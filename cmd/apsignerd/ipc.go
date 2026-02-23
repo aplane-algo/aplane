@@ -18,12 +18,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	utilkeys "github.com/aplane-algo/aplane/internal/util/keys"
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
 
 // IPCServer handles Unix socket connections for local IPC.
