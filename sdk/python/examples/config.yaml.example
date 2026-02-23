@@ -1,0 +1,32 @@
+# aPlane Python SDK client configuration
+# Copy this file to your data directory as config.yaml
+
+# =============================================================================
+# DIRECT CONNECTION (local signer on same machine)
+# =============================================================================
+# Just set the signer port - no SSH block needed:
+#
+#   signer_port: 11270
+#
+# =============================================================================
+# SSH TUNNEL CONNECTION (remote signer)
+# =============================================================================
+# Add the ssh block to tunnel to a remote host.
+# The API token (from aplane.token) is used as the SSH username for 2FA.
+#
+#   signer_port: 11270
+#   ssh:
+#     host: signer.example.com
+#     port: 1127
+#     identity_file: .ssh/id_ed25519
+#
+# =============================================================================
+
+# Signer REST API port
+signer_port: 11270
+
+# SSH tunnel configuration (remove this block for direct connection)
+ssh:
+  host: signer.example.com
+  port: 1127
+  identity_file: .ssh/id_ed25519

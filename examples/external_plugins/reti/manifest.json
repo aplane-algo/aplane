@@ -1,0 +1,118 @@
+{
+  "name": "reti-plugin",
+  "version": "1.0.0",
+  "description": "Reti staking pool plugin for depositing and withdrawing ALGO",
+  "author": "aPlane Shell Team",
+  "homepage": "https://github.com/TxnLab/reti",
+  "executable": "node",
+  "args": ["dist/reti-plugin.js"],
+  "commands": [
+    {
+      "name": "reti",
+      "description": "Interact with Reti staking pools",
+      "usage": "reti list | pools <id> | deposit <amt> algo into <pool> for <addr> | withdraw <amt> algo from <pool> for <addr> | balance <addr>",
+      "examples": [
+        "reti list",
+        "reti pools 123",
+        "reti deposit 1000 algo into 123 for alice",
+        "reti withdraw 500 algo from 456 for alice",
+        "reti balance alice"
+      ],
+      "category": "defi",
+      "arg_specs": [
+        {"type": "keyword", "values": ["list", "pools", "deposit", "withdraw", "balance"]},
+        {
+          "branches": [
+            {
+              "when": {"arg": 0, "matches": "^pools$"},
+              "specs": [
+                {"type": "custom", "values": ["validator_id"]}
+              ]
+            },
+            {
+              "when": {"arg": 0, "matches": "^deposit$"},
+              "specs": [
+                {"type": "number"},
+                {"type": "keyword", "values": ["algo"]},
+                {"type": "keyword", "values": ["into"]},
+                {"type": "custom", "values": ["pool_id"]},
+                {"type": "keyword", "values": ["for"]},
+                {"type": "address"}
+              ]
+            },
+            {
+              "when": {"arg": 0, "matches": "^withdraw$"},
+              "specs": [
+                {"type": "number"},
+                {"type": "keyword", "values": ["algo"]},
+                {"type": "keyword", "values": ["from"]},
+                {"type": "custom", "values": ["pool_id"]},
+                {"type": "keyword", "values": ["for"]},
+                {"type": "address"}
+              ]
+            },
+            {
+              "when": {"arg": 0, "matches": "^balance$"},
+              "specs": [
+                {"type": "address"}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "retiList",
+      "description": "List all available Reti staking validators",
+      "params": [],
+      "returns": "{validators: [{id: number, name: string, commission: number, totalStaked: number, numPools: number, totalStakers: number, minEntryStake: number}]}",
+      "command": ["list"]
+    },
+    {
+      "name": "retiPools",
+      "description": "Get pools for a specific Reti validator",
+      "params": [
+        {"name": "validatorId", "type": "number", "description": "Validator ID"}
+      ],
+      "returns": "{pools: [{id: number, appId: number, stakersCount: number, balance: number}]}",
+      "command": ["pools", "$validatorId"]
+    },
+    {
+      "name": "retiDeposit",
+      "description": "Deposit ALGO into a Reti validator (protocol assigns pool automatically)",
+      "params": [
+        {"name": "amount", "type": "number", "description": "Amount of ALGO to stake"},
+        {"name": "validatorId", "type": "number", "description": "Validator ID to deposit into"},
+        {"name": "addr", "type": "address", "description": "Account address or alias"}
+      ],
+      "returns": "{txids: string[], validatorId: number, poolAppId: number}",
+      "command": ["deposit", "$amount", "algo", "into", "$validatorId", "for", "$addr"]
+    },
+    {
+      "name": "retiWithdraw",
+      "description": "Withdraw ALGO from a Reti staking pool",
+      "params": [
+        {"name": "amount", "type": "number", "description": "Amount of ALGO to unstake (0 = all)"},
+        {"name": "poolAppId", "type": "number", "description": "Pool App ID to withdraw from (get from retiBalance)"},
+        {"name": "addr", "type": "address", "description": "Account address or alias"}
+      ],
+      "returns": "{txids: string[], poolAppId: number, withdrawAmount: string}",
+      "command": ["withdraw", "$amount", "algo", "from", "$poolAppId", "for", "$addr"]
+    },
+    {
+      "name": "retiBalance",
+      "description": "Get Reti staking balance for an account",
+      "params": [
+        {"name": "addr", "type": "address", "description": "Account address or alias"}
+      ],
+      "returns": "{stakes: [{poolAppId: number, validatorId: number, balance: number}], totalStaked: number}",
+      "command": ["balance", "$addr"]
+    }
+  ],
+
+  "networks": ["testnet", "mainnet"],
+  "timeout": 120,
+  "protocol_version": "1.0"
+}

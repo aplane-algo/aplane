@@ -1,0 +1,113 @@
+> testnet> selfping myalias
+Building 5 zero ALGO self-payment transactions for EXAMPLEADDRESSXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX using
+falcon1024...
+Created 5 transactions, signing as atomic group...
+
+Detected ungrouped Falcon transactions
+Adding 11 dummy transaction(s) for LogicSig capacity
+Mixed atomic group detected:
+  Total transactions: 5
+  Falcon transactions: 5
+  Ed25519 transactions: 0
+  LogicSig transactions: 5
+  Dummy transactions needed: 11
+  Final group size: 16
+
+Split dummy fees across 5 Falcon transaction(s): ~2200 microAlgos each (total: 11000 microAlgos)
+Signing mixed transaction group...
+  Transaction 1: Falcon (EXAM..XXXX)...
+⏳ Waiting for signature approval from Signer...
+✓ Signature received from Signer
+    [MEASURED] LogicSig program: 1805 bytes, Falcon signature: 1223 bytes, Total: 3028 bytes (budget: 3180)
+  Transaction 2: Falcon (EXAM..XXXX)...
+⏳ Waiting for signature approval from Signer...
+✓ Signature received from Signer
+    [MEASURED] LogicSig program: 1805 bytes, Falcon signature: 1225 bytes, Total: 3030 bytes (budget: 3180)
+  Transaction 3: Falcon (EXAM..XXXX)...
+⏳ Waiting for signature approval from Signer...
+✓ Signature received from Signer
+    [MEASURED] LogicSig program: 1805 bytes, Falcon signature: 1234 bytes, Total: 3039 bytes (budget: 3180)
+  Transaction 4: Falcon (EXAM..XXXX)...
+⏳ Waiting for signature approval from Signer...
+✓ Signature received from Signer
+    [MEASURED] LogicSig program: 1805 bytes, Falcon signature: 1229 bytes, Total: 3034 bytes (budget: 3180)
+  Transaction 5: Falcon (EXAM..XXXX)...
+⏳ Waiting for signature approval from Signer...
+✓ Signature received from Signer
+    [MEASURED] LogicSig program: 1805 bytes, Falcon signature: 1234 bytes, Total: 3039 bytes (budget: 3180)
+  Dummy 1: LogicSig...
+    [MEASURED] Dummy LogicSig: 33 bytes (no signature args)
+  Dummy 2: LogicSig...
+  Dummy 3: LogicSig...
+  Dummy 4: LogicSig...
+  Dummy 5: LogicSig...
+  Dummy 6: LogicSig...
+  Dummy 7: LogicSig...
+  Dummy 8: LogicSig...
+  Dummy 9: LogicSig...
+  Dummy 10: LogicSig...
+  Dummy 11: LogicSig...
+✓ Signed 5 main + 11 dummy transactions
+
+Submitting atomic group (16 transactions) to network...
+
+Submitting to network...
+✓ Transaction(s) submitted
+
+Transaction IDs:
+  1. E3RUIMYP5FNHSTUNDBLDQW7WVB5PICQCZ4QJTB7RXBVHWTBMLYHQ
+  2. 4YUA2RI35HENMPHGATEY6EB4MIV4ERHQ3KZIPR3IOKZ6TKJHN2YQ
+  3. LGDHRMG2BGFXFGVJWLOIWS3IUE5HGDZ5VDKZY76I2VR4KUAG67RQ
+  4. GVQHQJIKKSZOO7DDE27AUNY5IBFFQMWCLX5LSSCWBI667PXTEWAQ
+  5. WJ22AWEMXO7OL6OCDKJ3Y5FCFMYDYMAKCVELCRF3AKRAVNPXG6GQ
+  6. GHJ3KQF4VNB4SZZB437ATQOND6VHGOYNRZR4KOOU7J5DCQW7ZDDQ
+  7. WIJYCMIHAXO5H75VTIJSLVX3TSYULVA3N4RRGLDSAVPZ5OILXI4Q
+  8. JSSXOE6CERE6WBQHVQJBFJU4KOBAOR3Y45N6BKE3FYSXIW4TFBLA
+  9. DWILDPYYRHQ75VM2NYHEOVP6T4OTJFSIOOVY5YSDLKWBFKV7GFUQ
+  10. DJ6CQYVMJBHQX25FBFYLZ5IZZEVK2OANZT6H23ZMPHRNLI7MVYDA
+  11. NTIZZTRBYUXA4GLRVO2OLNKE3EJQ3KAM3RIN5MWMXR6PSPFMYDBQ
+  12. 7UAUAZET2JRHULQXLNLIRMQ455ER2LUOZT7SIJNGBUZSW7IB2E3Q
+  13. SRUXEJF2Y45UCYXM3NZZGF2CREZS6UFD5L5ES2RUH3CJNHQPSMZA
+  14. TKVKLQ44NQE4KNCQDM2EYZ45OGTCJ2SZZSDXZJAHTT3NKCHXLSXA
+  15. 5MXSXLKVLVMY5NNETRVGEZWTJQ3VVS4OOK5RU33MQZSRHJEJAKIQ
+  16. TBGJQH4MMGBVKDRPLCHUBCSQJBBPOSECXKPMSJ3NFL7QF5SCFVJQ
+
+✓ Atomic group submitted successfully!
+  Group size: 16 transactions
+  First transaction ID: E3RUIMYP5FNHSTUNDBLDQW7WVB5PICQCZ4QJTB7RXBVHWTBMLYHQ
+  Last transaction ID:  TBGJQH4MMGBVKDRPLCHUBCSQJBBPOSECXKPMSJ3NFL7QF5SCFVJQ
+
+View on testnet explorer:
+  https://testnet.algoexplorer.io/tx/E3RUIMYP5FNHSTUNDBLDQW7WVB5PICQCZ4QJTB7RXBVHWTBMLYHQ
+
+● Excellent! The measurements confirm everything:
+
+  Falcon LogicSig sizes (5 samples):
+  - 3028, 3030, 3039, 3034, 3039 bytes
+  - Range: 3028-3039 bytes
+  - Average: ~3034 bytes
+  - Our budget: 3180 bytes
+  - Safety margin: 141-152 bytes ✓
+
+  Dummy LogicSig size:
+  - 33 bytes (confirmed - matches the file size)
+  - No signature arguments, just a tiny TEAL program
+
+  Comparison:
+  - Falcon LogicSig: ~3034 bytes
+  - Dummy LogicSig: 33 bytes
+  - Falcon is 92x larger than dummy!
+
+  Capacity accounting:
+  Each transaction provides 1000 bytes of LogicSig budget:
+  - 5 Falcon transactions: Use ~3034 bytes each, provide 1000 each
+    - Net deficit per Falcon: 3034 - 1000 = 2034 bytes needed
+    - Total deficit: 5 × 2034 = 10,170 bytes
+  - 11 Dummy transactions: Use 33 bytes each, provide 1000 each
+    - Net surplus per dummy: 1000 - 33 = 967 bytes contributed
+    - Total surplus: 11 × 967 = 10,637 bytes
+
+  Balance: 10,637 (from dummies) - 10,170 (Falcon needs) = +467 bytes surplus ✓
+
+  The system works perfectly! The tiny 33-byte dummy LogicSigs are pure capacity donors, contributing almost their
+  entire 1000-byte budget to support the large Falcon signatures.

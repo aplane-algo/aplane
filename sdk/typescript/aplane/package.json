@@ -1,0 +1,73 @@
+{
+  "name": "@aplane/signer",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for signing Algorand transactions via apsignerd",
+  "license": "AGPL-3.0-or-later",
+  "author": "aPlane Authors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aplane/aplane.git",
+    "directory": "sdk/typescript/aplane"
+  },
+  "keywords": [
+    "algorand",
+    "blockchain",
+    "signing",
+    "crypto",
+    "typescript"
+  ],
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "build": "npm run build:esm && npm run build:cjs && npm run build:cjs-package",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:cjs-package": "echo '{\"type\": \"commonjs\"}' > dist/cjs/package.json",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "yaml": "^2.3.0"
+  },
+  "optionalDependencies": {
+    "ssh2": "^1.15.0"
+  },
+  "peerDependencies": {
+    "algosdk": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ssh2": "^1.15.0",
+    "algosdk": "^3.0.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,31 @@
+# apsignerd configuration for Docker playground
+
+signer_port: 11270
+store: /root/apsigner/store
+ipc_path: /tmp/aplane.sock
+
+# SSH tunnel for remote access and token provisioning
+ssh:
+  port: 1127
+  host_key_path: .ssh/ssh_host_key
+  authorized_keys_path: .ssh/authorized_keys
+  auto_register: true
+
+# Auto-unlock with passphrase file (demo only - don't use in production)
+passphrase_file: /root/apsigner/passphrase
+passphrase_timeout: "0"
+
+# Approval policy (auto-approve everything for demo)
+txn_auto_approve: true
+group_auto_approve: true
+allow_group_modification: true
+
+# Lock when admin disconnects (disabled for headless mode)
+lock_on_disconnect: false
+
+# TEAL compiler for LogicSig generation
+teal_compiler_algod_url: https://testnet-api.4160.nodely.dev
+teal_compiler_algod_token: ""
+
+# No memory protection in container (not running as root with caps)
+require_memory_protection: false

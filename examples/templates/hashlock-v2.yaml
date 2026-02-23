@@ -1,0 +1,115 @@
+schema_version: 1
+family: hashlock
+version: 2
+display_name: "Hashlock v2"
+description: "Lock funds until preimage is revealed (for atomic swaps)"
+display_color: "36"
+
+parameters:
+  - name: hash
+    label: "Hash (SHA256)"
+    description: "SHA256 hash of the secret preimage (64 hex characters)"
+    type: bytes
+    required: true
+    max_length: 64
+    example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    placeholder: "Enter 64-character hex hash"
+  - name: recipient
+    label: "Recipient Address"
+    description: "Address that can claim funds by providing the preimage"
+    type: address
+    required: true
+    example: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+  - name: refund_address
+    label: "Refund Address"
+    description: "Address that can reclaim funds after timeout"
+    type: address
+    required: true
+    example: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+  - name: timeout_round
+    label: "Timeout Round"
+    description: "Block round after which refund is allowed"
+    type: uint64
+    required: true
+    min: 1
+    example: "50000000"
+
+runtime_args:
+  - name: preimage
+    label: "Preimage"
+    description: "The secret value that hashes to the stored hash (needed for claim path, not refund)"
+    type: bytes
+
+teal: |
+  #pragma version 10
+
+  // Hashlock LogicSig - Two spending paths:
+  // 1. Claim: recipient provides correct preimage as arg 0 (before timeout)
+  // 2. Refund: refund_address reclaims after timeout (no arg needed)
+
+  // Security: Prevent rekey attacks
+  txn RekeyTo
+  global ZeroAddress
+  ==
+  assert
+
+  // Check transaction type is payment
+  txn TypeEnum
+  int pay
+  ==
+  assert
+
+  // Check if timeout has passed - if so, allow refund path
+  txn FirstValid
+  int @timeout_round
+  >=
+  bnz refund_path
+
+  // === CLAIM PATH (before timeout) ===
+  // Verify SHA256(preimage) == stored hash
+  // Note: If no arg provided, this will fail (arg 0 doesn't exist)
+  arg 0
+  sha256
+  byte @hash
+  ==
+  assert
+
+  // Verify receiver is the designated recipient
+  txn Receiver
+  addr @recipient
+  ==
+  assert
+
+  // Verify CloseRemainderTo is recipient or zero (no stealing via close)
+  txn CloseRemainderTo
+  addr @recipient
+  ==
+  txn CloseRemainderTo
+  global ZeroAddress
+  ==
+  ||
+  assert
+
+  int 1
+  return
+
+  // === REFUND PATH (after timeout) ===
+  refund_path:
+      // Verify receiver is the refund address
+      txn Receiver
+      addr @refund_address
+      ==
+      assert
+
+      // Verify CloseRemainderTo is refund address or zero
+      txn CloseRemainderTo
+      addr @refund_address
+      ==
+      txn CloseRemainderTo
+      global ZeroAddress
+      ==
+      ||
+      assert
+
+      int 1
+      return

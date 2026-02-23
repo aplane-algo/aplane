@@ -1,0 +1,39 @@
+schema_version: 1
+family: falcon1024-hashlock
+version: 2
+display_name: "Falcon-1024 Hashlock v2"
+description: "Falcon-1024 signature with SHA256 hash verification (requires preimage to spend)"
+
+parameters:
+  - name: hash
+    label: "SHA256 Hash"
+    description: "SHA256 hash of the secret preimage (64 hex characters)"
+    type: bytes
+    required: true
+    max_length: 64
+    example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    placeholder: "Enter 64-character hex hash"
+
+runtime_args:
+  - name: preimage
+    label: "Secret Preimage"
+    description: "The secret value whose SHA256 hash matches the stored hash"
+    type: bytes
+
+teal: |
+  // Prevent rekeying
+  txn RekeyTo
+  global ZeroAddress
+  ==
+  assert
+  // Prevent closing account
+  txn CloseRemainderTo
+  global ZeroAddress
+  ==
+  assert
+  // Hash verification: sha256(arg 1) == stored hash
+  arg 1
+  sha256
+  byte @hash
+  ==
+  assert

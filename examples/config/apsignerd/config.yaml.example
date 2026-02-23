@@ -1,0 +1,39 @@
+# apsignerd configuration with manual approval
+# See doc/USER_CONFIG.md for full documentation.
+
+# REST API port (bound to localhost when SSH is enabled)
+signer_port: 11270
+
+# SSH tunnel settings for remote access (uncomment for localhost only)
+ssh:
+  port: 1127
+  host_key_path: .ssh/ssh_host_key        # Relative to $APSIGNER_DATA
+  authorized_keys_path: .ssh/authorized_keys  # Relative to $APSIGNER_DATA
+  auto_register: true  # Auto-register new SSH keys (TOFU)
+
+# Store directory (relative to $APSIGNER_DATA)
+store: store
+
+# Approval policy settings (all default to false)
+# txn_auto_approve: false
+# group_auto_approve: false
+# allow_group_modification: false
+
+# IPC socket for admin interface (apadmin, apapprover)
+# Normally does not need to be specified - see doc/USER_CONFIG.md for defaults
+# ipc_path: /tmp/aplane.sock
+
+# Inactivity timeout before auto-lock: "0" = never, "15m" = 15 minutes, "1h" = 1 hour
+passphrase_timeout: "15m"
+
+# Lock signer when apadmin disconnects
+lock_on_disconnect: true
+
+# TEAL compiler for LogicSig generation (e.g., timelocks)
+teal_compiler_algod_url: https://testnet-api.4160.nodely.dev
+teal_compiler_algod_token: ""
+
+# Security settings
+# If true, fail startup when memory protection cannot be enabled (requires root/sudo)
+# Memory protection includes: disabling core dumps + locking memory (prevents swap)
+require_memory_protection: false

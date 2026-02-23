@@ -1,0 +1,48 @@
+{
+  "name": "tinymanswap",
+  "version": "1.0.0",
+  "description": "Tinyman DEX swap integration - perform token swaps on the Algorand blockchain",
+  "author": "aPlane Shell Team",
+  "homepage": "https://github.com/apshell/tinymanswap-plugin",
+  "executable": "./tinymanswap-plugin.js",
+  "commands": [
+    {
+      "name": "tinymanswap",
+      "description": "Swap tokens using Tinyman AMM",
+      "usage": "tinymanswap <amount> <from_asset> to <to_asset> for <account> [via router|direct]",
+      "examples": [
+        "tinymanswap 10 ALGO to usdc for alice",
+        "tinymanswap 100 usdc to ALGO for bob via router"
+      ],
+      "category": "defi",
+      "arg_specs": [
+        {"type": "number"},
+        {"type": "asset"},
+        {"type": "keyword", "values": ["to"]},
+        {"type": "asset"},
+        {"type": "keyword", "values": ["for"]},
+        {"type": "address"},
+        {"type": "keyword", "values": ["via"]},
+        {"type": "keyword", "values": ["router", "direct"]}
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "tinymanSwap",
+      "description": "Swap tokens using Tinyman AMM (automatically resolves asset IDs for current network)",
+      "params": [
+        {"name": "amount", "type": "number", "description": "Amount of source asset to swap"},
+        {"name": "fromAsset", "type": "asset", "description": "Source asset (e.g., 'ALGO', 'usdc', or asset ID)"},
+        {"name": "toAsset", "type": "asset", "description": "Target asset (e.g., 'ALGO', 'usdc', or asset ID)"},
+        {"name": "addr", "type": "address", "description": "Account address or alias"}
+      ],
+      "returns": "{txids: string[], amount_in: number, amount_out_expected: number, price_impact: number, slippage: number}",
+      "command": ["$amount", "$fromAsset", "to", "$toAsset", "for", "$addr"]
+    }
+  ],
+
+  "networks": ["testnet", "mainnet"],
+  "timeout": 60,
+  "protocol_version": "1.0"
+}

@@ -1,0 +1,217 @@
+#pragma version 10
+// Box storage contract for swap exchange data.
+//
+// 160-byte box prefix: creator (32B) || 4 ACL slots (4 × 32B).
+// ACL: only accounts in non-zero slots may write or delete.
+// Unused slots are zero-filled and ignored.
+// MBR: caller pays on create; refund goes to creator on delete.
+//
+// Box MBR formula: 2500 + 400 * (name_len + value_len) microAlgo.
+//
+// Three methods routed by app_args[0]:
+//   "create" — verify MBR payment, box_create, write prefix
+//   "write"  — ACL check, box_replace (caller offset + 160)
+//   "delete" — ACL check, box_del, refund MBR to creator
+
+txn ApplicationID
+bz approve  // Allow app creation
+
+txn OnCompletion
+int NoOp
+==
+assert
+
+txna ApplicationArgs 0
+byte "create"
+==
+bnz do_create
+
+txna ApplicationArgs 0
+byte "write"
+==
+bnz do_write
+
+txna ApplicationArgs 0
+byte "delete"
+==
+bnz do_delete
+
+err  // Unknown method
+
+do_create:
+    // Verify MBR payment: previous txn in group must be a payment
+    // to the app address for at least 2500 + 400*(name_len+box_size).
+    txn GroupIndex
+    int 1
+    -
+    gtxns TypeEnum
+    int pay
+    ==
+    assert
+
+    txn GroupIndex
+    int 1
+    -
+    gtxns Receiver
+    global CurrentApplicationAddress
+    ==
+    assert
+
+    // Compute required MBR: 2500 + 400 * (name_len + box_size)
+    txna ApplicationArgs 1   // box name
+    len
+    txna ApplicationArgs 2   // box size (big-endian uint64)
+    btoi
+    +
+    int 400
+    *
+    int 2500
+    +
+    // stack: [required_mbr]
+
+    txn GroupIndex
+    int 1
+    -
+    gtxns Amount
+    // stack: [required_mbr, paid_amount]
+    swap
+    >=
+    assert
+
+    // Create the box (zero-filled — unused ACL slots stay 0x00)
+    txna ApplicationArgs 1   // box name
+    txna ApplicationArgs 2   // box size (big-endian uint64)
+    btoi
+    box_create
+    assert
+
+    // Build prefix: creator || Accounts[1] [|| Accounts[2..4]]
+    // Only concat accounts that were actually passed.
+    txn Sender               // creator (32 bytes)
+    txna Accounts 1          // addr1 (always required)
+    concat
+
+    txn NumAccounts
+    int 2
+    <
+    bnz create_write_prefix
+
+    txna Accounts 2
+    concat
+
+    txn NumAccounts
+    int 3
+    <
+    bnz create_write_prefix
+
+    txna Accounts 3
+    concat
+
+    txn NumAccounts
+    int 4
+    <
+    bnz create_write_prefix
+
+    txna Accounts 4
+    concat
+
+create_write_prefix:
+    store 0                  // save prefix bytes
+    txna ApplicationArgs 1   // box name
+    int 0                    // offset 0
+    load 0                   // prefix bytes
+    box_replace
+    b approve
+
+do_write:
+    // ACL check: sender must be in one of the 4 ACL slots
+    callsub check_acl
+
+    txna ApplicationArgs 1   // box name
+    txna ApplicationArgs 2   // caller offset (big-endian uint64)
+    btoi
+    int 160                  // skip prefix
+    +
+    txna ApplicationArgs 3   // chunk data
+    box_replace
+    b approve
+
+do_delete:
+    // ACL check: sender must be in one of the 4 ACL slots
+    callsub check_acl
+
+    // Load creator address (bytes 0-31) for refund
+    txna ApplicationArgs 1   // box name
+    int 0
+    int 32
+    box_extract              // stack: [creator_addr]
+
+    // Compute refund: 2500 + 400 * (name_len + box_size)
+    txna ApplicationArgs 1   // box name
+    len
+    txna ApplicationArgs 1
+    box_len
+    assert                   // box must exist
+    +
+    int 400
+    *
+    int 2500
+    +
+    // stack: [creator_addr, refund_amount]
+
+    // Delete the box (frees MBR in contract account)
+    txna ApplicationArgs 1   // box name
+    box_del
+    assert
+
+    // Refund MBR to creator via inner transaction
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    itxn_field Amount         // refund_amount
+    itxn_field Receiver       // creator_addr
+    int 0
+    itxn_field Fee            // fee pooled from outer txn
+    itxn_submit
+
+    b approve
+
+// Subroutine: verify Txn.Sender is in one of the 4 ACL slots (bytes 32-159)
+// Zero-filled slots never match a real address.
+check_acl:
+    txna ApplicationArgs 1   // box name
+    int 32
+    int 128
+    box_extract              // stack: [acl_bytes (128B)]
+
+    dup
+    extract 0 32
+    txn Sender
+    ==
+    bnz acl_ok
+
+    dup
+    extract 32 32
+    txn Sender
+    ==
+    bnz acl_ok
+
+    dup
+    extract 64 32
+    txn Sender
+    ==
+    bnz acl_ok
+
+    extract 96 32
+    txn Sender
+    ==
+    assert                   // reject if no slot matches
+    b acl_continue
+
+acl_ok:
+    pop                      // clean up remaining acl_bytes
+acl_continue:
+    retsub
+
+approve:
+    int 1

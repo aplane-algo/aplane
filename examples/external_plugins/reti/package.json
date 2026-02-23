@@ -1,0 +1,19 @@
+{
+  "name": "reti-plugin",
+  "version": "1.0.0",
+  "description": "Reti staking pool plugin for aPlane Shell",
+  "type": "module",
+  "main": "dist/reti-plugin.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/reti-plugin.js"
+  },
+  "dependencies": {
+    "@algorandfoundation/algokit-utils": "^9.1.2",
+    "algosdk": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.11",
+    "typescript": "^5.6.3"
+  }
+}

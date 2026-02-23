@@ -1,0 +1,277 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux Binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            cc: musl-gcc
+            suffix: linux-amd64
+          - goarch: arm64
+            cc: zig-cc-aarch64
+            suffix: linux-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+          cache: true
+
+      - name: Install cross-compilation toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+          # Install Zig for ARM64 cross-compilation with musl
+          ZIG_VERSION="0.13.0"
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          tar xf "zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+          sudo mv "zig-linux-x86_64-${ZIG_VERSION}" /opt/zig
+          sudo ln -s /opt/zig/zig /usr/local/bin/zig
+
+          # Create zig cc wrapper for ARM64 musl target
+          echo '#!/bin/sh' | sudo tee /usr/local/bin/zig-cc-aarch64
+          echo 'exec zig cc -target aarch64-linux-musl "$@"' | sudo tee -a /usr/local/bin/zig-cc-aarch64
+          sudo chmod +x /usr/local/bin/zig-cc-aarch64
+
+      - name: Generate plugin imports
+        run: make generate-plugin-imports
+
+      - name: Get version info
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          GIT_COMMIT=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "git_commit=$GIT_COMMIT" >> $GITHUB_OUTPUT
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+          CGO_ENABLED: 1
+        run: |
+          VERSION_PKG="github.com/aplane-algo/aplane/internal/version"
+          LDFLAGS="-X ${VERSION_PKG}.Version=${{ steps.version.outputs.version }} -X ${VERSION_PKG}.GitCommit=${{ steps.version.outputs.git_commit }} -X ${VERSION_PKG}.BuildTime=${{ steps.version.outputs.build_time }} -extldflags '-static'"
+
+          AVAILABLE_PLUGINS=$(find coreplugins -maxdepth 1 \( -type d -o -type l \) -not -name coreplugins 2>/dev/null | xargs -I{} basename {} | tr '\n' ' ')
+
+          mkdir -p dist/${{ matrix.suffix }}
+
+          # For ARM64 cross-compilation with Zig, use netgo to avoid CGO DNS resolver issues
+          EXTRA_TAGS=""
+          if [ "${{ matrix.goarch }}" = "arm64" ]; then
+            EXTRA_TAGS="netgo osusergo"
+          fi
+
+          # Build apshell with plugins
+          if [ -n "$AVAILABLE_PLUGINS" ]; then
+            go build -ldflags "$LDFLAGS" -tags "$AVAILABLE_PLUGINS $EXTRA_TAGS" -o dist/${{ matrix.suffix }}/apshell ./cmd/apshell
+          else
+            go build -ldflags "$LDFLAGS" -tags "$EXTRA_TAGS" -o dist/${{ matrix.suffix }}/apshell ./cmd/apshell
+          fi
+
+          # Build other binaries
+          go build -ldflags "$LDFLAGS" -tags "$EXTRA_TAGS" -o dist/${{ matrix.suffix }}/apsignerd ./cmd/apsignerd
+          go build -ldflags "$LDFLAGS" -tags "$EXTRA_TAGS" -o dist/${{ matrix.suffix }}/apadmin ./cmd/apadmin
+          go build -ldflags "$LDFLAGS" -tags "$EXTRA_TAGS" -o dist/${{ matrix.suffix }}/apstore ./cmd/apstore
+          go build -ldflags "$LDFLAGS" -tags "$EXTRA_TAGS" -o dist/${{ matrix.suffix }}/apapprover ./cmd/apapprover
+
+      - name: Create archive
+        run: |
+          cd dist/${{ matrix.suffix }}
+          tar -czvf ../aplane-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.tar.gz *
+          cd ..
+          sha256sum aplane-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.tar.gz > aplane-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.tar.gz.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aplane-${{ matrix.suffix }}
+          path: |
+            dist/aplane-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.tar.gz
+            dist/aplane-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.tar.gz.sha256
+
+  build-macos:
+    name: Build macOS Binaries
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+          cache: true
+
+      - name: Generate plugin imports
+        run: make generate-plugin-imports
+
+      - name: Get version info
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          GIT_COMMIT=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "git_commit=$GIT_COMMIT" >> $GITHUB_OUTPUT
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+          CGO_ENABLED: 1
+        run: |
+          VERSION_PKG="github.com/aplane-algo/aplane/internal/version"
+          LDFLAGS="-X ${VERSION_PKG}.Version=${{ steps.version.outputs.version }} -X ${VERSION_PKG}.GitCommit=${{ steps.version.outputs.git_commit }} -X ${VERSION_PKG}.BuildTime=${{ steps.version.outputs.build_time }}"
+
+          AVAILABLE_PLUGINS=$(find coreplugins -maxdepth 1 \( -type d -o -type l \) -not -name coreplugins 2>/dev/null | xargs -I{} basename {} | tr '\n' ' ')
+
+          mkdir -p dist/darwin-arm64
+
+          # Build apshell with plugins
+          if [ -n "$AVAILABLE_PLUGINS" ]; then
+            go build -ldflags "$LDFLAGS" -tags "$AVAILABLE_PLUGINS" -o dist/darwin-arm64/apshell ./cmd/apshell
+          else
+            go build -ldflags "$LDFLAGS" -o dist/darwin-arm64/apshell ./cmd/apshell
+          fi
+
+          # Build other binaries
+          go build -ldflags "$LDFLAGS" -o dist/darwin-arm64/apsignerd ./cmd/apsignerd
+          go build -ldflags "$LDFLAGS" -o dist/darwin-arm64/apadmin ./cmd/apadmin
+          go build -ldflags "$LDFLAGS" -o dist/darwin-arm64/apstore ./cmd/apstore
+          go build -ldflags "$LDFLAGS" -o dist/darwin-arm64/apapprover ./cmd/apapprover
+
+      - name: Create archive
+        run: |
+          cd dist/darwin-arm64
+          tar -czvf ../aplane-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz *
+          cd ..
+          shasum -a 256 aplane-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz > aplane-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aplane-darwin-arm64
+          path: |
+            dist/aplane-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz
+            dist/aplane-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz.sha256
+
+  build-windows:
+    name: Build Windows Binaries
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            suffix: windows-amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+          cache: true
+
+      - name: Generate plugin imports
+        shell: bash
+        run: make generate-plugin-imports
+
+      - name: Get version info
+        id: version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          GIT_COMMIT=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "git_commit=$GIT_COMMIT" >> $GITHUB_OUTPUT
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        shell: bash
+        env:
+          GOOS: windows
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+        run: |
+          VERSION_PKG="github.com/aplane-algo/aplane/internal/version"
+          LDFLAGS="-X ${VERSION_PKG}.Version=${{ steps.version.outputs.version }} -X ${VERSION_PKG}.GitCommit=${{ steps.version.outputs.git_commit }} -X ${VERSION_PKG}.BuildTime=${{ steps.version.outputs.build_time }}"
+
+          AVAILABLE_PLUGINS=$(find coreplugins -maxdepth 1 \( -type d -o -type l \) -not -name coreplugins 2>/dev/null | xargs -I{} basename {} | tr '\n' ' ')
+
+          mkdir -p dist/${{ matrix.suffix }}
+
+          # Build apshell with plugins
+          if [ -n "$AVAILABLE_PLUGINS" ]; then
+            go build -ldflags "$LDFLAGS" -tags "$AVAILABLE_PLUGINS" -o dist/${{ matrix.suffix }}/apshell.exe ./cmd/apshell
+          else
+            go build -ldflags "$LDFLAGS" -o dist/${{ matrix.suffix }}/apshell.exe ./cmd/apshell
+          fi
+
+      - name: Create archive
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $suffix = "${{ matrix.suffix }}"
+          Compress-Archive -Path dist/$suffix/* -DestinationPath dist/aplane-$version-$suffix.zip
+          $hash = (Get-FileHash -Algorithm SHA256 dist/aplane-$version-$suffix.zip).Hash.ToLower()
+          "$hash  aplane-$version-$suffix.zip" | Out-File -Encoding ascii dist/aplane-$version-$suffix.zip.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aplane-${{ matrix.suffix }}
+          path: |
+            dist/aplane-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.zip
+            dist/aplane-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.zip.sha256
+
+  release:
+    name: Create Release
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: aPlane ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          generate_release_notes: true
+          files: |
+            artifacts/aplane-linux-amd64/*
+            artifacts/aplane-linux-arm64/*
+            artifacts/aplane-darwin-arm64/*
+            artifacts/aplane-windows-amd64/*

@@ -1,0 +1,39 @@
+# Auto-unlocked apsignerd configuration 
+# See doc/USER_CONFIG.md for full documentation.
+
+# Passphrase file for auto-unlocked startup (optional)
+passphrase_file: "passphrase"
+
+# REST API port (bound to localhost when SSH is enabled)
+signer_port: 11270
+
+# SSH tunnel settings (for remote clients)
+ssh:
+  port: 1127
+  host_key_path: .ssh/ssh_host_key
+  authorized_keys_path: .ssh/authorized_keys
+  auto_register: true    # Auto-register new client keys (TOFU)
+
+# Store directory (relative to $APSIGNER_DATA)
+store: store
+
+# IPC socket for admin interface (apadmin, apapprover)
+# Uses default: /tmp/aplane.sock
+
+# Inactivity timeout before auto-lock: "0" = never, "15m" = 15 minutes, "1h" = 1 hour
+passphrase_timeout: "0"
+
+# Approval policy settings
+txn_auto_approve: true
+group_auto_approve: true
+
+# Lock signer when apadmin disconnects
+lock_on_disconnect: false
+
+# TEAL compiler for apadmin LogicSig generation 
+teal_compiler_algod_url: https://testnet-api.4160.nodely.dev
+teal_compiler_algod_token: ""
+
+# Security settings
+require_memory_protection: false
+

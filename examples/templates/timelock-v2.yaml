@@ -1,0 +1,58 @@
+schema_version: 1
+family: timelock
+version: 2
+display_name: "Timelock v2"
+description: "Restrict funds to recipient after specified round"
+display_color: "35"
+
+parameters:
+  - name: recipient
+    label: "Recipient Address"
+    description: "Algorand address that can receive funds after unlock"
+    type: address
+    required: true
+    example: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+    placeholder: "Enter recipient address"
+
+  - name: unlock_round
+    label: "Unlock Round"
+    description: "Round number after which funds can be withdrawn"
+    type: uint64
+    required: true
+    min: 1
+    example: "50000000"
+    placeholder: "Enter unlock round number"
+
+teal: |
+  #pragma version 10
+  // Timelock: funds locked until round @unlock_round, then only to @recipient
+
+  // Check 1: Transaction first valid round >= unlock round
+  // (Transaction cannot be submitted until network reaches this round)
+  txn FirstValid
+  int @unlock_round
+  >=
+
+  // Check 2: Receiver matches recipient
+  txn Receiver
+  addr @recipient
+  ==
+  &&
+
+  // Security: CloseRemainderTo must be zero or recipient
+  txn CloseRemainderTo
+  global ZeroAddress
+  ==
+  txn CloseRemainderTo
+  addr @recipient
+  ==
+  ||
+  &&
+
+  // Security: Prevent RekeyTo takeover
+  txn RekeyTo
+  global ZeroAddress
+  ==
+  &&
+
+  return
