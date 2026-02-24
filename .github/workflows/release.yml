@@ -62,7 +62,7 @@ jobs:
           minisign -S -s /tmp/minisign.key -m dist/checksums.txt
           rm -f /tmp/minisign.key
         env:
-          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_KEY }}
 
       - name: Generate changelog
         id: changelog
