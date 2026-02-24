@@ -6,6 +6,7 @@ package util
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -69,9 +70,9 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 	lw := &limitedWriter{w: &stdoutBuf, remaining: maxUnsealOutputBytes}
 	cmd.Stdout = lw
 
-	// Capture stderr separately for error messages
-	var stderrBuf bytes.Buffer
-	cmd.Stderr = &stderrBuf
+	// Discard stderr — do not capture or propagate it, as a misbehaving helper
+	// could write sensitive content (passphrases, keys) to stderr.
+	cmd.Stderr = io.Discard
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("unseal_command_argv: failed to start: %w", err)
@@ -95,10 +96,6 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 	}
 
 	if runErr != nil {
-		stderrMsg := bytes.TrimSpace(stderrBuf.Bytes())
-		if len(stderrMsg) > 0 {
-			return nil, fmt.Errorf("unseal_command_argv: command failed: %w (stderr: %s)", runErr, stderrMsg)
-		}
 		return nil, fmt.Errorf("unseal_command_argv: command failed: %w", runErr)
 	}
 
@@ -107,8 +104,14 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 		return nil, fmt.Errorf("unseal_command_argv: stdout exceeded %d bytes", maxUnsealOutputBytes)
 	}
 
+	// Zero the stdout buffer on all exit paths from here (it holds secret material).
+	// We work on a copy so we can zero the buffer immediately after copying.
+	rawOutput := make([]byte, stdoutBuf.Len())
+	copy(rawOutput, stdoutBuf.Bytes())
+	zeroBuffer(&stdoutBuf)
+
 	// Strip exactly one trailing newline (preserve leading/trailing spaces in passphrase)
-	output := stdoutBuf.Bytes()
+	output := rawOutput
 	if len(output) > 0 && output[len(output)-1] == '\n' {
 		output = output[:len(output)-1]
 		// Also strip \r if present (Windows-style \r\n)
@@ -118,16 +121,20 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 	}
 
 	if len(output) == 0 {
+		zeroBytes(rawOutput)
 		return nil, fmt.Errorf("unseal_command_argv: command produced empty output")
 	}
 
 	// Reject NUL bytes (invalid in passphrases, indicates binary corruption)
 	if bytes.ContainsRune(output, 0) {
+		zeroBytes(rawOutput)
 		return nil, fmt.Errorf("unseal_command_argv: output contains NUL bytes (invalid)")
 	}
 
 	// Decode prefixed output formats
 	result, err := decodeUnsealOutput(output)
+	// Zero the raw output now that we have the decoded result (or an error)
+	zeroBytes(rawOutput)
 	if err != nil {
 		return nil, err
 	}
@@ -136,9 +143,12 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 }
 
 // decodeUnsealOutput handles base64: and hex: prefixed output, or returns raw bytes.
+// The caller is responsible for zeroing both the input and the returned slice.
 func decodeUnsealOutput(output []byte) ([]byte, error) {
 	if bytes.HasPrefix(output, []byte("base64:")) {
 		encoded := output[len("base64:"):]
+		// base64.DecodeString takes a string (immutable copy on heap — unavoidable with
+		// stdlib). The decoded result is a fresh []byte that the caller will zero.
 		decoded, err := base64.StdEncoding.DecodeString(string(encoded))
 		if err != nil {
 			return nil, fmt.Errorf("unseal_command_argv: invalid base64 output: %w", err)
@@ -155,10 +165,26 @@ func decodeUnsealOutput(output []byte) ([]byte, error) {
 		return decoded, nil
 	}
 
-	// Raw bytes — return a copy so the buffer can be GC'd
+	// Raw bytes — return a copy so the caller can zero the original
 	result := make([]byte, len(output))
 	copy(result, output)
 	return result, nil
+}
+
+// zeroBytes overwrites a byte slice with zeros using constant-time copy
+// to prevent compiler optimization from eliding the operation.
+func zeroBytes(b []byte) {
+	if len(b) == 0 {
+		return
+	}
+	subtle.ConstantTimeCopy(1, b, make([]byte, len(b)))
+}
+
+// zeroBuffer zeros the internal contents of a bytes.Buffer.
+func zeroBuffer(buf *bytes.Buffer) {
+	b := buf.Bytes()
+	zeroBytes(b)
+	buf.Reset()
 }
 
 // ValidateUnsealCommandConfig validates the full unseal command configuration.
