@@ -145,6 +145,11 @@ jobs:
             echo "## Initial release" > dist/changelog.md
           fi
 
+      - name: Delete existing release if present
+        run: gh release delete "${{ github.ref_name }}" --yes 2>/dev/null || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create release
         run: |
           gh release create "${{ github.ref_name }}" \
