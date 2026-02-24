@@ -49,8 +49,7 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "apstore - Signer keystore management\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n")
-		fmt.Fprintf(os.Stderr, "  apstore [-d path] init [--passphrase-file <path>]\n")
-		fmt.Fprintf(os.Stderr, "  apstore [-d path] passfile <path>\n")
+		fmt.Fprintf(os.Stderr, "  apstore [-d path] init\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] backup <all|ADDRESS> <destination>\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] restore <all|ADDRESS> <source>\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] verify <backup-path> [--deep]\n")
@@ -62,15 +61,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] add-falcon-template <yaml-file>\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		fmt.Fprintf(os.Stderr, "  -d path              Data directory (or set APSIGNER_DATA env var)\n")
-		fmt.Fprintf(os.Stderr, "  --passphrase-file    Create passphrase file at specified path (overrides config)\n")
 		fmt.Fprintf(os.Stderr, "  --random             Generate random passphrase (changepass only)\n")
 		fmt.Fprintf(os.Stderr, "  --show-private       Show private key material (inspect only)\n")
-		fmt.Fprintf(os.Stderr, "\nNotes:\n")
-		fmt.Fprintf(os.Stderr, "  If passphrase_file is configured in config.yaml, init will create it automatically.\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  apstore init\n")
-		fmt.Fprintf(os.Stderr, "  apstore init --passphrase-file /etc/aplane/passphrase\n")
-		fmt.Fprintf(os.Stderr, "  apstore passfile /etc/aplane/passphrase\n")
 		fmt.Fprintf(os.Stderr, "  apstore backup all /mnt/usb/backup\n")
 		fmt.Fprintf(os.Stderr, "  apstore backup ABC123... /mnt/usb/backup\n")
 		fmt.Fprintf(os.Stderr, "  apstore restore all /mnt/usb/backup\n")
@@ -116,30 +110,7 @@ func main() {
 
 	switch command {
 	case "init":
-		// Parse init-specific flags
-		var passphraseFilePath string
-		for i, arg := range args[1:] {
-			if arg == "--passphrase-file" && i+1 < len(args)-1 {
-				passphraseFilePath = args[i+2]
-			} else if strings.HasPrefix(arg, "--passphrase-file=") {
-				passphraseFilePath = strings.TrimPrefix(arg, "--passphrase-file=")
-			}
-		}
-		// If passphrase_file is configured in config.yaml and no explicit override, use it
-		if passphraseFilePath == "" && config.PassphraseFile != "" {
-			passphraseFilePath = config.PassphraseFile
-		}
-		if err := cmdInit(passphraseFilePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-
-	case "passfile":
-		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "Usage: apstore passfile <path>\n")
-			os.Exit(1)
-		}
-		if err := cmdPassfile(args[1]); err != nil {
+		if err := cmdInit(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -790,12 +761,6 @@ func cmdChangepass(random bool) error {
 	fmt.Println("=====================================")
 	fmt.Println()
 
-	if config.PassphraseFile != "" {
-		fmt.Printf("Passphrase file configured: %s\n", config.PassphraseFile)
-		fmt.Println("This file will also be updated with the new passphrase.")
-		fmt.Println()
-	}
-
 	// Get old passphrase
 	fmt.Print("Enter current passphrase: ")
 	oldPassphrase, err := readPassword()
@@ -1089,20 +1054,6 @@ func cmdChangepass(random bool) error {
 	pendingFiles = append(pendingFiles, pendingFile{keystorePath, newKeystorePath, oldKeystorePath})
 	fmt.Println("  Created: .keystore.new (verified)")
 
-	// 1c. Create new passphrase file if configured
-	if config.PassphraseFile != "" {
-		newPassPath := config.PassphraseFile + ".new"
-		oldPassPath := config.PassphraseFile + ".old"
-
-		if err := os.WriteFile(newPassPath, []byte(newPassphrase+"\n"), 0600); err != nil {
-			cleanupNew()
-			return fmt.Errorf("failed to write passphrase file.new: %w", err)
-		}
-
-		pendingFiles = append(pendingFiles, pendingFile{config.PassphraseFile, newPassPath, oldPassPath})
-		fmt.Printf("  Created: %s.new\n", filepath.Base(config.PassphraseFile))
-	}
-
 	// ========================================
 	// PHASE 2: Atomic swap (rename operations)
 	// ========================================
@@ -1146,84 +1097,12 @@ func cmdChangepass(random bool) error {
 		fmt.Printf("  - %d template file(s) migrated\n", len(templateFiles))
 	}
 	fmt.Println("  - Keystore metadata updated")
-	if config.PassphraseFile != "" {
-		fmt.Println("  - Passphrase file updated")
-	}
-
-	return nil
-}
-
-// cmdPassfile creates a passphrase file for an existing keystore (for headless operation)
-// Verifies the passphrase against the existing control file before creating
-func cmdPassfile(path string) error {
-	fmt.Println("Create Passphrase File")
-	fmt.Println("======================")
-	fmt.Println()
-
-	// Check that keystore is initialized
-	if !crypto.KeystoreMetadataExistsIn(config.StoreDir) {
-		return fmt.Errorf("keystore not initialized - run 'apstore init' first")
-	}
-
-	// Check if file already exists
-	if _, err := os.Stat(path); err == nil {
-		fmt.Printf("Warning: File already exists: %s\n", path)
-		fmt.Print("Overwrite? [y/N]: ")
-
-		reader := bufio.NewReader(os.Stdin)
-		response, _ := reader.ReadString('\n')
-		response = strings.TrimSpace(strings.ToLower(response))
-
-		if response != "y" && response != "yes" {
-			fmt.Println("Cancelled.")
-			return nil
-		}
-		fmt.Println()
-	}
-
-	fmt.Printf("Passphrase file: %s\n", path)
-	fmt.Println()
-	fmt.Println("Enter your keystore passphrase to create the passphrase file.")
-	fmt.Println()
-
-	// Get passphrase
-	fmt.Print("Enter passphrase: ")
-	passphrase, err := readPassword()
-	if err != nil {
-		return fmt.Errorf("failed to read passphrase: %w", err)
-	}
-	fmt.Println()
-
-	// Verify against keystore
-	if err := crypto.VerifyPassphraseWithMetadata([]byte(passphrase), config.StoreDir); err != nil {
-		return fmt.Errorf("passphrase does not match keystore")
-	}
-
-	// Create parent directory if needed
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	// Write passphrase file with secure permissions (0600)
-	if err := os.WriteFile(path, []byte(passphrase+"\n"), 0600); err != nil {
-		return fmt.Errorf("failed to create passphrase file: %w", err)
-	}
-
-	fmt.Println()
-	fmt.Println("✓ Passphrase file created!")
-	fmt.Printf("  Path: %s\n", path)
-	fmt.Println("  Permissions: 0600 (owner read/write only)")
-	fmt.Println()
-	fmt.Println("Add to config.yaml:")
-	fmt.Printf("  passphrase_file: %s\n", path)
 
 	return nil
 }
 
 // cmdInit initializes a new keystore with a passphrase
-// If passphraseFilePath is non-empty, also creates a passphrase file for headless operation
-func cmdInit(passphraseFilePath string) error {
+func cmdInit() error {
 	fmt.Println("Keystore Initialization")
 	fmt.Println("=======================")
 	fmt.Println()
@@ -1239,9 +1118,6 @@ func cmdInit(passphraseFilePath string) error {
 	}
 
 	fmt.Printf("Keystore directory: %s\n", config.StoreDir)
-	if passphraseFilePath != "" {
-		fmt.Printf("Passphrase file:    %s (for headless operation)\n", passphraseFilePath)
-	}
 	fmt.Println()
 	fmt.Println("Choose a strong passphrase. This will be used to encrypt all keys.")
 	fmt.Println("You will need this passphrase to unlock the signer.")
@@ -1286,26 +1162,9 @@ func cmdInit(passphraseFilePath string) error {
 	fmt.Println()
 	fmt.Println("✓ Keystore initialized successfully!")
 	fmt.Printf("  Keystore metadata: %s/.keystore\n", config.StoreDir)
-
-	// Create passphrase file if requested
-	if passphraseFilePath != "" {
-		// Create parent directory if needed
-		dir := filepath.Dir(passphraseFilePath)
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			return fmt.Errorf("failed to create directory for passphrase file: %w", err)
-		}
-
-		// Write passphrase file with secure permissions (0600)
-		if err := os.WriteFile(passphraseFilePath, []byte(passphrase+"\n"), 0600); err != nil {
-			return fmt.Errorf("failed to create passphrase file: %w", err)
-		}
-		fmt.Printf("  Passphrase file: %s\n", passphraseFilePath)
-		fmt.Println()
-		fmt.Println("Headless mode ready - apsignerd will auto-unlock on startup.")
-	} else {
-		fmt.Println()
-		fmt.Println("You can now start apsignerd and use apadmin to unlock.")
-	}
+	fmt.Println()
+	fmt.Println("You can now start apsignerd and use apadmin to unlock.")
+	fmt.Println("For headless operation, configure unseal_command_argv in config.yaml.")
 
 	return nil
 }

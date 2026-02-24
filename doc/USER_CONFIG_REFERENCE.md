@@ -45,7 +45,10 @@ File: `config.yaml` in apsignerd data directory (`-d` or `APSIGNER_DATA`)
 | `store` | string | `(none)` | Store directory (required) |
 | `ipc_path` | string | `/tmp/aplane.sock` | Unix socket path for admin IPC |
 | `lock_on_disconnect` | *bool | `true` | Lock signer when admin disconnects |
-| `passphrase_file` | string | `(none)` | Passphrase file for headless startup |
+| `unseal_command_argv` | []string | `(none)` | Command to run at startup to obtain the passphrase (argv[0] must be absolute path unless allow_path_lookup is true) |
+| `unseal_command_env` | map | `(none)` | Environment variables to pass to the unseal command (process env is never inherited) |
+| `unseal_kind` | string | `passphrase` | What the unseal command returns: passphrase (default, runs Argon2id) or master_key (raw key bytes, skips derivation) |
+| `allow_path_lookup` | bool | `false` | Allow non-absolute argv[0] in unseal_command_argv, resolved via locked PATH (/usr/sbin:/usr/bin:/sbin:/bin) |
 | `teal_compiler_algod_url` | string | `(none)` | Algod URL for TEAL compilation |
 | `teal_compiler_algod_token` | string | `(none)` | Algod token for TEAL compilation |
 | `require_memory_protection` | bool | `false` | Fail startup if memory protection unavailable |
@@ -84,5 +87,5 @@ Both apshell and apsignerd require a data directory to be specified.
 
 For apsignerd passphrase sources:
 1. `TEST_PASSPHRASE` environment variable (highest priority)
-2. `passphrase_file` config option
+2. `unseal_command_argv` config option (headless mode)
 3. Interactive prompt via apadmin IPC (default)

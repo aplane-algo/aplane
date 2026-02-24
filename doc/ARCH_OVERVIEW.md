@@ -37,7 +37,7 @@ This document provides a high-level overview of the aPlane Shell system architec
 | **apsignerd** | Signing server | Providers (Signing, KeyGen, Mnemonic) |
 | **apadmin** | Key management TUI | UI (TUI) + Providers |
 | **apapprover** | Signing approval daemon | Providers (Signing) |
-| **apstore** | Keystore management (init, backup, restore, passfile) | Providers (KeyGen) + Crypto |
+| **apstore** | Keystore management (init, backup, restore) | Providers (KeyGen) + Crypto |
 
 ## Security Boundary
 
@@ -218,7 +218,7 @@ apsignerd supports two startup modes that share a unified initialization path:
 
 | Mode | Passphrase Source | Starts | Use Case |
 |------|-------------------|--------|----------|
-| **Headless** | `passphrase_file` config or `TEST_PASSPHRASE` env | Unlocked | Automation, CI/CD, systemd services |
+| **Headless** | `unseal_command_argv` config or `TEST_PASSPHRASE` env | Unlocked | Automation, CI/CD, systemd services |
 | **Locked** | apadmin IPC connection | Locked | Interactive operation, manual approval |
 
 **Why unified initialization matters:**

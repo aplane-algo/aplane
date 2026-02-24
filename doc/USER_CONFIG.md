@@ -220,7 +220,10 @@ The server and admin tools share the same config format and data directory.
 | `ipc_path` | string | (see below) | Unix socket path for admin interface |
 | `passphrase_timeout` | string | `"15m"` | Inactivity timeout before auto-lock (see below) |
 | `lock_on_disconnect` | *bool | `true` | Lock signer when apadmin disconnects |
-| `passphrase_file` | string | (optional) | Path to file containing passphrase for headless startup |
+| `unseal_command_argv` | []string | (optional) | Command to run at startup to obtain passphrase (see Headless Operation) |
+| `unseal_command_env` | map | (optional) | Environment variables to pass to unseal command |
+| `unseal_kind` | string | `"passphrase"` | What the unseal command returns: `passphrase` or `master_key` |
+| `allow_path_lookup` | bool | `false` | Allow non-absolute path in unseal_command_argv[0] |
 | `teal_compiler_algod_url` | string | (required for LogicSigs) | Algod URL for TEAL compilation (LogicSig generation) |
 | `teal_compiler_algod_token` | string | (optional) | Algod API token for TEAL compilation |
 | `require_memory_protection` | bool | `false` | If true, fail startup when memory protection cannot be enabled (requires root/sudo) |
@@ -458,35 +461,52 @@ In headless mode:
 
 Three configuration items work together to enable headless operation:
 
-#### 1. `passphrase_file` (config.yaml)
+#### 1. `unseal_command_argv` (config.yaml)
 
-Provides the passphrase at startup without interactive prompt.
+Specifies a command that returns the passphrase (or master key) on stdout. The command runs with a cleared environment and 5-second timeout. This follows the `git credential.helper` pattern — you provide the integration, apsignerd just executes it.
+
+**Requirements:**
+- `argv[0]` must be an absolute path (or set `allow_path_lookup: true`)
+- The binary must not be group/world-writable
+- Command must exit 0 and produce non-empty stdout
+- Exactly one trailing newline is stripped from output
+- Output may use `base64:` or `hex:` prefix for binary data
+
+**Examples:**
 
 ```yaml
-passphrase_file: /etc/aplane/passphrase
+# INSECURE / DEV ONLY: Read passphrase from a plaintext file
+unseal_command_argv: ["/usr/bin/cat", "/etc/aplane/passphrase"]
+
+# macOS Keychain (recommended on macOS)
+unseal_command_argv: ["/usr/bin/security", "find-generic-password", "-s", "aplane-signer", "-w"]
+
+# systemd credential (recommended on Linux with systemd)
+unseal_command_argv: ["/usr/bin/systemd-creds", "cat", "aplane-passphrase"]
+
+# HashiCorp Vault agent (requires Vault agent running locally)
+unseal_command_argv: ["/usr/bin/vault", "kv", "get", "-field=passphrase", "secret/aplane"]
+unseal_command_env:
+  VAULT_ADDR: "http://127.0.0.1:8200"
+  VAULT_TOKEN: "s.xxxx"
+allow_path_lookup: true
+
+# TPM2 unseal
+unseal_command_argv: ["/usr/bin/tpm2_unseal", "-c", "0x81000001"]
 ```
 
-**Security requirements:**
-- File permissions must be `0600` or `0400` (no group/other access)
-- Signer refuses to start if file is world/group readable
-- Should be owned by the user running apsignerd
-- Consider placing on an encrypted filesystem
+**Controlled environment:** By default, the unseal command runs with no environment variables. Use `unseal_command_env` to declare specific variables:
 
-**Setup using apstore (recommended):**
-```bash
-# Option 1: Initialize keystore and create passphrase file together
-./apstore init --passphrase-file /etc/aplane/passphrase
-
-# Option 2: If keystore already exists, create passphrase file separately
-./apstore passfile /etc/aplane/passphrase
+```yaml
+unseal_command_env:
+  AWS_REGION: "us-west-2"
+  HOME: "/var/lib/aplane"
 ```
 
-**Manual setup:**
-```bash
-sudo mkdir -p /etc/aplane
-echo "your-passphrase-here" | sudo tee /etc/aplane/passphrase > /dev/null
-sudo chmod 600 /etc/aplane/passphrase
-sudo chown $(whoami):$(whoami) /etc/aplane/passphrase
+**Master key mode:** If your backend returns a raw derived key (e.g., from a KMS), set `unseal_kind: master_key` to skip Argon2id derivation:
+
+```yaml
+unseal_kind: master_key  # Output is raw key bytes, not a passphrase
 ```
 
 #### 2. `lock_on_disconnect` (config.yaml)
@@ -519,7 +539,7 @@ group_auto_approve: true
 ```yaml
 signer_port: 11270
 store: /var/lib/aplane/keys
-passphrase_file: /etc/aplane/passphrase
+unseal_command_argv: ["/usr/bin/security", "find-generic-password", "-s", "aplane-signer", "-w"]
 lock_on_disconnect: false
 txn_auto_approve: true
 ```
@@ -528,7 +548,7 @@ txn_auto_approve: true
 
 | Risk | Mitigation |
 |------|------------|
-| Passphrase file exposure | Strict file permissions (0600), encrypted filesystem |
+| Unseal command compromise | Use absolute paths, verify binary is not writable by group/other |
 | Unauthorized signing | Restrictive policy (avoid `txn_auto_approve`/`group_auto_approve` in production) |
 | Physical access | Run on secured/isolated hardware |
 

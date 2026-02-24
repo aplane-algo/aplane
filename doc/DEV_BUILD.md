@@ -5,7 +5,7 @@ This project contains five applications:
 2. **apsignerd** - Remote key management and signing server
 3. **apadmin** - TUI/batch admin tool for key generation and management
 4. **apapprover** - CLI tool for approving signing requests
-5. **apstore** - Keystore management (init, backup, restore, passfile, verify, changepass, inspect, list)
+5. **apstore** - Keystore management (init, backup, restore, verify, changepass, inspect, list)
 
 ## Project Structure
 

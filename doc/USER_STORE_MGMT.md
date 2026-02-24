@@ -238,22 +238,7 @@ This creates the `.keystore` metadata file containing:
 - Master salt for key derivation (Argon2id)
 - Passphrase verification check
 
-**With passphrase file (for headless operation):**
-```bash
-./apstore init --passphrase-file /etc/aplane/passphrase
-```
-
-This creates both the keystore and a passphrase file for headless startup.
-
-### Creating a Passphrase File
-
-If your keystore already exists and you want to enable headless operation:
-
-```bash
-./apstore passfile /etc/aplane/passphrase
-```
-
-This verifies your passphrase against the existing keystore and creates a secure passphrase file (mode 0600).
+**Headless operation:** After initializing the keystore, configure `unseal_command_argv` in your apsignerd `config.yaml` to provide the passphrase automatically at startup. See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for examples.
 
 ### Changing the Passphrase
 
@@ -494,10 +479,6 @@ Without the encryption passphrase, you can still regenerate the same keys from y
 ```bash
 # Initialize keystore (required before first use)
 ./apstore init
-./apstore init --passphrase-file /etc/aplane/passphrase
-
-# Create passphrase file for existing keystore (headless operation)
-./apstore passfile /etc/aplane/passphrase
 
 # List keys in keystore
 ./apstore keys

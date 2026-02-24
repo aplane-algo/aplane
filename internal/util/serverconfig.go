@@ -4,7 +4,6 @@
 package util
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,7 +29,10 @@ type ServerConfig struct {
 	StoreDir          string           `yaml:"store" description:"Store directory (required)"`
 	IPCPath           string           `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"/tmp/aplane.sock"`
 	LockOnDisconnect  *bool            `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
-	PassphraseFile    string           `yaml:"passphrase_file" description:"Passphrase file for headless startup"`
+	UnsealCommandArgv []string          `yaml:"unseal_command_argv" description:"Command to run at startup to obtain the passphrase (argv[0] must be absolute path unless allow_path_lookup is true)"`
+	UnsealCommandEnv  map[string]string `yaml:"unseal_command_env" description:"Environment variables to pass to the unseal command (process env is never inherited)"`
+	UnsealKind        string            `yaml:"unseal_kind" description:"What the unseal command returns: passphrase (default, runs Argon2id) or master_key (raw key bytes, skips derivation)" default:"passphrase"`
+	AllowPathLookup   bool              `yaml:"allow_path_lookup" description:"Allow non-absolute argv[0] in unseal_command_argv, resolved via locked PATH (/usr/sbin:/usr/bin:/sbin:/bin)" default:"false"`
 	// TEAL compilation settings (for LogicSig generation)
 	TEALCompilerAlgodURL   string `yaml:"teal_compiler_algod_url" description:"Algod URL for TEAL compilation"`
 	TEALCompilerAlgodToken string `yaml:"teal_compiler_algod_token" description:"Algod token for TEAL compilation"`
@@ -155,7 +157,6 @@ func LoadServerConfig(dataDir string) ServerConfig {
 
 	// Resolve relative paths to absolute paths based on dataDir
 	config.StoreDir = ResolvePath(config.StoreDir, dataDir)
-	config.PassphraseFile = ResolvePath(config.PassphraseFile, dataDir)
 
 	return config
 }
@@ -179,10 +180,10 @@ func (c *ServerConfig) SSHEnabled() bool {
 
 // ShouldLockOnDisconnect returns whether the signer should lock when apadmin disconnects.
 // Defaults to true if not explicitly set.
-// Note: In headless mode (passphrase_file set), this is always false.
+// Note: In headless mode (unseal_command_argv set), this is always false.
 func (c *ServerConfig) ShouldLockOnDisconnect() bool {
 	// Headless mode never locks on disconnect
-	if c.PassphraseFile != "" {
+	if len(c.UnsealCommandArgv) > 0 {
 		return false
 	}
 	if c.LockOnDisconnect == nil {
@@ -212,23 +213,36 @@ func ValidateHeadlessPolicy(config *ServerConfig) error {
 	return nil
 }
 
-// ValidatePassphraseFile checks that a passphrase file exists and has secure permissions.
-func ValidatePassphraseFile(path string) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("passphrase_file: %w", err)
+// UnsealCommandCfg builds an UnsealCommandConfig from the ServerConfig fields.
+func (c *ServerConfig) UnsealCommandCfg() *UnsealCommandConfig {
+	kind := c.UnsealKind
+	if kind == "" {
+		kind = "passphrase"
 	}
-
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("passphrase_file must be a regular file, not %s", info.Mode().Type())
+	return &UnsealCommandConfig{
+		Argv:            c.UnsealCommandArgv,
+		Env:             c.UnsealCommandEnv,
+		AllowPathLookup: c.AllowPathLookup,
+		Kind:            kind,
 	}
+}
 
-	perm := info.Mode().Perm()
-	if perm&0077 != 0 {
-		return fmt.Errorf("passphrase_file has insecure permissions %04o (group/other access not allowed)", perm)
+// EffectiveUnsealKind returns the unseal kind, defaulting to "passphrase".
+func (c *ServerConfig) EffectiveUnsealKind() string {
+	if c.UnsealKind == "" {
+		return "passphrase"
 	}
+	return c.UnsealKind
+}
 
-	return nil
+// ValidateUnsealKind checks that unseal_kind is a valid value.
+func ValidateUnsealKind(kind string) error {
+	switch kind {
+	case "", "passphrase", "master_key":
+		return nil
+	default:
+		return fmt.Errorf("unseal_kind: invalid value %q (must be \"passphrase\" or \"master_key\")", kind)
+	}
 }
 
 // ParsePassphraseTimeout parses a passphrase timeout string into a time.Duration.
@@ -252,40 +266,3 @@ func ParsePassphraseTimeout(timeoutStr string) (time.Duration, error) {
 	return duration, nil
 }
 
-// ReadPassphraseFileBytes reads a passphrase from a file with security checks.
-// Returns the passphrase as []byte for secure handling (can be zeroed after use).
-// Returns nil and error if:
-// - File doesn't exist or can't be read
-// - File has group or other permissions set (must be 0600 or more restrictive)
-func ReadPassphraseFileBytes(path string) ([]byte, error) {
-	// Check file exists and get info
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, fmt.Errorf("cannot access passphrase file: %w", err)
-	}
-
-	// Check it's a regular file
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("passphrase_file must be a regular file, not %s", info.Mode().Type())
-	}
-
-	// Check permissions - no group/other access allowed
-	perm := info.Mode().Perm()
-	if perm&0077 != 0 {
-		return nil, fmt.Errorf("passphrase_file has insecure permissions %04o (group/other access not allowed)", perm)
-	}
-
-	// Read the file
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read passphrase file: %w", err)
-	}
-
-	// Trim whitespace (allow trailing newline in file)
-	passphrase := bytes.TrimSpace(data)
-	if len(passphrase) == 0 {
-		return nil, fmt.Errorf("passphrase_file is empty")
-	}
-
-	return passphrase, nil
-}

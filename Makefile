@@ -425,7 +425,7 @@ help:
 	@echo "  make apsignerd        - Build apsignerd (signing server)"
 	@echo "  make apadmin     - Build apadmin"
 	@echo "  make apapprover  - Build apapprover"
-	@echo "  make apstore     - Build apstore (init, backup, restore, passfile, changepass)"
+	@echo "  make apstore     - Build apstore (init, backup, restore, changepass)"
 	@echo "  make plugin-checksum - Build plugin-checksum (generate checksums.sha256)"
 	@echo "  make all             - Build everything"
 	@echo "  make clean           - Remove built binaries"
