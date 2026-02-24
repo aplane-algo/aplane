@@ -24,15 +24,14 @@ type SSHServerConfig struct {
 
 // ServerConfig represents the Signer configuration file
 type ServerConfig struct {
-	SignerPort        int              `yaml:"signer_port" description:"REST API port" default:"11270"`
-	SSH               *SSHServerConfig `yaml:"ssh" description:"SSH tunnel settings (omit to disable SSH)"`
-	PassphraseTimeout string           `yaml:"passphrase_timeout" description:"Inactivity timeout before auto-lock (0=never)" default:"15m"`
-	StoreDir          string           `yaml:"store" description:"Store directory (required)"`
-	IPCPath           string           `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"/tmp/aplane.sock"`
-	LockOnDisconnect  *bool            `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
+	SignerPort            int               `yaml:"signer_port" description:"REST API port" default:"11270"`
+	SSH                   *SSHServerConfig  `yaml:"ssh" description:"SSH tunnel settings (omit to disable SSH)"`
+	PassphraseTimeout     string            `yaml:"passphrase_timeout" description:"Inactivity timeout before auto-lock (0=never)" default:"15m"`
+	StoreDir              string            `yaml:"store" description:"Store directory (required)"`
+	IPCPath               string            `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"/tmp/aplane.sock"`
+	LockOnDisconnect      *bool             `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
 	PassphraseCommandArgv []string          `yaml:"passphrase_command_argv" description:"Command to run to obtain/store the passphrase (argv[0]: absolute path, explicit relative path like ./script.sh resolved relative to data directory, or bare name resolved via locked PATH with allow_path_lookup; verb 'read' or 'write' is injected as argv[1])"`
 	PassphraseCommandEnv  map[string]string `yaml:"passphrase_command_env" description:"Environment variables to pass to the passphrase command (process env is never inherited)"`
-	PassphraseCommandKind string            `yaml:"passphrase_command_kind" description:"What the passphrase command returns: passphrase (default, runs Argon2id) or master_key (raw key bytes, skips derivation)" default:"passphrase"`
 	AllowPathLookup       bool              `yaml:"allow_path_lookup" description:"Allow non-absolute argv[0] in passphrase_command_argv, resolved via locked PATH (/usr/sbin:/usr/bin:/sbin:/bin)" default:"false"`
 	// TEAL compilation settings (for LogicSig generation)
 	TEALCompilerAlgodURL   string `yaml:"teal_compiler_algod_url" description:"Algod URL for TEAL compilation"`
@@ -231,33 +230,10 @@ func ValidateHeadlessPolicy(config *ServerConfig) []string {
 
 // PassphraseCommandCfg builds a PassphraseCommandConfig from the ServerConfig fields.
 func (c *ServerConfig) PassphraseCommandCfg() *PassphraseCommandConfig {
-	kind := c.PassphraseCommandKind
-	if kind == "" {
-		kind = "passphrase"
-	}
 	return &PassphraseCommandConfig{
 		Argv:            c.PassphraseCommandArgv,
 		Env:             c.PassphraseCommandEnv,
 		AllowPathLookup: c.AllowPathLookup,
-		Kind:            kind,
-	}
-}
-
-// EffectivePassphraseCommandKind returns the passphrase command kind, defaulting to "passphrase".
-func (c *ServerConfig) EffectivePassphraseCommandKind() string {
-	if c.PassphraseCommandKind == "" {
-		return "passphrase"
-	}
-	return c.PassphraseCommandKind
-}
-
-// ValidatePassphraseCommandKind checks that passphrase_command_kind is a valid value.
-func ValidatePassphraseCommandKind(kind string) error {
-	switch kind {
-	case "", "passphrase", "master_key":
-		return nil
-	default:
-		return fmt.Errorf("passphrase_command_kind: invalid value %q (must be \"passphrase\" or \"master_key\")", kind)
 	}
 }
 
@@ -281,4 +257,3 @@ func ParsePassphraseTimeout(timeoutStr string) (time.Duration, error) {
 
 	return duration, nil
 }
-

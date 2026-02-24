@@ -140,10 +140,6 @@ func main() {
 	var startLocked bool
 	var passphraseSource string // Track source for security audit
 
-	// passphraseKind tracks the type of bytes stored in encPassphrase.
-	// Must be set at the same point as encPassphrase to stay in sync.
-	var passphraseKind string
-
 	// Priority: TEST_PASSPHRASE > passphrase_command_argv > locked startup
 	if testPass := os.Getenv("TEST_PASSPHRASE"); testPass != "" {
 		// Testing mode - unlocks immediately
@@ -153,7 +149,6 @@ func main() {
 		fmt.Println("\n🔐 Using TEST_PASSPHRASE for encryption (testing mode)")
 		startLocked = false
 		passphraseSource = "TEST_PASSPHRASE"
-		passphraseKind = "passphrase" // TEST_PASSPHRASE always provides a passphrase
 
 		// Verify passphrase matches existing control file
 		if err := crypto.VerifyPassphraseWithMetadata(testPassBytes, config.StoreDir); err != nil {
@@ -163,7 +158,7 @@ func main() {
 		}
 		crypto.ZeroBytes(testPassBytes)
 	} else if len(config.PassphraseCommandArgv) > 0 {
-		// Headless mode - obtain passphrase/key via passphrase command
+		// Headless mode - obtain passphrase via passphrase command
 		cmdCfg := config.PassphraseCommandCfg()
 		cmdCfg.Verb = "read"
 		passphraseBytes, err := util.RunPassphraseCommand(cmdCfg, nil)
@@ -172,29 +167,15 @@ func main() {
 			os.Exit(1)
 		}
 
-		passphraseKind = config.EffectivePassphraseCommandKind() // set outer variable to match what command returns
-		if passphraseKind == "master_key" {
-			// Master key mode: passphrase command returned the derived master key directly.
-			// Verify by attempting to decrypt the keystore check field.
-			if err := crypto.VerifyMasterKeyWithMetadata(passphraseBytes, config.StoreDir); err != nil {
-				crypto.ZeroBytes(passphraseBytes)
-				fmt.Fprintf(os.Stderr, "Error: master key from passphrase command does not match existing keystore\n")
-				os.Exit(1)
-			}
-			// Wrap master key as SecureString (treated as passphrase internally for session init)
-			encPassphrase = crypto.NewSecureStringFromBytes(passphraseBytes)
-			fmt.Printf("\n🔐 Master key loaded via passphrase command (passphrase_command_kind: master_key)\n")
-		} else {
-			// Passphrase mode (default): verify passphrase against .keystore
-			if err := crypto.VerifyPassphraseWithMetadata(passphraseBytes, config.StoreDir); err != nil {
-				crypto.ZeroBytes(passphraseBytes)
-				fmt.Fprintf(os.Stderr, "Error: passphrase from passphrase command does not match existing keystore\n")
-				fmt.Fprintf(os.Stderr, "       The passphrase_command_argv must return the same passphrase used to create the keystore\n")
-				os.Exit(1)
-			}
-			encPassphrase = crypto.NewSecureStringFromBytes(passphraseBytes)
-			fmt.Printf("\n🔐 Passphrase loaded via passphrase command\n")
+		// Verify passphrase against .keystore
+		if err := crypto.VerifyPassphraseWithMetadata(passphraseBytes, config.StoreDir); err != nil {
+			crypto.ZeroBytes(passphraseBytes)
+			fmt.Fprintf(os.Stderr, "Error: passphrase from passphrase command does not match existing keystore\n")
+			fmt.Fprintf(os.Stderr, "       The passphrase_command_argv must return the same passphrase used to create the keystore\n")
+			os.Exit(1)
 		}
+		encPassphrase = crypto.NewSecureStringFromBytes(passphraseBytes)
+		fmt.Printf("\n🔐 Passphrase loaded via passphrase command\n")
 		fmt.Println("   Starting in UNLOCKED state (headless mode)")
 		startLocked = false
 		passphraseSource = "passphrase_command"
@@ -206,7 +187,6 @@ func main() {
 		encPassphrase = crypto.NewSecureStringFromBytes(nil)
 		startLocked = true
 		passphraseSource = "ipc"
-		passphraseKind = "passphrase" // IPC always provides a passphrase
 	}
 
 	// Initialize key store (file-based, identity-scoped keys directory)
@@ -271,7 +251,6 @@ func main() {
 		authorizer:             authorizer,
 		auditLog:               auditLog,
 		config:                 &config,
-		passphraseKind:         passphraseKind,
 		tealCompilerAlgodURL:   config.TEALCompilerAlgodURL,
 		tealCompilerAlgodToken: config.TEALCompilerAlgodToken,
 	}

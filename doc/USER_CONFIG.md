@@ -222,7 +222,6 @@ The server and admin tools share the same config format and data directory.
 | `lock_on_disconnect` | *bool | `true` | Lock signer when apadmin disconnects |
 | `passphrase_command_argv` | []string | (optional) | Command to run at startup to obtain passphrase (see Headless Operation) |
 | `passphrase_command_env` | map | (optional) | Environment variables to pass to passphrase command |
-| `passphrase_command_kind` | string | `"passphrase"` | What the passphrase command returns: `passphrase` or `master_key` |
 | `allow_path_lookup` | bool | `false` | Allow non-absolute path in passphrase_command_argv[0] |
 | `teal_compiler_algod_url` | string | (required for LogicSigs) | Algod URL for TEAL compilation (LogicSig generation) |
 | `teal_compiler_algod_token` | string | (optional) | Algod API token for TEAL compilation |
@@ -536,12 +535,6 @@ passphrase_command_env:
 passphrase_command_env:
   AWS_REGION: "us-west-2"
   HOME: "/var/lib/aplane"
-```
-
-**Master key mode:** If your backend returns a raw derived key (e.g., from a KMS), set `passphrase_command_kind: master_key` to skip Argon2id derivation:
-
-```yaml
-passphrase_command_kind: master_key  # Output is raw key bytes, not a passphrase
 ```
 
 #### 2. `lock_on_disconnect` (config.yaml)

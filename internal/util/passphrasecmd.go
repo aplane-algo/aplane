@@ -36,7 +36,6 @@ type PassphraseCommandConfig struct {
 	Argv            []string          // Command and arguments
 	Env             map[string]string // Explicit environment variables (not inherited)
 	AllowPathLookup bool              // Allow non-absolute argv[0] resolved via locked PATH
-	Kind            string            // "passphrase" (default) or "master_key"
 	Verb            string            // "read" (default) or "write"
 }
 

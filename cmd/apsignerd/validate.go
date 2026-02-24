@@ -32,16 +32,6 @@ func validateStartup(config *util.ServerConfig, runtime *RuntimeState) error {
 			"       Run 'apstore init' to initialize the keystore with a passphrase", config.StoreDir)
 	}
 
-	// Validate passphrase_command_kind unconditionally (rejects unknown values even without passphrase_command_argv)
-	if err := util.ValidatePassphraseCommandKind(config.PassphraseCommandKind); err != nil {
-		return err
-	}
-
-	// passphrase_command_kind: master_key requires passphrase_command_argv (IPC always provides a passphrase)
-	if config.PassphraseCommandKind == "master_key" && len(config.PassphraseCommandArgv) == 0 {
-		return fmt.Errorf("passphrase_command_kind: master_key requires passphrase_command_argv to be configured (IPC unlock always provides a passphrase)")
-	}
-
 	// Headless mode conflicts
 	if len(config.PassphraseCommandArgv) > 0 {
 		if config.LockOnDisconnect != nil && *config.LockOnDisconnect {

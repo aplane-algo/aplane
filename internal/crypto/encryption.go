@@ -346,35 +346,6 @@ func VerifyPassphraseWithMetadata(passphrase []byte, keystoreDir string) error {
 	return nil
 }
 
-// VerifyMasterKeyWithMetadata verifies a raw master key against the keystore check value.
-// Unlike VerifyPassphraseWithMetadata, this skips Argon2id derivation — the provided bytes
-// are used directly as the master key. Used with passphrase_command_kind: master_key.
-func VerifyMasterKeyWithMetadata(masterKey []byte, keystoreDir string) error {
-	meta, err := LoadKeystoreMetadata(keystoreDir)
-	if err != nil {
-		return fmt.Errorf("failed to load keystore metadata: %w", err)
-	}
-	if meta == nil {
-		return fmt.Errorf("keystore not initialized (missing .keystore file)")
-	}
-
-	checkData, err := base64.StdEncoding.DecodeString(meta.Check)
-	if err != nil {
-		return fmt.Errorf("failed to decode check value: %w", err)
-	}
-
-	plaintext, err := decryptCheckValue(checkData, masterKey)
-	if err != nil {
-		return fmt.Errorf("incorrect master key")
-	}
-
-	if string(plaintext) != checkPlaintext {
-		return fmt.Errorf("incorrect master key (check mismatch)")
-	}
-
-	return nil
-}
-
 // ============================================================================
 // Standalone encryption (envelope_version 2)
 // ============================================================================

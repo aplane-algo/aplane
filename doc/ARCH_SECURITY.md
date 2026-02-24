@@ -12,7 +12,7 @@ aPlane uses a multi-layer authentication model designed for distinct use cases.
 |---------|------|-----------|-------------|------------------|
 | HTTP REST API | apshell | Scripts/automation | Bearer token | Stateless (per-request) |
 | IPC Unix Socket | apadmin | Human operator | Passphrase | Persistent (session) |
-| SSH Tunnel | apshell (remote) | Agents or users | Public key (+ optional token) | Persistent (transport) |
+| SSH Tunnel | apshell (remote) | Agents or users | Public key + token (2FA) | Persistent (transport) |
 
 ## Authentication Channels
 
@@ -228,7 +228,7 @@ Client                                              Server
 ```
 
 **Key points:**
-- Token is always required (no "key-only" mode)
+- Token is always required for normal connections (no "key-only" mode); the `request-token` bootstrap flow is the sole exception
 - Token passed as SSH username (no keyboard-interactive prompts)
 - Token verification uses constant-time comparison (timing-attack safe)
 
@@ -261,7 +261,7 @@ Client                                              Server
 | Property | Implementation |
 |----------|----------------|
 | Two-factor auth | API token (as username) + Ed25519 public key |
-| Key registration control | `ssh_auto_register` config option |
+| Key registration control | `ssh.auto_register` config option |
 | Host key verification | TOFU model with persistent known_hosts |
 | Token validation | Constant-time comparison (timing-attack safe) |
 | Transport encryption | SSH protocol (Ed25519 keys) |
@@ -633,6 +633,83 @@ Set `require_memory_protection: true` in production environments where key secur
 
 **Note:** apshell does not require memory protection because it never handles private keys directly—it only constructs transactions and sends them to apsignerd for signing.
 
+### Passphrase Command Helper Protocol
+
+The signer supports an external command protocol for passphrase storage and retrieval, following the same pattern as Git credential helpers. This enables headless operation (auto-unlock at startup) and fully automated keystore management (`apstore init --random`, `apstore changepass --random`) without human interaction.
+
+**Configuration:**
+
+```yaml
+passphrase_command_argv: ["./passfile", "passphrase"]
+passphrase_command_env:          # optional, process env is never inherited
+```
+
+Path resolution: `argv[0]` can be an absolute path, a relative path (resolved against the data directory), or a bare name (resolved via a locked PATH when `allow_path_lookup: true`). Arguments `argv[1:]` with explicit relative prefixes (`./`, `../`) are also resolved against the data directory.
+
+**Protocol contract:**
+
+The verb is injected as `argv[1]` before the user's arguments. For example, `["./passfile", "passphrase"]` with verb `read` executes `./passfile read passphrase`.
+
+| Verb | stdin | stdout | Required |
+|------|-------|--------|----------|
+| `read` | nothing | passphrase bytes | yes |
+| `write` | passphrase bytes | passphrase bytes (read-back) | optional |
+
+- **`read`**: Returns the stored passphrase on stdout. Exit 0 on success, non-zero on failure.
+- **`write`**: Receives the new passphrase on stdin, stores it, then echoes the stored value back on stdout for round-trip verification. Exit non-zero if the write verb is unsupported — callers fall back to displaying the passphrase for manual storage.
+
+**Output handling:**
+
+- Exactly one trailing newline is stripped (not `TrimSpace` — leading/trailing spaces in passphrases are preserved)
+- Output prefixed with `base64:` or `hex:` is decoded accordingly
+- NUL bytes are rejected
+- stdout is capped at 8 KB; stderr is discarded (a misbehaving helper could leak secrets to stderr)
+
+**Callers:**
+
+| Caller | Verb | Purpose |
+|--------|------|---------|
+| `apsignerd` startup (headless) | `read` | Auto-unlock signer at boot |
+| `apstore init --random` | `write` | Store the generated passphrase |
+| `apstore changepass --random` | `read` + `write` | Read old passphrase, then store new passphrase after atomic key re-encryption |
+
+**Round-trip verification (`write`):**
+
+`WritePassphrase` sends the passphrase on stdin, captures the read-back from stdout, and compares using `subtle.ConstantTimeCompare`. A mismatch aborts the operation. For `changepass`, a write failure triggers a full rollback (restoring `.old` files) — the keystore is never left in a state where the keys and the stored passphrase disagree.
+
+**Security properties:**
+
+| Property | Implementation |
+|----------|----------------|
+| Environment isolation | Process environment is never inherited; only `passphrase_command_env` entries are passed |
+| Binary validation | Must be executable, must not be group/world-writable |
+| Path restriction | Non-absolute `argv[0]` resolved via locked PATH (`/usr/sbin:/usr/bin:/sbin:/bin`) only |
+| Timeout | 5-second deadline with process-group kill (child processes included) |
+| Output limit | 8 KB max stdout to prevent memory exhaustion |
+| Constant-time comparison | Write round-trip uses `crypto/subtle` |
+
+**Bundled helpers:**
+
+- **`passfile`** — Dev-only plaintext file helper. Implements `read` (reads file to stdout) and `write` (reads stdin, writes file, echoes back). **Not for production** — use a secrets manager (macOS Keychain, HashiCorp Vault, AWS Secrets Manager, TPM, etc.).
+
+**Writing a custom helper:**
+
+A helper is any executable that accepts a verb as its first argument. Minimal shell example:
+
+```sh
+#!/bin/sh
+case "$1" in
+  read)  security find-generic-password -s apsignerd -w ;;
+  write) security delete-generic-password -s apsignerd 2>/dev/null
+         read -r pass
+         security add-generic-password -s apsignerd -w "$pass"
+         echo "$pass" ;;
+  *)     exit 2 ;;
+esac
+```
+
+Helpers that only support `read` should exit non-zero on `write`. The caller will fall back to displaying the passphrase for manual storage.
+
 ### Defense in Depth
 
 | Attack Vector | Mitigation |
@@ -697,7 +774,7 @@ On load:  read → verify HMAC → base64 decode → JSON deserialize → data
 
 | Aspect | HTTP (apshell) | IPC (apadmin) | SSH Tunnel |
 |--------|-------------|-------------------|------------|
-| Auth credential | Token file | Passphrase | SSH key (+ optional token) |
+| Auth credential | Token file | Passphrase | SSH key + token (2FA) |
 | Auth frequency | Every request | Once per connection | Once per tunnel |
 | Authorization | Authorizer interface | Implicit (admin) | N/A (transport only) |
 | Connection model | Stateless | Persistent session | Persistent transport |
@@ -710,44 +787,44 @@ On load:  read → verify HMAC → base64 decode → JSON deserialize → data
 The multi-channel design separates concerns:
 - **HTTP**: Optimized for automation, scriptability, stateless operation
 - **IPC**: Optimized for human interaction, key security, session management
-- **SSH**: Secure transport for remote access, public key authentication (+ optional token)
+- **SSH**: Secure transport for remote access, public key + token authentication (2FA)
 
 ## Future Enhancements
 
-The architecture is designed to support hardening without structural changes:
+The architecture can support additional security features without major structural changes:
 
 ### Token Management
 
-| Current | Future |
-|---------|--------|
+| Current | Possible Options |
+|---------|------------------|
 | Single `aplane.token` file | Token store (file or database) |
 | No per-client identity | Per-agent tokens with unique IDs |
 | No expiration | Configurable token TTL |
 | Manual rotation only | Programmatic revocation |
 
-The `TokenAuthenticator` interface already returns an `Identity` struct—future token stores will populate this with client-specific metadata. Identity-scoped keyspaces are already plumbed end-to-end: identity flows via context to handlers, key cache lookups are scoped by `identity.ID`, and audit log entries carry a `principal` field. Today all paths use `DefaultIdentityID` (`"default"`); wiring in a real identity source activates per-tenant key isolation without handler changes.
+The `TokenAuthenticator` interface already returns an `Identity` struct, so a token store can populate client-specific metadata without changing handler interfaces. Identity-scoped keyspaces are already plumbed end-to-end: identity flows via context to handlers, key cache lookups are scoped by `identity.ID`, and audit log entries carry a `principal` field. Today all paths use `DefaultIdentityID` (`"default"`).
 
-**Planned implementations:** `FileTokenStore` → `SqliteTokenStore` → `PostgresTokenStore`
+**Possible token-store backends:** `FileTokenStore`, `SqliteTokenStore`, `PostgresTokenStore`
 
 ### Authorization
 
-The `Authorizer` interface is already wired into all protected endpoints. Upgrading from `AllowAllAuthorizer` to `RBACAuthorizer` requires no handler changes:
+The `Authorizer` interface is already wired into all protected endpoints. If role separation is needed, `AllowAllAuthorizer` can be replaced by `RBACAuthorizer` without handler changes:
 
 ```
-Current:  Authenticate → AllowAllAuthorizer → Handler
-Future:   Authenticate → RBACAuthorizer    → Handler
+Default:          Authenticate → AllowAllAuthorizer → Handler
+Role-separated:   Authenticate → RBACAuthorizer    → Handler
 ```
 
-**Admin endpoint separation:** Today `/admin/generate` and `/admin/keys` share the same token and `AllowAllAuthorizer` as `/sign`. When multi-client token support is added, key management operations (`ActionManageKeys`) should require an elevated role or a separate admin token so that signing-only clients cannot generate or delete keys.
+**Admin endpoint separation:** Today `/admin/generate` and `/admin/keys` share the same token and `AllowAllAuthorizer` as `/sign`. In multi-client deployments, key management operations (`ActionManageKeys`) can be gated behind an elevated role or a separate admin token so that signing-only clients cannot generate or delete keys.
 
 ### Security Parameters
 
-These parameters are currently fixed but designed for future configurability:
+These parameters are currently fixed but can be made configurable:
 
-| Parameter | Current Value | Hardening Direction |
-|-----------|---------------|---------------------|
-| Key derivation | Argon2id (64MB memory, GPU-resistant) | Already strong |
-| SSH approval policy | Configurable | Require manual approval for all |
-| Token entropy | 256 bits (32 bytes) | Already strong |
+| Parameter | Current Value | Possible Options |
+|-----------|---------------|------------------|
+| Key derivation | Argon2id (64MB memory, GPU-resistant) | Alternative settings if requirements change |
+| SSH approval policy | Configurable | Manual approval for all sessions |
+| Token entropy | 256 bits (32 bytes) | Alternative token formats with equivalent strength |
 
-A future "enterprise profile" could enforce stricter defaults without architectural changes.
+Optional presets or deployment guides could bundle stricter defaults without architectural changes.
