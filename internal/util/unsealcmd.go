@@ -65,8 +65,9 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 	cmd.Stdin = nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	// Capture stdout with size limit
+	// Capture stdout with size limit; defer zeroing so all exit paths are covered.
 	var stdoutBuf bytes.Buffer
+	defer zeroBuffer(&stdoutBuf)
 	lw := &limitedWriter{w: &stdoutBuf, remaining: maxUnsealOutputBytes}
 	cmd.Stdout = lw
 
@@ -104,11 +105,9 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 		return nil, fmt.Errorf("unseal_command_argv: stdout exceeded %d bytes", maxUnsealOutputBytes)
 	}
 
-	// Zero the stdout buffer on all exit paths from here (it holds secret material).
-	// We work on a copy so we can zero the buffer immediately after copying.
+	// Copy stdout content so we can work on it; the buffer itself is zeroed by defer.
 	rawOutput := make([]byte, stdoutBuf.Len())
 	copy(rawOutput, stdoutBuf.Bytes())
-	zeroBuffer(&stdoutBuf)
 
 	// Strip exactly one trailing newline (preserve leading/trailing spaces in passphrase)
 	output := rawOutput
