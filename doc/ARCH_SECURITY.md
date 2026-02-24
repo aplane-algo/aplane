@@ -690,7 +690,20 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 
 **Bundled helpers:**
 
-- **`pass-file`** — Dev-only plaintext file helper. Implements `read` (reads file to stdout) and `write` (reads stdin, writes file, echoes back). **Not for production** — use a secrets manager (macOS Keychain, HashiCorp Vault, AWS Secrets Manager, TPM, etc.).
+- **`pass-file`** (dev-only) — Plaintext file helper. Stores the passphrase unencrypted on disk. Implements both `read` and `write`. **Not for production** — the passphrase is readable by anyone with access to the file.
+
+- **`pass-systemd`** (production, Linux) — Encrypts the passphrase using `systemd-creds` (systemd 250+), which binds the encrypted blob to the machine's TPM2 chip and/or host key. The credential file can only be decrypted on the same machine. Implements both `read` and `write` with round-trip verification.
+
+  ```yaml
+  # Production: passphrase encrypted with TPM2/host key
+  passphrase_command_argv: ["pass-systemd", "passphrase.cred"]
+  ```
+
+  How it works:
+  - **`write`**: Reads passphrase from stdin, runs `systemd-creds encrypt --name=aplane-passphrase - <file>`, decrypts back to verify the round-trip, then echoes the passphrase to stdout.
+  - **`read`**: Runs `systemd-creds decrypt --name=aplane-passphrase <file> -` and writes the result to stdout.
+  - The `--name=aplane-passphrase` flag binds the credential to that name, preventing the encrypted blob from being repurposed for other services.
+  - `systemd-creds` automatically selects the best available key material: TPM2 + host key if both are present, or host key alone.
 
 **Writing a custom helper:**
 
