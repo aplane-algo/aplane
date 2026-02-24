@@ -56,6 +56,8 @@ func ConnectSSH(host, token, sshKeyPath string, opts *SSHConnectOptions) (*Signe
 	signerPort := DefaultSignerPort
 	timeout := DefaultTimeout
 
+	var knownHostsPath string
+
 	if opts != nil {
 		if opts.SSHPort > 0 {
 			sshPort = opts.SSHPort
@@ -66,9 +68,12 @@ func ConnectSSH(host, token, sshKeyPath string, opts *SSHConnectOptions) (*Signe
 		if opts.Timeout > 0 {
 			timeout = opts.Timeout
 		}
+		if opts.KnownHostsPath != "" {
+			knownHostsPath = opts.KnownHostsPath
+		}
 	}
 
-	tunnel := &sshTunnel{}
+	tunnel := &sshTunnel{knownHostsPath: knownHostsPath}
 	localPort, err := tunnel.connect(host, sshPort, signerPort, token, ExpandPath(sshKeyPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to establish SSH tunnel: %w", err)
@@ -115,10 +120,15 @@ func FromEnv(opts *FromEnvOptions) (*SignerClient, error) {
 	// Connect via SSH if configured
 	if config.SSH != nil && config.SSH.Host != "" {
 		sshKeyPath := filepath.Join(dataDir, config.SSH.IdentityFile)
+		knownHostsPath := filepath.Join(dataDir, "known_hosts")
+		if config.SSH.KnownHostsPath != "" {
+			knownHostsPath = config.SSH.KnownHostsPath
+		}
 		return ConnectSSH(config.SSH.Host, token, sshKeyPath, &SSHConnectOptions{
-			SSHPort:    config.SSH.Port,
-			SignerPort: config.SignerPort,
-			Timeout:    timeout,
+			SSHPort:        config.SSH.Port,
+			SignerPort:     config.SignerPort,
+			Timeout:        timeout,
+			KnownHostsPath: knownHostsPath,
 		})
 	}
 

@@ -91,9 +91,10 @@ type ConnectOptions struct {
 
 // SSHConnectOptions contains options for SSH tunnel connections.
 type SSHConnectOptions struct {
-	SSHPort    int
-	SignerPort int
-	Timeout    int // seconds
+	SSHPort        int
+	SignerPort     int
+	Timeout        int    // seconds
+	KnownHostsPath string // path to known_hosts file for TOFU verification
 }
 
 // FromEnvOptions contains options for FromEnv().
