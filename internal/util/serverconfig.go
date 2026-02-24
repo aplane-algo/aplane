@@ -18,7 +18,7 @@ type SSHServerConfig struct {
 	Port               int    `yaml:"port" description:"SSH port to listen on" default:"1127"`
 	HostKeyPath        string `yaml:"host_key_path" description:"Server's private host key path" default:".ssh/ssh_host_key"`
 	AuthorizedKeysPath string `yaml:"authorized_keys_path" description:"Allowed client public keys file" default:".ssh/authorized_keys"`
-	AutoRegister       *bool  `yaml:"auto_register" description:"Auto-register new SSH keys (TOFU)" default:"true"`
+	AutoRegister       *bool  `yaml:"auto_register" description:"Auto-register new SSH keys (TOFU)" default:"false"`
 }
 
 // ServerConfig represents the Signer configuration file
@@ -162,13 +162,13 @@ func LoadServerConfig(dataDir string) ServerConfig {
 }
 
 // ShouldAutoRegisterSSHKeys returns whether new SSH keys should be auto-registered.
-// Defaults to true if not explicitly set. Returns false if SSH is disabled.
+// Defaults to false if not explicitly set. Returns false if SSH is disabled.
 func (c *ServerConfig) ShouldAutoRegisterSSHKeys() bool {
 	if c.SSH == nil {
 		return false // SSH disabled
 	}
 	if c.SSH.AutoRegister == nil {
-		return true // Default: auto-register for TOFU
+		return false // Default: reject unknown keys
 	}
 	return *c.SSH.AutoRegister
 }

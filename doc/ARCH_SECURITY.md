@@ -203,8 +203,8 @@ The API token is passed as the SSH username, enabling single-step authentication
 
 | `ssh.auto_register` | Behavior |
 |---------------------|----------|
-| `true` (default)    | New keys are auto-registered after token validation |
-| `false`             | Unknown keys are rejected; only pre-registered keys allowed |
+| `true`              | New keys are auto-registered after token validation |
+| `false` (default)   | Unknown keys are rejected; only pre-registered keys allowed |
 
 **Authentication flow:**
 
@@ -291,22 +291,22 @@ SSH is configured via a nested `ssh:` block. Omit the block entirely to disable 
 | `ssh.port` | `2222` | SSH listener port |
 | `ssh.host_key_path` | `.ssh/ssh_host_key` | Server host key (auto-generated if missing) |
 | `ssh.authorized_keys_path` | `.ssh/authorized_keys` | Allowed client public keys |
-| `ssh.auto_register` | `true` | Auto-register new client keys after token validation |
+| `ssh.auto_register` | `false` | Auto-register new client keys after token validation |
 
-**Example config.yaml with auto-registration (default):**
+**Example config.yaml with auto-registration:**
 ```yaml
 signer_port: 11270
 ssh:
   port: 2222
-  auto_register: true   # New keys auto-register after token validation
+  auto_register: true   # New keys auto-register after token validation (dev/TOFU only)
 ```
 
-**Example config.yaml for manual key management:**
+**Example config.yaml for manual key management (default):**
 ```yaml
 signer_port: 11270
 ssh:
   port: 2222
-  auto_register: false  # Reject unknown keys; add to authorized_keys manually
+  # auto_register defaults to false — unknown keys are rejected
 ```
 
 **Example config.yaml for direct access (no SSH):**

@@ -215,7 +215,7 @@ The server and admin tools share the same config format and data directory.
 | `ssh.port` | int | `1127` | SSH tunnel port |
 | `ssh.host_key_path` | string | `".ssh/ssh_host_key"` | SSH host private key (relative to data dir) |
 | `ssh.authorized_keys_path` | string | `".ssh/authorized_keys"` | Authorized client public keys (relative to data dir) |
-| `ssh.auto_register` | bool | `true` | Auto-register new client SSH keys (TOFU) |
+| `ssh.auto_register` | bool | `false` | Auto-register new client SSH keys (TOFU) |
 | `store` | string | (required) | Store directory |
 | `ipc_path` | string | (see below) | Unix socket path for admin interface |
 | `passphrase_timeout` | string | `"15m"` | Inactivity timeout before auto-lock (see below) |

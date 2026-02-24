@@ -40,7 +40,7 @@ File: `config.yaml` in apsignerd data directory (`-d` or `APSIGNER_DATA`)
 | `ssh.port` | int | `1127` | SSH port to listen on |
 | `ssh.host_key_path` | string | `.ssh/ssh_host_key` | Server's private host key path |
 | `ssh.authorized_keys_path` | string | `.ssh/authorized_keys` | Allowed client public keys file |
-| `ssh.auto_register` | *bool | `true` | Auto-register new SSH keys (TOFU) |
+| `ssh.auto_register` | *bool | `false` | Auto-register new SSH keys (TOFU) |
 | `passphrase_timeout` | string | `15m` | Inactivity timeout before auto-lock (0=never) |
 | `store` | string | `(none)` | Store directory (required) |
 | `ipc_path` | string | `/tmp/aplane.sock` | Unix socket path for admin IPC |
