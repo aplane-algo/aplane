@@ -92,3 +92,4 @@ checksums.sha256
 # Build output
 bin/*
 !bin/.gitkeep
+dist/

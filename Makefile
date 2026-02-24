@@ -1,4 +1,4 @@
-.PHONY: all clean apshell apshell-core apshell-all apsignerd apadmin apapprover apstore plugin-checksum plugin-checksums help generate-plugin-imports list-plugins disable-all compile-teal test race-test unit-test integration-test check-example-plugins build-example-plugins docker-playground apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-arm64 plugin-checksum-arm64 bin-arm64 bin-amd64 security-analysis analyze-keyzero analyze-keylog analyze-insecurerand analyze-seedphrase config-docs client-package python-sdk python-sdk-test python-sdk-clean typescript-sdk typescript-sdk-clean typescript-sdk-test
+.PHONY: all clean apshell apshell-core apshell-all apsignerd apadmin apapprover apstore plugin-checksum plugin-checksums help generate-plugin-imports list-plugins disable-all compile-teal test race-test unit-test integration-test check-example-plugins build-example-plugins docker-playground apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-arm64 passfile-arm64 plugin-checksum-arm64 bin-arm64 bin-amd64 security-analysis analyze-keyzero analyze-keylog analyze-insecurerand analyze-seedphrase config-docs client-package python-sdk python-sdk-test python-sdk-clean typescript-sdk typescript-sdk-clean typescript-sdk-test release-local
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -133,17 +133,21 @@ apstore-arm64: compile-teal
 apapprover-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o apapprover-arm64 ./cmd/apapprover
 
+passfile-arm64:
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o passfile-arm64 ./cmd/passfile
+
 plugin-checksum-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o plugin-checksum-arm64 ./cmd/plugin-checksum
 
 # Build all binaries for arm64 into bin/arm64/
-bin-arm64: apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-arm64 plugin-checksum-arm64
+bin-arm64: apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-arm64 passfile-arm64 plugin-checksum-arm64
 	@mkdir -p bin/arm64
 	@mv apshell-arm64 bin/arm64/apshell
 	@mv apsignerd-arm64 bin/arm64/apsignerd
 	@mv apadmin-arm64 bin/arm64/apadmin
 	@mv apstore-arm64 bin/arm64/apstore
 	@mv apapprover-arm64 bin/arm64/apapprover
+	@mv passfile-arm64 bin/arm64/passfile
 	@mv plugin-checksum-arm64 bin/arm64/plugin-checksum
 	@echo "✓ Built arm64 binaries in bin/arm64/"
 
@@ -159,6 +163,7 @@ bin-amd64: compile-teal generate-plugin-imports
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apadmin ./cmd/apadmin
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apstore ./cmd/apstore
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/apapprover ./cmd/apapprover
+	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/passfile ./cmd/passfile
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/plugin-checksum ./cmd/plugin-checksum
 	@echo "✓ Built amd64 binaries in bin/amd64/"
 
@@ -259,6 +264,20 @@ DOCKER_PLAYGROUND_IMAGE := makman568/ap-play
 docker-playground: bin-arm64 bin-amd64
 	docker buildx build --platform linux/amd64,linux/arm64 -t $(DOCKER_PLAYGROUND_IMAGE):latest --push -f docker/Dockerfile .
 	@echo "✓ Pushed $(DOCKER_PLAYGROUND_IMAGE):latest (amd64 + arm64)"
+
+# Local release dry-run (builds archives without publishing)
+release-local: bin-amd64 bin-arm64
+	@mkdir -p dist
+	@VERSION=$$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//'); \
+	for arch in amd64 arm64; do \
+		archive="aplane_$${VERSION}_linux_$${arch}.tar.gz"; \
+		tar -czf "dist/$${archive}" -C "bin/$${arch}" \
+			apshell apsignerd apadmin apapprover apstore passfile; \
+		echo "✓ Created dist/$${archive}"; \
+	done; \
+	cd dist && sha256sum *.tar.gz > checksums.txt && cd ..; \
+	echo "✓ Generated dist/checksums.txt"; \
+	cat dist/checksums.txt
 
 test:
 	go test ./...
