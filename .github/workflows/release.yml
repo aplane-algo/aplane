@@ -99,17 +99,18 @@ jobs:
       - name: Package release archives
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          BINARIES="apshell apsignerd apadmin apapprover apstore passfile"
+          BINARIES="apshell apsignerd apadmin apapprover apstore pass-file"
+          LINUX_BINARIES="$BINARIES pass-systemd"
           mkdir -p dist
 
-          # Linux archives
+          # Linux archives (includes pass-systemd)
           for arch in amd64 arm64; do
             archive="aplane_${VERSION}_linux_${arch}.tar.gz"
-            tar -czf "dist/${archive}" -C "bin/${arch}" $BINARIES
+            tar -czf "dist/${archive}" -C "bin/${arch}" $LINUX_BINARIES
             echo "Created dist/${archive}"
           done
 
-          # macOS archives
+          # macOS archives (no pass-systemd — systemd is Linux-only)
           for arch in amd64 arm64; do
             archive="aplane_${VERSION}_darwin_${arch}.tar.gz"
             tar -czf "dist/${archive}" -C "bin/darwin-${arch}" $BINARIES

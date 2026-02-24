@@ -163,7 +163,7 @@ main() {
     log "aPlane ${version} installed to ${INSTALL_DIR}"
     log ""
     log "Installed binaries:"
-    for bin in apshell apsignerd apadmin apapprover apstore passfile; do
+    for bin in apshell apsignerd apadmin apapprover apstore pass-file; do
         if [ -f "${INSTALL_DIR}/${bin}" ]; then
             log "  ${bin}"
         fi

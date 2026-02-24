@@ -640,7 +640,7 @@ The signer supports an external command protocol for passphrase storage and retr
 **Configuration:**
 
 ```yaml
-passphrase_command_argv: ["./passfile", "passphrase"]
+passphrase_command_argv: ["./pass-file", "passphrase"]
 passphrase_command_env:          # optional, process env is never inherited
 ```
 
@@ -648,7 +648,7 @@ Path resolution: all elements of `passphrase_command_argv` are resolved relative
 
 **Protocol contract:**
 
-The verb is injected as `argv[1]` before the user's arguments. For example, `["./passfile", "passphrase"]` with verb `read` executes `./passfile read passphrase`.
+The verb is injected as `argv[1]` before the user's arguments. For example, `["./pass-file", "passphrase"]` with verb `read` executes `./pass-file read passphrase`.
 
 | Verb | stdin | stdout | Required |
 |------|-------|--------|----------|
@@ -690,7 +690,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 
 **Bundled helpers:**
 
-- **`passfile`** — Dev-only plaintext file helper. Implements `read` (reads file to stdout) and `write` (reads stdin, writes file, echoes back). **Not for production** — use a secrets manager (macOS Keychain, HashiCorp Vault, AWS Secrets Manager, TPM, etc.).
+- **`pass-file`** — Dev-only plaintext file helper. Implements `read` (reads file to stdout) and `write` (reads stdin, writes file, echoes back). **Not for production** — use a secrets manager (macOS Keychain, HashiCorp Vault, AWS Secrets Manager, TPM, etc.).
 
 **Writing a custom helper:**
 

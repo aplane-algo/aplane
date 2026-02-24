@@ -1,4 +1,4 @@
-.PHONY: all clean apshell apshell-core apshell-all apsignerd apadmin apapprover apstore plugin-checksum plugin-checksums help generate-plugin-imports list-plugins disable-all compile-teal test race-test unit-test integration-test check-example-plugins build-example-plugins docker-playground apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-arm64 passfile-arm64 plugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-insecurerand analyze-seedphrase config-docs client-package python-sdk python-sdk-test python-sdk-clean typescript-sdk typescript-sdk-clean typescript-sdk-test release-local
+.PHONY: all clean apshell apshell-core apshell-all apsignerd apadmin apapprover apstore plugin-checksum plugin-checksums help generate-plugin-imports list-plugins disable-all compile-teal test race-test unit-test integration-test check-example-plugins build-example-plugins docker-playground apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-arm64 pass-file-arm64 pass-systemd-arm64 plugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-insecurerand analyze-seedphrase config-docs client-package python-sdk python-sdk-test python-sdk-clean typescript-sdk typescript-sdk-clean typescript-sdk-test release-local
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -66,7 +66,7 @@ internal/lsig/dummy.teal.tok: resources/dummy.teal.tok
 	@echo "✓ Updated internal/lsig/dummy.teal.tok"
 
 # Default: Build all components
-all: compile-teal apshell apsignerd apadmin apapprover apstore passfile plugin-checksums client-package
+all: compile-teal apshell apsignerd apadmin apapprover apstore pass-file pass-systemd plugin-checksums client-package
 
 # Build apshell with enabled plugins (default)
 apshell: apshell-all
@@ -97,10 +97,15 @@ apapprover:
 apstore: compile-teal
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/apstore ./cmd/apstore
 
-# passfile is a dev-only plaintext file passphrase helper (pure Go)
-passfile:
-	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/passfile ./cmd/passfile
-	@chmod 700 bin/passfile
+# pass-file is a dev-only plaintext file passphrase helper (pure Go)
+pass-file:
+	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/pass-file ./cmd/pass-file
+	@chmod 700 bin/pass-file
+
+# pass-systemd encrypts passphrase via systemd-creds (TPM2/host key, Linux only, pure Go)
+pass-systemd:
+	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/pass-systemd ./cmd/pass-systemd
+	@chmod 700 bin/pass-systemd
 
 # plugin-checksum doesn't need CGO (pure Go crypto)
 plugin-checksum:
@@ -134,23 +139,29 @@ apstore-arm64: compile-teal
 apapprover-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o apapprover-arm64 ./cmd/apapprover
 
-passfile-arm64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o passfile-arm64 ./cmd/passfile
-	@chmod 700 passfile-arm64
+pass-file-arm64:
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o pass-file-arm64 ./cmd/pass-file
+	@chmod 700 pass-file-arm64
+
+pass-systemd-arm64:
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o pass-systemd-arm64 ./cmd/pass-systemd
+	@chmod 700 pass-systemd-arm64
 
 plugin-checksum-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o plugin-checksum-arm64 ./cmd/plugin-checksum
 
 # Build all binaries for arm64 into bin/arm64/
-bin-arm64: apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-arm64 passfile-arm64 plugin-checksum-arm64
+bin-arm64: apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-arm64 pass-file-arm64 pass-systemd-arm64 plugin-checksum-arm64
 	@mkdir -p bin/arm64
 	@mv apshell-arm64 bin/arm64/apshell
 	@mv apsignerd-arm64 bin/arm64/apsignerd
 	@mv apadmin-arm64 bin/arm64/apadmin
 	@mv apstore-arm64 bin/arm64/apstore
 	@mv apapprover-arm64 bin/arm64/apapprover
-	@mv passfile-arm64 bin/arm64/passfile
-	@chmod 700 bin/arm64/passfile
+	@mv pass-file-arm64 bin/arm64/pass-file
+	@chmod 700 bin/arm64/pass-file
+	@mv pass-systemd-arm64 bin/arm64/pass-systemd
+	@chmod 700 bin/arm64/pass-systemd
 	@mv plugin-checksum-arm64 bin/arm64/plugin-checksum
 	@echo "✓ Built arm64 binaries in bin/arm64/"
 
@@ -166,8 +177,10 @@ bin-amd64: compile-teal generate-plugin-imports
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apadmin ./cmd/apadmin
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apstore ./cmd/apstore
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/apapprover ./cmd/apapprover
-	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/passfile ./cmd/passfile
-	@chmod 700 bin/amd64/passfile
+	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/pass-file ./cmd/pass-file
+	@chmod 700 bin/amd64/pass-file
+	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/pass-systemd ./cmd/pass-systemd
+	@chmod 700 bin/amd64/pass-systemd
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/plugin-checksum ./cmd/plugin-checksum
 	@echo "✓ Built amd64 binaries in bin/amd64/"
 
@@ -186,8 +199,8 @@ bin-darwin-arm64: compile-teal generate-plugin-imports
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apadmin ./cmd/apadmin
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apstore ./cmd/apstore
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apapprover ./cmd/apapprover
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/passfile ./cmd/passfile
-	@chmod 700 bin/darwin-arm64/passfile
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/pass-file ./cmd/pass-file
+	@chmod 700 bin/darwin-arm64/pass-file
 	@echo "✓ Built darwin/arm64 binaries in bin/darwin-arm64/"
 
 # Build all binaries for darwin/amd64 (Intel Mac) into bin/darwin-amd64/
@@ -202,8 +215,8 @@ bin-darwin-amd64: compile-teal generate-plugin-imports
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apadmin ./cmd/apadmin
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apstore ./cmd/apstore
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apapprover ./cmd/apapprover
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/passfile ./cmd/passfile
-	@chmod 700 bin/darwin-amd64/passfile
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/pass-file ./cmd/pass-file
+	@chmod 700 bin/darwin-amd64/pass-file
 	@echo "✓ Built darwin/amd64 binaries in bin/darwin-amd64/"
 
 clean: python-sdk-clean typescript-sdk-clean
@@ -312,7 +325,7 @@ release-local: bin-amd64 bin-arm64
 	for arch in amd64 arm64; do \
 		archive="aplane_$${VERSION}_linux_$${arch}.tar.gz"; \
 		tar -czf "dist/$${archive}" -C "bin/$${arch}" \
-			apshell apsignerd apadmin apapprover apstore passfile; \
+			apshell apsignerd apadmin apapprover apstore pass-file pass-systemd; \
 		echo "✓ Created dist/$${archive}"; \
 	done; \
 	cd dist && sha256sum *.tar.gz > checksums.txt && cd ..; \

@@ -472,9 +472,9 @@ Specifies a helper command that can read and store the passphrase (or master key
 
 The command is invoked as: `argv[0] <verb> argv[1] argv[2] ...`
 
-For example, `passphrase_command_argv: ["/usr/local/bin/passfile", "/etc/aplane/passphrase"]` invokes:
-- Read: `/usr/local/bin/passfile read /etc/aplane/passphrase`
-- Write: `/usr/local/bin/passfile write /etc/aplane/passphrase` (with passphrase on stdin)
+For example, `passphrase_command_argv: ["/usr/local/bin/pass-file", "/etc/aplane/passphrase"]` invokes:
+- Read: `/usr/local/bin/pass-file read /etc/aplane/passphrase`
+- Write: `/usr/local/bin/pass-file write /etc/aplane/passphrase` (with passphrase on stdin)
 
 **Requirements:**
 - All paths in `passphrase_command_argv` are resolved relative to the data directory (absolute paths are left unchanged)
@@ -484,14 +484,14 @@ For example, `passphrase_command_argv: ["/usr/local/bin/passfile", "/etc/aplane/
 - Output may use `base64:` or `hex:` prefix for binary data
 - `write` is optional — helpers that only support `read` should exit non-zero on `write`
 
-**Built-in helper — passfile (INSECURE / DEV ONLY):**
+**Built-in helper — pass-file (INSECURE / DEV ONLY):**
 
-`passfile` is a simple file-based helper included with aPlane. It reads/writes the passphrase from a plaintext file. Useful for development and testing, but not for production.
+`pass-file` is a simple file-based helper included with aPlane. It reads/writes the passphrase from a plaintext file. Useful for development and testing, but not for production.
 
 ```yaml
 # INSECURE / DEV ONLY: Passphrase stored in plaintext file
-# Relative path (./passfile) resolved relative to data directory
-passphrase_command_argv: ["./passfile", "passphrase"]
+# Relative path (./pass-file) resolved relative to data directory
+passphrase_command_argv: ["./pass-file", "passphrase"]
 ```
 
 **Writing a custom helper:**

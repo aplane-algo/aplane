@@ -1,10 +1,10 @@
 # Auto-unlocked apsignerd configuration 
 # See doc/USER_CONFIG.md for full documentation.
 
-# INSECURE / DEV ONLY: Auto-unlock by reading passphrase from a file via passfile helper.
+# INSECURE / DEV ONLY: Auto-unlock by reading passphrase from a file via pass-file helper.
 # In production, use a secrets manager (macOS Keychain, TPM, Vault, etc.)
 # See doc/USER_CONFIG.md for secure examples.
-passphrase_command_argv: ["passfile", "passphrase"]
+passphrase_command_argv: ["pass-file", "passphrase"]
 
 # REST API port (bound to localhost when SSH is enabled)
 signer_port: 11270

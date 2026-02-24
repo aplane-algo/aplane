@@ -11,9 +11,9 @@ ssh:
   authorized_keys_path: .ssh/authorized_keys
   auto_register: true
 
-# INSECURE / DEV ONLY: Auto-unlock by reading passphrase from disk via passfile helper.
+# INSECURE / DEV ONLY: Auto-unlock by reading passphrase from disk via pass-file helper.
 # In production, use a secrets manager (macOS Keychain, TPM, Vault, etc.)
-passphrase_command_argv: ["/usr/local/bin/passfile", "/root/apsigner/passphrase"]
+passphrase_command_argv: ["/usr/local/bin/pass-file", "/root/apsigner/passphrase"]
 passphrase_timeout: "0"
 
 # Approval policy (auto-approve everything for demo)

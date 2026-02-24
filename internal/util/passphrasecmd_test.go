@@ -380,7 +380,7 @@ func TestValidatePassphraseCommandConfig(t *testing.T) {
 		},
 		{
 			name:    "bare name rejected",
-			cfg:     &PassphraseCommandConfig{Argv: []string{"passfile"}},
+			cfg:     &PassphraseCommandConfig{Argv: []string{"pass-file"}},
 			wantErr: "absolute path",
 		},
 	}

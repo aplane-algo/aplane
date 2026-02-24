@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 aPlane Authors
 
-// passfile is a passphrase command helper that stores the passphrase
+// pass-file is a passphrase command helper that stores the passphrase
 // in a plaintext file. It implements the passphrase command protocol:
 //
-//	passfile read   — prints the passphrase from the file to stdout
-//	passfile write  — reads a new passphrase from stdin, writes it to the file,
-//	                  then prints it back to stdout for round-trip verification
+//	pass-file read   — prints the passphrase from the file to stdout
+//	pass-file write  — reads a new passphrase from stdin, writes it to the file,
+//	                   then prints it back to stdout for round-trip verification
 //
 // INSECURE / DEV ONLY: The passphrase is stored in plaintext.
 // In production, use a secrets manager (macOS Keychain, TPM, Vault, etc.)
 //
 // Usage in config.yaml:
 //
-//	passphrase_command_argv: ["/path/to/passfile", "/path/to/passphrase-file"]
+//	passphrase_command_argv: ["/path/to/pass-file", "/path/to/passphrase-file"]
 package main
 
 import (
@@ -24,7 +24,7 @@ import (
 
 func main() {
 	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "Usage: passfile <read|write> <passphrase-file>\n")
+		fmt.Fprintf(os.Stderr, "Usage: pass-file <read|write> <passphrase-file>\n")
 		os.Exit(2)
 	}
 
@@ -35,7 +35,7 @@ func main() {
 	case "read":
 		data, err := os.ReadFile(filePath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "passfile: read %s: %v\n", filePath, err)
+			fmt.Fprintf(os.Stderr, "pass-file: read %s: %v\n", filePath, err)
 			os.Exit(1)
 		}
 		// Write passphrase to stdout (no trailing newline — caller strips one if present)
@@ -44,18 +44,18 @@ func main() {
 	case "write":
 		passphrase, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "passfile: read stdin: %v\n", err)
+			fmt.Fprintf(os.Stderr, "pass-file: read stdin: %v\n", err)
 			os.Exit(1)
 		}
 		if err := os.WriteFile(filePath, passphrase, 0600); err != nil {
-			fmt.Fprintf(os.Stderr, "passfile: write %s: %v\n", filePath, err)
+			fmt.Fprintf(os.Stderr, "pass-file: write %s: %v\n", filePath, err)
 			os.Exit(1)
 		}
 		// Read back and echo for round-trip verification
 		_, _ = os.Stdout.Write(passphrase)
 
 	default:
-		fmt.Fprintf(os.Stderr, "passfile: unknown verb %q (expected read or write)\n", verb)
+		fmt.Fprintf(os.Stderr, "pass-file: unknown verb %q (expected read or write)\n", verb)
 		os.Exit(2)
 	}
 }
