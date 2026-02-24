@@ -86,6 +86,10 @@ checksums.sha256
 *.log
 *.bak
 
+# Signing keys (secret key must never be committed)
+minisign.key
+!minisign.pub
+
 # Test environment (contains secrets)
 .env.test
 

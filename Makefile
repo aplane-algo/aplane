@@ -100,6 +100,7 @@ apstore: compile-teal
 # passfile is a dev-only plaintext file passphrase helper (pure Go)
 passfile:
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/passfile ./cmd/passfile
+	@chmod 700 bin/passfile
 
 # plugin-checksum doesn't need CGO (pure Go crypto)
 plugin-checksum:
@@ -135,6 +136,7 @@ apapprover-arm64:
 
 passfile-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o passfile-arm64 ./cmd/passfile
+	@chmod 700 passfile-arm64
 
 plugin-checksum-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o plugin-checksum-arm64 ./cmd/plugin-checksum
@@ -148,6 +150,7 @@ bin-arm64: apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-
 	@mv apstore-arm64 bin/arm64/apstore
 	@mv apapprover-arm64 bin/arm64/apapprover
 	@mv passfile-arm64 bin/arm64/passfile
+	@chmod 700 bin/arm64/passfile
 	@mv plugin-checksum-arm64 bin/arm64/plugin-checksum
 	@echo "✓ Built arm64 binaries in bin/arm64/"
 
@@ -164,6 +167,7 @@ bin-amd64: compile-teal generate-plugin-imports
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apstore ./cmd/apstore
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/apapprover ./cmd/apapprover
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/passfile ./cmd/passfile
+	@chmod 700 bin/amd64/passfile
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/plugin-checksum ./cmd/plugin-checksum
 	@echo "✓ Built amd64 binaries in bin/amd64/"
 

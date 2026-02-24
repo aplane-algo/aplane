@@ -12,7 +12,7 @@ REPO="aplane-algo/aplane"
 INSTALL_DIR="${APLANE_INSTALL_DIR:-$HOME/.aplane/bin}"
 
 # Embedded minisign public key for signature verification
-MINISIGN_PUBKEY="RWTBp6FKgqRpBul/BxGPeXIG8hSaT0VDmhn2CRy60KPWZ+HnR1l8TQRR"
+MINISIGN_PUBKEY="RWQOLhio7R0OS5qnDscyJm5JEarSemT7K687rs65qLMShetqD7cXOxA8"
 
 log() {
     printf '%s\n' "$@"

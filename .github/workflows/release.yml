@@ -58,11 +58,11 @@ jobs:
 
       - name: Sign checksums
         run: |
-          echo "$MINISIGN_KEY" > /tmp/minisign.key
+          printf '%s\n' "untrusted comment: minisign encrypted secret key" "$MINISIGN_SECRET_KEY" > /tmp/minisign.key
           minisign -S -s /tmp/minisign.key -m dist/checksums.txt
           rm -f /tmp/minisign.key
         env:
-          MINISIGN_KEY: ${{ secrets.MINISIGN_KEY }}
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
 
       - name: Generate changelog
         id: changelog
