@@ -335,9 +335,12 @@ func TestValidatePassphraseCommandConfig(t *testing.T) {
 	if err := os.WriteFile(execFile, []byte("#!/bin/sh\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	// Group-writable binary
+	// Group-writable binary (explicit chmod to override umask)
 	groupWritable := filepath.Join(dir, "gw")
-	if err := os.WriteFile(groupWritable, []byte("#!/bin/sh\n"), 0770); err != nil {
+	if err := os.WriteFile(groupWritable, []byte("#!/bin/sh\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(groupWritable, 0770); err != nil {
 		t.Fatal(err)
 	}
 
