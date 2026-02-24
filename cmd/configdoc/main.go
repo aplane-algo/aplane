@@ -169,7 +169,7 @@ func printEnvVars() {
 	fmt.Println()
 	fmt.Println("For apsignerd passphrase sources:")
 	fmt.Println("1. `TEST_PASSPHRASE` environment variable (highest priority)")
-	fmt.Println("2. `unseal_command_argv` config option (headless mode)")
+	fmt.Println("2. `passphrase_command_argv` config option (headless mode)")
 	fmt.Println("3. Interactive prompt via apadmin IPC (default)")
 }
 

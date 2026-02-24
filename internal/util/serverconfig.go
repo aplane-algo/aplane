@@ -30,10 +30,10 @@ type ServerConfig struct {
 	StoreDir          string           `yaml:"store" description:"Store directory (required)"`
 	IPCPath           string           `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"/tmp/aplane.sock"`
 	LockOnDisconnect  *bool            `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
-	UnsealCommandArgv []string          `yaml:"unseal_command_argv" description:"Command to run at startup to obtain the passphrase (argv[0]: absolute path, explicit relative path like ./script.sh resolved relative to data directory, or bare name resolved via locked PATH with allow_path_lookup; arguments with relative paths are resolved relative to the data directory)"`
-	UnsealCommandEnv  map[string]string `yaml:"unseal_command_env" description:"Environment variables to pass to the unseal command (process env is never inherited)"`
-	UnsealKind        string            `yaml:"unseal_kind" description:"What the unseal command returns: passphrase (default, runs Argon2id) or master_key (raw key bytes, skips derivation)" default:"passphrase"`
-	AllowPathLookup   bool              `yaml:"allow_path_lookup" description:"Allow non-absolute argv[0] in unseal_command_argv, resolved via locked PATH (/usr/sbin:/usr/bin:/sbin:/bin)" default:"false"`
+	PassphraseCommandArgv []string          `yaml:"passphrase_command_argv" description:"Command to run to obtain/store the passphrase (argv[0]: absolute path, explicit relative path like ./script.sh resolved relative to data directory, or bare name resolved via locked PATH with allow_path_lookup; verb 'read' or 'write' is injected as argv[1])"`
+	PassphraseCommandEnv  map[string]string `yaml:"passphrase_command_env" description:"Environment variables to pass to the passphrase command (process env is never inherited)"`
+	PassphraseCommandKind string            `yaml:"passphrase_command_kind" description:"What the passphrase command returns: passphrase (default, runs Argon2id) or master_key (raw key bytes, skips derivation)" default:"passphrase"`
+	AllowPathLookup       bool              `yaml:"allow_path_lookup" description:"Allow non-absolute argv[0] in passphrase_command_argv, resolved via locked PATH (/usr/sbin:/usr/bin:/sbin:/bin)" default:"false"`
 	// TEAL compilation settings (for LogicSig generation)
 	TEALCompilerAlgodURL   string `yaml:"teal_compiler_algod_url" description:"Algod URL for TEAL compilation"`
 	TEALCompilerAlgodToken string `yaml:"teal_compiler_algod_token" description:"Algod token for TEAL compilation"`
@@ -159,18 +159,18 @@ func LoadServerConfig(dataDir string) ServerConfig {
 	// Resolve relative paths to absolute paths based on dataDir
 	config.StoreDir = ResolvePath(config.StoreDir, dataDir)
 
-	// Resolve relative paths in unseal_command_argv.
+	// Resolve relative paths in passphrase_command_argv.
 	// argv[0]: resolve if it's an explicit relative path (contains separator).
 	//          Bare names (e.g. "cat") are left for allow_path_lookup / locked PATH.
 	// argv[1:]: all relative paths resolve against the data directory.
-	if len(config.UnsealCommandArgv) > 0 {
-		cmd := config.UnsealCommandArgv[0]
+	if len(config.PassphraseCommandArgv) > 0 {
+		cmd := config.PassphraseCommandArgv[0]
 		if !filepath.IsAbs(cmd) && strings.Contains(cmd, string(filepath.Separator)) {
-			config.UnsealCommandArgv[0] = filepath.Join(dataDir, cmd)
+			config.PassphraseCommandArgv[0] = filepath.Join(dataDir, cmd)
 		}
 	}
-	for i := 1; i < len(config.UnsealCommandArgv); i++ {
-		config.UnsealCommandArgv[i] = ResolvePath(config.UnsealCommandArgv[i], dataDir)
+	for i := 1; i < len(config.PassphraseCommandArgv); i++ {
+		config.PassphraseCommandArgv[i] = ResolvePath(config.PassphraseCommandArgv[i], dataDir)
 	}
 
 	return config
@@ -195,10 +195,10 @@ func (c *ServerConfig) SSHEnabled() bool {
 
 // ShouldLockOnDisconnect returns whether the signer should lock when apadmin disconnects.
 // Defaults to true if not explicitly set.
-// Note: In headless mode (unseal_command_argv set), this is always false.
+// Note: In headless mode (passphrase_command_argv set), this is always false.
 func (c *ServerConfig) ShouldLockOnDisconnect() bool {
 	// Headless mode never locks on disconnect
-	if len(c.UnsealCommandArgv) > 0 {
+	if len(c.PassphraseCommandArgv) > 0 {
 		return false
 	}
 	if c.LockOnDisconnect == nil {
@@ -213,7 +213,7 @@ func (c *ServerConfig) EffectiveTxnAutoApprove() bool {
 }
 
 // ValidateHeadlessPolicy checks policy settings for headless operation.
-// Returns warnings (not errors) because automated unsealing does not preclude
+// Returns warnings (not errors) because automated passphrase retrieval does not preclude
 // human approval — an operator may connect via apadmin for manual approval.
 func ValidateHeadlessPolicy(config *ServerConfig) []string {
 	var warnings []string
@@ -229,35 +229,35 @@ func ValidateHeadlessPolicy(config *ServerConfig) []string {
 	return warnings
 }
 
-// UnsealCommandCfg builds an UnsealCommandConfig from the ServerConfig fields.
-func (c *ServerConfig) UnsealCommandCfg() *UnsealCommandConfig {
-	kind := c.UnsealKind
+// PassphraseCommandCfg builds a PassphraseCommandConfig from the ServerConfig fields.
+func (c *ServerConfig) PassphraseCommandCfg() *PassphraseCommandConfig {
+	kind := c.PassphraseCommandKind
 	if kind == "" {
 		kind = "passphrase"
 	}
-	return &UnsealCommandConfig{
-		Argv:            c.UnsealCommandArgv,
-		Env:             c.UnsealCommandEnv,
+	return &PassphraseCommandConfig{
+		Argv:            c.PassphraseCommandArgv,
+		Env:             c.PassphraseCommandEnv,
 		AllowPathLookup: c.AllowPathLookup,
 		Kind:            kind,
 	}
 }
 
-// EffectiveUnsealKind returns the unseal kind, defaulting to "passphrase".
-func (c *ServerConfig) EffectiveUnsealKind() string {
-	if c.UnsealKind == "" {
+// EffectivePassphraseCommandKind returns the passphrase command kind, defaulting to "passphrase".
+func (c *ServerConfig) EffectivePassphraseCommandKind() string {
+	if c.PassphraseCommandKind == "" {
 		return "passphrase"
 	}
-	return c.UnsealKind
+	return c.PassphraseCommandKind
 }
 
-// ValidateUnsealKind checks that unseal_kind is a valid value.
-func ValidateUnsealKind(kind string) error {
+// ValidatePassphraseCommandKind checks that passphrase_command_kind is a valid value.
+func ValidatePassphraseCommandKind(kind string) error {
 	switch kind {
 	case "", "passphrase", "master_key":
 		return nil
 	default:
-		return fmt.Errorf("unseal_kind: invalid value %q (must be \"passphrase\" or \"master_key\")", kind)
+		return fmt.Errorf("passphrase_command_kind: invalid value %q (must be \"passphrase\" or \"master_key\")", kind)
 	}
 }
 

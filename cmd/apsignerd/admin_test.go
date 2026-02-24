@@ -751,7 +751,7 @@ func reloadKeysForTest(server *Signer) error {
 	return nil
 }
 
-// TestUnsealKindSourceSwitchInvariant verifies that unsealKind tracks the type of bytes
+// TestPassphraseKindSourceSwitchInvariant verifies that passphraseKind tracks the type of bytes
 // in encryptionPassphrase across source switches:
 //
 //	master_key startup → lock → IPC passphrase unlock → file watcher reload
@@ -759,7 +759,7 @@ func reloadKeysForTest(server *Signer) error {
 // This is the main mixed-source invariant: after IPC unlock replaces the master key bytes
 // with a passphrase, subsequent reloads (e.g. file watcher) must use Argon2id derivation,
 // not SetMasterKeyDirect.
-func TestUnsealKindSourceSwitchInvariant(t *testing.T) {
+func TestPassphraseKindSourceSwitchInvariant(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	keysDir := filepath.Join(tmpDir, "users", "default", "keys")
@@ -786,7 +786,7 @@ func TestUnsealKindSourceSwitchInvariant(t *testing.T) {
 		keyLsigSizes:         map[string]map[string]int{auth.DefaultIdentityID: {}},
 		keySession:           keystore.NewKeySession(ks),
 		encryptionPassphrase: crypto.NewSecureStringFromBytes(masterKey),
-		unsealKind:           "master_key",
+		passphraseKind:           "master_key",
 		config:               &util.ServerConfig{},
 	}
 	server.hub = NewHub(server)
@@ -797,8 +797,8 @@ func TestUnsealKindSourceSwitchInvariant(t *testing.T) {
 	}
 	server.hub.SetUnlocked()
 
-	if server.unsealKind != "master_key" {
-		t.Fatalf("Phase 1: expected unsealKind=master_key, got %s", server.unsealKind)
+	if server.passphraseKind != "master_key" {
+		t.Fatalf("Phase 1: expected passphraseKind=master_key, got %s", server.passphraseKind)
 	}
 
 	// --- Phase 2: explicit lock ---
@@ -812,18 +812,18 @@ func TestUnsealKindSourceSwitchInvariant(t *testing.T) {
 	if !success {
 		t.Fatalf("Phase 3 (tryUnlock): %s", errMsg)
 	}
-	if server.unsealKind != "passphrase" {
-		t.Fatalf("Phase 3: expected unsealKind=passphrase after tryUnlock, got %s", server.unsealKind)
+	if server.passphraseKind != "passphrase" {
+		t.Fatalf("Phase 3: expected passphraseKind=passphrase after tryUnlock, got %s", server.passphraseKind)
 	}
 
-	// --- Phase 4: file watcher reload (uses reloadKeys → reloadKeysLocked → fs.unsealKind) ---
+	// --- Phase 4: file watcher reload (uses reloadKeys → reloadKeysLocked → fs.passphraseKind) ---
 	// This MUST use the passphrase path, not master_key, because tryUnlock stored a passphrase.
 	if err := server.reloadKeys(); err != nil {
 		t.Fatalf("Phase 4 (watcher reload after passphrase unlock): %v", err)
 	}
 
-	// Final check: unsealKind must still be "passphrase"
-	if server.unsealKind != "passphrase" {
-		t.Fatalf("Phase 4: expected unsealKind=passphrase after reload, got %s", server.unsealKind)
+	// Final check: passphraseKind must still be "passphrase"
+	if server.passphraseKind != "passphrase" {
+		t.Fatalf("Phase 4: expected passphraseKind=passphrase after reload, got %s", server.passphraseKind)
 	}
 }

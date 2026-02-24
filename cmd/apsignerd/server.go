@@ -153,7 +153,7 @@ type Signer struct {
 	hub                    *Hub                    // Signer hub for apadmin/apapprover
 	ipcServer              *IPCServer              // IPC server for local Unix socket connections
 	config                 *util.ServerConfig      // Server configuration (includes policy settings)
-	unsealKind             string                  // "passphrase" (default) or "master_key" — tracks the type of bytes in encryptionPassphrase
+	passphraseKind         string                  // "passphrase" (default) or "master_key" — tracks the type of bytes in encryptionPassphrase
 	tealCompilerAlgodURL   string                  // Algod URL for TEAL compilation (defaults to Nodely testnet)
 	tealCompilerAlgodToken string                  // Algod token for TEAL compilation (optional)
 }
@@ -293,8 +293,8 @@ func (fs *Signer) reloadKeys() error {
 
 // reloadKeysLocked is the internal implementation of reloadKeys.
 // Caller must hold passphraseLock (read or write).
-// Uses fs.unsealKind to determine whether to derive via Argon2id or use direct master key.
-// INVARIANT: fs.unsealKind always reflects the type of bytes in fs.encryptionPassphrase.
+// Uses fs.passphraseKind to determine whether to derive via Argon2id or use direct master key.
+// INVARIANT: fs.passphraseKind always reflects the type of bytes in fs.encryptionPassphrase.
 // It is set at startup alongside encryptionPassphrase, and updated by tryUnlock() when
 // IPC replaces the stored bytes with a passphrase.
 func (fs *Signer) reloadKeysLocked() error {
@@ -309,7 +309,7 @@ func (fs *Signer) reloadKeysLocked() error {
 	// Step 1: Initialize master key (verify passphrase/key and derive or set key)
 	// This must happen first so we can use the master key for both templates and keys
 	var masterKey []byte
-	if fs.unsealKind == "master_key" {
+	if fs.passphraseKind == "master_key" {
 		// Master key mode: encryptionPassphrase holds the raw master key bytes.
 		// Skip Argon2id derivation — use them directly.
 		err = fs.encryptionPassphrase.WithBytes(func(p []byte) error {

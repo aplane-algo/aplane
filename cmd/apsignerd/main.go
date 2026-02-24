@@ -140,11 +140,11 @@ func main() {
 	var startLocked bool
 	var passphraseSource string // Track source for security audit
 
-	// unsealKind tracks the type of bytes stored in encPassphrase.
+	// passphraseKind tracks the type of bytes stored in encPassphrase.
 	// Must be set at the same point as encPassphrase to stay in sync.
-	var unsealKind string
+	var passphraseKind string
 
-	// Priority: TEST_PASSPHRASE > unseal_command_argv > locked startup
+	// Priority: TEST_PASSPHRASE > passphrase_command_argv > locked startup
 	if testPass := os.Getenv("TEST_PASSPHRASE"); testPass != "" {
 		// Testing mode - unlocks immediately
 		// Convert to bytes for secure handling, then zero the intermediate copy
@@ -153,7 +153,7 @@ func main() {
 		fmt.Println("\n🔐 Using TEST_PASSPHRASE for encryption (testing mode)")
 		startLocked = false
 		passphraseSource = "TEST_PASSPHRASE"
-		unsealKind = "passphrase" // TEST_PASSPHRASE always provides a passphrase
+		passphraseKind = "passphrase" // TEST_PASSPHRASE always provides a passphrase
 
 		// Verify passphrase matches existing control file
 		if err := crypto.VerifyPassphraseWithMetadata(testPassBytes, config.StoreDir); err != nil {
@@ -162,41 +162,43 @@ func main() {
 			os.Exit(1)
 		}
 		crypto.ZeroBytes(testPassBytes)
-	} else if len(config.UnsealCommandArgv) > 0 {
-		// Headless mode - obtain passphrase/key via unseal command
-		unsealBytes, err := util.RunUnsealCommand(config.UnsealCommandCfg())
+	} else if len(config.PassphraseCommandArgv) > 0 {
+		// Headless mode - obtain passphrase/key via passphrase command
+		cmdCfg := config.PassphraseCommandCfg()
+		cmdCfg.Verb = "read"
+		passphraseBytes, err := util.RunPassphraseCommand(cmdCfg, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
-		unsealKind = config.EffectiveUnsealKind() // set outer variable to match what unseal command returns
-		if unsealKind == "master_key" {
-			// Master key mode: unseal command returned the derived master key directly.
+		passphraseKind = config.EffectivePassphraseCommandKind() // set outer variable to match what command returns
+		if passphraseKind == "master_key" {
+			// Master key mode: passphrase command returned the derived master key directly.
 			// Verify by attempting to decrypt the keystore check field.
-			if err := crypto.VerifyMasterKeyWithMetadata(unsealBytes, config.StoreDir); err != nil {
-				crypto.ZeroBytes(unsealBytes)
-				fmt.Fprintf(os.Stderr, "Error: master key from unseal command does not match existing keystore\n")
+			if err := crypto.VerifyMasterKeyWithMetadata(passphraseBytes, config.StoreDir); err != nil {
+				crypto.ZeroBytes(passphraseBytes)
+				fmt.Fprintf(os.Stderr, "Error: master key from passphrase command does not match existing keystore\n")
 				os.Exit(1)
 			}
 			// Wrap master key as SecureString (treated as passphrase internally for session init)
-			encPassphrase = crypto.NewSecureStringFromBytes(unsealBytes)
-			fmt.Printf("\n🔐 Master key loaded via unseal command (unseal_kind: master_key)\n")
+			encPassphrase = crypto.NewSecureStringFromBytes(passphraseBytes)
+			fmt.Printf("\n🔐 Master key loaded via passphrase command (passphrase_command_kind: master_key)\n")
 		} else {
 			// Passphrase mode (default): verify passphrase against .keystore
-			if err := crypto.VerifyPassphraseWithMetadata(unsealBytes, config.StoreDir); err != nil {
-				crypto.ZeroBytes(unsealBytes)
-				fmt.Fprintf(os.Stderr, "Error: passphrase from unseal command does not match existing keystore\n")
-				fmt.Fprintf(os.Stderr, "       The unseal_command_argv must return the same passphrase used to create the keystore\n")
+			if err := crypto.VerifyPassphraseWithMetadata(passphraseBytes, config.StoreDir); err != nil {
+				crypto.ZeroBytes(passphraseBytes)
+				fmt.Fprintf(os.Stderr, "Error: passphrase from passphrase command does not match existing keystore\n")
+				fmt.Fprintf(os.Stderr, "       The passphrase_command_argv must return the same passphrase used to create the keystore\n")
 				os.Exit(1)
 			}
-			encPassphrase = crypto.NewSecureStringFromBytes(unsealBytes)
-			fmt.Printf("\n🔐 Passphrase loaded via unseal command\n")
+			encPassphrase = crypto.NewSecureStringFromBytes(passphraseBytes)
+			fmt.Printf("\n🔐 Passphrase loaded via passphrase command\n")
 		}
 		fmt.Println("   Starting in UNLOCKED state (headless mode)")
 		startLocked = false
-		passphraseSource = "unseal_command"
-		crypto.ZeroBytes(unsealBytes)
+		passphraseSource = "passphrase_command"
+		crypto.ZeroBytes(passphraseBytes)
 	} else {
 		// Default: Start in locked state, passphrase via apadmin IPC
 		fmt.Println("\n🔐 Starting in LOCKED state")
@@ -204,7 +206,7 @@ func main() {
 		encPassphrase = crypto.NewSecureStringFromBytes(nil)
 		startLocked = true
 		passphraseSource = "ipc"
-		unsealKind = "passphrase" // IPC always provides a passphrase
+		passphraseKind = "passphrase" // IPC always provides a passphrase
 	}
 
 	// Initialize key store (file-based, identity-scoped keys directory)
@@ -247,7 +249,7 @@ func main() {
 	fmt.Printf("  allow_group_modification: %v\n", config.AllowGroupModification)
 
 	// Warn about unusual configs in interactive mode (not headless)
-	if len(config.UnsealCommandArgv) == 0 {
+	if len(config.PassphraseCommandArgv) == 0 {
 		printInteractiveModeWarnings(&config)
 	}
 
@@ -269,7 +271,7 @@ func main() {
 		authorizer:             authorizer,
 		auditLog:               auditLog,
 		config:                 &config,
-		unsealKind:             unsealKind,
+		passphraseKind:         passphraseKind,
 		tealCompilerAlgodURL:   config.TEALCompilerAlgodURL,
 		tealCompilerAlgodToken: config.TEALCompilerAlgodToken,
 	}
@@ -546,8 +548,8 @@ func printSecurityAudit(passphraseTimeout time.Duration, config *util.ServerConf
 
 	// Passphrase source status
 	switch passphraseSource {
-	case "unseal_command":
-		fmt.Println("│  Passphrase source: unseal command (headless)              │")
+	case "passphrase_command":
+		fmt.Println("│  Passphrase source: passphrase command (headless)          │")
 	case "TEST_PASSPHRASE":
 		fmt.Println("│  Passphrase source: env var (testing) [!]                  │")
 	default:

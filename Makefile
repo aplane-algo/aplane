@@ -66,7 +66,7 @@ internal/lsig/dummy.teal.tok: resources/dummy.teal.tok
 	@echo "✓ Updated internal/lsig/dummy.teal.tok"
 
 # Default: Build all components
-all: compile-teal apshell apsignerd apadmin apapprover apstore plugin-checksums client-package
+all: compile-teal apshell apsignerd apadmin apapprover apstore passfile plugin-checksums client-package
 
 # Build apshell with enabled plugins (default)
 apshell: apshell-all
@@ -96,6 +96,10 @@ apapprover:
 
 apstore: compile-teal
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/apstore ./cmd/apstore
+
+# passfile is a dev-only plaintext file passphrase helper (pure Go)
+passfile:
+	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/passfile ./cmd/passfile
 
 # plugin-checksum doesn't need CGO (pure Go crypto)
 plugin-checksum:

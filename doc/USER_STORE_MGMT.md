@@ -238,7 +238,7 @@ This creates the `.keystore` metadata file containing:
 - Master salt for key derivation (Argon2id)
 - Passphrase verification check
 
-**Headless operation:** After initializing the keystore, configure `unseal_command_argv` in your apsignerd `config.yaml` to provide the passphrase automatically at startup. See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for examples.
+**Headless operation:** After initializing the keystore, configure `passphrase_command_argv` in your apsignerd `config.yaml` to provide the passphrase automatically at startup. See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for examples.
 
 ### Changing the Passphrase
 

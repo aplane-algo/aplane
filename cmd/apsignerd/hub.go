@@ -145,14 +145,14 @@ func (h *Hub) tryUnlock(passphrase []byte) (bool, int, string) {
 	}
 
 	// Set encryption passphrase and reload keys under write lock.
-	// IPC unlock always provides a passphrase, so update unsealKind to match.
+	// IPC unlock always provides a passphrase, so update passphraseKind to match.
 	// This ensures subsequent reloads (e.g., file watcher) also use passphrase derivation.
 	h.signer.passphraseLock.Lock()
 	if h.signer.encryptionPassphrase != nil {
 		h.signer.encryptionPassphrase.Destroy()
 	}
 	h.signer.encryptionPassphrase = crypto.NewSecureStringFromBytes(passphrase)
-	h.signer.unsealKind = "passphrase"
+	h.signer.passphraseKind = "passphrase"
 	if err := h.signer.reloadKeysLocked(); err != nil {
 		h.signer.passphraseLock.Unlock()
 		return false, 0, fmt.Sprintf("Failed to load keys: %v", err)

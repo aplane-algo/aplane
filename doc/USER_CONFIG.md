@@ -220,10 +220,10 @@ The server and admin tools share the same config format and data directory.
 | `ipc_path` | string | (see below) | Unix socket path for admin interface |
 | `passphrase_timeout` | string | `"15m"` | Inactivity timeout before auto-lock (see below) |
 | `lock_on_disconnect` | *bool | `true` | Lock signer when apadmin disconnects |
-| `unseal_command_argv` | []string | (optional) | Command to run at startup to obtain passphrase (see Headless Operation) |
-| `unseal_command_env` | map | (optional) | Environment variables to pass to unseal command |
-| `unseal_kind` | string | `"passphrase"` | What the unseal command returns: `passphrase` or `master_key` |
-| `allow_path_lookup` | bool | `false` | Allow non-absolute path in unseal_command_argv[0] |
+| `passphrase_command_argv` | []string | (optional) | Command to run at startup to obtain passphrase (see Headless Operation) |
+| `passphrase_command_env` | map | (optional) | Environment variables to pass to passphrase command |
+| `passphrase_command_kind` | string | `"passphrase"` | What the passphrase command returns: `passphrase` or `master_key` |
+| `allow_path_lookup` | bool | `false` | Allow non-absolute path in passphrase_command_argv[0] |
 | `teal_compiler_algod_url` | string | (required for LogicSigs) | Algod URL for TEAL compilation (LogicSig generation) |
 | `teal_compiler_algod_token` | string | (optional) | Algod API token for TEAL compilation |
 | `require_memory_protection` | bool | `false` | If true, fail startup when memory protection cannot be enabled (requires root/sudo) |
@@ -461,52 +461,87 @@ In headless mode:
 
 Three configuration items work together to enable headless operation:
 
-#### 1. `unseal_command_argv` (config.yaml)
+#### 1. `passphrase_command_argv` (config.yaml)
 
-Specifies a command that returns the passphrase (or master key) on stdout. The command runs with a cleared environment and 5-second timeout. This follows the `git credential.helper` pattern — you provide the integration, apsignerd just executes it.
+Specifies a helper command that can read and store the passphrase (or master key). The helper receives a **verb** (`read` or `write`) as its first argument, following the `git credential.helper` pattern.
+
+**Protocol:**
+
+| Verb | stdin | stdout | Required |
+|------|-------|--------|----------|
+| `read` | nothing | passphrase | yes |
+| `write` | passphrase | passphrase (read-back) | optional (exit non-zero = unsupported) |
+
+The command is invoked as: `argv[0] <verb> argv[1] argv[2] ...`
+
+For example, `passphrase_command_argv: ["/usr/local/bin/passfile", "/etc/aplane/passphrase"]` invokes:
+- Read: `/usr/local/bin/passfile read /etc/aplane/passphrase`
+- Write: `/usr/local/bin/passfile write /etc/aplane/passphrase` (with passphrase on stdin)
 
 **Requirements:**
-- `argv[0]` must be an absolute path (or set `allow_path_lookup: true`)
+- `argv[0]` must be an absolute path (or set `allow_path_lookup: true`, or use `./` for data-dir-relative paths)
 - The binary must not be group/world-writable
-- Command must exit 0 and produce non-empty stdout
+- `read` must exit 0 and produce non-empty stdout
 - Exactly one trailing newline is stripped from output
 - Output may use `base64:` or `hex:` prefix for binary data
+- `write` is optional — helpers that only support `read` should exit non-zero on `write`
 
-**Examples:**
+**Built-in helper — passfile (INSECURE / DEV ONLY):**
+
+`passfile` is a simple file-based helper included with aPlane. It reads/writes the passphrase from a plaintext file. Useful for development and testing, but not for production.
 
 ```yaml
-# INSECURE / DEV ONLY: Read passphrase from a plaintext file
-unseal_command_argv: ["/usr/bin/cat", "/etc/aplane/passphrase"]
-
-# macOS Keychain (recommended on macOS)
-unseal_command_argv: ["/usr/bin/security", "find-generic-password", "-s", "aplane-signer", "-w"]
-
-# systemd credential (recommended on Linux with systemd)
-unseal_command_argv: ["/usr/bin/systemd-creds", "cat", "aplane-passphrase"]
-
-# HashiCorp Vault agent (requires Vault agent running locally)
-unseal_command_argv: ["/usr/bin/vault", "kv", "get", "-field=passphrase", "secret/aplane"]
-unseal_command_env:
-  VAULT_ADDR: "http://127.0.0.1:8200"
-  VAULT_TOKEN: "s.xxxx"
-allow_path_lookup: true
-
-# TPM2 unseal
-unseal_command_argv: ["/usr/bin/tpm2_unseal", "-c", "0x81000001"]
+# INSECURE / DEV ONLY: Passphrase stored in plaintext file
+# Relative path (./passfile) resolved relative to data directory
+passphrase_command_argv: ["./passfile", "passphrase"]
 ```
 
-**Controlled environment:** By default, the unseal command runs with no environment variables. Use `unseal_command_env` to declare specific variables:
+**Writing a custom helper:**
+
+Your helper must accept a verb (`read` or `write`) as its first argument. A minimal shell wrapper around an existing tool:
+
+```bash
+#!/bin/sh
+# /usr/local/bin/aplane-keychain-helper
+# Wraps macOS Keychain for the passphrase command protocol
+case "$1" in
+  read)  security find-generic-password -s aplane-signer -w ;;
+  write) read -r pass; security add-generic-password -U -s aplane-signer -w "$pass"
+         security find-generic-password -s aplane-signer -w ;;
+  *)     exit 2 ;;
+esac
+```
 
 ```yaml
-unseal_command_env:
+# macOS Keychain via custom helper
+passphrase_command_argv: ["/usr/local/bin/aplane-keychain-helper"]
+```
+
+**More examples:**
+
+```yaml
+# systemd credential via custom helper
+passphrase_command_argv: ["/usr/local/bin/aplane-systemd-helper"]
+
+# HashiCorp Vault via custom helper
+passphrase_command_argv: ["/usr/local/bin/aplane-vault-helper"]
+passphrase_command_env:
+  VAULT_ADDR: "http://127.0.0.1:8200"
+  VAULT_TOKEN: "s.xxxx"
+```
+
+**Controlled environment:** By default, the passphrase command runs with no environment variables. Use `passphrase_command_env` to declare specific variables:
+
+```yaml
+passphrase_command_env:
   AWS_REGION: "us-west-2"
   HOME: "/var/lib/aplane"
 ```
 
-**Master key mode:** If your backend returns a raw derived key (e.g., from a KMS), set `unseal_kind: master_key` to skip Argon2id derivation:
+**Master key mode:** If your backend returns a raw derived key (e.g., from a KMS), set `passphrase_command_kind: master_key` to skip Argon2id derivation:
 
 ```yaml
-unseal_kind: master_key  # Output is raw key bytes, not a passphrase
+passphrase_command_kind: master_key  # Output is raw key bytes, not a passphrase
 ```
 
 #### 2. `lock_on_disconnect` (config.yaml)
@@ -539,7 +574,7 @@ group_auto_approve: true
 ```yaml
 signer_port: 11270
 store: /var/lib/aplane/keys
-unseal_command_argv: ["/usr/bin/security", "find-generic-password", "-s", "aplane-signer", "-w"]
+passphrase_command_argv: ["/usr/local/bin/aplane-keychain-helper"]
 lock_on_disconnect: false
 txn_auto_approve: true
 ```
@@ -548,7 +583,7 @@ txn_auto_approve: true
 
 | Risk | Mitigation |
 |------|------------|
-| Unseal command compromise | Use absolute paths, verify binary is not writable by group/other |
+| Passphrase command compromise | Use absolute paths, verify binary is not writable by group/other |
 | Unauthorized signing | Restrictive policy (avoid `txn_auto_approve`/`group_auto_approve` in production) |
 | Physical access | Run on secured/isolated hardware |
 

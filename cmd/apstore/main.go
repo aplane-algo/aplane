@@ -761,13 +761,31 @@ func cmdChangepass(random bool) error {
 	fmt.Println("=====================================")
 	fmt.Println()
 
+	// Determine if we're using the passphrase command helper
+	useHelper := len(config.PassphraseCommandArgv) > 0
+
 	// Get old passphrase
-	fmt.Print("Enter current passphrase: ")
-	oldPassphrase, err := readPassword()
-	if err != nil {
-		return fmt.Errorf("failed to read passphrase: %w", err)
+	var oldPassphrase string
+	if useHelper {
+		// Read current passphrase via helper command
+		cmdCfg := config.PassphraseCommandCfg()
+		cmdCfg.Verb = "read"
+		oldBytes, err := util.RunPassphraseCommand(cmdCfg, nil)
+		if err != nil {
+			return fmt.Errorf("failed to read current passphrase via helper: %w", err)
+		}
+		oldPassphrase = string(oldBytes)
+		crypto.ZeroBytes(oldBytes)
+		fmt.Println("Current passphrase read via passphrase command helper.")
+	} else {
+		fmt.Print("Enter current passphrase: ")
+		var err error
+		oldPassphrase, err = readPassword()
+		if err != nil {
+			return fmt.Errorf("failed to read passphrase: %w", err)
+		}
+		fmt.Println()
 	}
-	fmt.Println()
 
 	// Load metadata and verify old passphrase
 	oldMeta, err := crypto.LoadKeystoreMetadata(config.StoreDir)
@@ -1084,6 +1102,19 @@ func cmdChangepass(random bool) error {
 	}
 
 	// ========================================
+	// PHASE 2b: Store new passphrase via helper (if configured)
+	// ========================================
+	if useHelper {
+		if err := util.WritePassphrase(config.PassphraseCommandCfg(), []byte(newPassphrase)); err != nil {
+			fmt.Fprintf(os.Stderr, "\nError: failed to store new passphrase via helper: %v\n", err)
+			fmt.Fprintln(os.Stderr, "Rolling back keystore to previous passphrase...")
+			rollback()
+			return fmt.Errorf("passphrase change aborted: helper write failed")
+		}
+		fmt.Println("  Stored new passphrase via passphrase command helper.")
+	}
+
+	// ========================================
 	// PHASE 3: Cleanup .old files
 	// ========================================
 	cleanupOld()
@@ -1163,8 +1194,21 @@ func cmdInit() error {
 	fmt.Println("✓ Keystore initialized successfully!")
 	fmt.Printf("  Keystore metadata: %s/.keystore\n", config.StoreDir)
 	fmt.Println()
+
+	// If passphrase_command_argv is configured, try to store the passphrase via the helper
+	if len(config.PassphraseCommandArgv) > 0 {
+		if err := util.WritePassphrase(config.PassphraseCommandCfg(), []byte(passphrase)); err != nil {
+			fmt.Println("⚠️  Could not store passphrase via passphrase command helper:")
+			fmt.Printf("   %v\n", err)
+			fmt.Println("   Store the passphrase manually in your secrets backend.")
+		} else {
+			fmt.Println("✓ Passphrase stored via passphrase command helper.")
+		}
+		fmt.Println()
+	}
+
 	fmt.Println("You can now start apsignerd and use apadmin to unlock.")
-	fmt.Println("For headless operation, configure unseal_command_argv in config.yaml.")
+	fmt.Println("For headless operation, configure passphrase_command_argv in config.yaml.")
 
 	return nil
 }

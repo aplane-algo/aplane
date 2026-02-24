@@ -20,26 +20,35 @@ import (
 )
 
 const (
-	// unsealCommandTimeout is the maximum time allowed for the unseal command to complete.
-	unsealCommandTimeout = 5 * time.Second
+	// passphraseCommandTimeout is the maximum time allowed for the passphrase command to complete.
+	passphraseCommandTimeout = 5 * time.Second
 
-	// maxUnsealOutputBytes is the maximum stdout size from the unseal command (8 KB).
-	maxUnsealOutputBytes = 8 * 1024
+	// maxPassphraseOutputBytes is the maximum stdout size from the passphrase command (8 KB).
+	maxPassphraseOutputBytes = 8 * 1024
 )
 
 // lockedPATH is the restricted PATH used when allow_path_lookup is true.
 // Only system directories are included to prevent PATH injection.
 var lockedPATH = "/usr/sbin:/usr/bin:/sbin:/bin"
 
-// UnsealCommandConfig holds the full configuration for the unseal command.
-type UnsealCommandConfig struct {
-	Argv           []string          // Command and arguments
-	Env            map[string]string // Explicit environment variables (not inherited)
-	AllowPathLookup bool            // Allow non-absolute argv[0] resolved via locked PATH
-	Kind           string           // "passphrase" (default) or "master_key"
+// PassphraseCommandConfig holds the full configuration for the passphrase command.
+type PassphraseCommandConfig struct {
+	Argv            []string          // Command and arguments
+	Env             map[string]string // Explicit environment variables (not inherited)
+	AllowPathLookup bool              // Allow non-absolute argv[0] resolved via locked PATH
+	Kind            string            // "passphrase" (default) or "master_key"
+	Verb            string            // "read" (default) or "write"
 }
 
-// RunUnsealCommand executes the unseal command and returns the output.
+// RunPassphraseCommand executes the passphrase command with the configured verb
+// and returns the output.
+//
+// The verb is injected as argv[1] before the user-supplied arguments:
+//
+//	argv[0] verb argv[1] argv[2] ...
+//
+// For "write" verb, stdinData is piped to the command's stdin.
+// For "read" verb (default), stdin is nil.
 //
 // Output contract:
 //   - Exactly one trailing newline is stripped (not TrimSpace)
@@ -49,26 +58,42 @@ type UnsealCommandConfig struct {
 //   - Otherwise output is returned as raw bytes
 //
 // The returned []byte should be zeroed by the caller after use.
-func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
+func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byte, error) {
 	resolvedPath, err := validateAndResolveArgv(cfg.Argv, cfg.AllowPathLookup)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), unsealCommandTimeout)
+	verb := cfg.Verb
+	if verb == "" {
+		verb = "read"
+	}
+
+	// Build final args: verb + user args (argv[1:])
+	args := make([]string, 0, 1+len(cfg.Argv)-1)
+	args = append(args, verb)
+	args = append(args, cfg.Argv[1:]...)
+
+	ctx, cancel := context.WithTimeout(context.Background(), passphraseCommandTimeout)
 	defer cancel()
 
 	// Don't use exec.CommandContext's built-in cancel — it only kills the direct process.
 	// We use a process group so child processes (e.g., sh -> sleep) are also killed.
-	cmd := exec.Command(resolvedPath, cfg.Argv[1:]...) //nolint:gosec // validated above
-	cmd.Env = buildUnsealEnv(cfg.Env)
-	cmd.Stdin = nil
+	cmd := exec.Command(resolvedPath, args...) //nolint:gosec // validated above
+	cmd.Env = buildPassphraseEnv(cfg.Env)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// For "write" verb, pipe stdinData to the command's stdin
+	if len(stdinData) > 0 {
+		cmd.Stdin = bytes.NewReader(stdinData)
+	} else {
+		cmd.Stdin = nil
+	}
 
 	// Capture stdout with size limit; defer zeroing so all exit paths are covered.
 	var stdoutBuf bytes.Buffer
 	defer zeroBuffer(&stdoutBuf)
-	lw := &limitedWriter{w: &stdoutBuf, remaining: maxUnsealOutputBytes}
+	lw := &limitedWriter{w: &stdoutBuf, remaining: maxPassphraseOutputBytes}
 	cmd.Stdout = lw
 
 	// Discard stderr — do not capture or propagate it, as a misbehaving helper
@@ -76,7 +101,7 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 	cmd.Stderr = io.Discard
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("unseal_command_argv: failed to start: %w", err)
+		return nil, fmt.Errorf("passphrase_command_argv: failed to start: %w", err)
 	}
 
 	// Wait for completion or timeout, killing the entire process group on timeout.
@@ -93,16 +118,16 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		}
 		<-waitDone // Wait for cmd.Wait to return after kill
-		return nil, fmt.Errorf("unseal_command_argv: command timed out after %s", unsealCommandTimeout)
+		return nil, fmt.Errorf("passphrase_command_argv: command timed out after %s", passphraseCommandTimeout)
 	}
 
 	if runErr != nil {
-		return nil, fmt.Errorf("unseal_command_argv: command failed: %w", runErr)
+		return nil, fmt.Errorf("passphrase_command_argv: command failed: %w", runErr)
 	}
 
 	// Check if output was silently truncated (single write filled the buffer exactly)
 	if lw.truncated {
-		return nil, fmt.Errorf("unseal_command_argv: stdout exceeded %d bytes", maxUnsealOutputBytes)
+		return nil, fmt.Errorf("passphrase_command_argv: stdout exceeded %d bytes", maxPassphraseOutputBytes)
 	}
 
 	// Copy stdout content so we can work on it; the buffer itself is zeroed by defer.
@@ -121,17 +146,17 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 
 	if len(output) == 0 {
 		zeroBytes(rawOutput)
-		return nil, fmt.Errorf("unseal_command_argv: command produced empty output")
+		return nil, fmt.Errorf("passphrase_command_argv: command produced empty output")
 	}
 
 	// Reject NUL bytes (invalid in passphrases, indicates binary corruption)
 	if bytes.ContainsRune(output, 0) {
 		zeroBytes(rawOutput)
-		return nil, fmt.Errorf("unseal_command_argv: output contains NUL bytes (invalid)")
+		return nil, fmt.Errorf("passphrase_command_argv: output contains NUL bytes (invalid)")
 	}
 
 	// Decode prefixed output formats
-	result, err := decodeUnsealOutput(output)
+	result, err := decodePassphraseOutput(output)
 	// Zero the raw output now that we have the decoded result (or an error)
 	zeroBytes(rawOutput)
 	if err != nil {
@@ -141,17 +166,42 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 	return result, nil
 }
 
-// decodeUnsealOutput handles base64: and hex: prefixed output, or returns raw bytes.
+// WritePassphrase stores a passphrase via the passphrase command's "write" verb.
+// It sends the passphrase on stdin, reads back the round-trip value from stdout,
+// and verifies they match using constant-time comparison.
+//
+// Returns nil on success. Returns an error if:
+//   - The command exits non-zero (write verb unsupported)
+//   - The read-back value doesn't match the input
+//   - Any other execution error
+func WritePassphrase(cfg *PassphraseCommandConfig, passphrase []byte) error {
+	writeCfg := *cfg
+	writeCfg.Verb = "write"
+
+	readBack, err := RunPassphraseCommand(&writeCfg, passphrase)
+	if err != nil {
+		return fmt.Errorf("passphrase_command_argv write: %w", err)
+	}
+	defer zeroBytes(readBack)
+
+	if subtle.ConstantTimeCompare(readBack, passphrase) != 1 {
+		return fmt.Errorf("passphrase_command_argv write: read-back mismatch (helper returned different value)")
+	}
+
+	return nil
+}
+
+// decodePassphraseOutput handles base64: and hex: prefixed output, or returns raw bytes.
 // Uses []byte-native decode APIs to avoid creating immutable string copies of secret material.
 // The caller is responsible for zeroing both the input and the returned slice.
-func decodeUnsealOutput(output []byte) ([]byte, error) {
+func decodePassphraseOutput(output []byte) ([]byte, error) {
 	if bytes.HasPrefix(output, []byte("base64:")) {
 		encoded := output[len("base64:"):]
 		decoded := make([]byte, base64.StdEncoding.DecodedLen(len(encoded)))
 		n, err := base64.StdEncoding.Decode(decoded, encoded)
 		if err != nil {
 			zeroBytes(decoded)
-			return nil, fmt.Errorf("unseal_command_argv: invalid base64 output: %w", err)
+			return nil, fmt.Errorf("passphrase_command_argv: invalid base64 output: %w", err)
 		}
 		return decoded[:n], nil
 	}
@@ -162,7 +212,7 @@ func decodeUnsealOutput(output []byte) ([]byte, error) {
 		n, err := hex.Decode(decoded, encoded)
 		if err != nil {
 			zeroBytes(decoded)
-			return nil, fmt.Errorf("unseal_command_argv: invalid hex output: %w", err)
+			return nil, fmt.Errorf("passphrase_command_argv: invalid hex output: %w", err)
 		}
 		return decoded[:n], nil
 	}
@@ -189,8 +239,8 @@ func zeroBuffer(buf *bytes.Buffer) {
 	buf.Reset()
 }
 
-// ValidateUnsealCommandConfig validates the full unseal command configuration.
-func ValidateUnsealCommandConfig(cfg *UnsealCommandConfig) error {
+// ValidatePassphraseCommandConfig validates the full passphrase command configuration.
+func ValidatePassphraseCommandConfig(cfg *PassphraseCommandConfig) error {
 	_, err := validateAndResolveArgv(cfg.Argv, cfg.AllowPathLookup)
 	return err
 }
@@ -199,20 +249,20 @@ func ValidateUnsealCommandConfig(cfg *UnsealCommandConfig) error {
 // If allowPathLookup is true and argv[0] is not absolute, resolves via locked PATH.
 func validateAndResolveArgv(argv []string, allowPathLookup bool) (string, error) {
 	if len(argv) == 0 {
-		return "", fmt.Errorf("unseal_command_argv: must be non-empty")
+		return "", fmt.Errorf("passphrase_command_argv: must be non-empty")
 	}
 
 	binaryPath := argv[0]
 
 	if !filepath.IsAbs(binaryPath) {
 		if !allowPathLookup {
-			return "", fmt.Errorf("unseal_command_argv: argv[0] must be an absolute path, got %q (set allow_path_lookup:true to resolve via system PATH)", binaryPath)
+			return "", fmt.Errorf("passphrase_command_argv: argv[0] must be an absolute path, got %q (set allow_path_lookup:true to resolve via system PATH)", binaryPath)
 		}
 
 		// Resolve via locked PATH
 		resolved, err := lookupInLockedPath(binaryPath)
 		if err != nil {
-			return "", fmt.Errorf("unseal_command_argv: %w", err)
+			return "", fmt.Errorf("passphrase_command_argv: %w", err)
 		}
 		binaryPath = resolved
 	}
@@ -251,31 +301,31 @@ func lookupInLockedPath(name string) (string, error) {
 func validateBinary(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
-		return fmt.Errorf("unseal_command_argv: %w", err)
+		return fmt.Errorf("passphrase_command_argv: %w", err)
 	}
 
 	if info.IsDir() {
-		return fmt.Errorf("unseal_command_argv: %s is a directory, not an executable", path)
+		return fmt.Errorf("passphrase_command_argv: %s is a directory, not an executable", path)
 	}
 
 	perm := info.Mode().Perm()
 
 	// Check executable bit (owner, group, or other)
 	if perm&0111 == 0 {
-		return fmt.Errorf("unseal_command_argv: %s is not executable (mode %04o)", path, perm)
+		return fmt.Errorf("passphrase_command_argv: %s is not executable (mode %04o)", path, perm)
 	}
 
 	// Reject group/world-writable binaries (could be tampered with)
 	if perm&0022 != 0 {
-		return fmt.Errorf("unseal_command_argv: %s is group or world writable (mode %04o) — potential tampering risk", path, perm)
+		return fmt.Errorf("passphrase_command_argv: %s is group or world writable (mode %04o) — potential tampering risk", path, perm)
 	}
 
 	return nil
 }
 
-// buildUnsealEnv constructs the environment for the unseal command.
+// buildPassphraseEnv constructs the environment for the passphrase command.
 // Only explicitly declared variables are included — the process env is never inherited.
-func buildUnsealEnv(declaredEnv map[string]string) []string {
+func buildPassphraseEnv(declaredEnv map[string]string) []string {
 	if len(declaredEnv) == 0 {
 		return []string{}
 	}

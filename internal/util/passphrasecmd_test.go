@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestRunUnsealCommand(t *testing.T) {
+func TestRunPassphraseCommand(t *testing.T) {
 	// Helper to create an executable script in a temp dir
 	makeScript := func(t *testing.T, name, content string) string {
 		t.Helper()
@@ -26,27 +26,27 @@ func TestRunUnsealCommand(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		cfg     *UnsealCommandConfig
+		cfg     *PassphraseCommandConfig
 		want    string
 		wantErr string
 	}{
 		{
 			name: "happy path - echo passphrase",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "echo-pass.sh", "#!/bin/sh\necho mysecret\n"), "arg1"},
 			},
 			want: "mysecret",
 		},
 		{
 			name: "happy path - no trailing newline",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "printf-pass.sh", "#!/bin/sh\nprintf 'notrail'\n")},
 			},
 			want: "notrail",
 		},
 		{
 			name: "strips exactly one trailing newline",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "double-nl.sh", "#!/bin/sh\nprintf 'secret\\n\\n'\n")},
 			},
 			// Two trailing newlines: strip one, keep one
@@ -54,56 +54,56 @@ func TestRunUnsealCommand(t *testing.T) {
 		},
 		{
 			name: "preserves leading spaces",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "spaces.sh", "#!/bin/sh\nprintf '  secret  '\n")},
 			},
 			want: "  secret  ",
 		},
 		{
 			name: "base64 prefix decoding",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "b64.sh", "#!/bin/sh\nprintf 'base64:"+base64.StdEncoding.EncodeToString([]byte("decoded"))+"'\n")},
 			},
 			want: "decoded",
 		},
 		{
 			name: "hex prefix decoding",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "hex.sh", "#!/bin/sh\nprintf 'hex:"+hex.EncodeToString([]byte("hexval"))+"'\n")},
 			},
 			want: "hexval",
 		},
 		{
 			name: "empty output",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "empty.sh", "#!/bin/sh\n")},
 			},
 			wantErr: "empty output",
 		},
 		{
 			name: "non-absolute path without allow_path_lookup",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{"relative/path"},
 			},
 			wantErr: "absolute path",
 		},
 		{
 			name: "empty argv",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{},
 			},
 			wantErr: "non-empty",
 		},
 		{
 			name: "non-zero exit code",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "fail.sh", "#!/bin/sh\nexit 1\n")},
 			},
 			wantErr: "command failed",
 		},
 		{
 			name: "timeout - slow command",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				// Uses sh -> sleep to test that process group kill terminates children too.
 				Argv: []string{makeScript(t, "slow.sh", "#!/bin/sh\nsleep 30\necho done\n")},
 			},
@@ -111,22 +111,22 @@ func TestRunUnsealCommand(t *testing.T) {
 		},
 		{
 			name: "nonexistent executable",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{"/nonexistent/binary"},
 			},
-			wantErr: "unseal_command_argv",
+			wantErr: "passphrase_command_argv",
 		},
 		{
 			name: "NUL bytes in output",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "nul.sh", "#!/bin/sh\nprintf 'pass\\0word'\n")},
 			},
 			wantErr: "NUL bytes",
 		},
 		{
 			name: "stdout exceeds limit in single write",
-			cfg: &UnsealCommandConfig{
-				// Generate output larger than maxUnsealOutputBytes (8KB) using head -c,
+			cfg: &PassphraseCommandConfig{
+				// Generate output larger than maxPassphraseOutputBytes (8KB) using head -c,
 				// which is portable across coreutils implementations.
 				Argv: []string{makeScript(t, "bigout.sh", "#!/bin/sh\nhead -c 9000 /dev/zero\n")},
 			},
@@ -134,7 +134,7 @@ func TestRunUnsealCommand(t *testing.T) {
 		},
 		{
 			name: "env vars passed to command",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "env.sh", "#!/bin/sh\nprintf \"$MY_SECRET\"\n")},
 				Env:  map[string]string{"MY_SECRET": "fromenv"},
 			},
@@ -142,7 +142,7 @@ func TestRunUnsealCommand(t *testing.T) {
 		},
 		{
 			name: "process env NOT inherited",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv: []string{makeScript(t, "noenv.sh", "#!/bin/sh\nif [ -z \"$HOME\" ]; then printf 'no-home'; else printf 'has-home'; fi\n")},
 			},
 			want: "no-home",
@@ -156,7 +156,7 @@ func TestRunUnsealCommand(t *testing.T) {
 				t.Skip("skipping timeout test in short mode")
 			}
 
-			got, err := RunUnsealCommand(tt.cfg)
+			got, err := RunPassphraseCommand(tt.cfg, nil)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
@@ -176,7 +176,155 @@ func TestRunUnsealCommand(t *testing.T) {
 	}
 }
 
-func TestValidateUnsealCommandConfig(t *testing.T) {
+func TestRunPassphraseCommandVerbInjection(t *testing.T) {
+	// Helper to create an executable script in a temp dir
+	makeScript := func(t *testing.T, name, content string) string {
+		t.Helper()
+		dir := t.TempDir()
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(content), 0700); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("read verb is injected as argv1", func(t *testing.T) {
+		// Script echoes its first argument (the verb)
+		script := makeScript(t, "verb.sh", "#!/bin/sh\nprintf '%s' \"$1\"\n")
+		cfg := &PassphraseCommandConfig{
+			Argv: []string{script},
+			Verb: "read",
+		}
+		got, err := RunPassphraseCommand(cfg, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(got) != "read" {
+			t.Fatalf("got %q, want %q", string(got), "read")
+		}
+	})
+
+	t.Run("write verb is injected as argv1", func(t *testing.T) {
+		// Script echoes its first argument (the verb)
+		script := makeScript(t, "verb.sh", "#!/bin/sh\nprintf '%s' \"$1\"\n")
+		cfg := &PassphraseCommandConfig{
+			Argv: []string{script},
+			Verb: "write",
+		}
+		got, err := RunPassphraseCommand(cfg, []byte("ignored"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(got) != "write" {
+			t.Fatalf("got %q, want %q", string(got), "write")
+		}
+	})
+
+	t.Run("default verb is read", func(t *testing.T) {
+		script := makeScript(t, "verb.sh", "#!/bin/sh\nprintf '%s' \"$1\"\n")
+		cfg := &PassphraseCommandConfig{
+			Argv: []string{script},
+			// Verb not set — should default to "read"
+		}
+		got, err := RunPassphraseCommand(cfg, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(got) != "read" {
+			t.Fatalf("got %q, want %q", string(got), "read")
+		}
+	})
+
+	t.Run("user args follow verb", func(t *testing.T) {
+		// Script echoes all arguments
+		script := makeScript(t, "args.sh", "#!/bin/sh\nprintf '%s %s %s' \"$1\" \"$2\" \"$3\"\n")
+		cfg := &PassphraseCommandConfig{
+			Argv: []string{script, "extra1", "extra2"},
+			Verb: "read",
+		}
+		got, err := RunPassphraseCommand(cfg, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(got) != "read extra1 extra2" {
+			t.Fatalf("got %q, want %q", string(got), "read extra1 extra2")
+		}
+	})
+
+	t.Run("write verb receives stdin", func(t *testing.T) {
+		// Script reads stdin and echoes it back (round-trip)
+		script := makeScript(t, "readback.sh", "#!/bin/sh\ncat\n")
+		cfg := &PassphraseCommandConfig{
+			Argv: []string{script},
+			Verb: "write",
+		}
+		input := []byte("my-secret-passphrase")
+		got, err := RunPassphraseCommand(cfg, input)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(got) != "my-secret-passphrase" {
+			t.Fatalf("got %q, want %q", string(got), "my-secret-passphrase")
+		}
+	})
+}
+
+func TestWritePassphrase(t *testing.T) {
+	// Helper to create an executable script in a temp dir
+	makeScript := func(t *testing.T, name, content string) string {
+		t.Helper()
+		dir := t.TempDir()
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(content), 0700); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("success - round-trip match", func(t *testing.T) {
+		// Script reads stdin and echoes it back
+		script := makeScript(t, "echo-back.sh", "#!/bin/sh\ncat\n")
+		cfg := &PassphraseCommandConfig{
+			Argv: []string{script},
+		}
+		err := WritePassphrase(cfg, []byte("test-passphrase"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("failure - read-back mismatch", func(t *testing.T) {
+		// Script always returns a different value
+		script := makeScript(t, "wrong.sh", "#!/bin/sh\nprintf 'wrong-value'\n")
+		cfg := &PassphraseCommandConfig{
+			Argv: []string{script},
+		}
+		err := WritePassphrase(cfg, []byte("test-passphrase"))
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "mismatch") {
+			t.Fatalf("expected mismatch error, got %q", err.Error())
+		}
+	})
+
+	t.Run("failure - write unsupported (non-zero exit)", func(t *testing.T) {
+		// Script exits non-zero on write verb
+		script := makeScript(t, "no-write.sh", "#!/bin/sh\nif [ \"$1\" = \"write\" ]; then exit 1; fi\ncat\n")
+		cfg := &PassphraseCommandConfig{
+			Argv: []string{script},
+		}
+		err := WritePassphrase(cfg, []byte("test-passphrase"))
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "command failed") {
+			t.Fatalf("expected command failed error, got %q", err.Error())
+		}
+	})
+}
+
+func TestValidatePassphraseCommandConfig(t *testing.T) {
 	// Create a non-executable file
 	dir := t.TempDir()
 	nonExec := filepath.Join(dir, "noexec")
@@ -195,41 +343,41 @@ func TestValidateUnsealCommandConfig(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		cfg     *UnsealCommandConfig
+		cfg     *PassphraseCommandConfig
 		wantErr string
 	}{
 		{
 			name: "valid absolute path",
-			cfg:  &UnsealCommandConfig{Argv: []string{execFile}},
+			cfg:  &PassphraseCommandConfig{Argv: []string{execFile}},
 		},
 		{
 			name:    "empty argv",
-			cfg:     &UnsealCommandConfig{Argv: []string{}},
+			cfg:     &PassphraseCommandConfig{Argv: []string{}},
 			wantErr: "non-empty",
 		},
 		{
 			name:    "relative path without allow_path_lookup",
-			cfg:     &UnsealCommandConfig{Argv: []string{"./script.sh"}},
+			cfg:     &PassphraseCommandConfig{Argv: []string{"./script.sh"}},
 			wantErr: "absolute path",
 		},
 		{
 			name:    "not executable",
-			cfg:     &UnsealCommandConfig{Argv: []string{nonExec}},
+			cfg:     &PassphraseCommandConfig{Argv: []string{nonExec}},
 			wantErr: "not executable",
 		},
 		{
 			name:    "directory",
-			cfg:     &UnsealCommandConfig{Argv: []string{dir}},
+			cfg:     &PassphraseCommandConfig{Argv: []string{dir}},
 			wantErr: "directory",
 		},
 		{
 			name:    "group writable binary",
-			cfg:     &UnsealCommandConfig{Argv: []string{groupWritable}},
+			cfg:     &PassphraseCommandConfig{Argv: []string{groupWritable}},
 			wantErr: "group or world writable",
 		},
 		{
 			name: "allow_path_lookup resolves system binary",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv:            []string{"cat"},
 				AllowPathLookup: true,
 			},
@@ -237,7 +385,7 @@ func TestValidateUnsealCommandConfig(t *testing.T) {
 		},
 		{
 			name: "allow_path_lookup rejects unknown binary",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv:            []string{"nonexistent-binary-xyz"},
 				AllowPathLookup: true,
 			},
@@ -245,7 +393,7 @@ func TestValidateUnsealCommandConfig(t *testing.T) {
 		},
 		{
 			name: "allow_path_lookup rejects dot-dot traversal",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv:            []string{"../../tmp/evil"},
 				AllowPathLookup: true,
 			},
@@ -253,7 +401,7 @@ func TestValidateUnsealCommandConfig(t *testing.T) {
 		},
 		{
 			name: "allow_path_lookup rejects slash in name",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv:            []string{"sub/binary"},
 				AllowPathLookup: true,
 			},
@@ -261,7 +409,7 @@ func TestValidateUnsealCommandConfig(t *testing.T) {
 		},
 		{
 			name: "allow_path_lookup rejects bare dot",
-			cfg: &UnsealCommandConfig{
+			cfg: &PassphraseCommandConfig{
 				Argv:            []string{"."},
 				AllowPathLookup: true,
 			},
@@ -271,7 +419,7 @@ func TestValidateUnsealCommandConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateUnsealCommandConfig(tt.cfg)
+			err := ValidatePassphraseCommandConfig(tt.cfg)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
@@ -288,7 +436,7 @@ func TestValidateUnsealCommandConfig(t *testing.T) {
 	}
 }
 
-func TestDecodeUnsealOutput(t *testing.T) {
+func TestDecodePassphraseOutput(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   []byte
@@ -324,7 +472,7 @@ func TestDecodeUnsealOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := decodeUnsealOutput(tt.input)
+			got, err := decodePassphraseOutput(tt.input)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
@@ -344,15 +492,15 @@ func TestDecodeUnsealOutput(t *testing.T) {
 	}
 }
 
-func TestBuildUnsealEnv(t *testing.T) {
+func TestBuildPassphraseEnv(t *testing.T) {
 	// Empty map → empty slice
-	env := buildUnsealEnv(nil)
+	env := buildPassphraseEnv(nil)
 	if len(env) != 0 {
 		t.Fatalf("expected empty env, got %v", env)
 	}
 
 	// Declared vars only
-	env = buildUnsealEnv(map[string]string{
+	env = buildPassphraseEnv(map[string]string{
 		"AWS_REGION": "us-west-2",
 		"HOME":       "/var/empty",
 	})

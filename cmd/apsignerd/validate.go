@@ -32,25 +32,25 @@ func validateStartup(config *util.ServerConfig, runtime *RuntimeState) error {
 			"       Run 'apstore init' to initialize the keystore with a passphrase", config.StoreDir)
 	}
 
-	// Validate unseal_kind unconditionally (rejects unknown values even without unseal_command_argv)
-	if err := util.ValidateUnsealKind(config.UnsealKind); err != nil {
+	// Validate passphrase_command_kind unconditionally (rejects unknown values even without passphrase_command_argv)
+	if err := util.ValidatePassphraseCommandKind(config.PassphraseCommandKind); err != nil {
 		return err
 	}
 
-	// unseal_kind: master_key requires unseal_command_argv (IPC always provides a passphrase)
-	if config.UnsealKind == "master_key" && len(config.UnsealCommandArgv) == 0 {
-		return fmt.Errorf("unseal_kind: master_key requires unseal_command_argv to be configured (IPC unlock always provides a passphrase)")
+	// passphrase_command_kind: master_key requires passphrase_command_argv (IPC always provides a passphrase)
+	if config.PassphraseCommandKind == "master_key" && len(config.PassphraseCommandArgv) == 0 {
+		return fmt.Errorf("passphrase_command_kind: master_key requires passphrase_command_argv to be configured (IPC unlock always provides a passphrase)")
 	}
 
 	// Headless mode conflicts
-	if len(config.UnsealCommandArgv) > 0 {
+	if len(config.PassphraseCommandArgv) > 0 {
 		if config.LockOnDisconnect != nil && *config.LockOnDisconnect {
-			return fmt.Errorf("conflicting config: unseal_command_argv and lock_on_disconnect:true cannot be used together (headless mode requires signer to stay unlocked)")
+			return fmt.Errorf("conflicting config: passphrase_command_argv and lock_on_disconnect:true cannot be used together (headless mode requires signer to stay unlocked)")
 		}
 		if config.PassphraseTimeout != "" && config.PassphraseTimeout != "0" {
-			return fmt.Errorf("conflicting config: unseal_command_argv requires passphrase_timeout:0 (headless mode must stay unlocked, got %q)", config.PassphraseTimeout)
+			return fmt.Errorf("conflicting config: passphrase_command_argv requires passphrase_timeout:0 (headless mode must stay unlocked, got %q)", config.PassphraseTimeout)
 		}
-		if err := util.ValidateUnsealCommandConfig(config.UnsealCommandCfg()); err != nil {
+		if err := util.ValidatePassphraseCommandConfig(config.PassphraseCommandCfg()); err != nil {
 			return err
 		}
 		warnings = append(warnings, util.ValidateHeadlessPolicy(config)...)

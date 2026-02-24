@@ -218,7 +218,7 @@ apsignerd supports two startup modes that share a unified initialization path:
 
 | Mode | Passphrase Source | Starts | Use Case |
 |------|-------------------|--------|----------|
-| **Headless** | `unseal_command_argv` config or `TEST_PASSPHRASE` env | Unlocked | Automation, CI/CD, systemd services |
+| **Headless** | `passphrase_command_argv` config or `TEST_PASSPHRASE` env | Unlocked | Automation, CI/CD, systemd services |
 | **Locked** | apadmin IPC connection | Locked | Interactive operation, manual approval |
 
 **Why unified initialization matters:**

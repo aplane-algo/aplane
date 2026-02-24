@@ -348,7 +348,7 @@ func VerifyPassphraseWithMetadata(passphrase []byte, keystoreDir string) error {
 
 // VerifyMasterKeyWithMetadata verifies a raw master key against the keystore check value.
 // Unlike VerifyPassphraseWithMetadata, this skips Argon2id derivation — the provided bytes
-// are used directly as the master key. Used with unseal_kind: master_key.
+// are used directly as the master key. Used with passphrase_command_kind: master_key.
 func VerifyMasterKeyWithMetadata(masterKey []byte, keystoreDir string) error {
 	meta, err := LoadKeystoreMetadata(keystoreDir)
 	if err != nil {

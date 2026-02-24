@@ -82,7 +82,7 @@ func (f *FileKeyStore) InitializeMasterKey(passphrase []byte) ([]byte, error) {
 }
 
 // SetMasterKeyDirect sets a pre-derived master key directly, without Argon2id derivation.
-// Used with unseal_kind: master_key where the unseal command returns the derived key.
+// Used with passphrase_command_kind: master_key where the passphrase command returns the derived key.
 // The master key is verified against the keystore check value before storing.
 // Returns the master key for external use. Caller should NOT zero it — owned by FileKeyStore.
 func (f *FileKeyStore) SetMasterKeyDirect(masterKey []byte) ([]byte, error) {
