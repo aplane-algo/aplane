@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -27,16 +26,11 @@ const (
 	maxPassphraseOutputBytes = 8 * 1024
 )
 
-// lockedPATH is the restricted PATH used when allow_path_lookup is true.
-// Only system directories are included to prevent PATH injection.
-var lockedPATH = "/usr/sbin:/usr/bin:/sbin:/bin"
-
 // PassphraseCommandConfig holds the full configuration for the passphrase command.
 type PassphraseCommandConfig struct {
-	Argv            []string          // Command and arguments
-	Env             map[string]string // Explicit environment variables (not inherited)
-	AllowPathLookup bool              // Allow non-absolute argv[0] resolved via locked PATH
-	Verb            string            // "read" (default) or "write"
+	Argv []string          // Command and arguments
+	Env  map[string]string // Explicit environment variables (not inherited)
+	Verb string            // "read" (default) or "write"
 }
 
 // RunPassphraseCommand executes the passphrase command with the configured verb
@@ -58,7 +52,7 @@ type PassphraseCommandConfig struct {
 //
 // The returned []byte should be zeroed by the caller after use.
 func RunPassphraseCommand(cfg *PassphraseCommandConfig, stdinData []byte) ([]byte, error) {
-	resolvedPath, err := validateAndResolveArgv(cfg.Argv, cfg.AllowPathLookup)
+	resolvedPath, err := validateAndResolveArgv(cfg.Argv)
 	if err != nil {
 		return nil, err
 	}
@@ -240,13 +234,13 @@ func zeroBuffer(buf *bytes.Buffer) {
 
 // ValidatePassphraseCommandConfig validates the full passphrase command configuration.
 func ValidatePassphraseCommandConfig(cfg *PassphraseCommandConfig) error {
-	_, err := validateAndResolveArgv(cfg.Argv, cfg.AllowPathLookup)
+	_, err := validateAndResolveArgv(cfg.Argv)
 	return err
 }
 
 // validateAndResolveArgv checks that argv is well-formed and returns the resolved binary path.
-// If allowPathLookup is true and argv[0] is not absolute, resolves via locked PATH.
-func validateAndResolveArgv(argv []string, allowPathLookup bool) (string, error) {
+// argv[0] must be an absolute path (config loader resolves relative paths against the data directory).
+func validateAndResolveArgv(argv []string) (string, error) {
 	if len(argv) == 0 {
 		return "", fmt.Errorf("passphrase_command_argv: must be non-empty")
 	}
@@ -254,16 +248,7 @@ func validateAndResolveArgv(argv []string, allowPathLookup bool) (string, error)
 	binaryPath := argv[0]
 
 	if !filepath.IsAbs(binaryPath) {
-		if !allowPathLookup {
-			return "", fmt.Errorf("passphrase_command_argv: argv[0] must be an absolute path, got %q (set allow_path_lookup:true to resolve via system PATH)", binaryPath)
-		}
-
-		// Resolve via locked PATH
-		resolved, err := lookupInLockedPath(binaryPath)
-		if err != nil {
-			return "", fmt.Errorf("passphrase_command_argv: %w", err)
-		}
-		binaryPath = resolved
+		return "", fmt.Errorf("passphrase_command_argv: argv[0] must be an absolute path, got %q (use an absolute path or a path relative to the data directory)", binaryPath)
 	}
 
 	if err := validateBinary(binaryPath); err != nil {
@@ -271,29 +256,6 @@ func validateAndResolveArgv(argv []string, allowPathLookup bool) (string, error)
 	}
 
 	return binaryPath, nil
-}
-
-// lookupInLockedPath resolves a binary name using the locked PATH.
-// The name must be a plain basename (no slashes, no ".." components) to prevent
-// traversal outside the locked PATH directories.
-func lookupInLockedPath(name string) (string, error) {
-	if strings.Contains(name, "/") || strings.Contains(name, "..") || name == "." {
-		return "", fmt.Errorf("command name %q must be a plain basename (no path separators or traversal)", name)
-	}
-	for _, dir := range filepath.SplitList(lockedPATH) {
-		candidate := filepath.Join(dir, name)
-		info, err := os.Stat(candidate)
-		if err != nil {
-			continue
-		}
-		if info.IsDir() {
-			continue
-		}
-		if info.Mode().Perm()&0111 != 0 {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("command %q not found in locked PATH (%s)", name, lockedPATH)
 }
 
 // validateBinary checks that a binary path points to a valid, secure executable.

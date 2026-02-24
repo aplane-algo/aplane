@@ -644,7 +644,7 @@ passphrase_command_argv: ["./passfile", "passphrase"]
 passphrase_command_env:          # optional, process env is never inherited
 ```
 
-Path resolution: `argv[0]` can be an absolute path, a relative path (resolved against the data directory), or a bare name (resolved via a locked PATH when `allow_path_lookup: true`). Arguments `argv[1:]` with explicit relative prefixes (`./`, `../`) are also resolved against the data directory.
+Path resolution: all elements of `passphrase_command_argv` are resolved relative to the data directory. Absolute paths are left unchanged.
 
 **Protocol contract:**
 
@@ -683,7 +683,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 |----------|----------------|
 | Environment isolation | Process environment is never inherited; only `passphrase_command_env` entries are passed |
 | Binary validation | Must be executable, must not be group/world-writable |
-| Path restriction | Non-absolute `argv[0]` resolved via locked PATH (`/usr/sbin:/usr/bin:/sbin:/bin`) only |
+| Path restriction | Relative paths resolved against data directory; must be absolute after resolution |
 | Timeout | 5-second deadline with process-group kill (child processes included) |
 | Output limit | 8 KB max stdout to prevent memory exhaustion |
 | Constant-time comparison | Write round-trip uses `crypto/subtle` |

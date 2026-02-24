@@ -222,7 +222,6 @@ The server and admin tools share the same config format and data directory.
 | `lock_on_disconnect` | *bool | `true` | Lock signer when apadmin disconnects |
 | `passphrase_command_argv` | []string | (optional) | Command to run at startup to obtain passphrase (see Headless Operation) |
 | `passphrase_command_env` | map | (optional) | Environment variables to pass to passphrase command |
-| `allow_path_lookup` | bool | `false` | Allow non-absolute path in passphrase_command_argv[0] |
 | `teal_compiler_algod_url` | string | (required for LogicSigs) | Algod URL for TEAL compilation (LogicSig generation) |
 | `teal_compiler_algod_token` | string | (optional) | Algod API token for TEAL compilation |
 | `require_memory_protection` | bool | `false` | If true, fail startup when memory protection cannot be enabled (requires root/sudo) |
@@ -478,7 +477,7 @@ For example, `passphrase_command_argv: ["/usr/local/bin/passfile", "/etc/aplane/
 - Write: `/usr/local/bin/passfile write /etc/aplane/passphrase` (with passphrase on stdin)
 
 **Requirements:**
-- `argv[0]` must be an absolute path (or set `allow_path_lookup: true`, or use `./` for data-dir-relative paths)
+- All paths in `passphrase_command_argv` are resolved relative to the data directory (absolute paths are left unchanged)
 - The binary must not be group/world-writable
 - `read` must exit 0 and produce non-empty stdout
 - Exactly one trailing newline is stripped from output

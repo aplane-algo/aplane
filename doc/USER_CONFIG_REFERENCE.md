@@ -45,9 +45,8 @@ File: `config.yaml` in apsignerd data directory (`-d` or `APSIGNER_DATA`)
 | `store` | string | `(none)` | Store directory (required) |
 | `ipc_path` | string | `/tmp/aplane.sock` | Unix socket path for admin IPC |
 | `lock_on_disconnect` | *bool | `true` | Lock signer when admin disconnects |
-| `passphrase_command_argv` | []string | `(none)` | Command to run at startup to obtain the passphrase (argv[0] must be absolute path unless allow_path_lookup is true) |
+| `passphrase_command_argv` | []string | `(none)` | Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1]) |
 | `passphrase_command_env` | map | `(none)` | Environment variables to pass to the passphrase command (process env is never inherited) |
-| `allow_path_lookup` | bool | `false` | Allow non-absolute argv[0] in passphrase_command_argv, resolved via locked PATH (/usr/sbin:/usr/bin:/sbin:/bin) |
 | `teal_compiler_algod_url` | string | `(none)` | Algod URL for TEAL compilation |
 | `teal_compiler_algod_token` | string | `(none)` | Algod token for TEAL compilation |
 | `require_memory_protection` | bool | `false` | Fail startup if memory protection unavailable |

@@ -81,7 +81,7 @@ func TestRunPassphraseCommand(t *testing.T) {
 			wantErr: "empty output",
 		},
 		{
-			name: "non-absolute path without allow_path_lookup",
+			name: "non-absolute path rejected",
 			cfg: &PassphraseCommandConfig{
 				Argv: []string{"relative/path"},
 			},
@@ -359,7 +359,7 @@ func TestValidatePassphraseCommandConfig(t *testing.T) {
 			wantErr: "non-empty",
 		},
 		{
-			name:    "relative path without allow_path_lookup",
+			name:    "relative path",
 			cfg:     &PassphraseCommandConfig{Argv: []string{"./script.sh"}},
 			wantErr: "absolute path",
 		},
@@ -379,44 +379,9 @@ func TestValidatePassphraseCommandConfig(t *testing.T) {
 			wantErr: "group or world writable",
 		},
 		{
-			name: "allow_path_lookup resolves system binary",
-			cfg: &PassphraseCommandConfig{
-				Argv:            []string{"cat"},
-				AllowPathLookup: true,
-			},
-			// cat should be in /usr/bin/cat or /bin/cat
-		},
-		{
-			name: "allow_path_lookup rejects unknown binary",
-			cfg: &PassphraseCommandConfig{
-				Argv:            []string{"nonexistent-binary-xyz"},
-				AllowPathLookup: true,
-			},
-			wantErr: "not found in locked PATH",
-		},
-		{
-			name: "allow_path_lookup rejects dot-dot traversal",
-			cfg: &PassphraseCommandConfig{
-				Argv:            []string{"../../tmp/evil"},
-				AllowPathLookup: true,
-			},
-			wantErr: "plain basename",
-		},
-		{
-			name: "allow_path_lookup rejects slash in name",
-			cfg: &PassphraseCommandConfig{
-				Argv:            []string{"sub/binary"},
-				AllowPathLookup: true,
-			},
-			wantErr: "plain basename",
-		},
-		{
-			name: "allow_path_lookup rejects bare dot",
-			cfg: &PassphraseCommandConfig{
-				Argv:            []string{"."},
-				AllowPathLookup: true,
-			},
-			wantErr: "plain basename",
+			name:    "bare name rejected",
+			cfg:     &PassphraseCommandConfig{Argv: []string{"passfile"}},
+			wantErr: "absolute path",
 		},
 	}
 
