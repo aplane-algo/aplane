@@ -1,4 +1,4 @@
-.PHONY: all clean apshell apshell-core apshell-all apsignerd apadmin apapprover apstore plugin-checksum plugin-checksums help generate-plugin-imports list-plugins disable-all compile-teal test race-test unit-test integration-test check-example-plugins build-example-plugins docker-playground apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-arm64 passfile-arm64 plugin-checksum-arm64 bin-arm64 bin-amd64 security-analysis analyze-keyzero analyze-keylog analyze-insecurerand analyze-seedphrase config-docs client-package python-sdk python-sdk-test python-sdk-clean typescript-sdk typescript-sdk-clean typescript-sdk-test release-local
+.PHONY: all clean apshell apshell-core apshell-all apsignerd apadmin apapprover apstore plugin-checksum plugin-checksums help generate-plugin-imports list-plugins disable-all compile-teal test race-test unit-test integration-test check-example-plugins build-example-plugins docker-playground apshell-arm64 apsignerd-arm64 apadmin-arm64 apstore-arm64 apapprover-arm64 passfile-arm64 plugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-insecurerand analyze-seedphrase config-docs client-package python-sdk python-sdk-test python-sdk-clean typescript-sdk typescript-sdk-clean typescript-sdk-test release-local
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -171,6 +171,41 @@ bin-amd64: compile-teal generate-plugin-imports
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/plugin-checksum ./cmd/plugin-checksum
 	@echo "✓ Built amd64 binaries in bin/amd64/"
 
+# macOS build targets (dynamically linked — Apple doesn't support static binaries)
+DARWIN_LD_FLAGS = -ldflags '$(VERSION_LDFLAGS)'
+
+# Build all binaries for darwin/arm64 (Apple Silicon) into bin/darwin-arm64/
+bin-darwin-arm64: compile-teal generate-plugin-imports
+	@mkdir -p bin/darwin-arm64
+	@if [ -z "$(AVAILABLE_PLUGINS)" ]; then \
+		CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apshell ./cmd/apshell; \
+	else \
+		CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -tags "$(AVAILABLE_PLUGINS)" -o bin/darwin-arm64/apshell ./cmd/apshell; \
+	fi
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apsignerd ./cmd/apsignerd
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apadmin ./cmd/apadmin
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apstore ./cmd/apstore
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apapprover ./cmd/apapprover
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/passfile ./cmd/passfile
+	@chmod 700 bin/darwin-arm64/passfile
+	@echo "✓ Built darwin/arm64 binaries in bin/darwin-arm64/"
+
+# Build all binaries for darwin/amd64 (Intel Mac) into bin/darwin-amd64/
+bin-darwin-amd64: compile-teal generate-plugin-imports
+	@mkdir -p bin/darwin-amd64
+	@if [ -z "$(AVAILABLE_PLUGINS)" ]; then \
+		CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apshell ./cmd/apshell; \
+	else \
+		CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -tags "$(AVAILABLE_PLUGINS)" -o bin/darwin-amd64/apshell ./cmd/apshell; \
+	fi
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apsignerd ./cmd/apsignerd
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apadmin ./cmd/apadmin
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apstore ./cmd/apstore
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apapprover ./cmd/apapprover
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/passfile ./cmd/passfile
+	@chmod 700 bin/darwin-amd64/passfile
+	@echo "✓ Built darwin/amd64 binaries in bin/darwin-amd64/"
+
 clean: python-sdk-clean typescript-sdk-clean
 	find bin -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
 	rm -rf temp/apshell temp/apshell-client.tar.gz
@@ -270,6 +305,7 @@ docker-playground: bin-arm64 bin-amd64
 	@echo "✓ Pushed $(DOCKER_PLAYGROUND_IMAGE):latest (amd64 + arm64)"
 
 # Local release dry-run (builds archives without publishing)
+# On macOS: also builds darwin archives. On Linux: linux only.
 release-local: bin-amd64 bin-arm64
 	@mkdir -p dist
 	@VERSION=$$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//'); \

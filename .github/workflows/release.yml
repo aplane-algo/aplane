@@ -8,8 +8,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Release
+  build-linux:
+    name: Build Linux
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,19 +30,89 @@ jobs:
         with:
           version: 0.13.0
 
-      - name: Build all platforms
+      - name: Build all Linux platforms
         run: make bin-amd64 bin-arm64
+
+      - name: Upload Linux binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: |
+            bin/amd64/
+            bin/arm64/
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Build macOS arm64
+        run: make bin-darwin-arm64
+
+      - name: Build macOS amd64
+        run: make bin-darwin-amd64
+
+      - name: Upload macOS binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binaries
+          path: |
+            bin/darwin-amd64/
+            bin/darwin-arm64/
+
+  release:
+    name: Release
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Download Linux binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binaries
+          path: bin/
+
+      - name: Download macOS binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-binaries
+          path: bin/
 
       - name: Package release archives
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          BINARIES="apshell apsignerd apadmin apapprover apstore passfile"
           mkdir -p dist
 
-          # Create tar.gz for each platform
+          # Linux archives
           for arch in amd64 arm64; do
             archive="aplane_${VERSION}_linux_${arch}.tar.gz"
-            tar -czf "dist/${archive}" -C "bin/${arch}" \
-              apshell apsignerd apadmin apapprover apstore passfile
+            tar -czf "dist/${archive}" -C "bin/${arch}" $BINARIES
+            echo "Created dist/${archive}"
+          done
+
+          # macOS archives
+          for arch in amd64 arm64; do
+            archive="aplane_${VERSION}_darwin_${arch}.tar.gz"
+            tar -czf "dist/${archive}" -C "bin/darwin-${arch}" $BINARIES
             echo "Created dist/${archive}"
           done
 
@@ -65,9 +135,7 @@ jobs:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_KEY }}
 
       - name: Generate changelog
-        id: changelog
         run: |
-          # Get previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
             echo "## Changes since ${PREV_TAG}" > dist/changelog.md

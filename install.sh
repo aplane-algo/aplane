@@ -35,7 +35,8 @@ detect_os() {
     os="$(uname -s)"
     case "$os" in
         Linux)  echo "linux" ;;
-        *)      error "Unsupported OS: $os. aPlane currently supports Linux only." ;;
+        Darwin) echo "darwin" ;;
+        *)      error "Unsupported OS: $os. aPlane supports Linux and macOS." ;;
     esac
 }
 
