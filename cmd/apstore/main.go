@@ -878,7 +878,7 @@ func cmdChangepass(random bool) error {
 	fmt.Println()
 
 	// Confirm (skip in fully automated mode: helper + random)
-	if !(useHelper && random) {
+	if !useHelper || !random {
 		fmt.Print("Proceed with passphrase change? [y/N]: ")
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
