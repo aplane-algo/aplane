@@ -142,26 +142,29 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 }
 
 // decodeUnsealOutput handles base64: and hex: prefixed output, or returns raw bytes.
+// Uses []byte-native decode APIs to avoid creating immutable string copies of secret material.
 // The caller is responsible for zeroing both the input and the returned slice.
 func decodeUnsealOutput(output []byte) ([]byte, error) {
 	if bytes.HasPrefix(output, []byte("base64:")) {
 		encoded := output[len("base64:"):]
-		// base64.DecodeString takes a string (immutable copy on heap — unavoidable with
-		// stdlib). The decoded result is a fresh []byte that the caller will zero.
-		decoded, err := base64.StdEncoding.DecodeString(string(encoded))
+		decoded := make([]byte, base64.StdEncoding.DecodedLen(len(encoded)))
+		n, err := base64.StdEncoding.Decode(decoded, encoded)
 		if err != nil {
+			zeroBytes(decoded)
 			return nil, fmt.Errorf("unseal_command_argv: invalid base64 output: %w", err)
 		}
-		return decoded, nil
+		return decoded[:n], nil
 	}
 
 	if bytes.HasPrefix(output, []byte("hex:")) {
 		encoded := output[len("hex:"):]
-		decoded, err := hex.DecodeString(string(encoded))
+		decoded := make([]byte, hex.DecodedLen(len(encoded)))
+		n, err := hex.Decode(decoded, encoded)
 		if err != nil {
+			zeroBytes(decoded)
 			return nil, fmt.Errorf("unseal_command_argv: invalid hex output: %w", err)
 		}
-		return decoded, nil
+		return decoded[:n], nil
 	}
 
 	// Raw bytes — return a copy so the caller can zero the original
