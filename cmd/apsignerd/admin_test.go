@@ -750,3 +750,80 @@ func reloadKeysForTest(server *Signer) error {
 
 	return nil
 }
+
+// TestUnsealKindSourceSwitchInvariant verifies that unsealKind tracks the type of bytes
+// in encryptionPassphrase across source switches:
+//
+//	master_key startup → lock → IPC passphrase unlock → file watcher reload
+//
+// This is the main mixed-source invariant: after IPC unlock replaces the master key bytes
+// with a passphrase, subsequent reloads (e.g. file watcher) must use Argon2id derivation,
+// not SetMasterKeyDirect.
+func TestUnsealKindSourceSwitchInvariant(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	keysDir := filepath.Join(tmpDir, "users", "default", "keys")
+	if err := os.MkdirAll(keysDir, 0750); err != nil {
+		t.Fatalf("Failed to create keys dir: %v", err)
+	}
+
+	oldPath := utilkeys.KeystorePath()
+	utilkeys.SetKeystorePath(tmpDir)
+	defer utilkeys.SetKeystorePath(oldPath)
+
+	// Create keystore and derive master key from the passphrase
+	_, masterKey, err := crypto.CreateKeystoreMetadata(tmpDir, testPassphrase)
+	if err != nil {
+		t.Fatalf("Failed to create keystore metadata: %v", err)
+	}
+
+	// --- Phase 1: master_key startup ---
+	ks := keystore.NewFileKeyStore(auth.DefaultIdentityID)
+	server := &Signer{
+		keyStore:             ks,
+		keys:                 map[string]map[string]string{auth.DefaultIdentityID: {}},
+		keyTypes:             map[string]map[string]string{auth.DefaultIdentityID: {}},
+		keyLsigSizes:         map[string]map[string]int{auth.DefaultIdentityID: {}},
+		keySession:           keystore.NewKeySession(ks),
+		encryptionPassphrase: crypto.NewSecureStringFromBytes(masterKey),
+		unsealKind:           "master_key",
+		config:               &util.ServerConfig{},
+	}
+	server.hub = NewHub(server)
+
+	// reloadKeys must succeed using the master_key path (no Argon2id)
+	if err := server.reloadKeys(); err != nil {
+		t.Fatalf("Phase 1 (master_key reload): %v", err)
+	}
+	server.hub.SetUnlocked()
+
+	if server.unsealKind != "master_key" {
+		t.Fatalf("Phase 1: expected unsealKind=master_key, got %s", server.unsealKind)
+	}
+
+	// --- Phase 2: explicit lock ---
+	server.hub.lock()
+	if server.hub.GetState() != SignerStateLocked {
+		t.Fatal("Phase 2: signer should be locked")
+	}
+
+	// --- Phase 3: IPC passphrase unlock via tryUnlock ---
+	success, _, errMsg := server.hub.tryUnlock(testPassphrase)
+	if !success {
+		t.Fatalf("Phase 3 (tryUnlock): %s", errMsg)
+	}
+	if server.unsealKind != "passphrase" {
+		t.Fatalf("Phase 3: expected unsealKind=passphrase after tryUnlock, got %s", server.unsealKind)
+	}
+
+	// --- Phase 4: file watcher reload (uses reloadKeys → reloadKeysLocked → fs.unsealKind) ---
+	// This MUST use the passphrase path, not master_key, because tryUnlock stored a passphrase.
+	if err := server.reloadKeys(); err != nil {
+		t.Fatalf("Phase 4 (watcher reload after passphrase unlock): %v", err)
+	}
+
+	// Final check: unsealKind must still be "passphrase"
+	if server.unsealKind != "passphrase" {
+		t.Fatalf("Phase 4: expected unsealKind=passphrase after reload, got %s", server.unsealKind)
+	}
+}

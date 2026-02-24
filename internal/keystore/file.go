@@ -81,6 +81,32 @@ func (f *FileKeyStore) InitializeMasterKey(passphrase []byte) ([]byte, error) {
 	return masterKey, nil
 }
 
+// SetMasterKeyDirect sets a pre-derived master key directly, without Argon2id derivation.
+// Used with unseal_kind: master_key where the unseal command returns the derived key.
+// The master key is verified against the keystore check value before storing.
+// Returns the master key for external use. Caller should NOT zero it — owned by FileKeyStore.
+func (f *FileKeyStore) SetMasterKeyDirect(masterKey []byte) ([]byte, error) {
+	keystoreRoot := utilkeys.KeystorePath()
+
+	// Verify master key against keystore check value
+	if err := crypto.VerifyMasterKeyWithMetadata(masterKey, keystoreRoot); err != nil {
+		return nil, fmt.Errorf("master key verification failed: %w", err)
+	}
+
+	// Store a copy so the caller's slice can be independently managed
+	keyCopy := make([]byte, len(masterKey))
+	copy(keyCopy, masterKey)
+
+	f.cacheLock.Lock()
+	if f.masterKey != nil {
+		crypto.ZeroBytes(f.masterKey)
+	}
+	f.masterKey = keyCopy
+	f.cacheLock.Unlock()
+
+	return keyCopy, nil
+}
+
 // Scan populates the internal cache by scanning the keys directory.
 // This requires a passphrase to derive the master key and decrypt keys.
 // If InitializeMasterKey was already called, this reuses the existing master key.

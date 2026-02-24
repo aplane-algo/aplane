@@ -81,7 +81,7 @@ func (h *Hub) SetUnlocked() {
 	h.stateLock.Unlock()
 }
 
-// lock locks the signer and clears sensitive data from memory
+// lock locks the signer and clears sensitive data from memory.
 func (h *Hub) lock() {
 	// Set state to locked
 	h.stateLock.Lock()
@@ -122,7 +122,7 @@ func (h *Hub) lock() {
 
 	// Notify connected apadmin client about the lock
 	if h.signer.ipcServer != nil {
-		h.signer.ipcServer.NotifyLocked("inactivity timeout")
+		h.signer.ipcServer.NotifyLocked("locked")
 	}
 }
 
@@ -144,9 +144,12 @@ func (h *Hub) tryUnlock(passphrase []byte) (bool, int, string) {
 		return false, 0, "Invalid passphrase"
 	}
 
-	// Set encryption passphrase and reload keys under write lock
+	// Set encryption passphrase and reload keys under write lock.
+	// IPC unlock always provides a passphrase, so update unsealKind to match.
+	// This ensures subsequent reloads (e.g., file watcher) also use passphrase derivation.
 	h.signer.passphraseLock.Lock()
 	h.signer.encryptionPassphrase = crypto.NewSecureStringFromBytes(passphrase)
+	h.signer.unsealKind = "passphrase"
 	if err := h.signer.reloadKeysLocked(); err != nil {
 		h.signer.passphraseLock.Unlock()
 		return false, 0, fmt.Sprintf("Failed to load keys: %v", err)

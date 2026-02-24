@@ -147,14 +147,15 @@ type Signer struct {
 	sessionTimer           *time.Timer   // Fires hub.lock() after inactivity
 	lastActivity           atomic.Int64  // UnixNano of last activity; callback checks before locking
 	encryptionPassphrase   *algocrypto.SecureString
-	authenticator          auth.Authenticator // Pluggable authentication
-	authorizer             auth.Authorizer    // Pluggable authorization
-	auditLog               *AuditLogger       // Audit logger for security events
-	hub                    *Hub               // Signer hub for apadmin/apapprover
-	ipcServer              *IPCServer         // IPC server for local Unix socket connections
-	config                 *util.ServerConfig // Server configuration (includes policy settings)
-	tealCompilerAlgodURL   string             // Algod URL for TEAL compilation (defaults to Nodely testnet)
-	tealCompilerAlgodToken string             // Algod token for TEAL compilation (optional)
+	authenticator          auth.Authenticator      // Pluggable authentication
+	authorizer             auth.Authorizer         // Pluggable authorization
+	auditLog               *AuditLogger            // Audit logger for security events
+	hub                    *Hub                    // Signer hub for apadmin/apapprover
+	ipcServer              *IPCServer              // IPC server for local Unix socket connections
+	config                 *util.ServerConfig      // Server configuration (includes policy settings)
+	unsealKind             string                  // "passphrase" (default) or "master_key" — tracks the type of bytes in encryptionPassphrase
+	tealCompilerAlgodURL   string                  // Algod URL for TEAL compilation (defaults to Nodely testnet)
+	tealCompilerAlgodToken string                  // Algod token for TEAL compilation (optional)
 }
 
 // resetSessionTimer resets (or starts) the inactivity timer.
@@ -292,6 +293,10 @@ func (fs *Signer) reloadKeys() error {
 
 // reloadKeysLocked is the internal implementation of reloadKeys.
 // Caller must hold passphraseLock (read or write).
+// Uses fs.unsealKind to determine whether to derive via Argon2id or use direct master key.
+// INVARIANT: fs.unsealKind always reflects the type of bytes in fs.encryptionPassphrase.
+// It is set at startup alongside encryptionPassphrase, and updated by tryUnlock() when
+// IPC replaces the stored bytes with a passphrase.
 func (fs *Signer) reloadKeysLocked() error {
 	// Check if signer is locked (passphrase cleared)
 	if fs.encryptionPassphrase == nil {
@@ -301,14 +306,25 @@ func (fs *Signer) reloadKeysLocked() error {
 	// Use WithBytes to avoid creating unzeroed string copies
 	var err error
 
-	// Step 1: Initialize master key (verify passphrase and derive key)
+	// Step 1: Initialize master key (verify passphrase/key and derive or set key)
 	// This must happen first so we can use the master key for both templates and keys
 	var masterKey []byte
-	err = fs.encryptionPassphrase.WithBytes(func(p []byte) error {
-		var initErr error
-		masterKey, initErr = fs.keyStore.InitializeMasterKey(p)
-		return initErr
-	})
+	if fs.unsealKind == "master_key" {
+		// Master key mode: encryptionPassphrase holds the raw master key bytes.
+		// Skip Argon2id derivation — use them directly.
+		err = fs.encryptionPassphrase.WithBytes(func(p []byte) error {
+			var initErr error
+			masterKey, initErr = fs.keyStore.SetMasterKeyDirect(p)
+			return initErr
+		})
+	} else {
+		// Passphrase mode (default): derive master key via Argon2id.
+		err = fs.encryptionPassphrase.WithBytes(func(p []byte) error {
+			var initErr error
+			masterKey, initErr = fs.keyStore.InitializeMasterKey(p)
+			return initErr
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("failed to initialize master key: %w", err)
 	}
