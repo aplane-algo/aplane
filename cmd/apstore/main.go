@@ -49,7 +49,7 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "apstore - Signer keystore management\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n")
-		fmt.Fprintf(os.Stderr, "  apstore [-d path] init\n")
+		fmt.Fprintf(os.Stderr, "  apstore [-d path] init [--random]\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] backup <all|ADDRESS> <destination>\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] restore <all|ADDRESS> <source>\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] verify <backup-path> [--deep]\n")
@@ -61,10 +61,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] add-falcon-template <yaml-file>\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		fmt.Fprintf(os.Stderr, "  -d path              Data directory (or set APSIGNER_DATA env var)\n")
-		fmt.Fprintf(os.Stderr, "  --random             Generate random passphrase (changepass only)\n")
+		fmt.Fprintf(os.Stderr, "  --random             Generate random passphrase (init, changepass)\n")
 		fmt.Fprintf(os.Stderr, "  --show-private       Show private key material (inspect only)\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  apstore init\n")
+		fmt.Fprintf(os.Stderr, "  apstore init --random\n")
 		fmt.Fprintf(os.Stderr, "  apstore backup all /mnt/usb/backup\n")
 		fmt.Fprintf(os.Stderr, "  apstore backup ABC123... /mnt/usb/backup\n")
 		fmt.Fprintf(os.Stderr, "  apstore restore all /mnt/usb/backup\n")
@@ -110,7 +111,8 @@ func main() {
 
 	switch command {
 	case "init":
-		if err := cmdInit(); err != nil {
+		random := len(args) > 1 && args[1] == "--random"
+		if err := cmdInit(random); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -808,9 +810,13 @@ func cmdChangepass(random bool) error {
 			return fmt.Errorf("failed to generate random passphrase: %w", err)
 		}
 		newPassphrase = base64.StdEncoding.EncodeToString(randomBytes)
-		fmt.Printf("Generated new passphrase: %s\n", newPassphrase)
-		fmt.Println("\nIMPORTANT: Save this passphrase securely!")
-		fmt.Println("SECURITY: Clear shell history after copying this passphrase.")
+		if useHelper {
+			fmt.Println("Generated random passphrase (will be stored via helper).")
+		} else {
+			fmt.Printf("Generated new passphrase: %s\n", newPassphrase)
+			fmt.Println("\nIMPORTANT: Save this passphrase securely!")
+			fmt.Println("SECURITY: Clear shell history after copying this passphrase.")
+		}
 		fmt.Println()
 	} else {
 		fmt.Print("Enter new passphrase: ")
@@ -871,16 +877,18 @@ func cmdChangepass(random bool) error {
 	}
 	fmt.Println()
 
-	// Confirm
-	fmt.Print("Proceed with passphrase change? [y/N]: ")
-	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
-	response = strings.TrimSpace(strings.ToLower(response))
-	if response != "y" && response != "yes" {
-		fmt.Println("Cancelled.")
-		return nil
+	// Confirm (skip in fully automated mode: helper + random)
+	if !(useHelper && random) {
+		fmt.Print("Proceed with passphrase change? [y/N]: ")
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response != "y" && response != "yes" {
+			fmt.Println("Cancelled.")
+			return nil
+		}
+		fmt.Println()
 	}
-	fmt.Println()
 
 	// Track files for atomic swap
 	type pendingFile struct {
@@ -1132,8 +1140,11 @@ func cmdChangepass(random bool) error {
 	return nil
 }
 
-// cmdInit initializes a new keystore with a passphrase
-func cmdInit() error {
+// cmdInit initializes a new keystore with a passphrase.
+// If random is true, generates a random passphrase instead of prompting.
+// When a passphrase_command_argv helper is configured, the passphrase is
+// stored via the helper after keystore creation.
+func cmdInit(random bool) error {
 	fmt.Println("Keystore Initialization")
 	fmt.Println("=======================")
 	fmt.Println()
@@ -1150,32 +1161,52 @@ func cmdInit() error {
 
 	fmt.Printf("Keystore directory: %s\n", config.StoreDir)
 	fmt.Println()
-	fmt.Println("Choose a strong passphrase. This will be used to encrypt all keys.")
-	fmt.Println("You will need this passphrase to unlock the signer.")
-	fmt.Println()
+
+	useHelper := len(config.PassphraseCommandArgv) > 0
 
 	// Get passphrase
-	fmt.Print("Enter passphrase: ")
-	passphrase, err := readPassword()
-	if err != nil {
-		return fmt.Errorf("failed to read passphrase: %w", err)
-	}
-	fmt.Println()
+	var passphrase string
+	if random {
+		randomBytes := make([]byte, 32)
+		if _, err := rand.Read(randomBytes); err != nil {
+			return fmt.Errorf("failed to generate random passphrase: %w", err)
+		}
+		passphrase = base64.StdEncoding.EncodeToString(randomBytes)
+		if useHelper {
+			fmt.Println("Generated random passphrase (will be stored via helper).")
+		} else {
+			fmt.Printf("Generated passphrase: %s\n", passphrase)
+			fmt.Println("\nIMPORTANT: Save this passphrase securely!")
+			fmt.Println("SECURITY: Clear shell history after copying this passphrase.")
+		}
+	} else {
+		fmt.Println("Choose a strong passphrase. This will be used to encrypt all keys.")
+		fmt.Println("You will need this passphrase to unlock the signer.")
+		fmt.Println()
 
-	if len(passphrase) == 0 {
-		return fmt.Errorf("passphrase cannot be empty")
-	}
+		fmt.Print("Enter passphrase: ")
+		var err error
+		passphrase, err = readPassword()
+		if err != nil {
+			return fmt.Errorf("failed to read passphrase: %w", err)
+		}
+		fmt.Println()
 
-	// Confirm passphrase
-	fmt.Print("Confirm passphrase: ")
-	confirm, err := readPassword()
-	if err != nil {
-		return fmt.Errorf("failed to read confirmation: %w", err)
-	}
-	fmt.Println()
+		if len(passphrase) == 0 {
+			return fmt.Errorf("passphrase cannot be empty")
+		}
 
-	if passphrase != confirm {
-		return fmt.Errorf("passphrases do not match")
+		// Confirm passphrase
+		fmt.Print("Confirm passphrase: ")
+		confirm, err := readPassword()
+		if err != nil {
+			return fmt.Errorf("failed to read confirmation: %w", err)
+		}
+		fmt.Println()
+
+		if passphrase != confirm {
+			return fmt.Errorf("passphrases do not match")
+		}
 	}
 
 	// Create keystore metadata
@@ -1195,8 +1226,8 @@ func cmdInit() error {
 	fmt.Printf("  Keystore metadata: %s/.keystore\n", config.StoreDir)
 	fmt.Println()
 
-	// If passphrase_command_argv is configured, try to store the passphrase via the helper
-	if len(config.PassphraseCommandArgv) > 0 {
+	// If passphrase_command_argv is configured, store the passphrase via the helper
+	if useHelper {
 		if err := util.WritePassphrase(config.PassphraseCommandCfg(), []byte(passphrase)); err != nil {
 			fmt.Println("⚠️  Could not store passphrase via passphrase command helper:")
 			fmt.Printf("   %v\n", err)
@@ -1208,7 +1239,9 @@ func cmdInit() error {
 	}
 
 	fmt.Println("You can now start apsignerd and use apadmin to unlock.")
-	fmt.Println("For headless operation, configure passphrase_command_argv in config.yaml.")
+	if !useHelper {
+		fmt.Println("For headless operation, configure passphrase_command_argv in config.yaml.")
+	}
 
 	return nil
 }
