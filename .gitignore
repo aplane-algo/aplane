@@ -69,8 +69,7 @@ examples/external_plugins/folksgo/
 # Local settings
 settings.local.json
 .claude/
-CLAUDE.md
-GEMINI.md
+/*.md
 
 # System configuration (Pi setup, services, etc.)
 etc/
