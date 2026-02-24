@@ -228,10 +228,8 @@ func main() {
 		return nil
 	})
 
-	// encPassphrase already wrapped in SecureString above
-	if encPassphrase != nil {
-		defer encPassphrase.Destroy() // Zero on shutdown
-	}
+	// Note: encPassphrase is stored in server.encryptionPassphrase and may be replaced
+	// at runtime (e.g., by tryUnlock). Shutdown zeroing uses the Signer's field, not this local.
 
 	// Initialize audit logger
 	auditLog, err := NewAuditLogger(filepath.Join(resolvedDataDir, "audit.log"))
@@ -499,13 +497,20 @@ func main() {
 	// Stop session timer
 	server.stopSessionTimer()
 
-	// Zero encryption passphrase
+	// Zero encryption passphrase (use Signer's field, not the startup local which may be stale)
 	fmt.Println("[*] Zeroing encryption passphrase...")
-	encPassphrase.Destroy()
+	server.passphraseLock.Lock()
+	if server.encryptionPassphrase != nil {
+		server.encryptionPassphrase.Destroy()
+		server.encryptionPassphrase = nil
+	}
+	server.passphraseLock.Unlock()
 
-	// Zero all cached keys
+	// Zero all cached keys (use Signer's field for same reason)
 	fmt.Println("[*] Zeroing cached keys...")
-	keySession.Destroy()
+	if server.keySession != nil {
+		server.keySession.Destroy()
+	}
 
 	fmt.Println("[✓] Shutdown complete")
 }

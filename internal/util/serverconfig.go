@@ -197,20 +197,21 @@ func (c *ServerConfig) EffectiveTxnAutoApprove() bool {
 	return c.TxnAutoApprove
 }
 
-// ValidateHeadlessPolicy checks that policy settings are properly configured for headless operation.
-func ValidateHeadlessPolicy(config *ServerConfig) error {
-	// Check that there's a way to auto-approve transactions
-	// Note: validation transactions (0 ALGO self-send) are always auto-approved
+// ValidateHeadlessPolicy checks policy settings for headless operation.
+// Returns warnings (not errors) because automated unsealing does not preclude
+// human approval — an operator may connect via apadmin for manual approval.
+func ValidateHeadlessPolicy(config *ServerConfig) []string {
+	var warnings []string
+
 	if !config.EffectiveTxnAutoApprove() {
-		return fmt.Errorf("headless mode requires txn_auto_approve:true in config (no one available to manually approve)")
+		warnings = append(warnings, "headless mode without txn_auto_approve: transactions will require manual approval via apadmin")
 	}
 
-	// Group signing also requires auto-approve in headless mode (no apadmin to approve)
 	if !config.GroupAutoApprove {
-		return fmt.Errorf("headless mode requires group_auto_approve:true in config (no one available to manually approve groups)")
+		warnings = append(warnings, "headless mode without group_auto_approve: group transactions will require manual approval via apadmin")
 	}
 
-	return nil
+	return warnings
 }
 
 // UnsealCommandCfg builds an UnsealCommandConfig from the ServerConfig fields.

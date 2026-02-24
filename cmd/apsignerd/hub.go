@@ -148,6 +148,9 @@ func (h *Hub) tryUnlock(passphrase []byte) (bool, int, string) {
 	// IPC unlock always provides a passphrase, so update unsealKind to match.
 	// This ensures subsequent reloads (e.g., file watcher) also use passphrase derivation.
 	h.signer.passphraseLock.Lock()
+	if h.signer.encryptionPassphrase != nil {
+		h.signer.encryptionPassphrase.Destroy()
+	}
 	h.signer.encryptionPassphrase = crypto.NewSecureStringFromBytes(passphrase)
 	h.signer.unsealKind = "passphrase"
 	if err := h.signer.reloadKeysLocked(); err != nil {

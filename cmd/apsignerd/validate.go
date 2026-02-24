@@ -53,9 +53,7 @@ func validateStartup(config *util.ServerConfig, runtime *RuntimeState) error {
 		if err := util.ValidateUnsealCommandConfig(config.UnsealCommandCfg()); err != nil {
 			return err
 		}
-		if err := util.ValidateHeadlessPolicy(config); err != nil {
-			return err
-		}
+		warnings = append(warnings, util.ValidateHeadlessPolicy(config)...)
 	}
 
 	// === Required runtime checks (based on config) ===
