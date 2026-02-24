@@ -104,6 +104,7 @@ func TestRunUnsealCommand(t *testing.T) {
 		{
 			name: "timeout - slow command",
 			cfg: &UnsealCommandConfig{
+				// Uses sh -> sleep to test that process group kill terminates children too.
 				Argv: []string{makeScript(t, "slow.sh", "#!/bin/sh\nsleep 30\necho done\n")},
 			},
 			wantErr: "timed out",
@@ -125,10 +126,9 @@ func TestRunUnsealCommand(t *testing.T) {
 		{
 			name: "stdout exceeds limit in single write",
 			cfg: &UnsealCommandConfig{
-				// Generate output larger than maxUnsealOutputBytes (8KB) in a single write.
-				// dd writes exactly count*bs bytes in one go, which fills the buffer without
-				// triggering the "next write" error path — testing silent truncation detection.
-				Argv: []string{makeScript(t, "bigout.sh", "#!/bin/sh\ndd if=/dev/zero bs=9000 count=1 2>/dev/null\n")},
+				// Generate output larger than maxUnsealOutputBytes (8KB) using head -c,
+				// which is portable across coreutils implementations.
+				Argv: []string{makeScript(t, "bigout.sh", "#!/bin/sh\nhead -c 9000 /dev/zero\n")},
 			},
 			wantErr: "stdout exceeded",
 		},

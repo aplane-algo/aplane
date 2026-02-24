@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -56,9 +57,12 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), unsealCommandTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, resolvedPath, cfg.Argv[1:]...) //nolint:gosec // validated above
+	// Don't use exec.CommandContext's built-in cancel — it only kills the direct process.
+	// We use a process group so child processes (e.g., sh -> sleep) are also killed.
+	cmd := exec.Command(resolvedPath, cfg.Argv[1:]...) //nolint:gosec // validated above
 	cmd.Env = buildUnsealEnv(cfg.Env)
 	cmd.Stdin = nil
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// Capture stdout with size limit
 	var stdoutBuf bytes.Buffer
@@ -69,15 +73,33 @@ func RunUnsealCommand(cfg *UnsealCommandConfig) ([]byte, error) {
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
 
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("unseal_command_argv: command timed out after %s", unsealCommandTimeout)
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("unseal_command_argv: failed to start: %w", err)
+	}
+
+	// Wait for completion or timeout, killing the entire process group on timeout.
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- cmd.Wait() }()
+
+	var runErr error
+	select {
+	case runErr = <-waitDone:
+		// Process exited (success or failure)
+	case <-ctx.Done():
+		// Timeout: kill the entire process group
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		}
+		<-waitDone // Wait for cmd.Wait to return after kill
+		return nil, fmt.Errorf("unseal_command_argv: command timed out after %s", unsealCommandTimeout)
+	}
+
+	if runErr != nil {
 		stderrMsg := bytes.TrimSpace(stderrBuf.Bytes())
 		if len(stderrMsg) > 0 {
-			return nil, fmt.Errorf("unseal_command_argv: command failed: %w (stderr: %s)", err, stderrMsg)
+			return nil, fmt.Errorf("unseal_command_argv: command failed: %w (stderr: %s)", runErr, stderrMsg)
 		}
-		return nil, fmt.Errorf("unseal_command_argv: command failed: %w", err)
+		return nil, fmt.Errorf("unseal_command_argv: command failed: %w", runErr)
 	}
 
 	// Check if output was silently truncated (single write filled the buffer exactly)
