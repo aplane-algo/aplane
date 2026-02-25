@@ -103,14 +103,25 @@ jobs:
           LINUX_BINARIES="$BINARIES pass-systemd-creds"
           mkdir -p dist
 
-          # Linux archives (includes pass-systemd-creds)
+          # Linux archives (structured tarball with installer and scripts)
           for arch in amd64 arm64; do
             archive="aplane_${VERSION}_linux_${arch}.tar.gz"
-            tar -czf "dist/${archive}" -C "bin/${arch}" $LINUX_BINARIES
+            rm -rf dist/staging
+            mkdir -p dist/staging/aplane/{bin,installer,scripts}
+            cp bin/${arch}/apshell bin/${arch}/apsignerd bin/${arch}/apadmin \
+               bin/${arch}/apapprover bin/${arch}/apstore bin/${arch}/pass-file \
+               bin/${arch}/pass-systemd-creds dist/staging/aplane/bin/
+            cp installer/aplane.service installer/aplane@.service \
+               installer/aplane@.service.template installer/sudoers.template \
+               dist/staging/aplane/installer/
+            cp scripts/systemd-setup.sh scripts/init-signer.sh dist/staging/aplane/scripts/
+            cp install.sh dist/staging/aplane/
+            tar -czf "dist/${archive}" -C dist/staging aplane
             echo "Created dist/${archive}"
           done
+          rm -rf dist/staging
 
-          # macOS archives (no pass-systemd-creds — systemd is Linux-only)
+          # macOS archives (flat — no systemd files)
           for arch in amd64 arm64; do
             archive="aplane_${VERSION}_darwin_${arch}.tar.gz"
             tar -czf "dist/${archive}" -C "bin/darwin-${arch}" $BINARIES

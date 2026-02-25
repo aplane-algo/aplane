@@ -319,15 +319,26 @@ docker-playground: bin-arm64 bin-amd64
 
 # Local release dry-run (builds archives without publishing)
 # On macOS: also builds darwin archives. On Linux: linux only.
+# Linux tarballs include installer/, scripts/, and install.sh for systemd setup.
 release-local: bin-amd64 bin-arm64
 	@mkdir -p dist
 	@VERSION=$$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//'); \
 	for arch in amd64 arm64; do \
 		archive="aplane_$${VERSION}_linux_$${arch}.tar.gz"; \
-		tar -czf "dist/$${archive}" -C "bin/$${arch}" \
-			apshell apsignerd apadmin apapprover apstore pass-file pass-systemd-creds; \
+		rm -rf dist/staging; \
+		mkdir -p dist/staging/aplane/bin dist/staging/aplane/installer dist/staging/aplane/scripts; \
+		cp bin/$${arch}/apshell bin/$${arch}/apsignerd bin/$${arch}/apadmin \
+		   bin/$${arch}/apapprover bin/$${arch}/apstore bin/$${arch}/pass-file \
+		   bin/$${arch}/pass-systemd-creds dist/staging/aplane/bin/; \
+		cp installer/aplane.service installer/aplane@.service \
+		   installer/aplane@.service.template installer/sudoers.template \
+		   dist/staging/aplane/installer/; \
+		cp scripts/systemd-setup.sh scripts/init-signer.sh dist/staging/aplane/scripts/; \
+		cp install.sh dist/staging/aplane/; \
+		tar -czf "dist/$${archive}" -C dist/staging aplane; \
 		echo "✓ Created dist/$${archive}"; \
 	done; \
+	rm -rf dist/staging; \
 	cd dist && sha256sum *.tar.gz > checksums.txt && cd ..; \
 	echo "✓ Generated dist/checksums.txt"; \
 	cat dist/checksums.txt

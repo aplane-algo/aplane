@@ -1,185 +1,112 @@
-#!/bin/sh
-# aPlane installer
-# Usage: curl -sSfL https://raw.githubusercontent.com/aplane-algo/aplane/main/install.sh | sh
+#!/bin/bash
+# install.sh - Install aplane binaries and systemd service from a release tarball
 #
-# Environment variables:
-#   APLANE_VERSION     - version to install (default: latest)
-#   APLANE_INSTALL_DIR - installation directory (default: ~/.aplane/bin)
+# Usage:
+#   sudo ./install.sh <username> <group> [bindir]
+#
+# Arguments:
+#   username  User to run apsignerd as
+#   group     Group to run apsignerd as
+#   bindir    Where to install binaries (default: /usr/local/bin)
+#
+# Works from both a repo checkout and an extracted release tarball.
 
-set -eu
+# Refuse to run when sourced
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+    echo "Error: this script must be executed, not sourced." >&2
+    echo "Usage: sudo $0 <username> <group> [bindir]" >&2
+    return 1
+fi
 
-REPO="aplane-algo/aplane"
-INSTALL_DIR="${APLANE_INSTALL_DIR:-$HOME/.aplane/bin}"
+set -euo pipefail
 
-# Embedded minisign public key for signature verification
-MINISIGN_PUBKEY="RWQOLhio7R0OS5qnDscyJm5JEarSemT7K687rs65qLMShetqD7cXOxA8"
-
-log() {
-    printf '%s\n' "$@"
-}
-
-error() {
-    log "Error: $1" >&2
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Error: this script must be run as root (use sudo)." >&2
     exit 1
-}
+fi
 
-cleanup() {
-    if [ -n "${TMPDIR_CREATED:-}" ] && [ -d "${TMPDIR_CREATED}" ]; then
-        rm -rf "$TMPDIR_CREATED"
-    fi
-}
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <username> <group> [bindir]" >&2
+    echo "" >&2
+    echo "  username  User to run apsignerd as" >&2
+    echo "  group     Group to run apsignerd as" >&2
+    echo "  bindir    Where to install binaries (default: /usr/local/bin)" >&2
+    exit 2
+fi
 
-trap cleanup EXIT
+SVC_USER="$1"
+SVC_GROUP="$2"
+BINDIR="${3:-/usr/local/bin}"
 
-detect_os() {
-    os="$(uname -s)"
-    case "$os" in
-        Linux)  echo "linux" ;;
-        Darwin) echo "darwin" ;;
-        *)      error "Unsupported OS: $os. aPlane supports Linux and macOS." ;;
+# Resolve script directory (works from repo checkout and extracted tarball)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BIN_SRC="$SCRIPT_DIR/bin"
+
+if [ ! -d "$BIN_SRC" ]; then
+    echo "Error: bin/ directory not found at $BIN_SRC" >&2
+    exit 1
+fi
+
+echo "=== aplane installer ==="
+echo ""
+echo "  Source:    $SCRIPT_DIR"
+echo "  Bindir:    $BINDIR"
+echo "  User:      $SVC_USER"
+echo "  Group:     $SVC_GROUP"
+echo ""
+
+# Step 1: Create service user/group if they don't exist
+if ! id -u "$SVC_USER" >/dev/null 2>&1; then
+    echo "Creating system user $SVC_USER..."
+    useradd -r -m -d /var/lib/aplane -s /usr/sbin/nologin "$SVC_USER"
+    echo "  Created user $SVC_USER with home /var/lib/aplane"
+else
+    echo "User $SVC_USER already exists, skipping creation."
+fi
+
+# Step 2: Copy binaries
+echo "Installing binaries to $BINDIR..."
+for bin in "$BIN_SRC"/*; do
+    [ -f "$bin" ] || continue
+    cp "$bin" "$BINDIR/"
+    name="$(basename "$bin")"
+    # pass-file and pass-systemd-creds need restricted permissions
+    case "$name" in
+        pass-file|pass-systemd-creds) chmod 700 "$BINDIR/$name" ;;
+        *)                            chmod 755 "$BINDIR/$name" ;;
     esac
-}
+    echo "  $name"
+done
 
-detect_arch() {
-    arch="$(uname -m)"
-    case "$arch" in
-        x86_64|amd64)   echo "amd64" ;;
-        aarch64|arm64)  echo "arm64" ;;
-        *)              error "Unsupported architecture: $arch" ;;
-    esac
-}
+# Step 3: Run systemd setup
+echo ""
+echo "Running systemd setup..."
+"$SCRIPT_DIR/scripts/systemd-setup.sh" "$SVC_USER" "$SVC_GROUP" "$BINDIR"
 
-# Download a URL to a file. Tries curl first, falls back to wget.
-download() {
-    url="$1"
-    dest="$2"
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL -o "$dest" "$url"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -qO "$dest" "$url"
-    else
-        error "Neither curl nor wget found. Please install one of them."
-    fi
-}
+# Step 4: Initialize keystore (apstore must be on PATH — we just installed it)
+DATA_DIR="$(getent passwd "$SVC_USER" | cut -d: -f6)"
+if [ -z "$DATA_DIR" ]; then
+    echo "Error: could not determine home directory for $SVC_USER" >&2
+    exit 1
+fi
+echo ""
+echo "Initializing keystore in $DATA_DIR..."
+export PATH="$BINDIR:$PATH"
+"$SCRIPT_DIR/scripts/init-signer.sh" "$DATA_DIR" "$SVC_USER:$SVC_GROUP"
 
-get_latest_version() {
-    url="https://api.github.com/repos/${REPO}/releases/latest"
-    if command -v curl >/dev/null 2>&1; then
-        version=$(curl -fsSL "$url" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//')
-    elif command -v wget >/dev/null 2>&1; then
-        version=$(wget -qO- "$url" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//')
-    else
-        error "Neither curl nor wget found."
-    fi
-    if [ -z "$version" ]; then
-        error "Could not determine latest version. Check https://github.com/${REPO}/releases"
-    fi
-    echo "$version"
-}
-
-verify_checksum() {
-    checksums_file="$1"
-    tarball_file="$2"
-    tarball_name="$3"
-
-    if command -v sha256sum >/dev/null 2>&1; then
-        expected=$(grep "$tarball_name" "$checksums_file" | awk '{print $1}')
-        actual=$(sha256sum "$tarball_file" | awk '{print $1}')
-    elif command -v shasum >/dev/null 2>&1; then
-        expected=$(grep "$tarball_name" "$checksums_file" | awk '{print $1}')
-        actual=$(shasum -a 256 "$tarball_file" | awk '{print $1}')
-    else
-        error "Neither sha256sum nor shasum found. Cannot verify checksum."
-    fi
-
-    if [ -z "$expected" ]; then
-        error "Could not find checksum for $tarball_name in checksums.txt"
-    fi
-
-    if [ "$expected" != "$actual" ]; then
-        error "Checksum mismatch for $tarball_name\n  expected: $expected\n  actual:   $actual"
-    fi
-
-    log "Checksum verified."
-}
-
-verify_signature() {
-    checksums_file="$1"
-    sig_file="$2"
-
-    if ! command -v minisign >/dev/null 2>&1; then
-        log "Warning: minisign not installed, skipping signature verification."
-        log "  Install minisign for stronger integrity guarantees."
-        return
-    fi
-
-    if minisign -V -P "$MINISIGN_PUBKEY" -m "$checksums_file" -x "$sig_file" >/dev/null 2>&1; then
-        log "Signature verified."
-    else
-        error "Signature verification failed! The release may have been tampered with."
-    fi
-}
-
-main() {
-    os="$(detect_os)"
-    arch="$(detect_arch)"
-
-    version="${APLANE_VERSION:-}"
-    if [ -z "$version" ]; then
-        log "Fetching latest version..."
-        version="$(get_latest_version)"
-    fi
-
-    # Strip leading 'v' for the archive name (goreleaser convention)
-    version_num="${version#v}"
-
-    tarball_name="aplane_${version_num}_${os}_${arch}.tar.gz"
-    base_url="https://github.com/${REPO}/releases/download/${version}"
-
-    log "Installing aPlane ${version} (${os}/${arch})..."
-
-    # Create temp directory
-    tmpdir="$(mktemp -d)"
-    TMPDIR_CREATED="$tmpdir"
-
-    # Download release artifacts
-    log "Downloading ${tarball_name}..."
-    download "${base_url}/${tarball_name}" "${tmpdir}/${tarball_name}"
-    download "${base_url}/checksums.txt" "${tmpdir}/checksums.txt"
-    download "${base_url}/checksums.txt.minisig" "${tmpdir}/checksums.txt.minisig" 2>/dev/null || true
-
-    # Verify integrity
-    verify_checksum "${tmpdir}/checksums.txt" "${tmpdir}/${tarball_name}" "$tarball_name"
-
-    if [ -f "${tmpdir}/checksums.txt.minisig" ]; then
-        verify_signature "${tmpdir}/checksums.txt" "${tmpdir}/checksums.txt.minisig"
-    fi
-
-    # Install
-    mkdir -p "$INSTALL_DIR"
-    tar -xzf "${tmpdir}/${tarball_name}" -C "$INSTALL_DIR"
-
-    log ""
-    log "aPlane ${version} installed to ${INSTALL_DIR}"
-    log ""
-    log "Installed binaries:"
-    for bin in apshell apsignerd apadmin apapprover apstore pass-file; do
-        if [ -f "${INSTALL_DIR}/${bin}" ]; then
-            log "  ${bin}"
-        fi
-    done
-
-    # Check if install dir is in PATH
-    case ":${PATH}:" in
-        *":${INSTALL_DIR}:"*) ;;
-        *)
-            log ""
-            log "Add aPlane to your PATH by adding this to your shell profile:"
-            log ""
-            log "  export PATH=\"${INSTALL_DIR}:\$PATH\""
-            log ""
-            ;;
-    esac
-}
-
-main
+echo ""
+echo "=== Installation complete ==="
+echo ""
+echo "Next steps:"
+echo "  1. Configure headless mode:"
+echo "       sudo -u $SVC_USER tee $DATA_DIR/config.yaml <<'EOF'"
+echo "       passphrase_command_argv: [\"pass-systemd-creds\", \"passphrase.cred\"]"
+echo "       lock_on_disconnect: false"
+echo "       EOF"
+echo "  2. Enable and start:"
+echo "       sudo systemctl enable aplane@\$(systemd-escape $DATA_DIR)"
+echo "       sudo systemctl start aplane@\$(systemd-escape $DATA_DIR)"
+echo "  3. Generate keys:"
+echo "       sudo -u $SVC_USER apadmin -d $DATA_DIR"
+echo ""
+echo "Tip: export APSIGNER_DATA=$DATA_DIR to avoid passing -d every time."

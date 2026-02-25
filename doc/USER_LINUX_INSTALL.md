@@ -6,6 +6,7 @@ This guide covers installing apsignerd as a systemd service on Linux. It uses `s
 
 ## Table of Contents
 
+- [Install from Release Tarball](#install-from-release-tarball)
 - [Quick Start](#quick-start)
 - [Prerequisites](#prerequisites)
 - [Step 1: Build](#step-1-build)
@@ -25,9 +26,50 @@ This guide covers installing apsignerd as a systemd service on Linux. It uses `s
 
 ---
 
+## Install from Release Tarball
+
+The easiest way to install — no build tools required. Download a release tarball from GitHub:
+
+```bash
+# Download and extract
+tar xzf aplane_*_linux_amd64.tar.gz
+cd aplane
+
+# Install (creates user, copies binaries, sets up systemd, initializes keystore)
+sudo ./install.sh aplane aplane
+
+# Configure headless mode
+sudo -u aplane tee /var/lib/aplane/config.yaml <<'EOF'
+passphrase_command_argv: ["pass-systemd-creds", "passphrase.cred"]
+lock_on_disconnect: false
+EOF
+
+# Enable and start
+sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
+sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
+```
+
+The tarball contains:
+
+```
+aplane/
+├── bin/            # All binaries (apsignerd, apshell, apadmin, etc.)
+├── installer/      # systemd unit files and sudoers template
+├── scripts/        # systemd-setup.sh and init-signer.sh
+└── install.sh      # Convenience wrapper (copies binaries + runs systemd-setup.sh)
+```
+
+`install.sh` accepts an optional third argument for the install directory (default: `/usr/local/bin`):
+
+```bash
+sudo ./install.sh aplane aplane /opt/aplane/bin
+```
+
+---
+
 ## Quick Start
 
-For the impatient — a single-instance install at `/var/lib/aplane` as the `aplane` user:
+For the impatient — build from source and install at `/var/lib/aplane` as the `aplane` user:
 
 ```bash
 # Build
