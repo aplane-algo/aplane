@@ -19,15 +19,9 @@ const (
 
 // GetDefaultIPCPath returns the default Unix socket path for IPC.
 // Priority order:
-//  1. $XDG_RUNTIME_DIR/aplane.sock (modern standard, per-user, secure)
-//  2. $APSIGNER_DATA/aplane.sock (if APSIGNER_DATA is set)
-//  3. /tmp/aplane.sock (fallback)
+//  1. $APSIGNER_DATA/aplane.sock (if APSIGNER_DATA is set)
+//  2. /tmp/aplane.sock (fallback)
 func GetDefaultIPCPath() string {
-	// Try XDG_RUNTIME_DIR first (e.g., /run/user/1000/)
-	if xdgRuntime := os.Getenv("XDG_RUNTIME_DIR"); xdgRuntime != "" {
-		return filepath.Join(xdgRuntime, "aplane.sock")
-	}
-
 	// Try APSIGNER_DATA if set
 	if signerData := os.Getenv("APSIGNER_DATA"); signerData != "" {
 		return filepath.Join(signerData, "aplane.sock")

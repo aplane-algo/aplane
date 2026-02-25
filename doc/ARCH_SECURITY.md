@@ -707,6 +707,44 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 
 **Writing a custom helper:**
 
+**Usage Guide: pass-systemd**
+
+The `pass-systemd` helper is recommended for Linux production environments. It uses `systemd-creds` to bind your passphrase to the machine's TPM2 chip or host key.
+
+1.  **Initialize a new keystore:**
+    ```bash
+    apstore init --passphrase-command "pass-systemd passphrase.cred" --random
+    ```
+    This generates a random master passphrase, encrypts it via `systemd-creds`, and saves it to `passphrase.cred`.
+
+2.  **Service Integration (Headless):**
+    When running `apsignerd` as a systemd service, use the `LoadCredential` feature to securely pass the passphrase without needing a TTY:
+
+    **Unit File (`apsignerd.service`):**
+    ```ini
+    [Service]
+    User=thong
+    Group=thong
+    Environment=APSIGNER_DATA=/home/thong/avrun
+    # Load the passphrase as a credential named "aplane.pass"
+    LoadCredential=aplane.pass:/home/thong/avrun/passphrase.cred
+    ExecStart=/home/thong/aplane/bin/apsignerd
+    ```
+
+    **Config (`config.yaml`):**
+    ```yaml
+    # Use a helper script to read the systemd-provided credential
+    passphrase_command_argv: ["/home/thong/avrun/read-systemd-cred.sh"]
+    ```
+
+    **Helper Script (`read-systemd-cred.sh`):**
+    ```bash
+    #!/bin/bash
+    # Read the decrypted credential from the systemd-managed directory
+    cat "${CREDENTIALS_DIRECTORY}/aplane.pass"
+    ```
+
+
 A helper is any executable that accepts a verb as its first argument. Minimal shell example:
 
 ```sh

@@ -250,10 +250,8 @@ The admin interface uses Unix sockets (IPC) for secure local communication:
 - apadmin and apapprover connect via this socket
 
 **Default IPC path** (in priority order):
-1. `$XDG_RUNTIME_DIR/aplane.sock` - Modern standard, per-user, secure
-2. `$APSIGNER_DATA/aplane.sock` - If APSIGNER_DATA is set
-3. `/tmp/aplane.sock` - Last resort
-
+1. `$APSIGNER_DATA/aplane.sock` - If APSIGNER_DATA is set
+2. `/tmp/aplane.sock` - Fallback
 ### Data Directory Setup
 
 ```bash
