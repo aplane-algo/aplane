@@ -696,7 +696,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 
   ```yaml
   # Production: passphrase encrypted with TPM2/host key
-  passphrase_command_argv: ["pass-systemd-creds", "passphrase.cred"]
+  passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds", "passphrase.cred"]
   ```
 
   **How `read` works:**
@@ -760,8 +760,11 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
 
 2.  **Configure the helper in `config.yaml`:**
     ```yaml
-    passphrase_command_argv: ["pass-systemd-creds", "passphrase.cred"]
+    passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds", "passphrase.cred"]
+    passphrase_timeout: "0"
+    lock_on_disconnect: false
     ```
+    If your helper is installed outside `/usr/local/bin`, use that absolute path.
     This must be set before running `apstore init` or `apstore changepass` so that apstore knows to store the passphrase via the helper.
 
 3.  **Initialize a new keystore:**

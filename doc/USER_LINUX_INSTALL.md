@@ -35,7 +35,7 @@ The easiest way to install — no build tools required. Download a release tarba
 tar xzf aplane_*_linux_amd64.tar.gz
 cd aplane
 
-# Install (creates user, copies binaries, sets up systemd, initializes keystore)
+# Install (creates user, copies binaries, sets up systemd, writes config, initializes keystore if needed)
 sudo ./install.sh aplane aplane
 
 # Enable and start
@@ -50,7 +50,7 @@ aplane/
 ├── bin/            # All binaries (apsignerd, apshell, apadmin, etc.)
 ├── installer/      # systemd unit files and sudoers template
 ├── scripts/        # systemd-setup.sh and init-signer.sh
-└── install.sh      # Convenience wrapper (copies binaries + runs systemd-setup.sh)
+└── install.sh      # Convenience wrapper (copies binaries, runs systemd setup, writes config, initializes keystore)
 ```
 
 `install.sh` accepts an optional third argument for the install directory (default: `/usr/local/bin`):
@@ -58,6 +58,12 @@ aplane/
 ```bash
 sudo ./install.sh aplane aplane /opt/aplane/bin
 ```
+
+Re-running `install.sh` is safe:
+
+- Existing `config.yaml` is left unchanged
+- A canonical template is written to `config.yaml.aplane-installer.new`
+- Keystore init is skipped if `.keystore` already exists
 
 ---
 
@@ -71,6 +77,7 @@ make all
 
 # Install binaries
 sudo cp bin/apsignerd bin/pass-systemd-creds bin/apstore bin/apadmin /usr/local/bin/
+sudo chmod 755 /usr/local/bin/pass-systemd-creds
 
 # Create service user
 sudo useradd -r -m -d /var/lib/aplane -s /usr/sbin/nologin aplane
@@ -140,6 +147,7 @@ Copy the server-side binaries to a system path:
 
 ```bash
 sudo cp bin/apsignerd bin/pass-systemd-creds bin/apstore bin/apadmin /usr/local/bin/
+sudo chmod 755 /usr/local/bin/pass-systemd-creds
 ```
 
 Or keep them in a custom directory — `systemd-setup.sh` accepts a `bindir` argument (see Step 4).
@@ -209,6 +217,8 @@ passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds", "passphrase.cred"
 passphrase_timeout: "0"
 lock_on_disconnect: false
 ```
+
+If you installed binaries in a custom bindir, set that absolute path in `passphrase_command_argv[0]`.
 
 Then run the init script:
 
@@ -374,7 +384,8 @@ The passphrase flow uses three components working together:
 │           (TPM2 / host key)                   aplane-passphrase          │
 │                                                                          │
 │  apsignerd starts:                                                       │
-│    passphrase_command_argv: ["pass-systemd-creds", "passphrase.cred"]    │
+│    passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds",         │
+│                               "passphrase.cred"]                           │
 │       │                                                                  │
 │       └─► pass-systemd-creds read                                        │
 │              │                                                           │
