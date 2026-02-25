@@ -45,6 +45,12 @@ if ! id -u "$SVC_USER" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Validate group exists
+if ! getent group "$SVC_GROUP" >/dev/null 2>&1; then
+    echo "Error: group '$SVC_GROUP' does not exist." >&2
+    exit 1
+fi
+
 # Resolve paths
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALLER_DIR="$SCRIPT_DIR/../installer"

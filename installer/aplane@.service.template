@@ -22,7 +22,8 @@ Environment=APSIGNER_DATA=%I
 LoadCredentialEncrypted=aplane-passphrase:%I/passphrase.cred
 Restart=always
 RestartSec=5s
-ProtectSystem=false
+ProtectSystem=full
+ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target
