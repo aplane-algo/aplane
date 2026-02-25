@@ -1,0 +1,28 @@
+## This file should be installed as:
+##
+##   /lib/systemd/system/aplane@.service
+##
+## and then running "systemctl daemon-reload".
+##
+## To enable and start apsignerd for a particular directory, run:
+##
+##   systemctl enable aplane@$(systemd-escape /var/lib/aplane)
+##   systemctl start  aplane@$(systemd-escape /var/lib/aplane)
+
+[Unit]
+Description=apsignerd signing server for %I
+After=network.target
+AssertPathExists=%I
+
+[Service]
+ExecStart=@@BINDIR@@/apsignerd
+User=@@USER@@
+Group=@@GROUP@@
+Environment=APSIGNER_DATA=%I
+LoadCredentialEncrypted=aplane-passphrase:%I/passphrase.cred
+Restart=always
+RestartSec=5s
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target
