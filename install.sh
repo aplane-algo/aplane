@@ -98,21 +98,61 @@ CONFIG_PATH="$DATA_DIR/config.yaml"
 STORE_PATH="$DATA_DIR/store"
 
 echo ""
-echo "Writing $CONFIG_PATH..."
-cat > "$CONFIG_PATH" <<EOF
+write_canonical_config() {
+    local target="$1"
+    cat > "$target" <<EOF
 store: $STORE_PATH
 passphrase_command_argv: ["$BINDIR/pass-systemd-creds", "passphrase.cred"]
 passphrase_timeout: "0"
 lock_on_disconnect: false
 EOF
-chown "$SVC_USER:$SVC_GROUP" "$CONFIG_PATH"
-chmod 600 "$CONFIG_PATH"
+    chown "$SVC_USER:$SVC_GROUP" "$target"
+    chmod 600 "$target"
+}
+
+if [ -f "$CONFIG_PATH" ]; then
+    CONFIG_NEW_PATH="$CONFIG_PATH.aplane-installer.new"
+    echo "Config already exists at $CONFIG_PATH; leaving it unchanged."
+    echo "Writing canonical template to $CONFIG_NEW_PATH..."
+    write_canonical_config "$CONFIG_NEW_PATH"
+else
+    echo "Writing $CONFIG_PATH..."
+    write_canonical_config "$CONFIG_PATH"
+fi
 
 # Step 5: Initialize keystore (apstore must be on PATH — we just installed it)
 echo ""
-echo "Initializing keystore in $DATA_DIR..."
+echo "Checking keystore initialization state..."
 export PATH="$BINDIR:$PATH"
-"$SCRIPT_DIR/scripts/init-signer.sh" "$DATA_DIR" "$SVC_USER:$SVC_GROUP"
+ACTIVE_STORE_PATH="$STORE_PATH"
+if [ -f "$CONFIG_PATH" ]; then
+    CONFIG_STORE="$(awk '
+        /^[[:space:]]*#/ {next}
+        /^[[:space:]]*store:[[:space:]]*/ {
+            sub(/^[[:space:]]*store:[[:space:]]*/, "", $0)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0)
+            gsub(/^"/, "", $0)
+            gsub(/"$/, "", $0)
+            gsub(/^'\''/, "", $0)
+            gsub(/'\''$/, "", $0)
+            print $0
+            exit
+        }' "$CONFIG_PATH")"
+    if [ -n "$CONFIG_STORE" ]; then
+        if [[ "$CONFIG_STORE" = /* ]]; then
+            ACTIVE_STORE_PATH="$CONFIG_STORE"
+        else
+            ACTIVE_STORE_PATH="$DATA_DIR/$CONFIG_STORE"
+        fi
+    fi
+fi
+
+if [ -f "$ACTIVE_STORE_PATH/.keystore" ]; then
+    echo "Keystore already initialized at $ACTIVE_STORE_PATH; skipping init."
+else
+    echo "Initializing keystore in $DATA_DIR..."
+    "$SCRIPT_DIR/scripts/init-signer.sh" "$DATA_DIR" "$SVC_USER:$SVC_GROUP"
+fi
 
 echo ""
 echo "=== Installation complete ==="
