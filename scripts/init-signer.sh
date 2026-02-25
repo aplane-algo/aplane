@@ -27,7 +27,7 @@ if ! echo "$OWNER" | grep -q ':'; then
     exit 1
 fi
 
-apstore -d "$DATA_DIR" init
+apstore -d "$DATA_DIR" init --random
 
 # passphrase.cred stays root-owned (only systemd reads it via LoadCredentialEncrypted)
 # store/ must be owned by the service user

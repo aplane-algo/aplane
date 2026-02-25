@@ -42,6 +42,10 @@ BINDIR="${3:-/usr/local/bin}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_SRC="$SCRIPT_DIR/bin"
 
+# Ensure bindir exists and resolve to absolute path
+mkdir -p "$BINDIR"
+BINDIR="$(cd "$BINDIR" && pwd)"
+
 if [ ! -d "$BIN_SRC" ]; then
     echo "Error: bin/ directory not found at $BIN_SRC" >&2
     exit 1
@@ -70,10 +74,11 @@ for bin in "$BIN_SRC"/*; do
     [ -f "$bin" ] || continue
     cp "$bin" "$BINDIR/"
     name="$(basename "$bin")"
-    # pass-file and pass-systemd-creds need restricted permissions
+    # pass-systemd-creds must be executable by the unprivileged service user
     case "$name" in
-        pass-file|pass-systemd-creds) chmod 700 "$BINDIR/$name" ;;
-        *)                            chmod 755 "$BINDIR/$name" ;;
+        pass-file)          chmod 700 "$BINDIR/$name" ;;
+        pass-systemd-creds) chmod 755 "$BINDIR/$name" ;;
+        *)                  chmod 755 "$BINDIR/$name" ;;
     esac
     echo "  $name"
 done
@@ -83,12 +88,27 @@ echo ""
 echo "Running systemd setup..."
 "$SCRIPT_DIR/scripts/systemd-setup.sh" "$SVC_USER" "$SVC_GROUP" "$BINDIR"
 
-# Step 4: Initialize keystore (apstore must be on PATH — we just installed it)
+# Step 4: Generate canonical signer config for this installation
 DATA_DIR="$(getent passwd "$SVC_USER" | cut -d: -f6)"
 if [ -z "$DATA_DIR" ]; then
     echo "Error: could not determine home directory for $SVC_USER" >&2
     exit 1
 fi
+CONFIG_PATH="$DATA_DIR/config.yaml"
+STORE_PATH="$DATA_DIR/store"
+
+echo ""
+echo "Writing $CONFIG_PATH..."
+cat > "$CONFIG_PATH" <<EOF
+store: $STORE_PATH
+passphrase_command_argv: ["$BINDIR/pass-systemd-creds", "passphrase.cred"]
+passphrase_timeout: "0"
+lock_on_disconnect: false
+EOF
+chown "$SVC_USER:$SVC_GROUP" "$CONFIG_PATH"
+chmod 600 "$CONFIG_PATH"
+
+# Step 5: Initialize keystore (apstore must be on PATH — we just installed it)
 echo ""
 echo "Initializing keystore in $DATA_DIR..."
 export PATH="$BINDIR:$PATH"
@@ -98,15 +118,10 @@ echo ""
 echo "=== Installation complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. Configure headless mode:"
-echo "       sudo -u $SVC_USER tee $DATA_DIR/config.yaml <<'EOF'"
-echo "       passphrase_command_argv: [\"pass-systemd-creds\", \"passphrase.cred\"]"
-echo "       lock_on_disconnect: false"
-echo "       EOF"
-echo "  2. Enable and start:"
+echo "  1. Enable and start:"
 echo "       sudo systemctl enable aplane@\$(systemd-escape $DATA_DIR)"
 echo "       sudo systemctl start aplane@\$(systemd-escape $DATA_DIR)"
-echo "  3. Generate keys:"
+echo "  2. Generate keys:"
 echo "       sudo -u $SVC_USER apadmin -d $DATA_DIR"
 echo ""
 echo "Tip: export APSIGNER_DATA=$DATA_DIR to avoid passing -d every time."

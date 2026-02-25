@@ -38,12 +38,6 @@ cd aplane
 # Install (creates user, copies binaries, sets up systemd, initializes keystore)
 sudo ./install.sh aplane aplane
 
-# Configure headless mode
-sudo -u aplane tee /var/lib/aplane/config.yaml <<'EOF'
-passphrase_command_argv: ["pass-systemd-creds", "passphrase.cred"]
-lock_on_disconnect: false
-EOF
-
 # Enable and start
 sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
 sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
@@ -84,14 +78,16 @@ sudo useradd -r -m -d /var/lib/aplane -s /usr/sbin/nologin aplane
 # Install systemd service and sudoers
 sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin
 
-# Initialize keystore with TPM2-encrypted passphrase
-sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
-
-# Configure headless mode
+# Write signer config (required before keystore init)
 sudo -u aplane tee /var/lib/aplane/config.yaml <<'EOF'
-passphrase_command_argv: ["pass-systemd-creds", "passphrase.cred"]
+store: /var/lib/aplane/store
+passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds", "passphrase.cred"]
+passphrase_timeout: "0"
 lock_on_disconnect: false
 EOF
+
+# Initialize keystore with TPM2-encrypted passphrase
+sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
 
 # Enable and start
 sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
@@ -201,7 +197,20 @@ This installs:
 
 ## Step 5: Initialize the Keystore
 
-The init script creates the keystore directory structure, generates a random passphrase, and encrypts it with `systemd-creds`:
+Before initializing, create `/var/lib/aplane/config.yaml`:
+
+```yaml
+store: /var/lib/aplane/store
+
+# Passphrase helper: reads from systemd credential directory at runtime
+passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds", "passphrase.cred"]
+
+# Headless mode requires no auto-lock timeout
+passphrase_timeout: "0"
+lock_on_disconnect: false
+```
+
+Then run the init script:
 
 ```bash
 sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
@@ -212,24 +221,6 @@ This creates:
 - `/var/lib/aplane/passphrase.cred` — TPM2-encrypted passphrase (owned by `root`)
 
 The `passphrase.cred` file is root-owned because `systemd-creds encrypt` requires root. systemd decrypts it at service start via `LoadCredentialEncrypted` — apsignerd itself never needs root access.
-
-### Configure Headless Mode
-
-Create `/var/lib/aplane/config.yaml` to enable unattended operation:
-
-```yaml
-# Passphrase helper: reads from systemd credential directory at runtime
-passphrase_command_argv: ["pass-systemd-creds", "passphrase.cred"]
-
-# Keep signer unlocked when apadmin disconnects
-lock_on_disconnect: false
-```
-
-Set ownership:
-
-```bash
-sudo chown aplane:aplane /var/lib/aplane/config.yaml
-```
 
 See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for additional configuration options (auto-approve policies, network settings, etc.).
 
