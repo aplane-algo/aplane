@@ -284,17 +284,37 @@ func validateBinary(path string) error {
 	return nil
 }
 
-// buildPassphraseEnv constructs the environment for the passphrase command.
-// Only explicitly declared variables are included — the process env is never inherited.
-func buildPassphraseEnv(declaredEnv map[string]string) []string {
-	if len(declaredEnv) == 0 {
-		return []string{}
-	}
+// passthroughEnvVars lists environment variables automatically forwarded from
+// the process environment to the passphrase command, even when not declared in
+// passphrase_command_env. Currently limited to CREDENTIALS_DIRECTORY, which
+// systemd sets to the tmpfs path containing decrypted credentials when the
+// unit uses LoadCredentialEncrypted. This allows pass-systemd-creds to read the
+// pre-decrypted passphrase without requiring root access.
+var passthroughEnvVars = []string{
+	"CREDENTIALS_DIRECTORY",
+}
 
-	env := make([]string, 0, len(declaredEnv))
+// buildPassphraseEnv constructs the environment for the passphrase command.
+// Only explicitly declared variables and passthroughEnvVars are included —
+// the process env is never inherited wholesale.
+func buildPassphraseEnv(declaredEnv map[string]string) []string {
+	env := make([]string, 0, len(declaredEnv)+len(passthroughEnvVars))
+
 	for k, v := range declaredEnv {
 		env = append(env, k+"="+v)
 	}
+
+	// Forward systemd-provided variables from the process environment,
+	// unless explicitly overridden by the user's declared env.
+	for _, key := range passthroughEnvVars {
+		if _, overridden := declaredEnv[key]; overridden {
+			continue
+		}
+		if val, ok := os.LookupEnv(key); ok {
+			env = append(env, key+"="+val)
+		}
+	}
+
 	return env
 }
 

@@ -681,7 +681,7 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 
 | Property | Implementation |
 |----------|----------------|
-| Environment isolation | Process environment is never inherited; only `passphrase_command_env` entries are passed |
+| Environment isolation | Process environment is never inherited; only `passphrase_command_env` entries and `CREDENTIALS_DIRECTORY` (systemd credential path) are passed |
 | Binary validation | Must be executable, must not be group/world-writable |
 | Path restriction | Relative paths resolved against data directory; must be absolute after resolution |
 | Timeout | 5-second deadline with process-group kill (child processes included) |
@@ -692,58 +692,134 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 
 - **`pass-file`** (dev-only) — Plaintext file helper. Stores the passphrase unencrypted on disk. Implements both `read` and `write`. **Not for production** — the passphrase is readable by anyone with access to the file.
 
-- **`pass-systemd`** (production, Linux) — Encrypts the passphrase using `systemd-creds` (systemd 250+), which binds the encrypted blob to the machine's TPM2 chip and/or host key. The credential file can only be decrypted on the same machine. Implements both `read` and `write` with round-trip verification.
+- **`pass-systemd-creds`** (production, Linux) — Encrypts the passphrase using `systemd-creds`, which binds the encrypted blob to the machine's TPM2 chip and/or host key. The credential file persists on disk across reboots but can only be decrypted on the same machine. Implements both `read` and `write` with round-trip verification. Requires **systemd 250+** (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+). Not available on Ubuntu 22.04 or earlier.
 
   ```yaml
   # Production: passphrase encrypted with TPM2/host key
-  passphrase_command_argv: ["pass-systemd", "passphrase.cred"]
+  passphrase_command_argv: ["pass-systemd-creds", "passphrase.cred"]
   ```
 
-  How it works:
-  - **`write`**: Reads passphrase from stdin, runs `systemd-creds encrypt --name=aplane-passphrase - <file>`, decrypts back to verify the round-trip, then echoes the passphrase to stdout.
-  - **`read`**: Runs `systemd-creds decrypt --name=aplane-passphrase <file> -` and writes the result to stdout.
-  - The `--name=aplane-passphrase` flag binds the credential to that name, preventing the encrypted blob from being repurposed for other services.
-  - `systemd-creds` automatically selects the best available key material: TPM2 + host key if both are present, or host key alone.
+  **How `read` works:**
+
+  `pass-systemd-creds read` uses a two-tier strategy:
+
+  1. **Preferred: `CREDENTIALS_DIRECTORY`** — When running under a systemd unit with `LoadCredentialEncrypted`, systemd (PID 1, running as root) decrypts the credential at service start and places the plaintext in a tmpfs at `$CREDENTIALS_DIRECTORY/aplane-passphrase`. `pass-systemd-creds` reads directly from this path. No root access required. The `CREDENTIALS_DIRECTORY` environment variable is automatically passed through to passphrase command helpers (the only exception to the env-isolation policy).
+
+  2. **Fallback: `systemd-creds decrypt`** — When `CREDENTIALS_DIRECTORY` is not set (e.g., manual invocation outside a systemd unit), `pass-systemd-creds` calls `systemd-creds decrypt --name=aplane-passphrase <file> -` directly. This requires root or polkit authorization because `systemd-creds` must access the TPM2 device or host key.
+
+  **How `write` works:**
+
+  `pass-systemd-creds write` reads the passphrase from stdin, calls `systemd-creds encrypt --name=aplane-passphrase - <file>` to create the encrypted credential, verifies the round-trip by decrypting and comparing, then echoes the passphrase to stdout. Always requires root since `systemd-creds encrypt` accesses the TPM2/host key directly. This is a one-time operation (keystore init or passphrase change).
+
+  **Credential naming:**
+
+  The `--name=aplane-passphrase` flag binds the credential to that specific name. The encrypted blob cannot be decrypted under a different name, preventing it from being repurposed by other services. The same name must appear in both `systemd-creds encrypt` and the `LoadCredentialEncrypted` directive.
+
+  **Key material selection:**
+
+  `systemd-creds` automatically selects the best available key material:
+
+  | Available | Encryption binding | Security level |
+  |-----------|-------------------|----------------|
+  | TPM2 + host key | Hardware chip + file on disk | Strongest — disk theft alone is insufficient |
+  | TPM2 only | Hardware chip | Strong — requires physical machine |
+  | Host key only | File at `/var/lib/systemd/credential.secret` | Weaker — disk clone is sufficient to decrypt |
+
+  Check what your machine supports:
+  ```bash
+  systemd-creds has-tpm2
+  ```
+
+  If the machine lacks a TPM2 chip, the credential is bound only to the host key (a symmetric key file on disk, readable only by root). This protects against casual file reads but **not** against an attacker who can clone the entire disk. For stronger protection on non-TPM2 machines, a custom helper integrating a secrets manager (HashiCorp Vault, cloud KMS, etc.) is recommended.
+
+  **Persistence across reboots:**
+
+  The encrypted `.cred` file is a regular file on disk — it survives reboots. On each service start, systemd re-decrypts it using the same TPM2/host key. The decrypted plaintext in `$CREDENTIALS_DIRECTORY` is ephemeral (tmpfs) and disappears when the service stops or the machine powers off.
+
+  **What it protects against:**
+
+  | Threat | Protected? | Notes |
+  |--------|-----------|-------|
+  | Disk theft (machine off) | Yes (with TPM2) | Credential bound to hardware chip |
+  | Disk cloning | Yes (with TPM2) | TPM2 state cannot be cloned |
+  | Unauthorized file read | Yes | `.cred` file is encrypted; plaintext only in root-owned tmpfs |
+  | Root on running machine | No | Root can read `$CREDENTIALS_DIRECTORY` or dump process memory |
+  | Disk theft (no TPM2) | No | Host key is on the same disk |
+
+**Usage Guide: pass-systemd-creds**
+
+The `pass-systemd-creds` helper is recommended for Linux production environments. It uses `systemd-creds` to bind the passphrase to the machine's TPM2 chip and/or host key.
+
+**Minimum requirements:** systemd 250+ — Ubuntu 24.04, Debian 12, RHEL/Rocky 9, or Fedora 36 and above. On older distributions (including Ubuntu 22.04), `pass-systemd-creds` will fail with a clear error message. Use `pass-file` (dev only) or write a [custom helper](#writing-a-custom-helper) instead.
+
+1.  **Verify TPM2 availability:**
+    ```bash
+    systemd-creds has-tpm2
+    ```
+    If this reports "no", the credential will be bound to the host key only (see security implications above).
+
+2.  **Configure the helper in `config.yaml`:**
+    ```yaml
+    passphrase_command_argv: ["pass-systemd-creds", "passphrase.cred"]
+    ```
+    This must be set before running `apstore init` or `apstore changepass` so that apstore knows to store the passphrase via the helper.
+
+3.  **Initialize a new keystore:**
+    ```bash
+    sudo apstore -d /var/lib/apsigner init --random
+    ```
+    This generates a random master passphrase, creates the keystore, then calls `pass-systemd-creds write` to encrypt and store the passphrase to `passphrase.cred` via `systemd-creds`. Requires root because `systemd-creds encrypt` accesses the TPM2/host key directly.
+
+4.  **Service Integration (Headless):**
+
+    **Unit File (`/etc/systemd/system/apsignerd.service`):**
+    ```ini
+    [Unit]
+    Description=apsignerd - Signing Server
+    After=network.target
+
+    [Service]
+    User=apsigner
+    Group=apsigner
+    WorkingDirectory=/var/lib/apsigner
+    Environment=APSIGNER_DATA=/var/lib/apsigner
+    LoadCredentialEncrypted=aplane-passphrase:/var/lib/apsigner/passphrase.cred
+    ExecStart=/usr/local/bin/apsignerd
+    Restart=always
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+
+    At service start, systemd decrypts `passphrase.cred` and places the plaintext in a tmpfs at `$CREDENTIALS_DIRECTORY/aplane-passphrase`. When apsignerd invokes `pass-systemd-creds read`, it reads directly from that path — no root access needed, no shell script wrapper required.
+
+    The credential name in `LoadCredentialEncrypted` (`aplane-passphrase`) must match the constant used by `pass-systemd-creds`.
+
+5.  **Changing the passphrase:**
+    ```bash
+    sudo apstore -d /var/lib/apsigner changepass --random
+    ```
+    This reads the old passphrase (via `pass-systemd-creds read`), re-encrypts all keys with a new random passphrase, then stores it (via `pass-systemd-creds write`). Requires root. After changing, restart the service:
+    ```bash
+    sudo systemctl restart apsignerd
+    ```
+
+6.  **Migrating to a new machine:**
+
+    The encrypted `.cred` file is bound to the machine that created it (TPM2 chip and/or host key). It **cannot be decrypted on a different machine** — copying `passphrase.cred` to a new server will not work.
+
+    To migrate, use `apstore backup` on the old machine, then `apstore restore` and `apstore init` on the new machine:
+
+    ```bash
+    # On the old machine: create a portable backup
+    apstore -d /var/lib/apsigner backup all /mnt/usb/backup
+
+    # On the new machine: restore, then init with pass-systemd-creds configured in config.yaml
+    apstore -d /var/lib/apsigner restore all /mnt/usb/backup
+    sudo apstore -d /var/lib/apsigner init --random
+    ```
 
 **Writing a custom helper:**
-
-**Usage Guide: pass-systemd**
-
-The `pass-systemd` helper is recommended for Linux production environments. It uses `systemd-creds` to bind your passphrase to the machine's TPM2 chip or host key.
-
-1.  **Initialize a new keystore:**
-    ```bash
-    apstore init --passphrase-command "pass-systemd passphrase.cred" --random
-    ```
-    This generates a random master passphrase, encrypts it via `systemd-creds`, and saves it to `passphrase.cred`.
-
-2.  **Service Integration (Headless):**
-    When running `apsignerd` as a systemd service, use the `LoadCredential` feature to securely pass the passphrase without needing a TTY:
-
-    **Unit File (`apsignerd.service`):**
-    ```ini
-    [Service]
-    User=thong
-    Group=thong
-    Environment=APSIGNER_DATA=/home/thong/avrun
-    # Load the passphrase as a credential named "aplane.pass"
-    LoadCredential=aplane.pass:/home/thong/avrun/passphrase.cred
-    ExecStart=/home/thong/aplane/bin/apsignerd
-    ```
-
-    **Config (`config.yaml`):**
-    ```yaml
-    # Use a helper script to read the systemd-provided credential
-    passphrase_command_argv: ["/home/thong/avrun/read-systemd-cred.sh"]
-    ```
-
-    **Helper Script (`read-systemd-cred.sh`):**
-    ```bash
-    #!/bin/bash
-    # Read the decrypted credential from the systemd-managed directory
-    cat "${CREDENTIALS_DIRECTORY}/aplane.pass"
-    ```
-
 
 A helper is any executable that accepts a verb as its first argument. Minimal shell example:
 

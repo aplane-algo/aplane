@@ -14,7 +14,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `cmd/apapprover/`: Standalone approval interface
 - `cmd/apstore/`: Keystore management (init, backup, restore, verify, changepass, inspect, list)
 - `cmd/pass-file/`: Dev-only plaintext passphrase helper (insecure)
-- `cmd/pass-systemd/`: Production passphrase helper using systemd-creds (TPM2/host key)
+- `cmd/pass-systemd-creds/`: Production passphrase helper using systemd-creds (TPM2/host key)
 - `cmd/configdoc/`: Documentation generator for configuration
 - `cmd/plugin-checksum/`: Checksum generator for plugins
 

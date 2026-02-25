@@ -461,7 +461,16 @@ func TestDecodePassphraseOutput(t *testing.T) {
 }
 
 func TestBuildPassphraseEnv(t *testing.T) {
-	// Empty map → empty slice
+	// Ensure CREDENTIALS_DIRECTORY is unset for baseline tests
+	origCredDir := os.Getenv("CREDENTIALS_DIRECTORY")
+	os.Unsetenv("CREDENTIALS_DIRECTORY")
+	defer func() {
+		if origCredDir != "" {
+			os.Setenv("CREDENTIALS_DIRECTORY", origCredDir)
+		}
+	}()
+
+	// Empty map, no passthrough vars set → empty slice
 	env := buildPassphraseEnv(nil)
 	if len(env) != 0 {
 		t.Fatalf("expected empty env, got %v", env)
@@ -487,4 +496,55 @@ func TestBuildPassphraseEnv(t *testing.T) {
 	if !found["HOME=/var/empty"] {
 		t.Fatal("missing HOME=/var/empty")
 	}
+}
+
+func TestBuildPassphraseEnvPassthrough(t *testing.T) {
+	// Save and restore CREDENTIALS_DIRECTORY
+	origCredDir := os.Getenv("CREDENTIALS_DIRECTORY")
+	defer func() {
+		if origCredDir != "" {
+			os.Setenv("CREDENTIALS_DIRECTORY", origCredDir)
+		} else {
+			os.Unsetenv("CREDENTIALS_DIRECTORY")
+		}
+	}()
+
+	t.Run("CREDENTIALS_DIRECTORY passed through when set", func(t *testing.T) {
+		os.Setenv("CREDENTIALS_DIRECTORY", "/run/credentials/apsignerd.service")
+		env := buildPassphraseEnv(nil)
+
+		found := map[string]bool{}
+		for _, e := range env {
+			found[e] = true
+		}
+		if !found["CREDENTIALS_DIRECTORY=/run/credentials/apsignerd.service"] {
+			t.Fatalf("expected CREDENTIALS_DIRECTORY passthrough, got %v", env)
+		}
+	})
+
+	t.Run("CREDENTIALS_DIRECTORY not passed through when unset", func(t *testing.T) {
+		os.Unsetenv("CREDENTIALS_DIRECTORY")
+		env := buildPassphraseEnv(nil)
+		if len(env) != 0 {
+			t.Fatalf("expected empty env, got %v", env)
+		}
+	})
+
+	t.Run("declared env overrides passthrough", func(t *testing.T) {
+		os.Setenv("CREDENTIALS_DIRECTORY", "/run/credentials/apsignerd.service")
+		env := buildPassphraseEnv(map[string]string{
+			"CREDENTIALS_DIRECTORY": "/custom/path",
+		})
+
+		found := map[string]bool{}
+		for _, e := range env {
+			found[e] = true
+		}
+		if !found["CREDENTIALS_DIRECTORY=/custom/path"] {
+			t.Fatalf("expected declared value to win, got %v", env)
+		}
+		if found["CREDENTIALS_DIRECTORY=/run/credentials/apsignerd.service"] {
+			t.Fatal("process env should not override declared env")
+		}
+	})
 }
