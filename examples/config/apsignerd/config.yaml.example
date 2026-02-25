@@ -21,7 +21,7 @@ store: store
 
 # IPC socket for admin interface (apadmin, apapprover)
 # Normally does not need to be specified - see doc/USER_CONFIG.md for defaults
-# ipc_path: /tmp/aplane.sock
+# ipc_path: $APSIGNER_DATA/aplane.sock
 
 # Inactivity timeout before auto-lock: "0" = never, "15m" = 15 minutes, "1h" = 1 hour
 passphrase_timeout: "15m"

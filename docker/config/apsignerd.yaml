@@ -2,7 +2,7 @@
 
 signer_port: 11270
 store: /root/apsigner/store
-ipc_path: /tmp/aplane.sock
+ipc_path: $APSIGNER_DATA/aplane.sock
 
 # SSH tunnel for remote access and token provisioning
 ssh:

@@ -43,7 +43,7 @@ File: `config.yaml` in apsignerd data directory (`-d` or `APSIGNER_DATA`)
 | `ssh.auto_register` | *bool | `false` | Auto-register new SSH keys (TOFU) |
 | `passphrase_timeout` | string | `15m` | Inactivity timeout before auto-lock (0=never) |
 | `store` | string | `(none)` | Store directory (required) |
-| `ipc_path` | string | `/tmp/aplane.sock` | Unix socket path for admin IPC |
+| `ipc_path` | string | `$APSIGNER_DATA/aplane.sock` | Unix socket path for admin IPC |
 | `lock_on_disconnect` | *bool | `true` | Lock signer when admin disconnects |
 | `passphrase_command_argv` | []string | `(none)` | Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1]) |
 | `passphrase_command_env` | map | `(none)` | Environment variables to pass to the passphrase command (process env is never inherited) |

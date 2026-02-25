@@ -249,9 +249,7 @@ The admin interface uses Unix sockets (IPC) for secure local communication:
 - Cannot be snooped with tcpdump (no network stack)
 - apadmin and apapprover connect via this socket
 
-**Default IPC path** (in priority order):
-1. `$APSIGNER_DATA/aplane.sock` - If APSIGNER_DATA is set
-2. `/tmp/aplane.sock` - Fallback
+**Default IPC path**: `$APSIGNER_DATA/aplane.sock`
 ### Data Directory Setup
 
 ```bash

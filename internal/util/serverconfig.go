@@ -27,7 +27,7 @@ type ServerConfig struct {
 	SSH                   *SSHServerConfig  `yaml:"ssh" description:"SSH tunnel settings (omit to disable SSH)"`
 	PassphraseTimeout     string            `yaml:"passphrase_timeout" description:"Inactivity timeout before auto-lock (0=never)" default:"15m"`
 	StoreDir              string            `yaml:"store" description:"Store directory (required)"`
-	IPCPath               string            `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"/tmp/aplane.sock"`
+	IPCPath               string            `yaml:"ipc_path" description:"Unix socket path for admin IPC" `
 	LockOnDisconnect      *bool             `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
 	PassphraseCommandArgv []string          `yaml:"passphrase_command_argv" description:"Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1])"`
 	PassphraseCommandEnv  map[string]string `yaml:"passphrase_command_env" description:"Environment variables to pass to the passphrase command (process env is never inherited)"`
@@ -71,7 +71,7 @@ func DefaultServerConfig() ServerConfig {
 		SSH:               nil,   // nil = SSH disabled
 		PassphraseTimeout: "15m", // 15 minute session timeout (use "0" for never expire)
 		StoreDir:          "",    // no default - must be explicitly configured
-		IPCPath:           GetDefaultIPCPath(),
+		IPCPath:           "",
 	}
 }
 
@@ -131,8 +131,8 @@ func LoadServerConfig(dataDir string) ServerConfig {
 	if config.PassphraseTimeout == "" {
 		config.PassphraseTimeout = defaults.PassphraseTimeout
 	}
-	if config.IPCPath == "" {
-		config.IPCPath = defaults.IPCPath
+	if config.IPCPath == "" && dataDir != "" {
+		config.IPCPath = filepath.Join(dataDir, "aplane.sock")
 	}
 	// StoreDir intentionally has no default - must be explicitly configured
 
