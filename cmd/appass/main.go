@@ -9,7 +9,7 @@
 //
 //	sudo appass -d <data-dir> status
 //	sudo appass -d <data-dir> set passfile
-//	sudo appass -d <data-dir> set systemcreds
+//	sudo appass -d <data-dir> set systemd-creds
 //	sudo appass -d <data-dir> clear
 package main
 
@@ -40,8 +40,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "appass — manage passphrase auto-unlock for apsignerd\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n")
 		fmt.Fprintf(os.Stderr, "  appass -d <data-dir> status          Show current auto-unlock method\n")
-		fmt.Fprintf(os.Stderr, "  appass -d <data-dir> set passfile    Set up pass-file auto-unlock\n")
-		fmt.Fprintf(os.Stderr, "  appass -d <data-dir> set systemcreds Set up systemd-creds auto-unlock\n")
+		fmt.Fprintf(os.Stderr, "  appass -d <data-dir> set passfile     Set up pass-file auto-unlock\n")
+		fmt.Fprintf(os.Stderr, "  appass -d <data-dir> set systemd-creds  Set up systemd-creds auto-unlock\n")
 		fmt.Fprintf(os.Stderr, "  appass -d <data-dir> clear           Remove auto-unlock configuration\n")
 		fmt.Fprintf(os.Stderr, "  appass --version                     Show version\n")
 		fmt.Fprintf(os.Stderr, "\nFlags:\n")
@@ -67,7 +67,7 @@ func main() {
 		}
 	case "set":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "Error: 'set' requires a method: passfile or systemcreds")
+			fmt.Fprintln(os.Stderr, "Error: 'set' requires a method: passfile or systemd-creds")
 			os.Exit(2)
 		}
 		switch args[1] {
@@ -76,13 +76,13 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
-		case "systemcreds":
+		case "systemd-creds", "systemcreds":
 			if err := cmdSetSystemcreds(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
 		default:
-			fmt.Fprintf(os.Stderr, "Error: unknown method %q (use passfile or systemcreds)\n", args[1])
+			fmt.Fprintf(os.Stderr, "Error: unknown method %q (use passfile or systemd-creds)\n", args[1])
 			os.Exit(2)
 		}
 	case "clear":
@@ -114,7 +114,7 @@ func detectMethod(argv []string) string {
 	case strings.HasSuffix(bin, "/pass-file") || bin == "pass-file":
 		return "passfile"
 	case strings.HasSuffix(bin, "/pass-systemd-creds") || bin == "pass-systemd-creds":
-		return "systemcreds"
+		return "systemd-creds"
 	default:
 		return "custom"
 	}

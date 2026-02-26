@@ -50,7 +50,7 @@ func cmdStatus() error {
 			fmt.Printf("  Status:        OK\n")
 		}
 
-	case "systemcreds":
+	case "systemd-creds":
 		credFile := filepath.Join(dataDirectory, "passphrase.cred")
 		if len(config.PassphraseCommandArgv) > 1 {
 			credFile = config.PassphraseCommandArgv[1]

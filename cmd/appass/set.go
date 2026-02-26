@@ -34,7 +34,7 @@ func cmdSetPassfile() error {
 		return fmt.Errorf("reading service file: %w", err)
 	}
 	if svc.HasLoadCred {
-		return fmt.Errorf("service file has LoadCredentialEncrypted (systemd-creds); use 'set systemcreds' instead of downgrading to passfile")
+		return fmt.Errorf("service file has LoadCredentialEncrypted (systemd-creds); use 'set systemd-creds' instead of downgrading to passfile")
 	}
 
 	// Check pass-file binary exists
@@ -47,7 +47,7 @@ func cmdSetPassfile() error {
 	fmt.Println("")
 	fmt.Println("  WARNING: This stores the passphrase in a plaintext file.")
 	fmt.Println("  Suitable for development/testing only. For production, use")
-	fmt.Println("  'appass set systemcreds' (TPM2-backed encryption) instead.")
+	fmt.Println("  'appass set systemd-creds' (TPM2-backed encryption) instead.")
 	fmt.Println("")
 	fmt.Printf("  Data dir:  %s\n", dataDirectory)
 	fmt.Printf("  Binary:    %s/apsignerd\n", svc.BinDir)

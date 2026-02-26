@@ -49,7 +49,7 @@ func cmdClear() error {
 			}
 		}
 
-	case "systemcreds":
+	case "systemd-creds":
 		// Remove LoadCredentialEncrypted from the service file directly.
 		// We can't delegate to systemd-setup.sh because it has a guard that
 		// refuses to remove LoadCredentialEncrypted (anti-downgrade protection).
