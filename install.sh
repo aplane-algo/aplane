@@ -127,6 +127,21 @@ done
 
 # Step 3: Run systemd setup
 echo ""
+
+# Guard: refuse to silently remove auto-unlock from an existing installation.
+# If the current service file has LoadCredentialEncrypted but --auto-unlock was
+# not passed, re-installing would strip the credential line while config.yaml
+# still references pass-systemd-creds, causing startup failures.
+SERVICE_FILE="/lib/systemd/system/aplane@.service"
+if [ "$AUTO_UNLOCK" = "0" ] && [ -f "$SERVICE_FILE" ] && grep -q 'LoadCredentialEncrypted' "$SERVICE_FILE"; then
+    echo "Error: existing service file has auto-unlock (LoadCredentialEncrypted) enabled." >&2
+    echo "Re-running without --auto-unlock would break the installation." >&2
+    echo "" >&2
+    echo "To preserve auto-unlock, re-run with --auto-unlock:" >&2
+    echo "  sudo $0 --auto-unlock $SVC_USER $SVC_GROUP $BINDIR" >&2
+    exit 1
+fi
+
 echo "Running systemd setup..."
 if [ "$AUTO_UNLOCK" = "1" ]; then
     "$SCRIPT_DIR/scripts/systemd-setup.sh" "$SVC_USER" "$SVC_GROUP" "$BINDIR" --auto-unlock

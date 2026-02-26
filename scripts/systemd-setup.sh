@@ -69,6 +69,10 @@ fi
 for arg in "$@"; do
     if [ "$arg" = "--auto-unlock" ]; then
         AUTO_UNLOCK=1
+    else
+        echo "Error: unknown argument '$arg'" >&2
+        echo "Usage: $0 <username> <group> [bindir] [--auto-unlock]" >&2
+        exit 2
     fi
 done
 
@@ -105,6 +109,19 @@ echo "  Binary:    $BINDIR/apsignerd"
 echo "  User:      $SVC_USER"
 echo "  Group:     $SVC_GROUP"
 echo ""
+
+# Guard: refuse to silently remove auto-unlock from an existing installation.
+# If the current service file has LoadCredentialEncrypted but --auto-unlock was
+# not passed, rewriting would strip the credential line while config.yaml
+# still references pass-systemd-creds, causing startup failures.
+if [ "$AUTO_UNLOCK" = "0" ] && [ -f "$SERVICE_DEST" ] && grep -q 'LoadCredentialEncrypted' "$SERVICE_DEST"; then
+    echo "Error: existing service file has auto-unlock (LoadCredentialEncrypted) enabled." >&2
+    echo "Re-running without --auto-unlock would break the installation." >&2
+    echo "" >&2
+    echo "To preserve auto-unlock, re-run with --auto-unlock:" >&2
+    echo "  sudo $0 $SVC_USER $SVC_GROUP $BINDIR --auto-unlock" >&2
+    exit 1
+fi
 
 # Install service template with placeholder substitution
 if [ "$AUTO_UNLOCK" = "1" ]; then

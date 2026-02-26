@@ -162,7 +162,8 @@ EOF
 sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
 sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
 
-# Unlock via apadmin
+# Initialize keystore and unlock via apadmin
+sudo -u aplane apstore -d /var/lib/aplane init
 sudo -u aplane apadmin -d /var/lib/aplane
 ```
 
@@ -342,7 +343,7 @@ store: /var/lib/aplane/store
 lock_on_disconnect: false
 ```
 
-No keystore init is needed — apsignerd starts in locked state. Use `apadmin` to initialize and unlock after starting.
+No keystore init is needed before starting — apsignerd starts in locked state. After starting, run `apstore init` to create the keystore, then unlock via `apadmin`.
 
 See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for additional configuration options (auto-approve policies, network settings, etc.).
 
@@ -360,9 +361,10 @@ sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
 sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
 ```
 
-For locked-start mode, unlock after starting:
+For locked-start mode, initialize the keystore and unlock after starting:
 
 ```bash
+sudo -u aplane apstore -d /var/lib/aplane init
 sudo -u aplane apadmin -d /var/lib/aplane
 ```
 
