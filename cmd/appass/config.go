@@ -17,7 +17,7 @@ func configHasKey(path, key string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("could not open config: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	prefix := key + ":"
 	scanner := bufio.NewScanner(f)
@@ -46,7 +46,7 @@ func configAppendLines(path string, lines []string) error {
 	if err != nil {
 		return fmt.Errorf("could not open config for writing: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Ensure we start on a new line
 	if len(data) > 0 && data[len(data)-1] != '\n' {

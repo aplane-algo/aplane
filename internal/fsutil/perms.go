@@ -54,7 +54,7 @@ func CreateFile(path string, flag int) (*os.File, error) {
 		return nil, err
 	}
 	if err := f.Chmod(StoreFilePerm); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("failed to set permissions on %s: %w", path, err)
 	}
 	return f, nil
