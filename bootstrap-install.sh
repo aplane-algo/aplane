@@ -136,7 +136,6 @@ require_systemd_250_creds() {
 require_prereqs() {
     command -v tar >/dev/null 2>&1 || die "tar not found"
     command -v getent >/dev/null 2>&1 || die "getent not found"
-    command -v systemd-escape >/dev/null 2>&1 || die "systemd-escape not found"
 }
 
 verify_checksum() {
@@ -289,19 +288,17 @@ main() {
     local data_dir
     data_dir="$(getent passwd "$SVC_USER" | cut -d: -f6)"
     [ -n "$data_dir" ] || die "failed to resolve data directory for user $SVC_USER"
-    local escaped_data_dir
-    escaped_data_dir="$(systemd-escape "$data_dir")"
 
     if [ "$ENABLE_SERVICE" = "1" ]; then
-        log "Enabling service aplane@${escaped_data_dir}..."
-        run_root systemctl enable "aplane@${escaped_data_dir}"
+        log "Enabling service aplane..."
+        run_root systemctl enable aplane
     else
         log "Skipping service enable (--no-enable)."
     fi
 
     if [ "$START_SERVICE" = "1" ]; then
-        log "Starting service aplane@${escaped_data_dir}..."
-        run_root systemctl start "aplane@${escaped_data_dir}"
+        log "Starting service aplane..."
+        run_root systemctl start aplane
     else
         log "Skipping service start (--no-start)."
     fi
@@ -309,7 +306,7 @@ main() {
     log ""
     log "Installation complete."
     log "Data directory: ${data_dir}"
-    log "Check status: systemctl status aplane@${escaped_data_dir}"
+    log "Check status: systemctl status aplane"
     if [ "$AUTO_UNLOCK" = "1" ]; then
         log "Mode: auto-unlock (systemd-creds)"
     else

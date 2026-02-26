@@ -330,8 +330,8 @@ release-local: bin-amd64 bin-arm64
 		cp bin/$${arch}/apshell bin/$${arch}/apsignerd bin/$${arch}/apadmin \
 		   bin/$${arch}/apapprover bin/$${arch}/apstore bin/$${arch}/pass-file \
 		   bin/$${arch}/pass-systemd-creds dist/staging/aplane/bin/; \
-		cp installer/aplane.service installer/aplane@.service \
-		   installer/aplane@.service.template installer/sudoers.template \
+		cp installer/aplane.service installer/aplane.service.template \
+		   installer/sudoers.template \
 		   dist/staging/aplane/installer/; \
 		cp scripts/systemd-setup.sh scripts/init-signer.sh dist/staging/aplane/scripts/; \
 		cp install.sh dist/staging/aplane/; \

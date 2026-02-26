@@ -52,7 +52,7 @@ This bootstrap script:
 - Downloads the matching GitHub release tarball
 - Verifies checksums (and minisign signature if `minisign` is installed)
 - Runs the bundled `install.sh`
-- Enables and starts the `aplane@...` systemd instance
+- Enables and starts the `aplane` systemd service
 
 Useful options:
 
@@ -91,12 +91,9 @@ sudo ./install.sh aplane aplane
 # Or with auto-unlock (requires systemd 250+):
 # sudo ./install.sh --auto-unlock aplane aplane
 
-# Resolve actual data directory from the service user's home
-DATA_DIR="$(getent passwd aplane | cut -d: -f6)"
-
 # Enable and start
-sudo systemctl enable aplane@$(systemd-escape "$DATA_DIR")
-sudo systemctl start aplane@$(systemd-escape "$DATA_DIR")
+sudo systemctl enable aplane
+sudo systemctl start aplane
 
 # For locked-start mode, unlock after starting:
 sudo -u aplane apadmin -d "$DATA_DIR"
@@ -159,8 +156,8 @@ lock_on_disconnect: false
 EOF
 
 # Enable and start (service starts locked)
-sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
-sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
+sudo systemctl enable aplane
+sudo systemctl start aplane
 
 # Initialize keystore and unlock via apadmin
 sudo -u aplane apstore -d /var/lib/aplane init
@@ -195,8 +192,8 @@ EOF
 sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
 
 # Enable and start (service auto-unlocks)
-sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
-sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
+sudo systemctl enable aplane
+sudo systemctl start aplane
 ```
 
 The rest of this guide explains each step in detail.
@@ -269,10 +266,10 @@ To use an existing user instead, skip this step and substitute your username in 
 
 ## Step 4: Install the systemd Service
 
-The setup script installs a systemd **template** service (`aplane@.service`) that can manage instances for different data directories using systemd's `%I` specifier.
+The setup script installs a systemd service (`aplane.service`) configured for a specific data directory.
 
 ```bash
-sudo ./scripts/systemd-setup.sh <username> <group> [bindir] [--auto-unlock]
+sudo ./scripts/systemd-setup.sh <username> <group> [bindir] [--auto-unlock] [--data-dir <path>]
 ```
 
 **Arguments:**
@@ -283,6 +280,7 @@ sudo ./scripts/systemd-setup.sh <username> <group> [bindir] [--auto-unlock]
 | `group` | Group to run apsignerd as | (required) |
 | `bindir` | Directory containing the apsignerd binary | `../bin` relative to the script |
 | `--auto-unlock` | Include `LoadCredentialEncrypted` for systemd-creds | (off) |
+| `--data-dir` | Data directory for apsignerd | `/var/lib/aplane` |
 
 **Example — locked-start (default):**
 
@@ -298,7 +296,7 @@ sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin --auto-unlock
 
 This installs:
 
-- `/lib/systemd/system/aplane@.service` — the template unit file
+- `/lib/systemd/system/aplane.service` — the service unit file
 - `/etc/sudoers.d/99-aplane-systemctl` — allows the service user to start/stop/restart without a password
 
 ---
@@ -351,14 +349,12 @@ See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for additional configura
 
 ## Step 6: Enable and Start
 
-systemd template instances use `systemd-escape` to encode the data directory path:
-
 ```bash
 # Enable on boot
-sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
+sudo systemctl enable aplane
 
 # Start now
-sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
+sudo systemctl start aplane
 ```
 
 For locked-start mode, initialize the keystore and unlock after starting:
@@ -371,13 +367,13 @@ sudo -u aplane apadmin -d /var/lib/aplane
 Check status:
 
 ```bash
-systemctl status aplane@$(systemd-escape /var/lib/aplane)
+systemctl status aplane
 ```
 
 View logs:
 
 ```bash
-journalctl -u aplane@$(systemd-escape /var/lib/aplane) -f
+journalctl -u aplane -f
 ```
 
 ---
@@ -388,9 +384,9 @@ With the sudoers rules installed, the `aplane` user can manage the service witho
 
 ```bash
 # As the aplane user (or via sudo -u aplane)
-systemctl status aplane@$(systemd-escape /var/lib/aplane)
-sudo systemctl restart aplane@$(systemd-escape /var/lib/aplane)
-sudo systemctl stop aplane@$(systemd-escape /var/lib/aplane)
+systemctl status aplane
+sudo systemctl restart aplane
+sudo systemctl stop aplane
 ```
 
 ### Granting apadmin Access
@@ -433,7 +429,7 @@ See [USER_STORE_MGMT.md](USER_STORE_MGMT.md) for full backup/restore documentati
 
 ## Multiple Instances
 
-The template service supports multiple apsignerd instances on the same machine, each with a different data directory:
+To run multiple apsignerd instances on the same machine, create a separate service unit for each data directory. Copy the installed service file and adjust the `Environment=APSIGNER_DATA=` line:
 
 ```bash
 # Create a second data directory
@@ -446,9 +442,14 @@ sudo ./scripts/init-signer.sh /var/lib/aplane-staging aplane:aplane
 # Configure it (copy and edit config.yaml)
 sudo -u aplane cp /var/lib/aplane/config.yaml /var/lib/aplane-staging/config.yaml
 
+# Create a second service unit
+sudo cp /lib/systemd/system/aplane.service /lib/systemd/system/aplane-staging.service
+sudo sed -i 's|/var/lib/aplane|/var/lib/aplane-staging|g' /lib/systemd/system/aplane-staging.service
+sudo systemctl daemon-reload
+
 # Enable and start
-sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane-staging)
-sudo systemctl start aplane@$(systemd-escape /var/lib/aplane-staging)
+sudo systemctl enable aplane-staging
+sudo systemctl start aplane-staging
 ```
 
 Each instance runs independently with its own keystore, configuration, and IPC socket.
@@ -461,31 +462,19 @@ The `installer/` directory contains service files for different deployment scena
 
 | File | Use Case |
 |------|----------|
-| `installer/aplane.service` | Static single-instance service. Hardcoded for `/var/lib/aplane` as `aplane:aplane`. Copy directly to `/etc/systemd/system/` for the simplest possible setup. |
-| `installer/aplane@.service` | Template multi-instance service. Uses `%I` for the data directory path. Hardcoded for `aplane:aplane` with binaries in `/usr/local/bin/`. Copy directly to `/lib/systemd/system/` if defaults match your setup. |
-| `installer/aplane@.service.template` | Template with `@@BINDIR@@`, `@@USER@@`, `@@GROUP@@`, `@@LOAD_CREDENTIAL_LINE@@` placeholders. Used by `scripts/systemd-setup.sh` for customizable installs. |
-| `installer/sudoers.template` | sudoers rules with `@@USER@@` placeholder. Allows the service user to manage `aplane@*` services without a password. Covers both `/bin/systemctl` (Ubuntu) and `/usr/bin/systemctl` (RHEL/CentOS) paths. |
+| `installer/aplane.service` | Pre-built service unit. Hardcoded for `/var/lib/aplane` as `aplane:aplane` with binaries in `/usr/local/bin/`. Copy directly to `/lib/systemd/system/` for the simplest possible setup. |
+| `installer/aplane.service.template` | Service template with `@@BINDIR@@`, `@@USER@@`, `@@GROUP@@`, `@@DATA_DIR@@`, `@@LOAD_CREDENTIAL_LINE@@` placeholders. Used by `scripts/systemd-setup.sh` for customizable installs. |
+| `installer/sudoers.template` | sudoers rules with `@@USER@@` placeholder. Allows the service user to manage the `aplane` service without a password. Covers both `/bin/systemctl` (Ubuntu) and `/usr/bin/systemctl` (RHEL/CentOS) paths. |
 
 ### Manual Installation (Without the Setup Script)
 
-If you prefer not to use `systemd-setup.sh`, you can install the pre-built files directly:
-
-**Option A: Static service** (single instance at `/var/lib/aplane`):
+If you prefer not to use `systemd-setup.sh`, you can install the pre-built service file directly:
 
 ```bash
-sudo cp installer/aplane.service /etc/systemd/system/aplane.service
+sudo cp installer/aplane.service /lib/systemd/system/aplane.service
 sudo systemctl daemon-reload
 sudo systemctl enable aplane
 sudo systemctl start aplane
-```
-
-**Option B: Template service** (multi-instance, default user/bindir):
-
-```bash
-sudo cp installer/aplane@.service /lib/systemd/system/aplane@.service
-sudo systemctl daemon-reload
-sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
-sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
 ```
 
 ---
@@ -552,7 +541,7 @@ sudo apstore -d /var/lib/aplane changepass --random
 This atomically re-encrypts all keys with a new random passphrase and updates `passphrase.cred`. Restart the service afterward:
 
 ```bash
-sudo systemctl restart aplane@$(systemd-escape /var/lib/aplane)
+sudo systemctl restart aplane
 ```
 
 ---
@@ -584,11 +573,11 @@ The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot
 
 ```bash
 # Stop and disable
-sudo systemctl stop aplane@$(systemd-escape /var/lib/aplane)
-sudo systemctl disable aplane@$(systemd-escape /var/lib/aplane)
+sudo systemctl stop aplane
+sudo systemctl disable aplane
 
 # Remove service and sudoers
-sudo rm /lib/systemd/system/aplane@.service
+sudo rm /lib/systemd/system/aplane.service
 sudo rm /etc/sudoers.d/99-aplane-systemctl
 sudo systemctl daemon-reload
 
@@ -609,7 +598,7 @@ sudo rm /usr/local/bin/apsignerd /usr/local/bin/pass-systemd-creds \
 Check the journal:
 
 ```bash
-journalctl -u aplane@$(systemd-escape /var/lib/aplane) --no-pager -n 50
+journalctl -u aplane --no-pager -n 50
 ```
 
 ### "LoadCredentialEncrypted failed"

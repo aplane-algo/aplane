@@ -133,7 +133,7 @@ echo ""
 # If the current service file has LoadCredentialEncrypted but --auto-unlock was
 # not passed, re-installing would strip the credential line while config.yaml
 # still references pass-systemd-creds, causing startup failures.
-SERVICE_FILE="/lib/systemd/system/aplane@.service"
+SERVICE_FILE="/lib/systemd/system/aplane.service"
 if [ "$AUTO_UNLOCK" = "0" ] && [ -f "$SERVICE_FILE" ] && grep -q 'LoadCredentialEncrypted' "$SERVICE_FILE"; then
     echo "Error: existing service file has auto-unlock (LoadCredentialEncrypted) enabled." >&2
     echo "Re-running without --auto-unlock would break the installation." >&2
@@ -230,8 +230,8 @@ echo "=== Installation complete ==="
 echo ""
 echo "Next steps:"
 echo "  1. Enable and start:"
-echo "       sudo systemctl enable aplane@\$(systemd-escape $DATA_DIR)"
-echo "       sudo systemctl start aplane@\$(systemd-escape $DATA_DIR)"
+echo "       sudo systemctl enable aplane"
+echo "       sudo systemctl start aplane"
 if [ "$AUTO_UNLOCK" = "1" ]; then
     echo "  2. The service will auto-unlock using systemd-creds."
 else

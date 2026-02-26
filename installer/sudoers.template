@@ -1,15 +1,15 @@
 ## For Ubuntu
-@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl start aplane@*
-@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl stop aplane@*
-@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl restart aplane@*
-@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl status aplane@*
-@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl enable aplane@*
-@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl disable aplane@*
+@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl start aplane
+@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl stop aplane
+@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl restart aplane
+@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl status aplane
+@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl enable aplane
+@@USER@@ ALL=(ALL) NOPASSWD: /bin/systemctl disable aplane
 
 ## For CentOS / RHEL
-@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl start aplane@*
-@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop aplane@*
-@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart aplane@*
-@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl status aplane@*
-@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable aplane@*
-@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl disable aplane@*
+@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl start aplane
+@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop aplane
+@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart aplane
+@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl status aplane
+@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable aplane
+@@USER@@ ALL=(ALL) NOPASSWD: /usr/bin/systemctl disable aplane

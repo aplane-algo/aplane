@@ -1,22 +1,22 @@
 #!/bin/bash
-# systemd-setup.sh - Install the aplane systemd template service and sudoers rules
+# systemd-setup.sh - Install the aplane systemd service and sudoers rules
 #
 # Installs:
-#   /lib/systemd/system/aplane@.service  (from installer/aplane@.service.template)
-#   /etc/sudoers.d/99-aplane-systemctl   (from installer/sudoers.template)
+#   /lib/systemd/system/aplane.service  (from installer/aplane.service.template)
+#   /etc/sudoers.d/99-aplane-systemctl  (from installer/sudoers.template)
 #
 # Usage:
-#   sudo ./scripts/systemd-setup.sh <username> <group> [bindir] [--auto-unlock]
+#   sudo ./scripts/systemd-setup.sh <username> <group> [bindir] [--auto-unlock] [--data-dir <path>]
 #
 # After installing, initialize the keystore and start the service:
 #   sudo ./scripts/init-signer.sh /var/lib/aplane username:group
-#   sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
-#   sudo systemctl start  aplane@$(systemd-escape /var/lib/aplane)
+#   sudo systemctl enable aplane
+#   sudo systemctl start  aplane
 
 # Refuse to run when sourced (". script" or "source script" would kill the shell on exit/error)
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then
     echo "Error: this script must be executed, not sourced." >&2
-    echo "Usage: sudo $0 <username> <group> [bindir] [--auto-unlock]" >&2
+    echo "Usage: sudo $0 <username> <group> [bindir] [--auto-unlock] [--data-dir <path>]" >&2
     return 1
 fi
 
@@ -28,12 +28,13 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if [ $# -lt 2 ]; then
-    echo "Usage: $0 <username> <group> [bindir] [--auto-unlock]" >&2
+    echo "Usage: $0 <username> <group> [bindir] [--auto-unlock] [--data-dir <path>]" >&2
     echo "" >&2
     echo "  username      User to run apsignerd as" >&2
     echo "  group         Group to run apsignerd as" >&2
     echo "  bindir        Directory containing apsignerd binary (default: ../bin relative to script)" >&2
     echo "  --auto-unlock Include LoadCredentialEncrypted for systemd-creds auto-unlock" >&2
+    echo "  --data-dir    Data directory for apsignerd (default: /var/lib/aplane)" >&2
     exit 2
 fi
 
@@ -57,7 +58,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALLER_DIR="$SCRIPT_DIR/../installer"
 
 AUTO_UNLOCK=0
-if [ $# -ge 3 ] && [ "$3" != "--auto-unlock" ]; then
+DATA_DIR="/var/lib/aplane"
+if [ $# -ge 3 ] && [ "$3" != "--auto-unlock" ] && [ "$3" != "--data-dir" ]; then
     BINDIR="$3"
     shift 3
 else
@@ -65,15 +67,27 @@ else
     shift 2
 fi
 
-# Check remaining args for --auto-unlock
-for arg in "$@"; do
-    if [ "$arg" = "--auto-unlock" ]; then
-        AUTO_UNLOCK=1
-    else
-        echo "Error: unknown argument '$arg'" >&2
-        echo "Usage: $0 <username> <group> [bindir] [--auto-unlock]" >&2
-        exit 2
-    fi
+# Check remaining args for --auto-unlock and --data-dir
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --auto-unlock)
+            AUTO_UNLOCK=1
+            shift
+            ;;
+        --data-dir)
+            if [ $# -lt 2 ]; then
+                echo "Error: --data-dir requires a value" >&2
+                exit 2
+            fi
+            DATA_DIR="$2"
+            shift 2
+            ;;
+        *)
+            echo "Error: unknown argument '$1'" >&2
+            echo "Usage: $0 <username> <group> [bindir] [--auto-unlock] [--data-dir <path>]" >&2
+            exit 2
+            ;;
+    esac
 done
 
 # Resolve bindir to absolute path
@@ -85,7 +99,7 @@ if [ ! -f "$BINDIR/apsignerd" ]; then
     exit 1
 fi
 
-TEMPLATE="$INSTALLER_DIR/aplane@.service.template"
+TEMPLATE="$INSTALLER_DIR/aplane.service.template"
 SUDOERS_TEMPLATE="$INSTALLER_DIR/sudoers.template"
 
 if [ ! -f "$TEMPLATE" ]; then
@@ -98,7 +112,7 @@ if [ ! -f "$SUDOERS_TEMPLATE" ]; then
     exit 1
 fi
 
-SERVICE_DEST="/lib/systemd/system/aplane@.service"
+SERVICE_DEST="/lib/systemd/system/aplane.service"
 SUDOERS_DEST="/etc/sudoers.d/99-aplane-systemctl"
 
 echo "=== aplane systemd setup ==="
@@ -108,6 +122,7 @@ echo "  Sudoers:   $SUDOERS_DEST"
 echo "  Binary:    $BINDIR/apsignerd"
 echo "  User:      $SVC_USER"
 echo "  Group:     $SVC_GROUP"
+echo "  Data dir:  $DATA_DIR"
 echo ""
 
 # Guard: refuse to silently remove auto-unlock from an existing installation.
@@ -123,9 +138,9 @@ if [ "$AUTO_UNLOCK" = "0" ] && [ -f "$SERVICE_DEST" ] && grep -q 'LoadCredential
     exit 1
 fi
 
-# Install service template with placeholder substitution
+# Install service with placeholder substitution
 if [ "$AUTO_UNLOCK" = "1" ]; then
-    LOAD_CRED_LINE="LoadCredentialEncrypted=aplane-passphrase:%I/passphrase.cred"
+    LOAD_CRED_LINE="LoadCredentialEncrypted=aplane-passphrase:${DATA_DIR}/passphrase.cred"
 else
     LOAD_CRED_LINE=""
 fi
@@ -133,6 +148,7 @@ fi
 sed -e "s|@@BINDIR@@|${BINDIR}|g" \
     -e "s|@@USER@@|${SVC_USER}|g" \
     -e "s|@@GROUP@@|${SVC_GROUP}|g" \
+    -e "s|@@DATA_DIR@@|${DATA_DIR}|g" \
     -e "s|@@LOAD_CREDENTIAL_LINE@@|${LOAD_CRED_LINE}|g" \
     "$TEMPLATE" > "$SERVICE_DEST"
 chmod 644 "$SERVICE_DEST"
@@ -150,10 +166,10 @@ echo "Ran systemctl daemon-reload"
 echo ""
 echo "Next steps:"
 echo "  1. Initialize the keystore (if not already done):"
-echo "       sudo $SCRIPT_DIR/init-signer.sh /var/lib/aplane $SVC_USER:$SVC_GROUP"
+echo "       sudo $SCRIPT_DIR/init-signer.sh $DATA_DIR $SVC_USER:$SVC_GROUP"
 echo "  2. Enable on boot:"
-echo "       sudo systemctl enable aplane@\$(systemd-escape /var/lib/aplane)"
+echo "       sudo systemctl enable aplane"
 echo "  3. Start the service:"
-echo "       sudo systemctl start aplane@\$(systemd-escape /var/lib/aplane)"
+echo "       sudo systemctl start aplane"
 echo "  4. Check status:"
-echo "       systemctl status aplane@\$(systemd-escape /var/lib/aplane)"
+echo "       systemctl status aplane"

@@ -39,7 +39,7 @@ if ! command -v systemd-creds >/dev/null 2>&1; then
     exit 1
 fi
 
-SERVICE_FILE="/lib/systemd/system/aplane@.service"
+SERVICE_FILE="/lib/systemd/system/aplane.service"
 
 if [ ! -f "$SERVICE_FILE" ]; then
     echo "Error: service file not found at $SERVICE_FILE" >&2
@@ -149,7 +149,6 @@ echo "=== Upgrade complete ==="
 echo ""
 echo "Next steps:"
 echo "  1. Restart the service:"
-ESCAPED_DIR="$(systemd-escape "$DATA_DIR")"
-echo "       sudo systemctl restart aplane@$ESCAPED_DIR"
+echo "       sudo systemctl restart aplane"
 echo "  2. Check status:"
-echo "       systemctl status aplane@$ESCAPED_DIR"
+echo "       systemctl status aplane"

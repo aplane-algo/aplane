@@ -1,5 +1,5 @@
 [Unit]
-Description=apsignerd signing server for /var/lib/aplane
+Description=apsignerd signing server
 After=network.target
 
 [Service]
@@ -7,7 +7,6 @@ ExecStart=/usr/local/bin/apsignerd
 User=aplane
 Group=aplane
 Environment=APSIGNER_DATA=/var/lib/aplane
-LoadCredentialEncrypted=aplane-passphrase:/var/lib/aplane/passphrase.cred
 Restart=always
 RestartSec=5s
 ProtectSystem=full

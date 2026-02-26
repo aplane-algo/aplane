@@ -775,28 +775,28 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
 
 4.  **Service Integration (Headless):**
 
-    **Unit file (`/lib/systemd/system/aplane@.service`):**
+    **Unit file (`/lib/systemd/system/aplane.service`):**
     ```ini
     [Unit]
-    Description=apsignerd signing server for %I
+    Description=apsignerd signing server
     After=network.target
-    AssertPathExists=%I
+    AssertPathExists=/var/lib/aplane
 
     [Service]
     User=aplane
     Group=aplane
-    Environment=APSIGNER_DATA=%I
-    LoadCredentialEncrypted=aplane-passphrase:%I/passphrase.cred
+    Environment=APSIGNER_DATA=/var/lib/aplane
+    LoadCredentialEncrypted=aplane-passphrase:/var/lib/aplane/passphrase.cred
     ExecStart=/usr/local/bin/apsignerd
     Restart=always
 
     [Install]
     WantedBy=multi-user.target
     ```
-    Enable/start an instance (default data dir shown):
+    Enable and start:
     ```bash
-    sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
-    sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
+    sudo systemctl enable aplane
+    sudo systemctl start aplane
     ```
 
     At service start, systemd decrypts `passphrase.cred` and places the plaintext in a tmpfs at `$CREDENTIALS_DIRECTORY/aplane-passphrase`. When apsignerd invokes `pass-systemd-creds read`, it reads directly from that path — no root access needed, no shell script wrapper required.
@@ -809,7 +809,7 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
     ```
     This reads the old passphrase (via `pass-systemd-creds read`), re-encrypts all keys with a new random passphrase, then stores it (via `pass-systemd-creds write`). Requires root. After changing, restart the service:
     ```bash
-    sudo systemctl restart aplane@$(systemd-escape /var/lib/aplane)
+    sudo systemctl restart aplane
     ```
 
 6.  **Migrating to a new machine:**
