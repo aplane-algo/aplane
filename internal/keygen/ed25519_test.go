@@ -418,9 +418,9 @@ func TestKeyFilePermissions(t *testing.T) {
 		t.Fatalf("Failed to stat key file: %v", err)
 	}
 
-	// Should be 0600 (readable/writable by owner only)
+	// Should be 0660 (readable/writable by owner and group)
 	mode := info.Mode().Perm()
-	expectedMode := os.FileMode(0600)
+	expectedMode := os.FileMode(0660)
 	if mode != expectedMode {
 		t.Errorf("Key file permissions = %o, want %o", mode, expectedMode)
 	}

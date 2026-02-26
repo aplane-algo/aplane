@@ -72,7 +72,7 @@ func scanKeysDirectoryInternal(identityID string, decryptFunc func(keyFile strin
 	keysDir := utilkeys.KeysDir(identityID)
 
 	// Ensure keys directory exists
-	if err := os.MkdirAll(keysDir, 0750); err != nil {
+	if err := os.MkdirAll(keysDir, 0770); err != nil {
 		return nil, fmt.Errorf("failed to create keys directory: %w", err)
 	}
 

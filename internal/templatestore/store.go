@@ -89,7 +89,7 @@ func SaveTemplate(yamlData []byte, keyType string, templateType TemplateType, ma
 	dir := GetTemplateDir(templateType)
 
 	// Ensure directory exists
-	if err := os.MkdirAll(dir, 0750); err != nil {
+	if err := os.MkdirAll(dir, 0770); err != nil {
 		return "", fmt.Errorf("failed to create templates directory: %w", err)
 	}
 
@@ -101,7 +101,7 @@ func SaveTemplate(yamlData []byte, keyType string, templateType TemplateType, ma
 
 	// Write the file
 	outputPath := GetTemplateFilePath(keyType, templateType)
-	if err := os.WriteFile(outputPath, encrypted, 0600); err != nil {
+	if err := os.WriteFile(outputPath, encrypted, 0660); err != nil {
 		return "", fmt.Errorf("failed to write template file: %w", err)
 	}
 

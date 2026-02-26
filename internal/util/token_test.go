@@ -30,8 +30,8 @@ func TestReadToken_WarnsOnLoosePermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "aplane.token")
 
-	// Write with group-readable permissions (0640)
-	if err := os.WriteFile(path, []byte("deadbeef\n"), 0640); err != nil {
+	// Write with other-readable permissions (0664)
+	if err := os.WriteFile(path, []byte("deadbeef\n"), 0664); err != nil {
 		t.Fatal(err)
 	}
 
@@ -64,8 +64,8 @@ func TestReadToken_WarnsOnLoosePermissions(t *testing.T) {
 	if len(stderr) == 0 {
 		t.Fatal("expected warning on stderr for loose permissions, got nothing")
 	}
-	if !contains(stderr, "WARNING") || !contains(stderr, "0640") || !contains(stderr, "chmod 600") {
-		t.Fatalf("warning should mention WARNING, mode 0640, and chmod fix; got: %s", stderr)
+	if !contains(stderr, "WARNING") || !contains(stderr, "0664") || !contains(stderr, "chmod 660") {
+		t.Fatalf("warning should mention WARNING, mode 0664, and chmod fix; got: %s", stderr)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestReadToken_NoWarningOnSecurePermissions(t *testing.T) {
 		t.Fatalf("unexpected error: %v", readErr)
 	}
 	if len(stderr) != 0 {
-		t.Fatalf("expected no warning for 0600 permissions, got: %s", stderr)
+		t.Fatalf("expected no warning for 0660 permissions, got: %s", stderr)
 	}
 }
 

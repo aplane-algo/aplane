@@ -62,14 +62,14 @@ func WriteLSigFile(identityID, address, keyType, template string, parameters map
 	}
 
 	// Ensure identity-scoped directory exists
-	if err := os.MkdirAll(utilkeys.KeysDir(identityID), 0750); err != nil {
+	if err := os.MkdirAll(utilkeys.KeysDir(identityID), 0770); err != nil {
 		return fmt.Errorf("failed to create keys directory: %w", err)
 	}
 
 	filePath := utilkeys.KeyFilePath(identityID, address)
 
-	// Write with restricted permissions (readable only by owner)
-	if err := os.WriteFile(filePath, encrypted, 0600); err != nil {
+	// Write with group-accessible permissions
+	if err := os.WriteFile(filePath, encrypted, 0660); err != nil {
 		return fmt.Errorf("failed to write lsig file: %w", err)
 	}
 

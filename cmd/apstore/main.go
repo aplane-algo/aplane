@@ -607,12 +607,12 @@ func restoreKey(keysDir, address string, masterKey []byte, exportPassphrase stri
 	destPath := utilkeys.KeyFilePath(auth.DefaultIdentityID, address)
 
 	// Ensure keys subdirectory exists
-	if err := os.MkdirAll(utilkeys.KeysDir(auth.DefaultIdentityID), 0750); err != nil {
+	if err := os.MkdirAll(utilkeys.KeysDir(auth.DefaultIdentityID), 0770); err != nil {
 		return "", fmt.Errorf("failed to create keys directory: %w", err)
 	}
 
 	// Write the file
-	if err := os.WriteFile(destPath, encrypted, 0600); err != nil {
+	if err := os.WriteFile(destPath, encrypted, 0660); err != nil {
 		return "", fmt.Errorf("failed to write key file: %w", err)
 	}
 
@@ -979,7 +979,7 @@ func cmdChangepass(random bool) error {
 		}
 
 		// Write to .new file
-		if err := os.WriteFile(newPath, newData, 0600); err != nil {
+		if err := os.WriteFile(newPath, newData, 0660); err != nil {
 			cleanupNew()
 			return fmt.Errorf("failed to write %s.new: %w", address, err)
 		}
@@ -1034,7 +1034,7 @@ func cmdChangepass(random bool) error {
 		}
 
 		// Write to .new file
-		if err := os.WriteFile(newPath, newData, 0600); err != nil {
+		if err := os.WriteFile(newPath, newData, 0660); err != nil {
 			cleanupNew()
 			return fmt.Errorf("failed to write %s.new: %w", templateName, err)
 		}
@@ -1061,7 +1061,7 @@ func cmdChangepass(random bool) error {
 		return fmt.Errorf("failed to marshal new keystore metadata: %w", err)
 	}
 
-	if err := os.WriteFile(newKeystorePath, newMetaData, 0600); err != nil {
+	if err := os.WriteFile(newKeystorePath, newMetaData, 0660); err != nil {
 		cleanupNew()
 		return fmt.Errorf("failed to write .keystore.new: %w", err)
 	}
@@ -1154,9 +1154,12 @@ func cmdInit(random bool) error {
 		return fmt.Errorf("keystore already initialized (control file exists in %s)", config.StoreDir)
 	}
 
-	// Ensure keys directory exists
-	if err := os.MkdirAll(config.StoreDir, 0750); err != nil {
+	// Ensure store directory exists with setgid so files inherit the group
+	if err := os.MkdirAll(config.StoreDir, 0770); err != nil {
 		return fmt.Errorf("failed to create keystore directory: %w", err)
+	}
+	if err := os.Chmod(config.StoreDir, os.ModeSetgid|0770); err != nil {
+		return fmt.Errorf("failed to set permissions on keystore directory: %w", err)
 	}
 
 	fmt.Printf("Keystore directory: %s\n", config.StoreDir)
@@ -1217,7 +1220,7 @@ func cmdInit(random bool) error {
 	crypto.ZeroBytes(masterKey)
 
 	// Create identity-scoped keys directory
-	if err := os.MkdirAll(utilkeys.KeysDir(auth.DefaultIdentityID), 0750); err != nil {
+	if err := os.MkdirAll(utilkeys.KeysDir(auth.DefaultIdentityID), 0770); err != nil {
 		return fmt.Errorf("failed to create keys directory: %w", err)
 	}
 

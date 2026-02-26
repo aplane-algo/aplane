@@ -336,8 +336,8 @@ func (f *FileKeyStore) Store(ctx context.Context, address string, keyData []byte
 	}
 	dataToWrite := encrypted
 
-	// Write with secure permissions
-	if err := os.WriteFile(filePath, dataToWrite, 0600); err != nil {
+	// Write with group-accessible permissions
+	if err := os.WriteFile(filePath, dataToWrite, 0660); err != nil {
 		return fmt.Errorf("failed to write key file: %w", err)
 	}
 

@@ -53,12 +53,12 @@ func GetOrCreateCacheKey() ([]byte, error) {
 		}
 
 		// Ensure cache directory exists
-		if err := os.MkdirAll(cacheBaseDir, 0750); err != nil {
+		if err := os.MkdirAll(cacheBaseDir, 0770); err != nil {
 			return nil, fmt.Errorf("failed to create cache directory: %w", err)
 		}
 
 		// Write key to file with restrictive permissions
-		if err := os.WriteFile(keyFile, key, 0600); err != nil {
+		if err := os.WriteFile(keyFile, key, 0660); err != nil {
 			return nil, fmt.Errorf("failed to write cache key: %w", err)
 		}
 
@@ -136,17 +136,17 @@ func SaveSignedCache(filePath string, data interface{}, key []byte) error {
 	}
 
 	// Ensure cache directory exists
-	if err := os.MkdirAll(cacheBaseDir, 0750); err != nil {
+	if err := os.MkdirAll(cacheBaseDir, 0770); err != nil {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	return os.WriteFile(filePath, output, 0600)
+	return os.WriteFile(filePath, output, 0660)
 }
 
 // ensureCacheDir creates the cache directory or exits fatally on failure.
 // This is used by cache loading functions where directory creation failure is unrecoverable.
 func ensureCacheDir() {
-	if err := os.MkdirAll(cacheBaseDir, 0750); err != nil {
+	if err := os.MkdirAll(cacheBaseDir, 0770); err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal error: Failed to create cache directory %s: %v\n", cacheBaseDir, err)
 		os.Exit(1)
 	}

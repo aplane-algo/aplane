@@ -141,9 +141,9 @@ func TestSaveAuthCachePermissions(t *testing.T) {
 		t.Fatalf("Failed to stat cache file: %v", err)
 	}
 
-	// Verify 0600 permissions
+	// Verify 0660 permissions
 	mode := info.Mode().Perm()
-	expectedMode := os.FileMode(0600)
+	expectedMode := os.FileMode(0660)
 	if mode != expectedMode {
 		t.Errorf("Cache file has permissions %o, want %o", mode, expectedMode)
 	}
@@ -378,9 +378,9 @@ func TestAuthCacheDirectoryCreation(t *testing.T) {
 		t.Error("cache should be a directory")
 	}
 
-	// Verify permissions (0750)
+	// Verify permissions (0770)
 	mode := info.Mode().Perm()
-	expectedMode := os.FileMode(0750)
+	expectedMode := os.FileMode(0770)
 	if mode != expectedMode {
 		t.Errorf("Cache directory has permissions %o, want %o", mode, expectedMode)
 	}

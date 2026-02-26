@@ -198,15 +198,19 @@ func CreateKeystoreMetadata(keystoreDir string, passphrase []byte) (*KeystoreMet
 		return nil, nil, fmt.Errorf("failed to marshal keystore metadata: %w", err)
 	}
 
-	// Ensure keystore directory exists
-	if err := os.MkdirAll(keystoreDir, 0750); err != nil {
+	// Ensure keystore directory exists with setgid so files inherit the group
+	if err := os.MkdirAll(keystoreDir, 0770); err != nil {
 		ZeroBytes(masterKey)
 		return nil, nil, fmt.Errorf("failed to create keystore directory: %w", err)
+	}
+	if err := os.Chmod(keystoreDir, os.ModeSetgid|0770); err != nil {
+		ZeroBytes(masterKey)
+		return nil, nil, fmt.Errorf("failed to set permissions on keystore directory: %w", err)
 	}
 
 	// Write to file
 	metaPath := keystoreDir + "/" + keystoreMetaFile
-	if err := os.WriteFile(metaPath, data, 0600); err != nil {
+	if err := os.WriteFile(metaPath, data, 0660); err != nil {
 		ZeroBytes(masterKey)
 		return nil, nil, fmt.Errorf("failed to write keystore metadata: %w", err)
 	}

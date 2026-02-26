@@ -376,8 +376,8 @@ func TestGenerateRandom(t *testing.T) {
 	}
 
 	mode := info.Mode().Perm()
-	if mode != 0600 {
-		t.Errorf("Private key file should have 0600 permissions, got %o", mode)
+	if mode != 0660 {
+		t.Errorf("Private key file should have 0660 permissions, got %o", mode)
 	}
 }
 
@@ -468,9 +468,9 @@ func TestKeysDirectoryCreation(t *testing.T) {
 		t.Error("users/default/keys should be a directory")
 	}
 
-	// Verify directory permissions (0750)
+	// Verify directory permissions (0770)
 	mode := info.Mode().Perm()
-	expectedMode := os.FileMode(0750)
+	expectedMode := os.FileMode(0770)
 	if mode != expectedMode {
 		t.Errorf("users/default/keys directory should have %o permissions, got %o", expectedMode, mode)
 	}

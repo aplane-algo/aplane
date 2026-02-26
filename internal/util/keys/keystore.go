@@ -121,13 +121,13 @@ func SaveKeyFile(keyPair *KeyPair, identityID, address string, masterKey []byte)
 	}
 
 	// Create identity-scoped keys subdirectory if it doesn't exist
-	if err := os.MkdirAll(KeysDir(identityID), 0750); err != nil {
+	if err := os.MkdirAll(KeysDir(identityID), 0770); err != nil {
 		return nil, fmt.Errorf("failed to create keys directory: %w", err)
 	}
 
 	// Write private key file
 	privFile := KeyFilePath(identityID, address)
-	if err := os.WriteFile(privFile, dataToWrite, 0600); err != nil {
+	if err := os.WriteFile(privFile, dataToWrite, 0660); err != nil {
 		return nil, fmt.Errorf("failed to write key file: %w", err)
 	}
 

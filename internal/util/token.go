@@ -61,9 +61,9 @@ func ReadToken(path string) (string, error) {
 		return "", fmt.Errorf("failed to read token file: %w", err)
 	}
 
-	// Check for overly permissive file permissions (group or other access)
-	if perm := info.Mode().Perm(); perm&0077 != 0 {
-		fmt.Fprintf(os.Stderr, "WARNING: %s has mode %04o, should be 0600 — run: chmod 600 %s\n", path, perm, path)
+	// Check for overly permissive file permissions (other access)
+	if perm := info.Mode().Perm(); perm&0007 != 0 {
+		fmt.Fprintf(os.Stderr, "WARNING: %s has mode %04o, should be 0660 — run: chmod 660 %s\n", path, perm, path)
 	}
 
 	data, err := os.ReadFile(path)
@@ -73,10 +73,9 @@ func ReadToken(path string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// WriteToken writes a token to a file with secure permissions (0600)
+// WriteToken writes a token to a file with group-accessible permissions (0660)
 func WriteToken(path, token string) error {
-	// Write with restrictive permissions
-	if err := os.WriteFile(path, []byte(token+"\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(token+"\n"), 0660); err != nil {
 		return fmt.Errorf("failed to write token file: %w", err)
 	}
 	return nil
@@ -104,7 +103,7 @@ func LoadaPlaneToken(identityID string) (string, error) {
 	}
 
 	// Ensure directory exists (keystore/users/default/)
-	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0770); err != nil {
 		return "", fmt.Errorf("failed to create token directory: %w", err)
 	}
 
