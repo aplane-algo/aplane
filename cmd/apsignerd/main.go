@@ -129,7 +129,8 @@ func main() {
 
 	// Comprehensive startup validation (config + runtime)
 	// This handles required vs optional checks and prints warnings
-	if err := validateStartup(&config, runtime); err != nil {
+	startupInfo, err := validateStartup(&config, runtime)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Startup validation failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -140,8 +141,14 @@ func main() {
 	var startLocked bool
 	var passphraseSource string // Track source for security audit
 
-	// Priority: TEST_PASSPHRASE > passphrase_command_argv > locked startup
-	if testPass := os.Getenv("TEST_PASSPHRASE"); testPass != "" {
+	if !startupInfo.KeystoreExists {
+		// No keystore — force locked startup, skip passphrase handling entirely
+		fmt.Println("\n🔐 Starting in LOCKED state (keystore not initialized)")
+		fmt.Println("   Run 'apstore init' to create the keystore, then unlock via apadmin")
+		encPassphrase = crypto.NewSecureStringFromBytes(nil)
+		startLocked = true
+		passphraseSource = "ipc"
+	} else if testPass := os.Getenv("TEST_PASSPHRASE"); testPass != "" {
 		// Testing mode - unlocks immediately
 		// Convert to bytes for secure handling, then zero the intermediate copy
 		testPassBytes := []byte(testPass)

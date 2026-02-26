@@ -17,43 +17,50 @@ type RuntimeState struct {
 	MemoryLocked      bool
 }
 
+// StartupInfo holds the results of startup validation checks.
+type StartupInfo struct {
+	KeystoreExists bool
+}
+
 // validateStartup performs comprehensive startup validation for apsignerd.
 // It checks both configuration and runtime state in one place.
 // Returns an error for required failures (caller should halt).
 // Prints warnings for optional failures (caller continues).
-func validateStartup(config *util.ServerConfig, runtime *RuntimeState) error {
+func validateStartup(config *util.ServerConfig, runtime *RuntimeState) (*StartupInfo, error) {
 	var warnings []string
+	info := &StartupInfo{}
 
-	// === Required config checks ===
+	// === Keystore check (non-fatal — allows starting without keystore) ===
 
-	// Keystore metadata must exist (.keystore file with master salt)
 	if !crypto.KeystoreMetadataExistsIn(config.StoreDir) {
-		return fmt.Errorf("keystore not initialized: .keystore metadata not found in %s\n"+
-			"       Run 'apstore init' to initialize the keystore with a passphrase", config.StoreDir)
-	}
+		info.KeystoreExists = false
+		warnings = append(warnings, "Keystore not initialized — run 'apstore init' then unlock via apadmin")
+	} else {
+		info.KeystoreExists = true
 
-	// Headless mode conflicts
-	if len(config.PassphraseCommandArgv) > 0 {
-		if config.LockOnDisconnect != nil && *config.LockOnDisconnect {
-			return fmt.Errorf("conflicting config: passphrase_command_argv and lock_on_disconnect:true cannot be used together (headless mode requires signer to stay unlocked)")
+		// Headless mode conflicts (only relevant when keystore exists)
+		if len(config.PassphraseCommandArgv) > 0 {
+			if config.LockOnDisconnect != nil && *config.LockOnDisconnect {
+				return nil, fmt.Errorf("conflicting config: passphrase_command_argv and lock_on_disconnect:true cannot be used together (headless mode requires signer to stay unlocked)")
+			}
+			if config.PassphraseTimeout != "" && config.PassphraseTimeout != "0" {
+				return nil, fmt.Errorf("conflicting config: passphrase_command_argv requires passphrase_timeout:0 (headless mode must stay unlocked, got %q)", config.PassphraseTimeout)
+			}
+			if err := util.ValidatePassphraseCommandConfig(config.PassphraseCommandCfg()); err != nil {
+				return nil, err
+			}
+			warnings = append(warnings, util.ValidateHeadlessPolicy(config)...)
 		}
-		if config.PassphraseTimeout != "" && config.PassphraseTimeout != "0" {
-			return fmt.Errorf("conflicting config: passphrase_command_argv requires passphrase_timeout:0 (headless mode must stay unlocked, got %q)", config.PassphraseTimeout)
-		}
-		if err := util.ValidatePassphraseCommandConfig(config.PassphraseCommandCfg()); err != nil {
-			return err
-		}
-		warnings = append(warnings, util.ValidateHeadlessPolicy(config)...)
 	}
 
 	// === Required runtime checks (based on config) ===
 
 	if config.RequireMemoryProtection {
 		if !runtime.CoreDumpsDisabled {
-			return fmt.Errorf("memory protection required (require_memory_protection: true) but core dumps could not be disabled - run with sudo")
+			return nil, fmt.Errorf("memory protection required (require_memory_protection: true) but core dumps could not be disabled - run with sudo")
 		}
 		if !runtime.MemoryLocked {
-			return fmt.Errorf("memory protection required (require_memory_protection: true) but memory could not be locked - run with sudo")
+			return nil, fmt.Errorf("memory protection required (require_memory_protection: true) but memory could not be locked - run with sudo")
 		}
 	}
 
@@ -80,5 +87,5 @@ func validateStartup(config *util.ServerConfig, runtime *RuntimeState) error {
 		}
 	}
 
-	return nil
+	return info, nil
 }
