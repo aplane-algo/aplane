@@ -393,16 +393,30 @@ sudo systemctl restart aplane@$(systemd-escape /var/lib/aplane)
 sudo systemctl stop aplane@$(systemd-escape /var/lib/aplane)
 ```
 
+### Granting apadmin Access
+
+Users who need to run `apadmin` (to unlock, generate keys, approve requests, etc.) must be members of the `aplane` group:
+
+```bash
+sudo usermod -aG aplane <username>
+```
+
+Log out and back in for the group change to take effect. Group members can then run `apadmin` directly:
+
+```bash
+apadmin -d /var/lib/aplane
+```
+
 ### Generate Keys
 
 Use `apadmin` to generate signing keys:
 
 ```bash
 # TUI mode
-sudo -u aplane apadmin -d /var/lib/aplane
+apadmin -d /var/lib/aplane
 
 # Batch mode
-sudo -u aplane apadmin -d /var/lib/aplane --batch generate falcon1024-v1
+apadmin -d /var/lib/aplane --batch generate falcon1024-v1
 ```
 
 apsignerd auto-detects new keys via file watching — no restart needed.

@@ -105,6 +105,7 @@ echo ""
 if ! id -u "$SVC_USER" >/dev/null 2>&1; then
     echo "Creating system user $SVC_USER..."
     useradd -r -m -d /var/lib/aplane -s /usr/sbin/nologin "$SVC_USER"
+    chmod 750 /var/lib/aplane
     echo "  Created user $SVC_USER with home /var/lib/aplane"
 else
     echo "User $SVC_USER already exists, skipping creation."
@@ -175,7 +176,7 @@ lock_on_disconnect: false
 EOF
     fi
     chown "$SVC_USER:$SVC_GROUP" "$target"
-    chmod 600 "$target"
+    chmod 640 "$target"
 }
 
 if [ -f "$CONFIG_PATH" ]; then

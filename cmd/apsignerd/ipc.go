@@ -72,8 +72,8 @@ func (s *IPCServer) Start() error {
 		return fmt.Errorf("failed to listen on IPC socket: %w", err)
 	}
 
-	// Set socket permissions (only owner can access)
-	if err := os.Chmod(s.path, 0600); err != nil {
+	// Set socket permissions (owner + group can access, for apadmin users in the service group)
+	if err := os.Chmod(s.path, 0660); err != nil {
 		_ = listener.Close() // Best-effort cleanup
 		return fmt.Errorf("failed to set socket permissions: %w", err)
 	}
