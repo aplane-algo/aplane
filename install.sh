@@ -280,6 +280,50 @@ if [ "$AUTO_UNLOCK" = "1" ]; then
     fi
 fi
 
+# Step 7: Set up apshell data directory for the service user
+APSHELL_DIR="$DATA_DIR/.aplane"
+if [ ! -d "$APSHELL_DIR" ]; then
+    echo ""
+    echo "Setting up apshell data directory at $APSHELL_DIR..."
+    mkdir -p "$APSHELL_DIR"
+    cat > "$APSHELL_DIR/config.yaml" <<'APSHELL_EOF'
+# apshell configuration for LOCAL signer (same machine, no SSH tunnel)
+# See doc/USER_CONFIG.md for full documentation.
+
+# Algorand network (mainnet, testnet, betanet)
+network: testnet
+
+# Restrict which networks can be used (empty = all allowed)
+networks_allowed: []
+
+# Signer connection settings
+signer_host: localhost
+signer_port: 11270
+
+# AI model for code generation (empty = provider default)
+ai_model: ""
+
+# Algod settings (Nodely public endpoints)
+testnet_algod_server: https://testnet-api.4160.nodely.dev
+testnet_algod_token: ""
+
+# Uncomment for mainnet
+# mainnet_algod_server: https://mainnet-api.4160.nodely.dev
+# mainnet_algod_token: ""
+
+# Uncomment for betanet
+# betanet_algod_server: https://betanet-api.4160.nodely.dev
+# betanet_algod_token: ""
+APSHELL_EOF
+    chown -R "$SVC_USER:$SVC_GROUP" "$APSHELL_DIR"
+    chmod 750 "$APSHELL_DIR"
+    chmod 640 "$APSHELL_DIR/config.yaml"
+    echo "  Created $APSHELL_DIR/config.yaml"
+else
+    echo ""
+    echo "apshell data directory already exists at $APSHELL_DIR; skipping."
+fi
+
 echo ""
 echo "=== Installation complete ==="
 echo ""
@@ -295,5 +339,8 @@ else
 fi
 echo "  3. Generate keys:"
 echo "       sudo -u $SVC_USER apadmin -d $DATA_DIR"
+echo "  4. Run apshell:"
+echo "       sudo -u $SVC_USER apshell -d $APSHELL_DIR"
 echo ""
 echo "Tip: export APSIGNER_DATA=$DATA_DIR to avoid passing -d every time."
+echo "Tip: export APCLIENT_DATA=$APSHELL_DIR for apshell."
