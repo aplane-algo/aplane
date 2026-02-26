@@ -122,6 +122,7 @@ require_linux_systemd_250() {
     if [ "$version" -lt 250 ]; then
         die "systemd ${version} detected; systemd 250+ is required"
     fi
+    command -v systemd-creds >/dev/null 2>&1 || die "systemd-creds not found (required for passphrase encryption)"
 }
 
 require_prereqs() {
