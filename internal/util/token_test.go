@@ -34,6 +34,10 @@ func TestReadToken_WarnsOnLoosePermissions(t *testing.T) {
 	if err := os.WriteFile(path, []byte("deadbeef\n"), 0664); err != nil {
 		t.Fatal(err)
 	}
+	// Explicit chmod to bypass umask (WriteFile mode is masked by umask)
+	if err := os.Chmod(path, 0664); err != nil {
+		t.Fatal(err)
+	}
 
 	// Capture stderr
 	oldStderr := os.Stderr
