@@ -156,6 +156,13 @@ if [ -z "$DATA_DIR" ]; then
     echo "Error: could not determine home directory for $SVC_USER" >&2
     exit 1
 fi
+
+if [ ! -d "$DATA_DIR" ]; then
+    echo "Recreating missing data directory $DATA_DIR..."
+    mkdir -p "$DATA_DIR"
+    chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR"
+    chmod 750 "$DATA_DIR"
+fi
 CONFIG_PATH="$DATA_DIR/config.yaml"
 STORE_PATH="$DATA_DIR/store"
 
