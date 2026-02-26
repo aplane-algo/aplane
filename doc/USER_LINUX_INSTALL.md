@@ -6,6 +6,7 @@ This guide covers installing apsignerd as a systemd service on Linux. It uses `s
 
 ## Table of Contents
 
+- [Install via curl Bootstrap](#install-via-curl-bootstrap)
 - [Install from Release Tarball](#install-from-release-tarball)
 - [Quick Start](#quick-start)
 - [Prerequisites](#prerequisites)
@@ -23,6 +24,39 @@ This guide covers installing apsignerd as a systemd service on Linux. It uses `s
 - [Migrating to a New Machine](#migrating-to-a-new-machine)
 - [Uninstalling](#uninstalling)
 - [Troubleshooting](#troubleshooting)
+
+---
+
+## Install via curl Bootstrap
+
+For a fresh Ubuntu 24.04 host, use the bootstrap installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | bash
+```
+
+This bootstrap script:
+- Detects architecture (`amd64`/`arm64`)
+- Downloads the matching GitHub release tarball
+- Verifies checksums (and minisign signature if `minisign` is installed)
+- Runs the bundled `install.sh`
+- Enables and starts the `aplane@...` systemd instance
+
+Useful options:
+
+```bash
+# Pin a specific release
+curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
+  bash -s -- --version v1.2.3
+
+# Require minisign verification (fails if minisign is unavailable)
+curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
+  APLANE_REQUIRE_MINISIGN=1 bash
+
+# Custom service user/group/bindir
+curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
+  bash -s -- --user aplane --group aplane --bindir /usr/local/bin
+```
 
 ---
 
