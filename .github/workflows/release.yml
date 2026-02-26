@@ -99,7 +99,7 @@ jobs:
       - name: Package release archives
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          BINARIES="apshell apsignerd apadmin apapprover apstore pass-file"
+          BINARIES="apshell apsignerd apadmin apapprover apstore appass pass-file"
           LINUX_BINARIES="$BINARIES pass-systemd-creds"
           mkdir -p dist
 
@@ -109,7 +109,8 @@ jobs:
             rm -rf dist/staging
             mkdir -p dist/staging/aplane/{bin,installer,scripts}
             cp bin/${arch}/apshell bin/${arch}/apsignerd bin/${arch}/apadmin \
-               bin/${arch}/apapprover bin/${arch}/apstore bin/${arch}/pass-file \
+               bin/${arch}/apapprover bin/${arch}/apstore bin/${arch}/appass \
+               bin/${arch}/pass-file \
                bin/${arch}/pass-systemd-creds dist/staging/aplane/bin/
             cp installer/aplane.service installer/aplane.service.template \
                installer/sudoers.template \
