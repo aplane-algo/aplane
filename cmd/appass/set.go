@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -141,9 +142,9 @@ func cmdSetSystemcreds() error {
 	}
 
 	// Check pass-systemd-creds binary exists
-	passCredsbin := filepath.Join(svc.BinDir, "pass-systemd-creds")
-	if _, err := os.Stat(passCredsbin); err != nil {
-		return fmt.Errorf("pass-systemd-creds not found at %s; ensure it is installed alongside apsignerd", passCredsbin)
+	passCredsBin := filepath.Join(svc.BinDir, "pass-systemd-creds")
+	if _, err := os.Stat(passCredsBin); err != nil {
+		return fmt.Errorf("pass-systemd-creds not found at %s; ensure it is installed alongside apsignerd", passCredsBin)
 	}
 
 	fmt.Println("=== systemd-creds auto-unlock setup ===")
@@ -154,6 +155,55 @@ func cmdSetSystemcreds() error {
 	fmt.Printf("  Group:     %s\n", svc.Group)
 	fmt.Println("")
 
+	// Prompt for passphrase
+	fmt.Println("Enter the passphrase for the keystore.")
+	fmt.Println("This must match the passphrase used (or to be used) with apstore init.")
+	fmt.Println("The passphrase will be encrypted via systemd-creds (TPM2/host key).")
+	fmt.Println("")
+
+	fmt.Print("Passphrase: ")
+	pass1, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println()
+	if err != nil {
+		return fmt.Errorf("reading passphrase: %w", err)
+	}
+
+	fmt.Print("Confirm:    ")
+	pass2, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println()
+	if err != nil {
+		return fmt.Errorf("reading confirmation: %w", err)
+	}
+
+	if string(pass1) != string(pass2) {
+		return fmt.Errorf("passphrases do not match")
+	}
+	if len(pass1) == 0 {
+		return fmt.Errorf("passphrase must not be empty")
+	}
+
+	// Encrypt passphrase via pass-systemd-creds write
+	credFile := filepath.Join(dataDirectory, "passphrase.cred")
+	fmt.Printf("Encrypting passphrase to %s...\n", credFile)
+	cmd := exec.Command(passCredsBin, "write", credFile)
+	cmd.Stdin = bytes.NewReader(pass1)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("pass-systemd-creds write failed: %w", err)
+	}
+	if !bytes.Equal(pass1, out) {
+		return fmt.Errorf("round-trip verification failed: encrypted passphrase does not match")
+	}
+
+	// Credential file must be root-owned (systemd reads it via LoadCredentialEncrypted)
+	if err := os.Chown(credFile, 0, 0); err != nil {
+		return fmt.Errorf("chown credential file: %w", err)
+	}
+	if err := os.Chmod(credFile, 0600); err != nil {
+		return fmt.Errorf("chmod credential file: %w", err)
+	}
+
 	// Run systemd-setup.sh to regenerate service file with LoadCredentialEncrypted
 	setupScript := filepath.Join(dataDirectory, "scripts", "systemd-setup.sh")
 	if _, err := os.Stat(setupScript); err != nil {
@@ -161,17 +211,17 @@ func cmdSetSystemcreds() error {
 	}
 
 	fmt.Println("Regenerating service file with LoadCredentialEncrypted...")
-	cmd := exec.Command(setupScript, svc.User, svc.Group, svc.BinDir, "--auto-unlock")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	setupCmd := exec.Command(setupScript, svc.User, svc.Group, svc.BinDir, "--auto-unlock")
+	setupCmd.Stdout = os.Stdout
+	setupCmd.Stderr = os.Stderr
+	if err := setupCmd.Run(); err != nil {
 		return fmt.Errorf("systemd-setup.sh failed: %w", err)
 	}
 
 	// Append to config.yaml
 	fmt.Printf("Updating %s...\n", configPath)
 	lines := []string{
-		fmt.Sprintf(`passphrase_command_argv: ["%s", "passphrase.cred"]`, passCredsbin),
+		fmt.Sprintf(`passphrase_command_argv: ["%s", "passphrase.cred"]`, passCredsBin),
 		`passphrase_timeout: "0"`,
 	}
 	if err := configAppendLines(configPath, lines); err != nil {
@@ -182,8 +232,9 @@ func cmdSetSystemcreds() error {
 	fmt.Println("=== Setup complete ===")
 	fmt.Println("")
 	fmt.Println("Next steps:")
-	fmt.Printf("  1. Initialize the keystore with a random passphrase:\n")
-	fmt.Printf("       sudo apstore -d %s init --random\n", dataDirectory)
+	fmt.Printf("  1. If the keystore is not yet initialized:\n")
+	fmt.Printf("       sudo apstore -d %s init\n", dataDirectory)
+	fmt.Println("     Use the same passphrase you entered above.")
 	fmt.Println("  2. Start (or restart) the service:")
 	fmt.Println("       sudo systemctl restart aplane")
 	fmt.Println("  3. Check status:")
