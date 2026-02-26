@@ -4,10 +4,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/util"
 )
@@ -45,23 +47,11 @@ func cmdClear() error {
 		}
 
 	case "systemcreds":
-		// Regenerate service file WITHOUT --auto-unlock to remove LoadCredentialEncrypted
-		svc, err := parseServiceFile(defaultServiceFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not parse service file: %v\n", err)
-		} else {
-			setupScript := filepath.Join(dataDirectory, "scripts", "systemd-setup.sh")
-			if _, err := os.Stat(setupScript); err == nil {
-				fmt.Println("Regenerating service file without LoadCredentialEncrypted...")
-				cmd := exec.Command(setupScript, svc.User, svc.Group, svc.BinDir)
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				if err := cmd.Run(); err != nil {
-					return fmt.Errorf("systemd-setup.sh failed: %w", err)
-				}
-			} else {
-				fmt.Fprintf(os.Stderr, "Warning: systemd-setup.sh not found at %s; service file not updated\n", setupScript)
-			}
+		// Remove LoadCredentialEncrypted from the service file directly.
+		// We can't delegate to systemd-setup.sh because it has a guard that
+		// refuses to remove LoadCredentialEncrypted (anti-downgrade protection).
+		if err := removeLoadCredentialFromService(); err != nil {
+			return err
 		}
 
 		credFile := filepath.Join(dataDirectory, "passphrase.cred")
@@ -79,6 +69,51 @@ func cmdClear() error {
 	fmt.Println("The service will start locked. Use apadmin to unlock after starting:")
 	fmt.Println("  sudo systemctl restart aplane")
 	fmt.Printf("  sudo -u <service-user> apadmin -d %s\n", dataDirectory)
+
+	return nil
+}
+
+// removeLoadCredentialFromService removes any LoadCredentialEncrypted line
+// from the systemd service file and runs daemon-reload.
+func removeLoadCredentialFromService() error {
+	data, err := os.ReadFile(defaultServiceFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not read service file %s: %v\n", defaultServiceFile, err)
+		return nil
+	}
+
+	var kept []string
+	removed := false
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "LoadCredentialEncrypted") {
+			removed = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("reading service file: %w", err)
+	}
+
+	if !removed {
+		return nil
+	}
+
+	fmt.Printf("Removing LoadCredentialEncrypted from %s...\n", defaultServiceFile)
+	output := strings.Join(kept, "\n") + "\n"
+	if err := os.WriteFile(defaultServiceFile, []byte(output), 0644); err != nil {
+		return fmt.Errorf("writing service file: %w", err)
+	}
+
+	fmt.Println("Running systemctl daemon-reload...")
+	cmd := exec.Command("systemctl", "daemon-reload")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("daemon-reload failed: %w", err)
+	}
 
 	return nil
 }
