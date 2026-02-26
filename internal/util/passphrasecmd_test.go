@@ -462,13 +462,11 @@ func TestDecodePassphraseOutput(t *testing.T) {
 
 func TestBuildPassphraseEnv(t *testing.T) {
 	// Ensure CREDENTIALS_DIRECTORY is unset for baseline tests
-	origCredDir := os.Getenv("CREDENTIALS_DIRECTORY")
-	os.Unsetenv("CREDENTIALS_DIRECTORY")
-	defer func() {
-		if origCredDir != "" {
-			os.Setenv("CREDENTIALS_DIRECTORY", origCredDir)
-		}
-	}()
+	// t.Setenv saves/restores the original value automatically
+	t.Setenv("CREDENTIALS_DIRECTORY", "")
+	if err := os.Unsetenv("CREDENTIALS_DIRECTORY"); err != nil {
+		t.Fatalf("failed to unset CREDENTIALS_DIRECTORY: %v", err)
+	}
 
 	// Empty map, no passthrough vars set → empty slice
 	env := buildPassphraseEnv(nil)
@@ -499,18 +497,14 @@ func TestBuildPassphraseEnv(t *testing.T) {
 }
 
 func TestBuildPassphraseEnvPassthrough(t *testing.T) {
-	// Save and restore CREDENTIALS_DIRECTORY
-	origCredDir := os.Getenv("CREDENTIALS_DIRECTORY")
-	defer func() {
-		if origCredDir != "" {
-			os.Setenv("CREDENTIALS_DIRECTORY", origCredDir)
-		} else {
-			os.Unsetenv("CREDENTIALS_DIRECTORY")
-		}
-	}()
+	// t.Setenv saves/restores the original value automatically
+	t.Setenv("CREDENTIALS_DIRECTORY", "")
+	if err := os.Unsetenv("CREDENTIALS_DIRECTORY"); err != nil {
+		t.Fatalf("failed to unset CREDENTIALS_DIRECTORY: %v", err)
+	}
 
 	t.Run("CREDENTIALS_DIRECTORY passed through when set", func(t *testing.T) {
-		os.Setenv("CREDENTIALS_DIRECTORY", "/run/credentials/apsignerd.service")
+		t.Setenv("CREDENTIALS_DIRECTORY", "/run/credentials/apsignerd.service")
 		env := buildPassphraseEnv(nil)
 
 		found := map[string]bool{}
@@ -523,7 +517,11 @@ func TestBuildPassphraseEnvPassthrough(t *testing.T) {
 	})
 
 	t.Run("CREDENTIALS_DIRECTORY not passed through when unset", func(t *testing.T) {
-		os.Unsetenv("CREDENTIALS_DIRECTORY")
+		// Parent already unset it; t.Setenv + Unsetenv to be explicit
+		t.Setenv("CREDENTIALS_DIRECTORY", "")
+		if err := os.Unsetenv("CREDENTIALS_DIRECTORY"); err != nil {
+			t.Fatalf("failed to unset CREDENTIALS_DIRECTORY: %v", err)
+		}
 		env := buildPassphraseEnv(nil)
 		if len(env) != 0 {
 			t.Fatalf("expected empty env, got %v", env)
@@ -531,7 +529,7 @@ func TestBuildPassphraseEnvPassthrough(t *testing.T) {
 	})
 
 	t.Run("declared env overrides passthrough", func(t *testing.T) {
-		os.Setenv("CREDENTIALS_DIRECTORY", "/run/credentials/apsignerd.service")
+		t.Setenv("CREDENTIALS_DIRECTORY", "/run/credentials/apsignerd.service")
 		env := buildPassphraseEnv(map[string]string{
 			"CREDENTIALS_DIRECTORY": "/custom/path",
 		})
