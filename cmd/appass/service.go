@@ -26,7 +26,7 @@ func parseServiceFile(path string) (*serviceInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open service file %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info := &serviceInfo{}
 	scanner := bufio.NewScanner(f)
