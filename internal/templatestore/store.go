@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	utilkeys "github.com/aplane-algo/aplane/internal/util/keys"
 )
 
@@ -89,7 +90,7 @@ func SaveTemplate(yamlData []byte, keyType string, templateType TemplateType, ma
 	dir := GetTemplateDir(templateType)
 
 	// Ensure directory exists
-	if err := os.MkdirAll(dir, 0770); err != nil {
+	if err := fsutil.MkdirAll(dir); err != nil {
 		return "", fmt.Errorf("failed to create templates directory: %w", err)
 	}
 
@@ -101,7 +102,7 @@ func SaveTemplate(yamlData []byte, keyType string, templateType TemplateType, ma
 
 	// Write the file
 	outputPath := GetTemplateFilePath(keyType, templateType)
-	if err := os.WriteFile(outputPath, encrypted, 0660); err != nil {
+	if err := fsutil.WriteFile(outputPath, encrypted); err != nil {
 		return "", fmt.Errorf("failed to write template file: %w", err)
 	}
 

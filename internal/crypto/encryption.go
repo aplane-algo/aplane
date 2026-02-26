@@ -13,6 +13,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -199,18 +200,14 @@ func CreateKeystoreMetadata(keystoreDir string, passphrase []byte) (*KeystoreMet
 	}
 
 	// Ensure keystore directory exists with setgid so files inherit the group
-	if err := os.MkdirAll(keystoreDir, 0770); err != nil {
+	if err := fsutil.MkdirAll(keystoreDir); err != nil {
 		ZeroBytes(masterKey)
 		return nil, nil, fmt.Errorf("failed to create keystore directory: %w", err)
-	}
-	if err := os.Chmod(keystoreDir, os.ModeSetgid|0770); err != nil {
-		ZeroBytes(masterKey)
-		return nil, nil, fmt.Errorf("failed to set permissions on keystore directory: %w", err)
 	}
 
 	// Write to file
 	metaPath := keystoreDir + "/" + keystoreMetaFile
-	if err := os.WriteFile(metaPath, data, 0660); err != nil {
+	if err := fsutil.WriteFile(metaPath, data); err != nil {
 		ZeroBytes(masterKey)
 		return nil, nil, fmt.Errorf("failed to write keystore metadata: %w", err)
 	}

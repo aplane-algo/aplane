@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signing"
 	utilkeys "github.com/aplane-algo/aplane/internal/util/keys"
@@ -337,7 +338,7 @@ func (f *FileKeyStore) Store(ctx context.Context, address string, keyData []byte
 	dataToWrite := encrypted
 
 	// Write with group-accessible permissions
-	if err := os.WriteFile(filePath, dataToWrite, 0660); err != nil {
+	if err := fsutil.WriteFile(filePath, dataToWrite); err != nil {
 		return fmt.Errorf("failed to write key file: %w", err)
 	}
 

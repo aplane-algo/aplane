@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/util"
 	utilkeys "github.com/aplane-algo/aplane/internal/util/keys"
@@ -72,7 +73,7 @@ func scanKeysDirectoryInternal(identityID string, decryptFunc func(keyFile strin
 	keysDir := utilkeys.KeysDir(identityID)
 
 	// Ensure keys directory exists
-	if err := os.MkdirAll(keysDir, 0770); err != nil {
+	if err := fsutil.MkdirAll(keysDir); err != nil {
 		return nil, fmt.Errorf("failed to create keys directory: %w", err)
 	}
 

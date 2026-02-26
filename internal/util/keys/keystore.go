@@ -6,13 +6,13 @@ package keys
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
 // keystorePath holds the configured keystore directory
@@ -121,13 +121,13 @@ func SaveKeyFile(keyPair *KeyPair, identityID, address string, masterKey []byte)
 	}
 
 	// Create identity-scoped keys subdirectory if it doesn't exist
-	if err := os.MkdirAll(KeysDir(identityID), 0770); err != nil {
+	if err := fsutil.MkdirAll(KeysDir(identityID)); err != nil {
 		return nil, fmt.Errorf("failed to create keys directory: %w", err)
 	}
 
 	// Write private key file
 	privFile := KeyFilePath(identityID, address)
-	if err := os.WriteFile(privFile, dataToWrite, 0660); err != nil {
+	if err := fsutil.WriteFile(privFile, dataToWrite); err != nil {
 		return nil, fmt.Errorf("failed to write key file: %w", err)
 	}
 

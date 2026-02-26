@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	utilkeys "github.com/aplane-algo/aplane/internal/util/keys"
 )
 
@@ -75,7 +76,7 @@ func ReadToken(path string) (string, error) {
 
 // WriteToken writes a token to a file with group-accessible permissions (0660)
 func WriteToken(path, token string) error {
-	if err := os.WriteFile(path, []byte(token+"\n"), 0660); err != nil {
+	if err := fsutil.WriteFile(path, []byte(token+"\n")); err != nil {
 		return fmt.Errorf("failed to write token file: %w", err)
 	}
 	return nil
@@ -103,7 +104,7 @@ func LoadaPlaneToken(identityID string) (string, error) {
 	}
 
 	// Ensure directory exists (keystore/users/default/)
-	if err := os.MkdirAll(filepath.Dir(path), 0770); err != nil {
+	if err := fsutil.MkdirAll(filepath.Dir(path)); err != nil {
 		return "", fmt.Errorf("failed to create token directory: %w", err)
 	}
 

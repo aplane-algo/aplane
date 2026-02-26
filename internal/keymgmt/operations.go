@@ -13,6 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
@@ -112,7 +113,7 @@ func DeleteKey(address, keyFile, keysDir, identityID string) (*DeleteResult, err
 	deletedDir := filepath.Join(keystoreRoot, "deletedkeys", identityID)
 
 	// Create deletedkeys directory if it doesn't exist
-	if err := os.MkdirAll(deletedDir, 0770); err != nil {
+	if err := fsutil.MkdirAll(deletedDir); err != nil {
 		return nil, fmt.Errorf("failed to create deletedkeys directory: %w", err)
 	}
 
