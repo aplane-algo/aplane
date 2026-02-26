@@ -187,17 +187,47 @@ STORE_PATH="$DATA_DIR/store"
 echo ""
 write_canonical_config() {
     local target="$1"
-    if [ "$AUTO_UNLOCK" = "1" ]; then
-        cat > "$target" <<EOF
+    cat > "$target" <<EOF
+# apsignerd configuration
+# See doc/USER_CONFIG.md for full documentation.
+
+# Store directory (relative to \$APSIGNER_DATA)
 store: $STORE_PATH
+
+# REST API port (bound to localhost when SSH is enabled)
+signer_port: 11270
+
+# SSH tunnel settings for remote access (uncomment to enable)
+# ssh:
+#   port: 1127
+#   host_key_path: .ssh/ssh_host_key
+#   authorized_keys_path: .ssh/authorized_keys
+#   auto_register: true
+
+# Inactivity timeout before auto-lock: "0" = never, "15m" = 15 minutes
+passphrase_timeout: "15m"
+
+# Lock signer when apadmin disconnects
+lock_on_disconnect: false
+
+# Approval policy settings (all default to false)
+# txn_auto_approve: false
+# group_auto_approve: false
+# allow_group_modification: false
+
+# TEAL compiler for LogicSig generation (e.g., Falcon-1024 timelocks)
+teal_compiler_algod_url: https://testnet-api.4160.nodely.dev
+teal_compiler_algod_token: ""
+
+# Security settings
+require_memory_protection: false
+EOF
+    if [ "$AUTO_UNLOCK" = "1" ]; then
+        cat >> "$target" <<EOF
+
+# Auto-unlock via systemd-creds (managed by appass)
 passphrase_command_argv: ["$BINDIR/pass-systemd-creds", "passphrase.cred"]
 passphrase_timeout: "0"
-lock_on_disconnect: false
-EOF
-    else
-        cat > "$target" <<EOF
-store: $STORE_PATH
-lock_on_disconnect: false
 EOF
     fi
     chown "$SVC_USER:$SVC_GROUP" "$target"
