@@ -96,10 +96,9 @@ func main() {
 	utilkeys.SetKeystorePath(config.StoreDir)
 	fmt.Printf("Store directory: %s\n", utilkeys.KeystorePath())
 
-	// Ensure identity-scoped keys subdirectory exists
-	if err := os.MkdirAll(utilkeys.KeysDir(auth.DefaultIdentityID), 0750); err != nil {
-		fmt.Printf("Error: Failed to create keys directory: %v\n", err)
-		os.Exit(1)
+	// If the store directory doesn't exist, stay locked (apstore init creates it)
+	if _, err := os.Stat(utilkeys.KeystorePath()); os.IsNotExist(err) {
+		fmt.Println("Store directory not found; staying locked until keystore is initialized via apstore init.")
 	}
 
 	// Load or generate API token
