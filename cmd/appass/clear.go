@@ -29,10 +29,13 @@ func cmdClear() error {
 	fmt.Printf("Current auto-unlock method: %s\n", method)
 	fmt.Println("")
 
-	// Remove config keys
-	fmt.Printf("Removing passphrase_command_argv and passphrase_timeout from %s...\n", configPath)
+	// Remove auto-unlock config keys and restore default passphrase_timeout
+	fmt.Printf("Removing passphrase_command_argv from %s...\n", configPath)
 	if err := configRemoveKeys(configPath, []string{"passphrase_command_argv", "passphrase_timeout"}); err != nil {
 		return fmt.Errorf("editing config: %w", err)
+	}
+	if err := configAppendLines(configPath, []string{`passphrase_timeout: "15m"`}); err != nil {
+		return fmt.Errorf("restoring passphrase_timeout: %w", err)
 	}
 
 	// Method-specific cleanup

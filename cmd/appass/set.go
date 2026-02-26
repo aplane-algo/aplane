@@ -93,8 +93,12 @@ func cmdSetPassfile() error {
 		return fmt.Errorf("chown passphrase file: %w", err)
 	}
 
-	// Append to config.yaml
+	// Update config.yaml: remove passphrase_timeout if it exists (avoid duplicates),
+	// then append the auto-unlock settings.
 	fmt.Printf("Updating %s...\n", configPath)
+	if err := configRemoveKeys(configPath, []string{"passphrase_timeout"}); err != nil {
+		return fmt.Errorf("updating config: %w", err)
+	}
 	lines := []string{
 		fmt.Sprintf(`passphrase_command_argv: ["%s", "passphrase"]`, passFileBin),
 		`passphrase_timeout: "0"`,
@@ -218,8 +222,12 @@ func cmdSetSystemcreds() error {
 		return fmt.Errorf("systemd-setup.sh failed: %w", err)
 	}
 
-	// Append to config.yaml
+	// Update config.yaml: remove passphrase_timeout if it exists (avoid duplicates),
+	// then append the auto-unlock settings.
 	fmt.Printf("Updating %s...\n", configPath)
+	if err := configRemoveKeys(configPath, []string{"passphrase_timeout"}); err != nil {
+		return fmt.Errorf("updating config: %w", err)
+	}
 	lines := []string{
 		fmt.Sprintf(`passphrase_command_argv: ["%s", "passphrase.cred"]`, passCredsBin),
 		`passphrase_timeout: "0"`,
