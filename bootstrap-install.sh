@@ -23,6 +23,7 @@ REQUESTED_VERSION="${APLANE_VERSION:-latest}"
 ENABLE_SERVICE="${APLANE_ENABLE_SERVICE:-1}"
 START_SERVICE="${APLANE_START_SERVICE:-1}"
 REQUIRE_MINISIGN="${APLANE_REQUIRE_MINISIGN:-0}"
+AUTO_UNLOCK="${APLANE_AUTO_UNLOCK:-0}"
 
 TMPDIR_CREATED=""
 
@@ -35,10 +36,15 @@ Options:
   --group <name>      Service group to install/run as (default: aplane)
   --bindir <path>     Binary install directory (default: /usr/local/bin)
   --version <tag>     Release tag (e.g. v1.2.3) or "latest" (default: latest)
+  --auto-unlock       Enable auto-unlock via systemd-creds (requires systemd 250+)
   --no-enable         Do not run systemctl enable
   --no-start          Do not run systemctl start
   --require-minisign  Fail if minisign is unavailable or signature file is missing
   -h, --help          Show this help
+
+By default, the service starts in locked state. Use apadmin to unlock after
+starting. Pass --auto-unlock to enable automatic unlock via systemd-creds
+(requires systemd 250+ and systemd-creds).
 EOF
 }
 
@@ -108,21 +114,23 @@ detect_arch() {
     esac
 }
 
-require_linux_systemd_250() {
+require_linux_systemd() {
     local os
     os="$(uname -s)"
     [ "$os" = "Linux" ] || die "this bootstrap installer supports Linux only"
     command -v systemctl >/dev/null 2>&1 || die "systemctl not found"
+}
 
+require_systemd_250_creds() {
     local version
     version="$(systemctl --version | awk 'NR==1 {print $2}')"
     case "$version" in
         ''|*[!0-9]*) die "failed to parse systemd version from 'systemctl --version'" ;;
     esac
     if [ "$version" -lt 250 ]; then
-        die "systemd ${version} detected; systemd 250+ is required"
+        die "systemd ${version} detected; --auto-unlock requires systemd 250+"
     fi
-    command -v systemd-creds >/dev/null 2>&1 || die "systemd-creds not found (required for passphrase encryption)"
+    command -v systemd-creds >/dev/null 2>&1 || die "systemd-creds not found (required for --auto-unlock)"
 }
 
 require_prereqs() {
@@ -198,6 +206,10 @@ parse_args() {
                 START_SERVICE="0"
                 shift
                 ;;
+            --auto-unlock)
+                AUTO_UNLOCK="1"
+                shift
+                ;;
             --require-minisign)
                 REQUIRE_MINISIGN="1"
                 shift
@@ -217,7 +229,10 @@ main() {
     trap cleanup EXIT
     parse_args "$@"
 
-    require_linux_systemd_250
+    require_linux_systemd
+    if [ "$AUTO_UNLOCK" = "1" ]; then
+        require_systemd_250_creds
+    fi
     require_prereqs
     local arch
     arch="$(detect_arch)"
@@ -265,7 +280,11 @@ main() {
     [ -x "${TMPDIR_CREATED}/aplane/install.sh" ] || die "installer script not found in archive"
 
     log "Running bundled installer..."
-    run_root "${TMPDIR_CREATED}/aplane/install.sh" "$SVC_USER" "$SVC_GROUP" "$BINDIR"
+    if [ "$AUTO_UNLOCK" = "1" ]; then
+        run_root "${TMPDIR_CREATED}/aplane/install.sh" --auto-unlock "$SVC_USER" "$SVC_GROUP" "$BINDIR"
+    else
+        run_root "${TMPDIR_CREATED}/aplane/install.sh" "$SVC_USER" "$SVC_GROUP" "$BINDIR"
+    fi
 
     local data_dir
     data_dir="$(getent passwd "$SVC_USER" | cut -d: -f6)"
@@ -291,6 +310,12 @@ main() {
     log "Installation complete."
     log "Data directory: ${data_dir}"
     log "Check status: systemctl status aplane@${escaped_data_dir}"
+    if [ "$AUTO_UNLOCK" = "1" ]; then
+        log "Mode: auto-unlock (systemd-creds)"
+    else
+        log "Mode: locked-start (unlock via apadmin)"
+        log "Unlock: sudo -u ${SVC_USER} apadmin -d ${data_dir}"
+    fi
 }
 
 main "$@"

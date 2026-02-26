@@ -19,7 +19,7 @@ ExecStart=@@BINDIR@@/apsignerd
 User=@@USER@@
 Group=@@GROUP@@
 Environment=APSIGNER_DATA=%I
-LoadCredentialEncrypted=aplane-passphrase:%I/passphrase.cred
+@@LOAD_CREDENTIAL_LINE@@
 Restart=always
 RestartSec=5s
 ProtectSystem=full

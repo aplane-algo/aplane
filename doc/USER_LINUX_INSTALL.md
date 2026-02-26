@@ -1,8 +1,12 @@
 # Linux Production Installation
 
-This guide covers installing apsignerd as a systemd service on Linux. It uses `systemd-creds` (TPM2/host key) to encrypt the keystore passphrase at rest, and systemd's `LoadCredentialEncrypted` to inject it at service start.
+This guide covers installing apsignerd as a systemd service on Linux.
 
-**Requirements:** Linux with systemd 250+ (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+, Fedora 36+). macOS users should run apsignerd directly.
+By default, the service starts in **locked state** — no keystore initialization or passphrase configuration is needed. After starting the service, unlock via `apadmin`.
+
+For unattended operation, pass `--auto-unlock` to enable automatic unlock via `systemd-creds` (TPM2/host key). This encrypts a random passphrase at install time and injects it at service start via `LoadCredentialEncrypted`.
+
+**Requirements:** Linux with systemd. Auto-unlock mode requires systemd 250+ (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+, Fedora 36+). macOS users should run apsignerd directly.
 
 ## Table of Contents
 
@@ -14,7 +18,7 @@ This guide covers installing apsignerd as a systemd service on Linux. It uses `s
 - [Step 2: Install Binaries](#step-2-install-binaries)
 - [Step 3: Create Service User](#step-3-create-service-user)
 - [Step 4: Install the systemd Service](#step-4-install-the-systemd-service)
-- [Step 5: Initialize the Keystore](#step-5-initialize-the-keystore)
+- [Step 5: Initialize the Keystore (auto-unlock only)](#step-5-initialize-the-keystore-auto-unlock-only)
 - [Step 6: Enable and Start](#step-6-enable-and-start)
 - [Managing the Service](#managing-the-service)
 - [Multiple Instances](#multiple-instances)
@@ -29,10 +33,18 @@ This guide covers installing apsignerd as a systemd service on Linux. It uses `s
 
 ## Install via curl Bootstrap
 
-For a fresh Ubuntu 24.04 host, use the bootstrap installer:
+For a fresh Linux host, use the bootstrap installer:
 
 ```bash
+# Default: locked-start mode (unlock via apadmin after starting)
 curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | bash
+```
+
+For unattended operation with auto-unlock (requires systemd 250+):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
+  bash -s -- --auto-unlock
 ```
 
 This bootstrap script:
@@ -48,6 +60,10 @@ Useful options:
 # Pin a specific release
 curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
   bash -s -- --version v1.2.3
+
+# Auto-unlock with specific release
+curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
+  bash -s -- --auto-unlock --version v1.2.3
 
 # Require minisign verification (fails if minisign is unavailable)
 curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
@@ -69,8 +85,11 @@ The easiest way to install — no build tools required. Download a release tarba
 tar xzf aplane_*_linux_amd64.tar.gz
 cd aplane
 
-# Install (creates user, copies binaries, sets up systemd, writes config, initializes keystore if needed)
+# Default: locked-start mode
 sudo ./install.sh aplane aplane
+
+# Or with auto-unlock (requires systemd 250+):
+# sudo ./install.sh --auto-unlock aplane aplane
 
 # Resolve actual data directory from the service user's home
 DATA_DIR="$(getent passwd aplane | cut -d: -f6)"
@@ -78,6 +97,9 @@ DATA_DIR="$(getent passwd aplane | cut -d: -f6)"
 # Enable and start
 sudo systemctl enable aplane@$(systemd-escape "$DATA_DIR")
 sudo systemctl start aplane@$(systemd-escape "$DATA_DIR")
+
+# For locked-start mode, unlock after starting:
+sudo -u aplane apadmin -d "$DATA_DIR"
 ```
 
 The tarball contains:
@@ -87,7 +109,7 @@ aplane/
 ├── bin/            # All binaries (apsignerd, apshell, apadmin, etc.)
 ├── installer/      # systemd unit files and sudoers template
 ├── scripts/        # systemd-setup.sh and init-signer.sh
-└── install.sh      # Convenience wrapper (copies binaries, runs systemd setup, writes config, initializes keystore)
+└── install.sh      # Convenience wrapper (copies binaries, runs systemd setup, writes config)
 ```
 
 `install.sh` accepts an optional third argument for the install directory (default: `/usr/local/bin`):
@@ -100,7 +122,7 @@ Re-running `install.sh` is safe:
 
 - Existing `config.yaml` is left unchanged
 - A canonical template is written to `config.yaml.aplane-installer.new`
-- Keystore init is skipped if `.keystore` already exists
+- Keystore init is skipped if `.keystore` already exists (auto-unlock mode only)
 
 If `config.yaml.aplane-installer.new` is created, review and merge intentionally:
 
@@ -112,7 +134,9 @@ sudo -u aplane diff -u "$DATA_DIR/config.yaml" "$DATA_DIR/config.yaml.aplane-ins
 
 ## Quick Start
 
-For the impatient — build from source and install at `/var/lib/aplane` as the `aplane` user:
+For the impatient — build from source and install at `/var/lib/aplane` as the `aplane` user.
+
+### Locked-start mode (default)
 
 ```bash
 # Build
@@ -128,7 +152,37 @@ sudo useradd -r -m -d /var/lib/aplane -s /usr/sbin/nologin aplane
 # Install systemd service and sudoers
 sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin
 
-# Write signer config (required before keystore init)
+# Write signer config
+sudo -u aplane tee /var/lib/aplane/config.yaml <<'EOF'
+store: /var/lib/aplane/store
+lock_on_disconnect: false
+EOF
+
+# Enable and start (service starts locked)
+sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
+sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
+
+# Unlock via apadmin
+sudo -u aplane apadmin -d /var/lib/aplane
+```
+
+### Auto-unlock mode (requires systemd 250+)
+
+```bash
+# Build
+make all
+
+# Install binaries
+sudo cp bin/apsignerd bin/pass-systemd-creds bin/apstore bin/apadmin /usr/local/bin/
+sudo chmod 755 /usr/local/bin/pass-systemd-creds
+
+# Create service user
+sudo useradd -r -m -d /var/lib/aplane -s /usr/sbin/nologin aplane
+
+# Install systemd service with auto-unlock
+sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin --auto-unlock
+
+# Write signer config
 sudo -u aplane tee /var/lib/aplane/config.yaml <<'EOF'
 store: /var/lib/aplane/store
 passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds", "passphrase.cred"]
@@ -139,7 +193,7 @@ EOF
 # Initialize keystore with TPM2-encrypted passphrase
 sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
 
-# Enable and start
+# Enable and start (service auto-unlocks)
 sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
 sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
 ```
@@ -150,12 +204,13 @@ The rest of this guide explains each step in detail.
 
 ## Prerequisites
 
-1. **systemd 250+** — verify with:
+1. **systemd** — verify with:
    ```bash
    systemctl --version
    ```
+   For auto-unlock mode, systemd 250+ is required.
 
-2. **TPM2 support** (recommended but optional — systemd-creds falls back to the host key):
+2. **TPM2 support** (auto-unlock only, recommended but optional — systemd-creds falls back to the host key):
    ```bash
    systemd-creds has-tpm2
    # "yes" means TPM2 is available; "no" means host-key-only fallback
@@ -216,7 +271,7 @@ To use an existing user instead, skip this step and substitute your username in 
 The setup script installs a systemd **template** service (`aplane@.service`) that can manage instances for different data directories using systemd's `%I` specifier.
 
 ```bash
-sudo ./scripts/systemd-setup.sh <username> <group> [bindir]
+sudo ./scripts/systemd-setup.sh <username> <group> [bindir] [--auto-unlock]
 ```
 
 **Arguments:**
@@ -226,17 +281,18 @@ sudo ./scripts/systemd-setup.sh <username> <group> [bindir]
 | `username` | User to run apsignerd as | (required) |
 | `group` | Group to run apsignerd as | (required) |
 | `bindir` | Directory containing the apsignerd binary | `../bin` relative to the script |
+| `--auto-unlock` | Include `LoadCredentialEncrypted` for systemd-creds | (off) |
 
-**Example with default bindir** (binaries in `./bin/`):
-
-```bash
-sudo ./scripts/systemd-setup.sh aplane aplane
-```
-
-**Example with custom bindir** (binaries in `/usr/local/bin/`):
+**Example — locked-start (default):**
 
 ```bash
 sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin
+```
+
+**Example — auto-unlock:**
+
+```bash
+sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin --auto-unlock
 ```
 
 This installs:
@@ -246,9 +302,13 @@ This installs:
 
 ---
 
-## Step 5: Initialize the Keystore
+## Step 5: Initialize the Keystore (auto-unlock only)
 
-Before initializing, create `/var/lib/aplane/config.yaml`:
+This step is only needed with `--auto-unlock`. In locked-start mode, the service starts without a keystore and you initialize it via `apadmin` after starting.
+
+### Auto-unlock setup
+
+Create `/var/lib/aplane/config.yaml`:
 
 ```yaml
 store: /var/lib/aplane/store
@@ -273,7 +333,16 @@ This creates:
 - `/var/lib/aplane/store/` — keystore directory (owned by `aplane:aplane`)
 - `/var/lib/aplane/passphrase.cred` — TPM2-encrypted passphrase (owned by `root`)
 
-The `passphrase.cred` file is root-owned because `systemd-creds encrypt` requires root. systemd decrypts it at service start via `LoadCredentialEncrypted` — apsignerd itself never needs root access.
+### Locked-start setup
+
+Create `/var/lib/aplane/config.yaml`:
+
+```yaml
+store: /var/lib/aplane/store
+lock_on_disconnect: false
+```
+
+No keystore init is needed — apsignerd starts in locked state. Use `apadmin` to initialize and unlock after starting.
 
 See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for additional configuration options (auto-approve policies, network settings, etc.).
 
@@ -289,6 +358,12 @@ sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
 
 # Start now
 sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
+```
+
+For locked-start mode, unlock after starting:
+
+```bash
+sudo -u aplane apadmin -d /var/lib/aplane
 ```
 
 Check status:
@@ -349,7 +424,7 @@ The template service supports multiple apsignerd instances on the same machine, 
 sudo mkdir -p /var/lib/aplane-staging
 sudo chown aplane:aplane /var/lib/aplane-staging
 
-# Initialize it
+# Initialize it (auto-unlock mode only)
 sudo ./scripts/init-signer.sh /var/lib/aplane-staging aplane:aplane
 
 # Configure it (copy and edit config.yaml)
@@ -372,7 +447,7 @@ The `installer/` directory contains service files for different deployment scena
 |------|----------|
 | `installer/aplane.service` | Static single-instance service. Hardcoded for `/var/lib/aplane` as `aplane:aplane`. Copy directly to `/etc/systemd/system/` for the simplest possible setup. |
 | `installer/aplane@.service` | Template multi-instance service. Uses `%I` for the data directory path. Hardcoded for `aplane:aplane` with binaries in `/usr/local/bin/`. Copy directly to `/lib/systemd/system/` if defaults match your setup. |
-| `installer/aplane@.service.template` | Template with `@@BINDIR@@`, `@@USER@@`, `@@GROUP@@` placeholders. Used by `scripts/systemd-setup.sh` for customizable installs. |
+| `installer/aplane@.service.template` | Template with `@@BINDIR@@`, `@@USER@@`, `@@GROUP@@`, `@@LOAD_CREDENTIAL_LINE@@` placeholders. Used by `scripts/systemd-setup.sh` for customizable installs. |
 | `installer/sudoers.template` | sudoers rules with `@@USER@@` placeholder. Allows the service user to manage `aplane@*` services without a password. Covers both `/bin/systemctl` (Ubuntu) and `/usr/bin/systemctl` (RHEL/CentOS) paths. |
 
 ### Manual Installation (Without the Setup Script)
@@ -400,6 +475,8 @@ sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
 ---
 
 ## How Passphrase Encryption Works
+
+This section applies to **auto-unlock mode** only.
 
 The passphrase flow uses three components working together:
 
@@ -450,7 +527,7 @@ The passphrase flow uses three components working together:
 
 ## Changing the Passphrase
 
-To rotate the keystore passphrase:
+To rotate the keystore passphrase (auto-unlock mode):
 
 ```bash
 sudo apstore -d /var/lib/aplane changepass --random
@@ -478,7 +555,7 @@ The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot
    sudo -u aplane apstore -d /var/lib/aplane restore all /mnt/usb/backup
    ```
 
-3. **On the new machine** — initialize a new passphrase credential:
+3. **On the new machine** — if using auto-unlock, initialize a new passphrase credential:
    ```bash
    sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
    ```
@@ -521,7 +598,7 @@ journalctl -u aplane@$(systemd-escape /var/lib/aplane) --no-pager -n 50
 
 ### "LoadCredentialEncrypted failed"
 
-The `passphrase.cred` file may be missing or corrupted:
+This only applies to auto-unlock mode. The `passphrase.cred` file may be missing or corrupted:
 
 ```bash
 ls -la /var/lib/aplane/passphrase.cred
@@ -552,7 +629,7 @@ sudo chown aplane:aplane /var/lib/aplane
 
 ### systemd-creds not found
 
-Your systemd version is too old. Check with `systemctl --version`. You need systemd 250+.
+This is only needed for auto-unlock mode. Check with `systemctl --version`. You need systemd 250+ for auto-unlock. Without auto-unlock, the service starts in locked state and can be unlocked via `apadmin`.
 
 ### No TPM2
 
