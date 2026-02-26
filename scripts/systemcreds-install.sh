@@ -1,4 +1,6 @@
 #!/bin/bash
+# DEPRECATED: Use 'sudo appass -d <data-dir> set systemcreds' instead.
+#
 # systemcreds-install.sh - Upgrade a locked-start apsignerd installation to use systemd-creds auto-unlock
 #
 # This script upgrades an existing apsignerd installation (created without --auto-unlock)
