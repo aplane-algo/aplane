@@ -25,7 +25,15 @@ func MkdirAll(path string) error {
 	if err := os.MkdirAll(path, 0770); err != nil {
 		return err
 	}
-	return os.Chmod(path, StoreDirPerm)
+	// Set setgid + 0770. Setgid requires ownership or root; if we lack
+	// permission, fall back to 0770 without setgid.
+	if err := os.Chmod(path, StoreDirPerm); err != nil {
+		if os.IsPermission(err) {
+			return os.Chmod(path, 0770)
+		}
+		return err
+	}
+	return nil
 }
 
 // WriteFile writes data to a file with store permissions (g+rw).

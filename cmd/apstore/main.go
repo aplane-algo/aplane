@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
@@ -34,6 +35,9 @@ import (
 
 // Global config for commands that need it
 var config util.ServerConfig
+
+// dataDirectory holds the resolved data directory path
+var dataDirectory string
 
 // stdinReader is a shared reader for non-terminal stdin
 var stdinReader *bufio.Reader
@@ -86,10 +90,10 @@ func main() {
 	flag.Parse()
 
 	// Resolve data directory from -d flag or APSIGNER_DATA env var
-	resolvedDataDir := util.RequireSignerDataDir(*dataDir)
+	dataDirectory = util.RequireSignerDataDir(*dataDir)
 
 	// Load config from data directory
-	config = util.LoadServerConfig(resolvedDataDir)
+	config = util.LoadServerConfig(dataDirectory)
 
 	// Register all providers (must be called before using any registries)
 	RegisterProviders()
@@ -1150,6 +1154,11 @@ func cmdInit(random bool) error {
 	fmt.Println("=======================")
 	fmt.Println()
 
+	// Require root so that store files are created with correct ownership
+	if os.Getuid() != 0 {
+		return fmt.Errorf("apstore init must be run as root (use sudo)")
+	}
+
 	// Check if control file already exists
 	if crypto.KeystoreMetadataExistsIn(config.StoreDir) {
 		return fmt.Errorf("keystore already initialized (control file exists in %s)", config.StoreDir)
@@ -1220,6 +1229,20 @@ func cmdInit(random bool) error {
 	// Create identity-scoped keys directory
 	if err := fsutil.MkdirAll(utilkeys.KeysDir(auth.DefaultIdentityID)); err != nil {
 		return fmt.Errorf("failed to create keys directory: %w", err)
+	}
+
+	// Chown the store tree to the data directory owner (the service user)
+	if info, err := os.Stat(dataDirectory); err == nil {
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			uid := int(stat.Uid)
+			gid := int(stat.Gid)
+			_ = filepath.Walk(config.StoreDir, func(path string, _ os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				return os.Chown(path, uid, gid)
+			})
+		}
 	}
 
 	fmt.Println()
