@@ -38,9 +38,12 @@ cd aplane
 # Install (creates user, copies binaries, sets up systemd, writes config, initializes keystore if needed)
 sudo ./install.sh aplane aplane
 
+# Resolve actual data directory from the service user's home
+DATA_DIR="$(getent passwd aplane | cut -d: -f6)"
+
 # Enable and start
-sudo systemctl enable aplane@$(systemd-escape /var/lib/aplane)
-sudo systemctl start aplane@$(systemd-escape /var/lib/aplane)
+sudo systemctl enable aplane@$(systemd-escape "$DATA_DIR")
+sudo systemctl start aplane@$(systemd-escape "$DATA_DIR")
 ```
 
 The tarball contains:
@@ -64,6 +67,12 @@ Re-running `install.sh` is safe:
 - Existing `config.yaml` is left unchanged
 - A canonical template is written to `config.yaml.aplane-installer.new`
 - Keystore init is skipped if `.keystore` already exists
+
+If `config.yaml.aplane-installer.new` is created, review and merge intentionally:
+
+```bash
+sudo -u aplane diff -u "$DATA_DIR/config.yaml" "$DATA_DIR/config.yaml.aplane-installer.new" || true
+```
 
 ---
 
