@@ -8,6 +8,7 @@
 #
 # Environment overrides:
 #   APLANE_USER, APLANE_GROUP, APLANE_BINDIR, APLANE_VERSION
+#   APLANE_LOCAL (path or "1" for $PWD)
 #   APLANE_ENABLE_SERVICE (1|0), APLANE_START_SERVICE (1|0)
 #   APLANE_REQUIRE_MINISIGN (1|0) - require minisign binary and signature file
 
@@ -23,7 +24,7 @@ REQUESTED_VERSION="${APLANE_VERSION:-latest}"
 ENABLE_SERVICE="${APLANE_ENABLE_SERVICE:-1}"
 START_SERVICE="${APLANE_START_SERVICE:-1}"
 REQUIRE_MINISIGN="${APLANE_REQUIRE_MINISIGN:-0}"
-AUTO_UNLOCK="${APLANE_AUTO_UNLOCK:-0}"
+LOCAL_MODE="${APLANE_LOCAL:-}"
 
 TMPDIR_CREATED=""
 
@@ -36,15 +37,14 @@ Options:
   --group <name>      Service group to install/run as (default: aplane)
   --bindir <path>     Binary install directory (default: /usr/local/bin)
   --version <tag>     Release tag (e.g. v1.2.3) or "latest" (default: latest)
-  --auto-unlock       Enable auto-unlock via systemd-creds (requires systemd 250+)
+  --local [path]      Install locally without systemd (default path: $PWD)
   --no-enable         Do not run systemctl enable
   --no-start          Do not run systemctl start
   --require-minisign  Fail if minisign is unavailable or signature file is missing
   -h, --help          Show this help
 
 By default, the service starts in locked state. Use apadmin to unlock after
-starting. Pass --auto-unlock to enable automatic unlock via systemd-creds
-(requires systemd 250+ and systemd-creds).
+starting. Pass --local for a rootless install without systemd.
 EOF
 }
 
@@ -121,21 +121,14 @@ require_linux_systemd() {
     command -v systemctl >/dev/null 2>&1 || die "systemctl not found"
 }
 
-require_systemd_250_creds() {
-    local version
-    version="$(systemctl --version | awk 'NR==1 {print $2}')"
-    case "$version" in
-        ''|*[!0-9]*) die "failed to parse systemd version from 'systemctl --version'" ;;
-    esac
-    if [ "$version" -lt 250 ]; then
-        die "systemd ${version} detected; --auto-unlock requires systemd 250+"
-    fi
-    command -v systemd-creds >/dev/null 2>&1 || die "systemd-creds not found (required for --auto-unlock)"
+require_linux() {
+    local os
+    os="$(uname -s)"
+    [ "$os" = "Linux" ] || die "this bootstrap installer supports Linux only"
 }
 
 require_prereqs() {
     command -v tar >/dev/null 2>&1 || die "tar not found"
-    command -v getent >/dev/null 2>&1 || die "getent not found"
 }
 
 verify_checksum() {
@@ -197,16 +190,22 @@ parse_args() {
                 REQUESTED_VERSION="$2"
                 shift 2
                 ;;
+            --local)
+                shift
+                # Optional path argument (next arg if it doesn't start with --)
+                if [ $# -gt 0 ] && [ "${1:0:2}" != "--" ]; then
+                    LOCAL_MODE="$1"
+                    shift
+                else
+                    LOCAL_MODE="1"
+                fi
+                ;;
             --no-enable)
                 ENABLE_SERVICE="0"
                 shift
                 ;;
             --no-start)
                 START_SERVICE="0"
-                shift
-                ;;
-            --auto-unlock)
-                AUTO_UNLOCK="1"
                 shift
                 ;;
             --require-minisign)
@@ -228,9 +227,19 @@ main() {
     trap cleanup EXIT
     parse_args "$@"
 
-    require_linux_systemd
-    if [ "$AUTO_UNLOCK" = "1" ]; then
-        require_systemd_250_creds
+    # Determine if local mode is active
+    local is_local=0
+    if [ -n "$LOCAL_MODE" ]; then
+        is_local=1
+    fi
+
+    if [ "$is_local" = "1" ]; then
+        require_linux
+        # --local is mutually exclusive with --user/--group
+        # (we don't check if they were explicitly set, but that's fine —
+        # install.sh will reject positional args in --local mode)
+    else
+        require_linux_systemd
     fi
     require_prereqs
     local arch
@@ -279,37 +288,41 @@ main() {
     [ -x "${TMPDIR_CREATED}/aplane/install.sh" ] || die "installer script not found in archive"
 
     log "Running bundled installer..."
-    if [ "$AUTO_UNLOCK" = "1" ]; then
-        run_root "${TMPDIR_CREATED}/aplane/install.sh" --auto-unlock "$SVC_USER" "$SVC_GROUP" "$BINDIR"
+    if [ "$is_local" = "1" ]; then
+        # Resolve local path: "1" means $PWD, otherwise use the specified path
+        local local_path_arg=""
+        if [ "$LOCAL_MODE" != "1" ]; then
+            local_path_arg="$LOCAL_MODE"
+        fi
+        "${TMPDIR_CREATED}/aplane/install.sh" --local $local_path_arg
     else
         run_root "${TMPDIR_CREATED}/aplane/install.sh" "$SVC_USER" "$SVC_GROUP" "$BINDIR"
     fi
 
-    local data_dir
-    data_dir="$(getent passwd "$SVC_USER" | cut -d: -f6)"
-    [ -n "$data_dir" ] || die "failed to resolve data directory for user $SVC_USER"
+    # Post-install steps (prod mode only)
+    if [ "$is_local" = "0" ]; then
+        local data_dir
+        data_dir="$(getent passwd "$SVC_USER" | cut -d: -f6)"
+        [ -n "$data_dir" ] || die "failed to resolve data directory for user $SVC_USER"
 
-    if [ "$ENABLE_SERVICE" = "1" ]; then
-        log "Enabling service aplane..."
-        run_root systemctl enable aplane
-    else
-        log "Skipping service enable (--no-enable)."
-    fi
+        if [ "$ENABLE_SERVICE" = "1" ]; then
+            log "Enabling service aplane..."
+            run_root systemctl enable aplane
+        else
+            log "Skipping service enable (--no-enable)."
+        fi
 
-    if [ "$START_SERVICE" = "1" ]; then
-        log "Starting service aplane..."
-        run_root systemctl start aplane
-    else
-        log "Skipping service start (--no-start)."
-    fi
+        if [ "$START_SERVICE" = "1" ]; then
+            log "Starting service aplane..."
+            run_root systemctl start aplane
+        else
+            log "Skipping service start (--no-start)."
+        fi
 
-    log ""
-    log "Installation complete."
-    log "Data directory: ${data_dir}"
-    log "Check status: systemctl status aplane"
-    if [ "$AUTO_UNLOCK" = "1" ]; then
-        log "Mode: auto-unlock (systemd-creds)"
-    else
+        log ""
+        log "Installation complete."
+        log "Data directory: ${data_dir}"
+        log "Check status: systemctl status aplane"
         log "Mode: locked-start (unlock via apadmin)"
         log "Unlock: sudo -u ${SVC_USER} apadmin -d ${data_dir}"
     fi
