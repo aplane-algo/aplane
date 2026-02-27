@@ -360,7 +360,7 @@ func getTokenPathDescription() string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "~/.aplane/aplane.token"
+		return "~/.apclient/aplane.token"
 	}
-	return fmt.Sprintf("%s/.aplane/aplane.token", home)
+	return fmt.Sprintf("%s/.apclient/aplane.token", home)
 }

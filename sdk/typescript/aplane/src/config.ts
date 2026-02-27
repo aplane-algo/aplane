@@ -13,7 +13,7 @@ export const DEFAULT_SSH_PORT = 1127;
 export const DEFAULT_SIGNER_PORT = 11270;
 
 /** Default data directory (like ~/.aws, ~/.docker, ~/.kube) */
-export const DEFAULT_DATA_DIR = "~/.aplane";
+export const DEFAULT_DATA_DIR = "~/.apclient";
 
 /**
  * Expand ~ in paths to the user's home directory.

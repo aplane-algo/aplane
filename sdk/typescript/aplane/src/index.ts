@@ -4,8 +4,8 @@
 /**
  * aPlane TypeScript SDK - Transaction signing via apsignerd
  *
- * Data directory (default: ~/.aplane):
- *     ~/.aplane/
+ * Data directory (default: ~/.apclient):
+ *     ~/.apclient/
  *     ├── aplane.token         # API token
  *     └── config.yaml          # Connection settings
  *

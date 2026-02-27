@@ -4,8 +4,8 @@
 """
 aPlane Python SDK - Transaction signing via apsignerd
 
-Data directory (default: ~/.aplane):
-    ~/.aplane/
+Data directory (default: ~/.apclient):
+    ~/.apclient/
     ├── aplane.token         # API token (from request_token_to_file)
     ├── config.yaml          # Connection settings
     └── .ssh/
@@ -22,12 +22,12 @@ Token Provisioning:
     from aplane import request_token_to_file
 
     # Request token (operator must approve in apadmin)
-    request_token_to_file()  # uses ~/.aplane by default
+    request_token_to_file()  # uses ~/.apclient by default
 
 Usage:
     from aplane import SignerClient
 
-    client = SignerClient.from_env()  # uses ~/.aplane by default
+    client = SignerClient.from_env()  # uses ~/.apclient by default
     signed_txn = client.sign_transaction(txn)
     client.close()
 
@@ -64,7 +64,7 @@ DEFAULT_SSH_PORT = 1127
 DEFAULT_SIGNER_PORT = 11270
 
 # Default data directory (like ~/.aws, ~/.docker, ~/.kube)
-DEFAULT_DATA_DIR = "~/.aplane"
+DEFAULT_DATA_DIR = "~/.apclient"
 
 
 # -----------------------------------------------------------------------------
@@ -568,7 +568,7 @@ class SignerClient:
         """
         Connect using config file from data directory.
 
-        Data directory (default: ~/.aplane):
+        Data directory (default: ~/.apclient):
             - config.yaml: Connection settings
             - aplane.token: Authentication token
             - .ssh/id_ed25519: SSH key (if using SSH tunnel)
@@ -581,7 +581,7 @@ class SignerClient:
             SignerClient instance
 
         Example:
-            # Uses ~/.aplane by default
+            # Uses ~/.apclient by default
             client = SignerClient.from_env()
 
             # Or override
@@ -1684,7 +1684,7 @@ def request_token_to_file(
     3. Saves the token to data_dir/aplane.token
 
     Args:
-        data_dir: Data directory (default: ~/.aplane, or APCLIENT_DATA env var)
+        data_dir: Data directory (default: ~/.apclient, or APCLIENT_DATA env var)
         host: Signer host (default: from config.yaml ssh.host)
         ssh_port: SSH port (default: from config.yaml ssh.port or 1127)
         identity: Identity ID for the token (default: "default")
@@ -1698,7 +1698,7 @@ def request_token_to_file(
         TokenProvisioningError: If provisioning fails
 
     Example:
-        # Uses ~/.aplane and config.yaml automatically
+        # Uses ~/.apclient and config.yaml automatically
         request_token_to_file()
 
         # Or with explicit parameters

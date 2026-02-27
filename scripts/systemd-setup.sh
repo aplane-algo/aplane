@@ -1,16 +1,16 @@
 #!/bin/bash
-# systemd-setup.sh - Install the aplane systemd service and sudoers rules
+# systemd-setup.sh - Install the apsigner systemd service and sudoers rules
 #
 # Installs:
-#   /lib/systemd/system/aplane.service  (from installer/aplane.service.template)
-#   /etc/sudoers.d/99-aplane-systemctl  (from installer/sudoers.template)
+#   /lib/systemd/system/apsigner.service  (from installer/apsigner.service.template)
+#   /etc/sudoers.d/99-apsigner-systemctl  (from installer/sudoers.template)
 #
 # Usage:
 #   sudo ./scripts/systemd-setup.sh <username> <group> [bindir] [--data-dir <path>]
 #
 # After installing, enable and start the service:
-#   sudo systemctl enable aplane
-#   sudo systemctl start  aplane
+#   sudo systemctl enable apsigner
+#   sudo systemctl start  apsigner
 
 # Refuse to run when sourced (". script" or "source script" would kill the shell on exit/error)
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then
@@ -32,7 +32,7 @@ if [ $# -lt 2 ]; then
     echo "  username      User to run apsignerd as" >&2
     echo "  group         Group to run apsignerd as" >&2
     echo "  bindir        Directory containing apsignerd binary (default: ../bin relative to script)" >&2
-    echo "  --data-dir    Data directory for apsignerd (default: /var/lib/aplane)" >&2
+    echo "  --data-dir    Data directory for apsignerd (default: /var/lib/apsigner)" >&2
     exit 2
 fi
 
@@ -55,7 +55,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALLER_DIR="$SCRIPT_DIR/../installer"
 
-DATA_DIR="/var/lib/aplane"
+DATA_DIR="/var/lib/apsigner"
 if [ $# -ge 3 ] && [ "$3" != "--data-dir" ]; then
     BINDIR="$3"
     shift 3
@@ -92,7 +92,7 @@ if [ ! -f "$BINDIR/apsignerd" ]; then
     exit 1
 fi
 
-TEMPLATE="$INSTALLER_DIR/aplane.service.template"
+TEMPLATE="$INSTALLER_DIR/apsigner.service.template"
 SUDOERS_TEMPLATE="$INSTALLER_DIR/sudoers.template"
 
 if [ ! -f "$TEMPLATE" ]; then
@@ -105,10 +105,10 @@ if [ ! -f "$SUDOERS_TEMPLATE" ]; then
     exit 1
 fi
 
-SERVICE_DEST="/lib/systemd/system/aplane.service"
-SUDOERS_DEST="/etc/sudoers.d/99-aplane-systemctl"
+SERVICE_DEST="/lib/systemd/system/apsigner.service"
+SUDOERS_DEST="/etc/sudoers.d/99-apsigner-systemctl"
 
-echo "=== aplane systemd setup ==="
+echo "=== apsigner systemd setup ==="
 echo ""
 echo "  Service:   $SERVICE_DEST"
 echo "  Sudoers:   $SUDOERS_DEST"
@@ -139,8 +139,8 @@ echo "Ran systemctl daemon-reload"
 echo ""
 echo "Next steps:"
 echo "  1. Enable on boot:"
-echo "       sudo systemctl enable aplane"
+echo "       sudo systemctl enable apsigner"
 echo "  2. Start the service:"
-echo "       sudo systemctl start aplane"
+echo "       sudo systemctl start apsigner"
 echo "  3. Check status:"
-echo "       systemctl status aplane"
+echo "       systemctl status apsigner"

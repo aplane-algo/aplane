@@ -107,17 +107,17 @@ Load configuration from a data directory:
 
 ```typescript
 // Set environment variable
-// export APCLIENT_DATA=~/.aplane
+// export APCLIENT_DATA=~/.apclient
 
 const client = await SignerClient.fromEnv();
 
 // Or pass directly
-const client = await SignerClient.fromEnv({ dataDir: "~/.aplane" });
+const client = await SignerClient.fromEnv({ dataDir: "~/.apclient" });
 ```
 
 Data directory structure:
 ```
-~/.aplane/
+~/.apclient/
   config.yaml          # Connection settings
   aplane.token         # Authentication token
   .ssh/id_ed25519      # SSH key (if using SSH tunnel)
@@ -145,7 +145,7 @@ The token is the contents of the `aplane.token` file from your apsignerd data di
 import { loadToken } from "@aplane/signer";
 
 // Load from file
-const token = loadToken("~/.aplane/aplane.token");
+const token = loadToken("~/.apclient/aplane.token");
 
 // Or from environment
 const token = process.env.APSIGNER_TOKEN;
@@ -322,7 +322,7 @@ import algosdk from "algosdk";
 
 async function main() {
   // Load token
-  const token = loadToken("~/.aplane/aplane.token");
+  const token = loadToken("~/.apclient/aplane.token");
 
   // Connect to local signer
   const client = SignerClient.connectLocal(token);

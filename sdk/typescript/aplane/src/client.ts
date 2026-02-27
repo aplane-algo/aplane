@@ -296,7 +296,7 @@ export class SignerClient {
   /**
    * Connect using config file from data directory.
    *
-   * Data directory (default: ~/.aplane):
+   * Data directory (default: ~/.apclient):
    *   - config.yaml: Connection settings (signer_port, ssh)
    *   - aplane.token: Authentication token
    *   - .ssh/id_ed25519: SSH key (if using SSH tunnel)
@@ -306,7 +306,7 @@ export class SignerClient {
    *
    * @example
    * ```typescript
-   * // Uses ~/.aplane by default
+   * // Uses ~/.apclient by default
    * const client = await SignerClient.fromEnv();
    *
    * // Or override

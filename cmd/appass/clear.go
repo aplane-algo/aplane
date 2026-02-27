@@ -70,7 +70,7 @@ func cmdClear() error {
 	fmt.Println("=== Auto-unlock removed ===")
 	fmt.Println("")
 	fmt.Println("The service will start locked. Use apadmin to unlock after starting:")
-	fmt.Println("  sudo systemctl restart aplane")
+	fmt.Println("  sudo systemctl restart apsigner")
 	fmt.Printf("  sudo -u <service-user> apadmin -d %s\n", dataDirectory)
 
 	return nil

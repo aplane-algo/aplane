@@ -15,7 +15,7 @@ import (
 const (
 	DefaultSignerPort = 11270
 	DefaultSSHPort    = 1127
-	DefaultDataDir    = "~/.aplane"
+	DefaultDataDir    = "~/.apclient"
 	DefaultTimeout    = 90 // seconds
 )
 

@@ -769,24 +769,24 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
 
 3.  **Initialize a new keystore:**
     ```bash
-    sudo apstore -d /var/lib/aplane init --random
+    sudo apstore -d /var/lib/apsigner init --random
     ```
     This generates a random master passphrase, creates the keystore, then calls `pass-systemd-creds write` to encrypt and store the passphrase to `passphrase.cred` via `systemd-creds`. Requires root because `systemd-creds encrypt` accesses the TPM2/host key directly.
 
 4.  **Service Integration (Headless):**
 
-    **Unit file (`/lib/systemd/system/aplane.service`):**
+    **Unit file (`/lib/systemd/system/apsigner.service`):**
     ```ini
     [Unit]
     Description=apsignerd signing server
     After=network.target
-    AssertPathExists=/var/lib/aplane
+    AssertPathExists=/var/lib/apsigner
 
     [Service]
-    User=aplane
-    Group=aplane
-    Environment=APSIGNER_DATA=/var/lib/aplane
-    LoadCredentialEncrypted=aplane-passphrase:/var/lib/aplane/passphrase.cred
+    User=apsigner
+    Group=apsigner
+    Environment=APSIGNER_DATA=/var/lib/apsigner
+    LoadCredentialEncrypted=aplane-passphrase:/var/lib/apsigner/passphrase.cred
     ExecStart=/usr/local/bin/apsignerd
     Restart=always
 
@@ -795,8 +795,8 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
     ```
     Enable and start:
     ```bash
-    sudo systemctl enable aplane
-    sudo systemctl start aplane
+    sudo systemctl enable apsigner
+    sudo systemctl start apsigner
     ```
 
     At service start, systemd decrypts `passphrase.cred` and places the plaintext in a tmpfs at `$CREDENTIALS_DIRECTORY/aplane-passphrase`. When apsignerd invokes `pass-systemd-creds read`, it reads directly from that path — no root access needed, no shell script wrapper required.
@@ -805,11 +805,11 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
 
 5.  **Changing the passphrase:**
     ```bash
-    sudo apstore -d /var/lib/aplane changepass --random
+    sudo apstore -d /var/lib/apsigner changepass --random
     ```
     This reads the old passphrase (via `pass-systemd-creds read`), re-encrypts all keys with a new random passphrase, then stores it (via `pass-systemd-creds write`). Requires root. After changing, restart the service:
     ```bash
-    sudo systemctl restart aplane
+    sudo systemctl restart apsigner
     ```
 
 6.  **Migrating to a new machine:**
@@ -820,11 +820,11 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
 
     ```bash
     # On the old machine: create a portable backup
-    apstore -d /var/lib/aplane backup all /mnt/usb/backup
+    apstore -d /var/lib/apsigner backup all /mnt/usb/backup
 
     # On the new machine: restore, then init with pass-systemd-creds configured in config.yaml
-    apstore -d /var/lib/aplane restore all /mnt/usb/backup
-    sudo apstore -d /var/lib/aplane init --random
+    apstore -d /var/lib/apsigner restore all /mnt/usb/backup
+    sudo apstore -d /var/lib/apsigner init --random
     ```
 
 **Writing a custom helper:**

@@ -14,7 +14,7 @@ There are two distinct config.yaml formats:
 Both programs use a **data directory** for configuration and state:
 
 **apshell / Python SDK (clients):**
-- Default: `~/.aplane` (like `~/.aws`, `~/.docker`)
+- Default: `~/.apclient` (like `~/.aws`, `~/.docker`)
 - Override: `-d <path>` flag or `APCLIENT_DATA` env var
 
 **apsignerd / apadmin / apstore (server tools):**
@@ -22,10 +22,10 @@ Both programs use a **data directory** for configuration and state:
 
 Config files are located at `<data_dir>/config.yaml`.
 
-### Client Directory Structure (`~/.aplane`)
+### Client Directory Structure (`~/.apclient`)
 
 ```
-~/.aplane/
+~/.apclient/
 ├── aplane.token           # API token (obtained via request-token command)
 ├── config.yaml            # Connection settings
 ├── .ssh/
@@ -99,7 +99,7 @@ ssh:
   known_hosts_path: .ssh/known_hosts
 ```
 
-Note: SSH paths are relative to the data directory (`~/.aplane` by default). The `.ssh/` subdirectory is created automatically when needed. SSH authentication uses 2FA (API token as username + public key).
+Note: SSH paths are relative to the data directory (`~/.apclient` by default). The `.ssh/` subdirectory is created automatically when needed. SSH authentication uses 2FA (API token as username + public key).
 
 ### Custom Algod Endpoints
 
@@ -149,15 +149,15 @@ ai_model: claude-sonnet-4-5-20250929
 ### Data Directory Setup
 
 ```bash
-# apshell uses ~/.aplane by default - just run it
+# apshell uses ~/.apclient by default - just run it
 ./apshell
 
 # First-time setup: create config and SSH key
-mkdir -p ~/.aplane/.ssh
-ssh-keygen -t ed25519 -f ~/.aplane/.ssh/id_ed25519 -N ""
+mkdir -p ~/.apclient/.ssh
+ssh-keygen -t ed25519 -f ~/.apclient/.ssh/id_ed25519 -N ""
 
 # Create config.yaml (or copy from examples/)
-cat > ~/.aplane/config.yaml << 'EOF'
+cat > ~/.apclient/config.yaml << 'EOF'
 network: testnet
 signer_port: 11270
 ssh:
@@ -357,7 +357,7 @@ Use the `request-token` command to obtain a token securely via SSH:
 
 # In Python SDK
 from aplane import request_token_to_file
-request_token_to_file()  # uses ~/.aplane by default
+request_token_to_file()  # uses ~/.apclient by default
 ```
 
 The operator sees the client's SSH fingerprint in apadmin and can verify identity before approving.
@@ -368,7 +368,7 @@ For localhost or when SSH is not available:
 
 ```bash
 # Copy token from signer to client
-cp $APSIGNER_DATA/store/users/default/aplane.token ~/.aplane/
+cp $APSIGNER_DATA/store/users/default/aplane.token ~/.apclient/
 ```
 
 ### Endpoints
@@ -392,7 +392,7 @@ cp $APSIGNER_DATA/store/users/default/aplane.token ~/.aplane/
 
 | Variable | Description |
 |----------|-------------|
-| `APCLIENT_DATA` | Override client data directory (default: `~/.aplane`) |
+| `APCLIENT_DATA` | Override client data directory (default: `~/.apclient`) |
 | `APSIGNER_DATA` | **Data directory for apsignerd** (config, keys, IPC) - required |
 | `TEST_PASSPHRASE` | Passphrase for automated testing (auto-unlocks apsignerd) |
 | `TEST_FUNDING_MNEMONIC` | 25-word mnemonic for funding integration test accounts |
@@ -406,7 +406,7 @@ cp $APSIGNER_DATA/store/users/default/aplane.token ~/.aplane/
 ### Data Directory Configuration
 
 **apshell / Python SDK (clients):**
-- Default: `~/.aplane`
+- Default: `~/.apclient`
 - Override: `-d <path>` flag or `APCLIENT_DATA` env var
 
 **apsignerd / apadmin / apapprover / apstore (server tools):**
@@ -529,7 +529,7 @@ passphrase_command_env:
 ```yaml
 passphrase_command_env:
   AWS_REGION: "us-west-2"
-  HOME: "/var/lib/aplane"
+  HOME: "/var/lib/apsigner"
 ```
 
 #### 2. `lock_on_disconnect` (config.yaml)
@@ -561,7 +561,7 @@ group_auto_approve: true
 **config.yaml:**
 ```yaml
 signer_port: 11270
-store: /var/lib/aplane/keys
+store: /var/lib/apsigner/keys
 passphrase_command_argv: ["/usr/local/bin/aplane-keychain-helper"]
 lock_on_disconnect: false
 txn_auto_approve: true

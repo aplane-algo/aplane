@@ -50,7 +50,7 @@ SSH tunnel connection:
 		nil,
 	)
 
-From environment (reads ~/.aplane/config.yaml and aplane.token):
+From environment (reads ~/.apclient/config.yaml and aplane.token):
 
 	client, err := aplane.FromEnv(nil)
 

@@ -97,7 +97,7 @@ defer client.Close()
 Load configuration from a data directory:
 
 ```go
-// Uses APCLIENT_DATA env var or ~/.aplane
+// Uses APCLIENT_DATA env var or ~/.apclient
 client, err := aplane.FromEnv(nil)
 
 // Or specify data directory
@@ -108,7 +108,7 @@ client, err := aplane.FromEnv(&aplane.FromEnvOptions{
 
 Data directory structure:
 ```
-~/.aplane/
+~/.apclient/
   config.yaml          # Connection settings
   aplane.token         # Authentication token
   .ssh/id_ed25519      # SSH key (if using SSH tunnel)

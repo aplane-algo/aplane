@@ -4,27 +4,27 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
-#     bash -s -- --user aplane --group aplane --bindir /usr/local/bin --version latest
+#     bash -s -- --user apsigner --group apsigner --bindir /usr/local/bin --version latest
 #
 # Environment overrides:
-#   APLANE_USER, APLANE_GROUP, APLANE_BINDIR, APLANE_VERSION
-#   APLANE_LOCAL (path or "1" for $PWD)
-#   APLANE_ENABLE_SERVICE (1|0), APLANE_START_SERVICE (1|0)
-#   APLANE_REQUIRE_MINISIGN (1|0) - require minisign binary and signature file
+#   APSIGNER_USER, APSIGNER_GROUP, APSIGNER_BINDIR, APSIGNER_VERSION
+#   APSIGNER_LOCAL (path or "1" for $PWD)
+#   APSIGNER_ENABLE_SERVICE (1|0), APSIGNER_START_SERVICE (1|0)
+#   APSIGNER_REQUIRE_MINISIGN (1|0) - require minisign binary and signature file
 
 set -euo pipefail
 
 REPO="aplane-algo/aplane"
 MINISIGN_PUBKEY="RWQOLhio7R0OS5qnDscyJm5JEarSemT7K687rs65qLMShetqD7cXOxA8"
 
-SVC_USER="${APLANE_USER:-aplane}"
-SVC_GROUP="${APLANE_GROUP:-aplane}"
-BINDIR="${APLANE_BINDIR:-/usr/local/bin}"
-REQUESTED_VERSION="${APLANE_VERSION:-latest}"
-ENABLE_SERVICE="${APLANE_ENABLE_SERVICE:-1}"
-START_SERVICE="${APLANE_START_SERVICE:-1}"
-REQUIRE_MINISIGN="${APLANE_REQUIRE_MINISIGN:-0}"
-LOCAL_MODE="${APLANE_LOCAL:-}"
+SVC_USER="${APSIGNER_USER:-apsigner}"
+SVC_GROUP="${APSIGNER_GROUP:-apsigner}"
+BINDIR="${APSIGNER_BINDIR:-/usr/local/bin}"
+REQUESTED_VERSION="${APSIGNER_VERSION:-latest}"
+ENABLE_SERVICE="${APSIGNER_ENABLE_SERVICE:-1}"
+START_SERVICE="${APSIGNER_START_SERVICE:-1}"
+REQUIRE_MINISIGN="${APSIGNER_REQUIRE_MINISIGN:-0}"
+LOCAL_MODE="${APSIGNER_LOCAL:-}"
 
 TMPDIR_CREATED=""
 
@@ -33,8 +33,8 @@ usage() {
 Usage: bootstrap-install.sh [options]
 
 Options:
-  --user <name>       Service user to install/run as (default: aplane)
-  --group <name>      Service group to install/run as (default: aplane)
+  --user <name>       Service user to install/run as (default: apsigner)
+  --group <name>      Service group to install/run as (default: apsigner)
   --bindir <path>     Binary install directory (default: /usr/local/bin)
   --version <tag>     Release tag (e.g. v1.2.3) or "latest" (default: latest)
   --local [path]      Install locally without systemd (default path: $PWD)
@@ -159,7 +159,7 @@ verify_signature() {
         if [ "$REQUIRE_MINISIGN" = "1" ]; then
             die "minisign is required but not installed"
         fi
-        warn "minisign not installed; skipping signature verification (set APLANE_REQUIRE_MINISIGN=1 to enforce)"
+        warn "minisign not installed; skipping signature verification (set APSIGNER_REQUIRE_MINISIGN=1 to enforce)"
         return
     fi
 
@@ -306,15 +306,15 @@ main() {
         [ -n "$data_dir" ] || die "failed to resolve data directory for user $SVC_USER"
 
         if [ "$ENABLE_SERVICE" = "1" ]; then
-            log "Enabling service aplane..."
-            run_root systemctl enable aplane
+            log "Enabling service apsigner..."
+            run_root systemctl enable apsigner
         else
             log "Skipping service enable (--no-enable)."
         fi
 
         if [ "$START_SERVICE" = "1" ]; then
-            log "Starting service aplane..."
-            run_root systemctl start aplane
+            log "Starting service apsigner..."
+            run_root systemctl start apsigner
         else
             log "Skipping service start (--no-start)."
         fi
@@ -322,7 +322,7 @@ main() {
         log ""
         log "Installation complete."
         log "Data directory: ${data_dir}"
-        log "Check status: systemctl status aplane"
+        log "Check status: systemctl status apsigner"
         log "Mode: locked-start (unlock via apadmin)"
         log "Unlock: sudo -u ${SVC_USER} apadmin -d ${data_dir}"
     fi

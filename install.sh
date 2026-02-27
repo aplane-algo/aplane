@@ -13,7 +13,7 @@
 #   bindir    Where to install binaries (default: /usr/local/bin)
 #
 # Arguments (local mode):
-#   path      Parent directory for aplane/ (default: current directory)
+#   path      Parent directory for apsigner/ (default: $HOME)
 #
 # Works from both a repo checkout and an extracted release tarball.
 
@@ -78,13 +78,13 @@ if [ "$LOCAL_MODE" = "1" ]; then
     if [ -n "$LOCAL_PATH" ]; then
         LOCAL_PATH="$(cd "$LOCAL_PATH" && pwd)"
     else
-        LOCAL_PATH="$PWD"
+        LOCAL_PATH="$HOME"
     fi
-    INSTALL_ROOT="$LOCAL_PATH/aplane"
+    INSTALL_ROOT="$LOCAL_PATH/apsigner"
     BINDIR="$INSTALL_ROOT/bin"
-    DATA_DIR="$INSTALL_ROOT/data"
+    DATA_DIR="$INSTALL_ROOT"
 
-    echo "=== aplane installer (local mode) ==="
+    echo "=== apsigner installer (local mode) ==="
     echo ""
     echo "  Source:    $SCRIPT_DIR"
     echo "  Install:   $INSTALL_ROOT"
@@ -93,7 +93,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     echo ""
 
     # Create directories
-    mkdir -p "$BINDIR" "$DATA_DIR"
+    mkdir -p "$BINDIR"
 
     # Copy binaries
     echo "Installing binaries to $BINDIR..."
@@ -109,7 +109,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     CONFIG_PATH="$DATA_DIR/config.yaml"
     echo ""
     if [ -f "$CONFIG_PATH" ]; then
-        CONFIG_NEW_PATH="$CONFIG_PATH.aplane-installer.new"
+        CONFIG_NEW_PATH="$CONFIG_PATH.apsigner-installer.new"
         echo "Config already exists at $CONFIG_PATH; leaving it unchanged."
         echo "Writing canonical template to $CONFIG_NEW_PATH..."
         cat > "$CONFIG_NEW_PATH" <<'EOF'
@@ -186,57 +186,17 @@ require_memory_protection: false
 EOF
     fi
 
-    # Set up apshell data directory
-    APSHELL_DIR="$DATA_DIR/.aplane"
-    if [ ! -d "$APSHELL_DIR" ]; then
-        echo ""
-        echo "Setting up apshell data directory at $APSHELL_DIR..."
-        mkdir -p "$APSHELL_DIR"
-        cat > "$APSHELL_DIR/config.yaml" <<'APSHELL_EOF'
-# apshell configuration for LOCAL signer (same machine, no SSH tunnel)
-# See doc/USER_CONFIG.md for full documentation.
-
-# Algorand network (mainnet, testnet, betanet)
-network: testnet
-
-# Restrict which networks can be used (empty = all allowed)
-networks_allowed: []
-
-# Signer connection settings
-signer_host: localhost
-signer_port: 11270
-
-# AI model for code generation (empty = provider default)
-ai_model: ""
-
-# Algod settings (Nodely public endpoints)
-testnet_algod_server: https://testnet-api.4160.nodely.dev
-testnet_algod_token: ""
-
-# Uncomment for mainnet
-# mainnet_algod_server: https://mainnet-api.4160.nodely.dev
-# mainnet_algod_token: ""
-
-# Uncomment for betanet
-# betanet_algod_server: https://betanet-api.4160.nodely.dev
-# betanet_algod_token: ""
-APSHELL_EOF
-        echo "  Created $APSHELL_DIR/config.yaml"
-    else
-        echo ""
-        echo "apshell data directory already exists at $APSHELL_DIR; skipping."
-    fi
-
     # Write env.sh for easy sourcing
+    APCLIENT_DIR="$HOME/.apclient"
     cat > "$INSTALL_ROOT/env.sh" <<ENVEOF
-# Source this file to set up aplane environment:
+# Source this file to set up apsigner environment:
 #   source $INSTALL_ROOT/env.sh
 # Or add to ~/.bashrc:
 #   . $INSTALL_ROOT/env.sh
 
 export PATH="$BINDIR:\$PATH"
 export APSIGNER_DATA="$DATA_DIR"
-export APCLIENT_DATA="$APSHELL_DIR"
+export APCLIENT_DATA="$APCLIENT_DIR"
 ENVEOF
 
     echo ""
@@ -252,7 +212,8 @@ ENVEOF
     echo "  apstore init          # Initialize keystore"
     echo "  apsignerd              # Start signer"
     echo "  apadmin                # Unlock and manage keys"
-    echo "  apshell                # Interactive shell"
+    echo ""
+    echo "For apshell, create $APCLIENT_DIR/config.yaml with your client settings."
     exit 0
 fi
 
@@ -281,7 +242,7 @@ BINDIR="${POSITIONAL[2]:-/usr/local/bin}"
 mkdir -p "$BINDIR"
 BINDIR="$(cd "$BINDIR" && pwd)"
 
-echo "=== aplane installer ==="
+echo "=== apsigner installer ==="
 echo ""
 echo "  Source:    $SCRIPT_DIR"
 echo "  Bindir:    $BINDIR"
@@ -293,9 +254,9 @@ echo ""
 # Step 1: Create service user/group if they don't exist
 if ! id -u "$SVC_USER" >/dev/null 2>&1; then
     echo "Creating system user $SVC_USER..."
-    useradd -r -m -d /var/lib/aplane -s /usr/sbin/nologin "$SVC_USER"
-    chmod 750 /var/lib/aplane
-    echo "  Created user $SVC_USER with home /var/lib/aplane"
+    useradd -r -m -d /var/lib/apsigner -s /usr/sbin/nologin "$SVC_USER"
+    chmod 750 /var/lib/apsigner
+    echo "  Created user $SVC_USER with home /var/lib/apsigner"
 else
     echo "User $SVC_USER already exists, skipping creation."
 fi
@@ -380,7 +341,7 @@ EOF
 }
 
 if [ -f "$CONFIG_PATH" ]; then
-    CONFIG_NEW_PATH="$CONFIG_PATH.aplane-installer.new"
+    CONFIG_NEW_PATH="$CONFIG_PATH.apsigner-installer.new"
     echo "Config already exists at $CONFIG_PATH; leaving it unchanged."
     echo "Writing canonical template to $CONFIG_NEW_PATH..."
     write_canonical_config "$CONFIG_NEW_PATH"
@@ -389,56 +350,12 @@ else
     write_canonical_config "$CONFIG_PATH"
 fi
 
-# Step 5: Set up apshell data directory for the service user
-APSHELL_DIR="$DATA_DIR/.aplane"
-if [ ! -d "$APSHELL_DIR" ]; then
-    echo ""
-    echo "Setting up apshell data directory at $APSHELL_DIR..."
-    mkdir -p "$APSHELL_DIR"
-    cat > "$APSHELL_DIR/config.yaml" <<'APSHELL_EOF'
-# apshell configuration for LOCAL signer (same machine, no SSH tunnel)
-# See doc/USER_CONFIG.md for full documentation.
-
-# Algorand network (mainnet, testnet, betanet)
-network: testnet
-
-# Restrict which networks can be used (empty = all allowed)
-networks_allowed: []
-
-# Signer connection settings
-signer_host: localhost
-signer_port: 11270
-
-# AI model for code generation (empty = provider default)
-ai_model: ""
-
-# Algod settings (Nodely public endpoints)
-testnet_algod_server: https://testnet-api.4160.nodely.dev
-testnet_algod_token: ""
-
-# Uncomment for mainnet
-# mainnet_algod_server: https://mainnet-api.4160.nodely.dev
-# mainnet_algod_token: ""
-
-# Uncomment for betanet
-# betanet_algod_server: https://betanet-api.4160.nodely.dev
-# betanet_algod_token: ""
-APSHELL_EOF
-    chown -R "$SVC_USER:$SVC_GROUP" "$APSHELL_DIR"
-    chmod 750 "$APSHELL_DIR"
-    chmod 640 "$APSHELL_DIR/config.yaml"
-    echo "  Created $APSHELL_DIR/config.yaml"
-else
-    echo ""
-    echo "apshell data directory already exists at $APSHELL_DIR; skipping."
-fi
-
-# Step 6: Install /etc/profile.d drop-in for APSIGNER_DATA
-PROFILE_DROP="/etc/profile.d/aplane.sh"
+# Step 5: Install /etc/profile.d drop-in for APSIGNER_DATA
+PROFILE_DROP="/etc/profile.d/apsigner.sh"
 echo ""
 echo "Writing $PROFILE_DROP..."
 cat > "$PROFILE_DROP" <<PROFEOF
-# aplane environment (installed by aplane installer)
+# apsigner environment (installed by apsigner installer)
 export APSIGNER_DATA="$DATA_DIR"
 PROFEOF
 chmod 644 "$PROFILE_DROP"
@@ -449,17 +366,15 @@ echo "=== Installation complete ==="
 echo ""
 echo "Next steps:"
 echo "  1. Enable and start:"
-echo "       sudo systemctl enable aplane"
-echo "       sudo systemctl start aplane"
+echo "       sudo systemctl enable apsigner"
+echo "       sudo systemctl start apsigner"
 echo "  2. Unlock the signer after starting:"
 echo "       sudo -u $SVC_USER apadmin"
 echo "  3. Generate keys:"
 echo "       sudo -u $SVC_USER apadmin"
-echo "  4. Run apshell:"
-echo "       sudo -u $SVC_USER apshell -d $APSHELL_DIR"
 echo ""
 echo "APSIGNER_DATA is set in $PROFILE_DROP (active on next login)."
 echo "To use immediately: source $PROFILE_DROP"
 echo ""
-echo "For apshell, set APCLIENT_DATA per user:"
-echo "  export APCLIENT_DATA=$APSHELL_DIR"
+echo "For apshell, each user should set up ~/.apclient/config.yaml"
+echo "and set APCLIENT_DATA=~/.apclient (or use apshell -d)."

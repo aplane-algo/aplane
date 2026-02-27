@@ -32,7 +32,7 @@ func GetaPlaneTokenPath(identityID string) string {
 }
 
 // GetApshellTokenPath returns the path to the client token file.
-// Uses GetClientDataDir resolution: -d flag > APCLIENT_DATA > ~/.aplane
+// Uses GetClientDataDir resolution: -d flag > APCLIENT_DATA > ~/.apclient
 func GetApshellTokenPath() (string, error) {
 	dataDir := GetClientDataDir("")
 	if dataDir == "" {
@@ -114,7 +114,7 @@ func LoadaPlaneToken(identityID string) (string, error) {
 	}
 
 	fmt.Printf("✓ Generated new API token: %s\n", path)
-	fmt.Printf("  Copy this token to your client data directory (~/.aplane or $APCLIENT_DATA)\n")
+	fmt.Printf("  Copy this token to your client data directory (~/.apclient or $APCLIENT_DATA)\n")
 
 	return token, nil
 }

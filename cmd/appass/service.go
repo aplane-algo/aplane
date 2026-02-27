@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const defaultServiceFile = "/lib/systemd/system/aplane.service"
+const defaultServiceFile = "/lib/systemd/system/apsigner.service"
 
 type serviceInfo struct {
 	BinDir      string

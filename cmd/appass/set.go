@@ -115,9 +115,9 @@ func cmdSetPassfile() error {
 	fmt.Printf("       sudo apstore -d %s init\n", dataDirectory)
 	fmt.Println("     Use the same passphrase you entered above.")
 	fmt.Println("  2. Start (or restart) the service:")
-	fmt.Println("       sudo systemctl restart aplane")
+	fmt.Println("       sudo systemctl restart apsigner")
 	fmt.Println("  3. Check status:")
-	fmt.Println("       systemctl status aplane")
+	fmt.Println("       systemctl status apsigner")
 
 	return nil
 }
@@ -244,9 +244,9 @@ func cmdSetSystemcreds() error {
 	fmt.Printf("       sudo apstore -d %s init\n", dataDirectory)
 	fmt.Println("     Use the same passphrase you entered above.")
 	fmt.Println("  2. Start (or restart) the service:")
-	fmt.Println("       sudo systemctl restart aplane")
+	fmt.Println("       sudo systemctl restart apsigner")
 	fmt.Println("  3. Check status:")
-	fmt.Println("       systemctl status aplane")
+	fmt.Println("       systemctl status apsigner")
 
 	return nil
 }

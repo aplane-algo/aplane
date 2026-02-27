@@ -71,10 +71,10 @@ func DefaultSSHClientConfig() SSHClientConfig {
 }
 
 // DefaultClientDataDir is the default data directory for aplane clients (apshell, Python SDK)
-const DefaultClientDataDir = "~/.aplane"
+const DefaultClientDataDir = "~/.apclient"
 
 // GetClientDataDir returns the data directory for aplane clients.
-// Resolution order: -d flag > APCLIENT_DATA env var > ~/.aplane
+// Resolution order: -d flag > APCLIENT_DATA env var > ~/.apclient
 func GetClientDataDir(flagValue string) string {
 	if flagValue != "" {
 		return flagValue
@@ -87,11 +87,11 @@ func GetClientDataDir(flagValue string) string {
 	if err != nil {
 		return "" // Can't determine default
 	}
-	return filepath.Join(home, ".aplane")
+	return filepath.Join(home, ".apclient")
 }
 
 // RequireClientDataDir resolves the client data directory from the flag value,
-// APCLIENT_DATA environment variable, or ~/.aplane default. Exits if unresolvable.
+// APCLIENT_DATA environment variable, or ~/.apclient default. Exits if unresolvable.
 func RequireClientDataDir(flagValue string) string {
 	dir := GetClientDataDir(flagValue)
 	if dir == "" {

@@ -4,7 +4,7 @@
 """
 aPlane Python SDK - Transaction signing via apsignerd
 
-Data directory: ~/.aplane (override with APCLIENT_DATA)
+Data directory: ~/.apclient (override with APCLIENT_DATA)
 
 Token provisioning:
     from aplane import request_token_to_file

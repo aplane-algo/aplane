@@ -39,7 +39,7 @@ func New() *Discoverer {
 func getDefaultSearchPaths() []string {
 	paths := []string{}
 
-	// Client data dir plugins (APCLIENT_DATA or ~/.aplane)
+	// Client data dir plugins (APCLIENT_DATA or ~/.apclient)
 	if dataDir := util.GetClientDataDir(""); dataDir != "" {
 		paths = append(paths, filepath.Join(dataDir, "plugins"))
 	}

@@ -1,13 +1,13 @@
 ## This file should be installed as:
 ##
-##   /lib/systemd/system/aplane.service
+##   /lib/systemd/system/apsigner.service
 ##
 ## and then running "systemctl daemon-reload".
 ##
 ## To enable and start apsignerd:
 ##
-##   systemctl enable aplane
-##   systemctl start  aplane
+##   systemctl enable apsigner
+##   systemctl start  apsigner
 
 [Unit]
 Description=apsignerd signing server

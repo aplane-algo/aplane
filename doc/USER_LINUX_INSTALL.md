@@ -52,7 +52,7 @@ This bootstrap script:
 - Downloads the matching GitHub release tarball
 - Verifies checksums (and minisign signature if `minisign` is installed)
 - Runs the bundled `install.sh`
-- Enables and starts the `aplane` systemd service
+- Enables and starts the `apsigner` systemd service
 
 Useful options:
 
@@ -67,11 +67,11 @@ curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-i
 
 # Require minisign verification (fails if minisign is unavailable)
 curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
-  APLANE_REQUIRE_MINISIGN=1 bash
+  APSIGNER_REQUIRE_MINISIGN=1 bash
 
 # Custom service user/group/bindir
 curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
-  bash -s -- --user aplane --group aplane --bindir /usr/local/bin
+  bash -s -- --user apsigner --group apsigner --bindir /usr/local/bin
 ```
 
 ---
@@ -86,17 +86,17 @@ tar xzf aplane_*_linux_amd64.tar.gz
 cd aplane
 
 # Default: locked-start mode
-sudo ./install.sh aplane aplane
+sudo ./install.sh apsigner apsigner
 
 # Or with auto-unlock (requires systemd 250+):
-# sudo ./install.sh --auto-unlock aplane aplane
+# sudo ./install.sh --auto-unlock apsigner apsigner
 
 # Enable and start
-sudo systemctl enable aplane
-sudo systemctl start aplane
+sudo systemctl enable apsigner
+sudo systemctl start apsigner
 
 # For locked-start mode, unlock after starting:
-sudo -u aplane apadmin -d "$DATA_DIR"
+sudo -u apsigner apadmin -d "$DATA_DIR"
 ```
 
 The tarball contains:
@@ -112,7 +112,7 @@ aplane/
 `install.sh` accepts an optional third argument for the install directory (default: `/usr/local/bin`):
 
 ```bash
-sudo ./install.sh aplane aplane /opt/aplane/bin
+sudo ./install.sh apsigner apsigner /opt/aplane/bin
 ```
 
 Re-running `install.sh` is safe:
@@ -124,14 +124,14 @@ Re-running `install.sh` is safe:
 If `config.yaml.aplane-installer.new` is created, review and merge intentionally:
 
 ```bash
-sudo -u aplane diff -u "$DATA_DIR/config.yaml" "$DATA_DIR/config.yaml.aplane-installer.new" || true
+sudo -u apsigner diff -u "$DATA_DIR/config.yaml" "$DATA_DIR/config.yaml.aplane-installer.new" || true
 ```
 
 ---
 
 ## Quick Start
 
-For the impatient — build from source and install at `/var/lib/aplane` as the `aplane` user.
+For the impatient — build from source and install at `/var/lib/apsigner` as the `apsigner` user.
 
 ### Locked-start mode (default)
 
@@ -144,24 +144,24 @@ sudo cp bin/apsignerd bin/pass-systemd-creds bin/apstore bin/apadmin /usr/local/
 sudo chmod 755 /usr/local/bin/pass-systemd-creds
 
 # Create service user
-sudo useradd -r -m -d /var/lib/aplane -s /usr/sbin/nologin aplane
+sudo useradd -r -m -d /var/lib/apsigner -s /usr/sbin/nologin apsigner
 
 # Install systemd service and sudoers
-sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin
+sudo ./scripts/systemd-setup.sh apsigner apsigner /usr/local/bin
 
 # Write signer config
-sudo -u aplane tee /var/lib/aplane/config.yaml <<'EOF'
-store: /var/lib/aplane/store
+sudo -u apsigner tee /var/lib/apsigner/config.yaml <<'EOF'
+store: /var/lib/apsigner/store
 lock_on_disconnect: false
 EOF
 
 # Enable and start (service starts locked)
-sudo systemctl enable aplane
-sudo systemctl start aplane
+sudo systemctl enable apsigner
+sudo systemctl start apsigner
 
 # Initialize keystore and unlock via apadmin
-sudo -u aplane apstore -d /var/lib/aplane init
-sudo -u aplane apadmin -d /var/lib/aplane
+sudo -u apsigner apstore -d /var/lib/apsigner init
+sudo -u apsigner apadmin -d /var/lib/apsigner
 ```
 
 ### Auto-unlock mode (requires systemd 250+)
@@ -175,25 +175,25 @@ sudo cp bin/apsignerd bin/pass-systemd-creds bin/apstore bin/apadmin /usr/local/
 sudo chmod 755 /usr/local/bin/pass-systemd-creds
 
 # Create service user
-sudo useradd -r -m -d /var/lib/aplane -s /usr/sbin/nologin aplane
+sudo useradd -r -m -d /var/lib/apsigner -s /usr/sbin/nologin apsigner
 
 # Install systemd service with auto-unlock
-sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin --auto-unlock
+sudo ./scripts/systemd-setup.sh apsigner apsigner /usr/local/bin --auto-unlock
 
 # Write signer config
-sudo -u aplane tee /var/lib/aplane/config.yaml <<'EOF'
-store: /var/lib/aplane/store
+sudo -u apsigner tee /var/lib/apsigner/config.yaml <<'EOF'
+store: /var/lib/apsigner/store
 passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds", "passphrase.cred"]
 passphrase_timeout: "0"
 lock_on_disconnect: false
 EOF
 
 # Initialize keystore with TPM2-encrypted passphrase
-sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
+sudo ./scripts/init-signer.sh /var/lib/apsigner apsigner:apsigner
 
 # Enable and start (service auto-unlocks)
-sudo systemctl enable aplane
-sudo systemctl start aplane
+sudo systemctl enable apsigner
+sudo systemctl start apsigner
 ```
 
 The rest of this guide explains each step in detail.
@@ -255,10 +255,10 @@ Or keep them in a custom directory — `systemd-setup.sh` accepts a `bindir` arg
 Create a dedicated system user with no login shell:
 
 ```bash
-sudo useradd -r -m -d /var/lib/aplane -s /usr/sbin/nologin aplane
+sudo useradd -r -m -d /var/lib/apsigner -s /usr/sbin/nologin apsigner
 ```
 
-This creates the `aplane` user and group with home directory `/var/lib/aplane`.
+This creates the `apsigner` user and group with home directory `/var/lib/apsigner`.
 
 To use an existing user instead, skip this step and substitute your username in the following steps.
 
@@ -266,7 +266,7 @@ To use an existing user instead, skip this step and substitute your username in 
 
 ## Step 4: Install the systemd Service
 
-The setup script installs a systemd service (`aplane.service`) configured for a specific data directory.
+The setup script installs a systemd service (`apsigner.service`) configured for a specific data directory.
 
 ```bash
 sudo ./scripts/systemd-setup.sh <username> <group> [bindir] [--auto-unlock] [--data-dir <path>]
@@ -280,24 +280,24 @@ sudo ./scripts/systemd-setup.sh <username> <group> [bindir] [--auto-unlock] [--d
 | `group` | Group to run apsignerd as | (required) |
 | `bindir` | Directory containing the apsignerd binary | `../bin` relative to the script |
 | `--auto-unlock` | Include `LoadCredentialEncrypted` for systemd-creds | (off) |
-| `--data-dir` | Data directory for apsignerd | `/var/lib/aplane` |
+| `--data-dir` | Data directory for apsignerd | `/var/lib/apsigner` |
 
 **Example — locked-start (default):**
 
 ```bash
-sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin
+sudo ./scripts/systemd-setup.sh apsigner apsigner /usr/local/bin
 ```
 
 **Example — auto-unlock:**
 
 ```bash
-sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin --auto-unlock
+sudo ./scripts/systemd-setup.sh apsigner apsigner /usr/local/bin --auto-unlock
 ```
 
 This installs:
 
-- `/lib/systemd/system/aplane.service` — the service unit file
-- `/etc/sudoers.d/99-aplane-systemctl` — allows the service user to start/stop/restart without a password
+- `/lib/systemd/system/apsigner.service` — the service unit file
+- `/etc/sudoers.d/99-apsigner-systemctl` — allows the service user to start/stop/restart without a password
 
 ---
 
@@ -307,10 +307,10 @@ This step is only needed with `--auto-unlock`. In locked-start mode, the service
 
 ### Auto-unlock setup
 
-Create `/var/lib/aplane/config.yaml`:
+Create `/var/lib/apsigner/config.yaml`:
 
 ```yaml
-store: /var/lib/aplane/store
+store: /var/lib/apsigner/store
 
 # Passphrase helper: reads from systemd credential directory at runtime
 passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds", "passphrase.cred"]
@@ -325,19 +325,19 @@ If you installed binaries in a custom bindir, set that absolute path in `passphr
 Then run the init script:
 
 ```bash
-sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
+sudo ./scripts/init-signer.sh /var/lib/apsigner apsigner:apsigner
 ```
 
 This creates:
-- `/var/lib/aplane/store/` — keystore directory (owned by `aplane:aplane`)
-- `/var/lib/aplane/passphrase.cred` — TPM2-encrypted passphrase (owned by `root`)
+- `/var/lib/apsigner/store/` — keystore directory (owned by `apsigner:apsigner`)
+- `/var/lib/apsigner/passphrase.cred` — TPM2-encrypted passphrase (owned by `root`)
 
 ### Locked-start setup
 
-Create `/var/lib/aplane/config.yaml`:
+Create `/var/lib/apsigner/config.yaml`:
 
 ```yaml
-store: /var/lib/aplane/store
+store: /var/lib/apsigner/store
 lock_on_disconnect: false
 ```
 
@@ -351,56 +351,56 @@ See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for additional configura
 
 ```bash
 # Enable on boot
-sudo systemctl enable aplane
+sudo systemctl enable apsigner
 
 # Start now
-sudo systemctl start aplane
+sudo systemctl start apsigner
 ```
 
 For locked-start mode, initialize the keystore and unlock after starting:
 
 ```bash
-sudo -u aplane apstore -d /var/lib/aplane init
-sudo -u aplane apadmin -d /var/lib/aplane
+sudo -u apsigner apstore -d /var/lib/apsigner init
+sudo -u apsigner apadmin -d /var/lib/apsigner
 ```
 
 Check status:
 
 ```bash
-systemctl status aplane
+systemctl status apsigner
 ```
 
 View logs:
 
 ```bash
-journalctl -u aplane -f
+journalctl -u apsigner -f
 ```
 
 ---
 
 ## Managing the Service
 
-With the sudoers rules installed, the `aplane` user can manage the service without `sudo`:
+With the sudoers rules installed, the `apsigner` user can manage the service without `sudo`:
 
 ```bash
-# As the aplane user (or via sudo -u aplane)
-systemctl status aplane
-sudo systemctl restart aplane
-sudo systemctl stop aplane
+# As the apsigner user (or via sudo -u apsigner)
+systemctl status apsigner
+sudo systemctl restart apsigner
+sudo systemctl stop apsigner
 ```
 
 ### Granting apadmin Access
 
-Users who need to run `apadmin` (to unlock, generate keys, approve requests, etc.) must be members of the `aplane` group:
+Users who need to run `apadmin` (to unlock, generate keys, approve requests, etc.) must be members of the `apsigner` group:
 
 ```bash
-sudo usermod -aG aplane <username>
+sudo usermod -aG apsigner <username>
 ```
 
 Log out and back in for the group change to take effect. Group members can then run `apadmin` directly:
 
 ```bash
-apadmin -d /var/lib/aplane
+apadmin -d /var/lib/apsigner
 ```
 
 ### Generate Keys
@@ -409,10 +409,10 @@ Use `apadmin` to generate signing keys:
 
 ```bash
 # TUI mode
-apadmin -d /var/lib/aplane
+apadmin -d /var/lib/apsigner
 
 # Batch mode
-apadmin -d /var/lib/aplane --batch generate falcon1024-v1
+apadmin -d /var/lib/apsigner --batch generate falcon1024-v1
 ```
 
 apsignerd auto-detects new keys via file watching — no restart needed.
@@ -420,7 +420,7 @@ apsignerd auto-detects new keys via file watching — no restart needed.
 ### Backup Keys
 
 ```bash
-sudo -u aplane apstore -d /var/lib/aplane backup all /mnt/usb/backup
+sudo -u apsigner apstore -d /var/lib/apsigner backup all /mnt/usb/backup
 ```
 
 See [USER_STORE_MGMT.md](USER_STORE_MGMT.md) for full backup/restore documentation.
@@ -433,23 +433,23 @@ To run multiple apsignerd instances on the same machine, create a separate servi
 
 ```bash
 # Create a second data directory
-sudo mkdir -p /var/lib/aplane-staging
-sudo chown aplane:aplane /var/lib/aplane-staging
+sudo mkdir -p /var/lib/apsigner-staging
+sudo chown apsigner:apsigner /var/lib/apsigner-staging
 
 # Initialize it (auto-unlock mode only)
-sudo ./scripts/init-signer.sh /var/lib/aplane-staging aplane:aplane
+sudo ./scripts/init-signer.sh /var/lib/apsigner-staging apsigner:apsigner
 
 # Configure it (copy and edit config.yaml)
-sudo -u aplane cp /var/lib/aplane/config.yaml /var/lib/aplane-staging/config.yaml
+sudo -u apsigner cp /var/lib/apsigner/config.yaml /var/lib/apsigner-staging/config.yaml
 
 # Create a second service unit
-sudo cp /lib/systemd/system/aplane.service /lib/systemd/system/aplane-staging.service
-sudo sed -i 's|/var/lib/aplane|/var/lib/aplane-staging|g' /lib/systemd/system/aplane-staging.service
+sudo cp /lib/systemd/system/apsigner.service /lib/systemd/system/apsigner-staging.service
+sudo sed -i 's|/var/lib/apsigner|/var/lib/apsigner-staging|g' /lib/systemd/system/apsigner-staging.service
 sudo systemctl daemon-reload
 
 # Enable and start
-sudo systemctl enable aplane-staging
-sudo systemctl start aplane-staging
+sudo systemctl enable apsigner-staging
+sudo systemctl start apsigner-staging
 ```
 
 Each instance runs independently with its own keystore, configuration, and IPC socket.
@@ -462,19 +462,19 @@ The `installer/` directory contains service files for different deployment scena
 
 | File | Use Case |
 |------|----------|
-| `installer/aplane.service` | Pre-built service unit. Hardcoded for `/var/lib/aplane` as `aplane:aplane` with binaries in `/usr/local/bin/`. Copy directly to `/lib/systemd/system/` for the simplest possible setup. |
-| `installer/aplane.service.template` | Service template with `@@BINDIR@@`, `@@USER@@`, `@@GROUP@@`, `@@DATA_DIR@@`, `@@LOAD_CREDENTIAL_LINE@@` placeholders. Used by `scripts/systemd-setup.sh` for customizable installs. |
-| `installer/sudoers.template` | sudoers rules with `@@USER@@` placeholder. Allows the service user to manage the `aplane` service without a password. Covers both `/bin/systemctl` (Ubuntu) and `/usr/bin/systemctl` (RHEL/CentOS) paths. |
+| `installer/apsigner.service` | Pre-built service unit. Hardcoded for `/var/lib/apsigner` as `apsigner:apsigner` with binaries in `/usr/local/bin/`. Copy directly to `/lib/systemd/system/` for the simplest possible setup. |
+| `installer/apsigner.service.template` | Service template with `@@BINDIR@@`, `@@USER@@`, `@@GROUP@@`, `@@DATA_DIR@@`, `@@LOAD_CREDENTIAL_LINE@@` placeholders. Used by `scripts/systemd-setup.sh` for customizable installs. |
+| `installer/sudoers.template` | sudoers rules with `@@USER@@` placeholder. Allows the service user to manage the `apsigner` service without a password. Covers both `/bin/systemctl` (Ubuntu) and `/usr/bin/systemctl` (RHEL/CentOS) paths. |
 
 ### Manual Installation (Without the Setup Script)
 
 If you prefer not to use `systemd-setup.sh`, you can install the pre-built service file directly:
 
 ```bash
-sudo cp installer/aplane.service /lib/systemd/system/aplane.service
+sudo cp installer/apsigner.service /lib/systemd/system/apsigner.service
 sudo systemctl daemon-reload
-sudo systemctl enable aplane
-sudo systemctl start aplane
+sudo systemctl enable apsigner
+sudo systemctl start apsigner
 ```
 
 ---
@@ -535,13 +535,13 @@ The passphrase flow uses three components working together:
 To rotate the keystore passphrase (auto-unlock mode):
 
 ```bash
-sudo apstore -d /var/lib/aplane changepass --random
+sudo apstore -d /var/lib/apsigner changepass --random
 ```
 
 This atomically re-encrypts all keys with a new random passphrase and updates `passphrase.cred`. Restart the service afterward:
 
 ```bash
-sudo systemctl restart aplane
+sudo systemctl restart apsigner
 ```
 
 ---
@@ -552,17 +552,17 @@ The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot
 
 1. **On the old machine** — create a backup:
    ```bash
-   sudo -u aplane apstore -d /var/lib/aplane backup all /mnt/usb/backup
+   sudo -u apsigner apstore -d /var/lib/apsigner backup all /mnt/usb/backup
    ```
 
 2. **On the new machine** — install apsignerd (Steps 1–4 above), then restore:
    ```bash
-   sudo -u aplane apstore -d /var/lib/aplane restore all /mnt/usb/backup
+   sudo -u apsigner apstore -d /var/lib/apsigner restore all /mnt/usb/backup
    ```
 
 3. **On the new machine** — if using auto-unlock, initialize a new passphrase credential:
    ```bash
-   sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
+   sudo ./scripts/init-signer.sh /var/lib/apsigner apsigner:apsigner
    ```
 
 4. Enable and start the service (Step 6).
@@ -573,12 +573,12 @@ The TPM2-encrypted `passphrase.cred` is bound to the original machine and cannot
 
 ```bash
 # Stop and disable
-sudo systemctl stop aplane
-sudo systemctl disable aplane
+sudo systemctl stop apsigner
+sudo systemctl disable apsigner
 
 # Remove service and sudoers
-sudo rm /lib/systemd/system/aplane.service
-sudo rm /etc/sudoers.d/99-aplane-systemctl
+sudo rm /lib/systemd/system/apsigner.service
+sudo rm /etc/sudoers.d/99-apsigner-systemctl
 sudo systemctl daemon-reload
 
 # Remove binaries
@@ -586,7 +586,7 @@ sudo rm /usr/local/bin/apsignerd /usr/local/bin/pass-systemd-creds \
        /usr/local/bin/apstore /usr/local/bin/apadmin
 
 # Remove data (CAUTION: this deletes all keys!)
-# sudo userdel -r aplane
+# sudo userdel -r apsigner
 ```
 
 ---
@@ -598,7 +598,7 @@ sudo rm /usr/local/bin/apsignerd /usr/local/bin/pass-systemd-creds \
 Check the journal:
 
 ```bash
-journalctl -u aplane --no-pager -n 50
+journalctl -u apsigner --no-pager -n 50
 ```
 
 ### "LoadCredentialEncrypted failed"
@@ -606,13 +606,13 @@ journalctl -u aplane --no-pager -n 50
 This only applies to auto-unlock mode. The `passphrase.cred` file may be missing or corrupted:
 
 ```bash
-ls -la /var/lib/aplane/passphrase.cred
+ls -la /var/lib/apsigner/passphrase.cred
 ```
 
 Re-initialize if needed:
 
 ```bash
-sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
+sudo ./scripts/init-signer.sh /var/lib/apsigner apsigner:apsigner
 ```
 
 ### "AssertPathExists failed"
@@ -620,8 +620,8 @@ sudo ./scripts/init-signer.sh /var/lib/aplane aplane:aplane
 The data directory doesn't exist. Create it:
 
 ```bash
-sudo mkdir -p /var/lib/aplane
-sudo chown aplane:aplane /var/lib/aplane
+sudo mkdir -p /var/lib/apsigner
+sudo chown apsigner:apsigner /var/lib/apsigner
 ```
 
 ### Permission denied on IPC socket
@@ -629,7 +629,7 @@ sudo chown aplane:aplane /var/lib/aplane
 The IPC socket is created in the data directory. Ensure the directory is owned by the service user:
 
 ```bash
-sudo chown aplane:aplane /var/lib/aplane
+sudo chown apsigner:apsigner /var/lib/apsigner
 ```
 
 ### systemd-creds not found

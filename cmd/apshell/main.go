@@ -19,7 +19,7 @@ func main() {
 	// Define all flags upfront before parsing
 	printVersion := flag.Bool("version", false, "Print version and exit")
 	printManifest := flag.Bool("print-manifest", false, "Print provider manifest (JSON) for auditing and exit")
-	dataDir := flag.String("d", "", "Data directory (default: ~/.aplane or APCLIENT_DATA)")
+	dataDir := flag.String("d", "", "Data directory (default: ~/.apclient or APCLIENT_DATA)")
 	network := flag.String("network", "", "Algorand network (mainnet, testnet, betanet)")
 	scriptFile := flag.String("script", "", "Execute script file and exit")
 	jsScript := flag.String("js", "", "Execute JavaScript script file (use '-' for stdin)")
@@ -35,7 +35,7 @@ func main() {
 		manifest.PrintAndExit()
 	}
 
-	// Resolve data directory: -d flag > APCLIENT_DATA env var > ~/.aplane
+	// Resolve data directory: -d flag > APCLIENT_DATA env var > ~/.apclient
 	resolvedDataDir := util.RequireClientDataDir(*dataDir)
 
 	// Check that data directory and config file exist

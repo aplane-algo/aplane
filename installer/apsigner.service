@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 ExecStart=/usr/local/bin/apsignerd
-User=aplane
-Group=aplane
-Environment=APSIGNER_DATA=/var/lib/aplane
+User=apsigner
+Group=apsigner
+Environment=APSIGNER_DATA=/var/lib/apsigner
 Restart=always
 RestartSec=5s
 ProtectSystem=full
