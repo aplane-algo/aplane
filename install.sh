@@ -140,23 +140,7 @@ for bin in "$BIN_SRC"/*; do
     echo "  $name"
 done
 
-# Step 3: Install scripts and templates for post-install use
-echo ""
-echo "Installing scripts to $DATA_DIR..."
-mkdir -p "$DATA_DIR/scripts" "$DATA_DIR/installer"
-cp "$SCRIPT_DIR/scripts/systemd-setup.sh" "$DATA_DIR/scripts/"
-cp "$SCRIPT_DIR/scripts/init-signer.sh" "$DATA_DIR/scripts/"
-cp "$SCRIPT_DIR/installer/aplane.service.template" "$DATA_DIR/installer/"
-cp "$SCRIPT_DIR/installer/sudoers.template" "$DATA_DIR/installer/"
-chmod 755 "$DATA_DIR/scripts/"*.sh
-chmod 644 "$DATA_DIR/installer/"*
-chown -R "$SVC_USER:$SVC_GROUP" "$DATA_DIR/scripts" "$DATA_DIR/installer"
-echo "  scripts/systemd-setup.sh"
-echo "  scripts/init-signer.sh"
-echo "  installer/aplane.service.template"
-echo "  installer/sudoers.template"
-
-# Step 4: Run systemd setup
+# Step 3: Run systemd setup
 echo ""
 
 # Guard: refuse to silently remove auto-unlock from an existing installation.
@@ -175,12 +159,12 @@ fi
 
 echo "Running systemd setup..."
 if [ "$AUTO_UNLOCK" = "1" ]; then
-    "$DATA_DIR/scripts/systemd-setup.sh" "$SVC_USER" "$SVC_GROUP" "$BINDIR" --auto-unlock
+    "$SCRIPT_DIR/scripts/systemd-setup.sh" "$SVC_USER" "$SVC_GROUP" "$BINDIR" --auto-unlock
 else
-    "$DATA_DIR/scripts/systemd-setup.sh" "$SVC_USER" "$SVC_GROUP" "$BINDIR"
+    "$SCRIPT_DIR/scripts/systemd-setup.sh" "$SVC_USER" "$SVC_GROUP" "$BINDIR"
 fi
 
-# Step 5: Generate canonical signer config for this installation
+# Step 4: Generate canonical signer config for this installation
 CONFIG_PATH="$DATA_DIR/config.yaml"
 STORE_PATH="$DATA_DIR/store"
 
@@ -244,7 +228,7 @@ else
     write_canonical_config "$CONFIG_PATH"
 fi
 
-# Step 6: Initialize keystore (only with --auto-unlock)
+# Step 5: Initialize keystore (only with --auto-unlock)
 if [ "$AUTO_UNLOCK" = "1" ]; then
     echo ""
     echo "Checking keystore initialization state..."
@@ -276,11 +260,11 @@ if [ "$AUTO_UNLOCK" = "1" ]; then
         echo "Keystore already initialized at $ACTIVE_STORE_PATH; skipping init."
     else
         echo "Initializing keystore in $DATA_DIR..."
-        "$DATA_DIR/scripts/init-signer.sh" "$DATA_DIR" "$SVC_USER:$SVC_GROUP"
+        "$SCRIPT_DIR/scripts/init-signer.sh" "$DATA_DIR" "$SVC_USER:$SVC_GROUP"
     fi
 fi
 
-# Step 7: Set up apshell data directory for the service user
+# Step 6: Set up apshell data directory for the service user
 APSHELL_DIR="$DATA_DIR/.aplane"
 if [ ! -d "$APSHELL_DIR" ]; then
     echo ""
