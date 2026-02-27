@@ -96,6 +96,9 @@ func (h *Hub) lock() {
 	// Stop the inactivity timer
 	h.signer.stopSessionTimer()
 
+	// Stop the file watcher (keys directory may be cleaned up)
+	h.signer.stopKeyWatcher()
+
 	// Clear the encryption passphrase and key session from memory
 	h.signer.passphraseLock.Lock()
 	if h.signer.encryptionPassphrase != nil {
@@ -165,6 +168,9 @@ func (h *Hub) tryUnlock(passphrase []byte) (bool, int, string) {
 
 	// Start inactivity timer
 	h.signer.resetSessionTimer()
+
+	// Start file watcher (keys directory now exists after reloadKeysLocked)
+	h.signer.ensureKeyWatcher()
 
 	// Get key count
 	h.signer.keysLock.RLock()

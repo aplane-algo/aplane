@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -155,6 +156,40 @@ type Signer struct {
 	config                 *util.ServerConfig // Server configuration (includes policy settings)
 	tealCompilerAlgodURL   string             // Algod URL for TEAL compilation (defaults to Nodely testnet)
 	tealCompilerAlgodToken string             // Algod token for TEAL compilation (optional)
+	watcherCancel          context.CancelFunc // Cancels the file watcher goroutine (nil if not running)
+	watcherMu              sync.Mutex         // Protects watcherCancel
+}
+
+// ensureKeyWatcher starts the file watcher if not already running.
+// Called after unlock to watch for key file changes.
+func (fs *Signer) ensureKeyWatcher() {
+	fs.watcherMu.Lock()
+	defer fs.watcherMu.Unlock()
+
+	if fs.watcherCancel != nil {
+		return // Already running
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := startKeyWatcher(fs, ctx); err != nil {
+		cancel()
+		fmt.Printf("⚠️  Warning: Failed to start file watcher: %v\n", err)
+		fmt.Println("Keys will not auto-reload when filesystem changes")
+		return
+	}
+	fs.watcherCancel = cancel
+}
+
+// stopKeyWatcher stops the file watcher if running.
+// Called on lock to clean up resources.
+func (fs *Signer) stopKeyWatcher() {
+	fs.watcherMu.Lock()
+	defer fs.watcherMu.Unlock()
+
+	if fs.watcherCancel != nil {
+		fs.watcherCancel()
+		fs.watcherCancel = nil
+	}
 }
 
 // resetSessionTimer resets (or starts) the inactivity timer.

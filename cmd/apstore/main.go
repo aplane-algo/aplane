@@ -1154,9 +1154,17 @@ func cmdInit(random bool) error {
 	fmt.Println("=======================")
 	fmt.Println()
 
-	// Require root so that store files are created with correct ownership
+	// Require root unless the data directory is owned by the current user
+	// (local installs don't need root since the user owns everything)
 	if os.Getuid() != 0 {
-		return fmt.Errorf("apstore init must be run as root (use sudo)")
+		info, err := os.Stat(dataDirectory)
+		if err != nil {
+			return fmt.Errorf("cannot stat data directory %s: %w", dataDirectory, err)
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || int(stat.Uid) != os.Getuid() {
+			return fmt.Errorf("apstore init must be run as root (use sudo)")
+		}
 	}
 
 	// Check if control file already exists

@@ -227,21 +227,32 @@ APSHELL_EOF
         echo "apshell data directory already exists at $APSHELL_DIR; skipping."
     fi
 
+    # Write env.sh for easy sourcing
+    cat > "$INSTALL_ROOT/env.sh" <<ENVEOF
+# Source this file to set up aplane environment:
+#   source $INSTALL_ROOT/env.sh
+# Or add to ~/.bashrc:
+#   . $INSTALL_ROOT/env.sh
+
+export PATH="$BINDIR:\$PATH"
+export APSIGNER_DATA="$DATA_DIR"
+export APCLIENT_DATA="$APSHELL_DIR"
+ENVEOF
+
     echo ""
     echo "=== Installation complete ==="
     echo ""
-    echo "To run apsignerd:"
-    echo "  export APSIGNER_DATA=$DATA_DIR"
-    echo "  $BINDIR/apsignerd"
+    echo "Set up your environment:"
+    echo "  source $INSTALL_ROOT/env.sh"
     echo ""
-    echo "To unlock and manage keys:"
-    echo "  $BINDIR/apadmin -d $DATA_DIR"
+    echo "Or add to ~/.bashrc for persistence:"
+    echo "  echo '. $INSTALL_ROOT/env.sh' >> ~/.bashrc"
     echo ""
-    echo "To run apshell:"
-    echo "  export APCLIENT_DATA=$APSHELL_DIR"
-    echo "  $BINDIR/apshell -d $APSHELL_DIR"
-    echo ""
-    echo "Tip: add $BINDIR to your PATH."
+    echo "Then:"
+    echo "  apstore init          # Initialize keystore"
+    echo "  apsignerd              # Start signer"
+    echo "  apadmin                # Unlock and manage keys"
+    echo "  apshell                # Interactive shell"
     exit 0
 fi
 
@@ -422,6 +433,17 @@ else
     echo "apshell data directory already exists at $APSHELL_DIR; skipping."
 fi
 
+# Step 6: Install /etc/profile.d drop-in for APSIGNER_DATA
+PROFILE_DROP="/etc/profile.d/aplane.sh"
+echo ""
+echo "Writing $PROFILE_DROP..."
+cat > "$PROFILE_DROP" <<PROFEOF
+# aplane environment (installed by aplane installer)
+export APSIGNER_DATA="$DATA_DIR"
+PROFEOF
+chmod 644 "$PROFILE_DROP"
+echo "  APSIGNER_DATA=$DATA_DIR"
+
 echo ""
 echo "=== Installation complete ==="
 echo ""
@@ -430,11 +452,14 @@ echo "  1. Enable and start:"
 echo "       sudo systemctl enable aplane"
 echo "       sudo systemctl start aplane"
 echo "  2. Unlock the signer after starting:"
-echo "       sudo -u $SVC_USER apadmin -d $DATA_DIR"
+echo "       sudo -u $SVC_USER apadmin"
 echo "  3. Generate keys:"
-echo "       sudo -u $SVC_USER apadmin -d $DATA_DIR"
+echo "       sudo -u $SVC_USER apadmin"
 echo "  4. Run apshell:"
 echo "       sudo -u $SVC_USER apshell -d $APSHELL_DIR"
 echo ""
-echo "Tip: export APSIGNER_DATA=$DATA_DIR to avoid passing -d every time."
-echo "Tip: export APCLIENT_DATA=$APSHELL_DIR for apshell."
+echo "APSIGNER_DATA is set in $PROFILE_DROP (active on next login)."
+echo "To use immediately: source $PROFILE_DROP"
+echo ""
+echo "For apshell, set APCLIENT_DATA per user:"
+echo "  export APCLIENT_DATA=$APSHELL_DIR"

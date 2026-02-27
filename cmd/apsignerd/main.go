@@ -419,15 +419,13 @@ func main() {
 		fmt.Printf("✓ REST API listening on %s (direct access - no tunnel)\n", httpBindAddr)
 	}
 
-	// Create context for file watcher lifecycle
-	watcherCtx, watcherCancel := context.WithCancel(context.Background())
-	defer watcherCancel()
-
-	// Start file watcher for auto-reload
-	if err := startKeyWatcher(server, watcherCtx); err != nil {
-		fmt.Printf("⚠️  Warning: Failed to start file watcher: %v\n", err)
-		fmt.Println("Keys will not auto-reload when filesystem changes")
+	// Start file watcher if signer is already unlocked (headless mode).
+	// For locked-start mode, the watcher is started by tryUnlock when
+	// the keys directory becomes available.
+	if server.hub.IsUnlocked() {
+		server.ensureKeyWatcher()
 	}
+	defer server.stopKeyWatcher()
 
 	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
