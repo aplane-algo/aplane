@@ -20,8 +20,15 @@ const StoreFilePerm os.FileMode = 0660
 
 // MkdirAll creates a directory and all parents with store permissions (g+rwx, setgid).
 // Unlike os.MkdirAll, this explicitly sets permissions after creation to
-// bypass umask restrictions.
+// bypass umask restrictions. If the directory already exists, permissions
+// are left unchanged (the caller may not own it).
 func MkdirAll(path string) error {
+	// Check if directory already exists — skip chmod if so, since we may
+	// not own it (e.g., apstore restore run by a group member).
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return nil
+	}
+
 	if err := os.MkdirAll(path, 0770); err != nil {
 		return err
 	}
