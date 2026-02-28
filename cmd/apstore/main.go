@@ -733,7 +733,21 @@ func readPassword() (string, error) {
 		return string(bytePassword), nil
 	}
 
-	// Not a terminal - read plaintext line using shared reader
+	// stdin is not a terminal (e.g., curl | bash). Try /dev/tty for interactive input.
+	tty, err := os.Open("/dev/tty")
+	if err == nil {
+		defer func() { _ = tty.Close() }()
+		ttyFd := int(tty.Fd()) // #nosec G115 - file descriptors are small integers
+		if term.IsTerminal(ttyFd) {
+			bytePassword, err := term.ReadPassword(ttyFd)
+			if err != nil {
+				return "", err
+			}
+			return string(bytePassword), nil
+		}
+	}
+
+	// No terminal available - read plaintext line using shared reader
 	if stdinReader == nil {
 		stdinReader = bufio.NewReader(os.Stdin)
 	}
