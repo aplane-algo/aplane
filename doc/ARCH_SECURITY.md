@@ -783,8 +783,8 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
     AssertPathExists=/var/lib/apsigner
 
     [Service]
-    User=apsigner
-    Group=apsigner
+    User=aplane
+    Group=aplane
     Environment=APSIGNER_DATA=/var/lib/apsigner
     LoadCredentialEncrypted=aplane-passphrase:/var/lib/apsigner/passphrase.cred
     ExecStart=/usr/local/bin/apsignerd

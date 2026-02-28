@@ -4,7 +4,7 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
-#     bash -s -- --user apsigner --group apsigner --bindir /usr/local/bin --version latest
+#     bash -s -- --user aplane --group aplane --bindir /usr/local/bin --version latest
 #
 # Environment overrides:
 #   APSIGNER_USER, APSIGNER_GROUP, APSIGNER_BINDIR, APSIGNER_VERSION
@@ -17,8 +17,8 @@ set -euo pipefail
 REPO="aplane-algo/aplane"
 MINISIGN_PUBKEY="RWQOLhio7R0OS5qnDscyJm5JEarSemT7K687rs65qLMShetqD7cXOxA8"
 
-SVC_USER="${APSIGNER_USER:-apsigner}"
-SVC_GROUP="${APSIGNER_GROUP:-apsigner}"
+SVC_USER="${APSIGNER_USER:-aplane}"
+SVC_GROUP="${APSIGNER_GROUP:-aplane}"
 BINDIR="${APSIGNER_BINDIR:-/usr/local/bin}"
 REQUESTED_VERSION="${APSIGNER_VERSION:-latest}"
 ENABLE_SERVICE="${APSIGNER_ENABLE_SERVICE:-1}"
@@ -33,8 +33,8 @@ usage() {
 Usage: bootstrap-install.sh [options]
 
 Options:
-  --user <name>       Service user to install/run as (default: apsigner)
-  --group <name>      Service group to install/run as (default: apsigner)
+  --user <name>       Service user to install/run as (default: aplane)
+  --group <name>      Service group to install/run as (default: aplane)
   --bindir <path>     Binary install directory (default: /usr/local/bin)
   --version <tag>     Release tag (e.g. v1.2.3) or "latest" (default: latest)
   --local [path]      Install locally without systemd (default path: $PWD)
