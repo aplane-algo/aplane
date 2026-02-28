@@ -113,7 +113,13 @@ func LoadServerConfig(dataDir string) ServerConfig {
 	// Try to read config file
 	data, err := os.ReadFile(path)
 	if err != nil {
-		// File doesn't exist or can't be read - use defaults
+		if os.IsNotExist(err) {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: Config file not found: %s\n", path)
+		} else if os.IsPermission(err) {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: Permission denied reading config file: %s\n", path)
+		} else {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: Could not read config file %s: %v\n", path, err)
+		}
 		return defaults
 	}
 

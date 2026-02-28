@@ -93,7 +93,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     echo ""
 
     # Create directories
-    mkdir -p "$BINDIR"
+    mkdir -p "$BINDIR" "$INSTALL_ROOT/store"
 
     # Copy binaries
     echo "Installing binaries to $BINDIR..."
@@ -358,7 +358,16 @@ else
     write_canonical_config "$CONFIG_PATH"
 fi
 
-# Step 5: Install /etc/profile.d drop-in for APSIGNER_DATA
+# Step 5: Pre-create store directory so apstore init doesn't disrupt a running apsignerd
+STORE_DIR="$DATA_DIR/store"
+if [ ! -d "$STORE_DIR" ]; then
+    mkdir -p "$STORE_DIR"
+    chown "$SVC_USER:$SVC_GROUP" "$STORE_DIR"
+    chmod 2770 "$STORE_DIR"
+    echo "  Created $STORE_DIR"
+fi
+
+# Step 6: Install /etc/profile.d drop-in for APSIGNER_DATA
 PROFILE_DROP="/etc/profile.d/apsigner.sh"
 echo ""
 echo "Writing $PROFILE_DROP..."
