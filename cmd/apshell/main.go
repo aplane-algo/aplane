@@ -38,6 +38,9 @@ func main() {
 	// Resolve data directory: -d flag > APCLIENT_DATA env var > ~/.apclient
 	resolvedDataDir := util.RequireClientDataDir(*dataDir)
 
+	// Propagate resolved data dir so downstream code (token loading, etc.) sees it
+	_ = os.Setenv("APCLIENT_DATA", resolvedDataDir)
+
 	// Check that data directory and config file exist
 	configPath := util.GetConfigPath(resolvedDataDir)
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
