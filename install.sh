@@ -261,6 +261,14 @@ else
     echo "User $SVC_USER already exists, skipping creation."
 fi
 
+# Add the installing user to the service group (for apadmin access)
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "$SVC_USER" ]; then
+    if ! id -nG "$SUDO_USER" 2>/dev/null | grep -qw "$SVC_GROUP"; then
+        usermod -aG "$SVC_GROUP" "$SUDO_USER"
+        echo "  Added $SUDO_USER to group $SVC_GROUP (log out and back in to take effect)"
+    fi
+fi
+
 # Resolve data directory (needed for script installation and later steps)
 DATA_DIR="$(getent passwd "$SVC_USER" | cut -d: -f6)"
 if [ -z "$DATA_DIR" ]; then
