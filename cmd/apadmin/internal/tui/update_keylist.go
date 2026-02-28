@@ -18,8 +18,8 @@ type ViewerClosedMsg struct{}
 
 // saveTEALToFile saves TEAL source to a file in the data directory
 func saveTEALToFile(dataDir, address, teal string) (string, error) {
-	// Create files directory if it doesn't exist
-	filesDir := filepath.Join(dataDir, "files")
+	// Create files directory under the user directory
+	filesDir := filepath.Join(dataDir, "users", "default", "files")
 	if err := os.MkdirAll(filesDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create files directory: %w", err)
 	}
