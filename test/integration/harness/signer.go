@@ -28,7 +28,6 @@ type SignerHarness struct {
 	dataDir    string // From APSIGNER_DATA
 	buildDir   string // Temp dir for binary
 	port       string // Read from config.yaml
-	storeDir   string // Store directory from config.yaml
 	logFile    *os.File
 	stdout     io.ReadCloser
 	stderr     io.ReadCloser
@@ -37,8 +36,7 @@ type SignerHarness struct {
 
 // signerConfig represents the relevant parts of apsignerd's config.yaml
 type signerConfig struct {
-	SignerPort int    `yaml:"signer_port"`
-	Store      string `yaml:"store"`
+	SignerPort int `yaml:"signer_port"`
 }
 
 // NewSignerHarness creates a new Signer test harness.
@@ -86,9 +84,6 @@ func NewSignerHarness(t *testing.T) *SignerHarness {
 	if cfg.SignerPort == 0 {
 		t.Fatal("signer_port not set in config.yaml")
 	}
-	if cfg.Store == "" {
-		t.Fatal("store not set in config.yaml")
-	}
 	port := fmt.Sprintf("%d", cfg.SignerPort)
 
 	// Create temp build directory for binary
@@ -102,7 +97,6 @@ func NewSignerHarness(t *testing.T) *SignerHarness {
 		dataDir:  dataDir,
 		buildDir: buildDir,
 		port:     port,
-		storeDir: cfg.Store,
 	}
 }
 
@@ -270,9 +264,9 @@ func (s *SignerHarness) GetWorkDir() string {
 }
 
 // GetTokenPath returns the path to the API token file.
-// Token is stored in: <dataDir>/<storeDir>/users/default/aplane.token
+// Token is stored in: <dataDir>/users/default/aplane.token
 func (s *SignerHarness) GetTokenPath() string {
-	return filepath.Join(s.dataDir, s.storeDir, "users", "default", "aplane.token")
+	return filepath.Join(s.dataDir, "users", "default", "aplane.token")
 }
 
 // captureOutput reads from a pipe and writes to log file

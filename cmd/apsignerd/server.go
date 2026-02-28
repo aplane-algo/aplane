@@ -350,13 +350,13 @@ func (fs *Signer) reloadKeysLocked() error {
 
 	// Step 2: Load and register runtime generic templates using master key
 	// This ensures IsGenericLSigType() recognizes runtime template key types during scan
-	if err := multitemplate.RegisterKeystoreTemplates(masterKey); err != nil {
+	if err := multitemplate.RegisterKeystoreTemplates(auth.DefaultIdentityID, masterKey); err != nil {
 		// Log warning but don't fail - keys are more important
 		fmt.Printf("Warning: Failed to load generic templates: %v\n", err)
 	}
 
 	// Step 2b: Load and register Falcon DSA composition templates from keystore
-	if err := falcon1024template.RegisterKeystoreTemplates(masterKey); err != nil {
+	if err := falcon1024template.RegisterKeystoreTemplates(auth.DefaultIdentityID, masterKey); err != nil {
 		fmt.Printf("Warning: Failed to load falcon templates: %v\n", err)
 	}
 

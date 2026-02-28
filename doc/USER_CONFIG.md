@@ -42,13 +42,15 @@ $APSIGNER_DATA/
 ├── .ssh/
 │   ├── ssh_host_key       # Server's SSH host key
 │   └── authorized_keys    # Authorized client public keys
-└── store/                 # Encrypted signing keys
-    ├── .keystore          # Keystore metadata
-    └── users/
-        └── default/
-            ├── keys/      # Encrypted key files
-            │   └── *.key
-            └── aplane.token  # Generated API token
+└── users/
+    └── default/           # User directory (encrypted keys and metadata)
+        ├── .keystore      # Keystore metadata
+        ├── keys/          # Encrypted key files
+        │   └── *.key
+        ├── templates/     # LogicSig templates
+        │   ├── generic/
+        │   └── falcon/
+        └── aplane.token   # Generated API token
 ```
 
 ---
@@ -216,7 +218,6 @@ The server and admin tools share the same config format and data directory.
 | `ssh.host_key_path` | string | `".ssh/ssh_host_key"` | SSH host private key (relative to data dir) |
 | `ssh.authorized_keys_path` | string | `".ssh/authorized_keys"` | Authorized client public keys (relative to data dir) |
 | `ssh.auto_register` | bool | `false` | Auto-register new client SSH keys (TOFU) |
-| `store` | string | (required) | Store directory |
 | `ipc_path` | string | (see below) | Unix socket path for admin interface |
 | `passphrase_timeout` | string | `"15m"` | Inactivity timeout before auto-lock (see below) |
 | `lock_on_disconnect` | *bool | `true` | Lock signer when apadmin disconnects |
@@ -284,7 +285,6 @@ ssh:
   host_key_path: .ssh/ssh_host_key
   authorized_keys_path: .ssh/authorized_keys
   auto_register: true
-store: keys
 passphrase_timeout: "15m"
 lock_on_disconnect: true
 ```
@@ -293,7 +293,6 @@ lock_on_disconnect: true
 
 ```yaml
 signer_port: 11270
-store: keys
 passphrase_timeout: "15m"
 ```
 
@@ -301,7 +300,6 @@ Note: SSH paths are relative to the data directory (`$APSIGNER_DATA`). The `.ssh
 
 ### Notes
 
-- `store` is required and must be explicitly set (relative to data directory)
 - Relative paths in config are resolved from the data directory
 - apadmin and apapprover connect via the IPC socket
 - Approval policies are configured inline in `config.yaml` (`txn_auto_approve`, `group_auto_approve`, `allow_group_modification`)
@@ -334,7 +332,7 @@ Signer uses a shared token for authenticating API requests from apshell and the 
 ### How It Works
 
 1. **Token generation**: On first run, apsignerd generates a cryptographically secure 256-bit random token
-2. **Token storage**: Saved to `<store>/users/default/aplane.token` (alongside the keys it grants access to)
+2. **Token storage**: Saved to `users/default/aplane.token` (alongside the keys it grants access to)
 3. **Token provisioning**: Clients request tokens via SSH (requires operator approval in apadmin)
 4. **Request authentication**: Clients send the token via `Authorization: aplane <token>` HTTP header
 5. **Validation**: apsignerd validates using constant-time comparison (prevents timing attacks)
@@ -368,7 +366,7 @@ For localhost or when SSH is not available:
 
 ```bash
 # Copy token from signer to client
-cp $APSIGNER_DATA/store/users/default/aplane.token ~/.apclient/
+cp $APSIGNER_DATA/users/default/aplane.token ~/.apclient/
 ```
 
 ### Endpoints
@@ -420,8 +418,7 @@ Config files are always located at `<data_dir>/config.yaml`.
 
 1. **IPC mode is always used** for admin connections (Unix socket provides file-permission-based access control)
 2. **Set restrictive permissions** on config.yaml: `chmod 600 config.yaml`
-3. **Use absolute paths** for `store` in production
-4. **Avoid `txn_auto_approve: true` and `group_auto_approve: true`** in policy unless in a controlled environment
+3. **Avoid `txn_auto_approve: true` and `group_auto_approve: true`** in policy unless in a controlled environment
 5. **Use `passphrase_timeout`** for additional security in shared environments
 
 ---
@@ -561,7 +558,6 @@ group_auto_approve: true
 **config.yaml:**
 ```yaml
 signer_port: 11270
-store: /var/lib/apsigner/keys
 passphrase_command_argv: ["/usr/local/bin/aplane-keychain-helper"]
 lock_on_disconnect: false
 txn_auto_approve: true

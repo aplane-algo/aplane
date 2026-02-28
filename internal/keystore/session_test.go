@@ -313,9 +313,10 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 	utilkeys.SetKeystorePath(keystoreRoot)
 	defer utilkeys.SetKeystorePath(oldPath)
 
-	// Create keystore metadata for master key encryption (v2) in keystore root
+	// Create keystore metadata for master key encryption (v2) in user directory
 	passphrase := []byte("integration-test-pass")
-	_, masterKey, err := crypto.CreateKeystoreMetadata(keystoreRoot, passphrase)
+	userDir := filepath.Join(keystoreRoot, "users", "default")
+	_, masterKey, err := crypto.CreateKeystoreMetadata(userDir, passphrase)
 	if err != nil {
 		t.Fatalf("Failed to create keystore metadata: %v", err)
 	}

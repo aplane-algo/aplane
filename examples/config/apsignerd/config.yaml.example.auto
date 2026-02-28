@@ -16,9 +16,6 @@ ssh:
   authorized_keys_path: .ssh/authorized_keys
   auto_register: true    # Auto-register new client keys (TOFU)
 
-# Store directory (relative to $APSIGNER_DATA)
-store: store
-
 # IPC socket for admin interface (apadmin, apapprover)
 # Uses default: $APSIGNER_DATA/aplane.sock
 

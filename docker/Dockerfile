@@ -37,7 +37,7 @@ COPY docker/scripts/create-control-file.go /build/
 COPY internal/ /build/internal/
 COPY go.mod go.sum /build/
 RUN go mod download
-RUN mkdir -p /out/users && go run create-control-file.go /out/users /out/passphrase
+RUN mkdir -p /out && go run create-control-file.go /out/users/default /out/passphrase
 
 # Runtime stage
 FROM alpine:latest
@@ -60,10 +60,10 @@ ENV LANG=C.UTF-8 \
 COPY bin/${TARGETARCH}/ /usr/local/bin/
 
 # Setup directories
-RUN mkdir -p /root/apshell/plugins /root/apsigner/store
+RUN mkdir -p /root/apshell/plugins /root/apsigner/users/default
 
 # Copy pre-created users directory and passphrase file
-COPY --from=control-builder /out/users /root/apsigner/store
+COPY --from=control-builder /out/users /root/apsigner/users
 COPY --from=control-builder --chmod=600 /out/passphrase /root/apsigner/passphrase
 
 # Copy external plugins (with npm dependencies already installed)
@@ -74,11 +74,10 @@ COPY docker/config/apshell-config.yaml /root/apshell/config.yaml
 COPY docker/config/apsignerd.yaml /root/apsigner/config.yaml
 
 # Fixed API token for both server and client (demo only - 64 hex chars = 256 bits)
-# Server expects token at store/users/default/aplane.token
-RUN mkdir -p /root/apsigner/store/users/default && \
-    echo "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" > /root/apsigner/store/users/default/aplane.token && \
-    chmod 600 /root/apsigner/store/users/default/aplane.token && \
-    cp /root/apsigner/store/users/default/aplane.token /root/apshell/aplane.token && \
+# Server expects token at users/default/aplane.token
+RUN echo "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" > /root/apsigner/users/default/aplane.token && \
+    chmod 600 /root/apsigner/users/default/aplane.token && \
+    cp /root/apsigner/users/default/aplane.token /root/apshell/aplane.token && \
     chmod 600 /root/apshell/aplane.token
 
 # Example JS scripts

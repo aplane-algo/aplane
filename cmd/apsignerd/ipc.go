@@ -446,7 +446,7 @@ func (s *IPCServer) authenticateClient(conn *IPCConn) bool {
 		passphraseBytes := []byte(authMsg.Passphrase)
 
 		// Verify the passphrase using the control file
-		if err := crypto.VerifyPassphraseWithMetadata(passphraseBytes, utilkeys.KeystorePath()); err != nil {
+		if err := crypto.VerifyPassphraseWithMetadata(passphraseBytes, utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)); err != nil {
 			crypto.ZeroBytes(passphraseBytes)
 			s.sendAuthResult(conn, false, "invalid passphrase")
 			// Continue loop to allow retry

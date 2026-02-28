@@ -13,8 +13,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // ApshellHarness manages apshell CLI testing
@@ -98,15 +96,9 @@ func (a *ApshellHarness) SetEnv(key, value string) {
 }
 
 // CopyTokenFrom copies the aplane.token from the signer's identity-scoped directory.
-// Token is located at: <signerWorkDir>/<storeDir>/users/default/aplane.token
+// Token is located at: <signerWorkDir>/users/default/aplane.token
 func (a *ApshellHarness) CopyTokenFrom(signerWorkDir string) error {
-	// Read store path from config.yaml
-	storeDir, err := getStoreDirFromConfig(signerWorkDir)
-	if err != nil {
-		return fmt.Errorf("failed to get store dir: %w", err)
-	}
-
-	srcPath := filepath.Join(signerWorkDir, storeDir, "users", "default", "aplane.token")
+	srcPath := filepath.Join(signerWorkDir, "users", "default", "aplane.token")
 	dstPath := filepath.Join(a.workDir, "aplane.token")
 
 	data, err := os.ReadFile(srcPath)
@@ -257,26 +249,4 @@ func (a *ApshellHarness) GetWorkDir() string {
 // GetKeysDir returns the keys directory for this harness
 func (a *ApshellHarness) GetKeysDir() string {
 	return filepath.Join(a.workDir, "users", "default", "keys")
-}
-
-// getStoreDirFromConfig reads the store path from config.yaml
-func getStoreDirFromConfig(dataDir string) (string, error) {
-	configPath := filepath.Join(dataDir, "config.yaml")
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read config.yaml: %w", err)
-	}
-
-	var cfg struct {
-		Store string `yaml:"store"`
-	}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return "", fmt.Errorf("failed to parse config.yaml: %w", err)
-	}
-
-	if cfg.Store == "" {
-		return "", fmt.Errorf("store not set in config.yaml")
-	}
-
-	return cfg.Store, nil
 }

@@ -68,7 +68,7 @@ func ParseBackup(decryptedJSON []byte) (keyJSON []byte, templateYAML []byte, tem
 // If the key uses a keystore template, the template is bundled into the same
 // encrypted payload (no separate .template file).
 // Returns the SHA256 checksum of the written key file and its size.
-func ExportKey(srcDir, destDir, address string, masterKey, exportPassphrase []byte) (string, int64, error) {
+func ExportKey(identityID, srcDir, destDir, address string, masterKey, exportPassphrase []byte) (string, int64, error) {
 	srcFile := filepath.Join(srcDir, address+".key")
 	destFile := filepath.Join(destDir, address+".apb")
 
@@ -89,7 +89,7 @@ func ExportKey(srcDir, destDir, address string, masterKey, exportPassphrase []by
 	defer crypto.ZeroBytes(plaintext)
 
 	// Determine what to encrypt: plain key or bundle with template
-	payload, err := buildExportPayload(plaintext, masterKey)
+	payload, err := buildExportPayload(identityID, plaintext, masterKey)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to build export payload for %s: %w", address, err)
 	}
@@ -116,7 +116,7 @@ func ExportKey(srcDir, destDir, address string, masterKey, exportPassphrase []by
 // buildExportPayload returns the plaintext to encrypt for export.
 // If the key has an associated template, it builds a BackupBundle JSON containing
 // both the key and the template YAML. Otherwise it returns the key JSON as-is.
-func buildExportPayload(keyJSON, masterKey []byte) ([]byte, error) {
+func buildExportPayload(identityID string, keyJSON, masterKey []byte) ([]byte, error) {
 	// Parse key to get key type
 	var kp utilkeys.KeyPair
 	if err := json.Unmarshal(keyJSON, &kp); err != nil {
@@ -125,7 +125,7 @@ func buildExportPayload(keyJSON, masterKey []byte) ([]byte, error) {
 	}
 
 	// Check if this key type has a keystore template
-	templateType, templatePath := findKeystoreTemplate(kp.KeyType)
+	templateType, templatePath := findKeystoreTemplate(identityID, kp.KeyType)
 	if templatePath == "" {
 		// No template — return key JSON as-is
 		return append([]byte(nil), keyJSON...), nil
@@ -156,10 +156,10 @@ func buildExportPayload(keyJSON, masterKey []byte) ([]byte, error) {
 // findKeystoreTemplate returns the template type and path if a keystore template
 // exists for the given key type. Returns empty if the key type is built-in or
 // has no associated template.
-func findKeystoreTemplate(keyType string) (templatestore.TemplateType, string) {
+func findKeystoreTemplate(identityID, keyType string) (templatestore.TemplateType, string) {
 	for _, tt := range []templatestore.TemplateType{templatestore.TemplateTypeFalcon, templatestore.TemplateTypeGeneric} {
-		if templatestore.TemplateExists(keyType, tt) {
-			return tt, templatestore.GetTemplateFilePath(keyType, tt)
+		if templatestore.TemplateExists(identityID, keyType, tt) {
+			return tt, templatestore.GetTemplateFilePath(identityID, keyType, tt)
 		}
 	}
 	return "", ""
@@ -169,7 +169,7 @@ func findKeystoreTemplate(keyType string) (templatestore.TemplateType, string) {
 // Each file is decrypted with the store's master key and re-encrypted with the export
 // passphrase using standalone encryption (envelope_version 2).
 // No .keystore file is written — each backup file is self-contained.
-func ExportAllKeys(srcDir, destDir string, masterKey, exportPassphrase []byte) (map[string]string, error) {
+func ExportAllKeys(identityID, srcDir, destDir string, masterKey, exportPassphrase []byte) (map[string]string, error) {
 	// Scan source directory for .key files
 	addresses, err := ScanKeyFiles(srcDir)
 	if err != nil {
@@ -189,7 +189,7 @@ func ExportAllKeys(srcDir, destDir string, masterKey, exportPassphrase []byte) (
 	// Export each key to keys/ subdirectory
 	checksums := make(map[string]string)
 	for _, address := range addresses {
-		checksum, _, err := ExportKey(srcDir, keysDestDir, address, masterKey, exportPassphrase)
+		checksum, _, err := ExportKey(identityID, srcDir, keysDestDir, address, masterKey, exportPassphrase)
 		if err != nil {
 			return nil, fmt.Errorf("failed to export %s: %w", address, err)
 		}

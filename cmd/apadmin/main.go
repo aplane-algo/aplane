@@ -26,7 +26,6 @@ import (
 var (
 	serverAddr *string
 	batchMode  *bool
-	storeDir   *string
 )
 
 func main() {
@@ -54,17 +53,8 @@ func main() {
 	defaultAddr := fmt.Sprintf("localhost:%d", config.SignerPort)
 	serverAddr = &defaultAddr
 
-	// Use store from config
-	storeDir = &config.StoreDir
-
-	// Validate store directory is specified
-	if *storeDir == "" {
-		fmt.Fprintln(os.Stderr, "Error: store must be specified in config.yaml")
-		os.Exit(1)
-	}
-
-	// Set the global keystore path for template scanning
-	utilkeys.SetKeystorePath(*storeDir)
+	// Set the global keystore path to data directory (no separate store/ subdirectory)
+	utilkeys.SetKeystorePath(resolvedDataDir)
 
 	// Register all providers (must be called before using any registries)
 	RegisterProviders()
@@ -105,7 +95,7 @@ func main() {
 
 	// Check for batch mode
 	if *batchMode {
-		runBatchMode(config, *serverAddr, *storeDir, flag.Args())
+		runBatchMode(config, *serverAddr, flag.Args())
 		return
 	}
 

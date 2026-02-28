@@ -70,24 +70,24 @@ const (
 	TemplateTypeFalcon TemplateType = "falcon"
 )
 
-// GetTemplateDir returns the directory for a given template type.
-func GetTemplateDir(templateType TemplateType) string {
+// GetTemplateDir returns the directory for a given template type and identity.
+func GetTemplateDir(identityID string, templateType TemplateType) string {
 	switch templateType {
 	case TemplateTypeFalcon:
-		return utilkeys.FalconTemplatesDir()
+		return utilkeys.FalconTemplatesDir(identityID)
 	default:
-		return utilkeys.TemplatesDir()
+		return utilkeys.TemplatesDir(identityID)
 	}
 }
 
 // GetTemplateFilePath returns the full path for a template file.
-func GetTemplateFilePath(keyType string, templateType TemplateType) string {
-	return filepath.Join(GetTemplateDir(templateType), keyType+".template")
+func GetTemplateFilePath(identityID, keyType string, templateType TemplateType) string {
+	return filepath.Join(GetTemplateDir(identityID, templateType), keyType+".template")
 }
 
 // SaveTemplate encrypts and saves a template YAML to the keystore.
-func SaveTemplate(yamlData []byte, keyType string, templateType TemplateType, masterKey []byte) (string, error) {
-	dir := GetTemplateDir(templateType)
+func SaveTemplate(identityID string, yamlData []byte, keyType string, templateType TemplateType, masterKey []byte) (string, error) {
+	dir := GetTemplateDir(identityID, templateType)
 
 	// Ensure directory exists
 	if err := fsutil.MkdirAll(dir); err != nil {
@@ -101,7 +101,7 @@ func SaveTemplate(yamlData []byte, keyType string, templateType TemplateType, ma
 	}
 
 	// Write the file
-	outputPath := GetTemplateFilePath(keyType, templateType)
+	outputPath := GetTemplateFilePath(identityID, keyType, templateType)
 	if err := fsutil.WriteFile(outputPath, encrypted); err != nil {
 		return "", fmt.Errorf("failed to write template file: %w", err)
 	}
@@ -134,8 +134,8 @@ func LoadTemplateFromPath(path string, masterKey []byte) ([]byte, error) {
 }
 
 // TemplateExists checks if a template file already exists.
-func TemplateExists(keyType string, templateType TemplateType) bool {
-	path := GetTemplateFilePath(keyType, templateType)
+func TemplateExists(identityID, keyType string, templateType TemplateType) bool {
+	path := GetTemplateFilePath(identityID, keyType, templateType)
 	_, err := os.Stat(path)
 	return err == nil
 }
@@ -147,8 +147,8 @@ type TemplateFileInfo struct {
 }
 
 // ScanTemplateDirectory scans the template directory and returns info about each template file.
-func ScanTemplateDirectory(templateType TemplateType) ([]TemplateFileInfo, error) {
-	dir := GetTemplateDir(templateType)
+func ScanTemplateDirectory(identityID string, templateType TemplateType) ([]TemplateFileInfo, error) {
+	dir := GetTemplateDir(identityID, templateType)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -177,8 +177,8 @@ func ScanTemplateDirectory(templateType TemplateType) ([]TemplateFileInfo, error
 // LoadAllTemplates loads and decrypts all templates from a directory.
 // Returns a map of keyType -> decrypted YAML data.
 // Errors for individual files are logged but don't stop processing.
-func LoadAllTemplates(templateType TemplateType, masterKey []byte) (map[string][]byte, error) {
-	files, err := ScanTemplateDirectory(templateType)
+func LoadAllTemplates(identityID string, templateType TemplateType, masterKey []byte) (map[string][]byte, error) {
+	files, err := ScanTemplateDirectory(identityID, templateType)
 	if err != nil {
 		return nil, err
 	}

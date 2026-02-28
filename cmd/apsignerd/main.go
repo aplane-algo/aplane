@@ -87,19 +87,8 @@ func main() {
 		fmt.Printf("Session timeout: %s (auto-locks after inactivity)\n", passphraseTimeout.String())
 	}
 
-	// Validate and set store path (must be done before any key operations)
-	if config.StoreDir == "" {
-		fmt.Fprintln(os.Stderr, "Error: store must be specified in config.yaml")
-		fmt.Fprintln(os.Stderr, "Example: store: store")
-		os.Exit(1)
-	}
-	utilkeys.SetKeystorePath(config.StoreDir)
-	fmt.Printf("Store directory: %s\n", utilkeys.KeystorePath())
-
-	// If the store directory doesn't exist, stay locked (apstore init creates it)
-	if _, err := os.Stat(utilkeys.KeystorePath()); os.IsNotExist(err) {
-		fmt.Println("Store directory not found; staying locked until keystore is initialized via apstore init.")
-	}
+	// Set keystore path to data directory (no separate store/ subdirectory)
+	utilkeys.SetKeystorePath(resolvedDataDir)
 
 	// Load or generate API token
 	apiToken, err := util.LoadaPlaneToken(auth.DefaultIdentityID)
@@ -157,7 +146,7 @@ func main() {
 		passphraseSource = "TEST_PASSPHRASE"
 
 		// Verify passphrase matches existing control file
-		if err := crypto.VerifyPassphraseWithMetadata(testPassBytes, config.StoreDir); err != nil {
+		if err := crypto.VerifyPassphraseWithMetadata(testPassBytes, utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)); err != nil {
 			crypto.ZeroBytes(testPassBytes)
 			fmt.Fprintf(os.Stderr, "Error: TEST_PASSPHRASE does not match existing keystore\n")
 			os.Exit(1)
@@ -174,7 +163,7 @@ func main() {
 		}
 
 		// Verify passphrase against .keystore
-		if err := crypto.VerifyPassphraseWithMetadata(passphraseBytes, config.StoreDir); err != nil {
+		if err := crypto.VerifyPassphraseWithMetadata(passphraseBytes, utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)); err != nil {
 			crypto.ZeroBytes(passphraseBytes)
 			fmt.Fprintf(os.Stderr, "Error: passphrase from passphrase command does not match existing keystore\n")
 			fmt.Fprintf(os.Stderr, "       The passphrase_command_argv must return the same passphrase used to create the keystore\n")

@@ -221,15 +221,11 @@ func (c *BatchClient) ExportKey(address, passphrase string) (string, error) {
 }
 
 // runBatchMode runs apadmin in batch mode
-func runBatchMode(config util.ServerConfig, serverAddr string, storeDir string, args []string) {
+func runBatchMode(config util.ServerConfig, serverAddr string, args []string) {
 	if len(args) == 0 {
 		printBatchUsage()
 		os.Exit(1)
 	}
-
-	// Note: storeDir is passed to the server via config, not used directly here
-	// The server reads the store from its own config/flags
-	_ = storeDir
 
 	// Get passphrase from environment (used for both auth and unlock)
 	passphrase := os.Getenv("TEST_PASSPHRASE")

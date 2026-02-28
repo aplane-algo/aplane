@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/util"
+	utilkeys "github.com/aplane-algo/aplane/internal/util/keys"
 )
 
 // RuntimeState holds the results of runtime capability checks.
@@ -32,7 +34,7 @@ func validateStartup(config *util.ServerConfig, runtime *RuntimeState) (*Startup
 
 	// === Keystore check (non-fatal — allows starting without keystore) ===
 
-	if !crypto.KeystoreMetadataExistsIn(config.StoreDir) {
+	if !crypto.KeystoreMetadataExistsIn(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)) {
 		info.KeystoreExists = false
 		warnings = append(warnings, "Keystore not initialized — run 'apstore init' then unlock via apadmin")
 	} else {

@@ -208,8 +208,8 @@ func registerProvider(provider *v1.ComposedDSA) {
 // LoadTemplatesFromKeystore loads user-defined Falcon templates from the keystore.
 // These are templates added via 'apstore add-falcon-template'.
 // masterKey is required to decrypt the template files.
-func LoadTemplatesFromKeystore(masterKey []byte) ([]*v1.ComposedDSA, error) {
-	templateData, err := templatestore.LoadAllTemplates(templatestore.TemplateTypeFalcon, masterKey)
+func LoadTemplatesFromKeystore(identityID string, masterKey []byte) ([]*v1.ComposedDSA, error) {
+	templateData, err := templatestore.LoadAllTemplates(identityID, templatestore.TemplateTypeFalcon, masterKey)
 	if err != nil {
 		return nil, err
 	}
@@ -241,8 +241,8 @@ func LoadTemplatesFromKeystore(masterKey []byte) ([]*v1.ComposedDSA, error) {
 
 // RegisterKeystoreTemplates loads and registers templates from the keystore.
 // This should be called after the keystore is unlocked.
-func RegisterKeystoreTemplates(masterKey []byte) error {
-	providers, err := LoadTemplatesFromKeystore(masterKey)
+func RegisterKeystoreTemplates(identityID string, masterKey []byte) error {
+	providers, err := LoadTemplatesFromKeystore(identityID, masterKey)
 	if err != nil {
 		return fmt.Errorf("failed to load keystore templates: %w", err)
 	}

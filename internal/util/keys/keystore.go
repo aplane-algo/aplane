@@ -47,42 +47,52 @@ func validatePathComponent(label, s string) {
 	}
 }
 
-// UserDir returns the identity-scoped user directory path (store/users/<identityID>/).
-// This is the parent of per-identity subdirectories (keys/, aplane.token, etc.).
+// UserDir returns the identity-scoped user directory path (users/<identityID>/).
+// This is the parent of per-identity subdirectories (keys/, templates/, .keystore, aplane.token).
 // Panics if identityID contains path separators or traversal sequences.
 func UserDir(identityID string) string {
 	validatePathComponent("identity ID", identityID)
 	return filepath.Join(KeystorePath(), "users", identityID)
 }
 
-// KeysDir returns the keys subdirectory for an identity (store/users/<identityID>/keys/).
+// KeysDir returns the keys subdirectory for an identity (users/<identityID>/keys/).
 // The identityID parameter scopes keys to a specific identity (e.g., "default").
 // Panics if identityID contains path separators or traversal sequences.
 func KeysDir(identityID string) string {
 	return filepath.Join(UserDir(identityID), "keys")
 }
 
-// TemplatesRootDir returns the root templates directory path (keystore/templates/).
+// TemplatesRootDir returns the root templates directory for an identity (users/<identityID>/templates/).
 // This is the parent of all template type subdirectories.
-func TemplatesRootDir() string {
-	return filepath.Join(KeystorePath(), "templates")
+// Panics if identityID contains path separators or traversal sequences.
+func TemplatesRootDir(identityID string) string {
+	return filepath.Join(UserDir(identityID), "templates")
 }
 
-// TemplatesDir returns the generic templates subdirectory path (keystore/templates/generic/).
+// TemplatesDir returns the generic templates subdirectory for an identity (users/<identityID>/templates/generic/).
 // Used for generic LogicSig templates (multitemplate).
-func TemplatesDir() string {
-	return filepath.Join(KeystorePath(), "templates", "generic")
+// Panics if identityID contains path separators or traversal sequences.
+func TemplatesDir(identityID string) string {
+	return filepath.Join(UserDir(identityID), "templates", "generic")
 }
 
-// FalconTemplatesDir returns the falcon templates subdirectory path (keystore/templates/falcon/).
+// FalconTemplatesDir returns the falcon templates subdirectory for an identity (users/<identityID>/templates/falcon/).
 // Used for Falcon-1024 DSA composition templates (falcon1024template).
-func FalconTemplatesDir() string {
-	return filepath.Join(KeystorePath(), "templates", "falcon")
+// Panics if identityID contains path separators or traversal sequences.
+func FalconTemplatesDir(identityID string) string {
+	return filepath.Join(UserDir(identityID), "templates", "falcon")
+}
+
+// KeystoreMetadataDir returns the directory where .keystore metadata lives for an identity.
+// This is the same as UserDir — .keystore is stored at users/<identityID>/.keystore.
+// Panics if identityID contains path separators or traversal sequences.
+func KeystoreMetadataDir(identityID string) string {
+	return UserDir(identityID)
 }
 
 // KeyFilePath returns the full path for a key file given an identity and address.
 // All key types (Ed25519, Falcon-1024, LogicSigs) use the unified .key extension.
-// Example: KeyFilePath("default", "ABC123") -> "store/users/default/keys/ABC123.key"
+// Example: KeyFilePath("default", "ABC123") -> "users/default/keys/ABC123.key"
 func KeyFilePath(identityID, address string) string {
 	return filepath.Join(KeysDir(identityID), address+".key")
 }

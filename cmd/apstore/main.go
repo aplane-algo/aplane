@@ -5,8 +5,6 @@ package main
 
 import (
 	"bufio"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -54,11 +52,11 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "apstore - Signer keystore management\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n")
-		fmt.Fprintf(os.Stderr, "  apstore [-d path] init [--random]\n")
+		fmt.Fprintf(os.Stderr, "  apstore [-d path] init\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] backup <all|ADDRESS> <destination>\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] restore <all|ADDRESS> <source>\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] verify <backup-path> [--deep]\n")
-		fmt.Fprintf(os.Stderr, "  apstore [-d path] changepass [--random]\n")
+		fmt.Fprintf(os.Stderr, "  apstore [-d path] changepass\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] inspect <keyfile|ADDRESS> [--show-private]\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] keys\n")
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] templates\n")
@@ -66,18 +64,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  apstore [-d path] add-falcon-template <yaml-file>\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		fmt.Fprintf(os.Stderr, "  -d path              Data directory (or set APSIGNER_DATA env var)\n")
-		fmt.Fprintf(os.Stderr, "  --random             Generate random passphrase (init, changepass)\n")
 		fmt.Fprintf(os.Stderr, "  --show-private       Show private key material (inspect only)\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  apstore init\n")
-		fmt.Fprintf(os.Stderr, "  apstore init --random\n")
 		fmt.Fprintf(os.Stderr, "  apstore backup all /mnt/usb/backup\n")
 		fmt.Fprintf(os.Stderr, "  apstore backup ABC123... /mnt/usb/backup\n")
 		fmt.Fprintf(os.Stderr, "  apstore restore all /mnt/usb/backup\n")
 		fmt.Fprintf(os.Stderr, "  apstore restore ABC123... /mnt/usb/backup\n")
 		fmt.Fprintf(os.Stderr, "  apstore verify /mnt/usb/backup --deep\n")
 		fmt.Fprintf(os.Stderr, "  apstore changepass\n")
-		fmt.Fprintf(os.Stderr, "  apstore changepass --random\n")
 		fmt.Fprintf(os.Stderr, "  apstore inspect mykey.key\n")
 		fmt.Fprintf(os.Stderr, "  apstore inspect ABC123... --show-private\n")
 		fmt.Fprintf(os.Stderr, "  apstore keys\n")
@@ -98,13 +93,8 @@ func main() {
 	// Register all providers (must be called before using any registries)
 	RegisterProviders()
 
-	// Validate and set store path (must be done before any key operations)
-	if config.StoreDir == "" {
-		fmt.Fprintln(os.Stderr, "Error: store must be specified in config.yaml")
-		fmt.Fprintln(os.Stderr, "Example: store: store")
-		os.Exit(1)
-	}
-	utilkeys.SetKeystorePath(config.StoreDir)
+	// Set keystore path to data directory (no separate store/ subdirectory)
+	utilkeys.SetKeystorePath(dataDirectory)
 
 	args := flag.Args()
 	if len(args) < 1 {
@@ -116,8 +106,7 @@ func main() {
 
 	switch command {
 	case "init":
-		random := len(args) > 1 && args[1] == "--random"
-		if err := cmdInit(random); err != nil {
+		if err := cmdInit(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -159,8 +148,7 @@ func main() {
 		}
 
 	case "changepass":
-		random := len(args) > 1 && args[1] == "--random"
-		if err := cmdChangepass(random); err != nil {
+		if err := cmdChangepass(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -238,7 +226,7 @@ func cmdBackup(what, destination string) error {
 	}
 	fmt.Println()
 
-	meta, err := crypto.LoadKeystoreMetadata(config.StoreDir)
+	meta, err := crypto.LoadKeystoreMetadata(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID))
 	if err != nil {
 		return fmt.Errorf("failed to load keystore metadata: %w", err)
 	}
@@ -289,7 +277,7 @@ func cmdBackup(what, destination string) error {
 func backupAll(destination string, masterKey, exportPassphrase []byte) error {
 	fmt.Printf("Backing up all keys to %s\n\n", destination)
 
-	checksums, err := backup.ExportAllKeys(utilkeys.KeysDir(auth.DefaultIdentityID), destination, masterKey, exportPassphrase)
+	checksums, err := backup.ExportAllKeys(auth.DefaultIdentityID, utilkeys.KeysDir(auth.DefaultIdentityID), destination, masterKey, exportPassphrase)
 	if err != nil {
 		return err
 	}
@@ -321,7 +309,7 @@ func backupAddress(address, destination string, masterKey, exportPassphrase []by
 		return fmt.Errorf("failed to create backup keys directory: %w", err)
 	}
 
-	checksum, size, err := backup.ExportKey(utilkeys.KeysDir(auth.DefaultIdentityID), keysDestDir, address, masterKey, exportPassphrase)
+	checksum, size, err := backup.ExportKey(auth.DefaultIdentityID, utilkeys.KeysDir(auth.DefaultIdentityID), keysDestDir, address, masterKey, exportPassphrase)
 	if err != nil {
 		return err
 	}
@@ -356,7 +344,7 @@ func cmdRestore(what, source string) error {
 
 	// Get store passphrase and derive master key
 	var masterKey []byte
-	if crypto.KeystoreMetadataExistsIn(config.StoreDir) {
+	if crypto.KeystoreMetadataExistsIn(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)) {
 		fmt.Print("Enter store passphrase (to encrypt restored keys): ")
 		storePassphrase, err := readPassword()
 		if err != nil {
@@ -364,7 +352,7 @@ func cmdRestore(what, source string) error {
 		}
 		fmt.Println()
 
-		meta, err := crypto.LoadKeystoreMetadata(config.StoreDir)
+		meta, err := crypto.LoadKeystoreMetadata(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID))
 		if err != nil {
 			return fmt.Errorf("failed to load keystore metadata: %w", err)
 		}
@@ -395,7 +383,7 @@ func cmdRestore(what, source string) error {
 		}
 
 		// Create keystore metadata with new passphrase
-		_, masterKey, err = crypto.CreateKeystoreMetadata(config.StoreDir, []byte(storePassphrase))
+		_, masterKey, err = crypto.CreateKeystoreMetadata(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID), []byte(storePassphrase))
 		if err != nil {
 			return fmt.Errorf("failed to create keystore metadata: %w", err)
 		}
@@ -641,12 +629,12 @@ func restoreTemplate(templateYAML []byte, keyType, tmplType string, masterKey []
 	}
 
 	// Skip if template already exists
-	if templatestore.TemplateExists(keyType, tt) {
+	if templatestore.TemplateExists(auth.DefaultIdentityID, keyType, tt) {
 		return nil
 	}
 
 	// Save template encrypted with master key
-	if _, err := templatestore.SaveTemplate(templateYAML, keyType, tt, masterKey); err != nil {
+	if _, err := templatestore.SaveTemplate(auth.DefaultIdentityID, templateYAML, keyType, tt, masterKey); err != nil {
 		return fmt.Errorf("failed to save template: %w", err)
 	}
 
@@ -757,11 +745,12 @@ func readPassword() (string, error) {
 }
 
 // cmdChangepass changes the store passphrase using a safe write-new-then-rename pattern
-func cmdChangepass(random bool) error {
+func cmdChangepass() error {
 	// Check if keystore metadata exists
-	keystorePath := filepath.Join(config.StoreDir, ".keystore")
+	metaDir := utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)
+	keystorePath := filepath.Join(metaDir, ".keystore")
 	if _, err := os.Stat(keystorePath); os.IsNotExist(err) {
-		return fmt.Errorf("no .keystore file found in %s - store not initialized", config.StoreDir)
+		return fmt.Errorf("no .keystore file found in %s - store not initialized", metaDir)
 	}
 
 	fmt.Println("Signer Passphrase Change Utility")
@@ -795,7 +784,7 @@ func cmdChangepass(random bool) error {
 	}
 
 	// Load metadata and verify old passphrase
-	oldMeta, err := crypto.LoadKeystoreMetadata(config.StoreDir)
+	oldMeta, err := crypto.LoadKeystoreMetadata(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID))
 	if err != nil {
 		return fmt.Errorf("failed to load keystore metadata: %w", err)
 	}
@@ -808,43 +797,26 @@ func cmdChangepass(random bool) error {
 	fmt.Println()
 
 	// Get new passphrase
-	var newPassphrase string
-	if random {
-		randomBytes := make([]byte, 32)
-		if _, err := rand.Read(randomBytes); err != nil {
-			return fmt.Errorf("failed to generate random passphrase: %w", err)
-		}
-		newPassphrase = base64.StdEncoding.EncodeToString(randomBytes)
-		if useHelper {
-			fmt.Println("Generated random passphrase (will be stored via helper).")
-		} else {
-			fmt.Printf("Generated new passphrase: %s\n", newPassphrase)
-			fmt.Println("\nIMPORTANT: Save this passphrase securely!")
-			fmt.Println("SECURITY: Clear shell history after copying this passphrase.")
-		}
-		fmt.Println()
-	} else {
-		fmt.Print("Enter new passphrase: ")
-		newPassphrase, err = readPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read new passphrase: %w", err)
-		}
-		fmt.Println()
+	fmt.Print("Enter new passphrase: ")
+	newPassphrase, err := readPassword()
+	if err != nil {
+		return fmt.Errorf("failed to read new passphrase: %w", err)
+	}
+	fmt.Println()
 
-		if len(newPassphrase) == 0 {
-			return fmt.Errorf("new passphrase cannot be empty")
-		}
+	if len(newPassphrase) == 0 {
+		return fmt.Errorf("new passphrase cannot be empty")
+	}
 
-		fmt.Print("Confirm new passphrase: ")
-		confirm, err := readPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read confirmation: %w", err)
-		}
-		fmt.Println()
+	fmt.Print("Confirm new passphrase: ")
+	confirm, err := readPassword()
+	if err != nil {
+		return fmt.Errorf("failed to read confirmation: %w", err)
+	}
+	fmt.Println()
 
-		if newPassphrase != confirm {
-			return fmt.Errorf("passphrases do not match")
-		}
+	if newPassphrase != confirm {
+		return fmt.Errorf("passphrases do not match")
 	}
 
 	if newPassphrase == oldPassphrase {
@@ -859,7 +831,7 @@ func cmdChangepass(random bool) error {
 
 	// Scan for template files in all template subdirectories
 	var templateFiles []string
-	templatesRootDir := utilkeys.TemplatesRootDir()
+	templatesRootDir := utilkeys.TemplatesRootDir(auth.DefaultIdentityID)
 	_ = filepath.WalkDir(templatesRootDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip inaccessible paths
@@ -882,18 +854,16 @@ func cmdChangepass(random bool) error {
 	}
 	fmt.Println()
 
-	// Confirm (skip in fully automated mode: helper + random)
-	if !useHelper || !random {
-		fmt.Print("Proceed with passphrase change? [y/N]: ")
-		reader := bufio.NewReader(os.Stdin)
-		response, _ := reader.ReadString('\n')
-		response = strings.TrimSpace(strings.ToLower(response))
-		if response != "y" && response != "yes" {
-			fmt.Println("Cancelled.")
-			return nil
-		}
-		fmt.Println()
+	// Confirm before proceeding
+	fmt.Print("Proceed with passphrase change? [y/N]: ")
+	reader := bufio.NewReader(os.Stdin)
+	response, _ := reader.ReadString('\n')
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response != "y" && response != "yes" {
+		fmt.Println("Cancelled.")
+		return nil
 	}
+	fmt.Println()
 
 	// Track files for atomic swap
 	type pendingFile struct {
@@ -1149,7 +1119,7 @@ func cmdChangepass(random bool) error {
 // If random is true, generates a random passphrase instead of prompting.
 // When a passphrase_command_argv helper is configured, the passphrase is
 // stored via the helper after keystore creation.
-func cmdInit(random bool) error {
+func cmdInit() error {
 	fmt.Println("Keystore Initialization")
 	fmt.Println("=======================")
 	fmt.Println()
@@ -1168,67 +1138,51 @@ func cmdInit(random bool) error {
 	}
 
 	// Check if control file already exists
-	if crypto.KeystoreMetadataExistsIn(config.StoreDir) {
-		return fmt.Errorf("keystore already initialized (control file exists in %s)", config.StoreDir)
+	if crypto.KeystoreMetadataExistsIn(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)) {
+		return fmt.Errorf("keystore already initialized (control file exists in %s)", utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID))
 	}
 
-	// Ensure store directory exists with setgid so files inherit the group
-	if err := fsutil.MkdirAll(config.StoreDir); err != nil {
-		return fmt.Errorf("failed to create keystore directory: %w", err)
+	// Ensure user directory exists with setgid so files inherit the group
+	userDir := utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)
+	if err := fsutil.MkdirAll(userDir); err != nil {
+		return fmt.Errorf("failed to create user directory: %w", err)
 	}
 
-	fmt.Printf("Keystore directory: %s\n", config.StoreDir)
+	fmt.Printf("Keystore directory: %s\n", userDir)
 	fmt.Println()
 
 	useHelper := len(config.PassphraseCommandArgv) > 0
 
 	// Get passphrase
-	var passphrase string
-	if random {
-		randomBytes := make([]byte, 32)
-		if _, err := rand.Read(randomBytes); err != nil {
-			return fmt.Errorf("failed to generate random passphrase: %w", err)
-		}
-		passphrase = base64.StdEncoding.EncodeToString(randomBytes)
-		if useHelper {
-			fmt.Println("Generated random passphrase (will be stored via helper).")
-		} else {
-			fmt.Printf("Generated passphrase: %s\n", passphrase)
-			fmt.Println("\nIMPORTANT: Save this passphrase securely!")
-			fmt.Println("SECURITY: Clear shell history after copying this passphrase.")
-		}
-	} else {
-		fmt.Println("Choose a strong passphrase. This will be used to encrypt all keys.")
-		fmt.Println("You will need this passphrase to unlock the signer.")
-		fmt.Println()
+	fmt.Println("Choose a strong passphrase. This will be used to encrypt all keys.")
+	fmt.Println("You will need this passphrase to unlock the signer.")
+	fmt.Println()
 
-		fmt.Print("Enter passphrase: ")
-		var err error
-		passphrase, err = readPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read passphrase: %w", err)
-		}
-		fmt.Println()
+	fmt.Print("Enter passphrase: ")
+	passphrase, err := readPassword()
+	if err != nil {
+		return fmt.Errorf("failed to read passphrase: %w", err)
+	}
+	fmt.Println()
 
-		if len(passphrase) == 0 {
-			return fmt.Errorf("passphrase cannot be empty")
-		}
+	if len(passphrase) == 0 {
+		return fmt.Errorf("passphrase cannot be empty")
+	}
 
-		// Confirm passphrase
-		fmt.Print("Confirm passphrase: ")
-		confirm, err := readPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read confirmation: %w", err)
-		}
-		fmt.Println()
+	// Confirm passphrase
+	fmt.Print("Confirm passphrase: ")
+	confirm, err := readPassword()
+	if err != nil {
+		return fmt.Errorf("failed to read confirmation: %w", err)
+	}
+	fmt.Println()
 
-		if passphrase != confirm {
-			return fmt.Errorf("passphrases do not match")
-		}
+	if passphrase != confirm {
+		return fmt.Errorf("passphrases do not match")
 	}
 
 	// Create keystore metadata
-	_, masterKey, err := crypto.CreateKeystoreMetadata(config.StoreDir, []byte(passphrase))
+	_, masterKey, err := crypto.CreateKeystoreMetadata(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID), []byte(passphrase))
 	if err != nil {
 		return fmt.Errorf("failed to create keystore metadata: %w", err)
 	}
@@ -1239,12 +1193,14 @@ func cmdInit(random bool) error {
 		return fmt.Errorf("failed to create keys directory: %w", err)
 	}
 
-	// Chown the store tree to the data directory owner (the service user)
+	// Chown the users/ tree to the data directory owner (the service user).
+	// Walk from users/ (not users/default/) so the parent directory is also covered.
+	usersDir := filepath.Join(utilkeys.KeystorePath(), "users")
 	if info, err := os.Stat(dataDirectory); err == nil {
 		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 			uid := int(stat.Uid)
 			gid := int(stat.Gid)
-			_ = filepath.Walk(config.StoreDir, func(path string, _ os.FileInfo, err error) error {
+			_ = filepath.Walk(usersDir, func(path string, _ os.FileInfo, err error) error {
 				if err != nil {
 					return err
 				}
@@ -1255,7 +1211,7 @@ func cmdInit(random bool) error {
 
 	fmt.Println()
 	fmt.Println("✓ Keystore initialized successfully!")
-	fmt.Printf("  Keystore metadata: %s/.keystore\n", config.StoreDir)
+	fmt.Printf("  Keystore metadata: %s/.keystore\n", utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID))
 	fmt.Println()
 
 	// If passphrase_command_argv is configured, store the passphrase via the helper
@@ -1287,7 +1243,7 @@ func cmdInspect(target string, showPrivate bool) error {
 		if filepath.IsAbs(target) {
 			keyFile = target
 		} else {
-			keyFile = filepath.Join(config.StoreDir, target)
+			keyFile = filepath.Join(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID), target)
 		}
 	} else {
 		// Assume it's an address - look for matching key file
@@ -1344,7 +1300,7 @@ func cmdInspect(target string, showPrivate bool) error {
 		}
 		fmt.Println()
 
-		meta, err := crypto.LoadKeystoreMetadata(config.StoreDir)
+		meta, err := crypto.LoadKeystoreMetadata(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID))
 		if err != nil {
 			return fmt.Errorf("failed to load keystore metadata: %w", err)
 		}
@@ -1465,7 +1421,7 @@ func truncateString(s string, maxLen int) string {
 // cmdKeys lists all key files in the keystore directory
 func cmdKeys() error {
 	keysDir := utilkeys.KeysDir(auth.DefaultIdentityID)
-	fmt.Printf("Keystore: %s\n", config.StoreDir)
+	fmt.Printf("Keystore: %s\n", utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID))
 	fmt.Printf("Keys directory: %s\n", keysDir)
 	fmt.Println(strings.Repeat("=", 60))
 
@@ -1527,7 +1483,7 @@ func cmdKeys() error {
 
 // cmdTemplates lists all template files in the keystore templates directories
 func cmdTemplates() error {
-	fmt.Printf("Keystore: %s\n", config.StoreDir)
+	fmt.Printf("Keystore: %s\n", utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID))
 	fmt.Println(strings.Repeat("=", 60))
 
 	type templateEntry struct {
@@ -1539,7 +1495,7 @@ func cmdTemplates() error {
 	var allTemplates []templateEntry
 
 	// Scan all template subdirectories
-	_ = filepath.WalkDir(utilkeys.TemplatesRootDir(), func(path string, d os.DirEntry, err error) error {
+	_ = filepath.WalkDir(utilkeys.TemplatesRootDir(auth.DefaultIdentityID), func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -1578,7 +1534,7 @@ func cmdTemplates() error {
 // The template will be loaded and registered when apsignerd unlocks.
 func cmdAddTemplate(yamlPath string) error {
 	// Check if keystore is initialized
-	if !crypto.KeystoreMetadataExistsIn(utilkeys.KeystorePath()) {
+	if !crypto.KeystoreMetadataExistsIn(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)) {
 		return fmt.Errorf("keystore not initialized, run 'apstore init' first")
 	}
 
@@ -1603,10 +1559,10 @@ func cmdAddTemplate(yamlPath string) error {
 	keyType := fmt.Sprintf("%s-v%d", spec.Family, spec.Version)
 
 	// Check if template already exists in either template directory (generic or falcon)
-	if templatestore.TemplateExists(keyType, templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExists(auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric) {
 		return fmt.Errorf("template %s already exists in templates directory", keyType)
 	}
-	if templatestore.TemplateExists(keyType, templatestore.TemplateTypeFalcon) {
+	if templatestore.TemplateExists(auth.DefaultIdentityID, keyType, templatestore.TemplateTypeFalcon) {
 		return fmt.Errorf("key type %s already exists as a falcon template", keyType)
 	}
 
@@ -1624,7 +1580,7 @@ func cmdAddTemplate(yamlPath string) error {
 	fmt.Println()
 
 	// Load keystore metadata and derive master key
-	meta, err := crypto.LoadKeystoreMetadata(utilkeys.KeystorePath())
+	meta, err := crypto.LoadKeystoreMetadata(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID))
 	if err != nil {
 		return fmt.Errorf("failed to load keystore metadata: %w", err)
 	}
@@ -1639,7 +1595,7 @@ func cmdAddTemplate(yamlPath string) error {
 	defer crypto.ZeroBytes(masterKey)
 
 	// Save the template using the common templatestore
-	outputPath, err := templatestore.SaveTemplate(data, keyType, templatestore.TemplateTypeGeneric, masterKey)
+	outputPath, err := templatestore.SaveTemplate(auth.DefaultIdentityID, data, keyType, templatestore.TemplateTypeGeneric, masterKey)
 	if err != nil {
 		return fmt.Errorf("failed to save template: %w", err)
 	}
@@ -1658,7 +1614,7 @@ func cmdAddTemplate(yamlPath string) error {
 // The template will be loaded and registered when apsignerd unlocks.
 func cmdAddFalconTemplate(yamlPath string) error {
 	// Check if keystore is initialized
-	if !crypto.KeystoreMetadataExistsIn(utilkeys.KeystorePath()) {
+	if !crypto.KeystoreMetadataExistsIn(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)) {
 		return fmt.Errorf("keystore not initialized, run 'apstore init' first")
 	}
 
@@ -1682,10 +1638,10 @@ func cmdAddFalconTemplate(yamlPath string) error {
 	keyType := spec.KeyType()
 
 	// Check if template already exists in either template directory (falcon or generic)
-	if templatestore.TemplateExists(keyType, templatestore.TemplateTypeFalcon) {
+	if templatestore.TemplateExists(auth.DefaultIdentityID, keyType, templatestore.TemplateTypeFalcon) {
 		return fmt.Errorf("falcon template %s already exists in falcon-templates directory", keyType)
 	}
-	if templatestore.TemplateExists(keyType, templatestore.TemplateTypeGeneric) {
+	if templatestore.TemplateExists(auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric) {
 		return fmt.Errorf("key type %s already exists as a generic template", keyType)
 	}
 
@@ -1703,7 +1659,7 @@ func cmdAddFalconTemplate(yamlPath string) error {
 	fmt.Println()
 
 	// Load keystore metadata and derive master key
-	meta, err := crypto.LoadKeystoreMetadata(utilkeys.KeystorePath())
+	meta, err := crypto.LoadKeystoreMetadata(utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID))
 	if err != nil {
 		return fmt.Errorf("failed to load keystore metadata: %w", err)
 	}
@@ -1718,7 +1674,7 @@ func cmdAddFalconTemplate(yamlPath string) error {
 	defer crypto.ZeroBytes(masterKey)
 
 	// Save the template using the common templatestore
-	outputPath, err := templatestore.SaveTemplate(data, keyType, templatestore.TemplateTypeFalcon, masterKey)
+	outputPath, err := templatestore.SaveTemplate(auth.DefaultIdentityID, data, keyType, templatestore.TemplateTypeFalcon, masterKey)
 	if err != nil {
 		return fmt.Errorf("failed to save template: %w", err)
 	}

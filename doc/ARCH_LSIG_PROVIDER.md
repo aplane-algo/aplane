@@ -349,8 +349,8 @@ lsig.RegisterAll()
 
 Runtime templates (from keystore) are loaded after unlock:
 ```go
-multitemplate.RegisterKeystoreTemplates(masterKey)
-falcon1024template.RegisterKeystoreTemplates(masterKey)
+multitemplate.RegisterKeystoreTemplates(identityID, masterKey)
+falcon1024template.RegisterKeystoreTemplates(identityID, masterKey)
 ```
 
 ## Algod Client Configuration

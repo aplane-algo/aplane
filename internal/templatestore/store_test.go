@@ -15,6 +15,8 @@ import (
 // testMasterKey is a 32-byte key for testing
 var testMasterKey = []byte("test-master-key-32-bytes-long!!!")
 
+const testIdentityID = "default"
+
 func TestSaveAndLoadTemplate(t *testing.T) {
 	// Create temp directory
 	tmpDir, err := os.MkdirTemp("", "templatestore-test-*")
@@ -40,7 +42,7 @@ teal: |
 	keyType := "test-template-v1"
 
 	// Save template
-	outputPath, err := SaveTemplate(yamlData, keyType, TemplateTypeGeneric, testMasterKey)
+	outputPath, err := SaveTemplate(testIdentityID, yamlData, keyType, TemplateTypeGeneric, testMasterKey)
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
@@ -51,7 +53,7 @@ teal: |
 	}
 
 	// Load template back
-	loadedData, err := LoadTemplateFromPath(GetTemplateFilePath(keyType, TemplateTypeGeneric), testMasterKey)
+	loadedData, err := LoadTemplateFromPath(GetTemplateFilePath(testIdentityID, keyType, TemplateTypeGeneric), testMasterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath failed: %v", err)
 	}
@@ -100,19 +102,19 @@ teal: |
 	keyType := "falcon1024-test-v1"
 
 	// Save template
-	outputPath, err := SaveTemplate(yamlData, keyType, TemplateTypeFalcon, testMasterKey)
+	outputPath, err := SaveTemplate(testIdentityID, yamlData, keyType, TemplateTypeFalcon, testMasterKey)
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
 
-	// Verify file was created in templates/falcon directory
-	expectedDir := filepath.Join(tmpDir, "templates", "falcon")
+	// Verify file was created in users/default/templates/falcon directory
+	expectedDir := filepath.Join(tmpDir, "users", "default", "templates", "falcon")
 	if !strings.HasPrefix(outputPath, expectedDir) {
 		t.Errorf("Template saved to wrong directory. Expected prefix %s, got %s", expectedDir, outputPath)
 	}
 
 	// Load template back
-	loadedData, err := LoadTemplateFromPath(GetTemplateFilePath(keyType, TemplateTypeFalcon), testMasterKey)
+	loadedData, err := LoadTemplateFromPath(GetTemplateFilePath(testIdentityID, keyType, TemplateTypeFalcon), testMasterKey)
 	if err != nil {
 		t.Fatalf("LoadTemplateFromPath failed: %v", err)
 	}
@@ -137,24 +139,24 @@ func TestTemplateExists(t *testing.T) {
 	keyType := "exists-test-v1"
 
 	// Should not exist initially
-	if TemplateExists(keyType, TemplateTypeGeneric) {
+	if TemplateExists(testIdentityID, keyType, TemplateTypeGeneric) {
 		t.Error("Template should not exist before saving")
 	}
 
 	// Save template
 	yamlData := []byte("test: data")
-	_, err = SaveTemplate(yamlData, keyType, TemplateTypeGeneric, testMasterKey)
+	_, err = SaveTemplate(testIdentityID, yamlData, keyType, TemplateTypeGeneric, testMasterKey)
 	if err != nil {
 		t.Fatalf("SaveTemplate failed: %v", err)
 	}
 
 	// Should exist now
-	if !TemplateExists(keyType, TemplateTypeGeneric) {
+	if !TemplateExists(testIdentityID, keyType, TemplateTypeGeneric) {
 		t.Error("Template should exist after saving")
 	}
 
 	// Should not exist in falcon directory
-	if TemplateExists(keyType, TemplateTypeFalcon) {
+	if TemplateExists(testIdentityID, keyType, TemplateTypeFalcon) {
 		t.Error("Template should not exist in falcon directory")
 	}
 }
@@ -178,14 +180,14 @@ func TestLoadAllTemplates(t *testing.T) {
 	}
 
 	for keyType, data := range templates {
-		_, err := SaveTemplate(data, keyType, TemplateTypeGeneric, testMasterKey)
+		_, err := SaveTemplate(testIdentityID, data, keyType, TemplateTypeGeneric, testMasterKey)
 		if err != nil {
 			t.Fatalf("SaveTemplate failed for %s: %v", keyType, err)
 		}
 	}
 
 	// Load all templates
-	loaded, err := LoadAllTemplates(TemplateTypeGeneric, testMasterKey)
+	loaded, err := LoadAllTemplates(testIdentityID, TemplateTypeGeneric, testMasterKey)
 	if err != nil {
 		t.Fatalf("LoadAllTemplates failed: %v", err)
 	}

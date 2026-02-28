@@ -151,7 +151,6 @@ sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin
 
 # Write signer config
 sudo -u aplane tee /var/lib/apsigner/config.yaml <<'EOF'
-store: /var/lib/apsigner/store
 lock_on_disconnect: false
 EOF
 
@@ -182,7 +181,6 @@ sudo ./scripts/systemd-setup.sh aplane aplane /usr/local/bin --auto-unlock
 
 # Write signer config
 sudo -u aplane tee /var/lib/apsigner/config.yaml <<'EOF'
-store: /var/lib/apsigner/store
 passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds", "passphrase.cred"]
 passphrase_timeout: "0"
 lock_on_disconnect: false
@@ -310,8 +308,6 @@ This step is only needed with `--auto-unlock`. In locked-start mode, the service
 Create `/var/lib/apsigner/config.yaml`:
 
 ```yaml
-store: /var/lib/apsigner/store
-
 # Passphrase helper: reads from systemd credential directory at runtime
 passphrase_command_argv: ["/usr/local/bin/pass-systemd-creds", "passphrase.cred"]
 
@@ -329,7 +325,7 @@ sudo ./scripts/init-signer.sh /var/lib/apsigner aplane:aplane
 ```
 
 This creates:
-- `/var/lib/apsigner/store/` — keystore directory (owned by `aplane`)
+- `/var/lib/apsigner/users/default/` — user directory with keystore (owned by `aplane`)
 - `/var/lib/apsigner/passphrase.cred` — TPM2-encrypted passphrase (owned by `root`)
 
 ### Locked-start setup
@@ -337,7 +333,6 @@ This creates:
 Create `/var/lib/apsigner/config.yaml`:
 
 ```yaml
-store: /var/lib/apsigner/store
 lock_on_disconnect: false
 ```
 
@@ -489,9 +484,9 @@ The passphrase flow uses three components working together:
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                          One-Time Setup                                  │
 │                                                                          │
-│  apstore init --random                                                   │
+│  apstore init                                                            │
 │       │                                                                  │
-│       ├─► generates random passphrase                                    │
+│       ├─► prompts for passphrase                                         │
 │       ├─► creates keystore (Argon2id-derived master key)                 │
 │       └─► calls pass-systemd-creds write passphrase.cred                │
 │                  │                                                        │
@@ -535,10 +530,10 @@ The passphrase flow uses three components working together:
 To rotate the keystore passphrase (auto-unlock mode):
 
 ```bash
-sudo apstore -d /var/lib/apsigner changepass --random
+sudo apstore -d /var/lib/apsigner changepass
 ```
 
-This atomically re-encrypts all keys with a new random passphrase and updates `passphrase.cred`. Restart the service afterward:
+This atomically re-encrypts all keys with a new passphrase and updates `passphrase.cred`. Restart the service afterward:
 
 ```bash
 sudo systemctl restart apsigner

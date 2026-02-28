@@ -2,7 +2,7 @@
 # init-signer.sh - Initialize apsignerd keystore with TPM2-encrypted passphrase
 #
 # Must be run as root (systemd-creds encrypt requires TPM2/host key access).
-# After creating the keystore, fixes store permissions so apsignerd can run
+# After creating the keystore, fixes permissions so apsignerd can run
 # as a non-root service user.
 #
 # Usage:
@@ -27,11 +27,11 @@ if ! echo "$OWNER" | grep -q ':'; then
     exit 1
 fi
 
-apstore -d "$DATA_DIR" init --random
+apstore -d "$DATA_DIR" init
 
 # passphrase.cred stays root-owned (only systemd reads it via LoadCredentialEncrypted)
-# store/ must be owned by the service user
-chown -R "$OWNER" "$DATA_DIR/store"
+# users/ must be owned by the service user
+chown -R "$OWNER" "$DATA_DIR/users"
 
 echo ""
 echo "Done. Start the service with: systemctl start apsignerd"

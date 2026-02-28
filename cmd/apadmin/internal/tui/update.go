@@ -349,13 +349,13 @@ func (m *Model) loadRuntimeTemplates(passphrase []byte) {
 	}
 
 	// Load generic LogicSig templates (multitemplate)
-	if err := multitemplate.RegisterKeystoreTemplates(masterKey); err != nil {
+	if err := multitemplate.RegisterKeystoreTemplates(auth.DefaultIdentityID, masterKey); err != nil {
 		m.templateLoadWarnings = append(m.templateLoadWarnings,
 			fmt.Sprintf("Failed to load generic templates: %v", err))
 	}
 
 	// Load Falcon-1024 DSA composition templates (falcon1024template)
-	if err := falcon1024template.RegisterKeystoreTemplates(masterKey); err != nil {
+	if err := falcon1024template.RegisterKeystoreTemplates(auth.DefaultIdentityID, masterKey); err != nil {
 		m.templateLoadWarnings = append(m.templateLoadWarnings,
 			fmt.Sprintf("Failed to load falcon templates: %v", err))
 	}

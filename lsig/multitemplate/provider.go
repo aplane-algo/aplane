@@ -349,8 +349,8 @@ func RegisterTemplates() {
 // LoadTemplatesFromKeystore loads user-defined generic templates from the keystore.
 // These are templates added via 'apstore add-template'.
 // masterKey is required to decrypt the template files.
-func LoadTemplatesFromKeystore(masterKey []byte) ([]*YAMLTemplate, error) {
-	templateData, err := templatestore.LoadAllTemplates(templatestore.TemplateTypeGeneric, masterKey)
+func LoadTemplatesFromKeystore(identityID string, masterKey []byte) ([]*YAMLTemplate, error) {
+	templateData, err := templatestore.LoadAllTemplates(identityID, templatestore.TemplateTypeGeneric, masterKey)
 	if err != nil {
 		return nil, err
 	}
@@ -376,8 +376,8 @@ func LoadTemplatesFromKeystore(masterKey []byte) ([]*YAMLTemplate, error) {
 
 // RegisterKeystoreTemplates loads and registers generic templates from the keystore.
 // This should be called after the keystore is unlocked.
-func RegisterKeystoreTemplates(masterKey []byte) error {
-	templates, err := LoadTemplatesFromKeystore(masterKey)
+func RegisterKeystoreTemplates(identityID string, masterKey []byte) error {
+	templates, err := LoadTemplatesFromKeystore(identityID, masterKey)
 	if err != nil {
 		return fmt.Errorf("failed to load keystore templates: %w", err)
 	}

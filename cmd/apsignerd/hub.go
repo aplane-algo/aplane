@@ -143,7 +143,7 @@ func (h *Hub) HasClient() bool {
 func (h *Hub) tryUnlock(passphrase []byte) (bool, int, string) {
 	// Verify passphrase against existing control file
 	// (control file existence is validated at startup)
-	if err := crypto.VerifyPassphraseWithMetadata(passphrase, utilkeys.KeystorePath()); err != nil {
+	if err := crypto.VerifyPassphraseWithMetadata(passphrase, utilkeys.KeystoreMetadataDir(auth.DefaultIdentityID)); err != nil {
 		return false, 0, "Invalid passphrase"
 	}
 

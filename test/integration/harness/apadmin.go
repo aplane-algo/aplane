@@ -246,9 +246,8 @@ func (v *ApAdminHarness) Cleanup() {
 // removeKeyFile removes a key file directly from the keystore directory.
 // Returns true if the file was found and removed.
 func (v *ApAdminHarness) removeKeyFile(addr string) bool {
-	// Search for ADDRESS.key in identity-scoped keystore locations
+	// Search for ADDRESS.key in identity-scoped keystore location
 	candidates := []string{
-		filepath.Join(v.dataDir, "store", "users", "default", "keys", addr+".key"),
 		filepath.Join(v.dataDir, "users", "default", "keys", addr+".key"),
 	}
 	for _, path := range candidates {

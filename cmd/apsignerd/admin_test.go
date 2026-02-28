@@ -46,8 +46,9 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	oldPath := utilkeys.KeystorePath()
 	utilkeys.SetKeystorePath(tmpDir)
 
-	// Create keystore metadata (.keystore file with master salt)
-	_, _, err := crypto.CreateKeystoreMetadata(tmpDir, testPassphrase)
+	// Create keystore metadata (.keystore file in user directory)
+	userDir := filepath.Join(tmpDir, "users", "default")
+	_, _, err := crypto.CreateKeystoreMetadata(userDir, testPassphrase)
 	if err != nil {
 		utilkeys.SetKeystorePath(oldPath)
 		t.Fatalf("Failed to create keystore metadata: %v", err)

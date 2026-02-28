@@ -11,9 +11,6 @@ ssh:
   authorized_keys_path: .ssh/authorized_keys  # Relative to $APSIGNER_DATA
   auto_register: true  # Auto-register new SSH keys (TOFU)
 
-# Store directory (relative to $APSIGNER_DATA)
-store: store
-
 # Approval policy settings (all default to false)
 # txn_auto_approve: false
 # group_auto_approve: false

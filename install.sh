@@ -116,9 +116,6 @@ if [ "$LOCAL_MODE" = "1" ]; then
 # apsignerd configuration
 # See doc/USER_CONFIG.md for full documentation.
 
-# Store directory (relative to $APSIGNER_DATA)
-store: store
-
 # REST API port (bound to localhost when SSH is enabled)
 signer_port: 11270
 
@@ -152,9 +149,6 @@ EOF
         cat > "$CONFIG_PATH" <<'EOF'
 # apsignerd configuration
 # See doc/USER_CONFIG.md for full documentation.
-
-# Store directory (relative to $APSIGNER_DATA)
-store: store
 
 # REST API port (bound to localhost when SSH is enabled)
 signer_port: 11270
@@ -199,6 +193,12 @@ export APSIGNER_DATA="$DATA_DIR"
 export APCLIENT_DATA="$APCLIENT_DIR"
 ENVEOF
 
+    # Initialize keystore
+    echo ""
+    echo "=== Keystore initialization ==="
+    echo ""
+    "$BINDIR/apstore" -d "$DATA_DIR" init
+
     echo ""
     echo "=== Installation complete ==="
     echo ""
@@ -209,7 +209,6 @@ ENVEOF
     echo "  echo '. $INSTALL_ROOT/env.sh' >> ~/.bashrc"
     echo ""
     echo "Then:"
-    echo "  apstore init          # Initialize keystore"
     echo "  apsignerd              # Start signer"
     echo "  apadmin                # Unlock and manage keys"
     echo ""
@@ -313,9 +312,6 @@ write_canonical_config() {
 # apsignerd configuration
 # See doc/USER_CONFIG.md for full documentation.
 
-# Store directory (relative to $APSIGNER_DATA)
-store: store
-
 # REST API port (bound to localhost when SSH is enabled)
 signer_port: 11270
 
@@ -358,7 +354,13 @@ else
     write_canonical_config "$CONFIG_PATH"
 fi
 
-# Step 5: Install /etc/profile.d drop-in for APSIGNER_DATA
+# Step 5: Initialize keystore (before systemd starts the service)
+echo ""
+echo "=== Keystore initialization ==="
+echo ""
+"$BINDIR/apstore" -d "$DATA_DIR" init
+
+# Step 6: Install /etc/profile.d drop-in for APSIGNER_DATA
 PROFILE_DROP="/etc/profile.d/apsigner.sh"
 echo ""
 echo "Writing $PROFILE_DROP..."
@@ -369,17 +371,18 @@ PROFEOF
 chmod 644 "$PROFILE_DROP"
 echo "  APSIGNER_DATA=$DATA_DIR"
 
+# Step 7: Enable and start the service
+echo ""
+echo "Enabling and starting apsigner service..."
+systemctl enable apsigner
+systemctl start apsigner
+echo "  apsigner service started"
+
 echo ""
 echo "=== Installation complete ==="
 echo ""
-echo "Next steps:"
-echo "  1. Enable and start:"
-echo "       sudo systemctl enable apsigner"
-echo "       sudo systemctl start apsigner"
-echo "  2. Unlock the signer after starting:"
-echo "       sudo -u $SVC_USER apadmin"
-echo "  3. Generate keys:"
-echo "       sudo -u $SVC_USER apadmin"
+echo "The signer is running but locked. To unlock and manage keys:"
+echo "  apadmin"
 echo ""
 echo "APSIGNER_DATA is set in $PROFILE_DROP (active on next login)."
 echo "To use immediately: source $PROFILE_DROP"

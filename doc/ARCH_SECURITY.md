@@ -61,7 +61,7 @@ Used by apshell and other HTTP clients for signing requests.
 - 32 bytes (256 bits) of cryptographic randomness
 - Hex-encoded (64 characters)
 - Generated on first server startup if not present
-- Stored in `<keystore>/users/default/aplane.token` with mode 0600
+- Stored in `users/default/aplane.token` (relative to data directory) with mode 0600
 
 **Token Lifecycle and Limitations:**
 
@@ -635,7 +635,7 @@ Set `require_memory_protection: true` in production environments where key secur
 
 ### Passphrase Command Helper Protocol
 
-The signer supports an external command protocol for passphrase storage and retrieval, following the same pattern as Git credential helpers. This enables headless operation (auto-unlock at startup) and fully automated keystore management (`apstore init --random`, `apstore changepass --random`) without human interaction.
+The signer supports an external command protocol for passphrase storage and retrieval, following the same pattern as Git credential helpers. This enables headless operation (auto-unlock at startup) and automated keystore management without human interaction.
 
 **Configuration:**
 
@@ -670,8 +670,8 @@ The verb is injected as `argv[1]` before the user's arguments. For example, `[".
 | Caller | Verb | Purpose |
 |--------|------|---------|
 | `apsignerd` startup (headless) | `read` | Auto-unlock signer at boot |
-| `apstore init --random` | `write` | Store the generated passphrase |
-| `apstore changepass --random` | `read` + `write` | Read old passphrase, then store new passphrase after atomic key re-encryption |
+| `apstore init` | `write` | Store the chosen passphrase |
+| `apstore changepass` | `read` + `write` | Read old passphrase, then store new passphrase after atomic key re-encryption |
 
 **Round-trip verification (`write`):**
 
@@ -769,9 +769,9 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
 
 3.  **Initialize a new keystore:**
     ```bash
-    sudo apstore -d /var/lib/apsigner init --random
+    sudo apstore -d /var/lib/apsigner init
     ```
-    This generates a random master passphrase, creates the keystore, then calls `pass-systemd-creds write` to encrypt and store the passphrase to `passphrase.cred` via `systemd-creds`. Requires root because `systemd-creds encrypt` accesses the TPM2/host key directly.
+    This prompts for a master passphrase, creates the keystore, then calls `pass-systemd-creds write` to encrypt and store the passphrase to `passphrase.cred` via `systemd-creds`. Requires root because `systemd-creds encrypt` accesses the TPM2/host key directly.
 
 4.  **Service Integration (Headless):**
 
@@ -805,9 +805,9 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
 
 5.  **Changing the passphrase:**
     ```bash
-    sudo apstore -d /var/lib/apsigner changepass --random
+    sudo apstore -d /var/lib/apsigner changepass
     ```
-    This reads the old passphrase (via `pass-systemd-creds read`), re-encrypts all keys with a new random passphrase, then stores it (via `pass-systemd-creds write`). Requires root. After changing, restart the service:
+    This reads the old passphrase (via `pass-systemd-creds read`), re-encrypts all keys with the new passphrase, then stores it (via `pass-systemd-creds write`). Requires root. After changing, restart the service:
     ```bash
     sudo systemctl restart apsigner
     ```
@@ -824,7 +824,7 @@ The `pass-systemd-creds` helper is recommended for Linux production environments
 
     # On the new machine: restore, then init with pass-systemd-creds configured in config.yaml
     apstore -d /var/lib/apsigner restore all /mnt/usb/backup
-    sudo apstore -d /var/lib/apsigner init --random
+    sudo apstore -d /var/lib/apsigner init
     ```
 
 **Writing a custom helper:**

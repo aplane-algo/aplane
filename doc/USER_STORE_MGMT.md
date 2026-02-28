@@ -254,13 +254,6 @@ This safely re-encrypts all keys and templates using a two-phase atomic operatio
 
 If any step fails, the operation is rolled back automatically.
 
-**Generate a random passphrase:**
-```bash
-./apstore changepass --random
-```
-
-This generates a cryptographically secure 256-bit passphrase (base64 encoded) and displays it for you to save.
-
 ### Listing Keys
 
 To see all keys in your keystore:
@@ -303,7 +296,7 @@ For custom LogicSig templates:
 ./apstore add-falcon-template falcon1024-hashlock-v2.yaml
 ```
 
-Templates are encrypted and stored in the keystore's `templates/generic/` or `templates/falcon/` directory.
+Templates are encrypted and stored in the user directory's `templates/generic/` or `templates/falcon/` subdirectory.
 They become available after unlocking apsignerd.
 
 ---
@@ -501,7 +494,6 @@ Without the encryption passphrase, you can still regenerate the same keys from y
 
 # Change keystore passphrase
 ./apstore changepass
-./apstore changepass --random
 
 # Template management (for custom LogicSigs)
 ./apstore templates

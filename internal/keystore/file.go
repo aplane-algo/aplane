@@ -52,9 +52,8 @@ func NewFileKeyStore(identityID string) *FileKeyStore {
 // Returns the master key for external use (e.g., template scanning).
 // Caller should NOT zero the returned key - it's owned by FileKeyStore.
 func (f *FileKeyStore) InitializeMasterKey(passphrase []byte) ([]byte, error) {
-	// The .keystore metadata is in the keystore root.
-	// keysDir is store/users/<identityID>/keys, so root is three levels up.
-	keystoreRoot := utilkeys.KeystorePath()
+	// The .keystore metadata is in the user directory (users/<identityID>/).
+	keystoreRoot := utilkeys.KeystoreMetadataDir(f.identityID)
 
 	// Load keystore metadata to get master salt
 	meta, err := crypto.LoadKeystoreMetadata(keystoreRoot)
