@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 aPlane Authors
+
 // Create store metadata and passphrase file for Docker playground
 // Usage: go run create-control-file.go <user-directory> <passphrase-file>
 package main

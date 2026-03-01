@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 aPlane Authors
+
 // Package main implements a static analyzer that checks for proper zeroing of key material.
 //
 // This analyzer scans for functions that handle private key bytes and verifies

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 aPlane Authors
+
 // Package main implements a static analyzer that detects potential key material in logs or errors.
 //
 // This analyzer scans for logging statements or error messages that might

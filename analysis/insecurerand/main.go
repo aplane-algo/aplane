@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 aPlane Authors
+
 // Package main implements a static analyzer that detects insecure random number usage.
 //
 // This analyzer ensures that crypto/rand is used instead of math/rand
