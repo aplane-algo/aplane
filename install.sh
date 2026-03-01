@@ -199,20 +199,75 @@ ENVEOF
     echo ""
     "$BINDIR/apstore" -d "$DATA_DIR" init
 
+    # Configure apshell
+    echo ""
+    echo "=== apshell configuration ==="
+    echo ""
+    mkdir -p "$APCLIENT_DIR"
+
+    APCLIENT_CONFIG="$APCLIENT_DIR/config.yaml"
+    if [ -f "$APCLIENT_CONFIG" ]; then
+        echo "Config already exists at $APCLIENT_CONFIG; leaving it unchanged."
+    else
+        echo "Writing $APCLIENT_CONFIG..."
+        cat > "$APCLIENT_CONFIG" <<'EOF'
+# apshell configuration (local signer)
+# See doc/USER_CONFIG.md for full documentation.
+
+network: testnet
+networks_allowed: []
+
+signer_host: localhost
+signer_port: 11270
+
+ai_model: ""
+
+testnet_algod_server: https://testnet-api.4160.nodely.dev
+testnet_algod_token: ""
+
+# mainnet_algod_server: https://mainnet-api.4160.nodely.dev
+# mainnet_algod_token: ""
+EOF
+    fi
+
+    TOKEN_SRC="$DATA_DIR/users/default/aplane.token"
+    APCLIENT_TOKEN="$APCLIENT_DIR/aplane.token"
+    if [ -f "$TOKEN_SRC" ]; then
+        echo "Copying aplane.token to $APCLIENT_DIR..."
+        cp "$TOKEN_SRC" "$APCLIENT_TOKEN"
+        chmod 600 "$APCLIENT_TOKEN"
+    else
+        echo "Note: $TOKEN_SRC not found; skipping token copy."
+    fi
+
+    # Offer to add env.sh to ~/.bashrc (skip if already present)
+    BASHRC="$HOME/.bashrc"
+    GUARD="# aplane env"
+    if [ -f "$BASHRC" ] && grep -qF "$GUARD" "$BASHRC"; then
+        echo "env.sh already sourced in $BASHRC; skipping."
+    else
+        echo ""
+        read -rp "Add env.sh to $BASHRC for automatic setup? [Y/n] " answer </dev/tty
+        if [ -z "$answer" ] || [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+            echo "" >> "$BASHRC"
+            echo "$GUARD" >> "$BASHRC"
+            echo ". $INSTALL_ROOT/env.sh" >> "$BASHRC"
+            echo "Added env.sh to $BASHRC"
+        else
+            echo "Skipped. To set up manually, run:"
+            echo "  source $INSTALL_ROOT/env.sh"
+        fi
+    fi
+
     echo ""
     echo "=== Installation complete ==="
     echo ""
-    echo "Set up your environment:"
-    echo "  source $INSTALL_ROOT/env.sh"
-    echo ""
-    echo "Or add to ~/.bashrc for persistence:"
-    echo "  echo '. $INSTALL_ROOT/env.sh' >> ~/.bashrc"
+    echo "Start a new shell, or run: source $INSTALL_ROOT/env.sh"
     echo ""
     echo "Then:"
     echo "  apsignerd              # Start signer"
     echo "  apadmin                # Unlock and manage keys"
-    echo ""
-    echo "For apshell, create $APCLIENT_DIR/config.yaml with your client settings."
+    echo "  apshell                # Interactive shell (configured at $APCLIENT_DIR)"
     exit 0
 fi
 
@@ -360,18 +415,91 @@ echo "=== Keystore initialization ==="
 echo ""
 "$BINDIR/apstore" -d "$DATA_DIR" init
 
-# Step 6: Install /etc/profile.d drop-in for APSIGNER_DATA
-PROFILE_DROP="/etc/profile.d/apsigner.sh"
-echo ""
-echo "Writing $PROFILE_DROP..."
-cat > "$PROFILE_DROP" <<PROFEOF
-# apsigner environment (installed by apsigner installer)
-export APSIGNER_DATA="$DATA_DIR"
-PROFEOF
-chmod 644 "$PROFILE_DROP"
-echo "  APSIGNER_DATA=$DATA_DIR"
+# Step 6: Configure apshell for the installing user
+if [ -n "$SUDO_USER" ]; then
+    SUDO_USER_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+    APCLIENT_DIR="$SUDO_USER_HOME/.apclient"
+    echo ""
+    echo "=== apshell configuration (for $SUDO_USER) ==="
+    echo ""
+    mkdir -p "$APCLIENT_DIR"
 
-# Step 7: Enable and start the service
+    APCLIENT_CONFIG="$APCLIENT_DIR/config.yaml"
+    if [ -f "$APCLIENT_CONFIG" ]; then
+        echo "Config already exists at $APCLIENT_CONFIG; leaving it unchanged."
+    else
+        echo "Writing $APCLIENT_CONFIG..."
+        cat > "$APCLIENT_CONFIG" <<'EOF'
+# apshell configuration (local signer)
+# See doc/USER_CONFIG.md for full documentation.
+
+network: testnet
+networks_allowed: []
+
+signer_host: localhost
+signer_port: 11270
+
+ai_model: ""
+
+testnet_algod_server: https://testnet-api.4160.nodely.dev
+testnet_algod_token: ""
+
+# mainnet_algod_server: https://mainnet-api.4160.nodely.dev
+# mainnet_algod_token: ""
+EOF
+    fi
+
+    TOKEN_SRC="$DATA_DIR/users/default/aplane.token"
+    APCLIENT_TOKEN="$APCLIENT_DIR/aplane.token"
+    if [ -f "$TOKEN_SRC" ]; then
+        echo "Copying aplane.token to $APCLIENT_DIR..."
+        cp "$TOKEN_SRC" "$APCLIENT_TOKEN"
+        chmod 600 "$APCLIENT_TOKEN"
+    else
+        echo "Note: $TOKEN_SRC not found; skipping token copy."
+    fi
+
+    chown -R "$SUDO_USER" "$APCLIENT_DIR"
+fi
+
+# Step 7: Write env.sh for the installing user
+if [ -n "$SUDO_USER" ]; then
+    SUDO_USER_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+    ENV_SH="$SUDO_USER_HOME/.apclient/env.sh"
+    echo ""
+    echo "Writing $ENV_SH..."
+    cat > "$ENV_SH" <<ENVEOF
+# Source this file to set up aplane environment:
+#   source $ENV_SH
+
+export PATH="$BINDIR:\$PATH"
+export APSIGNER_DATA="$DATA_DIR"
+export APCLIENT_DATA="$SUDO_USER_HOME/.apclient"
+ENVEOF
+    chown "$SUDO_USER" "$ENV_SH"
+
+    # Offer to add env.sh to ~/.bashrc
+    BASHRC="$SUDO_USER_HOME/.bashrc"
+    GUARD="# aplane env"
+    if [ -f "$BASHRC" ] && grep -qF "$GUARD" "$BASHRC"; then
+        echo "env.sh already sourced in $BASHRC; skipping."
+    else
+        echo ""
+        read -rp "Add env.sh to $BASHRC for $SUDO_USER? [Y/n] " answer </dev/tty
+        if [ -z "$answer" ] || [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+            echo "" >> "$BASHRC"
+            echo "$GUARD" >> "$BASHRC"
+            echo ". $ENV_SH" >> "$BASHRC"
+            chown "$SUDO_USER" "$BASHRC"
+            echo "Added env.sh to $BASHRC"
+        else
+            echo "Skipped. To set up manually, run:"
+            echo "  source $ENV_SH"
+        fi
+    fi
+fi
+
+# Step 8: Enable and start the service
 echo ""
 echo "Enabling and starting apsigner service..."
 systemctl enable apsigner
@@ -384,8 +512,6 @@ echo ""
 echo "The signer is running but locked. To unlock and manage keys:"
 echo "  apadmin"
 echo ""
-echo "APSIGNER_DATA is set in $PROFILE_DROP (active on next login)."
-echo "To use immediately: source $PROFILE_DROP"
+echo "Start a new shell, or run: source ${ENV_SH:-~/.apclient/env.sh}"
 echo ""
-echo "For apshell, each user should set up ~/.apclient/config.yaml"
-echo "and set APCLIENT_DATA=~/.apclient (or use apshell -d)."
+echo "apshell is configured at ${APCLIENT_DIR:-\$HOME/.apclient}."
