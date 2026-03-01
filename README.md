@@ -1,4 +1,4 @@
-# aPlane - Secure Signing Infrastructure for Algorand
+# aPlane - Secure Signing Infrastructure for Algorand (ALPHA)
 
 aPlane is a suite of CLI tools for secure key management and transaction signing in the Algorand ecosystem. It supports standard Ed25519 keys, Falcon-1024 post-quantum signatures, and custom logic signatures (eg. timelock, hashlock, etc).
 
@@ -6,14 +6,13 @@ Designed for security-first operations where private keys are isolated on dedica
 
 ## Key Features
 
-- **Post-Quantum Ready**: Falcon-1024 signatures via LogicSig, protecting against future quantum threats
-- **Agent Friendly**: Enables agents to sign transactions securely 
-- **Network hardened**: Signing server can run on machines with restrictive firewalls and single-port exposure
+- **Enables key isolation**: Signing operations (and private keys) can be kept on dedicated purpose-built machines with restrictive firewalls and single-port exposure
+- **Post-Quantum Ready**: Supports Falcon-1024 signatures via LogicSig, protecting against future quantum threats
+- **Agent Friendly**: SDK enables agents to sign algosdk-built transactions securely without ever seeing private key material
 - **Flexible approval engine**: Supports both manual transaction-by-transaction approval and policy-driven auto-approval
-- **JavaScript Scripting**: Automate complex operations with a sandboxed JS runtime
-- **AI Code Generation**: Describe operations in natural language, get executable JavaScript
 - **Plugin Architecture**: Extend with DeFi integrations (Reti staking, Tinyman swaps)
-- **Mixed Transaction Groups**: Combine Ed25519 and Falcon signatures in atomic transactions
+- **JavaScript Scripting**: Complex operations can be automated with a sandboxed JS runtime
+- **AI Code Generation**: Operations can be described in natural language, with executable JavaScript generated via LLM (experimental)
 
 ## Components
 

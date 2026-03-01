@@ -1,10 +1,7 @@
 # Contributing
 
-This project implements security-sensitive infrastructure and is
-maintained by a single author.
-
-To preserve clear trust boundaries and architectural invariants,
-external pull requests are not currently accepted.
+This project implements security-sensitive infrastructure. 
+While aPlane is in alpha, external pull requests are not yet accepted.
 
 The code is published as open source for transparency, independent
 audit, and reuse under the terms of the license. Forks are explicitly
