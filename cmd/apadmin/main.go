@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/aplane-algo/aplane/cmd/apadmin/internal/tui"
 	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/keygen"
@@ -47,6 +49,15 @@ func main() {
 
 	// Resolve data directory from -d flag or APSIGNER_DATA env var
 	resolvedDataDir := util.RequireSignerDataDir(*dataDir)
+
+	// Check data directory is accessible
+	if err := unix.Access(resolvedDataDir, unix.R_OK|unix.X_OK); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Cannot access data directory: %s\n", resolvedDataDir)
+		if os.IsPermission(err) {
+			fmt.Fprintln(os.Stderr, "You may need to log out and back in for group membership to take effect.")
+		}
+		os.Exit(1)
+	}
 
 	// Load config from data directory
 	config := util.LoadServerConfig(resolvedDataDir)
