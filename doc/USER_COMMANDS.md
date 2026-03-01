@@ -531,7 +531,7 @@ connect 192.168.1.100 --ssh-port 1127
 connect localhost --signer-port 11270
 ```
 
-**Setup:** Copy `aplane.token` from `$APSIGNER_DATA/<store>/users/default/` to your `$APCLIENT_DATA` directory.
+**Setup:** Copy `aplane.token` from `$APSIGNER_DATA/users/default/` to your `$APCLIENT_DATA` directory.
 
 ---
 
