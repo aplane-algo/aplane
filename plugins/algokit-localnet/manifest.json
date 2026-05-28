@@ -1,0 +1,73 @@
+{
+  "name": "algokit-localnet",
+  "version": "0.1.0",
+  "description": "AlgoKit LocalNet operations for status, KMD account listing, and local funding",
+  "author": "APlane Shell Team",
+  "homepage": "https://github.com/aplane-algo/aplane",
+  "executable": "./algokit-localnet",
+  "args": [],
+  "commands": [
+    {
+      "name": "localnet",
+      "description": "Inspect and fund a local AlgoKit LocalNet",
+      "usage": "localnet status | genesis | accounts | fund <address|alias> [amount] [algo|microalgo] [from <address|alias>]",
+      "examples": [
+        "localnet status",
+        "localnet genesis",
+        "localnet accounts",
+        "localnet fund alice 100 algo",
+        "localnet fund alice 2500000 microalgo from LPB4KVPDCWWU6RHQARBAVVFCZRQKV7BXTKDGRZAPRS7STX6DQMPQKMWALQ"
+      ],
+      "category": "development",
+      "arg_specs": [
+        {
+          "type": "keyword",
+          "values": ["status", "genesis", "accounts", "fund"]
+        },
+        {
+          "branches": [
+            {
+              "when": {"arg": 0, "matches": "^fund$"},
+              "specs": [
+                {"type": "address"},
+                {"type": "custom", "values": ["amount"]},
+                {"type": "keyword", "values": ["algo", "algos", "microalgo", "microalgos", "ualgo", "ualgos"]},
+                {"type": "keyword", "values": ["from"]},
+                {"type": "address"}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "localnetStatus",
+      "description": "Show algod and KMD status for AlgoKit LocalNet",
+      "params": [],
+      "returns": "{network: string, algodUrl: string, kmdUrl: string, genesisId: string, genesisHash: string, lastRound: number}",
+      "command": ["status"]
+    },
+    {
+      "name": "localnetAccounts",
+      "description": "List KMD accounts in the configured AlgoKit LocalNet wallet",
+      "params": [],
+      "returns": "{wallet: string, accounts: [{address: string, balance: number, minBalance: number, spendable: number}]}",
+      "command": ["accounts"]
+    },
+    {
+      "name": "localnetFund",
+      "description": "Fund an address from a KMD account in AlgoKit LocalNet",
+      "params": [
+        {"name": "address", "type": "address", "description": "Recipient address or alias"},
+        {"name": "amount", "type": "string", "description": "Amount with optional unit, default 100 ALGO"}
+      ],
+      "returns": "{from: string, to: string, amount: number, txid: string, confirmedRound: number}",
+      "command": ["fund", "$address", "$amount"]
+    }
+  ],
+  "networks": ["localnet"],
+  "timeout": 60,
+  "manifest_format": "1.0"
+}

@@ -1,0 +1,124 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package apshellcli
+
+// Configuration and connection commands
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/aplane-algo/aplane/internal/config"
+)
+
+func (r *REPLState) cmdNetwork(args []string, _ interface{}) error {
+	return setNetwork(r, args)
+}
+
+func (r *REPLState) cmdWrite(args []string, _ interface{}) error {
+	return toggleWriteMode(r, args)
+}
+
+func (r *REPLState) cmdVerbose(args []string, _ interface{}) error {
+	result, err := execVerbose(r, args)
+	if err != nil {
+		return err
+	}
+	result.RenderText(r.Out, r)
+	return nil
+}
+
+func (r *REPLState) cmdSimulate(args []string, _ interface{}) error {
+	return toggleSimulate(r, args)
+}
+
+func (r *REPLState) cmdConnect(args []string, _ interface{}) error {
+	if len(args) > 0 {
+		return fmt.Errorf("connect takes no arguments — connection target is read from config.yaml\n\n" +
+			"Configure the ssh block in config.yaml with host, port, and identity_file.\n" +
+			"See 'help connect' for details")
+	}
+	return connectConfigured(r)
+}
+
+func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
+	// Parse connection info
+	if len(args) == 0 {
+		return requestTokenConfigured(r)
+	}
+
+	// Parse connection string
+	connStr := strings.Join(args, " ")
+	parsed, err := config.ParseConnectionString(connStr)
+	if err != nil {
+		return fmt.Errorf("invalid connection: %w", err)
+	}
+
+	return requestToken(r, parsed.Host, parsed.SSHPort)
+}
+
+func (r *REPLState) cmdScript(args []string, _ interface{}) error {
+	return r.runScript(args)
+}
+
+func (r *REPLState) cmdConfig(_ []string, _ interface{}) error {
+	// Display current config
+	config.DisplayConfig(r.DataDir)
+	r.println("Note: Config is read-only. Edit config.yaml in the data directory manually.")
+	return nil
+}
+
+func (r *REPLState) cmdPlugins(args []string, _ interface{}) error {
+	result, err := r.app().PluginsInfo(r.commandContext(), args)
+	if err != nil {
+		return err
+	}
+
+	if result.Mode == "list" && len(result.Plugins) == 0 {
+		r.println("No external plugins found")
+		return nil
+	}
+
+	if result.Mode == "show" && result.Plugin != nil {
+		plugin := result.Plugin
+		r.printf("%s v%s\n", plugin.Name, plugin.Version)
+		if plugin.Description != "" {
+			r.printf("  %s\n", plugin.Description)
+		}
+		if plugin.Author != "" {
+			r.printf("  Author: %s\n", plugin.Author)
+		}
+		if len(plugin.Networks) > 0 {
+			r.printf("  Networks: %s\n", strings.Join(plugin.Networks, ", "))
+		}
+		r.println("  Commands:")
+		for _, cmd := range plugin.Commands {
+			r.printf("    %s - %s\n", cmd.Name, cmd.Description)
+			if cmd.Usage != "" {
+				r.printf("      Usage: %s\n", cmd.Usage)
+			}
+		}
+		return nil
+	}
+
+	r.printf("%s:\n", result.Summary.Message)
+	for _, plugin := range result.Plugins {
+		// Collect command names
+		var cmdNames []string
+		for _, cmd := range plugin.Commands {
+			cmdNames = append(cmdNames, cmd.Name)
+		}
+
+		r.printf("  %s v%s", plugin.Name, plugin.Version)
+		if plugin.Description != "" {
+			r.printf(" - %s", plugin.Description)
+		}
+		r.println()
+		r.printf("    Commands: %s\n", strings.Join(cmdNames, ", "))
+		if len(plugin.Networks) > 0 {
+			r.printf("    Networks: %s\n", strings.Join(plugin.Networks, ", "))
+		}
+	}
+	return nil
+}

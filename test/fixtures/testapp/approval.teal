@@ -1,0 +1,341 @@
+#pragma version 10
+
+// APlane Test Contract — minimal ARC-4 fixture for Phase 1 integration tests.
+//
+// Global state:
+//   "counter" (uint64)  — incrementing counter
+//   "admin"   (bytes)   — creator address, set at creation
+//
+// Local state:
+//   "balance" (uint64)  — per-account balance
+//
+// Methods:
+//   increment(uint64)void        — selector 0x8296da2e
+//   set_box(byte[],byte[])void   — selector 0x6eb66b06
+//   optin()void                  — selector 0xdc0de7eb
+//   deposit()void                — selector 0x92e03b1c
+//   delete_box(byte[])void       — admin-only, for test cleanup
+
+// --- Creation ---
+txn ApplicationID
+bz handle_create
+
+// --- Route by OnCompletion ---
+txn OnCompletion
+int OptIn
+==
+bnz handle_optin
+
+txn OnCompletion
+int CloseOut
+==
+bnz handle_closeout
+
+txn OnCompletion
+int UpdateApplication
+==
+bnz handle_update
+
+txn OnCompletion
+int DeleteApplication
+==
+bnz handle_delete
+
+txn OnCompletion
+int NoOp
+==
+bnz handle_noop
+
+// ClearState is handled by clear program
+err
+
+// --- Creation handler ---
+handle_create:
+    // Initialize global state
+    byte "counter"
+    int 0
+    app_global_put
+
+    byte "admin"
+    txn Sender
+    app_global_put
+
+    int 1
+    return
+
+// --- NoOp: dispatch by ARC-4 method selector ---
+handle_noop:
+    txn NumAppArgs
+    int 0
+    ==
+    bnz reject  // must have at least one arg (method selector)
+
+    // Check method selector (first 4 bytes of arg 0)
+    txna ApplicationArgs 0
+    method "increment(uint64)void"
+    ==
+    bnz method_increment
+
+    txna ApplicationArgs 0
+    method "set_box(byte[],byte[])void"
+    ==
+    bnz method_set_box
+
+    txna ApplicationArgs 0
+    method "deposit()void"
+    ==
+    bnz method_deposit
+
+    txna ApplicationArgs 0
+    method "delete_box(byte[])void"
+    ==
+    bnz method_delete_box
+
+    // Unknown method
+    err
+
+// --- OptIn handler ---
+handle_optin:
+    // Check for optin() method selector if args present
+    txn NumAppArgs
+    int 0
+    >
+    bnz check_optin_selector
+
+    // Bare opt-in (no args) — also allowed
+    b do_optin
+
+check_optin_selector:
+    txna ApplicationArgs 0
+    method "optin()void"
+    ==
+    assert
+
+do_optin:
+    // Initialize local balance to 0
+    txn Sender
+    byte "balance"
+    int 0
+    app_local_put
+
+    int 1
+    return
+
+// --- CloseOut handler ---
+handle_closeout:
+    int 1
+    return
+
+// --- Admin-only update handler ---
+handle_update:
+    byte "admin"
+    app_global_get
+    txn Sender
+    ==
+    assert
+    int 1
+    return
+
+// --- Admin-only delete handler with refund ---
+handle_delete:
+    byte "admin"
+    app_global_get
+    txn Sender
+    ==
+    assert
+
+    // Remove known fixture boxes so the app account can be closed out.
+    byte "config"
+    box_del
+    pop
+
+    byte "settings"
+    box_del
+    pop
+
+    // Account[1] is the app account itself for delete flows.
+    int 1
+    balance
+    int 1000
+    >=
+    bz delete_done
+
+    // Return any remaining app-account balance to the admin before delete.
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    byte "admin"
+    app_global_get
+    itxn_field Receiver
+    int 0
+    itxn_field Amount
+    byte "admin"
+    app_global_get
+    itxn_field CloseRemainderTo
+    int 1000
+    itxn_field Fee
+    itxn_submit
+
+delete_done:
+    int 1
+    return
+
+// --- increment(uint64)void ---
+method_increment:
+    // arg 1 = ABI-encoded uint64 (8 bytes)
+    txna ApplicationArgs 1
+    btoi
+    store 0  // amount
+
+    // Load current counter
+    byte "counter"
+    app_global_get
+    store 1  // current
+
+    // New value = current + amount
+    load 1
+    load 0
+    +
+    store 2  // new value
+
+    // Store
+    byte "counter"
+    load 2
+    app_global_put
+
+    // Log
+    byte "incremented"
+    log
+
+    int 1
+    return
+
+// --- set_box(byte[],byte[])void ---
+method_set_box:
+    // arg 1 = ABI-encoded byte[] (box name)
+    // arg 2 = ABI-encoded byte[] (box value)
+    //
+    // ABI byte[] encoding: first 2 bytes = length, followed by data
+    // Extract name
+    txna ApplicationArgs 1
+    extract 2 0  // skip 2-byte length prefix, extract rest
+    store 3      // box name
+
+    // Extract value
+    txna ApplicationArgs 2
+    extract 2 0
+    store 4      // box value
+
+    // Delete box if it exists (ignore error)
+    load 3
+    box_del
+    pop
+
+    // Create box with correct size
+    load 3
+    load 4
+    len
+    box_create
+    assert
+
+    // Write value
+    load 3
+    int 0
+    load 4
+    box_replace
+
+    // Log
+    byte "box set"
+    log
+
+    int 1
+    return
+
+// --- deposit()void ---
+method_deposit:
+    // Must be opted in
+    txn Sender
+    int 0    // current app
+    byte "balance"
+    app_local_get_ex
+    store 5  // exists flag
+    store 6  // current balance
+    load 5
+    assert   // revert if not opted in
+
+    // Find companion payment in this group.
+    // Look for a payment transaction before this one in the group
+    // that pays to the app address.
+    global CurrentApplicationAddress
+    store 7  // app address
+
+    // Check previous transaction in group
+    txn GroupIndex
+    int 0
+    ==
+    bnz reject  // must not be first in group (need preceding payment)
+
+    txn GroupIndex
+    int 1
+    -
+    store 8  // index of previous txn
+
+    load 8
+    gtxns TypeEnum
+    int pay
+    ==
+    assert  // previous must be a payment
+
+    load 8
+    gtxns Receiver
+    load 7
+    ==
+    assert  // payment must go to app address
+
+    load 8
+    gtxns Sender
+    txn Sender
+    ==
+    assert  // payment sender must match app call sender
+
+    // Get payment amount
+    load 8
+    gtxns Amount
+    store 9
+
+    // Update local balance
+    txn Sender
+    byte "balance"
+    load 6   // current balance
+    load 9   // payment amount
+    +
+    app_local_put
+
+    // Log
+    byte "deposited"
+    log
+
+    int 1
+    return
+
+// --- delete_box(byte[])void ---
+method_delete_box:
+    // Admin-only box deletion for test cleanup.
+    byte "admin"
+    app_global_get
+    txn Sender
+    ==
+    assert
+
+    txna ApplicationArgs 1
+    extract 2 0  // skip ABI length prefix
+    box_del
+    pop
+
+    int 1
+    return
+
+// --- Reject ---
+reject:
+    int 0
+    return

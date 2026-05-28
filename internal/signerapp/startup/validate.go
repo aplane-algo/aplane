@@ -1,0 +1,138 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package startup
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/storepaths"
+)
+
+const (
+	prodMarkerFile            = ".prod"
+	systemdManagedInstanceEnv = "APLANE_SYSTEMD_MANAGED"
+)
+
+// RuntimeState holds the results of process runtime capability checks.
+type RuntimeState struct {
+	CoreDumpsDisabled bool
+	MemoryLocked      bool
+}
+
+// ValidationInfo holds the results of startup validation checks.
+type ValidationInfo struct {
+	KeystoreExists bool
+}
+
+// BlockManualProdStart rejects manual startup for a systemd-managed data
+// directory unless the process is running under systemd.
+func BlockManualProdStart(dataDir string) error {
+	prodManaged, err := IsProductionManagedDataDir(dataDir)
+	if err != nil {
+		return err
+	}
+	if !prodManaged {
+		return nil
+	}
+
+	if RunningUnderSystemd() {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"refusing manual startup for systemd-managed data directory %s; start with 'systemctl start apsigner'",
+		dataDir,
+	)
+}
+
+// IsProductionManagedDataDir reports whether dataDir has the systemd-managed
+// marker written by the systemd installer.
+func IsProductionManagedDataDir(dataDir string) (bool, error) {
+	markerPath := filepath.Join(dataDir, prodMarkerFile)
+	if _, err := os.Stat(markerPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("checking managed install marker %s: %w", markerPath, err)
+	}
+	return true, nil
+}
+
+// RunningUnderSystemd reports whether the process appears to be launched by
+// systemd or an equivalent service manager PID 1 context.
+func RunningUnderSystemd() bool {
+	return os.Getenv(systemdManagedInstanceEnv) == "1" || os.Getppid() == 1
+}
+
+// Validate performs comprehensive signer startup validation.
+// It returns an error for required failures and writes optional warnings to stderr.
+func Validate(config *apconfig.ServerConfig, runtime *RuntimeState, keyPaths storepaths.Paths, identityID string) (*ValidationInfo, error) {
+	var warnings []string
+	info := &ValidationInfo{}
+
+	if config.SSH.Port <= 0 {
+		return nil, fmt.Errorf("invalid ssh configuration: ssh.port must be greater than zero")
+	}
+	if config.SSH.HostKeyPath == "" {
+		return nil, fmt.Errorf("invalid ssh configuration: ssh.host_key_path is required")
+	}
+	if config.SSH.AuthorizedKeysPath == "" {
+		return nil, fmt.Errorf("invalid ssh configuration: ssh.authorized_keys_path is required")
+	}
+
+	if !crypto.KeystoreMetadataExistsIn(keyPaths.KeystoreMetadataDir(identityID)) {
+		info.KeystoreExists = false
+		warnings = append(warnings, "Keystore not initialized — run 'apstore initialize'")
+	} else {
+		info.KeystoreExists = true
+
+		if len(config.PassphraseCommandArgv) > 0 {
+			if config.LockOnDisconnect != nil && *config.LockOnDisconnect {
+				return nil, fmt.Errorf("conflicting config: passphrase_command_argv and lock_on_disconnect:true cannot be used together (headless mode requires signer to stay unlocked)")
+			}
+			if config.PassphraseTimeout != "" && config.PassphraseTimeout != "0" {
+				return nil, fmt.Errorf("conflicting config: passphrase_command_argv requires passphrase_timeout:0 (headless mode must stay unlocked, got %q)", config.PassphraseTimeout)
+			}
+			if err := apconfig.ValidatePassphraseCommandConfig(config.PassphraseCommandCfg()); err != nil {
+				return nil, err
+			}
+			warnings = append(warnings, apconfig.ValidateHeadlessPolicy(config)...)
+		}
+	}
+
+	if config.RequireMemoryProtection {
+		if !runtime.CoreDumpsDisabled {
+			return nil, fmt.Errorf("memory protection required (require_memory_protection: true) but core dumps could not be disabled - run with sudo")
+		}
+		if !runtime.MemoryLocked {
+			return nil, fmt.Errorf("memory protection required (require_memory_protection: true) but memory could not be locked - run with sudo")
+		}
+	}
+
+	tealCfg, err := config.GetTEALCompileAlgod()
+	if err != nil || tealCfg.Server == "" {
+		warnings = append(warnings, fmt.Sprintf("algod.%s.server not configured: LogicSig generation will fail", config.TEALCompileNetwork))
+	}
+
+	if !runtime.CoreDumpsDisabled {
+		warnings = append(warnings, "Core dumps enabled (keys may be written to disk on crash)")
+	}
+	if !runtime.MemoryLocked {
+		warnings = append(warnings, "Memory not locked (keys may be swapped to disk)")
+	}
+
+	if len(warnings) > 0 {
+		fmt.Fprintln(os.Stderr, "")
+		for _, w := range warnings {
+			fmt.Fprintf(os.Stderr, "⚠️  %s\n", w)
+		}
+	}
+
+	return info, nil
+}

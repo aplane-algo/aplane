@@ -1,0 +1,209 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestLoadConfigSignerStatusPollInterval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+network: testnet
+signer_status_poll_interval: "30s"
+networks:
+  testnet:
+    algod:
+      server: http://localhost:4001
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfigFromPath(path)
+	if err != nil {
+		t.Fatalf("LoadConfigFromPath: %v", err)
+	}
+	if cfg.SignerStatusPollInterval != "30s" {
+		t.Fatalf("signer_status_poll_interval = %q, want 30s", cfg.SignerStatusPollInterval)
+	}
+	if got := cfg.SignerStatusPollIntervalDuration(); got != 30*time.Second {
+		t.Fatalf("SignerStatusPollIntervalDuration() = %s, want 30s", got)
+	}
+}
+
+func TestLoadConfigSignerStatusPollIntervalDisabled(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+network: testnet
+signer_status_poll_interval: "0"
+networks:
+  testnet:
+    algod:
+      server: http://localhost:4001
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfigFromPath(path)
+	if err != nil {
+		t.Fatalf("LoadConfigFromPath: %v", err)
+	}
+	if got := cfg.SignerStatusPollIntervalDuration(); got != 0 {
+		t.Fatalf("SignerStatusPollIntervalDuration() = %s, want disabled", got)
+	}
+}
+
+func TestLoadConfigRejectsInvalidSignerStatusPollInterval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+network: testnet
+signer_status_poll_interval: "500ms"
+networks:
+  testnet:
+    algod:
+      server: http://localhost:4001
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfigFromPath(path)
+	if err == nil {
+		t.Fatal("LoadConfigFromPath error = nil, want invalid interval error")
+	}
+	if !strings.Contains(err.Error(), "invalid signer_status_poll_interval") {
+		t.Fatalf("LoadConfigFromPath error = %q, want signer_status_poll_interval", err)
+	}
+}
+
+func TestLoadConfigRejectsUnknownFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+network: testnet
+unknown_setting: true
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfigFromPath(path)
+	if err == nil {
+		t.Fatal("LoadConfigFromPath error = nil, want unknown field error")
+	}
+	if !strings.Contains(err.Error(), "field unknown_setting not found") {
+		t.Fatalf("LoadConfigFromPath error = %q, want unknown_setting", err)
+	}
+}
+
+func TestLoadConfigRejectsUnknownNestedFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+network: testnet
+ssh:
+  host: localhost
+  surprise: true
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfigFromPath(path)
+	if err == nil {
+		t.Fatal("LoadConfigFromPath error = nil, want unknown nested field error")
+	}
+	if !strings.Contains(err.Error(), "field surprise not found") {
+		t.Fatalf("LoadConfigFromPath error = %q, want surprise", err)
+	}
+}
+
+func TestClientConfigExamplesUseKnownFields(t *testing.T) {
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	installer, err := os.ReadFile(filepath.Join(repoRoot, "install.sh"))
+	if err != nil {
+		t.Fatalf("read install.sh: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{
+			name: "examples/config/apclient/config.yaml.example",
+			data: mustReadTestFile(t, filepath.Join(repoRoot, "examples", "config", "apclient", "config.yaml.example")),
+		},
+		{
+			name: "install.sh write_apshell_local_config",
+			data: []byte(strings.NewReplacer(
+				"$signer_port", "11270",
+				"$ssh_port", "1127",
+			).Replace(extractInstallHereDocAfter(
+				t,
+				string(installer),
+				"write_apshell_local_config() {",
+				`cat > "$target" <<EOF`,
+			))),
+		},
+		{
+			name: "install.sh remote apshell config",
+			data: []byte(extractInstallHereDoc(t, string(installer), `cat > "$APCLIENT_CONFIG" <<'EOF'`)),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := decodeClientConfigKnownFields(tt.data); err != nil {
+				t.Fatalf("config contains fields outside internal/config.Config: %v", err)
+			}
+		})
+	}
+}
+
+func mustReadTestFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return data
+}
+
+func extractInstallHereDoc(t *testing.T, installer, marker string) string {
+	t.Helper()
+	start := strings.Index(installer, marker)
+	if start == -1 {
+		t.Fatalf("install.sh heredoc marker not found: %s", marker)
+	}
+	bodyStart := strings.Index(installer[start:], "\n")
+	if bodyStart == -1 {
+		t.Fatalf("install.sh heredoc marker has no body: %s", marker)
+	}
+	body := installer[start+bodyStart+1:]
+	end := strings.Index(body, "\nEOF")
+	if end == -1 {
+		t.Fatalf("install.sh heredoc terminator not found after marker: %s", marker)
+	}
+	return body[:end]
+}
+
+func extractInstallHereDocAfter(t *testing.T, installer, after, marker string) string {
+	t.Helper()
+	sectionStart := strings.Index(installer, after)
+	if sectionStart == -1 {
+		t.Fatalf("install.sh section marker not found: %s", after)
+	}
+	return extractInstallHereDoc(t, installer[sectionStart:], marker)
+}
+
+func decodeClientConfigKnownFields(data []byte) error {
+	var cfg Config
+	if err := unmarshalKnownFields(data, &cfg); err != nil {
+		return err
+	}
+	if cfg.SignerPort == 0 {
+		return fmt.Errorf("signer_port must be set in example config")
+	}
+	return nil
+}

@@ -1,0 +1,152 @@
+{
+  "name": "reti-plugin",
+  "version": "1.0.0",
+  "description": "Reti staking pool plugin",
+  "author": "APlane Shell Team",
+  "homepage": "https://github.com/algorandfoundation/reti",
+  "executable": "./reti",
+  "args": [],
+  "commands": [
+    {
+      "name": "reti",
+      "description": "Interact with Reti staking pools",
+      "usage": "reti list [count] | validator <id> | pools <id> | deposit <amt> algo into <validator> for <addr> | withdraw <amt|all> algo from app <pool_app_id> for <addr> | withdraw <amt|all> algo from validator <validator_id> pool <pool_id> for <addr> | balance <addr> | claim <addr>",
+      "examples": [
+        "reti list",
+        "reti list 10",
+        "reti validator 123",
+        "reti pools 123",
+        "reti deposit 1000 algo into 123 for alice",
+        "reti withdraw 500 algo from app 456 for alice",
+        "reti withdraw all algo from app 456 for alice",
+        "reti withdraw all algo from validator 1 pool 1 for alice",
+        "reti balance alice",
+        "reti claim alice"
+      ],
+      "category": "defi",
+      "arg_specs": [
+        {
+          "type": "keyword",
+          "values": ["list", "validator", "pools", "deposit", "withdraw", "balance", "claim"]
+        },
+        {
+          "branches": [
+            {
+              "when": {"arg": 0, "matches": "^validator$"},
+              "specs": [
+                {"type": "custom", "values": ["validator_id"]}
+              ]
+            },
+            {
+              "when": {"arg": 0, "matches": "^pools$"},
+              "specs": [
+                {"type": "custom", "values": ["validator_id"]}
+              ]
+            },
+            {
+              "when": {"arg": 0, "matches": "^deposit$"},
+              "specs": [
+                {"type": "number"},
+                {"type": "keyword", "values": ["algo"]},
+                {"type": "keyword", "values": ["into"]},
+                {"type": "custom", "values": ["validator_id"]},
+                {"type": "keyword", "values": ["for"]},
+                {"type": "address"}
+              ]
+            },
+            {
+              "when": {"arg": 0, "matches": "^withdraw$"},
+              "specs": [
+                {"type": "custom", "values": ["amount_or_all"]},
+                {"type": "keyword", "values": ["algo"]},
+                {"type": "keyword", "values": ["from"]},
+                {"type": "keyword", "values": ["app", "validator"]},
+                {"type": "custom", "values": ["withdraw_target"]},
+                {"type": "keyword", "values": ["for", "pool"]},
+                {"type": "custom", "values": ["withdraw_target"]},
+                {"type": "keyword", "values": ["for"]},
+                {"type": "address"}
+              ]
+            },
+            {
+              "when": {"arg": 0, "matches": "^(balance|claim)$"},
+              "specs": [
+                {"type": "address"}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "retiList",
+      "description": "List available Reti validators",
+      "params": [],
+      "returns": "{validators: [{id: number, owner: string, commissionPct: number, minEntryStakeAlgo: string, maxAlgoPerPoolAlgo: string, epochRoundLength: number, poolsPerNode: number}]}",
+      "command": ["list"]
+    },
+    {
+      "name": "retiValidator",
+      "description": "Get detailed information for one Reti validator",
+      "params": [
+        {"name": "validatorId", "type": "number", "description": "Validator ID"}
+      ],
+      "returns": "{validator: {id: number, owner: string, manager: string, commissionPct: number, totalStakedAlgo: string, numPools: number, totalStakers: number, minEntryStakeAlgo: string, gatingType: number, rewardTokenId: number, pools: [{poolId: number, appId: number, totalStakers: number, totalStakedAlgo: string}]}}",
+      "command": ["validator", "$validatorId"]
+    },
+    {
+      "name": "retiPools",
+      "description": "Get pools for a specific Reti validator",
+      "params": [
+        {"name": "validatorId", "type": "number", "description": "Validator ID"}
+      ],
+      "returns": "{pools: [{poolId: number, appId: number, totalStakers: number, totalStakedAlgo: string}]}",
+      "command": ["pools", "$validatorId"]
+    },
+    {
+      "name": "retiDeposit",
+      "description": "Deposit ALGO into a Reti validator",
+      "params": [
+        {"name": "amount", "type": "number", "description": "Amount of ALGO to stake"},
+        {"name": "validatorId", "type": "number", "description": "Validator ID"},
+        {"name": "addr", "type": "address", "description": "Account address or alias"}
+      ],
+      "returns": "{validatorId: number, poolAppId: number, poolId: number}",
+      "command": ["deposit", "$amount", "algo", "into", "$validatorId", "for", "$addr"]
+    },
+    {
+      "name": "retiWithdraw",
+      "description": "Withdraw ALGO from a Reti staking pool",
+      "params": [
+        {"name": "amount", "type": "string", "description": "Amount of ALGO to unstake or 'all'"},
+        {"name": "poolAppId", "type": "number", "description": "Pool app ID"},
+        {"name": "addr", "type": "address", "description": "Account address or alias"}
+      ],
+      "returns": "{poolAppId: number, withdrawAmountAlgo: string}",
+      "command": ["withdraw", "$amount", "algo", "from", "app", "$poolAppId", "for", "$addr"]
+    },
+    {
+      "name": "retiBalance",
+      "description": "Get Reti staking balances for an account",
+      "params": [
+        {"name": "addr", "type": "address", "description": "Account address or alias"}
+      ],
+      "returns": "{stakes: [{validatorId: number, poolId: number, poolAppId: number, balanceAlgo: string, rewardTokenBalance: string, totalRewardedAlgo: string}], totalStakedAlgo: string}",
+      "command": ["balance", "$addr"]
+    },
+    {
+      "name": "retiClaim",
+      "description": "Claim available Réti reward tokens for an account",
+      "params": [
+        {"name": "addr", "type": "address", "description": "Account address or alias"}
+      ],
+      "returns": "{claimedPools: [{poolId: number, poolAppId: number, rewardTokenId?: number, rewardTokenBalance: string}], count: number, rewardTokenOptInRequired: boolean, rewardTokenOptIns: number[]}",
+      "command": ["claim", "$addr"]
+    }
+  ],
+  "networks": ["testnet", "mainnet", "betanet", "fnet", "localnet", "sandbox"],
+  "timeout": 120,
+  "manifest_format": "1.0"
+}

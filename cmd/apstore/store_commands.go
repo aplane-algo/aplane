@@ -1,0 +1,180 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package main
+
+import (
+	"bytes"
+	"fmt"
+
+	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/protocol"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	"github.com/aplane-algo/aplane/internal/storeinit"
+)
+
+func cmdChangepass() error {
+	logInfof("Signer Passphrase Change Utility")
+	logInfof("=====================================")
+
+	currentPassphrase, err := readCurrentPassphrase()
+	if err != nil {
+		return err
+	}
+	defer crypto.ZeroBytes(currentPassphrase)
+
+	newPassphrase, err := readNewPassphrase(currentPassphrase)
+	if err != nil {
+		return err
+	}
+	defer crypto.ZeroBytes(newPassphrase)
+
+	if !confirmPassphraseChange() {
+		logInfof("passphrase change cancelled")
+		return nil
+	}
+
+	client, err := newApstoreAdminClientWithPassphraseForCommand(currentPassphrase)
+	if err != nil {
+		return err
+	}
+	defer client.close()
+
+	msg := protocol.ChangeStorePassphraseMessage{
+		BaseMessage:       protocol.BaseMessage{Type: protocol.MsgTypeChangeStorePass, ID: newApstoreRequestID("changepass")},
+		CurrentPassphrase: protocol.SensitiveBytes(append([]byte(nil), currentPassphrase...)),
+		NewPassphrase:     protocol.SensitiveBytes(append([]byte(nil), newPassphrase...)),
+	}
+	defer msg.CurrentPassphrase.Zero()
+	defer msg.NewPassphrase.Zero()
+
+	var result protocol.ChangeStorePassphraseResultMessage
+	err = client.request(msg, &result)
+	msg.CurrentPassphrase.Zero()
+	msg.NewPassphrase.Zero()
+	if err != nil {
+		return err
+	}
+	if !result.Success {
+		return resultError("passphrase change failed", result.Code, result.Error)
+	}
+
+	logInfof("passphrase change complete")
+	if result.KeysMigrated > 0 {
+		logInfof("  - %d key file(s) migrated", result.KeysMigrated)
+	}
+	if result.TemplatesMigrated > 0 {
+		logInfof("  - %d template file(s) migrated", result.TemplatesMigrated)
+	}
+	if result.PolicySidecarsMigrated > 0 {
+		logInfof("  - %d policy sidecar(s) re-signed", result.PolicySidecarsMigrated)
+	}
+	logInfof("  - keystore metadata updated")
+	return nil
+}
+
+// cmdInitialize initializes a new keystore with a passphrase.
+// When a passphrase_command_argv helper is configured, the passphrase is
+// stored via the helper after keystore creation.
+func cmdInitialize() error {
+	logInfof("Keystore Initialization")
+	logInfof("=======================")
+
+	// Get passphrase
+	logInfof("choose a strong passphrase; it will be used to encrypt all keys")
+	logInfof("you will need this passphrase to unlock the signer")
+
+	var passphrase []byte
+	for {
+		fmt.Print("Enter passphrase: ")
+		p, err := readPassword()
+		if err != nil {
+			return fmt.Errorf("failed to read passphrase: %w", err)
+		}
+		fmt.Println()
+
+		if len(p) == 0 {
+			logWarnf("passphrase cannot be empty; try again")
+			continue
+		}
+
+		fmt.Print("Confirm passphrase: ")
+		confirm, err := readPassword()
+		if err != nil {
+			return fmt.Errorf("failed to read confirmation: %w", err)
+		}
+		fmt.Println()
+
+		if !bytes.Equal(p, confirm) {
+			crypto.ZeroBytes(p)
+			crypto.ZeroBytes(confirm)
+			logWarnf("passphrases do not match; try again")
+			continue
+		}
+
+		passphrase = p
+		crypto.ZeroBytes(confirm)
+		break
+	}
+
+	// Create keystore metadata
+	defer crypto.ZeroBytes(passphrase)
+
+	result, err := initializeStoreForCommand(passphrase)
+	if err != nil {
+		return err
+	}
+	if !result.Success {
+		return resultError("keystore initialization failed", result.Code, result.Error)
+	}
+
+	logInfof("keystore initialized successfully")
+	logInfof("  keystore metadata: %s/.keystore", result.MetadataDir)
+	if result.HelperWarning != "" {
+		logWarnf(result.HelperWarning)
+		logWarnf("store the passphrase manually in your secrets backend")
+	}
+	logInfof("start apsigner to unlock and use this keystore")
+
+	return nil
+}
+
+func initializeStoreLocal(passphrase []byte) (protocol.InitializeStoreResultMessage, error) {
+	var result protocol.InitializeStoreResultMessage
+	unlockCfg, err := signerstartup.ResolveUnlockConfig(dataDirectory, productIdentityID(), &config)
+	if err != nil {
+		return result, fmt.Errorf("failed to resolve passphrase helper config: %w", err)
+	}
+
+	initResult, err := storeinit.Initialize(passphrase, storeinit.Options{
+		DataDir:    dataDirectory,
+		Paths:      keystorePaths(),
+		IdentityID: productIdentityID(),
+		Logf:       logInfof,
+	})
+	if err != nil {
+		return protocol.InitializeStoreResultMessage{
+			Success: false,
+			Code:    "initialize_store_failed",
+			Error:   err.Error(),
+		}, nil
+	}
+
+	var helperWarning string
+	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
+		passphraseCmdCfg := &apconfig.PassphraseCommandConfig{
+			Argv: unlockCfg.PassphraseCommandArgv,
+			Env:  unlockCfg.PassphraseCommandEnv,
+		}
+		if err := apconfig.WritePassphrase(passphraseCmdCfg, passphrase); err != nil {
+			helperWarning = fmt.Sprintf("could not store passphrase via passphrase command helper: %v", err)
+		}
+	}
+
+	return protocol.InitializeStoreResultMessage{
+		Success:       true,
+		MetadataDir:   initResult.MetadataDir,
+		HelperWarning: helperWarning,
+	}, nil
+}

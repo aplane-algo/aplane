@@ -1,0 +1,42 @@
+schema_version: 1
+derivation_version: 2
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: aplane
+family: falcon1024-hashlock
+version: 1
+display_name: "Falcon-1024 Hashlock"
+description: "Falcon-1024 signature with SHA256 hash verification"
+
+parameters:
+  - name: hash
+    label: "SHA256 Hash"
+    description: "SHA256 hash of the secret preimage (64 hex characters)"
+    type: bytes
+    required: true
+    max_length: 64
+    example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    placeholder: "Enter 64-character hex hash"
+
+template_variables:
+  - name: hash
+    source: parameter
+    parameter: hash
+    type: bytes
+    constant: byte
+
+runtime_args:
+  - name: preimage
+    label: "Secret Preimage"
+    description: "The secret value whose SHA256 hash matches the stored hash"
+    type: bytes
+    required: true
+
+teal: |
+  // Hash verification: sha256(arg 1) == stored hash
+  arg 1
+  sha256
+  $hash
+  ==
+  assert

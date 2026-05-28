@@ -1,0 +1,30 @@
+{
+  "name": "aplane-test",
+  "desc": "Minimal ARC-4 test contract for APlane Phase 1 integration tests",
+  "methods": [
+    {
+      "name": "increment",
+      "args": [{"name": "amount", "type": "uint64"}],
+      "returns": {"type": "void"},
+      "desc": "Add amount to global counter"
+    },
+    {
+      "name": "set_box",
+      "args": [{"name": "name", "type": "byte[]"}, {"name": "value", "type": "byte[]"}],
+      "returns": {"type": "void"},
+      "desc": "Create or overwrite a box"
+    },
+    {
+      "name": "optin",
+      "args": [],
+      "returns": {"type": "void"},
+      "desc": "Opt in and initialize local balance to 0"
+    },
+    {
+      "name": "deposit",
+      "args": [],
+      "returns": {"type": "void"},
+      "desc": "Add companion payment amount to caller local balance (must be grouped with payment to app)"
+    }
+  ]
+}

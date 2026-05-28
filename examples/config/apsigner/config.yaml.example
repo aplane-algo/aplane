@@ -1,0 +1,51 @@
+# apsigner configuration with user auto-approve disabled
+# See docs/USER_CONFIG.md for full documentation.
+
+# REST API port (bound to localhost when SSH is enabled)
+signer_port: 11270
+
+# SSH tunnel settings for remote access (uncomment for localhost only)
+ssh:
+  port: 1127
+  host_key_path: .ssh/ssh_host_key        # Relative to $APSIGNER_DATA
+  authorized_keys_path: .ssh/authorized_keys  # Relative to $APSIGNER_DATA
+
+# User auto-approve skips operator prompts for non-rejected default-fallback requests (default: false)
+user_auto_approve: false
+
+# IPC socket for admin interface (apadmin, apapprover)
+# Normally does not need to be specified - see docs/USER_CONFIG.md for defaults
+# ipc_path: $APSIGNER_DATA/aplane.sock
+
+# Inactivity timeout before auto-lock: "0" = never, "15m" = 15 minutes, "1h" = 1 hour
+passphrase_timeout: "15m"
+
+# Lock signer when apadmin disconnects
+lock_on_disconnect: true
+
+# Network settings (used for algod access, TEAL compilation, policy enforcement, etc.)
+networks:
+  testnet:
+    algod:
+      server: https://testnet-api.4160.nodely.dev
+      token: ""
+  mainnet:
+    algod:
+      server: https://mainnet-api.4160.nodely.dev
+      token: ""
+  localnet:
+    algod:
+      server: http://localhost:4001
+      token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    # genesis_hash: "base64-or-hex-32-byte-localnet-genesis-hash"
+
+# Network whose algod is used for TEAL compilation (default: testnet)
+teal_compile_network: testnet
+
+# Color theme: auto (detect terminal), dark, or light
+# theme: auto
+
+# Security settings
+# If true, fail startup when memory protection cannot be enabled (requires root/sudo)
+# Memory protection includes: disabling core dumps + locking memory (prevents swap)
+require_memory_protection: false

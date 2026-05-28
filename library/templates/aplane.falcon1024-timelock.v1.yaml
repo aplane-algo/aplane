@@ -1,0 +1,35 @@
+schema_version: 1
+derivation_version: 2
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: aplane
+family: falcon1024-timelock
+version: 1
+display_name: "Falcon-1024 Timelock"
+description: "Falcon-1024 signature gated by round-based timelock"
+
+parameters:
+  - name: unlock_round
+    label: "Unlock Round"
+    description: "Round number after which funds can be withdrawn"
+    type: uint64
+    required: true
+    max_length: 20
+    min: 1
+    example: "50000000"
+    placeholder: "Enter unlock round number"
+
+template_variables:
+  - name: unlock_round
+    source: parameter
+    parameter: unlock_round
+    type: uint64
+    constant: int
+
+teal: |
+  // Timelock check: FirstValid >= unlock_round
+  txn FirstValid
+  $unlock_round
+  >=
+  assert

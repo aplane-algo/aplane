@@ -1,0 +1,245 @@
+schema_version: 1
+derivation_version: 2
+template_mode: generated
+publisher: aplane
+family: htlc
+version: 1
+display_name: "HTLC"
+description: "Hash time-locked contract"
+display_color: "36"
+
+parameters:
+  - name: hash
+    label: "Hash (SHA256)"
+    description: "SHA256 hash of the secret preimage (64 hex characters)"
+    type: bytes
+    required: true
+    max_length: 64
+    example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    placeholder: "Enter 64-character hex hash"
+  - name: recipient
+    label: "Recipient Address"
+    description: "Address that can claim funds by providing the preimage"
+    type: address
+    required: true
+    example: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+  - name: refund_address
+    label: "Refund Address"
+    description: "Address that can reclaim funds after timeout"
+    type: address
+    required: true
+    example: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+  - name: timeout_round
+    label: "Timeout Round"
+    description: "Block round after which refund is allowed"
+    type: uint64
+    required: true
+    min: 1
+    example: "50000000"
+  - name: allowed_optin_assets
+    label: "Approved Opt-In Assets"
+    description: "Optional list of ASA IDs this LogicSig may opt into via zero-amount self-transfer"
+    type: uint64[]
+    required: false
+    min_items: 1
+    max_items: 16
+    placeholder: "10458941,31566704"
+
+runtime_args:
+  - name: preimage
+    label: "Preimage"
+    description: "The 32-byte secret that hashes to the stored hash (hex-encoded)"
+    type: bytes
+    required: false
+    byte_length: 32
+
+teal: |
+  #pragma version 10
+
+  // HTLC LogicSig - Two spending paths:
+  // 1. Claim: recipient provides correct preimage as arg 0 before timeout.
+  // 2. Refund: refund_address reclaims after timeout with no arg.
+  // Supports both ALGO payments (pay) and ASA transfers (axfer).
+
+  // Strict fee cap: public generic LogicSigs must not carry variable fee liability.
+  // If higher total fees are ever needed, use explicit external sponsorship in a
+  // tightly controlled atomic group rather than loosening this escrow fee.
+  txn Fee
+  int 1000
+  ==
+  assert
+
+  // Security: Prevent rekey attacks
+  txn RekeyTo
+  global ZeroAddress
+  ==
+  assert
+
+  // Check transaction type is payment or asset transfer
+  txn TypeEnum
+  int pay
+  ==
+  txn TypeEnum
+  int axfer
+  ==
+  ||
+  assert
+
+  // Approved ASA opt-in is a separate helper path so the escrow can receive
+  // specific assets without requiring the claim preimage or waiting for timeout.
+  txn TypeEnum
+  int axfer
+  ==
+  bnz maybe_optin
+
+  continue_paths:
+  // Check if timeout has passed - if so, allow refund path
+  txn FirstValid
+  int @timeout_round
+  >=
+  bnz refund_path
+
+  // === CLAIM PATH (before timeout) ===
+  // Verify SHA256(preimage) == stored hash
+  // Note: If no arg is provided, this fails because arg 0 does not exist.
+  arg 0
+  sha256
+  byte @hash
+  ==
+  assert
+
+  // Branch on transaction type for field checks
+  txn TypeEnum
+  int pay
+  ==
+  bnz claim_pay
+
+  // --- claim: asset transfer ---
+  txn AssetSender
+  global ZeroAddress
+  ==
+  assert
+
+  txn AssetAmount
+  int 0
+  ==
+  txn AssetReceiver
+  txn Sender
+  ==
+  &&
+  bnz maybe_optin
+
+  txn AssetReceiver
+  addr @recipient
+  ==
+  assert
+
+  txn AssetCloseTo
+  addr @recipient
+  ==
+  txn AssetCloseTo
+  global ZeroAddress
+  ==
+  ||
+  assert
+
+  int 1
+  return
+
+  maybe_optin:
+  txn AssetSender
+  global ZeroAddress
+  ==
+  assert
+  txn AssetAmount
+  int 0
+  ==
+  txn AssetReceiver
+  txn Sender
+  ==
+  &&
+  bz continue_paths
+  txn AssetCloseTo
+  global ZeroAddress
+  ==
+  assert
+  {{range @allowed_optin_assets}}
+  txn XferAsset
+  int {{.}}
+  ==
+  bnz allow_optin
+  {{end}}
+  err
+
+  allow_optin:
+  int 1
+  return
+
+  // --- claim: payment ---
+  claim_pay:
+      txn Receiver
+      addr @recipient
+      ==
+      assert
+
+      txn CloseRemainderTo
+      addr @recipient
+      ==
+      txn CloseRemainderTo
+      global ZeroAddress
+      ==
+      ||
+      assert
+
+      int 1
+      return
+
+  // === REFUND PATH (after timeout) ===
+  refund_path:
+      // Branch on transaction type for field checks
+      txn TypeEnum
+      int pay
+      ==
+      bnz refund_pay
+
+      // --- refund: asset transfer ---
+      txn AssetSender
+      global ZeroAddress
+      ==
+      assert
+
+      txn AssetReceiver
+      addr @refund_address
+      ==
+      assert
+
+      txn AssetCloseTo
+      addr @refund_address
+      ==
+      txn AssetCloseTo
+      global ZeroAddress
+      ==
+      ||
+      assert
+
+      int 1
+      return
+
+      // --- refund: payment ---
+      refund_pay:
+          txn Receiver
+          addr @refund_address
+          ==
+          assert
+
+          txn CloseRemainderTo
+          addr @refund_address
+          ==
+          txn CloseRemainderTo
+          global ZeroAddress
+          ==
+          ||
+          assert
+
+          int 1
+          return

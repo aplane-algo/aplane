@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func apstoreUsage() {
+	fmt.Fprintf(os.Stderr, "apstore - Signer keystore management\n\n")
+	fmt.Fprintf(os.Stderr, "Usage:\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] initialize\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup create all\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup create address <ADDRESS>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup import <archive-path>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup list\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup export <backup-name|checksum> <destination-dir>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup delete <backup-id|name>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] restore preview <backup-id|name>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] restore apply <backup-id|name> [--address ADDRESS ...] [--overwrite]\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] rebuild <archive-path> [--address ADDRESS ...]\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] verify <backup-dir|archive-path>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] changepass\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] policy check\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] policy verify\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] policy sign\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] template list\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] template show <key-type> --show-sensitive-template\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] template import <yaml-file>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] template remove <key-type>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype activate <key-type>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype deactivate <key-type>\n")
+	fmt.Fprintf(os.Stderr, "\nOptions:\n")
+	fmt.Fprintf(os.Stderr, "  -d path              Data directory (or set APSIGNER_DATA env var)\n")
+	fmt.Fprintf(os.Stderr, "\nExamples:\n")
+	fmt.Fprintf(os.Stderr, "  apstore initialize\n")
+	fmt.Fprintf(os.Stderr, "  apstore backup create all\n")
+	fmt.Fprintf(os.Stderr, "  apstore backup list\n")
+	fmt.Fprintf(os.Stderr, "  apstore backup import /mnt/usb/aplane-backup.tar.gz\n")
+	fmt.Fprintf(os.Stderr, "  apstore backup export aplane-backup-20260423-010203.tar.gz /mnt/usb\n")
+	fmt.Fprintf(os.Stderr, "  apstore restore preview aplane-backup.tar.gz\n")
+	fmt.Fprintf(os.Stderr, "  apstore restore apply aplane-backup.tar.gz\n")
+	fmt.Fprintf(os.Stderr, "  apstore rebuild /mnt/usb/aplane-backup.tar.gz\n")
+	fmt.Fprintf(os.Stderr, "  apstore verify /mnt/usb/backup/aplane-backup-20260423-010203.tar.gz\n")
+	fmt.Fprintf(os.Stderr, "  apstore changepass\n")
+	fmt.Fprintf(os.Stderr, "  apstore policy check\n")
+	fmt.Fprintf(os.Stderr, "  apstore policy sign\n")
+	fmt.Fprintf(os.Stderr, "  apstore template list\n")
+	fmt.Fprintf(os.Stderr, "  apstore template show example.my_escrow.v1 --show-sensitive-template\n")
+	fmt.Fprintf(os.Stderr, "  apstore template import library/templates/aplane.whitelist.v1.yaml\n")
+	fmt.Fprintf(os.Stderr, "  apstore template remove example.my_escrow.v1\n")
+	fmt.Fprintf(os.Stderr, "  apstore keytype activate aplane.falcon1024_ed25519.v1\n")
+	fmt.Fprintf(os.Stderr, "  apstore keytype deactivate aplane.falcon1024_ed25519.v1\n")
+}

@@ -1,0 +1,111 @@
+schema_version: 1
+derivation_version: 2
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated
+publisher: aplane
+family: falcon1024-whitelist
+version: 1
+display_name: "Falcon-1024 Whitelist"
+description: "Falcon-1024 signature restricted to a fixed set of receiver addresses"
+
+parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+    label: "Whitelisted Addresses"
+    description: "Comma-separated Algorand addresses that may receive funds from this Falcon LogicSig"
+    placeholder: "ADDR1, ADDR2, ADDR3"
+
+teal: |
+  // Only pay/axfer have destination fields this whitelist constrains.
+  // Other transaction types keep the base Falcon authorization surface.
+  txn TypeEnum
+  int pay
+  ==
+  bnz pay_path
+  txn TypeEnum
+  int axfer
+  ==
+  bnz asset_path
+  b allow
+
+  // --- asset transfer path ---
+  asset_path:
+  txn AssetReceiver
+  txn Sender
+  ==
+  bnz allow_asset_receiver
+  txn AssetReceiver
+  callsub is_whitelisted
+  bnz allow_asset_receiver
+  err
+
+  allow_asset_receiver:
+  txn AssetCloseTo
+  global ZeroAddress
+  ==
+  bnz allow_asset_close
+  txn AssetCloseTo
+  txn Sender
+  ==
+  bnz allow_asset_close
+  txn AssetCloseTo
+  callsub is_whitelisted
+  bnz allow_asset_close
+  err
+
+  allow_asset_close:
+  b allow
+
+  // --- payment path ---
+  pay_path:
+      txn Receiver
+      txn Sender
+      ==
+      bnz allow_pay_receiver
+      txn Receiver
+      callsub is_whitelisted
+      bnz allow_pay_receiver
+      err
+
+  allow_pay_receiver:
+      txn CloseRemainderTo
+      global ZeroAddress
+      ==
+      bnz allow_pay_close
+      txn CloseRemainderTo
+      txn Sender
+      ==
+      bnz allow_pay_close
+      txn CloseRemainderTo
+      callsub is_whitelisted
+      bnz allow_pay_close
+      err
+
+  allow_pay_close:
+      b allow
+
+  allow:
+      b end_checks
+
+  is_whitelisted:
+      {{range @recipients}}
+      dup
+      byte {{.}}
+      ==
+      bnz whitelisted
+      {{end}}
+      pop
+      int 0
+      retsub
+
+  whitelisted:
+      pop
+      int 1
+      retsub
+
+  // === APPROVED PATHS FALL THROUGH TO COMPOSER RETURN ===
+  end_checks:

@@ -1,0 +1,278 @@
+#pragma version 10
+
+// Alternate approval program for app update integration tests.
+// It preserves the same schemas and method surface as approval.teal, but
+// increment(uint64)void applies 2x the requested amount.
+
+txn ApplicationID
+bz handle_create
+
+txn OnCompletion
+int OptIn
+==
+bnz handle_optin
+
+txn OnCompletion
+int CloseOut
+==
+bnz handle_closeout
+
+txn OnCompletion
+int UpdateApplication
+==
+bnz handle_update
+
+txn OnCompletion
+int DeleteApplication
+==
+bnz handle_delete
+
+txn OnCompletion
+int NoOp
+==
+bnz handle_noop
+
+err
+
+handle_create:
+    byte "counter"
+    int 0
+    app_global_put
+
+    byte "admin"
+    txn Sender
+    app_global_put
+
+    int 1
+    return
+
+handle_noop:
+    txn NumAppArgs
+    int 0
+    ==
+    bnz reject
+
+    txna ApplicationArgs 0
+    method "increment(uint64)void"
+    ==
+    bnz method_increment
+
+    txna ApplicationArgs 0
+    method "set_box(byte[],byte[])void"
+    ==
+    bnz method_set_box
+
+    txna ApplicationArgs 0
+    method "deposit()void"
+    ==
+    bnz method_deposit
+
+    txna ApplicationArgs 0
+    method "delete_box(byte[])void"
+    ==
+    bnz method_delete_box
+
+    err
+
+handle_optin:
+    txn NumAppArgs
+    int 0
+    >
+    bnz check_optin_selector
+
+    b do_optin
+
+check_optin_selector:
+    txna ApplicationArgs 0
+    method "optin()void"
+    ==
+    assert
+
+do_optin:
+    txn Sender
+    byte "balance"
+    int 0
+    app_local_put
+
+    int 1
+    return
+
+handle_closeout:
+    int 1
+    return
+
+handle_update:
+    byte "admin"
+    app_global_get
+    txn Sender
+    ==
+    assert
+    int 1
+    return
+
+handle_delete:
+    byte "admin"
+    app_global_get
+    txn Sender
+    ==
+    assert
+
+    byte "config"
+    box_del
+    pop
+
+    byte "settings"
+    box_del
+    pop
+
+    int 1
+    balance
+    int 1000
+    >=
+    bz delete_done
+
+    itxn_begin
+    int pay
+    itxn_field TypeEnum
+    byte "admin"
+    app_global_get
+    itxn_field Receiver
+    int 0
+    itxn_field Amount
+    byte "admin"
+    app_global_get
+    itxn_field CloseRemainderTo
+    int 1000
+    itxn_field Fee
+    itxn_submit
+
+delete_done:
+    int 1
+    return
+
+method_increment:
+    txna ApplicationArgs 1
+    btoi
+    int 2
+    *
+    store 0
+
+    byte "counter"
+    app_global_get
+    store 1
+
+    load 1
+    load 0
+    +
+    store 2
+
+    byte "counter"
+    load 2
+    app_global_put
+
+    byte "incremented-v2"
+    log
+
+    int 1
+    return
+
+method_set_box:
+    txna ApplicationArgs 1
+    extract 2 0
+    store 3
+
+    txna ApplicationArgs 2
+    extract 2 0
+    store 4
+
+    load 3
+    box_del
+    pop
+
+    load 3
+    load 4
+    len
+    box_create
+    assert
+
+    load 3
+    int 0
+    load 4
+    box_replace
+
+    byte "box set"
+    log
+
+    int 1
+    return
+
+method_deposit:
+    txn Sender
+    int 0
+    byte "balance"
+    app_local_get_ex
+    store 5
+    store 6
+    load 5
+    assert
+
+    global CurrentApplicationAddress
+    store 7
+
+    txn GroupIndex
+    int 0
+    >
+    assert
+
+    txn GroupIndex
+    int 1
+    -
+    gtxns TypeEnum
+    int pay
+    ==
+    assert
+
+    txn GroupIndex
+    int 1
+    -
+    gtxns Receiver
+    load 7
+    ==
+    assert
+
+    txn GroupIndex
+    int 1
+    -
+    gtxns Amount
+    store 8
+
+    txn Sender
+    byte "balance"
+    load 6
+    load 8
+    +
+    app_local_put
+
+    byte "deposited"
+    log
+
+    int 1
+    return
+
+method_delete_box:
+    byte "admin"
+    app_global_get
+    txn Sender
+    ==
+    assert
+
+    txna ApplicationArgs 1
+    extract 2 0
+    box_del
+    pop
+
+    int 1
+    return
+
+reject:
+    err

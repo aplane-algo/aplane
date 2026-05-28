@@ -1,0 +1,145 @@
+schema_version: 1
+derivation_version: 2
+template_type: generic
+template_mode: generated
+publisher: aplane
+family: whitelist
+version: 1
+display_name: "Whitelist"
+description: "Restrict outgoing transfers to a fixed set of recipient addresses"
+display_color: "35"
+
+parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+    label: "Whitelisted Addresses"
+    description: "List of Algorand address that may receive funds from this LogicSig"
+    placeholder: "ADDR1 ADDR2 ADDR3"
+  - name: allowed_optin_assets
+    type: uint64[]
+    required: false
+    min_items: 1
+    max_items: 16
+    label: "Approved Opt-In Assets"
+    description: "Optional list of ASA IDs this LogicSig may opt into via zero-amount self-transfer"
+    placeholder: "10458941,31566704"
+
+teal: |
+  #pragma version 10
+
+  // Strict fee cap: public generic LogicSigs must not carry variable fee liability.
+  // If higher total fees are ever needed, use explicit external sponsorship in a
+  // tightly controlled atomic group rather than loosening this escrow fee.
+  txn Fee
+  int 1000
+  ==
+  assert
+
+  // Security: Prevent rekey attacks
+  txn RekeyTo
+  global ZeroAddress
+  ==
+  assert
+
+  // Check transaction type is payment or asset transfer
+  txn TypeEnum
+  int pay
+  ==
+  txn TypeEnum
+  int axfer
+  ==
+  ||
+  assert
+
+  // Branch on transaction type for field checks
+  txn TypeEnum
+  int pay
+  ==
+  bnz pay_path
+
+  // --- asset transfer path ---
+  txn AssetSender
+  global ZeroAddress
+  ==
+  assert
+
+  txn AssetAmount
+  int 0
+  ==
+  txn AssetReceiver
+  txn Sender
+  ==
+  &&
+  bnz maybe_optin
+
+  {{range @recipients}}
+  txn AssetReceiver
+  addr {{.}}
+  ==
+  bnz allow_asset_receiver
+  {{end}}
+  err
+
+  allow_asset_receiver:
+  txn AssetCloseTo
+  global ZeroAddress
+  ==
+  bnz allow_asset_close
+  {{range @recipients}}
+  txn AssetCloseTo
+  addr {{.}}
+  ==
+  bnz allow_asset_close
+  {{end}}
+  err
+
+  allow_asset_close:
+  int 1
+  return
+
+  maybe_optin:
+  txn AssetCloseTo
+  global ZeroAddress
+  ==
+  assert
+  {{range @allowed_optin_assets}}
+  txn XferAsset
+  int {{.}}
+  ==
+  bnz allow_optin
+  {{end}}
+  err
+
+  allow_optin:
+  int 1
+  return
+
+  // --- payment path ---
+  pay_path:
+      {{range @recipients}}
+      txn Receiver
+      addr {{.}}
+      ==
+      bnz allow_pay_receiver
+      {{end}}
+      err
+
+  allow_pay_receiver:
+      txn CloseRemainderTo
+      global ZeroAddress
+      ==
+      bnz allow_pay_close
+      {{range @recipients}}
+      txn CloseRemainderTo
+      addr {{.}}
+      ==
+      bnz allow_pay_close
+      {{end}}
+      err
+
+  allow_pay_close:
+      int 1
+      return

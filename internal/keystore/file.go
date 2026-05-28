@@ -1,0 +1,639 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package keystore
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/storepaths"
+)
+
+// FileKeyStore implements KeyStore using encrypted files on disk
+type FileKeyStore struct {
+	paths      storepaths.Paths
+	keysDir    string
+	identityID string // Identity used for scanning (e.g., "default")
+
+	// Cache of address -> KeyScanInfo (populated by Scan)
+	// Contains both file path and key type from single decrypt
+	cache        map[string]keys.KeyScanInfo
+	scanWarnings []keys.KeyScanWarning
+	cacheLock    sync.RWMutex
+
+	// Master key for envelope_version 2 decryption
+	// Derived once during Scan() from keystore metadata salt
+	masterKey []byte
+}
+
+// SigningSummary is the non-sensitive key-file signing metadata cached at scan time.
+type SigningSummary struct {
+	Category               string
+	SigningArgs            []lsigprovider.RuntimeArgDef
+	SigningMetadataVersion int
+	TemplateFingerprint    string
+}
+
+// NewFileKeyStoreForPaths creates a new file-based key store rooted at the provided keystore paths.
+func NewFileKeyStoreForPaths(paths storepaths.Paths, identityID string) *FileKeyStore {
+	return &FileKeyStore{
+		paths:      paths,
+		keysDir:    paths.KeysDir(identityID),
+		identityID: identityID,
+		cache:      make(map[string]keys.KeyScanInfo),
+	}
+}
+
+// InitializeMasterKey derives and stores the master key from the passphrase.
+// This should be called before Scan() when you need the master key early
+// (e.g., for template scanning that happens before key scanning).
+// Returns the master key for external use (e.g., template scanning).
+// Caller should NOT zero the returned key - it's owned by FileKeyStore.
+func (f *FileKeyStore) InitializeMasterKey(passphrase []byte) ([]byte, error) {
+	// The .keystore metadata is in the identity directory (identities/<identityID>/).
+	keystoreRoot := f.paths.KeystoreMetadataDir(f.identityID)
+
+	// Load keystore metadata to get master salt
+	meta, err := crypto.LoadKeystoreMetadata(keystoreRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load keystore metadata: %w", err)
+	}
+	if meta == nil {
+		return nil, fmt.Errorf("keystore not initialized (missing .keystore file in %s) - run migration first", keystoreRoot)
+	}
+
+	// Verify passphrase and derive master key
+	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unlock keystore: %w", err)
+	}
+
+	f.cacheLock.Lock()
+	// Zero old master key if present
+	if f.masterKey != nil {
+		crypto.ZeroBytes(f.masterKey)
+	}
+	f.masterKey = masterKey
+	f.cacheLock.Unlock()
+
+	return masterKey, nil
+}
+
+// Scan populates the internal cache by scanning the keys directory.
+// If InitializeMasterKey was already called, the passphrase is ignored and
+// the existing master key is reused. Otherwise, the passphrase is required
+// to derive the master key.
+// Each key is decrypted only once to extract address, type, and path.
+func (f *FileKeyStore) Scan(passphrase []byte) error {
+	f.cacheLock.RLock()
+	masterKey := f.masterKey
+	f.cacheLock.RUnlock()
+
+	// If master key not already initialized, derive it now
+	if masterKey == nil {
+		if len(passphrase) == 0 {
+			return fmt.Errorf("master key not initialized and no passphrase provided")
+		}
+		if _, err := f.InitializeMasterKey(passphrase); err != nil {
+			return err
+		}
+	}
+
+	// Re-read and hold RLock through the entire scan to prevent
+	// ClearMasterKey() from zeroing the bytes mid-operation.
+	// This also closes the gap after InitializeMasterKey returns.
+	f.cacheLock.RLock()
+	masterKey = f.masterKey
+	if masterKey == nil {
+		f.cacheLock.RUnlock()
+		return fmt.Errorf("master key not available after initialization")
+	}
+	report, err := keys.ScanKeysDirectoryWithMasterKeyReport(f.paths, f.identityID, masterKey)
+	f.cacheLock.RUnlock()
+	if err != nil {
+		return fmt.Errorf("failed to scan keys directory: %w", err)
+	}
+
+	f.cacheLock.Lock()
+	f.cache = report.Keys
+	f.scanWarnings = append([]keys.KeyScanWarning(nil), report.Warnings...)
+	f.cacheLock.Unlock()
+
+	return nil
+}
+
+// WithMasterKey executes fn while holding the cache read lock, ensuring
+// the master key bytes cannot be zeroed by ClearMasterKey() during use.
+// Returns an error if the master key is nil (keystore not unlocked).
+func (f *FileKeyStore) WithMasterKey(fn func(masterKey []byte) error) error {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+	if f.masterKey == nil {
+		return fmt.Errorf("keystore not unlocked (master key not available): %w", ErrStoreLocked)
+	}
+	return fn(f.masterKey)
+}
+
+// ClearMasterKey securely zeros and removes the master key from memory.
+// Called when the signer locks to ensure no key material remains resident.
+func (f *FileKeyStore) ClearMasterKey() {
+	f.cacheLock.Lock()
+	if f.masterKey != nil {
+		crypto.ZeroBytes(f.masterKey)
+		f.masterKey = nil
+	}
+	f.cacheLock.Unlock()
+}
+
+// List returns metadata for all available keys
+func (f *FileKeyStore) List(ctx context.Context) ([]KeyMetadata, error) {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+
+	result := make([]KeyMetadata, 0, len(f.cache))
+	for address, info := range f.cache {
+		meta := KeyMetadata{
+			Address:     address,
+			StorageType: "file",
+			Exportable:  true,
+			FilePath:    info.KeyFile,
+			KeyType:     info.KeyType, // Now available from scan
+		}
+
+		if info.CreatedAt != "" {
+			if t, err := time.Parse(time.RFC3339, info.CreatedAt); err == nil {
+				meta.CreatedAt = t
+			}
+		}
+		if meta.CreatedAt.IsZero() {
+			if fileInfo, err := os.Stat(info.KeyFile); err == nil {
+				meta.CreatedAt = fileInfo.ModTime()
+			}
+		}
+
+		result = append(result, meta)
+	}
+
+	return result, nil
+}
+
+// Get retrieves key material for signing.
+// The keystore must be unlocked (via InitializeMasterKey or Scan) before calling Get.
+// Holds the cache read lock through decryption to prevent ClearMasterKey() from
+// zeroing the master key bytes mid-operation.
+func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMaterial, error) {
+	f.cacheLock.RLock()
+	info, exists := f.cache[address]
+	masterKey := f.masterKey
+	if !exists {
+		f.cacheLock.RUnlock()
+		return nil, ErrKeyNotFound
+	}
+	if masterKey == nil {
+		f.cacheLock.RUnlock()
+		return nil, fmt.Errorf("keystore not unlocked (master key not available): %w", ErrStoreLocked)
+	}
+	// Read and decrypt the key file using master key (under RLock)
+	decryptedData, err := keys.ReadDecryptedKeyJSONWithMasterKey(info.KeyFile, masterKey)
+	f.cacheLock.RUnlock()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key file: %w", err)
+	}
+	defer crypto.ZeroBytes(decryptedData)
+
+	if _, err := keys.ValidateCurrentKeyPayload(decryptedData); err != nil {
+		return nil, err
+	}
+
+	payloadMeta, err := keys.ParseKeyPayloadMetadata(decryptedData)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract bytecode if present (for LogicSig-based keys)
+	var bytecode []byte
+	if payloadMeta.BytecodeHex != "" {
+		bytecode, err = keys.DecodeKeyPayloadBytecode(decryptedData)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := keys.ValidateLogicSigSaltedBytecode(decryptedData, bytecode); err != nil {
+			return nil, err
+		}
+	}
+
+	// Use key type from cache (already determined during scan)
+	keyType := info.KeyType
+	signingMeta := keys.SigningMetadata{
+		Category:               info.Category,
+		BaseKeyType:            info.BaseKeyType,
+		SigningArgs:            info.SigningArgs,
+		SigningMetadataVersion: info.SigningMetadataVersion,
+	}
+
+	// Generic lsig types (timelock, etc.) don't have signing providers
+	// They only need bytecode attachment, no cryptographic signing
+	if keys.IsGenericKey(signingMeta.Category, keyType) {
+		km, err := loadGenericLsigKeys(decryptedData, keyType, signingMeta)
+		if err != nil {
+			return nil, err
+		}
+		km.Bytecode = bytecode
+		return km, nil
+	}
+
+	// Get provider and load keys (for ed25519, falcon, etc.)
+	provider := signing.GetProvider(keyType)
+	if provider == nil && signingMeta.BaseKeyType != "" {
+		provider = signing.GetProvider(signingMeta.BaseKeyType)
+	}
+	if provider == nil {
+		return nil, fmt.Errorf("unsupported key type: %s", keyType)
+	}
+
+	km, err := provider.LoadKeysFromData(decryptedData)
+	if err != nil {
+		return nil, err
+	}
+	km.Bytecode = bytecode // Set bytecode (nil for native ed25519, populated for falcon LSig)
+	if km.Category == "" {
+		km.Category = signingMeta.Category
+	}
+	if km.BaseKeyType == "" {
+		km.BaseKeyType = signingMeta.BaseKeyType
+	}
+	if km.SigningMetadataVersion == 0 {
+		km.SigningMetadataVersion = signingMeta.SigningMetadataVersion
+	}
+	if km.SigningArgs == nil {
+		km.SigningArgs = keys.SigningArgDefs(signingMeta.SigningArgs)
+	}
+	return km, nil
+}
+
+// GenericLsigData holds data for generic lsig types (timelock, etc.)
+// These don't have cryptographic keys - just bytecode.
+type GenericLsigData struct {
+	BytecodeHex string
+}
+
+// loadGenericLsigKeys loads key material for generic lsig types (timelock, etc.)
+// These don't have cryptographic keys - just bytecode that gets attached to transactions.
+func loadGenericLsigKeys(decryptedData []byte, keyType string, signingMeta keys.SigningMetadata) (*signing.KeyMaterial, error) {
+	payloadMeta, err := keys.ParseKeyPayloadMetadata(decryptedData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse generic lsig key data: %w", err)
+	}
+	bytecode, err := keys.DecodeKeyPayloadBytecode(decryptedData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse generic lsig bytecode: %w", err)
+	}
+	if _, err := keys.ValidateLogicSigSaltedBytecode(decryptedData, bytecode); err != nil {
+		return nil, err
+	}
+
+	return &signing.KeyMaterial{
+		Type:                   keyType,
+		Category:               signingMeta.Category,
+		SigningArgs:            keys.SigningArgDefs(signingMeta.SigningArgs),
+		SigningMetadataVersion: signingMeta.SigningMetadataVersion,
+		Value:                  &GenericLsigData{BytecodeHex: payloadMeta.BytecodeHex},
+	}, nil
+}
+
+// GetMetadata returns metadata for a single key
+func (f *FileKeyStore) GetMetadata(ctx context.Context, address string) (*KeyMetadata, error) {
+	f.cacheLock.RLock()
+	info, exists := f.cache[address]
+	f.cacheLock.RUnlock()
+
+	if !exists {
+		return nil, ErrKeyNotFound
+	}
+
+	meta := &KeyMetadata{
+		Address:     address,
+		StorageType: "file",
+		Exportable:  true,
+		FilePath:    info.KeyFile,
+		KeyType:     info.KeyType,
+	}
+
+	if info.CreatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, info.CreatedAt); err == nil {
+			meta.CreatedAt = t
+		}
+	}
+	if meta.CreatedAt.IsZero() {
+		if fileInfo, err := os.Stat(info.KeyFile); err == nil {
+			meta.CreatedAt = fileInfo.ModTime()
+		}
+	}
+
+	return meta, nil
+}
+
+// Store saves a new key to the store.
+// Note: This method is not part of the KeyStore interface - it's FileKeyStore-specific.
+// Keys are typically generated via keymgmt which writes files directly and calls Scan().
+// The keystore must be unlocked (master key available) before calling Store.
+func (f *FileKeyStore) Store(ctx context.Context, address string, keyData []byte) error {
+	// Check if key already exists
+	f.cacheLock.RLock()
+	_, exists := f.cache[address]
+	masterKey := f.masterKey
+	if exists {
+		f.cacheLock.RUnlock()
+		return ErrKeyExists
+	}
+	if masterKey == nil {
+		f.cacheLock.RUnlock()
+		return fmt.Errorf("master key required for encryption")
+	}
+
+	// Determine filename from address (first 8 chars)
+	filename := address
+	if len(filename) > 8 {
+		filename = filename[:8]
+	}
+	filePath := filepath.Join(f.keysDir, filename+".priv")
+
+	// Check if file already exists on disk
+	if _, err := os.Stat(filePath); err == nil {
+		f.cacheLock.RUnlock()
+		return ErrKeyExists
+	}
+
+	// Encrypt with master key (under RLock to prevent concurrent zeroing)
+	encrypted, err := crypto.EncryptWithMasterKey(keyData, masterKey)
+	f.cacheLock.RUnlock()
+	if err != nil {
+		return fmt.Errorf("failed to encrypt key: %w", err)
+	}
+	dataToWrite := encrypted
+
+	// Write with group-accessible permissions
+	if err := fsutil.WriteFile(filePath, dataToWrite); err != nil {
+		return fmt.Errorf("failed to write key file: %w", err)
+	}
+
+	// Update cache - key type unknown until Scan() is called
+	f.cacheLock.Lock()
+	f.cache[address] = keys.KeyScanInfo{KeyFile: filePath, KeyType: "unknown"}
+	f.cacheLock.Unlock()
+
+	return nil
+}
+
+// Delete removes a key from the store
+func (f *FileKeyStore) Delete(ctx context.Context, address string) error {
+	f.cacheLock.RLock()
+	info, exists := f.cache[address]
+	f.cacheLock.RUnlock()
+	if !exists {
+		return ErrKeyNotFound
+	}
+
+	// Remove the file
+	if err := os.Remove(info.KeyFile); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete key file: %w", err)
+	}
+
+	f.cacheLock.Lock()
+	if current, ok := f.cache[address]; ok && current.KeyFile == info.KeyFile {
+		delete(f.cache, address)
+	}
+	f.cacheLock.Unlock()
+
+	return nil
+}
+
+// Export returns the encrypted key data
+func (f *FileKeyStore) Export(ctx context.Context, address string) ([]byte, error) {
+	f.cacheLock.RLock()
+	info, exists := f.cache[address]
+	f.cacheLock.RUnlock()
+
+	if !exists {
+		return nil, ErrKeyNotFound
+	}
+
+	data, err := os.ReadFile(info.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key file: %w", err)
+	}
+
+	return data, nil
+}
+
+// SupportsExport returns true for file-based storage
+func (f *FileKeyStore) SupportsExport() bool {
+	return true
+}
+
+// Type returns the storage backend type
+func (f *FileKeyStore) Type() string {
+	return "file"
+}
+
+// GetKeyType returns the key type for an address.
+// Uses cached key type from scan - no decryption needed.
+func (f *FileKeyStore) GetKeyType(ctx context.Context, address string) (string, error) {
+	f.cacheLock.RLock()
+	info, exists := f.cache[address]
+	f.cacheLock.RUnlock()
+
+	if !exists {
+		return "", ErrKeyNotFound
+	}
+
+	return info.KeyType, nil
+}
+
+// GetCache returns a copy of the address -> filepath cache
+// This is useful for compatibility with existing code that expects this format
+func (f *FileKeyStore) GetCache() map[string]string {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+
+	result := make(map[string]string, len(f.cache))
+	for k, v := range f.cache {
+		result[k] = v.KeyFile
+	}
+	return result
+}
+
+// GetScanWarnings returns recoverable warnings from the most recent Scan.
+func (f *FileKeyStore) GetScanWarnings() []keys.KeyScanWarning {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+	return append([]keys.KeyScanWarning(nil), f.scanWarnings...)
+}
+
+// GetKeyTypes returns a copy of the address -> keyType cache
+func (f *FileKeyStore) GetKeyTypes() map[string]string {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+
+	result := make(map[string]string, len(f.cache))
+	for k, v := range f.cache {
+		result[k] = v.KeyType
+	}
+	return result
+}
+
+// GetSigningSummary returns one scan-time snapshot of address -> non-sensitive signing metadata.
+func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+
+	result := make(map[string]SigningSummary, len(f.cache))
+	for k, v := range f.cache {
+		summary := SigningSummary{
+			Category:               v.Category,
+			SigningMetadataVersion: v.SigningMetadataVersion,
+			TemplateFingerprint:    v.TemplateFingerprint,
+		}
+		if v.SigningMetadataVersion > 0 && len(v.SigningArgs) > 0 {
+			summary.SigningArgs = keys.SigningArgDefs(v.SigningArgs)
+		}
+		result[k] = summary
+	}
+	return result
+}
+
+// GetLsigSizes returns a copy of the address -> lsigSize cache.
+// LsigSize is the total LogicSig size in bytes (bytecode + signature).
+// Returns 0 for Ed25519 keys (no LogicSig).
+func (f *FileKeyStore) GetLsigSizes() map[string]int {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+
+	result := make(map[string]int, len(f.cache))
+	for k, v := range f.cache {
+		result[k] = v.LsigSize
+	}
+	return result
+}
+
+// GetPublicKeyHexMap returns a copy of the address -> publicKeyHex cache.
+// Used for the /keys endpoint. Returns empty string for generic LSig keys.
+func (f *FileKeyStore) GetPublicKeyHexMap() map[string]string {
+	f.cacheLock.RLock()
+	defer f.cacheLock.RUnlock()
+
+	result := make(map[string]string, len(f.cache))
+	for k, v := range f.cache {
+		result[k] = v.PublicKeyHex
+	}
+	return result
+}
+
+// GetPublicKeyInfo returns public key information for a single key.
+// Used for the /keys endpoint. Keystore must be unlocked.
+// Holds the cache read lock through decryption to prevent ClearMasterKey() from
+// zeroing the master key bytes mid-operation.
+func (f *FileKeyStore) GetPublicKeyInfo(ctx context.Context, address string) (*PublicKeyInfo, error) {
+	f.cacheLock.RLock()
+	info, exists := f.cache[address]
+	masterKey := f.masterKey
+	if !exists {
+		f.cacheLock.RUnlock()
+		return nil, ErrKeyNotFound
+	}
+	if masterKey == nil {
+		f.cacheLock.RUnlock()
+		return nil, fmt.Errorf("keystore not unlocked (master key not available): %w", ErrStoreLocked)
+	}
+	// Read and decrypt the key file using master key (under RLock)
+	decryptedData, err := keys.ReadDecryptedKeyJSONWithMasterKey(info.KeyFile, masterKey)
+	f.cacheLock.RUnlock()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key file: %w", err)
+	}
+	defer crypto.ZeroBytes(decryptedData)
+
+	if _, err := keys.ValidateCurrentKeyPayload(decryptedData); err != nil {
+		return nil, err
+	}
+
+	keyData, err := keys.ParseKeyPayloadMetadata(decryptedData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse key data: %w", err)
+	}
+
+	// Use cached key type
+	keyType := info.KeyType
+
+	return &PublicKeyInfo{
+		Address:         address,
+		KeyType:         keyType,
+		PublicKeyHex:    keyData.PublicKeyHex,
+		LsigBytecodeHex: keyData.BytecodeHex,
+	}, nil
+}
+
+// GetAllPublicKeyInfo returns public key information for all keys in the store.
+// This is more efficient than calling GetPublicKeyInfo for each key individually.
+// Keys that fail to load (corrupted, I/O errors) are logged and skipped.
+// Keystore must be unlocked.
+func (f *FileKeyStore) GetAllPublicKeyInfo() ([]PublicKeyInfo, error) {
+	return f.GetAllPublicKeyInfoWithContext(context.Background())
+}
+
+// GetAllPublicKeyInfoWithContext returns public key information for all keys in
+// the store using the caller's context for key metadata reads.
+func (f *FileKeyStore) GetAllPublicKeyInfoWithContext(ctx context.Context) ([]PublicKeyInfo, error) {
+	// Create a snapshot of the cache
+	f.cacheLock.RLock()
+	addresses := make([]string, 0, len(f.cache))
+	for addr := range f.cache {
+		addresses = append(addresses, addr)
+	}
+	f.cacheLock.RUnlock()
+
+	result := make([]PublicKeyInfo, 0, len(addresses))
+
+	for _, address := range addresses {
+		// Safe truncation for logging (addresses should be 58 chars, but be defensive)
+		addrPrefix := address
+		if len(addrPrefix) > 8 {
+			addrPrefix = addrPrefix[:8]
+		}
+
+		info, err := f.GetPublicKeyInfo(ctx, address)
+		if err != nil {
+			// Log and skip keys that fail to load (I/O error, parse error, etc.)
+			// Common cause: key file deleted after scan but before read
+			fmt.Printf("Warning: skipping key %s: %v\n", addrPrefix, err)
+			continue
+		}
+		result = append(result, *info)
+	}
+
+	return result, nil
+}
+
+// PublicKeyInfo contains public (non-sensitive) key information
+type PublicKeyInfo struct {
+	Address         string
+	KeyType         string
+	PublicKeyHex    string
+	LsigBytecodeHex string
+}
+
+// Compile-time interface check
+var (
+	_ KeyStore                    = (*FileKeyStore)(nil)
+	_ keys.KeyScanWarningProvider = (*FileKeyStore)(nil)
+)

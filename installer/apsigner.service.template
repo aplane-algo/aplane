@@ -1,0 +1,38 @@
+## This file should be installed as:
+##
+##   /etc/systemd/system/apsigner.service
+##
+## and then running "systemctl daemon-reload".
+##
+## To enable and start the apsigner daemon:
+##
+##   systemctl enable apsigner
+##   systemctl start  apsigner
+
+[Unit]
+Description=APlane Signer daemon (apsigner)
+After=network.target
+AssertPathExists=@@DATA_DIR@@
+
+[Service]
+ExecStart=@@BINDIR@@/apsigner
+User=@@USER@@
+Group=@@GROUP@@
+Environment=APSIGNER_DATA=@@DATA_DIR@@
+Environment=APLANE_SYSTEMD_MANAGED=1
+Restart=always
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictNamespaces=true
+UMask=0077
+@@MEMORY_LOCK_SERVICE_LINES@@
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

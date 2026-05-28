@@ -1,0 +1,28 @@
+{
+  "name": "reti-plugin",
+  "version": "1.0.0",
+  "description": "Reti staking plugin for APlane Shell",
+  "type": "module",
+  "main": "dist/reti-plugin.js",
+  "packageManager": "npm@10.9.4",
+  "engines": {
+    "node": "22.22.0"
+  },
+  "scripts": {
+    "build": "npm run build:js && npm run build:standalone",
+    "build:js": "tsc",
+    "build:standalone": "node scripts/build-sea.mjs",
+    "start": "node dist/reti-plugin.js",
+    "start:standalone": "./reti"
+  },
+  "dependencies": {
+    "@algorandfoundation/algokit-utils": "9.2.0",
+    "algosdk": "3.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.39",
+    "esbuild": "0.28.0",
+    "postject": "1.0.0-alpha.6",
+    "typescript": "5.9.3"
+  }
+}

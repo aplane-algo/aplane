@@ -1,0 +1,147 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/sshtunnel"
+	"github.com/aplane-algo/aplane/internal/tokenfile"
+
+	gossh "golang.org/x/crypto/ssh"
+)
+
+type sshRuntime struct {
+	server     *sshtunnel.Server
+	ctx        context.Context
+	cancel     context.CancelFunc
+	listenAddr string
+}
+
+func startSSHRuntime(server *Signer, port int, hostKeyPath, authorizedKeysPath, tokenRoot, identityID string, auditLog *AuditLogger) (*sshRuntime, error) {
+	sshCtx, sshCancel := context.WithCancel(context.Background())
+	provisioning := server.sshProvisioningService()
+
+	listenAddr := fmt.Sprintf("0.0.0.0:%d", port)
+	targetAddr := httpBindAddr(server.config.SignerPort)
+	productToken, err := tokenfile.LoadAPlaneToken(tokenRoot, identityID)
+	if err != nil {
+		sshCancel()
+		return nil, fmt.Errorf("failed to load product identity API token: %w", err)
+	}
+
+	sshServer, err := sshtunnel.NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, productToken)
+	if err != nil {
+		sshCancel()
+		return nil, err
+	}
+
+	for _, rt := range server.registry.All() {
+		if loadErr := rt.LoadAuthorizedKeys(); loadErr != nil {
+			logWarnf("failed to load identity authorized keys for %s: %v", rt.ID(), loadErr)
+		}
+	}
+
+	sshServer.SetIdentityHooks(sshtunnel.IdentityHooks{
+		ValidateToken: func(token string) (string, uint64, bool) {
+			var matchedID string
+			var matchedGeneration uint64
+			matchCount := 0
+			for _, rt := range server.registry.All() {
+				if rt == nil || rt.IsDecommissioned() {
+					continue
+				}
+				a := rt.Authenticator()
+				if ta, ok := a.(*auth.TokenAuthenticator); ok {
+					generation, valid := ta.ValidateTokenGeneration(token)
+					if !valid {
+						continue
+					}
+					matchCount++
+					if matchCount == 1 {
+						matchedID = rt.ID()
+						matchedGeneration = generation
+					}
+				}
+			}
+			if matchCount != 1 {
+				return "", 0, false
+			}
+			return matchedID, matchedGeneration, true
+		},
+		CheckKey: func(identityID string, key gossh.PublicKey) bool {
+			rt := server.registry.Get(identityID)
+			if rt == nil || rt.IsDecommissioned() {
+				return false
+			}
+			return rt.HasAuthorizedKey(key)
+		},
+		EnrollKey: func(identityID string, key gossh.PublicKey) error {
+			enrollIR := server.registry.Get(identityID)
+			if enrollIR == nil {
+				return fmt.Errorf("identity not found: %s", identityID)
+			}
+			if enrollIR.IsDecommissioned() {
+				return fmt.Errorf("identity decommissioned: %s", identityID)
+			}
+			return enrollIR.EnrollAuthorizedKey(key)
+		},
+	})
+
+	if auditLog != nil {
+		sshServer.SetSessionCallback(func(remoteAddr, identityID string, connected bool) {
+			if connected {
+				auditLog.LogSessionConnected(identityID, remoteAddr, identityID)
+			} else {
+				auditLog.LogSessionDisconnected(identityID, remoteAddr, identityID)
+			}
+		})
+	}
+
+	sshServer.SetAdminChannelCallback(func(channel gossh.Channel, remoteAddr, identityID string) {
+		if identityID == "" {
+			logInfof("apadmin client connected via SSH from %s", remoteAddr)
+		} else {
+			logInfof("apadmin client connected via SSH from %s for identity %q", remoteAddr, identityID)
+		}
+		server.ipcServer.acceptAdminSession(adminproto.NewStreamAdminConn(channel, remoteAddr, &server.ipcServer.writeMu), "ssh", "ssh-passphrase", identityID)
+	})
+	sshServer.SetTokenProvisioningHooks(sshtunnel.TokenProvisioningHooks{
+		ApproveContext: func(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (bool, error) {
+			return provisioning.ApproveContext(ctx, identityID, sshFingerprint, remoteAddr)
+		},
+		Issue: func(identityID string) (string, error) {
+			return provisioning.Issue(identityID)
+		},
+		AuditProvisioned: func(identityID, sshFingerprint, remoteAddr string) {
+			provisioning.AuditProvisioned(identityID, sshFingerprint, remoteAddr)
+		},
+		OperatorConnected: func(identityID string) bool {
+			return server.hasClientForIdentity(identityID)
+		},
+		IdentityProvisioning: func(identityID string) bool {
+			rt := server.registry.Get(identityID)
+			return rt != nil && !rt.IsDecommissioned()
+		},
+	})
+
+	if err := sshServer.Start(sshCtx); err != nil {
+		sshCancel()
+		return nil, err
+	}
+
+	server.sshServer = sshServer
+	logInfof("SSH server started on %s (public key authentication)", listenAddr)
+	logInfof("host key fingerprint: %s", sshServer.GetHostKeyFingerprint())
+
+	return &sshRuntime{
+		server:     sshServer,
+		ctx:        sshCtx,
+		cancel:     sshCancel,
+		listenAddr: listenAddr,
+	}, nil
+}

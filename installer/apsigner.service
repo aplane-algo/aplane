@@ -1,0 +1,17 @@
+[Unit]
+Description=APlane Signer daemon (apsigner)
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/apsigner
+User=aplane
+Group=aplane
+Environment=APSIGNER_DATA=/var/lib/apsigner
+Environment=APLANE_SYSTEMD_MANAGED=1
+Restart=always
+RestartSec=5s
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

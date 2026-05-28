@@ -1,0 +1,269 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package signing
+
+import (
+	"encoding/base64"
+	"testing"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
+	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/policy"
+)
+
+func TestEvaluateAlwaysReviewRulesUsesKeyTypeOverride(t *testing.T) {
+	enabled := true
+	cfg, err := (&policy.StoredConfig{
+		KeyTypeOverrides: map[string]*policy.StoredConfig{
+			"ed25519": {
+				AlwaysReviewWarnings: &enabled,
+			},
+		},
+	}).Apply(policy.DefaultConfig())
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	txn := types.Transaction{
+		Type: types.PaymentTx,
+		Header: types.Header{
+			Sender: types.Address{1},
+			Fee:    types.MicroAlgos(1_000_001),
+		},
+	}
+
+	ruleID, review := EvaluateAlwaysReviewRules(
+		[]types.Transaction{txn},
+		1,
+		map[int]bool{},
+		map[int]bool{},
+		cfg,
+		[]string{"ed25519"},
+		nil,
+		nil,
+	)
+	if !review {
+		t.Fatal("EvaluateAlwaysReviewRules() review = false, want true")
+	}
+	if ruleID != policy.AlwaysReviewWarningsRuleID {
+		t.Fatalf("ruleID = %q, want %q", ruleID, policy.AlwaysReviewWarningsRuleID)
+	}
+}
+
+func TestEvaluateAlwaysReviewRulesIgnoresDisabledPolicy(t *testing.T) {
+	txn := types.Transaction{
+		Type: types.PaymentTx,
+		Header: types.Header{
+			Sender: types.Address{1},
+			Fee:    types.MicroAlgos(1_000_001),
+		},
+	}
+
+	if _, review := EvaluateAlwaysReviewRules(
+		[]types.Transaction{txn},
+		1,
+		map[int]bool{},
+		map[int]bool{},
+		policy.DefaultConfig(),
+		nil,
+		nil,
+		nil,
+	); review {
+		t.Fatal("EvaluateAlwaysReviewRules() review = true, want false")
+	}
+}
+
+func TestEvaluateAlwaysReviewRulesUsesTransferGuardThreshold(t *testing.T) {
+	cfg := &policy.Config{
+		ReviewASAAmounts: map[string]map[uint64]uint64{
+			"testnet": {10458941: 500_000_000},
+		},
+		GenesisHashResolver: apconfig.DefaultGenesisHashNetworkResolver(),
+	}
+	txn := types.Transaction{
+		Header: types.Header{
+			Sender:      types.Address{1},
+			GenesisHash: testAlwaysReviewGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash),
+		},
+		Type: types.AssetTransferTx,
+		AssetTransferTxnFields: types.AssetTransferTxnFields{
+			XferAsset:   10458941,
+			AssetAmount: 500_000_001,
+		},
+	}
+
+	ruleID, review := EvaluateAlwaysReviewRules(
+		[]types.Transaction{txn},
+		1,
+		map[int]bool{},
+		map[int]bool{},
+		cfg,
+		nil,
+		nil,
+		nil,
+	)
+	if !review {
+		t.Fatal("EvaluateAlwaysReviewRules() review = false, want true")
+	}
+	if ruleID != policy.ReviewASAAmountExceededRuleID {
+		t.Fatalf("ruleID = %q, want %q", ruleID, policy.ReviewASAAmountExceededRuleID)
+	}
+}
+
+func TestEvaluateAlwaysReviewRulesUsesTransferRouting(t *testing.T) {
+	source := types.Address{1}
+	dest := types.Address{2}
+	cfg := routingPolicyConfigForSigningTest(t, `
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  on_no_route: reject
+  routes:
+    - id: review_payee
+      networks: [testnet]
+      sources: ["`+source.String()+`"]
+      assets: ["algo"]
+      destinations: ["`+dest.String()+`"]
+      limits:
+        review_above: 10
+`)
+	txn := types.Transaction{
+		Type: types.PaymentTx,
+		Header: types.Header{
+			Sender:      source,
+			GenesisHash: testAlwaysReviewGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash),
+		},
+		PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: dest,
+			Amount:   11,
+		},
+	}
+
+	ruleID, review := EvaluateAlwaysReviewRules(
+		[]types.Transaction{txn},
+		1,
+		map[int]bool{},
+		map[int]bool{},
+		cfg,
+		nil,
+		nil,
+		nil,
+	)
+	if !review {
+		t.Fatal("EvaluateAlwaysReviewRules() review = false, want true")
+	}
+	if ruleID != "transfer_policy:review_payee:review_above" {
+		t.Fatalf("ruleID = %q, want transfer routing review threshold", ruleID)
+	}
+}
+
+func TestEvaluateAlwaysReviewRulesUsesTransferRoutingKeyTypeOverride(t *testing.T) {
+	source := types.Address{1}
+	dest := types.Address{2}
+	cfg := routingPolicyConfigForSigningTest(t, `
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  on_no_route: operator_default
+  routes: []
+key_type_overrides:
+  aplane.falcon1024.v1:
+    transfer_policy:
+      schema_version: 1
+      enabled: true
+      on_no_route: reject
+      routes:
+        - id: override_review
+          networks: [testnet]
+          sources: ["`+source.String()+`"]
+          assets: ["algo"]
+          destinations: ["`+dest.String()+`"]
+          limits:
+            review_above: 10
+`)
+	txn := types.Transaction{
+		Type: types.PaymentTx,
+		Header: types.Header{
+			Sender:      source,
+			GenesisHash: testAlwaysReviewGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash),
+		},
+		PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: dest,
+			Amount:   11,
+		},
+	}
+
+	ruleID, review := EvaluateAlwaysReviewRules(
+		[]types.Transaction{txn},
+		1,
+		map[int]bool{},
+		map[int]bool{},
+		cfg,
+		[]string{"aplane.falcon1024.v1"},
+		nil,
+		nil,
+	)
+	if !review {
+		t.Fatal("EvaluateAlwaysReviewRules() review = false, want true")
+	}
+	if ruleID != "transfer_policy:override_review:review_above" {
+		t.Fatalf("ruleID = %q, want key-type override routing review threshold", ruleID)
+	}
+}
+
+func TestEvaluateAlwaysReviewRulesSkipsTransferRoutingForExemptIndex(t *testing.T) {
+	source := types.Address{1}
+	dest := types.Address{2}
+	cfg := routingPolicyConfigForSigningTest(t, `
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  on_no_route: reject
+  routes:
+    - id: review_payee
+      networks: [testnet]
+      sources: ["`+source.String()+`"]
+      assets: ["algo"]
+      destinations: ["`+dest.String()+`"]
+      limits:
+        review_above: 10
+`)
+	txn := types.Transaction{
+		Type: types.PaymentTx,
+		Header: types.Header{
+			Sender:      source,
+			GenesisHash: testAlwaysReviewGenesisDigest(t, apconfig.AlgorandTestnetGenesisHash),
+		},
+		PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: dest,
+			Amount:   11,
+		},
+	}
+
+	ruleID, review := EvaluateAlwaysReviewRules(
+		[]types.Transaction{txn},
+		1,
+		map[int]bool{},
+		map[int]bool{},
+		cfg,
+		nil,
+		nil,
+		map[int]bool{0: true},
+	)
+	if review {
+		t.Fatalf("EvaluateAlwaysReviewRules() = (%q, true), want no review for routing-exempt index", ruleID)
+	}
+}
+
+func testAlwaysReviewGenesisDigest(t *testing.T, encoded string) types.Digest {
+	t.Helper()
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("decode genesis hash: %v", err)
+	}
+	var out types.Digest
+	copy(out[:], decoded)
+	return out
+}

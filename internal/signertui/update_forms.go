@@ -1,0 +1,959 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package tui
+
+// Form handlers for import, generate, and delete operations.
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
+)
+
+func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.backupExportPassphrase = ""
+		m.backupConfirmPassphrase = ""
+		m.backupConfirmError = ""
+		m.viewState = ViewKeyList
+		return m, nil
+	case "tab":
+		m.backupConfirmFocus = (m.backupConfirmFocus + 1) % 2
+		return m, nil
+	case "shift+tab":
+		m.backupConfirmFocus = (m.backupConfirmFocus + 1) % 2
+		return m, nil
+	case "enter":
+		if m.backupConfirmFocus == 0 {
+			m.backupConfirmFocus = 1
+			return m, nil
+		}
+		if m.backupExportPassphrase == "" {
+			m.backupConfirmError = "Please enter an export passphrase"
+			return m, nil
+		}
+		if m.backupExportPassphrase != m.backupConfirmPassphrase {
+			m.backupConfirmError = "Passphrases do not match"
+			return m, nil
+		}
+		passphrase := m.backupExportPassphrase
+		m.backupExportPassphrase = ""
+		m.backupConfirmPassphrase = ""
+		m.backupConfirmError = ""
+		m.viewState = ViewBackingUp
+		return m, tea.Batch(m.sendBackupCmd(passphrase), m.waitForMessageCmd())
+	case "backspace":
+		if m.backupConfirmFocus == 0 {
+			if len(m.backupExportPassphrase) > 0 {
+				m.backupExportPassphrase = m.backupExportPassphrase[:len(m.backupExportPassphrase)-1]
+			}
+		} else {
+			if len(m.backupConfirmPassphrase) > 0 {
+				m.backupConfirmPassphrase = m.backupConfirmPassphrase[:len(m.backupConfirmPassphrase)-1]
+			}
+		}
+		m.backupConfirmError = ""
+		return m, nil
+	default:
+		if len(msg.String()) == 1 {
+			if m.backupConfirmFocus == 0 {
+				m.backupExportPassphrase += msg.String()
+			} else {
+				m.backupConfirmPassphrase += msg.String()
+			}
+			m.backupConfirmError = ""
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleBackupDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc", "enter", " ":
+		m.backupArchivePath = ""
+		m.viewState = ViewKeyList
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleGenerateDisplayKeys handles keyboard input on generate display screen
+func (m Model) handleGenerateDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc", "enter", " ":
+		m.selectKeyByAddress(m.generatedAddress)
+		m.generatedAddress = ""
+		m.generatedKeyType = ""
+		m.viewState = ViewKeyList
+	}
+
+	return m, nil
+}
+
+// handleImportDisplayKeys handles keyboard input on import display screen
+func (m Model) handleImportDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc", "enter", " ":
+		// Return to key list
+		m.importedAddress = ""
+		m.importedKeyType = ""
+		m.viewState = ViewKeyList
+	}
+
+	return m, nil
+}
+
+// handleImportFormKeys handles keyboard input on import form
+func (m Model) handleImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.importFocus == 1 {
+		switch msg.String() {
+		case "esc":
+			m.importMnemonicInput.SetValue("")
+			m.importMnemonicInput.Blur()
+			m.importError = ""
+			m.viewState = ViewKeyList
+			return m, nil
+		case "tab":
+			return m.setImportFocus(2)
+		case "shift+tab":
+			return m.setImportFocus(0)
+		case "enter":
+			return m.submitImport()
+		}
+
+		if msg.Type == tea.KeySpace {
+			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
+		}
+		var cmd tea.Cmd
+		m.importMnemonicInput, cmd = m.importMnemonicInput.Update(msg)
+		m.importError = ""
+		return m, cmd
+	}
+
+	switch msg.String() {
+	case "esc":
+		// Cancel and return to key list
+		m.importMnemonicInput.SetValue("")
+		m.importMnemonicInput.Blur()
+		m.importError = ""
+		m.viewState = ViewKeyList
+		return m, nil
+
+	case "tab":
+		// Cycle through fields
+		return m.setImportFocus((m.importFocus + 1) % 3)
+
+	case "shift+tab":
+		// Cycle backwards through fields
+		return m.setImportFocus((m.importFocus + 2) % 3)
+
+	case "up":
+		// In key type field, switch to previous type
+		if m.importFocus == 0 && m.importKeyType > 0 {
+			m.importKeyType--
+		}
+		return m, nil
+
+	case "k":
+		// In key type field, vim-style up navigation
+		if m.importFocus == 0 {
+			if m.importKeyType > 0 {
+				m.importKeyType--
+			}
+		}
+		return m, nil
+
+	case "down":
+		// In key type field, switch to next type (dynamic bounds)
+		if m.importFocus == 0 && m.importKeyType < getImportKeyTypeCount()-1 {
+			m.importKeyType++
+		}
+		return m, nil
+
+	case "j":
+		// In key type field, vim-style down navigation (dynamic bounds)
+		if m.importFocus == 0 {
+			if m.importKeyType < getImportKeyTypeCount()-1 {
+				m.importKeyType++
+			}
+		}
+		return m, nil
+
+	case "enter":
+		if m.importFocus == 2 {
+			return m.submitImport()
+		}
+		// In key type field, move to next field
+		if m.importFocus == 0 {
+			return m.setImportFocus(1)
+		}
+		return m, nil
+
+	case "left", "right", "delete", "home", "end", "insert", "pgup", "pgdown":
+		// Ignore navigation/editing keys not supported in these fields
+		return m, nil
+
+	case " ":
+		// Space - add to mnemonic or submit if on button
+		switch m.importFocus {
+		case 2:
+			return m.submitImport()
+		}
+		return m, nil
+
+	default:
+	}
+
+	return m, nil
+}
+
+func (m Model) setImportFocus(focus int) (tea.Model, tea.Cmd) {
+	m.importFocus = focus
+	if m.importFocus == 1 {
+		return m, m.importMnemonicInput.Focus()
+	}
+	m.importMnemonicInput.Blur()
+	return m, nil
+}
+
+func (m Model) importMnemonic() string {
+	return strings.Join(strings.Fields(m.importMnemonicInput.Value()), " ")
+}
+
+func (m Model) submitImport() (tea.Model, tea.Cmd) {
+	mnemonic := m.importMnemonic()
+	if mnemonic == "" {
+		m.importError = "Please enter a mnemonic phrase"
+		return m, nil
+	}
+	if wordCount, expected := len(strings.Fields(mnemonic)), getExpectedImportWordCount(m.importKeyType); wordCount != expected {
+		m.importError = fmt.Sprintf("Recovery phrase must contain %d words, got %d", expected, wordCount)
+		return m, nil
+	}
+
+	keyType := getImportKeyTypeByIndex(m.importKeyType)
+	if keyType == "" {
+		m.importError = "Invalid key type selected"
+		return m, nil
+	}
+
+	if spec := getParamSpecForKeyType(keyType); spec != nil {
+		m = m.initGenericLSigParamsForKeyType(keyType)
+		m.generateFocus = 0
+		m.importError = ""
+		m.viewState = ViewImportParams
+		return m, nil
+	}
+
+	return m, tea.Batch(m.sendImportKeyCmd(keyType, mnemonic), m.waitForMessageCmd())
+}
+
+// handleImportParamsKeys handles keyboard input on parameter input modal for import.
+func (m Model) handleImportParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	mnemonic := m.importMnemonic()
+	submitFn := func(keyType string, params map[string]string) tea.Cmd {
+		return tea.Batch(m.sendImportKeyWithParamsCmd(keyType, mnemonic, params), m.waitForMessageCmd())
+	}
+	m, cmd, errStr := m.handleParamModalKeys(msg, m.importKeyType, ViewImportForm, ViewImporting, submitFn)
+	if errStr != "" || m.viewState == ViewImporting || m.viewState == ViewImportForm {
+		m.importError = errStr
+	}
+	return m, cmd
+}
+
+// handleGenerateFormKeys handles keyboard input on key type selection form.
+// This is a clean selection screen - parameter input happens in ViewGenerateParams.
+func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		// Cancel and return to key list
+		m.generateError = ""
+		m.viewState = ViewKeyList
+		return m, nil
+
+	case "up", "k":
+		// Move to previous key type
+		if m.generateKeyType > 0 {
+			m.generateKeyType--
+		}
+		return m, nil
+
+	case "down", "j":
+		// Move to next key type
+		if m.generateKeyType < getKeyTypeCount()-1 {
+			m.generateKeyType++
+		}
+		return m, nil
+
+	case "t", "T":
+		keyType := getKeyTypeByIndex(m.generateKeyType)
+		tmpl, ok := m.generateTemplateDetailsForKeyType(keyType)
+		if !ok {
+			m.generateError = fmt.Sprintf("%s has no template details available", displayKeyType(keyType))
+			return m, nil
+		}
+		m.libraryDetailsReturnView = ViewGenerateForm
+		next, cmd, errMsg := m.openLibraryTemplateDetails(tmpl)
+		if errMsg != "" {
+			next.generateError = errMsg
+			return next, nil
+		}
+		next.generateError = ""
+		return next, cmd
+
+	case "enter", " ":
+		keyType := getKeyTypeByIndex(m.generateKeyType)
+		if keyType == "" {
+			m.generateError = "Invalid key type selected"
+			return m, nil
+		}
+
+		// For parameterized LSigs, transition to parameter input modal
+		if spec := getParamSpecForKeyType(keyType); spec != nil {
+			m = m.initGenericLSigParams(m.generateKeyType)
+			m.generateFocus = 0 // Start at first parameter
+			m.generateError = ""
+			m.viewState = ViewGenerateParams
+			return m, nil
+		}
+
+		// For non-parameterized keys, generate immediately
+		m.generateError = ""
+		m.viewState = ViewGenerating // Show loading state
+		return m, tea.Batch(m.sendGenerateKeyCmd(keyType, ""), m.waitForMessageCmd())
+	}
+
+	return m, nil
+}
+
+func (m Model) generateTemplateDetailsForKeyType(keyType string) (LibraryTemplateInfo, bool) {
+	if tmpl, ok := m.findLibraryTemplateForKeyType(keyType); ok {
+		return tmpl, true
+	}
+	info, ok := findServerKeyType(keyType)
+	if !ok || !info.RequiresLogicSig {
+		return LibraryTemplateInfo{}, false
+	}
+	return LibraryTemplateInfo{
+		KeyType:      info.KeyType,
+		TemplateType: libraryTypeCompiledProvider,
+		DisplayName:  info.DisplayName,
+		Description:  info.Description,
+		Parameters:   info.CreationParams,
+		RuntimeArgs:  info.RuntimeArgs,
+		Installed:    true,
+		Enabled:      true,
+	}, true
+}
+
+func (m Model) findLibraryTemplateForKeyType(keyType string) (LibraryTemplateInfo, bool) {
+	for _, tmpl := range m.libraryTemplates {
+		if tmpl.KeyType == keyType {
+			return tmpl, true
+		}
+	}
+	return LibraryTemplateInfo{}, false
+}
+
+// handleGenerateParamsKeys handles keyboard input on parameter input modal for generate.
+func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	submitFn := func(keyType string, params map[string]string) tea.Cmd {
+		return tea.Batch(m.sendGenerateKeyWithParamsCmd(keyType, "", params), m.waitForMessageCmd())
+	}
+	m, cmd, errStr := m.handleParamModalKeys(msg, m.generateKeyType, ViewGenerateForm, ViewGenerating, submitFn)
+	if errStr != "" || m.viewState == ViewGenerating || m.viewState == ViewGenerateForm {
+		m.generateError = errStr
+	}
+	return m, cmd
+}
+
+// handleParamModalKeys is the shared handler for parameter input modals (generate and import).
+// Returns the updated model, a tea.Cmd, and an error string for the caller to assign.
+func (m Model) handleParamModalKeys(
+	msg tea.KeyMsg,
+	keyTypeIndex int,
+	escView, submitView ViewState,
+	submitFn func(string, map[string]string) tea.Cmd,
+) (Model, tea.Cmd, string) {
+	keyType := getKeyTypeByIndex(keyTypeIndex)
+	if escView == ViewImportForm {
+		keyType = getImportKeyTypeByIndex(keyTypeIndex)
+	}
+	spec := getParamSpecForKeyType(keyType)
+	if spec == nil {
+		m.viewState = escView
+		return m, nil, "Parameters not found"
+	}
+
+	params := spec.Params
+	maxFocus := len(params)
+
+	switch msg.String() {
+	case "esc":
+		m.viewState = escView
+		return m, nil, ""
+
+	case "tab":
+		m.generateFocus = (m.generateFocus + 1) % (maxFocus + 1)
+		if m.generateFocus < len(params) {
+			m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+		}
+		return m, nil, ""
+
+	case "up":
+		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
+			m = m.scrollCurrentParamInput(params, -1)
+			return m, nil, ""
+		}
+		if m.generateFocus > 0 {
+			m.generateFocus--
+			if m.generateFocus < len(params) {
+				m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+			}
+		}
+		return m, nil, ""
+
+	case "shift+tab", "k":
+		if m.generateFocus > 0 {
+			m.generateFocus--
+			if m.generateFocus < len(params) {
+				m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+			}
+		}
+		return m, nil, ""
+
+	case "down":
+		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
+			m = m.scrollCurrentParamInput(params, 1)
+			return m, nil, ""
+		}
+		if m.generateFocus < maxFocus {
+			m.generateFocus++
+			if m.generateFocus < len(params) {
+				m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+			}
+		}
+		return m, nil, ""
+
+	case "j":
+		if m.generateFocus < maxFocus {
+			m.generateFocus++
+			if m.generateFocus < len(params) {
+				m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+			}
+		}
+		return m, nil, ""
+
+	case "<", ">":
+		if m.generateFocus < len(params) {
+			paramDef := params[m.generateFocus]
+			if len(paramDef.InputModes) > 1 {
+				currentMode := m.genericLSigParamModes[paramDef.Name]
+				if msg.String() == ">" {
+					currentMode = (currentMode + 1) % len(paramDef.InputModes)
+				} else {
+					currentMode = (currentMode - 1 + len(paramDef.InputModes)) % len(paramDef.InputModes)
+				}
+				m.genericLSigParamModes[paramDef.Name] = currentMode
+				m.genericLSigParams[paramDef.Name] = ""
+				m.setParamScroll(paramDef.Name, 0)
+			}
+		}
+		return m, nil, ""
+
+	case "backspace":
+		if m.generateFocus < len(params) {
+			paramName := params[m.generateFocus].Name
+			if m.genericLSigParams != nil {
+				if val, ok := m.genericLSigParams[paramName]; ok && len(val) > 0 {
+					m.genericLSigParams[paramName] = val[:len(val)-1]
+				}
+			}
+			m = m.ensureCurrentParamInputVisible(params)
+		}
+		return m, nil, ""
+
+	case "enter", " ":
+		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
+			if msg.String() == "enter" {
+				m = m.appendToCurrentParam("\n", params)
+			} else {
+				m = m.appendToCurrentParam(" ", params)
+			}
+			return m, nil, ""
+		}
+		if m.generateFocus == maxFocus || msg.String() == "enter" {
+			transformedParams, err := m.applyInputModeTransforms(params)
+			if err != nil {
+				return m, nil, err.Error()
+			}
+			if err := spec.Validate(transformedParams); err != nil {
+				return m, nil, err.Error()
+			}
+			m.viewState = submitView
+			return m, submitFn(keyType, transformedParams), ""
+		}
+		if m.generateFocus < maxFocus {
+			m.generateFocus++
+			if m.generateFocus < len(params) {
+				m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+			}
+		}
+		return m, nil, ""
+
+	case "pgup", "pgdown":
+		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
+			paramDef := params[m.generateFocus]
+			delta := -getFieldHeightForType(paramDef.Type)
+			if msg.String() == "pgdown" {
+				delta = getFieldHeightForType(paramDef.Type)
+			}
+			m = m.scrollCurrentParamInput(params, delta)
+		}
+		return m, nil, ""
+
+	case "home":
+		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
+			m.setParamScroll(params[m.generateFocus].Name, 0)
+		}
+		return m, nil, ""
+
+	case "end":
+		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
+			m = m.ensureCurrentParamInputVisible(params)
+		}
+		return m, nil, ""
+
+	case "left", "right", "delete", "insert":
+		return m, nil, ""
+
+	default:
+		input := msg.String()
+		if len(input) > 0 && m.generateFocus < len(params) {
+			m = m.appendToCurrentParam(input, params)
+		}
+	}
+
+	return m, nil, ""
+}
+
+// initGenericLSigParams initializes the parameter map for a generic LogicSig.
+// keyTypeIndex is the index into the key type list (use m.generateKeyType or m.importKeyType).
+func (m Model) initGenericLSigParams(keyTypeIndex int) Model {
+	keyType := getKeyTypeByIndex(keyTypeIndex)
+	return m.initGenericLSigParamsForKeyType(keyType)
+}
+
+func (m Model) initGenericLSigParamsForKeyType(keyType string) Model {
+	spec := getParamSpecForKeyType(keyType)
+	if spec == nil {
+		return m
+	}
+
+	params := spec.Params
+	m.genericLSigParams = make(map[string]string)
+	m.genericLSigParamOrder = make([]string, len(params))
+	m.genericLSigParamModes = make(map[string]int)
+	m.genericLSigParamScroll = make(map[string]int)
+	for i, p := range params {
+		m.genericLSigParamOrder[i] = p.Name
+		m.genericLSigParams[p.Name] = ""
+		m.genericLSigParamModes[p.Name] = 0 // Default to first input mode
+		m.genericLSigParamScroll[p.Name] = 0
+	}
+	m.generateParamScrollOffset = 0 // Reset scroll when initializing params
+	return m
+}
+
+// ensureParamVisible adjusts scroll offset to ensure the focused parameter is visible.
+func (m Model) ensureParamVisible(paramIdx, maxVisibleParams int) Model {
+	if paramIdx < 0 {
+		return m
+	}
+	// Scroll up if focused param is above visible area
+	if paramIdx < m.generateParamScrollOffset {
+		m.generateParamScrollOffset = paramIdx
+	}
+	// Scroll down if focused param is below visible area
+	if paramIdx >= m.generateParamScrollOffset+maxVisibleParams {
+		m.generateParamScrollOffset = paramIdx - maxVisibleParams + 1
+	}
+	return m
+}
+
+// getMaxVisibleParams returns max visible params based on terminal height.
+func (m Model) getMaxVisibleParams() int {
+	reservedLines := 18
+	availableHeight := m.height - reservedLines
+	if availableHeight < 8 {
+		availableHeight = 8
+	}
+	maxVisibleParams := availableHeight / 8
+	if maxVisibleParams < 1 {
+		maxVisibleParams = 1
+	}
+	return maxVisibleParams
+}
+
+// appendToCurrentParam appends input to the currently focused parameter field.
+// It strips bracketed paste sequences and other non-printable characters.
+// Note: In ViewGenerateParams, focus 0..N-1 are parameters (not 1..N like before).
+func (m Model) appendToCurrentParam(input string, params []lsigprovider.ParameterDef) Model {
+	if m.genericLSigParams == nil {
+		// Safety fallback: determine key type index based on view state
+		keyTypeIndex := m.generateKeyType
+		keyType := getKeyTypeByIndex(keyTypeIndex)
+		if m.viewState == ViewImportParams {
+			keyTypeIndex = m.importKeyType
+			keyType = getImportKeyTypeByIndex(keyTypeIndex)
+		}
+		m = m.initGenericLSigParamsForKeyType(keyType)
+	}
+
+	paramIdx := m.generateFocus // Focus is now 0-indexed for params
+	if paramIdx < 0 || paramIdx >= len(params) {
+		return m
+	}
+
+	paramDef := params[paramIdx]
+	currentVal := m.genericLSigParams[paramDef.Name]
+
+	// Determine effective input type (mode's InputType overrides paramDef.Type)
+	effectiveType := paramDef.Type
+	if len(paramDef.InputModes) > 1 && m.genericLSigParamModes != nil {
+		modeIdx := m.genericLSigParamModes[paramDef.Name]
+		if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
+			mode := paramDef.InputModes[modeIdx]
+			if mode.InputType != "" {
+				effectiveType = mode.InputType
+			}
+		}
+	}
+
+	maxLen := getMaxInputLengthForType(effectiveType, paramDef.MaxLength)
+	lineMaxLen := 0
+	if effectiveType == "address[]" {
+		lineMaxLen = getFieldWidthForType(effectiveType, paramDef.MaxLength) - 1
+		if lineMaxLen < 1 {
+			lineMaxLen = 1
+		}
+	}
+
+	for _, r := range input {
+		char := byte(r)
+		allowed := false
+
+		switch effectiveType {
+		case "address":
+			// Algorand addresses are base32 - uppercase alphanumeric
+			if char >= 'a' && char <= 'z' {
+				char = char - 'a' + 'A'
+			}
+			if (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') {
+				allowed = true
+			}
+		case "address[]":
+			if char == '\r' {
+				continue
+			}
+			if char == ',' || char == ' ' {
+				char = '\n'
+			}
+			if char == '\n' || char == '@' {
+				allowed = true
+				break
+			}
+			if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
+				allowed = true
+			}
+		case "uint64":
+			// Numbers only
+			if char >= '0' && char <= '9' {
+				allowed = true
+			}
+		case "bytes":
+			// Hex characters only (0-9, a-f, A-F)
+			if char >= 'a' && char <= 'f' {
+				char = char - 'a' + 'A' // Uppercase for consistency
+			}
+			if (char >= 'A' && char <= 'F') || (char >= '0' && char <= '9') {
+				allowed = true
+			}
+		default:
+			// Accept printable ASCII characters only (strips escape sequences, brackets from paste, etc.)
+			if char >= 32 && char <= 126 {
+				allowed = true
+			}
+		}
+
+		if allowed && len(currentVal) < maxLen {
+			if lineMaxLen > 0 && char != '\n' && currentParamLineLength(currentVal) >= lineMaxLen {
+				continue
+			}
+			currentVal += string(char)
+		}
+	}
+
+	m.genericLSigParams[paramDef.Name] = currentVal
+	if isMultilineParamType(effectiveType) {
+		m = m.ensureCurrentParamInputVisible(params)
+	}
+	return m
+}
+
+func (m Model) ensureCurrentParamInputVisible(params []lsigprovider.ParameterDef) Model {
+	paramIdx := m.generateFocus
+	if paramIdx < 0 || paramIdx >= len(params) {
+		return m
+	}
+	paramDef := params[paramIdx]
+	if !isMultilineParamType(paramDef.Type) {
+		return m
+	}
+	value := ""
+	if m.genericLSigParams != nil {
+		value = m.genericLSigParams[paramDef.Name]
+	}
+	lines := paramInputLines(value)
+	maxOffset := maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
+	m.setParamScroll(paramDef.Name, maxOffset)
+	return m
+}
+
+func (m Model) scrollCurrentParamInput(params []lsigprovider.ParameterDef, delta int) Model {
+	paramIdx := m.generateFocus
+	if paramIdx < 0 || paramIdx >= len(params) {
+		return m
+	}
+	paramDef := params[paramIdx]
+	if !isMultilineParamType(paramDef.Type) {
+		return m
+	}
+	current := 0
+	if m.genericLSigParamScroll != nil {
+		current = m.genericLSigParamScroll[paramDef.Name]
+	}
+	value := ""
+	if m.genericLSigParams != nil {
+		value = m.genericLSigParams[paramDef.Name]
+	}
+	lines := paramInputLines(value)
+	maxOffset := maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
+	next := current + delta
+	if next < 0 {
+		next = 0
+	}
+	if next > maxOffset {
+		next = maxOffset
+	}
+	m.setParamScroll(paramDef.Name, next)
+	return m
+}
+
+func (m *Model) setParamScroll(paramName string, offset int) {
+	if m.genericLSigParamScroll == nil {
+		m.genericLSigParamScroll = make(map[string]int)
+	}
+	m.genericLSigParamScroll[paramName] = offset
+}
+
+func paramInputLines(value string) []string {
+	lines := strings.Split(value, "\n")
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
+}
+
+func maxParamInputScrollOffset(lines []string, fieldHeight int) int {
+	if fieldHeight < 1 {
+		fieldHeight = 1
+	}
+	maxOffset := len(lines) - fieldHeight
+	if maxOffset < 0 {
+		return 0
+	}
+	return maxOffset
+}
+
+func currentParamLineLength(value string) int {
+	lastNewline := strings.LastIndex(value, "\n")
+	if lastNewline >= 0 {
+		value = value[lastNewline+1:]
+	}
+	return len([]rune(value))
+}
+
+// handleDeleteConfirmKeys handles keyboard input on delete confirmation dialog
+func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "n":
+		// Cancel and return to key list
+		m.deleteAddress = ""
+		m.deleteKeyType = ""
+		m.viewState = ViewKeyList
+		return m, nil
+
+	case "tab", "left", "right", "h", "l":
+		// Toggle between Cancel and Delete buttons
+		m.deleteConfirmFocus = (m.deleteConfirmFocus + 1) % 2
+		return m, nil
+
+	case "enter", " ":
+		if m.deleteConfirmFocus == 0 {
+			// Cancel selected
+			m.deleteAddress = ""
+			m.deleteKeyType = ""
+			m.viewState = ViewKeyList
+			return m, nil
+		}
+		// Delete selected - send delete request
+		m.viewState = ViewDeleting // Show loading state
+		return m, tea.Batch(m.sendDeleteKeyCmd(m.deleteAddress), m.waitForMessageCmd())
+
+	case "y":
+		// Quick confirm delete
+		m.viewState = ViewDeleting // Show loading state
+		return m, tea.Batch(m.sendDeleteKeyCmd(m.deleteAddress), m.waitForMessageCmd())
+	}
+
+	return m, nil
+}
+
+// handleRevokeTokenConfirmKeys handles keyboard input on token revocation confirmation dialog
+func (m Model) handleRevokeTokenConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "n":
+		m.viewState = ViewAdminPanel
+		return m, nil
+
+	case "tab", "left", "right", "h", "l":
+		m.revokeTokenConfirmFocus = (m.revokeTokenConfirmFocus + 1) % 2
+		return m, nil
+
+	case "enter", " ":
+		if m.revokeTokenConfirmFocus == 0 {
+			// Cancel
+			m.viewState = ViewAdminPanel
+			return m, nil
+		}
+		// Revoke - send IPC request
+		m.viewState = ViewAdminPanel
+		return m, tea.Batch(m.sendRevokeTokenCmd(), m.waitForMessageCmd())
+
+	case "y":
+		// Quick confirm
+		m.viewState = ViewAdminPanel
+		return m, tea.Batch(m.sendRevokeTokenCmd(), m.waitForMessageCmd())
+	}
+
+	return m, nil
+}
+
+// handleDisplaceConfirmKeys handles keyboard input on the displacement confirmation modal
+func (m Model) handleDisplaceConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "n":
+		// Cancel - disconnect and exit
+		m.disconnectAdminClient()
+		return m, tea.Quit
+
+	case "y":
+		// Quick confirm - displace the existing client
+		return m, tea.Batch(m.sendDisplaceConfirmCmd(), m.waitForMessageCmd())
+
+	case "tab", "left", "right", "h", "l":
+		// Toggle between Cancel and Proceed buttons
+		m.displaceConfirmFocus = (m.displaceConfirmFocus + 1) % 2
+		return m, nil
+
+	case "enter", " ":
+		if m.displaceConfirmFocus == 1 {
+			// Proceed - displace the existing client
+			return m, tea.Batch(m.sendDisplaceConfirmCmd(), m.waitForMessageCmd())
+		}
+		// Cancel - disconnect and exit
+		m.disconnectAdminClient()
+		return m, tea.Quit
+	}
+
+	return m, nil
+}
+
+// applyInputModeTransforms applies any transforms required by selected input modes.
+// For example, if a user selected "preimage" mode for a hash parameter, this hashes the input.
+func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map[string]string, error) {
+	result := make(map[string]string)
+
+	for _, paramDef := range params {
+		value := m.genericLSigParams[paramDef.Name]
+		if paramDef.Type == "address[]" {
+			var err error
+			value, err = resolveAddressListValue(m.dataDir, value)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", paramDef.Name, err)
+			}
+		}
+
+		// Check if this parameter has input modes and a non-default mode is selected
+		if len(paramDef.InputModes) > 1 {
+			modeIdx := m.genericLSigParamModes[paramDef.Name]
+			if modeIdx > 0 && modeIdx < len(paramDef.InputModes) {
+				mode := paramDef.InputModes[modeIdx]
+
+				// Apply transform based on mode
+				switch mode.Transform {
+				case "sha256":
+					if value == "" {
+						result[paramDef.Name] = ""
+						continue
+					}
+
+					var inputBytes []byte
+					if mode.InputType == "string" {
+						// String input: use raw bytes directly
+						inputBytes = []byte(value)
+					} else {
+						// Hex input: decode first
+						var err error
+						inputBytes, err = hex.DecodeString(value)
+						if err != nil {
+							return nil, fmt.Errorf("%s: invalid hex input for %s mode", paramDef.Name, mode.Name)
+						}
+					}
+
+					hash := sha256.Sum256(inputBytes)
+					value = hex.EncodeToString(hash[:])
+				}
+			}
+		}
+
+		result[paramDef.Name] = value
+	}
+
+	return lsigprovider.NormalizeCreationParams(result, params)
+}
+
+// selectKeyByAddress sets the selected key index to the key matching the given address.
+// It also adjusts scrollOffset to ensure the key is visible.
+func (m *Model) selectKeyByAddress(address string) {
+	for i, k := range m.keys {
+		if k.Address == address {
+			m.selectedKey = i
+			visibleHeight := m.keyListVisibleHeight()
+			if m.selectedKey < m.scrollOffset {
+				m.scrollOffset = m.selectedKey
+			} else if m.selectedKey >= m.scrollOffset+visibleHeight {
+				m.scrollOffset = m.selectedKey - visibleHeight + 1
+			}
+			return
+		}
+	}
+}

@@ -1,0 +1,517 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package templatestore
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/keytypestate"
+	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
+)
+
+// testMasterKey is a 32-byte key for testing
+var testMasterKey = []byte("test-master-key-32-bytes-long!!!")
+
+const testIdentityID = "default"
+
+func TestValidateBaseKeyType(t *testing.T) {
+	tests := []struct {
+		name        string
+		templateTyp TemplateType
+		baseKeyType string
+		wantErr     string
+	}{
+		{
+			name:        "generic without base",
+			templateTyp: TemplateTypeGeneric,
+		},
+		{
+			name:        "generic with base",
+			templateTyp: TemplateTypeGeneric,
+			baseKeyType: "aplane.falcon1024.v1",
+			wantErr:     "base_key_type must not be set for generic templates",
+		},
+		{
+			name:        "composed with base",
+			templateTyp: TemplateTypeComposed,
+			baseKeyType: "aplane.falcon1024.v1",
+		},
+		{
+			name:        "composed without base",
+			templateTyp: TemplateTypeComposed,
+			wantErr:     "base_key_type is required for composed templates",
+		},
+		{
+			name:        "unknown template type",
+			templateTyp: "custom",
+			wantErr:     `unsupported template_type "custom"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateBaseKeyType(tt.templateTyp, tt.baseKeyType)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ValidateBaseKeyType() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("ValidateBaseKeyType() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestActiveTemplateTypes(t *testing.T) {
+	got := ActiveTemplateTypes()
+	want := []TemplateType{TemplateTypeGeneric, TemplateTypeComposed}
+	if len(got) != len(want) {
+		t.Fatalf("ActiveTemplateTypes() len = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ActiveTemplateTypes()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestSaveAndLoadTemplate(t *testing.T) {
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "templatestore-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+
+	paths := utilkeys.NewPaths(tmpDir)
+
+	yamlData := []byte(`
+schema_version: 1
+family: test-template
+version: 1
+display_name: "Test Template"
+description: "A test template"
+teal: |
+  #pragma version 10
+  int 1
+`)
+
+	keyType := "test.test-template.v1"
+
+	// Save template
+	outputPath, err := SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeGeneric, testMasterKey)
+	if err != nil {
+		t.Fatalf("SaveTemplate failed: %v", err)
+	}
+
+	// Verify file was created
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Errorf("Template file was not created at %s", outputPath)
+	}
+	assertTemplateFileMode(t, outputPath, fsutil.StoreFilePerm)
+	assertTemplateDirMode(t, filepath.Dir(outputPath))
+
+	// Load template back
+	loadedData, err := LoadTemplateFromPath(GetTemplateFilePathForPaths(paths, testIdentityID, keyType, TemplateTypeGeneric), testMasterKey)
+	if err != nil {
+		t.Fatalf("LoadTemplateFromPath failed: %v", err)
+	}
+
+	// Verify content matches
+	if string(loadedData) != string(yamlData) {
+		t.Errorf("Loaded data doesn't match original.\nExpected: %s\nGot: %s", yamlData, loadedData)
+	}
+}
+
+func TestSaveAndLoadComposedTemplate(t *testing.T) {
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "templatestore-composed-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+
+	paths := utilkeys.NewPaths(tmpDir)
+
+	yamlData := []byte(`
+schema_version: 1
+family: falcon1024-test
+version: 1
+display_name: "Falcon Test"
+description: "A test falcon template"
+parameters:
+  - name: hash
+    type: bytes
+    required: true
+    max_length: 64
+    label: "Hash"
+teal: |
+  txn RekeyTo
+  global ZeroAddress
+  ==
+  assert
+  arg 1
+  sha256
+  byte @hash
+  ==
+  assert
+`)
+
+	keyType := "test.falcon1024-test.v1"
+
+	// Save template
+	outputPath, err := SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeComposed, testMasterKey)
+	if err != nil {
+		t.Fatalf("SaveTemplate failed: %v", err)
+	}
+
+	// Verify file was created in the identity-local key type records directory.
+	expectedDir := filepath.Join(tmpDir, "identities", "default", "keytypes")
+	if !strings.HasPrefix(outputPath, expectedDir) {
+		t.Errorf("Template saved to wrong directory. Expected prefix %s, got %s", expectedDir, outputPath)
+	}
+
+	// Load template back
+	loadedData, err := LoadTemplateFromPath(GetTemplateFilePathForPaths(paths, testIdentityID, keyType, TemplateTypeComposed), testMasterKey)
+	if err != nil {
+		t.Fatalf("LoadTemplateFromPath failed: %v", err)
+	}
+
+	// Verify content matches
+	if string(loadedData) != string(yamlData) {
+		t.Errorf("Loaded data doesn't match original")
+	}
+}
+
+func assertTemplateFileMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%s) error = %v", path, err)
+	}
+	if got := info.Mode() & os.ModePerm; got != want {
+		t.Fatalf("mode(%s) = %o, want %o", path, got, want)
+	}
+}
+
+func assertTemplateDirMode(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%s) error = %v", path, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s is not a directory", path)
+	}
+	if got := info.Mode() & os.ModePerm; got != 0o770 {
+		t.Fatalf("mode(%s) = %o, want 0770", path, got)
+	}
+	if info.Mode()&os.ModeSetgid == 0 {
+		t.Fatalf("mode(%s) missing setgid bit: %v", path, info.Mode())
+	}
+}
+
+func TestTemplateExists(t *testing.T) {
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "templatestore-exists-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+
+	// Set keystore path
+	paths := utilkeys.NewPaths(tmpDir)
+
+	keyType := "test.exists-test.v1"
+
+	// Should not exist initially
+	if TemplateExistsForPaths(paths, testIdentityID, keyType, TemplateTypeGeneric) {
+		t.Error("Template should not exist before saving")
+	}
+
+	// Save template
+	yamlData := []byte("test: data")
+	_, err = SaveTemplateForPaths(paths, testIdentityID, yamlData, keyType, TemplateTypeGeneric, testMasterKey)
+	if err != nil {
+		t.Fatalf("SaveTemplate failed: %v", err)
+	}
+
+	if TemplateExistsForPaths(paths, testIdentityID, keyType, TemplateTypeGeneric) {
+		t.Error("Template should not exist before key type state is written")
+	}
+	markTemplateState(t, paths, keyType, TemplateTypeGeneric, keytypestate.StateEnabled)
+
+	// Should exist now
+	if !TemplateExistsForPaths(paths, testIdentityID, keyType, TemplateTypeGeneric) {
+		t.Error("Template should exist after saving and state write")
+	}
+
+	// Should not exist in composed directory
+	if TemplateExistsForPaths(paths, testIdentityID, keyType, TemplateTypeComposed) {
+		t.Error("Template should not exist in composed directory")
+	}
+}
+
+func TestTemplateStoreRejectsUnknownTemplateType(t *testing.T) {
+	paths := utilkeys.NewPaths(t.TempDir())
+	keyType := "test.unknown-template-type.v1"
+	unknownType := TemplateType("compiled_provider")
+
+	if _, err := SaveTemplateForPaths(paths, testIdentityID, []byte("test: data"), keyType, unknownType, testMasterKey); err == nil {
+		t.Fatal("SaveTemplateForPaths() error = nil, want unsupported template_type")
+	}
+	if TemplateExistsForPaths(paths, testIdentityID, keyType, unknownType) {
+		t.Fatal("TemplateExistsForPaths() = true for unsupported template_type")
+	}
+	if _, err := ScanTemplateDirectoryForPaths(paths, testIdentityID, unknownType); err == nil {
+		t.Fatal("ScanTemplateDirectoryForPaths() error = nil, want unsupported template_type")
+	}
+	if _, err := LoadAllTemplatesForPaths(paths, testIdentityID, unknownType, testMasterKey); err == nil {
+		t.Fatal("LoadAllTemplatesForPaths() error = nil, want unsupported template_type")
+	}
+	if _, ok, err := keytypestate.Get(paths, testIdentityID, keyType); err != nil {
+		t.Fatalf("keytypestate.Get() error = %v", err)
+	} else if ok {
+		t.Fatal("SaveTemplateForPaths() wrote state for unsupported template_type")
+	}
+}
+
+func TestLoadAllTemplates(t *testing.T) {
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "templatestore-loadall-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+
+	// Set keystore path
+	paths := utilkeys.NewPaths(tmpDir)
+
+	// Save multiple templates
+	templates := map[string][]byte{
+		"test.template-a.v1": []byte("template A"),
+		"test.template-b.v1": []byte("template B"),
+		"test.template-c.v1": []byte("template C"),
+	}
+
+	for keyType, data := range templates {
+		_, err := SaveTemplateForPaths(paths, testIdentityID, data, keyType, TemplateTypeGeneric, testMasterKey)
+		if err != nil {
+			t.Fatalf("SaveTemplate failed for %s: %v", keyType, err)
+		}
+		markTemplateState(t, paths, keyType, TemplateTypeGeneric, keytypestate.StateEnabled)
+	}
+
+	// Load all templates
+	loaded, err := LoadAllTemplatesForPaths(paths, testIdentityID, TemplateTypeGeneric, testMasterKey)
+	if err != nil {
+		t.Fatalf("LoadAllTemplates failed: %v", err)
+	}
+
+	if len(loaded) != len(templates) {
+		t.Errorf("Expected %d templates, got %d", len(templates), len(loaded))
+	}
+
+	for keyType, expectedData := range templates {
+		loadedData, ok := loaded[keyType]
+		if !ok {
+			t.Errorf("Template %s not found in loaded templates", keyType)
+			continue
+		}
+		if string(loadedData) != string(expectedData) {
+			t.Errorf("Template %s data mismatch", keyType)
+		}
+	}
+}
+
+func TestBaseTemplateSpec_KeyType(t *testing.T) {
+	spec := BaseTemplateSpec{
+		Publisher: "APlane",
+		Family:    "My-Template",
+		Version:   3,
+	}
+
+	expected := "aplane.my-template.v3"
+	if spec.KeyType() != expected {
+		t.Errorf("Expected %s, got %s", expected, spec.KeyType())
+	}
+}
+
+func markTemplateState(t *testing.T, paths utilkeys.Paths, keyType string, templateType TemplateType, state keytypestate.State) {
+	t.Helper()
+	source, ok := sourceForTemplateType(templateType)
+	if !ok {
+		t.Fatalf("unsupported template type in test: %q", templateType)
+	}
+	if err := keytypestate.Put(paths, testIdentityID, keytypestate.Record{
+		KeyType: keyType,
+		Source:  source,
+		State:   state,
+	}); err != nil {
+		t.Fatalf("keytypestate.Put() error = %v", err)
+	}
+}
+
+func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
+	derivationVersion1 := DerivationVersionPushbytes
+	derivationVersion2 := DerivationVersionTrailingBytecblock
+	derivationVersion99 := 99
+	tests := []struct {
+		name    string
+		spec    BaseTemplateSpec
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid spec",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 1,
+				Publisher:     "test",
+				Family:        "test",
+				Version:       1,
+				DisplayName:   "Test",
+			},
+			wantErr: false,
+		},
+		{
+			name: "explicit derivation version 1",
+			spec: BaseTemplateSpec{
+				SchemaVersion:     1,
+				DerivationVersion: &derivationVersion1,
+				Publisher:         "test",
+				Family:            "test",
+				Version:           1,
+				DisplayName:       "Test",
+			},
+			wantErr: false,
+		},
+		{
+			name: "explicit derivation version 2",
+			spec: BaseTemplateSpec{
+				SchemaVersion:     1,
+				DerivationVersion: &derivationVersion2,
+				Publisher:         "test",
+				Family:            "test",
+				Version:           1,
+				DisplayName:       "Test",
+			},
+			wantErr: false,
+		},
+		{
+			name: "unsupported derivation version",
+			spec: BaseTemplateSpec{
+				SchemaVersion:     1,
+				DerivationVersion: &derivationVersion99,
+				Publisher:         "test",
+				Family:            "test",
+				Version:           1,
+				DisplayName:       "Test",
+			},
+			wantErr: true,
+			errMsg:  "derivation_version 99 is not supported",
+		},
+		{
+			name: "missing family",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 1,
+				Publisher:     "test",
+				Version:       1,
+				DisplayName:   "Test",
+			},
+			wantErr: true,
+			errMsg:  "family is required",
+		},
+		{
+			name: "invalid version",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 1,
+				Publisher:     "test",
+				Family:        "test",
+				Version:       0,
+				DisplayName:   "Test",
+			},
+			wantErr: true,
+			errMsg:  "version must be >= 1",
+		},
+		{
+			name: "missing display name",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 1,
+				Publisher:     "test",
+				Family:        "test",
+				Version:       1,
+			},
+			wantErr: true,
+			errMsg:  "display_name is required",
+		},
+		{
+			name: "schema version too new",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 99,
+				Publisher:     "test",
+				Family:        "test",
+				Version:       1,
+				DisplayName:   "Test",
+			},
+			wantErr: true,
+			errMsg:  "schema_version 99 is newer than supported",
+		},
+		{
+			name: "missing publisher",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 1,
+				Family:        "test",
+				Version:       1,
+				DisplayName:   "Test",
+			},
+			wantErr: true,
+			errMsg:  "publisher is required",
+		},
+		{
+			name: "unsafe publisher",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 1,
+				Publisher:     "../test",
+				Family:        "test",
+				Version:       1,
+				DisplayName:   "Test",
+			},
+			wantErr: true,
+			errMsg:  "publisher contains unsafe characters",
+		},
+		{
+			name: "unsafe family",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 1,
+				Publisher:     "test",
+				Family:        "bad..test",
+				Version:       1,
+				DisplayName:   "Test",
+			},
+			wantErr: true,
+			errMsg:  "family contains unsafe characters",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.spec.ValidateBase(1) // max schema version = 1
+			if tt.wantErr {
+				if err == nil {
+					t.Error("Expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
