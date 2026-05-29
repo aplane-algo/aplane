@@ -261,6 +261,28 @@ func TestF1FocusesSignerAndF2FocusesShell(t *testing.T) {
 	}
 }
 
+func TestShiftTabCyclesPaneLikeShiftRight(t *testing.T) {
+	m := model{
+		focus:  paneSigner,
+		signer: recordingTeaModel{},
+		daemon: newDaemonModel(daemonInfo{Status: daemonStatusStarting, Owned: true}, make(chan daemonEvent)),
+		width:  splitMinWidth,
+		height: splitMinHeight,
+	}
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if cmd != nil {
+		t.Fatalf("shift+tab cmd = %v, want nil", cmd)
+	}
+	got := next.(model)
+	if got.focus != paneShell {
+		t.Fatalf("shift+tab focus = %v, want shell", got.focus)
+	}
+	if signer := got.signer.(recordingTeaModel); signer.updates != 1 {
+		t.Fatalf("signer updates = %d, want 1 size resync", signer.updates)
+	}
+}
+
 func TestMouseEventsDoNotChangePaneFocus(t *testing.T) {
 	m := model{
 		focus:  paneSigner,

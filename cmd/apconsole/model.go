@@ -133,7 +133,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+left":
 			m.focus = prevPane(m.focus, m.daemon.hasLogNavigation())
 			return m.resyncSignerSize()
-		case "shift+right":
+		case "shift+right", "shift+tab":
 			m.focus = nextPane(m.focus, m.daemon.hasLogNavigation())
 			return m.resyncSignerSize()
 		case "f1":
