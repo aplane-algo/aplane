@@ -226,6 +226,13 @@ verify_install() {
     docker_exec_as_tester "test -f $OPERATOR_ROOT/apclient/config.yaml"
     docker_exec_as_tester "test -f $OPERATOR_ROOT/apenv.sh"
     docker_exec_as_tester "test -f $OPERATOR_ROOT/apconsole.yaml"
+    docker_exec_as_tester ". $OPERATOR_ROOT/apenv.sh && \
+        [ \"\$APLANE_INSTALL_ROOT\" = '$OPERATOR_ROOT' ] && \
+        [ \"\$APLANE_BINDIR\" = '/usr/local/bin' ] && \
+        [ \"\$APSIGNER_DATA\" = '/var/lib/apsigner' ] && \
+        [ \"\$APCLIENT_DATA\" = '$OPERATOR_ROOT/apclient' ] && \
+        command -v apsigner >/dev/null && \
+        command -v apshell >/dev/null"
     docker_exec_as_tester "grep -q '^signer_data: /var/lib/apsigner$' $OPERATOR_ROOT/apconsole.yaml"
     docker_exec_bash "systemctl is-enabled apsigner >/dev/null"
     docker_exec_bash "systemctl is-active apsigner >/dev/null"

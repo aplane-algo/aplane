@@ -23,6 +23,8 @@ APlane supports three install modes:
 supplies the default `--systemd --bindir` value when `--bindir` is omitted.
 Command-line arguments take precedence over environment variables, and
 environment variables take precedence over prompts/defaults.
+Installer-generated `apenv.sh` files export `APLANE_INSTALL_ROOT`; systemd
+operator `apenv.sh` also exports `APLANE_BINDIR`.
 The bootstrap wrapper also accepts `APLANE_VERSION`,
 `APLANE_ENABLE_SERVICE`, `APLANE_START_SERVICE`, and
 `APLANE_REQUIRE_MINISIGN`; older `APSIGNER_*` names remain accepted as
@@ -92,7 +94,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   ├── plugins.available/  # Installed plugin catalog entries
 │   └── scripts/           # Saved JavaScript/MCP snippets
 ├── apconsole.yaml         # Console profile (mode and relative data paths)
-├── apenv.sh               # Environment file (PATH, APSIGNER_DATA, APCLIENT_DATA)
+├── apenv.sh               # Environment file (PATH, APLANE_INSTALL_ROOT, APSIGNER_DATA, APCLIENT_DATA)
 └── start.sh               # Unified console launcher (apconsole)
 ```
 
@@ -134,7 +136,10 @@ The installer creates `apenv.sh` and optionally adds it to your shell rc file (`
 source /path/to/aplane/apenv.sh
 ```
 
-This adds the binary directories to `PATH` and exports `APSIGNER_DATA` and `APCLIENT_DATA`.
+This adds the binary directories to `PATH` and exports
+`APLANE_INSTALL_ROOT`, `APSIGNER_DATA`, and `APCLIENT_DATA`. After sourcing
+it, rerunning `./install.sh` without a path reinstalls the same local root
+because `APLANE_INSTALL_ROOT` supplies the omitted `[path]`.
 
 ### Starting the system
 
@@ -469,6 +474,13 @@ sudo ./install.sh --systemd /srv/operator/aplane --bindir /opt/aplane/bin
 sudo APLANE_INSTALL_ROOT=/srv/operator/aplane APLANE_BINDIR=/opt/aplane/bin ./install.sh --systemd
 ```
 
+If you sourced `<operator-root>/apenv.sh`, preserve the installer variables
+across `sudo` explicitly:
+
+```bash
+sudo APLANE_INSTALL_ROOT="$APLANE_INSTALL_ROOT" APLANE_BINDIR="$APLANE_BINDIR" ./install.sh --systemd
+```
+
 Re-running `install.sh` from an extracted tarball is safe and is the supported
 upgrade path, subject to the same live-process gates as bootstrap upgrades:
 stop the local signer before local upgrades, and stop `apsigner.service` before
@@ -518,7 +530,7 @@ Key systemd paths:
 | `/etc/sudoers.d/99-apsigner-systemctl` | sudoers rule allowing the service user to manage the service |
 | `<operator-root>/` | Operator workspace for the user who ran `sudo install.sh --systemd`; defaults to `~<installing-user>/aplane/` |
 | `<operator-root>/apclient/` | apshell client config, scripts, plugin activation config, and bundled plugin catalog |
-| `<operator-root>/apenv.sh` | Environment file for `APSIGNER_DATA`, `APCLIENT_DATA`, and `PATH` |
+| `<operator-root>/apenv.sh` | Environment file for `APLANE_INSTALL_ROOT`, `APLANE_BINDIR`, `APSIGNER_DATA`, `APCLIENT_DATA`, and `PATH` |
 | `<operator-root>/apconsole.yaml` | apconsole profile pointing at `./apclient` and `/var/lib/apsigner` |
 
 The service starts locked unless you later configure a passphrase helper.

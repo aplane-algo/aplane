@@ -234,6 +234,7 @@ verify_install() {
     docker_exec_as_tester "grep -qF '# aplane env' /home/$TEST_USER/.bashrc"
     # Sourcing apenv.sh sets the expected env
     docker_exec_as_tester ". $root/apenv.sh && \
+        [ \"\$APLANE_INSTALL_ROOT\" = '$root' ] && \
         [ \"\$APSIGNER_DATA\" = '$root/apsigner' ] && \
         [ \"\$APCLIENT_DATA\" = '$root/apclient' ] && \
         command -v apsigner >/dev/null && \

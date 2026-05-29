@@ -1571,6 +1571,7 @@ case ":\$PATH:" in
   *":$BINDIR:"*) ;;
   *) export PATH="$BINDIR:\$PATH" ;;
 esac
+export APLANE_INSTALL_ROOT="$CLIENT_PATH"
 export APCLIENT_DATA="$APCLIENT_DIR"
 ENVEOF
     bash -n "$ENV_SH"
@@ -1735,6 +1736,7 @@ case ":\$PATH:" in
   *":$CLIENT_BINDIR:"*) ;;
   *) export PATH="$CLIENT_BINDIR:\$PATH" ;;
 esac
+export APLANE_INSTALL_ROOT="$LOCAL_PATH"
 export APSIGNER_DATA="$DATA_DIR"
 export APCLIENT_DATA="$APCLIENT_DIR"
 ENVEOF
@@ -2088,6 +2090,8 @@ case ":\$PATH:" in
   *":$BINDIR:"*) ;;
   *) export PATH="$BINDIR:\$PATH" ;;
 esac
+export APLANE_INSTALL_ROOT="$OPERATOR_ROOT"
+export APLANE_BINDIR="$BINDIR"
 export APSIGNER_DATA="$DATA_DIR"
 export APCLIENT_DATA="$APCLIENT_DIR"
 ENVEOF
