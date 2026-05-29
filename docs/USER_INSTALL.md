@@ -18,6 +18,16 @@ APlane supports three install modes:
 | `--no-enable` | Skip `systemctl enable apsigner` so the service does not start on boot. |
 | `--no-start` | Skip `systemctl start apsigner` so the service is installed but not started. |
 
+**Environment defaults:** `APLANE_INSTALL_ROOT` supplies the optional
+`[path]` / `[operator-root]` argument when it is omitted. `APLANE_BINDIR`
+supplies the default `--systemd --bindir` value when `--bindir` is omitted.
+Command-line arguments take precedence over environment variables, and
+environment variables take precedence over prompts/defaults.
+The bootstrap wrapper also accepts `APLANE_VERSION`,
+`APLANE_ENABLE_SERVICE`, `APLANE_START_SERVICE`, and
+`APLANE_REQUIRE_MINISIGN`; older `APSIGNER_*` names remain accepted as
+compatibility aliases.
+
 ## Table of Contents
 
 - [Local Install (Default)](#local-install-default)
@@ -56,6 +66,9 @@ Local mode installs both the signer and client into a single directory under the
 
 # Install to a custom path
 ./install.sh /path/to/my/aplane
+
+# Equivalent custom path via environment
+APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 ```
 
 ### What gets created
@@ -279,11 +292,16 @@ curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-i
 
 # Require minisign verification (fails if minisign is unavailable)
 curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
-  APSIGNER_REQUIRE_MINISIGN=1 bash
+  APLANE_REQUIRE_MINISIGN=1 bash
 
 # Systemd mode with a custom binary directory
 curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
   bash -s -- --systemd --bindir /usr/local/bin
+
+# Equivalent systemd defaults via environment
+curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
+  APLANE_INSTALL_ROOT=/srv/operator/aplane APLANE_BINDIR=/opt/aplane/bin \
+  bash -s -- --systemd
 ```
 
 ---
@@ -448,6 +466,7 @@ for a custom binary directory (default: `/usr/local/bin`):
 ```bash
 sudo ./install.sh --systemd --bindir /opt/aplane/bin
 sudo ./install.sh --systemd /srv/operator/aplane --bindir /opt/aplane/bin
+sudo APLANE_INSTALL_ROOT=/srv/operator/aplane APLANE_BINDIR=/opt/aplane/bin ./install.sh --systemd
 ```
 
 Re-running `install.sh` from an extracted tarball is safe and is the supported

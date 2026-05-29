@@ -11,10 +11,12 @@
 #     bash -s -- --client
 #
 # Environment overrides:
-#   APSIGNER_BINDIR, APSIGNER_VERSION
-#   APSIGNER_LOCAL (path or "1" for $PWD)
-#   APSIGNER_ENABLE_SERVICE (1|0), APSIGNER_START_SERVICE (1|0)
-#   APSIGNER_REQUIRE_MINISIGN (1|0) - require minisign binary and signature file
+#   APLANE_INSTALL_ROOT, APLANE_BINDIR, APLANE_VERSION
+#   APLANE_ENABLE_SERVICE (1|0), APLANE_START_SERVICE (1|0)
+#   APLANE_REQUIRE_MINISIGN (1|0) - require minisign binary and signature file
+# Legacy aliases still accepted: APSIGNER_LOCAL, APSIGNER_BINDIR,
+#   APSIGNER_VERSION, APSIGNER_ENABLE_SERVICE, APSIGNER_START_SERVICE,
+#   APSIGNER_REQUIRE_MINISIGN.
 
 # Refuse to run when sourced. Do not compare BASH_SOURCE[0] with $0 here:
 # BASH_SOURCE[0] is empty when the supported `curl ... | bash` form is used.
@@ -28,12 +30,19 @@ set -euo pipefail
 REPO="aplane-algo/aplane"
 MINISIGN_PUBKEY="RWSTA8cMsOQuE+UHxDpCoqg0D8/lFCciIOWZcBgJTMMwXpqa0ovdJvYF"
 
-BINDIR="${APSIGNER_BINDIR:-/usr/local/bin}"
-REQUESTED_VERSION="${APSIGNER_VERSION:-latest}"
-ENABLE_SERVICE="${APSIGNER_ENABLE_SERVICE:-1}"
-START_SERVICE="${APSIGNER_START_SERVICE:-1}"
-REQUIRE_MINISIGN="${APSIGNER_REQUIRE_MINISIGN:-0}"
-LOCAL_MODE="${APSIGNER_LOCAL:-}"
+BINDIR="${APLANE_BINDIR:-${APSIGNER_BINDIR:-/usr/local/bin}}"
+REQUESTED_VERSION="${APLANE_VERSION:-${APSIGNER_VERSION:-latest}}"
+ENABLE_SERVICE="${APLANE_ENABLE_SERVICE:-${APSIGNER_ENABLE_SERVICE:-1}}"
+START_SERVICE="${APLANE_START_SERVICE:-${APSIGNER_START_SERVICE:-1}}"
+REQUIRE_MINISIGN="${APLANE_REQUIRE_MINISIGN:-${APSIGNER_REQUIRE_MINISIGN:-0}}"
+if [ -n "${APLANE_INSTALL_ROOT:-}" ]; then
+    INSTALL_ROOT_ENV="$APLANE_INSTALL_ROOT"
+elif [ "${APSIGNER_LOCAL:-}" = "1" ]; then
+    INSTALL_ROOT_ENV="$PWD"
+else
+    INSTALL_ROOT_ENV="${APSIGNER_LOCAL:-}"
+fi
+LOCAL_MODE="$INSTALL_ROOT_ENV"
 CLIENT_MODE=""
 PROD_MODE=""
 INSTALL_ROOT_ARG=""
@@ -66,6 +75,12 @@ EOF
     cat <<'EOF'
   --require-minisign  Fail if minisign is unavailable or signature file is missing
   -h, --help          Show this help
+
+Environment:
+  APLANE_INSTALL_ROOT  Default install root/operator root when omitted.
+  APLANE_BINDIR        Default --systemd --bindir when omitted.
+  APLANE_VERSION       Release tag or "latest".
+  APLANE_ENABLE_SERVICE, APLANE_START_SERVICE, APLANE_REQUIRE_MINISIGN
 
 EOF
     if [ "$(uname -s)" = "Linux" ]; then
@@ -291,6 +306,8 @@ main() {
     fi
     if [ "${#POSITIONAL[@]}" -eq 1 ]; then
         INSTALL_ROOT_ARG="${POSITIONAL[0]}"
+    elif [ -n "$INSTALL_ROOT_ENV" ]; then
+        INSTALL_ROOT_ARG="$INSTALL_ROOT_ENV"
     fi
 
     local is_client=0

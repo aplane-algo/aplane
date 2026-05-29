@@ -18,6 +18,10 @@
 #                  (default: installing user's ~/aplane)
 #   --bindir  Where to install binaries (default: /usr/local/bin)
 #
+# Environment overrides:
+#   APLANE_INSTALL_ROOT  Default [path] / [operator-root] when omitted
+#   APLANE_BINDIR        Default --systemd --bindir when omitted
+#
 # Works from both a repo checkout and an extracted release tarball.
 
 # Refuse to run when sourced. Do not compare BASH_SOURCE[0] with $0 here:
@@ -117,6 +121,12 @@ EOF
 
     cat <<'EOF'
   -h, --help        Show this help.
+
+Environment:
+  APLANE_INSTALL_ROOT  Default [path] / [operator-root] when omitted.
+  APLANE_BINDIR        Default --systemd --bindir when omitted.
+
+Explicit command-line arguments override environment values.
 EOF
 }
 
@@ -125,10 +135,12 @@ CLIENT_MODE=0
 PROD_MODE=0
 SVC_USER="aplane"
 SVC_GROUP="aplane"
-BINDIR="/usr/local/bin"
+BINDIR="${APLANE_BINDIR:-/usr/local/bin}"
+BINDIR_FLAG=0
 ENABLE_SERVICE=1
 START_SERVICE=1
 GROUP_MEMBERSHIP_CHANGED=0
+INSTALL_ROOT_ENV="${APLANE_INSTALL_ROOT:-}"
 POSITIONAL=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -150,6 +162,7 @@ while [ $# -gt 0 ]; do
                 exit 2
             fi
             BINDIR="$2"
+            BINDIR_FLAG=1
             shift 2
             ;;
         --no-enable)
@@ -186,7 +199,7 @@ if [ "$PROD_MODE" = "1" ] && [ "$CLIENT_MODE" = "1" ]; then
     echo "Error: --systemd and --client are mutually exclusive." >&2
     exit 2
 fi
-if [ "$CLIENT_MODE" = "1" ] && [ "$BINDIR" != "/usr/local/bin" ]; then
+if [ "$CLIENT_MODE" = "1" ] && [ "$BINDIR_FLAG" = "1" ]; then
     echo "Error: --client cannot be combined with --bindir." >&2
     exit 2
 fi
@@ -427,12 +440,12 @@ prompt_install_mode() {
 # so users don't have to know the flag names. This runs after the prompt
 # helpers are defined because bash resolves function names at call time.
 if [ "$PROD_MODE" = "0" ] && [ "$CLIENT_MODE" = "0" ]; then
-    if [ ${#POSITIONAL[@]} -eq 0 ]; then
+    if [ ${#POSITIONAL[@]} -eq 0 ] && [ -z "$INSTALL_ROOT_ENV" ]; then
         prompt_install_mode
     fi
     if [ "$PROD_MODE" = "0" ] && [ "$CLIENT_MODE" = "0" ]; then
         LOCAL_MODE=1
-        LOCAL_PATH="${POSITIONAL[0]:-}"
+        LOCAL_PATH="${POSITIONAL[0]:-${INSTALL_ROOT_ENV:-}}"
     fi
 fi
 
@@ -1454,6 +1467,8 @@ if [ "$CLIENT_MODE" = "1" ]; then
     fi
     if [ ${#POSITIONAL[@]} -gt 0 ]; then
         CLIENT_PATH="${POSITIONAL[0]}"
+    elif [ -n "$INSTALL_ROOT_ENV" ]; then
+        CLIENT_PATH="$INSTALL_ROOT_ENV"
     else
         CLIENT_PATH="$(prompt_install_path "$HOME/aplane")"
     fi
@@ -1841,7 +1856,7 @@ if [ ${#POSITIONAL[@]} -gt 1 ]; then
     echo "Usage: sudo $0 --systemd [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
     exit 2
 fi
-PROD_OPERATOR_ROOT_INPUT="${POSITIONAL[0]:-}"
+PROD_OPERATOR_ROOT_INPUT="${POSITIONAL[0]:-${INSTALL_ROOT_ENV:-}}"
 require_prod_service_stopped
 
 # Ensure bindir exists and resolve to absolute path
