@@ -149,15 +149,24 @@ func apstoreInvocation(useSudo bool, dataDir string, args []string) string {
 	return strings.Join(parts, " ")
 }
 
+func isShellSafeRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z':
+		return true
+	case r >= 'A' && r <= 'Z':
+		return true
+	case r >= '0' && r <= '9':
+		return true
+	}
+	return strings.ContainsRune("@%_+=:,./-", r)
+}
+
 func shellQuoteArg(s string) string {
 	if s == "" {
 		return "''"
 	}
 	for _, r := range s {
-		if (r >= 'a' && r <= 'z') ||
-			(r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') ||
-			strings.ContainsRune("@%_+=:,./-", r) {
+		if isShellSafeRune(r) {
 			continue
 		}
 		return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
