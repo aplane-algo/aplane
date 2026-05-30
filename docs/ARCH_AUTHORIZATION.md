@@ -204,9 +204,9 @@ admin auth message
 
 Auth-time unlock is authorization-gated before the runtime is unlocked.
 Explicit admin lock requests use `identity.lock` for the bound identity.
-`admin_activity` is not a separate grant-bearing operation; it is accepted only
-on an authenticated bound session and can only refresh an already-unlocked
-identity session timer.
+Admin disconnect cleanup applies the bound identity's `lock_on_disconnect`
+setting. Local admin idle timeout is enforced by `apadmin` as a disconnect,
+not by a signer-side activity grant.
 
 ### SSH Admin Subsystem
 

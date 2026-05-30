@@ -12,46 +12,26 @@ import (
 )
 
 const (
-	activityReportInterval    = 30 * time.Second
 	localIdleDisconnectReason = "apadmin disconnected after inactivity timeout"
 	manualLockReason          = "apadmin manual lock"
 )
 
 func (m Model) recordUserActivity(now time.Time, msg tea.KeyMsg) (Model, tea.Cmd) {
-	if !m.shouldTrackUserActivity(msg) {
+	if !m.shouldTrackLocalIdle(msg) {
 		return m, nil
 	}
 
 	m.lastUserInputAt = now
-	m.activityReportPending = true
 	m.localIdleDisconnectSent = false
 
-	return m, tea.Batch(
-		m.scheduleActivityReport(now),
-		m.armLocalIdleTimer(),
-	)
+	return m, m.armLocalIdleTimer()
 }
 
-func (m Model) shouldTrackUserActivity(msg tea.KeyMsg) bool {
-	if !m.canSendActivitySignals() {
-		return false
-	}
-	if m.viewState == ViewSigningPopup && isSignResponseKey(msg) {
-		return false
-	}
-	return true
+func (m Model) shouldTrackLocalIdle(_ tea.KeyMsg) bool {
+	return m.canTrackLocalIdle()
 }
 
-func isSignResponseKey(msg tea.KeyMsg) bool {
-	switch msg.String() {
-	case "enter", " ", "y", "a", "n", "r", "esc":
-		return true
-	default:
-		return false
-	}
-}
-
-func (m Model) canSendActivitySignals() bool {
+func (m Model) canTrackLocalIdle() bool {
 	if m.connectionState != ConnectionConnected || m.adminClient == nil {
 		return false
 	}
@@ -63,11 +43,6 @@ func (m Model) canSendActivitySignals() bool {
 
 func (m *Model) resetActivityState() {
 	m.lastUserInputAt = time.Time{}
-	m.lastActivityReportAt = time.Time{}
-	m.activityReportPending = false
-	m.activityReportArmed = false
-	m.activityReportDueAt = time.Time{}
-	m.activityReportGeneration++
 	m.localIdleDisconnectSent = false
 	m.localIdleGeneration++
 	m.localIdleDueAt = time.Time{}
@@ -118,65 +93,8 @@ func (m *Model) applyAdminSettingsTimeout(settings AdminSettings) tea.Cmd {
 	return m.armLocalIdleTimer()
 }
 
-func (m *Model) scheduleActivityReport(now time.Time) tea.Cmd {
-	if !m.canSendActivitySignals() || !m.activityReportPending {
-		return nil
-	}
-
-	if m.lastActivityReportAt.IsZero() || now.Sub(m.lastActivityReportAt) >= activityReportInterval {
-		return m.sendActivityReport(now)
-	}
-
-	if m.activityReportArmed {
-		return nil
-	}
-
-	m.activityReportGeneration++
-	m.activityReportDueAt = m.lastActivityReportAt.Add(activityReportInterval)
-	m.activityReportArmed = true
-	return activityReportTickCmd(m.activityReportGeneration, m.activityReportDueAt)
-}
-
-func (m *Model) handleActivityReportTick(msg activityReportTickMsg) tea.Cmd {
-	if !m.activityReportArmed ||
-		msg.Generation != m.activityReportGeneration ||
-		!msg.DueAt.Equal(m.activityReportDueAt) {
-		return nil
-	}
-	m.activityReportArmed = false
-
-	if !m.canSendActivitySignals() || !m.activityReportPending {
-		return nil
-	}
-	if !m.lastActivityReportAt.IsZero() && !m.lastUserInputAt.After(m.lastActivityReportAt) {
-		m.activityReportPending = false
-		return nil
-	}
-
-	now := time.Now()
-	if !m.lastActivityReportAt.IsZero() && now.Sub(m.lastActivityReportAt) < activityReportInterval {
-		return m.scheduleActivityReport(now)
-	}
-	return m.sendActivityReport(now)
-}
-
-func (m *Model) sendActivityReport(now time.Time) tea.Cmd {
-	m.lastActivityReportAt = now
-	m.activityReportPending = false
-	m.activityReportArmed = false
-	m.activityReportDueAt = time.Time{}
-	m.activityReportGeneration++
-	return m.sendAdminActivityCmd()
-}
-
-func activityReportTickCmd(generation uint64, dueAt time.Time) tea.Cmd {
-	return tea.Tick(tickDelay(dueAt), func(time.Time) tea.Msg {
-		return activityReportTickMsg{Generation: generation, DueAt: dueAt}
-	})
-}
-
 func (m *Model) armLocalIdleTimer() tea.Cmd {
-	if !m.canSendActivitySignals() ||
+	if !m.canTrackLocalIdle() ||
 		m.effectiveSessionTimeout <= 0 ||
 		m.lastUserInputAt.IsZero() {
 		return nil
@@ -191,7 +109,7 @@ func (m *Model) handleLocalIdleTick(msg localIdleTickMsg) tea.Cmd {
 	if msg.Generation != m.localIdleGeneration || !msg.DueAt.Equal(m.localIdleDueAt) {
 		return nil
 	}
-	if !m.canSendActivitySignals() || m.localIdleDisconnectSent {
+	if !m.canTrackLocalIdle() || m.localIdleDisconnectSent {
 		return nil
 	}
 
@@ -242,19 +160,6 @@ func tickDelay(dueAt time.Time) time.Duration {
 		return time.Nanosecond
 	}
 	return delay
-}
-
-func (m Model) sendAdminActivityCmd() tea.Cmd {
-	client := m.adminClient
-	return func() tea.Msg {
-		if client == nil {
-			return adminActivitySendFailedMsg{Error: fmt.Errorf("not connected")}
-		}
-		if err := client.SendAdminActivity(); err != nil {
-			return adminActivitySendFailedMsg{Error: err}
-		}
-		return nil
-	}
 }
 
 func (m Model) disconnectForLocalIdleCmd() tea.Cmd {

@@ -155,7 +155,7 @@ func New(cfg Config) *Runtime {
 	}
 
 	session := keystore.NewKeySession(cfg.KeyStore)
-	rt := signerruntime.New(cfg.SessionTimeout)
+	rt := signerruntime.New()
 	userAutoApprove := false
 	if cfg.UserAutoApprove != nil {
 		userAutoApprove = *cfg.UserAutoApprove
@@ -563,23 +563,6 @@ func (ir *Runtime) EnrollAuthorizedKey(key ssh.PublicKey) error {
 	return nil
 }
 
-// --- Session timer ---
-
-// ResetSessionTimer resets (or starts) the inactivity timer.
-func (ir *Runtime) ResetSessionTimer() {
-	ir.lockRuntime.ResetSessionTimer()
-}
-
-// StopSessionTimer stops the inactivity timer if running.
-func (ir *Runtime) StopSessionTimer() {
-	ir.lockRuntime.StopSessionTimer()
-}
-
-// SetSessionTimeout updates the inactivity timeout.
-func (ir *Runtime) SetSessionTimeout(d time.Duration) {
-	ir.lockRuntime.SetSessionTimeout(d)
-}
-
 // --- Key access ---
 
 // KnownAddresses returns a set of addresses this identity holds keys for.
@@ -839,7 +822,6 @@ func (ir *Runtime) StopKeyWatcher() {
 // Blocks until in-flight key operations complete.
 func (ir *Runtime) Destroy() {
 	ir.StopKeyWatcher()
-	ir.StopSessionTimer()
 	if ir.keySession != nil {
 		ir.keySession.Destroy()
 	}

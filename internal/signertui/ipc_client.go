@@ -155,17 +155,6 @@ func (c *IPCClient) SendUnlock(passphrase string) error {
 	return c.sendMessage(msg)
 }
 
-// SendAdminActivity reports explicit local user activity for the bound identity.
-func (c *IPCClient) SendAdminActivity() error {
-	msg := AdminActivityMessage{
-		BaseMessage: BaseMessage{
-			Type: MsgTypeAdminActivity,
-			ID:   fmt.Sprintf("activity-%d", time.Now().UnixNano()),
-		},
-	}
-	return c.sendMessage(msg)
-}
-
 // SendLockIdentity requests an explicit lock of the bound identity.
 func (c *IPCClient) SendLockIdentity(reason string) error {
 	msg := LockIdentityMessage{
@@ -568,7 +557,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				})
 
 			case MsgTypeSignerLocked:
-				// Server auto-locked (e.g., inactivity timeout) - transition to unlock screen
+				// Server locked - transition to unlock screen.
 				c.emit(sessionID, SignerStatusMsg{
 					Locked:   true,
 					KeyCount: 0,

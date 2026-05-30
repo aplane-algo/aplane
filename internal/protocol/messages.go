@@ -25,7 +25,6 @@ const (
 	// Signer state message types
 	MsgTypeUnlock                = "unlock"
 	MsgTypeUnlockResult          = "unlock_result"
-	MsgTypeAdminActivity         = "admin_activity"
 	MsgTypeLockIdentity          = "lock_identity"
 	MsgTypeLockIdentityResult    = "lock_identity_result"
 	MsgTypeInitializeStore       = "initialize_store"
@@ -94,7 +93,7 @@ const (
 
 	// Server-initiated notification message types
 	MsgTypeKeysChanged  = "keys_changed"  // Sent when keys are reloaded
-	MsgTypeSignerLocked = "signer_locked" // Sent when signer auto-locks (inactivity timeout)
+	MsgTypeSignerLocked = "signer_locked" // Sent when signer locks
 
 	// Admin settings message types
 	MsgTypeGetAdminSettings          = "get_admin_settings"           // Client → server: request current settings
@@ -165,12 +164,6 @@ type UnlockResultMessage struct {
 	KeyCount int    `json:"key_count,omitempty"`
 	Code     string `json:"code,omitempty"`
 	Error    string `json:"error,omitempty"`
-}
-
-// AdminActivityMessage refreshes the bound identity's inactivity timer after
-// explicit local user activity in an authenticated admin client.
-type AdminActivityMessage struct {
-	BaseMessage
 }
 
 // LockIdentityMessage requests an explicit lock of the currently bound identity.
@@ -743,11 +736,11 @@ type KeysChangedMessage struct {
 	KeyCount int `json:"key_count"` // Number of keys after reload
 }
 
-// SignerLockedMessage is sent by the server to notify clients that the signer has locked
-// (e.g., due to inactivity timeout). Client should transition to the unlock screen.
+// SignerLockedMessage is sent by the server to notify clients that the signer
+// has locked. Client should transition to the unlock screen.
 type SignerLockedMessage struct {
 	BaseMessage
-	Reason string `json:"reason"` // Why the signer locked (e.g., "inactivity timeout")
+	Reason string `json:"reason"` // Why the signer locked.
 }
 
 // GetAdminSettingsMessage requests the current admin settings from the server.

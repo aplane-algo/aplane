@@ -5,8 +5,6 @@ package runtime
 
 import (
 	"sync"
-	"sync/atomic"
-	"time"
 )
 
 // SignerState is the current lock state of the signer runtime.
@@ -28,24 +26,18 @@ func (s SignerState) String() string {
 	}
 }
 
-// Runtime owns signer lock state and session timeout lifecycle.
+// Runtime owns signer lock state.
 type Runtime struct {
 	state   SignerState
 	stateMu sync.RWMutex
-
-	sessionTimeout time.Duration
-	timerMu        sync.Mutex
-	timer          *time.Timer
-	lastActivity   atomic.Int64
 
 	onLock func()
 }
 
 // New creates a runtime owner initialized in the locked state.
-func New(sessionTimeout time.Duration) *Runtime {
+func New() *Runtime {
 	return &Runtime{
-		state:          SignerStateLocked,
-		sessionTimeout: sessionTimeout,
+		state: SignerStateLocked,
 	}
 }
 
@@ -54,13 +46,6 @@ func (r *Runtime) SetOnLock(fn func()) {
 	r.stateMu.Lock()
 	defer r.stateMu.Unlock()
 	r.onLock = fn
-}
-
-// SetSessionTimeout updates the inactivity timeout used by ResetSessionTimer.
-func (r *Runtime) SetSessionTimeout(timeout time.Duration) {
-	r.timerMu.Lock()
-	defer r.timerMu.Unlock()
-	r.sessionTimeout = timeout
 }
 
 // GetState returns the current signer state.
@@ -94,7 +79,6 @@ func (r *Runtime) Lock() {
 		return
 	}
 
-	r.StopSessionTimer()
 	if onLock != nil {
 		onLock()
 	}
@@ -111,51 +95,9 @@ func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bo
 	r.state = SignerStateUnlocked
 	r.stateMu.Unlock()
 
-	r.ResetSessionTimer()
 	if onUnlocked != nil {
 		onUnlocked()
 	}
 
 	return true, keyCount, ""
-}
-
-// ResetSessionTimer starts or refreshes the inactivity timer.
-func (r *Runtime) ResetSessionTimer() {
-	r.timerMu.Lock()
-	defer r.timerMu.Unlock()
-
-	if r.sessionTimeout <= 0 {
-		return
-	}
-
-	r.lastActivity.Store(time.Now().UnixNano())
-	if r.timer != nil {
-		r.timer.Reset(r.sessionTimeout)
-		return
-	}
-
-	r.timer = time.AfterFunc(r.sessionTimeout, func() {
-		r.timerMu.Lock()
-		timeout := r.sessionTimeout
-		r.timerMu.Unlock()
-		if timeout <= 0 {
-			return
-		}
-
-		if time.Since(time.Unix(0, r.lastActivity.Load())) < timeout {
-			r.ResetSessionTimer()
-			return
-		}
-		r.Lock()
-	})
-}
-
-// StopSessionTimer stops the inactivity timer if it is running.
-func (r *Runtime) StopSessionTimer() {
-	r.timerMu.Lock()
-	defer r.timerMu.Unlock()
-	if r.timer != nil {
-		r.timer.Stop()
-		r.timer = nil
-	}
 }

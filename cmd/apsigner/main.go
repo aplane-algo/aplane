@@ -106,12 +106,12 @@ func main() {
 	// Use config values for port settings
 	port := config.SignerPort
 
-	// Log the session timeout mode
+	// Log the admin idle timeout mode
 	if passphraseTimeout == 0 {
-		logWarnf("session timeout: never (signer stays unlocked indefinitely)")
-		logWarnf("set passphrase_timeout in config for auto-lock after inactivity")
+		logWarnf("admin idle timeout: disabled")
+		logWarnf("set passphrase_timeout in config to disconnect idle apadmin sessions")
 	} else {
-		logInfof("session timeout: %s (auto-locks after inactivity)", passphraseTimeout.String())
+		logInfof("admin idle timeout: %s (disconnects idle apadmin sessions)", passphraseTimeout.String())
 	}
 
 	// Memory Security: Attempt to disable core dumps and lock memory
@@ -279,7 +279,6 @@ func main() {
 			os.Exit(1)
 		}
 		ir.SetUnlocked()
-		ir.ResetSessionTimer()
 
 		keyCount := ir.KeyCount()
 		if keyCount == 0 {
@@ -420,11 +419,11 @@ func printSecurityAudit(passphraseTimeout time.Duration, config *apconfig.Server
 		logInfof("  passphrase_source: IPC unlock")
 	}
 
-	// Session timeout status
+	// Admin idle timeout status
 	if passphraseTimeout == 0 {
-		logWarnf("  session_timeout: never")
+		logWarnf("  admin_idle_timeout: disabled")
 	} else {
-		logInfof("  session_timeout: %s", passphraseTimeout)
+		logInfof("  admin_idle_timeout: %s", passphraseTimeout)
 	}
 
 	// Lock on disconnect status

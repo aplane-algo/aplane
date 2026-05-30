@@ -7,27 +7,10 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
-func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool, desc string) {
-	t.Helper()
-
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	if !cond() {
-		t.Fatalf("condition not met within %s: %s", timeout, desc)
-	}
-}
-
 func TestLockInvokesOnLockOnlyForUnlockedTransition(t *testing.T) {
-	rt := New(time.Hour)
+	rt := New()
 	var lockCalls atomic.Int32
 	rt.SetOnLock(func() {
 		lockCalls.Add(1)
@@ -51,7 +34,7 @@ func TestLockInvokesOnLockOnlyForUnlockedTransition(t *testing.T) {
 }
 
 func TestTryUnlockFailureKeepsRuntimeLocked(t *testing.T) {
-	rt := New(time.Hour)
+	rt := New()
 	var unlockedCalls atomic.Int32
 
 	ok, keyCount, errMsg := rt.TryUnlock(func() (int, error) {
@@ -78,7 +61,7 @@ func TestTryUnlockFailureKeepsRuntimeLocked(t *testing.T) {
 }
 
 func TestTryUnlockSuccessUnlocksAndCallsOnUnlocked(t *testing.T) {
-	rt := New(time.Hour)
+	rt := New()
 	var unlockedCalls atomic.Int32
 
 	ok, keyCount, errMsg := rt.TryUnlock(func() (int, error) {
@@ -101,112 +84,5 @@ func TestTryUnlockSuccessUnlocksAndCallsOnUnlocked(t *testing.T) {
 	}
 	if got := unlockedCalls.Load(); got != 1 {
 		t.Fatalf("onUnlocked calls after successful unlock = %d, want 1", got)
-	}
-}
-
-func TestResetSessionTimerLocksAfterInactivity(t *testing.T) {
-	rt := New(30 * time.Millisecond)
-	var lockCalls atomic.Int32
-	rt.SetOnLock(func() {
-		lockCalls.Add(1)
-	})
-
-	rt.SetUnlocked()
-	rt.ResetSessionTimer()
-
-	waitForCondition(t, 500*time.Millisecond, func() bool {
-		return rt.GetState() == SignerStateLocked
-	}, "runtime should auto-lock after inactivity")
-
-	if got := lockCalls.Load(); got != 1 {
-		t.Fatalf("onLock calls after inactivity timeout = %d, want 1", got)
-	}
-}
-
-func TestResetSessionTimerRefreshesDeadline(t *testing.T) {
-	rt := New(50 * time.Millisecond)
-	var lockCalls atomic.Int32
-	rt.SetOnLock(func() {
-		lockCalls.Add(1)
-	})
-
-	rt.SetUnlocked()
-	rt.ResetSessionTimer()
-
-	time.Sleep(30 * time.Millisecond)
-	rt.ResetSessionTimer()
-
-	time.Sleep(30 * time.Millisecond)
-	if state := rt.GetState(); state != SignerStateUnlocked {
-		t.Fatalf("state after refreshed timer before second deadline = %v, want %v", state, SignerStateUnlocked)
-	}
-
-	waitForCondition(t, 500*time.Millisecond, func() bool {
-		return rt.GetState() == SignerStateLocked
-	}, "runtime should lock after refreshed deadline expires")
-
-	if got := lockCalls.Load(); got != 1 {
-		t.Fatalf("onLock calls after refreshed timer expires = %d, want 1", got)
-	}
-}
-
-func TestStopSessionTimerPreventsAutoLock(t *testing.T) {
-	rt := New(40 * time.Millisecond)
-	var lockCalls atomic.Int32
-	rt.SetOnLock(func() {
-		lockCalls.Add(1)
-	})
-
-	rt.SetUnlocked()
-	rt.ResetSessionTimer()
-	rt.StopSessionTimer()
-
-	time.Sleep(100 * time.Millisecond)
-
-	if state := rt.GetState(); state != SignerStateUnlocked {
-		t.Fatalf("state after StopSessionTimer() = %v, want %v", state, SignerStateUnlocked)
-	}
-	if got := lockCalls.Load(); got != 0 {
-		t.Fatalf("onLock calls after StopSessionTimer() = %d, want 0", got)
-	}
-}
-
-func TestSetSessionTimeoutNonPositiveDisablesAutoLock(t *testing.T) {
-	rt := New(25 * time.Millisecond)
-	var lockCalls atomic.Int32
-	rt.SetOnLock(func() {
-		lockCalls.Add(1)
-	})
-
-	rt.SetSessionTimeout(0)
-	rt.SetUnlocked()
-	rt.ResetSessionTimer()
-
-	time.Sleep(80 * time.Millisecond)
-
-	if state := rt.GetState(); state != SignerStateUnlocked {
-		t.Fatalf("state with disabled session timeout = %v, want %v", state, SignerStateUnlocked)
-	}
-	if got := lockCalls.Load(); got != 0 {
-		t.Fatalf("onLock calls with disabled session timeout = %d, want 0", got)
-	}
-}
-
-func TestSetUnlockedDoesNotStartTimerOrInvokeCallbacks(t *testing.T) {
-	rt := New(25 * time.Millisecond)
-	var lockCalls atomic.Int32
-	rt.SetOnLock(func() {
-		lockCalls.Add(1)
-	})
-
-	rt.SetUnlocked()
-
-	time.Sleep(80 * time.Millisecond)
-
-	if state := rt.GetState(); state != SignerStateUnlocked {
-		t.Fatalf("state after SetUnlocked() without timer reset = %v, want %v", state, SignerStateUnlocked)
-	}
-	if got := lockCalls.Load(); got != 0 {
-		t.Fatalf("onLock calls after SetUnlocked() without timer reset = %d, want 0", got)
 	}
 }

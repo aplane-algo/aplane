@@ -61,7 +61,7 @@ func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 		t.Fatal("expected default identity runtime")
 	}
 
-	// Simulate the default config: 15m timeout, lock_on_disconnect true
+	// Simulate the default config: 15m admin idle timeout, lock_on_disconnect true
 	ir.Config().SetSessionTimeout(15 * time.Minute)
 	ir.Config().SetLockOnDisconnect(true)
 

@@ -423,7 +423,7 @@ Identity-sensitive runtime settings are owned separately by `internal/signerapp/
 
 - `user_auto_approve`,
 - `lock_on_disconnect`,
-- `passphrase_timeout` (inactivity timeout before auto-lock).
+- `passphrase_timeout` (admin idle disconnect timeout).
 
 Those values are persisted per identity at `identities/<identity>/config.yaml` via `internal/signerapp/identity.StoredConfig`. The same file also carries lifecycle state such as `decommissioned:true` for disabled identities. On startup, stored values overlay process-global defaults (nil/empty means inherit), while `decommissioned:true` is treated as an explicit disable marker rather than an inherited setting. Runtime reads resolve through the bound identity runtime rather than directly from `ServerConfig`.
 
@@ -525,7 +525,7 @@ Important secret-handling contracts:
 
 - unlock state of the signer,
 - active admin client connection state across IPC and SSH admin transport,
-- inactivity timer for auto-lock.
+- apadmin's configured local idle disconnect timeout.
 
 Admin protocol sessions carry `adminproto.SessionContext`: session ID,
 admin principal, target identity, auth method, transport, remote address, and
@@ -543,7 +543,9 @@ cleanup, lock-on-disconnect, approval delivery, and notification delivery are
 identity-scoped internally. Product-mode clients operate against the
 single exposed product identity.
 
-The inactivity timer is part of the server, not the keystore abstraction. Locking clears the active master key and deactivates the key session.
+Locking clears the active master key and deactivates the key session. Local
+admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
+`lock_on_disconnect` when that disconnect is observed.
 
 ## Server Ownership Model
 
@@ -551,7 +553,7 @@ The inactivity timer is part of the server, not the keystore abstraction. Lockin
 
 | Concern | Owner |
 |---------|-------|
-| Lock/unlock state, session timer | `internal/signerapp/runtime` |
+| Lock/unlock state | `internal/signerapp/runtime` |
 | Sign request lifecycle, approval queues, cancellation (sign + token) | `internal/signerapp/approval` |
 | Planning, approval flow, execution, signing orchestration | `internal/signerapp/signing` |
 | Template registration, reload coordination | `internal/signerapp/templates` |
@@ -655,7 +657,6 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `identity.Runtime.decommissioned` | `atomic.Bool` — lifecycle disable |
 | `identity.Runtime.approval` | `atomic.Pointer` — approval coordinator |
 | `Runtime.stateMu` | Signer locked/unlocked state |
-| `Runtime.timerMu` | Inactivity timer |
 | `Coordinator.pendingRequestsLock` | Pending sign approvals |
 | `Coordinator.pendingTokenRequestsLock` | Pending token provisioning approvals |
 | `IPCServer.writeMu` | Serializes outbound IPC JSON writes |
@@ -668,7 +669,6 @@ Goroutines:
 - HTTP server plus per-request handler goroutines,
 - IPC accept loop plus per-client goroutines,
 - file watcher goroutine,
-- inactivity timer callback goroutine,
 - SSH server accept loop plus per-connection goroutines.
 
 ### Lock/Unlock Lifecycle
@@ -682,12 +682,10 @@ Unlocking must:
 - scan keys and populate indexes,
 - mark the key session active,
 - update signer runtime state,
-- optionally start key watching,
-- reset the inactivity timer.
+- optionally start key watching.
 
 Locking must:
 
-- stop the inactivity timer,
 - clear master key material,
 - destroy the key session state,
 - clear or invalidate key caches as appropriate,
@@ -750,7 +748,7 @@ Storage primitives should not own:
 - HTTP status mapping,
 - IPC message shaping,
 - approval prompting,
-- `passphrase_timeout` policy,
+- admin idle-timeout policy,
 - audit formatting.
 
 ### Simulate Signing Boundary

@@ -36,7 +36,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `ssh.port` | int | `1127` | SSH port to listen on |
 | `ssh.host_key_path` | string | `.ssh/ssh_host_key` | Server's private host key path |
 | `ssh.authorized_keys_path` | string | `.ssh/authorized_keys` | Legacy/global authorized client public keys file |
-| `passphrase_timeout` | string | `15m` | Inactivity timeout before auto-lock (0=never) |
+| `passphrase_timeout` | string | `15m` | Admin idle disconnect timeout (0=never) |
 | `approval_wait` | string | `60s` | Maximum time to wait for operator approval of a signing request |
 | `ipc_path` | string | `$APSIGNER_DATA/aplane.sock` | Unix socket path for admin IPC |
 | `lock_on_disconnect` | *bool | `true` | Lock signer when admin disconnects |

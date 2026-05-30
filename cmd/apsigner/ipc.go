@@ -185,12 +185,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminproto.Session, transpor
 					boundIR.Lock()
 					logWarnf("apadmin client disconnected - signer locked")
 				} else {
-					timeout := boundIR.Config().SessionTimeout()
-					if timeout > 0 {
-						logWarnf("apadmin disconnected - signer remains unlocked until timeout: %s", timeout)
-					} else {
-						logWarnf("apadmin disconnected - signer remains unlocked with no timeout")
-					}
+					logWarnf("apadmin disconnected - signer remains unlocked")
 				}
 			}
 		}
@@ -292,7 +287,7 @@ func (s *IPCServer) SendTokenProvisioningRequest(identityID string, req *signera
 }
 
 // NotifyLocked sends a signer_locked notification to the connected IPC client.
-// This allows apadmin to transition to the unlock screen when the signer auto-locks.
+// This allows apadmin to transition to the unlock screen when the signer locks.
 func (s *IPCServer) NotifyLocked(identityID string, notification adminproto.SignerLockedNotification) {
 	msg := adminproto.ProtocolSignerLockedMessage(notification)
 	active := s.activeIdentitySession(identityID)

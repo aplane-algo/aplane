@@ -176,7 +176,7 @@ func TestBuildIdentityRuntimeForcesHeadlessOverrides_IdentityScopedPassfile(t *t
 		t.Fatal("lock_on_disconnect must be false when identity has passfile configured")
 	}
 	if ir.Config().SessionTimeout() != 0 {
-		t.Fatalf("session timeout = %s, want 0 (headless mode disables timeout)", ir.Config().SessionTimeout())
+		t.Fatalf("admin idle timeout = %s, want 0 (headless mode disables timeout)", ir.Config().SessionTimeout())
 	}
 }
 
@@ -217,7 +217,7 @@ func TestBuildIdentityRuntimeForcesHeadlessOverrides_GlobalPassfile(t *testing.T
 		t.Fatal("lock_on_disconnect must be false when global passfile is configured")
 	}
 	if ir.Config().SessionTimeout() != 0 {
-		t.Fatalf("session timeout = %s, want 0 (headless mode disables timeout)", ir.Config().SessionTimeout())
+		t.Fatalf("admin idle timeout = %s, want 0 (headless mode disables timeout)", ir.Config().SessionTimeout())
 	}
 }
 

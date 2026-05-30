@@ -145,16 +145,11 @@ type Model struct {
 	keyCount          int
 
 	// Local activity and idle locking state
-	lastUserInputAt          time.Time
-	lastActivityReportAt     time.Time
-	activityReportPending    bool
-	activityReportArmed      bool
-	activityReportDueAt      time.Time
-	activityReportGeneration uint64
-	localIdleDisconnectSent  bool
-	localIdleGeneration      uint64
-	localIdleDueAt           time.Time
-	effectiveSessionTimeout  time.Duration
+	lastUserInputAt         time.Time
+	localIdleDisconnectSent bool
+	localIdleGeneration     uint64
+	localIdleDueAt          time.Time
+	effectiveSessionTimeout time.Duration
 
 	// Key list
 	keys         []KeyInfo
@@ -657,11 +652,6 @@ type clearWarningMsg struct {
 	Generation uint64
 }
 
-type activityReportTickMsg struct {
-	Generation uint64
-	DueAt      time.Time
-}
-
 type localIdleTickMsg struct {
 	Generation uint64
 	DueAt      time.Time
@@ -669,10 +659,6 @@ type localIdleTickMsg struct {
 
 type localIdleDisconnectedMsg struct {
 	Reason string
-}
-
-type adminActivitySendFailedMsg struct {
-	Error error
 }
 
 type lockIdentitySendFailedMsg struct {

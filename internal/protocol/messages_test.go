@@ -16,7 +16,6 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypeAuthResult,
 		MsgTypeUnlock,
 		MsgTypeUnlockResult,
-		MsgTypeAdminActivity,
 		MsgTypeLockIdentity,
 		MsgTypeLockIdentityResult,
 		MsgTypeInitializeStore,
@@ -228,12 +227,12 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			name: "signer_locked",
 			msg: SignerLockedMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeSignerLocked, ID: "lock-1"},
-				Reason:      "inactivity timeout",
+				Reason:      "manual lock",
 			},
 			wantMap: map[string]any{
 				"type":   MsgTypeSignerLocked,
 				"id":     "lock-1",
-				"reason": "inactivity timeout",
+				"reason": "manual lock",
 			},
 		},
 		{
@@ -267,25 +266,15 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			},
 		},
 		{
-			name: "admin_activity",
-			msg: AdminActivityMessage{
-				BaseMessage: BaseMessage{Type: MsgTypeAdminActivity, ID: "activity-1"},
-			},
-			wantMap: map[string]any{
-				"type": MsgTypeAdminActivity,
-				"id":   "activity-1",
-			},
-		},
-		{
 			name: "lock_identity",
 			msg: LockIdentityMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeLockIdentity, ID: "lock-identity-1"},
-				Reason:      "apadmin local inactivity timeout",
+				Reason:      "apadmin manual lock",
 			},
 			wantMap: map[string]any{
 				"type":   MsgTypeLockIdentity,
 				"id":     "lock-identity-1",
-				"reason": "apadmin local inactivity timeout",
+				"reason": "apadmin manual lock",
 			},
 		},
 		{

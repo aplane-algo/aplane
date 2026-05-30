@@ -39,7 +39,6 @@ func (s Service) Simulate(ctx context.Context, ir *identity.Runtime, req signera
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "simulation service not configured"}
 	}
 
-	ir.ResetSessionTimer()
 	session := ir.SnapshotKeySession()
 	result, err := s.Deps.NewSigningService(ir).SignGroupForSimulationWithContext(ctx, ir.ID(), req, session)
 	if err != nil {

@@ -18,7 +18,6 @@ const (
 	// Signer state message types
 	MsgTypeUnlock              = protocol.MsgTypeUnlock
 	MsgTypeUnlockResult        = protocol.MsgTypeUnlockResult
-	MsgTypeAdminActivity       = protocol.MsgTypeAdminActivity
 	MsgTypeLockIdentity        = protocol.MsgTypeLockIdentity
 	MsgTypeLockIdentityResult  = protocol.MsgTypeLockIdentityResult
 	MsgTypeBackup              = protocol.MsgTypeBackup
@@ -101,7 +100,6 @@ type (
 	AuthResultMessage                   = protocol.AuthResultMessage
 	UnlockMessage                       = protocol.UnlockMessage
 	UnlockResultMessage                 = protocol.UnlockResultMessage
-	AdminActivityMessage                = protocol.AdminActivityMessage
 	LockIdentityMessage                 = protocol.LockIdentityMessage
 	LockIdentityResultMessage           = protocol.LockIdentityResultMessage
 	BackupMessage                       = protocol.BackupMessage

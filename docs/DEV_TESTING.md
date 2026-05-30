@@ -324,7 +324,7 @@ The script also writes `.env.test` in the project root, which the Makefile sourc
 1. Generates ed25519 SSH host key for the signer
 2. Generates ed25519 SSH client key and authorizes it on the signer
 3. Picks random available ports for REST API and SSH (avoids collisions with running services)
-4. Writes signer `config.yaml` (random ports, `user_auto_approve:true`, no session timeout)
+4. Writes signer `config.yaml` (random ports, `user_auto_approve:true`, no admin idle timeout)
 5. Writes client `config.yaml` (SSH to localhost with matching port, `known_hosts_path`, and algod for the selected integration network)
 6. Writes passphrase file for the signer
 7. Initializes the keystore non-interactively by piping the generated test passphrase to `apstore initialize`

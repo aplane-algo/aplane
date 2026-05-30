@@ -13,8 +13,8 @@ import (
 
 // KeySession manages on-demand key decryption using the master key.
 // Keys are decrypted ONLY when needed (on-demand), not pre-loaded into memory.
-// Session expiration is handled externally by the Signer's inactivity timer,
-// which locks the signer (zeroing the master key) after a configurable timeout.
+// Session expiration is handled externally by explicit signer lock paths, which
+// zero the master key and destroy the active key session.
 type KeySession struct {
 	keyStore KeyStore     // Key storage backend
 	active   bool         // Whether the session is active (master key available)

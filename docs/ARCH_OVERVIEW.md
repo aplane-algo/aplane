@@ -193,7 +193,7 @@ aplane/
 │   ├── signerapp/                 # Signer runtime packages
 │   │   ├── startup/               # Startup validation and identity runtime assembly
 │   │   ├── identity/              # Identity runtime, registry, config, lifecycle
-│   │   ├── runtime/               # Lock state and session timer
+│   │   ├── runtime/               # Lock state
 │   │   ├── approval/              # Approval queues
 │   │   ├── signing/               # Plan/approve/execute orchestration
 │   │   ├── keyadmin/              # Key generation/import/delete workflows
@@ -339,7 +339,7 @@ Each identity owns an `identity.Runtime` containing:
 - key session and master key access protected by `passphraseLock`
 - approval coordinator (atomic pointer)
 - effective policy config
-- lock state and session timer
+- lock state
 - file watcher lifecycle
 - identity-scoped config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`)
 

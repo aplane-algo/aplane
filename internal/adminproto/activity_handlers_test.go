@@ -6,7 +6,6 @@ package adminproto
 import (
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -24,106 +23,6 @@ func (a *recordingIdentityLockAudit) LogIdentityLockedContext(ctx SessionContext
 	a.lockCalls++
 	a.lockCtx = ctx
 	a.reason = reason
-}
-
-func TestHandleAdminActivityRefreshesUnlockedSessionTimer(t *testing.T) {
-	lockedCh := make(chan struct{}, 1)
-	ir := identity.New(identity.Config{
-		ID:             auth.DefaultIdentityID,
-		Authenticator:  auth.NewTokenAuthenticator("token"),
-		SessionTimeout: 100 * time.Millisecond,
-		OnLocked: func() {
-			select {
-			case lockedCh <- struct{}{}:
-			default:
-			}
-		},
-	})
-	ir.SetUnlocked()
-
-	session := NewSession(&queueConn{}, SessionDeps{})
-	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
-	session.HandleAdminActivity(&protocol.AdminActivityMessage{
-		BaseMessage: protocol.BaseMessage{ID: "activity-1"},
-	})
-
-	select {
-	case <-lockedCh:
-		t.Fatal("identity locked before refreshed activity timeout elapsed")
-	case <-time.After(25 * time.Millisecond):
-	}
-
-	select {
-	case <-lockedCh:
-	case <-time.After(2 * time.Second):
-		t.Fatal("identity did not lock after refreshed activity timeout elapsed")
-	}
-}
-
-func TestHandleAdminActivityDoesNotUnlockLockedRuntime(t *testing.T) {
-	ir := identity.New(identity.Config{
-		ID:            auth.DefaultIdentityID,
-		Authenticator: auth.NewTokenAuthenticator("token"),
-	})
-
-	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{})
-	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
-	session.HandleAdminActivity(&protocol.AdminActivityMessage{
-		BaseMessage: protocol.BaseMessage{ID: "activity-locked"},
-	})
-
-	if ir.IsUnlocked() {
-		t.Fatal("admin_activity unlocked a locked runtime")
-	}
-	if len(conn.writes) != 0 {
-		t.Fatalf("write count = %d, want 0 for fire-and-forget locked activity", len(conn.writes))
-	}
-}
-
-func TestHandleAdminActivityRequiresAuthenticatedBoundSession(t *testing.T) {
-	conn := &queueConn{}
-	session := NewSession(conn, SessionDeps{})
-	session.HandleAdminActivity(&protocol.AdminActivityMessage{
-		BaseMessage: protocol.BaseMessage{ID: "activity-unbound"},
-	})
-
-	if len(conn.writes) != 0 {
-		t.Fatalf("write count = %d, want 0 for unauthenticated fire-and-forget activity", len(conn.writes))
-	}
-}
-
-func TestBackgroundAdminRequestDoesNotRefreshSessionTimer(t *testing.T) {
-	lockedCh := make(chan struct{}, 1)
-	ir := identity.New(identity.Config{
-		ID:             auth.DefaultIdentityID,
-		Authenticator:  auth.NewTokenAuthenticator("token"),
-		SessionTimeout: 100 * time.Millisecond,
-		OnLocked: func() {
-			select {
-			case lockedCh <- struct{}{}:
-			default:
-			}
-		},
-	})
-	ir.SetUnlocked()
-	ir.ResetSessionTimer()
-
-	svc := &stubServices{}
-	session := NewSession(&queueConn{}, SessionDeps{
-		Identity: svc,
-		Settings: svc,
-	})
-	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
-
-	time.Sleep(70 * time.Millisecond)
-	session.HandleGetAdminSettings("settings-1")
-
-	select {
-	case <-lockedCh:
-	case <-time.After(80 * time.Millisecond):
-		t.Fatal("background admin request appears to have refreshed the session timer")
-	}
 }
 
 func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
@@ -144,7 +43,7 @@ func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 
 	session.HandleLockIdentity(&protocol.LockIdentityMessage{
 		BaseMessage: protocol.BaseMessage{ID: "lock-1"},
-		Reason:      "apadmin local inactivity timeout",
+		Reason:      "apadmin manual lock",
 	})
 
 	if ir.IsUnlocked() {
@@ -165,7 +64,7 @@ func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 	if audit.lockCtx.TargetIdentityID != auth.DefaultIdentityID || audit.lockCtx.AdminPrincipal.ID != "admin-principal" {
 		t.Fatalf("audit context = %+v, want target default and admin-principal", audit.lockCtx)
 	}
-	if audit.reason != "apadmin local inactivity timeout" {
+	if audit.reason != "apadmin manual lock" {
 		t.Fatalf("audit reason = %q", audit.reason)
 	}
 
@@ -199,7 +98,7 @@ func TestHandleLockIdentityRejectsUnauthorizedRequest(t *testing.T) {
 
 	session.HandleLockIdentity(&protocol.LockIdentityMessage{
 		BaseMessage: protocol.BaseMessage{ID: "lock-denied"},
-		Reason:      "apadmin local inactivity timeout",
+		Reason:      "apadmin manual lock",
 	})
 
 	if !ir.IsUnlocked() {

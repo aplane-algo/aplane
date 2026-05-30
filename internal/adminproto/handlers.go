@@ -158,17 +158,6 @@ func (s *Session) HandleUnlock(msg *protocol.UnlockMessage) {
 	_ = s.WriteJSON(ProtocolUnlockResultMessage(msg.ID, success, keyCount, errStr))
 }
 
-func (s *Session) HandleAdminActivity(msg *protocol.AdminActivityMessage) {
-	if s.State() != StateAuthenticated {
-		return
-	}
-	ir := s.BoundRuntime()
-	if ir == nil || !ir.IsUnlocked() {
-		return
-	}
-	ir.ResetSessionTimer()
-}
-
 func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 	if s.State() != StateAuthenticated {
 		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(

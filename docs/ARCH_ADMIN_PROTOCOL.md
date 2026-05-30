@@ -60,7 +60,6 @@ Client to Server:
 
 - `auth` (pre-auth handshake response to `auth_required`; required before authenticated dispatch)
 - `unlock`
-- `admin_activity` (authenticated, identity-bound, fire-and-forget)
 - `lock_identity`
 - `initialize_store`
 - `change_store_passphrase`
@@ -195,8 +194,7 @@ Server to Client:
 - `auth`: `passphrase`, optional `identity_id`
 - `auth_result`: `success`, optional `code`, optional `error`
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
-- `admin_activity`: no payload; authenticated bound-session signal that resets the identity session timer only while the signer is unlocked; no success response is emitted
-- `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the same server-side lock path as inactivity timeout, and normal `signer_locked` notifications remain the state-change signal
+- `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal
 - `initialize_store`: `passphrase` -> `initialize_store_result`: `success`, optional `metadata_dir`, optional `helper_warning`, `code`, `error`; local IPC only, creates the identity keystore metadata/master-key state and may write the configured passphrase helper
 - `change_store_passphrase`: `current_passphrase`, `new_passphrase` -> `change_store_passphrase_result`: `success`, optional `keys_migrated`, optional `templates_migrated`, optional `policy_sidecars_migrated`, `code`, `error`; local IPC only, rejects identical current/new passphrases and rotates key/template encryption, policy integrity sidecars, and keystore metadata
 - `status`: `state`, `key_count`

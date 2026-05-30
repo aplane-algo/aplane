@@ -32,7 +32,7 @@ const (
 type ServerConfig struct {
 	SignerPort            int               `yaml:"signer_port" description:"REST API port" default:"11270"`
 	SSH                   SSHServerConfig   `yaml:"ssh" description:"SSH tunnel settings for apsigner" default:"default SSH settings"`
-	PassphraseTimeout     string            `yaml:"passphrase_timeout" description:"Inactivity timeout before auto-lock (0=never)" default:"15m"`
+	PassphraseTimeout     string            `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
 	ApprovalWait          string            `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"60s"`
 	IPCPath               string            `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"$APSIGNER_DATA/aplane.sock"`
 	LockOnDisconnect      *bool             `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
@@ -129,7 +129,7 @@ func DefaultServerConfig() ServerConfig {
 	return ServerConfig{
 		SignerPort:         DefaultRESTPort,
 		SSH:                DefaultSSHServerConfig(),
-		PassphraseTimeout:  "15m", // 15 minute session timeout (use "0" for never expire)
+		PassphraseTimeout:  "15m", // 15 minute admin idle timeout (use "0" to disable)
 		ApprovalWait:       DefaultApprovalWaitString,
 		IPCPath:            "",
 		TEALCompileNetwork: "testnet",
@@ -465,12 +465,12 @@ func writeConfigAtomic(path string, data []byte, mode os.FileMode) error {
 	return nil
 }
 
-// ParsePassphraseTimeout parses a passphrase timeout string into a time.Duration.
-// Accepts formats like: "0" (never expire), "15m" (15 minutes), "1h" (1 hour).
+// ParsePassphraseTimeout parses an admin idle timeout string into a time.Duration.
+// Accepts formats like: "0" (disabled), "15m" (15 minutes), "1h" (1 hour).
 // Negative durations are rejected.
 func ParsePassphraseTimeout(timeoutStr string) (time.Duration, error) {
 	if timeoutStr == "" || timeoutStr == "0" {
-		return 0, nil // Never expire
+		return 0, nil // Disabled
 	}
 
 	// Try to parse as duration

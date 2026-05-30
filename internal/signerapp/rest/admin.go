@@ -22,7 +22,6 @@ func (s Service) AdminGenerate(ctx context.Context, ir *identity.Runtime, req si
 		return 403, signerapi.AdminGenerateResponse{Error: "signer is locked"}
 	}
 
-	ir.ResetSessionTimer()
 	result, err := s.Deps.KeyAdmin.GenerateKey(ctx, ir, req.KeyType, req.Parameters, s.Deps.GenerateGenericLSig)
 	if err != nil {
 		return mapGenerateError(err)
@@ -43,7 +42,6 @@ func (s Service) AdminDelete(ir *identity.Runtime, address string) (int, signera
 		return 403, signerapi.AdminDeleteResponse{Error: "signer is locked"}
 	}
 
-	ir.ResetSessionTimer()
 	if _, err := s.Deps.KeyAdmin.DeleteKey(ir, address); err != nil {
 		return mapDeleteError(err)
 	}

@@ -28,7 +28,6 @@ func (s Service) SignGroup(ctx context.Context, ir *identity.Runtime, req signer
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "signing service not configured"}
 	}
 
-	ir.ResetSessionTimer()
 	ctx, finishSignRequest := ir.BeginSigningRequest(ctx, req.RequestID)
 	defer finishSignRequest()
 
@@ -61,7 +60,6 @@ func (s Service) Plan(ir *identity.Runtime, req signerapi.GroupSignRequest) (*si
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "transaction encoder not configured"}
 	}
 
-	ir.ResetSessionTimer()
 	plan, err := s.Deps.PlanGroup(ir.ID(), req)
 	if err != nil {
 		return nil, err

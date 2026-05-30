@@ -134,12 +134,6 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 				err = fmt.Errorf("cannot set passphrase_timeout in headless mode (passphrase method: %s)", passphraseMethod)
 			} else {
 				icfg.SetSessionTimeout(duration)
-				ir.SetSessionTimeout(duration)
-				if duration <= 0 {
-					ir.StopSessionTimer()
-				} else {
-					ir.ResetSessionTimer()
-				}
 				saveKey, saveValue = adminproto.AdminSettingPassphraseTimeout, req.Value
 			}
 		}
@@ -168,12 +162,6 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 			icfg.SetUserAutoApprove(oldIdentityUserAutoApprove)
 			icfg.SetLockOnDisconnect(oldIdentityLockOnDisconnect)
 			icfg.SetSessionTimeout(oldIdentitySessionTimeout)
-			ir.SetSessionTimeout(oldIdentitySessionTimeout)
-			if oldIdentitySessionTimeout <= 0 {
-				ir.StopSessionTimer()
-			} else {
-				ir.ResetSessionTimer()
-			}
 			err = fmt.Errorf("failed to save config.yaml: %w", saveErr)
 		}
 	}

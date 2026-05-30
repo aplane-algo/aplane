@@ -97,7 +97,7 @@ func Validate(config *apconfig.ServerConfig, runtime *RuntimeState, keyPaths sto
 				return nil, fmt.Errorf("conflicting config: passphrase_command_argv and lock_on_disconnect:true cannot be used together (headless mode requires signer to stay unlocked)")
 			}
 			if config.PassphraseTimeout != "" && config.PassphraseTimeout != "0" {
-				return nil, fmt.Errorf("conflicting config: passphrase_command_argv requires passphrase_timeout:0 (headless mode must stay unlocked, got %q)", config.PassphraseTimeout)
+				return nil, fmt.Errorf("conflicting config: passphrase_command_argv requires passphrase_timeout:0 (headless mode disables admin idle timeout, got %q)", config.PassphraseTimeout)
 			}
 			if err := apconfig.ValidatePassphraseCommandConfig(config.PassphraseCommandCfg()); err != nil {
 				return nil, err

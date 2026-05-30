@@ -12,7 +12,6 @@ func InferMessageKind(messageType string) (MessageKind, bool) {
 	switch messageType {
 	case MsgTypeAuth,
 		MsgTypeUnlock,
-		MsgTypeAdminActivity,
 		MsgTypeLockIdentity,
 		MsgTypeInitializeStore,
 		MsgTypeChangeStorePass,

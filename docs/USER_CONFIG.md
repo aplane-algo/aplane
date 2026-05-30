@@ -262,29 +262,25 @@ hash, update `networks.<network>.genesis_hash` or use a different network token.
 
 ### Passphrase Timeout Values
 
-The `passphrase_timeout` setting controls how long the signer stays unlocked after inactivity.
-When the timer fires, the signer locks itself (zeroing the master key from memory).
-New signing requests will fail with "signer not unlocked" until apadmin re-enters the passphrase.
-Each successful `/sign` request resets the timer.
+The `passphrase_timeout` setting controls how long `apadmin` stays connected
+without local keyboard activity. When the timer fires, `apadmin` disconnects
+from `apsigner`. The signer does not maintain a separate activity timer based
+on admin input.
 
 In the default `prompt` passphrase mode, the signer effectively stays unlocked
-only while an admin client remains connected and active. With
-`lock_on_disconnect: true`, the signer locks when `apadmin` disconnects.
-With a nonzero `passphrase_timeout`, apadmin disconnects after local keyboard
-inactivity and the signer-side session timer can still lock after signer/admin
-inactivity. In prompt passphrase mode, the time-based disconnect and signer-side
-timeout can be disabled by setting `passphrase_timeout: "0"`.
-Also in prompt passphrase mode, if `lock_on_disconnect` is `true`, closing or
-disconnecting the Admin app automatically locks the Signer.
+only while an admin client remains connected when `lock_on_disconnect: true`.
+With a nonzero `passphrase_timeout`, `apadmin` disconnects after local keyboard
+inactivity. If `lock_on_disconnect` is `true`, that disconnect locks the signer.
+If `lock_on_disconnect` is `false`, the signer remains unlocked until manual
+lock, process stop, restart, or another explicit lock path. The time-based
+disconnect can be disabled by setting `passphrase_timeout: "0"`.
 
 When `apadmin` is connected, keyboard input in the TUI counts as user activity
-and is reported to the signer at most once every 30 seconds. Background screen
-refreshes, admin-panel polling, IPC responses, window resize events, and mouse
-events do not keep the signer unlocked. If the TUI sees no local keyboard input
-for the effective `passphrase_timeout`, it disconnects the admin session. A
-lock caused by that disconnect is controlled by `lock_on_disconnect`; the
-signer-side timeout remains the authoritative fail-safe if `apadmin`
-disconnects, crashes, or cannot send that disconnect request.
+for the admin session. Background screen refreshes, admin-panel polling, IPC
+responses, window resize events, and mouse events do not keep the admin session
+alive. If the TUI sees no local keyboard input for the effective
+`passphrase_timeout`, it disconnects the admin session. A lock caused by that
+disconnect is controlled by `lock_on_disconnect`.
 
 When identity-scoped `unlock.yaml` is configured by `appass`, the signer starts
 that identity in headless mode and the effective runtime behavior is:
@@ -300,21 +296,21 @@ For legacy process-global `passphrase_command_argv`, `config.yaml` must set
 | Passphrase mode | `passphrase_timeout` | `lock_on_disconnect` | While Admin app is connected | When Admin app closes/disconnects |
 |-----------------|----------------------|-----------------------|------------------------------|-----------------------------------|
 | `prompt` | nonzero, e.g. `"15m"` | `true` | Admin app disconnects after local inactivity; signer locks through disconnect policy | Signer locks immediately |
-| `prompt` | nonzero, e.g. `"15m"` | `false` | Admin app disconnects after local inactivity; signer remains subject to signer-side timeout | Signer stays unlocked until inactivity timeout |
-| `prompt` | `"0"` | `true` | Signer stays unlocked until stopped | Signer locks immediately |
-| `prompt` | `"0"` | `false` | Signer stays unlocked until stopped | Signer stays unlocked until stopped |
+| `prompt` | nonzero, e.g. `"15m"` | `false` | Admin app disconnects after local inactivity; signer remains unlocked | Signer stays unlocked |
+| `prompt` | `"0"` | `true` | Admin app stays connected until closed | Signer locks immediately |
+| `prompt` | `"0"` | `false` | Admin app stays connected until closed | Signer stays unlocked |
 | `passfile` / `systemd-creds` | `"0"` | effectively `false` | Signer starts unlocked and stays unlocked until stopped | Signer stays unlocked |
 | `passfile` / `systemd-creds` | nonzero | any | Invalid headless configuration; startup validation rejects it | Invalid headless configuration |
 
 In this table, "Admin app" means `apadmin` or the embedded signer-admin panel
-inside `apconsole`. "Admin activity" means keyboard/admin interaction reported
-by the TUI; background refreshes do not keep the signer unlocked.
+inside `apconsole`. "Admin activity" means local keyboard interaction in the
+TUI; background refreshes do not keep the admin session connected.
 
 | Value | Behavior |
 |-------|----------|
-| `"0"` | Signer stays unlocked indefinitely (no auto-lock) |
-| `"15m"` | Auto-lock after 15 minutes of inactivity |
-| `"1h"` | Auto-lock after 1 hour of inactivity |
+| `"0"` | Admin idle disconnect is disabled |
+| `"15m"` | Admin app disconnects after 15 minutes of local keyboard inactivity |
+| `"1h"` | Admin app disconnects after 1 hour of local keyboard inactivity |
 
 ### Admin Interface
 
@@ -977,7 +973,7 @@ See [USER_CONFIG_REFERENCE.md](USER_CONFIG_REFERENCE.md) for the full list of en
 2. **Set restrictive permissions** on config.yaml: `chmod 600 config.yaml`
 3. **Avoid `user_auto_approve: true`** unless in a controlled environment
 4. **Use restrictive `policy.yaml` safety guards** for rekey, close-out, and transfer ceilings
-5. **Use `passphrase_timeout`** for additional security in shared environments
+5. **Use `passphrase_timeout` with `lock_on_disconnect:true`** for additional security in shared environments
 
 ---
 
@@ -990,7 +986,7 @@ Headless operation allows Signer to run unattended without interactive prompts, 
 In normal (interactive) operation:
 1. Signer starts locked and waits for passphrase via apadmin
 2. By default, signing and token-provisioning requests require manual approval via apadmin or apapprover
-3. In default prompt mode, the signer stays unlocked only while apadmin remains connected and active
+3. In default prompt mode, apadmin can disconnect after local keyboard inactivity
 4. When apadmin disconnects, the signer locks
 
 In headless mode:

@@ -147,7 +147,6 @@ protocol list as exhaustive.
 IPC failure semantics:
 
 - protocol-level failures are reported through `error` messages or result messages with `success:false`,
-- `admin_activity` is fire-and-forget and may fail silently from the client's perspective; the signer-side inactivity timer remains authoritative,
 - `code` is additive and optional on the wire,
 - the transport does not provide a complete typed error taxonomy end-to-end.
 

@@ -23,114 +23,51 @@ func activityReadyModel() Model {
 	}
 }
 
-func TestRecordUserActivitySendsFirstReportImmediately(t *testing.T) {
+func TestRecordUserActivityArmsLocalIdleTimer(t *testing.T) {
 	m := activityReadyModel()
+	m.effectiveSessionTimeout = time.Minute
 	now := time.Now()
 
 	got, cmd := m.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 
 	if cmd == nil {
-		t.Fatal("recordUserActivity returned nil cmd, want immediate activity report")
+		t.Fatal("recordUserActivity returned nil cmd, want local idle timer")
 	}
-	if got.activityReportPending {
-		t.Fatal("activityReportPending = true, want false after immediate report")
+	if !got.lastUserInputAt.Equal(now) {
+		t.Fatalf("lastUserInputAt = %v, want %v", got.lastUserInputAt, now)
 	}
-	if got.activityReportArmed {
-		t.Fatal("activityReportArmed = true, want false after immediate report")
+	if got.localIdleDueAt.IsZero() {
+		t.Fatal("localIdleDueAt is zero, want idle due time")
 	}
-	if !got.lastActivityReportAt.Equal(now) {
-		t.Fatalf("lastActivityReportAt = %v, want %v", got.lastActivityReportAt, now)
-	}
-}
-
-func TestRecordUserActivityKeepsActivityTickSingleFlight(t *testing.T) {
-	m := activityReadyModel()
-	now := time.Now()
-	m.lastActivityReportAt = now
-
-	got, cmd := m.recordUserActivity(now.Add(time.Second), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	if cmd == nil {
-		t.Fatal("first throttled activity returned nil cmd, want tick")
-	}
-	if !got.activityReportArmed || !got.activityReportPending {
-		t.Fatalf("activity state = armed %v pending %v, want both true", got.activityReportArmed, got.activityReportPending)
-	}
-	generation := got.activityReportGeneration
-	dueAt := got.activityReportDueAt
-
-	got, _ = got.recordUserActivity(now.Add(2*time.Second), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
-	if got.activityReportGeneration != generation {
-		t.Fatalf("activity generation = %d, want unchanged %d", got.activityReportGeneration, generation)
-	}
-	if !got.activityReportDueAt.Equal(dueAt) {
-		t.Fatalf("activity dueAt = %v, want unchanged %v", got.activityReportDueAt, dueAt)
+	if !got.localIdleDueAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("localIdleDueAt = %v, want %v", got.localIdleDueAt, now.Add(time.Minute))
 	}
 }
 
-func TestActivityReportTickIgnoresStaleAndEmptyTicks(t *testing.T) {
-	m := activityReadyModel()
-	now := time.Now()
-	m.lastActivityReportAt = now.Add(-activityReportInterval)
-	m.lastUserInputAt = now
-	m.activityReportPending = true
-	m.activityReportArmed = true
-	m.activityReportGeneration = 4
-	m.activityReportDueAt = now
-
-	cmd := m.handleActivityReportTick(activityReportTickMsg{
-		Generation: 3,
-		DueAt:      now,
-	})
-	if cmd != nil {
-		t.Fatal("stale activity tick returned cmd, want nil")
-	}
-	if !m.activityReportArmed || !m.activityReportPending {
-		t.Fatalf("stale tick mutated state: armed %v pending %v", m.activityReportArmed, m.activityReportPending)
-	}
-
-	m.activityReportPending = false
-	cmd = m.handleActivityReportTick(activityReportTickMsg{
-		Generation: 4,
-		DueAt:      now,
-	})
-	if cmd != nil {
-		t.Fatal("empty activity tick returned cmd, want nil")
-	}
-}
-
-func TestKeystrokeAfterReportWindowSendsActivity(t *testing.T) {
-	m := activityReadyModel()
-	now := time.Now()
-	m.lastActivityReportAt = now.Add(-activityReportInterval)
-
-	got, cmd := m.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-
-	if cmd == nil {
-		t.Fatal("recordUserActivity returned nil cmd, want activity report after throttle window")
-	}
-	if !got.lastActivityReportAt.Equal(now) {
-		t.Fatalf("lastActivityReportAt = %v, want %v", got.lastActivityReportAt, now)
-	}
-	if got.activityReportPending || got.activityReportArmed {
-		t.Fatalf("activity state = pending %v armed %v, want both false after report", got.activityReportPending, got.activityReportArmed)
-	}
-}
-
-func TestRecordUserActivityIgnoresUnlockViewAndSignResponseKeys(t *testing.T) {
+func TestRecordUserActivityIgnoresUnlockView(t *testing.T) {
 	now := time.Now()
 
 	unlock := activityReadyModel()
 	unlock.viewState = ViewUnlock
 	got, cmd := unlock.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
-	if cmd != nil || !got.lastUserInputAt.IsZero() || got.activityReportPending {
+	if cmd != nil || !got.lastUserInputAt.IsZero() {
 		t.Fatalf("unlock activity state = %+v cmd %v, want ignored", got, cmd)
 	}
+}
 
-	signing := activityReadyModel()
-	signing.viewState = ViewSigningPopup
-	got, cmd = signing.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	if cmd != nil || !got.lastUserInputAt.IsZero() || got.activityReportPending {
-		t.Fatalf("sign response activity state = %+v cmd %v, want ignored", got, cmd)
+func TestRecordUserActivityCountsSignResponseKeysAsLocalActivity(t *testing.T) {
+	m := activityReadyModel()
+	m.viewState = ViewSigningPopup
+	m.effectiveSessionTimeout = time.Minute
+	now := time.Now()
+
+	got, cmd := m.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	if cmd == nil {
+		t.Fatal("sign response activity returned nil cmd, want local idle timer")
+	}
+	if !got.lastUserInputAt.Equal(now) {
+		t.Fatalf("lastUserInputAt = %v, want %v", got.lastUserInputAt, now)
 	}
 }
 
@@ -142,8 +79,8 @@ func TestUpdateIgnoresUnlockTypingEvenWithStaleUnlockedState(t *testing.T) {
 
 	got, _ := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 
-	if !got.lastUserInputAt.IsZero() || got.activityReportPending {
-		t.Fatalf("unlock typing activity state = last %v pending %v, want ignored", got.lastUserInputAt, got.activityReportPending)
+	if !got.lastUserInputAt.IsZero() {
+		t.Fatalf("unlock typing activity state = last %v, want ignored", got.lastUserInputAt)
 	}
 	if got.passphraseInput != "s" {
 		t.Fatalf("passphraseInput = %q, want key still handled by unlock view", got.passphraseInput)
@@ -153,6 +90,7 @@ func TestUpdateIgnoresUnlockTypingEvenWithStaleUnlockedState(t *testing.T) {
 func TestUpdateCountsRestorePreviewNavigationAsActivity(t *testing.T) {
 	m := activityReadyModel()
 	m.viewState = ViewRestorePreview
+	m.effectiveSessionTimeout = time.Minute
 	m.restorePreviewKeys = []RestoreKeyInfo{
 		{Address: "ADDR1", KeyType: "ed25519"},
 		{Address: "ADDR2", KeyType: "ed25519"},
@@ -168,7 +106,7 @@ func TestUpdateCountsRestorePreviewNavigationAsActivity(t *testing.T) {
 		t.Fatal("restore preview key was not handled")
 	}
 	if cmd == nil {
-		t.Fatal("restore preview navigation cmd = nil, want immediate activity report")
+		t.Fatal("restore preview navigation cmd = nil, want local idle timer")
 	}
 }
 
@@ -176,8 +114,8 @@ func TestNonKeyMessagesDoNotRecordActivity(t *testing.T) {
 	m := activityReadyModel()
 
 	got, _ := updateForTest(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
-	if !got.lastUserInputAt.IsZero() || got.activityReportPending {
-		t.Fatalf("window resize recorded activity: last %v pending %v", got.lastUserInputAt, got.activityReportPending)
+	if !got.lastUserInputAt.IsZero() {
+		t.Fatalf("window resize recorded activity: last %v", got.lastUserInputAt)
 	}
 
 	got, _ = updateForTest(t, got, AdminSettingsMsg{
@@ -186,18 +124,18 @@ func TestNonKeyMessagesDoNotRecordActivity(t *testing.T) {
 			Theme:             "auto",
 		},
 	})
-	if !got.lastUserInputAt.IsZero() || got.activityReportPending {
-		t.Fatalf("admin settings recorded activity: last %v pending %v", got.lastUserInputAt, got.activityReportPending)
+	if !got.lastUserInputAt.IsZero() {
+		t.Fatalf("admin settings recorded activity: last %v", got.lastUserInputAt)
 	}
 
 	got, _ = updateForTest(t, got, adminRefreshTickMsg{})
-	if !got.lastUserInputAt.IsZero() || got.activityReportPending {
-		t.Fatalf("admin refresh tick recorded activity: last %v pending %v", got.lastUserInputAt, got.activityReportPending)
+	if !got.lastUserInputAt.IsZero() {
+		t.Fatalf("admin refresh tick recorded activity: last %v", got.lastUserInputAt)
 	}
 
 	got, _ = updateForTest(t, got, tea.MouseMsg{})
-	if !got.lastUserInputAt.IsZero() || got.activityReportPending {
-		t.Fatalf("mouse event recorded activity: last %v pending %v", got.lastUserInputAt, got.activityReportPending)
+	if !got.lastUserInputAt.IsZero() {
+		t.Fatalf("mouse event recorded activity: last %v", got.lastUserInputAt)
 	}
 }
 
@@ -298,18 +236,11 @@ func TestAdminSettingsRearmsKnownTimeoutAfterFreshUnlock(t *testing.T) {
 func TestDisconnectAndServerLockClearActivityAndSensitiveRestoreState(t *testing.T) {
 	m := activityReadyModel()
 	m.lastUserInputAt = time.Now()
-	m.lastActivityReportAt = time.Now()
-	m.activityReportPending = true
-	m.activityReportArmed = true
-	m.activityReportDueAt = time.Now().Add(time.Second)
 	m.localIdleDisconnectSent = true
 	m.localIdleDueAt = time.Now().Add(time.Second)
 
 	got, _ := updateForTest(t, m, DisconnectedMsg{})
 	if !got.lastUserInputAt.IsZero() ||
-		!got.lastActivityReportAt.IsZero() ||
-		got.activityReportPending ||
-		got.activityReportArmed ||
 		got.localIdleDisconnectSent ||
 		!got.localIdleDueAt.IsZero() {
 		t.Fatalf("disconnect did not clear activity state: %+v", got)
@@ -336,9 +267,6 @@ func TestDisconnectAndServerLockClearActivityAndSensitiveRestoreState(t *testing
 func TestReconnectAndAuthRequiredClearActivityState(t *testing.T) {
 	m := activityReadyModel()
 	m.lastUserInputAt = time.Now()
-	m.lastActivityReportAt = time.Now()
-	m.activityReportPending = true
-	m.activityReportArmed = true
 	m.localIdleDisconnectSent = true
 	m.localIdleDueAt = time.Now().Add(time.Second)
 
@@ -350,7 +278,6 @@ func TestReconnectAndAuthRequiredClearActivityState(t *testing.T) {
 
 	m = activityReadyModel()
 	m.lastUserInputAt = time.Now()
-	m.activityReportPending = true
 	m.localIdleDisconnectSent = true
 	got, _ = updateForTest(t, m, AuthRequiredMsg{})
 	if got.viewState != ViewAuth {
@@ -362,9 +289,6 @@ func TestReconnectAndAuthRequiredClearActivityState(t *testing.T) {
 func assertActivityStateCleared(t *testing.T, m Model) {
 	t.Helper()
 	if !m.lastUserInputAt.IsZero() ||
-		!m.lastActivityReportAt.IsZero() ||
-		m.activityReportPending ||
-		m.activityReportArmed ||
 		m.localIdleDisconnectSent ||
 		!m.localIdleDueAt.IsZero() {
 		t.Fatalf("activity state not cleared: %+v", m)

@@ -85,11 +85,8 @@ boundaries, but the active admin TUI does not present a mutable policy panel.
 
 `apadmin` treats only Bubble Tea `tea.KeyMsg` input as local user activity.
 Window resizes, timers, IPC responses, server notifications, and background
-polling do not count. The TUI reports explicit user activity with
-`admin_activity`, throttled to one report per 30 seconds and driven by
-keystrokes rather than periodic refreshes. Approval and rejection keystrokes
-for signing requests are not double-counted because the sign response itself
-is the deliberate action.
+polling do not count. The TUI does not report local activity to the signer;
+keyboard activity only re-arms apadmin's own local idle-disconnect timer.
 
 The signer remains authoritative for lock state and master-key zeroing. After
 `apadmin` learns the effective passphrase timeout from admin settings, it

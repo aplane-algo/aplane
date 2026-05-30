@@ -144,9 +144,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SignerStatusMsg:
 		if msg.Locked {
-			// Signer locked (e.g., inactivity timeout) — show unlock screen
-			// immediately regardless of current view. Any in-progress operation
-			// would fail anyway since the master key has been zeroed.
+			// Signer locked; show unlock screen immediately regardless of
+			// current view. Any in-progress operation would fail anyway since
+			// the master key has been zeroed.
 			m.applySignerLockedState()
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd())
 		} else {
@@ -558,15 +558,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case activityReportTickMsg:
-		return m, m.handleActivityReportTick(msg)
-
 	case localIdleTickMsg:
 		return m, m.handleLocalIdleTick(msg)
-
-	case adminActivitySendFailedMsg:
-		// Activity reports are best-effort. The server-side timer remains authoritative.
-		return m, nil
 
 	case lockIdentitySendFailedMsg:
 		errText := ""

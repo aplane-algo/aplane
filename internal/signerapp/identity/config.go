@@ -94,14 +94,14 @@ func (c *IdentityConfig) SetLockOnDisconnect(v bool) {
 	c.mu.Unlock()
 }
 
-// SessionTimeout returns the inactivity timeout for this identity.
+// SessionTimeout returns the admin idle disconnect timeout for this identity.
 func (c *IdentityConfig) SessionTimeout() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.sessionTimeout
 }
 
-// SetSessionTimeout updates the inactivity timeout.
+// SetSessionTimeout updates the admin idle disconnect timeout.
 func (c *IdentityConfig) SetSessionTimeout(d time.Duration) {
 	c.mu.Lock()
 	c.sessionTimeout = d

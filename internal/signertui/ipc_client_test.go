@@ -186,7 +186,7 @@ func TestIPCClientSendBackupRestoreMessagesUseSensitivePassphraseWireString(t *t
 	}
 }
 
-func TestIPCClientSendActivityAndLockMessages(t *testing.T) {
+func TestIPCClientSendLockIdentityMessage(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = serverConn.Close() }()
 
@@ -223,19 +223,6 @@ func TestIPCClientSendActivityAndLockMessages(t *testing.T) {
 			t.Fatal("timed out reading IPC message")
 			return nil
 		}
-	}
-
-	activityLineCh := startReadLine()
-	if err := client.SendAdminActivity(); err != nil {
-		t.Fatalf("SendAdminActivity() error = %v", err)
-	}
-	activityLine := awaitLine(activityLineCh)
-	var activity protocol.AdminActivityMessage
-	if err := json.Unmarshal(activityLine, &activity); err != nil {
-		t.Fatalf("Unmarshal(activity) error = %v", err)
-	}
-	if activity.Type != protocol.MsgTypeAdminActivity || activity.ID == "" {
-		t.Fatalf("activity = %+v, want admin_activity with ID", activity)
 	}
 
 	lockLineCh := startReadLine()

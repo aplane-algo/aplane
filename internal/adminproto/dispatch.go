@@ -34,14 +34,6 @@ func (s *Session) Dispatch(raw []byte) bool {
 		}
 		s.HandleUnlock(&msg)
 		return true
-	case protocol.MsgTypeAdminActivity:
-		var msg protocol.AdminActivityMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid admin activity message")
-			return true
-		}
-		s.HandleAdminActivity(&msg)
-		return true
 	case protocol.MsgTypeLockIdentity:
 		var msg protocol.LockIdentityMessage
 		if err := json.Unmarshal(raw, &msg); err != nil {

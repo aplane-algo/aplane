@@ -760,25 +760,21 @@ Multiple signing or export requests proceed concurrently under `RLock`. When the
 `Signer.lock()` (in `cmd/apsigner/runtime.go`) delegates to `identity.Runtime.Lock()`, which conceptually executes the following steps in order:
 
 1. Set the lock runtime state to `Locked`; if it was already locked, return without side effects.
-2. Stop the inactivity timer.
-3. Run the identity lock callback (`performLock`). The key watcher stays running; while locked it marks the identity dirty instead of reloading keys.
-4. Acquire `passphraseLock.WLock`:
+2. Run the identity lock callback (`performLock`). The key watcher stays running; while locked it marks the identity dirty instead of reloading keys.
+3. Acquire `passphraseLock.WLock`:
    - `keySession.Destroy()` — blocks until all in-flight signing goroutines exit.
    - Reinitialize the key session with the same `keyStore`.
    - `keyStore.ClearMasterKey()` — zeros the master key under `cacheLock.WLock`.
-5. Release `passphraseLock`.
-6. Acquire `keysLock.WLock`, clear all identity key maps, release.
-7. Notify the admin hub that the signer identity is locked.
+4. Release `passphraseLock`.
+5. Acquire `keysLock.WLock`, clear all identity key maps, release.
+6. Notify the admin hub that the signer identity is locked.
 
 The locks are never held simultaneously — each is acquired and released sequentially, avoiding deadlock.
 
 Authenticated admin clients may request the same lock path explicitly with
 `lock_identity`. The request is authorized with `identity.lock` for the bound
-identity and is used by `apadmin` for local inactivity detection. Local
-keystroke activity is reported separately with fire-and-forget
-`admin_activity`; only those explicit activity reports and existing deliberate
-mutating/signing operations refresh the signer-side session timer, so background
-admin polling cannot keep the signer unlocked.
+identity. `apadmin` handles local inactivity by disconnecting; the signer then
+applies `lock_on_disconnect` in the normal disconnect cleanup path.
 
 #### Shutdown Path
 
@@ -792,12 +788,11 @@ all identity runtimes:
 4. Write `SERVER_STOP` and close the audit log.
 5. For each identity runtime, call `Destroy()`:
    - `StopKeyWatcher()` — prevents new reloads.
-   - `StopSessionTimer()` — cancel the inactivity lock timer.
    - `keySession.Destroy()` — drain in-flight signing operations.
    - `keyStore.ClearMasterKey()` — zero the master key.
 
-The shutdown destroy path stops watcher/timer dispatch before draining key
-operations and zeroing the master key.
+The shutdown destroy path stops watcher dispatch before draining key operations
+and zeroing the master key.
 
 #### Passphrase Zeroing Discipline
 
