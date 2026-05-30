@@ -170,3 +170,26 @@ func TestAdminPanelTShortcutOpensRevokeTokenConfirm(t *testing.T) {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
 }
+
+func TestAdminPanelLockShortcutOpensLockConfirm(t *testing.T) {
+	m := Model{
+		viewState:       ViewAdminPanel,
+		adminEditingRow: -1,
+		adminSettings: &AdminSettings{
+			PassphraseMethod: "none",
+			Theme:            "auto",
+		},
+	}
+
+	next, cmd := m.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	got := next.(Model)
+	if got.viewState != ViewLockConfirm {
+		t.Fatalf("viewState = %v, want ViewLockConfirm", got.viewState)
+	}
+	if got.manualLockReturnView != ViewAdminPanel {
+		t.Fatalf("manualLockReturnView = %v, want ViewAdminPanel", got.manualLockReturnView)
+	}
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+}

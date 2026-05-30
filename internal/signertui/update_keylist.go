@@ -133,6 +133,9 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p", "P":
 		return m.openPolicyViewer()
 
+	case "l":
+		return m.openManualLockConfirm()
+
 	case "s", "S":
 		// Open settings panel
 		m.adminSelectedRow = 0

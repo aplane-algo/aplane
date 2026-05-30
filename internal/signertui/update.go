@@ -125,6 +125,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DisconnectedMsg:
 		m.clearRestorePassphrase()
 		m.resetActivityState()
+		m.manualLockPending = false
 		m.connectionState = ConnectionDisconnected
 		if msg.Error != nil {
 			m.lastError = msg.Error.Error()
@@ -172,8 +173,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case LockIdentityResultMsg:
 		if msg.Success {
+			m.manualLockPending = false
 			m.applySignerLockedState()
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd())
+		}
+		if m.manualLockPending {
+			return m, tea.Batch(m.waitForMessageCmd(), m.handleManualLockFailed(msg.Error))
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), m.handleLockIdentityFailed(msg.Error))
 
@@ -561,6 +566,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != nil {
 			errText = msg.Error.Error()
 		}
+		if m.manualLockPending {
+			return m, m.handleManualLockFailed(errText)
+		}
 		return m, m.handleLockIdentityFailed(errText)
 
 	case KeyDetailsMsg:
@@ -780,6 +788,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDeleteConfirmKeys(msg)
 	case ViewRevokeTokenConfirm:
 		return m.handleRevokeTokenConfirmKeys(msg)
+	case ViewLockConfirm:
+		return m.handleLockConfirmKeys(msg)
 	case ViewDisplaceConfirm:
 		return m.handleDisplaceConfirmKeys(msg)
 	case ViewKeyDetails:

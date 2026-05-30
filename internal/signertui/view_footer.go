@@ -58,10 +58,12 @@ func (m Model) viewFooterText() string {
 		return "left/right/tab: Focus | enter/space: Select | y: Delete | n/esc: Cancel"
 	case ViewRevokeTokenConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Revoke | n/esc: Cancel"
+	case ViewLockConfirm:
+		return "left/right/tab: Focus | enter/space: Select | y: Lock | n/esc: Cancel"
 	case ViewDisplaceConfirm:
 		return "left/right/tab: Focus | enter/space: Select | y: Proceed | n/esc: Cancel"
 	case ViewAdminPanel:
-		return "p: Policy | k: KeyTypes | t: Revoke Token | esc: Back"
+		return "p: Policy | k: KeyTypes | t: Revoke Token | l: Lock | esc: Back"
 	case ViewPolicyViewer:
 		if m.policyLoadState != policyLoadIdle {
 			return m.policyLoadFooterText()

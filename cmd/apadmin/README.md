@@ -87,7 +87,8 @@ When `apsigner` receives a signing request:
 | `b` | Open backup flow from the settings/admin panel |
 | `o` | Open restore flow from the settings/admin panel |
 | `p` | Open the policy viewer |
-| `l` | Load a replacement policy YAML file from the policy viewer |
+| `l` (key list/settings) | Lock signer after confirmation, keeping apadmin open |
+| `l` (policy viewer) | Load a replacement policy YAML file |
 | `q` | Quit |
 
 ## Configuration

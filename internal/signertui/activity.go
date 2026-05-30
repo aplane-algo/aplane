@@ -14,6 +14,7 @@ import (
 const (
 	activityReportInterval     = 30 * time.Second
 	localIdleLockReason        = "apadmin local inactivity timeout"
+	manualLockReason           = "apadmin manual lock"
 	localIdleLockRetryInitial  = time.Second
 	localIdleLockRetryMaxDelay = 30 * time.Second
 )
@@ -80,6 +81,9 @@ func (m *Model) resetActivityState() {
 
 func (m *Model) applySignerLockedState() {
 	m.clearRestorePassphrase()
+	m.manualLockPending = false
+	m.manualLockConfirmFocus = 0
+	m.manualLockReturnView = ViewKeyList
 	m.signerLocked = true
 	m.signerStatusKnown = true
 	m.viewState = ViewUnlock
@@ -89,6 +93,9 @@ func (m *Model) applySignerLockedState() {
 }
 
 func (m *Model) applySignerUnlockedState(keyCount int) {
+	m.manualLockPending = false
+	m.manualLockConfirmFocus = 0
+	m.manualLockReturnView = ViewKeyList
 	m.signerLocked = false
 	m.signerStatusKnown = true
 	m.keyCount = keyCount
@@ -222,6 +229,25 @@ func (m *Model) handleLockIdentityFailed(errText string) tea.Cmd {
 		m.lastError = "Local idle lock failed: " + errText
 	}
 	return m.scheduleLocalIdleLockRetry(time.Now())
+}
+
+func (m *Model) handleManualLockFailed(errText string) tea.Cmd {
+	m.manualLockPending = false
+	if errText == "" {
+		errText = "request failed"
+	}
+	m.lastError = "Lock failed: " + errText
+	if m.viewState == ViewLockConfirm {
+		m.viewState = m.lockConfirmReturnView()
+	}
+	return nil
+}
+
+func (m Model) lockConfirmReturnView() ViewState {
+	if m.manualLockReturnView == ViewAuth || m.manualLockReturnView == ViewUnlock || m.manualLockReturnView == ViewLockConfirm {
+		return ViewKeyList
+	}
+	return m.manualLockReturnView
 }
 
 func (m *Model) scheduleLocalIdleLockRetry(now time.Time) tea.Cmd {

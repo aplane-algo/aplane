@@ -44,6 +44,7 @@ const (
 	ViewDeleteConfirm      // Delete confirmation dialog
 	ViewDeleting           // Loading state while deleting
 	ViewRevokeTokenConfirm // Token revocation confirmation dialog
+	ViewLockConfirm        // Manual signer lock confirmation dialog
 	ViewDisplaceConfirm    // Confirmation modal for displacing existing client
 	ViewAdminPanel         // Admin control panel
 	ViewPolicyViewer       // Read-only active policy snapshot viewer
@@ -241,6 +242,11 @@ type Model struct {
 
 	// Token revocation confirmation state
 	revokeTokenConfirmFocus int // 0 = cancel, 1 = revoke
+
+	// Manual lock confirmation state
+	manualLockConfirmFocus int       // 0 = cancel, 1 = lock
+	manualLockReturnView   ViewState // View to restore when canceling or if lock fails
+	manualLockPending      bool
 
 	// Displace confirmation state
 	displaceConfirmFocus int // 0 = cancel, 1 = proceed

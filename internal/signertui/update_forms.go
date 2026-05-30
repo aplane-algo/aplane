@@ -857,6 +857,47 @@ func (m Model) handleRevokeTokenConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	return m, nil
 }
 
+func (m Model) openManualLockConfirm() (tea.Model, tea.Cmd) {
+	m.manualLockConfirmFocus = 0
+	m.manualLockReturnView = m.viewState
+	m.viewState = ViewLockConfirm
+	return m, nil
+}
+
+// handleLockConfirmKeys handles keyboard input on the manual lock confirmation dialog.
+func (m Model) handleLockConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "n":
+		m.manualLockConfirmFocus = 0
+		m.viewState = m.lockConfirmReturnView()
+		return m, nil
+
+	case "tab", "left", "right", "h", "l":
+		m.manualLockConfirmFocus = (m.manualLockConfirmFocus + 1) % 2
+		return m, nil
+
+	case "enter", " ":
+		if m.manualLockConfirmFocus == 0 {
+			m.viewState = m.lockConfirmReturnView()
+			return m, nil
+		}
+		return m.startManualLock()
+
+	case "y":
+		return m.startManualLock()
+	}
+
+	return m, nil
+}
+
+func (m Model) startManualLock() (tea.Model, tea.Cmd) {
+	m.manualLockPending = true
+	m.manualLockConfirmFocus = 0
+	m.viewState = m.lockConfirmReturnView()
+	m.lastError = ""
+	return m, tea.Batch(m.sendLockIdentityCmd(manualLockReason), m.waitForMessageCmd())
+}
+
 // handleDisplaceConfirmKeys handles keyboard input on the displacement confirmation modal
 func (m Model) handleDisplaceConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {

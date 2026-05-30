@@ -618,3 +618,28 @@ func (m Model) renderRevokeTokenConfirm() string {
 
 	return m.renderPopup(80, sb.String())
 }
+
+// renderLockConfirm renders the manual signer lock confirmation dialog.
+func (m Model) renderLockConfirm() string {
+	var sb strings.Builder
+
+	sb.WriteString(warningStyle.Render("LOCK SIGNER"))
+	sb.WriteString("\n\n")
+
+	sb.WriteString("This will clear the unlocked key session from signer memory.\n")
+	sb.WriteString("apadmin will stay open and return to the unlock screen.\n\n")
+
+	var cancelBtn, lockBtn string
+	if m.manualLockConfirmFocus == 0 {
+		cancelBtn = buttonActiveStyle.Render("> CANCEL")
+		lockBtn = buttonInactiveStyle.Render("  LOCK")
+	} else {
+		cancelBtn = buttonInactiveStyle.Render("  CANCEL")
+		lockBtn = buttonActiveStyle.BorderForeground(lipgloss.Color("214")).Foreground(lipgloss.Color("214")).Render("> LOCK")
+	}
+
+	buttons := lipgloss.JoinHorizontal(lipgloss.Center, cancelBtn, "  ", lockBtn)
+	sb.WriteString(buttons)
+
+	return m.renderPopup(70, sb.String())
+}

@@ -79,6 +79,9 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.revokeTokenConfirmFocus = 0 // Default to Cancel
 		m.viewState = ViewRevokeTokenConfirm
 
+	case "l":
+		return m.openManualLockConfirm()
+
 	case "enter":
 		if m.adminSelectedRow < len(rows) {
 			row := rows[m.adminSelectedRow]

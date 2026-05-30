@@ -18,7 +18,7 @@ import (
 // hexPattern matches hex strings starting with 0x followed by hex digits
 var hexPattern = regexp.MustCompile(`0x[0-9a-fA-F]+`)
 
-const keyListHelpText = "g: Generate | i: Import | b: Backup | r: Restore | p: Policy | /: Filter | s: Settings | q: Quit"
+const keyListHelpText = "g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
 
 // truncateLongHex shortens hex values longer than maxLen characters
 // Example: 0x1234567890abcdef... becomes 0x1234...cdef

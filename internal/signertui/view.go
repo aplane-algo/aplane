@@ -279,6 +279,8 @@ func (m Model) renderViewContent() string {
 		content = m.renderDeleteConfirm()
 	case ViewRevokeTokenConfirm:
 		content = m.renderRevokeTokenConfirm()
+	case ViewLockConfirm:
+		content = m.renderLockConfirm()
 	case ViewDeleting:
 		content = m.renderDeleting()
 	case ViewDisplaceConfirm:
