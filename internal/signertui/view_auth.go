@@ -87,10 +87,10 @@ func (m Model) adminInactivityNotice() string {
 		}
 	}
 	if timeout > 0 {
-		return fmt.Sprintf("Signer locks after %s of admin inactivity", timeout)
+		return fmt.Sprintf("Admin disconnects after %s of inactivity", timeout)
 	}
 	if m.adminSettings != nil && strings.TrimSpace(m.adminSettings.PassphraseTimeout) == "0" {
-		return "Signer inactivity lock is disabled"
+		return "Admin inactivity disconnect is disabled"
 	}
 	return ""
 }

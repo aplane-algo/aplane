@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestUnlockViewShowsSignerInactivityTimeout(t *testing.T) {
+func TestUnlockViewShowsAdminInactivityTimeout(t *testing.T) {
 	m := Model{
 		viewState:               ViewUnlock,
 		connectionState:         ConnectionConnected,
@@ -22,7 +22,7 @@ func TestUnlockViewShowsSignerInactivityTimeout(t *testing.T) {
 	if !strings.Contains(view, "Enter passphrase to unlock Signer") {
 		t.Fatalf("unlock view missing prompt:\n%s", view)
 	}
-	if !strings.Contains(view, "Signer locks after 15m0s of admin inactivity") {
+	if !strings.Contains(view, "Admin disconnects after 15m0s of inactivity") {
 		t.Fatalf("unlock view missing inactivity timeout:\n%s", view)
 	}
 }
@@ -37,7 +37,7 @@ func TestUnlockViewUsesAdminSettingsTimeoutBeforeIdleTimerApplied(t *testing.T) 
 	}
 
 	view := stripANSI(m.renderUnlockView())
-	if !strings.Contains(view, "Signer locks after 15m0s of admin inactivity") {
+	if !strings.Contains(view, "Admin disconnects after 15m0s of inactivity") {
 		t.Fatalf("unlock view missing admin settings timeout:\n%s", view)
 	}
 }

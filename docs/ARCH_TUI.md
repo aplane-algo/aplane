@@ -94,11 +94,11 @@ is the deliberate action.
 The signer remains authoritative for lock state and master-key zeroing. After
 `apadmin` learns the effective passphrase timeout from admin settings, it
 arms a local idle timer from the latest local activity baseline. If the UI is
-still idle when that timer fires, it sends `lock_identity` with a
-local-inactivity reason. Failed explicit lock requests retry with bounded
-backoff while the UI is still idle and the signer is still known unlocked.
-Disconnect, reconnect, reauthentication, and server lock notifications clear
-pending activity and idle state.
+still idle when that timer fires, it disconnects the admin session. Any signer
+lock that follows that disconnect is decided by the signer-owned
+`lock_on_disconnect` setting. Manual lock actions are separate explicit
+`lock_identity` requests. Disconnect, reconnect, reauthentication, and server
+lock notifications clear pending activity and idle state.
 
 ## Error Handling
 

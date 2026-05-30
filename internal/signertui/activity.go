@@ -12,11 +12,9 @@ import (
 )
 
 const (
-	activityReportInterval     = 30 * time.Second
-	localIdleLockReason        = "apadmin local inactivity timeout"
-	manualLockReason           = "apadmin manual lock"
-	localIdleLockRetryInitial  = time.Second
-	localIdleLockRetryMaxDelay = 30 * time.Second
+	activityReportInterval    = 30 * time.Second
+	localIdleDisconnectReason = "apadmin disconnected after inactivity timeout"
+	manualLockReason          = "apadmin manual lock"
 )
 
 func (m Model) recordUserActivity(now time.Time, msg tea.KeyMsg) (Model, tea.Cmd) {
@@ -26,9 +24,7 @@ func (m Model) recordUserActivity(now time.Time, msg tea.KeyMsg) (Model, tea.Cmd
 
 	m.lastUserInputAt = now
 	m.activityReportPending = true
-	m.localIdleLockSent = false
-	m.localIdleLockRetryAt = time.Time{}
-	m.localIdleLockRetryDelay = 0
+	m.localIdleDisconnectSent = false
 
 	return m, tea.Batch(
 		m.scheduleActivityReport(now),
@@ -72,9 +68,7 @@ func (m *Model) resetActivityState() {
 	m.activityReportArmed = false
 	m.activityReportDueAt = time.Time{}
 	m.activityReportGeneration++
-	m.localIdleLockSent = false
-	m.localIdleLockRetryDelay = 0
-	m.localIdleLockRetryAt = time.Time{}
+	m.localIdleDisconnectSent = false
 	m.localIdleGeneration++
 	m.localIdleDueAt = time.Time{}
 }
@@ -197,7 +191,7 @@ func (m *Model) handleLocalIdleTick(msg localIdleTickMsg) tea.Cmd {
 	if msg.Generation != m.localIdleGeneration || !msg.DueAt.Equal(m.localIdleDueAt) {
 		return nil
 	}
-	if !m.canSendActivitySignals() || m.localIdleLockSent {
+	if !m.canSendActivitySignals() || m.localIdleDisconnectSent {
 		return nil
 	}
 
@@ -206,8 +200,8 @@ func (m *Model) handleLocalIdleTick(msg localIdleTickMsg) tea.Cmd {
 		return m.armLocalIdleTimer()
 	}
 
-	m.localIdleLockSent = true
-	return m.sendLockIdentityCmd(localIdleLockReason)
+	m.localIdleDisconnectSent = true
+	return m.disconnectForLocalIdleCmd()
 }
 
 func localIdleTickCmd(generation uint64, dueAt time.Time) tea.Cmd {
@@ -221,14 +215,6 @@ func (m Model) isLocallyIdle(now time.Time) bool {
 		return false
 	}
 	return !now.Before(m.lastUserInputAt.Add(m.effectiveSessionTimeout))
-}
-
-func (m *Model) handleLockIdentityFailed(errText string) tea.Cmd {
-	m.localIdleLockSent = false
-	if errText != "" {
-		m.lastError = "Local idle lock failed: " + errText
-	}
-	return m.scheduleLocalIdleLockRetry(time.Now())
 }
 
 func (m *Model) handleManualLockFailed(errText string) tea.Cmd {
@@ -250,45 +236,6 @@ func (m Model) lockConfirmReturnView() ViewState {
 	return m.manualLockReturnView
 }
 
-func (m *Model) scheduleLocalIdleLockRetry(now time.Time) tea.Cmd {
-	if !m.canSendActivitySignals() || !m.isLocallyIdle(now) {
-		return nil
-	}
-
-	delay := m.localIdleLockRetryDelay
-	if delay <= 0 {
-		delay = localIdleLockRetryInitial
-	} else {
-		delay *= 2
-		if delay > localIdleLockRetryMaxDelay {
-			delay = localIdleLockRetryMaxDelay
-		}
-	}
-	m.localIdleLockRetryDelay = delay
-	m.localIdleLockRetryAt = now.Add(delay)
-	return localIdleLockRetryTickCmd(m.localIdleLockRetryAt)
-}
-
-func (m *Model) handleLocalIdleLockRetryTick(msg localIdleLockRetryTickMsg) tea.Cmd {
-	if m.localIdleLockRetryAt.IsZero() || !msg.DueAt.Equal(m.localIdleLockRetryAt) {
-		return nil
-	}
-	m.localIdleLockRetryAt = time.Time{}
-
-	if !m.canSendActivitySignals() || m.localIdleLockSent || !m.isLocallyIdle(time.Now()) {
-		return nil
-	}
-
-	m.localIdleLockSent = true
-	return m.sendLockIdentityCmd(localIdleLockReason)
-}
-
-func localIdleLockRetryTickCmd(dueAt time.Time) tea.Cmd {
-	return tea.Tick(tickDelay(dueAt), func(time.Time) tea.Msg {
-		return localIdleLockRetryTickMsg{DueAt: dueAt}
-	})
-}
-
 func tickDelay(dueAt time.Time) time.Duration {
 	delay := time.Until(dueAt)
 	if delay <= 0 {
@@ -307,6 +254,16 @@ func (m Model) sendAdminActivityCmd() tea.Cmd {
 			return adminActivitySendFailedMsg{Error: err}
 		}
 		return nil
+	}
+}
+
+func (m Model) disconnectForLocalIdleCmd() tea.Cmd {
+	client := m.adminClient
+	return func() tea.Msg {
+		if client != nil {
+			client.Disconnect()
+		}
+		return localIdleDisconnectedMsg{Reason: localIdleDisconnectReason}
 	}
 }
 

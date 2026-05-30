@@ -51,11 +51,10 @@ func TestLockConfirmStartsManualLock(t *testing.T) {
 	}
 }
 
-func TestManualLockFailureDoesNotScheduleIdleRetry(t *testing.T) {
+func TestManualLockFailureDoesNotAffectIdleDisconnectState(t *testing.T) {
 	m := activityReadyModel()
 	m.manualLockPending = true
-	m.localIdleLockSent = true
-	m.localIdleLockRetryDelay = 0
+	m.localIdleDisconnectSent = true
 
 	next, _ := m.Update(LockIdentityResultMsg{
 		Success: false,
@@ -65,8 +64,8 @@ func TestManualLockFailureDoesNotScheduleIdleRetry(t *testing.T) {
 	if got.manualLockPending {
 		t.Fatal("manualLockPending = true, want false")
 	}
-	if got.localIdleLockRetryDelay != 0 || !got.localIdleLockRetryAt.IsZero() {
-		t.Fatalf("idle retry scheduled after manual lock failure: delay=%v at=%v", got.localIdleLockRetryDelay, got.localIdleLockRetryAt)
+	if !got.localIdleDisconnectSent {
+		t.Fatal("manual lock failure changed localIdleDisconnectSent")
 	}
 	if !strings.Contains(got.lastError, "Lock failed: authorization denied") {
 		t.Fatalf("lastError = %q", got.lastError)

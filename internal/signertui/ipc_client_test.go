@@ -239,7 +239,7 @@ func TestIPCClientSendActivityAndLockMessages(t *testing.T) {
 	}
 
 	lockLineCh := startReadLine()
-	if err := client.SendLockIdentity("apadmin local inactivity timeout"); err != nil {
+	if err := client.SendLockIdentity(manualLockReason); err != nil {
 		t.Fatalf("SendLockIdentity() error = %v", err)
 	}
 	lockLine := awaitLine(lockLineCh)
@@ -250,7 +250,7 @@ func TestIPCClientSendActivityAndLockMessages(t *testing.T) {
 	if lock.Type != protocol.MsgTypeLockIdentity || lock.ID == "" {
 		t.Fatalf("lock = %+v, want lock_identity with ID", lock)
 	}
-	if lock.Reason != "apadmin local inactivity timeout" {
+	if lock.Reason != manualLockReason {
 		t.Fatalf("lock.Reason = %q", lock.Reason)
 	}
 }

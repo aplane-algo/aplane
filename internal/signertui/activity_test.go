@@ -201,7 +201,7 @@ func TestNonKeyMessagesDoNotRecordActivity(t *testing.T) {
 	}
 }
 
-func TestLocalIdleTickSendsLockRequestWhenIdle(t *testing.T) {
+func TestLocalIdleTickDisconnectsAdminWhenIdle(t *testing.T) {
 	m := activityReadyModel()
 	m.effectiveSessionTimeout = time.Millisecond
 	m.lastUserInputAt = time.Now().Add(-time.Second)
@@ -213,10 +213,14 @@ func TestLocalIdleTickSendsLockRequestWhenIdle(t *testing.T) {
 	})
 
 	if cmd == nil {
-		t.Fatal("handleLocalIdleTick returned nil cmd, want lock request")
+		t.Fatal("handleLocalIdleTick returned nil cmd, want disconnect command")
 	}
-	if !m.localIdleLockSent {
-		t.Fatal("localIdleLockSent = false, want true")
+	if !m.localIdleDisconnectSent {
+		t.Fatal("localIdleDisconnectSent = false, want true")
+	}
+	msg := cmd()
+	if got, ok := msg.(localIdleDisconnectedMsg); !ok || got.Reason != localIdleDisconnectReason {
+		t.Fatalf("disconnect cmd message = %#v, want local idle disconnect", msg)
 	}
 }
 
@@ -238,8 +242,41 @@ func TestLocalIdleTickIgnoresStaleTickAfterNewerKeystroke(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("stale local idle tick returned cmd, want nil")
 	}
-	if m.localIdleLockSent {
-		t.Fatal("stale local idle tick set localIdleLockSent")
+	if m.localIdleDisconnectSent {
+		t.Fatal("stale local idle tick set localIdleDisconnectSent")
+	}
+}
+
+func TestLocalIdleDisconnectedMsgMarksDisconnectedWithoutLocking(t *testing.T) {
+	m := activityReadyModel()
+	m.lastUserInputAt = time.Now()
+	m.localIdleDisconnectSent = true
+
+	got, _ := updateForTest(t, m, localIdleDisconnectedMsg{Reason: localIdleDisconnectReason})
+
+	if got.connectionState != ConnectionDisconnected {
+		t.Fatalf("connectionState = %v, want disconnected", got.connectionState)
+	}
+	if got.signerLocked {
+		t.Fatal("signerLocked = true, want unchanged false")
+	}
+	if got.signerStatusKnown {
+		t.Fatal("signerStatusKnown = true, want unknown after local disconnect")
+	}
+	if got.lastWarning != localIdleDisconnectReason {
+		t.Fatalf("lastWarning = %q, want %q", got.lastWarning, localIdleDisconnectReason)
+	}
+	assertActivityStateCleared(t, got)
+
+	reconnecting, cmd := updateForTest(t, got, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if reconnecting.lastWarning != "" {
+		t.Fatalf("lastWarning after reconnect key = %q, want cleared", reconnecting.lastWarning)
+	}
+	if reconnecting.connectionState != ConnectionConnecting {
+		t.Fatalf("connectionState after reconnect key = %v, want connecting", reconnecting.connectionState)
+	}
+	if cmd == nil {
+		t.Fatal("reconnect key cmd = nil, want reconnect command")
 	}
 }
 
@@ -265,9 +302,7 @@ func TestDisconnectAndServerLockClearActivityAndSensitiveRestoreState(t *testing
 	m.activityReportPending = true
 	m.activityReportArmed = true
 	m.activityReportDueAt = time.Now().Add(time.Second)
-	m.localIdleLockSent = true
-	m.localIdleLockRetryDelay = localIdleLockRetryInitial
-	m.localIdleLockRetryAt = time.Now().Add(time.Second)
+	m.localIdleDisconnectSent = true
 	m.localIdleDueAt = time.Now().Add(time.Second)
 
 	got, _ := updateForTest(t, m, DisconnectedMsg{})
@@ -275,9 +310,7 @@ func TestDisconnectAndServerLockClearActivityAndSensitiveRestoreState(t *testing
 		!got.lastActivityReportAt.IsZero() ||
 		got.activityReportPending ||
 		got.activityReportArmed ||
-		got.localIdleLockSent ||
-		got.localIdleLockRetryDelay != 0 ||
-		!got.localIdleLockRetryAt.IsZero() ||
+		got.localIdleDisconnectSent ||
 		!got.localIdleDueAt.IsZero() {
 		t.Fatalf("disconnect did not clear activity state: %+v", got)
 	}
@@ -306,9 +339,7 @@ func TestReconnectAndAuthRequiredClearActivityState(t *testing.T) {
 	m.lastActivityReportAt = time.Now()
 	m.activityReportPending = true
 	m.activityReportArmed = true
-	m.localIdleLockSent = true
-	m.localIdleLockRetryDelay = localIdleLockRetryInitial
-	m.localIdleLockRetryAt = time.Now().Add(time.Second)
+	m.localIdleDisconnectSent = true
 	m.localIdleDueAt = time.Now().Add(time.Second)
 
 	got, _ := updateForTest(t, m, ReconnectingMsg{Delay: time.Second})
@@ -320,50 +351,12 @@ func TestReconnectAndAuthRequiredClearActivityState(t *testing.T) {
 	m = activityReadyModel()
 	m.lastUserInputAt = time.Now()
 	m.activityReportPending = true
-	m.localIdleLockSent = true
+	m.localIdleDisconnectSent = true
 	got, _ = updateForTest(t, m, AuthRequiredMsg{})
 	if got.viewState != ViewAuth {
 		t.Fatalf("viewState = %v, want ViewAuth", got.viewState)
 	}
 	assertActivityStateCleared(t, got)
-}
-
-func TestLocalIdleLockFailureSchedulesBoundedRetry(t *testing.T) {
-	m := activityReadyModel()
-	m.effectiveSessionTimeout = time.Millisecond
-	m.lastUserInputAt = time.Now().Add(-time.Second)
-	m.localIdleLockSent = true
-
-	cmd := m.handleLockIdentityFailed("write failed")
-
-	if cmd == nil {
-		t.Fatal("handleLockIdentityFailed returned nil cmd, want retry tick")
-	}
-	if m.localIdleLockSent {
-		t.Fatal("localIdleLockSent = true, want false after failure")
-	}
-	if m.localIdleLockRetryDelay != localIdleLockRetryInitial {
-		t.Fatalf("retry delay = %v, want %v", m.localIdleLockRetryDelay, localIdleLockRetryInitial)
-	}
-	if m.localIdleLockRetryAt.IsZero() {
-		t.Fatal("localIdleLockRetryAt is zero, want retry due time")
-	}
-}
-
-func TestLocalIdleLockRetryTickSendsLockWhileStillIdle(t *testing.T) {
-	m := activityReadyModel()
-	m.effectiveSessionTimeout = time.Millisecond
-	m.lastUserInputAt = time.Now().Add(-time.Second)
-	m.localIdleLockRetryAt = time.Now()
-
-	cmd := m.handleLocalIdleLockRetryTick(localIdleLockRetryTickMsg{DueAt: m.localIdleLockRetryAt})
-
-	if cmd == nil {
-		t.Fatal("retry tick returned nil cmd, want lock request")
-	}
-	if !m.localIdleLockSent {
-		t.Fatal("localIdleLockSent = false, want true after retry")
-	}
 }
 
 func assertActivityStateCleared(t *testing.T, m Model) {
@@ -372,9 +365,7 @@ func assertActivityStateCleared(t *testing.T, m Model) {
 		!m.lastActivityReportAt.IsZero() ||
 		m.activityReportPending ||
 		m.activityReportArmed ||
-		m.localIdleLockSent ||
-		m.localIdleLockRetryDelay != 0 ||
-		!m.localIdleLockRetryAt.IsZero() ||
+		m.localIdleDisconnectSent ||
 		!m.localIdleDueAt.IsZero() {
 		t.Fatalf("activity state not cleared: %+v", m)
 	}

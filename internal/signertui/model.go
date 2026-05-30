@@ -151,9 +151,7 @@ type Model struct {
 	activityReportArmed      bool
 	activityReportDueAt      time.Time
 	activityReportGeneration uint64
-	localIdleLockSent        bool
-	localIdleLockRetryDelay  time.Duration
-	localIdleLockRetryAt     time.Time
+	localIdleDisconnectSent  bool
 	localIdleGeneration      uint64
 	localIdleDueAt           time.Time
 	effectiveSessionTimeout  time.Duration
@@ -669,8 +667,8 @@ type localIdleTickMsg struct {
 	DueAt      time.Time
 }
 
-type localIdleLockRetryTickMsg struct {
-	DueAt time.Time
+type localIdleDisconnectedMsg struct {
+	Reason string
 }
 
 type adminActivitySendFailedMsg struct {

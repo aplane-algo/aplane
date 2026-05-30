@@ -270,10 +270,10 @@ Each successful `/sign` request resets the timer.
 In the default `prompt` passphrase mode, the signer effectively stays unlocked
 only while an admin client remains connected and active. With
 `lock_on_disconnect: true`, the signer locks when `apadmin` disconnects.
-With a nonzero `passphrase_timeout`, the signer locks after admin inactivity
-even if `apadmin` remains open.
-In prompt passphrase mode, this inactivity lock can be overridden by setting
-`passphrase_timeout: "0"`.
+With a nonzero `passphrase_timeout`, apadmin disconnects after local keyboard
+inactivity and the signer-side session timer can still lock after signer/admin
+inactivity. In prompt passphrase mode, the time-based disconnect and signer-side
+timeout can be disabled by setting `passphrase_timeout: "0"`.
 Also in prompt passphrase mode, if `lock_on_disconnect` is `true`, closing or
 disconnecting the Admin app automatically locks the Signer.
 
@@ -281,9 +281,10 @@ When `apadmin` is connected, keyboard input in the TUI counts as user activity
 and is reported to the signer at most once every 30 seconds. Background screen
 refreshes, admin-panel polling, IPC responses, window resize events, and mouse
 events do not keep the signer unlocked. If the TUI sees no local keyboard input
-for the effective `passphrase_timeout`, it proactively asks the signer to lock;
-the signer-side timeout remains the authoritative fail-safe if `apadmin`
-disconnects, crashes, or cannot send that lock request.
+for the effective `passphrase_timeout`, it disconnects the admin session. A
+lock caused by that disconnect is controlled by `lock_on_disconnect`; the
+signer-side timeout remains the authoritative fail-safe if `apadmin`
+disconnects, crashes, or cannot send that disconnect request.
 
 When identity-scoped `unlock.yaml` is configured by `appass`, the signer starts
 that identity in headless mode and the effective runtime behavior is:
@@ -298,8 +299,8 @@ For legacy process-global `passphrase_command_argv`, `config.yaml` must set
 
 | Passphrase mode | `passphrase_timeout` | `lock_on_disconnect` | While Admin app is connected | When Admin app closes/disconnects |
 |-----------------|----------------------|-----------------------|------------------------------|-----------------------------------|
-| `prompt` | nonzero, e.g. `"15m"` | `true` | Signer stays unlocked while there is admin activity; locks after inactivity timeout | Signer locks immediately |
-| `prompt` | nonzero, e.g. `"15m"` | `false` | Signer stays unlocked while there is admin activity; locks after inactivity timeout | Signer stays unlocked until inactivity timeout |
+| `prompt` | nonzero, e.g. `"15m"` | `true` | Admin app disconnects after local inactivity; signer locks through disconnect policy | Signer locks immediately |
+| `prompt` | nonzero, e.g. `"15m"` | `false` | Admin app disconnects after local inactivity; signer remains subject to signer-side timeout | Signer stays unlocked until inactivity timeout |
 | `prompt` | `"0"` | `true` | Signer stays unlocked until stopped | Signer locks immediately |
 | `prompt` | `"0"` | `false` | Signer stays unlocked until stopped | Signer stays unlocked until stopped |
 | `passfile` / `systemd-creds` | `"0"` | effectively `false` | Signer starts unlocked and stays unlocked until stopped | Signer stays unlocked |

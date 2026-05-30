@@ -132,6 +132,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case localIdleDisconnectedMsg:
+		m.clearRestorePassphrase()
+		m.resetActivityState()
+		m.manualLockPending = false
+		m.connectionState = ConnectionDisconnected
+		m.signerStatusKnown = false
+		m.lastError = ""
+		m.setPersistentWarning(msg.Reason)
+		return m, nil
+
 	case SignerStatusMsg:
 		if msg.Locked {
 			// Signer locked (e.g., inactivity timeout) — show unlock screen
@@ -180,7 +190,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.manualLockPending {
 			return m, tea.Batch(m.waitForMessageCmd(), m.handleManualLockFailed(msg.Error))
 		}
-		return m, tea.Batch(m.waitForMessageCmd(), m.handleLockIdentityFailed(msg.Error))
+		return m, tea.Batch(m.waitForMessageCmd(), m.handleManualLockFailed(msg.Error))
 
 	case SignRequestReceivedMsg:
 		m.pendingSign = &msg.Request
@@ -554,9 +564,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case localIdleTickMsg:
 		return m, m.handleLocalIdleTick(msg)
 
-	case localIdleLockRetryTickMsg:
-		return m, m.handleLocalIdleLockRetryTick(msg)
-
 	case adminActivitySendFailedMsg:
 		// Activity reports are best-effort. The server-side timer remains authoritative.
 		return m, nil
@@ -569,7 +576,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.manualLockPending {
 			return m, m.handleManualLockFailed(errText)
 		}
-		return m, m.handleLockIdentityFailed(errText)
+		return m, m.handleManualLockFailed(errText)
 
 	case KeyDetailsMsg:
 		if msg.Success {
@@ -743,6 +750,9 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.connectionState == ConnectionDisconnected && msg.String() == "c" {
 		m.connectionState = ConnectionConnecting
 		m.lastError = ""
+		if m.lastWarning == localIdleDisconnectReason {
+			m.clearWarning()
+		}
 		return m, m.reconnectCmd()
 	}
 
