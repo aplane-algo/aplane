@@ -131,7 +131,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 
 | Category | Example Key Types | Has Keys | Signing |
 |----------|-------------------|----------|---------|
-| `generic_lsig` | `aplane.timelock.v1`, `aplane.whitelist.v1` after template import | No | TEAL-only authorization |
+| `generic_lsig` | `aplane.timed-whitelist.v1`, `aplane.whitelist.v1` after template import | No | TEAL-only authorization |
 | `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`; `aplane.falcon1024-whitelist.v1` after template import | Yes | Cryptographic signature |
 
 ## Interface Hierarchy
@@ -139,13 +139,13 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 ```
 LSigProvider (base interface - ALL providers implement this)
 ├── Identity
-│   ├── KeyType() string        "aplane.falcon1024.v1", "aplane.timelock.v1"
-│   ├── Family() string         "falcon1024", "timelock" (display metadata; routing uses KeyType)
+│   ├── KeyType() string        "aplane.falcon1024.v1", "aplane.timed-whitelist.v1"
+│   ├── Family() string         "falcon1024", "timed-whitelist" (display metadata; routing uses KeyType)
 │   └── Version() int           1, 2, etc.
 ├── Category
 │   └── Category() string       "generic_lsig" or "dsa_lsig"
 ├── Display
-│   ├── DisplayName() string    "Falcon-1024", "Timelock"
+│   ├── DisplayName() string    "Falcon-1024", "Timed Whitelist"
 │   ├── Description() string    Short description for UI
 │   └── DisplayColor() string   ANSI color code
 ├── Parameters
@@ -576,7 +576,7 @@ independent: `base_key_type: aplane.falcon1024.v1` plus
 | `aplane.falcon1024.v1` | `falcon1024` | `dsa_lsig` | Default-enabled pure Falcon signature |
 | `aplane.falcon1024_ed25519.v1` | `falcon1024_ed25519` | `dsa_lsig` | Library-visible dual Falcon + Ed25519 DSA |
 | `aplane.ecdsak1.v1` | `ecdsak1` | `dsa_lsig` | Library-visible secp256k1 DSA |
-| `aplane.timelock.v1` | `timelock` | `generic_lsig` | Optional template library: funds locked until round |
+| `aplane.timed-whitelist.v1` | `timed-whitelist` | `generic_lsig` | Optional template library: timed recipient whitelist |
 | `aplane.whitelist.v1` | `whitelist` | `generic_lsig` | Optional template library: restrict outgoing transfers to fixed recipient addresses |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
 | `aplane.falcon1024-whitelist.v1` | `falcon1024-whitelist` | `dsa_lsig` | Optional template library: Falcon + fixed receiver whitelist |

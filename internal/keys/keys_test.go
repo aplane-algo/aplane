@@ -106,9 +106,9 @@ func TestDetectKeyTypeFromData(t *testing.T) {
 			want: "aplane.falcon1024.v1",
 		},
 		{
-			name: "aplane.timelock.v1",
-			data: `{"key_type":"aplane.timelock.v1"}`,
-			want: "aplane.timelock.v1",
+			name: "aplane.timed-whitelist.v1",
+			data: `{"key_type":"aplane.timed-whitelist.v1"}`,
+			want: "aplane.timed-whitelist.v1",
 		},
 		{
 			name:      "missing key_type",
@@ -240,11 +240,11 @@ func TestParseKeyPayloadMetadataRejectsConflictingAliases(t *testing.T) {
 	}{
 		{
 			name: "parameters conflict",
-			data: `{"key_type":"aplane.timelock.v1","parameters":{"recipient":"A"},"params":{"recipient":"B"}}`,
+			data: `{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"A"},"params":{"recipients":"B"}}`,
 		},
 		{
 			name: "bytecode conflict",
-			data: `{"key_type":"aplane.timelock.v1","lsig_bytecode":"0102","bytecode_hex":"0103"}`,
+			data: `{"key_type":"aplane.timed-whitelist.v1","lsig_bytecode":"0102","bytecode_hex":"0103"}`,
 		},
 	}
 
@@ -274,7 +274,7 @@ func TestRequireLogicSigSaltCounter(t *testing.T) {
 
 func TestLSigFileUnmarshalRequiresSaltCounter(t *testing.T) {
 	var lf LSigFile
-	err := json.Unmarshal([]byte(`{"category":"generic_lsig","key_type":"aplane.timelock.v1","bytecode_hex":"260101058101"}`), &lf)
+	err := json.Unmarshal([]byte(`{"category":"generic_lsig","key_type":"aplane.timed-whitelist.v1","bytecode_hex":"260101058101"}`), &lf)
 	if !errors.Is(err, ErrMissingLogicSigSaltCounter) {
 		t.Fatalf("json.Unmarshal(LSigFile without salt_counter) error = %v, want %v", err, ErrMissingLogicSigSaltCounter)
 	}

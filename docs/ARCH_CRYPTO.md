@@ -11,7 +11,7 @@ APlane supports three authorization categories:
 
 1. `ed25519` native signing keys
 2. DSA-backed LogicSig providers such as `aplane.falcon1024.v1`
-3. Generic LogicSig template instances such as `aplane.timelock.v1`
+3. Generic LogicSig template instances such as `aplane.timed-whitelist.v1`
 
 These share storage and runtime plumbing, but not the signing behavior:
 
@@ -101,7 +101,7 @@ Built-in key types:
 - `falcon1024`
 - `falcon1024_ed25519`
 - `ecdsak1`
-- optional generic templates like `aplane.timelock.v1`, `aplane.whitelist.v1`, and `aplane.htlc.v1`
+- optional generic templates like `aplane.timed-whitelist.v1`, `aplane.whitelist.v1`, and `aplane.htlc.v1`
 - optional Falcon-composed templates such as `aplane.falcon1024-whitelist.v1`, `aplane.falcon1024-hashlock.v1`, and `aplane.falcon1024-timelock.v1`
 
 Creation parameters are part of the provider boundary. `internal/lsigprovider`

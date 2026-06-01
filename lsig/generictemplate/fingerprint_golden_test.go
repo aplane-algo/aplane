@@ -16,7 +16,7 @@ func TestBundledGenericTemplateCompatibilityFingerprints(t *testing.T) {
 		want string
 	}{
 		{name: "whitelist", file: "aplane.whitelist.v1.yaml", want: "14c861e957dafe5a1a72fcbd7d0b0657bd6304fd5b1a4f57385d58bd8d7bde0b"},
-		{name: "timelock", file: "aplane.timelock.v1.yaml", want: "9e9ef7885b0fb9d613602ef04dad43232f169ac5c24d069cf39613606746b9d1"},
+		{name: "timed-whitelist", file: "aplane.timed-whitelist.v1.yaml", want: "62317fdafa6912adee04d389c9cdb8a5bce9f252811db7eda91daeaa10fe3bab"},
 		{name: "htlc", file: "aplane.htlc.v1.yaml", want: "ac4c919578f4605ee39348216a2b03dd18f4dd1d16244640101a98227561ba93"},
 	}
 

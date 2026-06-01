@@ -1184,7 +1184,7 @@ teal: |
 func TestTemplateLibraryGenericTemplates(t *testing.T) {
 	optInAssets := "10458941,31566704"
 	for _, name := range []string{
-		"aplane.timelock.v1.yaml",
+		"aplane.timed-whitelist.v1.yaml",
 		"aplane.whitelist.v1.yaml",
 		"aplane.htlc.v1.yaml",
 	} {
@@ -1203,9 +1203,11 @@ func TestTemplateLibraryGenericTemplates(t *testing.T) {
 			}
 			tmpl := NewYAMLTemplate(spec)
 			switch name {
-			case "aplane.timelock.v1.yaml":
+			case "aplane.timed-whitelist.v1.yaml":
+				addrA := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
+				addrB := "AEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEA5RCDXMI"
 				params := map[string]string{
-					"recipient":    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+					"recipients":   addrA + "," + addrB,
 					"unlock_round": "12345",
 				}
 				teal, err := tmpl.GenerateTEAL(params)
@@ -1213,14 +1215,23 @@ func TestTemplateLibraryGenericTemplates(t *testing.T) {
 					t.Fatalf("GenerateTEAL() error = %v", err)
 				}
 				if !strings.Contains(teal, "txn Fee\nint 1000\n==\nassert") {
-					t.Fatalf("timelock TEAL missing strict fee cap:\n%s", teal)
+					t.Fatalf("timed whitelist TEAL missing strict fee cap:\n%s", teal)
+				}
+				normalizedTEAL := strings.Join(strings.Fields(teal), " ")
+				for _, addr := range []string{addrA, addrB} {
+					if !strings.Contains(normalizedTEAL, "txn Receiver addr "+addr+" ==") {
+						t.Fatalf("timed whitelist TEAL missing payment recipient %s:\n%s", addr, teal)
+					}
+					if !strings.Contains(normalizedTEAL, "txn AssetCloseTo addr "+addr+" ==") {
+						t.Fatalf("timed whitelist TEAL missing asset close recipient %s:\n%s", addr, teal)
+					}
 				}
 				assertCompileWithSaltOffCurve(t, tmpl, params)
 				if strings.Contains(teal, "txn XferAsset\nint 10458941\n==") {
-					t.Fatalf("timelock TEAL unexpectedly contains approved opt-in checks without parameter:\n%s", teal)
+					t.Fatalf("timed whitelist TEAL unexpectedly contains approved opt-in checks without parameter:\n%s", teal)
 				}
 				tealWithOptIn, err := tmpl.GenerateTEAL(map[string]string{
-					"recipient":            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+					"recipients":           addrA,
 					"unlock_round":         "12345",
 					"allowed_optin_assets": optInAssets,
 				})
@@ -1230,13 +1241,13 @@ func TestTemplateLibraryGenericTemplates(t *testing.T) {
 				for _, assetID := range []string{"10458941", "31566704"} {
 					snippet := "txn XferAsset\nint " + assetID + "\n=="
 					if !strings.Contains(tealWithOptIn, snippet) {
-						t.Fatalf("timelock TEAL missing approved opt-in asset %s:\n%s", assetID, tealWithOptIn)
+						t.Fatalf("timed whitelist TEAL missing approved opt-in asset %s:\n%s", assetID, tealWithOptIn)
 					}
 				}
 				if !strings.Contains(tealWithOptIn, "maybe_optin:\ntxn AssetSender\nglobal ZeroAddress\n==\nassert") ||
 					!strings.Contains(tealWithOptIn, "bz continue_checks") ||
 					!strings.Contains(tealWithOptIn, "txn AssetCloseTo\nglobal ZeroAddress\n==\nassert") {
-					t.Fatalf("timelock approved opt-in path must enforce zero close-out:\n%s", tealWithOptIn)
+					t.Fatalf("timed whitelist approved opt-in path must enforce zero close-out:\n%s", tealWithOptIn)
 				}
 			case "aplane.whitelist.v1.yaml":
 				params := map[string]string{

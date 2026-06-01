@@ -95,7 +95,7 @@ func isValidationTransaction(messageBytes []byte, txnSender string, _ string) bo
 //
 // Parameters:
 //   - txnBytesHex: Full transaction bytes as hex (TX prefix + msgpack)
-//   - keyType: Type of key used (ed25519, aplane.falcon1024.v1, aplane.timelock.v1, etc.)
+//   - keyType: Type of key used (ed25519, aplane.falcon1024.v1, aplane.timed-whitelist.v1, etc.)
 //   - signature: Cryptographic signature (nil for generic lsigs)
 //   - bytecode: LogicSig bytecode (nil for ed25519)
 //   - orderedArgs: Runtime args for generic lsigs (nil otherwise)

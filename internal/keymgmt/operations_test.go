@@ -142,7 +142,7 @@ func TestValidKeyTypesIncludeIdentityActivatedYAMLComposedProvider(t *testing.T)
 func TestDetectKeyInfoFromFileWithMasterKeyRejectsPlaintext(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "plain.key")
-	content := []byte(`{"key_type":"aplane.timelock.v1","parameters":{"recipient":"ADDR"}}`)
+	content := []byte(`{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"ADDR"}}`)
 	if err := os.WriteFile(keyFile, content, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -282,7 +282,7 @@ func TestDetectKeyInfoFromFileWithMasterKeyWrongMasterKey(t *testing.T) {
 	keyFile := filepath.Join(dir, "encrypted.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 	wrongKey := []byte("fedcba9876543210fedcba9876543210")
-	plaintext := []byte(`{"key_type":"aplane.timelock.v1","parameters":{"recipient":"ADDR"}}`)
+	plaintext := []byte(`{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"ADDR"}}`)
 	encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey() error = %v", err)
@@ -384,16 +384,16 @@ func TestParseKeyFileInfoPrefersParametersAndFallsBackToParams(t *testing.T) {
 	}{
 		{
 			name:       "uses parameters when present",
-			payload:    `{"key_type":"aplane.timelock.v1","parameters":{"recipient":"ADDR1"}}`,
-			wantType:   "aplane.timelock.v1",
-			wantParamK: "recipient",
+			payload:    `{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"ADDR1"}}`,
+			wantType:   "aplane.timed-whitelist.v1",
+			wantParamK: "recipients",
 			wantParamV: "ADDR1",
 		},
 		{
 			name:       "allows duplicate aliases when equal",
-			payload:    `{"key_type":"aplane.timelock.v1","parameters":{"recipient":"ADDR1"},"params":{"recipient":"ADDR1"}}`,
-			wantType:   "aplane.timelock.v1",
-			wantParamK: "recipient",
+			payload:    `{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"ADDR1"},"params":{"recipients":"ADDR1"}}`,
+			wantType:   "aplane.timed-whitelist.v1",
+			wantParamK: "recipients",
 			wantParamV: "ADDR1",
 		},
 		{
@@ -422,7 +422,7 @@ func TestParseKeyFileInfoPrefersParametersAndFallsBackToParams(t *testing.T) {
 }
 
 func TestParseKeyFileInfoRejectsConflictingParameterAliases(t *testing.T) {
-	_, err := parseKeyFileInfo([]byte(`{"key_type":"aplane.timelock.v1","parameters":{"recipient":"ADDR1"},"params":{"recipient":"ADDR2"}}`))
+	_, err := parseKeyFileInfo([]byte(`{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"ADDR1"},"params":{"recipients":"ADDR2"}}`))
 	if err == nil {
 		t.Fatal("expected conflict error, got nil")
 	}
@@ -449,7 +449,7 @@ func TestParseKeyFileInfoInvalidJSON(t *testing.T) {
 }
 
 func TestParseDisplayTEALMissingFieldReturnsEmpty(t *testing.T) {
-	teal, err := parseDisplayTEAL([]byte(`{"key_type":"aplane.timelock.v1"}`))
+	teal, err := parseDisplayTEAL([]byte(`{"key_type":"aplane.timed-whitelist.v1"}`))
 	if err != nil {
 		t.Fatalf("parseDisplayTEAL() error = %v", err)
 	}

@@ -42,9 +42,9 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 			MnemonicImport:    true,
 		},
 		{
-			KeyType:           "aplane.timelock.v1",
-			DisplayName:       "Timelock",
-			Description:       "Generic timelock LogicSig",
+			KeyType:           "aplane.timed-whitelist.v1",
+			DisplayName:       "Timed Whitelist",
+			Description:       "Generic timed whitelist LogicSig",
 			MnemonicWordCount: 0,
 			CreationParams: []protocol.TemplateParamInfo{
 				{Name: "unlock_round", Label: "Unlock Round", Type: "uint64", Required: true},
@@ -79,7 +79,7 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 	if got, want := getImportKeyTypeCount(), 2; got != want {
 		t.Fatalf("getImportKeyTypeCount() = %d, want %d", got, want)
 	}
-	if got, want := getKeyTypeByIndex(1), "aplane.timelock.v1"; got != want {
+	if got, want := getKeyTypeByIndex(1), "aplane.timed-whitelist.v1"; got != want {
 		t.Fatalf("generate key type index 1 = %q, want %q", got, want)
 	}
 	if got, want := getImportKeyTypeByIndex(1), "aplane.falcon1024.v1"; got != want {

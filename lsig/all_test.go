@@ -22,7 +22,7 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 	RegisterClient()
 
 	for _, keyType := range []string{
-		"aplane.timelock.v1",
+		"aplane.timed-whitelist.v1",
 		"aplane.whitelist.v1",
 		"aplane.htlc.v1",
 		"aplane.falcon1024-whitelist.v1",

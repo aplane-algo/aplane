@@ -423,9 +423,9 @@ type KeysListMessage struct {
 // GenerateKeyMessage requests generation of a new key
 type GenerateKeyMessage struct {
 	BaseMessage
-	KeyType    string            `json:"key_type"` // Versioned key type: "ed25519", "aplane.falcon1024.v1", "aplane.timelock.v1", etc.
+	KeyType    string            `json:"key_type"` // Versioned key type: "ed25519", "aplane.falcon1024.v1", "aplane.timed-whitelist.v1", etc.
 	Name       string            `json:"name,omitempty"`
-	Parameters map[string]string `json:"parameters,omitempty"` // Template parameters (for generic lsigs like timelock)
+	Parameters map[string]string `json:"parameters,omitempty"` // Template parameters (for generic lsigs like timed-whitelist)
 }
 
 // GenerateResultMessage contains the result of key generation
@@ -507,7 +507,7 @@ type KeyDetailsMessage struct {
 	Success                  bool              `json:"success"`
 	Address                  string            `json:"address,omitempty"`
 	KeyType                  string            `json:"key_type,omitempty"`
-	Parameters               map[string]string `json:"parameters,omitempty"`   // For generic LogicSigs: recipient, unlock_round, etc.
+	Parameters               map[string]string `json:"parameters,omitempty"`   // For generic LogicSigs: recipients, unlock_round, etc.
 	DisplayTEAL              string            `json:"display_teal,omitempty"` // TEAL source for generic LogicSigs (actual compiled source)
 	TemplateProvenanceStatus string            `json:"template_provenance_status,omitempty"`
 	TemplateProvenanceNote   string            `json:"template_provenance_note,omitempty"`

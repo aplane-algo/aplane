@@ -4,7 +4,7 @@
 // Package lsigprovider defines unified interfaces for all LogicSig providers.
 //
 // This package provides a single registry for both generic LogicSigs
-// (timelock, htlc) and DSA-based LogicSigs (falcon1024).
+// (timed-whitelist, htlc) and DSA-based LogicSigs (falcon1024).
 //
 // Interface hierarchy:
 //   - LSigProvider: Base interface for all providers (identity, display, parameters)
@@ -21,8 +21,8 @@ import "context"
 // This provides identity, display, and parameter metadata for any LSig type.
 type LSigProvider interface {
 	// Identity
-	KeyType() string // Versioned identifier (e.g., "aplane.timelock.v1", "aplane.falcon1024.v1")
-	Family() string  // Family name without version (e.g., "timelock", "falcon1024")
+	KeyType() string // Versioned identifier (e.g., "aplane.timed-whitelist.v1", "aplane.falcon1024.v1")
+	Family() string  // Family name without version (e.g., "timed-whitelist", "falcon1024")
 	Version() int    // Version number (e.g., 1)
 
 	// Category returns the LSig category.
@@ -35,9 +35,9 @@ type LSigProvider interface {
 	DisplayColor() string // ANSI color code (e.g., "33" for yellow)
 
 	// CreationParams returns parameter definitions for LSig creation.
-	// For generic LSigs: recipient, unlock_round, etc.
+	// For generic LSigs: recipients, unlock_round, etc.
 	// For pure DSA LSigs: typically empty (public key is implicit).
-	// For hybrid DSA LSigs: unlock_round, recipient, etc.
+	// For hybrid DSA LSigs: unlock_round, recipients, etc.
 	CreationParams() []ParameterDef
 
 	// ValidateCreationParams validates the provided creation parameters.
@@ -78,7 +78,7 @@ type SigningProvider interface {
 	// DeriveLsig derives the LogicSig bytecode and address from a public key.
 	// The params argument allows passing additional parameters for hybrid schemes:
 	//   - Pure DSA (aplane.falcon1024.v1): params is empty or ignored
-	//   - Hybrid (falcon-aplane.timelock.v1): params contains unlock_round, recipient, etc.
+	//   - Hybrid (falcon-aplane.timed-whitelist.v1): params contains unlock_round, recipients, etc.
 	// Returns: (lsigBytecode, algorandAddress, error)
 	DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) (lsigBytecode []byte, address string, err error)
 }

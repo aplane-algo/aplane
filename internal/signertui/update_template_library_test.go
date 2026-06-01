@@ -292,7 +292,7 @@ func TestUninstalledTemplateOpensEnableConfirmation(t *testing.T) {
 		viewState:        ViewTemplateLibrary,
 		selectedTemplate: 0,
 		libraryTemplates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.timelock.v1",
+			KeyType:      "aplane.timed-whitelist.v1",
 			TemplateType: "generic",
 			Installed:    false,
 			Enabled:      false,
@@ -305,7 +305,7 @@ func TestUninstalledTemplateOpensEnableConfirmation(t *testing.T) {
 		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Enable Template Key Type", "Key type:  aplane.timelock.v1", "Publisher: aplane", "Source:    generic", "ENABLE"} {
+	for _, want := range []string{"Enable Template Key Type", "Key type:  timed-whitelist.v1", "Publisher: aplane", "Source:    generic", "ENABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -349,11 +349,11 @@ func TestTemplateInstallResultUsesEnabledStatus(t *testing.T) {
 
 	next, _ := m.Update(InstallLibraryTemplateResultMsg{
 		Success:      true,
-		KeyType:      "aplane.timelock.v1",
+		KeyType:      "aplane.timed-whitelist.v1",
 		TemplateType: "generic",
 	})
 	got := next.(Model)
-	if got.templateInstallStatus != "aplane.timelock.v1 available to create" {
+	if got.templateInstallStatus != "timed-whitelist.v1 available to create" {
 		t.Fatalf("templateInstallStatus = %q, want available-to-create status", got.templateInstallStatus)
 	}
 }
@@ -402,7 +402,7 @@ func TestInstalledEnabledTemplateOpensDisableConfirmation(t *testing.T) {
 		viewState:        ViewTemplateLibrary,
 		selectedTemplate: 0,
 		libraryTemplates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.timelock.v1",
+			KeyType:      "aplane.timed-whitelist.v1",
 			TemplateType: "generic",
 			Installed:    true,
 			Enabled:      true,
@@ -415,7 +415,7 @@ func TestInstalledEnabledTemplateOpensDisableConfirmation(t *testing.T) {
 		t.Fatalf("enter moved to %v pending=%#v, want disable confirm", got.viewState, got.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Disable Template Key Type", "Key type:  aplane.timelock.v1", "Publisher: aplane", "Source:    generic", "DISABLE"} {
+	for _, want := range []string{"Disable Template Key Type", "Key type:  timed-whitelist.v1", "Publisher: aplane", "Source:    generic", "DISABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}

@@ -109,9 +109,9 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			},
 		},
 		{
-			keyType: "aplane.timelock.v1",
+			keyType: "aplane.timed-whitelist.v1",
 			params: map[string]string{
-				"recipient":    funder.GetAddress(),
+				"recipients":   funder.GetAddress(),
 				"unlock_round": fmt.Sprintf("%d", timelockRound),
 			},
 			positiveFirstValid: timelockRound,
@@ -408,7 +408,7 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 	templateFiles := []string{
 		"aplane.htlc.v1.yaml",
 		"aplane.whitelist.v1.yaml",
-		"aplane.timelock.v1.yaml",
+		"aplane.timed-whitelist.v1.yaml",
 		"aplane.falcon1024-whitelist.v1.yaml",
 		"aplane.falcon1024-hashlock.v1.yaml",
 		"aplane.falcon1024-timelock.v1.yaml",

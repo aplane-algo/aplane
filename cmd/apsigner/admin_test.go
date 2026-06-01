@@ -414,20 +414,20 @@ func TestAdminGenerateFalconWhitelistIsImmediatelyVisibleInKeyCache(t *testing.T
 }
 
 func TestAdminGenerateTimelockV1(t *testing.T) {
-	registerLibraryGenericTemplateForTest(t, "aplane.timelock.v1.yaml")
+	registerLibraryGenericTemplateForTest(t, "aplane.timed-whitelist.v1.yaml")
 
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	installLibraryGenericTemplateForTest(t, server, "aplane.timelock.v1.yaml")
+	installLibraryGenericTemplateForTest(t, server, "aplane.timed-whitelist.v1.yaml")
 
 	algodCleanup := configureMockAlgod(t, server)
 	defer algodCleanup()
 
-	// aplane.timelock.v1 requires: recipient, unlock_round
+	// aplane.timed-whitelist.v1 requires: recipients, unlock_round
 	reqBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType: "aplane.timelock.v1",
+		KeyType: "aplane.timed-whitelist.v1",
 		Parameters: map[string]string{
-			"recipient":    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"recipients":   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 			"unlock_round": "1000000",
 		},
 	})
@@ -449,8 +449,8 @@ func TestAdminGenerateTimelockV1(t *testing.T) {
 	if resp.Address == "" {
 		t.Fatal("Expected non-empty address")
 	}
-	if resp.KeyType != "aplane.timelock.v1" {
-		t.Errorf("Expected key_type aplane.timelock.v1, got %s", resp.KeyType)
+	if resp.KeyType != "aplane.timed-whitelist.v1" {
+		t.Errorf("Expected key_type aplane.timed-whitelist.v1, got %s", resp.KeyType)
 	}
 	// Verify parameters are echoed back
 	if resp.Parameters["unlock_round"] == "" {
@@ -544,20 +544,20 @@ func TestAdminDeleteFalcon1024(t *testing.T) {
 }
 
 func TestAdminDeleteTimelockV1(t *testing.T) {
-	registerLibraryGenericTemplateForTest(t, "aplane.timelock.v1.yaml")
+	registerLibraryGenericTemplateForTest(t, "aplane.timed-whitelist.v1.yaml")
 
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	installLibraryGenericTemplateForTest(t, server, "aplane.timelock.v1.yaml")
+	installLibraryGenericTemplateForTest(t, server, "aplane.timed-whitelist.v1.yaml")
 
 	algodCleanup := configureMockAlgod(t, server)
 	defer algodCleanup()
 
-	// Generate a aplane.timelock.v1 key
+	// Generate a aplane.timed-whitelist.v1 key
 	genBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType: "aplane.timelock.v1",
+		KeyType: "aplane.timed-whitelist.v1",
 		Parameters: map[string]string{
-			"recipient":    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"recipients":   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 			"unlock_round": "1000000",
 		},
 	})
@@ -740,19 +740,19 @@ func TestAdminGenerateInvalidJSON(t *testing.T) {
 }
 
 func TestAdminGenerateTimelockMissingAlgod(t *testing.T) {
-	registerLibraryGenericTemplateForTest(t, "aplane.timelock.v1.yaml")
+	registerLibraryGenericTemplateForTest(t, "aplane.timed-whitelist.v1.yaml")
 
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	installLibraryGenericTemplateForTest(t, server, "aplane.timelock.v1.yaml")
+	installLibraryGenericTemplateForTest(t, server, "aplane.timed-whitelist.v1.yaml")
 
 	// No algod configured
 	server.config.Algod = nil
 
 	reqBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType: "aplane.timelock.v1",
+		KeyType: "aplane.timed-whitelist.v1",
 		Parameters: map[string]string{
-			"recipient":    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"recipients":   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 			"unlock_round": "1000000",
 		},
 	})
@@ -772,18 +772,18 @@ func TestAdminGenerateTimelockMissingAlgod(t *testing.T) {
 }
 
 func TestAdminGenerateTimelockInvalidParams(t *testing.T) {
-	registerLibraryGenericTemplateForTest(t, "aplane.timelock.v1.yaml")
+	registerLibraryGenericTemplateForTest(t, "aplane.timed-whitelist.v1.yaml")
 
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	installLibraryGenericTemplateForTest(t, server, "aplane.timelock.v1.yaml")
+	installLibraryGenericTemplateForTest(t, server, "aplane.timed-whitelist.v1.yaml")
 
 	algodCleanup := configureMockAlgod(t, server)
 	defer algodCleanup()
 
 	// Missing required params
 	reqBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType:    "aplane.timelock.v1",
+		KeyType:    "aplane.timed-whitelist.v1",
 		Parameters: map[string]string{}, // Missing all required params
 	})
 	w := httptest.NewRecorder()

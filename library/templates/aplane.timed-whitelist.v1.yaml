@@ -3,20 +3,21 @@ derivation_version: 2
 template_type: generic
 template_mode: generated
 publisher: aplane
-family: timelock
+family: timed-whitelist
 version: 1
-display_name: "Timelock"
-description: "Restrict funds (ALGO or ASA) to recipient after specified round"
+display_name: "Timed Whitelist"
+description: "Restrict funds (ALGO or ASA) to approved recipients after specified round"
 display_color: "35"
 
 parameters:
-  - name: recipient
-    label: "Recipient Address"
-    description: "Algorand address that can receive funds after unlock"
-    type: address
+  - name: recipients
+    label: "Whitelisted Addresses"
+    description: "List of Algorand addresses that may receive funds from this LogicSig after unlock"
+    type: address[]
     required: true
-    max_length: 58
-    placeholder: "Enter recipient address"
+    min_items: 1
+    max_items: 30
+    placeholder: "ADDR1 ADDR2 ADDR3"
 
   - name: unlock_round
     label: "Unlock Round"
@@ -37,7 +38,7 @@ parameters:
 teal: |
   #pragma version 10
 
-  // Timelock: funds (ALGO or ASA) locked until round @unlock_round, then only to @recipient
+  // Timed whitelist: funds (ALGO or ASA) locked until round @unlock_round, then only to @recipients
 
   // Strict fee cap: public generic LogicSigs must not carry variable fee liability.
   // If higher total fees are ever needed, use explicit external sponsorship in a
@@ -99,20 +100,28 @@ teal: |
   &&
   bnz maybe_optin
 
+  {{range @recipients}}
   txn AssetReceiver
-  addr @recipient
+  addr {{.}}
   ==
-  assert
+  bnz allow_asset_receiver
+  {{end}}
+  err
 
-  txn AssetCloseTo
-  addr @recipient
-  ==
+  allow_asset_receiver:
   txn AssetCloseTo
   global ZeroAddress
   ==
-  ||
-  assert
+  bnz allow_asset_close
+  {{range @recipients}}
+  txn AssetCloseTo
+  addr {{.}}
+  ==
+  bnz allow_asset_close
+  {{end}}
+  err
 
+  allow_asset_close:
   int 1
   return
 
@@ -147,19 +156,27 @@ teal: |
 
   // --- payment path ---
   pay_path:
+      {{range @recipients}}
       txn Receiver
-      addr @recipient
+      addr {{.}}
       ==
-      assert
+      bnz allow_pay_receiver
+      {{end}}
+      err
 
-      txn CloseRemainderTo
-      addr @recipient
-      ==
+  allow_pay_receiver:
       txn CloseRemainderTo
       global ZeroAddress
       ==
-      ||
-      assert
+      bnz allow_pay_close
+      {{range @recipients}}
+      txn CloseRemainderTo
+      addr {{.}}
+      ==
+      bnz allow_pay_close
+      {{end}}
+      err
 
+  allow_pay_close:
       int 1
       return

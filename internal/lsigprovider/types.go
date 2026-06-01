@@ -22,11 +22,11 @@ var (
 // These match the values used in key files and throughout the codebase.
 const (
 	// CategoryGenericLsig is for template-based LogicSigs without key material.
-	// Examples: timelock, htlc
+	// Examples: timed-whitelist, htlc
 	CategoryGenericLsig = "generic_lsig"
 
 	// CategoryDSALsig is for DSA-based LogicSigs that require key material.
-	// Examples: aplane.falcon1024.v1, falcon-aplane.timelock.v1
+	// Examples: aplane.falcon1024.v1, falcon-aplane.timed-whitelist.v1
 	CategoryDSALsig = "dsa_lsig"
 )
 

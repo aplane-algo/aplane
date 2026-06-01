@@ -22,8 +22,8 @@ type LSigFile struct {
 	FormatVersion          int                `json:"format_version"` // Key file format version
 	Category               string             `json:"category"`       // Always "generic_lsig" for this file type
 	Address                string             `json:"address"`
-	KeyType                string             `json:"key_type"`              // e.g., "aplane.timelock.v1"
-	Template               string             `json:"template,omitempty"`    // Template name (e.g., "timelock")
+	KeyType                string             `json:"key_type"`              // e.g., "aplane.timed-whitelist.v1"
+	Template               string             `json:"template,omitempty"`    // Template name (e.g., "timed-whitelist")
 	Parameters             map[string]string  `json:"parameters,omitempty"`  // Template parameters
 	BytecodeHex            string             `json:"bytecode_hex"`          // Hex-encoded TEAL bytecode
 	SaltCounter            byte               `json:"salt_counter"`          // Salt byte used to force an off-curve LogicSig address

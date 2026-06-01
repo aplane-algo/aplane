@@ -12,7 +12,7 @@ the new key type.
 Generic LogicSig templates are TEAL-only accounts with no private key:
 
 ```bash
-apstore template import library/templates/aplane.timelock.v1.yaml
+apstore template import library/templates/aplane.timed-whitelist.v1.yaml
 apstore template import library/templates/aplane.whitelist.v1.yaml
 apstore template import library/templates/aplane.htlc.v1.yaml
 ```
@@ -29,7 +29,7 @@ apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml
 
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
-| `aplane.timelock.v1` | `aplane.timelock.v1.yaml` | Allows ALGO or ASA transfers to one recipient after `unlock_round`; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipient`, `unlock_round`, `allowed_optin_assets` (`uint64[]`, optional) | None |
+| `aplane.timed-whitelist.v1` | `aplane.timed-whitelist.v1.yaml` | Allows ALGO or ASA transfers only to a fixed unordered recipient address set after `unlock_round`; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipients` (`address[]`), `unlock_round`, `allowed_optin_assets` (`uint64[]`, optional) | None |
 | `aplane.whitelist.v1` | `aplane.whitelist.v1.yaml` | Allows ALGO or ASA transfers only to a fixed unordered recipient address set; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipients` (`address[]`), `allowed_optin_assets` (`uint64[]`, optional) | None |
 | `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked contract for ALGO or ASA transfers: recipient can claim before timeout with a preimage; refund address can reclaim after timeout; optional parameterized ASA opt-in is available for approved asset IDs only. | `hash`, `recipient`, `refund_address`, `timeout_round`, `allowed_optin_assets` (`uint64[]`, optional) | `preimage` |
 
@@ -72,7 +72,7 @@ global ZeroAddress
 ==
 assert
 
-// for receiver-style templates (whitelist, htlc, timelock-with-recipient):
+// for receiver-style templates (whitelist, htlc, timed-whitelist):
 //   apply the whitelist to CloseRemainderTo / AssetCloseTo too;
 // for predicate-only templates with no receiver concept:
 //   txn CloseRemainderTo
@@ -81,7 +81,7 @@ assert
 //   assert
 ```
 
-This applies to `aplane.timelock.v1`, `aplane.whitelist.v1`, `aplane.htlc.v1`,
+This applies to `aplane.timed-whitelist.v1`, `aplane.whitelist.v1`, `aplane.htlc.v1`,
 and any new generic template.
 
 **Composed templates** (`template_type: composed`, with `base_key_type` pointing

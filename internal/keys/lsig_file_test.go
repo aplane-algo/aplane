@@ -21,7 +21,7 @@ func TestWriteLSigFile(t *testing.T) {
 
 	t.Run("round trip", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
-		params := map[string]string{"recipient": "ALICE", "unlock_round": "1000"}
+		params := map[string]string{"recipients": "ALICE", "unlock_round": "1000"}
 		signingArgs := []StoredSigningArg{{
 			Name:       "secret",
 			Type:       "bytes",
@@ -29,7 +29,7 @@ func TestWriteLSigFile(t *testing.T) {
 			ByteLength: 32,
 		}}
 
-		err := WriteLSigFile(paths, "default", address, "aplane.timelock.v1", "timelock", params, bytecode, 5, "// teal source", signingArgs, masterKey)
+		err := WriteLSigFile(paths, "default", address, "aplane.timed-whitelist.v1", "timed-whitelist", params, bytecode, 5, "// teal source", signingArgs, masterKey)
 		if err != nil {
 			t.Fatalf("WriteLSigFile() error = %v", err)
 		}
@@ -64,14 +64,14 @@ func TestWriteLSigFile(t *testing.T) {
 		if lsig.Address != address {
 			t.Errorf("Address = %q, want %q", lsig.Address, address)
 		}
-		if lsig.KeyType != "aplane.timelock.v1" {
-			t.Errorf("KeyType = %q, want %q", lsig.KeyType, "aplane.timelock.v1")
+		if lsig.KeyType != "aplane.timed-whitelist.v1" {
+			t.Errorf("KeyType = %q, want %q", lsig.KeyType, "aplane.timed-whitelist.v1")
 		}
-		if lsig.Template != "timelock" {
-			t.Errorf("Template = %q, want %q", lsig.Template, "timelock")
+		if lsig.Template != "timed-whitelist" {
+			t.Errorf("Template = %q, want %q", lsig.Template, "timed-whitelist")
 		}
-		if lsig.Parameters["recipient"] != "ALICE" {
-			t.Errorf("Parameters[recipient] = %q, want %q", lsig.Parameters["recipient"], "ALICE")
+		if lsig.Parameters["recipients"] != "ALICE" {
+			t.Errorf("Parameters[recipients] = %q, want %q", lsig.Parameters["recipients"], "ALICE")
 		}
 		if lsig.BytecodeHex != hex.EncodeToString(bytecode) {
 			t.Errorf("BytecodeHex = %q, want %q", lsig.BytecodeHex, hex.EncodeToString(bytecode))
@@ -96,7 +96,7 @@ func TestWriteLSigFile(t *testing.T) {
 	t.Run("directory creation", func(t *testing.T) {
 		paths := storepaths.NewPaths(t.TempDir())
 
-		err := WriteLSigFile(paths, "default", "NEWADDR", "aplane.timelock.v1", "timelock", nil, bytecode, 5, "", nil, masterKey)
+		err := WriteLSigFile(paths, "default", "NEWADDR", "aplane.timed-whitelist.v1", "timed-whitelist", nil, bytecode, 5, "", nil, masterKey)
 		if err != nil {
 			t.Fatalf("WriteLSigFile() error = %v, should create directory", err)
 		}
@@ -115,15 +115,15 @@ func TestLSigFileUnmarshalNormalizesAliases(t *testing.T) {
 		"format_version":1,
 		"category":"generic_lsig",
 		"address":"ADDR",
-		"key_type":"aplane.timelock.v1",
-		"params":{"recipient":"ALICE"},
+		"key_type":"aplane.timed-whitelist.v1",
+		"params":{"recipients":"ALICE"},
 		"lsig_bytecode":"260101058101",
 		"salt_counter":5
 	}`), &lf)
 	if err != nil {
 		t.Fatalf("json.Unmarshal(LSigFile) error = %v", err)
 	}
-	if lf.Parameters["recipient"] != "ALICE" {
+	if lf.Parameters["recipients"] != "ALICE" {
 		t.Fatalf("Parameters = %#v, want normalized params", lf.Parameters)
 	}
 	if lf.BytecodeHex != "260101058101" {
@@ -135,9 +135,9 @@ func TestLSigFileUnmarshalRejectsConflictingAliases(t *testing.T) {
 	var lf LSigFile
 	err := json.Unmarshal([]byte(`{
 		"category":"generic_lsig",
-		"key_type":"aplane.timelock.v1",
-		"parameters":{"recipient":"A"},
-		"params":{"recipient":"B"},
+		"key_type":"aplane.timed-whitelist.v1",
+		"parameters":{"recipients":"A"},
+		"params":{"recipients":"B"},
 		"bytecode_hex":"260101058101",
 		"salt_counter":5
 	}`), &lf)

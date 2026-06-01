@@ -179,8 +179,8 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	address := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 	err := svc.SaveGenericLSig(
 		address,
-		"aplane.timelock.v1",
-		"timelock",
+		"aplane.timed-whitelist.v1",
+		"timed-whitelist",
 		map[string]string{"unlock_round": "123"},
 		[]byte{0x01, 0x20, 0x01, 0x01, 0x22},
 		1,

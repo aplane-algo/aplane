@@ -441,9 +441,9 @@ identity keystore.
 These are signatureless once funded. If the TEAL permits a path, any network
 participant may be able to exercise it.
 
-##### `aplane.timelock.v1`
+##### `aplane.timed-whitelist.v1`
 
-- generic TEAL-only timelock
+- generic TEAL-only timed whitelist
 - public once funded
 - strict fixed fee
 - no key registration path
@@ -451,10 +451,10 @@ participant may be able to exercise it.
 
 Leaving `allowed_optin_assets` empty disables only the public ASA opt-in helper
 path. It does not make the account ALGO-only: if the LogicSig account already
-holds an ASA, the normal asset-transfer path can send or close that ASA to the
-configured recipient after `unlock_round`. That distinction is intentional:
-third parties must not be able to opt the escrow into arbitrary new assets, but
-the timelock applies to existing ASA holdings.
+holds an ASA, the normal asset-transfer path can send or close that ASA to one
+of the configured recipients after `unlock_round`. That distinction is
+intentional: third parties must not be able to opt the escrow into arbitrary new
+assets, but the timed whitelist applies to existing ASA holdings.
 
 ##### `aplane.whitelist.v1`
 

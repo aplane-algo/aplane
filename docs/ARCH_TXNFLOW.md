@@ -578,7 +578,7 @@ The TEAL verifier program:
 3. Verifies signature against embedded public key
 4. Returns 1 (approve) or 0 (reject)
 
-### 3. Generic LogicSig (e.g., Timelock, Hashlock)
+### 3. Generic LogicSig (e.g., Timed Whitelist, Hashlock)
 
 TEAL programs that authorize transactions without cryptographic signatures. Authorization is purely through TEAL evaluation.
 
@@ -588,7 +588,8 @@ Server receives: { auth_address, txn_bytes_hex, lsig_args }
                           ▼
               ┌───────────────────────┐
               │ 1. Load key file      │
-              │ 2. Key type: timelock │
+              │ 2. Key type: timed-   │
+              │    whitelist          │
               │ 3. NO CRYPTOGRAPHIC   │
               │    SIGNING            │
               │ 4. Load TEAL bytecode │
@@ -805,7 +806,7 @@ The server looks up the key type for `auth_address` and derives the message to s
 |----------|-----------------|-----------|
 | `ed25519` | Full transaction bytes (`TX` + msgpack) | Standard Algorand Ed25519 signing |
 | `aplane.falcon1024.v1` (or other DSA) | 32-byte transaction ID | LogicSig DSA schemes sign the transaction ID |
-| `aplane.timelock.v1` (or other generic) | N/A (no signing) | Generic LogicSigs don't need signatures |
+| `aplane.timed-whitelist.v1` (or other generic) | N/A (no signing) | Generic LogicSigs don't need signatures |
 
 This design achieves **true client key-type agnosticism**: clients never need to know what type of key they're using or how to format messages for signing.
 

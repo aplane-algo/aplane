@@ -159,7 +159,7 @@ User-loaded optional templates, if installed:
 
 | Library key type | Behavior category | Install command | Runtime storage |
 |---|---|---|---|
-| `aplane.timelock.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.timelock.v1.yaml` | `identities/<identity>/keytypes/aplane.timelock.v1.{json,template}` |
+| `aplane.timed-whitelist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.timed-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.timed-whitelist.v1.{json,template}` |
 | `aplane.whitelist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.whitelist.v1.{json,template}` |
 | `aplane.htlc.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.htlc.v1.yaml` | `identities/<identity>/keytypes/aplane.htlc.v1.{json,template}` |
 | `aplane.falcon1024-whitelist.v1` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-whitelist.v1.{json,template}` |
@@ -235,7 +235,7 @@ Typical code areas:
 ### B. Generic LogicSig Template
 
 Examples:
-- `aplane.timelock.v1`
+- `aplane.timed-whitelist.v1`
 - `aplane.whitelist.v1`
 
 Characteristics:
@@ -247,7 +247,7 @@ Typical code areas:
 - `library/templates/*.yaml`, installed with `apstore template import`, or
 - `lsig/<template>/template.go` only for a true product built-in
 
-Reference implementations: `library/templates/aplane.timelock.v1.yaml`, `library/templates/aplane.whitelist.v1.yaml`, and `library/templates/aplane.htlc.v1.yaml`.
+Reference implementations: `library/templates/aplane.timed-whitelist.v1.yaml`, `library/templates/aplane.whitelist.v1.yaml`, and `library/templates/aplane.htlc.v1.yaml`.
 
 ### C. DSA LogicSig Provider
 
@@ -477,7 +477,7 @@ program each time a transaction is submitted.
 | Embedded in | TEAL bytecode | LogicSig.Args |
 | TEAL access | `$variable` constants in strict mode; `@variable` only in generated mode | `arg 0`, `arg 1`, etc. |
 | Affects address | Yes | No |
-| Example | recipient address, unlock round | hashlock preimage |
+| Example | recipient address set, unlock round | hashlock preimage |
 
 ## YAML Schema
 
