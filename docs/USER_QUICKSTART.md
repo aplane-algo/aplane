@@ -28,7 +28,7 @@ There is a standalone unified console, apconsole, that gives you a unified view 
 
 - **`apsigner`** — the signing daemon (encrypted keys, approval + audit)
 - **`apadmin`** — the apsigner management TUI where you unlock the keystore,
-  manage keys and keytypes, approve signing requests, etc.
+  manage keys and key types, approve signing requests, etc.
 - **`apshell`** — a transaction shell where you build and submit
   transactions
 

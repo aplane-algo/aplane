@@ -337,7 +337,7 @@ Deferred plan:
 - add versions first where needed for concrete migration behavior:
   - backup bundles,
   - cache payloads,
-  - keytype state if changing shape,
+  - key type state if changing shape,
   - config only if strict parsing/version semantics are accepted,
 - consider reserving wire version surfaces when touching those contracts:
   - admin IPC `protocol_version`,

@@ -28,13 +28,13 @@ This document describes the LogicSig provider architecture.
 │                            │    │ lsig/ecdsak1/             secp256k1 DSA   │
 │ Sources:                   │    │ lsig/composeddsa/                         │
 │   Optional library YAML    │    │   └── template.go      YAML compositions  │
-│   Identity keytype state   │    │ Shared TEAL substitution:                 │
+│   Identity key type state  │    │ Shared TEAL substitution:                 │
 │                            │    │   internal/tealsubst/                     │
 │                            │    │                                           │
 │ Category: generic_lsig     │    │ Sources:                                  │
 └────────────────────────────┘    │   Hardcoded Go (v1)                       │
                                   │   Optional library YAML                   │
-                                  │   Identity keytype state                  │
+                                  │   Identity key type state                 │
                                   │                                           │
                                   │ Category: dsa_lsig                        │
                                   └───────────────────────────────────────────┘
@@ -76,7 +76,7 @@ precedence rather than the source system's original provenance:
   source exists
 
 This means restore does not care whether the backup source originally obtained a
-keytype from an identity-local template or signer-data library template. The
+key type from an identity-local template or signer-data library template. The
 destination system uses whatever local definition is available under the
 precedence rules above.
 The key file remains the signing authority: generic v1 signing-metadata keys can

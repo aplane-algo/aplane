@@ -62,7 +62,7 @@ aplane/
 │   │   └── plan_sign_parity_test.go   # Plan/sign parity and group-shaping tests
 │   ├── apstore/
 │   │   ├── ipc_backup_test.go         # Backup IPC command tests
-│   │   ├── ipc_template_keytype_test.go # Template/keytype command tests
+│   │   ├── ipc_template_keytype_test.go # Template and key type command tests
 │   │   └── store_commands_test.go     # Local store command tests
 │   ├── appass/
 │   │   ├── actions_test.go            # Passphrase helper setup tests

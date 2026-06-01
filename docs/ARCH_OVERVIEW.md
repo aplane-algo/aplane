@@ -55,7 +55,7 @@ a key.
 | **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes while preserving existing app interfaces | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
-| **apstore** | Keystore management client for signer-owned backup/restore/template/keytype/passphrase/init operations over IPC, plus local backup import admission, verification, and rebuild rescue flows | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
+| **apstore** | Keystore management client for signer-owned backup, restore, template, key type, passphrase, and init operations over IPC, plus local backup import admission, verification, and rebuild rescue flows | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
 | **appolicy** | Offline policy checker/editor for identity-scoped `policy.yaml` | UI (TUI) + Policy + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
 | **aplocalnet** | LocalNet setup TUI/CLI for apclient default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |

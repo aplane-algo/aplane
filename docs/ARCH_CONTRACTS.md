@@ -834,7 +834,7 @@ Template capability notes:
   templates; templates without `template_mode` are rejected rather than
   interpreted
 - `creation_params` may include scalar params plus unordered `address[]` and
-  `uint64[]` list params; public keytype surfaces preserve optional
+  `uint64[]` list params; public key type surfaces preserve optional
   `input_modes` UI metadata for alternate parameter entry forms such as
   hash/preimage toggles
 - strict generic-template YAML and Falcon composed-template YAML use declared `template_variables`
@@ -1141,7 +1141,7 @@ Watched paths:
 Mechanism:
 
 - reacts to Create, Write, Remove, and Rename on `.key`, `.template`, and key type state `.json` files
-- missing key/keytype directories are tracked and added later when created
+- missing key and key type directories are tracked and added later when created
 - when unlocked, qualifying changes trigger immediate reload
 - when locked, the watcher remains running and marks the identity dirty
 - watcher-triggered reload obtains the identity mutation lock before scanning keys/templates

@@ -465,7 +465,7 @@ workflows and do not need this capability.
 - **apadmin** provides TUI admin, approval, key, and KeyType Library workflows
 - **apconsole** composes shell, signer-admin, and daemon panes on the secure signer machine
 - **apapprover** handles approval-only workflows over local IPC
-- **apstore** requests signer-owned backup, restore, passphrase, keytype, and template mutations over local IPC; local operation is limited to backup import admission checks, backup verification, and rebuild rescue
+- **apstore** requests signer-owned backup, restore, passphrase, key type, and template mutations over local IPC; local operation is limited to backup import admission checks, backup verification, and rebuild rescue
 - **appolicy** verifies and edits identity `policy.yaml` offline while holding the store mutation lock
 - **appass** edits identity-scoped auto-unlock configuration while `apsigner` is stopped
 - **aplocalnet** configures a running AlgoKit LocalNet as apshell's default network, updates apsigner genesis mapping, enables the LocalNet plugin, and can persist a KMD URL override for plugin processes

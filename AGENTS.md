@@ -31,7 +31,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `cmd/apadmin/`: TUI and batch admin client over IPC
 - `cmd/apconsole/`: Secure-machine console wrapper for apshell/apadmin/apsigner panes
 - `cmd/apapprover/`: Approval-only admin client over IPC
-- `cmd/apstore/`: Keystore management (initialize, backup, restore, rebuild, verify, changepass, template, keytype)
+- `cmd/apstore/`: Keystore management (initialize, backup, restore, rebuild, verify, changepass, template, key type)
 - `cmd/appolicy/`: Offline policy checker/editor TUI for identity `policy.yaml`
 - `cmd/appass/`: Passphrase auto-unlock setup TUI
 - `cmd/appass-file/`: Dev-only plaintext passphrase helper (insecure)

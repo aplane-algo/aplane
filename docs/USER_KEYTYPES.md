@@ -190,7 +190,7 @@ On unlock or reload, `apsigner`:
 The state records are what `apsigner` trusts. A stray encrypted `.template`
 file without a matching state record is ignored on purpose.
 
-After successful template or keytype changes through `apstore` or `apadmin`,
+After successful template or key type changes through `apstore` or `apadmin`,
 the daemon reloads the identity runtime.
 
 ## Warnings And Recovery

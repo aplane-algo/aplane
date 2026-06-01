@@ -123,7 +123,7 @@ All under `cmd/`:
 | `apadmin` | TUI admin client over IPC or SSH admin transport |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
-| `apstore` | Local keystore management client: daemon-owned backup/restore/template/keytype/changepass/initialize over IPC, policy integrity check/verify/sign, plus local `verify` and `rebuild` rescue flows |
+| `apstore` | Local keystore management client: daemon-owned backup, restore, template, key type, changepass, and initialize over IPC, policy integrity check/verify/sign, plus local `verify` and `rebuild` rescue flows |
 | `appolicy` | Offline policy checker/editor TUI for identity-scoped `policy.yaml`; validates and signs policy edits while holding the store mutation lock |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, apclient default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
