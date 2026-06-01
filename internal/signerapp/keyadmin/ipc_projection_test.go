@@ -119,12 +119,12 @@ func TestProjectKeyDetailsIPC(t *testing.T) {
 }
 
 func TestProjectImportIPC(t *testing.T) {
-	ok := ProjectImportIPC(&keymgmt.ImportResult{Address: "ADDR"}, "ed25519", nil)
+	ok := ProjectImportIPC(&keymgmt.ImportResult{Address: "ADDR", KeyType: "ed25519"}, nil)
 	if !ok.Success || ok.Address != "ADDR" || ok.KeyType != "ed25519" {
 		t.Fatalf("result = %#v", ok)
 	}
 
-	bad := ProjectImportIPC(nil, "ed25519", &Error{Kind: ErrorInvalidInput, Message: "invalid import key message"})
+	bad := ProjectImportIPC(nil, &Error{Kind: ErrorInvalidInput, Message: "invalid import key message"})
 	if bad.Success {
 		t.Fatal("Success = true, want false")
 	}

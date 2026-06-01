@@ -84,10 +84,10 @@ Key type strings are canonical compatibility identifiers, not display labels.
 Except for the native `ed25519` key type, APlane-defined LogicSig/template and
 compiled-provider key types use `publisher.family.vN`, such as
 `aplane.falcon1024.v1`, `aplane.htlc.v1`, or
-`aplane.falcon1024-whitelist.v1`. UI surfaces should display the full
-canonical identifier to avoid ambiguity between publishers. Storage, protocol,
-provider registration, and migration code also use the full canonical
-identifier.
+`aplane.falcon1024-whitelist.v1`. Human CLI/TUI surfaces may display or accept
+the default-publisher shorthand `family.vN` for `aplane` key types, but storage,
+protocol, provider registration, migration code, and SDK-facing fields use the
+full canonical identifier.
 
 In this document `family` always refers to the middle segment of
 `publisher.family.vN`. Composed templates point at their signing provider via

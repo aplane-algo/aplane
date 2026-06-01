@@ -285,7 +285,7 @@ func TestGenerateFormTemplateShortcutSynthesizesDefaultCompiledProviderDetails(t
 	if got.libraryDetailsLoading {
 		t.Fatal("compiled provider details are loading, want synthesized details")
 	}
-	for _, want := range []string{"Compiled provider: aplane.falcon1024.v1", "Publisher: aplane", "Default post-quantum signer"} {
+	for _, want := range []string{"Compiled provider: falcon1024.v1", "Publisher: aplane", "Default post-quantum signer"} {
 		rendered := got.renderLibraryTemplateDetails()
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("compiled provider details missing %q:\n%s", want, rendered)

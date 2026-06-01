@@ -104,6 +104,25 @@ func TestCmdTemplateShowUsesIPC(t *testing.T) {
 	}
 }
 
+func TestCmdTemplateShowCanonicalizesDefaultPublisherAlias(t *testing.T) {
+	fake := &fakeApstoreAdminRequester{
+		showTemplateResult: protocol.ShowInstalledTemplateResultMessage{
+			Success:      true,
+			KeyType:      "aplane.whitelist.v1",
+			TemplateType: "generic",
+			TemplateYAML: protocol.SensitiveBytes("schema_version: 1\n"),
+		},
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	if err := cmdTemplate([]string{"show", "whitelist.v1", "--show-sensitive-template"}); err != nil {
+		t.Fatalf("cmdTemplate(show alias) error = %v", err)
+	}
+	if fake.showTemplateRequest.KeyType != "aplane.whitelist.v1" {
+		t.Fatalf("show key type = %q, want aplane.whitelist.v1", fake.showTemplateRequest.KeyType)
+	}
+}
+
 func TestCmdTemplateImportUsesIPC(t *testing.T) {
 	templatePath := filepath.Join(t.TempDir(), "template.yaml")
 	templateYAML := []byte("schema_version: 1\nfamily: escrow\nversion: 1\n")
@@ -209,6 +228,26 @@ func TestCmdTemplateRemoveUsesIPC(t *testing.T) {
 	}
 }
 
+func TestCmdTemplateRemoveCanonicalizesDefaultPublisherAlias(t *testing.T) {
+	fake := &fakeApstoreAdminRequester{
+		removeTemplateResult: protocol.RemoveInstalledTemplateResultMessage{
+			Success: true,
+			KeyType: "aplane.whitelist.v1",
+			Removed: true,
+		},
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	if err := withTestStdin("y\n", func() error {
+		return cmdTemplate([]string{"remove", "whitelist.v1"})
+	}); err != nil {
+		t.Fatalf("cmdTemplate(remove alias) error = %v", err)
+	}
+	if fake.removeTemplateRequest.KeyType != "aplane.whitelist.v1" {
+		t.Fatalf("remove key type = %q, want aplane.whitelist.v1", fake.removeTemplateRequest.KeyType)
+	}
+}
+
 func TestCmdTemplateRemoveHandlesAlreadyAbsentResult(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		removeTemplateResult: protocol.RemoveInstalledTemplateResultMessage{
@@ -267,6 +306,23 @@ func TestCmdKeyTypeActivateUsesIPC(t *testing.T) {
 	}
 }
 
+func TestCmdKeyTypeActivateCanonicalizesDefaultPublisherAlias(t *testing.T) {
+	fake := &fakeApstoreAdminRequester{
+		activateResult: protocol.ActivateKeyTypeResultMessage{
+			Success: true,
+			KeyType: "aplane.ecdsak1.v1",
+		},
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	if err := cmdKeyType([]string{"activate", "ecdsak1.v1"}); err != nil {
+		t.Fatalf("cmdKeyType(activate alias) error = %v", err)
+	}
+	if fake.activateRequest.KeyType != "aplane.ecdsak1.v1" {
+		t.Fatalf("activate key type = %q, want aplane.ecdsak1.v1", fake.activateRequest.KeyType)
+	}
+}
+
 func TestCmdKeyTypeDeactivateUsesIPC(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		deactivateResult: protocol.DeactivateKeyTypeResultMessage{
@@ -290,6 +346,26 @@ func TestCmdKeyTypeDeactivateUsesIPC(t *testing.T) {
 	}
 	if !fake.closed {
 		t.Fatal("admin client was not closed")
+	}
+}
+
+func TestCmdKeyTypeDeactivateCanonicalizesDefaultPublisherAlias(t *testing.T) {
+	fake := &fakeApstoreAdminRequester{
+		deactivateResult: protocol.DeactivateKeyTypeResultMessage{
+			Success: true,
+			KeyType: "aplane.ecdsak1.v1",
+			Removed: true,
+		},
+	}
+	withFakeApstoreAdminClient(t, fake)
+
+	if err := withTestStdin("y\n", func() error {
+		return cmdKeyType([]string{"deactivate", "ecdsak1.v1"})
+	}); err != nil {
+		t.Fatalf("cmdKeyType(deactivate alias) error = %v", err)
+	}
+	if fake.deactivateRequest.KeyType != "aplane.ecdsak1.v1" {
+		t.Fatalf("deactivate key type = %q, want aplane.ecdsak1.v1", fake.deactivateRequest.KeyType)
 	}
 }
 

@@ -8,3 +8,7 @@ import "github.com/aplane-algo/aplane/internal/keytypefmt"
 func displayKeyType(keyType string) string {
 	return keytypefmt.Display(keyType)
 }
+
+func canonicalKeyType(keyType string) string {
+	return keytypefmt.Canonicalize(keyType)
+}

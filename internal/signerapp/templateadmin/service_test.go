@@ -95,6 +95,25 @@ func TestActivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 	}
 }
 
+func TestActivateKeyTypeCanonicalizesDefaultPublisherAlias(t *testing.T) {
+	svc, ir, _ := setupServiceWithReloadCounter(t)
+
+	result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
+		KeyType: "falcon1024_ed25519.v1",
+	})
+	if !result.Success {
+		t.Fatalf("ActivateKeyType(alias) failed: code=%q error=%q", result.Code, result.Error)
+	}
+	if result.KeyType != "aplane.falcon1024_ed25519.v1" {
+		t.Fatalf("KeyType = %q, want canonical aplane.falcon1024_ed25519.v1", result.KeyType)
+	}
+	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.falcon1024_ed25519.v1"); err != nil {
+		t.Fatalf("Get after Activate: %v", err)
+	} else if !ok {
+		t.Fatal("canonical state record missing after alias activation")
+	}
+}
+
 // Locks in B2 regression coverage for the deactivation handler. Both internal
 // branches (YAML disable + compiled deactivate) flow through one Reload call
 // site after the state-record write.
@@ -122,5 +141,30 @@ func TestDeactivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 		t.Fatalf("Get after Deactivate: %v", err)
 	} else if ok {
 		t.Fatal("state record still present after Deactivate; record should have been removed")
+	}
+}
+
+func TestDeactivateKeyTypeCanonicalizesDefaultPublisherAlias(t *testing.T) {
+	svc, ir, _ := setupServiceWithReloadCounter(t)
+
+	if result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
+		KeyType: "aplane.falcon1024_ed25519.v1",
+	}); !result.Success {
+		t.Fatalf("setup ActivateKeyType failed: code=%q error=%q", result.Code, result.Error)
+	}
+
+	result := svc.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{
+		KeyType: "falcon1024_ed25519.v1",
+	})
+	if !result.Success {
+		t.Fatalf("DeactivateKeyType(alias) failed: code=%q error=%q", result.Code, result.Error)
+	}
+	if result.KeyType != "aplane.falcon1024_ed25519.v1" {
+		t.Fatalf("KeyType = %q, want canonical aplane.falcon1024_ed25519.v1", result.KeyType)
+	}
+	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.falcon1024_ed25519.v1"); err != nil {
+		t.Fatalf("Get after Deactivate: %v", err)
+	} else if ok {
+		t.Fatal("canonical state record still present after alias deactivation")
 	}
 }

@@ -51,6 +51,6 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore template show example.my_escrow.v1 --show-sensitive-template\n")
 	fmt.Fprintf(os.Stderr, "  apstore template import library/templates/aplane.whitelist.v1.yaml\n")
 	fmt.Fprintf(os.Stderr, "  apstore template remove example.my_escrow.v1\n")
-	fmt.Fprintf(os.Stderr, "  apstore keytype activate aplane.falcon1024_ed25519.v1\n")
-	fmt.Fprintf(os.Stderr, "  apstore keytype deactivate aplane.falcon1024_ed25519.v1\n")
+	fmt.Fprintf(os.Stderr, "  apstore keytype activate falcon1024_ed25519.v1\n")
+	fmt.Fprintf(os.Stderr, "  apstore keytype deactivate falcon1024_ed25519.v1\n")
 }

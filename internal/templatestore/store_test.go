@@ -498,6 +498,30 @@ func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
 			wantErr: true,
 			errMsg:  "family contains unsafe characters",
 		},
+		{
+			name: "family with single dot rejected",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 1,
+				Publisher:     "aplane",
+				Family:        "white.list",
+				Version:       1,
+				DisplayName:   "Test",
+			},
+			wantErr: true,
+			errMsg:  "family contains unsafe characters",
+		},
+		{
+			name: "publisher with single dot rejected",
+			spec: BaseTemplateSpec{
+				SchemaVersion: 1,
+				Publisher:     "ap.lane",
+				Family:        "whitelist",
+				Version:       1,
+				DisplayName:   "Test",
+			},
+			wantErr: true,
+			errMsg:  "publisher contains unsafe characters",
+		},
 	}
 
 	for _, tt := range tests {

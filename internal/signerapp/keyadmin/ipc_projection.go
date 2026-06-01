@@ -84,7 +84,7 @@ func keyDetailsIPCCode(err *Error) string {
 	return protocol.IPCErrorCode(err.Message)
 }
 
-func ProjectImportIPC(result *keymgmt.ImportResult, keyType string, err *Error) adminproto.ImportKeyResult {
+func ProjectImportIPC(result *keymgmt.ImportResult, err *Error) adminproto.ImportKeyResult {
 	if err != nil {
 		return adminproto.ImportKeyResult{
 			Success: false,
@@ -95,7 +95,7 @@ func ProjectImportIPC(result *keymgmt.ImportResult, keyType string, err *Error) 
 	return adminproto.ImportKeyResult{
 		Success: true,
 		Address: result.Address,
-		KeyType: keyType,
+		KeyType: result.KeyType,
 	}
 }
 

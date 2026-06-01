@@ -70,10 +70,12 @@ Canonical forms:
   `aplane.htlc.v1`, and `aplane.falcon1024-whitelist.v1`
 
 YAML templates declare `publisher`, `family`, and integer `version`; the
-computed key type is `publisher.family.v<version>`. UI surfaces should display
-the full canonical identifier to avoid ambiguity between publishers, and
-clients and tools must send and persist the full canonical identifier in
-`key_type` fields.
+computed key type is `publisher.family.v<version>`. Clients and tools must send
+and persist the full canonical identifier in `key_type` fields. Human-facing
+CLI/TUI input may additionally accept the default-publisher shorthand
+`family.vN`, which resolves to `aplane.family.vN`; this shorthand is never
+persisted or emitted in wire/storage fields. Compact human display may elide the
+default `aplane` publisher, but third-party publishers stay explicit.
 
 Terminology:
 

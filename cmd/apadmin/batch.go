@@ -117,6 +117,7 @@ func (c *testModeClient) GenerateKey(keyType string) (string, error) {
 
 // GenerateKeyWithParams generates a new key with creation parameters.
 func (c *testModeClient) GenerateKeyWithParams(keyType string, params map[string]string) (string, error) {
+	keyType = keytypefmt.Canonicalize(keyType)
 	msg := protocol.GenerateKeyMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeGenerateKey,
@@ -145,6 +146,7 @@ func (c *testModeClient) GenerateKeyWithParams(keyType string, params map[string
 
 // ImportKeyWithParams imports a key from mnemonic with creation parameters.
 func (c *testModeClient) ImportKeyWithParams(keyType, mnemonic string, params map[string]string) (string, error) {
+	keyType = keytypefmt.Canonicalize(keyType)
 	msg := protocol.ImportKeyMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeImportKey,
@@ -345,11 +347,11 @@ func formatBatchKeyType(keyType, templateProvenanceStatus string) string {
 func runTestGenerate(client *testModeClient, args []string) {
 	if len(args) < 1 {
 		logErrorf("usage: apadmin --test generate <key-type>")
-		logErrorf("key types: ed25519, aplane.falcon1024.v1")
+		logErrorf("key types: ed25519, falcon1024.v1")
 		os.Exit(1)
 	}
 
-	keyType := args[0]
+	keyType := keytypefmt.Canonicalize(args[0])
 	address, err := client.GenerateKey(keyType)
 	if err != nil {
 		logErrorf("%v", err)
@@ -362,11 +364,11 @@ func runTestGenerate(client *testModeClient, args []string) {
 func runTestImport(client *testModeClient, args []string) {
 	if len(args) < 2 {
 		logErrorf("usage: apadmin --test import <key-type> [key=value ...] <mnemonic words>")
-		logErrorf("key types: ed25519, aplane.falcon1024.v1")
+		logErrorf("key types: ed25519, falcon1024.v1")
 		os.Exit(1)
 	}
 
-	keyType := args[0]
+	keyType := keytypefmt.Canonicalize(args[0])
 	remaining := args[1:]
 
 	// Split remaining args into params (key=value) and mnemonic words
@@ -439,7 +441,7 @@ func printTestUsage() {
 
 Commands:
   list                              List all keys
-  generate <key-type>               Generate a new key (ed25519, aplane.falcon1024.v1)
+  generate <key-type>               Generate a new key (ed25519, falcon1024.v1)
   import <key-type> <mnemonic>      Import key from mnemonic
   delete <address>                  Delete a key
   unlock                            Unlock the signer (uses TEST_PASSPHRASE)
@@ -451,7 +453,7 @@ Environment variables:
 Examples:
   apadmin --test list
   apadmin --test --remote --client-data ~/aplane/apclient list
-  apadmin --test generate aplane.falcon1024.v1
+  apadmin --test generate falcon1024.v1
   apadmin --test import ed25519 word1 word2 ... word25
 `)
 }

@@ -47,6 +47,7 @@ func cmdShowTemplate(keyType string, showSensitiveTemplate bool) error {
 	if !showSensitiveTemplate {
 		return fmt.Errorf("refusing to show decrypted template YAML without --show-sensitive-template")
 	}
+	keyType = canonicalKeyType(keyType)
 
 	client, err := newApstoreAdminClientForCommand()
 	if err != nil {
@@ -103,6 +104,7 @@ func cmdImportTemplate(yamlPath string) error {
 }
 
 func cmdRemoveTemplate(keyType string) error {
+	keyType = canonicalKeyType(keyType)
 	if !confirmRemoveTemplate(keyType) {
 		return fmt.Errorf("template removal cancelled")
 	}

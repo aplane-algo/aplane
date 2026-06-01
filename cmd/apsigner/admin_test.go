@@ -351,6 +351,35 @@ func TestAdminGenerateFalcon1024(t *testing.T) {
 	}
 }
 
+func TestAdminGenerateCanonicalizesDefaultPublisherAlias(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	algodCleanup := configureMockAlgod(t, server)
+	defer algodCleanup()
+
+	reqBody, _ := json.Marshal(AdminGenerateRequest{
+		KeyType: "falcon1024.v1",
+	})
+
+	w := httptest.NewRecorder()
+	r := requestWithIdentity(http.MethodPost, "/admin/generate", reqBody)
+	server.handleAdminGenerate(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp AdminGenerateResponse
+	decodeResponse(t, w, &resp)
+	if resp.Error != "" {
+		t.Fatalf("Unexpected error: %s", resp.Error)
+	}
+	if resp.KeyType != "aplane.falcon1024.v1" {
+		t.Errorf("Expected canonical key_type aplane.falcon1024.v1, got %s", resp.KeyType)
+	}
+}
+
 func TestAdminGenerateEd25519IsImmediatelyVisibleInKeyCache(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()

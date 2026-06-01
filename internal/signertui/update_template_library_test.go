@@ -237,7 +237,7 @@ func TestLibraryDetailsViewerRendersSourceIntegrityMetadata(t *testing.T) {
 	}
 
 	rendered := got.renderLibraryTemplateDetails()
-	for _, want := range []string{"Library YAML: aplane.whitelist.v1", "Publisher: aplane", "SHA-256: 0123456789abcdef", "Modified: 2026-05-12 15:33:20 UTC"} {
+	for _, want := range []string{"Library YAML: whitelist.v1", "Publisher: aplane", "SHA-256: 0123456789abcdef", "Modified: 2026-05-12 15:33:20 UTC"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered details missing %q:\n%s", want, rendered)
 		}
@@ -280,7 +280,7 @@ func TestCompiledProviderLibraryEntryUsesActivationLanguage(t *testing.T) {
 	}
 
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Activate Compiled Provider", "Key type:  aplane.falcon1024_ed25519.v1", "Publisher: aplane", "Source:    falcon", "ACTIVATE"} {
+	for _, want := range []string{"Activate Compiled Provider", "Key type:  falcon1024_ed25519.v1", "Publisher: aplane", "Source:    falcon", "ACTIVATE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -339,7 +339,7 @@ func TestCompiledProviderInstallResultUsesActivatedStatus(t *testing.T) {
 		KeyType: "aplane.falcon1024_ed25519.v1",
 	})
 	got := next.(Model)
-	if got.templateInstallStatus != "aplane.falcon1024_ed25519.v1 available to create" {
+	if got.templateInstallStatus != "falcon1024_ed25519.v1 available to create" {
 		t.Fatalf("templateInstallStatus = %q, want available-to-create status", got.templateInstallStatus)
 	}
 }
@@ -376,7 +376,7 @@ func TestCompiledProviderAlreadyActivatedStatus(t *testing.T) {
 	}
 
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Deactivate Compiled Provider", "Key type:  aplane.falcon1024_ed25519.v1", "Publisher: aplane", "Source:    falcon", "DEACTIVATE"} {
+	for _, want := range []string{"Deactivate Compiled Provider", "Key type:  falcon1024_ed25519.v1", "Publisher: aplane", "Source:    falcon", "DEACTIVATE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -392,7 +392,7 @@ func TestCompiledProviderDeactivateResultUsesDeactivatedStatus(t *testing.T) {
 		Removed: true,
 	})
 	got := next.(Model)
-	if got.templateInstallStatus != "aplane.falcon1024_ed25519.v1 not available to create" {
+	if got.templateInstallStatus != "falcon1024_ed25519.v1 not available to create" {
 		t.Fatalf("templateInstallStatus = %q, want not-available-to-create status", got.templateInstallStatus)
 	}
 }
@@ -440,7 +440,7 @@ func TestInstalledDisabledTemplateOpensEnableConfirmation(t *testing.T) {
 		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Enable Template Key Type", "Key type:  aplane.falcon1024-whitelist.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {
+	for _, want := range []string{"Enable Template Key Type", "Key type:  falcon1024-whitelist.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}

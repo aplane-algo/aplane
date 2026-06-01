@@ -52,13 +52,13 @@ func (s IPCService) DeleteKey(ir *identity.Runtime, req adminproto.DeleteKeyRequ
 
 func (s IPCService) ImportKey(ir *identity.Runtime, req adminproto.ImportKeyRequest) adminproto.ImportKeyResult {
 	importResult, err := s.Service.ImportKey(ir, req.KeyType, req.Mnemonic, req.Parameters)
-	ipcResult := ProjectImportIPC(importResult, req.KeyType, err)
+	ipcResult := ProjectImportIPC(importResult, err)
 	if !ipcResult.Success {
 		return ipcResult
 	}
 
 	if importResult != nil {
-		s.logf("imported %s key via IPC: %s", keytypefmt.Display(req.KeyType), importResult.Address)
+		s.logf("imported %s key via IPC: %s", keytypefmt.Display(importResult.KeyType), importResult.Address)
 	}
 	return ipcResult
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -78,10 +79,10 @@ func (s *BaseTemplateSpec) ValidateBase(maxSchemaVersion int) error {
 	if s.Publisher == "" {
 		return fmt.Errorf("publisher is required")
 	}
-	if strings.ContainsAny(s.Publisher, "/\\\x00") || strings.Contains(s.Publisher, "..") {
+	if !keytypefmt.ValidSegment(strings.ToLower(strings.TrimSpace(s.Publisher))) {
 		return fmt.Errorf("publisher contains unsafe characters")
 	}
-	if strings.ContainsAny(s.Family, "/\\\x00") || strings.Contains(s.Family, "..") {
+	if !keytypefmt.ValidSegment(strings.ToLower(strings.TrimSpace(s.Family))) {
 		return fmt.Errorf("family contains unsafe characters")
 	}
 	if s.Version < 1 {

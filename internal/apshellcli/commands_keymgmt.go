@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
+	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -35,7 +36,7 @@ func (r *REPLState) cmdGenerate(args []string, _ interface{}) error {
 		return err
 	}
 
-	r.printf("Generated %s key: %s\n", result.KeyType, result.Address)
+	r.printf("Generated %s key: %s\n", keytypefmt.Display(result.KeyType), result.Address)
 
 	return nil
 }

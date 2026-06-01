@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -71,6 +72,10 @@ func (a *App) KeyTypes(ctx context.Context) (*KeyTypesCommandResult, error) {
 
 // GenerateKey resolves address-list creation params and generates a signer key.
 func (a *App) GenerateKey(ctx context.Context, req GenerateKeyRequest) (*GenerateKeyCommandResult, error) {
+	// Resolve an elided default-publisher key type (e.g. "falcon1024-whitelist.v1")
+	// to its canonical form before any lookup or storage.
+	req.KeyType = keytypefmt.Canonicalize(req.KeyType)
+
 	keyTypes, err := a.eng.ListKeyTypesWithContext(ctx)
 	if err != nil {
 		return nil, err

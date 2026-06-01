@@ -56,8 +56,8 @@ apstore -d $APSIGNER_DATA template list
 apstore -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
 apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.yaml
 apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
-apstore -d $APSIGNER_DATA keytype activate aplane.falcon1024_ed25519.v1
-apstore -d $APSIGNER_DATA keytype deactivate aplane.falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -74,6 +74,10 @@ generate <key_type> [param=value ...]
 ```
 
 `keytypes` lists only key types currently exposed by the connected signer.
+APlane-published key types may be displayed and entered without the leading
+`aplane.` publisher, for example `timed-whitelist.v1`; third-party publishers remain
+explicit, for example `example.my_escrow.v1`. Files, IPC/HTTP responses, and
+JSON fields still use the canonical `publisher.family.vN` identifier.
 
 ## Compiled Providers
 
@@ -83,7 +87,7 @@ default-enabled; others are library-visible and require identity activation.
 Activate a library-visible compiled provider:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype activate aplane.falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
 ```
 
 Activation writes or updates:
@@ -107,7 +111,7 @@ with:
 Deactivate a library-visible compiled provider:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype deactivate aplane.falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
 ```
 
 Deactivation removes the identity activation record after checking that no
@@ -207,7 +211,7 @@ change.
 Refresh the activation record:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype activate aplane.falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
 ```
 
 This updates the state-record fingerprint. It does not rewrite existing key
@@ -254,6 +258,17 @@ For example:
 aplane.falcon1024.v1
 aplane.whitelist.v1
 ```
+
+In human command input and compact UI display, APlane-published key types may
+use the default-publisher shorthand:
+
+```text
+falcon1024.v1
+whitelist.v1
+```
+
+This shorthand is only an alias. On disk, in backups, in policy files, in
+IPC/HTTP JSON, and in SDK-facing fields, the key type remains canonical.
 
 Existing key files keep their own stored LogicSig bytecode, off-curve salt
 counter, and signing metadata. Enabling, disabling, importing, or removing a

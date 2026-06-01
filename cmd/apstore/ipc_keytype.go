@@ -10,6 +10,8 @@ import (
 )
 
 func cmdActivateKeyType(keyType string) error {
+	keyType = canonicalKeyType(keyType)
+
 	client, err := newApstoreAdminClientForCommand()
 	if err != nil {
 		return err
@@ -36,6 +38,7 @@ func cmdActivateKeyType(keyType string) error {
 }
 
 func cmdDeactivateKeyType(keyType string) error {
+	keyType = canonicalKeyType(keyType)
 	if !confirmDeactivateKeyType(keyType) {
 		return fmt.Errorf("key type deactivation cancelled")
 	}
