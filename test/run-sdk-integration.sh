@@ -11,6 +11,159 @@ if [[ ! -d "$APLANE_SDKS_REPO" ]]; then
   exit 1
 fi
 
+check_sdk_test_requirements() {
+  local python_dir="$APLANE_SDKS_REPO/python"
+  local typescript_dir="$APLANE_SDKS_REPO/typescript"
+
+  if [[ -d "$python_dir" ]] && ! pytest --version >/dev/null 2>&1; then
+    cat >&2 <<EOF
+Python SDK integration prerequisite unavailable: pytest
+
+Install the Python SDK development dependencies, then rerun integration tests:
+  cd "$python_dir"
+  python3 -m pip install -e '.[dev]'
+EOF
+    exit 1
+  fi
+
+  if [[ -d "$typescript_dir" ]]; then
+    if ! command -v node >/dev/null 2>&1; then
+      echo "TypeScript SDK integration prerequisite missing: node" >&2
+      exit 1
+    fi
+    if ! command -v npm >/dev/null 2>&1; then
+      echo "TypeScript SDK integration prerequisite missing: npm" >&2
+      exit 1
+    fi
+    warn_typescript_node_engines "$typescript_dir"
+    if ! (cd "$typescript_dir" && node --import tsx --eval "" >/dev/null 2>&1); then
+      cat >&2 <<EOF
+TypeScript SDK integration prerequisite missing: local tsx dependency
+
+Install the TypeScript SDK dependencies, then rerun integration tests:
+  cd "$typescript_dir"
+  npm ci
+EOF
+      exit 1
+    fi
+  fi
+}
+
+warn_typescript_node_engines() {
+  local typescript_dir="$1"
+  local package_lock="$typescript_dir/package-lock.json"
+
+  if [[ ! -f "$package_lock" ]]; then
+    return 0
+  fi
+
+  node - "$package_lock" <<'NODE' || true
+const fs = require("node:fs");
+
+const packageLockPath = process.argv[2];
+const lock = JSON.parse(fs.readFileSync(packageLockPath, "utf8"));
+const current = parseVersion(process.versions.node);
+
+function parseVersion(value) {
+  const match = String(value).trim().match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+  if (!match) {
+    return null;
+  }
+  return [
+    Number(match[1]),
+    Number(match[2] || 0),
+    Number(match[3] || 0),
+  ];
+}
+
+function compareVersions(left, right) {
+  for (let i = 0; i < 3; i++) {
+    if (left[i] !== right[i]) {
+      return left[i] < right[i] ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+function satisfiesComparator(version, operator, target) {
+  const cmp = compareVersions(version, target);
+  switch (operator || "=") {
+    case ">":
+      return cmp > 0;
+    case ">=":
+      return cmp >= 0;
+    case "<":
+      return cmp < 0;
+    case "<=":
+      return cmp <= 0;
+    case "=":
+      return cmp === 0;
+    case "^":
+      if (cmp < 0) {
+        return false;
+      }
+      return target[0] > 0
+        ? version[0] === target[0]
+        : version[0] === 0 && version[1] === target[1];
+    case "~":
+      return cmp >= 0 && version[0] === target[0] && version[1] === target[1];
+    default:
+      return true;
+  }
+}
+
+function satisfiesRange(version, range) {
+  const text = String(range).trim();
+  if (!text || text === "*" || text.toLowerCase() === "latest") {
+    return true;
+  }
+  return text.split("||").some((alternative) => {
+    const comparators = [...alternative.matchAll(/(>=|<=|>|<|\^|~|=)?\s*v?(\d+(?:\.\d+){0,2})/g)];
+    if (comparators.length === 0) {
+      return true;
+    }
+    return comparators.every((match) =>
+      satisfiesComparator(version, match[1], parseVersion(match[2]))
+    );
+  });
+}
+
+function packageName(path, pkg) {
+  if (pkg && pkg.name) {
+    return pkg.name;
+  }
+  const parts = path.split("node_modules/");
+  return parts[parts.length - 1] || path || "(root)";
+}
+
+const packages = lock.packages || {};
+const mismatches = [];
+for (const [path, pkg] of Object.entries(packages)) {
+  const required = pkg && pkg.engines && pkg.engines.node;
+  if (!required || satisfiesRange(current, required)) {
+    continue;
+  }
+  mismatches.push({
+    name: packageName(path, pkg),
+    version: pkg.version || "unknown",
+    required,
+  });
+}
+
+if (mismatches.length > 0) {
+  console.error(
+    `TypeScript SDK integration warning: current Node ${process.version} does not satisfy package engine requirements:`
+  );
+  for (const item of mismatches) {
+    console.error(`  ${item.name}@${item.version} requires node ${item.required}`);
+  }
+  console.error("Tests will still run because npm treats these as warnings by default.");
+}
+NODE
+}
+
+check_sdk_test_requirements
+
 if [[ ! -f .env.test ]]; then
   echo ".env.test not found; run test/setup-test-env.sh first" >&2
   exit 1
