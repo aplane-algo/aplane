@@ -232,6 +232,32 @@ transaction sender, or rekey target. `/keys` and generation responses for
 component keys must expose `component_key_id` so clients do not depend on the
 compatibility locator.
 
+For MVP wire DTOs, component-key inventory and generation responses use these
+exact additive fields:
+
+```json
+{
+  "address": "attkey_...",
+  "component_key_id": "attkey_...",
+  "public_key_hex": "...",
+  "key_type": "aplane.attestor-ed25519.v1",
+  "is_component_key": true,
+  "is_spending_account": false
+}
+```
+
+For component-key rows, `address` is exactly the same string as
+`component_key_id`; it is a compatibility locator only. Existing spending
+account rows omit `component_key_id`, omit `is_component_key` or set it to
+`false`, and omit `is_spending_account` or set it to `true`. SDKs and shell UI
+must treat absent `is_component_key` as `false`. They must not infer that an
+`address` field is an Algorand address when `is_component_key:true` or
+`is_spending_account:false`.
+
+`POST /admin/generate` for a component key returns the same fields plus the
+existing `parameters` field when parameters are present. Contract fixtures must
+pin both `/keys` and `/admin/generate` component-key examples.
+
 `aplane.attestor-falcon1024-ed25519.v1` is an attested account key. It is a
 DSA-backed LogicSig key on disk with:
 
@@ -654,14 +680,58 @@ storage invariants are mandatory:
 - account-binding writes are atomic with respect to signer reload.
 
 The MVP integrity sidecars for `trusted_org_keys.json` and
-`account_bindings.json` use the same shape as `policy.yaml.hmac` unless the
-implementation introduces a shared signed-file helper first. The HMAC key is
-derived from the identity master key with distinct HKDF info strings:
+`account_bindings.json` use an attestor signed-file sidecar, not the
+policy-specific diagnostic field names. The HMAC key is derived from the
+identity master key with distinct HKDF info strings:
 
 ```text
 aplane attestor trusted org keys integrity v1
 aplane attestor account bindings integrity v1
 ```
+
+Sidecar JSON:
+
+```json
+{
+  "version": 1,
+  "algorithm": "hmac-sha256",
+  "key_id": "keystore-master-hkdf-v1",
+  "hmac": "...",
+  "payload_sha256": "...",
+  "signed_at_unix": 1770000000,
+  "payload_mtime_ns": 1770000000000000000
+}
+```
+
+Security fields:
+
+- `version`,
+- `algorithm`,
+- `key_id`,
+- `hmac`.
+
+Diagnostic fields:
+
+- `payload_sha256`,
+- `signed_at_unix`,
+- `payload_mtime_ns`.
+
+The HMAC covers the exact JSON payload bytes, not normalized JSON and not the
+sidecar diagnostic fields. Diagnostic field tampering does not affect the
+security decision.
+
+Load behavior:
+
+- if the whole `attestor/` directory is absent, attestor trust roots and account
+  bindings are treated as empty,
+- if a behavior-bearing payload file is absent and its sidecar is also absent,
+  that specific attestor state file is treated as empty,
+- if exactly one of a payload file or its sidecar exists, unlock/reload fails
+  closed for that identity,
+- if a sidecar has unsupported security fields or an invalid HMAC,
+  unlock/reload fails closed for that identity,
+- on reload failure, the previous in-memory attestor state remains active,
+  matching signer policy reload failure behavior.
 
 Profile JSON files do not need a local HMAC sidecar because the attestor
 profile signature is the behavior-bearing integrity check. Restore must verify
@@ -1454,8 +1524,8 @@ Existing package changes:
 - `internal/signerapp/rest`: expose service methods for new endpoints,
   including trusted-org-key management.
 - `internal/signerapp/rest` and the `/keys` inventory DTO in `pkg/signerapi`:
-  expose `component_key_id` and a non-spending marker for component-key rows in
-  `/keys` and key-generation responses.
+  expose `component_key_id`, `is_component_key`, and `is_spending_account` for
+  component-key rows in `/keys` and key-generation responses.
 - `internal/signerapp/txdesc`: add operator-facing approval descriptions for
   component signing and account registration (Section 11.3).
 - `internal/signerapp/audit`: add event types and fields.
@@ -1502,6 +1572,9 @@ Phase 0 contract tests:
 - component message vectors pass.
 - component key handle vectors produce stable `attkey_...` IDs and prove they
   are not Algorand addresses.
+- `/keys` and `/admin/generate` component-key fixtures include `address`,
+  `component_key_id`, `public_key_hex`, `key_type`, `is_component_key:true`,
+  and `is_spending_account:false`.
 - registration success and rejection fixtures are committed.
 - `/sign/component` and `/sign/assemble` fixtures, including passthrough
   assembly items, are committed.
@@ -1518,6 +1591,9 @@ Unit tests:
   transaction sender, `auth_address`, and rekey target.
 - trust-root add rejects a conflicting public key for an existing `org_key_id`,
   and revoke drives later re-verification to fail closed.
+- attestor signed-file sidecars reject tampered payloads, missing sidecars,
+  orphaned sidecars, unsupported security fields, and invalid HMAC values;
+  reload failure keeps the previous in-memory attestor state active.
 - profile import requires a pre-trusted active org key and rejects an
   `--org-key` assertion that does not match the stored trusted public key.
 - registration and attestor-role component signing fail closed when the current
