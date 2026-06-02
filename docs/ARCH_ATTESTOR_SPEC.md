@@ -477,6 +477,11 @@ The only MVP profile signature scheme is `aplane.profile-ed25519.v1`.
 `issuer.org_key_id`, and the trusted organization key with that ID must have
 the same public key as `issuer.org_public_key_hex`.
 
+Profile validity is checked against the current UTC time. Import fails closed
+when `valid_from` is in the future or `valid_until` is in the past. Any later
+operation that re-verifies a current local attestor profile must re-check the
+same validity window instead of treating import-time validity as durable.
+
 Profile import must fail closed for:
 
 - malformed JSON,
@@ -486,6 +491,7 @@ Profile import must fail closed for:
 - invalid identifier syntax,
 - invalid key encoding or signature length,
 - invalid timestamp format or `valid_until <= valid_from`,
+- not-yet-valid profile,
 - signature verification failure,
 - unknown, revoked, or mismatched trusted org key,
 - expired profile,
@@ -566,6 +572,54 @@ feature must define all of the following before release:
 - audit events for profile signing and org-key lifecycle changes,
 - tests proving org profile-signing keys cannot be used as transaction,
   component, sender, auth-address, or rekey keys.
+
+### 9.4 Trusted Organization Key Management
+
+Trusted organization keys (Section 9.2) are mutated only through an explicit,
+audited admin operation. They are never established implicitly as a side effect
+of profile import.
+
+Supported trust-root mutations are:
+
+- add a trusted org key,
+- revoke a trusted org key.
+
+The MVP operator UX target is the `apshell` trust-root command surface in
+Section 20. The backing transport may be HTTP, admin IPC/SSH, or both, but the
+shipped implementation must define exact request/response/status shapes in
+`docs/ARCH_HTTP_API.md`, `docs/ARCH_ADMIN_PROTOCOL.md`, and
+`docs/ARCH_CONTRACTS.md` before release. Until those canonical contracts are
+written, this section defines semantics only. Trust-root operations are gated
+by the stable authorization actions in Section 11.1
+(`attestor.trustroot.add`, `attestor.trustroot.revoke`,
+`attestor.trustroot.view`) and are available to `system:product-admins` in
+product-mode bootstrap grants.
+
+Add semantics:
+
+- the caller supplies `org_key_id`, `scheme`, and `public_key_hex`,
+- the new record is stored with `status: active`, `trusted_at`, and
+  `trusted_by_principal` taken from the authenticated admin principal,
+- add fails closed if `org_key_id` already exists with a different public key,
+- re-adding an identical `(org_key_id, public_key_hex)` is idempotent and must
+  not silently move a `revoked` key back to `active`; reactivation requires an
+  explicit, audited force flag.
+
+Revoke semantics:
+
+- revoke sets `status: revoked` and never deletes the record,
+- revoke does not delete stored profiles or bindings (Section 9.2),
+- after revoke, any operation that must re-verify a profile signed by that org
+  key fails closed until a newer trusted root and profile are imported.
+
+Profile import (Section 9.1) requires the issuing org key to already be present
+and `active` in the trust-root store. Import never adds, trusts, or reactivates
+an org key. The `--org-key <org-public-key>` option on the import command is an
+assertion: it must equal the stored trusted public key for `issuer.org_key_id`,
+and a mismatch fails closed without mutating the trust-root store.
+
+Trust-root writes hold the identity store mutation lock and atomically rewrite
+both `trusted_org_keys.json` and its HMAC sidecar.
 
 ## 10. Persistent Storage
 
@@ -684,6 +738,9 @@ Add stable authorization actions in `internal/auth/authorizer.go`:
 ```text
 attestor.profile.import
 attestor.profile.view
+attestor.trustroot.add
+attestor.trustroot.revoke
+attestor.trustroot.view
 attestor.account.register
 attestor.account.view
 attestor.account.update
@@ -759,6 +816,38 @@ beyond normal HTTP context cancellation. Its `request_id` is for response and
 audit correlation only; it is not registered as live request state and
 `/sign/cancel` must return `not_found` for it.
 
+### 11.3 Approval Prompt Rendering
+
+`/sign/component` and `/attestor/register-account` reuse the existing approval
+coordinator and operator approval surfaces (`apadmin`, `apapprover`). Each new
+request kind must supply an operator-facing approval description, analogous to
+the existing transaction `txdesc`, so an operator can make an informed manual
+decision without reading audit logs.
+
+Component-signing approval descriptions must show:
+
+- request kind and component role (user or attestor),
+- attested account,
+- target indices and target TxIDs,
+- observed and expected genesis hash / network token,
+- profile ID, short-form profile fingerprint, and org key ID,
+- per-target counterparty signature verification outcome,
+- the policy verdict phase that routed the request to manual review.
+
+Registration approval descriptions must show:
+
+- attested account,
+- template key type and short-form template fingerprint,
+- attestor key ID and short-form attestor public-key fingerprint,
+- profile ID, short-form profile fingerprint, and org key ID,
+- network token and genesis hash,
+- requester principal.
+
+These descriptions are presentation-only and must not introduce signing inputs.
+The authoritative signing inputs remain the decoded group bytes and the local
+binding. Description rendering lives in `internal/signerapp/txdesc` or a focused
+sibling package, not in transport adapters.
+
 ## 12. `/attestor/register-account`
 
 Request:
@@ -824,6 +913,8 @@ outcomes.
 ```text
 policy_refused
 profile_mismatch
+profile_not_yet_valid
+profile_expired
 bytecode_address_mismatch
 network_not_in_profile
 key_id_not_held
@@ -837,19 +928,20 @@ Validation:
 
 1. Resolve `attestor_profile_id` to the currently stored local profile.
 2. Re-verify the profile signature against the locally trusted org key.
-3. Verify `attestor_key_id`, `attestor_public_key`, `template_key_type`,
+3. Require the current UTC time to be within the profile validity window.
+4. Verify `attestor_key_id`, `attestor_public_key`, `template_key_type`,
    `network_id`, and `genesis_hash` all belong to that profile.
-4. Verify the signer holds an active component key whose public key matches
+5. Verify the signer holds an active component key whose public key matches
    the profile entry for `attestor_key_id`, and record its local
    `component_key_id`.
-5. Verify `template_key_type` is registered as an attested-account template.
-6. Rebuild LogicSig bytecode from template, user public key, attestor public
+6. Verify `template_key_type` is registered as an attested-account template.
+7. Rebuild LogicSig bytecode from template, user public key, attestor public
    key, and salt counter.
-7. Require rebuilt bytecode to equal `lsig_bytecode_hex`.
-8. Require bytecode-derived address to equal `attested_account`.
-9. Run account-registration policy and approval.
-10. Persist an active binding atomically if approved.
-11. Return `registered`; otherwise return `rejected`.
+8. Require rebuilt bytecode to equal `lsig_bytecode_hex`.
+9. Require bytecode-derived address to equal `attested_account`.
+10. Run account-registration policy and approval.
+11. Persist an active binding atomically if approved.
+12. Return `registered`; otherwise return `rejected`.
 
 `binding_fingerprint` is:
 
@@ -1070,11 +1162,18 @@ org_key_id
 Before attestor-role component signing, the attestor signer loads the current
 local profile for `profile_id`, verifies its signature, computes its
 fingerprint, and compares both `profile_fingerprint` and `org_key_id` with the
-binding. Mismatch fails closed with `binding_stale`.
+binding. Mismatch fails closed with `binding_stale`. A current local profile
+outside its validity window also fails closed; expired or not-yet-valid
+attestor profiles must not authorize new attestor component signatures.
 
 Before user-role component signing and `/sign/assemble`, the user signer
 performs the same comparison when a current local profile exists. Mismatch
-emits a warning into approval and audit but does not fail closed.
+emits a warning into approval and audit but does not fail closed. The same
+warning-only behavior applies when a current local profile exists but is
+outside its validity window, because the user signer may need to assemble or
+audit a component signature already produced by the independent attestor. The
+warning must be visible in audit even though `/sign/assemble` has no operator
+approval prompt.
 
 ## 18. Policy
 
@@ -1197,6 +1296,10 @@ USER_COMPONENT_APPROVED
 USER_COMPONENT_REJECTED
 USER_COMPONENT_FAILED
 ATTESTED_ASSEMBLY
+ATTESTOR_PROFILE_IMPORTED
+ATTESTOR_PROFILE_IMPORT_REJECTED
+ATTESTOR_TRUSTROOT_ADDED
+ATTESTOR_TRUSTROOT_REVOKED
 ```
 
 Component audit records include:
@@ -1249,6 +1352,10 @@ unknown
 Audit values for claimed source request IDs must be documented as unauthenticated
 claims.
 
+Profile-import and trust-root lifecycle events record identity ID, the
+authenticated requester/admin principal, `org_key_id`, `profile_id` and
+short-form `profile_fingerprint` for imports, and structured outcome.
+
 ## 20. UX And Tooling
 
 Attestor signer:
@@ -1275,10 +1382,34 @@ stable authorization action and audit event before release.
 User signer/client:
 
 ```text
+apshell attestor trustroot add --org-key-id <id> --scheme ed25519 --public-key <hex> --label "..."
+apshell attestor trustroot list
+apshell attestor trustroot revoke --org-key-id <id>
 apshell attestor profile import attestor-profile.json --org-key <org-public-key>
 apshell generate aplane.attestor-falcon1024-ed25519.v1 attestor_profile=<profile-id>
 apshell attestor register <attested-account>
 ```
+
+The issuing org key must be trusted (Section 9.4) before its profile can be
+imported. `trustroot add` is the explicit trust-establishment step; profile
+import never establishes trust on its own.
+
+Attested-account generation resolves the attestor key from the imported
+profile. If the profile lists more than one active attestor key whose
+`component_key_type` matches the template's `attestor_component_key_type`, the
+caller must disambiguate with an explicit `attestor_key_id` parameter:
+
+```text
+apshell generate aplane.attestor-falcon1024-ed25519.v1 \
+  attestor_profile=<profile-id> attestor_key_id=<attestor-key-id>
+```
+
+Generation fails closed if the selection is ambiguous and no `attestor_key_id`
+is given, if `attestor_key_id` is not active in the profile, or if its
+`component_key_type` does not match the template. Generation pins exactly one
+attestor public key, one genesis hash (Section 16), and records the source
+`profile_id` and `attestor_key_id` into the user key file params for later
+binding and drift checks.
 
 Shell command workflow logic belongs in `internal/apshellapp`, not
 `cmd/apshell`. Reusable network/signing orchestration belongs in
@@ -1320,7 +1451,13 @@ Existing package changes:
 
 - `internal/auth`: add stable actions and bootstrap grants.
 - `cmd/apsigner/http_runtime.go`: register new routes.
-- `internal/signerapp/rest`: expose service methods for new endpoints.
+- `internal/signerapp/rest`: expose service methods for new endpoints,
+  including trusted-org-key management.
+- `internal/signerapp/rest` and the `/keys` inventory DTO in `pkg/signerapi`:
+  expose `component_key_id` and a non-spending marker for component-key rows in
+  `/keys` and key-generation responses.
+- `internal/signerapp/txdesc`: add operator-facing approval descriptions for
+  component signing and account registration (Section 11.3).
 - `internal/signerapp/audit`: add event types and fields.
 - `internal/signing`: add exact key-type transaction-signing guard or split
   transaction/component registries.
@@ -1358,7 +1495,8 @@ Phase 0 contract tests:
 - APC vectors pass in Go and are consumable by TypeScript/Python SDK tests.
 - signed attestor profile v1 vectors cover valid import, unsupported schema,
   unsupported signature scheme, unknown org key, revoked org key, duplicate
-  raw keys, post-NFC key collision, invalid signature, and rollback update.
+  raw keys, post-NFC key collision, invalid signature, not-yet-valid profile,
+  expired profile, and rollback update.
 - trusted org-key and account-binding integrity vectors reject tampering.
 - group hash vectors pass.
 - component message vectors pass.
@@ -1378,6 +1516,18 @@ Unit tests:
   attested-account key types.
 - component-key compatibility locator values, when present, are rejected as
   transaction sender, `auth_address`, and rekey target.
+- trust-root add rejects a conflicting public key for an existing `org_key_id`,
+  and revoke drives later re-verification to fail closed.
+- profile import requires a pre-trusted active org key and rejects an
+  `--org-key` assertion that does not match the stored trusted public key.
+- registration and attestor-role component signing fail closed when the current
+  local profile is not-yet-valid or expired.
+- user-role component signing and `/sign/assemble` audit warnings, but do not
+  fail closed, when the current local profile is not-yet-valid or expired.
+- attested-account generation rejects an ambiguous attestor key selection and
+  binds the explicitly selected `attestor_key_id`.
+- component-signing and registration approval prompts render the operator-facing
+  fields required by Section 11.3.
 - `/plan` accepts attested-account metadata and budgets LogicSig bytes.
 - component message computation matches vectors.
 - TEAL generated by attested template verifies known signatures in algod.
@@ -1400,6 +1550,10 @@ Integration tests:
 - two isolated test `apsigner` deployments, user and attestor, each with its
   own temporary signer data root; this is test harness composition, not a
   product same-node multi-store deployment,
+- trusted-org-key add then signed profile import, then org-key revoke driving
+  attestor-role component signing to fail closed,
+- previously valid imported profile that later expires drives registration and
+  attestor-role component signing to fail closed,
 - signed profile import,
 - account generation and registration,
 - registration manual approval, auto approval, rejection, timeout, and cancel,
@@ -1437,6 +1591,8 @@ The MVP is complete when:
 - `/plan` handles attested account metadata,
 - signed attestor profiles, trusted org keys, and account bindings use the
   schemas and integrity checks defined above,
+- trusted organization keys are added and revoked through a guarded, audited
+  admin surface, and profile import requires a pre-trusted active org key,
 - account registration stores integrity-protected bindings,
 - `/sign/component` returns raw role-separated component signatures,
 - `/sign/assemble` verifies and assembles final signed transaction bytes,
