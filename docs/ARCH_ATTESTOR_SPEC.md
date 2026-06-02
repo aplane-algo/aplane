@@ -14,6 +14,8 @@ attestor behavior. Until implementation lands, the existing canonical docs keep
 their current contracts. Before shipping this feature, the compatibility-bearing
 sections below must be copied or promoted into the canonical HTTP, contracts,
 authorization, policy, and network docs named in Section 3.
+Promotion TODO: when the MVP ships, promote the compatibility-bearing sections
+into the docs named below and remove or rewrite this planning-status language.
 
 ## 1. Assessment Of The Design Note
 
@@ -68,6 +70,13 @@ txn.Sender == attested_account
 An attested LogicSig used as `AuthAddr` for another sender is out of scope and
 must be rejected by component signing and assembly.
 
+Attestor-role component signing is transfer-only in MVP. Target transactions
+must produce direct transfer movements expressible by `transfer_policy`
+(`pay`, `axfer`, opt-in, close-out, and clawback movements as defined in
+[docs/ARCH_POLICY.md#transfer-routing](ARCH_POLICY.md#transfer-routing)).
+Target `appl`, `keyreg`, `acfg`, and other non-transfer transaction types are
+rejected because routing cannot cover them.
+
 The attestor does not verify the account's LogicSig template as part of
 authorization. The user/client key type owns LogicSig construction, hard-codes
 the required attestor public key, defines the argument layout, and performs
@@ -118,10 +127,14 @@ Existing and related endpoint decisions:
 - `/sign` never signs attested-account key types or attestor component key
   types.
 - `/simulate` rejects attested-account senders in MVP.
-- `/sign/cancel` is extended by the MVP to cancel live `/sign` and
-  `/sign/component` approval waits by `request_id`. This is a proposed
-  compatibility change and must be promoted into the canonical HTTP contract
-  before release.
+- Attestor-role `/sign/component` authorizes only transfer target transactions
+  covered by deterministic routing. Target transactions with no supported
+  transfer movement (`appl`, `keyreg`, `acfg`, etc.) are rejected.
+- `/sign/cancel` is extended by the MVP to cancel live `/sign` and user-role
+  `/sign/component` approval waits by `request_id`. Attestor-role
+  `/sign/component` is deterministic and does not queue operator approval.
+  This is a proposed compatibility change and must be promoted into the
+  canonical HTTP contract before release.
 
 The MVP is synchronous. There is no polling API and no durable request table.
 
@@ -202,7 +215,9 @@ when implemented with these constraints:
   not carry a free-form target identity override.
 - Attestor private keys stay under `identities/<identity>/keys/` and never
   leave `apsigner`.
-- Attestor policy, unlock state, token, and audit records are identity-scoped.
+- Attestor policy, unlock state, token, and audit records are identity-scoped;
+  policy role domains inside `policy.yaml` are defined in
+  [ARCH_POLICY.md#role-domains](ARCH_POLICY.md#role-domains).
 - `/sign` never reaches attestor component keys or attested-account key types;
   component signing uses `/sign/component`.
 - `/plan` continues to own canonical group shaping and uses attested-account
@@ -452,16 +467,16 @@ identity's policy. The transaction sender address is the policy subject.
 Example policy:
 
 ```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: a_to_b_c
-      networks: ["mainnet"]
-      sources: ["A..."]
-      assets: ["algo"]
-      destinations: ["B...", "C..."]
+attestation:
+  transfer_policy:
+    schema_version: 1
+    enabled: true
+    routes:
+      - id: a_to_b_c
+        networks: ["mainnet"]
+        sources: ["A..."]
+        assets: ["algo"]
+        destinations: ["B...", "C..."]
 ```
 
 For an attestor component request, the signer extracts the same direct transfer
@@ -473,6 +488,11 @@ movements used by the existing policy engine:
 - ASA opt-ins,
 - ASA close-out movements,
 - ASA clawback movements.
+
+Transactions that produce none of those supported transfer movements are
+rejected for attestor-role component signing. The canonical supported movement
+list is maintained in
+[ARCH_POLICY.md#transfer-routing](ARCH_POLICY.md#transfer-routing).
 
 Policy must use decoded canonical transactions as the source of truth:
 
@@ -598,8 +618,9 @@ returns a non-empty canonical request ID:
 - audit uses the returned ID,
 - cancellation uses the returned ID only for live cancelable endpoint kinds.
 
-Live `/sign/component` requests register with the existing live request
-registry using a request kind:
+Only `/sign/component` requests that can wait for operator approval register
+with the existing live request registry. In MVP this means user-role component
+requests. They use a request kind:
 
 ```text
 component
@@ -623,24 +644,30 @@ entropy to avoid accidental collisions, but clients must treat returned IDs as
 opaque strings.
 
 `POST /sign/cancel` keeps its current DTO and response shape. It can cancel
-live `/sign` and `/sign/component` requests for the authenticated identity.
-This expansion is part of the attestor MVP and must be promoted into
-`docs/ARCH_HTTP_API.md` and `docs/ARCH_CONTRACTS.md` before release.
+live `/sign` requests and live approval-waiting user-role `/sign/component`
+requests for the authenticated identity. Attestor-role component requests are
+not live approval requests; `/sign/cancel` returns `not_found` for their
+request IDs after the synchronous response completes. This expansion is part
+of the attestor MVP and must be promoted into `docs/ARCH_HTTP_API.md` and
+`docs/ARCH_CONTRACTS.md` before release.
 
 `/sign/assemble` does not wait for operator approval and is not cancelable
 beyond normal HTTP context cancellation. Its `request_id` is for response and
 audit correlation only; it is not registered as live request state and
 `/sign/cancel` must return `not_found` for it.
 
-### 11.3 Approval Prompt Rendering
+### 11.3 Request Description Rendering
 
-`/sign/component` reuses the existing approval coordinator and operator
-approval surfaces (`apadmin`, `apapprover`). The request kind must supply an
-operator-facing approval description, analogous to the existing transaction
-`txdesc`, so an operator can make an informed manual decision without reading
-audit logs.
+User-role `/sign/component` may reuse the existing approval coordinator and
+operator approval surfaces (`apadmin`, `apapprover`) when client-signing policy
+requires manual review. Attestor-role `/sign/component` does not queue
+operator approval in MVP.
 
-Component-signing approval descriptions must show:
+Both roles must supply a structured request description, analogous to the
+existing transaction `txdesc`, so user-role manual review and attestor-role
+audit records can explain the decision without trusting caller labels.
+
+Component-signing request descriptions must show:
 
 - request kind and component role,
 - selected component key ID for attestor role,
@@ -649,7 +676,7 @@ Component-signing approval descriptions must show:
 - decoded transfer facts for each target,
 - observed genesis hash / resolved network token,
 - group hash,
-- policy verdict phase that routed the request to manual review,
+- policy verdict phase or deterministic attestation outcome,
 - policy rule ID when available,
 - warnings such as rekey, close-out, clawback, asset close, or high fee.
 
@@ -721,20 +748,23 @@ Validation:
 
 Attestor-role policy:
 
-- component signing uses the current policy phase order:
-  `Always Deny > Always Review > Always Approve > Operator Default`.
-- policy sees the full decoded group, not just target transactions.
+- component signing uses the attestation policy domain described in
+  `docs/ARCH_POLICY.md`: deterministic reject or sign, with no operator
+  default and no human review.
+- policy evaluates target transactions in the context of the decoded group.
 - policy evaluates only decoded transaction facts and existing signer-owned
   context. It does not use caller-supplied labels.
-- transfer routing evaluates target movements by the target transaction
-  sender. For the common case "A can send to B and C", the route's `sources`
-  contains Algorand address `A` and `destinations` contains addresses `B` and
-  `C`.
+- transfer routing is the positive authorization surface for attestation. All
+  target transactions must be supported transfer shapes, every extracted target
+  movement must be covered by a matching route, and no transaction guard or
+  route outcome may deny the request.
+- for the common case "A can send to B and C", the route's `sources` contains
+  Algorand address `A` and `destinations` contains addresses `B` and `C`.
 - passthrough and non-target group slots participate in group context, warning
-  display, and approval rendering, but attestor policy verdicts are produced
+  display, and request descriptions, but attestor policy verdicts are produced
   for target slots only.
-- if the effective policy produces no explicit verdict, the identity's
-  `user_auto_approve` fallback applies exactly as it does for `/sign`.
+- if the effective attestation policy does not positively authorize every
+  target movement, the request is rejected.
 
 User-role policy:
 
@@ -886,35 +916,58 @@ For `/sign`, the signature kind is transaction/account signing. For
 `/sign/component` role `attestor`, the signature kind is attestor component
 signing. The stored policy language is shared; the evaluation context differs.
 
-The existing policy phase order applies:
+Client signing keeps the existing policy phase order:
 
 ```text
 Always Deny > Always Review > Always Approve > Operator Default
 ```
 
-`transfer_policy` is the primary MVP configuration surface for attestation.
-A route match means "allowed to continue through the remaining policy phases";
-it is not itself an approval. This preserves the existing policy contract.
+Attestation uses the same decoded transaction facts and routing engine, but its
+verdict surface is deterministic. As shorthand:
+
+```text
+deny > allow/sign
+```
+
+This means Always Deny and deterministic guard failures reject before routing
+allow-list success; a transfer route match authorizes only when no deny guard
+matches and every target movement is covered.
+
+There is no `Always Review` prompt and no `user_auto_approve` fallback for
+attestor component signing.
+
+`transfer_policy` is the only MVP positive-authorization surface for
+attestation; other applicable policy fields are deterministic deny guards.
+For attestation, routing acts as an allow-list: all target transfer movements
+must match a route, no deny guard may match, and the effective attestation
+policy must not contain review-producing routing behavior such as
+`on_no_route: review` or `review_above`. Target transactions that produce no
+supported transfer movement are rejected because there is no route coverage
+that can authorize them.
 
 Example:
 
 ```yaml
-transfer_policy:
-  schema_version: 1
-  enabled: true
-  on_no_route: reject
-  routes:
-    - id: a_to_b_c
-      networks: ["mainnet"]
-      sources: ["A..."]
-      assets: ["algo"]
-      destinations: ["B...", "C..."]
+attestation:
+  transfer_policy:
+    schema_version: 1
+    enabled: true
+    routes:
+      - id: a_to_b_c
+        networks: ["mainnet"]
+        sources: ["A..."]
+        assets: ["algo"]
+        destinations: ["B...", "C..."]
 ```
 
+Inside `attestation.transfer_policy`, omitted route-miss verdict fields are
+implicit `reject`; the attestor has no review or operator-default fallback.
+
 This means an attestor component request for a payment whose decoded sender is
-`A...` and decoded receiver is `B...` or `C...` may continue. It can still be
-rejected or forced to review by fee limits, rekey/close/clawback guards,
-warnings, review thresholds, or the operator default.
+`A...` and decoded receiver is `B...` or `C...` is authorized by routing if no
+deny guard also matches. A payment from `A...` to any other destination is
+rejected because the attestation domain has no review or operator-default
+fallback.
 
 Policy evaluation context:
 
@@ -929,17 +982,18 @@ context:
 
 - `reject_close_remainder`, `reject_asset_close`, and `reject_clawback` apply
   directly.
-- `max_fee_microalgos`, `max_algo_payments`, `max_asa_amounts`,
-  `review_algo_payments`, and `review_asa_amounts` apply directly.
-- `always_review_warnings` applies to decoded warnings in the target
-  transactions and group context.
-- `reject_foreign_rekey` should reject any non-zero `RekeyTo` for attestor
-  role in MVP unless a future explicit policy field allows attested rekeying.
-  The ordinary meaning "rekey target not held by this signer" is not a useful
-  attestor authorization rule because the attestor is not the account owner.
+- `max_fee_microalgos`, `max_algo_payments`, and `max_asa_amounts` apply
+  directly.
+- `review_algo_payments`, `review_asa_amounts`, and
+  `always_review_warnings` are client-signing-only and do not apply to
+  attestor component signing.
+- `reject_foreign_rekey` is client-signing-only. Attestation uses
+  `attestation.reject_rekey` and the MVP default is to reject any non-zero
+  `RekeyTo`.
 - `auto_approve_self_noop_transfer` remains a transaction-signing convenience
-  rule and should not be treated as attestor-specific authorization unless
-  tests prove the exact existing predicate is safe in the component context.
+  rule and must not be treated as attestor-specific authorization. If present
+  in common policy, it harmlessly never fires for attestor requests because its
+  predicate requires signer-owned address context.
 
 No new `attestor.registration` policy block exists in MVP.
 
@@ -977,7 +1031,7 @@ Component audit records include:
 - decoded transfer facts for target transactions,
 - warnings,
 - requester principal,
-- approver principal when manually approved,
+- approver principal when manually approved for user-role component signing,
 - policy verdict phase,
 - policy rule ID when applicable.
 
@@ -1084,8 +1138,8 @@ Existing package changes:
 - `internal/signerapp/rest` and the `/keys` inventory DTO in `pkg/signerapi`:
   expose `component_key_id`, `is_component_key`, and `is_spending_account` for
   component-key rows in `/keys` and key-generation responses.
-- `internal/signerapp/txdesc`: add operator-facing approval descriptions for
-  component signing (Section 11.3).
+- `internal/signerapp/txdesc`: add component request descriptions for manual
+  review and audit (Section 11.3).
 - `internal/signerapp/audit`: add event types and fields.
 - `internal/signing`: add exact key-type transaction-signing guard or split
   transaction/component registries.
@@ -1131,6 +1185,10 @@ Phase 0 contract tests:
   assembly items, are committed.
 - attestor policy YAML fixtures prove existing `transfer_policy` routes can
   express "A can send to B and C" without registration.
+- role-domain policy YAML fixtures containing `client_signing:` and
+  `attestation:` blocks round-trip through `appolicy` and
+  `apstore policy check/sign/verify` without losing valid-but-not-guided-edited
+  YAML structure.
 
 Unit tests:
 
@@ -1145,16 +1203,20 @@ Unit tests:
   facts, never request labels.
 - attestor role accepts a policy-allowed `A -> B` payment and rejects an
   otherwise identical `A -> D` payment when `D` is not routed.
-- attestor role rejects route misses according to `transfer_policy.on_no_route`.
+- attestor role rejects route misses under deterministic
+  `attestation.transfer_policy` and fails closed when inherited common routing
+  would require a review or operator-default outcome.
+- attestor role rejects `appl`, `keyreg`, `acfg`, and any other target
+  transaction that produces no supported transfer movement.
 - attestor role rejects unknown genesis hashes when network-scoped policy must
   be evaluated.
 - attestor role rejects non-zero `RekeyTo` in MVP.
-- attestor role applies close, asset close, clawback, fee, review, and amount
+- attestor role applies close, asset close, clawback, fee, and amount
   thresholds consistently with the shared policy model.
 - user-role component signing evaluates the local attested-account key type
   policy and does not require an attestor-side binding.
-- component-signing approval prompts render the operator-facing fields required
-  by Section 11.3.
+- component-signing request descriptions render the fields required by Section
+  11.3.
 - `/plan` accepts attested-account metadata and budgets LogicSig bytes.
 - component message computation matches vectors.
 - TEAL generated by attested template verifies known signatures in algod.
@@ -1177,10 +1239,15 @@ Integration tests:
 - successful multi-target group,
 - cross-network attempt rejected,
 - route-miss attestor policy rejection,
-- manual approval, auto approval, rejection, timeout, and cancel for
-  `/sign/component`,
-- `/sign/cancel` cancels live component-signing approval waits and returns
-  `not_found` for assembly request IDs,
+- attestor rejection of `appl`, `keyreg`, and `acfg` target transactions from
+  an attested account because routing cannot authorize them,
+- user-role component-signing manual approval, auto approval, rejection,
+  timeout, and cancel,
+- attestor-role component-signing deterministic approval and rejection without
+  operator prompts,
+- `/sign/cancel` cancels live user-role component-signing approval waits and
+  returns `not_found` for attestor-role and assembly request IDs after their
+  synchronous responses complete,
 - missing local user key rejected,
 - stolen-user-key scenario where attestor refuses based on transaction policy,
 - rekey attempt cannot bypass attestor refusal,
@@ -1190,8 +1257,9 @@ Integration tests:
 SDK tests:
 
 - Go, TypeScript, and Python DTO contract fixtures pass.
-- SDK request deadlines for component signing are approval-wait aware like
-  `/sign`.
+- SDK request deadlines for user-role component signing are approval-wait aware
+  like `/sign`; attestor-role component-signing deadlines use ordinary request
+  timeouts.
 - SDK cancellation calls `/sign/cancel` with the returned request ID when the
   request ID was server-generated.
 
@@ -1234,4 +1302,6 @@ Deferred from MVP:
   attestor signing,
 - public attestor profiles for discovery/marketing metadata,
 - stateful account registration or recovery notices,
-- attested-account simulation.
+- attested-account simulation,
+- guided role-aware editing for `client_signing:` and `attestation:` blocks in
+  `appolicy`.

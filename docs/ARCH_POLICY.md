@@ -17,7 +17,8 @@ Both domains share one YAML grammar, one parser, one fixture corpus, and one
 verdict-model description. Fields that apply to only one domain are tagged
 inline. The attestation sections are forward-looking until
 `ARCH_ATTESTOR_SPEC.md` is promoted; until then, every active deployment uses
-only the client-signing domain.
+only the client-signing domain. Promotion TODO: remove this current-deployment
+freshness note when attestor component signing ships.
 
 ## Scope
 
@@ -75,12 +76,13 @@ matching verdict.
 empty. `transfer_policy` may be absent entirely; if it is present, it must
 satisfy the explicit routing schema below.
 
-The policy loader applies per-identity strict validation: an identity whose
-keystore holds no spending keys rejects a populated `client_signing:` block,
-and an identity whose keystore holds no attestor component keys rejects a
-populated `attestation:` block. Validation runs at unlock/reload and at any
-admin replacement attempt; failures fail closed with the previous in-memory
-policy snapshot left active, exactly like sidecar verification failure.
+The policy loader validates schema and domain constraints independent of the
+identity's current key inventory. A policy may contain `client_signing:` and
+`attestation:` blocks even before matching keys exist; unused role blocks are
+inert until a request for that role is evaluated. Validation runs at
+unlock/reload and at any admin replacement attempt; failures fail closed with
+the previous in-memory policy snapshot left active, exactly like sidecar
+verification failure.
 
 ## Verdict Model
 
@@ -117,26 +119,25 @@ Always Approve rule.
 
 The four-tier model is the canonical shape for **client-signing** requests.
 **Attestation** is policy-as-authorization with no human in the loop, so its
-verdict surface collapses to two outcomes (reject or sign). The shared phase
-order is preserved by these mappings:
+normal verdict surface has two outcomes (reject or sign). The shared phase
+order is still used, but review is not a valid attestation outcome:
 
 | Phase | Client signing | Attestation |
 |-------|----------------|-------------|
 | Always Deny | Reject | Reject |
-| Always Review | Require operator approval | Reject |
+| Always Review | Require operator approval | Invalid outcome; fail closed as config error |
 | Always Approve | Sign without approval | Sign |
-| Operator Default | Per `user_auto_approve` | Reject |
+| Operator Default | Per `user_auto_approve` | Not applicable; unmatched attestor requests reject |
 
-The collapse is enforced two ways:
-
-1. Policy load rejects review-producing fields inside an `attestation:` block
-   (`always_review_warnings`, `review_algo_payments`, `review_asa_amounts`,
-   `transfer_policy.on_no_route: review`, route `review_above`, etc.). The
-   advisory linter warns when a common field would have produced a review
-   verdict that is then collapsed.
-2. At evaluation time, any review verdict reachable through common-field
-   inheritance maps to Always Deny for attestor component requests rather
-   than blocking on a prompt that no one will answer.
+The deterministic attestation surface is enforced by keeping review-producing
+fields out of the effective attestation policy. Policy load rejects
+review-producing fields inside an `attestation:` block
+(`always_review_warnings`, `review_algo_payments`, `review_asa_amounts`,
+`transfer_policy.on_no_route: review`, route `review_above`, etc.). Legacy
+top-level review-producing fields are client-signing-only compatibility fields,
+not common attestation inputs. If implementation ever encounters a review
+verdict while evaluating an attestor component request, the request fails
+closed as a policy configuration error rather than waiting for a prompt.
 
 `user_auto_approve` is client-signing-only. It lives in
 `identities/<identity>/config.yaml` and has no attestation analog.
@@ -166,21 +167,26 @@ client_signing:
 
 attestation:
   reject_rekey: true
-  # attestation may also nest its own transfer_policy / amount guards
-  # that override the common values for attestor evaluation. Review-
-  # producing fields are rejected at load time.
+  transfer_policy:
+    schema_version: 1
+    enabled: true
+    routes: [...]
+  # attestation may also nest amount guards that override the common
+  # values for attestor evaluation. Review-producing fields are rejected
+  # at load time, and route misses are implicit reject.
 ```
 
-The accepted top-level keys are exactly the common-field set, `client_signing`,
-`attestation`, and `key_type_overrides`. Unknown top-level keys fail
-validation.
+The accepted top-level keys are the common-field set, `client_signing`,
+`attestation`, `key_type_overrides`, and the legacy client-signing-only fields
+listed below. Unknown top-level keys fail validation.
 
 Bucket semantics:
 
-- **Common fields** apply to every signing decision the identity makes.
+- **Common fields** apply to every signing decision the identity makes when
+  their verdict model is valid for that role.
   Common is where you put rules that are true regardless of role (a fee
   ceiling, a hard close-remainder reject, the routing table when the same
-  routes govern both signing and attestation).
+  deterministic routes govern both signing and attestation).
 - **`client_signing:`** holds fields whose semantics reference "this signer
   owns the account" (`reject_foreign_rekey`, `auto_approve_self_noop_transfer`)
   or whose verdict only makes sense with an operator above the signer
@@ -200,22 +206,31 @@ Resolution order for a single field:
 2. Otherwise the common-bucket value applies.
 3. Otherwise the product default applies.
 
-Per-identity validation (described in [Storage](#storage)) gates whether each
-role block may be populated at all. An identity with both spending keys and
-attestor component keys (deployment mode 3, dev only) may populate both
-blocks; an identity holding only one kind must leave the other block absent
-or empty.
+Role blocks are validated by schema and domain, not by the identity's current
+key inventory. An identity with only spending keys may still carry an
+`attestation:` block for later key installation; an identity with only
+attestor component keys may still carry a `client_signing:` block. A role block
+has no effect until a request for that role is evaluated.
+
+Advisory tools should make this visible without turning it into a load-time
+contract. For example, `appolicy` and `apadmin` should warn when the current
+identity has no key inventory for a populated role block, but the signer must
+still accept the file so operators can pre-provision policy before installing
+or rotating keys.
 
 Legacy compatibility: a `policy.yaml` written before role domains existed
 places all client-signing-only fields at the top level. The loader treats
 top-level `reject_foreign_rekey` and `auto_approve_self_noop_transfer` as
-sugar for an implicit `client_signing:` block on identities that hold
-spending keys; it rejects them at the top level on attestor-only identities.
+sugar for an implicit `client_signing:` block.
 Review-producing fields at the top level (`always_review_warnings`,
-`review_*`) are similarly treated as implicit client-signing on identities
-that hold spending keys and rejected on attestor-only identities. Operators
+`review_*`) are similarly treated as implicit client-signing. Operators
 migrating an existing policy can move these fields explicitly under
-`client_signing:` without semantic change.
+`client_signing:` without semantic change. A top-level `transfer_policy` that
+contains review-producing behavior (`on_no_route: review`, `review_above`,
+and similar fields) is valid for client signing, but it is not a complete
+attestation allow-list; an attestation request that would need those review
+outcomes fails closed unless an `attestation.transfer_policy` supplies a
+deterministic replacement.
 
 ## Runtime Snapshot Semantics
 
@@ -236,7 +251,7 @@ waiting for approval.
 Always Deny rules are hard safety guards. They cannot be approved by an
 operator prompt and are evaluated before all other policy or approval phases.
 
-Current rules:
+Policy fields by domain:
 
 | Field | Domain | Meaning |
 |-------|--------|---------|
@@ -248,7 +263,7 @@ Current rules:
 | `max_fee_microalgos` | common | Reject transactions whose raw microAlgo fee exceeds the configured ceiling |
 | `max_algo_payments` | common | Per-network raw microAlgo ceilings for ALGO payments |
 | `max_asa_amounts` | common | Per-network raw unit ceilings for ASA transfers |
-| `transfer_policy` | common | Transfer routing rules whose blocked-destination, route miss, close/clawback, and `reject_above` outcomes reject matching direct transfer movements |
+| `transfer_policy` | common | For client signing, produces deny verdicts for blocked destinations, route misses, close/clawback misses, and `reject_above`; for attestation, routing is the positive authorization surface |
 
 `reject_foreign_rekey` evaluates the rekey target against the set of addresses
 held by the current signer, which is meaningful only when the signer owns the
@@ -267,6 +282,9 @@ default.
 If a matching review threshold is also configured, the deny threshold must be
 greater than or equal to the review threshold. This invariant is enforced at
 config apply time: a `policy.yaml` that violates it fails to load.
+With role domains, the invariant is checked on each effective role policy after
+common, role-specific, and key-type override resolution; it is not a raw
+cross-block comparison between unrelated domains.
 
 `transfer_policy` is a YAML-driven route table for direct `pay` and `axfer`
 movements. When enabled, it can reject blocked destinations, route misses,
@@ -282,20 +300,23 @@ policy phases. See [Transfer Routing](#transfer-routing).
 Always Review rules force a human approval prompt even when the operator default
 is configured to skip review. The whole tier is client-signing-only: the
 attestation domain has no operator above the signer, so review-producing
-fields are rejected inside an `attestation:` block at policy load time, and
-review verdicts reachable through common-field inheritance map to Always Deny
-for attestor component requests. See
-[Verdict Mapping By Role](#verdict-mapping-by-role).
+fields are rejected inside an `attestation:` block at policy load time.
+Legacy top-level review-producing fields are client-signing-only compatibility
+fields. If a review verdict is still reachable while evaluating an attestor
+component request, the request fails closed as a policy configuration error.
+See [Verdict Mapping By Role](#verdict-mapping-by-role).
 
-Current rules:
+Policy fields by domain:
 
 | Field | Domain | Meaning |
 |-------|--------|---------|
 | `always_review_warnings` | client_signing | Require operator review when warning analysis finds risk markers |
 | `review_algo_payments` | client_signing | Per-network raw microAlgo thresholds that require review for ALGO payments |
 | `review_asa_amounts` | client_signing | Per-network raw unit thresholds that require review for ASA transfers |
-| `transfer_policy.on_no_route: review` | client_signing under `attestation:` | Forces route misses to review for client signing; rejected at load time under `attestation:` |
-| `transfer_policy` `review_above` | client_signing under `attestation:` | Route-level review threshold; rejected at load time under `attestation:` |
+| `transfer_policy.on_no_route: review` | client_signing | Forces ordinary route misses to review for client signing |
+| `transfer_policy.close_on_no_route: review` | client_signing | Forces close-out route misses to review for client signing |
+| `transfer_policy.clawback_on_no_route: review` | client_signing | Forces clawback route misses to review for client signing |
+| `transfer_policy` `review_above` | client_signing | Route-level review threshold |
 
 `review_algo_payments` and `review_asa_amounts` are the review side of transfer
 guards. They are evaluated after Always Deny. For example, an ASA transfer above
@@ -328,7 +349,7 @@ do not force review in that mode.
 Always Approve rules are explicit low-risk rules stored in policy. They are
 evaluated only after Always Deny and Always Review have not matched.
 
-Current rules:
+Policy fields by domain:
 
 | Field | Domain | Meaning |
 |-------|--------|---------|
@@ -389,35 +410,63 @@ Behavior:
 ## Transfer Routing
 
 `transfer_policy` is the implemented v1 route table for direct transfer
-movements. It is a common-bucket field: the same routing engine applies to
-both client-signing and attestation evaluation. It lives only in `policy.yaml`
-and is not projected through admin IPC. A route match means "allowed to
-continue through the normal policy phases"; it does not approve signing and
-never produces an Always Approve verdict.
+movements. It is a common-bucket field when its configured verdicts are valid
+for both roles: the same routing engine applies to both client-signing and
+attestation evaluation. It lives only in `policy.yaml` and is not projected
+through admin IPC.
+
+For client signing, a route match means "allowed to continue through the
+normal policy phases"; it does not approve signing and never produces an
+Always Approve verdict.
+
+For attestation, routing is the positive authorization surface. An attestor
+component request is eligible to sign only when all evaluated target
+transactions are supported transfer shapes, every extracted target movement is
+covered by a matching route, no route or transaction guard produces a deny
+verdict, and the effective attestation routing block contains no
+review-producing behavior. In other words: for client signing, routing is a
+guardrail; for attestation, routing is an allow-list.
+
+Always Deny and deterministic transaction guards run before attestation
+allow-list success. A route match cannot rescue a target rejected by rekey,
+close-out, clawback, fee, amount, blocked-destination, or unsupported-shape
+rules.
 
 A `transfer_policy:` block may also be nested inside `client_signing:` or
 `attestation:` to override the common routes for that role only. Nested
 blocks follow the same schema, validation, and overlay rules as a top-level
-`transfer_policy`. Under `attestation:`, the load-time rejection of
-review-producing fields applies: `on_no_route: review` and route-level
-`review_above` are rejected.
+`transfer_policy` except for attestation route-miss boilerplate. Under
+`attestation:`, route-miss behavior is not configurable:
+`on_no_route`, `close_on_no_route`, and `clawback_on_no_route` may be omitted
+and are interpreted as `reject`; if present, the only accepted value is
+`reject`. `review_above` under `limits` or `limits_by_network` is rejected.
 
 For client-signing evaluation, an `on_no_route: review` miss produces Always
-Review. For attestation evaluation reached through the common block,
-`on_no_route: review` produces Always Deny (per
-[Verdict Mapping By Role](#verdict-mapping-by-role)); the advisory linter
-warns when this collapse is reachable so operators can move the route under
-`client_signing:` or rewrite the policy with explicit attestor-side rules.
+Review. For attestation evaluation, review or operator-default routing outcomes
+are not valid authorization outcomes. Examples include `on_no_route: review`,
+`close_on_no_route: operator_default`, and route-level `review_above`. If such
+behavior appears in the effective attestation routing block, the attestor
+request fails closed as a policy configuration error. Operators can keep review
+behavior under `client_signing:` and provide a deterministic
+`attestation.transfer_policy` for attestor component signing.
+
+For example, a legacy top-level `transfer_policy` with one deterministic
+`A -> B` route and `on_no_route: review` can authorize an attestor request for
+`A -> B` if no other guard denies it. A request for `A -> D` fails closed
+because the route miss would need a review verdict, which attestation cannot
+produce.
 
 For operator examples and troubleshooting, see
 [USER_TRANSFER_ROUTING.md](USER_TRANSFER_ROUTING.md).
 
 Routing's shape is deliberately conservative:
 
-- It produces only Always Deny or Always Review verdicts. A matching route is
-  allow-to-continue, not approval, because fee, rekey, close-out, clawback,
-  warning, legacy transfer-guard, and Operator Default behavior must still be
-  able to apply.
+- For client signing, it produces only Always Deny or Always Review verdicts.
+  A matching route is allow-to-continue, not approval, because fee, rekey,
+  close-out, clawback, warning, legacy transfer-guard, and Operator Default
+  behavior must still be able to apply.
+- For attestation, it is an allow-list: every target movement must be covered
+  by a matching route, and any deny verdict rejects the request.
 - It denies by absence rather than by general explicit deny routes. In v1,
   operators grant allowed source/asset/destination paths and use `on_no_route`
   to decide what a miss means. The narrow exception is `blocked_destinations`,
@@ -438,11 +487,16 @@ Routing's shape is deliberately conservative:
 Routing is disabled unless `transfer_policy.enabled:true`. If a
 `transfer_policy` block is present, `schema_version: 1` and an explicit
 `enabled: true` or `enabled: false` are required. Unknown fields under
-`transfer_policy` or route entries fail validation. When routing is enabled,
-`on_no_route` must be explicit unless the block is a key type override that
-inherits an identity-wide `on_no_route` value. `close_on_no_route` and
+`transfer_policy` or route entries fail validation. For top-level and
+`client_signing.transfer_policy` blocks, `on_no_route` must be explicit when
+routing is enabled unless the block is a key type override that inherits an
+identity-wide `on_no_route` value. `attestation.transfer_policy` omits that
+choice and treats route misses as `reject`. For top-level and
+`client_signing.transfer_policy` blocks, `close_on_no_route` and
 `clawback_on_no_route` default to `reject` and may be set explicitly to
 document or override the stricter close-out and clawback route-miss behavior.
+For `attestation.transfer_policy`, those values are implicit `reject` as
+described above.
 
 Top-level routing schema:
 
@@ -506,9 +560,17 @@ transactions:
   equal to `Sender`; the route must match `sources`, `asset_sources`, `assets`,
   and `destinations`.
 
-Other transaction types produce no routing movement and continue through the
-remaining policy phases. Passthrough and foreign request slots are not governed
-by this signer's route table because this signer is not signing them.
+Together, `pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, and
+`clawback` are the supported attestation transfer-movement surface in MVP; a
+target transaction must extract at least one of these movements to be eligible
+for attestor-role component signing.
+
+For client signing, other transaction types produce no routing movement and
+continue through the remaining policy phases. For attestation MVP, target
+transactions that produce no supported transfer movement are rejected because
+there is no route coverage that can authorize them. Passthrough, foreign, and
+non-target group slots are not governed by this signer's route table because
+this signer is not producing signatures for those slots.
 
 For each extracted movement, routing checks `blocked_destinations` before
 network-dependent route matching. The block applies to normal ALGO payment
@@ -544,8 +606,11 @@ Verdict production for each movement:
 10. If the amount is known and any matching route has `review_above`, the lowest
    effective review threshold wins; amounts strictly greater than that value
    are Always Review.
-11. Otherwise routing produces no verdict and the request continues to warning
-   review, explicit auto-approval, or Operator Default.
+11. Otherwise, client-signing routing produces no verdict and the request
+   continues to warning review, explicit auto-approval, or Operator Default.
+   For attestation routing, a target movement that reaches this step is
+   covered by policy; if every target movement is covered and no deny guard
+   matched, the transfer-policy portion of attestation authorization succeeds.
 
 `limits_by_network` overrides global `limits` for that network. If both review
 and reject thresholds are set, `reject_above` must be greater than or equal to
@@ -614,7 +679,9 @@ Override blocks for an attestor component key type must satisfy the same
 attestation validation as the identity-wide `attestation:` block (no
 review-producing fields). Overrides for spending key types are unchanged
 client-signing behavior. An override that mixes both is a configuration
-error; the loader rejects it.
+error; the loader rejects it. For example, an override for a spending key type
+must not contain `attestation.reject_rekey`, and an override for an attestor
+component key type must not contain client-signing review fields.
 
 ## Transaction Scope
 
@@ -672,11 +739,11 @@ production is the operation that asks for the passphrase. The TUI exposes
 common policy fields as effective values with a source column, such as
 `default`, `explicit`, or `absent`, rather than showing YAML-null markers as
 values. Values that match the product default can still be omitted from saved
-YAML. Transfer settings edit the required binary
-`transfer_policy.enabled` switch and the route-miss fallback fields. Guard,
-transfer-settings, and asset-set field editors validate and commit successful
-edits into the in-memory draft as each field editor closes; applying the draft
-to production remains a separate `a` action.
+YAML. For common and client-signing transfer policies, transfer settings edit
+the required binary `transfer_policy.enabled` switch and the route-miss
+fallback fields. Guard, transfer-settings, and asset-set field editors
+validate and commit successful edits into the in-memory draft as each field
+editor closes; applying the draft to production remains a separate `a` action.
 
 A normal transfer guard is a UI projection of adjacent stored routes with the
 same derived guard name and network/source/destination/close shape. Group-level
@@ -702,6 +769,9 @@ Advanced routing structures that are not yet surfaced in the guard editor
 still round-trip through YAML and can be edited directly with
 `apstore policy check/sign/verify`. For non-interactive use,
 `APPOLICY_PASSPHRASE` is checked before `APSIGNER_PASSPHRASE`.
+Role-domain blocks (`client_signing:` and `attestation:`) follow the same
+rule: until guided role-aware editing lands in `appolicy`, they are preserved
+through YAML round-trip and edited directly through checked/signed YAML.
 `appolicy --sha256` verifies the sidecar and prints the SHA-256 digest of the
 exact trusted `policy.yaml` bytes. `appolicy --yaml` verifies the sidecar and
 emits those bytes to stdout. `appolicy --save` reads exact replacement YAML
@@ -764,6 +834,10 @@ policy decision:
 - `[POLICY] Group/Txn requires manual review (<rule_id>)` when an Always Review
   rule forces a prompt.
 - `[USER AUTO-APPROVE] ...` when Operator Default approves without prompting.
+
+Attestor component signing uses the same policy rule identifiers for decoded
+transaction facts, but records component-specific audit events. Those planned
+events are documented in [ARCH_ATTESTOR_SPEC.md §17](ARCH_ATTESTOR_SPEC.md#17-audit).
 
 ## Source Files
 
