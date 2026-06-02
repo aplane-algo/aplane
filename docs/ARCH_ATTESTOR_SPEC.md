@@ -1059,6 +1059,17 @@ Response:
 }
 ```
 
+The request and response examples show the attestor role. Role-specific wire
+values are:
+
+- attestor role: `component_key` is the local `component_key_id`
+  (`attkey_...`, Section 6.1); the response `signature_scheme` is the attestor
+  component key type, for example `aplane.attestor-ed25519.v1`.
+- user role: `component_key` is the local `attested_account` LogicSig address,
+  because the user's component private key lives in that `dsa_lsig`
+  attested-account key file; the response `signature_scheme` is the user key
+  type, for example `aplane.falcon1024.v1`.
+
 Validation:
 
 - `role` is exactly `user` or `attestor`.
@@ -1066,8 +1077,9 @@ Validation:
 - `target_indices` is non-empty, unique, sorted or canonicalized for internal
   processing, and every value is in range.
 - `component_key` resolves to a key that supports component signing for the
-  declared role. For attestor component keys this is the local
-  `component_key_id` defined in Section 6.1.
+  declared role: for the attestor role the local `component_key_id`
+  (Section 6.1), for the user role exactly the `attested_account` LogicSig
+  address (`component_key == attested_account`).
 - `attested_account` resolves against the receiving signer:
   - role `user`: local `dsa_lsig` attested-account key file,
   - role `attestor`: local active account-binding registry entry.
@@ -1513,9 +1525,14 @@ cmd/apsigner/http_handlers_attestor.go
 internal/signerclient/attestor.go
 internal/apshellapp/attestor.go
 internal/engine/attestor_signing.go
-lsig/attestor_ed25519/
 lsig/attestor_falcon1024_ed25519/
 ```
+
+There is no `lsig/` package for the `aplane.attestor-ed25519.v1` component key:
+it is a raw Ed25519 component-signing key, not a LogicSig, so its generation and
+signing live under `internal/keygen` and a non-registry Ed25519 helper, not under
+`lsig/`. The optional all-Ed25519 attested-account template (Section 6.1,
+`aplane.attestor-ed25519-ed25519.v1`), if implemented, is `lsig/attestor_ed25519_ed25519/`.
 
 Existing package changes:
 
