@@ -4,10 +4,10 @@ Status: draft implementation planning spec.
 
 Source design note: `temp/DESIGN_ATTESTOR_SIGNING.md`.
 
-This file converts the design note into an engineering specification for an
-MVP implementation. The design note remains useful rationale, but this file is
-the implementable contract: endpoint shapes, storage ownership, security
-requirements, module boundaries, and acceptance tests.
+This file converts the original design note into an engineering specification
+for an MVP implementation. The model in this document intentionally differs
+from the earlier registration-oriented design: initial attestation is stateless
+and policy-driven.
 
 This document is not yet the canonical compatibility contract for released
 attestor behavior. Until implementation lands, the existing canonical docs keep
@@ -17,20 +17,33 @@ authorization, policy, and network docs named in Section 3.
 
 ## 1. Assessment Of The Design Note
 
-`temp/DESIGN_ATTESTOR_SIGNING.md` is not yet an engineering specification. It
-is a strong protocol and product design note, but an implementation team would
-still need to resolve:
+`temp/DESIGN_ATTESTOR_SIGNING.md` is useful rationale, but it is not the MVP
+contract. The design note's registration/account-binding model is deliberately
+out of scope for the first implementation.
 
-- exact HTTP status and error-envelope behavior,
-- exact persistent store ownership and integrity protection,
+The MVP attestor is a transaction-policy co-signer:
+
+```text
+Given canonical Algorand transaction/group bytes:
+  decode the actual transaction facts
+  evaluate the local identity policy over those facts
+  if policy allows signing, produce attestor component signatures
+```
+
+The attestor does not register accounts, does not store account bindings, and
+does not authorize based on labels, profiles, or caller-supplied descriptions.
+The only authority for attestation is the authenticated signer's unlocked
+attestor component key plus the identity's trusted `policy.yaml` snapshot.
+
+This specification supplies the remaining implementable pieces:
+
+- endpoint shapes,
 - exact signing-provider registry changes needed to make "not signable by
   `/sign`" structural,
-- concrete source files and package boundaries,
+- source files and package boundaries,
 - authorization action additions,
 - canonicalization fixture ownership,
 - rollout and acceptance criteria.
-
-This specification supplies those missing pieces for the MVP.
 
 ## 2. Scope
 
@@ -40,6 +53,12 @@ predicate requires:
 - a user component signature produced by the user signer, and
 - an attestor component signature produced by a separate attestor signer.
 
+The attestor's job is minimal:
+
+```text
+Attest that the selected transaction(s) match this identity's policy.
+```
+
 The MVP supports only transactions where:
 
 ```text
@@ -48,6 +67,12 @@ txn.Sender == attested_account
 
 An attested LogicSig used as `AuthAddr` for another sender is out of scope and
 must be rejected by component signing and assembly.
+
+The attestor does not verify the account's LogicSig template as part of
+authorization. The user/client key type owns LogicSig construction, hard-codes
+the required attestor public key, defines the argument layout, and performs
+final assembly. If a client obtains a signature from the wrong attestor key, the
+signature is harmless because the LogicSig program will not accept it.
 
 ## 3. Normative References
 
@@ -72,10 +97,20 @@ SDK fixtures have one canonical source.
 The MVP endpoint names are:
 
 ```text
-POST /attestor/register-account
 POST /sign/component
 POST /sign/assemble
 ```
+
+There is no MVP registration endpoint.
+
+Explicitly out of scope for MVP:
+
+- `POST /attestor/register-account`,
+- account-binding storage,
+- attestor profile import,
+- attestor profile trust roots,
+- profile drift checks,
+- account lifecycle states such as active/suspended/revoked.
 
 Existing and related endpoint decisions:
 
@@ -83,10 +118,10 @@ Existing and related endpoint decisions:
 - `/sign` never signs attested-account key types or attestor component key
   types.
 - `/simulate` rejects attested-account senders in MVP.
-- `/sign/cancel` is extended by the MVP to cancel live `/sign`,
-  `/sign/component`, and `/attestor/register-account` approval waits by
-  `request_id`. This is a proposed compatibility change and must be promoted
-  into the canonical HTTP contract before release.
+- `/sign/cancel` is extended by the MVP to cancel live `/sign` and
+  `/sign/component` approval waits by `request_id`. This is a proposed
+  compatibility change and must be promoted into the canonical HTTP contract
+  before release.
 
 The MVP is synchronous. There is no polling API and no durable request table.
 
@@ -102,7 +137,7 @@ Actors:
 - `user signer`: the apsigner deployment and authenticated identity holding the
   attested account key file and the user's component private key.
 - `attestor signer`: the apsigner deployment and authenticated identity holding
-  the attestor component key and account-binding registry.
+  the attestor component key and policy that governs when it may sign.
 
 The current product deployment model is one `apsigner` on the signer host, with
 one signer data directory resolved by `-d` or `APSIGNER_DATA`. Product UI/docs
@@ -117,12 +152,12 @@ MVP supports these role-placement modes:
    third-party attestation.
 2. **Co-located attestor identity.** One `apsigner` process has separate
    identities, for example `identities/default` for user signing and
-   `identities/attestor` for attestor component keys and account bindings. This
-   separates identity-scoped keys, policy, unlock state, token, and binding
-   storage, but it shares the process, host, process-global config, daemon
-   lifecycle, and operator control plane. This can be production-acceptable
-   when the co-located attestor identity attests accounts whose user component
-   keys live on a different apsigner deployment/operator domain.
+   `identities/attestor` for attestor component keys and policy. This separates
+   identity-scoped keys, policy, unlock state, token, and audit records, but it
+   shares the process, host, process-global config, daemon lifecycle, and
+   operator control plane. This can be production-acceptable when the
+   co-located attestor identity attests accounts whose user component keys live
+   on a different apsigner deployment/operator domain.
 3. **Same identity self-attestation.** The product identity holds both ordinary
    signing keys and attestor component keys. This is the weakest separation and
    is for local development only. Production UX and docs must not recommend or
@@ -139,11 +174,11 @@ machines. For example:
 ```text
 Machine A apsigner
   identities/default   # A user keys
-  identities/attestor  # attestor keys for B accounts
+  identities/attestor  # attestor keys and policy for B accounts
 
 Machine B apsigner
   identities/default   # B user keys
-  identities/attestor  # attestor keys for A accounts
+  identities/attestor  # attestor keys and policy for A accounts
 ```
 
 Accounts owned by A use A's user component key and B's attestor component key.
@@ -167,8 +202,7 @@ when implemented with these constraints:
   not carry a free-form target identity override.
 - Attestor private keys stay under `identities/<identity>/keys/` and never
   leave `apsigner`.
-- Attestor account bindings, profile trust roots, policy, unlock state, token,
-  and audit records are identity-scoped.
+- Attestor policy, unlock state, token, and audit records are identity-scoped.
 - `/sign` never reaches attestor component keys or attested-account key types;
   component signing uses `/sign/component`.
 - `/plan` continues to own canonical group shaping and uses attested-account
@@ -179,11 +213,9 @@ when implemented with these constraints:
 Violations would be: treating the attestor identity as an unrelated hosted
 tenant, allowing callers to select arbitrary identities in request bodies,
 sharing one account's user and attestor private keys in the same deployment
-while claiming independent attestation, or letting the normal `/sign` provider
-path sign attestor/attested key types.
-
-The attestor profile is public routing and key metadata. It must never contain
-bearer tokens or other credentials.
+while claiming independent attestation, letting the normal `/sign` provider
+path sign attestor/attested key types, or authorizing attestation from
+caller-supplied labels instead of decoded transaction facts.
 
 ## 6. Key Types And Registries
 
@@ -219,10 +251,14 @@ component_key_id = "attkey_" || lower_hex(SHA-256(
 
 `component_key_id` is public, deterministic, and not an Algorand address. The
 `attkey_` prefix is intentionally outside Algorand address syntax. Component
-signing requests use this handle in the `component_key` field. Attestor
-profiles may also carry an operator-assigned `attestor_key_id`, but that value
-is profile metadata and must not be treated as a universal local key lookup
-unless it resolves unambiguously to a local `component_key_id`.
+signing requests use this handle in the `component_key` field when selecting a
+specific attestor component key.
+
+If an attestor identity has exactly one active attestor component key, clients
+may omit `component_key` for role `attestor` and the signer may select that key
+unambiguously. If more than one active attestor component key exists,
+`component_key` is required. Key selection never affects policy authorization;
+policy is evaluated from decoded transaction facts.
 
 If existing key inventory or generation DTOs require an `address` field for
 every key row, a component-key row may carry a storage locator in that field
@@ -268,7 +304,11 @@ DSA-backed LogicSig key on disk with:
 - compiled LogicSig bytecode hex in the existing `lsig_bytecode` JSON field
 - off-curve `salt_counter`
 - `signing_args` containing durable argument order
-- attestor metadata under `parameters` / `params`
+- attestor public-key metadata under `parameters` / `params`
+
+The attested account key stores the attestor public key selected by the user at
+generation time. That public key is a LogicSig verifier input, not attestor-side
+authorization state.
 
 ### 6.2 Registry And Keygen Requirements
 
@@ -371,8 +411,8 @@ during implementation:
 
 - component-signing messages use SHA512/256 because they are tied to Algorand
   transaction ID semantics and TEAL verification,
-- attestor profile fingerprints, binding fingerprints, and group audit hashes
-  use SHA-256 because they are off-chain canonical-data fingerprints.
+- group audit hashes and component key handles use SHA-256 because they are
+  off-chain canonical-data fingerprints.
 
 ## 8. Attested LogicSig Template
 
@@ -387,6 +427,7 @@ verify_attestor(attestor_public_key, m_attestor, arg attestor_signature)
 Template requirements:
 
 - public keys are embedded in bytecode using constant bytes,
+- the attestor public key is chosen at user key generation time,
 - `arg 0` is the user component signature,
 - `arg 1` is the attestor component signature,
 - additional runtime args, if any, appear after those two slots in stored
@@ -400,376 +441,92 @@ The Falcon/Ed25519 hybrid in `lsig/falcon1024_ed25519` is a TEAL shape
 reference only. It signs `txn TxID` directly and derives both keys from one
 mnemonic. Attestor signing must use the role-separated message contract above.
 
-## 9. Profile Canonicalization
+## 9. Stateless Attestation Model
 
-The profile canonicalization algorithm is APlane Profile Canonicalization
-(`APC`):
+There is no account registration or account-binding store in the MVP.
 
-```text
-APC(json) =
-  RFC_8785_JCS(
-    apply_NFC_to_all_strings(
-      reject_duplicate_keys(json)
-    )
-  )
+The attestor does not decide whether an account is "registered", "active", or
+"trusted". It decides only whether the target transaction facts satisfy this
+identity's policy. The transaction sender address is the policy subject.
+
+Example policy:
+
+```yaml
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  on_no_route: reject
+  routes:
+    - id: a_to_b_c
+      networks: ["mainnet"]
+      sources: ["A..."]
+      assets: ["algo"]
+      destinations: ["B...", "C..."]
 ```
 
-Additional APC rules:
+For an attestor component request, the signer extracts the same direct transfer
+movements used by the existing policy engine:
 
-- duplicate raw object keys fail with `apc_duplicate_key`,
-- two raw keys that collide after NFC normalization fail with
-  `apc_key_collision`,
-- NFC is applied to object keys and string values,
-- the profile signature input is `APC(profile without "signature")`,
-- the profile fingerprint input is `APC(profile with "signature")`.
+- `pay` from `Sender` to `Receiver`,
+- ALGO close-out movements,
+- normal `axfer` movements,
+- ASA opt-ins,
+- ASA close-out movements,
+- ASA clawback movements.
 
-`profile_fingerprint` is:
+Policy must use decoded canonical transactions as the source of truth:
 
-```text
-SHA-256(APC(full_profile_including_signature))
-```
+- sender comes from transaction `Sender`,
+- receiver comes from `Receiver` or `AssetReceiver`,
+- close destinations come from close fields,
+- assets and amounts come from transaction fields,
+- network comes from transaction `GenesisHash`,
+- group context comes from decoded group membership.
 
-The implementation must add test vectors under `test/contracts/signerapi/` for:
+The request body may select target indices and a local component key. It must
+not supply policy facts such as "source A", "destination B", profile labels, or
+route labels as trusted inputs.
 
-- baseline profile,
-- reordered keys,
-- extra whitespace,
-- NFD string values that normalize to the baseline,
-- duplicate raw keys,
-- post-NFC key collision,
-- same body signed by two org keys producing distinct fingerprints.
-
-### 9.1 Signed Attestor Profile V1
-
-An attestor profile is a public, signed routing and key metadata document. It
-is not a credentials file and must never contain bearer tokens, endpoint
-secrets, SSH keys, passphrases, or local credential references.
-
-The MVP profile schema is:
-
-```json
-{
-  "schema_version": 1,
-  "profile_id": "example-attestor-mainnet-v1",
-  "display_name": "Example Attestor",
-  "issuer": {
-    "org_id": "example-attestor",
-    "org_name": "Example Attestor, Inc.",
-    "org_key_id": "org_2026_main",
-    "org_public_key_hex": "..."
-  },
-  "valid_from": "2026-05-20T00:00:00Z",
-  "valid_until": "2027-05-20T00:00:00Z",
-  "networks": [
-    {
-      "network_id": "mainnet",
-      "genesis_hash": "..."
-    }
-  ],
-  "attestor_keys": [
-    {
-      "attestor_key_id": "default-ed25519-2026",
-      "component_key_type": "aplane.attestor-ed25519.v1",
-      "public_key_hex": "...",
-      "signature_scheme": "aplane.attestor-ed25519.v1",
-      "status": "active"
-    }
-  ],
-  "templates": [
-    {
-      "template_key_type": "aplane.attestor-falcon1024-ed25519.v1",
-      "template_fingerprint": "...",
-      "user_key_type": "aplane.falcon1024.v1",
-      "attestor_component_key_type": "aplane.attestor-ed25519.v1"
-    }
-  ],
-  "signature": {
-    "scheme": "aplane.profile-ed25519.v1",
-    "org_key_id": "org_2026_main",
-    "signature_hex": "..."
-  }
-}
-```
-
-Profile IDs, org IDs, org key IDs, and attestor key IDs are compatibility
-identifiers. They must be 1 through 128 ASCII characters, start with a
-lowercase letter or digit, and contain only lowercase letters, digits, `_`,
-`-`, or `.`. Public keys are hex-encoded raw public keys for their declared
-scheme. Timestamps are RFC3339 UTC.
-
-The only MVP profile signature scheme is `aplane.profile-ed25519.v1`.
-`signature_hex` is an Ed25519 signature over
-`APC(attestor_profile without "signature")`. `signature.org_key_id` must equal
-`issuer.org_key_id`, and the trusted organization key with that ID must have
-the same public key as `issuer.org_public_key_hex`.
-
-Profile validity is checked against the current UTC time. Import fails closed
-when `valid_from` is in the future or `valid_until` is in the past. Any later
-operation that re-verifies a current local attestor profile must re-check the
-same validity window instead of treating import-time validity as durable.
-
-Profile import must fail closed for:
-
-- malformed JSON,
-- unsupported `schema_version`,
-- unsupported signature scheme,
-- duplicate raw keys or post-NFC key collisions,
-- invalid identifier syntax,
-- invalid key encoding or signature length,
-- invalid timestamp format or `valid_until <= valid_from`,
-- not-yet-valid profile,
-- signature verification failure,
-- unknown, revoked, or mismatched trusted org key,
-- expired profile,
-- empty `networks`, `attestor_keys`, or `templates`,
-- unsupported network token syntax,
-- duplicate `attestor_key_id` entries,
-- duplicate `network_id` entries with different genesis hashes,
-- duplicate genesis hashes mapped to different `network_id` values.
-
-Importing a profile with an existing `profile_id` is an update, not a blind
-overwrite. The new profile must verify against a currently trusted org key. If
-its fingerprint differs from the stored profile, it must have a strictly newer
-`valid_from` timestamp unless the operator uses an explicit force/update flow
-that is audited. This prevents accidental rollback to an older signed profile.
-
-### 9.2 Trusted Organization Keys
-
-Trusted organization keys are local trust roots. They are identity-scoped and
-behavior-bearing. The MVP trust-root payload is:
-
-```json
-{
-  "schema_version": 1,
-  "org_keys": [
-    {
-      "org_key_id": "org_2026_main",
-      "scheme": "ed25519",
-      "public_key_hex": "...",
-      "status": "active",
-      "trusted_at": "2026-05-20T12:34:56Z",
-      "trusted_by_principal": "system:product-admin",
-      "label": "Example Attestor production root"
-    }
-  ]
-}
-```
-
-`status` values are:
-
-```text
-active
-revoked
-```
-
-Only active trusted org keys can verify new attestor profile imports or current
-profile drift checks. Revoking an org key does not delete stored attestor
-profiles or account bindings, but any later operation that must re-verify a
-profile signed by that org key fails closed unless a newer trusted root and
-profile are imported.
-
-### 9.3 Organization Profile-Signing Key Custody
-
-The MVP trust-root store in Section 9.2 stores public organization keys only.
-It does not store organization profile-signing private keys, and it is not a
-profile-authoring keystore.
-
-MVP profile signing is offline/operator-managed unless implementation
-explicitly adds signer-held organization signing keys. Offline profile signing
-means the organization profile-signing private key is outside `apsigner` and
-outside `identities/<identity>/attestor/`; the signer imports or verifies the
-resulting signed attestor profile v1 document, but does not hold the org
-private key.
-
-Any command option such as `--org-key` in profile-authoring tooling must refer
-to an external local authoring-key reference unless a signer-held org-key
-custody feature is specified in the same change. It must not be interpreted as
-a lookup into `trusted_org_keys.json`, because that file contains public trust
-roots only.
-
-If a later implementation chooses signer-held org profile-signing keys, that
-feature must define all of the following before release:
-
-- a distinct non-spending org profile-signing key type or key class,
-- exact-key-type generation/import/signing gates,
-- exclusion from `/sign` and `/sign/component`,
-- identity-scoped encrypted storage and backup/restore behavior,
-- stable authorization actions such as `attestor.profile.sign`,
-- audit events for profile signing and org-key lifecycle changes,
-- tests proving org profile-signing keys cannot be used as transaction,
-  component, sender, auth-address, or rekey keys.
-
-### 9.4 Trusted Organization Key Management
-
-Trusted organization keys (Section 9.2) are mutated only through an explicit,
-audited admin operation. They are never established implicitly as a side effect
-of profile import.
-
-Supported trust-root mutations are:
-
-- add a trusted org key,
-- revoke a trusted org key.
-
-The MVP operator UX target is the `apshell` trust-root command surface in
-Section 20. The backing transport may be HTTP, admin IPC/SSH, or both, but the
-shipped implementation must define exact request/response/status shapes in
-`docs/ARCH_HTTP_API.md`, `docs/ARCH_ADMIN_PROTOCOL.md`, and
-`docs/ARCH_CONTRACTS.md` before release. Until those canonical contracts are
-written, this section defines semantics only. Trust-root operations are gated
-by the stable authorization actions in Section 11.1
-(`attestor.trustroot.add`, `attestor.trustroot.revoke`,
-`attestor.trustroot.view`) and are available to `system:product-admins` in
-product-mode bootstrap grants.
-
-Add semantics:
-
-- the caller supplies `org_key_id`, `scheme`, and `public_key_hex`,
-- the new record is stored with `status: active`, `trusted_at`, and
-  `trusted_by_principal` taken from the authenticated admin principal,
-- add fails closed if `org_key_id` already exists with a different public key,
-- re-adding an identical `(org_key_id, public_key_hex)` is idempotent and must
-  not silently move a `revoked` key back to `active`; reactivation requires an
-  explicit, audited force flag.
-
-Revoke semantics:
-
-- revoke sets `status: revoked` and never deletes the record,
-- revoke does not delete stored profiles or bindings (Section 9.2),
-- after revoke, any operation that must re-verify a profile signed by that org
-  key fails closed until a newer trusted root and profile are imported.
-
-Profile import (Section 9.1) requires the issuing org key to already be present
-and `active` in the trust-root store. Import never adds, trusts, or reactivates
-an org key. The `--org-key <org-public-key>` option on the import command is an
-assertion: it must equal the stored trusted public key for `issuer.org_key_id`,
-and a mismatch fails closed without mutating the trust-root store.
-
-Trust-root writes hold the identity store mutation lock and atomically rewrite
-both `trusted_org_keys.json` and its HMAC sidecar.
+For MVP, the attestor does not require or verify user counterparty signatures
+before signing. The user signature is enforced by the final LogicSig. A future
+policy option may require a verified user component signature first, but that
+is not part of the initial model.
 
 ## 10. Persistent Storage
 
-All signer-side attestor state is identity-scoped and lives under:
+The MVP adds no new attestor-side behavior-bearing storage beyond existing
+identity-scoped keys, policy, token, unlock config, and audit log.
+
+Specifically, MVP does not create:
 
 ```text
 identities/<identity>/attestor/
-```
-
-Required files:
-
-```text
-identities/<identity>/attestor/profiles/<profile_id>.json
+identities/<identity>/attestor/profiles/
 identities/<identity>/attestor/trusted_org_keys.json
-identities/<identity>/attestor/trusted_org_keys.json.hmac
 identities/<identity>/attestor/account_bindings.json
-identities/<identity>/attestor/account_bindings.json.hmac
 ```
 
-The exact file names may be refined during implementation, but the following
-storage invariants are mandatory:
-
-- attestor profile files are public but behavior-bearing; their signatures are
-  verified on import and again before use,
-- trusted organization keys are behavior-bearing trust roots and must be
-  integrity-protected by the identity master key,
-- account bindings are behavior-bearing authorization state and must be
-  integrity-protected by the identity master key,
-- mutation paths hold the identity store mutation lock,
-- backups include attestor profiles, trusted org keys, and account bindings,
-- restore validates integrity before making restored attestor state active,
-- account-binding writes are atomic with respect to signer reload.
-
-The MVP integrity sidecars for `trusted_org_keys.json` and
-`account_bindings.json` use an attestor signed-file sidecar, not the
-policy-specific diagnostic field names. The HMAC key is derived from the
-identity master key with distinct HKDF info strings:
+Attestor component private keys are normal encrypted identity key files under:
 
 ```text
-aplane attestor trusted org keys integrity v1
-aplane attestor account bindings integrity v1
+identities/<identity>/keys/
 ```
 
-Sidecar JSON:
-
-```json
-{
-  "version": 1,
-  "algorithm": "hmac-sha256",
-  "key_id": "keystore-master-hkdf-v1",
-  "hmac": "...",
-  "payload_sha256": "...",
-  "signed_at_unix": 1770000000,
-  "payload_mtime_ns": 1770000000000000000
-}
-```
-
-Security fields:
-
-- `version`,
-- `algorithm`,
-- `key_id`,
-- `hmac`.
-
-Diagnostic fields:
-
-- `payload_sha256`,
-- `signed_at_unix`,
-- `payload_mtime_ns`.
-
-The HMAC covers the exact JSON payload bytes, not normalized JSON and not the
-sidecar diagnostic fields. Diagnostic field tampering does not affect the
-security decision.
-
-Load behavior:
-
-- if the whole `attestor/` directory is absent, attestor trust roots and account
-  bindings are treated as empty,
-- if a behavior-bearing payload file is absent and its sidecar is also absent,
-  that specific attestor state file is treated as empty,
-- if exactly one of a payload file or its sidecar exists, unlock/reload fails
-  closed for that identity,
-- if a sidecar has unsupported security fields or an invalid HMAC,
-  unlock/reload fails closed for that identity,
-- on reload failure, the previous in-memory attestor state remains active,
-  matching signer policy reload failure behavior.
-
-Profile JSON files do not need a local HMAC sidecar because the attestor
-profile signature is the behavior-bearing integrity check. Restore must verify
-both local HMAC sidecars and all attestor profile signatures before restored
-attestor state becomes active.
-
-An account binding record stores:
-
-```json
-{
-  "attested_account": "...",
-  "user_public_key": "...",
-  "attestor_public_key": "...",
-  "attestor_key_id": "...",
-  "template_key_type": "aplane.attestor-falcon1024-ed25519.v1",
-  "template_fingerprint": "...",
-  "salt_counter": 42,
-  "profile_id": "...",
-  "profile_fingerprint": "...",
-  "org_key_id": "...",
-  "network_id": "mainnet",
-  "genesis_hash": "...",
-  "status": "active",
-  "registration_timestamp": "RFC3339 UTC",
-  "registered_by_principal": "...",
-  "approved_by_principal": "..."
-}
-```
-
-`status` values:
+Attestor authorization policy is the existing identity-scoped policy file:
 
 ```text
-active
-suspended
-revoked
+identities/<identity>/policy.yaml
+identities/<identity>/policy.yaml.hmac
 ```
 
-Only `active` bindings are signable.
+The existing policy HMAC, reload, backup, restore, and fail-closed behavior
+from `docs/ARCH_CONTRACTS.md` applies unchanged.
+
+Backup and restore preserve attestor component keys through the normal key
+backup path and preserve policy snapshots through the existing managed backup
+policy snapshot. Restore does not install policy automatically; restored policy
+YAML must be reviewed and re-signed for the destination store through the
+existing policy recovery flow.
 
 ## 11. HTTP Contract
 
@@ -806,14 +563,6 @@ test/contracts/signerapi/
 Add stable authorization actions in `internal/auth/authorizer.go`:
 
 ```text
-attestor.profile.import
-attestor.profile.view
-attestor.trustroot.add
-attestor.trustroot.revoke
-attestor.trustroot.view
-attestor.account.register
-attestor.account.view
-attestor.account.update
 sign.component
 sign.assemble
 ```
@@ -824,9 +573,8 @@ Product-mode bootstrap grants must include these actions for
 HTTP endpoint mapping:
 
 ```text
-POST /attestor/register-account -> attestor.account.register, resource account_binding
-POST /sign/component            -> sign.component, resource transaction
-POST /sign/assemble             -> sign.assemble, resource transaction
+POST /sign/component -> sign.component, resource transaction
+POST /sign/assemble  -> sign.assemble, resource transaction
 ```
 
 If implementation chooses to reuse `sign.request` for a first internal patch,
@@ -850,23 +598,21 @@ returns a non-empty canonical request ID:
 - audit uses the returned ID,
 - cancellation uses the returned ID only for live cancelable endpoint kinds.
 
-Live `/sign/component` and `/attestor/register-account` requests register with
-the existing live request registry using a request kind:
+Live `/sign/component` requests register with the existing live request
+registry using a request kind:
 
 ```text
-sign
 component
-attestor_register
 ```
 
 The live request namespace is one namespace per authenticated identity, not one
-namespace per kind. A caller-supplied `request_id` that is already live for any
-cancelable kind under the same identity must be rejected with `400` before a
-new approval prompt is queued. This keeps `/sign/cancel` unambiguous because
-its DTO carries only `request_id`.
+namespace per kind. A caller-supplied `request_id` that is already live for
+`/sign` or `/sign/component` under the same identity must be rejected with
+`400` before a new approval prompt is queued. This keeps `/sign/cancel`
+unambiguous because its DTO carries only `request_id`.
 
 The shared live namespace changes the effective collision behavior for `/sign`
-when attestor request kinds are live. This is a compatibility-bearing part of
+when component request kinds are live. This is a compatibility-bearing part of
 the MVP and must be promoted into `docs/ARCH_HTTP_API.md` and
 `docs/ARCH_CONTRACTS.md` before release. If implementation instead chooses a
 `(kind, request_id)` namespace, `/sign/cancel` must also gain kind-aware
@@ -876,10 +622,10 @@ Server-generated IDs should include an internal kind prefix or equivalent
 entropy to avoid accidental collisions, but clients must treat returned IDs as
 opaque strings.
 
-`POST /sign/cancel` keeps its current DTO and response shape. It can cancel any
-live request kind for the authenticated identity. This expansion is part of
-the attestor MVP and must be promoted into `docs/ARCH_HTTP_API.md` and
-`docs/ARCH_CONTRACTS.md` before release.
+`POST /sign/cancel` keeps its current DTO and response shape. It can cancel
+live `/sign` and `/sign/component` requests for the authenticated identity.
+This expansion is part of the attestor MVP and must be promoted into
+`docs/ARCH_HTTP_API.md` and `docs/ARCH_CONTRACTS.md` before release.
 
 `/sign/assemble` does not wait for operator approval and is not cancelable
 beyond normal HTTP context cancellation. Its `request_id` is for response and
@@ -888,140 +634,31 @@ audit correlation only; it is not registered as live request state and
 
 ### 11.3 Approval Prompt Rendering
 
-`/sign/component` and `/attestor/register-account` reuse the existing approval
-coordinator and operator approval surfaces (`apadmin`, `apapprover`). Each new
-request kind must supply an operator-facing approval description, analogous to
-the existing transaction `txdesc`, so an operator can make an informed manual
-decision without reading audit logs.
+`/sign/component` reuses the existing approval coordinator and operator
+approval surfaces (`apadmin`, `apapprover`). The request kind must supply an
+operator-facing approval description, analogous to the existing transaction
+`txdesc`, so an operator can make an informed manual decision without reading
+audit logs.
 
 Component-signing approval descriptions must show:
 
-- request kind and component role (user or attestor),
-- attested account,
+- request kind and component role,
+- selected component key ID for attestor role,
+- attested account / transaction sender,
 - target indices and target TxIDs,
-- observed and expected genesis hash / network token,
-- profile ID, short-form profile fingerprint, and org key ID,
-- per-target counterparty signature verification outcome,
-- the policy verdict phase that routed the request to manual review.
-
-Registration approval descriptions must show:
-
-- attested account,
-- template key type and short-form template fingerprint,
-- attestor key ID and short-form attestor public-key fingerprint,
-- profile ID, short-form profile fingerprint, and org key ID,
-- network token and genesis hash,
-- requester principal.
+- decoded transfer facts for each target,
+- observed genesis hash / resolved network token,
+- group hash,
+- policy verdict phase that routed the request to manual review,
+- policy rule ID when available,
+- warnings such as rekey, close-out, clawback, asset close, or high fee.
 
 These descriptions are presentation-only and must not introduce signing inputs.
-The authoritative signing inputs remain the decoded group bytes and the local
-binding. Description rendering lives in `internal/signerapp/txdesc` or a focused
-sibling package, not in transport adapters.
+The authoritative signing inputs remain the decoded group bytes and target
+indices. Description rendering lives in `internal/signerapp/txdesc` or a
+focused sibling package, not in transport adapters.
 
-## 12. `/attestor/register-account`
-
-Request:
-
-```json
-{
-  "request_id": "reg-001",
-  "attested_account": "LOGICSIG_ACCOUNT_ADDRESS",
-  "template_key_type": "aplane.attestor-falcon1024-ed25519.v1",
-  "template_fingerprint": "...",
-  "salt_counter": 42,
-  "lsig_bytecode_hex": "...",
-  "user_public_key": "...",
-  "attestor_public_key": "...",
-  "attestor_key_id": "default-ed25519-2026",
-  "attestor_profile_id": "example-attestor-mainnet-v1",
-  "network_id": "mainnet",
-  "genesis_hash": "..."
-}
-```
-
-Success response:
-
-```json
-{
-  "request_id": "reg-001",
-  "status": "registered",
-  "attested_account": "LOGICSIG_ACCOUNT_ADDRESS",
-  "binding_fingerprint": "...",
-  "profile_fingerprint": "...",
-  "org_key_id": "example-attestor-org-2026",
-  "registration_timestamp": "2026-05-20T12:34:56Z"
-}
-```
-
-Policy/operator rejection response:
-
-```json
-{
-  "request_id": "reg-001",
-  "status": "rejected",
-  "reason": "policy_refused",
-  "reason_detail": "profile_id not in operator allow-list"
-}
-```
-
-Semantic registration refusals return HTTP `200` with `status:"rejected"`
-because the endpoint completed its decision. This includes policy refusal,
-operator rejection, profile/request mismatch, bytecode/address mismatch,
-network mismatch against the profile, missing held attestor key, unsupported
-template, approval timeout, and cancellation. Malformed JSON, invalid request
-syntax, auth failures, unknown local profile ID, corrupted local profile state,
-and internal errors use non-2xx `ErrorResponse`.
-
-The `200` rejection response is an endpoint-specific exception to the current
-generic HTTP status mapping, where policy/operator rejection and approval
-timeout normally map to non-2xx statuses. Implementers must not reuse the
-generic `/sign` `ServiceError` mapping for these registration decision
-outcomes.
-
-`reason` enum:
-
-```text
-policy_refused
-profile_mismatch
-profile_not_yet_valid
-profile_expired
-bytecode_address_mismatch
-network_not_in_profile
-key_id_not_held
-template_not_registered
-approval_timeout
-cancelled
-unknown
-```
-
-Validation:
-
-1. Resolve `attestor_profile_id` to the currently stored local profile.
-2. Re-verify the profile signature against the locally trusted org key.
-3. Require the current UTC time to be within the profile validity window.
-4. Verify `attestor_key_id`, `attestor_public_key`, `template_key_type`,
-   `network_id`, and `genesis_hash` all belong to that profile.
-5. Verify the signer holds an active component key whose public key matches
-   the profile entry for `attestor_key_id`, and record its local
-   `component_key_id`.
-6. Verify `template_key_type` is registered as an attested-account template.
-7. Rebuild LogicSig bytecode from template, user public key, attestor public
-   key, and salt counter.
-8. Require rebuilt bytecode to equal `lsig_bytecode_hex`.
-9. Require bytecode-derived address to equal `attested_account`.
-10. Run account-registration policy and approval.
-11. Persist an active binding atomically if approved.
-12. Return `registered`; otherwise return `rejected`.
-
-`binding_fingerprint` is:
-
-```text
-SHA-256(APC(binding_record_without_mutable_status_fields))
-```
-
-The exact binding-fingerprint input must be pinned by Phase 0 fixtures.
-
-## 13. `/sign/component`
+## 12. `/sign/component`
 
 Request:
 
@@ -1030,16 +667,8 @@ Request:
   "request_id": "cli-123",
   "role": "attestor",
   "component_key": "attkey_...",
-  "attested_account": "LOGICSIG_ACCOUNT_ADDRESS",
   "group_bytes_hex": ["5458..."],
-  "target_indices": [0],
-  "counterparty_signatures": [
-    {
-      "target_index": 0,
-      "role": "user",
-      "signature": "..."
-    }
-  ]
+  "target_indices": [0]
 }
 ```
 
@@ -1063,11 +692,13 @@ The request and response examples show the attestor role. Role-specific wire
 values are:
 
 - attestor role: `component_key` is the local `component_key_id`
-  (`attkey_...`, Section 6.1); the response `signature_scheme` is the attestor
-  component key type, for example `aplane.attestor-ed25519.v1`.
-- user role: `component_key` is the local `attested_account` LogicSig address,
+  (`attkey_...`, Section 6.1). It may be omitted only when the authenticated
+  identity has exactly one active attestor component key. The response
+  `signature_scheme` is the attestor component key type, for example
+  `aplane.attestor-ed25519.v1`.
+- user role: `component_key` is the local attested-account LogicSig address,
   because the user's component private key lives in that `dsa_lsig`
-  attested-account key file; the response `signature_scheme` is the user key
+  attested-account key file. The response `signature_scheme` is the user key
   type, for example `aplane.falcon1024.v1`.
 
 Validation:
@@ -1076,42 +707,48 @@ Validation:
 - `group_bytes_hex` has length 1 through 16.
 - `target_indices` is non-empty, unique, sorted or canonicalized for internal
   processing, and every value is in range.
-- `component_key` resolves to a key that supports component signing for the
-  declared role: for the attestor role the local `component_key_id`
-  (Section 6.1), for the user role exactly the `attested_account` LogicSig
-  address (`component_key == attested_account`).
-- `attested_account` resolves against the receiving signer:
-  - role `user`: local `dsa_lsig` attested-account key file,
-  - role `attestor`: local active account-binding registry entry.
-- user/attestor public keys come from the local binding source, never from the
-  request.
-- every target transaction has `txn.Sender == attested_account`.
-- every target transaction has `GenesisHash == binding.genesis_hash`.
 - every transaction byte string is canonical per Section 7.
-- group consistency is valid per Section 15.
-- `component_key` public key equals the role public key in the binding.
-- profile drift is checked before policy:
-  - attestor role: drift fails closed with `binding_stale`,
-  - user role: drift emits warning and continues.
-- counterparty signatures, when present, are unique by `target_index`, cover
-  only requested targets, have the opposite role, and verify against the
-  binding public key for the counterparty role.
+- group consistency is valid per Section 14.
+- every target transaction has `txn.Sender` equal to the attested account being
+  authorized.
+- every target transaction has a non-empty `GenesisHash` that resolves to an
+  allowed network context token for policy evaluation.
+- role `attestor`: `component_key`, after optional unambiguous defaulting,
+  resolves to a local active attestor component key.
+- role `user`: `component_key` resolves to a local `dsa_lsig`
+  attested-account key file, and every target transaction has
+  `txn.Sender == component_key`.
 
-Policy:
+Attestor-role policy:
 
 - component signing uses the current policy phase order:
   `Always Deny > Always Review > Always Approve > Operator Default`.
 - policy sees the full decoded group, not just target transactions.
-- attestor-role transfer routing evaluates target movements as movements by
-  the attested account.
-- the default attestor policy requires verified user counterparty signatures
-  before approval. Operators may relax this only through explicit policy.
+- policy evaluates only decoded transaction facts and existing signer-owned
+  context. It does not use caller-supplied labels.
+- transfer routing evaluates target movements by the target transaction
+  sender. For the common case "A can send to B and C", the route's `sources`
+  contains Algorand address `A` and `destinations` contains addresses `B` and
+  `C`.
+- passthrough and non-target group slots participate in group context, warning
+  display, and approval rendering, but attestor policy verdicts are produced
+  for target slots only.
+- if the effective policy produces no explicit verdict, the identity's
+  `user_auto_approve` fallback applies exactly as it does for `/sign`.
+
+User-role policy:
+
+- user component signing uses the same transaction policy phase order as
+  `/sign`.
+- the effective policy is selected by the local attested-account key type.
+- user-role component signing does not require or consult an attestor-side
+  account binding.
 
 Non-2xx failures use `ErrorResponse`. Policy/operator rejection is `403`.
 Malformed shape and validation failures are `400` unless the existing error
 model classifies them otherwise.
 
-## 14. `/sign/assemble`
+## 13. `/sign/assemble`
 
 Request:
 
@@ -1154,12 +791,15 @@ Validation:
 - every group position appears exactly once in `targets` or `passthrough`.
 - no duplicate `target_index` appears.
 - every transaction byte string is canonical per Section 7.
-- group consistency is valid per Section 15.
+- group consistency is valid per Section 14.
 - each target resolves to a local attested-account key file on the user signer.
 - target sender equals `attested_account`.
-- target `GenesisHash` matches the stored key metadata.
+- target `GenesisHash` matches the stored key metadata when stored metadata
+  contains a pinned genesis hash.
 - `user_signature` verifies over role `user` message.
-- `attestor_signature` verifies over role `attestor` message.
+- `attestor_signature` verifies over role `attestor` message using the
+  attestor public key embedded in the local attested-account key's stored
+  LogicSig bytecode/metadata.
 - runtime args exactly fill stored `signing_args` slots beyond
   `user_signature` and `attestor_signature`.
 - each passthrough signed transaction decodes and has a TxID equal to the
@@ -1185,7 +825,7 @@ added.
 Schema-valid requests emit `ATTESTED_ASSEMBLY` audit events whether assembly
 succeeds or fails.
 
-## 15. Group Consistency
+## 14. Group Consistency
 
 For `len(group_bytes_hex) == 1`:
 
@@ -1212,163 +852,105 @@ SHA-256(
 `tx[i]` is exactly the TX-prefixed transport bytes from `group_bytes_hex[i]`
 after hex decode. Do not strip the TX prefix for `group_hash`.
 
-## 16. Network Scoping
+## 15. Network Scoping
 
 Network identity is derived from transaction `GenesisHash`, not `GenesisID`.
 
-Attestor profiles declare allowed networks as `(network_id, genesis_hash)`
-pairs. `network_id` follows `docs/ARCH_NETWORKS.md` token syntax.
+Attestor component signing uses the same genesis-hash-to-network-token
+resolution as normal signer policy:
 
-Account generation pins exactly one `genesis_hash` into:
-
-- the user key file params,
-- the attestor binding registry.
+- built-in mainnet/testnet/betanet genesis hashes resolve to their built-in
+  tokens,
+- configured signer genesis mappings resolve custom networks,
+- unknown genesis hashes fail closed when a network-scoped policy rule must be
+  evaluated.
 
 At component signing and assembly:
 
-- target transaction `GenesisHash` must match the bound `genesis_hash`,
-- signer config must be able to resolve the hash to a network context token,
-- if `network_id` is present in stored metadata, it must match the resolver
-  token or fail closed.
+- target transaction `GenesisHash` is decoded from the transaction bytes,
+- policy uses the resolved network token,
+- `GenesisID` may be displayed as diagnostic data but is never the policy key.
 
-## 17. Profile Drift
+## 16. Policy
 
-Bindings store:
+The MVP reuses the existing identity-scoped `policy.yaml` structure for both
+normal transaction signing and component attestation.
 
-```text
-profile_id
-profile_fingerprint
-org_key_id
-```
-
-Before attestor-role component signing, the attestor signer loads the current
-local profile for `profile_id`, verifies its signature, computes its
-fingerprint, and compares both `profile_fingerprint` and `org_key_id` with the
-binding. Mismatch fails closed with `binding_stale`. A current local profile
-outside its validity window also fails closed; expired or not-yet-valid
-attestor profiles must not authorize new attestor component signatures.
-
-Before user-role component signing and `/sign/assemble`, the user signer
-performs the same comparison when a current local profile exists. Mismatch
-emits a warning into approval and audit but does not fail closed. The same
-warning-only behavior applies when a current local profile exists but is
-outside its validity window, because the user signer may need to assemble or
-audit a component signature already produced by the independent attestor. The
-warning must be visible in audit even though `/sign/assemble` has no operator
-approval prompt.
-
-## 18. Policy
-
-Add an account-registration policy phase for `/attestor/register-account`.
-It uses the existing policy phase ordering, but evaluates account-binding
-facts rather than transaction movements.
-
-Registration selectors:
+The policy question is:
 
 ```text
-profile_id
-profile_fingerprint
-org_key_id
-network_id
-genesis_hash
-template_key_type
-attestor_key_id
-requester_principal
+May this identity produce this kind of signature for these decoded transaction facts?
 ```
 
-MVP policy extends `policy.yaml` with an optional top-level `attestor` block:
+For `/sign`, the signature kind is transaction/account signing. For
+`/sign/component` role `attestor`, the signature kind is attestor component
+signing. The stored policy language is shared; the evaluation context differs.
 
-```yaml
-attestor:
-  schema_version: 1
-  registration:
-    rules:
-      - id: allow_example_mainnet
-        verdict: always_approve
-        profile_ids: ["example-attestor-mainnet-v1"]
-        profile_fingerprints: ["..."]
-        org_key_ids: ["org_2026_main"]
-        network_ids: ["mainnet"]
-        genesis_hashes: ["..."]
-        template_key_types: ["aplane.attestor-falcon1024-ed25519.v1"]
-        attestor_key_ids: ["default-ed25519-2026"]
-        requester_principals: ["system:product-admin"]
-  component_signing:
-    require_verified_user_signature_for_attestor: true
-```
-
-Validation rules:
-
-- `attestor.schema_version` is required when the block is present and must be
-  `1`.
-- Unknown fields under `attestor`, `registration`, `component_signing`, or a
-  registration rule fail policy validation.
-- Registration rule IDs use the same grammar as transfer route IDs:
-  `^[a-z0-9][a-z0-9_-]*$`.
-- `verdict` is one of `always_deny`, `always_review`, or `always_approve`.
-- Selector lists are optional, but a rule with no selectors is rejected unless
-  it explicitly sets `match_all: true`.
-- Empty selector lists are rejected.
-- `network_ids` use network context token syntax.
-- `genesis_hashes` are base64 or hex encoded 32-byte genesis hashes.
-
-Registration policy uses the existing phase order:
+The existing policy phase order applies:
 
 ```text
 Always Deny > Always Review > Always Approve > Operator Default
 ```
 
-If the `attestor.registration` block is absent or no rule matches, registration
-falls through to the identity's Operator Default (`user_auto_approve`). A
-matching `always_deny` rule produces `status:"rejected"` with
-`reason:"policy_refused"` on `/attestor/register-account`.
+`transfer_policy` is the primary MVP configuration surface for attestation.
+A route match means "allowed to continue through the remaining policy phases";
+it is not itself an approval. This preserves the existing policy contract.
 
-Registration policy rule IDs in audit use:
-
-```text
-attestor_registration:<rule_id>
-```
-
-Component-signing policy reuses existing transaction policy and transfer
-routing. The transfer-routing subject for attestor-role requests is the target
-transaction sender, which must equal the attested account.
-
-For attestor-role component signing, the default policy requires verified user
-counterparty signatures for every requested target before approval can be
-requested. This default applies when `attestor.component_signing` is absent.
-Operators may relax it only by explicitly setting:
+Example:
 
 ```yaml
-attestor:
+transfer_policy:
   schema_version: 1
-  component_signing:
-    require_verified_user_signature_for_attestor: false
+  enabled: true
+  on_no_route: reject
+  routes:
+    - id: a_to_b_c
+      networks: ["mainnet"]
+      sources: ["A..."]
+      assets: ["algo"]
+      destinations: ["B...", "C..."]
 ```
 
-When the requirement rejects a request, the policy rule ID is:
+This means an attestor component request for a payment whose decoded sender is
+`A...` and decoded receiver is `B...` or `C...` may continue. It can still be
+rejected or forced to review by fee limits, rekey/close/clawback guards,
+warnings, review thresholds, or the operator default.
 
-```text
-attestor_component:missing_verified_user_signature
-```
+Policy evaluation context:
 
-If the requirement is explicitly relaxed, audit records should include:
+- normal `/sign`: evaluates signer-controlled request slots as today.
+- `/sign/component` role `user`: evaluates local user component target slots.
+- `/sign/component` role `attestor`: evaluates selected target slots as
+  attestation targets, even though the attestor does not own the transaction
+  sender account.
 
-```text
-attestor_component:user_signature_requirement_relaxed
-```
+Existing signer-specific rules must be interpreted carefully in the attestor
+context:
+
+- `reject_close_remainder`, `reject_asset_close`, and `reject_clawback` apply
+  directly.
+- `max_fee_microalgos`, `max_algo_payments`, `max_asa_amounts`,
+  `review_algo_payments`, and `review_asa_amounts` apply directly.
+- `always_review_warnings` applies to decoded warnings in the target
+  transactions and group context.
+- `reject_foreign_rekey` should reject any non-zero `RekeyTo` for attestor
+  role in MVP unless a future explicit policy field allows attested rekeying.
+  The ordinary meaning "rekey target not held by this signer" is not a useful
+  attestor authorization rule because the attestor is not the account owner.
+- `auto_approve_self_noop_transfer` remains a transaction-signing convenience
+  rule and should not be treated as attestor-specific authorization unless
+  tests prove the exact existing predicate is safe in the component context.
+
+No new `attestor.registration` policy block exists in MVP.
 
 Caller-specific transaction policy is deferred. Caller identity remains
 available for authentication, revocation, audit, and rate limiting.
 
-## 19. Audit
+## 17. Audit
 
 Add audit events:
 
 ```text
-ATTESTOR_ACCOUNT_REGISTER_REQUEST
-ATTESTOR_ACCOUNT_REGISTER_APPROVED
-ATTESTOR_ACCOUNT_REGISTER_REJECTED
-ATTESTOR_ACCOUNT_REGISTER_FAILED
 ATTESTOR_COMPONENT_REQUEST
 ATTESTOR_COMPONENT_APPROVED
 ATTESTOR_COMPONENT_REJECTED
@@ -1378,10 +960,6 @@ USER_COMPONENT_APPROVED
 USER_COMPONENT_REJECTED
 USER_COMPONENT_FAILED
 ATTESTED_ASSEMBLY
-ATTESTOR_PROFILE_IMPORTED
-ATTESTOR_PROFILE_IMPORT_REJECTED
-ATTESTOR_TRUSTROOT_ADDED
-ATTESTOR_TRUSTROOT_REVOKED
 ```
 
 Component audit records include:
@@ -1389,21 +967,18 @@ Component audit records include:
 - identity ID,
 - request ID,
 - component role,
-- component key ID,
-- attested account,
+- component key ID for attestor role,
+- attested account / transaction sender,
 - target indices,
 - target TxIDs,
 - group hash,
 - observed genesis hash,
-- expected genesis hash,
-- user public-key fingerprint,
-- attestor public-key fingerprint,
-- profile ID,
-- profile fingerprint,
-- org key ID,
-- counterparty verification outcome,
+- resolved network token,
+- decoded transfer facts for target transactions,
+- warnings,
 - requester principal,
 - approver principal when manually approved,
+- policy verdict phase,
 - policy rule ID when applicable.
 
 `ATTESTED_ASSEMBLY` records:
@@ -1421,7 +996,6 @@ Structured assembly failure reasons:
 
 ```text
 signature_verification_failed
-binding_stale
 network_mismatch
 group_inconsistent
 coverage_violation
@@ -1431,21 +1005,15 @@ key_missing
 unknown
 ```
 
-Audit values for claimed source request IDs must be documented as unauthenticated
-claims.
+Audit values for claimed source request IDs must be documented as
+unauthenticated claims.
 
-Profile-import and trust-root lifecycle events record identity ID, the
-authenticated requester/admin principal, `org_key_id`, `profile_id` and
-short-form `profile_fingerprint` for imports, and structured outcome.
-
-## 20. UX And Tooling
+## 18. UX And Tooling
 
 Attestor signer:
 
 ```text
 apshell generate aplane.attestor-ed25519.v1
-apshell attestor profile export <component-key-id> --out attestor-profile.unsigned.json
-# sign the profile offline with the organization profile-signing key
 ```
 
 The MVP does not add an `apstore generate` surface. Attestor component keys are
@@ -1455,70 +1023,43 @@ If a later implementation adds offline `apstore` generation, it must define the
 command ownership, authorization behavior, audit behavior, and tests in the
 same change.
 
-The attestor profile signature is produced by an organization profile-signing
-key, not by the attestor component key itself. The MVP default is offline
-profile authoring as described in Section 9.3. If profile export/signing is
-implemented through a live signer endpoint, that endpoint must receive its own
-stable authorization action and audit event before release.
-
 User signer/client:
 
 ```text
-apshell attestor trustroot add --org-key-id <id> --scheme ed25519 --public-key <hex> --label "..."
-apshell attestor trustroot list
-apshell attestor trustroot revoke --org-key-id <id>
-apshell attestor profile import attestor-profile.json --org-key <org-public-key>
-apshell generate aplane.attestor-falcon1024-ed25519.v1 attestor_profile=<profile-id>
-apshell attestor register <attested-account>
+apshell generate aplane.attestor-falcon1024-ed25519.v1 attestor_public_key=<hex>
+apshell attest sign <group-or-transaction> --attestor <endpoint-or-name>
+apshell attest assemble <group-or-transaction> --user-sig <sig> --attestor-sig <sig>
 ```
 
-The issuing org key must be trusted (Section 9.4) before its profile can be
-imported. `trustroot add` is the explicit trust-establishment step; profile
-import never establishes trust on its own.
+The exact shell syntax may change during implementation, but the workflow
+should stay simple:
 
-Attested-account generation resolves the attestor key from the imported
-profile. If the profile lists more than one active attestor key whose
-`component_key_type` matches the template's `attestor_component_key_type`, the
-caller must disambiguate with an explicit `attestor_key_id` parameter:
-
-```text
-apshell generate aplane.attestor-falcon1024-ed25519.v1 \
-  attestor_profile=<profile-id> attestor_key_id=<attestor-key-id>
-```
-
-Generation fails closed if the selection is ambiguous and no `attestor_key_id`
-is given, if `attestor_key_id` is not active in the profile, or if its
-`component_key_type` does not match the template. Generation pins exactly one
-attestor public key, one genesis hash (Section 16), and records the source
-`profile_id` and `attestor_key_id` into the user key file params for later
-binding and drift checks.
+1. The user generates an attested account key that hard-codes the attestor
+   public key in the LogicSig program.
+2. The orchestrator obtains a user component signature from the user signer.
+3. The orchestrator sends canonical transaction/group bytes to the attestor
+   signer.
+4. The attestor signer evaluates `policy.yaml` over decoded transaction facts
+   and returns attestor component signatures when allowed.
+5. The user signer assembles the final signed group.
 
 Shell command workflow logic belongs in `internal/apshellapp`, not
 `cmd/apshell`. Reusable network/signing orchestration belongs in
 `internal/engine` or a focused internal package.
 
-Client-side credential routing must be separate from profiles. A suggested
-client config file is:
+Client-side credential routing is separate local client config. If a named
+attestor shortcut is needed, it should store endpoint and credential
+references, not policy facts or profile labels. Tokens are never stored in
+attested LogicSig metadata.
 
-```text
-attestors.yaml
-```
-
-containing profile ID, endpoint URL override if needed, and local credential
-reference. Tokens are never stored in profile JSON.
-
-## 21. Implementation Ownership
+## 19. Implementation Ownership
 
 Expected new or changed packages:
 
 ```text
 pkg/signerapi/attestor.go
-internal/attestor/profile/
-internal/attestor/apc/
-internal/attestor/binding/
 internal/attestor/message/
 internal/attestor/verify/
-internal/signerapp/attestor/
 internal/signerapp/signing/component.go
 internal/signerapp/signing/assemble.go
 cmd/apsigner/http_handlers_attestor.go
@@ -1530,27 +1071,29 @@ lsig/attestor_falcon1024_ed25519/
 
 There is no `lsig/` package for the `aplane.attestor-ed25519.v1` component key:
 it is a raw Ed25519 component-signing key, not a LogicSig, so its generation and
-signing live under `internal/keygen` and a non-registry Ed25519 helper, not under
-`lsig/`. The optional all-Ed25519 attested-account template (Section 6.1,
-`aplane.attestor-ed25519-ed25519.v1`), if implemented, is `lsig/attestor_ed25519_ed25519/`.
+signing live under `internal/keygen` and a non-registry Ed25519 helper, not
+under `lsig/`. The optional all-Ed25519 attested-account template (Section 6.1,
+`aplane.attestor-ed25519-ed25519.v1`), if implemented, is
+`lsig/attestor_ed25519_ed25519/`.
 
 Existing package changes:
 
 - `internal/auth`: add stable actions and bootstrap grants.
 - `cmd/apsigner/http_runtime.go`: register new routes.
-- `internal/signerapp/rest`: expose service methods for new endpoints,
-  including trusted-org-key management.
+- `internal/signerapp/rest`: expose service methods for new endpoints.
 - `internal/signerapp/rest` and the `/keys` inventory DTO in `pkg/signerapi`:
   expose `component_key_id`, `is_component_key`, and `is_spending_account` for
   component-key rows in `/keys` and key-generation responses.
 - `internal/signerapp/txdesc`: add operator-facing approval descriptions for
-  component signing and account registration (Section 11.3).
+  component signing (Section 11.3).
 - `internal/signerapp/audit`: add event types and fields.
 - `internal/signing`: add exact key-type transaction-signing guard or split
   transaction/component registries.
 - `internal/keygen`: add exact-key-type generators for component and
   attested-account key types, and block family fallback for those types.
-- `internal/keys`: preserve attestor metadata in `KeyPair.Params`.
+- `internal/keys`: preserve attestor public-key metadata in `KeyPair.Params`.
+- `internal/policy`: support evaluating an attestor component-signing context
+  over selected target transactions using the existing policy model.
 - `internal/signerapp/signing/planner_runtime.go`: allow attested-account
   metadata in `/plan` while blocking `/sign`.
 - `internal/signerapp/signing/simulation.go` or REST simulate path: reject
@@ -1559,13 +1102,11 @@ Existing package changes:
 
 Layering rules:
 
-- `internal/attestor/*` owns APC canonicalization, attestor profile parsing and
-  verification, binding fingerprints, component message construction, group
-  hash helpers, and pure verifier primitives. It must not depend on HTTP,
-  identity runtime, approval, keystore sessions, or shell packages.
-- `internal/signerapp/attestor` owns signer-side attestor profile import/view,
-  trust-root mutation, account-binding registration, binding storage, and
-  policy facts.
+- `internal/attestor/*` owns component message construction, group hash
+  helpers, and pure verifier primitives. It must not depend on HTTP, identity
+  runtime, approval, keystore sessions, or shell packages.
+- `internal/policy` owns reusable transaction-fact policy evaluation for both
+  normal signing and attestor component-signing contexts.
 - `internal/signerapp/signing` owns decoded transaction-group component
   signing and final assembly because those flows share planning, policy,
   approval, audit, and lifecycle behavior with existing signing.
@@ -1575,16 +1116,10 @@ Layering rules:
   APIs.
 - `cmd/apshell` and `cmd/apsigner` remain transport/composition adapters.
 
-## 22. Acceptance Tests
+## 20. Acceptance Tests
 
 Phase 0 contract tests:
 
-- APC vectors pass in Go and are consumable by TypeScript/Python SDK tests.
-- signed attestor profile v1 vectors cover valid import, unsupported schema,
-  unsupported signature scheme, unknown org key, revoked org key, duplicate
-  raw keys, post-NFC key collision, invalid signature, not-yet-valid profile,
-  expired profile, and rollback update.
-- trusted org-key and account-binding integrity vectors reject tampering.
 - group hash vectors pass.
 - component message vectors pass.
 - component key handle vectors produce stable `attkey_...` IDs and prove they
@@ -1592,11 +1127,10 @@ Phase 0 contract tests:
 - `/keys` and `/admin/generate` component-key fixtures include `address`,
   `component_key_id`, `public_key_hex`, `key_type`, `is_component_key:true`,
   and `is_spending_account:false`.
-- registration success and rejection fixtures are committed.
 - `/sign/component` and `/sign/assemble` fixtures, including passthrough
   assembly items, are committed.
-- attestor policy YAML fixtures cover registration rules and
-  `require_verified_user_signature_for_attestor`.
+- attestor policy YAML fixtures prove existing `transfer_policy` routes can
+  express "A can send to B and C" without registration.
 
 Unit tests:
 
@@ -1606,34 +1140,28 @@ Unit tests:
   attested-account key types.
 - component-key compatibility locator values, when present, are rejected as
   transaction sender, `auth_address`, and rekey target.
-- trust-root add rejects a conflicting public key for an existing `org_key_id`,
-  and revoke drives later re-verification to fail closed.
-- attestor signed-file sidecars reject tampered payloads, missing sidecars,
-  orphaned sidecars, unsupported security fields, and invalid HMAC values;
-  reload failure keeps the previous in-memory attestor state active.
-- profile import requires a pre-trusted active org key and rejects an
-  `--org-key` assertion that does not match the stored trusted public key.
-- registration and attestor-role component signing fail closed when the current
-  local profile is not-yet-valid or expired.
-- user-role component signing and `/sign/assemble` audit warnings, but do not
-  fail closed, when the current local profile is not-yet-valid or expired.
-- attested-account generation rejects an ambiguous attestor key selection and
-  binds the explicitly selected `attestor_key_id`.
-- component-signing and registration approval prompts render the operator-facing
-  fields required by Section 11.3.
+- `/sign/component` policy evaluation uses decoded transaction sender,
+  receiver, amount, asset, fee, close, clawback, rekey, network, and group
+  facts, never request labels.
+- attestor role accepts a policy-allowed `A -> B` payment and rejects an
+  otherwise identical `A -> D` payment when `D` is not routed.
+- attestor role rejects route misses according to `transfer_policy.on_no_route`.
+- attestor role rejects unknown genesis hashes when network-scoped policy must
+  be evaluated.
+- attestor role rejects non-zero `RekeyTo` in MVP.
+- attestor role applies close, asset close, clawback, fee, review, and amount
+  thresholds consistently with the shared policy model.
+- user-role component signing evaluates the local attested-account key type
+  policy and does not require an attestor-side binding.
+- component-signing approval prompts render the operator-facing fields required
+  by Section 11.3.
 - `/plan` accepts attested-account metadata and budgets LogicSig bytes.
 - component message computation matches vectors.
 - TEAL generated by attested template verifies known signatures in algod.
 - live request registration rejects duplicate caller-supplied `request_id`
-  values across `/sign`, `/sign/component`, and `/attestor/register-account`
-  for the same identity.
+  values across `/sign` and `/sign/component` for the same identity.
 - group consistency rejects singleton with group, multi-member missing group,
   divergent group, and wrong computed group.
-- counterparty signature validation rejects wrong role, duplicate target,
-  non-target target, invalid signature, and wrong public key.
-- profile drift fails closed on attestor role.
-- user role drift warns and continues.
-- binding registry rejects tamper or failed integrity verification.
 - `/simulate` rejects attested-account senders with a stable error message.
 - `/sign/assemble` rejects malformed passthrough items and signed transaction
   TxID mismatches.
@@ -1643,24 +1171,18 @@ Integration tests:
 - two isolated test `apsigner` deployments, user and attestor, each with its
   own temporary signer data root; this is test harness composition, not a
   product same-node multi-store deployment,
-- trusted-org-key add then signed profile import, then org-key revoke driving
-  attestor-role component signing to fail closed,
-- previously valid imported profile that later expires drives registration and
-  attestor-role component signing to fail closed,
-- signed profile import,
-- account generation and registration,
-- registration manual approval, auto approval, rejection, timeout, and cancel,
-- `/sign/cancel` cancels live component-signing and registration approval waits
-  and returns `not_found` for assembly request IDs,
-- unregistered attestor component request rejected,
-- missing local user key rejected,
-- profile-label spoofing rejected,
-- successful singleton attested payment,
+- account generation with a hard-coded attestor public key,
+- successful singleton attested payment allowed by attestor `policy.yaml`,
 - successful attested group with mixed senders and passthrough,
 - successful multi-target group,
 - cross-network attempt rejected,
-- attestor policy rejection,
-- stolen-user-key scenario where attestor refuses,
+- route-miss attestor policy rejection,
+- manual approval, auto approval, rejection, timeout, and cancel for
+  `/sign/component`,
+- `/sign/cancel` cancels live component-signing approval waits and returns
+  `not_found` for assembly request IDs,
+- missing local user key rejected,
+- stolen-user-key scenario where attestor refuses based on transaction policy,
 - rekey attempt cannot bypass attestor refusal,
 - assembly emits audit on success and schema-valid failure,
 - claimed source request IDs are recorded as claims.
@@ -1668,12 +1190,12 @@ Integration tests:
 SDK tests:
 
 - Go, TypeScript, and Python DTO contract fixtures pass.
-- SDK request deadlines for component signing and registration are approval-wait
-  aware like `/sign`.
+- SDK request deadlines for component signing are approval-wait aware like
+  `/sign`.
 - SDK cancellation calls `/sign/cancel` with the returned request ID when the
   request ID was server-generated.
 
-## 23. MVP Completion Criteria
+## 21. MVP Completion Criteria
 
 The MVP is complete when:
 
@@ -1682,22 +1204,21 @@ The MVP is complete when:
 - attestor component key generation exposes stable non-address
   `component_key_id` handles,
 - `/plan` handles attested account metadata,
-- signed attestor profiles, trusted org keys, and account bindings use the
-  schemas and integrity checks defined above,
-- trusted organization keys are added and revoked through a guarded, audited
-  admin surface, and profile import requires a pre-trusted active org key,
-- account registration stores integrity-protected bindings,
-- `/sign/component` returns raw role-separated component signatures,
+- no registration endpoint, account-binding store, profile store, or trust-root
+  store is required for attestation,
+- `/sign/component` returns raw role-separated component signatures after
+  evaluating decoded transaction facts against `policy.yaml`,
 - `/sign/assemble` verifies and assembles final signed transaction bytes,
-- `/sign/cancel` cancellation semantics for component signing and registration
-  are promoted into the canonical HTTP contract,
+- `/sign/cancel` cancellation semantics for component signing are promoted into
+  the canonical HTTP contract,
 - `/simulate` rejects attested accounts with a clear MVP limitation error,
-- audit records registration, component signing, and assembly,
-- backup and restore preserve attestor keys and account bindings,
+- audit records component signing and assembly,
+- backup and restore preserve attestor component keys through the normal key
+  backup path,
 - contract fixtures and integration tests pass,
 - SDK DTOs and docs are updated in the same release window.
 
-## 24. Deferred Work
+## 22. Deferred Work
 
 Deferred from MVP:
 
@@ -1708,5 +1229,9 @@ Deferred from MVP:
 - attestor-side assembly,
 - M-of-N attestor templates,
 - escape hatches and recovery keys,
-- stateful recovery notices,
+- optional stricter template/LogicSig preflight by the attestor,
+- optional policy requiring a verified user component signature before
+  attestor signing,
+- public attestor profiles for discovery/marketing metadata,
+- stateful account registration or recovery notices,
 - attested-account simulation.
