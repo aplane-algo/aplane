@@ -1,6 +1,6 @@
 {
   "request_id": "cli-123",
-  "component_key": "attkey_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "component_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "signatures": [
     {
       "target_index": 0,

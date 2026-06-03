@@ -47,7 +47,6 @@ func (e *Error) Error() string {
 
 type GenerateResult struct {
 	Address           string
-	ComponentKeyID    string
 	PublicKeyHex      string
 	KeyType           string
 	IsComponentKey    bool
@@ -167,7 +166,6 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 
 	return &GenerateResult{
 		Address:           genResult.Address,
-		ComponentKeyID:    genResult.ComponentKeyID,
 		PublicKeyHex:      genResult.PublicKeyHex,
 		KeyType:           genResult.KeyType,
 		IsComponentKey:    genResult.IsComponentKey,
@@ -184,7 +182,9 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	if address == "" {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "address is required"}
 	}
-	if err := validateDeleteKeyID(address); err != nil {
+	var err error
+	address, err = normalizeDeleteKeyID(address)
+	if err != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 	}
 
@@ -265,12 +265,16 @@ func isLockedStateError(err error) bool {
 	return errors.Is(err, keystore.ErrStoreLocked)
 }
 
-func validateDeleteKeyID(address string) error {
-	if keytypes.IsComponentKeyID(address) {
-		return nil
+func normalizeDeleteKeyID(address string) (string, error) {
+	if keytypes.IsComponentKeySelector(address) {
+		selector, err := keytypes.NormalizeComponentKeySelector(address)
+		if err != nil {
+			return "", err
+		}
+		return selector, nil
 	}
 	if _, err := types.DecodeAddress(strings.ToUpper(address)); err != nil {
-		return fmt.Errorf("invalid key identifier")
+		return "", fmt.Errorf("invalid key identifier")
 	}
-	return nil
+	return address, nil
 }

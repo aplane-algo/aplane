@@ -513,11 +513,11 @@ func componentAddressAndPublicKey(meta KeyPayloadMetadata) (string, string, erro
 	if len(publicKey) != ed25519.PublicKeySize {
 		return "", "", fmt.Errorf("invalid component public key length: expected %d bytes, got %d", ed25519.PublicKeySize, len(publicKey))
 	}
-	componentKeyID, err := keytypes.ComponentKeyID(meta.KeyType, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(meta.KeyType, publicKey)
 	if err != nil {
 		return "", "", err
 	}
-	return componentKeyID, strings.ToLower(meta.PublicKeyHex), nil
+	return componentKey, strings.ToLower(meta.PublicKeyHex), nil
 }
 
 // deriveAddressAndPublicKeyFromData derives the Algorand address and extracts the public key

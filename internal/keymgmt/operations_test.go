@@ -198,7 +198,7 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 	if result.Address == "" {
 		t.Fatal("Address is empty")
 	}
-	if result.IsComponentKey || result.ComponentKeyID != "" {
+	if result.IsComponentKey {
 		t.Fatalf("attested account marked as component: %#v", result)
 	}
 
@@ -246,12 +246,6 @@ func TestGenerateKeyAttestorComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey(component) error = %v", err)
 	}
-	if !strings.HasPrefix(result.Address, keytypes.ComponentKeyIDPrefix) {
-		t.Fatalf("Address = %q, want component key ID", result.Address)
-	}
-	if result.ComponentKeyID != result.Address {
-		t.Fatalf("ComponentKeyID = %q, want address %q", result.ComponentKeyID, result.Address)
-	}
 	if !result.IsComponentKey {
 		t.Fatal("IsComponentKey = false, want true")
 	}
@@ -260,6 +254,9 @@ func TestGenerateKeyAttestorComponent(t *testing.T) {
 	}
 	if result.PublicKeyHex == "" {
 		t.Fatal("PublicKeyHex is empty")
+	}
+	if result.Address != result.PublicKeyHex {
+		t.Fatalf("Address = %q, want public key hex %q", result.Address, result.PublicKeyHex)
 	}
 	if result.Mnemonic != "" {
 		t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)

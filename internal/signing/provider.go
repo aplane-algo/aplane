@@ -39,9 +39,9 @@ type KeyMaterial struct {
 // keys are not transaction-signing provider keys and must only be used by the
 // attestor component-signing flow.
 type ComponentKeyMaterial struct {
-	ComponentKeyID string
-	PublicKey      []byte
-	PrivateKey     []byte
+	ComponentKey string
+	PublicKey    []byte
+	PrivateKey   []byte
 }
 
 // Provider defines the interface for cryptographic signature providers

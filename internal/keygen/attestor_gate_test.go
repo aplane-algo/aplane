@@ -41,7 +41,6 @@ func TestGetGeneratorRequiresExactAttestorKeyTypeRegistration(t *testing.T) {
 	tests := []string{
 		keytypes.AttestorComponentEd25519V1,
 		keytypes.AttestedFalcon1024V1,
-		keytypes.AttestedEd25519V1,
 	}
 	for _, keyType := range tests {
 		t.Run(keyType, func(t *testing.T) {

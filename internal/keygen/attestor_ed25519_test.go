@@ -5,7 +5,6 @@ package keygen
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
@@ -37,11 +36,11 @@ func TestAttestorEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateRandom() error = %v", err)
 	}
-	if !strings.HasPrefix(result.Address, keytypes.ComponentKeyIDPrefix) {
-		t.Fatalf("Address = %q, want component key ID", result.Address)
-	}
 	if result.PublicKeyHex == "" {
 		t.Fatal("PublicKeyHex is empty")
+	}
+	if result.Address != result.PublicKeyHex {
+		t.Fatalf("Address = %q, want public key hex %q", result.Address, result.PublicKeyHex)
 	}
 	if result.Mnemonic != "" {
 		t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)
@@ -90,7 +89,7 @@ func TestAttestorEd25519GeneratorRejectsWrongKeyType(t *testing.T) {
 	}
 }
 
-func assertComponentMaterial(t *testing.T, km *signing.KeyMaterial, wantID string) {
+func assertComponentMaterial(t *testing.T, km *signing.KeyMaterial, wantSelector string) {
 	t.Helper()
 	if km == nil {
 		t.Fatal("key material is nil")
@@ -99,8 +98,8 @@ func assertComponentMaterial(t *testing.T, km *signing.KeyMaterial, wantID strin
 	if !ok {
 		t.Fatalf("key material value = %T, want *signing.ComponentKeyMaterial", km.Value)
 	}
-	if material.ComponentKeyID != wantID {
-		t.Fatalf("ComponentKeyID = %q, want %q", material.ComponentKeyID, wantID)
+	if material.ComponentKey != wantSelector {
+		t.Fatalf("ComponentKey = %q, want %q", material.ComponentKey, wantSelector)
 	}
 	securecrypto.ZeroBytes(material.PrivateKey)
 	securecrypto.ZeroBytes(material.PublicKey)

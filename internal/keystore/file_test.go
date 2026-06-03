@@ -588,9 +588,9 @@ func TestFileKeyStore_GetRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey(private) error = %v", err)
 	}
-	componentKeyID, err := keytypes.ComponentKeyID(keytypes.AttestorComponentEd25519V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeyID() error = %v", err)
+		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 	keyPair := &keys.KeyPair{
 		Category:      keys.CategoryComponent,
@@ -598,7 +598,7 @@ func TestFileKeyStore_GetRejectsComponentPublicPrivateMismatch(t *testing.T) {
 		PublicKeyHex:  hex.EncodeToString(publicKey),
 		PrivateKeyHex: hex.EncodeToString(privateKey),
 	}
-	if _, err := keys.SaveKeyFile(paths, keyPair, testIdentityID, componentKeyID, testMasterKey); err != nil {
+	if _, err := keys.SaveKeyFile(paths, keyPair, testIdentityID, componentKey, testMasterKey); err != nil {
 		t.Fatalf("SaveKeyFile() error = %v", err)
 	}
 
@@ -608,7 +608,7 @@ func TestFileKeyStore_GetRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err := store.Scan(nil); err != nil {
 		t.Fatalf("Scan() error = %v", err)
 	}
-	_, err = store.Get(context.Background(), componentKeyID)
+	_, err = store.Get(context.Background(), componentKey)
 	if err == nil {
 		t.Fatal("Get() error = nil, want public/private mismatch")
 	}

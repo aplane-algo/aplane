@@ -201,7 +201,6 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 	}
 	if keytypes.IsAttestorComponentKeyType(genResult.KeyType) {
 		spending := false
-		result.ComponentKeyID = genResult.Address
 		result.IsComponentKey = true
 		result.IsSpendingAccount = &spending
 	}

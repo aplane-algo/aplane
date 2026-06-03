@@ -358,7 +358,7 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 		return nil, fmt.Errorf("component public key does not match private key")
 	}
 
-	componentKeyID, err := keytypes.ComponentKeyID(keyType, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
 	if err != nil {
 		crypto.ZeroBytes(publicKey)
 		crypto.ZeroBytes(privateKey)
@@ -369,9 +369,9 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 		Type:     keyType,
 		Category: signingMeta.Category,
 		Value: &signing.ComponentKeyMaterial{
-			ComponentKeyID: componentKeyID,
-			PublicKey:      publicKey,
-			PrivateKey:     privateKey,
+			ComponentKey: componentKey,
+			PublicKey:    publicKey,
+			PrivateKey:   privateKey,
 		},
 	}, nil
 }

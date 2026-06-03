@@ -69,7 +69,7 @@ func (g *AttestorEd25519Generator) GenerateRandom(ctx context.Context, paths sto
 }
 
 func saveAttestorEd25519Key(paths storepaths.Paths, identityID, keyType string, publicKey, privateKey []byte, masterKey []byte) (*GenerationResult, error) {
-	componentKeyID, err := keytypes.ComponentKeyID(keyType, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -80,13 +80,13 @@ func saveAttestorEd25519Key(paths storepaths.Paths, identityID, keyType string, 
 		PublicKeyHex:  fmt.Sprintf("%x", publicKey),
 		PrivateKeyHex: fmt.Sprintf("%x", privateKey),
 	}
-	keyFiles, err := keys.SaveKeyFile(paths, keyPair, identityID, componentKeyID, masterKey)
+	keyFiles, err := keys.SaveKeyFile(paths, keyPair, identityID, componentKey, masterKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save component key: %w", err)
 	}
 
 	return &GenerationResult{
-		Address:      componentKeyID,
+		Address:      componentKey,
 		KeyType:      keyType,
 		PublicKeyHex: keyPair.PublicKeyHex,
 		KeyFiles:     keyFiles,

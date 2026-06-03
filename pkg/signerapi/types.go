@@ -327,7 +327,6 @@ type KeyTypesResponse struct {
 // KeyInfo represents a key returned from the /keys endpoint.
 type KeyInfo struct {
 	Address                  string           `json:"address"`
-	ComponentKeyID           string           `json:"component_key_id,omitempty"`
 	PublicKeyHex             string           `json:"public_key_hex"`
 	KeyType                  string           `json:"key_type"`
 	LsigSize                 int              `json:"lsig_size,omitempty"` // Total LogicSig size for budget calculation (bytecode + crypto sig)
@@ -354,7 +353,6 @@ type AdminGenerateRequest struct {
 // AdminGenerateResponse is the response from POST /admin/generate.
 type AdminGenerateResponse struct {
 	Address           string            `json:"address,omitempty"`
-	ComponentKeyID    string            `json:"component_key_id,omitempty"`
 	PublicKeyHex      string            `json:"public_key_hex,omitempty"`
 	KeyType           string            `json:"key_type,omitempty"`
 	IsComponentKey    bool              `json:"is_component_key,omitempty"`

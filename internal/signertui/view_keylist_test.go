@@ -133,7 +133,7 @@ func TestRenderKeyDetailsShowsPreciseTemplateProvenanceNote(t *testing.T) {
 
 func TestRenderKeyDetailsShowsAttestorPublicKey(t *testing.T) {
 	rendered := stripANSI(Model{
-		detailsAddress:      "attkey_abc",
+		detailsAddress:      "aabbccdd",
 		detailsKeyType:      keytypes.AttestorComponentEd25519V1,
 		detailsPublicKeyHex: "aabbccdd",
 		height:              30,

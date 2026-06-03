@@ -64,19 +64,24 @@ func signPreparedAttestorComponents(ctx context.Context, plan *ComponentSignPlan
 
 	return &ComponentSignResult{
 		RequestID:    plan.RequestID,
-		ComponentKey: componentKey.ComponentKeyID,
+		ComponentKey: componentKey.ComponentKey,
 		Signatures:   signatures,
 	}, nil
 }
 
-func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, componentKeyID string) (*coresigning.KeyMaterial, *coresigning.ComponentKeyMaterial, *ServiceError) {
-	keyMaterial, err := session.GetKeyWithContext(ctx, componentKeyID)
+func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, componentKeySelector string) (*coresigning.KeyMaterial, *coresigning.ComponentKeyMaterial, *ServiceError) {
+	componentKeySelector, normalizeErr := keytypes.NormalizeComponentKeySelector(componentKeySelector)
+	if normalizeErr != nil {
+		return nil, nil, badRequest(normalizeErr.Error())
+	}
+
+	keyMaterial, err := session.GetKeyWithContext(ctx, componentKeySelector)
 	if err != nil {
 		switch {
 		case errors.Is(err, keystore.ErrStoreLocked):
 			return nil, nil, forbidden("signer is locked")
 		case errors.Is(err, keystore.ErrKeyNotFound):
-			return nil, nil, badRequest(fmt.Sprintf("component key %q not found", componentKeyID))
+			return nil, nil, badRequest(fmt.Sprintf("component key %q not found", componentKeySelector))
 		default:
 			return nil, nil, internal(fmt.Sprintf("failed to load component key: %v", err))
 		}
@@ -87,20 +92,20 @@ func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, c
 	if keyMaterial.Type != keytypes.AttestorComponentEd25519V1 {
 		gotType := keyMaterial.Type
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, badRequest(fmt.Sprintf("key %q is %s, not %s", componentKeyID, gotType, keytypes.AttestorComponentEd25519V1))
+		return nil, nil, badRequest(fmt.Sprintf("key %q is %s, not %s", componentKeySelector, gotType, keytypes.AttestorComponentEd25519V1))
 	}
 	if keyMaterial.Category != "" && keyMaterial.Category != keys.CategoryComponent {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, badRequest(fmt.Sprintf("key %q is not a component key", componentKeyID))
+		return nil, nil, badRequest(fmt.Sprintf("key %q is not a component key", componentKeySelector))
 	}
 	componentKey, ok := keyMaterial.Value.(*coresigning.ComponentKeyMaterial)
 	if !ok || componentKey == nil {
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, internal("loaded attestor component key has invalid material")
 	}
-	if componentKey.ComponentKeyID != componentKeyID {
+	if componentKey.ComponentKey != componentKeySelector {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, internal("loaded component key handle does not match requested component key")
+		return nil, nil, internal("loaded component key selector does not match requested component key")
 	}
 	if len(componentKey.PrivateKey) != ed25519.PrivateKeySize {
 		zeroLoadedKeyMaterial(keyMaterial)

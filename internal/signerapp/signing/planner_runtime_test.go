@@ -145,11 +145,6 @@ func TestVerifySignableKeysRejectsAttestorKeyTypes(t *testing.T) {
 			keyType: keytypes.AttestedFalcon1024V1,
 			want:    attestedAccountSignRejectMessage,
 		},
-		{
-			name:    "optional attested account",
-			keyType: keytypes.AttestedEd25519V1,
-			want:    attestedAccountSignRejectMessage,
-		},
 	}
 
 	for _, tt := range tests {

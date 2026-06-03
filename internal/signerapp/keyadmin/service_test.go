@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -187,14 +186,11 @@ func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey(component) error = %#v", err)
 	}
-	if !strings.HasPrefix(result.Address, keytypes.ComponentKeyIDPrefix) {
-		t.Fatalf("GenerateKey(component) address = %q, want component key ID", result.Address)
-	}
-	if result.ComponentKeyID != result.Address {
-		t.Fatalf("ComponentKeyID = %q, want address %q", result.ComponentKeyID, result.Address)
-	}
 	if result.PublicKeyHex == "" {
 		t.Fatal("GenerateKey(component) public key is empty")
+	}
+	if result.Address != result.PublicKeyHex {
+		t.Fatalf("GenerateKey(component) address = %q, want public key hex %q", result.Address, result.PublicKeyHex)
 	}
 	details, svcErr := svc.GetKeyDetails(ir, result.Address)
 	if svcErr != nil {

@@ -15,7 +15,6 @@ type KeyInfo struct {
 // GenerateResult is the result of generating a new key
 type GenerateResult struct {
 	Address           string
-	ComponentKeyID    string
 	PublicKeyHex      string
 	KeyType           string // Full versioned type: "aplane.falcon1024.v1" or "ed25519"
 	IsComponentKey    bool

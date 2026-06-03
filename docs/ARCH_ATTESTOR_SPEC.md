@@ -253,31 +253,27 @@ aplane.attestor-ed25519.v1
 aplane.falcon1024-attested.v1
 ```
 
-Optional MVP key type if implementation cost is low:
-
-```text
-aplane.ed25519-attested.v1
-```
+The MVP deliberately has no all-Ed25519 attested account key type. Future
+attested-account key types should follow the client-side account-key naming
+pattern `aplane.<user-key-family>-attested.v1`, but they are deferred until a
+real consumer needs them.
 
 `aplane.attestor-ed25519.v1` is an attestor component key. It can
 produce raw component signatures only. It is not an Algorand spending account
 and must not be accepted by `/sign`.
 
-Generated attestor component keys have a stable component key handle:
+Generated attestor component keys are selected by their canonical public key
+hex:
 
 ```text
-component_key_id = "attkey_" || lower_hex(SHA-256(
-  "APLANE_COMPONENT_KEY_V1" ||
-  uint16_be(len(key_type)) ||
-  key_type ||
-  public_key_bytes
-))
+component_key = lower_hex(attestor_public_key_bytes)
 ```
 
-`component_key_id` is public, deterministic, and not an Algorand address. The
-`attkey_` prefix is intentionally outside Algorand address syntax. Component
-signing requests use this handle in the `component_key` field when selecting a
-specific attestor component key.
+The selector is public, deterministic, and not an Algorand address. It is the
+same public key value embedded in `aplane.falcon1024-attested.v1` LogicSig
+bytecode and used for attestor endpoint routing. Component signing requests use
+this selector in the `component_key` field when selecting a specific attestor
+component key.
 
 If an attestor identity has exactly one active attestor component key, clients
 may omit `component_key` for role `attestor` and the signer may select that key
@@ -286,20 +282,17 @@ unambiguously. If more than one active attestor component key exists,
 policy is evaluated from decoded transaction facts.
 
 If existing key inventory or generation DTOs require an `address` field for
-every key row, a component-key row may carry a storage locator in that field
-for compatibility. That locator is not a spendable account address, must be
-marked as non-spending in UI, and must not be accepted as `auth_address`,
-transaction sender, or rekey target. `/keys` and generation responses for
-component keys must expose `component_key_id` so clients do not depend on the
-compatibility locator.
+every key row, a component-key row uses the same canonical public-key hex in
+that field. That locator is not a spendable account address, must be marked as
+non-spending in UI, and must not be accepted as `auth_address`, transaction
+sender, or rekey target.
 
 For MVP wire DTOs, component-key inventory and generation responses use these
 exact additive fields:
 
 ```json
 {
-  "address": "attkey_...",
-  "component_key_id": "attkey_...",
+  "address": "<attestor_public_key_hex>",
   "public_key_hex": "...",
   "key_type": "aplane.attestor-ed25519.v1",
   "is_component_key": true,
@@ -312,12 +305,11 @@ The client obtains the attestor component public key from the attestor signer's
 an endpoint URL or credential, is embedded in the generated LogicSig.
 
 For component-key rows, `address` is exactly the same string as
-`component_key_id`; it is a compatibility locator only. Existing spending
-account rows omit `component_key_id`, omit `is_component_key` or set it to
-`false`, and omit `is_spending_account` or set it to `true`. SDKs and shell UI
-must treat absent `is_component_key` as `false`. They must not infer that an
-`address` field is an Algorand address when `is_component_key:true` or
-`is_spending_account:false`.
+`public_key_hex`; it is a compatibility locator only. Existing spending account
+rows omit `is_component_key` or set it to `false`, and omit
+`is_spending_account` or set it to `true`. SDKs and shell UI must treat absent
+`is_component_key` as `false`. They must not infer that an `address` field is
+an Algorand address when `is_component_key:true` or `is_spending_account:false`.
 
 `POST /admin/generate` for a component key returns the same fields plus the
 existing `parameters` field when parameters are present. Contract fixtures must
@@ -387,11 +379,10 @@ registered and enabled for the authenticated identity.
 
 Generation tests must prove:
 
-- `aplane.attestor-ed25519.v1` generation returns `component_key_id`,
+- `aplane.attestor-ed25519.v1` generation returns canonical `public_key_hex`
+  and uses it as the component-key selector,
 - `aplane.falcon1024-attested.v1` generation uses the attested-account
-  generator, not the Falcon base generator through fallback,
-- optional `aplane.ed25519-attested.v1` generation, if implemented,
-  also uses exact-key-type generation.
+  generator, not the Falcon base generator through fallback.
 
 ### 6.3 `/plan` Metadata
 
@@ -445,8 +436,8 @@ during implementation:
 
 - component-signing messages use SHA512/256 because they are tied to Algorand
   transaction ID semantics and TEAL verification,
-- group audit hashes and component key handles use SHA-256 because they are
-  off-chain canonical-data fingerprints.
+- group audit hashes use SHA-256 because they are off-chain canonical-data
+  fingerprints.
 
 ## 8. Attested LogicSig Template
 
@@ -702,7 +693,7 @@ Request:
 {
   "request_id": "cli-123",
   "role": "attestor",
-  "component_key": "attkey_...",
+  "component_key": "<attestor_public_key_hex>",
   "group_bytes_hex": ["5458..."],
   "target_indices": [0]
 }
@@ -713,7 +704,7 @@ Response:
 ```json
 {
   "request_id": "cli-123",
-  "component_key": "attkey_...",
+  "component_key": "<attestor_public_key_hex>",
   "signatures": [
     {
       "target_index": 0,
@@ -727,11 +718,10 @@ Response:
 The request and response examples show the attestor role. Role-specific wire
 values are:
 
-- attestor role: `component_key` is the local `component_key_id`
-  (`attkey_...`, Section 6.1). It may be omitted only when the authenticated
-  identity has exactly one active attestor component key. The response
-  `signature_scheme` is the attestor component key type, for example
-  `aplane.attestor-ed25519.v1`.
+- attestor role: `component_key` is the local attestor component public key hex
+  (Section 6.1). It may be omitted only when the authenticated identity has
+  exactly one active attestor component key. The response `signature_scheme` is
+  the attestor component key type, for example `aplane.attestor-ed25519.v1`.
 - user role: `component_key` is the local attested-account LogicSig address,
   because the user's component private key lives in that `dsa_lsig`
   attested-account key file. The response `signature_scheme` is the user key
@@ -1089,17 +1079,18 @@ Shell command workflow logic belongs in `internal/apshellapp`, not
 `cmd/apshell`. Reusable network/signing orchestration belongs in
 `internal/engine` or a focused internal package.
 
-Client-side credential routing is separate local client config. If a named
-attestor shortcut is needed, it should map an expected attestor
-`component_key_id` / public key to endpoint and credential references, not to
-policy facts or profile labels. Tokens are never stored in attested LogicSig
-metadata.
+Client-side credential routing is separate local client config. Attestor
+endpoint mappings use the expected attestor public key hex as the map key and
+point to endpoint and credential references, not to policy facts or profile
+labels. Tokens are never stored in attested LogicSig metadata.
 
 A logical attestor may have multiple equivalent endpoints for availability.
-The client must verify each endpoint's `/keys` projection exposes the expected
-`component_key_id` / `public_key_hex` before treating it as equivalent. Network
-failure may fail over to another equivalent endpoint; policy rejection is final
-and must not be retried as an outage.
+The client may call each endpoint's `/keys` projection to check whether it
+advertises the expected `public_key_hex`, but this is an early-fail
+misconfiguration check only and does not prove key ownership. Network failure
+may fail over to another equivalent endpoint; policy rejection is final and
+must not be retried as an outage. The actual trust anchor remains the attestor
+public key embedded at `aplane.<user-key-family>-attested.v1` generation time.
 
 ## 19. Implementation Ownership
 
@@ -1121,9 +1112,9 @@ lsig/falcon1024_attested/
 There is no `lsig/` package for the `aplane.attestor-ed25519.v1` component key:
 it is a raw Ed25519 component-signing key, not a LogicSig, so its generation and
 signing live under `internal/keygen` and a non-registry Ed25519 helper, not
-under `lsig/`. The optional all-Ed25519 attested-account template (Section 6.1,
-`aplane.ed25519-attested.v1`), if implemented, is
-`lsig/ed25519_attested/`.
+under `lsig/`. Future attested-account templates, if implemented, should follow
+the `aplane.<user-key-family>-attested.v1` naming pattern and live in
+corresponding `lsig/<user_key_family>_attested/` packages.
 
 Existing package changes:
 
@@ -1131,7 +1122,7 @@ Existing package changes:
 - `cmd/apsigner/http_runtime.go`: register new routes.
 - `internal/signerapp/rest`: expose service methods for new endpoints.
 - `internal/signerapp/rest` and the `/keys` inventory DTO in `pkg/signerapi`:
-  expose `component_key_id`, `is_component_key`, and `is_spending_account` for
+  expose `public_key_hex`, `is_component_key`, and `is_spending_account` for
   component-key rows in `/keys` and key-generation responses.
 - `internal/signerapp/txdesc`: add component request descriptions for manual
   review and audit (Section 11.3).
@@ -1171,11 +1162,11 @@ Phase 0 contract tests:
 
 - group hash vectors pass.
 - component message vectors pass.
-- component key handle vectors produce stable `attkey_...` IDs and prove they
-  are not Algorand addresses.
+- component-key selector vectors prove canonical public-key-hex normalization
+  and prove selectors are not accepted as Algorand spending addresses.
 - `/keys` and `/admin/generate` component-key fixtures include `address`,
-  `component_key_id`, `public_key_hex`, `key_type`, `is_component_key:true`,
-  and `is_spending_account:false`.
+  `public_key_hex`, `key_type`, `is_component_key:true`, and
+  `is_spending_account:false`.
 - `/sign/component` and `/sign/assemble` fixtures, including passthrough
   assembly items, are committed.
 - attestor policy YAML fixtures prove existing `transfer_policy` routes can
@@ -1264,8 +1255,8 @@ The MVP is complete when:
 
 - attestor component keys cannot sign through `/sign`,
 - attested account keys cannot sign through `/sign`,
-- attestor component key generation exposes stable non-address
-  `component_key_id` handles,
+- attestor component key generation exposes canonical public-key-hex selectors
+  and marks them as non-spending component keys,
 - `/plan` handles attested account metadata,
 - no registration endpoint, account-binding store, profile store, or trust-root
   store is required for attestation,

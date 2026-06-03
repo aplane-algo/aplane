@@ -48,7 +48,6 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 		}
 		if isComponent {
 			spending := false
-			keyInfo.ComponentKeyID = address
 			keyInfo.IsComponentKey = true
 			keyInfo.IsSpendingAccount = &spending
 		}

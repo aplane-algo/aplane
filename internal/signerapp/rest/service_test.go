@@ -227,10 +227,11 @@ func TestServiceSignGroupDelegates(t *testing.T) {
 
 func TestServiceSignComponentDelegates(t *testing.T) {
 	ir := setupIdentityRuntime(t, true)
+	componentKey := strings.Repeat("ab", 32)
 	stub := &stubSigningService{
 		component: &signersigning.ComponentSignResult{
 			RequestID:    "cmp-1",
-			ComponentKey: "attkey_abc",
+			ComponentKey: componentKey,
 			Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
 				Signature:       "aa",
@@ -252,7 +253,7 @@ func TestServiceSignComponentDelegates(t *testing.T) {
 	req := signerapi.ComponentSignRequest{
 		RequestID:     "cmp-1",
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  "attkey_abc",
+		ComponentKey:  componentKey,
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},
 	}
@@ -273,7 +274,7 @@ func TestServiceSignComponentDelegates(t *testing.T) {
 	if stub.gotCtx != ctx {
 		t.Fatal("SignComponent() did not pass caller context to signing service")
 	}
-	if resp.RequestID != "cmp-1" || resp.ComponentKey != "attkey_abc" || len(resp.Signatures) != 1 {
+	if resp.RequestID != "cmp-1" || resp.ComponentKey != componentKey || len(resp.Signatures) != 1 {
 		t.Fatalf("SignComponent() response = %#v", resp)
 	}
 }
@@ -525,14 +526,11 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("AdminGenerate(component) status = %d, want 200: %#v", status, genResp)
 	}
-	if !strings.HasPrefix(genResp.Address, keytypes.ComponentKeyIDPrefix) {
-		t.Fatalf("AdminGenerate address = %q, want component key ID", genResp.Address)
-	}
-	if genResp.ComponentKeyID != genResp.Address {
-		t.Fatalf("ComponentKeyID = %q, want address %q", genResp.ComponentKeyID, genResp.Address)
-	}
 	if genResp.PublicKeyHex == "" {
 		t.Fatal("AdminGenerate public key is empty")
+	}
+	if genResp.Address != genResp.PublicKeyHex {
+		t.Fatalf("AdminGenerate address = %q, want public key hex %q", genResp.Address, genResp.PublicKeyHex)
 	}
 	if !genResp.IsComponentKey {
 		t.Fatal("AdminGenerate is_component_key = false, want true")
@@ -549,8 +547,8 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 		t.Fatalf("Keys count = %d, want 1", keysResp.Count)
 	}
 	row := keysResp.Keys[0]
-	if row.Address != genResp.Address || row.ComponentKeyID != genResp.ComponentKeyID {
-		t.Fatalf("component row handles = (%q, %q), want %q", row.Address, row.ComponentKeyID, genResp.Address)
+	if row.Address != genResp.Address {
+		t.Fatalf("component row address = %q, want %q", row.Address, genResp.Address)
 	}
 	if row.PublicKeyHex != genResp.PublicKeyHex {
 		t.Fatalf("component row public key = %q, want %q", row.PublicKeyHex, genResp.PublicKeyHex)

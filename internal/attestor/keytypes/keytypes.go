@@ -6,8 +6,7 @@
 package keytypes
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
+	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -22,14 +21,6 @@ const (
 	// verifies a Falcon-1024 user signature plus an attestor component
 	// signature.
 	AttestedFalcon1024V1 = "aplane.falcon1024-attested.v1"
-
-	// AttestedEd25519V1 is an optional future account type. It is classified so
-	// deny gates can fail closed even before implementation.
-	AttestedEd25519V1 = "aplane.ed25519-attested.v1"
-
-	ComponentKeyIDPrefix = "attkey_"
-
-	componentKeyDomainV1 = "APLANE_COMPONENT_KEY_V1"
 )
 
 // IsAttestorComponentKeyType reports whether keyType names a component key
@@ -41,12 +32,7 @@ func IsAttestorComponentKeyType(keyType string) bool {
 // IsAttestedAccountKeyType reports whether keyType names an attested spending
 // account that requires the component signing and assembly flow.
 func IsAttestedAccountKeyType(keyType string) bool {
-	switch keyType {
-	case AttestedFalcon1024V1, AttestedEd25519V1:
-		return true
-	default:
-		return false
-	}
+	return keyType == AttestedFalcon1024V1
 }
 
 // IsAttestorMVPKeyType reports whether keyType is any key type reserved by the
@@ -55,38 +41,40 @@ func IsAttestorMVPKeyType(keyType string) bool {
 	return IsAttestorComponentKeyType(keyType) || IsAttestedAccountKeyType(keyType)
 }
 
-// ComponentKeyID returns the stable public handle for an attestor component key.
-func ComponentKeyID(keyType string, publicKey []byte) (string, error) {
+// ComponentKeySelector returns the canonical selector for an attestor component
+// key. Selectors are lower-case Ed25519 public-key hex.
+func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 	if !IsAttestorComponentKeyType(keyType) {
 		return "", fmt.Errorf("key type %q is not an attestor component key type", keyType)
 	}
-	if len(publicKey) == 0 {
-		return "", fmt.Errorf("component public key is required")
-	}
-	if len(keyType) > 0xffff {
-		return "", fmt.Errorf("key type is too long")
+	if len(publicKey) != ed25519.PublicKeySize {
+		return "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), ed25519.PublicKeySize)
 	}
 
-	h := sha256.New()
-	h.Write([]byte(componentKeyDomainV1))
-	var lenBuf [2]byte
-	binary.BigEndian.PutUint16(lenBuf[:], uint16(len(keyType)))
-	h.Write(lenBuf[:])
-	h.Write([]byte(keyType))
-	h.Write(publicKey)
-	return ComponentKeyIDPrefix + hex.EncodeToString(h.Sum(nil)), nil
+	return hex.EncodeToString(publicKey), nil
 }
 
-// IsComponentKeyID reports whether id is a syntactically valid component-key
-// handle produced by ComponentKeyID.
-func IsComponentKeyID(id string) bool {
-	suffix, ok := strings.CutPrefix(id, ComponentKeyIDPrefix)
-	if !ok {
-		return false
+// NormalizeComponentKeySelector validates and canonicalizes a component-key
+// selector. It accepts an optional 0x prefix and upper-case hex on input.
+func NormalizeComponentKeySelector(selector string) (string, error) {
+	raw := strings.TrimSpace(selector)
+	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "0x"), "0X")
+	if raw == "" {
+		return "", fmt.Errorf("component key selector is required")
 	}
-	if len(suffix) != sha256.Size*2 {
-		return false
+	publicKey, err := hex.DecodeString(raw)
+	if err != nil {
+		return "", fmt.Errorf("component key selector must be hex: %w", err)
 	}
-	_, err := hex.DecodeString(suffix)
+	if len(publicKey) != ed25519.PublicKeySize {
+		return "", fmt.Errorf("component key selector length %d invalid (expected %d bytes)", len(publicKey), ed25519.PublicKeySize)
+	}
+	return hex.EncodeToString(publicKey), nil
+}
+
+// IsComponentKeySelector reports whether selector is a syntactically valid
+// attestor component-key selector.
+func IsComponentKeySelector(selector string) bool {
+	_, err := NormalizeComponentKeySelector(selector)
 	return err == nil
 }

@@ -29,7 +29,6 @@ func (s Service) AdminGenerate(ctx context.Context, ir *identity.Runtime, req si
 
 	return 200, signerapi.AdminGenerateResponse{
 		Address:           result.Address,
-		ComponentKeyID:    result.ComponentKeyID,
 		PublicKeyHex:      result.PublicKeyHex,
 		KeyType:           result.KeyType,
 		IsComponentKey:    result.IsComponentKey,
