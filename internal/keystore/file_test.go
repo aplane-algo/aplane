@@ -13,10 +13,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -571,6 +573,47 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 	got.SigningArgs[0].Name = "mutated"
 	if store.cache["addr1"].SigningArgs[0].Name != "proof" {
 		t.Fatal("GetSigningSummary should return a copy, not mutate cached signing args")
+	}
+}
+
+func TestFileKeyStore_GetRejectsComponentPublicPrivateMismatch(t *testing.T) {
+	_, paths, cleanup := setupTestKeysDir(t)
+	defer cleanup()
+
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey(public) error = %v", err)
+	}
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey(private) error = %v", err)
+	}
+	componentKeyID, err := keytypes.ComponentKeyID(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeyID() error = %v", err)
+	}
+	keyPair := &keys.KeyPair{
+		Category:      keys.CategoryComponent,
+		KeyType:       keytypes.AttestorComponentEd25519V1,
+		PublicKeyHex:  hex.EncodeToString(publicKey),
+		PrivateKeyHex: hex.EncodeToString(privateKey),
+	}
+	if _, err := keys.SaveKeyFile(paths, keyPair, testIdentityID, componentKeyID, testMasterKey); err != nil {
+		t.Fatalf("SaveKeyFile() error = %v", err)
+	}
+
+	store := NewFileKeyStoreForPaths(paths, testIdentityID)
+	store.masterKey = append([]byte(nil), testMasterKey...)
+	defer crypto.ZeroBytes(store.masterKey)
+	if err := store.Scan(nil); err != nil {
+		t.Fatalf("Scan() error = %v", err)
+	}
+	_, err = store.Get(context.Background(), componentKeyID)
+	if err == nil {
+		t.Fatal("Get() error = nil, want public/private mismatch")
+	}
+	if !strings.Contains(err.Error(), "component public key does not match private key") {
+		t.Fatalf("Get() error = %v, want component mismatch", err)
 	}
 }
 

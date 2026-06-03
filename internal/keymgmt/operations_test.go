@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -136,6 +137,43 @@ func TestValidKeyTypesIncludeIdentityActivatedYAMLComposedProvider(t *testing.T)
 	}
 	if !IsValidKeyTypeWithActivated(keyType, []string{keyType}) {
 		t.Fatal("IsValidKeyTypeWithActivated() rejected identity-enabled composed provider")
+	}
+}
+
+func TestValidKeyTypesIncludeAttestorComponentKey(t *testing.T) {
+	if !containsKeyType(GetValidKeyTypes(), keytypes.AttestorComponentEd25519V1) {
+		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.AttestorComponentEd25519V1)
+	}
+	if !IsValidKeyType(keytypes.AttestorComponentEd25519V1) {
+		t.Fatalf("IsValidKeyType() rejected %s", keytypes.AttestorComponentEd25519V1)
+	}
+}
+
+func TestGenerateKeyAttestorComponent(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := []byte("0123456789abcdef0123456789abcdef")
+
+	result, err := GenerateKey(paths, "test-identity", keytypes.AttestorComponentEd25519V1, masterKey, nil)
+	if err != nil {
+		t.Fatalf("GenerateKey(component) error = %v", err)
+	}
+	if !strings.HasPrefix(result.Address, keytypes.ComponentKeyIDPrefix) {
+		t.Fatalf("Address = %q, want component key ID", result.Address)
+	}
+	if result.ComponentKeyID != result.Address {
+		t.Fatalf("ComponentKeyID = %q, want address %q", result.ComponentKeyID, result.Address)
+	}
+	if !result.IsComponentKey {
+		t.Fatal("IsComponentKey = false, want true")
+	}
+	if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
+		t.Fatalf("IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
+	}
+	if result.PublicKeyHex == "" {
+		t.Fatal("PublicKeyHex is empty")
+	}
+	if result.Mnemonic != "" {
+		t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)
 	}
 }
 

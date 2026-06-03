@@ -14,10 +14,14 @@ type KeyInfo struct {
 
 // GenerateResult is the result of generating a new key
 type GenerateResult struct {
-	Address  string
-	KeyType  string // Full versioned type: "aplane.falcon1024.v1" or "ed25519"
-	Mnemonic string // Internal recovery material persisted to the encrypted keyfile.
-	KeyFile  string // Path to saved key
+	Address           string
+	ComponentKeyID    string
+	PublicKeyHex      string
+	KeyType           string // Full versioned type: "aplane.falcon1024.v1" or "ed25519"
+	IsComponentKey    bool
+	IsSpendingAccount *bool
+	Mnemonic          string // Internal recovery material persisted to the encrypted keyfile.
+	KeyFile           string // Path to saved key
 }
 
 // DeleteResult is the result of deleting a key

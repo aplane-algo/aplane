@@ -15,12 +15,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
@@ -141,25 +143,12 @@ func setupIdentityRuntime(t *testing.T) *identity.Runtime {
 	return ir
 }
 
-func reloadKeysForTest(ir *identity.Runtime, keyPaths storepaths.Paths) error {
-	var scan map[string]keys.KeyScanInfo
-	if err := ir.WithMasterKey(func(mk []byte) error {
-		var scanErr error
-		scan, scanErr = keys.ScanKeysDirectoryWithMasterKey(keyPaths, ir.ID(), mk)
-		return scanErr
-	}); err != nil {
+func reloadKeysForTest(ir *identity.Runtime, _ storepaths.Paths) error {
+	ks := ir.KeyStore()
+	if err := ks.Scan(nil); err != nil {
 		return err
 	}
-
-	keysByAddr := make(map[string]string, len(scan))
-	keyTypes := make(map[string]string, len(scan))
-	lsigSizes := make(map[string]int, len(scan))
-	for addr, info := range scan {
-		keysByAddr[addr] = info.KeyFile
-		keyTypes[addr] = info.KeyType
-		lsigSizes[addr] = info.LsigSize
-	}
-	ir.PublishSnapshot(keysByAddr, keyTypes, lsigSizes)
+	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes(), ks.GetLsigSizes())
 	return nil
 }
 
@@ -186,6 +175,41 @@ func TestServiceGenerateKeyEd25519(t *testing.T) {
 	}
 	if len(audit.generated) != 1 {
 		t.Fatalf("generated audit count = %d, want 1", len(audit.generated))
+	}
+}
+
+func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
+	ir := setupIdentityRuntime(t)
+	audit := &auditRecorder{}
+	svc := Service{AuditLog: audit}
+
+	result, err := svc.GenerateKey(context.Background(), ir, keytypes.AttestorComponentEd25519V1, nil, nil)
+	if err != nil {
+		t.Fatalf("GenerateKey(component) error = %#v", err)
+	}
+	if !strings.HasPrefix(result.Address, keytypes.ComponentKeyIDPrefix) {
+		t.Fatalf("GenerateKey(component) address = %q, want component key ID", result.Address)
+	}
+	if result.ComponentKeyID != result.Address {
+		t.Fatalf("ComponentKeyID = %q, want address %q", result.ComponentKeyID, result.Address)
+	}
+	if result.PublicKeyHex == "" {
+		t.Fatal("GenerateKey(component) public key is empty")
+	}
+	if !result.IsComponentKey {
+		t.Fatal("GenerateKey(component) IsComponentKey = false, want true")
+	}
+	if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
+		t.Fatalf("GenerateKey(component) IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
+	}
+	if result.Mnemonic != "" {
+		t.Fatalf("GenerateKey(component) mnemonic = %q, want empty", result.Mnemonic)
+	}
+	if _, err := ir.FindKeyFile(result.Address); err != nil {
+		t.Fatalf("FindKeyFile(%q) error = %v", result.Address, err)
+	}
+	if len(audit.generated) != 1 || audit.generated[0].address != result.Address {
+		t.Fatalf("generated audit = %#v, want component address", audit.generated)
 	}
 }
 

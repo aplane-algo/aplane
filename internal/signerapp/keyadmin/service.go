@@ -45,10 +45,14 @@ func (e *Error) Error() string {
 }
 
 type GenerateResult struct {
-	Address    string
-	KeyType    string
-	Mnemonic   string
-	Parameters map[string]string
+	Address           string
+	ComponentKeyID    string
+	PublicKeyHex      string
+	KeyType           string
+	IsComponentKey    bool
+	IsSpendingAccount *bool
+	Mnemonic          string
+	Parameters        map[string]string
 }
 
 type DeleteResult struct {
@@ -160,10 +164,14 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	}
 
 	return &GenerateResult{
-		Address:    genResult.Address,
-		KeyType:    genResult.KeyType,
-		Mnemonic:   genResult.Mnemonic,
-		Parameters: params,
+		Address:           genResult.Address,
+		ComponentKeyID:    genResult.ComponentKeyID,
+		PublicKeyHex:      genResult.PublicKeyHex,
+		KeyType:           genResult.KeyType,
+		IsComponentKey:    genResult.IsComponentKey,
+		IsSpendingAccount: genResult.IsSpendingAccount,
+		Mnemonic:          genResult.Mnemonic,
+		Parameters:        params,
 	}, nil
 }
 

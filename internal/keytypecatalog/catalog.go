@@ -75,6 +75,12 @@ func LibraryVisible() []Entry {
 	})
 }
 
+func DefaultEnabled() []Entry {
+	return filter(func(entry Entry) bool {
+		return entry.Availability == AvailabilityDefaultEnabled
+	})
+}
+
 // IsDefaultEnabled reports whether a cataloged key type is visible by default.
 // Missing catalog entries are not default-enabled; compiled key types must be
 // cataloged explicitly.

@@ -20,6 +20,7 @@ const (
 	CategoryEd25519         = "ed25519"
 	CategoryDSALsig         = "dsa_lsig"
 	CategoryGenericLsig     = "generic_lsig"
+	CategoryComponent       = "component"
 	CurrentKeyFormatVersion = 1
 )
 

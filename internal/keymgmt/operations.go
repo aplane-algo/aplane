@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keygen"
@@ -34,6 +35,7 @@ func GetValidKeyTypes() []string {
 // identity-activated library-visible compiled key types.
 func GetValidKeyTypesWithActivated(activated []string) []string {
 	activatedSet := activatedKeyTypeSet(activated)
+	seen := make(map[string]bool)
 	var types []string
 
 	// Add non-LogicSig types from algorithm registry (e.g., "ed25519")
@@ -41,15 +43,19 @@ func GetValidKeyTypesWithActivated(activated []string) []string {
 	for _, family := range algorithm.GetRegisteredFamilies() {
 		meta, err := algorithm.GetMetadata(family)
 		if err == nil && !meta.RequiresLogicSig() && keyTypeEnabledForGeneration(family, activatedSet) {
-			types = append(types, family)
+			types = appendKeyType(types, seen, family)
 		}
 	}
 
 	// Add versioned LogicSig DSA types (e.g., "aplane.falcon1024.v1")
 	for _, keyType := range logicsigdsa.GetKeyTypes() {
 		if keyTypeEnabledForGeneration(keyType, activatedSet) {
-			types = append(types, keyType)
+			types = appendKeyType(types, seen, keyType)
 		}
+	}
+
+	for _, entry := range keytypecatalog.DefaultEnabled() {
+		types = appendKeyType(types, seen, entry.KeyType)
 	}
 
 	// Sort: standard algorithms first, then LogicSig DSAs grouped by family
@@ -74,6 +80,15 @@ func GetValidKeyTypesWithActivated(activated []string) []string {
 	})
 
 	return types
+}
+
+func appendKeyType(types []string, seen map[string]bool, keyType string) []string {
+	keyType = strings.ToLower(strings.TrimSpace(keyType))
+	if keyType == "" || seen[keyType] {
+		return types
+	}
+	seen[keyType] = true
+	return append(types, keyType)
 }
 
 // GetValidKeyTypesForIdentity returns default-enabled key types plus
@@ -177,12 +192,20 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		return nil, fmt.Errorf("failed to generate key: %w", err)
 	}
 
-	return &GenerateResult{
-		Address:  genResult.Address,
-		KeyType:  genResult.KeyType, // Full versioned type from generator
-		Mnemonic: genResult.Mnemonic,
-		KeyFile:  genResult.KeyFiles.PrivateFile,
-	}, nil
+	result := &GenerateResult{
+		Address:      genResult.Address,
+		PublicKeyHex: genResult.PublicKeyHex,
+		KeyType:      genResult.KeyType, // Full versioned type from generator
+		Mnemonic:     genResult.Mnemonic,
+		KeyFile:      genResult.KeyFiles.PrivateFile,
+	}
+	if keytypes.IsAttestorComponentKeyType(genResult.KeyType) {
+		spending := false
+		result.ComponentKeyID = genResult.Address
+		result.IsComponentKey = true
+		result.IsSpendingAccount = &spending
+	}
+	return result, nil
 }
 
 // ImportKey imports a key from a mnemonic phrase.

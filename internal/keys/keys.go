@@ -4,6 +4,7 @@
 package keys
 
 import (
+	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -111,12 +113,15 @@ func validateCurrentKeyPayloadMetadata(meta KeyPayloadMetadata) (KeyPayloadHeade
 		return KeyPayloadHeader{}, incompatibleKeyFormat("missing category")
 	}
 	switch meta.Category {
-	case CategoryEd25519, CategoryDSALsig, CategoryGenericLsig:
+	case CategoryEd25519, CategoryDSALsig, CategoryGenericLsig, CategoryComponent:
 	default:
 		return KeyPayloadHeader{}, incompatibleKeyFormat("unknown category %q", meta.Category)
 	}
 	if strings.TrimSpace(meta.KeyType) == "" {
 		return KeyPayloadHeader{}, incompatibleKeyFormat("missing key_type")
+	}
+	if meta.Category == CategoryComponent && !keytypes.IsAttestorComponentKeyType(meta.KeyType) {
+		return KeyPayloadHeader{}, incompatibleKeyFormat("component category requires an attestor component key type, got %q", meta.KeyType)
 	}
 	if meta.HasRuntimeArgs {
 		return KeyPayloadHeader{}, incompatibleKeyFormat("legacy runtime_args field; use signing_args")
@@ -348,7 +353,14 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 		var publicKeyHex string
 		var lsigSize int
 
-		if IsGenericKey(category, keyType) {
+		if IsComponentKey(category, keyType) {
+			address, publicKeyHex, err = componentAddressAndPublicKey(payloadMeta)
+			if err != nil {
+				crypto.ZeroBytes(data)
+				warn(KeyScanWarningAddressDerivationFailed, keyFile, err)
+				continue
+			}
+		} else if IsGenericKey(category, keyType) {
 			// For generic LogicSig files, address and bytecode are stored directly
 			var lsigFile LSigFile
 			if err := json.Unmarshal(data, &lsigFile); err != nil {
@@ -465,6 +477,11 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 	return &KeyScanReport{Keys: keysMap, Warnings: warnings}, nil
 }
 
+// IsComponentKey classifies a key payload as an attestor component key.
+func IsComponentKey(category, keyType string) bool {
+	return category == CategoryComponent
+}
+
 // IsGenericKey classifies a key payload from durable key-file metadata.
 // Current keys use category as authoritative; legacy keys without category
 // fall back to the generic LogicSig provider registry.
@@ -486,6 +503,21 @@ func cryptoSignatureSizeForKey(keyType, baseKeyType string) int {
 		return logicsigdsa.GetCryptoSignatureSize(baseKeyType)
 	}
 	return 0
+}
+
+func componentAddressAndPublicKey(meta KeyPayloadMetadata) (string, string, error) {
+	publicKey, err := hex.DecodeString(meta.PublicKeyHex)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode component public key: %w", err)
+	}
+	if len(publicKey) != ed25519.PublicKeySize {
+		return "", "", fmt.Errorf("invalid component public key length: expected %d bytes, got %d", ed25519.PublicKeySize, len(publicKey))
+	}
+	componentKeyID, err := keytypes.ComponentKeyID(meta.KeyType, publicKey)
+	if err != nil {
+		return "", "", err
+	}
+	return componentKeyID, strings.ToLower(meta.PublicKeyHex), nil
 }
 
 // deriveAddressAndPublicKeyFromData derives the Algorand address and extracts the public key

@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
@@ -56,6 +57,12 @@ func RegisterSigner() {
 
 		// Key generator for creating new keys
 		keygen.RegisterEd25519Generator()
+		keygen.RegisterAttestorEd25519Generator()
+		keytypecatalog.Register(keytypecatalog.Entry{
+			KeyType:      keytypes.AttestorComponentEd25519V1,
+			Family:       "attestor-ed25519",
+			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+		})
 
 		// Mnemonic handler for Algorand mnemonic handling
 		mnemonic.RegisterEd25519Handler()

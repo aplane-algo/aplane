@@ -14,10 +14,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
-	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -149,25 +149,12 @@ func setupIdentityRuntime(t *testing.T, unlocked bool) *identity.Runtime {
 	return ir
 }
 
-func reloadKeysForTest(ir *identity.Runtime, keyPaths storepaths.Paths) error {
-	var scan map[string]keys.KeyScanInfo
-	if err := ir.WithMasterKey(func(mk []byte) error {
-		var scanErr error
-		scan, scanErr = keys.ScanKeysDirectoryWithMasterKey(keyPaths, ir.ID(), mk)
-		return scanErr
-	}); err != nil {
+func reloadKeysForTest(ir *identity.Runtime, _ storepaths.Paths) error {
+	ks := ir.KeyStore()
+	if err := ks.Scan(nil); err != nil {
 		return err
 	}
-
-	keysByAddr := make(map[string]string, len(scan))
-	keyTypes := make(map[string]string, len(scan))
-	lsigSizes := make(map[string]int, len(scan))
-	for addr, info := range scan {
-		keysByAddr[addr] = info.KeyFile
-		keyTypes[addr] = info.KeyType
-		lsigSizes[addr] = info.LsigSize
-	}
-	ir.PublishSnapshot(keysByAddr, keyTypes, lsigSizes)
+	ir.PublishSnapshot(ks.GetCache(), ks.GetKeyTypes(), ks.GetLsigSizes())
 	return nil
 }
 
@@ -404,21 +391,76 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 	}
 }
 
+func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
+	ir := setupIdentityRuntime(t, true)
+	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{}}}
+
+	status, genResp := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: keytypes.AttestorComponentEd25519V1})
+	if status != 200 {
+		t.Fatalf("AdminGenerate(component) status = %d, want 200: %#v", status, genResp)
+	}
+	if !strings.HasPrefix(genResp.Address, keytypes.ComponentKeyIDPrefix) {
+		t.Fatalf("AdminGenerate address = %q, want component key ID", genResp.Address)
+	}
+	if genResp.ComponentKeyID != genResp.Address {
+		t.Fatalf("ComponentKeyID = %q, want address %q", genResp.ComponentKeyID, genResp.Address)
+	}
+	if genResp.PublicKeyHex == "" {
+		t.Fatal("AdminGenerate public key is empty")
+	}
+	if !genResp.IsComponentKey {
+		t.Fatal("AdminGenerate is_component_key = false, want true")
+	}
+	if genResp.IsSpendingAccount == nil || *genResp.IsSpendingAccount {
+		t.Fatalf("AdminGenerate is_spending_account = %#v, want false pointer", genResp.IsSpendingAccount)
+	}
+
+	keysResp, err := svc.Keys(ir)
+	if err != nil {
+		t.Fatalf("Keys() error = %v", err)
+	}
+	if keysResp.Count != 1 {
+		t.Fatalf("Keys count = %d, want 1", keysResp.Count)
+	}
+	row := keysResp.Keys[0]
+	if row.Address != genResp.Address || row.ComponentKeyID != genResp.ComponentKeyID {
+		t.Fatalf("component row handles = (%q, %q), want %q", row.Address, row.ComponentKeyID, genResp.Address)
+	}
+	if row.PublicKeyHex != genResp.PublicKeyHex {
+		t.Fatalf("component row public key = %q, want %q", row.PublicKeyHex, genResp.PublicKeyHex)
+	}
+	if !row.IsComponentKey {
+		t.Fatal("component row is_component_key = false, want true")
+	}
+	if row.IsSpendingAccount == nil || *row.IsSpendingAccount {
+		t.Fatalf("component row is_spending_account = %#v, want false pointer", row.IsSpendingAccount)
+	}
+}
+
 func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 	resp := Service{}.KeyTypes()
 	if resp == nil || len(resp.KeyTypes) == 0 {
 		t.Fatal("KeyTypes() returned no key types")
 	}
 
-	found := false
+	foundEd25519 := false
+	foundComponent := false
 	for _, keyType := range resp.KeyTypes {
 		if keyType.KeyType == "ed25519" {
-			found = true
-			break
+			foundEd25519 = true
+		}
+		if keyType.KeyType == keytypes.AttestorComponentEd25519V1 {
+			foundComponent = true
+			if keyType.Family != "attestor-ed25519" || keyType.MnemonicImport {
+				t.Fatalf("component key type info = %#v, want attestor component metadata", keyType)
+			}
 		}
 	}
-	if !found {
+	if !foundEd25519 {
 		t.Fatal("KeyTypes() did not include ed25519")
+	}
+	if !foundComponent {
+		t.Fatalf("KeyTypes() did not include %s", keytypes.AttestorComponentEd25519V1)
 	}
 }
 

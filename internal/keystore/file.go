@@ -4,13 +4,17 @@
 package keystore
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -252,6 +256,10 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 		return km, nil
 	}
 
+	if keys.IsComponentKey(signingMeta.Category, keyType) {
+		return loadComponentKeyMaterial(decryptedData, keyType, signingMeta)
+	}
+
 	// Get provider and load keys (for ed25519, falcon, etc.)
 	provider := signing.GetProvider(keyType)
 	if provider == nil && signingMeta.BaseKeyType != "" {
@@ -308,6 +316,63 @@ func loadGenericLsigKeys(decryptedData []byte, keyType string, signingMeta keys.
 		SigningArgs:            keys.SigningArgDefs(signingMeta.SigningArgs),
 		SigningMetadataVersion: signingMeta.SigningMetadataVersion,
 		Value:                  &GenericLsigData{BytecodeHex: payloadMeta.BytecodeHex},
+	}, nil
+}
+
+func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta keys.SigningMetadata) (*signing.KeyMaterial, error) {
+	payloadMeta, err := keys.ParseKeyPayloadMetadata(decryptedData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse component key data: %w", err)
+	}
+	if signingMeta.Category != keys.CategoryComponent {
+		return nil, fmt.Errorf("component key has invalid category %q", signingMeta.Category)
+	}
+	if !keytypes.IsAttestorComponentKeyType(keyType) {
+		return nil, fmt.Errorf("unsupported component key type: %s", keyType)
+	}
+
+	publicKey, err := hex.DecodeString(payloadMeta.PublicKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode component public key: %w", err)
+	}
+	if len(publicKey) != ed25519.PublicKeySize {
+		crypto.ZeroBytes(publicKey)
+		return nil, fmt.Errorf("invalid component public key length: expected %d bytes, got %d", ed25519.PublicKeySize, len(publicKey))
+	}
+
+	privateKey, err := hex.DecodeString(payloadMeta.PrivateKeyHex)
+	if err != nil {
+		crypto.ZeroBytes(publicKey)
+		return nil, fmt.Errorf("failed to decode component private key: %w", err)
+	}
+	if len(privateKey) != ed25519.PrivateKeySize {
+		crypto.ZeroBytes(publicKey)
+		crypto.ZeroBytes(privateKey)
+		return nil, fmt.Errorf("invalid component private key length: expected %d bytes, got %d", ed25519.PrivateKeySize, len(privateKey))
+	}
+
+	derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
+	if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
+		crypto.ZeroBytes(publicKey)
+		crypto.ZeroBytes(privateKey)
+		return nil, fmt.Errorf("component public key does not match private key")
+	}
+
+	componentKeyID, err := keytypes.ComponentKeyID(keyType, publicKey)
+	if err != nil {
+		crypto.ZeroBytes(publicKey)
+		crypto.ZeroBytes(privateKey)
+		return nil, err
+	}
+
+	return &signing.KeyMaterial{
+		Type:     keyType,
+		Category: signingMeta.Category,
+		Value: &signing.ComponentKeyMaterial{
+			ComponentKeyID: componentKeyID,
+			PublicKey:      publicKey,
+			PrivateKey:     privateKey,
+		},
 	}, nil
 }
 

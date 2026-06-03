@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -36,6 +37,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 		summary := signingSummary[address]
 		category := summary.Category
 		isGeneric := category == keys.CategoryGenericLsig || (category == "" && keys.IsGenericLSigType(keyType))
+		isComponent := keys.IsComponentKey(category, keyType)
 
 		keyInfo := signerapi.KeyInfo{
 			Address:       address,
@@ -43,6 +45,12 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			KeyType:       keyType,
 			LsigSize:      lsigSizesCopy[address],
 			IsGenericLsig: isGeneric,
+		}
+		if isComponent {
+			spending := false
+			keyInfo.ComponentKeyID = address
+			keyInfo.IsComponentKey = true
+			keyInfo.IsSpendingAccount = &spending
 		}
 		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = keys.CompareTemplateFingerprint(keyType, summary.TemplateFingerprint)
 
@@ -130,6 +138,14 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			KeyType:        keyType,
 			CreationParams: []signerapi.CreationParamInfo{},
 			RuntimeArgs:    []signerapi.RuntimeArgInfo{},
+		}
+
+		if keytypes.IsAttestorComponentKeyType(keyType) {
+			info.Family = "attestor-ed25519"
+			info.DisplayName = "Attestor Ed25519 component key"
+			info.Description = "Raw Ed25519 attestor component signing key"
+			keyTypes = append(keyTypes, info)
+			continue
 		}
 
 		meta, err := algorithm.GetMetadata(keyType)

@@ -279,6 +279,13 @@ func zeroKeyMaterialFallback(key *coresigning.KeyMaterial) {
 			algocrypto.ZeroBytes(value.PrivateKey)
 			value.PrivateKey = nil
 		}
+	case *coresigning.ComponentKeyMaterial:
+		if value != nil {
+			algocrypto.ZeroBytes(value.PrivateKey)
+			algocrypto.ZeroBytes(value.PublicKey)
+			value.PrivateKey = nil
+			value.PublicKey = nil
+		}
 	case crypto.Account:
 		algocrypto.ZeroBytes(value.PrivateKey[:])
 		algocrypto.ZeroBytes(value.PublicKey[:])
