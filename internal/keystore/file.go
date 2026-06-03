@@ -295,6 +295,17 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	if km.BaseKeyType == "" {
 		km.BaseKeyType = signingMeta.BaseKeyType
 	}
+	if len(km.PublicKey) == 0 && payloadMeta.PublicKeyHex != "" {
+		publicKey, err := hex.DecodeString(payloadMeta.PublicKeyHex)
+		if err != nil {
+			zeroLoadedKeyMaterialForKeystore(km)
+			return nil, fmt.Errorf("failed to decode public key: %w", err)
+		}
+		km.PublicKey = publicKey
+	}
+	if km.Parameters == nil {
+		km.Parameters = maps.Clone(signingMeta.Parameters)
+	}
 	if km.SigningMetadataVersion == 0 {
 		km.SigningMetadataVersion = signingMeta.SigningMetadataVersion
 	}
@@ -328,6 +339,7 @@ func loadGenericLsigKeys(decryptedData []byte, keyType string, signingMeta keys.
 	return &signing.KeyMaterial{
 		Type:                   keyType,
 		Category:               signingMeta.Category,
+		Parameters:             maps.Clone(signingMeta.Parameters),
 		SigningArgs:            keys.SigningArgDefs(signingMeta.SigningArgs),
 		SigningMetadataVersion: signingMeta.SigningMetadataVersion,
 		Value:                  &GenericLsigData{BytecodeHex: payloadMeta.BytecodeHex},
@@ -391,14 +403,39 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 	}
 
 	return &signing.KeyMaterial{
-		Type:     keyType,
-		Category: signingMeta.Category,
+		Type:       keyType,
+		Category:   signingMeta.Category,
+		PublicKey:  append([]byte(nil), publicKey...),
+		Parameters: maps.Clone(signingMeta.Parameters),
 		Value: &signing.ComponentKeyMaterial{
 			ComponentKey: componentKey,
 			PublicKey:    publicKey,
 			PrivateKey:   privateKey,
 		},
 	}, nil
+}
+
+func zeroLoadedKeyMaterialForKeystore(key *signing.KeyMaterial) {
+	if key == nil {
+		return
+	}
+	provider := signing.GetProvider(key.Type)
+	if provider == nil && key.BaseKeyType != "" {
+		provider = signing.GetProvider(key.BaseKeyType)
+	}
+	if provider != nil {
+		provider.ZeroKey(key)
+	}
+	if key.Bytecode != nil {
+		crypto.ZeroBytes(key.Bytecode)
+		key.Bytecode = nil
+	}
+	if key.PublicKey != nil {
+		crypto.ZeroBytes(key.PublicKey)
+		key.PublicKey = nil
+	}
+	key.Parameters = nil
+	key.SigningArgs = nil
 }
 
 func validateComponentPublicPrivatePair(keyType string, publicKey, privateKey []byte) error {

@@ -264,6 +264,11 @@ func zeroLoadedKeyMaterial(key *coresigning.KeyMaterial) {
 		algocrypto.ZeroBytes(key.Bytecode)
 		key.Bytecode = nil
 	}
+	if key.PublicKey != nil {
+		algocrypto.ZeroBytes(key.PublicKey)
+		key.PublicKey = nil
+	}
+	key.Parameters = nil
 	key.SigningArgs = nil
 }
 

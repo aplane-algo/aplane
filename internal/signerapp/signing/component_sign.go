@@ -134,28 +134,9 @@ func signPreparedUserComponents(ctx context.Context, plan *ComponentSignPlan, se
 }
 
 func loadAttestedAccountSigningKey(ctx context.Context, session componentKeyGetter, attestedAccount string) (*coresigning.KeyMaterial, coresigning.Provider, string, *ServiceError) {
-	keyMaterial, err := session.GetKeyWithContext(ctx, attestedAccount)
+	keyMaterial, err := loadAttestedAccountKeyMaterial(ctx, session, attestedAccount)
 	if err != nil {
-		switch {
-		case errors.Is(err, keystore.ErrStoreLocked):
-			return nil, nil, "", forbidden("signer is locked")
-		case errors.Is(err, keystore.ErrKeyNotFound):
-			return nil, nil, "", badRequest(fmt.Sprintf("attested account key %q not found", attestedAccount))
-		default:
-			return nil, nil, "", internal(fmt.Sprintf("failed to load attested account key: %v", err))
-		}
-	}
-	if keyMaterial == nil {
-		return nil, nil, "", internal("loaded attested account key material is nil")
-	}
-	if !keytypes.IsAttestedAccountKeyType(keyMaterial.Type) {
-		gotType := keyMaterial.Type
-		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, "", badRequest(fmt.Sprintf("key %q is %s, not an attested account key", attestedAccount, gotType))
-	}
-	if keyMaterial.Category != "" && keyMaterial.Category != keys.CategoryDSALsig {
-		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, "", badRequest(fmt.Sprintf("key %q is not a dsa_lsig key", attestedAccount))
+		return nil, nil, "", err
 	}
 	if keyMaterial.BaseKeyType == "" {
 		zeroLoadedKeyMaterial(keyMaterial)
@@ -169,6 +150,33 @@ func loadAttestedAccountSigningKey(ctx context.Context, session componentKeyGett
 		return nil, nil, "", internal(fmt.Sprintf("unsupported attested account base key type: %s", baseKeyType))
 	}
 	return keyMaterial, provider, keyMaterial.BaseKeyType, nil
+}
+
+func loadAttestedAccountKeyMaterial(ctx context.Context, session componentKeyGetter, attestedAccount string) (*coresigning.KeyMaterial, *ServiceError) {
+	keyMaterial, err := session.GetKeyWithContext(ctx, attestedAccount)
+	if err != nil {
+		switch {
+		case errors.Is(err, keystore.ErrStoreLocked):
+			return nil, forbidden("signer is locked")
+		case errors.Is(err, keystore.ErrKeyNotFound):
+			return nil, badRequest(fmt.Sprintf("attested account key %q not found", attestedAccount))
+		default:
+			return nil, internal(fmt.Sprintf("failed to load attested account key: %v", err))
+		}
+	}
+	if keyMaterial == nil {
+		return nil, internal("loaded attested account key material is nil")
+	}
+	if !keytypes.IsAttestedAccountKeyType(keyMaterial.Type) {
+		gotType := keyMaterial.Type
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, badRequest(fmt.Sprintf("key %q is %s, not an attested account key", attestedAccount, gotType))
+	}
+	if keyMaterial.Category != "" && keyMaterial.Category != keys.CategoryDSALsig {
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, badRequest(fmt.Sprintf("key %q is not a dsa_lsig key", attestedAccount))
+	}
+	return keyMaterial, nil
 }
 
 func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, componentKeySelector string) (*coresigning.KeyMaterial, *coresigning.ComponentKeyMaterial, *ServiceError) {

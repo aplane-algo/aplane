@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	attestorverify "github.com/aplane-algo/aplane/internal/attestor/verify"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -126,7 +127,6 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 
 func (s *Service) AssembleAttestedWithContext(ctx context.Context, identityID string, req signerapi.AttestedAssemblyRequest, session *keystore.KeySession) (*AttestedAssemblyResult, *ServiceError) {
 	_ = identityID
-	_ = session
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -136,7 +136,17 @@ func (s *Service) AssembleAttestedWithContext(ctx context.Context, identityID st
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
-	return nil, unavailable("attested assembly is not implemented")
+	group, decodeErr := attestorverify.DecodeCanonicalGroupHex(req.GroupBytesHex)
+	if decodeErr != nil {
+		return nil, badRequest(decodeErr.Error())
+	}
+	if s.IsUnlocked != nil && !s.IsUnlocked() {
+		return nil, forbidden("signer is locked")
+	}
+	if session == nil {
+		return nil, internal("key session is nil")
+	}
+	return assembleDecodedAttested(ctx, req, group, session)
 }
 
 func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession, plan *PlanResult, simulation bool) (*SignGroupResult, *ServiceError) {
