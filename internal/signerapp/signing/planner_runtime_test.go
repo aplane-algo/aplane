@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
@@ -125,6 +126,58 @@ func TestVerifySignableKeysRequiresKeyFileInSnapshot(t *testing.T) {
 	}
 	if got := err.Error(); got == "" || !strings.Contains(got, "no key found for address") {
 		t.Fatalf("verifySignableKeys() error = %q, want missing key failure", got)
+	}
+}
+
+func TestVerifySignableKeysRejectsAttestorKeyTypes(t *testing.T) {
+	tests := []struct {
+		name    string
+		keyType string
+		want    string
+	}{
+		{
+			name:    "component key",
+			keyType: keytypes.AttestorComponentEd25519V1,
+			want:    attestorComponentSignRejectMessage,
+		},
+		{
+			name:    "attested account",
+			keyType: keytypes.AttestedFalcon1024Ed25519V1,
+			want:    attestedAccountSignRejectMessage,
+		},
+		{
+			name:    "optional attested account",
+			keyType: keytypes.AttestedEd25519Ed25519V1,
+			want:    attestedAccountSignRejectMessage,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr := types.Address{1}.String()
+			requests := []signerapi.SignRequest{{
+				AuthAddress: addr,
+				TxnBytesHex: "deadbeef",
+			}}
+			snapshot := PlannerIdentitySnapshot{
+				KeyFiles: map[string]string{addr: "keys/" + addr + ".key"},
+				KeyTypes: map[string]string{addr: tt.keyType},
+			}
+
+			count, err := verifySignableKeys(nil, snapshot, "default", requests, map[int]bool{}, map[int]bool{})
+			if count != 0 {
+				t.Fatalf("verifySignableKeys() count = %d, want 0", count)
+			}
+			if err == nil {
+				t.Fatal("verifySignableKeys() error = nil, want attestor key type rejection")
+			}
+			if err.Kind != ErrorBadRequest {
+				t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
+			}
+			if !strings.Contains(err.Message, tt.want) {
+				t.Fatalf("error message = %q, want %q", err.Message, tt.want)
+			}
+		})
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -186,6 +187,82 @@ func TestExecutorSignCryptoKeyRejectsUnsupportedKeyType(t *testing.T) {
 	}
 	if !bytes.Equal(privateKey, []byte{0, 0, 0}) {
 		t.Fatalf("private key bytes = %v, want zeroed", privateKey)
+	}
+}
+
+func TestExecutorRejectsAttestorKeyTypesBeforeSessionLoad(t *testing.T) {
+	exec := &Executor{}
+	plan := &PlanResult{
+		AllTxns:            []types.Transaction{{}},
+		PassthroughIndices: map[int]bool{},
+		ForeignIndices:     map[int]bool{},
+		AuthKeyTypes:       []string{keytypes.AttestedFalcon1024Ed25519V1},
+	}
+	req := signerapi.GroupSignRequest{
+		Requests: []signerapi.SignRequest{{
+			AuthAddress: "AUTHADDR",
+			TxnBytesHex: "deadbeef",
+		}},
+	}
+
+	_, err := exec.ExecuteGroupSigning(context.Background(), plan, req, "default", nil)
+	if err == nil {
+		t.Fatal("ExecuteGroupSigning() error = nil, want attestor key type rejection")
+	}
+	if err.Kind != ErrorBadRequest {
+		t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
+	}
+	if !strings.Contains(err.Message, attestedAccountSignRejectMessage) {
+		t.Fatalf("error message = %q, want %q", err.Message, attestedAccountSignRejectMessage)
+	}
+}
+
+func TestExecutorSignCryptoKeyRejectsAttestorKeyTypesBeforeProviderLookup(t *testing.T) {
+	tests := []struct {
+		name    string
+		keyType string
+		want    string
+	}{
+		{name: "component", keyType: keytypes.AttestorComponentEd25519V1, want: attestorComponentSignRejectMessage},
+		{name: "attested", keyType: keytypes.AttestedFalcon1024Ed25519V1, want: attestedAccountSignRejectMessage},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			privateKey := []byte{1, 2, 3}
+			keyMaterial := &coresigning.KeyMaterial{
+				Type:        tt.keyType,
+				BaseKeyType: "ed25519",
+				Value:       privateKey,
+			}
+
+			_, keyType, err := (&Executor{}).signCryptoKey(
+				types.Transaction{},
+				"AUTHADDR",
+				"",
+				nil,
+				keyMaterial,
+				"default",
+			)
+			if err == nil {
+				t.Fatal("signCryptoKey() error = nil, want attestor key type rejection")
+			}
+			if keyType != tt.keyType {
+				t.Fatalf("keyType = %q, want %q", keyType, tt.keyType)
+			}
+			if err.Kind != ErrorBadRequest {
+				t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
+			}
+			if !strings.Contains(err.Message, tt.want) {
+				t.Fatalf("error message = %q, want %q", err.Message, tt.want)
+			}
+			if keyMaterial.Value != nil {
+				t.Fatalf("keyMaterial.Value = %#v, want nil after cleanup", keyMaterial.Value)
+			}
+			if !bytes.Equal(privateKey, []byte{0, 0, 0}) {
+				t.Fatalf("private key bytes = %v, want zeroed", privateKey)
+			}
+		})
 	}
 }
 

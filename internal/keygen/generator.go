@@ -10,6 +10,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -82,6 +83,10 @@ func GetGenerator(keyType string) (Generator, error) {
 	// Try direct lookup first
 	if generator, exists := registry.generators[keyType]; exists {
 		return generator, nil
+	}
+
+	if keytypes.IsAttestorMVPKeyType(keyType) {
+		return nil, fmt.Errorf("no exact key generator registered for key type: %s", keyType)
 	}
 
 	// Try family name (e.g., "aplane.falcon1024.v1" -> "falcon1024")

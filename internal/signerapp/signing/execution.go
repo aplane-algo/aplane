@@ -82,6 +82,11 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 		}
 
 		txnSender := txns[i].Sender.String()
+		if i < len(plan.AuthKeyTypes) {
+			if msg, ok := attestorSignRejectMessage(plan.AuthKeyTypes[i]); ok {
+				return nil, badRequest(fmt.Sprintf("transaction %d: %s", i+1, msg))
+			}
+		}
 		signedBytes, keyType, signErr := e.signSingleTransaction(
 			allTxns[i], req.Requests[i].AuthAddress, txnSender,
 			req.Requests[i].LsigArgs, session, identityID, ctx,
@@ -134,6 +139,11 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, "", canceledSignRequest(err)
 	}
+	if err := rejectAttestorSignKeyType(keyMaterial.Type); err != nil {
+		keyType := keyMaterial.Type
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, keyType, err
+	}
 
 	if isGenericKeyMaterial(keyMaterial) {
 		return e.signGenericLSig(txn, authAddr, txnSender, lsigArgs, keyMaterial, identityID)
@@ -183,6 +193,11 @@ func (e *Executor) signGenericLSig(txn types.Transaction, authAddr, txnSender st
 
 func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, keyMaterial *coresigning.KeyMaterial, identityID string) ([]byte, string, *ServiceError) {
 	keyType := keyMaterial.Type
+
+	if err := rejectAttestorSignKeyType(keyType); err != nil {
+		defer zeroLoadedKeyMaterial(keyMaterial)
+		return nil, keyType, err
+	}
 
 	provider := coresigning.GetProvider(keyType)
 	if provider == nil && keyMaterial.BaseKeyType != "" {

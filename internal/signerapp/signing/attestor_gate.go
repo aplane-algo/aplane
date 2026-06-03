@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package signing
+
+import "github.com/aplane-algo/aplane/internal/attestor/keytypes"
+
+const (
+	attestorComponentSignRejectMessage = "attestor component keys require /sign/component"
+	attestedAccountSignRejectMessage   = "this key type requires the attestor signing flow: use POST /sign/component then POST /sign/assemble"
+)
+
+func attestorSignRejectMessage(keyType string) (string, bool) {
+	switch {
+	case keytypes.IsAttestorComponentKeyType(keyType):
+		return attestorComponentSignRejectMessage, true
+	case keytypes.IsAttestedAccountKeyType(keyType):
+		return attestedAccountSignRejectMessage, true
+	default:
+		return "", false
+	}
+}
+
+func rejectAttestorSignKeyType(keyType string) *ServiceError {
+	if msg, ok := attestorSignRejectMessage(keyType); ok {
+		return badRequest(msg)
+	}
+	return nil
+}
