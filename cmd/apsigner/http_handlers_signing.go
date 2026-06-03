@@ -30,6 +30,40 @@ func (fs *Signer) handleSign(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// handleSignComponent handles the /sign/component endpoint for attestor MVP
+// role-separated component signatures.
+func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.ComponentSignRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
+	if !ok {
+		return
+	}
+
+	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).SignComponent(r.Context(), ir, req)
+	if err != nil {
+		writeErrorJSON(w, err.HTTPStatus(), err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleSignAssemble handles the /sign/assemble endpoint for attested-account
+// LogicSig assembly.
+func (fs *Signer) handleSignAssemble(w http.ResponseWriter, r *http.Request) {
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.AttestedAssemblyRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
+	if !ok {
+		return
+	}
+
+	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).AssembleAttested(r.Context(), ir, req)
+	if err != nil {
+		writeErrorJSON(w, err.HTTPStatus(), err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 // handleSignCancel handles explicit client cancellation for a pending /sign
 // approval request. It is idempotent: a missing request may already have
 // completed or been canceled through the original HTTP context.

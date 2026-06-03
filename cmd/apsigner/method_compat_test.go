@@ -29,6 +29,22 @@ func TestHandlerMethodCompatibilitySurface(t *testing.T) {
 			wantBody:   "Method not allowed",
 		},
 		{
+			name: "sign component requires POST",
+			call: func(w *httptest.ResponseRecorder) {
+				server.handleSignComponent(w, requestWithIdentity(http.MethodGet, "/sign/component", nil))
+			},
+			wantStatus: http.StatusMethodNotAllowed,
+			wantBody:   "Method not allowed",
+		},
+		{
+			name: "sign assemble requires POST",
+			call: func(w *httptest.ResponseRecorder) {
+				server.handleSignAssemble(w, requestWithIdentity(http.MethodGet, "/sign/assemble", nil))
+			},
+			wantStatus: http.StatusMethodNotAllowed,
+			wantBody:   "Method not allowed",
+		},
+		{
 			name: "plan requires POST",
 			call: func(w *httptest.ResponseRecorder) {
 				server.handlePlan(w, requestWithIdentity(http.MethodGet, "/plan", nil))

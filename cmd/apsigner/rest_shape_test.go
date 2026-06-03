@@ -140,6 +140,26 @@ func TestErrorEnvelopeJSONShapes(t *testing.T) {
 			},
 		},
 		{
+			name: "sign_component_method_not_allowed",
+			invoke: func(w *httptest.ResponseRecorder) {
+				server.handleSignComponent(w, requestWithIdentity(http.MethodGet, "/sign/component", nil))
+			},
+			wantStatus: http.StatusMethodNotAllowed,
+			want: map[string]any{
+				"error": "Method not allowed",
+			},
+		},
+		{
+			name: "sign_assemble_method_not_allowed",
+			invoke: func(w *httptest.ResponseRecorder) {
+				server.handleSignAssemble(w, requestWithIdentity(http.MethodGet, "/sign/assemble", nil))
+			},
+			wantStatus: http.StatusMethodNotAllowed,
+			want: map[string]any{
+				"error": "Method not allowed",
+			},
+		},
+		{
 			name: "admin_generate_method_not_allowed",
 			invoke: func(w *httptest.ResponseRecorder) {
 				server.handleAdminGenerate(w, requestWithIdentity(http.MethodGet, "/admin/generate", nil))

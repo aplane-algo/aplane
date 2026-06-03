@@ -132,6 +132,57 @@ func TestPrepareComponentSigningRejectsInvalidRequestShape(t *testing.T) {
 	}
 }
 
+func TestSigningServiceSignComponentFailsClosedAfterValidation(t *testing.T) {
+	sender := types.Address{7}.String()
+	receiver := types.Address{8}.String()
+	txn := paymentTransaction(t, sender, receiver, 10)
+
+	_, err := (&Service{}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+		Role:          signerapi.ComponentSignRoleAttestor,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, nil)
+	if err == nil || err.Kind != ErrorUnavailable {
+		t.Fatalf("SignComponentWithContext() error = %#v, want unavailable", err)
+	}
+	if !strings.Contains(err.Message, "not implemented") {
+		t.Fatalf("SignComponentWithContext() error = %q, want not implemented", err.Message)
+	}
+
+	_, err = (&Service{}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+		Role:          signerapi.ComponentSignRoleUser,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, nil)
+	if err == nil || err.Kind != ErrorBadRequest {
+		t.Fatalf("SignComponentWithContext(invalid) error = %#v, want bad request", err)
+	}
+}
+
+func TestSigningServiceAssembleAttestedFailsClosedAfterValidation(t *testing.T) {
+	_, err := (&Service{}).AssembleAttestedWithContext(nil, "default", signerapi.AttestedAssemblyRequest{
+		RequestID:     "asm-1",
+		GroupBytesHex: []string{"5458aa"},
+		Targets: []signerapi.AttestedAssemblyTarget{{
+			TargetIndex:       0,
+			AttestedAccount:   "ADDR",
+			UserSignature:     "aa",
+			AttestorSignature: "bb",
+		}},
+	}, nil)
+	if err == nil || err.Kind != ErrorUnavailable {
+		t.Fatalf("AssembleAttestedWithContext() error = %#v, want unavailable", err)
+	}
+	if !strings.Contains(err.Message, "not implemented") {
+		t.Fatalf("AssembleAttestedWithContext() error = %q, want not implemented", err.Message)
+	}
+
+	_, err = (&Service{}).AssembleAttestedWithContext(nil, "default", signerapi.AttestedAssemblyRequest{}, nil)
+	if err == nil || err.Kind != ErrorBadRequest {
+		t.Fatalf("AssembleAttestedWithContext(invalid) error = %#v, want bad request", err)
+	}
+}
+
 func groupedPaymentTransactions(t *testing.T, sender, receiver string) []types.Transaction {
 	t.Helper()
 	txns := []types.Transaction{

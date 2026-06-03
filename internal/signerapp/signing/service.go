@@ -43,6 +43,17 @@ type SignGroupResult struct {
 	Mutations *signerapi.MutationReport
 }
 
+type ComponentSignResult struct {
+	RequestID    string
+	ComponentKey string
+	Signatures   []signerapi.ComponentSignature
+}
+
+type AttestedAssemblyResult struct {
+	RequestID   string
+	SignedGroup []string
+}
+
 type policyAuditLogger interface {
 	LogSignRejected(identityID, authAddress, txnSender, reason string)
 }
@@ -82,6 +93,36 @@ func (s *Service) SignGroupForSimulationWithContext(ctx context.Context, identit
 		return nil, err
 	}
 	return s.signGroupWithPlanContext(ctx, identityID, req, session, plan, true)
+}
+
+func (s *Service) SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*ComponentSignResult, *ServiceError) {
+	_ = identityID
+	_ = session
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, canceledSignRequest(err)
+	}
+	if _, err := PrepareComponentSigning(req); err != nil {
+		return nil, err
+	}
+	return nil, unavailable("component signing is not implemented")
+}
+
+func (s *Service) AssembleAttestedWithContext(ctx context.Context, identityID string, req signerapi.AttestedAssemblyRequest, session *keystore.KeySession) (*AttestedAssemblyResult, *ServiceError) {
+	_ = identityID
+	_ = session
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, canceledSignRequest(err)
+	}
+	if err := req.Validate(); err != nil {
+		return nil, badRequest(err.Error())
+	}
+	return nil, unavailable("attested assembly is not implemented")
 }
 
 func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession, plan *PlanResult, simulation bool) (*SignGroupResult, *ServiceError) {

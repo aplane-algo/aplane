@@ -18,6 +18,8 @@ import (
 type SigningService interface {
 	SignGroupWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession) (*signersigning.SignGroupResult, *signersigning.ServiceError)
 	SignGroupForSimulationWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession) (*signersigning.SignGroupResult, *signersigning.ServiceError)
+	SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*signersigning.ComponentSignResult, *signersigning.ServiceError)
+	AssembleAttestedWithContext(ctx context.Context, identityID string, req signerapi.AttestedAssemblyRequest, session *keystore.KeySession) (*signersigning.AttestedAssemblyResult, *signersigning.ServiceError)
 }
 
 type SimulateSignedGroupFunc func(context.Context, []types.SignedTxn) ([]string, string, bool, *signersigning.ServiceError)

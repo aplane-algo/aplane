@@ -18,6 +18,8 @@ const signerHTTPWriteTimeout = apconfig.MaxApprovalWait + 2*time.Minute
 func buildHTTPServer(server *Signer, port int) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sign", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSign))
+	mux.HandleFunc("/sign/component", server.requireAuth(auth.ActionSignComponent, auth.Resource{Type: "transaction"}, server.handleSignComponent))
+	mux.HandleFunc("/sign/assemble", server.requireAuth(auth.ActionSignAssemble, auth.Resource{Type: "transaction"}, server.handleSignAssemble))
 	mux.HandleFunc("/sign/cancel", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSignCancel))
 	mux.HandleFunc("/plan", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handlePlan))
 	mux.HandleFunc("/simulate", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSimulate))
@@ -52,6 +54,8 @@ func logHTTPStartup(keyCount int, keysSnapshot map[string]string, port int) {
 	}
 	logInfof("Endpoints:")
 	logInfof("  POST   /sign                    - Sign transactions (handles groups, dummies, fee pooling)")
+	logInfof("  POST   /sign/component          - Produce attestor MVP component signatures")
+	logInfof("  POST   /sign/assemble           - Assemble attested-account signed groups")
 	logInfof("  POST   /sign/cancel             - Cancel a pending sign approval request")
 	logInfof("  POST   /plan                    - Preview group building (no signing, no approval)")
 	logInfof("  POST   /simulate                - Sign internally and run algod simulation (no signed bytes returned)")

@@ -73,10 +73,16 @@ func init() {
 type stubSigningService struct {
 	gotIdentityID string
 	gotReq        signerapi.GroupSignRequest
+	gotComponent  signerapi.ComponentSignRequest
+	gotAssembly   signerapi.AttestedAssemblyRequest
 	gotSession    *keystore.KeySession
 	gotCtx        context.Context
 	result        *signersigning.SignGroupResult
+	component     *signersigning.ComponentSignResult
+	assembly      *signersigning.AttestedAssemblyResult
 	err           *signersigning.ServiceError
+	componentErr  *signersigning.ServiceError
+	assemblyErr   *signersigning.ServiceError
 }
 
 type testContextKey string
@@ -95,6 +101,22 @@ func (s *stubSigningService) SignGroupForSimulationWithContext(ctx context.Conte
 	s.gotReq = req
 	s.gotSession = session
 	return s.result, s.err
+}
+
+func (s *stubSigningService) SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*signersigning.ComponentSignResult, *signersigning.ServiceError) {
+	s.gotCtx = ctx
+	s.gotIdentityID = identityID
+	s.gotComponent = req
+	s.gotSession = session
+	return s.component, s.componentErr
+}
+
+func (s *stubSigningService) AssembleAttestedWithContext(ctx context.Context, identityID string, req signerapi.AttestedAssemblyRequest, session *keystore.KeySession) (*signersigning.AttestedAssemblyResult, *signersigning.ServiceError) {
+	s.gotCtx = ctx
+	s.gotIdentityID = identityID
+	s.gotAssembly = req
+	s.gotSession = session
+	return s.assembly, s.assemblyErr
 }
 
 func rejectAllSimulateDeps(t *testing.T) Dependencies {
@@ -200,6 +222,110 @@ func TestServiceSignGroupDelegates(t *testing.T) {
 	}
 	if stub.gotCtx != ctx {
 		t.Fatal("SignGroup() did not pass caller context to signing service")
+	}
+}
+
+func TestServiceSignComponentDelegates(t *testing.T) {
+	ir := setupIdentityRuntime(t, true)
+	stub := &stubSigningService{
+		component: &signersigning.ComponentSignResult{
+			RequestID:    "cmp-1",
+			ComponentKey: "attkey_abc",
+			Signatures: []signerapi.ComponentSignature{{
+				TargetIndex:     0,
+				Signature:       "aa",
+				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+			}},
+		},
+	}
+	svc := Service{
+		Deps: Dependencies{
+			NewSigningService: func(got *identity.Runtime) SigningService {
+				if got != ir {
+					t.Fatalf("runtime = %p, want %p", got, ir)
+				}
+				return stub
+			},
+		},
+	}
+
+	req := signerapi.ComponentSignRequest{
+		RequestID:     "cmp-1",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  "attkey_abc",
+		GroupBytesHex: []string{"5458aa"},
+		TargetIndices: []int{0},
+	}
+	ctx := context.WithValue(context.Background(), testContextKey("component"), "ctx")
+	resp, err := svc.SignComponent(ctx, ir, req)
+	if err != nil {
+		t.Fatalf("SignComponent() error = %v", err)
+	}
+	if stub.gotIdentityID != ir.ID() {
+		t.Fatalf("identityID = %q, want %q", stub.gotIdentityID, ir.ID())
+	}
+	if stub.gotComponent.RequestID != req.RequestID || stub.gotComponent.ComponentKey != req.ComponentKey {
+		t.Fatalf("got component request = %#v, want %#v", stub.gotComponent, req)
+	}
+	if stub.gotSession == nil {
+		t.Fatal("SignComponent() passed nil session")
+	}
+	if stub.gotCtx != ctx {
+		t.Fatal("SignComponent() did not pass caller context to signing service")
+	}
+	if resp.RequestID != "cmp-1" || resp.ComponentKey != "attkey_abc" || len(resp.Signatures) != 1 {
+		t.Fatalf("SignComponent() response = %#v", resp)
+	}
+}
+
+func TestServiceAssembleAttestedDelegates(t *testing.T) {
+	ir := setupIdentityRuntime(t, true)
+	stub := &stubSigningService{
+		assembly: &signersigning.AttestedAssemblyResult{
+			RequestID:   "asm-1",
+			SignedGroup: []string{"signed"},
+		},
+	}
+	svc := Service{
+		Deps: Dependencies{
+			NewSigningService: func(got *identity.Runtime) SigningService {
+				if got != ir {
+					t.Fatalf("runtime = %p, want %p", got, ir)
+				}
+				return stub
+			},
+		},
+	}
+
+	req := signerapi.AttestedAssemblyRequest{
+		RequestID:     "asm-1",
+		GroupBytesHex: []string{"5458aa"},
+		Targets: []signerapi.AttestedAssemblyTarget{{
+			TargetIndex:       0,
+			AttestedAccount:   "ADDR",
+			UserSignature:     "aa",
+			AttestorSignature: "bb",
+		}},
+	}
+	ctx := context.WithValue(context.Background(), testContextKey("assemble"), "ctx")
+	resp, err := svc.AssembleAttested(ctx, ir, req)
+	if err != nil {
+		t.Fatalf("AssembleAttested() error = %v", err)
+	}
+	if stub.gotIdentityID != ir.ID() {
+		t.Fatalf("identityID = %q, want %q", stub.gotIdentityID, ir.ID())
+	}
+	if stub.gotAssembly.RequestID != req.RequestID || len(stub.gotAssembly.Targets) != 1 {
+		t.Fatalf("got assembly request = %#v, want %#v", stub.gotAssembly, req)
+	}
+	if stub.gotSession == nil {
+		t.Fatal("AssembleAttested() passed nil session")
+	}
+	if stub.gotCtx != ctx {
+		t.Fatal("AssembleAttested() did not pass caller context to signing service")
+	}
+	if resp.RequestID != "asm-1" || len(resp.SignedGroup) != 1 || resp.SignedGroup[0] != "signed" {
+		t.Fatalf("AssembleAttested() response = %#v", resp)
 	}
 }
 
@@ -899,6 +1025,12 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 	if _, err := (Service{}).SignGroup(context.Background(), locked, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 {
 		t.Fatalf("SignGroup(locked) error = %#v, want forbidden", err)
 	}
+	if _, err := (Service{}).SignComponent(context.Background(), locked, signerapi.ComponentSignRequest{}); err == nil || err.HTTPStatus() != 403 {
+		t.Fatalf("SignComponent(locked) error = %#v, want forbidden", err)
+	}
+	if _, err := (Service{}).AssembleAttested(context.Background(), locked, signerapi.AttestedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 {
+		t.Fatalf("AssembleAttested(locked) error = %#v, want forbidden", err)
+	}
 	if _, err := (Service{}).Keys(locked); err == nil || err.HTTPStatus() != 403 {
 		t.Fatalf("Keys(locked) error = %#v, want forbidden", err)
 	}
@@ -909,6 +1041,12 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 	}
 	if _, err := (Service{}).SignGroup(context.Background(), decommissioned, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 {
 		t.Fatalf("SignGroup(decommissioned) error = %#v, want forbidden", err)
+	}
+	if _, err := (Service{}).SignComponent(context.Background(), decommissioned, signerapi.ComponentSignRequest{}); err == nil || err.HTTPStatus() != 403 {
+		t.Fatalf("SignComponent(decommissioned) error = %#v, want forbidden", err)
+	}
+	if _, err := (Service{}).AssembleAttested(context.Background(), decommissioned, signerapi.AttestedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 {
+		t.Fatalf("AssembleAttested(decommissioned) error = %#v, want forbidden", err)
 	}
 	if _, err := (Service{}).Plan(decommissioned, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 {
 		t.Fatalf("Plan(decommissioned) error = %#v, want forbidden", err)
