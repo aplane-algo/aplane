@@ -156,6 +156,15 @@ one signer data directory resolved by `-d` or `APSIGNER_DATA`. Product UI/docs
 are single-operator and expose the product identity, normally `default`.
 Although the runtime has identity scoping, the system does not claim strong
 tenant isolation or product support for unrelated operators sharing one node.
+The attestor MVP product model keeps that shape: one apsigner endpoint is
+presented as one active authenticated identity, normally `default`. Endpoint
+bodies do not carry an `identity` field, and MVP routes do not add identity path
+segments such as `/sign/component/<identity>`.
+
+Future multitenancy must introduce identity routing consistently across
+`/sign`, `/sign/component`, `/sign/assemble`, `/keys`, policy, and admin
+surfaces. Identity selection must be part of authenticated routing/session
+context, not a free-form transaction request field.
 
 MVP supports these role-placement modes:
 
@@ -212,6 +221,8 @@ when implemented with these constraints:
 
 - HTTP token authentication selects exactly one identity runtime; requests do
   not carry a free-form target identity override.
+- `/sign/component` and `/sign/assemble` follow `/sign`: they operate on the
+  authenticated signer identity selected before endpoint logic runs.
 - Attestor private keys stay under `identities/<identity>/keys/` and never
   leave `apsigner`.
 - Attestor policy, unlock state, token, and audit records are identity-scoped;
@@ -295,6 +306,10 @@ exact additive fields:
   "is_spending_account": false
 }
 ```
+
+The client obtains the attestor component public key from the attestor signer's
+`/keys` projection before generating an attested account. That public key, not
+an endpoint URL or credential, is embedded in the generated LogicSig.
 
 For component-key rows, `address` is exactly the same string as
 `component_key_id`; it is a compatibility locator only. Existing spending
@@ -1070,9 +1085,16 @@ Shell command workflow logic belongs in `internal/apshellapp`, not
 `internal/engine` or a focused internal package.
 
 Client-side credential routing is separate local client config. If a named
-attestor shortcut is needed, it should store endpoint and credential
-references, not policy facts or profile labels. Tokens are never stored in
-attested LogicSig metadata.
+attestor shortcut is needed, it should map an expected attestor
+`component_key_id` / public key to endpoint and credential references, not to
+policy facts or profile labels. Tokens are never stored in attested LogicSig
+metadata.
+
+A logical attestor may have multiple equivalent endpoints for availability.
+The client must verify each endpoint's `/keys` projection exposes the expected
+`component_key_id` / `public_key_hex` before treating it as equivalent. Network
+failure may fail over to another equivalent endpoint; policy rejection is final
+and must not be retried as an outage.
 
 ## 19. Implementation Ownership
 
