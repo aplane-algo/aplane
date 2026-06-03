@@ -406,6 +406,11 @@ func getFieldWidthForType(paramType string, maxLength int) int {
 		return 62
 	case "uint64":
 		return 20 // plenty for large numbers
+	case "bytes":
+		if maxLength > 0 {
+			return maxLength + 2
+		}
+		return 66 // 32 bytes of hex plus cursor and margin
 	case "string":
 		if maxLength > 0 {
 			return maxLength + 2
@@ -428,6 +433,11 @@ func getMaxInputLengthForType(paramType string, maxLength int) int {
 		return 4096
 	case "uint64":
 		return 20 // Max uint64 is 20 digits
+	case "bytes":
+		if maxLength > 0 {
+			return maxLength
+		}
+		return 4096
 	case "string":
 		if maxLength > 0 {
 			return maxLength

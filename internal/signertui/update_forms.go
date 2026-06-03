@@ -680,10 +680,10 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 			}
 		case "bytes":
 			// Hex characters only (0-9, a-f, A-F)
-			if char >= 'a' && char <= 'f' {
-				char = char - 'a' + 'A' // Uppercase for consistency
+			if char >= 'A' && char <= 'F' {
+				char = char - 'A' + 'a'
 			}
-			if (char >= 'A' && char <= 'F') || (char >= '0' && char <= '9') {
+			if (char >= 'a' && char <= 'f') || (char >= '0' && char <= '9') {
 				allowed = true
 			}
 		default:
