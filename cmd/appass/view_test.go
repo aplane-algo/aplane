@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
 
 func TestRenderHomeViewWarnsNonRootProduction(t *testing.T) {
@@ -33,7 +33,7 @@ func TestRenderHomeViewWarnsNonRootProduction(t *testing.T) {
 func TestStatusHelperInfoLabelsIdentityScopedPassphraseFile(t *testing.T) {
 	dataDir := t.TempDir()
 	passPath := filepath.Join(dataDir, "identities", "default", "passphrase")
-	if err := identity.SaveUnlockConfig(dataDir, "default", &identity.UnlockConfig{
+	if err := unlockconfig.SaveUnlockConfig(dataDir, "default", &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"/usr/local/bin/appass-file", passPath},
 	}); err != nil {
 		t.Fatalf("save unlock config: %v", err)

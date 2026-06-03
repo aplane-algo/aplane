@@ -4,19 +4,18 @@
 package startup
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
+	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 const (
-	prodMarkerFile            = ".prod"
-	systemdManagedInstanceEnv = "APLANE_SYSTEMD_MANAGED"
+	prodMarkerFile            = signerbootstrap.ProdMarkerFile
+	systemdManagedInstanceEnv = signerbootstrap.SystemdManagedInstanceEnv
 )
 
 // RuntimeState holds the results of process runtime capability checks.
@@ -54,20 +53,13 @@ func BlockManualProdStart(dataDir string) error {
 // IsProductionManagedDataDir reports whether dataDir has the systemd-managed
 // marker written by the systemd installer.
 func IsProductionManagedDataDir(dataDir string) (bool, error) {
-	markerPath := filepath.Join(dataDir, prodMarkerFile)
-	if _, err := os.Stat(markerPath); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, fmt.Errorf("checking managed install marker %s: %w", markerPath, err)
-	}
-	return true, nil
+	return signerbootstrap.IsProductionManagedDataDir(dataDir)
 }
 
 // RunningUnderSystemd reports whether the process appears to be launched by
 // systemd or an equivalent service manager PID 1 context.
 func RunningUnderSystemd() bool {
-	return os.Getenv(systemdManagedInstanceEnv) == "1" || os.Getppid() == 1
+	return signerbootstrap.RunningUnderSystemd()
 }
 
 // Validate performs comprehensive signer startup validation.

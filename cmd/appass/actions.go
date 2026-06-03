@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
 
 const systemdCredentialName = "aplane-passphrase"
@@ -88,10 +88,10 @@ func executeSetPassfile(dataDir, identityID string, passphrase []byte, svc *serv
 	}
 
 	// Write identity-scoped unlock config
-	unlockCfg := &identity.UnlockConfig{
+	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{passFileBin, passphrasePath},
 	}
-	if err := identity.SaveUnlockConfig(dataDir, identityID, unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(dataDir, identityID, unlockCfg); err != nil {
 		return "", fmt.Errorf("saving unlock config: %w", err)
 	}
 	if !isLocal {
@@ -181,10 +181,10 @@ func executeSetSystemcreds(dataDir, identityID string, passphrase []byte, svc *s
 	}
 
 	// Write identity-scoped unlock config
-	unlockCfg := &identity.UnlockConfig{
+	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{passCredsBin, credFile},
 	}
-	if err := identity.SaveUnlockConfig(dataDir, identityID, unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(dataDir, identityID, unlockCfg); err != nil {
 		return "", fmt.Errorf("saving unlock config: %w", err)
 	}
 	if err := setProdUnlockConfigPermissions(dataDir, identityID, svc); err != nil {
@@ -227,7 +227,7 @@ func executeClear(dataDir, identityID string) (string, error) {
 	}
 
 	// Remove identity-scoped unlock config
-	if err := identity.ClearUnlockConfig(dataDir, identityID); err != nil {
+	if err := unlockconfig.ClearUnlockConfig(dataDir, identityID); err != nil {
 		return "", fmt.Errorf("clearing unlock config: %w", err)
 	}
 
@@ -253,7 +253,7 @@ func executeClear(dataDir, identityID string) (string, error) {
 }
 
 func currentAutoUnlockMethod(dataDir, identityID string) (string, error) {
-	unlockCfg, err := identity.LoadUnlockConfig(dataDir, identityID)
+	unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir, identityID)
 	if err == nil && unlockCfg.HasPassphraseCommand() {
 		return detectMethod(unlockCfg.PassphraseCommandArgv), nil
 	}
@@ -313,7 +313,7 @@ func setProdUnlockConfigPermissions(dataDir, identityID string, svc *serviceInfo
 	if svc == nil {
 		return fmt.Errorf("service info unavailable")
 	}
-	path := identity.UnlockConfigPath(dataDir, identityID)
+	path := unlockconfig.UnlockConfigPath(dataDir, identityID)
 	if err := chownToUser(path, svc.User, svc.Group); err != nil {
 		return fmt.Errorf("chown unlock config: %w", err)
 	}

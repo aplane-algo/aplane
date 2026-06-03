@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
 
 func TestMain(m *testing.M) {
@@ -88,10 +88,10 @@ func setupDataDir(t *testing.T) string {
 	t.Helper()
 	dataDir := t.TempDir()
 
-	unlockCfg := &identity.UnlockConfig{
+	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"/usr/local/bin/appass-file", filepath.Join(dataDir, "identities", "default", "passphrase")},
 	}
-	if err := identity.SaveUnlockConfig(dataDir, "default", unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(dataDir, "default", unlockCfg); err != nil {
 		t.Fatalf("save unlock config: %v", err)
 	}
 
@@ -147,10 +147,10 @@ func TestExecuteClear_RemovesIdentityScopedSystemdCredsFile(t *testing.T) {
 		t.Fatalf("MkdirAll(identityDir) error = %v", err)
 	}
 
-	unlockCfg := &identity.UnlockConfig{
+	unlockCfg := &unlockconfig.UnlockConfig{
 		PassphraseCommandArgv: []string{"/usr/local/bin/appass-systemd-creds", filepath.Join(identityDir, "passphrase.cred")},
 	}
-	if err := identity.SaveUnlockConfig(dataDir, identityID, unlockCfg); err != nil {
+	if err := unlockconfig.SaveUnlockConfig(dataDir, identityID, unlockCfg); err != nil {
 		t.Fatalf("SaveUnlockConfig() error = %v", err)
 	}
 

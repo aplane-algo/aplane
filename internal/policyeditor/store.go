@@ -12,7 +12,7 @@ import (
 	"time"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/keystore"
+	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storelock"
@@ -284,12 +284,22 @@ func (s OfflineStore) unlock(ctx context.Context) ([]byte, func(), error) {
 	if len(passphrase) == 0 {
 		return nil, func() {}, fmt.Errorf("passphrase is required")
 	}
-	ks := keystore.NewFileKeyStoreForPaths(storepaths.NewPaths(s.DataDir), s.identityID())
-	masterKey, err := ks.InitializeMasterKey(passphrase)
+
+	metadataDir := storepaths.NewPaths(s.DataDir).KeystoreMetadataDir(s.identityID())
+	meta, err := apcrypto.LoadKeystoreMetadata(metadataDir)
+	if err != nil {
+		clearPassphrase()
+		return nil, func() {}, fmt.Errorf("failed to load keystore metadata: %w", err)
+	}
+	if meta == nil {
+		clearPassphrase()
+		return nil, func() {}, fmt.Errorf("keystore not initialized (missing .keystore file in %s) - run migration first", metadataDir)
+	}
+
+	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
 	clearPassphrase()
 	if err != nil {
-		ks.ClearMasterKey()
-		return nil, func() {}, err
+		return nil, func() {}, fmt.Errorf("failed to unlock keystore: %w", err)
 	}
-	return masterKey, ks.ClearMasterKey, nil
+	return masterKey, func() { apcrypto.ZeroBytes(masterKey) }, nil
 }

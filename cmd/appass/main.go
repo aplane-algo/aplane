@@ -14,7 +14,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
 )
@@ -66,7 +65,7 @@ func main() {
 	}
 	dataDir = resolvedDataDir
 
-	prodManaged, err := signerstartup.IsProductionManagedDataDir(dataDir)
+	prodManaged, err := bootstrap.IsProductionManagedDataDir(dataDir)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

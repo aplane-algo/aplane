@@ -9,8 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
-	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
+	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
+	"github.com/aplane-algo/aplane/internal/signerapp/unlockconfig"
 )
 
 // ViewState represents which screen the TUI is showing.
@@ -97,7 +97,7 @@ func (m Model) Init() tea.Cmd {
 // loadStatusCmd loads the current identity-scoped auto-unlock configuration.
 func loadStatusCmd(dataDir, identityID string) tea.Cmd {
 	return func() tea.Msg {
-		prodManaged, err := signerstartup.IsProductionManagedDataDir(dataDir)
+		prodManaged, err := bootstrap.IsProductionManagedDataDir(dataDir)
 		if err != nil {
 			prodManaged = false
 		}
@@ -111,7 +111,7 @@ func loadStatusCmd(dataDir, identityID string) tea.Cmd {
 
 		method := "none"
 
-		unlockCfg, err := identity.LoadUnlockConfig(dataDir, identityID)
+		unlockCfg, err := unlockconfig.LoadUnlockConfig(dataDir, identityID)
 		if err == nil && unlockCfg.HasPassphraseCommand() {
 			method = detectMethod(unlockCfg.PassphraseCommandArgv)
 		}
@@ -179,7 +179,7 @@ func (m Model) buildMenu() []menuItem {
 // statusHelperInfo returns display info about the helper binary and associated file.
 func (m Model) statusHelperInfo() (helperPath, helperStatus, filePath, fileLabel, fileStatus string) {
 	var argv []string
-	if unlockCfg, err := identity.LoadUnlockConfig(m.dataDir, m.identityID); err == nil && unlockCfg.HasPassphraseCommand() {
+	if unlockCfg, err := unlockconfig.LoadUnlockConfig(m.dataDir, m.identityID); err == nil && unlockCfg.HasPassphraseCommand() {
 		argv = unlockCfg.PassphraseCommandArgv
 	}
 
