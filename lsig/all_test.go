@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/ecdsak1"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
+	falcon1024attested "github.com/aplane-algo/aplane/lsig/falcon1024_attested"
 	falcon1024ed25519 "github.com/aplane-algo/aplane/lsig/falcon1024_ed25519"
 )
 
@@ -32,6 +33,23 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 		if lsigprovider.Has(keyType) {
 			t.Fatalf("RegisterClient() registered %s; it should remain an optional template", keyType)
 		}
+	}
+}
+
+func TestRegisterClientMarksFalcon1024AttestedDefaultEnabled(t *testing.T) {
+	RegisterClient()
+
+	if !lsigprovider.Has(falcon1024attested.KeyTypeV1) {
+		t.Fatalf("RegisterClient() did not register %s", falcon1024attested.KeyTypeV1)
+	}
+	if !keytypecatalog.IsDefaultEnabled(falcon1024attested.KeyTypeV1) {
+		t.Fatalf("%s should be default-enabled", falcon1024attested.KeyTypeV1)
+	}
+	if keytypecatalog.IsLibraryVisible(falcon1024attested.KeyTypeV1) {
+		t.Fatalf("%s should not be library-visible", falcon1024attested.KeyTypeV1)
+	}
+	if !containsKeyType(keymgmt.GetValidKeyTypes(), falcon1024attested.KeyTypeV1) {
+		t.Fatalf("%s should be in default generation key types", falcon1024attested.KeyTypeV1)
 	}
 }
 
@@ -65,6 +83,15 @@ func TestRegisterClientMarksLibraryVisible(t *testing.T) {
 			}
 		})
 	}
+}
+
+func containsKeyType(types []string, want string) bool {
+	for _, got := range types {
+		if got == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestBundledComposedTemplatesBindTxIDBeforeSuffix pins the cross-component

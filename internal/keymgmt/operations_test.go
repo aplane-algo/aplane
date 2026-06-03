@@ -5,17 +5,27 @@ package keymgmt
 
 import (
 	"context"
+	stded25519 "crypto/ed25519"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	falcon1024attested "github.com/aplane-algo/aplane/lsig/falcon1024_attested"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -54,6 +64,7 @@ func TestSupportsMnemonicImport(t *testing.T) {
 	}{
 		{keyType: "ed25519", want: true},
 		{keyType: "aplane.falcon1024.v1", want: true},
+		{keyType: falcon1024attested.KeyTypeV1, want: false},
 		{keyType: "aplane.ecdsak1.v1", want: false},
 		{keyType: "aplane.falcon1024_ed25519.v1", want: false},
 		{keyType: "aplane.falcon1024-whitelist.v1", want: false},
@@ -149,6 +160,84 @@ func TestValidKeyTypesIncludeAttestorComponentKey(t *testing.T) {
 	}
 }
 
+func TestValidKeyTypesIncludeFalcon1024AttestedKey(t *testing.T) {
+	if !containsKeyType(GetValidKeyTypes(), falcon1024attested.KeyTypeV1) {
+		t.Fatalf("GetValidKeyTypes() missing %s", falcon1024attested.KeyTypeV1)
+	}
+	if !IsValidKeyType(falcon1024attested.KeyTypeV1) {
+		t.Fatalf("IsValidKeyType() rejected %s", falcon1024attested.KeyTypeV1)
+	}
+}
+
+func TestGenerateKeyFalcon1024AttestedRequiresAttestorPublicKey(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := []byte("0123456789abcdef0123456789abcdef")
+
+	_, err := GenerateKey(paths, "test-identity", falcon1024attested.KeyTypeV1, masterKey, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing required parameter: attestor_public_key") {
+		t.Fatalf("GenerateKey(attested missing params) error = %v, want missing attestor_public_key", err)
+	}
+}
+
+func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
+	configureAttestedCompileMock(t)
+
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := []byte("0123456789abcdef0123456789abcdef")
+	attestorPublicKey := strings.Repeat("ab", stded25519.PublicKeySize)
+
+	result, err := GenerateKey(paths, "test-identity", falcon1024attested.KeyTypeV1, masterKey, map[string]string{
+		falcon1024attested.ParamAttestorPublicKey: attestorPublicKey,
+	})
+	if err != nil {
+		t.Fatalf("GenerateKey(attested) error = %v", err)
+	}
+	if result.KeyType != falcon1024attested.KeyTypeV1 {
+		t.Fatalf("KeyType = %q, want %s", result.KeyType, falcon1024attested.KeyTypeV1)
+	}
+	if result.Address == "" {
+		t.Fatal("Address is empty")
+	}
+	if result.IsComponentKey || result.ComponentKeyID != "" {
+		t.Fatalf("attested account marked as component: %#v", result)
+	}
+
+	decrypted, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(result.KeyFile, masterKey)
+	if err != nil {
+		t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
+	}
+	defer crypto.ZeroBytes(decrypted)
+
+	var keyPair apkeys.KeyPair
+	if err := json.Unmarshal(decrypted, &keyPair); err != nil {
+		t.Fatalf("json.Unmarshal(KeyPair) error = %v", err)
+	}
+	if keyPair.Category != apkeys.CategoryDSALsig {
+		t.Fatalf("Category = %q, want %s", keyPair.Category, apkeys.CategoryDSALsig)
+	}
+	if keyPair.KeyType != falcon1024attested.KeyTypeV1 {
+		t.Fatalf("stored KeyType = %q, want %s", keyPair.KeyType, falcon1024attested.KeyTypeV1)
+	}
+	if keyPair.BaseKeyType != falcon1024attested.BaseKeyType {
+		t.Fatalf("BaseKeyType = %q, want %s", keyPair.BaseKeyType, falcon1024attested.BaseKeyType)
+	}
+	if keyPair.Params[falcon1024attested.ParamAttestorPublicKey] != attestorPublicKey {
+		t.Fatalf("attestor public key param = %q, want %q", keyPair.Params[falcon1024attested.ParamAttestorPublicKey], attestorPublicKey)
+	}
+	if keyPair.LsigBytecodeHex == "" {
+		t.Fatal("LsigBytecodeHex is empty")
+	}
+	if keyPair.SaltCounter == nil {
+		t.Fatal("SaltCounter is nil")
+	}
+	if keyPair.SigningMetadataVersion != apkeys.CurrentSigningMetadataVersion {
+		t.Fatalf("SigningMetadataVersion = %d, want %d", keyPair.SigningMetadataVersion, apkeys.CurrentSigningMetadataVersion)
+	}
+	if keyPair.TemplateFingerprint == "" {
+		t.Fatal("TemplateFingerprint is empty")
+	}
+}
+
 func TestGenerateKeyAttestorComponent(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
@@ -201,6 +290,47 @@ func containsKeyType(items []string, keyType string) bool {
 		}
 	}
 	return false
+}
+
+func configureAttestedCompileMock(t *testing.T) {
+	t.Helper()
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, attestedCompileMockTransport{})
+	if err != nil {
+		t.Fatalf("MakeClientWithTransport() error = %v", err)
+	}
+	lsigprovider.ConfigureAlgodClient(client)
+}
+
+type attestedCompileMockTransport struct{}
+
+func (attestedCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method != http.MethodPost || req.URL.Path != "/v2/teal/compile" {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"message":"unexpected request"}`)),
+			Request:    req,
+		}, nil
+	}
+	if _, err := io.ReadAll(req.Body); err != nil {
+		return nil, err
+	}
+	bytecode := compiledAttestedPushbytesSaltBytecode(0)
+	body := `{"result":"` + base64.StdEncoding.EncodeToString(bytecode) + `","hash":"TESTHASH"}`
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}, nil
+}
+
+func compiledAttestedPushbytesSaltBytecode(counter byte) []byte {
+	marker := lsigsalt.PushbytesSaltMarker(counter)
+	bytecode := []byte{0x0c, 0x80, byte(len(marker))}
+	bytecode = append(bytecode, marker...)
+	bytecode = append(bytecode, 0x48, 0x81, 0x01)
+	return bytecode
 }
 
 func TestDetectKeyInfoFromFileWithMasterKeyEncrypted(t *testing.T) {

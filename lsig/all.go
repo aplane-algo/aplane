@@ -28,6 +28,7 @@ import (
 	ecdsak1family "github.com/aplane-algo/aplane/lsig/ecdsak1/family"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
+	falcon1024attested "github.com/aplane-algo/aplane/lsig/falcon1024_attested"
 	falcon1024ed25519 "github.com/aplane-algo/aplane/lsig/falcon1024_ed25519"
 )
 
@@ -50,6 +51,11 @@ func RegisterClient() {
 			Family:       family.Name,
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 		}, falcon.RegisterClient)
+		registerCompiledProvider(keytypecatalog.Entry{
+			KeyType:      falcon1024attested.KeyTypeV1,
+			Family:       falcon1024attested.FamilyName,
+			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+		}, falcon1024attested.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      falcon1024ed25519.KeyTypeV1,
 			Family:       falcon1024ed25519.FamilyName,
