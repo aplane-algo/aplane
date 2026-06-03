@@ -310,6 +310,11 @@ rows omit `is_component_key` or set it to `false`, and omit
 `is_spending_account` or set it to `true`. SDKs and shell UI must treat absent
 `is_component_key` as `false`. They must not infer that an `address` field is
 an Algorand address when `is_component_key:true` or `is_spending_account:false`.
+Because the selector has no dedicated prefix, every ingestion point that accepts
+account-like strings must rely on key type/category metadata and the
+`is_component_key` / `is_spending_account` projection, not string shape.
+Component-key selectors must be rejected wherever an Algorand account address is
+required, including transaction sender, `auth_address`, and rekey target inputs.
 
 `POST /admin/generate` for a component key returns the same fields plus the
 existing `parameters` field when parameters are present. Contract fixtures must
@@ -689,7 +694,8 @@ audit records can explain the decision without trusting caller labels.
 Component-signing request descriptions must show:
 
 - request kind and component role,
-- selected component key ID for attestor role,
+- selected component key selector for attestor role
+  (`component_key`, the attestor public-key hex),
 - attested account / transaction sender,
 - target indices and target TxIDs,
 - decoded transfer facts for each target,
@@ -1018,7 +1024,8 @@ Component audit records include:
 - identity ID,
 - request ID,
 - component role,
-- component key ID for attestor role,
+- component key selector for attestor role (`component_key`, the attestor
+  public-key hex),
 - attested account / transaction sender,
 - target indices,
 - target TxIDs,
@@ -1113,6 +1120,10 @@ misconfiguration check only and does not prove key ownership. Network failure
 may fail over to another equivalent endpoint; policy rejection is final and
 must not be retried as an outage. The actual trust anchor remains the attestor
 public key embedded at `aplane.<user-key-family>-attested.v1` generation time.
+If the client performs the optional pre-assembly attestor signature check, it
+must use the shared `internal/attestor/verify` primitives so message
+construction stays byte-identical to signer assembly and on-chain LogicSig
+verification.
 
 Endpoint resolution rules:
 
