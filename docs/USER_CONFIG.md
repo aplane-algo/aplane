@@ -222,6 +222,11 @@ change one of these settings through admin IPC, the signer writes it as an
 identity-scoped override at `identities/<identity>/config.yaml`. `approval_wait`
 is YAML-only.
 
+Identity config also supports `mode: signing|attestation|dual`. Omitted mode
+defaults to `signing`. `attestation` identities may hold attestor component
+keys only; `signing` identities may hold account/signing keys only; `dual`
+allows both key classes and should be an explicit operational choice.
+
 In `apadmin`, the operator-default shortcut is shown as `User Auto-Approve`:
 `ON` means `user_auto_approve: true`; `OFF` means `user_auto_approve: false`.
 

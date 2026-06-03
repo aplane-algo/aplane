@@ -43,6 +43,9 @@ func (fs *Signer) newReloadServiceForIdentity(ir *identity.Runtime, session *key
 			ir.SetPolicyState(storedPolicy, effectivePolicy)
 			return nil
 		},
+		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
+			return identity.ValidateKeyTypesAllowed(ir.Config().Mode(), keyTypes)
+		},
 		PublishSnapshot:   ir.PublishSnapshot,
 		AuditLog:          auditLog,
 		NotifyKeysChanged: notifyKeysChanged,

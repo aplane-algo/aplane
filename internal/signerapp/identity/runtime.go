@@ -143,6 +143,7 @@ type Config struct {
 	ApprovalWait        time.Duration
 	UserAutoApprove     *bool
 	LockOnDisconnect    bool
+	Mode                Mode
 	OnLocked            func() // Called after lock transition completes.
 	PersistDecommission func(identityID string) error
 }
@@ -168,7 +169,7 @@ func New(cfg Config) *Runtime {
 		lockRuntime:         rt,
 		keySession:          session,
 		authenticator:       cfg.Authenticator,
-		identityCfg:         NewIdentityConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
+		identityCfg:         NewIdentityConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait, cfg.Mode),
 		keys:                make(map[string]string),
 		keyTypes:            make(map[string]string),
 		keyLsigSizes:        make(map[string]int),

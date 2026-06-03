@@ -27,6 +27,7 @@ type fakeKeyStore struct {
 	scanCalled   bool
 	withMKCalled bool
 	clearCount   int
+	clearCache   int
 	scanErr      error
 	withMKErr    error
 	onScan       func()
@@ -51,6 +52,7 @@ func (f *fakeKeyStore) Scan(_ []byte) error {
 	return nil
 }
 func (f *fakeKeyStore) ClearMasterKey()                { f.clearCount++ }
+func (f *fakeKeyStore) ClearCache()                    { f.clearCache++ }
 func (f *fakeKeyStore) GetCache() map[string]string    { return f.cache }
 func (f *fakeKeyStore) GetKeyTypes() map[string]string { return f.keyTypes }
 func (f *fakeKeyStore) GetLsigSizes() map[string]int   { return f.lsigSizes }
@@ -390,6 +392,53 @@ func TestReloadDoesNotClearExistingUnlockOnScanError(t *testing.T) {
 	}
 }
 
+func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing.T) {
+	wantErr := errors.New("identity mode rejects key")
+	store := &fakeKeyStore{
+		cache:     map[string]string{"ADDR": "/keys/ADDR.key"},
+		keyTypes:  map[string]string{"ADDR": "ed25519"},
+		lsigSizes: map[string]int{"ADDR": 0},
+	}
+	session := &fakeSession{}
+	publishedKeys := map[string]string{"OLD": "/keys/OLD.key"}
+	publishedKeyTypes := map[string]string{"OLD": "ed25519"}
+	publishedLsigSizes := map[string]int{"OLD": 0}
+	var notifications []KeysChangedNotification
+	service := &ReloadService{
+		KeyStore:        store,
+		Session:         session,
+		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		BeforePublish: func(map[string]string, map[string]string, map[string]int) error {
+			return wantErr
+		},
+		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int) {
+			publishedKeys = keys
+			publishedKeyTypes = keyTypes
+			publishedLsigSizes = lsigSizes
+		},
+		NotifyKeysChanged: func(notification KeysChangedNotification) {
+			notifications = append(notifications, notification)
+		},
+	}
+
+	_, err := service.Reload("default", nil)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Reload() error = %v, want %v", err, wantErr)
+	}
+	if len(publishedKeys) != 0 || len(publishedKeyTypes) != 0 || len(publishedLsigSizes) != 0 {
+		t.Fatalf("published snapshot = (%#v, %#v, %#v), want empty maps after rejection", publishedKeys, publishedKeyTypes, publishedLsigSizes)
+	}
+	if store.clearCache != 1 {
+		t.Fatalf("ClearCache() calls = %d, want 1", store.clearCache)
+	}
+	if session.initialized {
+		t.Fatal("session initialized after rejected snapshot")
+	}
+	if !reflect.DeepEqual(notifications, []KeysChangedNotification{{KeyCount: 0}}) {
+		t.Fatalf("notifications = %#v, want key count 0", notifications)
+	}
+}
+
 func TestReloadAddressCollisionInvalidatesPublishedSnapshot(t *testing.T) {
 	collisionErr := &keys.AddressCollisionError{
 		Collisions: map[string][]string{
@@ -427,6 +476,9 @@ func TestReloadAddressCollisionInvalidatesPublishedSnapshot(t *testing.T) {
 	}
 	if len(publishedKeys) != 0 || len(publishedKeyTypes) != 0 || len(publishedLsigSizes) != 0 {
 		t.Fatalf("published snapshot = (%#v, %#v, %#v), want empty maps after collision", publishedKeys, publishedKeyTypes, publishedLsigSizes)
+	}
+	if store.clearCache != 1 {
+		t.Fatalf("ClearCache() calls = %d, want 1", store.clearCache)
 	}
 	if session.initialized {
 		t.Fatal("session initialized after address collision")

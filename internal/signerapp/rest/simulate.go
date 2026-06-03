@@ -29,6 +29,9 @@ func (s Service) Simulate(ctx context.Context, ir *identity.Runtime, req signera
 	if !ir.IsUnlocked() {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
 	}
+	if modeErr := requireAccountSigningMode(ir, "simulation signing"); modeErr != nil {
+		return nil, modeErr
+	}
 	if s.Deps.NewSigningService == nil {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "signing service not configured"}
 	}

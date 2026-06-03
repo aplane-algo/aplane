@@ -284,6 +284,9 @@ Validation:
 - `approval_wait` must parse as a positive Go duration between 30 seconds and
   30 minutes. The default is `60s`. Identity config may override the process
   default for that identity.
+- identity `mode`, when present, must be one of `signing`, `attestation`, or
+  `dual`. Omitted mode defaults to `signing`. Key generation, import, and
+  key reload reject key classes disallowed by the effective identity mode.
 - `require_memory_protection:true` requires disabled core dumps and successful memory locking
 
 Built-in Algorand genesis-hash mappings are source-defined:
@@ -309,6 +312,8 @@ Operational rules:
   `approval_wait`, and `theme`
 - runtime reads that need configuration should use snapshots or narrow accessors rather than holding mutable `ServerConfig` pointers
 - identity-owned settings and policy writes are serialized by the target identity's mutation lock
+- managed identity mode tightening is refused while the active key inventory
+  contains key classes disallowed by the requested target mode
 
 ### LocalNet Setup Utility
 

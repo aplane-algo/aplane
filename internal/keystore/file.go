@@ -161,6 +161,16 @@ func (f *FileKeyStore) ClearMasterKey() {
 	f.cacheLock.Unlock()
 }
 
+// ClearCache removes scanned key metadata while preserving the unlocked master
+// key. Reload fail-closed paths use this to ensure direct key lookups cannot
+// use a rejected scan result.
+func (f *FileKeyStore) ClearCache() {
+	f.cacheLock.Lock()
+	f.cache = make(map[string]keys.KeyScanInfo)
+	f.scanWarnings = nil
+	f.cacheLock.Unlock()
+}
+
 // List returns metadata for all available keys
 func (f *FileKeyStore) List(ctx context.Context) ([]KeyMetadata, error) {
 	f.cacheLock.RLock()

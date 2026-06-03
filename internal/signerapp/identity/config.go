@@ -23,6 +23,7 @@ type IdentityConfig struct {
 	lockOnDisconnect bool
 	sessionTimeout   time.Duration
 	approvalWait     time.Duration
+	mode             Mode
 }
 
 // ConfigDefaults contains process-level defaults that an identity overlay can
@@ -32,6 +33,7 @@ type ConfigDefaults struct {
 	LockOnDisconnect bool
 	SessionTimeout   time.Duration
 	ApprovalWait     time.Duration
+	Mode             Mode
 }
 
 // EffectiveConfig contains the concrete runtime settings for one identity.
@@ -40,6 +42,7 @@ type EffectiveConfig struct {
 	LockOnDisconnect bool
 	SessionTimeout   time.Duration
 	ApprovalWait     time.Duration
+	Mode             Mode
 }
 
 // StoredConfig is the persisted per-identity configuration overlay.
@@ -50,19 +53,22 @@ type StoredConfig struct {
 	LockOnDisconnect  *bool  `yaml:"lock_on_disconnect,omitempty"`
 	PassphraseTimeout string `yaml:"passphrase_timeout,omitempty"`
 	ApprovalWait      string `yaml:"approval_wait,omitempty"`
+	Mode              string `yaml:"mode,omitempty"`
 	Decommissioned    *bool  `yaml:"decommissioned,omitempty"`
 }
 
 // NewIdentityConfig creates an identity config with values from the process config.
-func NewIdentityConfig(userAutoApprove, lockOnDisconnect bool, sessionTimeout, approvalWait time.Duration) *IdentityConfig {
+func NewIdentityConfig(userAutoApprove, lockOnDisconnect bool, sessionTimeout, approvalWait time.Duration, mode Mode) *IdentityConfig {
 	if approvalWait <= 0 {
 		approvalWait = apconfig.DefaultApprovalWait
 	}
+	mode = NormalizeMode(mode)
 	return &IdentityConfig{
 		userAutoApprove:  userAutoApprove,
 		lockOnDisconnect: lockOnDisconnect,
 		sessionTimeout:   sessionTimeout,
 		approvalWait:     approvalWait,
+		mode:             mode,
 	}
 }
 
@@ -119,6 +125,20 @@ func (c *IdentityConfig) ApprovalWait() time.Duration {
 func (c *IdentityConfig) SetApprovalWait(d time.Duration) {
 	c.mu.Lock()
 	c.approvalWait = d
+	c.mu.Unlock()
+}
+
+// Mode returns the identity's key-class mode.
+func (c *IdentityConfig) Mode() Mode {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return NormalizeMode(c.mode)
+}
+
+// SetMode updates the identity's key-class mode.
+func (c *IdentityConfig) SetMode(mode Mode) {
+	c.mu.Lock()
+	c.mode = NormalizeMode(mode)
 	c.mu.Unlock()
 }
 
@@ -187,6 +207,7 @@ func SaveStoredSetting(dataRoot, identityID, key string, value interface{}) erro
 // identity settings on top of process-global defaults.
 func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 	effective := EffectiveConfig(defaults)
+	effective.Mode = NormalizeMode(effective.Mode)
 
 	if c.UserAutoApprove != nil {
 		effective.UserAutoApprove = *c.UserAutoApprove
@@ -210,6 +231,14 @@ func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 			return EffectiveConfig{}, fmt.Errorf("invalid identity approval_wait: %w", err)
 		}
 		effective.ApprovalWait = parsed
+	}
+
+	if c.Mode != "" {
+		mode, err := ParseMode(c.Mode)
+		if err != nil {
+			return EffectiveConfig{}, fmt.Errorf("invalid identity mode: %w", err)
+		}
+		effective.Mode = mode
 	}
 
 	return effective, nil

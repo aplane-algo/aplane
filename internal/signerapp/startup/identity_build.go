@@ -147,6 +147,7 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 	lockOnDisconnect := effectiveCfg.LockOnDisconnect
 	sessionTimeout := effectiveCfg.SessionTimeout
 	approvalWait := effectiveCfg.ApprovalWait
+	mode := effectiveCfg.Mode
 
 	unlockCfg, unlockErr := ResolveUnlockConfig(opts.DataDir, identityID, opts.Config)
 	if unlockErr != nil {
@@ -166,6 +167,7 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 		ApprovalWait:     approvalWait,
 		UserAutoApprove:  &userAutoApprove,
 		LockOnDisconnect: lockOnDisconnect,
+		Mode:             mode,
 		PersistDecommission: func(id string) error {
 			return identity.SaveStoredSetting(opts.DataDir, id, "decommissioned", true)
 		},
@@ -229,6 +231,9 @@ func wireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ident
 				}
 				ir.SetPolicyState(storedPolicy, effectivePolicy)
 				return nil
+			},
+			BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
+				return identity.ValidateKeyTypesAllowed(ir.Config().Mode(), keyTypes)
 			},
 			PublishSnapshot: ir.PublishSnapshot,
 			AuditLog:        hooks.ReloadAuditLog,

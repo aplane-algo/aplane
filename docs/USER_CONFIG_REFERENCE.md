@@ -52,6 +52,9 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `user_auto_approve` | bool | `false` | User default to sign non-rejected requests without operator approval unless policy forces review |
 | `theme` | string | `auto` | Signer-admin UI theme: auto, dark, or light (auto detects terminal) |
 
+Identity-scoped `identities/<identity>/config.yaml` also supports `mode`
+(`signing`, `attestation`, or `dual`; default `signing`).
+
 ## Environment Variables
 
 | Variable | Description | Used By |

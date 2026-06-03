@@ -257,7 +257,7 @@ unlock/reload after passphrase verification through
 
 ### Admin and Policy Settings
 
-- `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, `ssh_enabled`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, `theme`
+- `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, `mode`, `ssh_enabled`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
 - `policy_settings`: `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, `reject_clawback`, `always_review_warnings`, `auto_approve_self_noop_transfer`, `max_fee_microalgos`, `review_algo_payments`, `max_algo_payments`, `policy_networks`, `review_asa_amounts`, `max_asa_amounts`, optional `policy_asa_metadata`; compatibility fields `max_asa_amounts_mainnet`, `max_asa_amounts_testnet`, and `max_asa_amounts_betanet` may also be present; `key_type_overrides` is not projected over admin IPC
@@ -281,6 +281,8 @@ Writable admin settings:
 - `user_auto_approve` (`User Auto-Approve`; operator-default fallback approval switch)
 - `lock_on_disconnect`
 - `passphrase_timeout`
+- `mode` (`signing`, `attestation`, or `dual`; changing to a tighter mode is
+  rejected while conflicting key classes are loaded)
 - `theme`
 
 YAML-only runtime settings:

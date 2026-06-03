@@ -24,6 +24,9 @@ func (s Service) SignGroup(ctx context.Context, ir *identity.Runtime, req signer
 	if !ir.IsUnlocked() {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
 	}
+	if modeErr := requireAccountSigningMode(ir, "account signing"); modeErr != nil {
+		return nil, modeErr
+	}
 	if s.Deps.NewSigningService == nil {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "signing service not configured"}
 	}
@@ -52,6 +55,9 @@ func (s Service) Plan(ir *identity.Runtime, req signerapi.GroupSignRequest) (*si
 	}
 	if !ir.IsUnlocked() {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
+	}
+	if modeErr := requireAccountSigningMode(ir, "planning account signing"); modeErr != nil {
+		return nil, modeErr
 	}
 	if s.Deps.PlanGroup == nil {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "planner service not configured"}

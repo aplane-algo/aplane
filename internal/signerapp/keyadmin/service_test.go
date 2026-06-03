@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -179,6 +180,7 @@ func TestServiceGenerateKeyEd25519(t *testing.T) {
 
 func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
 	ir := setupIdentityRuntime(t)
+	ir.Config().SetMode(identity.ModeAttestation)
 	audit := &auditRecorder{}
 	svc := Service{AuditLog: audit}
 
@@ -213,6 +215,28 @@ func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
 	}
 	if len(audit.generated) != 1 || audit.generated[0].address != result.Address {
 		t.Fatalf("generated audit = %#v, want component address", audit.generated)
+	}
+}
+
+func TestServiceGenerateKeyRejectsKeyTypeDisallowedByMode(t *testing.T) {
+	ir := setupIdentityRuntime(t)
+	svc := Service{}
+
+	result, err := svc.GenerateKey(context.Background(), ir, keytypes.AttestorComponentEd25519V1, nil, nil)
+	if result != nil {
+		t.Fatalf("GenerateKey(component in signing mode) result = %#v, want nil", result)
+	}
+	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `identity mode "signing"`) {
+		t.Fatalf("GenerateKey(component in signing mode) error = %#v, want mode invalid input", err)
+	}
+
+	ir.Config().SetMode(identity.ModeAttestation)
+	result, err = svc.GenerateKey(context.Background(), ir, "ed25519", nil, nil)
+	if result != nil {
+		t.Fatalf("GenerateKey(ed25519 in attestation mode) result = %#v, want nil", result)
+	}
+	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `identity mode "attestation"`) {
+		t.Fatalf("GenerateKey(ed25519 in attestation mode) error = %#v, want mode invalid input", err)
 	}
 }
 
@@ -433,6 +457,7 @@ func TestServiceDeleteKeyRemovesKeyAndAudits(t *testing.T) {
 
 func TestServiceDeleteKeyRemovesAttestorComponentKey(t *testing.T) {
 	ir := setupIdentityRuntime(t)
+	ir.Config().SetMode(identity.ModeAttestation)
 	svc := Service{}
 
 	genResult, genErr := svc.GenerateKey(context.Background(), ir, keytypes.AttestorComponentEd25519V1, nil, nil)
@@ -612,6 +637,23 @@ func TestServiceImportKeyFalcon1024V1PersistsKey(t *testing.T) {
 	}
 	if len(audit.imported) != 1 || audit.imported[0].keyType != "aplane.falcon1024.v1" {
 		t.Fatalf("import audit = %#v, want one aplane.falcon1024.v1 import", audit.imported)
+	}
+}
+
+func TestServiceImportKeyRejectsKeyTypeDisallowedByMode(t *testing.T) {
+	configureFalconCompileMock(t)
+
+	ir := setupIdentityRuntime(t)
+	ir.Config().SetMode(identity.ModeAttestation)
+	svc := Service{}
+	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+
+	result, err := svc.ImportKey(ir, "aplane.falcon1024.v1", mnemonic, nil)
+	if result != nil {
+		t.Fatalf("ImportKey(disallowed mode) result = %#v, want nil", result)
+	}
+	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `identity mode "attestation"`) {
+		t.Fatalf("ImportKey(disallowed mode) error = %#v, want mode invalid input", err)
 	}
 }
 

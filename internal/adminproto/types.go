@@ -20,6 +20,7 @@ type AdminSettings struct {
 	LockOnDisconnect  bool
 	PassphraseTimeout string
 	PassphraseMethod  string
+	Mode              string
 	SSHEnabled        bool
 	SSHPort           int
 	SSHFingerprint    string
@@ -33,6 +34,7 @@ const (
 	AdminSettingUserAutoApprove   = "user_auto_approve"
 	AdminSettingLockOnDisconnect  = "lock_on_disconnect"
 	AdminSettingPassphraseTimeout = "passphrase_timeout"
+	AdminSettingMode              = "mode"
 	AdminSettingTheme             = "theme"
 )
 

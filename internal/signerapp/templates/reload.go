@@ -36,6 +36,7 @@ type KeysChangedNotification struct {
 
 type NotifyKeysChangedFunc func(notification KeysChangedNotification)
 type BeforeKeyScanFunc func(masterKey []byte) error
+type BeforePublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int) error
 type PublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int)
 type WarnFunc func(msg string)
 type InfoFunc func(msg string)
@@ -52,6 +53,7 @@ type ReloadService struct {
 	Session           Session
 	TemplateManager   *Manager
 	BeforeKeyScan     BeforeKeyScanFunc
+	BeforePublish     BeforePublishSnapshotFunc
 	PublishSnapshot   PublishSnapshotFunc
 	AuditLog          AuditLogger
 	NotifyKeysChanged NotifyKeysChangedFunc
@@ -125,6 +127,7 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 	if err := s.KeyStore.Scan(nil); err != nil {
 		clearInitializedMasterKey()
 		if errors.Is(err, keys.ErrAddressCollision) {
+			s.clearKeyCache()
 			s.PublishSnapshot(map[string]string{}, map[string]string{}, map[string]int{})
 			if s.NotifyKeysChanged != nil {
 				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
@@ -137,6 +140,17 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 	newKeysMap := s.KeyStore.GetCache()
 	newKeyTypes := s.KeyStore.GetKeyTypes()
 	newLsigSizes := s.KeyStore.GetLsigSizes()
+	if s.BeforePublish != nil {
+		if err := s.BeforePublish(newKeysMap, newKeyTypes, newLsigSizes); err != nil {
+			clearInitializedMasterKey()
+			s.clearKeyCache()
+			s.PublishSnapshot(map[string]string{}, map[string]string{}, map[string]int{})
+			if s.NotifyKeysChanged != nil {
+				s.NotifyKeysChanged(KeysChangedNotification{KeyCount: 0})
+			}
+			return nil, fmt.Errorf("key snapshot rejected: %w", err)
+		}
+	}
 	s.PublishSnapshot(newKeysMap, newKeyTypes, newLsigSizes)
 
 	s.Session.InitializeSession()
@@ -154,6 +168,15 @@ func (s *ReloadService) Reload(identityID string, passphrase []byte) (*ReloadRep
 	}
 
 	return report, nil
+}
+
+func (s *ReloadService) clearKeyCache() {
+	type keyCacheClearer interface {
+		ClearCache()
+	}
+	if clearer, ok := s.KeyStore.(keyCacheClearer); ok {
+		clearer.ClearCache()
+	}
 }
 
 func (s *ReloadService) auditRejectedLogicSigKeys(identityID string) {

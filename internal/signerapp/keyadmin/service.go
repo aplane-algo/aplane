@@ -105,6 +105,9 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	if keyType == "" {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "key_type is required"}
 	}
+	if modeErr := identity.ValidateKeyTypeAllowed(ir.Config().Mode(), keyType); modeErr != nil {
+		return nil, &Error{Kind: ErrorInvalidInput, Message: modeErr.Error()}
+	}
 
 	if provider := lsigprovider.Get(keyType); provider != nil {
 		// Canonicalize at the admin boundary so persisted params and API responses

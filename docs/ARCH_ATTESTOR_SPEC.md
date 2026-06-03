@@ -214,7 +214,69 @@ operator-controlled service role scoped to an apsigner identity. Product UX and
 docs remain single-operator; the attestor identity is not a customer-management
 surface, and unrelated operators must not be co-hosted under this MVP model.
 
-### 5.1 APlane Invariant Compatibility
+### 5.1 Identity Mode
+
+Each identity has an identity-scoped key-class mode stored in
+`identities/<identity>/config.yaml`:
+
+```yaml
+mode: signing
+```
+
+Allowed values are:
+
+- `signing`: the identity may hold and use ordinary account/signing keys,
+  including attested account keys such as `aplane.falcon1024-attested.v1`.
+  It must not hold attestor component keys.
+- `attestation`: the identity may hold and use attestor component keys such as
+  `aplane.attestor-ed25519.v1`. It must not hold ordinary account/signing
+  keys.
+- `dual`: the identity may hold both key classes. This is an explicit opt-in
+  for co-located development or carefully reviewed production composition.
+
+The default for an omitted `mode` is `signing`. Unset mode must never mean
+"anything goes". Existing identities therefore continue as signing identities
+unless an operator explicitly changes the stored identity config.
+
+Mode is bound to the identity, not the node. One apsigner process may host a
+`signing` identity and an `attestation` identity when the deployment model
+requires co-location. A future node-level assertion may add outer
+defense-in-depth, but it must not replace the identity-level mode.
+
+Mode gates key class at every key-ingestion boundary:
+
+- key generation and mnemonic import reject key types disallowed by the
+  authenticated identity's mode;
+- restore, hand-placed key files, and other out-of-band changes fail closed at
+  key scan/load when the scanned inventory contains a key type disallowed by
+  the identity's mode;
+- service endpoints reject role/use mismatches even if a forbidden key file is
+  present on disk.
+
+Tightening a mode is only valid after the on-disk key inventory already matches
+the target mode. For example, changing `dual` to `attestation` must be refused
+while any signing-class key exists, and changing `dual` to `signing` must be
+refused while any attestor component key exists. The signer must not silently
+delete keys during a mode change, and it must not silently ignore contradictory
+keys while claiming a tighter mode. If a contradiction arrives through backup
+restore or manual file placement, key load fails closed and surfaces the
+conflict until the operator removes the conflicting key files or explicitly
+chooses a compatible mode.
+
+Mode is a key-class and operational guardrail, not an independence proof. A
+node or identity that has ever held signing keys may have backups or history
+containing those keys. Independent attestation remains a deployment-domain
+property: for a given account, the user component private key and embedded
+attestor component private key must be controlled by different operator
+domains.
+
+Mode also does not replace the same-account self-attestation guard. A `dual`
+identity can be a legitimate co-located operator identity for unrelated
+accounts, but the specific pairing where one identity holds both an attested
+account key and the attestor component key embedded in that same account remains
+forbidden outside explicitly marked local-development flows.
+
+### 5.2 APlane Invariant Compatibility
 
 The attestor role placement above is compatible with current APlane invariants
 when implemented with these constraints:
@@ -228,6 +290,9 @@ when implemented with these constraints:
 - Attestor policy, unlock state, token, and audit records are identity-scoped;
   policy role domains inside `policy.yaml` are defined in
   [ARCH_POLICY.md#role-domains](ARCH_POLICY.md#role-domains).
+- Identity mode is loaded from identity config before key generation, import,
+  scan/load, and endpoint role dispatch; the mode check is enforced against key
+  type/category metadata, not string appearance.
 - `/sign` never reaches attestor component keys or attested-account key types;
   component signing uses `/sign/component`.
 - `/plan` continues to own canonical group shaping and uses attested-account
@@ -588,6 +653,18 @@ All new HTTP endpoints:
 Request `Content-Type` is not enforced in the MVP unless the broader HTTP
 contract changes. Malformed JSON still returns `400`, and oversized bodies
 still return `413`.
+
+Endpoint role dispatch must honor identity mode:
+
+- `signing` identities may use `/sign`, `/plan`, `/simulate`, user-role
+  `/sign/component`, and `/sign/assemble`. Attestor-role `/sign/component`
+  must be rejected because the identity is not allowed to hold attestor
+  component keys.
+- `attestation` identities may use attestor-role `/sign/component`. `/sign`,
+  `/simulate`, user-role `/sign/component`, and `/sign/assemble` must be
+  rejected because the identity is not allowed to hold account/signing keys.
+- `dual` identities may use both role families subject to all narrower
+  key-type, policy, and same-account self-attestation guards.
 
 New DTOs live in:
 
@@ -1230,6 +1307,14 @@ Phase 0 contract tests:
 
 Unit tests:
 
+- identity config parses `mode`, defaults omitted mode to `signing`, and
+  rejects unknown mode values.
+- identity mode rejects disallowed key generation and mnemonic import before
+  writing key files.
+- key reload fails closed and publishes no active key snapshot when scanned key
+  inventory contains a key type disallowed by the identity mode.
+- mode tightening through managed admin settings is refused while conflicting
+  key classes still exist.
 - `/sign` rejects every attestor component key type.
 - `/sign` rejects every attested-account key type before provider lookup.
 - key generation uses exact-key-type gates for attestor component and
@@ -1305,6 +1390,10 @@ SDK tests:
 
 The MVP is complete when:
 
+- each identity has an enforced `mode` with omitted mode defaulting to
+  `signing`, and invalid modes fail config load,
+- key generation, import, restore/load, and endpoint role dispatch reject key
+  classes disallowed by the identity mode,
 - attestor component keys cannot sign through `/sign`,
 - attested account keys cannot sign through `/sign`,
 - attestor component key generation exposes canonical public-key-hex selectors

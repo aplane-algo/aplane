@@ -135,11 +135,22 @@ func (s Service) BuildKeyTypesForIdentity(ir *identity.Runtime) ([]signerapi.Key
 	if err != nil {
 		return nil, err
 	}
+	validTypes = filterKeyTypesForMode(validTypes, ir.Config().Mode())
 	enabled, err := keytypestate.ListEnabled(ir.KeyPaths(), ir.ID())
 	if err != nil {
 		return nil, err
 	}
 	return s.buildKeyTypes(validTypes, enabled), nil
+}
+
+func filterKeyTypesForMode(validTypes []string, mode identity.Mode) []string {
+	filtered := make([]string, 0, len(validTypes))
+	for _, keyType := range validTypes {
+		if mode.AllowsKeyType(keyType) {
+			filtered = append(filtered, keyType)
+		}
+	}
+	return filtered
 }
 
 func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []signerapi.KeyTypeInfo {

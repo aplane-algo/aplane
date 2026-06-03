@@ -423,9 +423,10 @@ Identity-sensitive runtime settings are owned separately by `internal/signerapp/
 
 - `user_auto_approve`,
 - `lock_on_disconnect`,
-- `passphrase_timeout` (admin idle disconnect timeout).
+- `passphrase_timeout` (admin idle disconnect timeout),
+- `mode` (`signing`, `attestation`, or `dual`; defaults to `signing`).
 
-Those values are persisted per identity at `identities/<identity>/config.yaml` via `internal/signerapp/identity.StoredConfig`. The same file also carries lifecycle state such as `decommissioned:true` for disabled identities. On startup, stored values overlay process-global defaults (nil/empty means inherit), while `decommissioned:true` is treated as an explicit disable marker rather than an inherited setting. Runtime reads resolve through the bound identity runtime rather than directly from `ServerConfig`.
+Those values are persisted per identity at `identities/<identity>/config.yaml` via `internal/signerapp/identity.StoredConfig`. The same file also carries lifecycle state such as `decommissioned:true` for disabled identities. On startup, stored runtime values overlay process-global defaults (nil/empty means inherit), while omitted `mode` defaults to `signing` and `decommissioned:true` is treated as an explicit disable marker rather than an inherited setting. Runtime reads resolve through the bound identity runtime rather than directly from `ServerConfig`.
 
 Passphrase helper configuration is identity-scoped via `internal/signerapp/identity.UnlockConfig`, stored at `identities/<identity>/unlock.yaml`:
 

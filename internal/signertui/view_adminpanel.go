@@ -35,6 +35,7 @@ func (m Model) adminRows() []adminRow {
 		{section: "User-Editable", label: "User Auto-Approve", key: adminproto.AdminSettingUserAutoApprove, value: boolStr(s.UserAutoApprove), editable: true, isBool: true},
 		{section: "User-Editable", label: "Lock-on-disconnect", key: adminproto.AdminSettingLockOnDisconnect, value: boolStr(s.LockOnDisconnect), editable: isPromptMode, isBool: true},
 		{section: "User-Editable", label: "Passphrase timeout", key: adminproto.AdminSettingPassphraseTimeout, value: s.PassphraseTimeout, editable: isPromptMode, isBool: false},
+		{section: "User-Editable", label: "Identity mode", key: adminproto.AdminSettingMode, value: identityModeDisplay(s.Mode), editable: true, choices: []string{"signing", "attestation", "dual"}},
 		{section: "User-Editable", label: "Color theme", key: adminproto.AdminSettingTheme, value: themeDisplay(s.Theme), editable: true, choices: []string{"auto", "dark", "light"}},
 		{section: "Runtime", label: "Admin transport", key: "", value: m.transportLabel, editable: false},
 		{section: "Runtime", label: "Passphrase unlock", key: "", value: passphraseMethodDisplay(s.PassphraseMethod), editable: false},
@@ -83,6 +84,14 @@ func nextChoice(current string, choices []string) string {
 		}
 	}
 	return choices[0]
+}
+
+func identityModeDisplay(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		return "signing"
+	}
+	return mode
 }
 
 func passphraseMethodDisplay(m string) string {
