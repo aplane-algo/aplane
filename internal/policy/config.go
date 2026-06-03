@@ -23,6 +23,7 @@ import (
 // value is always nil).
 type Config struct {
 	RejectForeignRekey          bool
+	RejectRekey                 bool
 	RejectCloseRemainder        bool
 	RejectAssetClose            bool
 	RejectClawback              bool
@@ -35,6 +36,7 @@ type Config struct {
 	MaxASAAmounts               map[string]map[uint64]uint64
 	TransferPolicy              *TransferPolicy
 	KeyTypeOverrides            map[string]*Config
+	Attestation                 *Config
 	GenesisHashResolver         apconfig.GenesisHashNetworkResolver
 	FormatASAAmount             func(network string, assetID uint64, raw uint64) (string, bool)
 }
@@ -45,6 +47,7 @@ type Config struct {
 // layered on top of the identity-wide settings when the signing key has that
 // type. Overrides never recurse.
 type StoredConfig struct {
+	RejectRekey                 *bool                        `yaml:"-"`
 	RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
 	RejectCloseRemainder        *bool                        `yaml:"reject_close_remainder,omitempty"`
 	RejectAssetClose            *bool                        `yaml:"reject_asset_close,omitempty"`
@@ -57,7 +60,28 @@ type StoredConfig struct {
 	ReviewASAAmounts            map[string]map[string]uint64 `yaml:"review_asa_amounts,omitempty"`
 	MaxASAAmounts               map[string]map[string]uint64 `yaml:"max_asa_amounts,omitempty"`
 	TransferPolicy              *StoredTransferPolicy        `yaml:"transfer_policy,omitempty"`
+	ClientSigning               *StoredRoleConfig            `yaml:"client_signing,omitempty"`
+	Attestation                 *StoredRoleConfig            `yaml:"attestation,omitempty"`
 	KeyTypeOverrides            map[string]*StoredConfig     `yaml:"key_type_overrides,omitempty"`
+}
+
+// StoredRoleConfig is a sparse role-domain policy block nested under
+// client_signing: or attestation:. It intentionally does not recurse into role
+// blocks or key_type_overrides.
+type StoredRoleConfig struct {
+	RejectRekey                 *bool                        `yaml:"reject_rekey,omitempty"`
+	RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
+	RejectCloseRemainder        *bool                        `yaml:"reject_close_remainder,omitempty"`
+	RejectAssetClose            *bool                        `yaml:"reject_asset_close,omitempty"`
+	RejectClawback              *bool                        `yaml:"reject_clawback,omitempty"`
+	AlwaysReviewWarnings        *bool                        `yaml:"always_review_warnings,omitempty"`
+	AutoApproveSelfNoOpTransfer *bool                        `yaml:"auto_approve_self_noop_transfer,omitempty"`
+	MaxFeeMicroAlgos            *uint64                      `yaml:"max_fee_microalgos,omitempty"`
+	ReviewAlgoPayments          map[string]uint64            `yaml:"review_algo_payments,omitempty"`
+	MaxAlgoPayments             map[string]uint64            `yaml:"max_algo_payments,omitempty"`
+	ReviewASAAmounts            map[string]map[string]uint64 `yaml:"review_asa_amounts,omitempty"`
+	MaxASAAmounts               map[string]map[string]uint64 `yaml:"max_asa_amounts,omitempty"`
+	TransferPolicy              *StoredTransferPolicy        `yaml:"transfer_policy,omitempty"`
 }
 
 // Clone returns a deep copy of the stored policy config.
@@ -66,6 +90,7 @@ func (c *StoredConfig) Clone() *StoredConfig {
 		return nil
 	}
 	cp := *c
+	cp.RejectRekey = cloneBoolPtr(c.RejectRekey)
 	cp.RejectForeignRekey = cloneBoolPtr(c.RejectForeignRekey)
 	cp.RejectCloseRemainder = cloneBoolPtr(c.RejectCloseRemainder)
 	cp.RejectAssetClose = cloneBoolPtr(c.RejectAssetClose)
@@ -78,12 +103,35 @@ func (c *StoredConfig) Clone() *StoredConfig {
 	cp.ReviewASAAmounts = cloneStoredASAAmounts(c.ReviewASAAmounts)
 	cp.MaxASAAmounts = cloneStoredASAAmounts(c.MaxASAAmounts)
 	cp.TransferPolicy = c.TransferPolicy.Clone()
+	cp.ClientSigning = c.ClientSigning.Clone()
+	cp.Attestation = c.Attestation.Clone()
 	if c.KeyTypeOverrides != nil {
 		cp.KeyTypeOverrides = make(map[string]*StoredConfig, len(c.KeyTypeOverrides))
 		for keyType, override := range c.KeyTypeOverrides {
 			cp.KeyTypeOverrides[keyType] = override.Clone()
 		}
 	}
+	return &cp
+}
+
+func (c *StoredRoleConfig) Clone() *StoredRoleConfig {
+	if c == nil {
+		return nil
+	}
+	cp := *c
+	cp.RejectRekey = cloneBoolPtr(c.RejectRekey)
+	cp.RejectForeignRekey = cloneBoolPtr(c.RejectForeignRekey)
+	cp.RejectCloseRemainder = cloneBoolPtr(c.RejectCloseRemainder)
+	cp.RejectAssetClose = cloneBoolPtr(c.RejectAssetClose)
+	cp.RejectClawback = cloneBoolPtr(c.RejectClawback)
+	cp.AlwaysReviewWarnings = cloneBoolPtr(c.AlwaysReviewWarnings)
+	cp.AutoApproveSelfNoOpTransfer = cloneBoolPtr(c.AutoApproveSelfNoOpTransfer)
+	cp.MaxFeeMicroAlgos = cloneUint64Ptr(c.MaxFeeMicroAlgos)
+	cp.ReviewAlgoPayments = cloneUintMap(c.ReviewAlgoPayments)
+	cp.MaxAlgoPayments = cloneUintMap(c.MaxAlgoPayments)
+	cp.ReviewASAAmounts = cloneStoredASAAmounts(c.ReviewASAAmounts)
+	cp.MaxASAAmounts = cloneStoredASAAmounts(c.MaxASAAmounts)
+	cp.TransferPolicy = c.TransferPolicy.Clone()
 	return &cp
 }
 
@@ -104,6 +152,8 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 		"review_asa_amounts":              {},
 		"max_asa_amounts":                 {},
 		"transfer_policy":                 {},
+		"client_signing":                  {},
+		"attestation":                     {},
 		"key_type_overrides":              {},
 	}
 	for i := 0; i < len(value.Content); i += 2 {
@@ -125,6 +175,8 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 		ReviewASAAmounts            map[string]map[string]uint64 `yaml:"review_asa_amounts,omitempty"`
 		MaxASAAmounts               map[string]map[string]uint64 `yaml:"max_asa_amounts,omitempty"`
 		TransferPolicy              *StoredTransferPolicy        `yaml:"transfer_policy,omitempty"`
+		ClientSigning               *StoredRoleConfig            `yaml:"client_signing,omitempty"`
+		Attestation                 *StoredRoleConfig            `yaml:"attestation,omitempty"`
 		KeyTypeOverrides            map[string]*StoredConfig     `yaml:"key_type_overrides,omitempty"`
 	}
 	var raw rawConfig
@@ -143,8 +195,122 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 	c.ReviewASAAmounts = raw.ReviewASAAmounts
 	c.MaxASAAmounts = raw.MaxASAAmounts
 	c.TransferPolicy = raw.TransferPolicy
+	c.ClientSigning = raw.ClientSigning
+	c.Attestation = raw.Attestation
 	c.KeyTypeOverrides = raw.KeyTypeOverrides
+	if err := validateRoleConfig("client_signing", c.ClientSigning); err != nil {
+		return err
+	}
+	if err := validateRoleConfig("attestation", c.Attestation); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (c *StoredRoleConfig) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("policy role config must be a mapping")
+	}
+	allowed := map[string]struct{}{
+		"reject_rekey":                    {},
+		"reject_foreign_rekey":            {},
+		"reject_close_remainder":          {},
+		"reject_asset_close":              {},
+		"reject_clawback":                 {},
+		"always_review_warnings":          {},
+		"auto_approve_self_noop_transfer": {},
+		"max_fee_microalgos":              {},
+		"review_algo_payments":            {},
+		"max_algo_payments":               {},
+		"review_asa_amounts":              {},
+		"max_asa_amounts":                 {},
+		"transfer_policy":                 {},
+	}
+	for i := 0; i < len(value.Content); i += 2 {
+		key := value.Content[i].Value
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("unknown policy role field %q", key)
+		}
+	}
+	type rawRoleConfig StoredRoleConfig
+	var raw rawRoleConfig
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	*c = StoredRoleConfig(raw)
+	return nil
+}
+
+func validateRoleConfig(role string, cfg *StoredRoleConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	switch role {
+	case "client_signing":
+		if cfg.RejectRekey != nil {
+			return fmt.Errorf("client_signing.reject_rekey is not supported; reject_rekey is attestation-only")
+		}
+	case "attestation":
+		if cfg.RejectForeignRekey != nil {
+			return fmt.Errorf("attestation.reject_foreign_rekey is not supported; use attestation.reject_rekey")
+		}
+		if cfg.AlwaysReviewWarnings != nil {
+			return fmt.Errorf("attestation.always_review_warnings is not supported; attestation policy cannot produce review verdicts")
+		}
+		if cfg.AutoApproveSelfNoOpTransfer != nil {
+			return fmt.Errorf("attestation.auto_approve_self_noop_transfer is not supported; attestation has no operator default")
+		}
+		if len(cfg.ReviewAlgoPayments) > 0 {
+			return fmt.Errorf("attestation.review_algo_payments is not supported; attestation policy cannot produce review verdicts")
+		}
+		if len(cfg.ReviewASAAmounts) > 0 {
+			return fmt.Errorf("attestation.review_asa_amounts is not supported; attestation policy cannot produce review verdicts")
+		}
+		if err := validateAttestationTransferPolicy(cfg.TransferPolicy); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown policy role %q", role)
+	}
+	return nil
+}
+
+func validateAttestationTransferPolicy(tp *StoredTransferPolicy) error {
+	if tp == nil {
+		return nil
+	}
+	if err := requireRejectRouteMiss("attestation.transfer_policy.on_no_route", tp.OnNoRoute); err != nil {
+		return err
+	}
+	if err := requireRejectRouteMiss("attestation.transfer_policy.close_on_no_route", tp.CloseOnNoRoute); err != nil {
+		return err
+	}
+	if err := requireRejectRouteMiss("attestation.transfer_policy.clawback_on_no_route", tp.ClawbackOnNoRoute); err != nil {
+		return err
+	}
+	for _, route := range tp.Routes {
+		if route.Limits != nil && route.Limits.ReviewAbove != nil {
+			return fmt.Errorf("attestation.transfer_policy route %q limits.review_above is not supported; attestation policy cannot produce review verdicts", route.ID)
+		}
+		for network, limits := range route.LimitsByNetwork {
+			if limits.ReviewAbove != nil {
+				return fmt.Errorf("attestation.transfer_policy route %q limits_by_network[%s].review_above is not supported; attestation policy cannot produce review verdicts", route.ID, network)
+			}
+		}
+	}
+	return nil
+}
+
+func requireRejectRouteMiss(label string, value *string) error {
+	if value == nil {
+		return nil
+	}
+	switch *value {
+	case "", string(TransferOnNoRouteReject):
+		return nil
+	default:
+		return fmt.Errorf("%s must be %q for attestation policy, got %q", label, TransferOnNoRouteReject, *value)
+	}
 }
 
 // DefaultConfig returns the default effective policy for new identities.
@@ -194,6 +360,12 @@ func (c *Config) Clone() *Config {
 	}
 	if c.TransferPolicy != nil {
 		cp.TransferPolicy = c.TransferPolicy.Clone()
+	}
+	if c.Attestation != nil {
+		cp.Attestation = c.Attestation.Clone()
+		if cp.Attestation != nil {
+			cp.Attestation.Attestation = nil
+		}
 	}
 	return &cp
 }
@@ -415,7 +587,16 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		}
 		return effective, nil
 	}
+	if err := validateRoleConfig("client_signing", c.ClientSigning); err != nil {
+		return nil, err
+	}
+	if err := validateRoleConfig("attestation", c.Attestation); err != nil {
+		return nil, err
+	}
 
+	if c.RejectRekey != nil {
+		effective.RejectRekey = *c.RejectRekey
+	}
 	if c.RejectForeignRekey != nil {
 		effective.RejectForeignRekey = *c.RejectForeignRekey
 	}
@@ -473,6 +654,14 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		effective.TransferPolicy = compiled
 	}
 
+	if c.ClientSigning != nil {
+		clientSigningCfg, err := c.ClientSigning.toStoredConfig().Apply(effective)
+		if err != nil {
+			return nil, fmt.Errorf("client_signing: %w", err)
+		}
+		effective = clientSigningCfg
+	}
+
 	if len(c.KeyTypeOverrides) > 0 {
 		// Use a detached copy of the resolved base as the "defaults" for each
 		// override so overrides only see their own fields plus the identity
@@ -496,9 +685,88 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		}
 	}
 
+	attestationCfg, err := c.applyAttestation(effective)
+	if err != nil {
+		return nil, err
+	}
+	effective.Attestation = attestationCfg
+
 	if err := ValidateTransferGuards(effective); err != nil {
 		return nil, err
 	}
 
 	return effective, nil
+}
+
+func (c *StoredConfig) applyAttestation(clientEffective *Config) (*Config, error) {
+	if c == nil || c.Attestation == nil {
+		return nil, nil
+	}
+	base := DefaultConfigWithGenesisHashResolver(clientEffective.GenesisHashResolver)
+	base.FormatASAAmount = clientEffective.FormatASAAmount
+	base.RejectRekey = true
+	common := c.commonStoredConfig()
+	cfg, err := common.Apply(base)
+	if err != nil {
+		return nil, fmt.Errorf("attestation common policy: %w", err)
+	}
+	roleStored := c.Attestation.toStoredConfig()
+	if roleStored.TransferPolicy != nil {
+		roleStored.TransferPolicy = normalizeAttestationTransferPolicy(roleStored.TransferPolicy)
+	}
+	cfg, err = roleStored.Apply(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("attestation: %w", err)
+	}
+	cfg.KeyTypeOverrides = nil
+	cfg.Attestation = nil
+	return cfg, nil
+}
+
+func (c *StoredConfig) commonStoredConfig() *StoredConfig {
+	if c == nil {
+		return &StoredConfig{}
+	}
+	return &StoredConfig{
+		RejectCloseRemainder: c.RejectCloseRemainder,
+		RejectAssetClose:     c.RejectAssetClose,
+		RejectClawback:       c.RejectClawback,
+		MaxFeeMicroAlgos:     c.MaxFeeMicroAlgos,
+		MaxAlgoPayments:      cloneUintMap(c.MaxAlgoPayments),
+		MaxASAAmounts:        cloneStoredASAAmounts(c.MaxASAAmounts),
+		TransferPolicy:       normalizeAttestationTransferPolicy(c.TransferPolicy),
+	}
+}
+
+func (c *StoredRoleConfig) toStoredConfig() *StoredConfig {
+	if c == nil {
+		return &StoredConfig{}
+	}
+	return &StoredConfig{
+		RejectRekey:                 c.RejectRekey,
+		RejectForeignRekey:          c.RejectForeignRekey,
+		RejectCloseRemainder:        c.RejectCloseRemainder,
+		RejectAssetClose:            c.RejectAssetClose,
+		RejectClawback:              c.RejectClawback,
+		AlwaysReviewWarnings:        c.AlwaysReviewWarnings,
+		AutoApproveSelfNoOpTransfer: c.AutoApproveSelfNoOpTransfer,
+		MaxFeeMicroAlgos:            c.MaxFeeMicroAlgos,
+		ReviewAlgoPayments:          cloneUintMap(c.ReviewAlgoPayments),
+		MaxAlgoPayments:             cloneUintMap(c.MaxAlgoPayments),
+		ReviewASAAmounts:            cloneStoredASAAmounts(c.ReviewASAAmounts),
+		MaxASAAmounts:               cloneStoredASAAmounts(c.MaxASAAmounts),
+		TransferPolicy:              c.TransferPolicy.Clone(),
+	}
+}
+
+func normalizeAttestationTransferPolicy(tp *StoredTransferPolicy) *StoredTransferPolicy {
+	if tp == nil {
+		return nil
+	}
+	cp := tp.Clone()
+	reject := string(TransferOnNoRouteReject)
+	if cp.Enabled != nil && *cp.Enabled && cp.OnNoRoute == nil {
+		cp.OnNoRoute = &reject
+	}
+	return cp
 }

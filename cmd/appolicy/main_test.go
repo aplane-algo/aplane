@@ -111,6 +111,25 @@ func TestRunCheckPolicyFileDoesNotRequireStorePassphrase(t *testing.T) {
 	}
 }
 
+func TestRunCheckPolicyFileRejectsInvalidAttestationReviewPolicy(t *testing.T) {
+	t.Setenv("APPOLICY_PASSPHRASE", "")
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	t.Setenv("APSIGNER_DATA", "")
+	path := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(path, []byte("attestation:\n  always_review_warnings: true\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(policy) error = %v", err)
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"--check", path}, strings.NewReader(""), &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("run(--check invalid attestation) code = 0, stdout = %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "attestation.always_review_warnings") {
+		t.Fatalf("stderr = %q, want attestation review rejection", stderr.String())
+	}
+}
+
 func TestRunSaveRejectsPolicyFileArgument(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 

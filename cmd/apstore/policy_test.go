@@ -121,6 +121,22 @@ transfer_policy:
 	})
 }
 
+func TestCmdPolicyCheckRejectsInvalidAttestationReviewPolicy(t *testing.T) {
+	withPolicyCommandStore(t, func(root string, _ []byte) {
+		raw := []byte(`
+attestation:
+  always_review_warnings: true
+`)
+		if err := os.WriteFile(policy.PolicyPath(root, productIdentityID()), raw, 0o600); err != nil {
+			t.Fatalf("WriteFile(policy) error = %v", err)
+		}
+		err := cmdPolicy([]string{"check"})
+		if err == nil || !strings.Contains(err.Error(), "attestation.always_review_warnings") {
+			t.Fatalf("cmdPolicy(check) error = %v, want attestation review rejection", err)
+		}
+	})
+}
+
 func withPolicyCommandStore(t *testing.T, fn func(root string, passphrase []byte)) {
 	t.Helper()
 	oldDataDirectory := dataDirectory
