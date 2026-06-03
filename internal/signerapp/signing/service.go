@@ -97,17 +97,31 @@ func (s *Service) SignGroupForSimulationWithContext(ctx context.Context, identit
 
 func (s *Service) SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*ComponentSignResult, *ServiceError) {
 	_ = identityID
-	_ = session
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, canceledSignRequest(err)
 	}
-	if _, err := PrepareComponentSigning(req); err != nil {
+
+	plan, err := PrepareComponentSigning(req)
+	if err != nil {
 		return nil, err
 	}
-	return nil, unavailable("component signing is not implemented")
+	if s.IsUnlocked != nil && !s.IsUnlocked() {
+		return nil, forbidden("signer is locked")
+	}
+	if session == nil {
+		return nil, internal("key session is nil")
+	}
+	switch plan.Role {
+	case signerapi.ComponentSignRoleUser:
+		return signPreparedUserComponents(ctx, plan, session)
+	case signerapi.ComponentSignRoleAttestor:
+		return signPreparedAttestorComponents(ctx, plan, session)
+	default:
+		return nil, badRequest("unsupported component signing role")
+	}
 }
 
 func (s *Service) AssembleAttestedWithContext(ctx context.Context, identityID string, req signerapi.AttestedAssemblyRequest, session *keystore.KeySession) (*AttestedAssemblyResult, *ServiceError) {

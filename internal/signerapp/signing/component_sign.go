@@ -76,6 +76,101 @@ func signPreparedAttestorComponents(ctx context.Context, plan *ComponentSignPlan
 	}, nil
 }
 
+func signPreparedUserComponents(ctx context.Context, plan *ComponentSignPlan, session componentKeyGetter) (*ComponentSignResult, *ServiceError) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, canceledSignRequest(err)
+	}
+	if plan == nil {
+		return nil, internal("component sign plan is nil")
+	}
+	if plan.MessageRole != message.RoleUser {
+		return nil, badRequest("user component signing requires user role")
+	}
+	if plan.ComponentKey == "" {
+		return nil, badRequest("component_key is required for user component signing")
+	}
+	if session == nil {
+		return nil, internal("key session is nil")
+	}
+	for _, target := range plan.Targets {
+		if target.Sender != plan.ComponentKey {
+			return nil, badRequest(fmt.Sprintf(
+				"target index %d sender %q does not match attested account %q",
+				target.TargetIndex,
+				target.Sender,
+				plan.ComponentKey,
+			))
+		}
+	}
+
+	keyMaterial, provider, signatureScheme, err := loadAttestedAccountSigningKey(ctx, session, plan.ComponentKey)
+	if err != nil {
+		return nil, err
+	}
+	defer zeroLoadedKeyMaterial(keyMaterial)
+
+	signatures := make([]signerapi.ComponentSignature, len(plan.Targets))
+	for i, target := range plan.Targets {
+		signature, signErr := provider.SignMessage(keyMaterial, target.Message[:])
+		if signErr != nil {
+			return nil, internal(fmt.Sprintf("failed to sign user component message: %v", signErr))
+		}
+		signatures[i] = signerapi.ComponentSignature{
+			TargetIndex:     target.TargetIndex,
+			Signature:       hex.EncodeToString(signature),
+			SignatureScheme: signatureScheme,
+		}
+		crypto.ZeroBytes(signature)
+	}
+
+	return &ComponentSignResult{
+		RequestID:    plan.RequestID,
+		ComponentKey: plan.ComponentKey,
+		Signatures:   signatures,
+	}, nil
+}
+
+func loadAttestedAccountSigningKey(ctx context.Context, session componentKeyGetter, attestedAccount string) (*coresigning.KeyMaterial, coresigning.Provider, string, *ServiceError) {
+	keyMaterial, err := session.GetKeyWithContext(ctx, attestedAccount)
+	if err != nil {
+		switch {
+		case errors.Is(err, keystore.ErrStoreLocked):
+			return nil, nil, "", forbidden("signer is locked")
+		case errors.Is(err, keystore.ErrKeyNotFound):
+			return nil, nil, "", badRequest(fmt.Sprintf("attested account key %q not found", attestedAccount))
+		default:
+			return nil, nil, "", internal(fmt.Sprintf("failed to load attested account key: %v", err))
+		}
+	}
+	if keyMaterial == nil {
+		return nil, nil, "", internal("loaded attested account key material is nil")
+	}
+	if !keytypes.IsAttestedAccountKeyType(keyMaterial.Type) {
+		gotType := keyMaterial.Type
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, nil, "", badRequest(fmt.Sprintf("key %q is %s, not an attested account key", attestedAccount, gotType))
+	}
+	if keyMaterial.Category != "" && keyMaterial.Category != keys.CategoryDSALsig {
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, nil, "", badRequest(fmt.Sprintf("key %q is not a dsa_lsig key", attestedAccount))
+	}
+	if keyMaterial.BaseKeyType == "" {
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, nil, "", internal("loaded attested account key is missing base key type")
+	}
+
+	provider := coresigning.GetProvider(keyMaterial.BaseKeyType)
+	if provider == nil {
+		baseKeyType := keyMaterial.BaseKeyType
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, nil, "", internal(fmt.Sprintf("unsupported attested account base key type: %s", baseKeyType))
+	}
+	return keyMaterial, provider, keyMaterial.BaseKeyType, nil
+}
+
 func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, componentKeySelector string) (*coresigning.KeyMaterial, *coresigning.ComponentKeyMaterial, *ServiceError) {
 	componentKeySelector, normalizeErr := keytypes.NormalizeComponentKeySelector(componentKeySelector)
 	if normalizeErr != nil {

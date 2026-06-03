@@ -142,21 +142,22 @@ func TestPrepareComponentSigningRejectsInvalidRequestShape(t *testing.T) {
 	}
 }
 
-func TestSigningServiceSignComponentFailsClosedAfterValidation(t *testing.T) {
+func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	sender := types.Address{7}.String()
 	receiver := types.Address{8}.String()
 	txn := paymentTransaction(t, sender, receiver, 10)
 
 	_, err := (&Service{}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, nil)
-	if err == nil || err.Kind != ErrorUnavailable {
-		t.Fatalf("SignComponentWithContext() error = %#v, want unavailable", err)
+	if err == nil || err.Kind != ErrorInternal {
+		t.Fatalf("SignComponentWithContext() error = %#v, want internal", err)
 	}
-	if !strings.Contains(err.Message, "not implemented") {
-		t.Fatalf("SignComponentWithContext() error = %q, want not implemented", err.Message)
+	if !strings.Contains(err.Message, "key session is nil") {
+		t.Fatalf("SignComponentWithContext() error = %q, want key session", err.Message)
 	}
 
 	_, err = (&Service{}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
@@ -166,6 +167,102 @@ func TestSigningServiceSignComponentFailsClosedAfterValidation(t *testing.T) {
 	}, nil)
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("SignComponentWithContext(invalid) error = %#v, want bad request", err)
+	}
+}
+
+func TestSignPreparedUserComponentsSignsAttestedAccountMessages(t *testing.T) {
+	baseKeyType := "test.user-component-signing.v1"
+	provider := &componentUserTestProvider{family: baseKeyType}
+	coresigning.Register(provider)
+
+	sender := types.Address{13}.String()
+	receiver := types.Address{14}.String()
+	txns := groupedPaymentTransactions(t, sender, receiver)
+	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
+		RequestID:     "cmp-user",
+		Role:          signerapi.ComponentSignRoleUser,
+		ComponentKey:  sender,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])},
+		TargetIndices: []int{0, 1},
+	})
+	if err != nil {
+		t.Fatalf("PrepareComponentSigning() error = %v", err)
+	}
+
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:        keytypes.AttestedFalcon1024V1,
+		Category:    keys.CategoryDSALsig,
+		BaseKeyType: baseKeyType,
+		Bytecode:    []byte{0x01, 0x02, 0x03},
+		Value:       []byte{0xaa, 0xbb, 0xcc},
+	}
+	session := &componentKeyTestSession{key: keyMaterial}
+
+	result, signErr := signPreparedUserComponents(nil, plan, session)
+	if signErr != nil {
+		t.Fatalf("signPreparedUserComponents() error = %v", signErr)
+	}
+	if session.calls != 1 || session.gotAddress != sender {
+		t.Fatalf("session calls = %d address %q, want one call for %q", session.calls, session.gotAddress, sender)
+	}
+	if result.RequestID != plan.RequestID || result.ComponentKey != sender {
+		t.Fatalf("result metadata = %#v, want request_id %q component_key %q", result, plan.RequestID, sender)
+	}
+	if len(result.Signatures) != len(plan.Targets) {
+		t.Fatalf("Signatures len = %d, want %d", len(result.Signatures), len(plan.Targets))
+	}
+	if len(provider.messages) != len(plan.Targets) {
+		t.Fatalf("provider messages len = %d, want %d", len(provider.messages), len(plan.Targets))
+	}
+	for i, sig := range result.Signatures {
+		if sig.TargetIndex != plan.Targets[i].TargetIndex {
+			t.Fatalf("signature %d target index = %d, want %d", i, sig.TargetIndex, plan.Targets[i].TargetIndex)
+		}
+		if sig.SignatureScheme != baseKeyType {
+			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, baseKeyType)
+		}
+		if !bytes.Equal(provider.messages[i], plan.Targets[i].Message[:]) {
+			t.Fatalf("provider message %d = %x, want %x", i, provider.messages[i], plan.Targets[i].Message)
+		}
+		gotSignature, err := hex.DecodeString(sig.Signature)
+		if err != nil {
+			t.Fatalf("DecodeString(signature) error = %v", err)
+		}
+		if !bytes.Equal(gotSignature, provider.signatures[i]) {
+			t.Fatalf("signature %d = %x, want provider signature %x", i, gotSignature, provider.signatures[i])
+		}
+	}
+	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil {
+		t.Fatalf("key material was not zeroed after signing: %#v", keyMaterial)
+	}
+}
+
+func TestSignPreparedUserComponentsRejectsSenderMismatchBeforeKeyLoad(t *testing.T) {
+	sender := types.Address{15}.String()
+	receiver := types.Address{16}.String()
+	componentKey := types.Address{17}.String()
+	txn := paymentTransaction(t, sender, receiver, 13)
+	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
+		RequestID:     "cmp-user-mismatch",
+		Role:          signerapi.ComponentSignRoleUser,
+		ComponentKey:  componentKey,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	})
+	if err != nil {
+		t.Fatalf("PrepareComponentSigning() error = %v", err)
+	}
+	session := &componentKeyTestSession{}
+
+	result, signErr := signPreparedUserComponents(nil, plan, session)
+	if result != nil {
+		t.Fatalf("result = %#v, want nil", result)
+	}
+	if signErr == nil || signErr.Kind != ErrorBadRequest {
+		t.Fatalf("signPreparedUserComponents() error = %#v, want bad request", signErr)
+	}
+	if session.calls != 0 {
+		t.Fatalf("session calls = %d, want 0 before sender mismatch rejection", session.calls)
 	}
 }
 
@@ -412,6 +509,42 @@ func (s *componentKeyTestSession) GetKeyWithContext(_ context.Context, address s
 		return nil, s.err
 	}
 	return s.key, nil
+}
+
+type componentUserTestProvider struct {
+	family     string
+	messages   [][]byte
+	signatures [][]byte
+}
+
+func (p *componentUserTestProvider) Family() string {
+	return p.family
+}
+
+func (p *componentUserTestProvider) LoadKeysFromData(_ []byte) (*coresigning.KeyMaterial, error) {
+	return nil, nil
+}
+
+func (p *componentUserTestProvider) SignMessage(_ *coresigning.KeyMaterial, msg []byte) ([]byte, error) {
+	msgCopy := append([]byte(nil), msg...)
+	signature := append([]byte("user-component-signature:"), msgCopy...)
+	p.messages = append(p.messages, msgCopy)
+	p.signatures = append(p.signatures, append([]byte(nil), signature...))
+	return signature, nil
+}
+
+func (p *componentUserTestProvider) ZeroKey(key *coresigning.KeyMaterial) {
+	if value, ok := key.Value.([]byte); ok {
+		for i := range value {
+			value[i] = 0
+		}
+	}
+	key.Type = ""
+	key.Value = nil
+}
+
+func (p *componentUserTestProvider) DetectKeyType(_ []byte, _ string) bool {
+	return false
 }
 
 func TestLoadAttestorComponentKeyMapsMissingKey(t *testing.T) {
