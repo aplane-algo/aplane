@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
@@ -183,7 +184,7 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	if address == "" {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "address is required"}
 	}
-	if err := validateAlgorandAddress(address); err != nil {
+	if err := validateDeleteKeyID(address); err != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 	}
 
@@ -264,9 +265,12 @@ func isLockedStateError(err error) bool {
 	return errors.Is(err, keystore.ErrStoreLocked)
 }
 
-func validateAlgorandAddress(address string) error {
+func validateDeleteKeyID(address string) error {
+	if keytypes.IsComponentKeyID(address) {
+		return nil
+	}
 	if _, err := types.DecodeAddress(strings.ToUpper(address)); err != nil {
-		return fmt.Errorf("invalid Algorand address")
+		return fmt.Errorf("invalid key identifier")
 	}
 	return nil
 }

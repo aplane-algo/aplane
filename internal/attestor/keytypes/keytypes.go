@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -74,4 +75,18 @@ func ComponentKeyID(keyType string, publicKey []byte) (string, error) {
 	h.Write([]byte(keyType))
 	h.Write(publicKey)
 	return ComponentKeyIDPrefix + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// IsComponentKeyID reports whether id is a syntactically valid component-key
+// handle produced by ComponentKeyID.
+func IsComponentKeyID(id string) bool {
+	suffix, ok := strings.CutPrefix(id, ComponentKeyIDPrefix)
+	if !ok {
+		return false
+	}
+	if len(suffix) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(suffix)
+	return err == nil
 }

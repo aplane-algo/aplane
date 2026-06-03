@@ -435,6 +435,37 @@ func TestServiceDeleteKeyRemovesKeyAndAudits(t *testing.T) {
 	}
 }
 
+func TestServiceDeleteKeyRemovesAttestorComponentKey(t *testing.T) {
+	ir := setupIdentityRuntime(t)
+	svc := Service{}
+
+	genResult, genErr := svc.GenerateKey(context.Background(), ir, keytypes.AttestorComponentEd25519V1, nil, nil)
+	if genErr != nil {
+		t.Fatalf("GenerateKey(component) error = %#v", genErr)
+	}
+	keyFile, findErr := ir.FindKeyFile(genResult.Address)
+	if findErr != nil {
+		t.Fatalf("FindKeyFile(%q) before delete error = %v", genResult.Address, findErr)
+	}
+
+	delResult, delErr := svc.DeleteKey(ir, genResult.Address)
+	if delErr != nil {
+		t.Fatalf("DeleteKey(component) error = %#v", delErr)
+	}
+	if delResult.DeletedPath == "" {
+		t.Fatal("DeleteKey(component) returned empty deleted path")
+	}
+	if _, err := os.Stat(keyFile); !os.IsNotExist(err) {
+		t.Fatalf("component key file still present after delete: stat err = %v", err)
+	}
+	if _, err := os.Stat(delResult.DeletedPath); err != nil {
+		t.Fatalf("deleted component key path %q stat error = %v", delResult.DeletedPath, err)
+	}
+	if _, err := ir.FindKeyFile(genResult.Address); err == nil {
+		t.Fatalf("FindKeyFile(%q) after delete succeeded, want stale snapshot cleared", genResult.Address)
+	}
+}
+
 func TestServiceDeleteKeyValidatesAddressAndNotFound(t *testing.T) {
 	ir := setupIdentityRuntime(t)
 	svc := Service{}
