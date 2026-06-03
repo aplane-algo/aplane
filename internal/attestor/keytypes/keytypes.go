@@ -15,7 +15,7 @@ import (
 const (
 	// AttestorComponentEd25519V1 is a raw Ed25519 component-signing key. It is
 	// not an Algorand spending account and must not be accepted by /sign.
-	AttestorComponentEd25519V1 = "aplane.attestor-component-ed25519.v1"
+	AttestorComponentEd25519V1 = "aplane.attestor-ed25519.v1"
 
 	// AttestedFalcon1024V1 is the MVP user-account key type whose LogicSig
 	// verifies a Falcon-1024 user signature plus an attestor component

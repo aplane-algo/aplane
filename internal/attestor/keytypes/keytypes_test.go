@@ -30,7 +30,7 @@ func TestComponentKeyIDKnownVector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComponentKeyID() error = %v", err)
 	}
-	const want = "attkey_14b2f812b37b88149dd2d15e53a3e70b1ec4759514b1b0b0238a43018ab4d848"
+	const want = "attkey_c180fb1cce27fcf3bb4f26403a47466216cfa206a0759439d3bd1498bc3a99d0"
 	if got != want {
 		t.Fatalf("ComponentKeyID() = %q, want %q", got, want)
 	}

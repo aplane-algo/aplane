@@ -5,7 +5,7 @@
     {
       "target_index": 0,
       "signature": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "signature_scheme": "aplane.attestor-component-ed25519.v1"
+      "signature_scheme": "aplane.attestor-ed25519.v1"
     }
   ]
 }
