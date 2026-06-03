@@ -25,9 +25,9 @@ const (
 	AttestorComponentFalcon1024V1 = "aplane.attestor-falcon1024.v1"
 
 	// AttestedFalcon1024V1 is the MVP user-account key type whose LogicSig
-	// verifies a Falcon-1024 user signature plus an attestor component
+	// verifies a Falcon-1024 user signature plus an Ed25519 attestor component
 	// signature.
-	AttestedFalcon1024V1 = "aplane.falcon1024-attested.v1"
+	AttestedFalcon1024V1 = "aplane.falcon1024-att-ed25519.v1"
 
 	// ParameterAttestorPublicKey is the durable creation parameter that records
 	// the attestor Ed25519 public key embedded in an attested account LogicSig.

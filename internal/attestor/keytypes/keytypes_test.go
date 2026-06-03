@@ -25,7 +25,7 @@ func TestAttestorKeyTypeClassifiers(t *testing.T) {
 	if IsAttestorMVPKeyType("aplane.falcon1024.v1") {
 		t.Fatal("ordinary Falcon key type classified as attestor MVP key type")
 	}
-	if IsAttestorMVPKeyType("aplane.future-attested.v1") {
+	if IsAttestorMVPKeyType("aplane.future-att-future.v1") {
 		t.Fatal("deferred future attested key type classified as MVP key type")
 	}
 }

@@ -223,7 +223,7 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - optional `parameters`: non-secret key creation parameters needed by clients
   to orchestrate key-type-specific workflows. For attested account rows this
   includes `attestor_public_key`, the Ed25519 public key embedded in the
-  current `aplane.falcon1024-attested.v1` LogicSig bytecode. SDK consumers must
+  current `aplane.falcon1024-att-ed25519.v1` LogicSig bytecode. SDK consumers must
   treat this as signer-owned metadata, not as proof of remote attestor endpoint
   ownership.
 - optional `template_provenance_status`, `template_provenance_note`; these are

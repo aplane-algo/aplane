@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	FamilyName  = "falcon1024-attested"
+	FamilyName  = "falcon1024-att-ed25519"
 	KeyTypeV1   = keytypes.AttestedFalcon1024V1
 	BaseKeyType = "aplane.falcon1024.v1"
 
@@ -58,7 +58,7 @@ func (p *Provider) BaseKeyType() string { return BaseKeyType }
 func (p *Provider) Family() string      { return FamilyName }
 func (p *Provider) Version() int        { return 1 }
 func (p *Provider) Category() string    { return lsigprovider.CategoryDSALsig }
-func (p *Provider) DisplayName() string { return "Falcon-1024 Attested" }
+func (p *Provider) DisplayName() string { return "Falcon-1024 / Ed25519 Attested" }
 func (p *Provider) Description() string {
 	return "Falcon-1024 account requiring an Ed25519 attestor signature"
 }
