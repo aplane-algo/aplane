@@ -126,3 +126,29 @@ func (s *ConnectionState) RequestGroupSignWithContext(ctx context.Context, reque
 	}
 	return client.RequestGroupSignWithContext(ctx, requests)
 }
+
+// RequestComponentSign sends a component-signing request to Signer.
+func (s *ConnectionState) RequestComponentSign(req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
+	return s.RequestComponentSignWithContext(context.Background(), req)
+}
+
+func (s *ConnectionState) RequestComponentSignWithContext(ctx context.Context, req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
+	client, err := s.signerClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.RequestComponentSignWithContext(ctx, req)
+}
+
+// RequestAttestedAssemble sends an attested assembly request to Signer.
+func (s *ConnectionState) RequestAttestedAssemble(req signerapi.AttestedAssemblyRequest) (*signerapi.AttestedAssemblyResponse, error) {
+	return s.RequestAttestedAssembleWithContext(context.Background(), req)
+}
+
+func (s *ConnectionState) RequestAttestedAssembleWithContext(ctx context.Context, req signerapi.AttestedAssemblyRequest) (*signerapi.AttestedAssemblyResponse, error) {
+	client, err := s.signerClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.RequestAttestedAssembleWithContext(ctx, req)
+}

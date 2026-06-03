@@ -47,6 +47,8 @@ const (
 	mutationTimeout           = 60 * time.Second
 	groupPlanTimeout          = 60 * time.Second
 	groupSimulateTimeout      = 60 * time.Second
+	componentSignTimeout      = 2 * time.Minute
+	attestedAssemblyTimeout   = 2 * time.Minute
 	signCancelTimeout         = 5 * time.Second
 	signApprovalSlack         = 30 * time.Second
 	defaultSignRequestTimeout = 6 * time.Minute
@@ -447,6 +449,118 @@ func (c *Client) RequestGroupSignWithContext(ctx context.Context, requests []sig
 
 	_, _ = fmt.Fprintln(w, "Approved by Signer")
 	return &groupResp, nil
+}
+
+// RequestComponentSign sends a role-specific component-signing request to
+// /sign/component.
+func (c *Client) RequestComponentSign(req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
+	return c.RequestComponentSignWithContext(context.Background(), req)
+}
+
+func (c *Client) RequestComponentSignWithContext(ctx context.Context, reqBody signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
+	if reqBody.RequestID == "" {
+		requestID, err := newSignRequestID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create component sign request ID: %w", err)
+		}
+		reqBody.RequestID = requestID
+	}
+	if err := reqBody.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid component sign request: %w", err)
+	}
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.BaseURL+"/sign/component", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	reqCtx, cancel := c.requestContext(ctx, componentSignTimeout)
+	defer cancel()
+
+	resp, err := c.doRequest(reqCtx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request to Signer: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Debug("failed to close response body", "error", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+	}
+
+	var componentResp signerapi.ComponentSignResponse
+	if err := json.NewDecoder(resp.Body).Decode(&componentResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if err := componentResp.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid component sign response: %w", err)
+	}
+	return &componentResp, nil
+}
+
+// RequestAttestedAssemble sends a verified attested transaction assembly
+// request to /sign/assemble.
+func (c *Client) RequestAttestedAssemble(req signerapi.AttestedAssemblyRequest) (*signerapi.AttestedAssemblyResponse, error) {
+	return c.RequestAttestedAssembleWithContext(context.Background(), req)
+}
+
+func (c *Client) RequestAttestedAssembleWithContext(ctx context.Context, reqBody signerapi.AttestedAssemblyRequest) (*signerapi.AttestedAssemblyResponse, error) {
+	if reqBody.RequestID == "" {
+		requestID, err := newSignRequestID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create attested assembly request ID: %w", err)
+		}
+		reqBody.RequestID = requestID
+	}
+	if err := reqBody.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid attested assembly request: %w", err)
+	}
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.BaseURL+"/sign/assemble", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	reqCtx, cancel := c.requestContext(ctx, attestedAssemblyTimeout)
+	defer cancel()
+
+	resp, err := c.doRequest(reqCtx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request to Signer: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Debug("failed to close response body", "error", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+	}
+
+	var assemblyResp signerapi.AttestedAssemblyResponse
+	if err := json.NewDecoder(resp.Body).Decode(&assemblyResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if err := assemblyResp.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid attested assembly response: %w", err)
+	}
+	return &assemblyResp, nil
 }
 
 // CancelSignRequestWithContext asks apsigner to cancel a pending manual

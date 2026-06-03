@@ -33,6 +33,28 @@ func TestRequestGroupPlanRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	}
 }
 
+func TestRequestComponentSignRejectsInvalidRequestBeforeHTTP(t *testing.T) {
+	client := NewSignerClientWithToken("http://127.0.0.1:1", "test-token")
+	_, err := client.RequestComponentSign(signerapi.ComponentSignRequest{
+		Role:          signerapi.ComponentSignRoleUser,
+		GroupBytesHex: []string{"5458aa"},
+		TargetIndices: []int{0},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid component sign request") {
+		t.Fatalf("RequestComponentSign() error = %v", err)
+	}
+}
+
+func TestRequestAttestedAssembleRejectsInvalidRequestBeforeHTTP(t *testing.T) {
+	client := NewSignerClientWithToken("http://127.0.0.1:1", "test-token")
+	_, err := client.RequestAttestedAssemble(signerapi.AttestedAssemblyRequest{
+		GroupBytesHex: []string{"5458aa"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid attested assembly request") {
+		t.Fatalf("RequestAttestedAssemble() error = %v", err)
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -614,6 +636,87 @@ func TestRequestGroupSignCancelsApprovalWhenContextCanceled(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("RequestGroupSignWithContext() did not return")
+	}
+}
+
+func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
+	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/sign/component" || req.Method != http.MethodPost {
+			t.Fatalf("request = %s %s, want POST /sign/component", req.Method, req.URL.Path)
+		}
+		if got := req.Header.Get("Authorization"); got != "aplane test-token" {
+			t.Fatalf("authorization header = %q", got)
+		}
+		var got signerapi.ComponentSignRequest
+		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+			t.Fatalf("Decode(request body) error = %v", err)
+		}
+		if got.RequestID == "" {
+			t.Fatal("request_id was not populated")
+		}
+		if got.Role != signerapi.ComponentSignRoleAttestor || got.ComponentKey != "001122" {
+			t.Fatalf("component request = %+v, want attestor component_key 001122", got)
+		}
+		resp := signerapi.ComponentSignResponse{
+			RequestID: got.RequestID,
+			Signatures: []signerapi.ComponentSignature{{
+				TargetIndex:     0,
+				Signature:       "aabb",
+				SignatureScheme: "aplane.attestor-ed25519.v1",
+			}},
+		}
+		return mockResponse(http.StatusOK, jsonBody(t, resp)), nil
+	})
+
+	got, err := c.RequestComponentSign(signerapi.ComponentSignRequest{
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  "001122",
+		GroupBytesHex: []string{"5458aa"},
+		TargetIndices: []int{0},
+	})
+	if err != nil {
+		t.Fatalf("RequestComponentSign() error = %v", err)
+	}
+	if len(got.Signatures) != 1 || got.Signatures[0].Signature != "aabb" {
+		t.Fatalf("RequestComponentSign() = %+v, want one signature aabb", got)
+	}
+}
+
+func TestRequestAttestedAssemblePostsToAssembleEndpoint(t *testing.T) {
+	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/sign/assemble" || req.Method != http.MethodPost {
+			t.Fatalf("request = %s %s, want POST /sign/assemble", req.Method, req.URL.Path)
+		}
+		var got signerapi.AttestedAssemblyRequest
+		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+			t.Fatalf("Decode(request body) error = %v", err)
+		}
+		if got.RequestID == "" {
+			t.Fatal("request_id was not populated")
+		}
+		if len(got.Targets) != 1 || got.Targets[0].AttestedAccount != "ADDR1" {
+			t.Fatalf("assembly request targets = %+v, want ADDR1 target", got.Targets)
+		}
+		return mockResponse(http.StatusOK, jsonBody(t, signerapi.AttestedAssemblyResponse{
+			RequestID:   got.RequestID,
+			SignedGroup: []string{"ccdd"},
+		})), nil
+	})
+
+	got, err := c.RequestAttestedAssemble(signerapi.AttestedAssemblyRequest{
+		GroupBytesHex: []string{"5458aa"},
+		Targets: []signerapi.AttestedAssemblyTarget{{
+			TargetIndex:       0,
+			AttestedAccount:   "ADDR1",
+			UserSignature:     "aabb",
+			AttestorSignature: "bbcc",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("RequestAttestedAssemble() error = %v", err)
+	}
+	if len(got.SignedGroup) != 1 || got.SignedGroup[0] != "ccdd" {
+		t.Fatalf("RequestAttestedAssemble() = %+v, want signed group ccdd", got)
 	}
 }
 

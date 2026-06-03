@@ -39,6 +39,12 @@ func TestConnectionStateSignerClientErrorsWhenDisconnected(t *testing.T) {
 	if _, err := state.AdminGenerate("ed25519", nil); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
 		t.Fatalf("AdminGenerate() error = %v, want not connected", err)
 	}
+	if _, err := state.RequestComponentSign(signerapi.ComponentSignRequest{}); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
+		t.Fatalf("RequestComponentSign() error = %v, want not connected", err)
+	}
+	if _, err := state.RequestAttestedAssemble(signerapi.AttestedAssemblyRequest{}); err == nil || !strings.Contains(err.Error(), "not connected to Signer") {
+		t.Fatalf("RequestAttestedAssemble() error = %v, want not connected", err)
+	}
 }
 
 func TestConnectionStateSignerClientInheritsProgressWriter(t *testing.T) {
@@ -84,6 +90,20 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 			}, req), nil
 		case req.Method == http.MethodDelete && req.URL.Path == "/admin/keys":
 			return connectJSONResponse(t, http.StatusOK, signerapi.AdminDeleteResponse{Success: true}, req), nil
+		case req.Method == http.MethodPost && req.URL.Path == "/sign/component":
+			return connectJSONResponse(t, http.StatusOK, signerapi.ComponentSignResponse{
+				RequestID: "req-component",
+				Signatures: []signerapi.ComponentSignature{{
+					TargetIndex:     0,
+					Signature:       "aabb",
+					SignatureScheme: "aplane.attestor-ed25519.v1",
+				}},
+			}, req), nil
+		case req.Method == http.MethodPost && req.URL.Path == "/sign/assemble":
+			return connectJSONResponse(t, http.StatusOK, signerapi.AttestedAssemblyResponse{
+				RequestID:   "req-assemble",
+				SignedGroup: []string{"ccdd"},
+			}, req), nil
 		default:
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
 			return nil, nil
@@ -111,6 +131,27 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 	del, err := state.AdminDeleteKey("ADDR2")
 	if err != nil || !del.Success {
 		t.Fatalf("AdminDeleteKey() = (%+v, %v), want success nil", del, err)
+	}
+	component, err := state.RequestComponentSign(signerapi.ComponentSignRequest{
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  "001122",
+		GroupBytesHex: []string{"5458aa"},
+		TargetIndices: []int{0},
+	})
+	if err != nil || len(component.Signatures) != 1 {
+		t.Fatalf("RequestComponentSign() = (%+v, %v), want one signature nil", component, err)
+	}
+	assembly, err := state.RequestAttestedAssemble(signerapi.AttestedAssemblyRequest{
+		GroupBytesHex: []string{"5458aa"},
+		Targets: []signerapi.AttestedAssemblyTarget{{
+			TargetIndex:       0,
+			AttestedAccount:   "ADDR1",
+			UserSignature:     "aabb",
+			AttestorSignature: "bbcc",
+		}},
+	})
+	if err != nil || len(assembly.SignedGroup) != 1 {
+		t.Fatalf("RequestAttestedAssemble() = (%+v, %v), want one signed txn nil", assembly, err)
 	}
 }
 

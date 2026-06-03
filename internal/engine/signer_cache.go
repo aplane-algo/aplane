@@ -61,6 +61,18 @@ func (e *Engine) signerCacheKeyType(address string) string {
 	return e.SignerCache.GetKeyType(address)
 }
 
+func (e *Engine) signerCacheLsigSize(address string) int {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	return e.SignerCache.GetLsigSize(address)
+}
+
+func (e *Engine) signerCacheAttestorPublicKey(address string) (string, bool) {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	return e.SignerCache.AttestorPublicKeyForAddress(address)
+}
+
 func (e *Engine) signerCacheIsGenericLsig(address string) bool {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
