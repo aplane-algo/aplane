@@ -15,17 +15,16 @@ import (
 const (
 	// AttestorComponentEd25519V1 is a raw Ed25519 component-signing key. It is
 	// not an Algorand spending account and must not be accepted by /sign.
-	AttestorComponentEd25519V1 = "aplane.attestor-ed25519.v1"
+	AttestorComponentEd25519V1 = "aplane.attestor-component-ed25519.v1"
 
-	// AttestedFalcon1024Ed25519V1 is the MVP user-account key type whose
-	// LogicSig verifies a Falcon-1024 user signature and an Ed25519 attestor
+	// AttestedFalcon1024V1 is the MVP user-account key type whose LogicSig
+	// verifies a Falcon-1024 user signature plus an attestor component
 	// signature.
-	AttestedFalcon1024Ed25519V1 = "aplane.attestor-falcon1024-ed25519.v1"
+	AttestedFalcon1024V1 = "aplane.falcon1024-attested.v1"
 
-	// AttestedEd25519Ed25519V1 is an optional future account type named by the
-	// planning spec. It is classified so deny gates can fail closed even before
-	// implementation.
-	AttestedEd25519Ed25519V1 = "aplane.attestor-ed25519-ed25519.v1"
+	// AttestedEd25519V1 is an optional future account type. It is classified so
+	// deny gates can fail closed even before implementation.
+	AttestedEd25519V1 = "aplane.ed25519-attested.v1"
 
 	ComponentKeyIDPrefix = "attkey_"
 
@@ -42,7 +41,7 @@ func IsAttestorComponentKeyType(keyType string) bool {
 // account that requires the component signing and assembly flow.
 func IsAttestedAccountKeyType(keyType string) bool {
 	switch keyType {
-	case AttestedFalcon1024Ed25519V1, AttestedEd25519Ed25519V1:
+	case AttestedFalcon1024V1, AttestedEd25519V1:
 		return true
 	default:
 		return false

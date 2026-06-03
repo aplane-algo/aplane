@@ -677,7 +677,7 @@ explicit `enabled`; the remaining transfer routing fields use the overlay rules
 described in [Transfer Routing](#transfer-routing).
 
 For attestor component signing, the auth key is the attestor component key
-type (for example `aplane.attestor-ed25519.v1`), not an Algorand account key
+type (for example `aplane.attestor-component-ed25519.v1`), not an Algorand account key
 type. Override selection rules:
 
 - if `key_type_overrides` contains a key equal to the attestor component key

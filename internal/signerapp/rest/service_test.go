@@ -451,7 +451,7 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 		}
 		if keyType.KeyType == keytypes.AttestorComponentEd25519V1 {
 			foundComponent = true
-			if keyType.Family != "attestor-ed25519" || keyType.MnemonicImport {
+			if keyType.Family != "attestor-component-ed25519" || keyType.MnemonicImport {
 				t.Fatalf("component key type info = %#v, want attestor component metadata", keyType)
 			}
 		}

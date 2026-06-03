@@ -142,12 +142,12 @@ func TestVerifySignableKeysRejectsAttestorKeyTypes(t *testing.T) {
 		},
 		{
 			name:    "attested account",
-			keyType: keytypes.AttestedFalcon1024Ed25519V1,
+			keyType: keytypes.AttestedFalcon1024V1,
 			want:    attestedAccountSignRejectMessage,
 		},
 		{
 			name:    "optional attested account",
-			keyType: keytypes.AttestedEd25519Ed25519V1,
+			keyType: keytypes.AttestedEd25519V1,
 			want:    attestedAccountSignRejectMessage,
 		},
 	}

@@ -141,7 +141,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		}
 
 		if keytypes.IsAttestorComponentKeyType(keyType) {
-			info.Family = "attestor-ed25519"
+			info.Family = "attestor-component-ed25519"
 			info.DisplayName = "Attestor Ed25519 component key"
 			info.Description = "Raw Ed25519 attestor component signing key"
 			keyTypes = append(keyTypes, info)

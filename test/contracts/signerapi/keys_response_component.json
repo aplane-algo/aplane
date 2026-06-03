@@ -2,10 +2,10 @@
   "count": 1,
   "keys": [
     {
-      "address": "attkey_c180fb1cce27fcf3bb4f26403a47466216cfa206a0759439d3bd1498bc3a99d0",
-      "component_key_id": "attkey_c180fb1cce27fcf3bb4f26403a47466216cfa206a0759439d3bd1498bc3a99d0",
+      "address": "attkey_14b2f812b37b88149dd2d15e53a3e70b1ec4759514b1b0b0238a43018ab4d848",
+      "component_key_id": "attkey_14b2f812b37b88149dd2d15e53a3e70b1ec4759514b1b0b0238a43018ab4d848",
       "public_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-      "key_type": "aplane.attestor-ed25519.v1",
+      "key_type": "aplane.attestor-component-ed25519.v1",
       "is_component_key": true,
       "is_spending_account": false
     }

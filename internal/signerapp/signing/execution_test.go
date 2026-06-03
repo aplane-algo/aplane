@@ -196,7 +196,7 @@ func TestExecutorRejectsAttestorKeyTypesBeforeSessionLoad(t *testing.T) {
 		AllTxns:            []types.Transaction{{}},
 		PassthroughIndices: map[int]bool{},
 		ForeignIndices:     map[int]bool{},
-		AuthKeyTypes:       []string{keytypes.AttestedFalcon1024Ed25519V1},
+		AuthKeyTypes:       []string{keytypes.AttestedFalcon1024V1},
 	}
 	req := signerapi.GroupSignRequest{
 		Requests: []signerapi.SignRequest{{
@@ -224,7 +224,7 @@ func TestExecutorSignCryptoKeyRejectsAttestorKeyTypesBeforeProviderLookup(t *tes
 		want    string
 	}{
 		{name: "component", keyType: keytypes.AttestorComponentEd25519V1, want: attestorComponentSignRejectMessage},
-		{name: "attested", keyType: keytypes.AttestedFalcon1024Ed25519V1, want: attestedAccountSignRejectMessage},
+		{name: "attested", keyType: keytypes.AttestedFalcon1024V1, want: attestedAccountSignRejectMessage},
 	}
 
 	for _, tt := range tests {

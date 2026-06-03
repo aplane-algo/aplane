@@ -249,19 +249,19 @@ caller-supplied labels instead of decoded transaction facts.
 MVP key types:
 
 ```text
-aplane.attestor-ed25519.v1
-aplane.attestor-falcon1024-ed25519.v1
+aplane.attestor-component-ed25519.v1
+aplane.falcon1024-attested.v1
 ```
 
 Optional MVP key type if implementation cost is low:
 
 ```text
-aplane.attestor-ed25519-ed25519.v1
+aplane.ed25519-attested.v1
 ```
 
-`aplane.attestor-ed25519.v1` is an attestor component key. It can produce raw
-component signatures only. It is not an Algorand spending account and must not
-be accepted by `/sign`.
+`aplane.attestor-component-ed25519.v1` is an attestor component key. It can
+produce raw component signatures only. It is not an Algorand spending account
+and must not be accepted by `/sign`.
 
 Generated attestor component keys have a stable component key handle:
 
@@ -301,7 +301,7 @@ exact additive fields:
   "address": "attkey_...",
   "component_key_id": "attkey_...",
   "public_key_hex": "...",
-  "key_type": "aplane.attestor-ed25519.v1",
+  "key_type": "aplane.attestor-component-ed25519.v1",
   "is_component_key": true,
   "is_spending_account": false
 }
@@ -323,7 +323,7 @@ must treat absent `is_component_key` as `false`. They must not infer that an
 existing `parameters` field when parameters are present. Contract fixtures must
 pin both `/keys` and `/admin/generate` component-key examples.
 
-`aplane.attestor-falcon1024-ed25519.v1` is an attested account key. It is a
+`aplane.falcon1024-attested.v1` is an attested account key. It is a
 DSA-backed LogicSig key on disk with:
 
 - `category: dsa_lsig`
@@ -338,6 +338,11 @@ DSA-backed LogicSig key on disk with:
 The attested account key stores the attestor public key selected by the user at
 generation time. That public key is a LogicSig verifier input, not attestor-side
 authorization state.
+
+The `falcon1024-attested` family names the user's component DSA and the
+attested-account template, matching existing composed families such as
+`falcon1024-whitelist`. The attestor component scheme is recorded in the stored
+template metadata and bytecode rather than duplicated in the family segment.
 
 ### 6.2 Registry And Keygen Requirements
 
@@ -382,10 +387,10 @@ registered and enabled for the authenticated identity.
 
 Generation tests must prove:
 
-- `aplane.attestor-ed25519.v1` generation returns `component_key_id`,
-- `aplane.attestor-falcon1024-ed25519.v1` generation uses the attested-account
+- `aplane.attestor-component-ed25519.v1` generation returns `component_key_id`,
+- `aplane.falcon1024-attested.v1` generation uses the attested-account
   generator, not the Falcon base generator through fallback,
-- optional `aplane.attestor-ed25519-ed25519.v1` generation, if implemented,
+- optional `aplane.ed25519-attested.v1` generation, if implemented,
   also uses exact-key-type generation.
 
 ### 6.3 `/plan` Metadata
@@ -713,7 +718,7 @@ Response:
     {
       "target_index": 0,
       "signature": "...",
-      "signature_scheme": "aplane.attestor-ed25519.v1"
+      "signature_scheme": "aplane.attestor-component-ed25519.v1"
     }
   ]
 }
@@ -726,7 +731,7 @@ values are:
   (`attkey_...`, Section 6.1). It may be omitted only when the authenticated
   identity has exactly one active attestor component key. The response
   `signature_scheme` is the attestor component key type, for example
-  `aplane.attestor-ed25519.v1`.
+  `aplane.attestor-component-ed25519.v1`.
 - user role: `component_key` is the local attested-account LogicSig address,
   because the user's component private key lives in that `dsa_lsig`
   attested-account key file. The response `signature_scheme` is the user key
@@ -1050,7 +1055,7 @@ unauthenticated claims.
 Attestor signer:
 
 ```text
-apshell generate aplane.attestor-ed25519.v1
+apshell generate aplane.attestor-component-ed25519.v1
 ```
 
 The MVP does not add an `apstore generate` surface. Attestor component keys are
@@ -1063,7 +1068,7 @@ same change.
 User signer/client:
 
 ```text
-apshell generate aplane.attestor-falcon1024-ed25519.v1 attestor_public_key=<hex>
+apshell generate aplane.falcon1024-attested.v1 attestor_public_key=<hex>
 apshell attest sign <group-or-transaction> --attestor <endpoint-or-name>
 apshell attest assemble <group-or-transaction> --user-sig <sig> --attestor-sig <sig>
 ```
@@ -1110,15 +1115,15 @@ cmd/apsigner/http_handlers_attestor.go
 internal/signerclient/attestor.go
 internal/apshellapp/attestor.go
 internal/engine/attestor_signing.go
-lsig/attestor_falcon1024_ed25519/
+lsig/falcon1024_attested/
 ```
 
-There is no `lsig/` package for the `aplane.attestor-ed25519.v1` component key:
+There is no `lsig/` package for the `aplane.attestor-component-ed25519.v1` component key:
 it is a raw Ed25519 component-signing key, not a LogicSig, so its generation and
 signing live under `internal/keygen` and a non-registry Ed25519 helper, not
 under `lsig/`. The optional all-Ed25519 attested-account template (Section 6.1,
-`aplane.attestor-ed25519-ed25519.v1`), if implemented, is
-`lsig/attestor_ed25519_ed25519/`.
+`aplane.ed25519-attested.v1`), if implemented, is
+`lsig/ed25519_attested/`.
 
 Existing package changes:
 
