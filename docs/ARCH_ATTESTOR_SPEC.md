@@ -71,11 +71,11 @@ An attested LogicSig used as `AuthAddr` for another sender is out of scope and
 must be rejected by component signing and assembly.
 
 Attestor-role component signing is transfer-only in MVP. Target transactions
-must produce direct transfer movements expressible by `transfer_policy`
-(`pay`, `axfer`, opt-in, close-out, and clawback movements as defined in
-[docs/ARCH_POLICY.md#transfer-routing](ARCH_POLICY.md#transfer-routing)).
-Target `appl`, `keyreg`, `acfg`, and other non-transfer transaction types are
-rejected because routing cannot cover them.
+must produce direct transfer movements expressible by `transfer_policy`; the
+supported attestation movement surface is defined in
+[docs/ARCH_POLICY.md#transfer-routing](ARCH_POLICY.md#transfer-routing).
+Target `appl`, `keyreg`, `acfg`, and other transactions that produce no
+supported transfer movement are rejected because routing cannot cover them.
 
 The attestor does not verify the account's LogicSig template as part of
 authorization. The user/client key type owns LogicSig construction, hard-codes
@@ -130,11 +130,10 @@ Existing and related endpoint decisions:
 - Attestor-role `/sign/component` authorizes only transfer target transactions
   covered by deterministic routing. Target transactions with no supported
   transfer movement (`appl`, `keyreg`, `acfg`, etc.) are rejected.
-- `/sign/cancel` is extended by the MVP to cancel live `/sign` and user-role
-  `/sign/component` approval waits by `request_id`. Attestor-role
-  `/sign/component` is deterministic and does not queue operator approval.
-  This is a proposed compatibility change and must be promoted into the
-  canonical HTTP contract before release.
+- `/sign/cancel` is extended by the MVP for component signing; see Section
+  11.2 for the live-request and user-role/attestor-role split. This is a
+  proposed compatibility change and must be promoted into the canonical HTTP
+  contract before release.
 
 The MVP is synchronous. There is no polling API and no durable request table.
 
@@ -464,7 +463,7 @@ The attestor does not decide whether an account is "registered", "active", or
 "trusted". It decides only whether the target transaction facts satisfy this
 identity's policy. The transaction sender address is the policy subject.
 
-Example policy:
+Example deterministic attestation policy:
 
 ```yaml
 attestation:
@@ -479,20 +478,10 @@ attestation:
         destinations: ["B...", "C..."]
 ```
 
-For an attestor component request, the signer extracts the same direct transfer
-movements used by the existing policy engine:
-
-- `pay` from `Sender` to `Receiver`,
-- ALGO close-out movements,
-- normal `axfer` movements,
-- ASA opt-ins,
-- ASA close-out movements,
-- ASA clawback movements.
-
-Transactions that produce none of those supported transfer movements are
-rejected for attestor-role component signing. The canonical supported movement
-list is maintained in
-[ARCH_POLICY.md#transfer-routing](ARCH_POLICY.md#transfer-routing).
+For an attestor component request, the signer extracts the supported direct
+transfer movements defined in
+[ARCH_POLICY.md#transfer-routing](ARCH_POLICY.md#transfer-routing). Target
+transactions that produce none of those movements are rejected.
 
 Policy must use decoded canonical transactions as the source of truth:
 
@@ -737,7 +726,10 @@ Validation:
 - every transaction byte string is canonical per Section 7.
 - group consistency is valid per Section 14.
 - every target transaction has `txn.Sender` equal to the attested account being
-  authorized.
+  authorized. For role `user`, the attested account is the local
+  attested-account LogicSig selected by `component_key`; for role `attestor`,
+  the attested account is the target transaction sender being evaluated
+  against policy.
 - every target transaction has a non-empty `GenesisHash` that resolves to an
   allowed network context token for policy evaluation.
 - role `attestor`: `component_key`, after optional unambiguous defaulting,
@@ -943,31 +935,7 @@ must match a route, no deny guard may match, and the effective attestation
 policy must not contain review-producing routing behavior such as
 `on_no_route: review` or `review_above`. Target transactions that produce no
 supported transfer movement are rejected because there is no route coverage
-that can authorize them.
-
-Example:
-
-```yaml
-attestation:
-  transfer_policy:
-    schema_version: 1
-    enabled: true
-    routes:
-      - id: a_to_b_c
-        networks: ["mainnet"]
-        sources: ["A..."]
-        assets: ["algo"]
-        destinations: ["B...", "C..."]
-```
-
-Inside `attestation.transfer_policy`, omitted route-miss verdict fields are
-implicit `reject`; the attestor has no review or operator-default fallback.
-
-This means an attestor component request for a payment whose decoded sender is
-`A...` and decoded receiver is `B...` or `C...` is authorized by routing if no
-deny guard also matches. A payment from `A...` to any other destination is
-rejected because the attestation domain has no review or operator-default
-fallback.
+that can authorize them. See Section 9 for an example policy shape.
 
 Policy evaluation context:
 

@@ -112,8 +112,9 @@ Operational flow:
    - `user_auto_approve:false` requires approval.
    - `user_auto_approve:true` signs without approval.
 
-This means Always Review blocks both `user_auto_approve:true` and any matching
-Always Approve rule.
+For client signing, Always Review blocks both `user_auto_approve:true` and any
+matching Always Approve rule. Attestation rejects review-producing policy
+instead of treating it as a promptable phase.
 
 ### Verdict Mapping By Role
 
@@ -291,9 +292,10 @@ movements. When enabled, it can reject blocked destinations, route misses,
 close-out misses according to `close_on_no_route`, clawback misses according to
 `clawback_on_no_route`, matched close-out movements without `close.allow:true`,
 matched clawback movements without `clawback.allow:true`, and matching
-movements above a route's `reject_above` threshold. Routes never auto-approve a
-request; a route match only lets the movement continue through the remaining
-policy phases. See [Transfer Routing](#transfer-routing).
+movements above a route's `reject_above` threshold. For client signing, routes
+never auto-approve a request; a route match only lets the movement continue
+through the remaining policy phases. For attestation, routing is the positive
+authorization surface. See [Transfer Routing](#transfer-routing).
 
 ## Always Review
 
@@ -323,9 +325,11 @@ guards. They are evaluated after Always Deny. For example, an ASA transfer above
 `review_asa_amounts.testnet["10458941"]` requires approval unless it has already
 been rejected by a matching `max_asa_amounts` threshold.
 
-Unknown genesis hashes trigger a distinct fail-closed rule that forces review
-when a configured transfer-guard review threshold cannot be mapped to a network
-token. This rule is independent of the configured threshold values.
+For client signing, unknown genesis hashes trigger a distinct fail-closed rule
+that forces review when a configured transfer-guard review threshold cannot be
+mapped to a network token. This rule is independent of the configured threshold
+values. Attestation rejects unknown genesis hashes when network-scoped policy
+must be evaluated because it has no review fallback.
 
 Transfer routing review outcomes are evaluated after hard-reject policy passes
 and before auto-approval. Routing review applies only to signer-controlled
@@ -624,6 +628,8 @@ signer-generated LogicSig-budget dummy transactions, is routing-exempt. Routing
 exemption suppresses all routing verdicts for that shape. Non-routing guards
 such as warning analysis, fee checks, rekey/close/clawback guards, and the
 self no-op auto-approval predicate still apply according to their own rules.
+For attestation, the self no-op predicate never fires because it requires
+signer-owned address context.
 
 Key type override routing blocks are sparse overlays, except `enabled` must be
 explicit in every `transfer_policy` block. Unset `on_no_route`,
@@ -652,6 +658,10 @@ Routing rule IDs:
 The per-route IDs use the stable grammar
 `transfer_policy:<route_id>:<outcome>`, where `<outcome>` is one of
 `close_rejected`, `clawback_rejected`, `reject_above`, or `review_above`.
+`review_above` rule IDs are client-signing-only. Attestation can emit
+blocked-destination, route-miss, close/clawback rejection, unknown-genesis, and
+`reject_above` IDs, but review-producing route outcomes are invalid for
+attestor component requests.
 
 ## Key Type Overrides
 
