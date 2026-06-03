@@ -575,6 +575,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Success {
 			m.detailsAddress = msg.Address
 			m.detailsKeyType = msg.KeyType
+			m.detailsPublicKeyHex = msg.PublicKeyHex
 			m.detailsParameters = msg.Parameters
 			m.detailsTEAL = msg.DisplayTEAL
 			m.detailsTemplateProvenanceStatus = msg.TemplateProvenanceStatus

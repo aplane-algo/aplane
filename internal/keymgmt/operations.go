@@ -272,6 +272,7 @@ func DeleteKey(address, keyFile, deletedKeysDir string) (*DeleteResult, error) {
 // KeyFileInfo contains info extracted from a key file
 type KeyFileInfo struct {
 	Type                string            // Full versioned type: "aplane.falcon1024.v1", "ed25519", "aplane.timed-whitelist.v1"
+	PublicKeyHex        string            // Hex-encoded public key stored in the key payload.
 	Parameters          map[string]string // Parameters for LogicSig keys (nil for DSA keys)
 	TemplateFingerprint string
 }
@@ -307,6 +308,7 @@ func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
 	if keyData.KeyType != "" {
 		return &KeyFileInfo{
 			Type:                keyData.KeyType,
+			PublicKeyHex:        keyData.PublicKeyHex,
 			Parameters:          keyData.Parameters,
 			TemplateFingerprint: keyData.TemplateFingerprint,
 		}, nil

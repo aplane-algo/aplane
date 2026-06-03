@@ -467,6 +467,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 					Success:                  detailsResult.Success,
 					Address:                  detailsResult.Address,
 					KeyType:                  detailsResult.KeyType,
+					PublicKeyHex:             detailsResult.PublicKeyHex,
 					Parameters:               detailsResult.Parameters,
 					DisplayTEAL:              detailsResult.DisplayTEAL,
 					TemplateProvenanceStatus: detailsResult.TemplateProvenanceStatus,

@@ -338,6 +338,7 @@ type GetKeyDetailsResult struct {
 	Success                  bool
 	Address                  string
 	KeyType                  string
+	PublicKeyHex             string
 	Parameters               map[string]string
 	DisplayTEAL              string
 	TemplateProvenanceStatus string

@@ -589,6 +589,16 @@ func TestParseKeyFileInfoPrefersParametersAndFallsBackToParams(t *testing.T) {
 	}
 }
 
+func TestParseKeyFileInfoIncludesPublicKey(t *testing.T) {
+	info, err := parseKeyFileInfo([]byte(`{"key_type":"aplane.attestor-ed25519.v1","public_key":"aabbccdd"}`))
+	if err != nil {
+		t.Fatalf("parseKeyFileInfo() error = %v", err)
+	}
+	if info.PublicKeyHex != "aabbccdd" {
+		t.Fatalf("PublicKeyHex = %q, want aabbccdd", info.PublicKeyHex)
+	}
+}
+
 func TestParseKeyFileInfoRejectsConflictingParameterAliases(t *testing.T) {
 	_, err := parseKeyFileInfo([]byte(`{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"ADDR1"},"params":{"recipients":"ADDR2"}}`))
 	if err == nil {

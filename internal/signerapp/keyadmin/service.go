@@ -69,6 +69,7 @@ type ListKeyInfo struct {
 type KeyDetailsResult struct {
 	Address                  string
 	KeyType                  string
+	PublicKeyHex             string
 	Parameters               map[string]string
 	DisplayTEAL              string
 	TemplateProvenanceStatus string

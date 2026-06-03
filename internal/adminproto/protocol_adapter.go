@@ -497,6 +497,7 @@ func ProtocolKeyDetailsMessage(id string, result GetKeyDetailsResult) protocol.K
 		Success:                  result.Success,
 		Address:                  result.Address,
 		KeyType:                  result.KeyType,
+		PublicKeyHex:             result.PublicKeyHex,
 		Parameters:               result.Parameters,
 		DisplayTEAL:              result.DisplayTEAL,
 		TemplateProvenanceStatus: result.TemplateProvenanceStatus,

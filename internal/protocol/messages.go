@@ -507,6 +507,7 @@ type KeyDetailsMessage struct {
 	Success                  bool              `json:"success"`
 	Address                  string            `json:"address,omitempty"`
 	KeyType                  string            `json:"key_type,omitempty"`
+	PublicKeyHex             string            `json:"public_key_hex,omitempty"`
 	Parameters               map[string]string `json:"parameters,omitempty"`   // For generic LogicSigs: recipients, unlock_round, etc.
 	DisplayTEAL              string            `json:"display_teal,omitempty"` // TEAL source for generic LogicSigs (actual compiled source)
 	TemplateProvenanceStatus string            `json:"template_provenance_status,omitempty"`

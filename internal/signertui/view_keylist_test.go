@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -127,6 +128,19 @@ func TestRenderKeyDetailsShowsPreciseTemplateProvenanceNote(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "Template provenance: creation template fingerprint differs") {
 		t.Fatalf("renderKeyDetails() missing precise template provenance detail:\n%s", rendered)
+	}
+}
+
+func TestRenderKeyDetailsShowsAttestorPublicKey(t *testing.T) {
+	rendered := stripANSI(Model{
+		detailsAddress:      "attkey_abc",
+		detailsKeyType:      keytypes.AttestorComponentEd25519V1,
+		detailsPublicKeyHex: "aabbccdd",
+		height:              30,
+	}.renderKeyDetails())
+
+	if !strings.Contains(rendered, "Attestor public key: aabbccdd") {
+		t.Fatalf("renderKeyDetails() missing attestor public key:\n%s", rendered)
 	}
 }
 

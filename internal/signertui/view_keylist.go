@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 )
 
@@ -263,6 +264,14 @@ func (m Model) renderKeyDetails() string {
 	sb.WriteString(m.detailsAddress)
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", styledKeyTypeWithTemplateProvenanceStatus(m.detailsKeyType, m.detailsTemplateProvenanceStatus)))
+	if m.detailsPublicKeyHex != "" {
+		label := "Public key"
+		if keytypes.IsAttestorComponentKeyType(m.detailsKeyType) {
+			label = "Attestor public key"
+		}
+		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, m.detailsPublicKeyHex), m.popupBodyWidth(62)))
+		sb.WriteString("\n")
+	}
 	if m.detailsTemplateProvenanceNote != "" {
 		sb.WriteString(warningStyle.Render("Template provenance: " + m.detailsTemplateProvenanceNote))
 		sb.WriteString("\n")

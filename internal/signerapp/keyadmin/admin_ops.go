@@ -63,6 +63,7 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 		info, err := keymgmt.DetectKeyInfoFromFileWithMasterKey(keyFile, mk)
 		if err == nil {
 			result.KeyType = info.Type
+			result.PublicKeyHex = info.PublicKeyHex
 			result.Parameters = info.Parameters
 			result.TemplateProvenanceStatus, result.TemplateProvenanceNote = keys.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
 			result.DisplayTEAL, _ = keymgmt.GetDisplayTEALWithMasterKey(keyFile, mk)

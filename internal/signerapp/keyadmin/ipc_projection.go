@@ -70,6 +70,7 @@ func ProjectKeyDetailsIPC(result *KeyDetailsResult, err *Error) adminproto.GetKe
 		Success:                  true,
 		Address:                  result.Address,
 		KeyType:                  result.KeyType,
+		PublicKeyHex:             result.PublicKeyHex,
 		Parameters:               result.Parameters,
 		DisplayTEAL:              result.DisplayTEAL,
 		TemplateProvenanceStatus: result.TemplateProvenanceStatus,

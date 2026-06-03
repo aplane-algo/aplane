@@ -196,6 +196,13 @@ func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
 	if result.PublicKeyHex == "" {
 		t.Fatal("GenerateKey(component) public key is empty")
 	}
+	details, svcErr := svc.GetKeyDetails(ir, result.Address)
+	if svcErr != nil {
+		t.Fatalf("GetKeyDetails(component) error = %#v", svcErr)
+	}
+	if details.PublicKeyHex != result.PublicKeyHex {
+		t.Fatalf("GetKeyDetails(component) PublicKeyHex = %q, want %q", details.PublicKeyHex, result.PublicKeyHex)
+	}
 	if !result.IsComponentKey {
 		t.Fatal("GenerateKey(component) IsComponentKey = false, want true")
 	}

@@ -96,16 +96,20 @@ func TestProjectListKeys(t *testing.T) {
 
 func TestProjectKeyDetailsIPC(t *testing.T) {
 	ok := ProjectKeyDetailsIPC(&KeyDetailsResult{
-		Address:     "ADDR",
-		KeyType:     "aplane.timed-whitelist.v1",
-		Parameters:  map[string]string{"owner": "alice"},
-		DisplayTEAL: "#pragma version 8",
+		Address:      "ADDR",
+		KeyType:      "aplane.timed-whitelist.v1",
+		PublicKeyHex: "aabbccdd",
+		Parameters:   map[string]string{"owner": "alice"},
+		DisplayTEAL:  "#pragma version 8",
 	}, nil)
 	if !ok.Success {
 		t.Fatal("Success = false, want true")
 	}
 	if ok.Address != "ADDR" || ok.DisplayTEAL == "" {
 		t.Fatalf("result = %#v", ok)
+	}
+	if ok.PublicKeyHex != "aabbccdd" {
+		t.Fatalf("PublicKeyHex = %q, want aabbccdd", ok.PublicKeyHex)
 	}
 
 	notFound := ProjectKeyDetailsIPC(nil, &Error{Kind: ErrorNotFound, Message: "key not found"})

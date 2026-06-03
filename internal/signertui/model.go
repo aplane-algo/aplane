@@ -247,6 +247,7 @@ type Model struct {
 	// Key details state (for viewing key metadata)
 	detailsAddress                  string            // Address of key being viewed
 	detailsKeyType                  string            // Key type
+	detailsPublicKeyHex             string            // Hex-encoded public key, when available
 	detailsParameters               map[string]string // Parameters for generic LogicSigs
 	detailsScrollOffset             int               // Scroll offset for parameter list
 	detailsTEAL                     string            // TEAL source (for LogicSig keys)
@@ -670,6 +671,7 @@ type KeyDetailsMsg struct {
 	Success                  bool
 	Address                  string
 	KeyType                  string
+	PublicKeyHex             string
 	Parameters               map[string]string
 	DisplayTEAL              string
 	TemplateProvenanceStatus string
