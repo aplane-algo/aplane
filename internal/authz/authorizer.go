@@ -143,6 +143,8 @@ func ProductBootstrapActions() []auth.Action {
 		auth.ActionIdentityDecommission,
 		auth.ActionSignRequest,
 		auth.ActionSignApprove,
+		auth.ActionSignComponent,
+		auth.ActionSignAssemble,
 		auth.ActionKeysView,
 		auth.ActionKeysGenerate,
 		auth.ActionKeysImport,

@@ -22,6 +22,14 @@ type GroupSignResponse = pub.GroupSignResponse
 type GroupPlanResponse = pub.GroupPlanResponse
 type GroupSimulateResponse = pub.GroupSimulateResponse
 type ErrorResponse = pub.ErrorResponse
+type ComponentSignRole = pub.ComponentSignRole
+type ComponentSignRequest = pub.ComponentSignRequest
+type ComponentSignature = pub.ComponentSignature
+type ComponentSignResponse = pub.ComponentSignResponse
+type AttestedAssemblyRequest = pub.AttestedAssemblyRequest
+type AttestedAssemblyTarget = pub.AttestedAssemblyTarget
+type AttestedPassthroughItem = pub.AttestedPassthroughItem
+type AttestedAssemblyResponse = pub.AttestedAssemblyResponse
 type HealthResponse = pub.HealthResponse
 type StatusResponse = pub.StatusResponse
 type KeyTypeInfo = pub.KeyTypeInfo
@@ -46,9 +54,11 @@ type AdminGenerateResponse = pub.AdminGenerateResponse
 type AdminDeleteResponse = pub.AdminDeleteResponse
 
 const (
-	RequestModeSign         = pub.RequestModeSign
-	RequestModePassthrough  = pub.RequestModePassthrough
-	RequestModeForeign      = pub.RequestModeForeign
-	SignCancelStateCanceled = pub.SignCancelStateCanceled
-	SignCancelStateNotFound = pub.SignCancelStateNotFound
+	RequestModeSign           = pub.RequestModeSign
+	RequestModePassthrough    = pub.RequestModePassthrough
+	RequestModeForeign        = pub.RequestModeForeign
+	SignCancelStateCanceled   = pub.SignCancelStateCanceled
+	SignCancelStateNotFound   = pub.SignCancelStateNotFound
+	ComponentSignRoleUser     = pub.ComponentSignRoleUser
+	ComponentSignRoleAttestor = pub.ComponentSignRoleAttestor
 )

@@ -31,6 +31,8 @@ const (
 	ActionIdentityDecommission Action = "identity.decommission"
 	ActionSignRequest          Action = "sign.request"
 	ActionSignApprove          Action = "sign.approve"
+	ActionSignComponent        Action = "sign.component"
+	ActionSignAssemble         Action = "sign.assemble"
 	ActionKeysView             Action = "keys.view"
 	ActionKeysGenerate         Action = "keys.generate"
 	ActionKeysImport           Action = "keys.import"
@@ -65,6 +67,8 @@ var knownActions = map[Action]struct{}{
 	ActionIdentityDecommission: {},
 	ActionSignRequest:          {},
 	ActionSignApprove:          {},
+	ActionSignComponent:        {},
+	ActionSignAssemble:         {},
 	ActionKeysView:             {},
 	ActionKeysGenerate:         {},
 	ActionKeysImport:           {},

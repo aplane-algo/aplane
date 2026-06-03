@@ -1,0 +1,11 @@
+{
+  "request_id": "cli-123",
+  "role": "attestor",
+  "component_key": "attkey_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "group_bytes_hex": [
+    "5458a16374786ea0"
+  ],
+  "target_indices": [
+    0
+  ]
+}
