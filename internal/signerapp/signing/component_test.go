@@ -5,11 +5,18 @@ package signing
 
 import (
 	"bytes"
+	"context"
+	stded25519 "crypto/ed25519"
+	"encoding/hex"
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/attestor/message"
+	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -183,6 +190,98 @@ func TestSigningServiceAssembleAttestedFailsClosedAfterValidation(t *testing.T) 
 	}
 }
 
+func TestSignPreparedAttestorComponentsSignsEd25519Messages(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x42}, stded25519.SeedSize)
+	privateKey := stded25519.NewKeyFromSeed(seed)
+	publicKey := append([]byte(nil), privateKey.Public().(stded25519.PublicKey)...)
+	componentKeyID, err := keytypes.ComponentKeyID(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeyID() error = %v", err)
+	}
+
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:     keytypes.AttestorComponentEd25519V1,
+		Category: keys.CategoryComponent,
+		Value: &coresigning.ComponentKeyMaterial{
+			ComponentKeyID: componentKeyID,
+			PublicKey:      append([]byte(nil), publicKey...),
+			PrivateKey:     append([]byte(nil), privateKey...),
+		},
+	}
+	session := &componentKeyTestSession{key: keyMaterial}
+	plan := preparedAttestorComponentPlan(t, componentKeyID)
+
+	result, signErr := signPreparedAttestorComponents(nil, plan, session)
+	if signErr != nil {
+		t.Fatalf("signPreparedAttestorComponents() error = %v", signErr)
+	}
+	if session.calls != 1 || session.gotAddress != componentKeyID {
+		t.Fatalf("session calls = %d address %q, want one call for %q", session.calls, session.gotAddress, componentKeyID)
+	}
+	if result.RequestID != plan.RequestID || result.ComponentKey != componentKeyID {
+		t.Fatalf("result metadata = %#v, want request_id %q component_key %q", result, plan.RequestID, componentKeyID)
+	}
+	if len(result.Signatures) != len(plan.Targets) {
+		t.Fatalf("Signatures len = %d, want %d", len(result.Signatures), len(plan.Targets))
+	}
+	for i, sig := range result.Signatures {
+		if sig.TargetIndex != plan.Targets[i].TargetIndex {
+			t.Fatalf("signature %d target index = %d, want %d", i, sig.TargetIndex, plan.Targets[i].TargetIndex)
+		}
+		if sig.SignatureScheme != keytypes.AttestorComponentEd25519V1 {
+			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, keytypes.AttestorComponentEd25519V1)
+		}
+		sigBytes, err := hex.DecodeString(sig.Signature)
+		if err != nil {
+			t.Fatalf("DecodeString(signature) error = %v", err)
+		}
+		if !stded25519.Verify(stded25519.PublicKey(publicKey), plan.Targets[i].Message[:], sigBytes) {
+			t.Fatalf("signature %d does not verify over prepared component message", i)
+		}
+	}
+	if keyMaterial.Type != "" || keyMaterial.Value != nil {
+		t.Fatalf("key material was not zeroed after signing: %#v", keyMaterial)
+	}
+}
+
+func TestSignPreparedAttestorComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T) {
+	sender := types.Address{9}.String()
+	receiver := types.Address{10}.String()
+	txn := paymentTransaction(t, sender, receiver, 11)
+	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
+		RequestID:     "cmp-user",
+		Role:          signerapi.ComponentSignRoleUser,
+		ComponentKey:  sender,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	})
+	if err != nil {
+		t.Fatalf("PrepareComponentSigning() error = %v", err)
+	}
+	session := &componentKeyTestSession{}
+
+	result, signErr := signPreparedAttestorComponents(nil, plan, session)
+	if result != nil {
+		t.Fatalf("result = %#v, want nil", result)
+	}
+	if signErr == nil || signErr.Kind != ErrorBadRequest {
+		t.Fatalf("signPreparedAttestorComponents() error = %#v, want bad request", signErr)
+	}
+	if session.calls != 0 {
+		t.Fatalf("session calls = %d, want 0 before role rejection", session.calls)
+	}
+}
+
+func TestSignPreparedAttestorComponentsRejectsWrongKeyType(t *testing.T) {
+	plan := preparedAttestorComponentPlan(t, "attkey_wrong")
+	session := &componentKeyTestSession{key: &coresigning.KeyMaterial{Type: "ed25519"}}
+
+	_, err := signPreparedAttestorComponents(nil, plan, session)
+	if err == nil || err.Kind != ErrorBadRequest {
+		t.Fatalf("signPreparedAttestorComponents() error = %#v, want bad request", err)
+	}
+}
+
 func groupedPaymentTransactions(t *testing.T, sender, receiver string) []types.Transaction {
 	t.Helper()
 	txns := []types.Transaction{
@@ -218,4 +317,74 @@ func paymentTransaction(t *testing.T, sender, receiver string, amount uint64) ty
 		t.Fatalf("MakePaymentTxn() error = %v", err)
 	}
 	return txn
+}
+
+func preparedAttestorComponentPlan(t *testing.T, componentKeyID string) *ComponentSignPlan {
+	t.Helper()
+	sender := types.Address{11}.String()
+	receiver := types.Address{12}.String()
+	txn := paymentTransaction(t, sender, receiver, 12)
+	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  componentKeyID,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	})
+	if err != nil {
+		t.Fatalf("PrepareComponentSigning() error = %v", err)
+	}
+	return plan
+}
+
+type componentKeyTestSession struct {
+	key        *coresigning.KeyMaterial
+	err        error
+	calls      int
+	gotAddress string
+}
+
+func (s *componentKeyTestSession) GetKeyWithContext(_ context.Context, address string) (*coresigning.KeyMaterial, error) {
+	s.calls++
+	s.gotAddress = address
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.key, nil
+}
+
+func TestLoadAttestorComponentKeyMapsMissingKey(t *testing.T) {
+	session := &componentKeyTestSession{err: keystore.ErrKeyNotFound}
+	_, _, err := loadAttestorComponentKey(nil, session, "attkey_missing")
+	if err == nil || err.Kind != ErrorBadRequest {
+		t.Fatalf("loadAttestorComponentKey() error = %#v, want bad request", err)
+	}
+}
+
+func TestLoadAttestorComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T) {
+	privateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x44}, stded25519.SeedSize))
+	wrongPublicKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x45}, stded25519.SeedSize)).Public().(stded25519.PublicKey)
+	componentKeyID, err := keytypes.ComponentKeyID(keytypes.AttestorComponentEd25519V1, wrongPublicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeyID() error = %v", err)
+	}
+
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:     keytypes.AttestorComponentEd25519V1,
+		Category: keys.CategoryComponent,
+		Value: &coresigning.ComponentKeyMaterial{
+			ComponentKeyID: componentKeyID,
+			PublicKey:      append([]byte(nil), wrongPublicKey...),
+			PrivateKey:     append([]byte(nil), privateKey...),
+		},
+	}
+	session := &componentKeyTestSession{key: keyMaterial}
+
+	_, _, loadErr := loadAttestorComponentKey(nil, session, componentKeyID)
+	if loadErr == nil || loadErr.Kind != ErrorInternal {
+		t.Fatalf("loadAttestorComponentKey() error = %#v, want internal", loadErr)
+	}
+	if keyMaterial.Type != "" || keyMaterial.Value != nil {
+		t.Fatalf("key material was not zeroed after mismatch: %#v", keyMaterial)
+	}
 }
