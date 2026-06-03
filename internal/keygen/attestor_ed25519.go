@@ -12,7 +12,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -39,7 +38,7 @@ func (g *AttestorEd25519Generator) GenerateFromSeed(ctx context.Context, paths s
 	defer securecrypto.ZeroBytes(privateKey)
 	publicKey := privateKey.Public().(ed25519.PublicKey)
 
-	return saveAttestorEd25519Key(paths, identityID, keyType, publicKey, privateKey, masterKey)
+	return saveAttestorComponentKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
 }
 
 func (g *AttestorEd25519Generator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
@@ -65,32 +64,7 @@ func (g *AttestorEd25519Generator) GenerateRandom(ctx context.Context, paths sto
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
-	return saveAttestorEd25519Key(paths, identityID, keyType, publicKey, privateKey, masterKey)
-}
-
-func saveAttestorEd25519Key(paths storepaths.Paths, identityID, keyType string, publicKey, privateKey []byte, masterKey []byte) (*GenerationResult, error) {
-	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
-	if err != nil {
-		return nil, err
-	}
-
-	keyPair := &keys.KeyPair{
-		Category:      keys.CategoryComponent,
-		KeyType:       keyType,
-		PublicKeyHex:  fmt.Sprintf("%x", publicKey),
-		PrivateKeyHex: fmt.Sprintf("%x", privateKey),
-	}
-	keyFiles, err := keys.SaveKeyFile(paths, keyPair, identityID, componentKey, masterKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to save component key: %w", err)
-	}
-
-	return &GenerationResult{
-		Address:      componentKey,
-		KeyType:      keyType,
-		PublicKeyHex: keyPair.PublicKeyHex,
-		KeyFiles:     keyFiles,
-	}, nil
+	return saveAttestorComponentKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
 }
 
 var registerAttestorEd25519GeneratorOnce sync.Once

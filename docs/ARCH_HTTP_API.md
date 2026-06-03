@@ -211,15 +211,21 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - `keys[]` with `address`, `public_key_hex`, `key_type`
 - optional `lsig_size`
 - optional `is_generic_lsig`
+- optional `is_component_key` and `is_spending_account`: component-key rows use
+  `address` as the component-key selector, not as an Algorand spending address.
+  Ed25519 attestor component selectors equal `public_key_hex`; Falcon-1024
+  attestor component selectors use the short `apc_` selector while
+  `public_key_hex` carries the full Falcon public key.
 - optional `signing_args`: the key file's stored signing schema captured at
   generation time, not the live template/provider schema; this is what the
   signer enforces at sign time for that specific key. SDK consumers must treat
   an absent field the same as an empty list.
 - optional `parameters`: non-secret key creation parameters needed by clients
   to orchestrate key-type-specific workflows. For attested account rows this
-  includes `attestor_public_key`, the Ed25519 public key embedded in the stored
-  LogicSig bytecode. SDK consumers must treat this as signer-owned metadata,
-  not as proof of remote attestor endpoint ownership.
+  includes `attestor_public_key`, the Ed25519 public key embedded in the
+  current `aplane.falcon1024-attested.v1` LogicSig bytecode. SDK consumers must
+  treat this as signer-owned metadata, not as proof of remote attestor endpoint
+  ownership.
 - optional `template_provenance_status`, `template_provenance_note`; these are
   informational comparisons between stored key template provenance and the
   registered local definition, not signing gates

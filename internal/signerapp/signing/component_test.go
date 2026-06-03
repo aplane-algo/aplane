@@ -13,11 +13,14 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/attestor/message"
+	"github.com/aplane-algo/aplane/internal/attestor/verify"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
@@ -237,6 +240,64 @@ func TestSignPreparedAttestorComponentsSignsEd25519Messages(t *testing.T) {
 		}
 		if !stded25519.Verify(stded25519.PublicKey(publicKey), plan.Targets[i].Message[:], sigBytes) {
 			t.Fatalf("signature %d does not verify over prepared component message", i)
+		}
+	}
+	if keyMaterial.Type != "" || keyMaterial.Value != nil {
+		t.Fatalf("key material was not zeroed after signing: %#v", keyMaterial)
+	}
+}
+
+func TestSignPreparedAttestorComponentsSignsFalcon1024Messages(t *testing.T) {
+	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x43}, 64))
+	if err != nil {
+		t.Fatalf("GenerateKeypair() error = %v", err)
+	}
+	if len(publicKey) != falconfamily.PublicKeySize {
+		t.Fatalf("public key length = %d, want %d", len(publicKey), falconfamily.PublicKeySize)
+	}
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentFalcon1024V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:     keytypes.AttestorComponentFalcon1024V1,
+		Category: keys.CategoryComponent,
+		Value: &coresigning.ComponentKeyMaterial{
+			ComponentKey: componentKey,
+			PublicKey:    append([]byte(nil), publicKey...),
+			PrivateKey:   append([]byte(nil), privateKey...),
+		},
+	}
+	session := &componentKeyTestSession{key: keyMaterial}
+	plan := preparedAttestorComponentPlan(t, componentKey)
+
+	result, signErr := signPreparedAttestorComponents(nil, plan, session)
+	if signErr != nil {
+		t.Fatalf("signPreparedAttestorComponents() error = %v", signErr)
+	}
+	if session.calls != 1 || session.gotAddress != componentKey {
+		t.Fatalf("session calls = %d address %q, want one call for %q", session.calls, session.gotAddress, componentKey)
+	}
+	if result.RequestID != plan.RequestID || result.ComponentKey != componentKey {
+		t.Fatalf("result metadata = %#v, want request_id %q component_key %q", result, plan.RequestID, componentKey)
+	}
+	if len(result.Signatures) != len(plan.Targets) {
+		t.Fatalf("Signatures len = %d, want %d", len(result.Signatures), len(plan.Targets))
+	}
+	for i, sig := range result.Signatures {
+		if sig.TargetIndex != plan.Targets[i].TargetIndex {
+			t.Fatalf("signature %d target index = %d, want %d", i, sig.TargetIndex, plan.Targets[i].TargetIndex)
+		}
+		if sig.SignatureScheme != keytypes.AttestorComponentFalcon1024V1 {
+			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, keytypes.AttestorComponentFalcon1024V1)
+		}
+		sigBytes, err := hex.DecodeString(sig.Signature)
+		if err != nil {
+			t.Fatalf("DecodeString(signature) error = %v", err)
+		}
+		if err := verify.VerifyFalcon1024(publicKey, plan.Targets[i].Message[:], sigBytes); err != nil {
+			t.Fatalf("signature %d does not verify over prepared component message: %v", i, err)
 		}
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil {

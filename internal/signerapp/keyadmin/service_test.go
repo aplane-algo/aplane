@@ -173,48 +173,72 @@ func TestServiceGenerateKeyEd25519(t *testing.T) {
 	if _, err := ir.FindKeyFile(result.Address); err != nil {
 		t.Fatalf("FindKeyFile(%q) error = %v", result.Address, err)
 	}
+	details, svcErr := svc.GetKeyDetails(ir, result.Address)
+	if svcErr != nil {
+		t.Fatalf("GetKeyDetails(ed25519) error = %#v", svcErr)
+	}
+	if details.PublicKeyHex != "" {
+		t.Fatalf("GetKeyDetails(ed25519) PublicKeyHex = %q, want hidden", details.PublicKeyHex)
+	}
 	if len(audit.generated) != 1 {
 		t.Fatalf("generated audit count = %d, want 1", len(audit.generated))
 	}
 }
 
 func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
-	ir := setupIdentityRuntime(t)
-	ir.Config().SetMode(identity.ModeAttestation)
-	audit := &auditRecorder{}
-	svc := Service{AuditLog: audit}
+	for _, keyType := range []string{
+		keytypes.AttestorComponentEd25519V1,
+		keytypes.AttestorComponentFalcon1024V1,
+	} {
+		t.Run(keyType, func(t *testing.T) {
+			ir := setupIdentityRuntime(t)
+			ir.Config().SetMode(identity.ModeAttestation)
+			audit := &auditRecorder{}
+			svc := Service{AuditLog: audit}
 
-	result, err := svc.GenerateKey(context.Background(), ir, keytypes.AttestorComponentEd25519V1, nil, nil)
-	if err != nil {
-		t.Fatalf("GenerateKey(component) error = %#v", err)
-	}
-	if result.PublicKeyHex == "" {
-		t.Fatal("GenerateKey(component) public key is empty")
-	}
-	if result.Address != result.PublicKeyHex {
-		t.Fatalf("GenerateKey(component) address = %q, want public key hex %q", result.Address, result.PublicKeyHex)
-	}
-	details, svcErr := svc.GetKeyDetails(ir, result.Address)
-	if svcErr != nil {
-		t.Fatalf("GetKeyDetails(component) error = %#v", svcErr)
-	}
-	if details.PublicKeyHex != result.PublicKeyHex {
-		t.Fatalf("GetKeyDetails(component) PublicKeyHex = %q, want %q", details.PublicKeyHex, result.PublicKeyHex)
-	}
-	if !result.IsComponentKey {
-		t.Fatal("GenerateKey(component) IsComponentKey = false, want true")
-	}
-	if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
-		t.Fatalf("GenerateKey(component) IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
-	}
-	if result.Mnemonic != "" {
-		t.Fatalf("GenerateKey(component) mnemonic = %q, want empty", result.Mnemonic)
-	}
-	if _, err := ir.FindKeyFile(result.Address); err != nil {
-		t.Fatalf("FindKeyFile(%q) error = %v", result.Address, err)
-	}
-	if len(audit.generated) != 1 || audit.generated[0].address != result.Address {
-		t.Fatalf("generated audit = %#v, want component address", audit.generated)
+			result, err := svc.GenerateKey(context.Background(), ir, keyType, nil, nil)
+			if err != nil {
+				t.Fatalf("GenerateKey(component) error = %#v", err)
+			}
+			if result.PublicKeyHex == "" {
+				t.Fatal("GenerateKey(component) public key is empty")
+			}
+			switch keyType {
+			case keytypes.AttestorComponentEd25519V1:
+				if result.Address != result.PublicKeyHex {
+					t.Fatalf("GenerateKey(component) address = %q, want public key hex %q", result.Address, result.PublicKeyHex)
+				}
+			case keytypes.AttestorComponentFalcon1024V1:
+				if !strings.HasPrefix(result.Address, "apc_") {
+					t.Fatalf("GenerateKey(component) address = %q, want apc_ selector", result.Address)
+				}
+				if result.Address == result.PublicKeyHex {
+					t.Fatal("GenerateKey(component) Falcon address unexpectedly equals public key hex")
+				}
+			}
+			details, svcErr := svc.GetKeyDetails(ir, result.Address)
+			if svcErr != nil {
+				t.Fatalf("GetKeyDetails(component) error = %#v", svcErr)
+			}
+			if details.PublicKeyHex != result.PublicKeyHex {
+				t.Fatalf("GetKeyDetails(component) PublicKeyHex = %q, want %q", details.PublicKeyHex, result.PublicKeyHex)
+			}
+			if !result.IsComponentKey {
+				t.Fatal("GenerateKey(component) IsComponentKey = false, want true")
+			}
+			if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
+				t.Fatalf("GenerateKey(component) IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
+			}
+			if result.Mnemonic != "" {
+				t.Fatalf("GenerateKey(component) mnemonic = %q, want empty", result.Mnemonic)
+			}
+			if _, err := ir.FindKeyFile(result.Address); err != nil {
+				t.Fatalf("FindKeyFile(%q) error = %v", result.Address, err)
+			}
+			if len(audit.generated) != 1 || audit.generated[0].address != result.Address {
+				t.Fatalf("generated audit = %#v, want component address", audit.generated)
+			}
+		})
 	}
 }
 

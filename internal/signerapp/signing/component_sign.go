@@ -13,10 +13,13 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/attestor/message"
+	"github.com/aplane-algo/aplane/internal/attestor/verify"
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
 type componentKeyGetter interface {
@@ -54,12 +57,16 @@ func signPreparedAttestorComponents(ctx context.Context, plan *ComponentSignPlan
 
 	signatures := make([]signerapi.ComponentSignature, len(plan.Targets))
 	for i, target := range plan.Targets {
-		signature := ed25519.Sign(ed25519.PrivateKey(componentKey.PrivateKey), target.Message[:])
+		signature, signErr := signAttestorComponentMessage(keyMaterial.Type, componentKey.PrivateKey, target.Message[:])
+		if signErr != nil {
+			return nil, signErr
+		}
 		signatures[i] = signerapi.ComponentSignature{
 			TargetIndex:     target.TargetIndex,
 			Signature:       hex.EncodeToString(signature),
-			SignatureScheme: keytypes.AttestorComponentEd25519V1,
+			SignatureScheme: keyMaterial.Type,
 		}
+		crypto.ZeroBytes(signature)
 	}
 
 	return &ComponentSignResult{
@@ -89,10 +96,10 @@ func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, c
 	if keyMaterial == nil {
 		return nil, nil, internal("loaded component key material is nil")
 	}
-	if keyMaterial.Type != keytypes.AttestorComponentEd25519V1 {
+	if !keytypes.IsAttestorComponentKeyType(keyMaterial.Type) {
 		gotType := keyMaterial.Type
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, badRequest(fmt.Sprintf("key %q is %s, not %s", componentKeySelector, gotType, keytypes.AttestorComponentEd25519V1))
+		return nil, nil, badRequest(fmt.Sprintf("key %q is %s, not an attestor component key", componentKeySelector, gotType))
 	}
 	if keyMaterial.Category != "" && keyMaterial.Category != keys.CategoryComponent {
 		zeroLoadedKeyMaterial(keyMaterial)
@@ -107,18 +114,61 @@ func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, c
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, internal("loaded component key selector does not match requested component key")
 	}
-	if len(componentKey.PrivateKey) != ed25519.PrivateKeySize {
+	publicKeySize, _ := keytypes.ComponentPublicKeySize(keyMaterial.Type)
+	privateKeySize, _ := keytypes.ComponentPrivateKeySize(keyMaterial.Type)
+	if len(componentKey.PrivateKey) != privateKeySize {
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, internal(fmt.Sprintf("loaded attestor component key has private key length %d", len(componentKey.PrivateKey)))
 	}
-	if len(componentKey.PublicKey) != ed25519.PublicKeySize {
+	if len(componentKey.PublicKey) != publicKeySize {
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, internal(fmt.Sprintf("loaded attestor component key has public key length %d", len(componentKey.PublicKey)))
 	}
-	derivedPublicKey, ok := ed25519.PrivateKey(componentKey.PrivateKey).Public().(ed25519.PublicKey)
-	if !ok || !bytes.Equal(derivedPublicKey, componentKey.PublicKey) {
+	if err := validateLoadedAttestorComponentPair(keyMaterial.Type, componentKey.PublicKey, componentKey.PrivateKey); err != nil {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, internal("loaded attestor component key public key does not match private key")
+		return nil, nil, internal(err.Error())
 	}
 	return keyMaterial, componentKey, nil
+}
+
+func signAttestorComponentMessage(keyType string, privateKey, msg []byte) ([]byte, *ServiceError) {
+	switch keyType {
+	case keytypes.AttestorComponentEd25519V1:
+		if len(privateKey) != ed25519.PrivateKeySize {
+			return nil, internal(fmt.Sprintf("loaded attestor component key has private key length %d", len(privateKey)))
+		}
+		return ed25519.Sign(ed25519.PrivateKey(privateKey), msg), nil
+	case keytypes.AttestorComponentFalcon1024V1:
+		signature, err := signerops.New(nil).Sign(privateKey, msg)
+		if err != nil {
+			return nil, internal(fmt.Sprintf("failed to sign Falcon attestor component message: %v", err))
+		}
+		return signature, nil
+	default:
+		return nil, badRequest(fmt.Sprintf("key type %q is not an attestor component key", keyType))
+	}
+}
+
+func validateLoadedAttestorComponentPair(keyType string, publicKey, privateKey []byte) error {
+	switch keyType {
+	case keytypes.AttestorComponentEd25519V1:
+		derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
+		if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
+			return fmt.Errorf("loaded attestor component key public key does not match private key")
+		}
+		return nil
+	case keytypes.AttestorComponentFalcon1024V1:
+		const probe = "APLANE_COMPONENT_KEY_LOAD_V1"
+		signature, err := signerops.New(nil).Sign(privateKey, []byte(probe))
+		if err != nil {
+			return fmt.Errorf("loaded Falcon attestor component key validation failed: %w", err)
+		}
+		defer crypto.ZeroBytes(signature)
+		if err := verify.VerifyFalcon1024(publicKey, []byte(probe), signature); err != nil {
+			return fmt.Errorf("loaded attestor component key public key does not match private key")
+		}
+		return nil
+	default:
+		return fmt.Errorf("loaded key type %q is not an attestor component key", keyType)
+	}
 }

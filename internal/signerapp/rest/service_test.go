@@ -597,23 +597,33 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 	}
 
 	foundEd25519 := false
-	foundComponent := false
+	foundEd25519Component := false
+	foundFalconComponent := false
 	for _, keyType := range resp.KeyTypes {
 		if keyType.KeyType == "ed25519" {
 			foundEd25519 = true
 		}
 		if keyType.KeyType == keytypes.AttestorComponentEd25519V1 {
-			foundComponent = true
+			foundEd25519Component = true
 			if keyType.Family != "attestor-ed25519" || keyType.MnemonicImport {
-				t.Fatalf("component key type info = %#v, want attestor component metadata", keyType)
+				t.Fatalf("Ed25519 component key type info = %#v, want attestor component metadata", keyType)
+			}
+		}
+		if keyType.KeyType == keytypes.AttestorComponentFalcon1024V1 {
+			foundFalconComponent = true
+			if keyType.Family != "attestor-falcon1024" || keyType.MnemonicImport {
+				t.Fatalf("Falcon component key type info = %#v, want attestor component metadata", keyType)
 			}
 		}
 	}
 	if !foundEd25519 {
 		t.Fatal("KeyTypes() did not include ed25519")
 	}
-	if !foundComponent {
+	if !foundEd25519Component {
 		t.Fatalf("KeyTypes() did not include %s", keytypes.AttestorComponentEd25519V1)
+	}
+	if !foundFalconComponent {
+		t.Fatalf("KeyTypes() did not include %s", keytypes.AttestorComponentFalcon1024V1)
 	}
 }
 
@@ -639,6 +649,9 @@ func TestServiceKeyTypesForIdentityFiltersByMode(t *testing.T) {
 	if keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentEd25519V1) {
 		t.Fatalf("signing mode key types included %s", keytypes.AttestorComponentEd25519V1)
 	}
+	if keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentFalcon1024V1) {
+		t.Fatalf("signing mode key types included %s", keytypes.AttestorComponentFalcon1024V1)
+	}
 
 	ir.Config().SetMode(identity.ModeAttestation)
 	resp, svcErr = Service{}.KeyTypesForIdentity(ir)
@@ -650,6 +663,9 @@ func TestServiceKeyTypesForIdentityFiltersByMode(t *testing.T) {
 	}
 	if !keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentEd25519V1) {
 		t.Fatalf("attestation mode key types missing %s", keytypes.AttestorComponentEd25519V1)
+	}
+	if !keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentFalcon1024V1) {
+		t.Fatalf("attestation mode key types missing %s", keytypes.AttestorComponentFalcon1024V1)
 	}
 }
 

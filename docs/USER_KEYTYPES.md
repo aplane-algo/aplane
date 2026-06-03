@@ -15,8 +15,11 @@ APlane has two optional key type paths:
 | Compiled provider | `aplane.falcon1024_ed25519.v1` | Go code in the current binary | `apstore keytype activate` or apadmin KeyType Library |
 | YAML template | `aplane.whitelist.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apstore template import` or apadmin KeyType Library |
 
-Default-enabled compiled providers, such as `ed25519` and
-`aplane.falcon1024.v1`, are available without extra steps.
+Default-enabled compiled providers, such as `ed25519`,
+`aplane.falcon1024.v1`, `aplane.attestor-ed25519.v1`,
+`aplane.attestor-falcon1024.v1`, and
+`aplane.falcon1024-attested.v1`, are available without extra steps when the
+identity mode allows that key class.
 Library-visible compiled providers are present in the binary but require an
 identity-local activation record before that identity can discover or generate
 them.

@@ -164,9 +164,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		}
 
 		if keytypes.IsAttestorComponentKeyType(keyType) {
-			info.Family = "attestor-ed25519"
-			info.DisplayName = "Attestor Ed25519 component key"
-			info.Description = "Raw Ed25519 attestor component signing key"
+			info.Family, info.DisplayName, info.Description = attestorComponentKeyTypeMetadata(keyType)
 			keyTypes = append(keyTypes, info)
 			continue
 		}
@@ -277,6 +275,17 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 	}
 
 	return keyTypes
+}
+
+func attestorComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
+	switch keyType {
+	case keytypes.AttestorComponentEd25519V1:
+		return "attestor-ed25519", "Attestor Ed25519 component key", "Raw Ed25519 attestor component signing key"
+	case keytypes.AttestorComponentFalcon1024V1:
+		return "attestor-falcon1024", "Attestor Falcon-1024 component key", "Raw Falcon-1024 attestor component signing key"
+	default:
+		return keyType, keyType, "Raw attestor component signing key"
+	}
 }
 
 func (s Service) KeyTypes() *signerapi.KeyTypesResponse {

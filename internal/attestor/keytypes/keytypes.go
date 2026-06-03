@@ -7,15 +7,22 @@ package keytypes
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"strings"
+
+	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
 const (
 	// AttestorComponentEd25519V1 is a raw Ed25519 component-signing key. It is
 	// not an Algorand spending account and must not be accepted by /sign.
 	AttestorComponentEd25519V1 = "aplane.attestor-ed25519.v1"
+
+	// AttestorComponentFalcon1024V1 is a raw Falcon-1024 component-signing key.
+	// It is not an Algorand spending account and must not be accepted by /sign.
+	AttestorComponentFalcon1024V1 = "aplane.attestor-falcon1024.v1"
 
 	// AttestedFalcon1024V1 is the MVP user-account key type whose LogicSig
 	// verifies a Falcon-1024 user signature plus an attestor component
@@ -30,7 +37,12 @@ const (
 // IsAttestorComponentKeyType reports whether keyType names a component key
 // that may only be used through /sign/component.
 func IsAttestorComponentKeyType(keyType string) bool {
-	return keyType == AttestorComponentEd25519V1
+	switch keyType {
+	case AttestorComponentEd25519V1, AttestorComponentFalcon1024V1:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsAttestedAccountKeyType reports whether keyType names an attested spending
@@ -46,22 +58,46 @@ func IsAttestorMVPKeyType(keyType string) bool {
 }
 
 // ComponentKeySelector returns the canonical selector for an attestor component
-// key. Selectors are lower-case Ed25519 public-key hex.
+// key. Selectors are lower-case public-key hex.
 func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 	if !IsAttestorComponentKeyType(keyType) {
 		return "", fmt.Errorf("key type %q is not an attestor component key type", keyType)
 	}
-	if len(publicKey) != ed25519.PublicKeySize {
-		return "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), ed25519.PublicKeySize)
+	wantSize, ok := ComponentPublicKeySize(keyType)
+	if !ok {
+		return "", fmt.Errorf("key type %q is not an attestor component key type", keyType)
+	}
+	if len(publicKey) != wantSize {
+		return "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
 	}
 
-	return hex.EncodeToString(publicKey), nil
+	switch keyType {
+	case AttestorComponentEd25519V1:
+		return hex.EncodeToString(publicKey), nil
+	case AttestorComponentFalcon1024V1:
+		sum := sha256.Sum256(publicKey)
+		return "apc_" + hex.EncodeToString(sum[:]), nil
+	default:
+		return "", fmt.Errorf("key type %q is not an attestor component key type", keyType)
+	}
 }
 
 // NormalizeComponentKeySelector validates and canonicalizes a component-key
-// selector. It accepts an optional 0x prefix and upper-case hex on input.
+// selector. Ed25519 selectors are public-key hex and accept an optional 0x
+// prefix and upper-case hex. Hashed component selectors use the apc_ prefix.
 func NormalizeComponentKeySelector(selector string) (string, error) {
 	raw := strings.TrimSpace(selector)
+	if strings.HasPrefix(strings.ToLower(raw), "apc_") {
+		hashHex := strings.TrimPrefix(strings.TrimPrefix(raw, "apc_"), "APC_")
+		decoded, err := hex.DecodeString(hashHex)
+		if err != nil {
+			return "", fmt.Errorf("component key selector hash must be hex: %w", err)
+		}
+		if len(decoded) != sha256.Size {
+			return "", fmt.Errorf("component key selector hash length %d invalid (expected %d bytes)", len(decoded), sha256.Size)
+		}
+		return "apc_" + hex.EncodeToString(decoded), nil
+	}
 	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "0x"), "0X")
 	if raw == "" {
 		return "", fmt.Errorf("component key selector is required")
@@ -71,7 +107,7 @@ func NormalizeComponentKeySelector(selector string) (string, error) {
 		return "", fmt.Errorf("component key selector must be hex: %w", err)
 	}
 	if len(publicKey) != ed25519.PublicKeySize {
-		return "", fmt.Errorf("component key selector length %d invalid (expected %d bytes)", len(publicKey), ed25519.PublicKeySize)
+		return "", fmt.Errorf("component key selector length %d invalid (expected %d bytes, or apc_<sha256>)", len(publicKey), ed25519.PublicKeySize)
 	}
 	return hex.EncodeToString(publicKey), nil
 }
@@ -81,4 +117,30 @@ func NormalizeComponentKeySelector(selector string) (string, error) {
 func IsComponentKeySelector(selector string) bool {
 	_, err := NormalizeComponentKeySelector(selector)
 	return err == nil
+}
+
+// ComponentPublicKeySize returns the public key byte size for a component key
+// type.
+func ComponentPublicKeySize(keyType string) (int, bool) {
+	switch keyType {
+	case AttestorComponentEd25519V1:
+		return ed25519.PublicKeySize, true
+	case AttestorComponentFalcon1024V1:
+		return falconfamily.PublicKeySize, true
+	default:
+		return 0, false
+	}
+}
+
+// ComponentPrivateKeySize returns the private key byte size for a component key
+// type.
+func ComponentPrivateKeySize(keyType string) (int, bool) {
+	switch keyType {
+	case AttestorComponentEd25519V1:
+		return ed25519.PrivateKeySize, true
+	case AttestorComponentFalcon1024V1:
+		return falconfamily.PrivateKeySize, true
+	default:
+		return 0, false
+	}
 }

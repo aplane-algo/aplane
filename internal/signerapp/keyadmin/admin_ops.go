@@ -4,6 +4,7 @@
 package keyadmin
 
 import (
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
@@ -63,7 +64,9 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 		info, err := keymgmt.DetectKeyInfoFromFileWithMasterKey(keyFile, mk)
 		if err == nil {
 			result.KeyType = info.Type
-			result.PublicKeyHex = info.PublicKeyHex
+			if keytypes.IsAttestorComponentKeyType(info.Type) {
+				result.PublicKeyHex = info.PublicKeyHex
+			}
 			result.Parameters = info.Parameters
 			result.TemplateProvenanceStatus, result.TemplateProvenanceNote = keys.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
 			result.DisplayTEAL, _ = keymgmt.GetDisplayTEALWithMasterKey(keyFile, mk)

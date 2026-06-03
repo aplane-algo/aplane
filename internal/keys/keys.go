@@ -4,7 +4,6 @@
 package keys
 
 import (
-	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -514,8 +513,12 @@ func componentAddressAndPublicKey(meta KeyPayloadMetadata) (string, string, erro
 	if err != nil {
 		return "", "", fmt.Errorf("failed to decode component public key: %w", err)
 	}
-	if len(publicKey) != ed25519.PublicKeySize {
-		return "", "", fmt.Errorf("invalid component public key length: expected %d bytes, got %d", ed25519.PublicKeySize, len(publicKey))
+	wantSize, ok := keytypes.ComponentPublicKeySize(meta.KeyType)
+	if !ok {
+		return "", "", fmt.Errorf("unsupported component key type: %s", meta.KeyType)
+	}
+	if len(publicKey) != wantSize {
+		return "", "", fmt.Errorf("invalid component public key length: expected %d bytes, got %d", wantSize, len(publicKey))
 	}
 	componentKey, err := keytypes.ComponentKeySelector(meta.KeyType, publicKey)
 	if err != nil {

@@ -65,6 +65,8 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		{keyType: "ed25519", want: true},
 		{keyType: "aplane.falcon1024.v1", want: true},
 		{keyType: falcon1024attested.KeyTypeV1, want: false},
+		{keyType: keytypes.AttestorComponentEd25519V1, want: false},
+		{keyType: keytypes.AttestorComponentFalcon1024V1, want: false},
 		{keyType: "aplane.ecdsak1.v1", want: false},
 		{keyType: "aplane.falcon1024_ed25519.v1", want: false},
 		{keyType: "aplane.falcon1024-whitelist.v1", want: false},
@@ -158,6 +160,12 @@ func TestValidKeyTypesIncludeAttestorComponentKey(t *testing.T) {
 	if !IsValidKeyType(keytypes.AttestorComponentEd25519V1) {
 		t.Fatalf("IsValidKeyType() rejected %s", keytypes.AttestorComponentEd25519V1)
 	}
+	if !containsKeyType(GetValidKeyTypes(), keytypes.AttestorComponentFalcon1024V1) {
+		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.AttestorComponentFalcon1024V1)
+	}
+	if !IsValidKeyType(keytypes.AttestorComponentFalcon1024V1) {
+		t.Fatalf("IsValidKeyType() rejected %s", keytypes.AttestorComponentFalcon1024V1)
+	}
 }
 
 func TestValidKeyTypesIncludeFalcon1024AttestedKey(t *testing.T) {
@@ -239,27 +247,47 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 }
 
 func TestGenerateKeyAttestorComponent(t *testing.T) {
-	paths := storepaths.NewPaths(t.TempDir())
-	masterKey := []byte("0123456789abcdef0123456789abcdef")
+	for _, keyType := range []string{
+		keytypes.AttestorComponentEd25519V1,
+		keytypes.AttestorComponentFalcon1024V1,
+	} {
+		t.Run(keyType, func(t *testing.T) {
+			paths := storepaths.NewPaths(t.TempDir())
+			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-	result, err := GenerateKey(paths, "test-identity", keytypes.AttestorComponentEd25519V1, masterKey, nil)
-	if err != nil {
-		t.Fatalf("GenerateKey(component) error = %v", err)
-	}
-	if !result.IsComponentKey {
-		t.Fatal("IsComponentKey = false, want true")
-	}
-	if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
-		t.Fatalf("IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
-	}
-	if result.PublicKeyHex == "" {
-		t.Fatal("PublicKeyHex is empty")
-	}
-	if result.Address != result.PublicKeyHex {
-		t.Fatalf("Address = %q, want public key hex %q", result.Address, result.PublicKeyHex)
-	}
-	if result.Mnemonic != "" {
-		t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)
+			result, err := GenerateKey(paths, "test-identity", keyType, masterKey, nil)
+			if err != nil {
+				t.Fatalf("GenerateKey(component) error = %v", err)
+			}
+			if result.KeyType != keyType {
+				t.Fatalf("KeyType = %q, want %s", result.KeyType, keyType)
+			}
+			if !result.IsComponentKey {
+				t.Fatal("IsComponentKey = false, want true")
+			}
+			if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
+				t.Fatalf("IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
+			}
+			if result.PublicKeyHex == "" {
+				t.Fatal("PublicKeyHex is empty")
+			}
+			switch keyType {
+			case keytypes.AttestorComponentEd25519V1:
+				if result.Address != result.PublicKeyHex {
+					t.Fatalf("Address = %q, want public key hex %q", result.Address, result.PublicKeyHex)
+				}
+			case keytypes.AttestorComponentFalcon1024V1:
+				if !strings.HasPrefix(result.Address, "apc_") {
+					t.Fatalf("Address = %q, want apc_ selector", result.Address)
+				}
+				if result.Address == result.PublicKeyHex {
+					t.Fatal("Falcon component address unexpectedly equals public key hex")
+				}
+			}
+			if result.Mnemonic != "" {
+				t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)
+			}
+		})
 	}
 }
 

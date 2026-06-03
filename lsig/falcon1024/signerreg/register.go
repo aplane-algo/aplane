@@ -7,6 +7,9 @@ package signerreg
 import (
 	"sync"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
+	internalkeygen "github.com/aplane-algo/aplane/internal/keygen"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
@@ -25,6 +28,12 @@ func RegisterSigner() {
 		falcon.RegisterClient()
 		falconsigning.RegisterProvider()
 		keygen.RegisterGenerator()
+		internalkeygen.RegisterAttestorFalcon1024Generator()
+		keytypecatalog.Register(keytypecatalog.Entry{
+			KeyType:      keytypes.AttestorComponentFalcon1024V1,
+			Family:       "attestor-falcon1024",
+			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+		})
 		mnemonic.Register(bip39impl.NewHandler(family.Name, family.MnemonicWordCount))
 		falconkeys.RegisterProcessors()
 	})

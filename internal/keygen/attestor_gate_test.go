@@ -40,6 +40,7 @@ func TestGetGeneratorRequiresExactAttestorKeyTypeRegistration(t *testing.T) {
 
 	tests := []string{
 		keytypes.AttestorComponentEd25519V1,
+		keytypes.AttestorComponentFalcon1024V1,
 		keytypes.AttestedFalcon1024V1,
 	}
 	for _, keyType := range tests {
@@ -69,5 +70,15 @@ func TestGetGeneratorAllowsExactAttestorKeyTypeRegistration(t *testing.T) {
 	}
 	if got != exact {
 		t.Fatalf("GetGenerator() = %#v, want exact generator", got)
+	}
+
+	falconExact := &registryTestGenerator{family: keytypes.AttestorComponentFalcon1024V1}
+	Register(falconExact)
+	got, err = GetGenerator(keytypes.AttestorComponentFalcon1024V1)
+	if err != nil {
+		t.Fatalf("GetGenerator(falcon) error = %v", err)
+	}
+	if got != falconExact {
+		t.Fatalf("GetGenerator(falcon) = %#v, want exact generator", got)
 	}
 }

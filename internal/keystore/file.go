@@ -16,12 +16,14 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
+	"github.com/aplane-algo/aplane/internal/attestor/verify"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
 // FileKeyStore implements KeyStore using encrypted files on disk
@@ -348,9 +350,14 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode component public key: %w", err)
 	}
-	if len(publicKey) != ed25519.PublicKeySize {
+	publicKeySize, ok := keytypes.ComponentPublicKeySize(keyType)
+	if !ok {
 		crypto.ZeroBytes(publicKey)
-		return nil, fmt.Errorf("invalid component public key length: expected %d bytes, got %d", ed25519.PublicKeySize, len(publicKey))
+		return nil, fmt.Errorf("unsupported component key type: %s", keyType)
+	}
+	if len(publicKey) != publicKeySize {
+		crypto.ZeroBytes(publicKey)
+		return nil, fmt.Errorf("invalid component public key length: expected %d bytes, got %d", publicKeySize, len(publicKey))
 	}
 
 	privateKey, err := hex.DecodeString(payloadMeta.PrivateKeyHex)
@@ -358,17 +365,22 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 		crypto.ZeroBytes(publicKey)
 		return nil, fmt.Errorf("failed to decode component private key: %w", err)
 	}
-	if len(privateKey) != ed25519.PrivateKeySize {
+	privateKeySize, ok := keytypes.ComponentPrivateKeySize(keyType)
+	if !ok {
 		crypto.ZeroBytes(publicKey)
 		crypto.ZeroBytes(privateKey)
-		return nil, fmt.Errorf("invalid component private key length: expected %d bytes, got %d", ed25519.PrivateKeySize, len(privateKey))
+		return nil, fmt.Errorf("unsupported component key type: %s", keyType)
+	}
+	if len(privateKey) != privateKeySize {
+		crypto.ZeroBytes(publicKey)
+		crypto.ZeroBytes(privateKey)
+		return nil, fmt.Errorf("invalid component private key length: expected %d bytes, got %d", privateKeySize, len(privateKey))
 	}
 
-	derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
-	if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
+	if err := validateComponentPublicPrivatePair(keyType, publicKey, privateKey); err != nil {
 		crypto.ZeroBytes(publicKey)
 		crypto.ZeroBytes(privateKey)
-		return nil, fmt.Errorf("component public key does not match private key")
+		return nil, err
 	}
 
 	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
@@ -387,6 +399,30 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 			PrivateKey:   privateKey,
 		},
 	}, nil
+}
+
+func validateComponentPublicPrivatePair(keyType string, publicKey, privateKey []byte) error {
+	switch keyType {
+	case keytypes.AttestorComponentEd25519V1:
+		derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
+		if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
+			return fmt.Errorf("component public key does not match private key")
+		}
+		return nil
+	case keytypes.AttestorComponentFalcon1024V1:
+		const probe = "APLANE_COMPONENT_KEY_LOAD_V1"
+		signature, err := signerops.New(nil).Sign(privateKey, []byte(probe))
+		if err != nil {
+			return fmt.Errorf("component public/private key validation failed: %w", err)
+		}
+		defer crypto.ZeroBytes(signature)
+		if err := verify.VerifyFalcon1024(publicKey, []byte(probe), signature); err != nil {
+			return fmt.Errorf("component public key does not match private key")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported component key type: %s", keyType)
+	}
 }
 
 // GetMetadata returns metadata for a single key
