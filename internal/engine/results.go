@@ -47,11 +47,12 @@ type AccountInfo struct {
 
 // KeyInfo represents a remote signing key from Signer
 type KeyInfo struct {
-	Address                  string `json:"address"`
-	KeyType                  string `json:"key_type"` // "ed25519", "aplane.falcon1024.v1", "aplane.timed-whitelist.v1", etc.
-	PublicKeyHex             string `json:"public_key_hex"`
-	TemplateProvenanceStatus string `json:"template_provenance_status,omitempty"`
-	TemplateProvenanceNote   string `json:"template_provenance_note,omitempty"`
+	Address                  string            `json:"address"`
+	KeyType                  string            `json:"key_type"` // "ed25519", "aplane.falcon1024.v1", "aplane.timed-whitelist.v1", etc.
+	PublicKeyHex             string            `json:"public_key_hex"`
+	Parameters               map[string]string `json:"parameters,omitempty"`
+	TemplateProvenanceStatus string            `json:"template_provenance_status,omitempty"`
+	TemplateProvenanceNote   string            `json:"template_provenance_note,omitempty"`
 }
 
 // ASAInfo holds asset metadata

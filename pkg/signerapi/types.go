@@ -326,16 +326,17 @@ type KeyTypesResponse struct {
 
 // KeyInfo represents a key returned from the /keys endpoint.
 type KeyInfo struct {
-	Address                  string           `json:"address"`
-	PublicKeyHex             string           `json:"public_key_hex"`
-	KeyType                  string           `json:"key_type"`
-	LsigSize                 int              `json:"lsig_size,omitempty"` // Total LogicSig size for budget calculation (bytecode + crypto sig)
-	IsGenericLsig            bool             `json:"is_generic_lsig,omitempty"`
-	IsComponentKey           bool             `json:"is_component_key,omitempty"`
-	IsSpendingAccount        *bool            `json:"is_spending_account,omitempty"`
-	SigningArgs              []SigningArgInfo `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
-	TemplateProvenanceStatus string           `json:"template_provenance_status,omitempty"`
-	TemplateProvenanceNote   string           `json:"template_provenance_note,omitempty"`
+	Address                  string            `json:"address"`
+	PublicKeyHex             string            `json:"public_key_hex"`
+	KeyType                  string            `json:"key_type"`
+	LsigSize                 int               `json:"lsig_size,omitempty"` // Total LogicSig size for budget calculation (bytecode + crypto sig)
+	IsGenericLsig            bool              `json:"is_generic_lsig,omitempty"`
+	IsComponentKey           bool              `json:"is_component_key,omitempty"`
+	IsSpendingAccount        *bool             `json:"is_spending_account,omitempty"`
+	SigningArgs              []SigningArgInfo  `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
+	Parameters               map[string]string `json:"parameters,omitempty"`
+	TemplateProvenanceStatus string            `json:"template_provenance_status,omitempty"`
+	TemplateProvenanceNote   string            `json:"template_provenance_note,omitempty"`
 }
 
 // KeysResponse is the response from the /keys endpoint.

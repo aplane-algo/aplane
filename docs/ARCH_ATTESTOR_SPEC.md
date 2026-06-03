@@ -315,6 +315,25 @@ an Algorand address when `is_component_key:true` or `is_spending_account:false`.
 existing `parameters` field when parameters are present. Contract fixtures must
 pin both `/keys` and `/admin/generate` component-key examples.
 
+For attested account rows, `/keys` must expose the non-secret creation metadata
+needed for client orchestration:
+
+```json
+{
+  "address": "<attested_account_address>",
+  "public_key_hex": "...",
+  "key_type": "aplane.falcon1024-attested.v1",
+  "parameters": {
+    "attestor_public_key": "<attestor_public_key_hex>"
+  }
+}
+```
+
+This is a compatibility-bearing `/keys` wire projection. The value is the
+attestor public key stored at generation time and embedded in the LogicSig; it
+is not an endpoint credential and does not prove ownership by any remote
+attestor endpoint.
+
 `aplane.falcon1024-attested.v1` is an attested account key. It is a
 DSA-backed LogicSig key on disk with:
 
@@ -1077,7 +1096,10 @@ should stay simple:
 
 Shell command workflow logic belongs in `internal/apshellapp`, not
 `cmd/apshell`. Reusable network/signing orchestration belongs in
-`internal/engine` or a focused internal package.
+`internal/engine` or a focused internal package. Endpoint resolvers that need
+signer HTTP clients must obtain them through the existing
+`internal/engine/connect` ownership path rather than creating a parallel
+connection or tunnel lifecycle.
 
 Client-side credential routing is separate local client config. Attestor
 endpoint mappings use the expected attestor public key hex as the map key and
@@ -1091,6 +1113,23 @@ misconfiguration check only and does not prove key ownership. Network failure
 may fail over to another equivalent endpoint; policy rejection is final and
 must not be retried as an outage. The actual trust anchor remains the attestor
 public key embedded at `aplane.<user-key-family>-attested.v1` generation time.
+
+Endpoint resolution rules:
+
+- If an explicit `attestor_endpoints[attestor_public_key]` mapping exists, the
+  client uses only the configured endpoint set for that public key. A `/keys`
+  mismatch for an explicitly configured endpoint is a hard configuration error,
+  not permission to fall back to local self-discovery.
+- If no explicit mapping exists, development self-discovery may resolve to the
+  currently connected signer when that signer advertises a matching
+  `aplane.attestor-ed25519.v1` component key. This is local development
+  ergonomics only; docs must not present self-attestation as production
+  third-party attestation or as a security control.
+- Remote production attestor endpoints must use an authenticated confidential
+  transport. The preferred product path is the existing SSH tunnel and
+  `known_hosts` trust model owned by `internal/engine/connect`; HTTPS with
+  normal signer token authentication is also acceptable when deployed with
+  ordinary TLS validation. Raw remote `http://` examples are loopback/dev only.
 
 ## 19. Implementation Ownership
 
@@ -1123,7 +1162,8 @@ Existing package changes:
 - `internal/signerapp/rest`: expose service methods for new endpoints.
 - `internal/signerapp/rest` and the `/keys` inventory DTO in `pkg/signerapi`:
   expose `public_key_hex`, `is_component_key`, and `is_spending_account` for
-  component-key rows in `/keys` and key-generation responses.
+  component-key rows in `/keys` and key-generation responses, and expose
+  `parameters.attestor_public_key` for attested-account rows.
 - `internal/signerapp/txdesc`: add component request descriptions for manual
   review and audit (Section 11.3).
 - `internal/signerapp/audit`: add event types and fields.
@@ -1167,6 +1207,7 @@ Phase 0 contract tests:
 - `/keys` and `/admin/generate` component-key fixtures include `address`,
   `public_key_hex`, `key_type`, `is_component_key:true`, and
   `is_spending_account:false`.
+- `/keys` attested-account fixtures include `parameters.attestor_public_key`.
 - `/sign/component` and `/sign/assemble` fixtures, including passthrough
   assembly items, are committed.
 - attestor policy YAML fixtures prove existing `transfer_policy` routes can

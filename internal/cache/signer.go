@@ -11,11 +11,12 @@ import (
 // NewSignerCache creates an empty SignerCache
 func NewSignerCache() SignerCache {
 	cache := SignerCache{
-		SchemaVersion: cachePayloadSchemaVersion,
-		Keys:          make(map[string]string),
-		GenericLsigs:  make(map[string]bool),
-		LsigSizes:     make(map[string]int),
-		SigningArgs:   make(map[string][]SigningArgInfo),
+		SchemaVersion:      cachePayloadSchemaVersion,
+		Keys:               make(map[string]string),
+		GenericLsigs:       make(map[string]bool),
+		LsigSizes:          make(map[string]int),
+		SigningArgs:        make(map[string][]SigningArgInfo),
+		AttestorPublicKeys: make(map[string]string),
 	}
 	return cache
 }
@@ -61,6 +62,10 @@ func (cache *SignerCache) AddAddress(address string, keyType string) {
 // RemoveAddress removes an address from the signer cache
 func (cache *SignerCache) RemoveAddress(address string) {
 	delete(cache.Keys, address)
+	delete(cache.GenericLsigs, address)
+	delete(cache.LsigSizes, address)
+	delete(cache.SigningArgs, address)
+	delete(cache.AttestorPublicKeys, address)
 }
 
 // Count returns the number of addresses in the cache
@@ -103,6 +108,29 @@ func (cache *SignerCache) SetLsigSize(address string, size int) {
 		cache.LsigSizes = make(map[string]int)
 	}
 	cache.LsigSizes[address] = size
+}
+
+// AttestorPublicKeyForAddress returns the attestor public key embedded in an
+// attested account LogicSig, when signer inventory exposed it.
+func (cache *SignerCache) AttestorPublicKeyForAddress(address string) (string, bool) {
+	if cache.AttestorPublicKeys == nil {
+		return "", false
+	}
+	value, ok := cache.AttestorPublicKeys[address]
+	return value, ok && value != ""
+}
+
+// SetAttestorPublicKeyForAddress stores or clears the embedded attestor public
+// key for an attested account.
+func (cache *SignerCache) SetAttestorPublicKeyForAddress(address, publicKeyHex string) {
+	if cache.AttestorPublicKeys == nil {
+		cache.AttestorPublicKeys = make(map[string]string)
+	}
+	if publicKeyHex == "" {
+		delete(cache.AttestorPublicKeys, address)
+		return
+	}
+	cache.AttestorPublicKeys[address] = publicKeyHex
 }
 
 // GetSigningArgs returns the key-file signing args schema for a LogicSig address.

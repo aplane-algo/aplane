@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -147,6 +148,7 @@ type KeyScanInfo struct {
 	LsigSize               int    // Total LogicSig size in bytes (bytecode + signature), 0 for ed25519
 	PublicKeyHex           string // Hex-encoded public key (for /keys API)
 	BaseKeyType            string // Base DSA key type used for signing metadata, if present
+	Parameters             map[string]string
 	SigningArgs            []StoredSigningArg
 	SigningMetadataVersion int
 	TemplateFingerprint    string
@@ -340,6 +342,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 		signingMeta := SigningMetadata{
 			Category:               payloadMeta.Category,
 			BaseKeyType:            payloadMeta.BaseKeyType,
+			Parameters:             maps.Clone(payloadMeta.Parameters),
 			SigningArgs:            payloadMeta.SigningArgs,
 			SigningMetadataVersion: payloadMeta.SigningMetadataVersion,
 		}
@@ -463,6 +466,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 			LsigSize:               lsigSize,
 			PublicKeyHex:           publicKeyHex,
 			BaseKeyType:            signingMeta.BaseKeyType,
+			Parameters:             signingMeta.Parameters,
 			SigningArgs:            signingMeta.SigningArgs,
 			SigningMetadataVersion: signingMeta.SigningMetadataVersion,
 			TemplateFingerprint:    templateFingerprint,
@@ -665,6 +669,7 @@ func logicSigAddressBytes(bytecode []byte) (types.Address, error) {
 type SigningMetadata struct {
 	Category               string
 	BaseKeyType            string
+	Parameters             map[string]string
 	SigningArgs            []StoredSigningArg
 	SigningMetadataVersion int
 }
@@ -677,6 +682,7 @@ func ExtractSigningMetadata(data []byte) SigningMetadata {
 	return SigningMetadata{
 		Category:               meta.Category,
 		BaseKeyType:            meta.BaseKeyType,
+		Parameters:             maps.Clone(meta.Parameters),
 		SigningArgs:            meta.SigningArgs,
 		SigningMetadataVersion: meta.SigningMetadataVersion,
 	}

@@ -9,6 +9,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -43,6 +44,7 @@ type FileKeyStore struct {
 // SigningSummary is the non-sensitive key-file signing metadata cached at scan time.
 type SigningSummary struct {
 	Category               string
+	Parameters             map[string]string
 	SigningArgs            []lsigprovider.RuntimeArgDef
 	SigningMetadataVersion int
 	TemplateFingerprint    string
@@ -241,6 +243,7 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	signingMeta := keys.SigningMetadata{
 		Category:               info.Category,
 		BaseKeyType:            info.BaseKeyType,
+		Parameters:             maps.Clone(info.Parameters),
 		SigningArgs:            info.SigningArgs,
 		SigningMetadataVersion: info.SigningMetadataVersion,
 	}
@@ -566,6 +569,7 @@ func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 	for k, v := range f.cache {
 		summary := SigningSummary{
 			Category:               v.Category,
+			Parameters:             maps.Clone(v.Parameters),
 			SigningMetadataVersion: v.SigningMetadataVersion,
 			TemplateFingerprint:    v.TemplateFingerprint,
 		}

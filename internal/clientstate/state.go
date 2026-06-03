@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/addressdisplay"
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientdata"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -141,6 +142,7 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 	s.SignerCache.GenericLsigs = make(map[string]bool)
 	s.SignerCache.LsigSizes = make(map[string]int)
 	s.SignerCache.SigningArgs = make(map[string][]cache.SigningArgInfo)
+	s.SignerCache.AttestorPublicKeys = make(map[string]string)
 	s.SignerCache.Locked = false
 	s.SignerCache.BindStore(s.CacheStore)
 	for _, keyInfo := range keys {
@@ -151,6 +153,9 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 		}
 		if keyInfo.IsGenericLsig {
 			s.SignerCache.SetGenericLsig(keyInfo.Address, true)
+		}
+		if attestorPublicKey := keyInfo.Parameters[keytypes.ParameterAttestorPublicKey]; attestorPublicKey != "" {
+			s.SignerCache.SetAttestorPublicKeyForAddress(keyInfo.Address, attestorPublicKey)
 		}
 		if len(keyInfo.SigningArgs) > 0 {
 			signingArgs := make([]cache.SigningArgInfo, len(keyInfo.SigningArgs))

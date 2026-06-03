@@ -31,7 +31,7 @@ const (
 	KeyTypeV1   = keytypes.AttestedFalcon1024V1
 	BaseKeyType = "aplane.falcon1024.v1"
 
-	ParamAttestorPublicKey = "attestor_public_key"
+	ParamAttestorPublicKey = keytypes.ParameterAttestorPublicKey
 
 	SignatureSize = 2 + family.MaxSignatureSize + ed25519.SignatureSize
 )

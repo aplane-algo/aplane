@@ -21,6 +21,10 @@ const (
 	// verifies a Falcon-1024 user signature plus an attestor component
 	// signature.
 	AttestedFalcon1024V1 = "aplane.falcon1024-attested.v1"
+
+	// ParameterAttestorPublicKey is the durable creation parameter that records
+	// the attestor Ed25519 public key embedded in an attested account LogicSig.
+	ParameterAttestorPublicKey = "attestor_public_key"
 )
 
 // IsAttestorComponentKeyType reports whether keyType names a component key

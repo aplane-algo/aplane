@@ -51,6 +51,9 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			keyInfo.IsComponentKey = true
 			keyInfo.IsSpendingAccount = &spending
 		}
+		if keytypes.IsAttestedAccountKeyType(keyType) {
+			keyInfo.Parameters = attestedAccountParameters(summary.Parameters)
+		}
 		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = keys.CompareTemplateFingerprint(keyType, summary.TemplateFingerprint)
 
 		if summary.SigningMetadataVersion > 0 {
@@ -61,6 +64,16 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 	}
 
 	return keyList
+}
+
+func attestedAccountParameters(parameters map[string]string) map[string]string {
+	attestorPublicKey := parameters[keytypes.ParameterAttestorPublicKey]
+	if attestorPublicKey == "" {
+		return nil
+	}
+	return map[string]string{
+		keytypes.ParameterAttestorPublicKey: attestorPublicKey,
+	}
 }
 
 func restInputModeInfos(modes []lsigprovider.InputMode) []signerapi.InputModeInfo {

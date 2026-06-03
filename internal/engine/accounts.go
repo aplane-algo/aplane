@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/aplane-algo/aplane/internal/asa"
@@ -162,6 +163,7 @@ func (e *Engine) ListKeysWithContext(ctx context.Context) ([]KeyInfo, error) {
 			Address:                  k.Address,
 			KeyType:                  k.KeyType,
 			PublicKeyHex:             k.PublicKeyHex,
+			Parameters:               maps.Clone(k.Parameters),
 			TemplateProvenanceStatus: k.TemplateProvenanceStatus,
 			TemplateProvenanceNote:   k.TemplateProvenanceNote,
 		})
@@ -200,6 +202,7 @@ func (e *Engine) RefreshKeysWithContext(ctx context.Context) ([]KeyInfo, error) 
 			Address:                  k.Address,
 			KeyType:                  k.KeyType,
 			PublicKeyHex:             k.PublicKeyHex,
+			Parameters:               maps.Clone(k.Parameters),
 			TemplateProvenanceStatus: k.TemplateProvenanceStatus,
 			TemplateProvenanceNote:   k.TemplateProvenanceNote,
 		})

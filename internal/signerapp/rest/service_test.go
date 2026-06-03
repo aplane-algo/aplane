@@ -561,6 +561,33 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	}
 }
 
+func TestAttestedAccountParametersProjection(t *testing.T) {
+	const attestorPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
+
+	got := attestedAccountParameters(map[string]string{
+		keytypes.ParameterAttestorPublicKey: attestorPublicKey,
+		"unrelated":                         "not-projected",
+	})
+	if got[keytypes.ParameterAttestorPublicKey] != attestorPublicKey {
+		t.Fatalf("attestedAccountParameters() = %#v, want attestor public key", got)
+	}
+	if _, ok := got["unrelated"]; ok {
+		t.Fatalf("attestedAccountParameters() projected unrelated parameter: %#v", got)
+	}
+
+	got[keytypes.ParameterAttestorPublicKey] = "mutated"
+	again := attestedAccountParameters(map[string]string{
+		keytypes.ParameterAttestorPublicKey: attestorPublicKey,
+	})
+	if again[keytypes.ParameterAttestorPublicKey] != attestorPublicKey {
+		t.Fatalf("attestedAccountParameters() reused mutable map: %#v", again)
+	}
+
+	if empty := attestedAccountParameters(nil); empty != nil {
+		t.Fatalf("attestedAccountParameters(nil) = %#v, want nil", empty)
+	}
+}
+
 func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 	resp := Service{}.KeyTypes()
 	if resp == nil || len(resp.KeyTypes) == 0 {
