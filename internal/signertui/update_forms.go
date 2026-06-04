@@ -1044,9 +1044,16 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 // selectKeyByAddress sets the selected key index to the key matching the given address.
 // It also adjusts scrollOffset to ensure the key is visible.
 func (m *Model) selectKeyByAddress(address string) {
-	for i, k := range m.keys {
+	for _, k := range m.keys {
 		if k.Address == address {
-			m.selectedKey = i
+			m.keyListTab = keyListTabForKey(k)
+			m.selectedKey = 0
+			for i, displayKey := range m.filteredKeys() {
+				if displayKey.Address == address {
+					m.selectedKey = i
+					break
+				}
+			}
 			visibleHeight := m.keyListVisibleHeight()
 			if m.selectedKey < m.scrollOffset {
 				m.scrollOffset = m.selectedKey

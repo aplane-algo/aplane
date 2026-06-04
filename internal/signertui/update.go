@@ -225,8 +225,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.keys = msg.Keys
 		m.keyCount = len(msg.Keys)
 		// Ensure selectedKey and scrollOffset are within bounds
-		if m.selectedKey >= len(m.keys) {
-			m.selectedKey = len(m.keys) - 1
+		displayKeys := m.filteredKeys()
+		if m.selectedKey >= len(displayKeys) {
+			m.selectedKey = len(displayKeys) - 1
 			if m.selectedKey < 0 {
 				m.selectedKey = 0
 			}

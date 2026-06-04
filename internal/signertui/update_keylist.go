@@ -40,24 +40,20 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Clear filter and exit filter mode
 			m.filterInput = ""
 			m.filterActive = false
-			m.selectedKey = 0
-			m.scrollOffset = 0
+			m.resetKeyListSelection()
 		case "enter":
 			// Keep filter, exit filter mode
 			m.filterActive = false
-			m.selectedKey = 0
-			m.scrollOffset = 0
+			m.resetKeyListSelection()
 		case "backspace":
 			if len(m.filterInput) > 0 {
 				m.filterInput = m.filterInput[:len(m.filterInput)-1]
-				m.selectedKey = 0
-				m.scrollOffset = 0
+				m.resetKeyListSelection()
 			}
 		default:
 			if len(msg.String()) == 1 {
 				m.filterInput += msg.String()
-				m.selectedKey = 0
-				m.scrollOffset = 0
+				m.resetKeyListSelection()
 			}
 		}
 		return m, nil
@@ -72,14 +68,25 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Clear filter if active, otherwise do nothing (only q quits)
 		if m.filterInput != "" {
 			m.filterInput = ""
-			m.selectedKey = 0
-			m.scrollOffset = 0
+			m.resetKeyListSelection()
 		}
 		return m, nil
 
 	case "/":
 		// Activate filter mode
 		m.filterActive = true
+		return m, nil
+
+	case "tab":
+		m.toggleKeyListTab()
+		return m, nil
+
+	case "right":
+		m.setKeyListTab(keyListTabAttestor)
+		return m, nil
+
+	case "shift+tab", "left":
+		m.setKeyListTab(keyListTabSigning)
 		return m, nil
 	}
 
@@ -152,6 +159,27 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *Model) resetKeyListSelection() {
+	m.selectedKey = 0
+	m.scrollOffset = 0
+}
+
+func (m *Model) setKeyListTab(tab keyListTab) {
+	if m.keyListTab == tab {
+		return
+	}
+	m.keyListTab = tab
+	m.resetKeyListSelection()
+}
+
+func (m *Model) toggleKeyListTab() {
+	if m.keyListTab == keyListTabAttestor {
+		m.setKeyListTab(keyListTabSigning)
+		return
+	}
+	m.setKeyListTab(keyListTabAttestor)
 }
 
 func (m Model) openBackupConfirm() (tea.Model, tea.Cmd) {

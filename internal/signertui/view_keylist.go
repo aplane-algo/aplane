@@ -20,7 +20,7 @@ import (
 // hexPattern matches hex strings starting with 0x followed by hex digits
 var hexPattern = regexp.MustCompile(`0x[0-9a-fA-F]+`)
 
-const keyListHelpText = "g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
+const keyListHelpText = "tab/left/right: Switch tab | g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
 
 // truncateLongHex shortens hex values longer than maxLen characters
 // Example: 0x1234567890abcdef... becomes 0x1234...cdef
@@ -145,12 +145,13 @@ func matchesFilter(value, filter string) bool {
 }
 
 func (m Model) filteredKeys() []KeyInfo {
+	tabKeys := filterKeysForTab(m.keys, m.keyListTab)
 	if m.filterInput == "" {
-		return m.keys
+		return tabKeys
 	}
 	filter := strings.ToLower(m.filterInput)
 	var result []KeyInfo
-	for _, key := range m.keys {
+	for _, key := range tabKeys {
 		if matchesFilter(strings.ToLower(key.Address), filter) ||
 			matchesFilter(strings.ToLower(key.KeyType), filter) ||
 			matchesFilter(strings.ToLower(keyTypeDisplayWithTemplateProvenanceStatus(key.KeyType, key.TemplateProvenanceStatus)), filter) {
@@ -160,9 +161,78 @@ func (m Model) filteredKeys() []KeyInfo {
 	return result
 }
 
+func filterKeysForTab(keys []KeyInfo, tab keyListTab) []KeyInfo {
+	result := make([]KeyInfo, 0, len(keys))
+	for _, key := range keys {
+		if keyBelongsToTab(key, tab) {
+			result = append(result, key)
+		}
+	}
+	return result
+}
+
+func keyBelongsToTab(key KeyInfo, tab keyListTab) bool {
+	isAttestor := keytypes.IsAttestorComponentKeyType(key.KeyType)
+	if tab == keyListTabAttestor {
+		return isAttestor
+	}
+	return !isAttestor
+}
+
+func keyListTabForKey(key KeyInfo) keyListTab {
+	if keytypes.IsAttestorComponentKeyType(key.KeyType) {
+		return keyListTabAttestor
+	}
+	return keyListTabSigning
+}
+
+func (m Model) keyListTabCounts() (signing, attestor int) {
+	for _, key := range m.keys {
+		if keytypes.IsAttestorComponentKeyType(key.KeyType) {
+			attestor++
+		} else {
+			signing++
+		}
+	}
+	return signing, attestor
+}
+
+func (m Model) renderKeyListTabs() string {
+	signing, attestor := m.keyListTabCounts()
+	labels := []struct {
+		tab   keyListTab
+		label string
+		count int
+	}{
+		{tab: keyListTabSigning, label: "Signing", count: signing},
+		{tab: keyListTabAttestor, label: "Attestor", count: attestor},
+	}
+
+	parts := make([]string, 0, len(labels))
+	for _, item := range labels {
+		text := fmt.Sprintf("%s (%d)", item.label, item.count)
+		if m.keyListTab == item.tab {
+			parts = append(parts, selectedStyle.Render("[ "+text+" ]"))
+		} else {
+			parts = append(parts, normalStyle.Render("  "+text+"  "))
+		}
+	}
+	return strings.Join(parts, "  ")
+}
+
+func (m Model) activeKeyListTabLabel() string {
+	if m.keyListTab == keyListTabAttestor {
+		return "Attestor"
+	}
+	return "Signing"
+}
+
 // renderKeyListView renders the main key list screen
 func (m Model) renderKeyListView() string {
 	var sb strings.Builder
+
+	sb.WriteString(m.renderKeyListTabs())
+	sb.WriteString("\n\n")
 
 	// Filter input
 	if m.filterActive {
@@ -173,6 +243,7 @@ func (m Model) renderKeyListView() string {
 	sb.WriteString("\n")
 
 	// Get filtered key list
+	tabKeys := filterKeysForTab(m.keys, m.keyListTab)
 	displayKeys := m.filteredKeys()
 
 	if len(m.keys) == 0 {
@@ -183,11 +254,15 @@ func (m Model) renderKeyListView() string {
 		} else {
 			sb.WriteString("No keys found. Press 'g' to generate a new key.\n")
 		}
+	} else if len(tabKeys) == 0 {
+		sb.WriteString(subtitleStyle.Render(fmt.Sprintf("No %s keys found", strings.ToLower(m.activeKeyListTabLabel()))))
+		sb.WriteString("\n")
+		sb.WriteString(fmt.Sprintf("\n  Total: %d keys\n", len(m.keys)))
 	} else if len(displayKeys) == 0 {
 		// Filter returned no matches
 		sb.WriteString(subtitleStyle.Render("No keys match filter"))
 		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("\n  Total: %d keys\n", len(m.keys)))
+		sb.WriteString(fmt.Sprintf("\n  Showing: 0 of %d %s keys\n", len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
 	} else {
 		visibleHeight := m.keyListVisibleHeight()
 
@@ -239,9 +314,9 @@ func (m Model) renderKeyListView() string {
 
 		// Show filtered count vs total
 		if m.filterInput != "" {
-			sb.WriteString(fmt.Sprintf("\n  Showing: %d of %d keys\n", len(displayKeys), len(m.keys)))
+			sb.WriteString(fmt.Sprintf("\n  Showing: %d of %d %s keys\n", len(displayKeys), len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
 		} else {
-			sb.WriteString(fmt.Sprintf("\n  Total: %d keys\n", len(m.keys)))
+			sb.WriteString(fmt.Sprintf("\n  Total: %d %s keys\n", len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
 		}
 	}
 

@@ -136,6 +136,84 @@ func TestRenderKeyListViewShowsTemplateConflictStatus(t *testing.T) {
 	}
 }
 
+func TestRenderKeyListViewSeparatesSigningAndAttestorTabs(t *testing.T) {
+	m := Model{
+		width:  120,
+		height: 24,
+		keys: []KeyInfo{
+			{Address: "SIGNINGADDR", KeyType: "ed25519"},
+			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
+		},
+	}
+
+	signing := stripANSI(m.renderKeyListView())
+	if !strings.Contains(signing, "Signing (1)") || !strings.Contains(signing, "Attestor (1)") {
+		t.Fatalf("signing tab missing tab counts:\n%s", signing)
+	}
+	if !strings.Contains(signing, "SIGNINGADDR") {
+		t.Fatalf("signing tab missing signing key:\n%s", signing)
+	}
+	if strings.Contains(signing, "ATTESTORKEY") {
+		t.Fatalf("signing tab showed attestor key:\n%s", signing)
+	}
+
+	m.keyListTab = keyListTabAttestor
+	attestor := stripANSI(m.renderKeyListView())
+	if !strings.Contains(attestor, "ATTESTORKEY") {
+		t.Fatalf("attestor tab missing attestor key:\n%s", attestor)
+	}
+	if strings.Contains(attestor, "SIGNINGADDR") {
+		t.Fatalf("attestor tab showed signing key:\n%s", attestor)
+	}
+}
+
+func TestHandleKeyListKeysSwitchesTabs(t *testing.T) {
+	m := Model{
+		viewState: ViewKeyList,
+		keys: []KeyInfo{
+			{Address: "SIGNINGADDR", KeyType: "ed25519"},
+			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
+		},
+	}
+
+	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyTab})
+	next := nextModel.(Model)
+	if next.keyListTab != keyListTabAttestor {
+		t.Fatalf("keyListTab after tab = %v, want attestor", next.keyListTab)
+	}
+	keys := next.filteredKeys()
+	if len(keys) != 1 || keys[0].Address != "ATTESTORKEY" {
+		t.Fatalf("attestor filtered keys = %#v, want attestor key", keys)
+	}
+
+	nextModel, _ = next.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyLeft})
+	next = nextModel.(Model)
+	if next.keyListTab != keyListTabSigning {
+		t.Fatalf("keyListTab after left = %v, want signing", next.keyListTab)
+	}
+	keys = next.filteredKeys()
+	if len(keys) != 1 || keys[0].Address != "SIGNINGADDR" {
+		t.Fatalf("signing filtered keys = %#v, want signing key", keys)
+	}
+}
+
+func TestSelectKeyByAddressSwitchesToAttestorTab(t *testing.T) {
+	m := Model{
+		keys: []KeyInfo{
+			{Address: "SIGNINGADDR", KeyType: "ed25519"},
+			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
+		},
+	}
+
+	m.selectKeyByAddress("ATTESTORKEY")
+	if m.keyListTab != keyListTabAttestor {
+		t.Fatalf("keyListTab = %v, want attestor", m.keyListTab)
+	}
+	if m.selectedKey != 0 {
+		t.Fatalf("selectedKey = %d, want first attestor tab row", m.selectedKey)
+	}
+}
+
 func TestRenderKeyDetailsShowsPreciseTemplateProvenanceNote(t *testing.T) {
 	rendered := stripANSI(Model{
 		detailsAddress:                  "ADDR",

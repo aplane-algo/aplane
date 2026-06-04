@@ -105,6 +105,13 @@ type KeyInfo struct {
 	TemplateProvenanceNote   string
 }
 
+type keyListTab int
+
+const (
+	keyListTabSigning keyListTab = iota
+	keyListTabAttestor
+)
+
 // PendingSignRequest holds a signing request waiting for approval
 type PendingSignRequest struct {
 	ID          string
@@ -155,6 +162,7 @@ type Model struct {
 	keys         []KeyInfo
 	selectedKey  int
 	scrollOffset int
+	keyListTab   keyListTab
 
 	// Key list filter
 	filterInput  string // Current filter text
