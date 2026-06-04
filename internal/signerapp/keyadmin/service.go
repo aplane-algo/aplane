@@ -60,6 +60,13 @@ type DeleteResult struct {
 	DeletedPath string
 }
 
+type SyncAttestorReferencesResult struct {
+	Added   int
+	Updated int
+	Removed int
+	Records []attrefs.Record
+}
+
 type ListKeyInfo struct {
 	Address                  string
 	KeyType                  string
@@ -221,6 +228,26 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	}
 
 	return &DeleteResult{DeletedPath: delResult.DeletedPath}, nil
+}
+
+func (s Service) SyncAttestorReferences(ir *identity.Runtime, discovered []attrefs.DiscoveredRecord) (*SyncAttestorReferencesResult, *Error) {
+	if ir == nil {
+		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
+	}
+
+	unlockMutation := s.lockMutation(ir.ID())
+	defer unlockMutation()
+
+	result, err := attrefs.SyncDiscovered(ir.KeyPaths(), ir.ID(), discovered)
+	if err != nil {
+		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+	}
+	return &SyncAttestorReferencesResult{
+		Added:   result.Added,
+		Updated: result.Updated,
+		Removed: result.Removed,
+		Records: result.Records,
+	}, nil
 }
 
 func activatedKeyTypes(ir *identity.Runtime) ([]string, *Error) {

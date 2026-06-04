@@ -614,6 +614,7 @@ endpoints list
 endpoints show <alias>
 endpoints import --alias <alias> [--dry-run] <endpoint-json>
 endpoints discover-attestors [--dry-run]
+endpoints sync-attestors [--dry-run]
 endpoints default <alias>
 endpoints delete <alias>
 ```
@@ -631,6 +632,13 @@ inventory in `endpoints.yaml`. Attested-send routing is derived from that
 inventory. Run it after importing endpoints and requesting endpoint tokens. Use
 `--dry-run` to inspect the discovered inventory without writing.
 
+`endpoints sync-attestors` publishes that local discovered inventory to the
+currently connected signer identity as public attestor reference options for
+key generation. Run it after `endpoints discover-attestors` when you want
+`apadmin` or `generate ... attestor=<name>` to offer endpoint-discovered
+attestors. It syncs public metadata only and does not move endpoint tokens or
+SSH trust.
+
 **Examples:**
 ```
 endpoints import --alias attestor-local attestor.endpoint.json
@@ -638,6 +646,9 @@ endpoints import --alias attestor-local --dry-run attestor.endpoint.json
 request-token --endpoint attestor-local
 endpoints discover-attestors
 endpoints discover-attestors --dry-run
+connect primary
+endpoints sync-attestors
+endpoints sync-attestors --dry-run
 endpoints list
 endpoints show attestor-local
 endpoints default primary

@@ -6,6 +6,7 @@ package rest
 import (
 	"context"
 
+	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
@@ -52,6 +53,46 @@ func (s Service) AdminDelete(ir *identity.Runtime, address string) (int, signera
 	return 200, signerapi.AdminDeleteResponse{Success: true}
 }
 
+func (s Service) AdminSyncAttestorReferences(ir *identity.Runtime, req signerapi.AdminSyncAttestorReferencesRequest) (int, signerapi.AdminSyncAttestorReferencesResponse) {
+	if ir == nil {
+		return 500, signerapi.AdminSyncAttestorReferencesResponse{Error: "identity runtime is nil"}
+	}
+	discovered := make([]attrefs.DiscoveredRecord, 0, len(req.Candidates))
+	for _, candidate := range req.Candidates {
+		discovered = append(discovered, attrefs.DiscoveredRecord{
+			EndpointAlias: candidate.EndpointAlias,
+			ComponentKey:  candidate.ComponentKey,
+			KeyType:       candidate.KeyType,
+			PublicKeyHex:  candidate.PublicKeyHex,
+			LastSeenAt:    candidate.LastSeenAt,
+		})
+	}
+	result, err := s.Deps.KeyAdmin.SyncAttestorReferences(ir, discovered)
+	if err != nil {
+		return mapSyncAttestorReferencesError(err)
+	}
+	records := make([]signerapi.SyncedAttestorReferenceInfo, 0, len(result.Records))
+	for _, rec := range result.Records {
+		records = append(records, signerapi.SyncedAttestorReferenceInfo{
+			Name:          rec.Name,
+			Source:        rec.Source,
+			EndpointAlias: rec.EndpointAlias,
+			ComponentKey:  rec.ComponentKey,
+			KeyType:       rec.KeyType,
+			PublicKeyHex:  rec.PublicKeyHex,
+			LastSeenAt:    rec.LastSeenAt,
+			SyncedAt:      rec.SyncedAt,
+		})
+	}
+	return 200, signerapi.AdminSyncAttestorReferencesResponse{
+		Added:   result.Added,
+		Updated: result.Updated,
+		Removed: result.Removed,
+		Count:   len(result.Records),
+		Records: records,
+	}
+}
+
 func mapGenerateError(err *keyadmin.Error) (int, signerapi.AdminGenerateResponse) {
 	if err == nil {
 		return 200, signerapi.AdminGenerateResponse{}
@@ -66,6 +107,18 @@ func mapGenerateError(err *keyadmin.Error) (int, signerapi.AdminGenerateResponse
 			return 500, signerapi.AdminGenerateResponse{Error: "key generation failed"}
 		}
 		return 500, signerapi.AdminGenerateResponse{Error: err.Message}
+	}
+}
+
+func mapSyncAttestorReferencesError(err *keyadmin.Error) (int, signerapi.AdminSyncAttestorReferencesResponse) {
+	if err == nil {
+		return 200, signerapi.AdminSyncAttestorReferencesResponse{}
+	}
+	switch err.Kind {
+	case keyadmin.ErrorInvalidInput:
+		return 400, signerapi.AdminSyncAttestorReferencesResponse{Error: err.Message}
+	default:
+		return 500, signerapi.AdminSyncAttestorReferencesResponse{Error: "attestor reference sync failed"}
 	}
 }
 

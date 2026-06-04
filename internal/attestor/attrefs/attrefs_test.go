@@ -110,6 +110,95 @@ func TestResolveCreationParamsRejectsMismatchedComponentKeyType(t *testing.T) {
 	}
 }
 
+func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	pub := bytesOfLen(32, 0xab)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, pub)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+
+	result, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
+		EndpointAlias: "Attestor.Local",
+		ComponentKey:  componentKey,
+		KeyType:       keytypes.AttestorComponentEd25519V1,
+		PublicKeyHex:  strings.ToUpper(hex.EncodeToString(pub)),
+		LastSeenAt:    "2026-06-04T00:00:00Z",
+	}})
+	if err != nil {
+		t.Fatalf("SyncDiscovered() error = %v", err)
+	}
+	if result.Added != 1 || result.Updated != 0 || result.Removed != 0 {
+		t.Fatalf("sync counts = %#v, want one added", result)
+	}
+	wantName, err := SyncedReferenceName("Attestor.Local", componentKey)
+	if err != nil {
+		t.Fatalf("SyncedReferenceName() error = %v", err)
+	}
+	rec, ok, err := Get(paths, "default", wantName)
+	if err != nil || !ok {
+		t.Fatalf("Get(%s) = (%#v, %v, %v), want synced record", wantName, rec, ok, err)
+	}
+	if rec.Source != SourceClientDiscovery || rec.EndpointAlias != "Attestor.Local" {
+		t.Fatalf("record source/endpoint = %q/%q, want client discovery Attestor.Local", rec.Source, rec.EndpointAlias)
+	}
+	if rec.PublicKeyHex != strings.Repeat("ab", 32) {
+		t.Fatalf("PublicKeyHex = %q, want lower-case ab", rec.PublicKeyHex)
+	}
+	if rec.SyncedAt == "" || rec.LastSeenAt == "" {
+		t.Fatalf("SyncedAt/LastSeenAt = %q/%q, want populated", rec.SyncedAt, rec.LastSeenAt)
+	}
+}
+
+func TestSyncDiscoveredReplacesOnlyClientDiscoveryReferences(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	manualPub := bytesOfLen(32, 0xab)
+	if _, err := Import(paths, "default", "manual-att", testExportJSON(t, keytypes.AttestorComponentEd25519V1, manualPub)); err != nil {
+		t.Fatalf("Import() error = %v", err)
+	}
+	stalePub := bytesOfLen(32, 0xcd)
+	staleComponent, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, stalePub)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector(stale) error = %v", err)
+	}
+	if _, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
+		EndpointAlias: "stale",
+		ComponentKey:  staleComponent,
+		KeyType:       keytypes.AttestorComponentEd25519V1,
+		PublicKeyHex:  hex.EncodeToString(stalePub),
+	}}); err != nil {
+		t.Fatalf("SyncDiscovered(stale) error = %v", err)
+	}
+
+	freshPub := bytesOfLen(32, 0xef)
+	freshComponent, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, freshPub)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector(fresh) error = %v", err)
+	}
+	result, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
+		EndpointAlias: "fresh",
+		ComponentKey:  freshComponent,
+		KeyType:       keytypes.AttestorComponentEd25519V1,
+		PublicKeyHex:  hex.EncodeToString(freshPub),
+	}})
+	if err != nil {
+		t.Fatalf("SyncDiscovered(fresh) error = %v", err)
+	}
+	if result.Added != 1 || result.Removed != 1 {
+		t.Fatalf("sync counts = %#v, want one added and one stale removed", result)
+	}
+	if _, ok, err := Get(paths, "default", "manual-att"); err != nil || !ok {
+		t.Fatalf("manual reference removed or unreadable: ok=%v err=%v", ok, err)
+	}
+	staleName, err := SyncedReferenceName("stale", staleComponent)
+	if err != nil {
+		t.Fatalf("SyncedReferenceName(stale) error = %v", err)
+	}
+	if _, ok, err := Get(paths, "default", staleName); err != nil || ok {
+		t.Fatalf("stale reference Get = ok:%v err:%v, want absent", ok, err)
+	}
+}
+
 func testExportJSON(t *testing.T, keyType string, pub []byte) []byte {
 	t.Helper()
 	componentKey, err := keytypes.ComponentKeySelector(keyType, pub)

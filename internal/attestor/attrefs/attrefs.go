@@ -23,8 +23,10 @@ import (
 )
 
 const (
-	ExportSchema = "aplane.attestor-public-key.v1"
-	RecordSchema = "aplane.attestor-public-key-ref.v1"
+	ExportSchema          = "aplane.attestor-public-key.v1"
+	RecordSchema          = "aplane.attestor-public-key-ref.v1"
+	SourceManual          = "manual"
+	SourceClientDiscovery = "client_discovery"
 
 	// ParamAttestorName is the generation parameter that selects an imported
 	// attestor reference by name.
@@ -52,7 +54,29 @@ type Record struct {
 	PublicKeyHex      string `json:"public_key_hex"`
 	PublicKeySize     int    `json:"public_key_size"`
 	PublicKeySHA256   string `json:"public_key_sha256"`
+	Source            string `json:"source,omitempty"`
+	EndpointAlias     string `json:"endpoint_alias,omitempty"`
+	LastSeenAt        string `json:"last_seen_at,omitempty"`
+	SyncedAt          string `json:"synced_at,omitempty"`
 	ImportedAt        string `json:"imported_at"`
+}
+
+// DiscoveredRecord is a public attestor reference learned by a client endpoint
+// discovery pass and synced into a signer identity for key-generation UX.
+type DiscoveredRecord struct {
+	EndpointAlias string
+	ComponentKey  string
+	KeyType       string
+	PublicKeyHex  string
+	LastSeenAt    string
+}
+
+// SyncResult summarizes one client-discovered attestor reference sync.
+type SyncResult struct {
+	Added   int
+	Updated int
+	Removed int
+	Records []Record
 }
 
 func NormalizeName(name string) (string, error) {
@@ -67,6 +91,15 @@ func NormalizeName(name string) (string, error) {
 		return "", fmt.Errorf("invalid attestor reference name %q: must not contain '..'", name)
 	}
 	return normalized, nil
+}
+
+func SyncedReferenceName(endpointAlias, componentKey string) (string, error) {
+	componentKey, err := keytypes.NormalizeComponentKeySelector(componentKey)
+	if err != nil {
+		return "", err
+	}
+	alias := sanitizeEndpointAlias(endpointAlias)
+	return NormalizeName("endpoint-" + alias + "-" + componentKey)
 }
 
 func NewExportEnvelope(componentKey, keyType, publicKeyHex string) (*ExportEnvelope, error) {
@@ -107,6 +140,80 @@ func Import(paths storepaths.Paths, identityID, name string, data []byte) (*Reco
 	return record, nil
 }
 
+func SyncDiscovered(paths storepaths.Paths, identityID string, discovered []DiscoveredRecord) (*SyncResult, error) {
+	syncedAt := time.Now().UTC().Format(time.RFC3339)
+	desired := make(map[string]Record, len(discovered))
+	seenPublicKeys := map[string]string{}
+	for _, item := range discovered {
+		rec, err := recordFromDiscovered(item, syncedAt)
+		if err != nil {
+			return nil, err
+		}
+		if previous, ok := seenPublicKeys[rec.PublicKeyHex]; ok && previous != rec.EndpointAlias {
+			return nil, fmt.Errorf("attestor public key %s appears under multiple endpoint aliases (%s and %s)", rec.PublicKeyHex, previous, rec.EndpointAlias)
+		}
+		seenPublicKeys[rec.PublicKeyHex] = rec.EndpointAlias
+		if existing, ok := desired[rec.Name]; ok && !sameSyncedRecord(existing, rec) {
+			return nil, fmt.Errorf("multiple discovered attestors resolve to reference name %q", rec.Name)
+		}
+		desired[rec.Name] = rec
+	}
+
+	existing, err := List(paths, identityID)
+	if err != nil {
+		return nil, err
+	}
+	existingByName := make(map[string]Record, len(existing))
+	for _, rec := range existing {
+		existingByName[rec.Name] = rec
+	}
+
+	result := &SyncResult{Records: make([]Record, 0, len(desired))}
+	for name, rec := range desired {
+		if current, ok := existingByName[name]; ok && current.Source != SourceClientDiscovery {
+			return nil, fmt.Errorf("synced attestor reference %q collides with existing %s reference", name, current.Source)
+		}
+		if current, ok := existingByName[name]; ok {
+			if !sameSyncedRecord(current, rec) {
+				result.Updated++
+				if err := Put(paths, identityID, rec); err != nil {
+					return nil, err
+				}
+			} else {
+				rec.SyncedAt = current.SyncedAt
+				desired[name] = rec
+			}
+		} else {
+			result.Added++
+			if err := Put(paths, identityID, rec); err != nil {
+				return nil, err
+			}
+		}
+		result.Records = append(result.Records, rec)
+	}
+
+	for _, current := range existing {
+		if current.Source != SourceClientDiscovery {
+			continue
+		}
+		if _, keep := desired[current.Name]; keep {
+			continue
+		}
+		removed, err := Delete(paths, identityID, current.Name)
+		if err != nil {
+			return nil, err
+		}
+		if removed {
+			result.Removed++
+		}
+	}
+
+	sort.Slice(result.Records, func(i, j int) bool {
+		return result.Records[i].Name < result.Records[j].Name
+	})
+	return result, nil
+}
+
 func ParseImport(name string, data []byte) (*Record, error) {
 	name, err := NormalizeName(name)
 	if err != nil {
@@ -132,6 +239,7 @@ func ParseImport(name string, data []byte) (*Record, error) {
 		PublicKeyHex:      env.PublicKeyHex,
 		PublicKeySize:     env.PublicKeySize,
 		PublicKeySHA256:   env.PublicKeySHA256,
+		Source:            SourceManual,
 	}, nil
 }
 
@@ -305,6 +413,22 @@ func normalizeRecord(rec Record) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
+	source := strings.TrimSpace(rec.Source)
+	if source == "" {
+		source = SourceManual
+	}
+	switch source {
+	case SourceManual:
+		rec.EndpointAlias = ""
+		rec.LastSeenAt = ""
+		rec.SyncedAt = ""
+	case SourceClientDiscovery:
+		if strings.TrimSpace(rec.EndpointAlias) == "" {
+			return Record{}, fmt.Errorf("endpoint_alias is required for %s attestor reference", SourceClientDiscovery)
+		}
+	default:
+		return Record{}, fmt.Errorf("unsupported attestor reference source %q", source)
+	}
 	return Record{
 		Schema:            RecordSchema,
 		Name:              name,
@@ -314,8 +438,80 @@ func normalizeRecord(rec Record) (Record, error) {
 		PublicKeyHex:      env.PublicKeyHex,
 		PublicKeySize:     env.PublicKeySize,
 		PublicKeySHA256:   env.PublicKeySHA256,
+		Source:            source,
+		EndpointAlias:     strings.TrimSpace(rec.EndpointAlias),
+		LastSeenAt:        strings.TrimSpace(rec.LastSeenAt),
+		SyncedAt:          strings.TrimSpace(rec.SyncedAt),
 		ImportedAt:        strings.TrimSpace(rec.ImportedAt),
 	}, nil
+}
+
+func recordFromDiscovered(item DiscoveredRecord, syncedAt string) (Record, error) {
+	endpointAlias := strings.TrimSpace(item.EndpointAlias)
+	if endpointAlias == "" {
+		return Record{}, fmt.Errorf("endpoint alias is required for discovered attestor")
+	}
+	componentKey, err := keytypes.NormalizeComponentKeySelector(item.ComponentKey)
+	if err != nil {
+		return Record{}, fmt.Errorf("invalid discovered attestor component key: %w", err)
+	}
+	name, err := SyncedReferenceName(endpointAlias, componentKey)
+	if err != nil {
+		return Record{}, err
+	}
+	env, err := NewExportEnvelope(componentKey, item.KeyType, item.PublicKeyHex)
+	if err != nil {
+		return Record{}, err
+	}
+	return normalizeRecord(Record{
+		Schema:            RecordSchema,
+		Name:              name,
+		ComponentKey:      env.ComponentKey,
+		KeyType:           env.KeyType,
+		PublicKeyEncoding: env.PublicKeyEncoding,
+		PublicKeyHex:      env.PublicKeyHex,
+		PublicKeySize:     env.PublicKeySize,
+		PublicKeySHA256:   env.PublicKeySHA256,
+		Source:            SourceClientDiscovery,
+		EndpointAlias:     endpointAlias,
+		LastSeenAt:        item.LastSeenAt,
+		SyncedAt:          syncedAt,
+	})
+}
+
+func sameSyncedRecord(a, b Record) bool {
+	return a.Name == b.Name &&
+		a.ComponentKey == b.ComponentKey &&
+		a.KeyType == b.KeyType &&
+		a.PublicKeyEncoding == b.PublicKeyEncoding &&
+		a.PublicKeyHex == b.PublicKeyHex &&
+		a.PublicKeySize == b.PublicKeySize &&
+		a.PublicKeySHA256 == b.PublicKeySHA256 &&
+		a.Source == b.Source &&
+		a.EndpointAlias == b.EndpointAlias &&
+		a.LastSeenAt == b.LastSeenAt
+}
+
+func sanitizeEndpointAlias(alias string) string {
+	alias = strings.ToLower(strings.TrimSpace(alias))
+	var b strings.Builder
+	for _, r := range alias {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '_' || r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-_")
+	if out == "" {
+		return "endpoint"
+	}
+	return out
 }
 
 func validatePublicKey(keyType, componentKey, publicKeyHex string) ([]byte, string, error) {

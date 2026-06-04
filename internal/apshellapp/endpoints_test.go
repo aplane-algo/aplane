@@ -291,6 +291,36 @@ func TestEndpointDiscoverAttestorsDryRunDoesNotWriteMappings(t *testing.T) {
 	}
 }
 
+func TestEndpointSyncAttestorsDryRunUsesPublishedInventory(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+	publicKeyHex := testAttestorPublicKeyHex()
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+		URL: "http://127.0.0.1:12345",
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint() error = %v", err)
+	}
+	writePublishedAttestor(t, dataDir, "attestor-local", publicKeyHex)
+
+	result, err := app.EndpointSyncAttestors(context.Background(), EndpointSyncAttestorsRequest{DryRun: true})
+	if err != nil {
+		t.Fatalf("EndpointSyncAttestors(dry-run) error = %v", err)
+	}
+	if !result.DryRun || result.CandidateCount != 1 {
+		t.Fatalf("dry-run result = dry:%v count:%d, want true/1", result.DryRun, result.CandidateCount)
+	}
+	if len(result.Records) != 1 {
+		t.Fatalf("records = %d, want 1", len(result.Records))
+	}
+	rec := result.Records[0]
+	if rec.EndpointAlias != "attestor-local" || rec.PublicKey != publicKeyHex {
+		t.Fatalf("record = %#v, want attestor-local %s", rec, publicKeyHex)
+	}
+	if !strings.HasPrefix(rec.Name, "endpoint-attestor-local-a_") {
+		t.Fatalf("record name = %q, want endpoint-attestor-local-a_ prefix", rec.Name)
+	}
+}
+
 func TestEndpointDefaultSetsSigningEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)

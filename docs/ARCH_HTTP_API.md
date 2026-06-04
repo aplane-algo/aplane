@@ -25,11 +25,12 @@ coverage.
 | `POST` | `/plan` | yes | yes |
 | `POST` | `/simulate` | yes | yes |
 | `POST` | `/admin/generate` | yes | yes |
+| `POST` | `/admin/attestors/sync` | yes | no |
 | `DELETE` | `/admin/keys` | yes | yes |
 
 Method enforcement:
 
-- `/sign`, `/sign/cancel`, `/plan`, `/simulate`, `/status`, `/admin/generate`, and `/admin/keys` enforce their HTTP method.
+- `/sign`, `/sign/cancel`, `/plan`, `/simulate`, `/status`, `/admin/generate`, `/admin/attestors/sync`, and `/admin/keys` enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
 
 Transport behavior:
@@ -49,8 +50,8 @@ Timeout behavior:
   the server write deadline.
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
-  mutations 60 seconds, `/plan` 60 seconds, `/simulate` 60 seconds, and `/sign`
-  based on approval wait.
+  mutations including `/admin/attestors/sync` 60 seconds, `/plan` 60 seconds,
+  `/simulate` 60 seconds, and `/sign` based on approval wait.
 - caller-provided contexts with earlier deadlines are preserved.
 - before `/sign`, `internal/signerclient` attempts `/status` discovery; when
   `approval_wait_seconds` is known and valid, the `/sign` deadline is
@@ -284,6 +285,20 @@ uses.
 - no `name` field
 - response has `address`, `key_type`, optional `parameters`
 - no mnemonic in REST response
+
+`/admin/attestors/sync`:
+
+- request has `candidates[]`
+- each candidate has `endpoint_alias`, `component_key`, `key_type`,
+  `public_key_hex`, and optional `last_seen_at`
+- response has `added`, `updated`, `removed`, `count`, optional `records[]`,
+  and optional `error`
+- each record has `name`, `source`, `component_key`, `key_type`,
+  `public_key_hex`, and optional `endpoint_alias`, `last_seen_at`, `synced_at`
+
+This endpoint writes public attestor reference records for generation UX only.
+It does not require the identity to be unlocked and never carries tokens, SSH
+trust, or private key material.
 
 `/admin/keys`:
 

@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
+	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
@@ -26,6 +28,12 @@ type EndpointImportRequest struct {
 // EndpointDiscoverAttestorsRequest rebuilds endpoint-published attestor
 // inventory by querying configured endpoint inventories.
 type EndpointDiscoverAttestorsRequest struct {
+	DryRun bool
+}
+
+// EndpointSyncAttestorsRequest syncs endpoint-published attestor inventory into
+// the connected signer identity's public attestor reference catalog.
+type EndpointSyncAttestorsRequest struct {
 	DryRun bool
 }
 
@@ -191,6 +199,62 @@ func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscove
 	return result, nil
 }
 
+// EndpointSyncAttestors publishes endpoint-discovered attestor metadata into
+// the connected signer identity so signer-side key generation can select those
+// attestors by name.
+func (a *App) EndpointSyncAttestors(ctx context.Context, req EndpointSyncAttestorsRequest) (*EndpointSyncAttestorsResult, error) {
+	cfg, err := config.LoadConfig(a.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	a.Config = cfg
+
+	candidates := endpointAttestorCandidates(cfg.Endpoints)
+	result := &EndpointSyncAttestorsResult{
+		DryRun:         req.DryRun,
+		CandidateCount: len(candidates),
+	}
+	if req.DryRun {
+		for _, candidate := range candidates {
+			name, err := attrefs.SyncedReferenceName(candidate.EndpointAlias, candidate.ComponentKey)
+			if err != nil {
+				return nil, err
+			}
+			result.Records = append(result.Records, SyncedEndpointAttestorReference{
+				Name:          name,
+				EndpointAlias: candidate.EndpointAlias,
+				PublicKey:     candidate.PublicKeyHex,
+				ComponentKey:  candidate.ComponentKey,
+				KeyType:       candidate.KeyType,
+			})
+		}
+		result.RenderLines = endpointSyncAttestorsRenderLines(result)
+		return result, nil
+	}
+
+	if !a.eng.IsConnected() {
+		return nil, fmt.Errorf("not connected to Signer")
+	}
+	resp, err := a.eng.AdminSyncAttestorReferencesWithContext(ctx, candidates)
+	if err != nil {
+		return nil, err
+	}
+	result.Added = resp.Added
+	result.Updated = resp.Updated
+	result.Removed = resp.Removed
+	for _, rec := range resp.Records {
+		result.Records = append(result.Records, SyncedEndpointAttestorReference{
+			Name:          rec.Name,
+			EndpointAlias: rec.EndpointAlias,
+			PublicKey:     rec.PublicKeyHex,
+			ComponentKey:  rec.ComponentKey,
+			KeyType:       rec.KeyType,
+		})
+	}
+	result.RenderLines = endpointSyncAttestorsRenderLines(result)
+	return result, nil
+}
+
 // EndpointDefault sets the default signing endpoint alias.
 func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefaultResult, error) {
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
@@ -267,6 +331,35 @@ func attestorEndpointMappingsByAlias(routes config.AttestorEndpointConfigs) map[
 	return out
 }
 
+func endpointAttestorCandidates(registry config.ClientEndpointRegistry) []signerapi.AttestorReferenceCandidate {
+	aliases := make([]string, 0, len(registry.Endpoints))
+	for alias := range registry.Endpoints {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+
+	candidates := make([]signerapi.AttestorReferenceCandidate, 0)
+	for _, alias := range aliases {
+		endpoint := registry.Endpoints[alias]
+		publicKeys := make([]string, 0, len(endpoint.PublishedAttestors))
+		for publicKey := range endpoint.PublishedAttestors {
+			publicKeys = append(publicKeys, publicKey)
+		}
+		sort.Strings(publicKeys)
+		for _, publicKey := range publicKeys {
+			published := endpoint.PublishedAttestors[publicKey]
+			candidates = append(candidates, signerapi.AttestorReferenceCandidate{
+				EndpointAlias: alias,
+				ComponentKey:  published.ComponentKey,
+				KeyType:       published.KeyType,
+				PublicKeyHex:  publicKey,
+				LastSeenAt:    published.LastSeenAt,
+			})
+		}
+	}
+	return candidates
+}
+
 func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, isDefault bool, publicKeys []string) EndpointEntry {
 	tokenPresent, tokenError := endpointTokenStatus(endpoint.TokenFile)
 	keys := append([]string(nil), publicKeys...)
@@ -317,6 +410,27 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 	}
 	if result.DefaultChanged {
 		lines = append(lines, "  default: yes")
+	}
+	return lines
+}
+
+func endpointSyncAttestorsRenderLines(result *EndpointSyncAttestorsResult) []string {
+	action := "Synced"
+	if result.DryRun {
+		action = "Would sync"
+	}
+	lines := []string{
+		fmt.Sprintf("%s %d endpoint-discovered attestor reference(s) to signer", action, result.CandidateCount),
+	}
+	if !result.DryRun {
+		lines = append(lines,
+			fmt.Sprintf("  added: %d", result.Added),
+			fmt.Sprintf("  updated: %d", result.Updated),
+			fmt.Sprintf("  removed stale: %d", result.Removed),
+		)
+	}
+	for _, rec := range result.Records {
+		lines = append(lines, fmt.Sprintf("  %s: %s (%s, %s)", rec.Name, rec.PublicKey, rec.KeyType, rec.EndpointAlias))
 	}
 	return lines
 }

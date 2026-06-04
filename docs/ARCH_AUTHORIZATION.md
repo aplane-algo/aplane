@@ -248,7 +248,7 @@ grant accidentally contains the same typo.
 | `sign.request` | Request transaction signing, signing plan, simulation, or sign-request cancellation | `transaction` | Yes for signing/cancel |
 | `sign.approve` | Approve or reject signing request | `sign_request` | No |
 | `keys.view` | List keys or view key details | `keys`, `key` | Yes for key list/details |
-| `keys.generate` | Generate a key | `key` | Yes |
+| `keys.generate` | Generate a key or manage generation inputs | `key` | Yes for key generation; no for public attestor reference sync |
 | `keys.import` | Import a key | `key` | Yes |
 | `keys.export` | Export a key mnemonic (disabled) | `key` | Yes |
 | `keys.delete` | Delete a key | `key` | Yes |
@@ -340,8 +340,8 @@ response handling, token rotation, or policy/settings changes.
 Enforced callsites:
 
 - `cmd/apsigner/http_runtime.go` wraps HTTP `/sign`, `/plan`, `/simulate`,
-  `/status`, `/keys`, `/keytypes`, `/admin/generate`, and `/admin/keys` with
-  `requireAuth`.
+  `/status`, `/keys`, `/keytypes`, `/admin/generate`,
+  `/admin/attestors/sync`, and `/admin/keys` with `requireAuth`.
 - `cmd/apsigner/http_auth.go` calls `Authorizer.Authorize` after
   authentication and before the handler executes.
 - `internal/adminproto/session.go` gates auth-time unlock through

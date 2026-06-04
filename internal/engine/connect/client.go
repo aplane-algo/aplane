@@ -88,6 +88,20 @@ func (s *ConnectionState) AdminDeleteKeyWithContext(ctx context.Context, address
 	return client.AdminDeleteKeyWithContext(ctx, address)
 }
 
+// AdminSyncAttestorReferences syncs public attestor reference candidates into
+// the connected signer identity.
+func (s *ConnectionState) AdminSyncAttestorReferences(candidates []signerapi.AttestorReferenceCandidate) (*signerapi.AdminSyncAttestorReferencesResponse, error) {
+	return s.AdminSyncAttestorReferencesWithContext(context.Background(), candidates)
+}
+
+func (s *ConnectionState) AdminSyncAttestorReferencesWithContext(ctx context.Context, candidates []signerapi.AttestorReferenceCandidate) (*signerapi.AdminSyncAttestorReferencesResponse, error) {
+	client, err := s.signerClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.AdminSyncAttestorReferencesWithContext(ctx, candidates)
+}
+
 // RequestGroupPlan sends group planning requests to Signer.
 func (s *ConnectionState) RequestGroupPlan(requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
 	return s.RequestGroupPlanWithContext(context.Background(), requests)

@@ -24,6 +24,22 @@ func (fs *Signer) handleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, statusCode, response)
 }
 
+// handleAdminSyncAttestors handles POST /admin/attestors/sync for public
+// attestor reference catalog sync via REST.
+func (fs *Signer) handleAdminSyncAttestors(w http.ResponseWriter, r *http.Request) {
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.AdminSyncAttestorReferencesRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
+	if !ok {
+		return
+	}
+
+	statusCode, response := fs.restService().AdminSyncAttestorReferences(ir, req)
+	if statusCode != http.StatusOK {
+		writeErrorJSON(w, statusCode, response.Error)
+		return
+	}
+	writeJSON(w, statusCode, response)
+}
+
 // handleAdminDelete handles DELETE /admin/keys for key deletion via REST.
 func (fs *Signer) handleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	ir, ok := requireMethodAndIdentity(fs, w, r, http.MethodDelete, func(msg string) any { return errorResponse(msg) })

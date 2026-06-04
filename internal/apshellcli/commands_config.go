@@ -67,7 +67,7 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import --alias <alias> [--dry-run] <endpoint-json> | endpoints discover-attestors [--dry-run] | endpoints default <alias> | endpoints delete <alias>")
+		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import --alias <alias> [--dry-run] <endpoint-json> | endpoints discover-attestors [--dry-run] | endpoints sync-attestors [--dry-run] | endpoints default <alias> | endpoints delete <alias>")
 	}
 	switch args[0] {
 	case "list":
@@ -126,6 +126,19 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 				r.Config = cfg
 				r.app().Config = cfg
 			}
+		}
+		for _, line := range result.RenderLines {
+			r.println(line)
+		}
+		return nil
+	case "sync-attestors":
+		req, err := parseEndpointSyncAttestorsArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		result, err := r.app().EndpointSyncAttestors(r.commandContext(), req)
+		if err != nil {
+			return err
 		}
 		for _, line := range result.RenderLines {
 			r.println(line)
@@ -215,6 +228,23 @@ func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, e
 func parseEndpointDiscoverAttestorsArgs(args []string) (apshellapp.EndpointDiscoverAttestorsRequest, error) {
 	var req apshellapp.EndpointDiscoverAttestorsRequest
 	const usage = "usage: endpoints discover-attestors [--dry-run]"
+	for _, arg := range args {
+		switch arg {
+		case "--dry-run":
+			if req.DryRun {
+				return req, errors.New(usage)
+			}
+			req.DryRun = true
+		default:
+			return req, errors.New(usage)
+		}
+	}
+	return req, nil
+}
+
+func parseEndpointSyncAttestorsArgs(args []string) (apshellapp.EndpointSyncAttestorsRequest, error) {
+	var req apshellapp.EndpointSyncAttestorsRequest
+	const usage = "usage: endpoints sync-attestors [--dry-run]"
 	for _, arg := range args {
 		switch arg {
 		case "--dry-run":

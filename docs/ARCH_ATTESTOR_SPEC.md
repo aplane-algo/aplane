@@ -1285,6 +1285,8 @@ apshell -d "$APCLIENT_DATA"
 > endpoints show attestor-local
 > request-token --endpoint attestor-local
 > endpoints discover-attestors
+> connect primary
+> endpoints sync-attestors
 ```
 
 The exported `aplane.endpoint.v1` envelope is public routing metadata only and
@@ -1306,6 +1308,14 @@ extracts attestor component-key `public_key_hex` values, and atomically
 rebuilds each endpoint's `published_attestors` inventory in `endpoints.yaml`.
 The rebuild rejects duplicate public keys advertised by multiple endpoint
 aliases and leaves files unchanged on any endpoint/query/validation failure.
+
+`apshell endpoints sync-attestors [--dry-run]` then copies that local
+`published_attestors` inventory into the connected user signer identity as
+source-marked public attestor reference records. This sync is for generation UX:
+it makes endpoint-discovered attestors selectable in `/keytypes` consumers such
+as `apadmin`. It carries only public metadata and does not move endpoint tokens,
+SSH trust, or any private key material. The signer continues to resolve the
+selected reference to the embedded attestor public key at generation time.
 
 A logical attestor may have multiple equivalent endpoints for availability.
 The client may call each endpoint's `/keys` projection to check whether it

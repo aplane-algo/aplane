@@ -1,0 +1,18 @@
+{
+  "added": 1,
+  "updated": 0,
+  "removed": 0,
+  "count": 1,
+  "records": [
+    {
+      "name": "endpoint-attestor-local-a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078",
+      "source": "client_discovery",
+      "endpoint_alias": "attestor-local",
+      "component_key": "a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078",
+      "key_type": "aplane.attestor-ed25519.v1",
+      "public_key_hex": "19482fa6b5437b8f9bab1e816dd0cea94e7d43c9f3bbdbe6fdc5b38fe89727a9",
+      "last_seen_at": "2026-06-04T00:00:00Z",
+      "synced_at": "2026-06-04T00:01:00Z"
+    }
+  ]
+}

@@ -499,6 +499,38 @@ func TestAdminDeleteKey_ErrorResponse(t *testing.T) {
 	}
 }
 
+// --- AdminSyncAttestorReferences ---
+
+func TestAdminSyncAttestorReferences_Success(t *testing.T) {
+	resp := signerapi.AdminSyncAttestorReferencesResponse{Added: 1, Count: 1}
+	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/admin/attestors/sync" || req.Method != "POST" {
+			t.Errorf("request = %s %s, want POST /admin/attestors/sync", req.Method, req.URL.Path)
+		}
+		var body signerapi.AdminSyncAttestorReferencesRequest
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Fatalf("Decode(request body) error = %v", err)
+		}
+		if len(body.Candidates) != 1 || body.Candidates[0].EndpointAlias != "attestor-local" {
+			t.Fatalf("request body = %#v, want one attestor-local candidate", body)
+		}
+		return mockResponse(200, jsonBody(t, resp)), nil
+	})
+
+	got, err := c.AdminSyncAttestorReferences([]signerapi.AttestorReferenceCandidate{{
+		EndpointAlias: "attestor-local",
+		ComponentKey:  "a_1234",
+		KeyType:       "aplane.attestor-ed25519.v1",
+		PublicKeyHex:  strings.Repeat("ab", 32),
+	}})
+	if err != nil {
+		t.Fatalf("AdminSyncAttestorReferences() error = %v", err)
+	}
+	if got.Added != 1 || got.Count != 1 {
+		t.Fatalf("sync response = %#v, want Added/Count 1", got)
+	}
+}
+
 // --- RequestGroupSign ---
 
 func TestRequestGroupSign_Success(t *testing.T) {

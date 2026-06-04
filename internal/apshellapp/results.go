@@ -770,6 +770,28 @@ type EndpointDiscoverAttestorsResult struct {
 	RenderLines            []string
 }
 
+// SyncedEndpointAttestorReference describes one endpoint-discovered attestor
+// candidate synced into the connected signer identity.
+type SyncedEndpointAttestorReference struct {
+	Name          string
+	EndpointAlias string
+	PublicKey     string
+	ComponentKey  string
+	KeyType       string
+}
+
+// EndpointSyncAttestorsResult describes syncing endpoint-published attestors
+// into signer-side key-generation reference options.
+type EndpointSyncAttestorsResult struct {
+	DryRun         bool
+	CandidateCount int
+	Added          int
+	Updated        int
+	Removed        int
+	Records        []SyncedEndpointAttestorReference
+	RenderLines    []string
+}
+
 // StartupConnectDecision describes what apshell should do at startup about signer connectivity.
 type StartupConnectDecision struct {
 	EndpointName  string

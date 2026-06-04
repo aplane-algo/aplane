@@ -751,6 +751,52 @@ func (c *Client) AdminDeleteKeyWithContext(ctx context.Context, address string) 
 	return &delResp, nil
 }
 
+// AdminSyncAttestorReferences syncs public attestor reference candidates into
+// the connected signer identity.
+func (c *Client) AdminSyncAttestorReferences(candidates []signerapi.AttestorReferenceCandidate) (*signerapi.AdminSyncAttestorReferencesResponse, error) {
+	return c.AdminSyncAttestorReferencesWithContext(context.Background(), candidates)
+}
+
+func (c *Client) AdminSyncAttestorReferencesWithContext(ctx context.Context, candidates []signerapi.AttestorReferenceCandidate) (*signerapi.AdminSyncAttestorReferencesResponse, error) {
+	reqBody := signerapi.AdminSyncAttestorReferencesRequest{Candidates: candidates}
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.BaseURL+"/admin/attestors/sync", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	reqCtx, cancel := c.requestContext(ctx, mutationTimeout)
+	defer cancel()
+
+	resp, err := c.doRequest(reqCtx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sync attestor references: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Debug("failed to close response body", "error", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+	}
+
+	var syncResp signerapi.AdminSyncAttestorReferencesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&syncResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if syncResp.Error != "" {
+		return nil, fmt.Errorf("attestor reference sync failed: %s", syncResp.Error)
+	}
+	return &syncResp, nil
+}
+
 // GetKeyTypes fetches available key types from Signer.
 func (c *Client) GetKeyTypes() (*signerapi.KeyTypesResponse, error) {
 	return c.GetKeyTypesWithContext(context.Background())

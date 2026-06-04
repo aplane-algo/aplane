@@ -503,6 +503,7 @@ Additional client-state notes:
 - `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. The common form takes `--host <client-reachable-host>` and derives `ssh://<host>:<configured-ssh-port>` plus the configured signer REST port; `--url <url>` overrides that URL for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, attestor public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
 - `apshell endpoints import --alias <alias> [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias, import fails without writing. Import is not an ownership or trust proof and does not discover attestor keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints discover-attestors [--dry-run]` scans every configured endpoint with authenticated `/keys`, extracts attestor component-key `public_key_hex` values, validates each `component_key`, and atomically rebuilds endpoint-local `published_attestors` inventory in `endpoints.yaml`. Discovery rejects duplicate public keys advertised by multiple endpoint aliases and leaves files unchanged on any endpoint/query/validation failure.
+- `apshell endpoints sync-attestors [--dry-run]` copies the current client-local `published_attestors` inventory into the connected signer identity's public attestor reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered attestors selectable from signer-side key generation clients such as `apadmin`.
 - `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. `show` is local-only and does not call `/keys`; `delete` refuses to remove the default endpoint or an endpoint with published attestors still referenced by derived runtime routing.
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
 - for interactive `apshell`, token presence and SSH host trust are enforced when the shell attempts `connect`, startup auto-connect, or `request-token` flows; they are not preflight requirements for process startup
@@ -895,9 +896,17 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
   "public_key_hex": "<full public key hex>",
   "public_key_size": 1793,
   "public_key_sha256": "<sha256-public-key>",
+  "source": "manual",
   "imported_at": "2026-06-04T00:00:00Z"
 }
 ```
+
+Endpoint discovery may also populate this catalog through
+`apshell endpoints sync-attestors`. Synced records use the same schema with
+`source: "client_discovery"`, a deterministic generated name
+`endpoint-<alias>-<component_key>`, `endpoint_alias`, `last_seen_at`, and
+`synced_at`. They are public candidates derived from the client's
+`endpoints.yaml`; they are not an attestor ownership proof.
 
 The library is a generation convenience and trust-input inventory for the user
 signer. When generating an attested account, callers may provide

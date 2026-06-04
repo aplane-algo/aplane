@@ -27,6 +27,7 @@ func buildHTTPServer(server *Signer, port int) *http.Server {
 	mux.HandleFunc("/keys", server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, server.handleKeys))
 	mux.HandleFunc("/keytypes", server.requireAuth(auth.ActionKeyTypesView, auth.Resource{Type: "keytypes"}, server.handleKeyTypes))
 	mux.HandleFunc("/admin/generate", server.requireAuth(auth.ActionKeysGenerate, auth.Resource{Type: "key"}, server.handleAdminGenerate))
+	mux.HandleFunc("/admin/attestors/sync", server.requireAuth(auth.ActionKeysGenerate, auth.Resource{Type: "key"}, server.handleAdminSyncAttestors))
 	mux.HandleFunc("/admin/keys", server.requireAuth(auth.ActionKeysDelete, auth.Resource{Type: "key"}, server.handleAdminDelete))
 	mux.HandleFunc("/health", server.handleHealth)
 
@@ -63,6 +64,7 @@ func logHTTPStartup(keyCount int, keysSnapshot map[string]string, port int) {
 	logInfof("  GET    /keys                    - List all available signing addresses")
 	logInfof("  GET    /keytypes                - List available key types and creation parameters")
 	logInfof("  POST   /admin/generate          - Generate a new key")
+	logInfof("  POST   /admin/attestors/sync    - Sync public attestor references")
 	logInfof("  DELETE /admin/keys?address=...  - Delete a key (soft delete)")
 	logInfof("  GET    /health                  - Health check")
 	logInfof("Key Management:")

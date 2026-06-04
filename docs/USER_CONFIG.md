@@ -193,6 +193,8 @@ endpoints import --alias attestor-local attestor.endpoint.json
 endpoints show attestor-local
 request-token --endpoint attestor-local
 endpoints discover-attestors
+connect primary
+endpoints sync-attestors
 ```
 
 Importing an endpoint creates routing/configuration only. It does not copy API
@@ -205,6 +207,12 @@ After endpoint tokens are enrolled, `endpoints discover-attestors` queries
 `/keys` on each configured endpoint and rebuilds that endpoint's
 `published_attestors` inventory in `endpoints.yaml`. Attested-send routing is
 derived from this endpoint-local inventory.
+
+If the user signer will generate attested account keys through `apadmin` or
+another signer-side key-generation client, run `endpoints sync-attestors` while
+connected to that user signer. The command publishes only the discovered public
+attestor metadata into the signer identity's attestor reference catalog so the
+attestors appear as selectable generation options.
 
 The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 
