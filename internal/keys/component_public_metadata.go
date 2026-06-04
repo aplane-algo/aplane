@@ -1,0 +1,80 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package keys
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
+	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/storepaths"
+)
+
+const ComponentPublicMetadataSuffix = ".public.json"
+
+// ComponentPublicMetadataPath returns the public-only metadata sidecar path for
+// an attestor component key.
+func ComponentPublicMetadataPath(paths storepaths.Paths, identityID, componentKey string) string {
+	return filepath.Join(paths.KeysDir(identityID), componentKey+ComponentPublicMetadataSuffix)
+}
+
+// ReadComponentPublicMetadata reads and validates a component public metadata
+// sidecar. The boolean is false when the sidecar is absent.
+func ReadComponentPublicMetadata(paths storepaths.Paths, identityID, componentKey string) (attrefs.ExportEnvelope, bool, error) {
+	componentKey, err := keytypes.NormalizeComponentKeySelector(componentKey)
+	if err != nil {
+		return attrefs.ExportEnvelope{}, false, fmt.Errorf("invalid component key selector: %w", err)
+	}
+	path := ComponentPublicMetadataPath(paths, identityID, componentKey)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return attrefs.ExportEnvelope{}, false, nil
+		}
+		return attrefs.ExportEnvelope{}, false, fmt.Errorf("failed to read component public metadata %s: %w", path, err)
+	}
+	var env attrefs.ExportEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return attrefs.ExportEnvelope{}, false, fmt.Errorf("failed to parse component public metadata %s: %w", path, err)
+	}
+	if env.Schema != attrefs.ExportSchema {
+		return attrefs.ExportEnvelope{}, false, fmt.Errorf("component public metadata %s has unsupported schema %q", path, env.Schema)
+	}
+	normalized, err := attrefs.NewExportEnvelope(env.ComponentKey, env.KeyType, env.PublicKeyHex)
+	if err != nil {
+		return attrefs.ExportEnvelope{}, false, fmt.Errorf("invalid component public metadata %s: %w", path, err)
+	}
+	if normalized.ComponentKey != componentKey {
+		return attrefs.ExportEnvelope{}, false, fmt.Errorf("component public metadata %s selector %q does not match %q", path, normalized.ComponentKey, componentKey)
+	}
+	return *normalized, true, nil
+}
+
+func writeComponentPublicMetadataIfNeeded(paths storepaths.Paths, identityID, address string, keyPair *KeyPair) error {
+	if keyPair == nil || keyPair.Category != CategoryComponent || !keytypes.IsAttestorComponentKeyType(keyPair.KeyType) {
+		return nil
+	}
+	componentKey, err := keytypes.NormalizeComponentKeySelector(address)
+	if err != nil {
+		return fmt.Errorf("invalid component key selector: %w", err)
+	}
+	env, err := attrefs.NewExportEnvelope(componentKey, keyPair.KeyType, keyPair.PublicKeyHex)
+	if err != nil {
+		return fmt.Errorf("failed to build component public metadata: %w", err)
+	}
+	data, err := json.MarshalIndent(env, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode component public metadata: %w", err)
+	}
+	data = append(data, '\n')
+	path := ComponentPublicMetadataPath(paths, identityID, componentKey)
+	if err := fsutil.WriteFile(path, data); err != nil {
+		return fmt.Errorf("failed to write component public metadata %s: %w", path, err)
+	}
+	return nil
+}

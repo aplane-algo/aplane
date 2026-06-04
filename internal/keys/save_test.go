@@ -4,11 +4,15 @@
 package keys
 
 import (
+	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -64,6 +68,52 @@ func TestSaveKeyFile_Encrypted(t *testing.T) {
 	}
 	if roundTripped.PublicKeyHex != "aabbccdd" {
 		t.Errorf("PublicKeyHex = %q, want %q", roundTripped.PublicKeyHex, "aabbccdd")
+	}
+	if _, err := os.Stat(ComponentPublicMetadataPath(paths, "default", address)); !os.IsNotExist(err) {
+		t.Fatalf("component public metadata for ed25519 stat error = %v, want not exist", err)
+	}
+}
+
+func TestSaveKeyFileWritesComponentPublicMetadata(t *testing.T) {
+	masterKey := testMasterKey(t)
+	paths := storepaths.NewPaths(t.TempDir())
+	publicKey := bytes.Repeat([]byte{0x29}, 32)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+
+	result, err := SaveKeyFile(paths, &KeyPair{
+		Category:      CategoryComponent,
+		KeyType:       keytypes.AttestorComponentEd25519V1,
+		PublicKeyHex:  hex.EncodeToString(publicKey),
+		PrivateKeyHex: strings.Repeat("11", 64),
+	}, "default", componentKey, masterKey)
+	if err != nil {
+		t.Fatalf("SaveKeyFile() error = %v", err)
+	}
+	if result.Address != componentKey {
+		t.Fatalf("Address = %q, want %q", result.Address, componentKey)
+	}
+
+	path := ComponentPublicMetadataPath(paths, "default", componentKey)
+	assertKeyFileMode(t, path, fsutil.StoreFilePerm)
+
+	env, ok, err := ReadComponentPublicMetadata(paths, "default", componentKey)
+	if err != nil {
+		t.Fatalf("ReadComponentPublicMetadata() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("ReadComponentPublicMetadata() ok = false, want true")
+	}
+	if env.ComponentKey != componentKey {
+		t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, componentKey)
+	}
+	if env.KeyType != keytypes.AttestorComponentEd25519V1 {
+		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.AttestorComponentEd25519V1)
+	}
+	if env.PublicKeyHex != hex.EncodeToString(publicKey) {
+		t.Fatalf("PublicKeyHex = %q, want public key", env.PublicKeyHex)
 	}
 }
 

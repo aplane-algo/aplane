@@ -44,6 +44,9 @@ func SaveKeyFile(paths storepaths.Paths, keyPair *KeyPair, identityID, address s
 	if err := fsutil.WriteFile(privFile, dataToWrite); err != nil {
 		return nil, fmt.Errorf("failed to write key file: %w", err)
 	}
+	if err := writeComponentPublicMetadataIfNeeded(paths, identityID, address, keyPair); err != nil {
+		return nil, err
+	}
 
 	return &ImportKeyResult{
 		Address:     address,
