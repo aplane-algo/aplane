@@ -92,11 +92,6 @@ func dispatchApstoreCommand(args []string) {
 			exitWithError(err)
 		}
 
-	case "key":
-		if err := cmdKey(args[1:]); err != nil {
-			exitWithError(err)
-		}
-
 	case "attestor":
 		if err := cmdAttestor(args[1:]); err != nil {
 			exitWithError(err)

@@ -32,7 +32,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] template remove <key-type>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype activate <key-type>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype deactivate <key-type>\n")
-	fmt.Fprintf(os.Stderr, "  apstore [-d path] key export-att <component-key> [output-json]\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] attestor export-public <component-key> [output-json]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] attestor import <export-json> <name>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] attestor list\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] attestor show <name>\n")
@@ -58,6 +58,6 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore template remove example.my_escrow.v1\n")
 	fmt.Fprintf(os.Stderr, "  apstore keytype activate falcon1024_ed25519.v1\n")
 	fmt.Fprintf(os.Stderr, "  apstore keytype deactivate falcon1024_ed25519.v1\n")
-	fmt.Fprintf(os.Stderr, "  apstore key export-att a_<sha256-public-key> attestor-public.json\n")
+	fmt.Fprintf(os.Stderr, "  apstore attestor export-public a_<sha256-public-key> attestor-public.json\n")
 	fmt.Fprintf(os.Stderr, "  apstore attestor import attestor-public.json lab-att\n")
 }

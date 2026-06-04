@@ -822,7 +822,7 @@ or alter signing behavior.
 
 #### Attestor Public Key Export Envelope
 
-`apstore key export-att <component-key> [output-json]` emits a public-only
+`apstore attestor export-public <component-key> [output-json]` emits a public-only
 JSON envelope for an attestor component key. The command decrypts the local
 `.key` file using the identity store passphrase, reads stored public-key
 metadata, verifies that `<component-key>` equals the canonical selector derived

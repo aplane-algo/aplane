@@ -61,7 +61,7 @@ apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.
 apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
 apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
 apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
-apstore -d $APSIGNER_DATA key export-att a_<sha256-public-key> attestor-public.json
+apstore -d $APSIGNER_DATA attestor export-public a_<sha256-public-key> attestor-public.json
 apstore -d $APSIGNER_DATA attestor import attestor-public.json lab-att
 apstore -d $APSIGNER_DATA attestor list
 ```
@@ -92,17 +92,17 @@ Attestor component keys, such as `aplane.attestor-ed25519.v1` and
 locally by their `a_` component-key selector, but attested account generation
 needs the full component public key hex.
 
-Use `apstore key export-att` on the attestor signer host to export a public-only
+Use `apstore attestor export-public` on the attestor signer host to export a public-only
 JSON envelope:
 
 ```bash
-apstore -d $APSIGNER_DATA key export-att a_<sha256-public-key> attestor-public.json
+apstore -d $APSIGNER_DATA attestor export-public a_<sha256-public-key> attestor-public.json
 ```
 
 If the output path is omitted, the JSON envelope is written to stdout:
 
 ```bash
-apstore -d $APSIGNER_DATA key export-att a_<sha256-public-key>
+apstore -d $APSIGNER_DATA attestor export-public a_<sha256-public-key>
 ```
 
 The command prompts for the store passphrase, decrypts the local key file only

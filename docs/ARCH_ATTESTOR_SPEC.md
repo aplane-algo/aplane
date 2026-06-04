@@ -383,7 +383,7 @@ For Falcon-sized public keys or offline provisioning, the attestor operator may
 instead export the same public key through:
 
 ```text
-apstore key export-att <component_key> [output-json]
+apstore attestor export-public <component_key> [output-json]
 ```
 
 The exported JSON envelope has schema `aplane.attestor-public-key.v1`; its
@@ -1196,14 +1196,14 @@ Attestor signer:
 ```text
 apshell generate aplane.attestor-ed25519.v1
 apshell generate aplane.attestor-falcon1024.v1
-apstore key export-att <component_key> [output-json]
+apstore attestor export-public <component_key> [output-json]
 apstore attestor import <export-json> <name>
 ```
 
 The MVP does not add an `apstore generate` surface. Attestor component keys are
 generated through the existing signer/admin key-generation path exposed by
 `apshell generate` and `POST /admin/generate`, guarded by `keys.generate`.
-`apstore key export-att` is an offline public-only export of the verifier
+`apstore attestor export-public` is an offline public-only export of the verifier
 input for an already-created attestor component key; it does not generate keys
 and does not bypass the disabled private-key export path.
 If a later implementation adds offline `apstore` generation, it must define the
@@ -1467,7 +1467,7 @@ The MVP is complete when:
 - attested account keys cannot sign through `/sign`,
 - attestor component key generation exposes canonical `a_` selectors derived
   as `a_<sha256(pubkey)>` and marks them as non-spending component keys,
-- `apstore key export-att` emits a public-only
+- `apstore attestor export-public` emits a public-only
   `aplane.attestor-public-key.v1` envelope and rejects selector/public-key
   mismatches,
 - `apstore attestor import/list/show/remove` manages identity-scoped

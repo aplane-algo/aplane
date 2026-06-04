@@ -575,7 +575,7 @@ From the key details view:
 ./apstore keytype deactivate <key-type>
 
 # Public-only attestor key export
-./apstore key export-att <component-key> [output-json]
+./apstore attestor export-public <component-key> [output-json]
 ./apstore attestor import <export-json> <name>
 ./apstore attestor list
 ./apstore attestor show <name>

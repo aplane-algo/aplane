@@ -9,13 +9,18 @@ import (
 	"os"
 
 	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keymgmt"
 )
 
 func cmdAttestor(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore attestor <import|list|show|remove>")
+		return fmt.Errorf("usage: apstore attestor <export-public|import|list|show|remove>")
 	}
 	switch args[0] {
+	case "export-public":
+		return cmdAttestorExportPublic(args[1:])
 	case "import":
 		if len(args) != 3 {
 			return fmt.Errorf("usage: apstore attestor import <export-json> <name>")
@@ -37,8 +42,53 @@ func cmdAttestor(args []string) error {
 		}
 		return cmdAttestorRemove(args[1])
 	default:
-		return fmt.Errorf("usage: apstore attestor <import|list|show|remove>")
+		return fmt.Errorf("usage: apstore attestor <export-public|import|list|show|remove>")
 	}
+}
+
+func cmdAttestorExportPublic(args []string) error {
+	if len(args) < 1 || len(args) > 2 {
+		return fmt.Errorf("usage: apstore attestor export-public <component-key> [output-json]")
+	}
+	componentKey, err := keytypes.NormalizeComponentKeySelector(args[0])
+	if err != nil {
+		return fmt.Errorf("invalid component key selector: %w", err)
+	}
+
+	masterKey, err := readStoreMasterKey()
+	if err != nil {
+		return err
+	}
+	defer crypto.ZeroBytes(masterKey)
+
+	keyFile := keystorePaths().KeyFilePath(productIdentityID(), componentKey)
+	info, err := keymgmt.DetectKeyInfoFromFileWithMasterKey(keyFile, masterKey)
+	if err != nil {
+		return fmt.Errorf("failed to read key file %s: %w", keyFile, err)
+	}
+	envelope, err := keymgmt.BuildAttestorPublicKeyExport(componentKey, info)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(envelope, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode public key envelope: %w", err)
+	}
+	data = append(data, '\n')
+
+	if len(args) == 1 {
+		_, err := os.Stdout.Write(data)
+		return err
+	}
+	outputPath := args[1]
+	if outputPath == "" {
+		return fmt.Errorf("output path is required")
+	}
+	if err := os.WriteFile(outputPath, data, 0o600); err != nil {
+		return fmt.Errorf("failed to write public key envelope: %w", err)
+	}
+	logInfof("attestor public key envelope written: %s", outputPath)
+	return nil
 }
 
 func cmdAttestorImport(path, name string) error {
