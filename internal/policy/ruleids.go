@@ -43,6 +43,12 @@ const (
 	TransferRoutingClawbackRouteMissRuleID  = "transfer_policy:clawback_route_miss"
 	TransferRoutingCloseRejectedRuleID      = "transfer_policy:close_rejected"
 	TransferRoutingClawbackRejectedRuleID   = "transfer_policy:clawback_rejected"
+
+	AttestationPolicyMissingRuleID          = "attestation_policy:missing"
+	AttestationTransferPolicyRequiredRuleID = "attestation_policy:transfer_policy_required"
+	AttestationDeterministicRoutingRuleID   = "attestation_policy:deterministic_routing_required"
+	AttestationNonTransferRuleID            = "attestation_policy:non_transfer"
+	AttestationRekeyRuleID                  = "attestation_policy:reject_rekey"
 )
 
 const (

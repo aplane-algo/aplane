@@ -8,14 +8,17 @@ import (
 	"context"
 	stded25519 "crypto/ed25519"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/attestor/message"
 	"github.com/aplane-algo/aplane/internal/attestor/verify"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -159,11 +162,11 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, nil)
-	if err == nil || err.Kind != ErrorInternal {
-		t.Fatalf("SignComponentWithContext() error = %#v, want internal", err)
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, "key session is nil") {
-		t.Fatalf("SignComponentWithContext() error = %q, want key session", err.Message)
+	if !strings.Contains(err.Message, policy.AttestationPolicyMissingRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want missing attestation policy", err.Message)
 	}
 
 	_, err = (&Service{}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
@@ -173,6 +176,273 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	}, nil)
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("SignComponentWithContext(invalid) error = %#v, want bad request", err)
+	}
+}
+
+func TestSignComponentAttestorRequiresPolicyBeforeKeyLoad(t *testing.T) {
+	componentKey := strings.Repeat("ab", stded25519.PublicKeySize)
+	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
+	store := &componentKeyStore{}
+
+	_, err := (&Service{}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor-no-policy",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  componentKey,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
+	}
+	if !strings.Contains(err.Message, policy.AttestationPolicyMissingRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want missing attestation policy", err.Message)
+	}
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+	}
+}
+
+func TestSignComponentAttestorRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
+	cfg := routingPolicyConfigForSigningTest(t, `
+attestation: {}
+`)
+	componentKey := strings.Repeat("ab", stded25519.PublicKeySize)
+	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
+	store := &componentKeyStore{}
+
+	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor-no-routing",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  componentKey,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
+	}
+	if !strings.Contains(err.Message, policy.AttestationTransferPolicyRequiredRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want transfer policy required", err.Message)
+	}
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+	}
+}
+
+func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
+	source := types.Address{24}
+	cfg := wildcardAttestationPolicy(t)
+	txn := types.Transaction{
+		Type: types.ApplicationCallTx,
+		Header: types.Header{
+			Sender:      source,
+			Fee:         types.MicroAlgos(1000),
+			FirstValid:  10,
+			LastValid:   20,
+			GenesisHash: testDigest(t, apconfig.AlgorandTestnetGenesisHash),
+		},
+	}
+	store := &componentKeyStore{}
+
+	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor-appl",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
+	}
+	if !strings.Contains(err.Message, policy.AttestationNonTransferRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want non-transfer rejection", err.Message)
+	}
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+	}
+}
+
+func TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad(t *testing.T) {
+	source := types.Address{25}.String()
+	allowed := types.Address{26}.String()
+	blocked := types.Address{27}.String()
+	cfg := attestationRoutePolicy(t, source, allowed)
+	txn := testnetPaymentTransaction(t, source, blocked, 1)
+	store := &componentKeyStore{}
+
+	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor-route-miss",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
+	}
+	if !strings.Contains(err.Message, policy.TransferRoutingRouteMissRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want route miss", err.Message)
+	}
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+	}
+}
+
+func TestSignComponentAttestorRejectsInheritedReviewRouteMissBeforeKeyLoad(t *testing.T) {
+	cfg := routingPolicyConfigForSigningTest(t, `
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  on_no_route: review
+  routes: []
+attestation: {}
+`)
+	txn := testnetPaymentTransaction(t, types.Address{33}.String(), types.Address{34}.String(), 1)
+	store := &componentKeyStore{}
+
+	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor-review-route-miss",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
+	}
+	if !strings.Contains(err.Message, policy.AttestationDeterministicRoutingRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want deterministic routing rejection", err.Message)
+	}
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+	}
+}
+
+func TestSignComponentAttestorRejectsInheritedReviewAboveBeforeKeyLoad(t *testing.T) {
+	source := types.Address{35}.String()
+	dest := types.Address{36}.String()
+	cfg := routingPolicyConfigForSigningTest(t, fmt.Sprintf(`
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  on_no_route: reject
+  routes:
+    - id: inherited_review_route
+      networks: [testnet]
+      sources: [%q]
+      assets: ["algo"]
+      destinations: [%q]
+      limits:
+        review_above: 1
+attestation: {}
+`, source, dest))
+	txn := testnetPaymentTransaction(t, source, dest, 2)
+	store := &componentKeyStore{}
+
+	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor-review-above",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
+	}
+	if !strings.Contains(err.Message, "transfer_policy:inherited_review_route:review_above") {
+		t.Fatalf("SignComponentWithContext() error = %q, want inherited review threshold rejection", err.Message)
+	}
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+	}
+}
+
+func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
+	source := types.Address{28}.String()
+	dest := types.Address{29}.String()
+	txn := testnetPaymentTransaction(t, source, dest, 1)
+	txn.RekeyTo = types.Address{30}
+	store := &componentKeyStore{}
+
+	_, err := (&Service{Policy: attestationRoutePolicy(t, source, dest)}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor-rekey",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
+	}
+	if !strings.Contains(err.Message, policy.AttestationRekeyRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want rekey rejection", err.Message)
+	}
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+	}
+}
+
+func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x61}, stded25519.SeedSize)
+	privateKey := stded25519.NewKeyFromSeed(seed)
+	publicKey := append([]byte(nil), privateKey.Public().(stded25519.PublicKey)...)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+
+	source := types.Address{31}.String()
+	dest := types.Address{32}.String()
+	txn := testnetPaymentTransaction(t, source, dest, 1)
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:     keytypes.AttestorComponentEd25519V1,
+		Category: keys.CategoryComponent,
+		Value: &coresigning.ComponentKeyMaterial{
+			ComponentKey: componentKey,
+			PublicKey:    append([]byte(nil), publicKey...),
+			PrivateKey:   append([]byte(nil), privateKey...),
+		},
+	}
+	store := &componentKeyStore{key: keyMaterial}
+	audit := &testAuditLogger{}
+
+	result, signErr := (&Service{
+		Policy:   attestationRoutePolicy(t, source, dest),
+		AuditLog: audit,
+	}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor-policy-pass",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  componentKey,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if signErr != nil {
+		t.Fatalf("SignComponentWithContext() error = %v", signErr)
+	}
+	if store.calls != 1 || store.gotAddress != componentKey {
+		t.Fatalf("store calls = %d address %q, want one call for %q", store.calls, store.gotAddress, componentKey)
+	}
+	if result == nil || len(result.Signatures) != 1 {
+		t.Fatalf("result = %#v, want one signature", result)
+	}
+	sigBytes, err := hex.DecodeString(result.Signatures[0].Signature)
+	if err != nil {
+		t.Fatalf("DecodeString(signature) error = %v", err)
+	}
+	plan, prepErr := PrepareComponentSigning(signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor-policy-pass",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  componentKey,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	})
+	if prepErr != nil {
+		t.Fatalf("PrepareComponentSigning() error = %v", prepErr)
+	}
+	if !stded25519.Verify(stded25519.PublicKey(publicKey), plan.Targets[0].Message[:], sigBytes) {
+		t.Fatal("attestor signature does not verify over component message")
+	}
+	if len(audit.approved) != 1 || audit.approved[0].authAddress != componentKey {
+		t.Fatalf("approved audit entries = %#v, want one component approval", audit.approved)
 	}
 }
 
@@ -640,6 +910,45 @@ func paymentTransaction(t *testing.T, sender, receiver string, amount uint64) ty
 	return txn
 }
 
+func testnetPaymentTransaction(t *testing.T, sender, receiver string, amount uint64) types.Transaction {
+	t.Helper()
+	txn := paymentTransaction(t, sender, receiver, amount)
+	txn.GenesisHash = testDigest(t, apconfig.AlgorandTestnetGenesisHash)
+	return txn
+}
+
+func wildcardAttestationPolicy(t *testing.T) *policy.Config {
+	t.Helper()
+	return routingPolicyConfigForSigningTest(t, `
+attestation:
+  transfer_policy:
+    schema_version: 1
+    enabled: true
+    routes:
+      - id: allow_all_dev
+        networks: ["*"]
+        sources: ["*"]
+        assets: ["*"]
+        destinations: ["*"]
+`)
+}
+
+func attestationRoutePolicy(t *testing.T, source, destination string) *policy.Config {
+	t.Helper()
+	return routingPolicyConfigForSigningTest(t, fmt.Sprintf(`
+attestation:
+  transfer_policy:
+    schema_version: 1
+    enabled: true
+    routes:
+      - id: allow_test_route
+        networks: [testnet]
+        sources: [%q]
+        assets: ["algo"]
+        destinations: [%q]
+`, source, destination))
+}
+
 func logicSigAddressForTest(t *testing.T, bytecode []byte) string {
 	t.Helper()
 	lsig := algocrypto.LogicSigAccount{
@@ -684,6 +993,48 @@ func (s *componentKeyTestSession) GetKeyWithContext(_ context.Context, address s
 		return nil, s.err
 	}
 	return s.key, nil
+}
+
+type componentKeyStore struct {
+	key        *coresigning.KeyMaterial
+	err        error
+	calls      int
+	gotAddress string
+}
+
+func newComponentKeySession(store *componentKeyStore) *keystore.KeySession {
+	session := keystore.NewKeySession(store)
+	session.InitializeSession()
+	return session
+}
+
+func (s *componentKeyStore) List(context.Context) ([]keystore.KeyMetadata, error) {
+	return nil, nil
+}
+
+func (s *componentKeyStore) Get(_ context.Context, address string) (*coresigning.KeyMaterial, error) {
+	s.calls++
+	s.gotAddress = address
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.key, nil
+}
+
+func (s *componentKeyStore) GetMetadata(context.Context, string) (*keystore.KeyMetadata, error) {
+	return nil, nil
+}
+
+func (s *componentKeyStore) Delete(context.Context, string) error {
+	return nil
+}
+
+func (s *componentKeyStore) WithMasterKey(func([]byte) error) error {
+	return nil
+}
+
+func (s *componentKeyStore) Type() string {
+	return "test"
 }
 
 type componentUserTestProvider struct {

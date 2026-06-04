@@ -663,6 +663,20 @@ blocked-destination, route-miss, close/clawback rejection, unknown-genesis, and
 `reject_above` IDs, but review-producing route outcomes are invalid for
 attestor component requests.
 
+Attestor component policy rule IDs:
+
+- `attestation_policy:missing`
+- `attestation_policy:transfer_policy_required`
+- `attestation_policy:deterministic_routing_required`
+- `attestation_policy:non_transfer`
+- `attestation_policy:reject_rekey`
+
+These rule IDs are emitted when the attestor role has no effective
+`attestation:` policy, lacks an enabled positive `attestation.transfer_policy`,
+inherits route-miss behavior that is not deterministic `reject`, is asked to
+attest a target with no supported transfer movement, or sees a non-zero
+`RekeyTo`.
+
 ## Key Type Overrides
 
 `policy.yaml` may contain `key_type_overrides`, a map from signing key type to

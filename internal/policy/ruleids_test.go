@@ -27,6 +27,11 @@ func TestStablePolicyRuleIDs(t *testing.T) {
 		"TransferRoutingClawbackRouteMissRuleID":  TransferRoutingClawbackRouteMissRuleID,
 		"TransferRoutingCloseRejectedRuleID":      TransferRoutingCloseRejectedRuleID,
 		"TransferRoutingClawbackRejectedRuleID":   TransferRoutingClawbackRejectedRuleID,
+		"AttestationPolicyMissingRuleID":          AttestationPolicyMissingRuleID,
+		"AttestationTransferPolicyRequiredRuleID": AttestationTransferPolicyRequiredRuleID,
+		"AttestationDeterministicRoutingRuleID":   AttestationDeterministicRoutingRuleID,
+		"AttestationNonTransferRuleID":            AttestationNonTransferRuleID,
+		"AttestationRekeyRuleID":                  AttestationRekeyRuleID,
 	}
 	want := map[string]string{
 		"RejectForeignRekeyRuleID":                "reject_foreign_rekey",
@@ -49,6 +54,11 @@ func TestStablePolicyRuleIDs(t *testing.T) {
 		"TransferRoutingClawbackRouteMissRuleID":  "transfer_policy:clawback_route_miss",
 		"TransferRoutingCloseRejectedRuleID":      "transfer_policy:close_rejected",
 		"TransferRoutingClawbackRejectedRuleID":   "transfer_policy:clawback_rejected",
+		"AttestationPolicyMissingRuleID":          "attestation_policy:missing",
+		"AttestationTransferPolicyRequiredRuleID": "attestation_policy:transfer_policy_required",
+		"AttestationDeterministicRoutingRuleID":   "attestation_policy:deterministic_routing_required",
+		"AttestationNonTransferRuleID":            "attestation_policy:non_transfer",
+		"AttestationRekeyRuleID":                  "attestation_policy:reject_rekey",
 	}
 	for name, wantID := range want {
 		if ruleIDs[name] != wantID {

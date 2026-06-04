@@ -97,7 +97,6 @@ func (s *Service) SignGroupForSimulationWithContext(ctx context.Context, identit
 }
 
 func (s *Service) SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*ComponentSignResult, *ServiceError) {
-	_ = identityID
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -112,14 +111,25 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
 		return nil, forbidden("signer is locked")
 	}
-	if session == nil {
-		return nil, internal("key session is nil")
-	}
 	switch plan.Role {
 	case signerapi.ComponentSignRoleUser:
+		if session == nil {
+			return nil, internal("key session is nil")
+		}
 		return signPreparedUserComponents(ctx, plan, session)
 	case signerapi.ComponentSignRoleAttestor:
-		return signPreparedAttestorComponents(ctx, plan, session)
+		if err := s.evaluateAttestorComponentPolicy(identityID, plan); err != nil {
+			return nil, err
+		}
+		if session == nil {
+			return nil, internal("key session is nil")
+		}
+		result, signErr := signPreparedAttestorComponents(ctx, plan, session)
+		if signErr != nil {
+			return nil, signErr
+		}
+		s.logAttestorComponentApproved(identityID, plan, result)
+		return result, nil
 	default:
 		return nil, badRequest("unsupported component signing role")
 	}
