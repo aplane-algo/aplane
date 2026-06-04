@@ -1240,13 +1240,38 @@ signer HTTP clients must obtain them through the existing
 `internal/engine/connect` ownership path rather than creating a parallel
 connection or tunnel lifecycle.
 
-Client-side credential routing is separate local client config. Attestor
-endpoint mappings use the expected attestor public key hex as the map key and
-point to endpoint and credential references, not to policy facts or profile
-labels. Falcon-1024 public-key hex values exceed the YAML simple-key length in
-some parsers, so `config.yaml` should write them as explicit mapping keys
-(`? "<hex>"` followed by `:`). Tokens are never stored in attested LogicSig
-metadata.
+Client-side credential routing is separate local client config. Signer
+endpoint connection profiles live in `$APCLIENT_DATA/endpoints.yaml`; API
+tokens remain in endpoint-scoped token files referenced by those profiles.
+Attestor endpoint mappings use the expected attestor public key hex as the map
+key and normally point to an endpoint alias, not to policy facts. Falcon-1024
+public-key hex values exceed the YAML simple-key length in some parsers, so
+`config.yaml` should write them as explicit mapping keys (`? "<hex>"` followed
+by `:`). Tokens are never stored in attested LogicSig metadata.
+
+Example:
+
+```yaml
+# $APCLIENT_DATA/endpoints.yaml
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signing
+    url: ssh://signer.example:1127
+    signer_port: 11270
+    token_file: aplane.token
+  attestor-local:
+    role: attestation
+    url: ssh://127.0.0.1:2223
+    signer_port: 11270
+    token_file: tokens/attestor-local.token
+
+# $APCLIENT_DATA/config.yaml
+attestor_endpoints:
+  "<embedded-attestor-public-key-hex>":
+    endpoint: attestor-local
+```
 
 A logical attestor may have multiple equivalent endpoints for availability.
 The client may call each endpoint's `/keys` projection to check whether it

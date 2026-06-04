@@ -324,15 +324,15 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 	// Remote Signing
 	mustRegister(registry, &command.Command{
 		Name:        "connect",
-		Usage:       "connect",
-		Description: "Connect to Signer via SSH tunnel (uses config.yaml)",
+		Usage:       "connect [endpoint-alias]",
+		Description: "Connect to Signer via SSH tunnel (uses the default endpoint or endpoint alias)",
 		Category:    command.CategoryRemote,
 		Handler:     command.NewInternalHandler(r.cmdConnect),
 	})
 
 	mustRegister(registry, &command.Command{
 		Name:        "request-token",
-		Usage:       "request-token [<host> [--ssh-port <port>]]",
+		Usage:       "request-token [--endpoint <alias>] [<host> [--ssh-port <port>]]",
 		Description: "Request API token from Signer (requires operator approval)",
 		Category:    command.CategoryRemote,
 		Handler:     command.NewInternalHandler(r.cmdRequestToken),

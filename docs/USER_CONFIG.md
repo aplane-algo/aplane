@@ -165,20 +165,48 @@ export APCLIENT_DATA=/custom/path
 
 - All connections use SSH tunneling for uniform per-client identity
 - The `ssh:` block is required for connecting to the signer
-- The `connect` command reads from config.yaml but never modifies it
+- The `connect` command reads from config.yaml or the optional endpoint registry but never modifies it
 - Edit config.yaml manually to change connection settings
 
 ### Connect Command Behavior
 
-The `connect` command takes no arguments. It reads all connection settings from
-config.yaml and opens an SSH tunnel to the configured signer:
+The `connect` command with no arguments connects to the default signer. In the
+legacy single-endpoint setup, it reads connection settings from `config.yaml`
+and the token from `$APCLIENT_DATA/aplane.token`:
 
 ```bash
 connect
 ```
 
-To change connection settings, edit config.yaml directly. To request a token
-from a different host for enrollment, use `request-token <host> [--ssh-port <port>]`.
+For multiple signer endpoints, create `$APCLIENT_DATA/endpoints.yaml` and use
+endpoint aliases:
+
+```yaml
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signing
+    url: ssh://signer.example.com:1127
+    signer_port: 11270
+    token_file: aplane.token
+  attestor-local:
+    role: attestation
+    url: ssh://127.0.0.1:2223
+    signer_port: 11270
+    token_file: tokens/attestor-local.token
+```
+
+Then:
+
+```bash
+connect                 # default endpoint
+connect primary
+request-token --endpoint attestor-local
+```
+
+To request a token from a one-off host for enrollment, use
+`request-token <host> [--ssh-port <port>]`.
 
 ---
 
@@ -916,6 +944,9 @@ Use the `request-token` command to obtain a token securely via SSH:
 ```bash
 # In apshell - requests token via SSH, operator approves in apadmin
 > request-token
+
+# For a named endpoint in endpoints.yaml
+> request-token --endpoint attestor-local
 
 # In Python SDK
 from aplane import request_token_to_file

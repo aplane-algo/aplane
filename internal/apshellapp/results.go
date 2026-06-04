@@ -696,6 +696,7 @@ type RequestTokenResult struct {
 
 // StartupConnectDecision describes what apshell should do at startup about signer connectivity.
 type StartupConnectDecision struct {
+	EndpointName  string
 	HasToken      bool
 	TokenPath     string
 	HasSSHConfig  bool

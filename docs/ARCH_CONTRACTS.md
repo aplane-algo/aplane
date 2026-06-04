@@ -454,8 +454,11 @@ Additional signer-state notes:
 ```text
 <data_dir>/
   config.yaml
+  endpoints.yaml
   .mcp.json
   aplane.token
+  tokens/
+    <endpoint-alias>.token
   .apclient.lock
   .ssh/id_ed25519
   .ssh/known_hosts
@@ -492,10 +495,14 @@ Additional client-state notes:
 - systemd installs/upgrades refuse to proceed while `apsigner.service` is `active`, `activating`, `reloading`, or `deactivating`; operators must stop the service first, then rerun the same install/bootstrap command
 - local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
 - `apconsole.yaml` supports `mode: local|remote`, `client_data`, and local-mode `signer_data`; relative paths resolve against the profile file
-- interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without `aplane.token` or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
+- `endpoints.yaml` is an optional client-local signer endpoint registry with `schema_version: 1`, a `default` endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
+- if `endpoints.yaml` is absent, the legacy primary endpoint is derived from `config.yaml` `ssh:` plus `signer_port`, and uses `APCLIENT_DATA/aplane.token`.
+- endpoint records carry connection profile fields together: `role`, `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, and `token_file`. Relative file paths resolve against `APCLIENT_DATA`.
+- endpoint token files are bearer credentials. The legacy default endpoint continues to use `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
+- `attestor_endpoints` in `config.yaml` maps embedded attestor public-key hex to either an inline legacy endpoint record or `{ endpoint: <endpoint-alias> }`; the alias resolves through `endpoints.yaml` before attested send orchestration.
+- interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
 - for interactive `apshell`, token presence and SSH host trust are enforced when the shell attempts `connect`, startup auto-connect, or `request-token` flows; they are not preflight requirements for process startup
-- after a successful interactive `request-token`, `apshell` immediately attempts to establish the signer SSH tunnel with the newly issued token
-- token files are bearer credentials: reads reject group/world-accessible `aplane.token` files and report a `chmod 600` remediation; token writes create owner-only files
+- after a successful interactive `request-token` for the default endpoint, `apshell` immediately attempts to establish the signer SSH tunnel with the newly issued token; `request-token --endpoint <alias>` saves that endpoint's token and only auto-connects when `<alias>` is the default endpoint.
 - `apshell --mcp` has a stricter startup contract than interactive `apshell`: MCP startup is non-interactive and refuses to start unless the client is already enrolled (`ssh:` config, `aplane.token`, trusted `known_hosts`)
 - `apshell --mcp` also requires the startup signer connection to succeed; it does not start in a disconnected or partially enrolled state, and it cannot perform first-use trust or token enrollment itself
 - `apconsole` resolves startup inputs per field in this order: flags, environment variables, explicitly selected profile (`-config` or `APCONSOLE_CONFIG`), auto-discovered profile, then defaults

@@ -294,6 +294,95 @@ attestor_endpoints:
 	}
 }
 
+func TestLoadConfigEndpointRegistryResolvesAttestorEndpointAlias(t *testing.T) {
+	dataDir := t.TempDir()
+	selector := attestorEndpointTestHex("d6")
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(fmt.Sprintf(`
+network: testnet
+signer_port: 12270
+ssh:
+  host: signer.example
+  port: 2222
+attestor_endpoints:
+  %s:
+    endpoint: attestor-local
+`, selector)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
+schema_version: 1
+default: primary
+endpoints:
+  attestor-local:
+    role: attestation
+    url: ssh://127.0.0.1:2223
+    signer_port: 12271
+`), 0o600); err != nil {
+		t.Fatalf("write endpoints: %v", err)
+	}
+
+	cfg, err := LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if _, ok := cfg.Endpoints.Endpoints[DefaultClientEndpointName]; !ok {
+		t.Fatalf("implicit primary endpoint missing from %#v", cfg.Endpoints.Endpoints)
+	}
+	attestor, ok := cfg.Endpoints.Endpoints["attestor-local"]
+	if !ok {
+		t.Fatalf("attestor-local endpoint missing from %#v", cfg.Endpoints.Endpoints)
+	}
+	if attestor.TokenFile != filepath.Join(dataDir, "tokens", "attestor-local.token") {
+		t.Fatalf("attestor token_file = %q, want default endpoint token path", attestor.TokenFile)
+	}
+	if attestor.IdentityFile != filepath.Join(dataDir, ".ssh", "id_ed25519") {
+		t.Fatalf("attestor identity_file = %q, want default SSH identity", attestor.IdentityFile)
+	}
+
+	route := cfg.AttestorEndpoints[selector]
+	if route.Endpoint != "attestor-local" {
+		t.Fatalf("attestor route endpoint = %q, want attestor-local", route.Endpoint)
+	}
+	if route.URL != "ssh://127.0.0.1:2223" {
+		t.Fatalf("attestor route url = %q, want endpoint URL", route.URL)
+	}
+	if route.TokenFile != filepath.Join(dataDir, "tokens", "attestor-local.token") {
+		t.Fatalf("attestor route token_file = %q, want resolved endpoint token path", route.TokenFile)
+	}
+	if route.SignerPort != 12271 {
+		t.Fatalf("attestor route signer_port = %d, want endpoint signer port", route.SignerPort)
+	}
+}
+
+func TestLoadConfigEndpointRegistryRejectsUnknownAttestorEndpointAlias(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(fmt.Sprintf(`
+network: testnet
+ssh:
+  host: signer.example
+attestor_endpoints:
+  %s:
+    endpoint: missing
+`, attestorEndpointTestHex("d6"))), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
+schema_version: 1
+default: primary
+endpoints: {}
+`), 0o600); err != nil {
+		t.Fatalf("write endpoints: %v", err)
+	}
+
+	_, err := LoadConfig(dataDir)
+	if err == nil {
+		t.Fatal("LoadConfig error = nil, want unknown endpoint alias")
+	}
+	if !strings.Contains(err.Error(), "unknown endpoint alias") {
+		t.Fatalf("LoadConfig error = %q, want unknown endpoint alias", err)
+	}
+}
+
 func TestClientConfigExamplesUseKnownFields(t *testing.T) {
 	repoRoot := filepath.Clean(filepath.Join("..", ".."))
 	installer, err := os.ReadFile(filepath.Join(repoRoot, "install.sh"))

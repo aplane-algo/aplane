@@ -35,6 +35,7 @@ type SSHClientConfig struct {
 // AttestorEndpointConfig maps an embedded attestor public key to the signer
 // endpoint that can produce attestor-role component signatures for that key.
 type AttestorEndpointConfig struct {
+	Endpoint       string `yaml:"endpoint,omitempty" description:"Endpoint alias from endpoints.yaml"`
 	URL            string `yaml:"url" description:"Attestor endpoint URL: self, https://..., loopback http://..., or ssh://host[:port]"`
 	TokenFile      string `yaml:"token_file,omitempty" description:"Path to the attestor endpoint API token file"`
 	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// attestor endpoints"`
@@ -63,6 +64,9 @@ type Config struct {
 	// AttestorEndpoints maps attested-account embedded attestor public keys to
 	// signer endpoints for attestor-role component signing.
 	AttestorEndpoints AttestorEndpointConfigs `yaml:"attestor_endpoints,omitempty" description:"Attestor endpoint routing by embedded attestor public-key hex"`
+
+	// Endpoints is loaded from endpoints.yaml and is not part of config.yaml.
+	Endpoints ClientEndpointRegistry `yaml:"-"`
 
 	// Grouped network settings. This is the canonical on-disk network config.
 	Networks ClientNetworkConfigs `yaml:"networks" description:"Grouped settings per network context token"`
@@ -131,6 +135,16 @@ func LoadConfig(dataDir string) (Config, error) {
 		config.SSH.KnownHostsPath = ResolvePath(config.SSH.KnownHostsPath, dataDir)
 	}
 	config.resolveAttestorEndpointPaths(dataDir)
+	endpoints, err := LoadClientEndpointRegistry(dataDir, config)
+	if err != nil {
+		return Config{}, err
+	}
+	config.Endpoints = endpoints
+	if resolved, err := endpoints.ResolveAttestorEndpointConfigs(config.AttestorEndpoints); err != nil {
+		return Config{}, err
+	} else {
+		config.AttestorEndpoints = resolved
+	}
 
 	return config, nil
 }
@@ -293,6 +307,15 @@ func isSupportedAttestorEndpointPublicKeySize(size int) bool {
 }
 
 func validateAttestorEndpointConfig(selector string, endpoint AttestorEndpointConfig) error {
+	if strings.TrimSpace(endpoint.Endpoint) != "" {
+		if err := ValidateClientEndpointAlias(endpoint.Endpoint); err != nil {
+			return fmt.Errorf("attestor endpoint %s: invalid endpoint alias: %w", selector, err)
+		}
+		if endpoint.URL != "" || endpoint.TokenFile != "" || endpoint.SignerPort != 0 || endpoint.LocalPort != 0 || endpoint.IdentityFile != "" || endpoint.KnownHostsPath != "" {
+			return fmt.Errorf("attestor endpoint %s: endpoint alias cannot be combined with inline endpoint fields", selector)
+		}
+		return nil
+	}
 	if strings.TrimSpace(endpoint.URL) == "" {
 		return fmt.Errorf("attestor endpoint %s: url is required", selector)
 	}

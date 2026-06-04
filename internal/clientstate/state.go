@@ -4,6 +4,9 @@
 package clientstate
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 
 	"github.com/aplane-algo/aplane/internal/addressdisplay"
@@ -66,7 +69,16 @@ func (s *State) SaveApshellToken(token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return s.SaveApshellTokenToPath(tokenPath, token)
+}
+
+// SaveApshellTokenToPath persists a client auth token to a specific endpoint
+// token file under APCLIENT_DATA.
+func (s *State) SaveApshellTokenToPath(tokenPath, token string) (string, error) {
 	if err := s.WithExclusiveLock(func() error {
+		if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
+			return err
+		}
 		return tokenfile.WriteToken(tokenPath, token)
 	}); err != nil {
 		return "", err

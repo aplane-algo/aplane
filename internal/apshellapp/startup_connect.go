@@ -7,17 +7,31 @@ import "github.com/aplane-algo/aplane/internal/tokenfile"
 
 // StartupConnectDecision reports the app-layer startup decision for signer connectivity.
 func (a *App) StartupConnectDecision() *StartupConnectDecision {
-	token, _ := tokenfile.LoadApshellTokenFromDataDir(a.DataDir)
+	registry := a.Config.ClientEndpointsOrDefault(a.DataDir)
+	alias, endpoint, ok := registry.DefaultEndpoint()
+	tokenPath := endpoint.TokenFile
+	if tokenPath == "" {
+		tokenPath, _ = tokenfile.GetApshellTokenPathForDataDir(a.DataDir)
+	}
+	token, _ := tokenfile.ReadToken(tokenPath)
 	decision := &StartupConnectDecision{
-		HasToken:  token != "",
-		TokenPath: getTokenPathDescription(a.DataDir),
+		EndpointName: alias,
+		HasToken:     token != "",
+		TokenPath:    tokenPath,
 	}
 
-	if a.Config.SSH != nil {
-		decision.HasSSHConfig = true
-		decision.Host = a.Config.SSH.Host
-		decision.SSHPort = a.Config.SSH.Port
-		decision.SignerPort = a.Config.SignerPort
+	if ok {
+		host, sshPort, err := sshEndpointHostPort(endpoint)
+		if err == nil {
+			signerPort := endpoint.SignerPort
+			if signerPort == 0 {
+				signerPort = a.Config.SignerPort
+			}
+			decision.HasSSHConfig = true
+			decision.Host = host
+			decision.SSHPort = sshPort
+			decision.SignerPort = signerPort
+		}
 	}
 
 	decision.ShouldConnect = decision.HasToken && decision.HasSSHConfig

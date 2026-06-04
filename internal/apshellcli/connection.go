@@ -64,6 +64,27 @@ func connectConfigured(r *REPLState) error {
 	return r.renderConnectResult(result)
 }
 
+func connectEndpointAlias(r *REPLState, alias string) error {
+	registry := r.Config.ClientEndpointsOrDefault(r.DataDir)
+	endpoint, ok := registry.Endpoint(alias)
+	if !ok {
+		return fmt.Errorf("unknown endpoint alias %q", alias)
+	}
+	hostKeyApproval := buildHostKeyApproval(r)
+
+	r.printf("Connecting to endpoint %s...\n", alias)
+	r.println("Using SSH public key authentication...")
+
+	result, err := r.app().ConnectEndpoint(r.commandContext(), alias, endpoint, hostKeyApproval, func() {
+		r.println("⚠️  Disconnected from signer")
+		r.print("> ")
+	})
+	if err != nil {
+		return err
+	}
+	return r.renderConnectResult(result)
+}
+
 // disconnectTunnel closes the SSH tunnel connection and reports the shell-visible result.
 func disconnectTunnel(r *REPLState) error {
 	if r.app().IsTunnelConnected() {
@@ -118,7 +139,9 @@ func requestToken(r *REPLState, host string, sshPort int) error {
 }
 
 func requestTokenConfigured(r *REPLState) error {
-	if r.Config.SSH == nil {
+	registry := r.Config.ClientEndpointsOrDefault(r.DataDir)
+	alias, endpoint, ok := registry.DefaultEndpoint()
+	if !ok {
 		return fmt.Errorf("usage: request-token [<host> [--ssh-port <port>]]\n\n" +
 			"Request an API token from the Signer. Requires an operator\n" +
 			"(apadmin) to approve the request on the server.\n" +
@@ -130,15 +153,7 @@ func requestTokenConfigured(r *REPLState) error {
 	}
 
 	hostKeyApproval := buildHostKeyApproval(r)
-
-	result, err := r.app().RequestToken(r.commandContext(), apshellapp.RequestTokenRequest{
-		Host:                  r.Config.SSH.Host,
-		SSHPort:               r.Config.SSH.Port,
-		IdentityFile:          r.Config.SSH.IdentityFile,
-		KnownHostsPath:        r.Config.SSH.KnownHostsPath,
-		HostKeyApproval:       hostKeyApproval,
-		OnProvisioningStarted: r.printTokenProvisioningWait,
-	})
+	result, err := r.app().RequestTokenEndpoint(r.commandContext(), alias, endpoint, hostKeyApproval, r.printTokenProvisioningWait)
 	if err != nil {
 		return err
 	}
@@ -147,7 +162,39 @@ func requestTokenConfigured(r *REPLState) error {
 		r.println(line)
 	}
 	r.println("Connecting to signer with new token...")
-	return connectTunnelWithKey(r, r.Config.SSH.Host, r.Config.SSH.Port, r.Config.SignerPort)
+	return connectEndpointAlias(r, alias)
+}
+
+func requestTokenEndpointAlias(r *REPLState, alias string) error {
+	registry := r.Config.ClientEndpointsOrDefault(r.DataDir)
+	endpoint, ok := registry.Endpoint(alias)
+	if !ok {
+		return fmt.Errorf("unknown endpoint alias %q", alias)
+	}
+	defaultAlias, _, _ := registry.DefaultEndpoint()
+
+	if alias == defaultAlias && r.app().IsTunnelConnected() {
+		r.println("Disconnecting current session...")
+		_ = disconnectTunnel(r)
+	}
+
+	r.printf("Requesting token from endpoint %s...\n", alias)
+	r.println("This requires an operator (apadmin) to approve on the server.")
+	r.println()
+
+	hostKeyApproval := buildHostKeyApproval(r)
+	result, err := r.app().RequestTokenEndpoint(r.commandContext(), alias, endpoint, hostKeyApproval, r.printTokenProvisioningWait)
+	if err != nil {
+		return err
+	}
+	for _, line := range result.RenderLines {
+		r.println(line)
+	}
+	if alias == defaultAlias {
+		r.println("Connecting to signer with new token...")
+		return connectEndpointAlias(r, alias)
+	}
+	return nil
 }
 
 func (r *REPLState) printTokenProvisioningWait() {

@@ -31,6 +31,28 @@ func TestConnectRequiresToken(t *testing.T) {
 	}
 }
 
+func TestConnectRequiresEndpointToken(t *testing.T) {
+	eng, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	dataDir := t.TempDir()
+	tokenPath := dataDir + "/tokens/attestor-local.token"
+	app := New(eng, config.DefaultConfig(), dataDir)
+	_, err = app.Connect(context.Background(), ConnectRequest{
+		Host:           "localhost",
+		SSHPort:        1127,
+		SignerPort:     11270,
+		IdentityFile:   "/tmp/id",
+		KnownHostsPath: "/tmp/known_hosts",
+		TokenFile:      tokenPath,
+	})
+	if err == nil || !strings.Contains(err.Error(), tokenPath) {
+		t.Fatalf("Connect() error = %v, want missing endpoint token path", err)
+	}
+}
+
 func TestDisconnectNoOpWhenNotConnected(t *testing.T) {
 	eng, err := engine.NewEngine("testnet")
 	if err != nil {

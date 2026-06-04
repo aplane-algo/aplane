@@ -34,18 +34,22 @@ func (r *REPLState) cmdSimulate(args []string, _ interface{}) error {
 }
 
 func (r *REPLState) cmdConnect(args []string, _ interface{}) error {
-	if len(args) > 0 {
-		return fmt.Errorf("connect takes no arguments — connection target is read from config.yaml\n\n" +
-			"Configure the ssh block in config.yaml with host, port, and identity_file.\n" +
-			"See 'help connect' for details")
+	if len(args) == 0 {
+		return connectConfigured(r)
 	}
-	return connectConfigured(r)
+	if len(args) == 1 {
+		return connectEndpointAlias(r, args[0])
+	}
+	return fmt.Errorf("usage: connect [endpoint-alias]")
 }
 
 func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 	// Parse connection info
 	if len(args) == 0 {
 		return requestTokenConfigured(r)
+	}
+	if len(args) == 2 && (args[0] == "--endpoint" || args[0] == "-e") {
+		return requestTokenEndpointAlias(r, args[1])
 	}
 
 	// Parse connection string

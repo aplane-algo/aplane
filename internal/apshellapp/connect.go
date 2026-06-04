@@ -7,8 +7,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
+	"strconv"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -21,6 +24,8 @@ type ConnectRequest struct {
 	SignerPort      int
 	IdentityFile    string
 	KnownHostsPath  string
+	TokenFile       string
+	EndpointName    string
 	HostKeyApproval sshtunnel.HostKeyApprovalHandler
 	OnDisconnect    func()
 }
@@ -31,15 +36,21 @@ type RequestTokenRequest struct {
 	SSHPort               int
 	IdentityFile          string
 	KnownHostsPath        string
+	TokenFile             string
+	EndpointName          string
 	HostKeyApproval       sshtunnel.HostKeyApprovalHandler
 	OnProvisioningStarted func()
 }
 
 // Connect establishes an SSH tunnel using the configured signer identity and token.
 func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, error) {
-	token, _ := tokenfile.LoadApshellTokenFromDataDir(a.DataDir)
+	tokenPath, err := a.tokenPathForRequest(req.TokenFile)
+	if err != nil {
+		return nil, err
+	}
+	token, _ := tokenfile.ReadToken(tokenPath)
 	if token == "" {
-		return nil, fmt.Errorf("no token configured.\nRun 'request-token' to obtain a token, or copy aplane.token to %s", getTokenPathDescription(a.DataDir))
+		return nil, fmt.Errorf("no token configured.\nRun 'request-token' to obtain a token, or copy a token to %s", tokenPath)
 	}
 
 	localPort, err := findAvailablePort()
@@ -64,7 +75,6 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 		if strings.Contains(err.Error(), "401") ||
 			strings.Contains(err.Error(), "Invalid token") ||
 			strings.Contains(err.Error(), "unable to authenticate") {
-			tokenPath, _ := tokenfile.GetApshellTokenPathForDataDir(a.DataDir)
 			return nil, fmt.Errorf("authentication failed — possible causes:\n  - Token at %s was revoked or is invalid\n  - SSH key is not in the signer's authorized_keys\n\nTry 'request-token' to re-enroll, or copy a valid aplane.token from the signer", tokenPath)
 		}
 		return nil, err
@@ -98,15 +108,31 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 
 // ConnectConfigured establishes an SSH tunnel using the configured ssh block.
 func (a *App) ConnectConfigured(ctx context.Context, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
-	if a.Config.SSH == nil {
+	registry := a.Config.ClientEndpointsOrDefault(a.DataDir)
+	alias, endpoint, ok := registry.DefaultEndpoint()
+	if !ok {
 		return nil, fmt.Errorf("no ssh block in config.yaml — add ssh host, port, and identity_file")
 	}
+	return a.ConnectEndpoint(ctx, alias, endpoint, hostKeyApproval, onDisconnect)
+}
+
+func (a *App) ConnectEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
+	host, sshPort, err := sshEndpointHostPort(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	signerPort := endpoint.SignerPort
+	if signerPort == 0 {
+		signerPort = a.Config.SignerPort
+	}
 	return a.Connect(ctx, ConnectRequest{
-		Host:            a.Config.SSH.Host,
-		SSHPort:         a.Config.SSH.Port,
-		SignerPort:      a.Config.SignerPort,
-		IdentityFile:    a.Config.SSH.IdentityFile,
-		KnownHostsPath:  a.Config.SSH.KnownHostsPath,
+		Host:            host,
+		SSHPort:         sshPort,
+		SignerPort:      signerPort,
+		IdentityFile:    endpoint.IdentityFile,
+		KnownHostsPath:  endpoint.KnownHostsPath,
+		TokenFile:       endpoint.TokenFile,
+		EndpointName:    alias,
 		HostKeyApproval: hostKeyApproval,
 		OnDisconnect:    onDisconnect,
 	})
@@ -135,7 +161,11 @@ func (a *App) RequestToken(_ context.Context, req RequestTokenRequest) (*Request
 		return nil, err
 	}
 
-	tokenPath, err := a.eng.SaveApshellToken(token)
+	tokenPath, err := a.tokenPathForRequest(req.TokenFile)
+	if err != nil {
+		return nil, err
+	}
+	tokenPath, err = a.eng.SaveApshellTokenToPath(tokenPath, token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save token: %w", err)
 	}
@@ -153,7 +183,9 @@ func (a *App) RequestToken(_ context.Context, req RequestTokenRequest) (*Request
 
 // RequestTokenConfigured requests and persists a fresh apshell token using the configured ssh block.
 func (a *App) RequestTokenConfigured(ctx context.Context, hostKeyApproval sshtunnel.HostKeyApprovalHandler) (*RequestTokenResult, error) {
-	if a.Config.SSH == nil {
+	registry := a.Config.ClientEndpointsOrDefault(a.DataDir)
+	alias, endpoint, ok := registry.DefaultEndpoint()
+	if !ok {
 		return nil, fmt.Errorf("usage: request-token [<host> [--ssh-port <port>]]\n\n" +
 			"Request an API token from the Signer. Requires an operator\n" +
 			"(apadmin) to approve the request on the server.\n" +
@@ -163,13 +195,58 @@ func (a *App) RequestTokenConfigured(ctx context.Context, hostKeyApproval sshtun
 			"  request-token 192.168.1.100\n" +
 			"  request-token 192.168.1.100 --ssh-port 2222")
 	}
+	return a.RequestTokenEndpoint(ctx, alias, endpoint, hostKeyApproval)
+}
+
+func (a *App) RequestTokenEndpoint(ctx context.Context, alias string, endpoint config.ClientEndpointConfig, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStarted ...func()) (*RequestTokenResult, error) {
+	host, sshPort, err := sshEndpointHostPort(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	var progress func()
+	if len(onProvisioningStarted) > 0 {
+		progress = onProvisioningStarted[0]
+	}
 	return a.RequestToken(ctx, RequestTokenRequest{
-		Host:            a.Config.SSH.Host,
-		SSHPort:         a.Config.SSH.Port,
-		IdentityFile:    a.Config.SSH.IdentityFile,
-		KnownHostsPath:  a.Config.SSH.KnownHostsPath,
-		HostKeyApproval: hostKeyApproval,
+		Host:                  host,
+		SSHPort:               sshPort,
+		IdentityFile:          endpoint.IdentityFile,
+		KnownHostsPath:        endpoint.KnownHostsPath,
+		TokenFile:             endpoint.TokenFile,
+		EndpointName:          alias,
+		HostKeyApproval:       hostKeyApproval,
+		OnProvisioningStarted: progress,
 	})
+}
+
+func (a *App) tokenPathForRequest(tokenPath string) (string, error) {
+	if tokenPath != "" {
+		return tokenPath, nil
+	}
+	return tokenfile.GetApshellTokenPathForDataDir(a.DataDir)
+}
+
+func sshEndpointHostPort(endpoint config.ClientEndpointConfig) (string, int, error) {
+	parsed, err := url.Parse(endpoint.URL)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+	if parsed.Scheme != "ssh" {
+		return "", 0, fmt.Errorf("endpoint %q cannot be used for primary signer connection; connect requires ssh://", endpoint.URL)
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return "", 0, fmt.Errorf("endpoint %q has no SSH host", endpoint.URL)
+	}
+	sshPort := config.DefaultSSHPort
+	if parsed.Port() != "" {
+		port, err := strconv.Atoi(parsed.Port())
+		if err != nil || port <= 0 || port > 65535 {
+			return "", 0, fmt.Errorf("invalid SSH port %q", parsed.Port())
+		}
+		sshPort = port
+	}
+	return host, sshPort, nil
 }
 
 func decorateConnectResult(res *ConnectResult) {
@@ -198,13 +275,6 @@ func findAvailablePort() (int, error) {
 
 	addr := listener.Addr().(*net.TCPAddr)
 	return addr.Port, nil
-}
-
-func getTokenPathDescription(dataDir string) string {
-	if dataDir == "" {
-		return "$APCLIENT_DATA/aplane.token"
-	}
-	return fmt.Sprintf("%s/aplane.token", dataDir)
 }
 
 var _ = engine.ErrAlreadyConnected

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
 type attestorComponentClient interface {
@@ -109,11 +109,10 @@ func (e *Engine) connectConfiguredAttestorEndpoint(ctx context.Context, endpoint
 }
 
 func readAttestorEndpointToken(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	token, err := tokenfile.ReadToken(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to read attestor token file %s: %w", path, err)
 	}
-	token := strings.TrimSpace(string(data))
 	if token == "" {
 		return "", fmt.Errorf("attestor token file %s is empty", path)
 	}

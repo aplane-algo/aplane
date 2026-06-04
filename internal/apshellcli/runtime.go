@@ -35,7 +35,7 @@ func attemptStartupConnection(r *REPLState) error {
 	if !decision.ShouldConnect {
 		return nil
 	}
-	return connectTunnelWithKey(r, decision.Host, decision.SSHPort, decision.SignerPort)
+	return connectConfigured(r)
 }
 
 const missingAplaneTokenStartupMessage = "No aplane token found. Run 'request-token' to obtain token from the signer."
@@ -56,7 +56,7 @@ func printInteractiveStartupConnectionStatus(r *REPLState) {
 
 	fmt.Printf("Verifying Signer via SSH: %s (SSH port: %d, signer port: %d)\n",
 		decision.Host, decision.SSHPort, decision.SignerPort)
-	if err := connectTunnelWithKey(r, decision.Host, decision.SSHPort, decision.SignerPort); err != nil {
+	if err := connectConfigured(r); err != nil {
 		fmt.Printf("\nWarning: Signer verification failed: %v\n", err)
 		fmt.Println("Signer not available (run 'connect' to retry)")
 	}

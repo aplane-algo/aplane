@@ -333,6 +333,26 @@ func TestSaveApshellTokenPersistsTokenFile(t *testing.T) {
 	}
 }
 
+func TestSaveApshellTokenToPathCreatesEndpointTokenDirectory(t *testing.T) {
+	state := newTestState(t)
+	tokenPath := filepath.Join(state.DataDir, "tokens", "attestor-local.token")
+
+	gotPath, err := state.SaveApshellTokenToPath(tokenPath, "attestor-token")
+	if err != nil {
+		t.Fatalf("SaveApshellTokenToPath() error = %v", err)
+	}
+	if gotPath != tokenPath {
+		t.Fatalf("token path = %q, want %q", gotPath, tokenPath)
+	}
+	got, err := tokenfile.ReadToken(tokenPath)
+	if err != nil {
+		t.Fatalf("ReadToken() error = %v", err)
+	}
+	if got != "attestor-token" {
+		t.Fatalf("persisted token = %q, want attestor-token", got)
+	}
+}
+
 func newAuthCacheTestAlgodClient(t *testing.T, authAddrs map[string]string) *algod.Client {
 	t.Helper()
 
