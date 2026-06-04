@@ -72,16 +72,23 @@ func LoadClientEndpointRegistry(dataDir string, cfg Config) (ClientEndpointRegis
 	if stored.SchemaVersion != 1 {
 		return ClientEndpointRegistry{}, fmt.Errorf("%s schema_version = %d, want 1", ClientEndpointsFile, stored.SchemaVersion)
 	}
-	if strings.TrimSpace(stored.Default) == "" {
+	hasLegacyPrimary := false
+	if registry.Endpoints != nil {
+		_, hasLegacyPrimary = registry.Endpoints[DefaultClientEndpointName]
+	}
+	stored.Default = strings.TrimSpace(stored.Default)
+	if stored.Default == "" && hasLegacyPrimary {
 		stored.Default = DefaultClientEndpointName
 	}
-	if err := ValidateClientEndpointAlias(stored.Default); err != nil {
-		return ClientEndpointRegistry{}, fmt.Errorf("%s default: %w", ClientEndpointsFile, err)
+	if stored.Default != "" {
+		if err := ValidateClientEndpointAlias(stored.Default); err != nil {
+			return ClientEndpointRegistry{}, fmt.Errorf("%s default: %w", ClientEndpointsFile, err)
+		}
 	}
 	if stored.Endpoints == nil {
 		stored.Endpoints = map[string]ClientEndpointConfig{}
 	}
-	if registry.Endpoints != nil {
+	if hasLegacyPrimary {
 		if _, exists := stored.Endpoints[DefaultClientEndpointName]; !exists {
 			if legacy, ok := registry.Endpoints[DefaultClientEndpointName]; ok {
 				stored.Endpoints[DefaultClientEndpointName] = legacy
@@ -98,8 +105,10 @@ func LoadClientEndpointRegistry(dataDir string, cfg Config) (ClientEndpointRegis
 		}
 		stored.Endpoints[alias] = normalized
 	}
-	if _, ok := stored.Endpoints[stored.Default]; !ok {
-		return ClientEndpointRegistry{}, fmt.Errorf("%s default endpoint %q is not defined", ClientEndpointsFile, stored.Default)
+	if stored.Default != "" {
+		if _, ok := stored.Endpoints[stored.Default]; !ok {
+			return ClientEndpointRegistry{}, fmt.Errorf("%s default endpoint %q is not defined", ClientEndpointsFile, stored.Default)
+		}
 	}
 	return stored, nil
 }
@@ -253,7 +262,7 @@ func (r ClientEndpointRegistry) Clone() ClientEndpointRegistry {
 func (r ClientEndpointRegistry) DefaultEndpoint() (string, ClientEndpointConfig, bool) {
 	alias := r.Default
 	if alias == "" {
-		alias = DefaultClientEndpointName
+		return "", ClientEndpointConfig{}, false
 	}
 	endpoint, ok := r.Endpoints[alias]
 	return alias, endpoint, ok
