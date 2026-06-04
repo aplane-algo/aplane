@@ -722,18 +722,17 @@ type EndpointShowResult struct {
 
 // EndpointImportResult describes a public endpoint-envelope import.
 type EndpointImportResult struct {
-	Alias              string
-	Role               string
-	URL                string
-	SignerPort         int
-	LocalPort          int
-	TokenFile          string
-	DryRun             bool
-	Created            bool
-	Updated            bool
-	DefaultChanged     bool
-	AttestorPublicKeys []string
-	RenderLines        []string
+	Alias          string
+	Role           string
+	URL            string
+	SignerPort     int
+	LocalPort      int
+	TokenFile      string
+	DryRun         bool
+	Created        bool
+	Updated        bool
+	DefaultChanged bool
+	RenderLines    []string
 }
 
 // EndpointDefaultResult describes a default endpoint change.

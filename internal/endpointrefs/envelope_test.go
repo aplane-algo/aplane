@@ -5,67 +5,35 @@ package endpointrefs
 
 import (
 	"bytes"
-	"encoding/hex"
 	"strings"
 	"testing"
-
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 )
 
 func TestParseNormalizesEndpointEnvelope(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x42}, 32)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
-	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
-	}
 	data := []byte(`{
   "kind": "aplane.endpoint.v1",
   "schema_version": 1,
-  "role": "ATTESTATION",
   "url": "ssh://signer.example:2223/",
-  "signer_port": 11270,
-  "attestor_public_keys": [
-    {
-      "key_type": "aplane.attestor-ed25519.v1",
-      "public_key_hex": "` + strings.ToUpper(hex.EncodeToString(publicKey)) + `",
-      "component_key": "` + componentKey + `"
-    }
-  ]
+  "signer_port": 11270
 }`)
 
 	env, err := Parse(data)
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
-	if env.Role != RoleAttestation {
-		t.Fatalf("Role = %q, want %q", env.Role, RoleAttestation)
-	}
 	if env.URL != "ssh://signer.example:2223" {
 		t.Fatalf("URL = %q, want trimmed URL", env.URL)
 	}
-	if got := env.AttestorPublicKeys[0].PublicKeyHex; got != hex.EncodeToString(publicKey) {
-		t.Fatalf("PublicKeyHex = %q, want lowercase hex", got)
+	if env.SignerPort != 11270 {
+		t.Fatalf("SignerPort = %d, want 11270", env.SignerPort)
 	}
 }
 
 func TestParseRejectsInvalidEnvelope(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x24}, 32)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
-	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
-	}
 	valid := `{
   "kind": "aplane.endpoint.v1",
   "schema_version": 1,
-  "role": "attestation",
-  "url": "ssh://signer.example:2223",
-  "attestor_public_keys": [
-    {
-      "key_type": "aplane.attestor-ed25519.v1",
-      "public_key_hex": "` + hex.EncodeToString(publicKey) + `",
-      "component_key": "` + componentKey + `"
-    }
-  ]
+  "url": "ssh://signer.example:2223"
 }`
 
 	tests := []struct {
@@ -75,7 +43,17 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 	}{
 		{
 			name:    "unknown field",
-			data:    strings.Replace(valid, `"role":`, `"extra": true, "role":`, 1),
+			data:    strings.Replace(valid, `"url":`, `"extra": true, "url":`, 1),
+			wantErr: "unknown field",
+		},
+		{
+			name:    "stale role field",
+			data:    strings.Replace(valid, `"url":`, `"role": "attestation", "url":`, 1),
+			wantErr: "unknown field",
+		},
+		{
+			name:    "stale attestor keys field",
+			data:    strings.Replace(valid, `"url":`, `"attestor_public_keys": [], "url":`, 1),
 			wantErr: "unknown field",
 		},
 		{
@@ -104,11 +82,6 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 			wantErr: "raw http endpoints must be loopback",
 		},
 		{
-			name:    "bad selector",
-			data:    strings.Replace(valid, componentKey, strings.Replace(componentKey, "a_", "a_00", 1), 1),
-			wantErr: "component_key",
-		},
-		{
 			name:    "trailing content",
 			data:    valid + `{}`,
 			wantErr: "trailing JSON content",
@@ -128,43 +101,10 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 	}
 }
 
-func TestNormalizeRejectsDuplicateAttestorKeys(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x51}, 32)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
-	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
-	}
-	_, err = Normalize(Envelope{
-		Kind:          Kind,
-		SchemaVersion: SchemaVersion,
-		Role:          RoleAttestation,
-		URL:           "ssh://signer.example:2223",
-		AttestorPublicKeys: []AttestorPublicKey{
-			{
-				KeyType:      keytypes.AttestorComponentEd25519V1,
-				PublicKeyHex: hex.EncodeToString(publicKey),
-				ComponentKey: componentKey,
-			},
-			{
-				KeyType:      keytypes.AttestorComponentEd25519V1,
-				PublicKeyHex: hex.EncodeToString(publicKey),
-				ComponentKey: componentKey,
-			},
-		},
-	})
-	if err == nil {
-		t.Fatal("Normalize() error = nil, want duplicate rejection")
-	}
-	if !strings.Contains(err.Error(), "duplicate public_key_hex") {
-		t.Fatalf("Normalize() error = %q, want duplicate public_key_hex", err)
-	}
-}
-
 func TestMarshalValidatesEnvelope(t *testing.T) {
 	_, err := Marshal(Envelope{
 		Kind:          Kind,
 		SchemaVersion: SchemaVersion,
-		Role:          RoleAttestation,
 		URL:           "self",
 	})
 	if err == nil {
@@ -173,23 +113,12 @@ func TestMarshalValidatesEnvelope(t *testing.T) {
 }
 
 func TestMarshalParseRoundTripStable(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0x73}, 32)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
-	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
-	}
 	env := Envelope{
 		Kind:          Kind,
 		SchemaVersion: SchemaVersion,
-		Role:          RoleAttestation,
 		URL:           "ssh://signer.example:2223",
 		SignerPort:    11270,
 		LocalPort:     12001,
-		AttestorPublicKeys: []AttestorPublicKey{{
-			KeyType:      keytypes.AttestorComponentEd25519V1,
-			PublicKeyHex: hex.EncodeToString(publicKey),
-			ComponentKey: componentKey,
-		}},
 	}
 
 	first, err := Marshal(env)

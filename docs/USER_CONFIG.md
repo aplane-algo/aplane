@@ -185,12 +185,11 @@ to import it:
 ```bash
 # signer side
 apstore -d "$APSIGNER_DATA" endpoints export \
-  --role attestation \
   --host attestor.example.com \
   --out attestor.endpoint.json
 
 # client side, inside apshell
-endpoints import --alias attestor-local attestor.endpoint.json
+endpoints import --alias attestor-local --role attestation attestor.endpoint.json
 endpoints show attestor-local
 request-token --endpoint attestor-local
 ```
@@ -230,7 +229,7 @@ Useful local commands:
 ```bash
 endpoints list
 endpoints show attestor-local
-endpoints import --alias attestor-local --dry-run attestor.endpoint.json
+endpoints import --alias attestor-local --role attestation --dry-run attestor.endpoint.json
 endpoints default primary
 endpoints delete old-attestor
 ```

@@ -33,7 +33,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype activate <key-type>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype deactivate <key-type>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keys list\n")
-	fmt.Fprintf(os.Stderr, "  apstore [-d path] endpoints export --role signing|attestation|dual (--host <host> | --url <url>) [--out endpoint.json]\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] endpoints export (--host <host> | --url <url>) [--out endpoint.json]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] attestor export-public <component-key> [output-json]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] attestor import-public <export-json> <name>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] attestor list\n")
@@ -61,7 +61,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore keytype activate falcon1024_ed25519.v1\n")
 	fmt.Fprintf(os.Stderr, "  apstore keytype deactivate falcon1024_ed25519.v1\n")
 	fmt.Fprintf(os.Stderr, "  apstore keys list\n")
-	fmt.Fprintf(os.Stderr, "  apstore endpoints export --role attestation --host 127.0.0.1 --out attestor.endpoint.json\n")
+	fmt.Fprintf(os.Stderr, "  apstore endpoints export --host 127.0.0.1 --out endpoint.json\n")
 	fmt.Fprintf(os.Stderr, "  apstore attestor export-public a_<sha256-public-key> attestor-public.json\n")
 	fmt.Fprintf(os.Stderr, "  apstore attestor import-public attestor-public.json lab-att\n")
 }

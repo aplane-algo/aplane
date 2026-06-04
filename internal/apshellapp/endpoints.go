@@ -18,6 +18,7 @@ import (
 // EndpointImportRequest imports one public endpoint handoff envelope.
 type EndpointImportRequest struct {
 	Alias  string
+	Role   string
 	Path   string
 	DryRun bool
 }
@@ -83,9 +84,13 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	if err != nil {
 		return nil, err
 	}
+	role, err := normalizeEndpointImportRole(req.Role)
+	if err != nil {
+		return nil, err
+	}
 
 	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, config.ClientEndpointConfig{
-		Role:       env.Role,
+		Role:       role,
 		URL:        env.URL,
 		SignerPort: env.SignerPort,
 		LocalPort:  env.LocalPort,
@@ -94,34 +99,22 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		return nil, err
 	}
 
-	publicKeys := endpointImportAttestorPublicKeys(env)
-	mappingPlan, err := config.PlanClientAttestorEndpointAliases(a.DataDir, req.Alias, publicKeys)
-	if err != nil {
-		return nil, err
-	}
-
 	result := &EndpointImportResult{
-		Alias:              req.Alias,
-		Role:               env.Role,
-		URL:                endpointPlan.Endpoint.URL,
-		SignerPort:         endpointPlan.Endpoint.SignerPort,
-		LocalPort:          endpointPlan.Endpoint.LocalPort,
-		TokenFile:          endpointPlan.Endpoint.TokenFile,
-		DryRun:             req.DryRun,
-		Created:            endpointPlan.Created,
-		Updated:            endpointPlan.Updated,
-		DefaultChanged:     endpointPlan.DefaultChanged,
-		AttestorPublicKeys: append([]string(nil), mappingPlan.PublicKeys...),
+		Alias:          req.Alias,
+		Role:           role,
+		URL:            endpointPlan.Endpoint.URL,
+		SignerPort:     endpointPlan.Endpoint.SignerPort,
+		LocalPort:      endpointPlan.Endpoint.LocalPort,
+		TokenFile:      endpointPlan.Endpoint.TokenFile,
+		DryRun:         req.DryRun,
+		Created:        endpointPlan.Created,
+		Updated:        endpointPlan.Updated,
+		DefaultChanged: endpointPlan.DefaultChanged,
 	}
 
 	if !req.DryRun {
 		if err := config.ApplyStoredClientEndpointUpsert(a.DataDir, endpointPlan); err != nil {
 			return nil, err
-		}
-		if len(mappingPlan.PublicKeys) > 0 {
-			if err := config.ApplyClientAttestorEndpointAliases(a.DataDir, mappingPlan); err != nil {
-				return nil, err
-			}
 		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
 			a.Config = cfg
@@ -144,7 +137,7 @@ func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefault
 	if !ok {
 		return nil, fmt.Errorf("unknown endpoint alias %q", alias)
 	}
-	if endpoint.Role == endpointrefs.RoleAttestation {
+	if endpoint.Role == "attestation" {
 		return nil, fmt.Errorf("endpoint alias %q has role attestation and cannot be the default signing endpoint", alias)
 	}
 	previousAlias, _, _ := cfg.Endpoints.DefaultEndpoint()
@@ -231,17 +224,6 @@ func endpointTokenStatus(path string) (bool, string) {
 	return token != "", ""
 }
 
-func endpointImportAttestorPublicKeys(env endpointrefs.Envelope) []string {
-	if env.Role == endpointrefs.RoleSigning {
-		return nil
-	}
-	publicKeys := make([]string, 0, len(env.AttestorPublicKeys))
-	for _, key := range env.AttestorPublicKeys {
-		publicKeys = append(publicKeys, key.PublicKeyHex)
-	}
-	return publicKeys
-}
-
 func endpointImportRenderLines(result *EndpointImportResult) []string {
 	action := "Imported"
 	if result.DryRun {
@@ -264,11 +246,15 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 	if result.DefaultChanged {
 		lines = append(lines, "  default: yes")
 	}
-	if len(result.AttestorPublicKeys) > 0 {
-		lines = append(lines, fmt.Sprintf("  attestor mappings: %d", len(result.AttestorPublicKeys)))
-		for _, publicKey := range result.AttestorPublicKeys {
-			lines = append(lines, fmt.Sprintf("    %s", publicKey))
-		}
-	}
 	return lines
+}
+
+func normalizeEndpointImportRole(role string) (string, error) {
+	role = strings.ToLower(strings.TrimSpace(role))
+	switch role {
+	case "signing", "attestation", "dual":
+		return role, nil
+	default:
+		return "", fmt.Errorf("endpoint role must be signing, attestation, or dual")
+	}
 }

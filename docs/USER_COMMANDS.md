@@ -612,20 +612,20 @@ Manage client-local signer endpoint profiles.
 ```
 endpoints list
 endpoints show <alias>
-endpoints import --alias <alias> [--dry-run] <endpoint-json>
+endpoints import --alias <alias> --role signing|attestation|dual [--dry-run] <endpoint-json>
 endpoints default <alias>
 endpoints delete <alias>
 ```
 
 `endpoints import` reads a public `aplane.endpoint.v1` envelope produced by
-`apstore endpoints export`. Import writes local routing only: `endpoints.yaml`
-and, for attestor envelopes, `config.yaml` `attestor_endpoints` alias mappings.
-It does not copy tokens or SSH host trust.
+`apstore endpoints export`. Import writes local endpoint routing only:
+`endpoints.yaml`. It does not copy tokens or SSH host trust, and it does not
+discover attestor keys.
 
 **Examples:**
 ```
-endpoints import --alias attestor-local attestor.endpoint.json
-endpoints import --alias attestor-local --dry-run attestor.endpoint.json
+endpoints import --alias attestor-local --role attestation attestor.endpoint.json
+endpoints import --alias attestor-local --role attestation --dry-run attestor.endpoint.json
 endpoints list
 endpoints show attestor-local
 endpoints default primary
