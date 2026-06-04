@@ -338,6 +338,14 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 		Handler:     command.NewInternalHandler(r.cmdRequestToken),
 	})
 
+	mustRegister(registry, &command.Command{
+		Name:        "endpoints",
+		Usage:       "endpoints list | endpoints show <alias> | endpoints import [--dry-run] <endpoint-json>",
+		Description: "Manage client-local signer endpoint profiles",
+		Category:    command.CategoryRemote,
+		Handler:     command.NewInternalHandler(r.cmdEndpoints),
+	})
+
 	// Terminal
 	mustRegister(registry, &command.Command{
 		Name:        "clear",

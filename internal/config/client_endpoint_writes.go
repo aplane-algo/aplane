@@ -53,29 +53,65 @@ func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointReg
 	return writeConfigAtomic(path, data, 0o600)
 }
 
-// UpsertStoredClientEndpoint adds one endpoint profile to endpoints.yaml. When
-// replace is false, conflicting existing aliases are rejected.
-func UpsertStoredClientEndpoint(dataDir, alias string, endpoint ClientEndpointConfig, replace bool) (ClientEndpointRegistry, error) {
+// StoredClientEndpointUpsertPlan describes the endpoint registry change that
+// would be applied for one endpoint alias.
+type StoredClientEndpointUpsertPlan struct {
+	Registry       ClientEndpointRegistry
+	Alias          string
+	Endpoint       ClientEndpointConfig
+	Created        bool
+	Updated        bool
+	DefaultChanged bool
+}
+
+// PlanStoredClientEndpointUpsert validates one endpoint upsert and returns the
+// registry that would be written. It does not touch endpoints.yaml.
+func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpointConfig, replace bool) (StoredClientEndpointUpsertPlan, error) {
 	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
-		return ClientEndpointRegistry{}, err
+		return StoredClientEndpointUpsertPlan{}, err
 	}
 	normalized, err := normalizeStoredClientEndpoint(alias, endpoint)
 	if err != nil {
-		return ClientEndpointRegistry{}, fmt.Errorf("endpoint %q: %w", alias, err)
+		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint %q: %w", alias, err)
 	}
-	if existing, ok := registry.Endpoints[alias]; ok && !storedClientEndpointsEqual(existing, normalized) && !replace {
-		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q already exists with different settings", alias)
+	existing, exists := registry.Endpoints[alias]
+	if exists && !storedClientEndpointsEqual(existing, normalized) && !replace {
+		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint alias %q already exists with different settings", alias)
 	}
 	wasEmpty := len(registry.Endpoints) == 0
+	oldDefault := registry.Default
 	registry.Endpoints[alias] = normalized
 	if registry.Default == "" && wasEmpty && endpointEligibleForDefault(normalized) {
 		registry.Default = alias
 	}
-	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
+	return StoredClientEndpointUpsertPlan{
+		Registry:       registry,
+		Alias:          alias,
+		Endpoint:       normalized,
+		Created:        !exists,
+		Updated:        exists && !storedClientEndpointsEqual(existing, normalized),
+		DefaultChanged: oldDefault != registry.Default,
+	}, nil
+}
+
+// ApplyStoredClientEndpointUpsert writes a previously planned endpoint
+// registry change.
+func ApplyStoredClientEndpointUpsert(dataDir string, plan StoredClientEndpointUpsertPlan) error {
+	return SaveStoredClientEndpointRegistry(dataDir, plan.Registry)
+}
+
+// UpsertStoredClientEndpoint adds one endpoint profile to endpoints.yaml. When
+// replace is false, conflicting existing aliases are rejected.
+func UpsertStoredClientEndpoint(dataDir, alias string, endpoint ClientEndpointConfig, replace bool) (ClientEndpointRegistry, error) {
+	plan, err := PlanStoredClientEndpointUpsert(dataDir, alias, endpoint, replace)
+	if err != nil {
 		return ClientEndpointRegistry{}, err
 	}
-	return registry, nil
+	if err := ApplyStoredClientEndpointUpsert(dataDir, plan); err != nil {
+		return ClientEndpointRegistry{}, err
+	}
+	return plan.Registry, nil
 }
 
 func SetStoredClientEndpointDefault(dataDir, alias string) (ClientEndpointRegistry, error) {
@@ -118,11 +154,69 @@ func DeleteStoredClientEndpoint(dataDir, alias string) (ClientEndpointRegistry, 
 	return registry, nil
 }
 
-func UpsertClientAttestorEndpointAliases(dataDir, alias string, publicKeys []string) error {
+// ClientAttestorEndpointAliasPlan describes config.yaml attestor route mappings
+// that would be written for one endpoint alias.
+type ClientAttestorEndpointAliasPlan struct {
+	Alias      string
+	PublicKeys []string
+}
+
+// PlanClientAttestorEndpointAliases validates attestor public-key mappings for
+// one endpoint alias without touching config.yaml.
+func PlanClientAttestorEndpointAliases(dataDir, alias string, publicKeys []string) (ClientAttestorEndpointAliasPlan, error) {
 	if err := ValidateClientEndpointAlias(alias); err != nil {
-		return err
+		return ClientAttestorEndpointAliasPlan{}, err
 	}
 	normalizedKeys, err := normalizeAttestorPublicKeys(publicKeys)
+	if err != nil {
+		return ClientAttestorEndpointAliasPlan{}, err
+	}
+	doc, err := loadClientYAMLDocument(GetConfigPath(dataDir))
+	if err != nil {
+		return ClientAttestorEndpointAliasPlan{}, err
+	}
+	root, err := clientYAMLDocumentMapping(doc)
+	if err != nil {
+		return ClientAttestorEndpointAliasPlan{}, err
+	}
+	routes := clientYAMLMappingValue(root, "attestor_endpoints")
+	if routes != nil && routes.Kind != yaml.MappingNode {
+		return ClientAttestorEndpointAliasPlan{}, fmt.Errorf("attestor_endpoints must be a mapping")
+	}
+
+	for _, publicKey := range normalizedKeys {
+		if routes == nil {
+			continue
+		}
+		existing := clientYAMLMappingValue(routes, publicKey)
+		if existing == nil {
+			continue
+		}
+		existingAlias, ok, err := attestorRouteAlias(existing)
+		if err != nil {
+			return ClientAttestorEndpointAliasPlan{}, err
+		}
+		if !ok {
+			return ClientAttestorEndpointAliasPlan{}, fmt.Errorf("attestor endpoint %s already has an inline route; replace is required to move it to endpoint alias %q", publicKey, alias)
+		}
+		if existingAlias != alias {
+			return ClientAttestorEndpointAliasPlan{}, fmt.Errorf("attestor endpoint %s already maps to endpoint alias %q", publicKey, existingAlias)
+		}
+	}
+
+	return ClientAttestorEndpointAliasPlan{
+		Alias:      alias,
+		PublicKeys: normalizedKeys,
+	}, nil
+}
+
+// ApplyClientAttestorEndpointAliases writes a previously planned set of
+// attestor endpoint mappings.
+func ApplyClientAttestorEndpointAliases(dataDir string, plan ClientAttestorEndpointAliasPlan) error {
+	if err := ValidateClientEndpointAlias(plan.Alias); err != nil {
+		return err
+	}
+	normalizedKeys, err := normalizeAttestorPublicKeys(plan.PublicKeys)
 	if err != nil {
 		return err
 	}
@@ -138,28 +232,18 @@ func UpsertClientAttestorEndpointAliases(dataDir, alias string, publicKeys []str
 	if err != nil {
 		return err
 	}
-
 	for _, publicKey := range normalizedKeys {
-		existing := clientYAMLMappingValue(routes, publicKey)
-		if existing == nil {
-			continue
-		}
-		existingAlias, ok, err := attestorRouteAlias(existing)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("attestor endpoint %s already has an inline route; replace is required to move it to endpoint alias %q", publicKey, alias)
-		}
-		if existingAlias != alias {
-			return fmt.Errorf("attestor endpoint %s already maps to endpoint alias %q", publicKey, existingAlias)
-		}
-	}
-
-	for _, publicKey := range normalizedKeys {
-		setClientYAMLMappingValue(routes, publicKey, endpointAliasNode(alias))
+		setClientYAMLMappingValue(routes, publicKey, endpointAliasNode(plan.Alias))
 	}
 	return writeClientYAMLDocumentAtomic(GetConfigPath(dataDir), doc, 0o600)
+}
+
+func UpsertClientAttestorEndpointAliases(dataDir, alias string, publicKeys []string) error {
+	plan, err := PlanClientAttestorEndpointAliases(dataDir, alias, publicKeys)
+	if err != nil {
+		return err
+	}
+	return ApplyClientAttestorEndpointAliases(dataDir, plan)
 }
 
 func ClientAttestorEndpointMappingsByAlias(dataDir string) (map[string][]string, error) {

@@ -8,7 +8,9 @@ package apshellcli
 import (
 	"fmt"
 	"strings"
+	"text/tabwriter"
 
+	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
 )
 
@@ -62,6 +64,58 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 	return requestToken(r, parsed.Host, parsed.SSHPort)
 }
 
+func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import [--dry-run] <endpoint-json>")
+	}
+	switch args[0] {
+	case "list":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: endpoints list")
+		}
+		result, err := r.app().EndpointsList(r.commandContext())
+		if err != nil {
+			return err
+		}
+		r.renderEndpointsList(result)
+		return nil
+	case "show":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: endpoints show <alias>")
+		}
+		result, err := r.app().EndpointShow(r.commandContext(), args[1])
+		if err != nil {
+			return err
+		}
+		r.renderEndpointShow(result)
+		return nil
+	case "import":
+		req, err := parseEndpointImportArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		result, err := r.app().EndpointImport(r.commandContext(), req)
+		if err != nil {
+			return err
+		}
+		if !result.DryRun {
+			if cfg, err := config.LoadConfig(r.DataDir); err == nil {
+				r.Config = cfg
+				r.app().Config = cfg
+			}
+		}
+		for _, line := range result.RenderLines {
+			r.println(line)
+		}
+		if !result.DryRun {
+			r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown endpoints subcommand %q", args[0])
+	}
+}
+
 func (r *REPLState) cmdScript(args []string, _ interface{}) error {
 	return r.runScript(args)
 }
@@ -71,6 +125,84 @@ func (r *REPLState) cmdConfig(_ []string, _ interface{}) error {
 	config.DisplayConfig(r.DataDir)
 	r.println("Note: Config is read-only. Edit config.yaml in the data directory manually.")
 	return nil
+}
+
+func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, error) {
+	var req apshellapp.EndpointImportRequest
+	for _, arg := range args {
+		switch arg {
+		case "--dry-run":
+			req.DryRun = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return req, fmt.Errorf("unknown endpoints import flag %q", arg)
+			}
+			if req.Path != "" {
+				return req, fmt.Errorf("usage: endpoints import [--dry-run] <endpoint-json>")
+			}
+			req.Path = arg
+		}
+	}
+	if req.Path == "" {
+		return req, fmt.Errorf("usage: endpoints import [--dry-run] <endpoint-json>")
+	}
+	return req, nil
+}
+
+func (r *REPLState) renderEndpointsList(result *apshellapp.EndpointsListResult) {
+	if len(result.Endpoints) == 0 {
+		r.println("No endpoints configured")
+		return
+	}
+	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "ALIAS\tROLE\tDEFAULT\tURL\tTOKEN\tMAPPED")
+	for _, endpoint := range result.Endpoints {
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\n",
+			endpoint.Alias,
+			endpoint.Role,
+			yesNo(endpoint.IsDefault),
+			endpoint.URL,
+			tokenStatusLabel(endpoint),
+			len(endpoint.LocalAttestorPublicKeys),
+		)
+	}
+	_ = w.Flush()
+}
+
+func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
+	endpoint := result.Endpoint
+	r.printf("Alias: %s\n", endpoint.Alias)
+	r.printf("Role: %s\n", endpoint.Role)
+	r.printf("Default: %s\n", yesNo(endpoint.IsDefault))
+	r.printf("URL: %s\n", endpoint.URL)
+	r.printf("Signer port: %d\n", endpoint.SignerPort)
+	r.printf("Local port: %d\n", endpoint.LocalPort)
+	r.printf("Identity file: %s\n", endpoint.IdentityFile)
+	r.printf("Known hosts: %s\n", endpoint.KnownHostsPath)
+	r.printf("Token file: %s\n", endpoint.TokenFile)
+	r.printf("Token present: %s\n", tokenStatusLabel(endpoint))
+	if len(endpoint.LocalAttestorPublicKeys) == 0 {
+		r.println("Locally mapped attestors: none")
+		return
+	}
+	r.println("Locally mapped attestors:")
+	for _, publicKey := range endpoint.LocalAttestorPublicKeys {
+		r.printf("  %s\n", publicKey)
+	}
+}
+
+func tokenStatusLabel(endpoint apshellapp.EndpointEntry) string {
+	if endpoint.TokenError != "" {
+		return "error"
+	}
+	return yesNo(endpoint.TokenPresent)
+}
+
+func yesNo(ok bool) string {
+	if ok {
+		return "yes"
+	}
+	return "no"
 }
 
 func (r *REPLState) cmdPlugins(args []string, _ interface{}) error {
