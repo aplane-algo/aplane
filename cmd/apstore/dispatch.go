@@ -97,6 +97,11 @@ func dispatchApstoreCommand(args []string) {
 			exitWithError(err)
 		}
 
+	case "attestor":
+		if err := cmdAttestor(args[1:]); err != nil {
+			exitWithError(err)
+		}
+
 	default:
 		logErrorf("unknown command: %s", command)
 		flag.Usage()

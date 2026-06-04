@@ -95,6 +95,15 @@ func (p Paths) KeyTypeRecordsDir(identityID string) string {
 	return filepath.Join(p.IdentityDir(identityID), "keytypes")
 }
 
+func (p Paths) AttestorRefsDir(identityID string) string {
+	return filepath.Join(p.IdentityDir(identityID), "attestors")
+}
+
+func (p Paths) AttestorRefPath(identityID, name string) string {
+	validatePathComponent("attestor reference name", name)
+	return filepath.Join(p.AttestorRefsDir(identityID), name+".json")
+}
+
 func (p Paths) KeyTypeRecord(identityID, keyType string) string {
 	validateKeyTypeComponent(keyType)
 	return filepath.Join(p.KeyTypeRecordsDir(identityID), keyType+".json")

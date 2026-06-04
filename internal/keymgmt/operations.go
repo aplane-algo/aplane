@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -180,6 +181,11 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 
 	if !isKeyTypeInList(keyType, validTypes) {
 		return nil, fmt.Errorf("invalid key type: %s (must be one of: %s)", keyType, strings.Join(validTypes, ", "))
+	}
+	var resolveErr error
+	params, resolveErr = attrefs.ResolveCreationParams(paths, identityID, keyType, params)
+	if resolveErr != nil {
+		return nil, fmt.Errorf("%w: attestor reference resolution failed: %v", keygen.ErrInvalidParams, resolveErr)
 	}
 
 	generator, err := keygen.GetGenerator(keyType)

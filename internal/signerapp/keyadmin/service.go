@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keygen"
@@ -107,6 +108,13 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	}
 	if modeErr := identity.ValidateKeyTypeAllowed(ir.Config().Mode(), keyType); modeErr != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: modeErr.Error()}
+	}
+	if keytypes.IsAttestedAccountKeyType(keyType) {
+		resolved, err := attrefs.ResolveCreationParams(ir.KeyPaths(), ir.ID(), keyType, params)
+		if err != nil {
+			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+		}
+		params = resolved
 	}
 
 	if provider := lsigprovider.Get(keyType); provider != nil {

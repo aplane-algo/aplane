@@ -425,6 +425,7 @@ config/plugin/env files).
     passphrase.cred         # systemd-creds helper artifact, mode 0600
     keytypes/<key_type>.json
     keytypes/<key_type>.template
+    attestors/<name>.json
     deleted/keys/*.key
     deleted/keytypes/<key_type>.template
 ```
@@ -846,6 +847,41 @@ component key. `public_key_hex` is the raw component public key encoded in hex;
 it is the value embedded into attested-account LogicSig bytecode and supplied
 as `attestor_public_key` during attested account generation. The envelope makes
 no endpoint, policy, ownership, freshness, or trust claim.
+
+#### Attestor Public Key Reference Library
+
+`apstore attestor import <export-json> <name>` imports an
+`aplane.attestor-public-key.v1` envelope into the target identity's public
+attestor reference library:
+
+```text
+identities/<identity>/attestors/<name>.json
+```
+
+Reference names are normalized to lowercase and may contain lowercase letters,
+digits, `.`, `-`, and `_`. The persisted record schema is:
+
+```json
+{
+  "schema": "aplane.attestor-public-key-ref.v1",
+  "name": "lab-att",
+  "component_key": "a_<sha256-public-key>",
+  "key_type": "aplane.attestor-falcon1024.v1",
+  "public_key_encoding": "hex",
+  "public_key_hex": "<full public key hex>",
+  "public_key_size": 1793,
+  "public_key_sha256": "<sha256-public-key>",
+  "imported_at": "2026-06-04T00:00:00Z"
+}
+```
+
+The library is a generation convenience and trust-input inventory for the user
+signer. When generating an attested account, callers may provide
+`attestor=<name>` instead of `attestor_public_key=<hex>`. The signer resolves
+the name to `public_key_hex`, verifies that the reference key type matches the
+attested-account key type's required attestor component key type, rejects
+requests that provide both forms, and persists only the resolved
+`attestor_public_key` in the key file.
 
 ### Template Files (`.template`)
 

@@ -390,6 +390,17 @@ The exported JSON envelope has schema `aplane.attestor-public-key.v1`; its
 `public_key_hex` field is the value to embed as `attestor_public_key`, and its
 `component_key` field is the local `a_` selector. The envelope is public-only
 and carries no private key material or endpoint trust claim.
+The user signer may import that envelope into its local public attestor
+reference library with:
+
+```text
+apstore attestor import <export-json> <name>
+```
+
+After import, generation may use `attestor=<name>` instead of
+`attestor_public_key=<hex>`. The signer resolves the name locally, validates
+that the imported component key type matches the attested account key type, and
+persists only the resolved `attestor_public_key`.
 
 For all component-key rows, `address` is the `a_` selector and
 `public_key_hex` is the full component public key. Existing spending account
@@ -1181,6 +1192,7 @@ Attestor signer:
 apshell generate aplane.attestor-ed25519.v1
 apshell generate aplane.attestor-falcon1024.v1
 apstore key export-att <component_key> [output-json]
+apstore attestor import <export-json> <name>
 ```
 
 The MVP does not add an `apstore generate` surface. Attestor component keys are
@@ -1198,6 +1210,8 @@ User signer/client:
 ```text
 apshell generate aplane.falcon1024-att-ed25519.v1 attestor_public_key=<hex>
 apshell generate aplane.falcon1024-att-falcon1024.v1 attestor_public_key=<hex>
+apshell generate aplane.falcon1024-att-ed25519.v1 attestor=<name>
+apshell generate aplane.falcon1024-att-falcon1024.v1 attestor=<name>
 apshell attest sign <group-or-transaction> --attestor <endpoint-or-name>
 apshell attest assemble <group-or-transaction> --user-sig <sig> --attestor-sig <sig>
 ```
@@ -1451,6 +1465,9 @@ The MVP is complete when:
 - `apstore key export-att` emits a public-only
   `aplane.attestor-public-key.v1` envelope and rejects selector/public-key
   mismatches,
+- `apstore attestor import/list/show/remove` manages identity-scoped
+  public-only attestor references, and attested-account generation accepts
+  `attestor=<name>` as a local alias for `attestor_public_key=<hex>`,
 - `/plan` handles attested account metadata,
 - no registration endpoint, account-binding store, profile store, or trust-root
   store is required for attestation,

@@ -62,6 +62,8 @@ apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
 apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
 apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
 apstore -d $APSIGNER_DATA key export-att a_<sha256-public-key> attestor-public.json
+apstore -d $APSIGNER_DATA attestor import attestor-public.json lab-att
+apstore -d $APSIGNER_DATA attestor list
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -124,6 +126,29 @@ an attested account. `component_key` is the local selector used when asking the
 attestor signer to produce component signatures. The envelope is not encrypted
 and contains no private key material, endpoint credential, policy, or trust
 claim.
+
+To avoid pasting large public keys when creating user-side attested accounts,
+import the exported envelope into the user signer's attestor reference library:
+
+```bash
+apstore -d $USER_APSIGNER_DATA attestor import attestor-public.json lab-att
+apstore -d $USER_APSIGNER_DATA attestor list
+apstore -d $USER_APSIGNER_DATA attestor show lab-att
+```
+
+Imported references are public-only records under the user identity and are
+selected by name during generation:
+
+```text
+generate aplane.falcon1024-att-ed25519.v1 attestor=lab-att
+generate aplane.falcon1024-att-falcon1024.v1 attestor=lab-att
+```
+
+The signer resolves `attestor=<name>` to the imported record's
+`public_key_hex`, validates that the selected attestor key type matches the
+attested account key type, and stores only the resolved `attestor_public_key`
+in the generated key file. Supplying both `attestor=<name>` and
+`attestor_public_key=<hex>` is rejected.
 
 ## Compiled Providers
 

@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
+)
+
+func cmdAttestor(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: apstore attestor <import|list|show|remove>")
+	}
+	switch args[0] {
+	case "import":
+		if len(args) != 3 {
+			return fmt.Errorf("usage: apstore attestor import <export-json> <name>")
+		}
+		return cmdAttestorImport(args[1], args[2])
+	case "list":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: apstore attestor list")
+		}
+		return cmdAttestorList()
+	case "show":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: apstore attestor show <name>")
+		}
+		return cmdAttestorShow(args[1])
+	case "remove":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: apstore attestor remove <name>")
+		}
+		return cmdAttestorRemove(args[1])
+	default:
+		return fmt.Errorf("usage: apstore attestor <import|list|show|remove>")
+	}
+}
+
+func cmdAttestorImport(path, name string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read attestor public key export: %w", err)
+	}
+	rec, err := attrefs.Import(keystorePaths(), productIdentityID(), name, data)
+	if err != nil {
+		return err
+	}
+	logInfof("attestor reference %s imported for %s", rec.Name, rec.KeyType)
+	return nil
+}
+
+func cmdAttestorList() error {
+	records, err := attrefs.List(keystorePaths(), productIdentityID())
+	if err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		logInfof("no attestor references found")
+		return nil
+	}
+	logInfof("found %d attestor reference(s)", len(records))
+	for _, rec := range records {
+		fmt.Printf("  %s  (%s, %s)\n", rec.Name, rec.KeyType, rec.ComponentKey)
+	}
+	return nil
+}
+
+func cmdAttestorShow(name string) error {
+	rec, ok, err := attrefs.Get(keystorePaths(), productIdentityID(), name)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("attestor reference %q not found", name)
+	}
+	data, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode attestor reference: %w", err)
+	}
+	data = append(data, '\n')
+	_, err = os.Stdout.Write(data)
+	return err
+}
+
+func cmdAttestorRemove(name string) error {
+	removed, err := attrefs.Delete(keystorePaths(), productIdentityID(), name)
+	if err != nil {
+		return err
+	}
+	if removed {
+		logInfof("attestor reference %s removed", name)
+	} else {
+		logInfof("attestor reference %s was already absent", name)
+	}
+	return nil
+}
