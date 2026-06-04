@@ -820,6 +820,19 @@ informational provenance only: inventory surfaces may report a template
 conflict or unavailable template, but that status does not invalidate the key
 or alter signing behavior.
 
+#### Offline Identity Key Inventory
+
+`apstore keys list` is a local, passphrase-gated inventory surface for the
+current product identity's encrypted key files. It decrypts key metadata using
+the identity store passphrase and lists successfully scanned key addresses or
+component selectors with their key type, durable category, creation timestamp,
+and key-file name.
+
+The default human output must not emit private key material, mnemonic material,
+or raw public-key hex. Component keys are identified by their `a_` selector,
+not by the raw attestor public key. Recoverable key-scan warnings may be
+reported while still listing keys that scanned successfully.
+
 #### Attestor Public Key Export Envelope
 
 `apstore attestor export-public <component-key> [output-json]` emits a public-only
