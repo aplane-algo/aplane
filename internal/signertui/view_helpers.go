@@ -308,7 +308,11 @@ func protocolInputModesToDefs(modes []protocol.InputModeInfo) []lsigprovider.Inp
 // keyListVisibleHeight returns the number of visible key rows based on terminal height.
 // Used by key list rendering, scroll handling, and key selection.
 func (m Model) keyListVisibleHeight() int {
-	h := m.windowBodyHeight() - 10 // Reserve lines for tabs, filter, scroll indicators, count, and spacing.
+	reservedLines := 10 // Reserve lines for tabs, filter, scroll indicators, count, and spacing.
+	if !m.keyListUsesTabs() {
+		reservedLines -= 2
+	}
+	h := m.windowBodyHeight() - reservedLines
 	if h < 3 {
 		h = 3
 	}

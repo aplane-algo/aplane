@@ -421,6 +421,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			initStyles()
 		}
 		m.adminSettings = &msg.Settings
+		m.syncKeyListTabWithMode()
 		timeoutCmd := m.applyAdminSettingsTimeout(msg.Settings)
 		return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
 

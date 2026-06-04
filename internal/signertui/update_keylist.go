@@ -78,15 +78,21 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "tab":
-		m.toggleKeyListTab()
+		if m.keyListUsesTabs() {
+			m.toggleKeyListTab()
+		}
 		return m, nil
 
 	case "right":
-		m.setKeyListTab(keyListTabAttestor)
+		if m.keyListUsesTabs() {
+			m.setKeyListTab(keyListTabAttestor)
+		}
 		return m, nil
 
 	case "shift+tab", "left":
-		m.setKeyListTab(keyListTabSigning)
+		if m.keyListUsesTabs() {
+			m.setKeyListTab(keyListTabSigning)
+		}
 		return m, nil
 	}
 
@@ -167,6 +173,7 @@ func (m *Model) resetKeyListSelection() {
 }
 
 func (m *Model) setKeyListTab(tab keyListTab) {
+	tab = m.keyListTabForMode(tab)
 	if m.keyListTab == tab {
 		return
 	}
@@ -175,6 +182,9 @@ func (m *Model) setKeyListTab(tab keyListTab) {
 }
 
 func (m *Model) toggleKeyListTab() {
+	if !m.keyListUsesTabs() {
+		return
+	}
 	if m.keyListTab == keyListTabAttestor {
 		m.setKeyListTab(keyListTabSigning)
 		return

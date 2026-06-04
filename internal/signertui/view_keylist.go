@@ -20,7 +20,10 @@ import (
 // hexPattern matches hex strings starting with 0x followed by hex digits
 var hexPattern = regexp.MustCompile(`0x[0-9a-fA-F]+`)
 
-const keyListHelpText = "tab/left/right: Switch tab | g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
+const (
+	keyListHelpText     = "g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
+	keyListDualHelpText = "tab/left/right: Switch tab | " + keyListHelpText
+)
 
 // truncateLongHex shortens hex values longer than maxLen characters
 // Example: 0x1234567890abcdef... becomes 0x1234...cdef
@@ -145,7 +148,7 @@ func matchesFilter(value, filter string) bool {
 }
 
 func (m Model) filteredKeys() []KeyInfo {
-	tabKeys := filterKeysForTab(m.keys, m.keyListTab)
+	tabKeys := filterKeysForTab(m.keys, m.effectiveKeyListTab())
 	if m.filterInput == "" {
 		return tabKeys
 	}
@@ -186,6 +189,54 @@ func keyListTabForKey(key KeyInfo) keyListTab {
 	return keyListTabSigning
 }
 
+func (m Model) keyListMode() string {
+	if m.adminSettings == nil {
+		return "signing"
+	}
+	switch strings.ToLower(strings.TrimSpace(m.adminSettings.Mode)) {
+	case "attestation":
+		return "attestation"
+	case "dual":
+		return "dual"
+	default:
+		return "signing"
+	}
+}
+
+func (m Model) keyListUsesTabs() bool {
+	return m.keyListMode() == "dual"
+}
+
+func (m Model) effectiveKeyListTab() keyListTab {
+	switch m.keyListMode() {
+	case "attestation":
+		return keyListTabAttestor
+	case "dual":
+		return m.keyListTab
+	default:
+		return keyListTabSigning
+	}
+}
+
+func (m Model) keyListTabForMode(tab keyListTab) keyListTab {
+	if m.keyListUsesTabs() {
+		return tab
+	}
+	return m.effectiveKeyListTab()
+}
+
+func (m *Model) syncKeyListTabWithMode() {
+	if m.keyListUsesTabs() {
+		return
+	}
+	tab := m.effectiveKeyListTab()
+	if m.keyListTab == tab {
+		return
+	}
+	m.keyListTab = tab
+	m.resetKeyListSelection()
+}
+
 func (m Model) keyListTabCounts() (signing, attestor int) {
 	for _, key := range m.keys {
 		if keytypes.IsAttestorComponentKeyType(key.KeyType) {
@@ -211,7 +262,7 @@ func (m Model) renderKeyListTabs() string {
 	parts := make([]string, 0, len(labels))
 	for _, item := range labels {
 		text := fmt.Sprintf("%s (%d)", item.label, item.count)
-		if m.keyListTab == item.tab {
+		if m.effectiveKeyListTab() == item.tab {
 			parts = append(parts, selectedStyle.Render("[ "+text+" ]"))
 		} else {
 			parts = append(parts, normalStyle.Render("  "+text+"  "))
@@ -221,18 +272,27 @@ func (m Model) renderKeyListTabs() string {
 }
 
 func (m Model) activeKeyListTabLabel() string {
-	if m.keyListTab == keyListTabAttestor {
+	if m.effectiveKeyListTab() == keyListTabAttestor {
 		return "Attestor"
 	}
 	return "Signing"
+}
+
+func (m Model) keyListFooterText() string {
+	if m.keyListUsesTabs() {
+		return keyListDualHelpText
+	}
+	return keyListHelpText
 }
 
 // renderKeyListView renders the main key list screen
 func (m Model) renderKeyListView() string {
 	var sb strings.Builder
 
-	sb.WriteString(m.renderKeyListTabs())
-	sb.WriteString("\n\n")
+	if m.keyListUsesTabs() {
+		sb.WriteString(m.renderKeyListTabs())
+		sb.WriteString("\n\n")
+	}
 
 	// Filter input
 	if m.filterActive {
@@ -243,7 +303,7 @@ func (m Model) renderKeyListView() string {
 	sb.WriteString("\n")
 
 	// Get filtered key list
-	tabKeys := filterKeysForTab(m.keys, m.keyListTab)
+	tabKeys := filterKeysForTab(m.keys, m.effectiveKeyListTab())
 	displayKeys := m.filteredKeys()
 
 	if len(m.keys) == 0 {

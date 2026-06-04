@@ -13,7 +13,7 @@ func (m Model) viewFooterText() string {
 		if m.filterActive {
 			return "Enter: Apply | Esc: Clear"
 		}
-		return keyListHelpText
+		return m.keyListFooterText()
 	case ViewKeyDetails:
 		parts := []string{"d=delete"}
 		if m.detailsTEAL != "" {
@@ -82,7 +82,7 @@ func (m Model) viewFooterText() string {
 	case ViewError:
 		return "Esc: Close"
 	default:
-		return keyListHelpText
+		return m.keyListFooterText()
 	}
 }
 

@@ -1046,7 +1046,7 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 func (m *Model) selectKeyByAddress(address string) {
 	for _, k := range m.keys {
 		if k.Address == address {
-			m.keyListTab = keyListTabForKey(k)
+			m.keyListTab = m.keyListTabForMode(keyListTabForKey(k))
 			m.selectedKey = 0
 			for i, displayKey := range m.filteredKeys() {
 				if displayKey.Address == address {
