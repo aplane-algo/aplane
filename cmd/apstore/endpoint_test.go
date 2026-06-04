@@ -11,17 +11,17 @@ import (
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 )
 
-func TestCmdEndpointsExportStdout(t *testing.T) {
+func TestCmdEndpointExportStdout(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
 		out, err := withCapturedStdout(func() error {
-			return cmdEndpoints([]string{
+			return cmdEndpoint([]string{
 				"export",
 				"--url", "ssh://127.0.0.1:2223",
 				"--signer-port", "11270",
 			})
 		})
 		if err != nil {
-			t.Fatalf("cmdEndpoints(export) error = %v", err)
+			t.Fatalf("cmdEndpoint(export) error = %v", err)
 		}
 		if strings.Contains(out, "Enter store passphrase") {
 			t.Fatalf("stdout contains passphrase prompt: %q", out)
@@ -44,19 +44,19 @@ func TestCmdEndpointsExportStdout(t *testing.T) {
 	})
 }
 
-func TestCmdEndpointsExportHostDerivesSSHURLFromConfig(t *testing.T) {
+func TestCmdEndpointExportHostDerivesSSHURLFromConfig(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
 		config.SSH.Port = 2223
 		config.SignerPort = 12345
 
 		out, err := withCapturedStdout(func() error {
-			return cmdEndpoints([]string{
+			return cmdEndpoint([]string{
 				"export",
 				"--host", "attestor.example",
 			})
 		})
 		if err != nil {
-			t.Fatalf("cmdEndpoints(export --host) error = %v", err)
+			t.Fatalf("cmdEndpoint(export --host) error = %v", err)
 		}
 		env, err := endpointrefs.Parse([]byte(out))
 		if err != nil {
@@ -71,20 +71,20 @@ func TestCmdEndpointsExportHostDerivesSSHURLFromConfig(t *testing.T) {
 	})
 }
 
-func TestCmdEndpointsExportURLOverridesHost(t *testing.T) {
+func TestCmdEndpointExportURLOverridesHost(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
 		config.SSH.Port = 2223
 		config.SignerPort = 12345
 
 		out, err := withCapturedStdout(func() error {
-			return cmdEndpoints([]string{
+			return cmdEndpoint([]string{
 				"export",
 				"--host", "ignored.example",
 				"--url", "ssh://explicit.example:2200",
 			})
 		})
 		if err != nil {
-			t.Fatalf("cmdEndpoints(export --url --host) error = %v", err)
+			t.Fatalf("cmdEndpoint(export --url --host) error = %v", err)
 		}
 		env, err := endpointrefs.Parse([]byte(out))
 		if err != nil {
@@ -99,19 +99,19 @@ func TestCmdEndpointsExportURLOverridesHost(t *testing.T) {
 	})
 }
 
-func TestCmdEndpointsExportHostUsesDefaultPortsWhenConfigUnset(t *testing.T) {
+func TestCmdEndpointExportHostUsesDefaultPortsWhenConfigUnset(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
 		config.SSH.Port = 0
 		config.SignerPort = 0
 
 		out, err := withCapturedStdout(func() error {
-			return cmdEndpoints([]string{
+			return cmdEndpoint([]string{
 				"export",
 				"--host", "127.0.0.1",
 			})
 		})
 		if err != nil {
-			t.Fatalf("cmdEndpoints(export --host defaults) error = %v", err)
+			t.Fatalf("cmdEndpoint(export --host defaults) error = %v", err)
 		}
 		env, err := endpointrefs.Parse([]byte(out))
 		if err != nil {
@@ -126,17 +126,17 @@ func TestCmdEndpointsExportHostUsesDefaultPortsWhenConfigUnset(t *testing.T) {
 	})
 }
 
-func TestCmdEndpointsExportRejectsSelfURL(t *testing.T) {
+func TestCmdEndpointExportRejectsSelfURL(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		err := cmdEndpoints([]string{
+		err := cmdEndpoint([]string{
 			"export",
 			"--url", "self",
 		})
 		if err == nil {
-			t.Fatal("cmdEndpoints(export self) error = nil, want rejection")
+			t.Fatal("cmdEndpoint(export self) error = nil, want rejection")
 		}
 		if !strings.Contains(err.Error(), "not allowed") {
-			t.Fatalf("cmdEndpoints(export self) error = %v, want not allowed", err)
+			t.Fatalf("cmdEndpoint(export self) error = %v, want not allowed", err)
 		}
 	})
 }

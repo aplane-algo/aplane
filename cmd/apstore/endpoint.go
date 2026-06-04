@@ -17,22 +17,22 @@ import (
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 )
 
-const endpointsExportUsage = "usage: apstore endpoints export (--host <host> | --url <url>) [--signer-port <port>] [--local-port <port>] [--out endpoint.json]"
+const endpointExportUsage = "usage: apstore endpoint export (--host <host> | --url <url>) [--signer-port <port>] [--local-port <port>] [--out endpoint.json]"
 
-func cmdEndpoints(args []string) error {
+func cmdEndpoint(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore endpoints <export>")
+		return fmt.Errorf("usage: apstore endpoint <export>")
 	}
 	switch args[0] {
 	case "export":
-		return cmdEndpointsExport(args[1:])
+		return cmdEndpointExport(args[1:])
 	default:
-		return fmt.Errorf("usage: apstore endpoints <export>")
+		return fmt.Errorf("usage: apstore endpoint <export>")
 	}
 }
 
-func cmdEndpointsExport(args []string) error {
-	fs := flag.NewFlagSet("apstore endpoints export", flag.ContinueOnError)
+func cmdEndpointExport(args []string) error {
+	fs := flag.NewFlagSet("apstore endpoint export", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	host := fs.String("host", "", "client-reachable SSH host or IP")
 	endpointURL := fs.String("url", "", "endpoint URL")
@@ -40,10 +40,10 @@ func cmdEndpointsExport(args []string) error {
 	localPort := fs.Int("local-port", 0, "local tunnel port")
 	outPath := fs.String("out", "", "output JSON path")
 	if err := fs.Parse(args); err != nil {
-		return errors.New(endpointsExportUsage)
+		return errors.New(endpointExportUsage)
 	}
 	if fs.NArg() != 0 {
-		return errors.New(endpointsExportUsage)
+		return errors.New(endpointExportUsage)
 	}
 
 	urlValue, err := endpointExportURL(*host, *endpointURL)
@@ -87,7 +87,7 @@ func endpointExportURL(host, explicitURL string) (string, error) {
 	}
 	host = strings.TrimSpace(host)
 	if host == "" {
-		return "", errors.New(endpointsExportUsage)
+		return "", errors.New(endpointExportUsage)
 	}
 	if strings.Contains(host, "://") {
 		return "", fmt.Errorf("--host must be a host or IP without a URL scheme; use --url for explicit endpoint URLs")

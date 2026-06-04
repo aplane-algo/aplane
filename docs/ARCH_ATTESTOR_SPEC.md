@@ -1278,7 +1278,7 @@ in the common case:
 
 ```bash
 # signer side
-apstore -d "$APSIGNER_DATA" endpoints export \
+apstore -d "$APSIGNER_DATA" endpoint export \
   --host attestor.example \
   --out attestor.endpoint.json
 

@@ -97,8 +97,8 @@ func dispatchApstoreCommand(args []string) {
 			exitWithError(err)
 		}
 
-	case "endpoints":
-		if err := cmdEndpoints(args[1:]); err != nil {
+	case "endpoint":
+		if err := cmdEndpoint(args[1:]); err != nil {
 			exitWithError(err)
 		}
 
