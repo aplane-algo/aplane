@@ -175,7 +175,7 @@ admin-projected policy settings exposed by `get_policy_settings`,
 `update_policy_setting`, and `update_policy_asa_amounts`, including scalar
 policy toggles, max fee, and network-scoped transfer guard thresholds. It is not
 a full guided `policy.yaml` editor and does not expose YAML-only fields such as
-`key_type_overrides`.
+`key_overrides`.
 
 These client capabilities describe the product surface for the product
 identity. Backend admin routing is identity-scoped internally; `apadmin`,
@@ -263,10 +263,11 @@ Policy is verified and loaded on unlock/reload before the key scan; a missing
 policy file or missing/mismatched sidecar fails closed instead of falling back
 to defaults. Authenticated admin IPC policy writes require an unlocked identity
 and write both files.
-`policy.yaml` also supports YAML-only `key_type_overrides` blocks for
-per-signing-key-type effective policy; these overrides apply to policy phases,
-are not exposed through admin IPC, and direct YAML edits require
-offline `apstore policy sign` before the signer will trust them.
+`policy.yaml` also supports YAML-only `key_overrides` blocks for per-key
+effective policy. Client-signing overrides are keyed by Algorand auth address;
+attestor overrides are keyed by `a_...` component selector. These overrides
+apply to policy phases, are not exposed through admin IPC, and direct YAML edits
+require offline `apstore policy sign` before the signer will trust them.
 
 Validation:
 
@@ -1043,7 +1044,7 @@ Auto-rejection policy includes:
 - `transfer_policy` blocked destinations, route misses,
   close/clawback denials, and `reject_above` thresholds for direct `pay` and
   `axfer` movements
-- YAML-only `key_type_overrides` keyed by signing auth key type
+- YAML-only `key_overrides` keyed by signing auth address or attestor component selector
 
 Policy enforcement stores and compares `review_algo_payments` and
 `max_algo_payments` in raw microAlgos; admin-facing input, display, and

@@ -13,6 +13,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policyview"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 func TestPolicySnapshotMsgBuildsReadOnlyPolicyView(t *testing.T) {
@@ -638,8 +640,8 @@ func TestRenderPolicyViewerOverridesModeShowsOverrideDetails(t *testing.T) {
 	maxFee := uint64(5000)
 	enabled := true
 	stored := &policy.StoredConfig{
-		KeyTypeOverrides: map[string]*policy.StoredConfig{
-			"aplane.falcon1024.v1": {
+		KeyOverrides: map[string]*policy.StoredConfig{
+			types.Address{9}.String(): {
 				RejectAssetClose: &rejectAssetClose,
 				MaxFeeMicroAlgos: &maxFee,
 				TransferPolicy: &policy.StoredTransferPolicy{
@@ -670,8 +672,8 @@ func TestRenderPolicyViewerOverridesModeShowsOverrideDetails(t *testing.T) {
 
 	rendered := stripANSI(m.renderPolicyViewer())
 	for _, want := range []string{
-		"Key type overrides",
-		"falcon1024",
+		"Key overrides",
+		types.Address{9}.String(),
 		"Reject asset close",
 		"Max fee microAlgos",
 		"falcon",
@@ -751,8 +753,8 @@ func policyViewerConstraintFixture() Model {
 				},
 			},
 		},
-		KeyTypeOverrides: map[string]*policy.StoredConfig{
-			"aplane.falcon1024.experimental.long-keytype-name.v1": {
+		KeyOverrides: map[string]*policy.StoredConfig{
+			types.Address{9}.String(): {
 				RejectAssetClose: &enabled,
 				TransferPolicy: &policy.StoredTransferPolicy{
 					SchemaVersion: 1,

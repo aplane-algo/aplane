@@ -35,7 +35,7 @@ type Model struct {
 	TransferGuards      []TransferGuardGroup
 	AssetSets           []AssetSetRow
 	BlockedDestinations []string
-	KeyTypeOverrides    []string
+	KeyOverrides        []string
 }
 
 func ParseYAML(raw string) (*policy.StoredConfig, error) {
@@ -45,11 +45,11 @@ func ParseYAML(raw string) (*policy.StoredConfig, error) {
 func Build(stored *policy.StoredConfig, yamlText string) Model {
 	cp := stored.Clone()
 	model := Model{
-		Policy:           cp,
-		YAML:             yamlText,
-		Fields:           FieldRows(cp),
-		TransferSummary:  TransferPolicySummary(cp),
-		KeyTypeOverrides: sortedKeyTypeOverrides(cp),
+		Policy:          cp,
+		YAML:            yamlText,
+		Fields:          FieldRows(cp),
+		TransferSummary: TransferPolicySummary(cp),
+		KeyOverrides:    sortedKeyOverrides(cp),
 	}
 	if cp != nil && cp.TransferPolicy != nil {
 		model.TransferGuards = TransferGuardGroups(cp.TransferPolicy.Routes)
@@ -87,10 +87,10 @@ func FieldRows(c *policy.StoredConfig) []FieldRow {
 			Source: transferPolicySource(c),
 		},
 		{
-			Key:    "key_type_overrides",
-			Label:  "Key type overrides",
-			Value:  fmt.Sprintf("%d", len(sortedKeyTypeOverrides(c))),
-			Source: keyTypeOverridesSource(c),
+			Key:    "key_overrides",
+			Label:  "Key overrides",
+			Value:  fmt.Sprintf("%d", len(sortedKeyOverrides(c))),
+			Source: keyOverridesSource(c),
 		},
 	}
 }
@@ -192,20 +192,20 @@ func transferPolicySource(c *policy.StoredConfig) string {
 	return "explicit"
 }
 
-func keyTypeOverridesSource(c *policy.StoredConfig) string {
-	if c == nil || len(c.KeyTypeOverrides) == 0 {
+func keyOverridesSource(c *policy.StoredConfig) string {
+	if c == nil || len(c.KeyOverrides) == 0 {
 		return "absent"
 	}
 	return "explicit"
 }
 
-func sortedKeyTypeOverrides(c *policy.StoredConfig) []string {
-	if c == nil || len(c.KeyTypeOverrides) == 0 {
+func sortedKeyOverrides(c *policy.StoredConfig) []string {
+	if c == nil || len(c.KeyOverrides) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(c.KeyTypeOverrides))
-	for keyType := range c.KeyTypeOverrides {
-		out = append(out, keyType)
+	out := make([]string, 0, len(c.KeyOverrides))
+	for key := range c.KeyOverrides {
+		out = append(out, key)
 	}
 	sort.Strings(out)
 	return out

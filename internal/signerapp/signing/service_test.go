@@ -179,33 +179,35 @@ func TestEvaluateAutoRejectionRulesRespectsThresholdBoundaries(t *testing.T) {
 	}
 }
 
-func TestEvaluateAutoRejectionRulesAppliesKeyTypeOverrides(t *testing.T) {
+func TestEvaluateAutoRejectionRulesAppliesKeyOverrides(t *testing.T) {
 	nonZeroAddr := types.Address{1}
+	overrideKey := types.Address{10}.String()
+	baseKey := types.Address{11}.String()
 	txns := []types.Transaction{
-		// Signed by a whitelist key: the override allows asset close.
+		// Signed by the override key: the override allows asset close.
 		{AssetTransferTxnFields: types.AssetTransferTxnFields{AssetCloseTo: nonZeroAddr}},
-		// Signed by a generic ed25519 key: inherits identity default (reject).
+		// Signed by a different key: inherits identity default (reject).
 		{AssetTransferTxnFields: types.AssetTransferTxnFields{AssetCloseTo: nonZeroAddr}},
 	}
 
 	cfg := &policy.Config{
 		RejectAssetClose: true,
-		KeyTypeOverrides: map[string]*policy.Config{
-			"aplane.falcon1024-whitelist.v1": {RejectAssetClose: false},
+		KeyOverrides: map[string]*policy.Config{
+			overrideKey: {RejectAssetClose: false},
 		},
 	}
-	authKeyTypes := []string{"aplane.falcon1024-whitelist.v1", "ed25519"}
+	authKeys := []string{overrideKey, baseKey}
 
-	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, true, cfg, authKeyTypes, nil, nil, nil)
+	err := EvaluateAutoRejectionRules(txns, len(txns), nil, nil, true, cfg, authKeys, nil, nil, nil)
 	if err == nil {
-		t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection only for ed25519 txn")
+		t.Fatal("EvaluateAutoRejectionRules() error = nil, want rejection only for non-overridden txn")
 	}
 	got := err.Error()
 	if strings.Contains(got, "txn 1:") {
-		t.Errorf("whitelist override should allow asset close on txn 1: %q", got)
+		t.Errorf("key override should allow asset close on txn 1: %q", got)
 	}
 	if !strings.Contains(got, "txn 2: [reject_asset_close]") {
-		t.Errorf("ed25519 txn 2 should be rejected by identity default: %q", got)
+		t.Errorf("txn 2 should be rejected by identity default: %q", got)
 	}
 }
 
@@ -273,17 +275,19 @@ transfer_policy:
 	}
 }
 
-func TestEvaluateAutoRejectionRulesUsesTransferRoutingKeyTypeOverrides(t *testing.T) {
+func TestEvaluateAutoRejectionRulesUsesTransferRoutingKeyOverrides(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
+	overrideKey := types.Address{10}.String()
+	baseKey := types.Address{11}.String()
 	cfg := routingPolicyConfigForSigningTest(t, `
 transfer_policy:
   schema_version: 1
   enabled: true
   on_no_route: reject
   routes: []
-key_type_overrides:
-  aplane.falcon1024.v1:
+key_overrides:
+  `+overrideKey+`:
     transfer_policy:
       schema_version: 1
       enabled: true
@@ -313,7 +317,7 @@ key_type_overrides:
 		map[int]bool{},
 		true,
 		cfg,
-		[]string{"aplane.falcon1024.v1", "ed25519"},
+		[]string{overrideKey, baseKey},
 		nil,
 		nil,
 		nil,

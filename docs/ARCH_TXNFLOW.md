@@ -485,7 +485,7 @@ to a `GroupSignResponse` with a populated `error`.
 
 See `cmd/apsigner/http_handlers_signing.go`'s `handleSign` for the dispatch
 implementation, and `internal/signerapp/signing/planner.go` and
-`internal/signerapp/signing/execution.go` for the planning and per-key-type
+`internal/signerapp/signing/execution.go` for the planning and per-key
 signing logic it drives.
 
 ### Branch Summary
@@ -714,7 +714,7 @@ The following runtime and policy settings affect server behavior:
 | `max_algo_payments` | `identities/<identity>/policy.yaml` | unset | Reject payment txns whose raw microAlgo amount exceeds the configured per-network ceiling. Admin UI/IPC input and rejection messages use ALGO display units. |
 | `review_asa_amounts` | `identities/<identity>/policy.yaml` | unset | Force review for ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset threshold. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
 | `max_asa_amounts` | `identities/<identity>/policy.yaml` | unset | Reject ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset ceiling. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
-| `key_type_overrides` | `identities/<identity>/policy.yaml` | unset | YAML-only sparse policy overrides keyed by signing auth key type. Unset fields inherit identity-wide policy, nested overrides are rejected, and missing key-type metadata for a signable auth address fails closed. |
+| `key_overrides` | `identities/<identity>/policy.yaml` | unset | YAML-only sparse policy overrides keyed by signing auth address or attestor component selector. Unset fields inherit identity-wide policy, and nested overrides are rejected. |
 
 **Pre-grouped immutability**: Pre-grouped transactions are always immutable. If they require additional dummies for LogicSig budget, the request is rejected. Clients should submit ungrouped transactions to let the server canonicalize the group.
 

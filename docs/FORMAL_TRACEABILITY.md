@@ -67,7 +67,7 @@ Source: [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md)
 | P7 | derived | Decision Procedure | `user_auto_approve` consulted only after policy verdict miss | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanAlwaysReviewWarningsOverridesUserAutoApprove`; `::TestSignGroupWithPlanTransferRoutingReviewOverridesUserAutoApprove`; `::TestSignGroupWithPlanUsesSingleTxnApprovalForServerAddedDummies`; `cmd/apsigner/audit_test.go::TestHandleSignWritesHTTPAttributedAuditEntries` | Machine-checked via `policy_precedence.tla::P7_OperatorDefaultLast`. |
 | P8 | implemented | Slot Classes | `EvaluateAutoRejectionRules` skips passthrough/foreign positions by index map | `internal/signerapp/signing/service_test.go::TestEvaluateAutoRejectionRulesSkipsForeignAndDummyTransactions`; `*SkipsTransferRoutingForPassthroughForeignAndDummySlots*` | |
 | P9 | implemented | P9 | `internal/policy/transfer_routing_eval.go` returns `Reject`/`Review`/no-verdict only | `internal/policy/transfer_routing_eval_test.go`; `internal/policy/ruleids_test.go` | |
-| P10 | implemented | Effective Policy Selection; P10 | `internal/policy/config.go::ForKeyType`; `internal/signerapp/signing/always_review.go` uses `authKeyTypes[i]` | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesUsesKeyTypeOverride`; `service_test.go::TestEvaluateAutoRejectionRulesAppliesKeyTypeOverrides` | |
+| P10 | implemented | Effective Policy Selection; P10 | `internal/policy/config.go::ForKey`; `internal/signerapp/signing/service.go::authPolicyKeysFromRequest` passes auth addresses to policy evaluators | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesUsesKeyOverride`; `service_test.go::TestEvaluateAutoRejectionRulesAppliesKeyOverrides` | |
 
 ## Lifecycle Model
 
@@ -104,7 +104,7 @@ Source: [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md)
 | S9 | implemented | S9 | `internal/keys/keys.go` and `lsig_file.go` alias parsing rejects conflicting values | `internal/keys/keys_test.go::TestParseKeyPayloadMetadataRejectsConflictingAliases`; `internal/keys/lsig_file_test.go::TestLSigFileUnmarshalRejectsConflictingAliases` | |
 | S10 | implemented | Runtime Key Index; S10 | `internal/signerapp/identity/runtime.go::KeyIndexSnapshot`; `internal/signerapp/signing/planner.go::PlanGroup`; `internal/signerapp/signing/planner_runtime.go::verifySignableKeys` | `internal/signerapp/identity/identity_test.go::TestKeyIndexSnapshotMaterializesConsistentCopy`; `internal/signerapp/signing/planner_runtime_test.go::TestPlannerUsesSingleIdentitySnapshot` | Planning materializes key files, key types, LogicSig sizes, and signer-local known addresses from one copied snapshot. |
 | S11 | implemented | Auth Address Binding; S11 | `internal/signerapp/signing/planner_runtime.go` resolves auth addresses through `PlannerIdentitySnapshot.KeyFiles` | `internal/signerapp/signing/planner_runtime_test.go::TestVerifySignableKeysRequiresKeyFileInSnapshot`; `::TestVerifySignableKeysRequiresKeyTypeMetadata` | |
-| S12 | implemented | S12 | `planner.go::PlanGroup` uses `snapshot.KeyTypes[txReq.AuthAddress]` for `authKeyTypes[i]`; `policyCfg.ForKeyType` consumes it | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesUsesKeyTypeOverride`; `service_test.go::TestEvaluateAutoRejectionRulesAppliesKeyTypeOverrides` | |
+| S12 | implemented | S12 | `service.go::authPolicyKeysFromRequest` uses `txReq.AuthAddress` for policy override selection; `policyCfg.ForKey` consumes it | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesUsesKeyOverride`; `service_test.go::TestEvaluateAutoRejectionRulesAppliesKeyOverrides` | |
 | S13 | implemented | Canonical Filename Binding; S13 | Scan derives payload address and skips filename mismatches in `internal/keys/keys.go`; canonical writers use `paths.KeyFilePath(identityID, address)` without write-time directory preflight | `internal/keys/keys_test.go::TestScanKeysDirectoryWithMasterKey/filename_address_mismatch_is_skipped`; `internal/keys/save_test.go::TestSaveKeyFileAllowsCanonicalWriteWithNonCanonicalKeyPresent`; `internal/keymgmt/operations_test.go::TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical`; `internal/backup/restore_test.go::TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical` | Open Question 3 resolved as filename binding; address-collision invalidation remains a defensive fallback. |
 
 ## Open Cross-Cutting Gaps
@@ -232,7 +232,7 @@ meaningfully.
 The following invariants have no TLA+ representation yet:
 - Most of I4-I6, IS1-IS6 (planning details, simulate boundary).
 - P1, P2, P3, P8, P9, P10 (snapshot semantics, slot scope, routing,
-  key-type overrides).
+  key overrides).
 - L1, L2, L3, L9-L11 (lifecycle non-concurrency claims), plus L8
   (pending-approval cascade, deferred to a future approval-coordinator
   model).

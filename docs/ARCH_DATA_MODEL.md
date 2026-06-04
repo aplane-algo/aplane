@@ -330,7 +330,7 @@ stored YAML. It controls:
 - Always Review rules,
 - Always Approve rules,
 - network-scoped ALGO and ASA transfer thresholds,
-- YAML-only `key_type_overrides`.
+- YAML-only `key_overrides`.
 
 `user_auto_approve` is not policy. It is the user/operator-default fallback in
 identity config.

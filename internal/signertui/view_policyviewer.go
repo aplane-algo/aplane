@@ -222,7 +222,7 @@ func (m Model) renderPolicyViewerFieldSummary() string {
 	sb.WriteString("\n")
 	width := m.policyViewerRowWidth()
 	for _, field := range m.policyView.Fields {
-		if field.Key == "transfer_policy" || field.Key == "key_type_overrides" {
+		if field.Key == "transfer_policy" || field.Key == "key_overrides" {
 			continue
 		}
 		line := fmt.Sprintf("  %-34s %-18s %s", field.Label, field.Value, field.Source)
@@ -238,8 +238,8 @@ func (m Model) renderPolicyViewerFieldSummary() string {
 	sb.WriteString("\n")
 	sb.WriteString(ellipsize(fmt.Sprintf(
 		"  %-34s %-18d %s",
-		"Key type overrides",
-		len(m.policyView.KeyTypeOverrides),
+		"Key overrides",
+		len(m.policyView.KeyOverrides),
 		"read-only",
 	), width))
 	sb.WriteString("\n")
@@ -370,9 +370,9 @@ func (m Model) renderPolicyViewerYAML() string {
 }
 
 func (m Model) renderPolicyViewerOverrides() string {
-	overrides := m.policyView.KeyTypeOverrides
+	overrides := m.policyView.KeyOverrides
 	if len(overrides) == 0 {
-		return subtitleStyle.Render("  No key type overrides configured")
+		return subtitleStyle.Render("  No key overrides configured")
 	}
 
 	displayModel := m.ensurePolicyViewOverrideVisible()
@@ -384,7 +384,7 @@ func (m Model) renderPolicyViewerOverrides() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(subtitleStyle.Render("Key type overrides"))
+	sb.WriteString(subtitleStyle.Render("Key overrides"))
 	sb.WriteString("\n")
 	if above := scrollMoreAboveLine(offset); above != "" {
 		sb.WriteString(above)
@@ -392,12 +392,12 @@ func (m Model) renderPolicyViewerOverrides() string {
 	}
 	width := displayModel.policyViewerRowWidth()
 	for i := offset; i < end; i++ {
-		keyType := overrides[i]
+		key := overrides[i]
 		prefix := "  "
 		if i == displayModel.policyViewSelectedOverride {
 			prefix = "> "
 		}
-		line := ellipsize(fmt.Sprintf("%s%-44s %s", prefix, displayKeyType(keyType), policyViewerOverrideSummary(displayModel, keyType)), width)
+		line := ellipsize(fmt.Sprintf("%s%-44s %s", prefix, displayPolicyOverrideKey(key), policyViewerOverrideSummary(displayModel, key)), width)
 		if i == displayModel.policyViewSelectedOverride {
 			sb.WriteString(selectedStyle.Render(line))
 		} else {
@@ -418,18 +418,18 @@ func (m Model) renderPolicyViewerOverrides() string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-func (m Model) renderPolicyViewerOverrideDetail(keyType string) string {
-	if m.policyView.Policy == nil || m.policyView.Policy.KeyTypeOverrides == nil {
+func (m Model) renderPolicyViewerOverrideDetail(key string) string {
+	if m.policyView.Policy == nil || m.policyView.Policy.KeyOverrides == nil {
 		return ""
 	}
-	override := m.policyView.Policy.KeyTypeOverrides[keyType]
+	override := m.policyView.Policy.KeyOverrides[key]
 	if override == nil {
 		return subtitleStyle.Render("  Empty override")
 	}
 	overrideView := policyview.Build(override, "")
 	width := m.policyViewerRowWidth()
 	var sb strings.Builder
-	sb.WriteString(keyTypeStyle.Render(ellipsize(displayKeyType(keyType), width)))
+	sb.WriteString(keyTypeStyle.Render(ellipsize(displayPolicyOverrideKey(key), width)))
 	sb.WriteString("\n")
 	lines := policyViewerExplicitOverrideLines(overrideView)
 	if len(lines) == 0 {
@@ -762,11 +762,15 @@ func policyViewerIntListSummary(items []int) string {
 	return policyViewerListSummary(parts, 8)
 }
 
-func policyViewerOverrideSummary(m Model, keyType string) string {
-	if m.policyView.Policy == nil || m.policyView.Policy.KeyTypeOverrides == nil {
+func displayPolicyOverrideKey(key string) string {
+	return key
+}
+
+func policyViewerOverrideSummary(m Model, key string) string {
+	if m.policyView.Policy == nil || m.policyView.Policy.KeyOverrides == nil {
 		return "empty"
 	}
-	override := m.policyView.Policy.KeyTypeOverrides[keyType]
+	override := m.policyView.Policy.KeyOverrides[key]
 	if override == nil {
 		return "empty"
 	}
@@ -796,7 +800,7 @@ func policyViewerExplicitOverrideLines(view policyview.Model) []string {
 			if field.Source == "explicit" {
 				lines = append(lines, fmt.Sprintf("  %-34s %s", field.Label, field.Value))
 			}
-		case "key_type_overrides":
+		case "key_overrides":
 			continue
 		default:
 			if field.Source == "explicit" {

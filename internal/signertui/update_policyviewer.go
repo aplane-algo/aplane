@@ -552,7 +552,7 @@ func (m Model) policyViewYAMLLineCount() int {
 }
 
 func (m Model) policyViewOverrideCount() int {
-	return len(m.policyView.KeyTypeOverrides)
+	return len(m.policyView.KeyOverrides)
 }
 
 func (m Model) policyViewerExitView() ViewState {

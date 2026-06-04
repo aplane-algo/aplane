@@ -122,7 +122,7 @@ active policy changed before the upload was applied.
 | `review_asa_amounts` | Legacy per-network raw ASA unit review thresholds. |
 | `max_asa_amounts` | Legacy per-network raw ASA unit reject thresholds. |
 | `transfer_policy` | Source/asset/destination route table for direct ALGO and ASA movements. |
-| `key_type_overrides` | Advanced per-key-type policy overlays. YAML-only. |
+| `key_overrides` | Advanced per-key policy overlays. YAML-only. |
 
 New operator-facing transfer policy should prefer `transfer_policy` over the
 legacy payment and ASA threshold maps.
@@ -254,15 +254,16 @@ Advanced route shapes remain YAML-only, including multi-asset routes,
 non-uniform `limits_by_network`, clawback `asset_sources`, and some wildcard or
 asset-set amount-limit combinations.
 
-## Key Type Overrides
+## Key Overrides
 
-`key_type_overrides` is an advanced YAML-only feature. The appolicy UI does not
+`key_overrides` is an advanced YAML-only feature. The appolicy UI does not
 edit overrides.
 
-Overrides let one signing key type use tighter or looser policy than the
-identity-wide policy. The override is selected by the auth address key type
-that will actually sign, not necessarily by the transaction sender. This
-matters for rekeyed accounts.
+Overrides let one concrete signing key use tighter or looser policy than the
+identity-wide policy. For normal transaction signing, the override is selected
+by the auth address that will actually sign, not necessarily by the transaction
+sender. For attestor component signing, the override is selected by the
+`a_...` component-key selector.
 
 Example:
 
@@ -281,11 +282,11 @@ transfer_policy:
       assets: ["algo"]
       destinations: ["OPSADDRESS..."]
 
-key_type_overrides:
-  ed25519:
+key_overrides:
+  SIGNINGAUTHADDRESS...:
     reject_asset_close: true
 
-  aplane.falcon1024-whitelist.v1:
+  OTHERAUTHADDRESS...:
     max_fee_microalgos: 5000
     transfer_policy:
       schema_version: 1
@@ -308,24 +309,25 @@ Override rules:
 | `transfer_policy.close_on_no_route` | Inherit identity-wide value | Replace identity-wide value |
 | `transfer_policy.clawback_on_no_route` | Inherit identity-wide value | Replace identity-wide value |
 | `transfer_policy.routes` | Inherit identity-wide routes | Replace the entire route list |
-| `transfer_policy.routes: []` | Not applicable | Clear all inherited routes for that key type |
+| `transfer_policy.routes: []` | Not applicable | Clear all inherited routes for that key |
 | `address_sets` and `asset_sets` | Inherit by name | Add new names or replace matching names |
 | `blocked_destinations` | Inherit identity-wide list | Add to the inherited list |
-| Nested `key_type_overrides` | Not applicable | Rejected |
+| Nested `key_overrides` | Not applicable | Rejected |
 
 The sharp edge is inheritance. If an override omits `routes`, it still uses the
 identity-wide routes. If it sets `routes`, the listed routes are a replacement,
 not an append. If it sets `routes: []` while inheriting `on_no_route: reject`,
-then covered transfer movements for that key type have no matching routes and
+then covered transfer movements for that key have no matching routes and
 are rejected, except for routing-exempt self no-op shapes.
 
 `blocked_destinations` can only become stricter in an override. An override can
 add blocked destinations but cannot remove identity-wide blocked destinations.
 
-Use overrides when a key type has materially different signing constraints,
-such as a LogicSig key whose TEAL enforces a separate whitelist. Avoid overrides
-when normal identity-wide routes can express the rule; simpler policy is easier
-to audit.
+Use overrides when one key has materially different signing constraints, such
+as a LogicSig account whose TEAL enforces a separate whitelist, or one attestor
+component key that should attest a narrower route set than the identity
+default. Avoid overrides when normal identity-wide routes can express the rule;
+simpler policy is easier to audit.
 
 ## Validation Checklist
 
@@ -349,8 +351,8 @@ Before relying on a policy:
 | Signer refuses to load policy | The sidecar is missing or does not match `policy.yaml`, or validation failed. |
 | A transfer is rejected unexpectedly | `on_no_route: reject`, a blocked destination, close/clawback denial, or a stricter matching route threshold. |
 | A route does not match an ASA | ASA IDs are network-local; check the transaction network and any `asset_sets` mapping. |
-| A key type override still uses base routes | The override omitted `transfer_policy.routes`; omitted routes inherit. |
-| A key type override cannot unblock an address | `blocked_destinations` are inherited and unioned. Overrides cannot remove base blocked destinations. |
+| A key override still uses base routes | The override omitted `transfer_policy.routes`; omitted routes inherit. |
+| A key override cannot unblock an address | `blocked_destinations` are inherited and unioned. Overrides cannot remove base blocked destinations. |
 
 For implementation-level details, see [ARCH_POLICY.md](ARCH_POLICY.md). For
 network token rules, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).

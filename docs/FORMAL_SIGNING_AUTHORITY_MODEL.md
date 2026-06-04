@@ -111,7 +111,7 @@ planning and signing. Concretely it exposes:
 - `Resolve(address) -> KeyFile | NotFound` - maps an address to the durable
   key file that authorizes signing for it,
 - `KeyType(address) -> key_type | NotFound` - the stored key type used by
-  policy `key_type_overrides`,
+  signing dispatch and fail-closed signability checks,
 - `LSigSize(address) -> bytes | NotFound` - LogicSig budget contribution for
   planning.
 
@@ -363,20 +363,20 @@ implementation must not silently fall back to a different address or recover
 a key by recomputing addresses from `signing_metadata_version`,
 `base_key_type`, `template_fingerprint`, or `salt_counter` alone.
 
-### S12: Auth Address Determines Key Type For Policy
+### S12: Auth Address Determines Policy Override
 
-The key type used for policy `key_type_overrides` selection is the stored
-key type of the key file resolved through `auth_address`. It is not the
-request-supplied key type (there is none) and it is not derived from the
-transaction sender.
+The key used for client-signing `key_overrides` selection is the request
+`auth_address`. It is not derived from transaction sender. This preserves
+rekey semantics: a rekeyed account uses the policy override for the signing
+authority address.
 
 ```text
 SignMode(entry) and Accepted(entry) =>
-  EffectiveKeyType(entry) = RuntimeKeyIndex.KeyType(entry.auth_address)
+  EffectivePolicyKey(entry) = entry.auth_address
 ```
 
-Missing key-type metadata fails closed (consistent with the Effective Policy
-Selection rules in [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md)).
+Missing key-type metadata still fails closed for signing dispatch and LogicSig
+budget planning.
 
 ### S13: Canonical Filename Binding
 
@@ -459,8 +459,7 @@ High-value test anchors:
   behavior,
 - sign-mode `auth_address` resolves through the runtime index; unresolved
   addresses reject in planning,
-- key type for `key_type_overrides` is taken from the resolved key file,
-  not from the transaction sender,
+- `key_overrides` selection uses `auth_address`, not transaction sender,
 - misnamed key files are skipped instead of being loaded under their
   payload-derived address.
 

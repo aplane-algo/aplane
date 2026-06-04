@@ -73,7 +73,7 @@ signer settings and status:
 
 `apadmin` does not expose guided policy field editing. Its policy surface
 requests a signer-owned snapshot over the admin protocol and renders overview,
-guard detail, YAML, and key-type override views. From that viewer, the operator
+guard detail, YAML, and key override views. From that viewer, the operator
 may load a local YAML file as a whole-policy replacement; the signer validates
 and persists the file and returns a fresh canonical snapshot. Operator guided
 policy edits remain centered on `appolicy`, which validates and signs

@@ -287,6 +287,58 @@ func TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	}
 }
 
+func TestAttestorComponentPolicyUsesComponentKeyOverride(t *testing.T) {
+	source := types.Address{25}.String()
+	baseDest := types.Address{26}.String()
+	overrideDest := types.Address{27}.String()
+	componentKey := testEd25519ComponentSelector(t, 0xab)
+	otherComponentKey := testEd25519ComponentSelector(t, 0xcd)
+	cfg := routingPolicyConfigForSigningTest(t, fmt.Sprintf(`
+attestation:
+  transfer_policy:
+    schema_version: 1
+    enabled: true
+    routes:
+      - id: base_route
+        networks: [testnet]
+        sources: [%q]
+        assets: ["algo"]
+        destinations: [%q]
+key_overrides:
+  %s:
+    attestation:
+      transfer_policy:
+        schema_version: 1
+        enabled: true
+        routes:
+          - id: override_route
+            networks: [testnet]
+            sources: [%q]
+            assets: ["algo"]
+            destinations: [%q]
+`, source, baseDest, componentKey, source, overrideDest))
+	txn := testnetPaymentTransaction(t, source, overrideDest, 1)
+	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
+		RequestID:     "cmp-attestor-key-override",
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  componentKey,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	})
+	if err != nil {
+		t.Fatalf("PrepareComponentSigning() error = %v", err)
+	}
+	if signErr := (&Service{Policy: cfg}).evaluateAttestorComponentPolicy("default", plan); signErr != nil {
+		t.Fatalf("evaluateAttestorComponentPolicy() error = %v", signErr)
+	}
+
+	plan.ComponentKey = otherComponentKey
+	signErr := (&Service{Policy: cfg}).evaluateAttestorComponentPolicy("default", plan)
+	if signErr == nil || !strings.Contains(signErr.Message, policy.TransferRoutingRouteMissRuleID) {
+		t.Fatalf("evaluateAttestorComponentPolicy(other key) error = %#v, want route miss", signErr)
+	}
+}
+
 func TestSignComponentAttestorRejectsInheritedReviewRouteMissBeforeKeyLoad(t *testing.T) {
 	cfg := routingPolicyConfigForSigningTest(t, `
 transfer_policy:

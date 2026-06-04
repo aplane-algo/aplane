@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/policy"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 func TestTransferGuardGroupsMergeAdjacentRoutesWithSameMovementShape(t *testing.T) {
@@ -110,8 +112,8 @@ func TestBuildPolicyViewModelSummarizesFieldsAndCollections(t *testing.T) {
 				},
 			},
 		},
-		KeyTypeOverrides: map[string]*policy.StoredConfig{
-			"ed25519": {},
+		KeyOverrides: map[string]*policy.StoredConfig{
+			types.Address{9}.String(): {},
 		},
 	}
 
@@ -129,8 +131,9 @@ func TestBuildPolicyViewModelSummarizesFieldsAndCollections(t *testing.T) {
 	if len(model.BlockedDestinations) != 1 || model.BlockedDestinations[0] != "ADDR..." {
 		t.Fatalf("BlockedDestinations = %+v, want ADDR...", model.BlockedDestinations)
 	}
-	if len(model.KeyTypeOverrides) != 1 || model.KeyTypeOverrides[0] != "ed25519" {
-		t.Fatalf("KeyTypeOverrides = %+v, want ed25519", model.KeyTypeOverrides)
+	wantOverride := types.Address{9}.String()
+	if len(model.KeyOverrides) != 1 || model.KeyOverrides[0] != wantOverride {
+		t.Fatalf("KeyOverrides = %+v, want %s", model.KeyOverrides, wantOverride)
 	}
 	if got := model.Fields[0]; got.Key != "reject_foreign_rekey" || got.Value != "false" || got.Source != "explicit" {
 		t.Fatalf("first field = %+v, want explicit reject_foreign_rekey=false", got)

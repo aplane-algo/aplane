@@ -482,7 +482,7 @@ Always Deny > Always Review > Always Approve > Operator Default
 | `review_asa_amounts` | map | Per-network raw unit review thresholds keyed first by network, then by ASA ID |
 | `max_asa_amounts` | map | Per-network raw unit ceilings keyed first by network, then by ASA ID |
 | `transfer_policy` | map | Direct transfer route table for source/asset/destination policy; see [Transfer routing](#transfer-routing) |
-| `key_type_overrides` | map | Per-key-type override blocks; see [Key type overrides](#key-type-overrides) below |
+| `key_overrides` | map | Per-key override blocks; see [Key overrides](#key-overrides) below |
 
 `auto_approve_self_noop_transfer` treats the transaction shape as low risk; a
 0-unit ASA self-transfer can still opt the account into an asset if the account
@@ -779,32 +779,33 @@ thresholds and close/clawback checks still apply.
 For normative implementation details, see
 [ARCH_POLICY.md#transfer-routing](ARCH_POLICY.md#transfer-routing).
 
-### Key Type Overrides
+### Key Overrides
 
-`key_type_overrides` lets the identity relax or tighten specific guards for a
-single key type without changing the identity-wide defaults. It is a map keyed
-by key type (for example `ed25519`, `aplane.falcon1024-whitelist.v1`) with sparse
-`policy.yaml` blocks as values. Fields left unset in an override inherit from
-the identity-wide settings. Overrides do not nest. If an override includes a
-`transfer_policy` block, that block still requires `schema_version` and an
-explicit `enabled: true` or `enabled: false`.
+`key_overrides` lets the identity relax or tighten specific guards for one
+concrete signing key without changing the identity-wide defaults. For normal
+transaction signing, map keys are Algorand auth addresses. For attestor
+component signing, map keys are `a_...` component-key selectors. Fields left
+unset in an override inherit from the identity-wide settings. Overrides do not
+nest. If an override includes a `transfer_policy` block, that block still
+requires `schema_version` and an explicit `enabled: true` or
+`enabled: false`.
 
-When a transaction is linted, the signer picks the override block for the key
-type that will actually sign it and applies that block on top of the identity
-settings; other key types fall back to the identity defaults.
+When a transaction is linted, the signer picks the override block for the auth
+address that will actually sign it and applies that block on top of the
+identity settings; other keys fall back to the identity defaults.
 
 ```yaml
 reject_foreign_rekey: true
 reject_asset_close: false  # identity-wide
 
-key_type_overrides:
-  ed25519:
+key_overrides:
+  SIGNINGAUTHADDRESS...:
     # Generic keys have no LogicSig enforcement, so tighten further.
     reject_asset_close: true
-  aplane.falcon1024-whitelist.v1:
+  OTHERAUTHADDRESS...:
     # Whitelist TEAL already constrains close-to addresses; identity-wide
     # setting of false is fine, but we can still raise the fee ceiling for
-    # this key type if it needs more headroom.
+    # this key if it needs more headroom.
     max_fee_microalgos: 5000
 ```
 

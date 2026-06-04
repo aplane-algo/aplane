@@ -12,7 +12,7 @@ import (
 
 // EvaluateAlwaysReviewRules evaluates policy rules that force operator review
 // after hard rejection passes and before auto-approval or the operator default.
-func EvaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyCfg *policy.Config, authKeyTypes []string, knownAddresses map[string]bool, routingExemptIndices map[int]bool) (ruleID string, review bool) {
+func EvaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passthroughIndices, foreignIndices map[int]bool, policyCfg *policy.Config, authKeys []string, knownAddresses map[string]bool, routingExemptIndices map[int]bool) (ruleID string, review bool) {
 	if policyCfg == nil {
 		return "", false
 	}
@@ -24,8 +24,8 @@ func EvaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passt
 	for i := 0; i < limit; i++ {
 		cfg := policyCfg
 		signerControlled := !passthroughIndices[i] && !foreignIndices[i]
-		if signerControlled && i < len(authKeyTypes) && authKeyTypes[i] != "" {
-			cfg = policyCfg.ForKeyType(authKeyTypes[i])
+		if signerControlled && i < len(authKeys) && authKeys[i] != "" {
+			cfg = policyCfg.ForKey(authKeys[i])
 		}
 		if cfg == nil {
 			continue

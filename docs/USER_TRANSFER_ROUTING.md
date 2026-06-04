@@ -8,7 +8,7 @@ normal adjacent routes with the same network/source/destination shape as a
 single transfer guard with an asset threshold table.
 
 This is the transfer-routing deep dive. For the broader signer policy model,
-editing workflow, top-level fields, and key type override overview, start with
+editing workflow, top-level fields, and key override overview, start with
 [USER_POLICY.md](USER_POLICY.md).
 
 Routing is configured in the identity policy file:
@@ -219,7 +219,7 @@ If `enabled:false`, routing sits out and current non-routing policy behavior is
 unchanged.
 
 When routing is enabled, `on_no_route` must be explicit unless the block is a
-key type override inheriting an identity-wide value.
+key override inheriting an identity-wide value.
 
 ## Schema Walkthrough
 
@@ -891,9 +891,11 @@ routing had no opinion. Attempts to send to X, Y, or Z are still Always Deny.
 Close-out and clawback misses still use `close_on_no_route` and
 `clawback_on_no_route`.
 
-## Key Type Overrides
+## Key Overrides
 
-`key_type_overrides` can provide sparse routing policy for a key type:
+`key_overrides` can provide sparse routing policy for one concrete signing key.
+Use an Algorand auth address for normal transaction signing, or an `a_...`
+component selector for attestor component signing:
 
 ```yaml
 transfer_policy:
@@ -914,8 +916,8 @@ transfer_policy:
       assets: ["algo"]
       destinations: ["@ops"]
 
-key_type_overrides:
-  aplane.falcon1024-whitelist.v1:
+key_overrides:
+  SIGNINGAUTHADDRESS...:
     transfer_policy:
       schema_version: 1
       enabled: true
@@ -940,10 +942,12 @@ Inheritance rules:
 - override set names replace inherited set names with the same name,
 - `routes`, when present in the override, replaces the inherited route list,
 - `routes`, when absent, inherits the identity route list,
-- nested `key_type_overrides` are rejected.
+- nested `key_overrides` are rejected.
 
-During signing, the effective override is selected by the auth address key type
-that will actually sign, not necessarily by the transaction sender.
+During normal signing, the effective override is selected by the auth address
+that will actually sign, not necessarily by the transaction sender. During
+attestor component signing, it is selected by the `component_key` selector in
+the `/sign/component` request.
 
 ## Validation Rules
 
@@ -1097,7 +1101,7 @@ If the hash cannot be resolved, routing emits
 - `review` forces review,
 - `operator_default` produces no routing verdict.
 
-### A Key Type Override Removed My Base Routes
+### A Key Override Removed My Base Routes
 
 If an override contains a `routes` field, that list replaces inherited routes
-for that key type. Omit `routes` to inherit the identity-wide route list.
+for that key. Omit `routes` to inherit the identity-wide route list.

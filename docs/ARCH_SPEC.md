@@ -452,12 +452,13 @@ backed by a signer-owned snapshot, can hot-replace the whole policy from a YAML
 file through the signer, and retains a limited policy settings panel for scalar
 policy toggles, max fee, and transfer guard thresholds. It does not expose the
 full `appolicy`-style guided editor or YAML-only fields such as
-`key_type_overrides`.
+`key_overrides`.
 
-`policy.yaml` may also contain YAML-only `key_type_overrides`; during signing,
-the effective policy is selected by signing auth key type, not by transaction
-sender, so rekeyed accounts use the policy override for the auth address key
-type. Network-scoped policy derives transaction network identity from
+`policy.yaml` may also contain YAML-only `key_overrides`; during normal
+signing, the effective policy is selected by signing auth address, not by
+transaction sender, so rekeyed accounts use the policy override for the auth
+address. Attestor component signing selects by the `a_...` component selector.
+Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
 

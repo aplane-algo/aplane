@@ -178,7 +178,7 @@ attestation:
 ```
 
 The accepted top-level keys are the common-field set, `client_signing`,
-`attestation`, `key_type_overrides`, and the legacy client-signing-only fields
+`attestation`, `key_overrides`, and the legacy client-signing-only fields
 listed below. Unknown top-level keys fail validation.
 
 Bucket semantics:
@@ -284,7 +284,7 @@ If a matching review threshold is also configured, the deny threshold must be
 greater than or equal to the review threshold. This invariant is enforced at
 config apply time: a `policy.yaml` that violates it fails to load.
 With role domains, the invariant is checked on each effective role policy after
-common, role-specific, and key-type override resolution; it is not a raw
+common, role-specific, and key override resolution; it is not a raw
 cross-block comparison between unrelated domains.
 
 `transfer_policy` is a YAML-driven route table for direct `pay` and `axfer`
@@ -493,7 +493,7 @@ Routing is disabled unless `transfer_policy.enabled:true`. If a
 `enabled: true` or `enabled: false` are required. Unknown fields under
 `transfer_policy` or route entries fail validation. For top-level and
 `client_signing.transfer_policy` blocks, `on_no_route` must be explicit when
-routing is enabled unless the block is a key type override that inherits an
+routing is enabled unless the block is a key override that inherits an
 identity-wide `on_no_route` value. `attestation.transfer_policy` omits that
 choice and treats route misses as `reject`. For top-level and
 `client_signing.transfer_policy` blocks, `close_on_no_route` and
@@ -547,7 +547,7 @@ shape because ASA IDs are network-local.
 
 `blocked_destinations` is a flat list of concrete Algorand addresses. It does
 not accept `self`, `*`, or `@address_set` terms. The list is global in v1:
-it is not source-scoped, asset-scoped, or network-scoped. A key type override
+it is not source-scoped, asset-scoped, or network-scoped. A key override
 inherits the identity-wide blocked list and may add addresses, but it cannot
 remove identity-wide blocked destinations.
 
@@ -631,7 +631,7 @@ self no-op auto-approval predicate still apply according to their own rules.
 For attestation, the self no-op predicate never fires because it requires
 signer-owned address context.
 
-Key type override routing blocks are sparse overlays, except `enabled` must be
+Key override routing blocks are sparse overlays, except `enabled` must be
 explicit in every `transfer_policy` block. Unset `on_no_route`,
 `close_on_no_route`, `clawback_on_no_route`, `blocked_destinations`,
 `address_sets`, and `asset_sets` inherit from the
@@ -639,7 +639,7 @@ identity-wide effective policy. Override `blocked_destinations` are unioned with
 the inherited blocked list. Override address and asset sets add to or replace
 inherited set names. Routes inherit unless the override explicitly provides a
 `routes` field, in which case the override's route list replaces the inherited
-route list for that key type.
+route list for that key.
 
 Routing rule IDs:
 
@@ -677,12 +677,18 @@ inherits route-miss behavior that is not deterministic `reject`, is asked to
 attest a target with no supported transfer movement, or sees a non-zero
 `RekeyTo`.
 
-## Key Type Overrides
+## Key Overrides
 
-`policy.yaml` may contain `key_type_overrides`, a map from signing key type to
-sparse policy blocks. During signing, the effective policy is selected by the
-auth-address key type, not by transaction sender. This matters for rekeyed
-accounts: the key type that will actually sign controls the override.
+`policy.yaml` may contain `key_overrides`, a map from concrete signing
+authority selector to sparse policy blocks. Client-signing selectors are
+Algorand auth addresses. Attestor component selectors are `a_...` component
+key selectors.
+
+During normal transaction signing, the effective policy is selected by the
+`auth_address` key that will sign, not by transaction sender. This matters for
+rekeyed accounts: the auth address controls the override. During attestor
+component signing, the effective policy is selected by the request
+`component_key` selector.
 
 At the stored-policy level, overrides are sparse: unset fields inherit from the
 identity-wide policy. Nested overrides are rejected. If an override includes a
@@ -690,23 +696,11 @@ identity-wide policy. Nested overrides are rejected. If an override includes a
 explicit `enabled`; the remaining transfer routing fields use the overlay rules
 described in [Transfer Routing](#transfer-routing).
 
-For attestor component signing, the auth key is the attestor component key
-type (for example `aplane.attestor-ed25519.v1` or
-`aplane.attestor-falcon1024.v1`), not an Algorand account key type. Override
-selection rules:
-
-- if `key_type_overrides` contains a key equal to the attestor component key
-  type, that override applies to the attestor request,
-- otherwise the identity-wide effective policy applies, with `attestation:` /
-  common resolution per [Role Domains](#role-domains).
-
-Override blocks for an attestor component key type must satisfy the same
-attestation validation as the identity-wide `attestation:` block (no
-review-producing fields). Overrides for spending key types are unchanged
-client-signing behavior. An override that mixes both is a configuration
-error; the loader rejects it. For example, an override for a spending key type
-must not contain `attestation.reject_rekey`, and an override for an attestor
-component key type must not contain client-signing review fields.
+If no matching selector exists, the identity-wide effective policy applies,
+with `attestation:` / common resolution per [Role Domains](#role-domains).
+Override blocks for attestor component selectors should put attestor policy
+under `attestation:` and must satisfy the same attestation validation as the
+identity-wide `attestation:` block: no review-producing route outcomes.
 
 ## Transaction Scope
 

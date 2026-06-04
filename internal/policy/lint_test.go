@@ -154,18 +154,20 @@ func TestStoredConfigApplyRejectsReviewThresholdAboveDenyThreshold(t *testing.T)
 	}
 }
 
-func TestStoredConfigApplyKeyTypeOverridesInheritBase(t *testing.T) {
+func TestStoredConfigApplyKeyOverridesInheritBase(t *testing.T) {
 	trueVal := true
 	falseVal := false
+	whitelistKey := types.Address{1}.String()
+	strictKey := types.Address{2}.String()
 	sp := &StoredConfig{
 		RejectCloseRemainder: &falseVal,
-		KeyTypeOverrides: map[string]*StoredConfig{
-			"aplane.falcon1024-whitelist.v1": {
+		KeyOverrides: map[string]*StoredConfig{
+			whitelistKey: {
 				// Override only RejectForeignRekey; inherit the rest from the identity base.
 				RejectForeignRekey: &falseVal,
 			},
-			"ed25519": {
-				// Tighter guard for a general-purpose key type.
+			strictKey: {
+				// Tighter guard for a specific signing key.
 				RejectCloseRemainder: &trueVal,
 			},
 		},
@@ -175,9 +177,9 @@ func TestStoredConfigApplyKeyTypeOverridesInheritBase(t *testing.T) {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
-	whitelist := cfg.ForKeyType("aplane.falcon1024-whitelist.v1")
+	whitelist := cfg.ForKey(whitelistKey)
 	if whitelist == cfg {
-		t.Fatal("ForKeyType did not return the override config")
+		t.Fatal("ForKey did not return the override config")
 	}
 	if whitelist.RejectForeignRekey {
 		t.Error("whitelist override RejectForeignRekey = true, want false (override applied)")
@@ -186,33 +188,57 @@ func TestStoredConfigApplyKeyTypeOverridesInheritBase(t *testing.T) {
 		t.Error("whitelist override RejectCloseRemainder = true, want false (inherited from identity base)")
 	}
 
-	strict := cfg.ForKeyType("ed25519")
+	strict := cfg.ForKey(strictKey)
 	if !strict.RejectForeignRekey {
-		t.Error("ed25519 override RejectForeignRekey = false, want true (inherited identity default)")
+		t.Error("strict override RejectForeignRekey = false, want true (inherited identity default)")
 	}
 	if !strict.RejectCloseRemainder {
-		t.Error("ed25519 override RejectCloseRemainder = false, want true (override applied)")
+		t.Error("strict override RejectCloseRemainder = false, want true (override applied)")
 	}
 
-	if got := cfg.ForKeyType("unknown-key-type"); got != cfg {
-		t.Error("ForKeyType for unknown type should return the base config")
+	if got := cfg.ForKey(types.Address{3}.String()); got != cfg {
+		t.Error("ForKey for unknown key should return the base config")
 	}
 }
 
-func TestStoredConfigApplyRejectsNestedKeyTypeOverrides(t *testing.T) {
+func TestStoredConfigApplyRejectsNestedKeyOverrides(t *testing.T) {
 	trueVal := true
+	outerKey := types.Address{1}.String()
+	innerKey := types.Address{2}.String()
 	sp := &StoredConfig{
-		KeyTypeOverrides: map[string]*StoredConfig{
-			"aplane.falcon1024-whitelist.v1": {
+		KeyOverrides: map[string]*StoredConfig{
+			outerKey: {
 				RejectForeignRekey: &trueVal,
-				KeyTypeOverrides: map[string]*StoredConfig{
-					"nested": {RejectForeignRekey: &trueVal},
+				KeyOverrides: map[string]*StoredConfig{
+					innerKey: {RejectForeignRekey: &trueVal},
 				},
 			},
 		},
 	}
 	if _, err := sp.Apply(DefaultConfig()); err == nil {
-		t.Fatal("Apply() error = nil, want error for nested key_type_overrides")
+		t.Fatal("Apply() error = nil, want error for nested key_overrides")
+	}
+}
+
+func TestParseStoredConfigRejectsOldKeyTypeOverridesField(t *testing.T) {
+	if _, err := ParseStoredConfig([]byte(`
+key_type_overrides:
+  ed25519: {}
+`)); err == nil {
+		t.Fatal("ParseStoredConfig() error = nil, want unknown key_type_overrides field")
+	}
+}
+
+func TestStoredConfigApplyRejectsKeyTypeAsKeyOverrideSelector(t *testing.T) {
+	stored, err := ParseStoredConfig([]byte(`
+key_overrides:
+  ed25519: {}
+`))
+	if err != nil {
+		t.Fatalf("ParseStoredConfig() error = %v", err)
+	}
+	if _, err := stored.Apply(DefaultConfig()); err == nil {
+		t.Fatal("Apply() error = nil, want invalid key override selector")
 	}
 }
 

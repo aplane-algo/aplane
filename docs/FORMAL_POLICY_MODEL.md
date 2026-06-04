@@ -11,7 +11,7 @@
 Normative inputs:
 
 - [ARCH_POLICY.md](ARCH_POLICY.md): policy storage, verdict precedence, snapshot
-  semantics, rule inventory, transfer routing, key type overrides, and
+  semantics, rule inventory, transfer routing, key overrides, and
   transaction scope.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing approval and
   policy contract.
@@ -64,7 +64,7 @@ Policy is separate from:
 request. It includes:
 
 - identity-wide policy fields,
-- YAML-only `key_type_overrides`,
+- YAML-only `key_overrides`,
 - transfer routing configuration,
 - policy defaults for absent fields,
 - the identity's operator default input `user_auto_approve`, even though that
@@ -85,7 +85,7 @@ reload failure keeps the previous in-memory snapshot active.
 - signer-controlled slots,
 - passthrough and foreign slots as context,
 - server-added dummy effects,
-- auth key types for signer-controlled slots.
+- auth addresses for signer-controlled slots.
 
 Policy does not evaluate caller drafts that were changed by planning.
 
@@ -230,16 +230,16 @@ matched. It is controlled by `user_auto_approve` in
 ## Effective Policy Selection
 
 For signer-controlled slots, the effective policy may be modified by
-`key_type_overrides`.
+`key_overrides`.
 
 Rules:
 
-1. Overrides are keyed by signing auth key type.
-2. The key type is selected from the auth address that will sign, not from the
+1. Client-signing overrides are keyed by the signing auth address.
+2. The auth address is selected from the key that will sign, not from the
    transaction sender.
-3. This matters for rekeyed accounts: the signing key's key type controls the
-   override.
-4. Missing key-type metadata for a signer-controlled slot fails closed before a
+3. This matters for rekeyed accounts: the auth address controls the override.
+4. Attestor component overrides are keyed by the `a_...` component selector.
+5. Missing key-type metadata for a signer-controlled slot still fails closed before a
    policy decision can silently fall back to the wrong override.
 5. Override fields are sparse overlays over the identity-wide policy; nested
    overrides are rejected.
@@ -386,14 +386,14 @@ If no later phase matches and `user_auto_approve:true`, the request can still
 be auto-approved via Operator Default. Routing does not *grant* auto-approval,
 but it does not *block* it either.
 
-### P10: Auth Key Type Selects Overrides
+### P10: Auth Key Selects Overrides
 
-For signer-controlled slots, key type overrides are selected by the signing auth
-key type.
+For signer-controlled slots, key overrides are selected by the signing auth
+address.
 
 ```text
 EffectivePolicyForSlot(slot) =
-  Overlay(identity_policy, key_type_overrides[AuthKeyType(slot)])
+  Overlay(identity_policy, key_overrides[AuthAddress(slot)])
 ```
 
 ## Assumptions
@@ -451,7 +451,7 @@ High-value test anchors:
 - Operator Default is reached only when no policy verdict matched,
 - passthrough and foreign slots are skipped by transaction-level policy,
 - routing matches do not auto-approve,
-- key type overrides use auth key type rather than transaction sender,
+- key overrides use auth address rather than transaction sender,
 - network-scoped thresholds use `GenesisHash`, not `GenesisID`.
 
 ## Open Questions

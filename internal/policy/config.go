@@ -8,19 +8,23 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"gopkg.in/yaml.v3"
 )
 
 // Config is the effective signer-side policy for one identity.
 //
-// KeyTypeOverrides maps key type (e.g. "aplane.falcon1024-whitelist.v1") to a fully
-// resolved Config that should be used when a transaction is signed by a key
-// of that type. Overrides inherit from the base config for any field they do
-// not set. Nested overrides are not supported (KeyTypeOverrides on an override
-// value is always nil).
+// KeyOverrides maps a concrete signing authority key to a fully resolved Config
+// that should be used when that key signs. Signing account overrides are keyed
+// by Algorand auth address. Attestor component overrides are keyed by a_ component
+// selector. Overrides inherit from the base config for any field they do not
+// set. Nested overrides are not supported (KeyOverrides on an override value is
+// always nil).
 type Config struct {
 	RejectForeignRekey          bool
 	RejectRekey                 bool
@@ -35,7 +39,7 @@ type Config struct {
 	ReviewASAAmounts            map[string]map[uint64]uint64
 	MaxASAAmounts               map[string]map[uint64]uint64
 	TransferPolicy              *TransferPolicy
-	KeyTypeOverrides            map[string]*Config
+	KeyOverrides                map[string]*Config
 	Attestation                 *Config
 	GenesisHashResolver         apconfig.GenesisHashNetworkResolver
 	FormatASAAmount             func(network string, assetID uint64, raw uint64) (string, bool)
@@ -43,9 +47,9 @@ type Config struct {
 
 // StoredConfig is the persisted YAML representation for identity-scoped policy.
 // Nil booleans mean "use default". Zero threshold values mean "no limit".
-// KeyTypeOverrides is a map from key type to a sparse StoredConfig that is
-// layered on top of the identity-wide settings when the signing key has that
-// type. Overrides never recurse.
+// KeyOverrides is a map from concrete signing authority key to a sparse
+// StoredConfig that is layered on top of the identity-wide settings when that
+// key signs. Overrides never recurse.
 type StoredConfig struct {
 	RejectRekey                 *bool                        `yaml:"-"`
 	RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
@@ -62,12 +66,12 @@ type StoredConfig struct {
 	TransferPolicy              *StoredTransferPolicy        `yaml:"transfer_policy,omitempty"`
 	ClientSigning               *StoredRoleConfig            `yaml:"client_signing,omitempty"`
 	Attestation                 *StoredRoleConfig            `yaml:"attestation,omitempty"`
-	KeyTypeOverrides            map[string]*StoredConfig     `yaml:"key_type_overrides,omitempty"`
+	KeyOverrides                map[string]*StoredConfig     `yaml:"key_overrides,omitempty"`
 }
 
 // StoredRoleConfig is a sparse role-domain policy block nested under
 // client_signing: or attestation:. It intentionally does not recurse into role
-// blocks or key_type_overrides.
+// blocks or key_overrides.
 type StoredRoleConfig struct {
 	RejectRekey                 *bool                        `yaml:"reject_rekey,omitempty"`
 	RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
@@ -105,10 +109,10 @@ func (c *StoredConfig) Clone() *StoredConfig {
 	cp.TransferPolicy = c.TransferPolicy.Clone()
 	cp.ClientSigning = c.ClientSigning.Clone()
 	cp.Attestation = c.Attestation.Clone()
-	if c.KeyTypeOverrides != nil {
-		cp.KeyTypeOverrides = make(map[string]*StoredConfig, len(c.KeyTypeOverrides))
-		for keyType, override := range c.KeyTypeOverrides {
-			cp.KeyTypeOverrides[keyType] = override.Clone()
+	if c.KeyOverrides != nil {
+		cp.KeyOverrides = make(map[string]*StoredConfig, len(c.KeyOverrides))
+		for key, override := range c.KeyOverrides {
+			cp.KeyOverrides[key] = override.Clone()
 		}
 	}
 	return &cp
@@ -154,7 +158,7 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 		"transfer_policy":                 {},
 		"client_signing":                  {},
 		"attestation":                     {},
-		"key_type_overrides":              {},
+		"key_overrides":                   {},
 	}
 	for i := 0; i < len(value.Content); i += 2 {
 		key := value.Content[i].Value
@@ -177,7 +181,7 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 		TransferPolicy              *StoredTransferPolicy        `yaml:"transfer_policy,omitempty"`
 		ClientSigning               *StoredRoleConfig            `yaml:"client_signing,omitempty"`
 		Attestation                 *StoredRoleConfig            `yaml:"attestation,omitempty"`
-		KeyTypeOverrides            map[string]*StoredConfig     `yaml:"key_type_overrides,omitempty"`
+		KeyOverrides                map[string]*StoredConfig     `yaml:"key_overrides,omitempty"`
 	}
 	var raw rawConfig
 	if err := value.Decode(&raw); err != nil {
@@ -197,7 +201,7 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 	c.TransferPolicy = raw.TransferPolicy
 	c.ClientSigning = raw.ClientSigning
 	c.Attestation = raw.Attestation
-	c.KeyTypeOverrides = raw.KeyTypeOverrides
+	c.KeyOverrides = raw.KeyOverrides
 	if err := validateRoleConfig("client_signing", c.ClientSigning); err != nil {
 		return err
 	}
@@ -352,10 +356,10 @@ func (c *Config) Clone() *Config {
 	if c.ReviewAlgoPayments != nil {
 		cp.ReviewAlgoPayments = cloneUintMap(c.ReviewAlgoPayments)
 	}
-	if c.KeyTypeOverrides != nil {
-		cp.KeyTypeOverrides = make(map[string]*Config, len(c.KeyTypeOverrides))
-		for kt, override := range c.KeyTypeOverrides {
-			cp.KeyTypeOverrides[kt] = override.Clone()
+	if c.KeyOverrides != nil {
+		cp.KeyOverrides = make(map[string]*Config, len(c.KeyOverrides))
+		for key, override := range c.KeyOverrides {
+			cp.KeyOverrides[key] = override.Clone()
 		}
 	}
 	if c.TransferPolicy != nil {
@@ -370,16 +374,41 @@ func (c *Config) Clone() *Config {
 	return &cp
 }
 
-// ForKeyType returns the effective config for the given key type. If no
-// override is defined for the key type, the base config is returned.
-func (c *Config) ForKeyType(keyType string) *Config {
-	if c == nil || keyType == "" {
+// ForKey returns the effective config for the given concrete signing authority
+// key. If no override is defined for the key, the base config is returned.
+func (c *Config) ForKey(key string) *Config {
+	if c == nil || key == "" {
 		return c
 	}
-	if override, ok := c.KeyTypeOverrides[keyType]; ok {
+	lookupKey := strings.TrimSpace(key)
+	if canonical, err := NormalizeKeyOverrideKey(lookupKey); err == nil {
+		lookupKey = canonical
+	}
+	if override, ok := c.KeyOverrides[lookupKey]; ok {
 		return override
 	}
 	return c
+}
+
+// NormalizeKeyOverrideKey validates and canonicalizes a policy key_overrides
+// selector. Signing-account selectors are Algorand addresses. Attestor
+// component-key selectors are a_ component selectors.
+func NormalizeKeyOverrideKey(key string) (string, error) {
+	raw := strings.TrimSpace(key)
+	if raw == "" {
+		return "", fmt.Errorf("key override selector is required")
+	}
+	if selector, err := keytypes.NormalizeComponentKeySelector(raw); err == nil {
+		return selector, nil
+	}
+	if strings.HasPrefix(raw, keytypes.ComponentKeySelectorPrefix) {
+		return "", fmt.Errorf("invalid component key selector %q", raw)
+	}
+	addr, err := types.DecodeAddress(strings.ToUpper(raw))
+	if err != nil {
+		return "", fmt.Errorf("key override selector must be an Algorand address or component key selector")
+	}
+	return addr.String(), nil
 }
 
 func cloneUintMap(in map[string]uint64) map[string]uint64 {
@@ -662,34 +691,41 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		effective = clientSigningCfg
 	}
 
-	if len(c.KeyTypeOverrides) > 0 {
-		// Use a detached copy of the resolved base as the "defaults" for each
-		// override so overrides only see their own fields plus the identity
-		// base, never other overrides.
-		overrideBase := effective.Clone()
-		overrideBase.KeyTypeOverrides = nil
-		effective.KeyTypeOverrides = make(map[string]*Config, len(c.KeyTypeOverrides))
-		for keyType, overrideStored := range c.KeyTypeOverrides {
-			if overrideStored == nil {
-				continue
-			}
-			if len(overrideStored.KeyTypeOverrides) > 0 {
-				return nil, fmt.Errorf("key_type_overrides for %q: nested key_type_overrides are not supported", keyType)
-			}
-			overrideCfg, err := overrideStored.Apply(overrideBase)
-			if err != nil {
-				return nil, fmt.Errorf("key_type_overrides for %q: %w", keyType, err)
-			}
-			overrideCfg.KeyTypeOverrides = nil
-			effective.KeyTypeOverrides[keyType] = overrideCfg
-		}
-	}
-
 	attestationCfg, err := c.applyAttestation(effective)
 	if err != nil {
 		return nil, err
 	}
 	effective.Attestation = attestationCfg
+
+	if len(c.KeyOverrides) > 0 {
+		// Use a detached copy of the resolved base as the "defaults" for each
+		// override so overrides only see their own fields plus the identity
+		// base, never other overrides.
+		overrideBase := effective.Clone()
+		overrideBase.KeyOverrides = nil
+		effective.KeyOverrides = make(map[string]*Config, len(c.KeyOverrides))
+		for key, overrideStored := range c.KeyOverrides {
+			if overrideStored == nil {
+				continue
+			}
+			canonicalKey, normalizeErr := NormalizeKeyOverrideKey(key)
+			if normalizeErr != nil {
+				return nil, fmt.Errorf("key_overrides for %q: %w", key, normalizeErr)
+			}
+			if _, exists := effective.KeyOverrides[canonicalKey]; exists {
+				return nil, fmt.Errorf("key_overrides for %q: duplicate canonical selector %q", key, canonicalKey)
+			}
+			if len(overrideStored.KeyOverrides) > 0 {
+				return nil, fmt.Errorf("key_overrides for %q: nested key_overrides are not supported", canonicalKey)
+			}
+			overrideCfg, err := overrideStored.Apply(overrideBase)
+			if err != nil {
+				return nil, fmt.Errorf("key_overrides for %q: %w", canonicalKey, err)
+			}
+			overrideCfg.KeyOverrides = nil
+			effective.KeyOverrides[canonicalKey] = overrideCfg
+		}
+	}
 
 	if err := ValidateTransferGuards(effective); err != nil {
 		return nil, err
@@ -700,11 +736,19 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 
 func (c *StoredConfig) applyAttestation(clientEffective *Config) (*Config, error) {
 	if c == nil || c.Attestation == nil {
+		if clientEffective != nil && clientEffective.Attestation != nil {
+			return clientEffective.Attestation.Clone(), nil
+		}
 		return nil, nil
 	}
-	base := DefaultConfigWithGenesisHashResolver(clientEffective.GenesisHashResolver)
-	base.FormatASAAmount = clientEffective.FormatASAAmount
-	base.RejectRekey = true
+	var base *Config
+	if clientEffective.Attestation != nil {
+		base = clientEffective.Attestation.Clone()
+	} else {
+		base = DefaultConfigWithGenesisHashResolver(clientEffective.GenesisHashResolver)
+		base.FormatASAAmount = clientEffective.FormatASAAmount
+		base.RejectRekey = true
+	}
 	common := c.commonStoredConfig()
 	cfg, err := common.Apply(base)
 	if err != nil {
@@ -718,7 +762,7 @@ func (c *StoredConfig) applyAttestation(clientEffective *Config) (*Config, error
 	if err != nil {
 		return nil, fmt.Errorf("attestation: %w", err)
 	}
-	cfg.KeyTypeOverrides = nil
+	cfg.KeyOverrides = nil
 	cfg.Attestation = nil
 	return cfg, nil
 }

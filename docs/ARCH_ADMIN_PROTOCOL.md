@@ -260,7 +260,7 @@ unlock/reload after passphrase verification through
 - `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, `mode`, `ssh_enabled`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
-- `policy_settings`: `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, `reject_clawback`, `always_review_warnings`, `auto_approve_self_noop_transfer`, `max_fee_microalgos`, `review_algo_payments`, `max_algo_payments`, `policy_networks`, `review_asa_amounts`, `max_asa_amounts`, optional `policy_asa_metadata`; compatibility fields `max_asa_amounts_mainnet`, `max_asa_amounts_testnet`, and `max_asa_amounts_betanet` may also be present; `key_type_overrides` is not projected over admin IPC
+- `policy_settings`: `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, `reject_clawback`, `always_review_warnings`, `auto_approve_self_noop_transfer`, `max_fee_microalgos`, `review_algo_payments`, `max_algo_payments`, `policy_networks`, `review_asa_amounts`, `max_asa_amounts`, optional `policy_asa_metadata`; compatibility fields `max_asa_amounts_mainnet`, `max_asa_amounts_testnet`, and `max_asa_amounts_betanet` may also be present; `key_overrides` is not projected over admin IPC
 - `get_policy_snapshot`: no payload; requests the active signer-owned stored policy projection for read-only display
 - `policy_snapshot`: `success`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
 - `replace_policy`: `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of `policy.yaml` with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
@@ -309,15 +309,15 @@ Scalar threshold update semantics:
 
 Key-type override semantics:
 
-- `policy.yaml` may include `key_type_overrides`, a map from signing key type to sparse policy blocks
+- `policy.yaml` may include `key_overrides`, a map from concrete signing key selector to sparse policy blocks
 - override blocks inherit unset fields from the identity-wide effective policy
-- nested `key_type_overrides` are rejected at policy load
-- the signer selects an override by the signing auth key type, not by transaction sender, so rekeyed accounts use the key type of their auth address
-- if a signable auth address has key material but no key-type metadata, planning fails closed
-- overrides are YAML-only; admin IPC/TUI settings do not expose or mutate `key_type_overrides`
-- `get_policy_snapshot` may expose key-type overrides read-only as part of the canonical YAML snapshot
-- `replace_policy` may replace YAML that contains `key_type_overrides`; it validates the complete policy before writing and applies immediately on success
-- `policy.yaml` is verified against `policy.yaml.hmac` and loaded into the bound identity runtime on unlock/reload; policy-mutation admin IPC requires an unlocked identity and writes both files; direct `key_type_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
+- nested `key_overrides` are rejected at policy load
+- normal signing selects an override by signing auth address, not by transaction sender, so rekeyed accounts use the auth address
+- attestor component signing selects an override by the request `component_key` selector
+- overrides are YAML-only; admin IPC/TUI settings do not expose or mutate `key_overrides`
+- `get_policy_snapshot` may expose key overrides read-only as part of the canonical YAML snapshot
+- `replace_policy` may replace YAML that contains `key_overrides`; it validates the complete policy before writing and applies immediately on success
+- `policy.yaml` is verified against `policy.yaml.hmac` and loaded into the bound identity runtime on unlock/reload; policy-mutation admin IPC requires an unlocked identity and writes both files; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
 
 Whole-policy replacement:
 

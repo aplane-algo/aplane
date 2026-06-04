@@ -783,9 +783,10 @@ transfer_policy:
 	}
 }
 
-func TestStoredTransferPolicyKeyTypeOverrideInheritsRoutesWhenAbsent(t *testing.T) {
+func TestStoredTransferPolicyKeyOverrideInheritsRoutesWhenAbsent(t *testing.T) {
 	baseDest := types.Address{1}.String()
 	overrideBlocked := types.Address{2}.String()
+	overrideKey := types.Address{10}.String()
 	stored := parsePolicyYAML(t, `
 transfer_policy:
   schema_version: 1
@@ -799,8 +800,8 @@ transfer_policy:
       sources: ["*"]
       assets: ["algo"]
       destinations: ["`+baseDest+`"]
-key_type_overrides:
-  ed25519:
+key_overrides:
+  `+overrideKey+`:
     transfer_policy:
       schema_version: 1
       enabled: true
@@ -811,7 +812,7 @@ key_type_overrides:
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	override := cfg.ForKeyType("ed25519").TransferPolicy
+	override := cfg.ForKey(overrideKey).TransferPolicy
 	if override == nil {
 		t.Fatal("override TransferPolicy = nil")
 	}
@@ -832,12 +833,13 @@ key_type_overrides:
 	}
 }
 
-func TestStoredTransferPolicyKeyTypeOverrideMergesSetsAndReplacesRoutes(t *testing.T) {
+func TestStoredTransferPolicyKeyOverrideMergesSetsAndReplacesRoutes(t *testing.T) {
 	treasury := types.Address{1}.String()
 	ops := types.Address{2}.String()
 	vendors := types.Address{3}.String()
 	baseBlocked := types.Address{4}.String()
 	overrideBlocked := types.Address{5}.String()
+	overrideKey := types.Address{10}.String()
 	stored := parsePolicyYAML(t, `
 transfer_policy:
   schema_version: 1
@@ -856,8 +858,8 @@ transfer_policy:
       sources: ["@treasury"]
       assets: ["algo"]
       destinations: ["@ops"]
-key_type_overrides:
-  ed25519:
+key_overrides:
+  `+overrideKey+`:
     transfer_policy:
       schema_version: 1
       enabled: true
@@ -887,7 +889,7 @@ key_type_overrides:
 	if _, ok := base.BlockedDestinations[types.Address{5}]; ok {
 		t.Fatal("base blocked destinations unexpectedly include override entry")
 	}
-	override := cfg.ForKeyType("ed25519").TransferPolicy
+	override := cfg.ForKey(overrideKey).TransferPolicy
 	if override == nil {
 		t.Fatal("override TransferPolicy = nil")
 	}
@@ -908,8 +910,9 @@ key_type_overrides:
 	}
 }
 
-func TestStoredTransferPolicyKeyTypeOverrideEmptyRoutesRoundTrips(t *testing.T) {
+func TestStoredTransferPolicyKeyOverrideEmptyRoutesRoundTrips(t *testing.T) {
 	baseDest := types.Address{1}.String()
+	overrideKey := types.Address{10}.String()
 	stored := parsePolicyYAML(t, `
 transfer_policy:
   schema_version: 1
@@ -921,8 +924,8 @@ transfer_policy:
       sources: ["*"]
       assets: ["algo"]
       destinations: ["`+baseDest+`"]
-key_type_overrides:
-  ed25519:
+key_overrides:
+  `+overrideKey+`:
     transfer_policy:
       schema_version: 1
       enabled: true
@@ -934,7 +937,7 @@ key_type_overrides:
 		if err != nil {
 			t.Fatalf("Apply() error = %v", err)
 		}
-		override := cfg.ForKeyType("ed25519").TransferPolicy
+		override := cfg.ForKey(overrideKey).TransferPolicy
 		if override == nil {
 			t.Fatal("override TransferPolicy = nil")
 		}

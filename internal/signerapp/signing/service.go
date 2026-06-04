@@ -189,12 +189,13 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID strin
 
 	knownAddresses := s.knownAddresses(identityID, plan)
 	routingExemptIndices := routingExemptIndicesForPlan(plan, allTxns)
-	if err := EvaluateAutoRejectionRules(allTxns, len(req.Requests), plan.PassthroughIndices, plan.ForeignIndices, isGroup, s.Policy, plan.AuthKeyTypes, knownAddresses, routingExemptIndices, console); err != nil {
+	authKeys := authPolicyKeysFromRequest(req, plan)
+	if err := EvaluateAutoRejectionRules(allTxns, len(req.Requests), plan.PassthroughIndices, plan.ForeignIndices, isGroup, s.Policy, authKeys, knownAddresses, routingExemptIndices, console); err != nil {
 		s.logPolicyRejections(identityID, req, plan, txns, err.Error())
 		return nil, err
 	}
 
-	alwaysReviewRuleID, alwaysReview := EvaluateAlwaysReviewRules(txns, len(req.Requests), plan.PassthroughIndices, plan.ForeignIndices, s.Policy, plan.AuthKeyTypes, knownAddresses, routingExemptIndices)
+	alwaysReviewRuleID, alwaysReview := EvaluateAlwaysReviewRules(txns, len(req.Requests), plan.PassthroughIndices, plan.ForeignIndices, s.Policy, authKeys, knownAddresses, routingExemptIndices)
 	if simulation {
 		console.Println("[SIMULATE] Auto-approved inside Signer; signed bytes will not be returned")
 		console.Sync()
@@ -255,6 +256,20 @@ func (s *Service) knownAddresses(identityID string, plan *PlanResult) map[string
 		return nil
 	}
 	return s.Approval.KnownAddresses(identityID)
+}
+
+func authPolicyKeysFromRequest(req signerapi.GroupSignRequest, plan *PlanResult) []string {
+	if len(req.Requests) == 0 {
+		return nil
+	}
+	out := make([]string, len(req.Requests))
+	for i, txReq := range req.Requests {
+		if plan != nil && (plan.PassthroughIndices[i] || plan.ForeignIndices[i]) {
+			continue
+		}
+		out[i] = txReq.AuthAddress
+	}
+	return out
 }
 
 func (s *Service) beforeExecute() (func(), *ServiceError) {

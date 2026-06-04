@@ -13,11 +13,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/policy"
 )
 
-func TestEvaluateAlwaysReviewRulesUsesKeyTypeOverride(t *testing.T) {
+func TestEvaluateAlwaysReviewRulesUsesKeyOverride(t *testing.T) {
 	enabled := true
+	authKey := types.Address{9}.String()
 	cfg, err := (&policy.StoredConfig{
-		KeyTypeOverrides: map[string]*policy.StoredConfig{
-			"ed25519": {
+		KeyOverrides: map[string]*policy.StoredConfig{
+			authKey: {
 				AlwaysReviewWarnings: &enabled,
 			},
 		},
@@ -40,7 +41,7 @@ func TestEvaluateAlwaysReviewRulesUsesKeyTypeOverride(t *testing.T) {
 		map[int]bool{},
 		map[int]bool{},
 		cfg,
-		[]string{"ed25519"},
+		[]string{authKey},
 		nil,
 		nil,
 	)
@@ -159,17 +160,18 @@ transfer_policy:
 	}
 }
 
-func TestEvaluateAlwaysReviewRulesUsesTransferRoutingKeyTypeOverride(t *testing.T) {
+func TestEvaluateAlwaysReviewRulesUsesTransferRoutingKeyOverride(t *testing.T) {
 	source := types.Address{1}
 	dest := types.Address{2}
+	authKey := types.Address{9}.String()
 	cfg := routingPolicyConfigForSigningTest(t, `
 transfer_policy:
   schema_version: 1
   enabled: true
   on_no_route: operator_default
   routes: []
-key_type_overrides:
-  aplane.falcon1024.v1:
+key_overrides:
+  `+authKey+`:
     transfer_policy:
       schema_version: 1
       enabled: true
@@ -201,7 +203,7 @@ key_type_overrides:
 		map[int]bool{},
 		map[int]bool{},
 		cfg,
-		[]string{"aplane.falcon1024.v1"},
+		[]string{authKey},
 		nil,
 		nil,
 	)
@@ -209,7 +211,7 @@ key_type_overrides:
 		t.Fatal("EvaluateAlwaysReviewRules() review = false, want true")
 	}
 	if ruleID != "transfer_policy:override_review:review_above" {
-		t.Fatalf("ruleID = %q, want key-type override routing review threshold", ruleID)
+		t.Fatalf("ruleID = %q, want key override routing review threshold", ruleID)
 	}
 }
 
