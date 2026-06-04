@@ -454,7 +454,13 @@ func (m Model) handleParamModalKeys(
 	case "<", ">":
 		if m.generateFocus < len(params) {
 			paramDef := params[m.generateFocus]
-			if len(paramDef.InputModes) > 1 {
+			if len(paramDef.Options) > 0 {
+				delta := 1
+				if msg.String() == "<" {
+					delta = -1
+				}
+				m = m.cycleCurrentParamOption(params, delta)
+			} else if len(paramDef.InputModes) > 1 {
 				currentMode := m.genericLSigParamModes[paramDef.Name]
 				if msg.String() == ">" {
 					currentMode = (currentMode + 1) % len(paramDef.InputModes)
@@ -531,7 +537,17 @@ func (m Model) handleParamModalKeys(
 		}
 		return m, nil, ""
 
-	case "left", "right", "delete", "insert":
+	case "left", "right":
+		if m.generateFocus < len(params) && len(params[m.generateFocus].Options) > 0 {
+			delta := -1
+			if msg.String() == "right" {
+				delta = 1
+			}
+			m = m.cycleCurrentParamOption(params, delta)
+		}
+		return m, nil, ""
+
+	case "delete", "insert":
 		return m, nil, ""
 
 	default:
@@ -564,7 +580,7 @@ func (m Model) initGenericLSigParamsForKeyType(keyType string) Model {
 	m.genericLSigParamScroll = make(map[string]int)
 	for i, p := range params {
 		m.genericLSigParamOrder[i] = p.Name
-		m.genericLSigParams[p.Name] = ""
+		m.genericLSigParams[p.Name] = defaultParamValue(p)
 		m.genericLSigParamModes[p.Name] = 0 // Default to first input mode
 		m.genericLSigParamScroll[p.Name] = 0
 	}
@@ -623,6 +639,9 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 	}
 
 	paramDef := params[paramIdx]
+	if len(paramDef.Options) > 0 {
+		return m
+	}
 	currentVal := m.genericLSigParams[paramDef.Name]
 
 	// Determine effective input type (mode's InputType overrides paramDef.Type)
@@ -706,6 +725,43 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 		m = m.ensureCurrentParamInputVisible(params)
 	}
 	return m
+}
+
+func defaultParamValue(paramDef lsigprovider.ParameterDef) string {
+	if paramDef.Default != "" {
+		return paramDef.Default
+	}
+	if len(paramDef.Options) > 0 {
+		return paramDef.Options[0]
+	}
+	return ""
+}
+
+func (m Model) cycleCurrentParamOption(params []lsigprovider.ParameterDef, delta int) Model {
+	if m.generateFocus < 0 || m.generateFocus >= len(params) {
+		return m
+	}
+	paramDef := params[m.generateFocus]
+	if len(paramDef.Options) == 0 {
+		return m
+	}
+	current := indexOfOption(paramDef.Options, m.genericLSigParams[paramDef.Name])
+	if current < 0 {
+		current = 0
+	} else {
+		current = (current + delta + len(paramDef.Options)) % len(paramDef.Options)
+	}
+	m.genericLSigParams[paramDef.Name] = paramDef.Options[current]
+	return m
+}
+
+func indexOfOption(options []string, value string) int {
+	for i, option := range options {
+		if option == value {
+			return i
+		}
+	}
+	return -1
 }
 
 func (m Model) ensureCurrentParamInputVisible(params []lsigprovider.ParameterDef) Model {

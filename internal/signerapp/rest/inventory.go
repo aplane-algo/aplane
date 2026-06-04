@@ -4,9 +4,11 @@
 package rest
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
@@ -140,7 +142,9 @@ func (s Service) BuildKeyTypesForIdentity(ir *identity.Runtime) ([]signerapi.Key
 	if err != nil {
 		return nil, err
 	}
-	return s.buildKeyTypes(validTypes, enabled), nil
+	infos := s.buildKeyTypes(validTypes, enabled)
+	applyAttestorReferenceParams(ir, infos)
+	return infos, nil
 }
 
 func filterKeyTypesForMode(validTypes []string, mode identity.Mode) []string {
@@ -193,6 +197,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 					Required:    p.Required,
 					MaxLength:   p.MaxLength,
 					InputModes:  restInputModeInfos(p.InputModes),
+					Options:     append([]string(nil), p.Options...),
 					MinItems:    p.MinItems,
 					MaxItems:    p.MaxItems,
 					Example:     p.Example,
@@ -275,6 +280,46 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 	}
 
 	return keyTypes
+}
+
+func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeInfo) {
+	if ir == nil {
+		return
+	}
+	refs, err := attrefs.List(ir.KeyPaths(), ir.ID())
+	if err != nil || len(refs) == 0 {
+		return
+	}
+
+	namesByComponentType := make(map[string][]string)
+	for _, ref := range refs {
+		namesByComponentType[ref.KeyType] = append(namesByComponentType[ref.KeyType], ref.Name)
+	}
+	for componentType := range namesByComponentType {
+		names := namesByComponentType[componentType]
+		sort.Strings(names)
+		namesByComponentType[componentType] = names
+	}
+
+	for i := range infos {
+		componentType, ok := keytypes.AttestorComponentKeyTypeForAttestedAccount(infos[i].KeyType)
+		if !ok {
+			continue
+		}
+		names := namesByComponentType[componentType]
+		if len(names) == 0 {
+			continue
+		}
+		infos[i].CreationParams = []signerapi.CreationParamInfo{{
+			Name:        attrefs.ParamAttestorName,
+			Label:       "Attestor",
+			Description: "Imported attestor public-key reference to embed in the attested account",
+			Type:        "select",
+			Required:    true,
+			Options:     append([]string(nil), names...),
+			Default:     names[0],
+		}}
+	}
 }
 
 func attestorComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {

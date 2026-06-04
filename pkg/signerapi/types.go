@@ -281,6 +281,7 @@ type CreationParamInfo struct {
 	Required    bool            `json:"required"`
 	MaxLength   int             `json:"max_length,omitempty"`
 	InputModes  []InputModeInfo `json:"input_modes,omitempty"`
+	Options     []string        `json:"options,omitempty"`
 	MinItems    int             `json:"min_items,omitempty"`
 	MaxItems    int             `json:"max_items,omitempty"`
 	Example     string          `json:"example,omitempty"`

@@ -736,6 +736,7 @@ func protocolCreationParams(params []signerapi.CreationParamInfo) []protocol.Tem
 			Required:    p.Required,
 			MaxLength:   p.MaxLength,
 			InputModes:  protocolInputModes(p.InputModes),
+			Options:     append([]string(nil), p.Options...),
 			MinItems:    p.MinItems,
 			MaxItems:    p.MaxItems,
 			Example:     p.Example,

@@ -402,6 +402,11 @@ After import, generation may use `attestor=<name>` instead of
 that the imported component key type matches the attested account key type, and
 persists only the resolved `attestor_public_key`.
 
+When matching references exist, identity-scoped `/keytypes` metadata may expose
+the attested-account creation parameter as `attestor` with `type:"select"` and
+`options[]` set to the imported reference names. This lets admin clients choose
+from the library instead of asking users to paste public-key hex.
+
 For all component-key rows, `address` is the `a_` selector and
 `public_key_hex` is the full component public key. Existing spending account
 rows omit `is_component_key` or set it to `false`, and omit
@@ -1466,8 +1471,10 @@ The MVP is complete when:
   `aplane.attestor-public-key.v1` envelope and rejects selector/public-key
   mismatches,
 - `apstore attestor import/list/show/remove` manages identity-scoped
-  public-only attestor references, and attested-account generation accepts
-  `attestor=<name>` as a local alias for `attestor_public_key=<hex>`,
+  public-only attestor references, attested-account generation accepts
+  `attestor=<name>` as a local alias for `attestor_public_key=<hex>`, and
+  identity-scoped key-type metadata exposes matching references as select
+  options for admin clients,
 - `/plan` handles attested account metadata,
 - no registration endpoint, account-binding store, profile store, or trust-root
   store is required for attestation,

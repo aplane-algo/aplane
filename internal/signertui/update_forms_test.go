@@ -130,6 +130,43 @@ func TestHandleParamInput_AddressListPreservesAliasCase(t *testing.T) {
 	}
 }
 
+func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType:     "aplane.falcon1024-att-ed25519.v1",
+		DisplayName: "Falcon-1024 / Ed25519 Attested",
+		CreationParams: []protocol.TemplateParamInfo{{
+			Name:    "attestor",
+			Label:   "Attestor",
+			Type:    "select",
+			Options: []string{"lab-att", "backup-att"},
+			Default: "lab-att",
+		}},
+	}})
+
+	m := Model{generateKeyType: 0}
+	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-att-ed25519.v1")
+	if got := m.genericLSigParams["attestor"]; got != "lab-att" {
+		t.Fatalf("default attestor = %q, want lab-att", got)
+	}
+
+	m.generateFocus = 0
+	next, cmd := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'>'}})
+	if cmd != nil {
+		t.Fatalf("cycle command = %v, want nil", cmd)
+	}
+	m = next.(Model)
+	if got := m.genericLSigParams["attestor"]; got != "backup-att" {
+		t.Fatalf("cycled attestor = %q, want backup-att", got)
+	}
+
+	next, _ = m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyLeft})
+	m = next.(Model)
+	if got := m.genericLSigParams["attestor"]; got != "lab-att" {
+		t.Fatalf("left-cycled attestor = %q, want lab-att", got)
+	}
+}
+
 func TestHandleParamInputBytesAcceptsDeclaredHexLength(t *testing.T) {
 	m := Model{
 		genericLSigParams:     map[string]string{},

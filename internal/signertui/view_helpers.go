@@ -275,6 +275,7 @@ func protocolParamInfosToDefs(params []protocol.TemplateParamInfo) []lsigprovide
 			Required:    p.Required,
 			MaxLength:   p.MaxLength,
 			InputModes:  protocolInputModesToDefs(p.InputModes),
+			Options:     append([]string(nil), p.Options...),
 			MinItems:    p.MinItems,
 			MaxItems:    p.MaxItems,
 			Example:     p.Example,
@@ -392,6 +393,8 @@ func getPlaceholderForType(paramType string) string {
 		return "(enter number)"
 	case "string":
 		return "(enter value)"
+	case "select":
+		return "(select value)"
 	default:
 		return "(enter value)"
 	}
@@ -416,6 +419,8 @@ func getFieldWidthForType(paramType string, maxLength int) int {
 			return maxLength + 2
 		}
 		return 40
+	case "select":
+		return 40
 	default:
 		return 40
 	}
@@ -439,6 +444,11 @@ func getMaxInputLengthForType(paramType string, maxLength int) int {
 		}
 		return 4096
 	case "string":
+		if maxLength > 0 {
+			return maxLength
+		}
+		return 256
+	case "select":
 		if maxLength > 0 {
 			return maxLength
 		}

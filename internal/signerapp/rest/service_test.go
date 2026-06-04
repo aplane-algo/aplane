@@ -7,13 +7,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -669,6 +672,51 @@ func TestServiceKeyTypesForIdentityFiltersByMode(t *testing.T) {
 	}
 	if !keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentFalcon1024V1) {
 		t.Fatalf("attestation mode key types missing %s", keytypes.AttestorComponentFalcon1024V1)
+	}
+}
+
+func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
+	ir := setupIdentityRuntime(t, false)
+	publicKey := strings.Repeat("ab", 32)
+	publicKeyBytes, err := hex.DecodeString(publicKey)
+	if err != nil {
+		t.Fatalf("DecodeString() error = %v", err)
+	}
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKeyBytes)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+	env, err := attrefs.NewExportEnvelope(componentKey, keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("NewExportEnvelope() error = %v", err)
+	}
+	data, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if _, err := attrefs.Import(ir.KeyPaths(), ir.ID(), "lab-att", data); err != nil {
+		t.Fatalf("Import() error = %v", err)
+	}
+
+	resp, svcErr := Service{}.KeyTypesForIdentity(ir)
+	if svcErr != nil {
+		t.Fatalf("KeyTypesForIdentity() error = %v", svcErr)
+	}
+	var params []signerapi.CreationParamInfo
+	for _, info := range resp.KeyTypes {
+		if info.KeyType == keytypes.AttestedFalcon1024AttEd25519V1 {
+			params = info.CreationParams
+			break
+		}
+	}
+	if len(params) != 1 {
+		t.Fatalf("CreationParams = %#v, want one attestor selector", params)
+	}
+	if params[0].Name != attrefs.ParamAttestorName || params[0].Type != "select" {
+		t.Fatalf("attestor param = %#v, want select attestor", params[0])
+	}
+	if !reflect.DeepEqual(params[0].Options, []string{"lab-att"}) || params[0].Default != "lab-att" {
+		t.Fatalf("attestor options/default = %#v/%q, want lab-att", params[0].Options, params[0].Default)
 	}
 }
 

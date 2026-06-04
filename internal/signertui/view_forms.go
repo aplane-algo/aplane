@@ -275,6 +275,13 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 				modeHint = fmt.Sprintf("  [</> to switch: %d/%d]", modeIdx+1, len(paramDef.InputModes))
 			}
 		}
+		if len(paramDef.Options) > 0 && isFieldFocused {
+			optionIdx := indexOfOption(paramDef.Options, m.genericLSigParams[paramDef.Name])
+			if optionIdx < 0 {
+				optionIdx = 0
+			}
+			modeHint = fmt.Sprintf("  [</> to choose: %d/%d]", optionIdx+1, len(paramDef.Options))
+		}
 
 		// Label with focus indicator
 		label := "  " + labelText + ":"
@@ -290,6 +297,9 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		// Pad to field width - use mode's byte length if available, but keep
 		// the rendered input box inside the popup body.
 		fieldWidth := getFieldWidthForType(paramDef.Type, paramDef.MaxLength)
+		if len(paramDef.Options) > 0 {
+			fieldWidth = optionFieldWidth(paramDef.Options)
+		}
 		if len(paramDef.InputModes) > 1 && m.genericLSigParamModes != nil {
 			modeIdx := m.genericLSigParamModes[paramDef.Name]
 			if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
@@ -384,6 +394,19 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	}
 
 	return m.renderPopup(80, sb.String())
+}
+
+func optionFieldWidth(options []string) int {
+	width := 0
+	for _, option := range options {
+		if len(option) > width {
+			width = len(option)
+		}
+	}
+	if width < 20 {
+		width = 20
+	}
+	return width + 4
 }
 
 func fixedWidthFieldLine(line string, width int) string {

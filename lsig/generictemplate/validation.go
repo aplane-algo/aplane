@@ -6,6 +6,7 @@ package generictemplate
 import (
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -16,10 +17,12 @@ import (
 
 // ValidateParameterValue validates a single parameter value against its type.
 // Supported types:
-// - address: 58-char Algorand address with checksum validation
-// - uint64: decimal number fitting in uint64
-// - uint64[]: comma-separated decimal uint64 values
-// - bytes: valid hexadecimal string (optionally with length enforcement)
+//   - address: 58-char Algorand address with checksum validation
+//   - uint64: decimal number fitting in uint64
+//   - uint64[]: comma-separated decimal uint64 values
+//   - bytes: valid hexadecimal string (optionally with length enforcement)
+//   - string/select: non-empty scalar strings; select membership is checked by
+//     ValidateParameterValues when options are provided.
 func ValidateParameterValue(value, paramType string, byteLength int) error {
 	switch paramType {
 	case "address":
@@ -28,6 +31,8 @@ func ValidateParameterValue(value, paramType string, byteLength int) error {
 		return validateUint64(value)
 	case "bytes":
 		return validateBytes(value, byteLength)
+	case "string", "select":
+		return nil
 	default:
 		return fmt.Errorf("unsupported parameter type: %s", paramType)
 	}
@@ -224,6 +229,9 @@ func ValidateParameterValues(params map[string]string, defs []lsigprovider.Param
 		// Skip validation for empty optional parameters
 		if !ok || value == "" {
 			continue
+		}
+		if len(def.Options) > 0 && !slices.Contains(def.Options, value) {
+			return fmt.Errorf("invalid %s: %q is not a valid option", def.Name, value)
 		}
 
 		// Determine byte length for bytes type (from MaxLength in hex chars)

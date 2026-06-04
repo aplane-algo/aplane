@@ -883,6 +883,12 @@ attested-account key type's required attestor component key type, rejects
 requests that provide both forms, and persists only the resolved
 `attestor_public_key` in the key file.
 
+Identity-scoped `/keytypes` metadata may expose imported references as a
+creation parameter named `attestor` with `type:"select"` and `options[]`
+containing reference names whose component key type matches the attested
+account key type. This is UI metadata for generation clients such as `apadmin`;
+the durable key file still stores the resolved `attestor_public_key`.
+
 ### Template Files (`.template`)
 
 Encrypted YAML using master-key encryption. `BaseTemplateSpec` contains:
@@ -912,10 +918,10 @@ Template capability notes:
 - `template_mode` is required for imported, installed, bundled, and library
   templates; templates without `template_mode` are rejected rather than
   interpreted
-- `creation_params` may include scalar params plus unordered `address[]` and
-  `uint64[]` list params; public key type surfaces preserve optional
-  `input_modes` UI metadata for alternate parameter entry forms such as
-  hash/preimage toggles
+- `creation_params` may include scalar params, `select` params with `options[]`,
+  plus unordered `address[]` and `uint64[]` list params; public key type
+  surfaces preserve optional `input_modes` UI metadata for alternate parameter
+  entry forms such as hash/preimage toggles
 - strict generic-template YAML and Falcon composed-template YAML use declared `template_variables`
   and symbolic `$name` references that render through generated `intcblock` and `bytecblock`
   constants

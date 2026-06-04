@@ -719,6 +719,7 @@ func creationParamInfos(params []lsigprovider.ParameterDef) []signerapi.Creation
 			Required:    p.Required,
 			MaxLength:   p.MaxLength,
 			InputModes:  creationInputModeInfos(p.InputModes),
+			Options:     append([]string(nil), p.Options...),
 			MinItems:    p.MinItems,
 			MaxItems:    p.MaxItems,
 			Example:     p.Example,

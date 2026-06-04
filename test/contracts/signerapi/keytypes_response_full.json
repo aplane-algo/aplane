@@ -73,6 +73,18 @@
             }
           ],
           "default": "aplane"
+        },
+        {
+          "name": "attestor",
+          "label": "Attestor",
+          "description": "Imported attestor public-key reference",
+          "type": "select",
+          "required": true,
+          "options": [
+            "lab-att",
+            "backup-att"
+          ],
+          "default": "lab-att"
         }
       ],
       "runtime_args": [

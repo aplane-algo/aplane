@@ -259,9 +259,21 @@ func TestValidateParameterValue(t *testing.T) {
 
 		// Unknown type
 		{
-			name:      "unknown type",
+			name:      "valid string",
 			value:     "test",
 			paramType: "string",
+			wantErr:   false,
+		},
+		{
+			name:      "valid select",
+			value:     "choice",
+			paramType: "select",
+			wantErr:   false,
+		},
+		{
+			name:      "unknown type",
+			value:     "test",
+			paramType: "unknown",
 			wantErr:   true,
 		},
 	}

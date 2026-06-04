@@ -150,6 +150,10 @@ attested account key type, and stores only the resolved `attestor_public_key`
 in the generated key file. Supplying both `attestor=<name>` and
 `attestor_public_key=<hex>` is rejected.
 
+In `apadmin`, imported references whose key family matches the attested account
+type appear as selectable generation options, so the raw public key does not
+need to be pasted into the form.
+
 ## Compiled Providers
 
 Compiled providers are registered from Go code when `apsigner` starts. Some are

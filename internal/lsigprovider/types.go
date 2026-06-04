@@ -50,6 +50,7 @@ type ParameterDef struct {
 	Required    bool
 	MaxLength   int         // For validation and input field sizing
 	InputModes  []InputMode // Optional: alternative input modes (shown as toggle in UI)
+	Options     []string    // Optional fixed option values for selection-style params
 	MinItems    int         // For list types only (0 = no minimum)
 	MaxItems    int         // For list types only (0 = no maximum)
 
