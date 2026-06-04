@@ -37,6 +37,7 @@ func (fs *Signer) newSigningServiceForIdentityWithAudit(ir *identity.Runtime, au
 			}
 			return release, nil
 		},
-		Policy: ir.Policy(),
+		Policy:            ir.Policy(),
+		AttestationPolicy: ir.AttestationPolicy(),
 	}
 }

@@ -124,7 +124,7 @@ All under `cmd/`:
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
 | `apstore` | Local keystore management client: daemon-owned backup, restore, template, key type, changepass, and initialize over IPC, policy integrity check/verify/sign, plus local `verify` and `rebuild` rescue flows |
-| `appolicy` | Offline policy checker/editor TUI for identity-scoped `policy.yaml`; validates and signs policy edits while holding the store mutation lock |
+| `appolicy` | Offline policy checker/editor TUI for identity-scoped signing `policy.yaml`; validates and signs signing-policy edits while holding the store mutation lock |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, apclient default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
 | `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |
@@ -436,28 +436,31 @@ Passphrase helper configuration is identity-scoped via `internal/signerapp/ident
 Passphrase files are stored at `identities/<identity>/passphrase` or `passphrase.cred` for `systemd-creds`.
 
 Signer policy participates in the ordered approval engine. The current policy
-verdict model is documented in [ARCH_POLICY.md](ARCH_POLICY.md). Auto-rejection,
-forced-review, and explicit auto-approval rules are identity-scoped and stored
-separately at `identities/<identity>/policy.yaml` with an HMAC sidecar at
-`identities/<identity>/policy.yaml.hmac`. The default approval fallback is
-`user_auto_approve`, persisted in
+verdict model is documented in [ARCH_POLICY.md](ARCH_POLICY.md). Client
+signing policy is identity-scoped and stored at
+`identities/<identity>/policy.yaml`; attestor component policy is stored at
+`identities/<identity>/attestation.yaml`. Both files have HMAC sidecars. The
+default approval fallback is `user_auto_approve`, persisted in
 `identities/<identity>/config.yaml` and shown in `apadmin` as
 `User Auto-Approve`. Policy is verified with a key derived from the identity
 master key and loaded into the bound identity runtime on unlock/reload before
-the key scan. Operator guided policy editing is centered on `appolicy`, which
-edits the verified policy offline while holding the store mutation lock and
-persists both the YAML and sidecar. Admin IPC policy read/write messages remain
-in the backend for compatibility. `apadmin` exposes an active policy viewer
-backed by a signer-owned snapshot, can hot-replace the whole policy from a YAML
+the key scan. Operator guided signing-policy editing is centered on
+`appolicy`, which edits verified `policy.yaml` offline while holding the store
+mutation lock and persists both the YAML and sidecar. Direct edits to either
+policy document are checked and signed with `apstore policy`. Admin IPC policy
+read/write messages remain in the backend for compatibility and target
+`policy.yaml`. `apadmin` exposes an active signing-policy viewer backed by a
+signer-owned snapshot, can hot-replace the whole signing policy from a YAML
 file through the signer, and retains a limited policy settings panel for scalar
 policy toggles, max fee, and transfer guard thresholds. It does not expose the
 full `appolicy`-style guided editor or YAML-only fields such as
 `key_overrides`.
 
-`policy.yaml` may also contain YAML-only `key_overrides`; during normal
+Both policy documents may contain YAML-only `key_overrides`; during normal
 signing, the effective policy is selected by signing auth address, not by
 transaction sender, so rekeyed accounts use the policy override for the auth
-address. Attestor component signing selects by the `a_...` component selector.
+address. Attestor component signing selects by the `a_...` component selector
+from `attestation.yaml`.
 Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.

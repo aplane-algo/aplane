@@ -15,7 +15,7 @@ func (s *Service) evaluateAttestorComponentPolicy(identityID string, plan *Compo
 	if plan == nil {
 		return internal("component sign plan is nil")
 	}
-	cfg := attestationPolicyConfig(s.Policy, plan.ComponentKey)
+	cfg := attestationPolicyConfig(s.AttestationPolicy, plan.ComponentKey)
 	if cfg == nil {
 		return s.rejectAttestorComponentPolicy(identityID, plan, []policy.LintViolation{{
 			RuleID:   policy.AttestationPolicyMissingRuleID,
@@ -51,7 +51,7 @@ func attestationPolicyConfig(cfg *policy.Config, componentKey string) *policy.Co
 	if cfg == nil {
 		return nil
 	}
-	return cfg.ForKey(componentKey).Attestation
+	return cfg.ForKey(componentKey)
 }
 
 func attestorTransferPolicyConfigLints(tp *policy.TransferPolicy) []policy.LintViolation {

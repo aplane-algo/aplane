@@ -253,21 +253,24 @@ only `user_auto_approve`.
 
 Process-global settings live in `config.yaml`. Identity-scoped settings live in `identities/<identity>/config.yaml` and nil means inherit from process defaults. `decommissioned:true` disables the identity.
 
-Signer policy participates in the ordered approval engine. Auto-rejection,
-forced-review, and explicit auto-approval rules are identity-scoped and stored
-separately in `identities/<identity>/policy.yaml`. The sibling
-`policy.yaml.hmac` authenticates the exact YAML bytes with a key derived from
-the identity master key. The default approval fallback is `user_auto_approve`,
-lives in `identities/<identity>/config.yaml`, and is not a `policy.yaml` field.
-Policy is verified and loaded on unlock/reload before the key scan; a missing
-policy file or missing/mismatched sidecar fails closed instead of falling back
-to defaults. Authenticated admin IPC policy writes require an unlocked identity
-and write both files.
-`policy.yaml` also supports YAML-only `key_overrides` blocks for per-key
-effective policy. Client-signing overrides are keyed by Algorand auth address;
-attestor overrides are keyed by `a_...` component selector. These overrides
-apply to policy phases, are not exposed through admin IPC, and direct YAML edits
-require offline `apstore policy sign` before the signer will trust them.
+Signer policy participates in the ordered approval engine.
+Client-signing policy is identity-scoped and stored in
+`identities/<identity>/policy.yaml`; attestor component policy is stored in
+`identities/<identity>/attestation.yaml`. Each document has a sibling `.hmac`
+sidecar that authenticates the exact YAML bytes with a key derived from the
+identity master key. The default approval fallback is `user_auto_approve`,
+lives in `identities/<identity>/config.yaml`, and is not a policy document
+field. Both policy documents are verified and loaded on unlock/reload before
+the key scan; a missing policy file or missing/mismatched sidecar fails closed
+instead of falling back to defaults. Authenticated admin IPC policy replacement
+currently writes `policy.yaml`; direct `attestation.yaml` edits are checked,
+signed, and verified through `apstore policy`.
+Both documents support YAML-only `key_overrides` blocks for per-key effective
+policy. Client-signing overrides in `policy.yaml` are keyed by Algorand auth
+address; attestor overrides in `attestation.yaml` are keyed by `a_...`
+component selector. These overrides apply to policy phases, are not exposed
+through admin IPC, and direct YAML edits require offline `apstore policy sign`
+before the signer will trust them.
 
 Validation:
 
@@ -414,6 +417,8 @@ config/plugin/env files).
     config.yaml
     policy.yaml
     policy.yaml.hmac
+    attestation.yaml
+    attestation.yaml.hmac
     unlock.yaml
     .ssh/authorized_keys
     passphrase              # plaintext appass-file helper artifact, mode 0600
@@ -616,12 +621,12 @@ Behavior:
 - version 2 metadata with missing or zero KDF params is rejected
 - version 1 unlock falls back to the older Argon2id time parameter
 
-### Policy Files (`policy.yaml`, `policy.yaml.hmac`)
+### Policy Files (`policy.yaml`, `attestation.yaml`)
 
 The identity-scoped signer safety policy is stored at
-`identities/<identity>/policy.yaml`. Its sibling
-`identities/<identity>/policy.yaml.hmac` is a JSON sidecar that authenticates
-the exact policy YAML bytes.
+`identities/<identity>/policy.yaml`. The identity-scoped attestor component
+policy is stored at `identities/<identity>/attestation.yaml`. Each has a JSON
+sidecar at `<document>.hmac` that authenticates the exact YAML bytes.
 
 The policy integrity key is derived from the identity master key with HKDF-SHA256
 using info string `aplane policy integrity v1`. The derived key is 32 bytes and
@@ -632,8 +637,8 @@ Sidecar JSON fields:
 - `version`: integer sidecar version; currently `1`
 - `algorithm`: currently `hmac-sha256`
 - `key_id`: currently `keystore-master-hkdf-v1`
-- `hmac`: hex HMAC-SHA256 over the exact `policy.yaml` bytes
-- `policy_sha256`: optional diagnostic SHA-256 of `policy.yaml`
+- `hmac`: hex HMAC-SHA256 over the exact policy document bytes
+- `policy_sha256`: optional diagnostic SHA-256 of the policy document
 - `signed_at_unix`: optional diagnostic signing timestamp
 - `policy_mtime_ns`: optional diagnostic policy-file mtime
 
@@ -644,18 +649,22 @@ decision.
 
 Policy load behavior:
 
-- unlock/reload verifies `policy.yaml.hmac` before parsing and applying policy
-- missing `policy.yaml` or missing/mismatched sidecar fails closed
+- unlock/reload verifies both `policy.yaml.hmac` and
+  `attestation.yaml.hmac` before parsing and applying policy
+- missing `policy.yaml`, missing `attestation.yaml`, or a missing/mismatched
+  sidecar fails closed
 - during initial locked startup, a policy integrity failure prevents the
   admin-auth unlock from completing and is reported as `auth_result` with
   `code:"unlock_failed"`
 - reload failure keeps the previous in-memory policy active
-- admin policy writes require an unlocked identity and write both files
-- direct YAML edits require offline `apstore policy sign` before the signer
-  trusts them
+- admin policy writes require an unlocked identity and replace `policy.yaml`
+- direct YAML edits to either document require offline `apstore policy sign`
+  before the signer trusts them
 - `appolicy --yaml` emits the exact verified `policy.yaml` bytes, and
   `appolicy --save` reads replacement bytes from stdin, validates them, and
   writes those exact bytes plus a fresh sidecar under the store mutation lock
+- `apstore policy check|verify|sign` checks, verifies, or signs both policy
+  documents
 
 ### Key Files (`.key`)
 
@@ -1070,13 +1079,15 @@ fallback switch stored in identity config and shown in `apadmin` as
 auto-rejection, forced review, and explicit auto-approval have all had a chance
 to run.
 
-`transfer_policy` is persisted only in `policy.yaml` in v1. It is validated by
-the normal policy load path, by `apstore policy check/sign/verify`, by the
-offline `appolicy` checker/editor, and by apadmin's whole-file replacement
-path. It is not projected through mutable admin IPC policy settings and has no
-guided `apadmin` editor surface; `apadmin` can request an active policy snapshot
-for inspection and can ask the signer to hot-replace the whole YAML file. The
-`appolicy --yaml`/`--save` CLI path is the scriptable offline editor for
+Client-signing `transfer_policy` is persisted in `policy.yaml`; attestor
+component `transfer_policy` is persisted in `attestation.yaml`. Both are
+validated by the normal policy load path and by `apstore policy
+check/sign/verify`. `appolicy` and apadmin whole-file replacement target
+`policy.yaml`. Transfer policy is not projected through mutable admin IPC
+policy settings and has no guided `apadmin` editor surface; `apadmin` can
+request an active signing-policy snapshot for inspection and can ask the signer
+to hot-replace the whole signing-policy YAML file. The `appolicy
+--yaml`/`--save` CLI path is the scriptable offline editor for
 byte-preserving route-table edits.
 Route matches are allow-to-continue, not approvals.
 
@@ -1488,8 +1499,9 @@ Managed archive packaging:
   managed path, or checksum, copies it into a caller-selected destination
   directory using the managed archive filename, creates the destination directory
   when needed, and verifies the copy
-- the archive contains `README.md`, `apb/*.apb`, and a policy snapshot at
-  `policy/policy.yaml` plus `policy/policy.yaml.hmac`
+- the archive contains `README.md`, `apb/*.apb`, and policy snapshots at
+  `policy/policy.yaml`, `policy/policy.yaml.hmac`,
+  `policy/attestation.yaml`, and `policy/attestation.yaml.hmac`
 - the tarball is packaging only; `.apb` remains the cryptographic backup unit
 - the archived policy sidecar is source-store provenance material only; restore
   does not install it as the destination sidecar
@@ -1536,9 +1548,9 @@ Live signer-managed restore:
 - restore decrypts selected `addresses`; if `addresses` is omitted, all `.apb` payloads in the archive are attempted
 - restore skips existing key files unless `overwrite:true` is supplied
 - restore reloads the bound identity runtime after one or more keys are restored
-- restore does not install `policy/policy.yaml` or `policy/policy.yaml.hmac`;
-  restoring policy is an explicit manual recovery operation, and the destination
-  store must sign a fresh sidecar before the signer trusts the restored policy
+- restore does not install archived policy documents or sidecars; restoring
+  policy is an explicit manual recovery operation, and the destination store
+  must sign fresh sidecars before the signer trusts restored policy
 - restore is per-key: failed keys are reported in `errors[]`, skipped existing keys are reported in `skipped[]`, successfully written keys are reported in `restored[]`, and non-fatal restore notices such as skipped bundled templates are reported in `warnings[]`
 
 Restore:

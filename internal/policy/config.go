@@ -51,7 +51,7 @@ type Config struct {
 // StoredConfig that is layered on top of the identity-wide settings when that
 // key signs. Overrides never recurse.
 type StoredConfig struct {
-	RejectRekey                 *bool                        `yaml:"-"`
+	RejectRekey                 *bool                        `yaml:"reject_rekey,omitempty"`
 	RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
 	RejectCloseRemainder        *bool                        `yaml:"reject_close_remainder,omitempty"`
 	RejectAssetClose            *bool                        `yaml:"reject_asset_close,omitempty"`
@@ -144,6 +144,7 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 		return fmt.Errorf("policy config must be a mapping")
 	}
 	allowed := map[string]struct{}{
+		"reject_rekey":                    {},
 		"reject_foreign_rekey":            {},
 		"reject_close_remainder":          {},
 		"reject_asset_close":              {},
@@ -167,6 +168,7 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 		}
 	}
 	type rawConfig struct {
+		RejectRekey                 *bool                        `yaml:"reject_rekey,omitempty"`
 		RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
 		RejectCloseRemainder        *bool                        `yaml:"reject_close_remainder,omitempty"`
 		RejectAssetClose            *bool                        `yaml:"reject_asset_close,omitempty"`
@@ -187,6 +189,7 @@ func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 	if err := value.Decode(&raw); err != nil {
 		return err
 	}
+	c.RejectRekey = raw.RejectRekey
 	c.RejectForeignRekey = raw.RejectForeignRekey
 	c.RejectCloseRemainder = raw.RejectCloseRemainder
 	c.RejectAssetClose = raw.RejectAssetClose
@@ -411,6 +414,21 @@ func NormalizeKeyOverrideKey(key string) (string, error) {
 	return addr.String(), nil
 }
 
+// NormalizeAttestationKeyOverrideKey validates and canonicalizes an
+// attestation.yaml key_overrides selector. Attestation overrides are always
+// keyed by attestor component-key selector, not spending-account address.
+func NormalizeAttestationKeyOverrideKey(key string) (string, error) {
+	raw := strings.TrimSpace(key)
+	if raw == "" {
+		return "", fmt.Errorf("attestation key override selector is required")
+	}
+	selector, err := keytypes.NormalizeComponentKeySelector(raw)
+	if err != nil {
+		return "", fmt.Errorf("attestation key override selector must be a component key selector: %w", err)
+	}
+	return selector, nil
+}
+
 func cloneUintMap(in map[string]uint64) map[string]uint64 {
 	if in == nil {
 		return nil
@@ -530,6 +548,11 @@ func PolicyPath(dataRoot, identityID string) string {
 	return filepath.Join(dataRoot, "identities", identityID, "policy.yaml")
 }
 
+// AttestationPath returns the path to an identity attestation policy file.
+func AttestationPath(dataRoot, identityID string) string {
+	return filepath.Join(dataRoot, "identities", identityID, "attestation.yaml")
+}
+
 // LoadStoredConfig reads the per-identity policy file. Missing files return an empty config.
 func LoadStoredConfig(dataRoot, identityID string) (*StoredConfig, error) {
 	path := PolicyPath(dataRoot, identityID)
@@ -544,6 +567,25 @@ func LoadStoredConfig(dataRoot, identityID string) (*StoredConfig, error) {
 	cfg, err := ParseStoredConfig(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse policy config: %w", err)
+	}
+	return cfg, nil
+}
+
+// LoadStoredAttestationConfig reads the per-identity attestation policy file.
+// Missing files return an empty config.
+func LoadStoredAttestationConfig(dataRoot, identityID string) (*StoredConfig, error) {
+	path := AttestationPath(dataRoot, identityID)
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return &StoredConfig{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read attestation config: %w", err)
+	}
+
+	cfg, err := ParseStoredAttestationConfig(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse attestation config: %w", err)
 	}
 	return cfg, nil
 }
@@ -576,6 +618,31 @@ func SaveStoredConfig(dataRoot, identityID string, cfg *StoredConfig) error {
 // verification. Callers that need authoritative signer policy should use
 // LoadVerifiedStoredConfig once policy integrity is enforced.
 func ParseStoredConfig(data []byte) (*StoredConfig, error) {
+	cfg, err := parseStoredConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateSigningDocument(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// ParseStoredAttestationConfig parses attestation.yaml bytes without
+// performing any integrity verification. The document is direct attestation
+// policy; it must not contain an attestation: wrapper.
+func ParseStoredAttestationConfig(data []byte) (*StoredConfig, error) {
+	cfg, err := parseStoredConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateAttestationDocument(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func parseStoredConfig(data []byte) (*StoredConfig, error) {
 	var cfg StoredConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
@@ -588,7 +655,163 @@ func MarshalStoredConfig(cfg *StoredConfig) ([]byte, error) {
 	if cfg == nil {
 		cfg = &StoredConfig{}
 	}
+	if err := validateSigningDocument(cfg); err != nil {
+		return nil, err
+	}
 	return yaml.Marshal(cfg)
+}
+
+// MarshalStoredAttestationConfig serializes a whole stored attestation config.
+func MarshalStoredAttestationConfig(cfg *StoredConfig) ([]byte, error) {
+	if cfg == nil {
+		cfg = &StoredConfig{}
+	}
+	if err := validateAttestationDocument(cfg); err != nil {
+		return nil, err
+	}
+	return yaml.Marshal(cfg)
+}
+
+// ApplySigning overlays policy.yaml values onto defaults and returns the
+// effective signing policy. policy.yaml is signing-only; attestation policy
+// lives in attestation.yaml.
+func (c *StoredConfig) ApplySigning(defaults *Config) (*Config, error) {
+	if err := validateSigningDocument(c); err != nil {
+		return nil, err
+	}
+	effective, err := c.Apply(defaults)
+	if err != nil {
+		return nil, err
+	}
+	effective.Attestation = nil
+	return effective, nil
+}
+
+// ApplyAttestation overlays attestation.yaml values onto attestation defaults
+// and returns the effective attestor component policy. The document is direct:
+// no attestation: wrapper is used.
+func (c *StoredConfig) ApplyAttestation(defaults *Config) (*Config, error) {
+	if err := validateAttestationDocument(c); err != nil {
+		return nil, err
+	}
+	base := defaultAttestationConfig(defaults)
+	effective, err := applyDirectAttestationConfig(c, base)
+	if err != nil {
+		return nil, err
+	}
+	if c != nil && len(c.KeyOverrides) > 0 {
+		overrideBase := effective.Clone()
+		overrideBase.KeyOverrides = nil
+		effective.KeyOverrides = make(map[string]*Config, len(c.KeyOverrides))
+		for key, overrideStored := range c.KeyOverrides {
+			if overrideStored == nil {
+				continue
+			}
+			canonicalKey, normalizeErr := NormalizeAttestationKeyOverrideKey(key)
+			if normalizeErr != nil {
+				return nil, fmt.Errorf("key_overrides for %q: %w", key, normalizeErr)
+			}
+			if _, exists := effective.KeyOverrides[canonicalKey]; exists {
+				return nil, fmt.Errorf("key_overrides for %q: duplicate canonical selector %q", key, canonicalKey)
+			}
+			overrideCfg, err := applyDirectAttestationConfig(overrideStored, overrideBase)
+			if err != nil {
+				return nil, fmt.Errorf("key_overrides for %q: %w", canonicalKey, err)
+			}
+			overrideCfg.KeyOverrides = nil
+			effective.KeyOverrides[canonicalKey] = overrideCfg
+		}
+	}
+	return effective, nil
+}
+
+func validateSigningDocument(c *StoredConfig) error {
+	if c == nil {
+		return nil
+	}
+	if c.RejectRekey != nil {
+		return fmt.Errorf("policy.yaml reject_rekey is not supported; use attestation.yaml")
+	}
+	if c.Attestation != nil {
+		return fmt.Errorf("policy.yaml attestation is not supported; use attestation.yaml")
+	}
+	for key, override := range c.KeyOverrides {
+		if override == nil {
+			continue
+		}
+		if override.RejectRekey != nil {
+			return fmt.Errorf("key_overrides for %q: reject_rekey is not supported in policy.yaml; use attestation.yaml", key)
+		}
+		if override.Attestation != nil {
+			return fmt.Errorf("key_overrides for %q: attestation is not supported in policy.yaml; use attestation.yaml", key)
+		}
+	}
+	return nil
+}
+
+func validateAttestationDocument(c *StoredConfig) error {
+	if c == nil {
+		return nil
+	}
+	if c.ClientSigning != nil {
+		return fmt.Errorf("attestation.yaml client_signing is not supported")
+	}
+	if c.Attestation != nil {
+		return fmt.Errorf("attestation.yaml must not contain an attestation wrapper; put attestation policy fields at top level")
+	}
+	if err := validateRoleConfig("attestation", c.toStoredRoleConfig()); err != nil {
+		return err
+	}
+	for key, override := range c.KeyOverrides {
+		if _, err := NormalizeAttestationKeyOverrideKey(key); err != nil {
+			return fmt.Errorf("key_overrides for %q: %w", key, err)
+		}
+		if override == nil {
+			continue
+		}
+		if override.ClientSigning != nil {
+			return fmt.Errorf("key_overrides for %q: client_signing is not supported in attestation.yaml", key)
+		}
+		if override.Attestation != nil {
+			return fmt.Errorf("key_overrides for %q: attestation wrapper is not supported in attestation.yaml", key)
+		}
+		if len(override.KeyOverrides) > 0 {
+			return fmt.Errorf("key_overrides for %q: nested key_overrides are not supported", key)
+		}
+		if err := validateRoleConfig("attestation", override.toStoredRoleConfig()); err != nil {
+			return fmt.Errorf("key_overrides for %q: %w", key, err)
+		}
+	}
+	return nil
+}
+
+func defaultAttestationConfig(defaults *Config) *Config {
+	base := DefaultConfig()
+	if defaults != nil {
+		base = DefaultConfigWithGenesisHashResolver(defaults.GenesisHashResolver)
+		base.FormatASAAmount = defaults.FormatASAAmount
+	}
+	base.RejectForeignRekey = false
+	base.RejectRekey = true
+	return base
+}
+
+func applyDirectAttestationConfig(stored *StoredConfig, defaults *Config) (*Config, error) {
+	if stored == nil {
+		stored = &StoredConfig{}
+	}
+	direct := stored.Clone()
+	direct.ClientSigning = nil
+	direct.Attestation = nil
+	direct.KeyOverrides = nil
+	direct.TransferPolicy = normalizeAttestationTransferPolicy(direct.TransferPolicy)
+	cfg, err := direct.Apply(defaults)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Attestation = nil
+	cfg.KeyOverrides = nil
+	return cfg, nil
 }
 
 // Apply overlays stored values onto defaults and returns the effective policy.
@@ -803,14 +1026,43 @@ func (c *StoredRoleConfig) toStoredConfig() *StoredConfig {
 	}
 }
 
+func (c *StoredConfig) toStoredRoleConfig() *StoredRoleConfig {
+	if c == nil {
+		return nil
+	}
+	return &StoredRoleConfig{
+		RejectRekey:                 c.RejectRekey,
+		RejectForeignRekey:          c.RejectForeignRekey,
+		RejectCloseRemainder:        c.RejectCloseRemainder,
+		RejectAssetClose:            c.RejectAssetClose,
+		RejectClawback:              c.RejectClawback,
+		AlwaysReviewWarnings:        c.AlwaysReviewWarnings,
+		AutoApproveSelfNoOpTransfer: c.AutoApproveSelfNoOpTransfer,
+		MaxFeeMicroAlgos:            c.MaxFeeMicroAlgos,
+		ReviewAlgoPayments:          cloneUintMap(c.ReviewAlgoPayments),
+		MaxAlgoPayments:             cloneUintMap(c.MaxAlgoPayments),
+		ReviewASAAmounts:            cloneStoredASAAmounts(c.ReviewASAAmounts),
+		MaxASAAmounts:               cloneStoredASAAmounts(c.MaxASAAmounts),
+		TransferPolicy:              c.TransferPolicy.Clone(),
+	}
+}
+
 func normalizeAttestationTransferPolicy(tp *StoredTransferPolicy) *StoredTransferPolicy {
 	if tp == nil {
 		return nil
 	}
 	cp := tp.Clone()
 	reject := string(TransferOnNoRouteReject)
-	if cp.Enabled != nil && *cp.Enabled && cp.OnNoRoute == nil {
-		cp.OnNoRoute = &reject
+	if cp.Enabled != nil && *cp.Enabled {
+		if cp.OnNoRoute == nil {
+			cp.OnNoRoute = &reject
+		}
+		if cp.CloseOnNoRoute == nil {
+			cp.CloseOnNoRoute = &reject
+		}
+		if cp.ClawbackOnNoRoute == nil {
+			cp.ClawbackOnNoRoute = &reject
+		}
 	}
 	return cp
 }

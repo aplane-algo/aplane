@@ -39,6 +39,9 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	if err := policy.SaveStoredConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, testExportMasterKey, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveStoredConfigWithMasterKey() error = %v", err)
 	}
+	if err := policy.SaveStoredAttestationConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, testExportMasterKey, timeForBackupTest()); err != nil {
+		t.Fatalf("SaveStoredAttestationConfigWithMasterKey() error = %v", err)
+	}
 
 	archivePath := BuildManagedArchivePath(paths, identityID, "20260428-010203")
 	if _, err := CreateAllKeysArchive(paths, identityID, archivePath, testExportMasterKey, []byte("export-passphrase")); err != nil {
@@ -61,6 +64,12 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	}
 	if _, err := os.Stat(filepath.Join(extractDir, "policy", "policy.yaml.hmac")); err != nil {
 		t.Fatalf("extracted policy.yaml.hmac stat error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(extractDir, "policy", "attestation.yaml")); err != nil {
+		t.Fatalf("extracted attestation.yaml stat error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(extractDir, "policy", "attestation.yaml.hmac")); err != nil {
+		t.Fatalf("extracted attestation.yaml.hmac stat error = %v", err)
 	}
 }
 

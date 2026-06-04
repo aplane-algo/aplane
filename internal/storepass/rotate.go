@@ -106,14 +106,16 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		}
 	}
 
-	policySidecar, ok, err := createPendingPolicySidecar(paths, identityID, oldMasterKey, newMasterKey, opts.Logf)
-	if err != nil {
-		cleanupPendingNewFiles(pendingFiles)
-		return result, err
-	}
-	if ok {
-		pendingFiles = append(pendingFiles, *policySidecar)
-		result.PolicySidecarsMigrated++
+	for _, doc := range policyDocumentsForRotation(paths.Root(), identityID) {
+		policySidecar, ok, err := createPendingPolicySidecar(doc, oldMasterKey, newMasterKey, opts.Logf)
+		if err != nil {
+			cleanupPendingNewFiles(pendingFiles)
+			return result, err
+		}
+		if ok {
+			pendingFiles = append(pendingFiles, *policySidecar)
+			result.PolicySidecarsMigrated++
+		}
 	}
 
 	if err := writeVerifiedNewKeystore(keystorePath, newKeystorePath, newMeta, newPassphrase); err != nil {
@@ -286,20 +288,46 @@ func createPendingEncryptedFile(path string, oldMasterKey []byte, newMasterKey [
 	return pf, true, nil
 }
 
-func createPendingPolicySidecar(paths storepaths.Paths, identityID string, oldMasterKey, newMasterKey []byte, log Logger) (*pendingFile, bool, error) {
-	dataRoot := paths.Root()
-	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataRoot, identityID, oldMasterKey); err != nil {
-		return nil, false, fmt.Errorf("failed to verify policy integrity before passphrase rotation: %w", err)
+type policyRotationDocument struct {
+	name       string
+	path       string
+	verifyFunc func(masterKey []byte) error
+}
+
+func policyDocumentsForRotation(dataRoot, identityID string) []policyRotationDocument {
+	return []policyRotationDocument{
+		{
+			name: "policy.yaml",
+			path: policy.PolicyPath(dataRoot, identityID),
+			verifyFunc: func(masterKey []byte) error {
+				_, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataRoot, identityID, masterKey)
+				return err
+			},
+		},
+		{
+			name: "attestation.yaml",
+			path: policy.AttestationPath(dataRoot, identityID),
+			verifyFunc: func(masterKey []byte) error {
+				_, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataRoot, identityID, masterKey)
+				return err
+			},
+		},
+	}
+}
+
+func createPendingPolicySidecar(doc policyRotationDocument, oldMasterKey, newMasterKey []byte, log Logger) (*pendingFile, bool, error) {
+	if err := doc.verifyFunc(oldMasterKey); err != nil {
+		return nil, false, fmt.Errorf("failed to verify %s integrity before passphrase rotation: %w", doc.name, err)
 	}
 
-	policyPath := policy.PolicyPath(dataRoot, identityID)
+	policyPath := doc.path
 	policyBytes, err := os.ReadFile(policyPath)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to read policy.yaml: %w", err)
+		return nil, false, fmt.Errorf("failed to read %s: %w", doc.name, err)
 	}
 	info, err := os.Stat(policyPath)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to stat policy.yaml: %w", err)
+		return nil, false, fmt.Errorf("failed to stat %s: %w", doc.name, err)
 	}
 
 	newPolicyKey, err := crypto.DerivePolicyIntegrityKey(newMasterKey)
@@ -320,19 +348,19 @@ func createPendingPolicySidecar(paths storepaths.Paths, identityID string, oldMa
 	sidecarPath := policy.PolicyIntegritySidecarPath(policyPath)
 	newPath := sidecarPath + ".new"
 	if err := fsutil.WriteFile(newPath, sidecarBytes); err != nil {
-		return nil, false, fmt.Errorf("failed to write policy.yaml.hmac.new: %w", err)
+		return nil, false, fmt.Errorf("failed to write %s.hmac.new: %w", doc.name, err)
 	}
 	if err := ApplyFileMetadataFrom(sidecarPath, newPath); err != nil {
-		return nil, false, fmt.Errorf("failed to set metadata on policy.yaml.hmac.new: %w", err)
+		return nil, false, fmt.Errorf("failed to set metadata on %s.hmac.new: %w", doc.name, err)
 	}
 	verifySidecar, err := policy.LoadPolicyIntegritySidecar(newPath)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to verify policy.yaml.hmac.new: %w", err)
+		return nil, false, fmt.Errorf("failed to verify %s.hmac.new: %w", doc.name, err)
 	}
 	if err := policy.VerifyPolicyIntegrity(policyBytes, verifySidecar, newPolicyKey); err != nil {
-		return nil, false, fmt.Errorf("verification failed for policy.yaml.hmac.new: %w", err)
+		return nil, false, fmt.Errorf("verification failed for %s.hmac.new: %w", doc.name, err)
 	}
-	logf(log, "created: policy.yaml.hmac.new (verified)")
+	logf(log, "created: %s.hmac.new (verified)", doc.name)
 	return &pendingFile{original: sidecarPath, newPath: newPath, oldPath: sidecarPath + ".old"}, true, nil
 }
 

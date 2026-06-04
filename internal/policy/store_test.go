@@ -61,6 +61,24 @@ func TestSaveAndLoadVerifiedStoredConfigWithMasterKey(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadVerifiedAttestationConfigWithMasterKey(t *testing.T) {
+	root := t.TempDir()
+	masterKey := []byte("test master key")
+	rejectRekey := true
+	want := &StoredConfig{RejectRekey: &rejectRekey}
+
+	if err := SaveStoredAttestationConfigWithMasterKey(root, "alice", want, masterKey, time.Unix(1700000000, 0)); err != nil {
+		t.Fatalf("SaveStoredAttestationConfigWithMasterKey() error = %v", err)
+	}
+	got, err := LoadVerifiedAttestationConfigWithMasterKey(root, "alice", masterKey)
+	if err != nil {
+		t.Fatalf("LoadVerifiedAttestationConfigWithMasterKey() error = %v", err)
+	}
+	if got.RejectRekey == nil || !*got.RejectRekey {
+		t.Fatalf("RejectRekey = %#v, want true", got.RejectRekey)
+	}
+}
+
 func TestSignPolicyFileIntegrityPreservesPolicyBytes(t *testing.T) {
 	root := t.TempDir()
 	key := policyIntegrityTestKey(t)

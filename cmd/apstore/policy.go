@@ -13,6 +13,16 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 )
 
+type policyCommandDocument struct {
+	name      string
+	path      string
+	sidecar   string
+	loadCheck func() (*policy.StoredConfig, error)
+	verify    func(masterKey []byte) (*policy.StoredConfig, error)
+	apply     func(*policy.StoredConfig) (*policy.Config, error)
+	sign      func(masterKey []byte, signedAt time.Time) error
+}
+
 func cmdPolicy(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: apstore policy <check|verify|sign>")
@@ -30,23 +40,23 @@ func cmdPolicy(args []string) error {
 }
 
 func cmdPolicyCheck() error {
-	if _, err := loadPolicyForCheck(); err != nil {
-		return err
+	for _, doc := range policyCommandDocuments() {
+		if _, err := doc.loadCheck(); err != nil {
+			return err
+		}
+		sidecarBytes, err := os.ReadFile(doc.sidecar)
+		if os.IsNotExist(err) {
+			logWarnf("%s sidecar missing: %s", doc.name, doc.sidecar)
+			logWarnf("run apstore policy sign after reviewing direct policy edits")
+		} else if err != nil {
+			return fmt.Errorf("failed to read %s sidecar: %w", doc.name, err)
+		} else if _, err := policy.ParsePolicyIntegritySidecar(sidecarBytes); err != nil {
+			return fmt.Errorf("failed to parse %s sidecar: %w", doc.name, err)
+		} else {
+			logInfof("%s sidecar shape OK: %s", doc.name, doc.sidecar)
+		}
+		logInfof("%s syntax OK: %s", doc.name, doc.path)
 	}
-	path := policy.PolicyPath(dataDirectory, productIdentityID())
-	sidecarPath := policy.PolicyIntegritySidecarPath(path)
-	sidecarBytes, err := os.ReadFile(sidecarPath)
-	if os.IsNotExist(err) {
-		logWarnf("policy sidecar missing: %s", sidecarPath)
-		logWarnf("run apstore policy sign after reviewing direct policy edits")
-	} else if err != nil {
-		return fmt.Errorf("failed to read policy sidecar: %w", err)
-	} else if _, err := policy.ParsePolicyIntegritySidecar(sidecarBytes); err != nil {
-		return fmt.Errorf("failed to parse policy sidecar: %w", err)
-	} else {
-		logInfof("policy sidecar shape OK: %s", sidecarPath)
-	}
-	logInfof("policy syntax OK: %s", path)
 	return nil
 }
 
@@ -57,20 +67,25 @@ func cmdPolicyVerify() error {
 	}
 	defer crypto.ZeroBytes(masterKey)
 
-	stored, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataDirectory, productIdentityID(), masterKey)
-	if err != nil {
-		return fmt.Errorf("policy integrity verification failed: %w", err)
+	for _, doc := range policyCommandDocuments() {
+		stored, err := doc.verify(masterKey)
+		if err != nil {
+			return fmt.Errorf("%s integrity verification failed: %w", doc.name, err)
+		}
+		if _, err := doc.apply(stored); err != nil {
+			return fmt.Errorf("%s config invalid: %w", doc.name, err)
+		}
+		logInfof("%s integrity verified: %s", doc.name, doc.path)
 	}
-	if _, err := policyruntime.ApplyStoredConfig(dataDirectory, &config, stored); err != nil {
-		return fmt.Errorf("policy config invalid: %w", err)
-	}
-	logInfof("policy integrity verified: %s", policy.PolicyPath(dataDirectory, productIdentityID()))
 	return nil
 }
 
 func cmdPolicySign() error {
-	if _, err := loadPolicyForCheck(); err != nil {
-		return err
+	docs := policyCommandDocuments()
+	for _, doc := range docs {
+		if _, err := doc.loadCheck(); err != nil {
+			return err
+		}
 	}
 	masterKey, err := readPolicyMasterKey()
 	if err != nil {
@@ -78,31 +93,79 @@ func cmdPolicySign() error {
 	}
 	defer crypto.ZeroBytes(masterKey)
 
-	if err := policy.SignPolicyFileIntegrityWithMasterKey(dataDirectory, productIdentityID(), masterKey, time.Now()); err != nil {
-		return fmt.Errorf("failed to sign policy integrity sidecar: %w", err)
+	now := time.Now()
+	for _, doc := range docs {
+		if err := doc.sign(masterKey, now); err != nil {
+			return fmt.Errorf("failed to sign %s integrity sidecar: %w", doc.name, err)
+		}
+		if _, err := doc.verify(masterKey); err != nil {
+			return fmt.Errorf("%s sidecar written but verification failed: %w", doc.name, err)
+		}
+		logInfof("%s sidecar signed: %s", doc.name, doc.sidecar)
 	}
-	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataDirectory, productIdentityID(), masterKey); err != nil {
-		return fmt.Errorf("policy sidecar written but verification failed: %w", err)
-	}
-	logInfof("policy sidecar signed: %s", policy.PolicyIntegritySidecarPath(policy.PolicyPath(dataDirectory, productIdentityID())))
 	return nil
 }
 
-func loadPolicyForCheck() (*policy.StoredConfig, error) {
-	path := policy.PolicyPath(dataDirectory, productIdentityID())
+func policyCommandDocuments() []policyCommandDocument {
+	identityID := productIdentityID()
+	policyPath := policy.PolicyPath(dataDirectory, identityID)
+	attestationPath := policy.AttestationPath(dataDirectory, identityID)
+	return []policyCommandDocument{
+		{
+			name:    "policy.yaml",
+			path:    policyPath,
+			sidecar: policy.PolicyIntegritySidecarPath(policyPath),
+			loadCheck: func() (*policy.StoredConfig, error) {
+				return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
+					return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
+				})
+			},
+			verify: func(masterKey []byte) (*policy.StoredConfig, error) {
+				return policy.LoadVerifiedStoredConfigWithMasterKey(dataDirectory, identityID, masterKey)
+			},
+			apply: func(stored *policy.StoredConfig) (*policy.Config, error) {
+				return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
+			},
+			sign: func(masterKey []byte, signedAt time.Time) error {
+				return policy.SignPolicyFileIntegrityWithMasterKey(dataDirectory, identityID, masterKey, signedAt)
+			},
+		},
+		{
+			name:    "attestation.yaml",
+			path:    attestationPath,
+			sidecar: policy.PolicyIntegritySidecarPath(attestationPath),
+			loadCheck: func() (*policy.StoredConfig, error) {
+				return loadPolicyDocumentForCheck("attestation.yaml", attestationPath, policy.ParseStoredAttestationConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
+					return policyruntime.ApplyAttestationStoredConfig(dataDirectory, &config, stored)
+				})
+			},
+			verify: func(masterKey []byte) (*policy.StoredConfig, error) {
+				return policy.LoadVerifiedAttestationConfigWithMasterKey(dataDirectory, identityID, masterKey)
+			},
+			apply: func(stored *policy.StoredConfig) (*policy.Config, error) {
+				return policyruntime.ApplyAttestationStoredConfig(dataDirectory, &config, stored)
+			},
+			sign: func(masterKey []byte, signedAt time.Time) error {
+				return policy.SignAttestationFileIntegrityWithMasterKey(dataDirectory, identityID, masterKey, signedAt)
+			},
+		},
+	}
+}
+
+func loadPolicyDocumentForCheck(name, path string, parser func([]byte) (*policy.StoredConfig, error), apply func(*policy.StoredConfig) (*policy.Config, error)) (*policy.StoredConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("policy file missing: %s", path)
+			return nil, fmt.Errorf("%s file missing: %s", name, path)
 		}
-		return nil, fmt.Errorf("failed to read policy config: %w", err)
+		return nil, fmt.Errorf("failed to read %s config: %w", name, err)
 	}
-	stored, err := policy.ParseStoredConfig(data)
+	stored, err := parser(data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse policy config: %w", err)
+		return nil, fmt.Errorf("failed to parse %s config: %w", name, err)
 	}
-	if _, err := policyruntime.ApplyStoredConfig(dataDirectory, &config, stored); err != nil {
-		return nil, fmt.Errorf("policy config invalid: %w", err)
+	if _, err := apply(stored); err != nil {
+		return nil, fmt.Errorf("%s config invalid: %w", name, err)
 	}
 	return stored, nil
 }

@@ -25,9 +25,6 @@ func TestRoleDomainsFixtureParsesAndRoundTrips(t *testing.T) {
 	if stored.ClientSigning == nil {
 		t.Fatal("ClientSigning = nil, want populated role block")
 	}
-	if stored.Attestation == nil {
-		t.Fatal("Attestation = nil, want populated role block")
-	}
 
 	encoded, err := MarshalStoredConfig(stored)
 	if err != nil {
@@ -37,8 +34,8 @@ func TestRoleDomainsFixtureParsesAndRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseStoredConfig(round trip) error = %v\nyaml:\n%s", err, encoded)
 	}
-	if roundTrip.ClientSigning == nil || roundTrip.Attestation == nil {
-		t.Fatalf("round-tripped roles = client:%#v attestation:%#v", roundTrip.ClientSigning, roundTrip.Attestation)
+	if roundTrip.ClientSigning == nil {
+		t.Fatalf("round-tripped client role = %#v", roundTrip.ClientSigning)
 	}
 }
 
@@ -66,38 +63,45 @@ func TestStoredConfigApplyAttestationRole(t *testing.T) {
 	enabled := true
 	addr := types.Address{1}.String()
 	stored := &StoredConfig{
-		Attestation: &StoredRoleConfig{
-			RejectRekey: &rejectRekey,
-			TransferPolicy: &StoredTransferPolicy{
-				SchemaVersion: 1,
-				Enabled:       &enabled,
-				Routes: []StoredTransferRoute{{
-					ID:           "attestor_route",
-					Networks:     []string{"testnet"},
-					Sources:      []string{"*"},
-					Assets:       []StoredAssetTerm{{Raw: "algo"}},
-					Destinations: []string{addr},
-				}},
-			},
+		RejectRekey: &rejectRekey,
+		TransferPolicy: &StoredTransferPolicy{
+			SchemaVersion: 1,
+			Enabled:       &enabled,
+			Routes: []StoredTransferRoute{{
+				ID:           "attestor_route",
+				Networks:     []string{"testnet"},
+				Sources:      []string{"*"},
+				Assets:       []StoredAssetTerm{{Raw: "algo"}},
+				Destinations: []string{addr},
+			}},
 		},
 	}
 
-	cfg, err := stored.Apply(DefaultConfig())
+	cfg, err := stored.ApplyAttestation(DefaultConfig())
 	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
+		t.Fatalf("ApplyAttestation() error = %v", err)
 	}
-	if cfg.Attestation == nil {
-		t.Fatal("Attestation = nil, want effective attestation config")
+	if !cfg.RejectRekey {
+		t.Fatal("RejectRekey = false, want true")
 	}
-	if !cfg.Attestation.RejectRekey {
-		t.Fatal("Attestation.RejectRekey = false, want true")
-	}
-	if cfg.Attestation.TransferPolicy == nil || cfg.Attestation.TransferPolicy.OnNoRoute != TransferOnNoRouteReject {
-		t.Fatalf("Attestation.TransferPolicy = %#v, want implicit reject route miss", cfg.Attestation.TransferPolicy)
+	if cfg.TransferPolicy == nil || cfg.TransferPolicy.OnNoRoute != TransferOnNoRouteReject || cfg.TransferPolicy.CloseOnNoRoute != TransferOnNoRouteReject || cfg.TransferPolicy.ClawbackOnNoRoute != TransferOnNoRouteReject {
+		t.Fatalf("TransferPolicy = %#v, want implicit reject route miss", cfg.TransferPolicy)
 	}
 }
 
-func TestParseStoredConfigRejectsReviewProducingAttestationFields(t *testing.T) {
+func TestParseStoredConfigRejectsAttestationPolicyFields(t *testing.T) {
+	for _, raw := range []string{
+		"attestation: {}\n",
+		"reject_rekey: true\n",
+	} {
+		_, err := ParseStoredConfig([]byte(raw))
+		if err == nil {
+			t.Fatalf("ParseStoredConfig(%q) error = nil, want signing document rejection", raw)
+		}
+	}
+}
+
+func TestParseStoredAttestationConfigRejectsReviewProducingFields(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
@@ -106,68 +110,70 @@ func TestParseStoredConfigRejectsReviewProducingAttestationFields(t *testing.T) 
 		{
 			name: "always review warnings",
 			raw: `
-attestation:
-  always_review_warnings: true
+always_review_warnings: true
 `,
 			want: "attestation.always_review_warnings",
 		},
 		{
 			name: "review algo payments",
 			raw: `
-attestation:
-  review_algo_payments:
-    testnet: 1
+review_algo_payments:
+  testnet: 1
 `,
 			want: "attestation.review_algo_payments",
 		},
 		{
 			name: "route miss review",
 			raw: `
-attestation:
-  transfer_policy:
-    schema_version: 1
-    enabled: true
-    on_no_route: review
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  on_no_route: review
 `,
 			want: "attestation.transfer_policy.on_no_route",
 		},
 		{
 			name: "route review above",
 			raw: `
-attestation:
-  transfer_policy:
-    schema_version: 1
-    enabled: true
-    on_no_route: reject
-    routes:
-      - id: route
-        networks: [testnet]
-        sources: ["*"]
-        assets: ["algo"]
-        destinations: ["*"]
-        limits:
-          review_above: 10
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  on_no_route: reject
+  routes:
+    - id: route
+      networks: [testnet]
+      sources: ["*"]
+      assets: ["algo"]
+      destinations: ["*"]
+      limits:
+        review_above: 10
 `,
 			want: "limits.review_above",
 		},
 		{
+			name: "wrapper",
+			raw: `
+attestation: {}
+`,
+			want: "attestation.yaml must not contain an attestation wrapper",
+		},
+		{
 			name: "client reject rekey",
 			raw: `
-client_signing:
-  reject_rekey: true
+client_signing: {}
 `,
-			want: "client_signing.reject_rekey",
+			want: "attestation.yaml client_signing",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseStoredConfig([]byte(tt.raw))
+			_, err := ParseStoredAttestationConfig([]byte(tt.raw))
 			if err == nil {
-				t.Fatal("ParseStoredConfig() error = nil, want role-domain rejection")
+				t.Fatal("ParseStoredAttestationConfig() error = nil, want role-domain rejection")
 			}
 			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("ParseStoredConfig() error = %v, want containing %q", err, tt.want)
+				t.Fatalf("ParseStoredAttestationConfig() error = %v, want containing %q", err, tt.want)
 			}
 		})
 	}

@@ -55,7 +55,8 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	                pointer. It is never nested with passphraseLock or keysLock;
 //	                reloadFromWatcher copies the callback out before releasing
 //	                watcherMu.
-//	policyMu        guards policyCfg and storedPolicyCfg. Held alone.
+//	policyMu        guards policyCfg/storedPolicyCfg and
+//	                attestationPolicyCfg/storedAttestationPolicyCfg. Held alone.
 //	sshKeysMu       guards sshKeys. Held alone.
 //	lifecycleMu     guards the decommission lease. BeginOperation takes RLock
 //	                and returns the RUnlock as the release; Decommission takes
@@ -95,12 +96,14 @@ type Runtime struct {
 	dirty         bool // Filesystem changes detected while locked; reconcile on next unlock
 	reloadLock    func() sync.Locker
 
-	approval        atomic.Pointer[signerapproval.Coordinator]
-	authenticator   auth.Authenticator
-	identityCfg     *IdentityConfig
-	policyMu        sync.RWMutex
-	policyCfg       *policy.Config
-	storedPolicyCfg *policy.StoredConfig
+	approval                   atomic.Pointer[signerapproval.Coordinator]
+	authenticator              auth.Authenticator
+	identityCfg                *IdentityConfig
+	policyMu                   sync.RWMutex
+	policyCfg                  *policy.Config
+	storedPolicyCfg            *policy.StoredConfig
+	attestationPolicyCfg       *policy.Config
+	storedAttestationPolicyCfg *policy.StoredConfig
 
 	// SSH authorized keys for this identity
 	sshKeys   []ssh.PublicKey
@@ -246,6 +249,45 @@ func (ir *Runtime) PolicySnapshot() (*policy.StoredConfig, *policy.Config) {
 	return stored, effective
 }
 
+// AttestationPolicy returns a copy of the effective attestor component policy
+// for this identity.
+func (ir *Runtime) AttestationPolicy() *policy.Config {
+	ir.policyMu.RLock()
+	defer ir.policyMu.RUnlock()
+	if ir.attestationPolicyCfg == nil {
+		return nil
+	}
+	return ir.attestationPolicyCfg.Clone()
+}
+
+// StoredAttestationPolicy returns a copy of the stored attestation policy
+// snapshot that produced the currently active effective attestation policy, if
+// one is available.
+func (ir *Runtime) StoredAttestationPolicy() *policy.StoredConfig {
+	ir.policyMu.RLock()
+	defer ir.policyMu.RUnlock()
+	if ir.storedAttestationPolicyCfg == nil {
+		return nil
+	}
+	return ir.storedAttestationPolicyCfg.Clone()
+}
+
+// AttestationPolicySnapshot returns copies of the active stored and effective
+// attestation policy state.
+func (ir *Runtime) AttestationPolicySnapshot() (*policy.StoredConfig, *policy.Config) {
+	ir.policyMu.RLock()
+	defer ir.policyMu.RUnlock()
+	var stored *policy.StoredConfig
+	if ir.storedAttestationPolicyCfg != nil {
+		stored = ir.storedAttestationPolicyCfg.Clone()
+	}
+	var effective *policy.Config
+	if ir.attestationPolicyCfg != nil {
+		effective = ir.attestationPolicyCfg.Clone()
+	}
+	return stored, effective
+}
+
 // SetPolicy installs the effective policy for this identity.
 func (ir *Runtime) SetPolicy(cfg *policy.Config) {
 	ir.SetPolicyState(nil, cfg)
@@ -267,6 +309,31 @@ func (ir *Runtime) SetPolicyState(stored *policy.StoredConfig, cfg *policy.Confi
 		ir.storedPolicyCfg = stored.Clone()
 	}
 	ir.policyCfg = cfg.Clone()
+}
+
+// SetAttestationPolicy installs the effective attestation policy for this
+// identity.
+func (ir *Runtime) SetAttestationPolicy(cfg *policy.Config) {
+	ir.SetAttestationPolicyState(nil, cfg)
+}
+
+// SetAttestationPolicyState installs the stored attestation policy snapshot
+// and the effective attestation policy for this identity as one atomic runtime
+// update.
+func (ir *Runtime) SetAttestationPolicyState(stored *policy.StoredConfig, cfg *policy.Config) {
+	ir.policyMu.Lock()
+	defer ir.policyMu.Unlock()
+	if cfg == nil {
+		ir.storedAttestationPolicyCfg = nil
+		ir.attestationPolicyCfg = nil
+		return
+	}
+	if stored == nil {
+		ir.storedAttestationPolicyCfg = nil
+	} else {
+		ir.storedAttestationPolicyCfg = stored.Clone()
+	}
+	ir.attestationPolicyCfg = cfg.Clone()
 }
 
 // --- Lock state ---

@@ -61,7 +61,7 @@ func TestCmdPolicySignRepairsDirectEdit(t *testing.T) {
 		if err == nil {
 			t.Fatal("cmdPolicy(verify) error = nil, want mismatch before signing")
 		}
-		if !strings.Contains(err.Error(), "policy integrity verification failed") {
+		if !strings.Contains(err.Error(), "policy.yaml integrity verification failed") {
 			t.Fatalf("cmdPolicy(verify) error = %v, want integrity failure", err)
 		}
 
@@ -91,7 +91,7 @@ func TestCmdPolicyCheckRejectsMalformedPolicy(t *testing.T) {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
-		if err == nil || !strings.Contains(err.Error(), "failed to parse policy config") {
+		if err == nil || !strings.Contains(err.Error(), "failed to parse policy.yaml config") {
 			t.Fatalf("cmdPolicy(check) error = %v, want parse failure", err)
 		}
 	})
@@ -115,7 +115,7 @@ transfer_policy:
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
-		if err == nil || !strings.Contains(err.Error(), "policy config invalid") {
+		if err == nil || !strings.Contains(err.Error(), "policy.yaml config invalid") {
 			t.Fatalf("cmdPolicy(check) error = %v, want transfer routing validation failure", err)
 		}
 	})
@@ -123,12 +123,9 @@ transfer_policy:
 
 func TestCmdPolicyCheckRejectsInvalidAttestationReviewPolicy(t *testing.T) {
 	withPolicyCommandStore(t, func(root string, _ []byte) {
-		raw := []byte(`
-attestation:
-  always_review_warnings: true
-`)
-		if err := os.WriteFile(policy.PolicyPath(root, productIdentityID()), raw, 0o600); err != nil {
-			t.Fatalf("WriteFile(policy) error = %v", err)
+		raw := []byte("always_review_warnings: true\n")
+		if err := os.WriteFile(policy.AttestationPath(root, productIdentityID()), raw, 0o600); err != nil {
+			t.Fatalf("WriteFile(attestation) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
 		if err == nil || !strings.Contains(err.Error(), "attestation.always_review_warnings") {

@@ -66,6 +66,10 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		crypto.ZeroBytes(masterKey)
 		return result, fmt.Errorf("failed to create policy integrity baseline: %w", err)
 	}
+	if err := policy.SaveStoredAttestationConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
+		crypto.ZeroBytes(masterKey)
+		return result, fmt.Errorf("failed to create attestation policy integrity baseline: %w", err)
+	}
 	crypto.ZeroBytes(masterKey)
 
 	if err := fsutil.MkdirAll(opts.Paths.KeysDir(opts.IdentityID)); err != nil {

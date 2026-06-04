@@ -203,14 +203,12 @@ func TestSignComponentAttestorRequiresPolicyBeforeKeyLoad(t *testing.T) {
 }
 
 func TestSignComponentAttestorRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
-	cfg := routingPolicyConfigForSigningTest(t, `
-attestation: {}
-`)
+	cfg := attestationPolicyConfigForSigningTest(t, `{}`)
 	componentKey := testEd25519ComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-no-routing",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  componentKey,
@@ -243,7 +241,7 @@ func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	}
 	store := &componentKeyStore{}
 
-	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-appl",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -269,7 +267,7 @@ func TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	txn := testnetPaymentTransaction(t, source, blocked, 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-route-miss",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -293,29 +291,27 @@ func TestAttestorComponentPolicyUsesComponentKeyOverride(t *testing.T) {
 	overrideDest := types.Address{27}.String()
 	componentKey := testEd25519ComponentSelector(t, 0xab)
 	otherComponentKey := testEd25519ComponentSelector(t, 0xcd)
-	cfg := routingPolicyConfigForSigningTest(t, fmt.Sprintf(`
-attestation:
-  transfer_policy:
-    schema_version: 1
-    enabled: true
-    routes:
-      - id: base_route
-        networks: [testnet]
-        sources: [%q]
-        assets: ["algo"]
-        destinations: [%q]
+	cfg := attestationPolicyConfigForSigningTest(t, fmt.Sprintf(`
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  routes:
+    - id: base_route
+      networks: [testnet]
+      sources: [%q]
+      assets: ["algo"]
+      destinations: [%q]
 key_overrides:
   %s:
-    attestation:
-      transfer_policy:
-        schema_version: 1
-        enabled: true
-        routes:
-          - id: override_route
-            networks: [testnet]
-            sources: [%q]
-            assets: ["algo"]
-            destinations: [%q]
+    transfer_policy:
+      schema_version: 1
+      enabled: true
+      routes:
+        - id: override_route
+          networks: [testnet]
+          sources: [%q]
+          assets: ["algo"]
+          destinations: [%q]
 `, source, baseDest, componentKey, source, overrideDest))
 	txn := testnetPaymentTransaction(t, source, overrideDest, 1)
 	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
@@ -328,30 +324,29 @@ key_overrides:
 	if err != nil {
 		t.Fatalf("PrepareComponentSigning() error = %v", err)
 	}
-	if signErr := (&Service{Policy: cfg}).evaluateAttestorComponentPolicy("default", plan); signErr != nil {
+	if signErr := (&Service{AttestationPolicy: cfg}).evaluateAttestorComponentPolicy("default", plan); signErr != nil {
 		t.Fatalf("evaluateAttestorComponentPolicy() error = %v", signErr)
 	}
 
 	plan.ComponentKey = otherComponentKey
-	signErr := (&Service{Policy: cfg}).evaluateAttestorComponentPolicy("default", plan)
+	signErr := (&Service{AttestationPolicy: cfg}).evaluateAttestorComponentPolicy("default", plan)
 	if signErr == nil || !strings.Contains(signErr.Message, policy.TransferRoutingRouteMissRuleID) {
 		t.Fatalf("evaluateAttestorComponentPolicy(other key) error = %#v, want route miss", signErr)
 	}
 }
 
 func TestSignComponentAttestorRejectsInheritedReviewRouteMissBeforeKeyLoad(t *testing.T) {
-	cfg := routingPolicyConfigForSigningTest(t, `
+	cfg := attestationPolicyConfigForSigningTest(t, `
 transfer_policy:
   schema_version: 1
   enabled: true
-  on_no_route: review
   routes: []
-attestation: {}
 `)
+	cfg.TransferPolicy.OnNoRoute = policy.TransferOnNoRouteReview
 	txn := testnetPaymentTransaction(t, types.Address{33}.String(), types.Address{34}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-review-route-miss",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -385,12 +380,11 @@ transfer_policy:
       destinations: [%q]
       limits:
         review_above: 1
-attestation: {}
 `, source, dest))
 	txn := testnetPaymentTransaction(t, source, dest, 2)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-review-above",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -415,7 +409,7 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	txn.RekeyTo = types.Address{30}
 	store := &componentKeyStore{}
 
-	_, err := (&Service{Policy: attestationRoutePolicy(t, source, dest)}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: attestationRoutePolicy(t, source, dest)}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-rekey",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -458,8 +452,8 @@ func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
 	audit := &testAuditLogger{}
 
 	result, signErr := (&Service{
-		Policy:   attestationRoutePolicy(t, source, dest),
-		AuditLog: audit,
+		AttestationPolicy: attestationRoutePolicy(t, source, dest),
+		AuditLog:          audit,
 	}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-policy-pass",
 		Role:          signerapi.ComponentSignRoleAttestor,
@@ -1050,33 +1044,31 @@ func testnetPaymentTransaction(t *testing.T, sender, receiver string, amount uin
 
 func wildcardAttestationPolicy(t *testing.T) *policy.Config {
 	t.Helper()
-	return routingPolicyConfigForSigningTest(t, `
-attestation:
-  transfer_policy:
-    schema_version: 1
-    enabled: true
-    routes:
-      - id: allow_all_dev
-        networks: ["*"]
-        sources: ["*"]
-        assets: ["*"]
-        destinations: ["*"]
+	return attestationPolicyConfigForSigningTest(t, `
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  routes:
+    - id: allow_all_dev
+      networks: ["*"]
+      sources: ["*"]
+      assets: ["*"]
+      destinations: ["*"]
 `)
 }
 
 func attestationRoutePolicy(t *testing.T, source, destination string) *policy.Config {
 	t.Helper()
-	return routingPolicyConfigForSigningTest(t, fmt.Sprintf(`
-attestation:
-  transfer_policy:
-    schema_version: 1
-    enabled: true
-    routes:
-      - id: allow_test_route
-        networks: [testnet]
-        sources: [%q]
-        assets: ["algo"]
-        destinations: [%q]
+	return attestationPolicyConfigForSigningTest(t, fmt.Sprintf(`
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  routes:
+    - id: allow_test_route
+      networks: [testnet]
+      sources: [%q]
+      assets: ["algo"]
+      destinations: [%q]
 `, source, destination))
 }
 

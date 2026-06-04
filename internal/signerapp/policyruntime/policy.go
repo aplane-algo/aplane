@@ -35,7 +35,22 @@ func ApplyStoredConfig(dataDir string, serverCfg *apconfig.ServerConfig, stored 
 	if err != nil {
 		return nil, err
 	}
-	effectivePolicy, err := stored.Apply(defaultPolicy)
+	effectivePolicy, err := stored.ApplySigning(defaultPolicy)
+	if err != nil {
+		return nil, err
+	}
+	return effectivePolicy, nil
+}
+
+// ApplyAttestationStoredConfig resolves a stored attestation.yaml overlay into
+// an effective attestor component policy using the runtime defaults for this
+// process.
+func ApplyAttestationStoredConfig(dataDir string, serverCfg *apconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error) {
+	defaultPolicy, err := DefaultConfig(dataDir, serverCfg)
+	if err != nil {
+		return nil, err
+	}
+	effectivePolicy, err := stored.ApplyAttestation(defaultPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -64,6 +79,21 @@ func LoadVerifiedWithStored(dataDir, identityID string, serverCfg *apconfig.Serv
 	return stored, effective, nil
 }
 
+// LoadVerifiedAttestationWithStored loads attestation.yaml only after
+// verifying its integrity sidecar with the identity master key, then returns
+// both the stored policy snapshot and the applied runtime attestor policy.
+func LoadVerifiedAttestationWithStored(dataDir, identityID string, serverCfg *apconfig.ServerConfig, masterKey []byte) (*policy.StoredConfig, *policy.Config, error) {
+	stored, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataDir, identityID, masterKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	effective, err := ApplyAttestationStoredConfig(dataDir, serverCfg, stored)
+	if err != nil {
+		return nil, nil, err
+	}
+	return stored, effective, nil
+}
+
 // SaveStoredConfigWithMasterKey writes policy.yaml plus policy.yaml.hmac and
 // returns the effective runtime policy for the stored content.
 func SaveStoredConfigWithMasterKey(dataDir, identityID string, serverCfg *apconfig.ServerConfig, stored *policy.StoredConfig, masterKey []byte, signedAt time.Time) (*policy.Config, error) {
@@ -73,6 +103,20 @@ func SaveStoredConfigWithMasterKey(dataDir, identityID string, serverCfg *apconf
 	}
 	if err := policy.SaveStoredConfigWithMasterKey(dataDir, identityID, stored, masterKey, signedAt); err != nil {
 		return nil, fmt.Errorf("failed to save policy.yaml: %w", err)
+	}
+	return effective, nil
+}
+
+// SaveStoredAttestationConfigWithMasterKey writes attestation.yaml plus
+// attestation.yaml.hmac and returns the effective runtime attestor policy for
+// the stored content.
+func SaveStoredAttestationConfigWithMasterKey(dataDir, identityID string, serverCfg *apconfig.ServerConfig, stored *policy.StoredConfig, masterKey []byte, signedAt time.Time) (*policy.Config, error) {
+	effective, err := ApplyAttestationStoredConfig(dataDir, serverCfg, stored)
+	if err != nil {
+		return nil, err
+	}
+	if err := policy.SaveStoredAttestationConfigWithMasterKey(dataDir, identityID, stored, masterKey, signedAt); err != nil {
+		return nil, fmt.Errorf("failed to save attestation.yaml: %w", err)
 	}
 	return effective, nil
 }

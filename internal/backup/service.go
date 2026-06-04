@@ -115,28 +115,50 @@ func CreateKeysArchive(paths storepaths.Paths, identityID, archivePath string, a
 }
 
 func copyPolicyFilesToArchive(paths storepaths.Paths, identityID, stageDir string, masterKey []byte) error {
-	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(paths.Root(), identityID, masterKey); err != nil {
-		return fmt.Errorf("failed to verify policy before backup: %w", err)
-	}
-	policyPath := policy.PolicyPath(paths.Root(), identityID)
-	sidecarPath := policy.PolicyIntegritySidecarPath(policyPath)
-	policyBytes, err := os.ReadFile(policyPath)
-	if err != nil {
-		return fmt.Errorf("failed to read policy.yaml: %w", err)
-	}
-	sidecarBytes, err := os.ReadFile(sidecarPath)
-	if err != nil {
-		return fmt.Errorf("failed to read policy.yaml.hmac: %w", err)
-	}
 	dstDir := filepath.Join(stageDir, "policy")
 	if err := os.MkdirAll(dstDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create policy backup directory: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dstDir, "policy.yaml"), policyBytes, 0o600); err != nil {
-		return fmt.Errorf("failed to stage policy.yaml: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(dstDir, "policy.yaml.hmac"), sidecarBytes, 0o600); err != nil {
-		return fmt.Errorf("failed to stage policy.yaml.hmac: %w", err)
+	for _, doc := range []struct {
+		name       string
+		path       string
+		verifyFunc func() error
+	}{
+		{
+			name: "policy.yaml",
+			path: policy.PolicyPath(paths.Root(), identityID),
+			verifyFunc: func() error {
+				_, err := policy.LoadVerifiedStoredConfigWithMasterKey(paths.Root(), identityID, masterKey)
+				return err
+			},
+		},
+		{
+			name: "attestation.yaml",
+			path: policy.AttestationPath(paths.Root(), identityID),
+			verifyFunc: func() error {
+				_, err := policy.LoadVerifiedAttestationConfigWithMasterKey(paths.Root(), identityID, masterKey)
+				return err
+			},
+		},
+	} {
+		if err := doc.verifyFunc(); err != nil {
+			return fmt.Errorf("failed to verify %s before backup: %w", doc.name, err)
+		}
+		docBytes, err := os.ReadFile(doc.path)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", doc.name, err)
+		}
+		sidecarPath := policy.PolicyIntegritySidecarPath(doc.path)
+		sidecarBytes, err := os.ReadFile(sidecarPath)
+		if err != nil {
+			return fmt.Errorf("failed to read %s.hmac: %w", doc.name, err)
+		}
+		if err := os.WriteFile(filepath.Join(dstDir, doc.name), docBytes, 0o600); err != nil {
+			return fmt.Errorf("failed to stage %s: %w", doc.name, err)
+		}
+		if err := os.WriteFile(filepath.Join(dstDir, doc.name+".hmac"), sidecarBytes, 0o600); err != nil {
+			return fmt.Errorf("failed to stage %s.hmac: %w", doc.name, err)
+		}
 	}
 	return nil
 }

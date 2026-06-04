@@ -9,11 +9,15 @@ Policy is stored beside the identity keys:
 ```text
 identities/<identity>/policy.yaml
 identities/<identity>/policy.yaml.hmac
+identities/<identity>/attestation.yaml
+identities/<identity>/attestation.yaml.hmac
 ```
 
-The `.hmac` sidecar authenticates the exact YAML bytes. After the signed
-baseline exists, a missing or mismatched sidecar fails closed rather than
-silently loading defaults.
+`policy.yaml` controls normal account signing. `attestation.yaml` controls
+attestor component signing for attested accounts. Each `.hmac` sidecar
+authenticates the exact YAML bytes. After the signed baseline exists, a
+missing or mismatched sidecar fails closed rather than silently loading
+defaults.
 
 ## What Policy Controls
 
@@ -39,7 +43,7 @@ rule.
 
 ## Editing Policy
 
-Use `appolicy` for normal policy work:
+Use `appolicy` for normal signing-policy work:
 
 ```bash
 appolicy -d "$APSIGNER_DATA"
@@ -87,9 +91,11 @@ apstore -d "$APSIGNER_DATA" policy verify
 ```
 
 Direct YAML edits take effect only after the next successful signer reload,
-unlock, or restart. `apstore policy sign` and `appolicy --save` are offline
-store mutations, so the normal workflow is to run them while `apsigner` is
-stopped or before starting it.
+unlock, or restart. `apstore policy check`, `apstore policy sign`, and
+`apstore policy verify` process both `policy.yaml` and `attestation.yaml`.
+`appolicy --save` updates only `policy.yaml`. These are offline store
+mutations, so the normal workflow is to run them while `apsigner` is stopped
+or before starting it.
 
 From the main key list in `apadmin`, press `p` to inspect the active signer
 policy. The same viewer is also available from the Settings `Policy` row. It
@@ -107,6 +113,8 @@ active policy changed before the upload was applied.
 ## Top-Level Fields
 
 `policy.yaml` is sparse. Omitted fields resolve through product defaults.
+It must not contain an `attestation:` block; attestor component policy lives in
+`attestation.yaml` without a wrapper.
 
 | Field | Meaning |
 |-------|---------|

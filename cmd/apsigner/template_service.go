@@ -40,7 +40,12 @@ func (fs *Signer) newReloadServiceForIdentity(ir *identity.Runtime, session *key
 			if err != nil {
 				return fmt.Errorf("policy verification failed for identity %q: %w", ir.ID(), err)
 			}
+			storedAttestation, effectiveAttestation, err := policyruntime.LoadVerifiedAttestationWithStored(fs.dataDir, ir.ID(), fs.config, masterKey)
+			if err != nil {
+				return fmt.Errorf("attestation policy verification failed for identity %q: %w", ir.ID(), err)
+			}
 			ir.SetPolicyState(storedPolicy, effectivePolicy)
+			ir.SetAttestationPolicyState(storedAttestation, effectiveAttestation)
 			return nil
 		},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {

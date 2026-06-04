@@ -402,6 +402,19 @@ func routingPolicyConfigForSigningTest(t *testing.T, raw string) *policy.Config 
 	return cfg
 }
 
+func attestationPolicyConfigForSigningTest(t *testing.T, raw string) *policy.Config {
+	t.Helper()
+	stored, err := policy.ParseStoredAttestationConfig([]byte(raw))
+	if err != nil {
+		t.Fatalf("ParseStoredAttestationConfig() error = %v", err)
+	}
+	cfg, err := stored.ApplyAttestation(policy.DefaultConfig())
+	if err != nil {
+		t.Fatalf("ApplyAttestation() error = %v", err)
+	}
+	return cfg
+}
+
 func testDigest(t *testing.T, encoded string) types.Digest {
 	t.Helper()
 	decoded, err := base64.StdEncoding.DecodeString(encoded)

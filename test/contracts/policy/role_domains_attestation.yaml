@@ -10,16 +10,3 @@ client_signing:
         sources: ["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"]
         assets: ["algo"]
         destinations: ["BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAY5HFKQ"]
-attestation:
-  reject_rekey: true
-  transfer_policy:
-    schema_version: 1
-    enabled: true
-    routes:
-      - id: attestor-mainnet-a-to-b-c
-        networks: ["mainnet"]
-        sources: ["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"]
-        assets: ["algo"]
-        destinations:
-          - "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBAY5HFKQ"
-          - "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAY5HFKQ"

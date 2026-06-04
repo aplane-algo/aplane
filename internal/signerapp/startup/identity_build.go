@@ -229,7 +229,12 @@ func wireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ident
 				if err != nil {
 					return fmt.Errorf("policy verification failed for identity %q: %w", identityID, err)
 				}
+				storedAttestation, effectiveAttestation, err := policyruntime.LoadVerifiedAttestationWithStored(opts.DataDir, identityID, opts.Config, masterKey)
+				if err != nil {
+					return fmt.Errorf("attestation policy verification failed for identity %q: %w", identityID, err)
+				}
 				ir.SetPolicyState(storedPolicy, effectivePolicy)
+				ir.SetAttestationPolicyState(storedAttestation, effectiveAttestation)
 				return nil
 			},
 			BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {

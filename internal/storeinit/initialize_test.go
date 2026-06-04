@@ -53,6 +53,9 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
 		t.Fatalf("policy integrity baseline did not verify: %v", err)
 	}
+	if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
+		t.Fatalf("attestation policy integrity baseline did not verify: %v", err)
+	}
 }
 
 func TestInitializeRejectsExistingMetadata(t *testing.T) {

@@ -416,7 +416,8 @@ Note: SSH paths are relative to the data directory (`$APSIGNER_DATA`). The `.ssh
 - Relative paths in config are resolved from the data directory
 - apadmin and apapprover connect via the IPC socket
 - `user_auto_approve` is the `User Auto-Approve` runtime admin setting persisted with identity config
-- signer safety guards live in identity-scoped `policy.yaml`
+- signer safety guards live in identity-scoped `policy.yaml`; attestor
+  component policy lives in `attestation.yaml`
 - See [Headless Operation](#headless-operation) for unattended deployment
 
 ---
@@ -430,14 +431,17 @@ Signer safety policy is identity-scoped and stored at:
 
 ```text
 $APSIGNER_DATA/identities/<identity>/policy.yaml
+$APSIGNER_DATA/identities/<identity>/attestation.yaml
 ```
 
-The sibling `$APSIGNER_DATA/identities/<identity>/policy.yaml.hmac` authenticates
-the exact YAML bytes. `apstore initialize` creates the signed baseline, and the
-signer verifies policy on unlock/reload before it loads keys. A missing or
-mismatched sidecar fails closed instead of falling back to default policy.
+Each file has a sibling `.hmac` sidecar that authenticates the exact YAML
+bytes. `apstore initialize` creates the signed baseline, and the signer
+verifies both policy documents on unlock/reload before it loads keys. A missing
+or mismatched sidecar fails closed instead of falling back to default policy.
 
-This file controls hard-reject, forced-review, and explicit auto-approval rules. It is separate from:
+`policy.yaml` controls hard-reject, forced-review, and explicit auto-approval
+rules for normal signing. `attestation.yaml` controls attestor component
+cosigning policy. They are separate from:
 
 - process/identity runtime settings like `signer_port`, `user_auto_approve`, and SSH
 - approval UI state such as which pending request an operator is viewing
@@ -446,11 +450,12 @@ For the operator-facing policy guide, including transfer routing and key type
 override examples, see [USER_POLICY.md](USER_POLICY.md). This section is a
 configuration reference for the policy fields.
 
-Use `appolicy` for policy edits. It verifies the existing sidecar, validates
-the edited policy, and writes `policy.yaml` plus a fresh sidecar while holding
-the offline store mutation lock. For deliberate direct YAML edits, run
-`apstore policy check`, review the change, then run `apstore policy sign`;
-`apstore policy verify` confirms the signed policy with the store passphrase.
+Use `appolicy` for signing-policy edits. It verifies the existing sidecar,
+validates the edited policy, and writes `policy.yaml` plus a fresh sidecar
+while holding the offline store mutation lock. For deliberate direct YAML edits
+to either policy document, run `apstore policy check`, review the change, then
+run `apstore policy sign`; `apstore policy verify` confirms both signed policy
+documents with the store passphrase.
 For byte-preserving scripted edits, `appolicy --yaml` emits the verified policy
 bytes and `appolicy --save` reads replacement YAML from stdin, validates it,
 and writes a fresh sidecar. `apstore policy sign` and `appolicy --save` are
@@ -533,13 +538,15 @@ max_asa_amounts:
 
 ### Transfer Routing
 
-`transfer_policy` is the `policy.yaml` route table for direct `pay` and `axfer`
-transactions. It is not exposed in `apadmin`. Use
+`transfer_policy` is the route table for direct `pay` and `axfer`
+transactions. For normal signing it lives in `policy.yaml`; for attestor
+component cosigning it lives in `attestation.yaml`. It is not exposed in
+`apadmin`. Use
 `appolicy -d "$APSIGNER_DATA"` for offline guided editing of common policy and
 transfer guards, or edit advanced routing fields directly in `policy.yaml`,
 then run `apstore policy check` and `apstore policy sign` before starting or
 reloading the signer. For scripts, use `appolicy --yaml` to export the verified
-policy and `appolicy --save` to validate, save, and sign replacement YAML from
+signing policy and `appolicy --save` to validate, save, and sign replacement YAML from
 stdin.
 
 For the broader operator policy guide, see [USER_POLICY.md](USER_POLICY.md).
@@ -813,7 +820,7 @@ key_overrides:
 
 `apadmin` no longer exposes a guided policy editor. It can show the active
 loaded policy from the main key list with `p`, and that viewer can hot-replace
-`policy.yaml` from a local YAML file. Use `appolicy` for guided policy edits:
+`policy.yaml` from a local YAML file. Use `appolicy` for guided signing-policy edits:
 
 ```bash
 appolicy -d "$APSIGNER_DATA"
@@ -821,8 +828,9 @@ appolicy -d "$APSIGNER_DATA"
 
 For scripted flows, `appolicy --yaml` writes the verified policy bytes to
 stdout, and `appolicy --save` reads replacement YAML from stdin, validates it,
-and writes a fresh sidecar. Direct YAML editing remains available through
-`apstore policy check`, `apstore policy sign`, and `apstore policy verify`.
+and writes a fresh sidecar for `policy.yaml`. Direct YAML editing for either
+policy document remains available through `apstore policy check`,
+`apstore policy sign`, and `apstore policy verify`.
 
 The legacy global transfer guard fields remain supported in `policy.yaml` for
 compatibility:

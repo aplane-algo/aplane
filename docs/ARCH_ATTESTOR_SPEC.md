@@ -35,7 +35,7 @@ Given canonical Algorand transaction/group bytes:
 The attestor does not register accounts, does not store account bindings, and
 does not authorize based on labels, profiles, or caller-supplied descriptions.
 The only authority for attestation is the authenticated signer's unlocked
-attestor component key plus the identity's trusted `policy.yaml` snapshot.
+attestor component key plus the identity's trusted `attestation.yaml` snapshot.
 
 This specification supplies the remaining implementable pieces:
 
@@ -288,7 +288,7 @@ when implemented with these constraints:
 - Attestor private keys stay under `identities/<identity>/keys/` and never
   leave `apsigner`.
 - Attestor policy, unlock state, token, and audit records are identity-scoped;
-  policy role domains inside `policy.yaml` are defined in
+  `attestation.yaml` and policy document domains are defined in
   [ARCH_POLICY.md#role-domains](ARCH_POLICY.md#role-domains).
 - Identity mode is loaded from identity config before key generation, import,
   scan/load, and endpoint role dispatch; the mode check is enforced against key
@@ -584,16 +584,15 @@ identity's policy. The transaction sender address is the policy subject.
 Example deterministic attestation policy:
 
 ```yaml
-attestation:
-  transfer_policy:
-    schema_version: 1
-    enabled: true
-    routes:
-      - id: a_to_b_c
-        networks: ["mainnet"]
-        sources: ["A..."]
-        assets: ["algo"]
-        destinations: ["B...", "C..."]
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  routes:
+    - id: a_to_b_c
+      networks: ["mainnet"]
+      sources: ["A..."]
+      assets: ["algo"]
+      destinations: ["B...", "C..."]
 ```
 
 For an attestor component request, the signer extracts the supported direct
@@ -639,15 +638,16 @@ Attestor component private keys are normal encrypted identity key files under:
 identities/<identity>/keys/
 ```
 
-Attestor authorization policy is the existing identity-scoped policy file:
+Attestor authorization policy is a separate identity-scoped signed policy file:
 
 ```text
-identities/<identity>/policy.yaml
-identities/<identity>/policy.yaml.hmac
+identities/<identity>/attestation.yaml
+identities/<identity>/attestation.yaml.hmac
 ```
 
-The existing policy HMAC, reload, backup, restore, and fail-closed behavior
-from `docs/ARCH_CONTRACTS.md` applies unchanged.
+The same policy HMAC, reload, backup, restore, and fail-closed behavior from
+`docs/ARCH_CONTRACTS.md` applies to both `policy.yaml` and
+`attestation.yaml`.
 
 Backup and restore preserve attestor component keys through the normal key
 backup path and preserve policy snapshots through the existing managed backup
@@ -1026,8 +1026,9 @@ At component signing and assembly:
 
 ## 16. Policy
 
-The MVP reuses the existing identity-scoped `policy.yaml` structure for both
-normal transaction signing and component attestation.
+The MVP uses the shared policy language in two signed identity-scoped
+documents: `policy.yaml` for normal transaction signing and `attestation.yaml`
+for attestor component signing.
 
 The policy question is:
 
@@ -1194,8 +1195,8 @@ should stay simple:
 2. The orchestrator obtains a user component signature from the user signer.
 3. The orchestrator sends canonical transaction/group bytes to the attestor
    signer.
-4. The attestor signer evaluates `policy.yaml` over decoded transaction facts
-   and returns attestor component signatures when allowed.
+4. The attestor signer evaluates `attestation.yaml` over decoded transaction
+   facts and returns attestor component signatures when allowed.
 5. The user signer assembles the final signed group.
 
 Shell command workflow logic belongs in `internal/apshellapp`, not
@@ -1332,10 +1333,11 @@ Phase 0 contract tests:
   assembly items, are committed.
 - attestor policy YAML fixtures prove existing `transfer_policy` routes can
   express "A can send to B and C" without registration.
-- role-domain policy YAML fixtures containing `client_signing:` and
-  `attestation:` blocks round-trip through `appolicy` and
-  `apstore policy check/sign/verify` without losing valid-but-not-guided-edited
-  YAML structure.
+- policy YAML fixtures containing `client_signing:` round-trip through
+  `appolicy` and `apstore policy check/sign/verify` without losing
+  valid-but-not-guided-edited YAML structure.
+- attestation YAML fixtures use direct attestor policy fields with no
+  `attestation:` wrapper and pass `apstore policy check/sign/verify`.
 
 Unit tests:
 
@@ -1358,9 +1360,9 @@ Unit tests:
   facts, never request labels.
 - attestor role accepts a policy-allowed `A -> B` payment and rejects an
   otherwise identical `A -> D` payment when `D` is not routed.
-- attestor role rejects route misses under deterministic
-  `attestation.transfer_policy` and fails closed when inherited common routing
-  would require a review or operator-default outcome.
+- attestor role rejects route misses under deterministic `attestation.yaml`
+  transfer policy and fails closed when policy would require a review or
+  operator-default outcome.
 - attestor role rejects `appl`, `keyreg`, `acfg`, and any other target
   transaction that produces no supported transfer movement.
 - attestor role rejects unknown genesis hashes when network-scoped policy must
@@ -1390,7 +1392,7 @@ Integration tests:
   own temporary signer data root; this is test harness composition, not a
   product same-node multi-store deployment,
 - account generation with a hard-coded attestor public key,
-- successful singleton attested payment allowed by attestor `policy.yaml`,
+- successful singleton attested payment allowed by attestor `attestation.yaml`,
 - successful attested group with mixed senders and passthrough,
 - successful multi-target group,
 - cross-network attempt rejected,
@@ -1435,7 +1437,7 @@ The MVP is complete when:
 - no registration endpoint, account-binding store, profile store, or trust-root
   store is required for attestation,
 - `/sign/component` returns raw role-separated component signatures after
-  evaluating decoded transaction facts against `policy.yaml`,
+  evaluating decoded transaction facts against `attestation.yaml`,
 - `/sign/assemble` verifies and assembles final signed transaction bytes,
 - `/sign/cancel` cancellation semantics for component signing are promoted into
   the canonical HTTP contract,
@@ -1463,5 +1465,5 @@ Deferred from MVP:
 - public attestor profiles for discovery/marketing metadata,
 - stateful account registration or recovery notices,
 - attested-account simulation,
-- guided role-aware editing for `client_signing:` and `attestation:` blocks in
-  `appolicy`.
+- guided role-aware editing for `client_signing:` in `appolicy` and
+  dedicated guided editing for `attestation.yaml`.
