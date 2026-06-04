@@ -175,3 +175,41 @@ func TestMarshalValidatesEnvelope(t *testing.T) {
 		t.Fatal("Marshal() error = nil, want validation error")
 	}
 }
+
+func TestMarshalParseRoundTripStable(t *testing.T) {
+	publicKey := bytes.Repeat([]byte{0x73}, 32)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+	env := Envelope{
+		Kind:          Kind,
+		SchemaVersion: SchemaVersion,
+		Alias:         "attestor-local",
+		Role:          RoleAttestation,
+		URL:           "ssh://signer.example:2223",
+		SignerPort:    11270,
+		LocalPort:     12001,
+		AttestorPublicKeys: []AttestorPublicKey{{
+			KeyType:      keytypes.AttestorComponentEd25519V1,
+			PublicKeyHex: hex.EncodeToString(publicKey),
+			ComponentKey: componentKey,
+		}},
+	}
+
+	first, err := Marshal(env)
+	if err != nil {
+		t.Fatalf("Marshal(first) error = %v", err)
+	}
+	parsed, err := Parse(first)
+	if err != nil {
+		t.Fatalf("Parse(first) error = %v", err)
+	}
+	second, err := Marshal(parsed)
+	if err != nil {
+		t.Fatalf("Marshal(second) error = %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatalf("marshal/parse/marshal changed envelope:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}

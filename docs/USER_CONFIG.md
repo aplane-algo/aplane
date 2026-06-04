@@ -178,8 +178,30 @@ and the token from `$APCLIENT_DATA/aplane.token`:
 connect
 ```
 
-For multiple signer endpoints, create `$APCLIENT_DATA/endpoints.yaml` and use
-endpoint aliases:
+For multiple signer endpoints, use endpoint aliases. The preferred handoff is
+for the signer operator to export a public endpoint envelope and for the client
+to import it:
+
+```bash
+# signer side
+apstore -d "$APSIGNER_DATA" endpoints export \
+  --alias attestor-local \
+  --role attestation \
+  --url ssh://attestor.example.com:1127 \
+  --signer-port 11270 \
+  --out attestor-local.endpoint.json
+
+# client side, inside apshell
+endpoints import attestor-local.endpoint.json
+endpoints show attestor-local
+request-token --endpoint attestor-local
+```
+
+Importing an endpoint creates routing/configuration only. It does not copy API
+tokens, SSH host trust, private keys, or passphrases. Tokens are still obtained
+with `request-token --endpoint <alias>`.
+
+The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 
 ```yaml
 schema_version: 1
@@ -203,6 +225,16 @@ Then:
 connect                 # default endpoint
 connect primary
 request-token --endpoint attestor-local
+```
+
+Useful local commands:
+
+```bash
+endpoints list
+endpoints show attestor-local
+endpoints import --dry-run attestor-local.endpoint.json
+endpoints default primary
+endpoints delete old-attestor
 ```
 
 To request a token from a one-off host for enrollment, use

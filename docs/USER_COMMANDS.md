@@ -14,7 +14,7 @@ Complete command reference for the APlane shell (`apshell`).
 | **Aliases & Sets** | `alias`, `sets` |
 | **Rekeying** | `rekey list`, `rekey`, `unrekey` |
 | **ASA Management** | `asa list`, `asa add`, `asa remove`, `asa clear` |
-| **Configuration** | `network`, `connect`, `request-token`, `write`, `verbose`, `simulate`, `config` |
+| **Configuration** | `network`, `connect`, `request-token`, `endpoints`, `write`, `verbose`, `simulate`, `config` |
 | **Automation** | `js`, `jssave`, `jslist`, `script` |
 | **Plugins** | `plugins` |
 | **Session** | `help`, `clear`, `quit` |
@@ -544,14 +544,19 @@ network <network>
 Connect to `apsigner` for transaction signing.
 
 ```
-connect
+connect [endpoint-alias]
 ```
 
-`connect` takes no arguments. It reads the SSH target from the `ssh:` block in `config.yaml` and opens the tunnel using that configuration.
+With no arguments, `connect` opens the default endpoint. In legacy
+single-endpoint setups that default is derived from the `ssh:` block in
+`config.yaml`. When `$APCLIENT_DATA/endpoints.yaml` exists, the default alias
+comes from that registry. Passing an endpoint alias connects to that named
+profile.
 
 **Examples:**
 ```
 connect
+connect primary
 ```
 
 **Required config:**
@@ -571,16 +576,19 @@ Request an API token from the Signer over SSH.
 
 ```
 request-token <host> [--ssh-port <port>]
+request-token --endpoint <alias>
 request-token
 ```
 
 The command always uses the client SSH key and known-hosts path from the local
-`ssh:` config block. With no arguments, it also uses `ssh.host` and `ssh.port`
-from that block.
+`ssh:` config block or the selected endpoint profile. With no arguments, it
+uses the default endpoint. With `--endpoint`, it saves the token to that
+endpoint's token file.
 
 **Examples:**
 ```
 request-token
+request-token --endpoint attestor-local
 request-token 192.168.1.100
 request-token 192.168.1.100 --ssh-port 2222
 ```
@@ -594,6 +602,39 @@ The same client-side SSH config and `aplane.token` obtained here can also be use
 ```bash
 apadmin --remote --client-data ~/aplane/apclient
 ```
+
+---
+
+### endpoints
+
+Manage client-local signer endpoint profiles.
+
+```
+endpoints list
+endpoints show <alias>
+endpoints import [--dry-run] <endpoint-json>
+endpoints default <alias>
+endpoints delete <alias>
+```
+
+`endpoints import` reads a public `aplane.endpoint.v1` envelope produced by
+`apstore endpoints export`. Import writes local routing only: `endpoints.yaml`
+and, for attestor envelopes, `config.yaml` `attestor_endpoints` alias mappings.
+It does not copy tokens or SSH host trust.
+
+**Examples:**
+```
+endpoints import attestor-local.endpoint.json
+endpoints import --dry-run attestor-local.endpoint.json
+endpoints list
+endpoints show attestor-local
+endpoints default primary
+endpoints delete old-attestor
+request-token --endpoint attestor-local
+```
+
+`endpoints delete` refuses to remove the default endpoint or an endpoint still
+referenced by local attestor mappings.
 
 ---
 
