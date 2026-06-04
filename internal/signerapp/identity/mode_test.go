@@ -71,6 +71,9 @@ func TestModeAllowsKeyType(t *testing.T) {
 	if !ModeSigning.AllowsKeyType(keytypes.AttestedFalcon1024V1) {
 		t.Fatal("signing mode rejected attested account key")
 	}
+	if !ModeSigning.AllowsKeyType(keytypes.AttestedFalcon1024AttFalcon1024V1) {
+		t.Fatal("signing mode rejected Falcon-attestor attested account key")
+	}
 	if ModeSigning.AllowsKeyType(keytypes.AttestorComponentEd25519V1) {
 		t.Fatal("signing mode allowed Ed25519 attestor component key")
 	}
@@ -85,6 +88,9 @@ func TestModeAllowsKeyType(t *testing.T) {
 	}
 	if ModeAttestation.AllowsKeyType("ed25519") {
 		t.Fatal("attestation mode allowed signing key")
+	}
+	if ModeAttestation.AllowsKeyType(keytypes.AttestedFalcon1024AttFalcon1024V1) {
+		t.Fatal("attestation mode allowed attested account key")
 	}
 	if !ModeDual.AllowsKeyType("ed25519") ||
 		!ModeDual.AllowsKeyType(keytypes.AttestorComponentEd25519V1) ||

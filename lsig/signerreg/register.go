@@ -38,6 +38,11 @@ func RegisterSigner() {
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 		}, attestedsignerreg.RegisterSigner)
 		registerCompiledSigner(keytypecatalog.Entry{
+			KeyType:      falcon1024attested.KeyTypeFalcon1024V1,
+			Family:       falcon1024attested.FamilyNameFalcon1024,
+			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+		}, attestedsignerreg.RegisterSigner)
+		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType:      falcon1024ed25519.KeyTypeV1,
 			Family:       falcon1024ed25519.FamilyName,
 			Availability: keytypecatalog.AvailabilityLibrary,

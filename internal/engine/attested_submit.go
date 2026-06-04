@@ -24,14 +24,20 @@ import (
 )
 
 type attestedOriginalTarget struct {
-	Index             int
-	Account           string
-	AttestorPublicKey string
+	Index                    int
+	Account                  string
+	AttestorComponentKeyType string
+	AttestorPublicKey        string
+}
+
+type attestorRequestKey struct {
+	ComponentKeyType string
+	PublicKey        string
 }
 
 func (e *Engine) hasAttestedSender(txns []types.Transaction) bool {
 	for _, txn := range txns {
-		if e.signerCacheKeyType(txn.Sender.String()) == keytypes.AttestedFalcon1024V1 {
+		if keytypes.IsAttestedAccountKeyType(e.signerCacheKeyType(txn.Sender.String())) {
 			return true
 		}
 	}
@@ -58,7 +64,7 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 		return nil, nil, fmt.Errorf("attested signing selected with no attested senders")
 	}
 	if len(targets) != len(txns) {
-		return nil, nil, fmt.Errorf("attested signing currently requires every original transaction sender to be %s", keytypes.AttestedFalcon1024V1)
+		return nil, nil, fmt.Errorf("attested signing currently requires every original transaction sender to use an attested account key type")
 	}
 
 	plannedTxns, dummyTxns, err := e.planAttestedGroup(txns, targets, w)
@@ -105,7 +111,7 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 			UserSignature:           userSig,
 			UserSourceRequestID:     userRequestIDs[target.Account],
 			AttestorSignature:       attestorSig,
-			AttestorSourceRequestID: attestorRequestIDs[target.AttestorPublicKey],
+			AttestorSourceRequestID: attestorRequestIDs[target.attestorRequestKey()],
 		})
 	}
 	for i, signedHex := range signedDummyHex {
@@ -146,27 +152,39 @@ func (e *Engine) attestedOriginalTargets(txns []types.Transaction) ([]attestedOr
 		if keyType == "" {
 			return nil, fmt.Errorf("transaction %d sender %s is not in signer cache", i, sender)
 		}
-		if keyType != keytypes.AttestedFalcon1024V1 {
+		if !keytypes.IsAttestedAccountKeyType(keyType) {
 			continue
+		}
+		attestorComponentKeyType, ok := keytypes.AttestorComponentKeyTypeForAttestedAccount(keyType)
+		if !ok {
+			return nil, fmt.Errorf("attested account %s uses unsupported attested key type %s", sender, keyType)
 		}
 		attestorPublicKey, ok := e.signerCacheAttestorPublicKey(sender)
 		if !ok || attestorPublicKey == "" {
 			return nil, fmt.Errorf("attested account %s is missing attestor_public_key metadata; run keys refresh", sender)
 		}
-		canonicalPublicKey, err := normalizeAttestorEd25519PublicKeyHex(attestorPublicKey)
+		canonicalPublicKey, err := normalizeAttestorPublicKeyHex(attestorPublicKey, attestorComponentKeyType)
 		if err != nil {
 			return nil, fmt.Errorf("attested account %s has invalid attestor_public_key metadata: %w", sender, err)
 		}
 		targets = append(targets, attestedOriginalTarget{
-			Index:             i,
-			Account:           sender,
-			AttestorPublicKey: canonicalPublicKey,
+			Index:                    i,
+			Account:                  sender,
+			AttestorComponentKeyType: attestorComponentKeyType,
+			AttestorPublicKey:        canonicalPublicKey,
 		})
 	}
 	return targets, nil
 }
 
-func normalizeAttestorEd25519PublicKeyHex(raw string) (string, error) {
+func (t attestedOriginalTarget) attestorRequestKey() attestorRequestKey {
+	return attestorRequestKey{
+		ComponentKeyType: t.AttestorComponentKeyType,
+		PublicKey:        t.AttestorPublicKey,
+	}
+}
+
+func normalizeAttestorPublicKeyHex(raw string, componentKeyType string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return "", fmt.Errorf("attestor public key is required")
@@ -176,15 +194,18 @@ func normalizeAttestorEd25519PublicKeyHex(raw string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("attestor public key must be hex: %w", err)
 	}
-	wantSize, _ := keytypes.ComponentPublicKeySize(keytypes.AttestorComponentEd25519V1)
+	wantSize, ok := keytypes.ComponentPublicKeySize(componentKeyType)
+	if !ok {
+		return "", fmt.Errorf("key type %q is not an attestor component key type", componentKeyType)
+	}
 	if len(publicKey) != wantSize {
 		return "", fmt.Errorf("attestor public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
 	}
 	return hex.EncodeToString(publicKey), nil
 }
 
-func attestorEd25519ComponentSelector(attestorPublicKey string) (string, error) {
-	canonicalPublicKey, err := normalizeAttestorEd25519PublicKeyHex(attestorPublicKey)
+func attestorComponentSelector(componentKeyType string, attestorPublicKey string) (string, error) {
+	canonicalPublicKey, err := normalizeAttestorPublicKeyHex(attestorPublicKey, componentKeyType)
 	if err != nil {
 		return "", err
 	}
@@ -192,7 +213,7 @@ func attestorEd25519ComponentSelector(attestorPublicKey string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	return keytypes.ComponentKeySelector(componentKeyType, publicKey)
 }
 
 func (e *Engine) planAttestedGroup(txns []types.Transaction, targets []attestedOriginalTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
@@ -320,33 +341,34 @@ func (e *Engine) requestUserComponentSignatures(ctx context.Context, groupBytesH
 	return signatures, requestIDs, nil
 }
 
-func (e *Engine) requestAttestorComponentSignatures(ctx context.Context, groupBytesHex []string, group *attestorverify.CanonicalGroup, targets []attestedOriginalTarget) (map[int]string, map[string]string, error) {
-	byAttestor := make(map[string][]int)
+func (e *Engine) requestAttestorComponentSignatures(ctx context.Context, groupBytesHex []string, group *attestorverify.CanonicalGroup, targets []attestedOriginalTarget) (map[int]string, map[attestorRequestKey]string, error) {
+	byAttestor := make(map[attestorRequestKey][]int)
 	for _, target := range targets {
-		byAttestor[target.AttestorPublicKey] = append(byAttestor[target.AttestorPublicKey], target.Index)
+		key := target.attestorRequestKey()
+		byAttestor[key] = append(byAttestor[key], target.Index)
 	}
 	signatures := make(map[int]string, len(targets))
-	requestIDs := make(map[string]string, len(byAttestor))
-	for attestorPublicKey, indices := range byAttestor {
-		requestID, err := e.requestOneAttestorComponentSignatureSet(ctx, groupBytesHex, group, attestorPublicKey, indices, signatures)
+	requestIDs := make(map[attestorRequestKey]string, len(byAttestor))
+	for attestorKey, indices := range byAttestor {
+		requestID, err := e.requestOneAttestorComponentSignatureSet(ctx, groupBytesHex, group, attestorKey, indices, signatures)
 		if err != nil {
 			return nil, nil, err
 		}
-		requestIDs[attestorPublicKey] = requestID
+		requestIDs[attestorKey] = requestID
 	}
 	return signatures, requestIDs, nil
 }
 
-func (e *Engine) requestOneAttestorComponentSignatureSet(ctx context.Context, groupBytesHex []string, group *attestorverify.CanonicalGroup, attestorPublicKey string, indices []int, signatures map[int]string) (string, error) {
-	endpoint, err := e.resolveAttestorEndpoint(ctx, attestorPublicKey)
+func (e *Engine) requestOneAttestorComponentSignatureSet(ctx context.Context, groupBytesHex []string, group *attestorverify.CanonicalGroup, attestorKey attestorRequestKey, indices []int, signatures map[int]string) (string, error) {
+	endpoint, err := e.resolveAttestorEndpoint(ctx, attestorKey)
 	if err != nil {
 		return "", err
 	}
 	defer endpoint.close()
 
-	componentSelector, err := attestorEd25519ComponentSelector(attestorPublicKey)
+	componentSelector, err := attestorComponentSelector(attestorKey.ComponentKeyType, attestorKey.PublicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to derive attestor component selector for public key %s: %w", attestorPublicKey, err)
+		return "", fmt.Errorf("failed to derive attestor component selector for public key %s: %w", attestorKey.PublicKey, err)
 	}
 
 	resp, err := endpoint.client.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
@@ -356,12 +378,12 @@ func (e *Engine) requestOneAttestorComponentSignatureSet(ctx context.Context, gr
 		TargetIndices: indices,
 	})
 	if err != nil {
-		return "", fmt.Errorf("attestor component signing failed for public key %s via %s: %w", attestorPublicKey, endpoint.source, err)
+		return "", fmt.Errorf("attestor component signing failed for public key %s via %s: %w", attestorKey.PublicKey, endpoint.source, err)
 	}
-	if err := collectComponentSignatures(resp, indices, keytypes.AttestorComponentEd25519V1, signatures); err != nil {
-		return "", fmt.Errorf("attestor component signing failed for public key %s via %s: %w", attestorPublicKey, endpoint.source, err)
+	if err := collectComponentSignatures(resp, indices, attestorKey.ComponentKeyType, signatures); err != nil {
+		return "", fmt.Errorf("attestor component signing failed for public key %s via %s: %w", attestorKey.PublicKey, endpoint.source, err)
 	}
-	if err := verifyAttestorComponentSignatures(attestorPublicKey, group, indices, signatures); err != nil {
+	if err := verifyAttestorComponentSignatures(attestorKey.ComponentKeyType, attestorKey.PublicKey, group, indices, signatures); err != nil {
 		return "", err
 	}
 	return resp.RequestID, nil
@@ -397,8 +419,8 @@ func collectComponentSignatures(resp *signerapi.ComponentSignResponse, expected 
 	return nil
 }
 
-func verifyAttestorComponentSignatures(attestorPublicKey string, group *attestorverify.CanonicalGroup, indices []int, signatures map[int]string) error {
-	canonicalPublicKey, err := normalizeAttestorEd25519PublicKeyHex(attestorPublicKey)
+func verifyAttestorComponentSignatures(componentKeyType string, attestorPublicKey string, group *attestorverify.CanonicalGroup, indices []int, signatures map[int]string) error {
+	canonicalPublicKey, err := normalizeAttestorPublicKeyHex(attestorPublicKey, componentKeyType)
 	if err != nil {
 		return err
 	}
@@ -413,11 +435,22 @@ func verifyAttestorComponentSignatures(attestorPublicKey string, group *attestor
 			return fmt.Errorf("attestor signature for target index %d must be hex: %w", index, err)
 		}
 		msg := message.ComponentMessage(message.RoleAttestor, group.Entries[index].TxID)
-		if err := attestorverify.VerifyEd25519(publicKey, msg[:], signature); err != nil {
+		if err := verifyAttestorComponentSignature(componentKeyType, publicKey, msg[:], signature); err != nil {
 			return fmt.Errorf("attestor signature for target index %d did not verify against embedded attestor public key: %w", index, err)
 		}
 	}
 	return nil
+}
+
+func verifyAttestorComponentSignature(componentKeyType string, publicKey, msg, signature []byte) error {
+	switch componentKeyType {
+	case keytypes.AttestorComponentEd25519V1:
+		return attestorverify.VerifyEd25519(publicKey, msg, signature)
+	case keytypes.AttestorComponentFalcon1024V1:
+		return attestorverify.VerifyFalcon1024(publicKey, msg, signature)
+	default:
+		return fmt.Errorf("key type %q is not an attestor component key type", componentKeyType)
+	}
 }
 
 func decodeAttestedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {

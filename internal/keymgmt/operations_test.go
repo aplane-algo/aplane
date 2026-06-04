@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024attested "github.com/aplane-algo/aplane/lsig/falcon1024_attested"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
@@ -65,6 +66,7 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		{keyType: "ed25519", want: true},
 		{keyType: "aplane.falcon1024.v1", want: true},
 		{keyType: falcon1024attested.KeyTypeV1, want: false},
+		{keyType: falcon1024attested.KeyTypeFalcon1024V1, want: false},
 		{keyType: keytypes.AttestorComponentEd25519V1, want: false},
 		{keyType: keytypes.AttestorComponentFalcon1024V1, want: false},
 		{keyType: "aplane.ecdsak1.v1", want: false},
@@ -169,11 +171,18 @@ func TestValidKeyTypesIncludeAttestorComponentKey(t *testing.T) {
 }
 
 func TestValidKeyTypesIncludeFalcon1024AttestedKey(t *testing.T) {
-	if !containsKeyType(GetValidKeyTypes(), falcon1024attested.KeyTypeV1) {
-		t.Fatalf("GetValidKeyTypes() missing %s", falcon1024attested.KeyTypeV1)
-	}
-	if !IsValidKeyType(falcon1024attested.KeyTypeV1) {
-		t.Fatalf("IsValidKeyType() rejected %s", falcon1024attested.KeyTypeV1)
+	for _, keyType := range []string{
+		falcon1024attested.KeyTypeV1,
+		falcon1024attested.KeyTypeFalcon1024V1,
+	} {
+		t.Run(keyType, func(t *testing.T) {
+			if !containsKeyType(GetValidKeyTypes(), keyType) {
+				t.Fatalf("GetValidKeyTypes() missing %s", keyType)
+			}
+			if !IsValidKeyType(keyType) {
+				t.Fatalf("IsValidKeyType() rejected %s", keyType)
+			}
+		})
 	}
 }
 
@@ -181,68 +190,92 @@ func TestGenerateKeyFalcon1024AttestedRequiresAttestorPublicKey(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-	_, err := GenerateKey(paths, "test-identity", falcon1024attested.KeyTypeV1, masterKey, nil)
-	if err == nil || !strings.Contains(err.Error(), "missing required parameter: attestor_public_key") {
-		t.Fatalf("GenerateKey(attested missing params) error = %v, want missing attestor_public_key", err)
+	for _, keyType := range []string{
+		falcon1024attested.KeyTypeV1,
+		falcon1024attested.KeyTypeFalcon1024V1,
+	} {
+		t.Run(keyType, func(t *testing.T) {
+			_, err := GenerateKey(paths, "test-identity", keyType, masterKey, nil)
+			if err == nil || !strings.Contains(err.Error(), "missing required parameter: attestor_public_key") {
+				t.Fatalf("GenerateKey(attested missing params) error = %v, want missing attestor_public_key", err)
+			}
+		})
 	}
 }
 
 func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 	configureAttestedCompileMock(t)
 
-	paths := storepaths.NewPaths(t.TempDir())
-	masterKey := []byte("0123456789abcdef0123456789abcdef")
-	attestorPublicKey := strings.Repeat("ab", stded25519.PublicKeySize)
-
-	result, err := GenerateKey(paths, "test-identity", falcon1024attested.KeyTypeV1, masterKey, map[string]string{
-		falcon1024attested.ParamAttestorPublicKey: attestorPublicKey,
-	})
-	if err != nil {
-		t.Fatalf("GenerateKey(attested) error = %v", err)
-	}
-	if result.KeyType != falcon1024attested.KeyTypeV1 {
-		t.Fatalf("KeyType = %q, want %s", result.KeyType, falcon1024attested.KeyTypeV1)
-	}
-	if result.Address == "" {
-		t.Fatal("Address is empty")
-	}
-	if result.IsComponentKey {
-		t.Fatalf("attested account marked as component: %#v", result)
+	tests := []struct {
+		keyType           string
+		attestorPublicKey string
+	}{
+		{
+			keyType:           falcon1024attested.KeyTypeV1,
+			attestorPublicKey: strings.Repeat("ab", stded25519.PublicKeySize),
+		},
+		{
+			keyType:           falcon1024attested.KeyTypeFalcon1024V1,
+			attestorPublicKey: strings.Repeat("cd", falconfamily.PublicKeySize),
+		},
 	}
 
-	decrypted, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(result.KeyFile, masterKey)
-	if err != nil {
-		t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
-	}
-	defer crypto.ZeroBytes(decrypted)
+	for _, tt := range tests {
+		t.Run(tt.keyType, func(t *testing.T) {
+			paths := storepaths.NewPaths(t.TempDir())
+			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-	var keyPair apkeys.KeyPair
-	if err := json.Unmarshal(decrypted, &keyPair); err != nil {
-		t.Fatalf("json.Unmarshal(KeyPair) error = %v", err)
-	}
-	if keyPair.Category != apkeys.CategoryDSALsig {
-		t.Fatalf("Category = %q, want %s", keyPair.Category, apkeys.CategoryDSALsig)
-	}
-	if keyPair.KeyType != falcon1024attested.KeyTypeV1 {
-		t.Fatalf("stored KeyType = %q, want %s", keyPair.KeyType, falcon1024attested.KeyTypeV1)
-	}
-	if keyPair.BaseKeyType != falcon1024attested.BaseKeyType {
-		t.Fatalf("BaseKeyType = %q, want %s", keyPair.BaseKeyType, falcon1024attested.BaseKeyType)
-	}
-	if keyPair.Params[falcon1024attested.ParamAttestorPublicKey] != attestorPublicKey {
-		t.Fatalf("attestor public key param = %q, want %q", keyPair.Params[falcon1024attested.ParamAttestorPublicKey], attestorPublicKey)
-	}
-	if keyPair.LsigBytecodeHex == "" {
-		t.Fatal("LsigBytecodeHex is empty")
-	}
-	if keyPair.SaltCounter == nil {
-		t.Fatal("SaltCounter is nil")
-	}
-	if keyPair.SigningMetadataVersion != apkeys.CurrentSigningMetadataVersion {
-		t.Fatalf("SigningMetadataVersion = %d, want %d", keyPair.SigningMetadataVersion, apkeys.CurrentSigningMetadataVersion)
-	}
-	if keyPair.TemplateFingerprint == "" {
-		t.Fatal("TemplateFingerprint is empty")
+			result, err := GenerateKey(paths, "test-identity", tt.keyType, masterKey, map[string]string{
+				falcon1024attested.ParamAttestorPublicKey: tt.attestorPublicKey,
+			})
+			if err != nil {
+				t.Fatalf("GenerateKey(attested) error = %v", err)
+			}
+			if result.KeyType != tt.keyType {
+				t.Fatalf("KeyType = %q, want %s", result.KeyType, tt.keyType)
+			}
+			if result.Address == "" {
+				t.Fatal("Address is empty")
+			}
+			if result.IsComponentKey {
+				t.Fatalf("attested account marked as component: %#v", result)
+			}
+
+			decrypted, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(result.KeyFile, masterKey)
+			if err != nil {
+				t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
+			}
+			defer crypto.ZeroBytes(decrypted)
+
+			var keyPair apkeys.KeyPair
+			if err := json.Unmarshal(decrypted, &keyPair); err != nil {
+				t.Fatalf("json.Unmarshal(KeyPair) error = %v", err)
+			}
+			if keyPair.Category != apkeys.CategoryDSALsig {
+				t.Fatalf("Category = %q, want %s", keyPair.Category, apkeys.CategoryDSALsig)
+			}
+			if keyPair.KeyType != tt.keyType {
+				t.Fatalf("stored KeyType = %q, want %s", keyPair.KeyType, tt.keyType)
+			}
+			if keyPair.BaseKeyType != falcon1024attested.BaseKeyType {
+				t.Fatalf("BaseKeyType = %q, want %s", keyPair.BaseKeyType, falcon1024attested.BaseKeyType)
+			}
+			if keyPair.Params[falcon1024attested.ParamAttestorPublicKey] != tt.attestorPublicKey {
+				t.Fatalf("attestor public key param = %q, want %q", keyPair.Params[falcon1024attested.ParamAttestorPublicKey], tt.attestorPublicKey)
+			}
+			if keyPair.LsigBytecodeHex == "" {
+				t.Fatal("LsigBytecodeHex is empty")
+			}
+			if keyPair.SaltCounter == nil {
+				t.Fatal("SaltCounter is nil")
+			}
+			if keyPair.SigningMetadataVersion != apkeys.CurrentSigningMetadataVersion {
+				t.Fatalf("SigningMetadataVersion = %d, want %d", keyPair.SigningMetadataVersion, apkeys.CurrentSigningMetadataVersion)
+			}
+			if keyPair.TemplateFingerprint == "" {
+				t.Fatal("TemplateFingerprint is empty")
+			}
+		})
 	}
 }
 

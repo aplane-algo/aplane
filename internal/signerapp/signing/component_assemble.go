@@ -6,7 +6,6 @@ package signing
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -92,7 +91,11 @@ func assembleAttestedTarget(ctx context.Context, target signerapi.AttestedAssemb
 	if len(keyMaterial.PublicKey) != family.PublicKeySize {
 		return "", internal(fmt.Sprintf("loaded attested account key has public key length %d", len(keyMaterial.PublicKey)))
 	}
-	attestorPublicKey, err := attestedAccountAttestorPublicKey(keyMaterial.Parameters)
+	attestorComponentKeyType, ok := keytypes.AttestorComponentKeyTypeForAttestedAccount(keyMaterial.Type)
+	if !ok {
+		return "", internal(fmt.Sprintf("loaded attested account key type %s has no attestor component key type", keyMaterial.Type))
+	}
+	attestorPublicKey, err := attestedAccountAttestorPublicKey(keyMaterial.Parameters, attestorComponentKeyType)
 	if err != nil {
 		return "", err
 	}
@@ -113,11 +116,11 @@ func assembleAttestedTarget(ctx context.Context, target signerapi.AttestedAssemb
 		return "", badRequest(fmt.Sprintf("target index %d user_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
 	attestorMessage := message.ComponentMessage(message.RoleAttestor, entry.TxID)
-	if verifyErr := attestorverify.VerifyEd25519(attestorPublicKey, attestorMessage[:], attestorSignature); verifyErr != nil {
+	if verifyErr := verifyAttestorAssemblySignature(attestorComponentKeyType, attestorPublicKey, attestorMessage[:], attestorSignature); verifyErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d attestor_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
 
-	packedSignature, packErr := falcon1024attested.PackComponentSignatures(userSignature, attestorSignature)
+	packedSignature, packErr := falcon1024attested.PackComponentSignaturesForKeyType(keyMaterial.Type, userSignature, attestorSignature)
 	if packErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d signatures invalid: %v", target.TargetIndex, packErr))
 	}
@@ -177,7 +180,18 @@ func validateAttestedPassthrough(passthrough signerapi.AttestedPassthroughItem, 
 	return hex.EncodeToString(signedTxnBytes), nil
 }
 
-func attestedAccountAttestorPublicKey(parameters map[string]string) ([]byte, *ServiceError) {
+func verifyAttestorAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {
+	switch componentKeyType {
+	case keytypes.AttestorComponentEd25519V1:
+		return attestorverify.VerifyEd25519(publicKey, msg, signature)
+	case keytypes.AttestorComponentFalcon1024V1:
+		return attestorverify.VerifyFalcon1024(publicKey, msg, signature)
+	default:
+		return fmt.Errorf("key type %q is not an attestor component key type", componentKeyType)
+	}
+}
+
+func attestedAccountAttestorPublicKey(parameters map[string]string, componentKeyType string) ([]byte, *ServiceError) {
 	if parameters == nil {
 		return nil, internal("loaded attested account key is missing creation parameters")
 	}
@@ -185,7 +199,11 @@ func attestedAccountAttestorPublicKey(parameters map[string]string) ([]byte, *Se
 	if strings.TrimSpace(value) == "" {
 		return nil, internal("loaded attested account key is missing attestor_public_key parameter")
 	}
-	publicKey, err := decodeHexBytes(value, ed25519.PublicKeySize, keytypes.ParameterAttestorPublicKey)
+	publicKeySize, ok := keytypes.ComponentPublicKeySize(componentKeyType)
+	if !ok {
+		return nil, internal(fmt.Sprintf("key type %q is not an attestor component key type", componentKeyType))
+	}
+	publicKey, err := decodeHexBytes(value, publicKeySize, keytypes.ParameterAttestorPublicKey)
 	if err != nil {
 		return nil, internal(err.Error())
 	}

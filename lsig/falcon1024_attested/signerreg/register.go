@@ -23,5 +23,8 @@ func RegisterSigner() {
 		keygen.Register(falconkeygen.NewFalconGenerator(falcon1024attested.KeyTypeV1, map[string]falconkeygen.LogicSigKeygenOps{
 			falcon1024attested.KeyTypeV1: ops,
 		}))
+		keygen.Register(falconkeygen.NewFalconGenerator(falcon1024attested.KeyTypeFalcon1024V1, map[string]falconkeygen.LogicSigKeygenOps{
+			falcon1024attested.KeyTypeFalcon1024V1: ops,
+		}))
 	})
 }

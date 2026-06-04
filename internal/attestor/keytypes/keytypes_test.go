@@ -22,11 +22,34 @@ func TestAttestorKeyTypeClassifiers(t *testing.T) {
 	if !IsAttestedAccountKeyType(AttestedFalcon1024V1) {
 		t.Fatal("attested Falcon account key type was not classified as attested")
 	}
+	if !IsAttestedAccountKeyType(AttestedFalcon1024AttFalcon1024V1) {
+		t.Fatal("Falcon-attested Falcon account key type was not classified as attested")
+	}
 	if IsAttestorMVPKeyType("aplane.falcon1024.v1") {
 		t.Fatal("ordinary Falcon key type classified as attestor MVP key type")
 	}
 	if IsAttestorMVPKeyType("aplane.future-att-future.v1") {
 		t.Fatal("deferred future attested key type classified as MVP key type")
+	}
+}
+
+func TestAttestorComponentKeyTypeForAttestedAccount(t *testing.T) {
+	tests := []struct {
+		keyType string
+		want    string
+		ok      bool
+	}{
+		{AttestedFalcon1024AttEd25519V1, AttestorComponentEd25519V1, true},
+		{AttestedFalcon1024AttFalcon1024V1, AttestorComponentFalcon1024V1, true},
+		{AttestorComponentEd25519V1, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.keyType, func(t *testing.T) {
+			got, ok := AttestorComponentKeyTypeForAttestedAccount(tt.keyType)
+			if ok != tt.ok || got != tt.want {
+				t.Fatalf("AttestorComponentKeyTypeForAttestedAccount() = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.ok)
+			}
+		})
 	}
 }
 

@@ -317,23 +317,21 @@ MVP key types:
 aplane.attestor-ed25519.v1
 aplane.attestor-falcon1024.v1
 aplane.falcon1024-att-ed25519.v1
+aplane.falcon1024-att-falcon1024.v1
 ```
 
 The MVP deliberately has no all-Ed25519 attested account key type. Future
-attested-account key types should follow the client-side account-key naming
-pattern `aplane.<user-key-family>-att-<attestor-key-family>.v1`, but they are
-deferred until a real consumer needs them.
+attested-account key types should follow the same client-side account-key
+naming pattern `aplane.<user-key-family>-att-<attestor-key-family>.v1`.
 
 `aplane.attestor-ed25519.v1` and `aplane.attestor-falcon1024.v1` are
 attestor component keys. They can produce raw component signatures only. They
 are not Algorand spending accounts and must not be accepted by `/sign`.
 
-`aplane.falcon1024-att-ed25519.v1` embeds an Ed25519 attestor verifier. A Falcon
-attestor component signature is distinguishable on the wire by
-`signature_scheme:"aplane.attestor-falcon1024.v1"`, but it is not accepted by
-the current `aplane.falcon1024-att-ed25519.v1` LogicSig. Supporting a Falcon
-attestor in an attested account requires a separate attested-account template
-whose bytecode verifies a Falcon attestor signature.
+`aplane.falcon1024-att-ed25519.v1` embeds an Ed25519 attestor verifier.
+`aplane.falcon1024-att-falcon1024.v1` embeds a Falcon-1024 attestor verifier.
+The attested-account key type determines which attestor component key type and
+signature scheme are accepted by assembly and by the LogicSig bytecode.
 
 Generated attestor component keys are selected by a canonical component-key
 selector:
@@ -348,10 +346,10 @@ deterministic, not an Algorand address, and always a 66-character
 `a_<64 lowercase hex>` string. The hash input is the canonical public-key bytes
 for the component key type, independent of key family or public-key size. The
 full component public key remains exposed in `public_key_hex`; for Ed25519
-attestors, that public key is the value embedded in
-`aplane.falcon1024-att-ed25519.v1` LogicSig bytecode and used for endpoint
-routing. Component signing requests use the selector in the `component_key`
-field when selecting a specific local attestor component key.
+and Falcon attestors, that public key is the value embedded in the matching
+`aplane.<user-key-family>-att-<attestor-key-family>.v1` LogicSig bytecode and
+used for endpoint routing. Component signing requests use the selector in the
+`component_key` field when selecting a specific local attestor component key.
 
 If an attestor identity has exactly one active attestor component key, clients
 may omit `component_key` for role `attestor` and the signer may select that key
@@ -417,7 +415,8 @@ attestor public key stored at generation time and embedded in the LogicSig; it
 is not an endpoint credential and does not prove ownership by any remote
 attestor endpoint.
 
-`aplane.falcon1024-att-ed25519.v1` is an attested account key. It is a
+`aplane.falcon1024-att-ed25519.v1` and
+`aplane.falcon1024-att-falcon1024.v1` are attested account keys. Each is a
 DSA-backed LogicSig key on disk with:
 
 - `category: dsa_lsig`
@@ -433,11 +432,12 @@ The attested account key stores the attestor public key selected by the user at
 generation time. That public key is a LogicSig verifier input, not attestor-side
 authorization state.
 
-The `falcon1024-att-ed25519` family names both component signature schemes:
-Falcon-1024 for the user role and Ed25519 for the attestor role. The stored
-template metadata and bytecode remain the signing authority, but the stable key
-type identifier must expose the attestor verifier family because changing it
-requires different LogicSig bytecode.
+The `falcon1024-att-ed25519` and `falcon1024-att-falcon1024` families name
+both component signature schemes: Falcon-1024 for the user role and either
+Ed25519 or Falcon-1024 for the attestor role. The stored template metadata and
+bytecode remain the signing authority, but the stable key type identifier must
+expose the attestor verifier family because changing it requires different
+LogicSig bytecode.
 
 ### 6.2 Registry And Keygen Requirements
 
@@ -487,8 +487,9 @@ Generation tests must prove:
 - `aplane.attestor-falcon1024.v1` generation returns canonical
   `public_key_hex` and uses a stable `a_` component-key selector derived from
   that public key,
-- `aplane.falcon1024-att-ed25519.v1` generation uses the attested-account
-  generator, not the Falcon base generator through fallback.
+- `aplane.falcon1024-att-ed25519.v1` and
+  `aplane.falcon1024-att-falcon1024.v1` generation use exact attested-account
+  generators, not the Falcon base generator through fallback.
 
 ### 6.3 `/plan` Metadata
 
@@ -1180,6 +1181,7 @@ User signer/client:
 
 ```text
 apshell generate aplane.falcon1024-att-ed25519.v1 attestor_public_key=<hex>
+apshell generate aplane.falcon1024-att-falcon1024.v1 attestor_public_key=<hex>
 apshell attest sign <group-or-transaction> --attestor <endpoint-or-name>
 apshell attest assemble <group-or-transaction> --user-sig <sig> --attestor-sig <sig>
 ```
@@ -1206,7 +1208,10 @@ connection or tunnel lifecycle.
 Client-side credential routing is separate local client config. Attestor
 endpoint mappings use the expected attestor public key hex as the map key and
 point to endpoint and credential references, not to policy facts or profile
-labels. Tokens are never stored in attested LogicSig metadata.
+labels. Falcon-1024 public-key hex values exceed the YAML simple-key length in
+some parsers, so `config.yaml` should write them as explicit mapping keys
+(`? "<hex>"` followed by `:`). Tokens are never stored in attested LogicSig
+metadata.
 
 A logical attestor may have multiple equivalent endpoints for availability.
 The client may call each endpoint's `/keys` projection to check whether it
@@ -1229,11 +1234,13 @@ Endpoint resolution rules:
   not permission to fall back to local self-discovery.
 - If no explicit mapping exists, development self-discovery may resolve to the
   currently connected signer when that signer advertises a matching
-  attestor component key. Current `aplane.falcon1024-att-ed25519.v1` accounts
-  embed Ed25519 attestor public keys, so self-discovery for that account type
-  only matches `aplane.attestor-ed25519.v1`. This is local development
-  ergonomics only; docs must not present self-attestation as production
-  third-party attestation or as a security control.
+  attestor component key. The attested account key type determines the required
+  attestor component key type: `aplane.falcon1024-att-ed25519.v1` matches
+  `aplane.attestor-ed25519.v1`, and
+  `aplane.falcon1024-att-falcon1024.v1` matches
+  `aplane.attestor-falcon1024.v1`. This is local development ergonomics only;
+  docs must not present self-attestation as production third-party attestation
+  or as a security control.
 - Remote production attestor endpoints must use an authenticated confidential
   transport. The preferred product path is the existing SSH tunnel and
   `known_hosts` trust model owned by `internal/engine/connect`; HTTPS with
@@ -1261,10 +1268,11 @@ There is no `lsig/` package for attestor component key types such as
 `aplane.attestor-ed25519.v1` or `aplane.attestor-falcon1024.v1`: they are raw
 component-signing keys, not LogicSigs. Their generation lives under
 `internal/keygen`; Ed25519 component signing uses the standard Ed25519 helper,
-and Falcon component signing reuses the signer-side Falcon operations. Future
-attested-account templates, if implemented, should follow the
+and Falcon component signing reuses the signer-side Falcon operations.
+Falcon-user attested-account templates live in `lsig/falcon1024_attested`.
+Future attested-account templates should follow the
 `aplane.<user-key-family>-att-<attestor-key-family>.v1` naming pattern and live
-in corresponding `lsig/<user_key_family>_att_<attestor_key_family>/` packages.
+in focused packages for their user-key family.
 
 Existing package changes:
 
@@ -1366,7 +1374,8 @@ Unit tests:
   11.3.
 - `/plan` accepts attested-account metadata and budgets LogicSig bytes.
 - component message computation matches vectors.
-- TEAL generated by attested template verifies known signatures in algod.
+- TEAL generated by each shipped attested-account template verifies known
+  signatures in algod.
 - live request registration rejects duplicate caller-supplied `request_id`
   values across `/sign` and `/sign/component` for the same identity.
 - group consistency rejects singleton with group, multi-member missing group,

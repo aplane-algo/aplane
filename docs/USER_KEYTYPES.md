@@ -17,9 +17,9 @@ APlane has two optional key type paths:
 
 Default-enabled compiled providers, such as `ed25519`,
 `aplane.falcon1024.v1`, `aplane.attestor-ed25519.v1`,
-`aplane.attestor-falcon1024.v1`, and
-`aplane.falcon1024-att-ed25519.v1`, are available without extra steps when the
-identity mode allows that key class.
+`aplane.attestor-falcon1024.v1`, `aplane.falcon1024-att-ed25519.v1`, and
+`aplane.falcon1024-att-falcon1024.v1`, are available without extra steps when
+the identity mode allows that key class.
 Library-visible compiled providers are present in the binary but require an
 identity-local activation record before that identity can discover or generate
 them.

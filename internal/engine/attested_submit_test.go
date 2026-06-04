@@ -27,6 +27,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
 func TestAttestedOriginalTargetsNormalizeAttestorPublicKey(t *testing.T) {
@@ -48,6 +50,34 @@ func TestAttestedOriginalTargetsNormalizeAttestorPublicKey(t *testing.T) {
 	}
 	if targets[0].Index != 0 || targets[0].Account != sender {
 		t.Fatalf("target = %+v, want index 0 account %s", targets[0], sender)
+	}
+	if targets[0].AttestorComponentKeyType != keytypes.AttestorComponentEd25519V1 {
+		t.Fatalf("attestor component key type = %q, want %q", targets[0].AttestorComponentKeyType, keytypes.AttestorComponentEd25519V1)
+	}
+	if targets[0].AttestorPublicKey != attestorHex {
+		t.Fatalf("attestor public key = %q, want %q", targets[0].AttestorPublicKey, attestorHex)
+	}
+}
+
+func TestAttestedOriginalTargetsNormalizeFalconAttestorPublicKey(t *testing.T) {
+	sender := testAddress(1).String()
+	attestorHex := testFalconAttestorPublicKeyHex(0xd6)
+	eng := newAttestedSubmitTestEngineForKeyType(t, sender, keytypes.AttestedFalcon1024AttFalcon1024V1, 1500, "0X"+strings.ToUpper(attestorHex))
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
+
+	if !eng.hasAttestedSender([]types.Transaction{txn}) {
+		t.Fatal("hasAttestedSender() = false, want true")
+	}
+
+	targets, err := eng.attestedOriginalTargets([]types.Transaction{txn})
+	if err != nil {
+		t.Fatalf("attestedOriginalTargets() error = %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("len(targets) = %d, want 1", len(targets))
+	}
+	if targets[0].AttestorComponentKeyType != keytypes.AttestorComponentFalcon1024V1 {
+		t.Fatalf("attestor component key type = %q, want %q", targets[0].AttestorComponentKeyType, keytypes.AttestorComponentFalcon1024V1)
 	}
 	if targets[0].AttestorPublicKey != attestorHex {
 		t.Fatalf("attestor public key = %q, want %q", targets[0].AttestorPublicKey, attestorHex)
@@ -71,9 +101,10 @@ func TestPlanAttestedGroupReturnsGroupedDummies(t *testing.T) {
 	eng := newAttestedSubmitTestEngine(t, sender, 2500, attestorHex)
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
 	targets := []attestedOriginalTarget{{
-		Index:             0,
-		Account:           sender,
-		AttestorPublicKey: attestorHex,
+		Index:                    0,
+		Account:                  sender,
+		AttestorComponentKeyType: keytypes.AttestorComponentEd25519V1,
+		AttestorPublicKey:        attestorHex,
 	}}
 
 	planned, dummies, err := eng.planAttestedGroup([]types.Transaction{txn}, targets, nil)
@@ -120,13 +151,45 @@ func TestVerifyAttestorComponentSignaturesUsesSharedMessage(t *testing.T) {
 
 	msg := message.ComponentMessage(message.RoleAttestor, group.Entries[0].TxID)
 	signatures := map[int]string{0: hex.EncodeToString(ed25519.Sign(privateKey, msg[:]))}
-	if err := verifyAttestorComponentSignatures(hex.EncodeToString(publicKey), group, []int{0}, signatures); err != nil {
+	if err := verifyAttestorComponentSignatures(keytypes.AttestorComponentEd25519V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err != nil {
 		t.Fatalf("verifyAttestorComponentSignatures() error = %v", err)
 	}
 
 	wrongRoleMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
 	signatures[0] = hex.EncodeToString(ed25519.Sign(privateKey, wrongRoleMsg[:]))
-	if err := verifyAttestorComponentSignatures(hex.EncodeToString(publicKey), group, []int{0}, signatures); err == nil {
+	if err := verifyAttestorComponentSignatures(keytypes.AttestorComponentEd25519V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err == nil {
+		t.Fatal("verifyAttestorComponentSignatures() accepted user-role signature for attestor role")
+	}
+}
+
+func TestVerifyAttestorComponentSignaturesUsesFalcon1024Scheme(t *testing.T) {
+	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(make([]byte, 64))
+	if err != nil {
+		t.Fatalf("GenerateKeypair() error = %v", err)
+	}
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
+	group, err := attestorverify.DecodeCanonicalGroupHex(encodeGroupHex([]types.Transaction{txn}))
+	if err != nil {
+		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
+	}
+
+	msg := message.ComponentMessage(message.RoleAttestor, group.Entries[0].TxID)
+	signature, err := signerops.New(nil).Sign(privateKey, msg[:])
+	if err != nil {
+		t.Fatalf("Sign() error = %v", err)
+	}
+	signatures := map[int]string{0: hex.EncodeToString(signature)}
+	if err := verifyAttestorComponentSignatures(keytypes.AttestorComponentFalcon1024V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err != nil {
+		t.Fatalf("verifyAttestorComponentSignatures() error = %v", err)
+	}
+
+	wrongRoleMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
+	signature, err = signerops.New(nil).Sign(privateKey, wrongRoleMsg[:])
+	if err != nil {
+		t.Fatalf("Sign(wrong role) error = %v", err)
+	}
+	signatures[0] = hex.EncodeToString(signature)
+	if err := verifyAttestorComponentSignatures(keytypes.AttestorComponentFalcon1024V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err == nil {
 		t.Fatal("verifyAttestorComponentSignatures() accepted user-role signature for attestor role")
 	}
 }
@@ -155,7 +218,7 @@ func TestRequestAttestorComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing
 		context.Background(),
 		groupBytesHex,
 		group,
-		[]attestedOriginalTarget{{Index: 0, Account: txn.Sender.String(), AttestorPublicKey: attestorHex}},
+		[]attestedOriginalTarget{ed25519AttestedTarget(txn.Sender.String(), attestorHex)},
 	)
 	if err != nil {
 		t.Fatalf("requestAttestorComponentSignatures() error = %v", err)
@@ -163,7 +226,7 @@ func TestRequestAttestorComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing
 	if signatures[0] == "" {
 		t.Fatal("signature for target 0 is empty")
 	}
-	if requestIDs[attestorHex] == "" {
+	if requestIDs[ed25519AttestorRequestKey(attestorHex)] == "" {
 		t.Fatal("request ID for attestor is empty")
 	}
 }
@@ -203,7 +266,7 @@ func TestRequestAttestorComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 		context.Background(),
 		groupBytesHex,
 		group,
-		[]attestedOriginalTarget{{Index: 0, Account: txn.Sender.String(), AttestorPublicKey: attestorHex}},
+		[]attestedOriginalTarget{ed25519AttestedTarget(txn.Sender.String(), attestorHex)},
 	)
 	if err == nil {
 		t.Fatal("requestAttestorComponentSignatures() error = nil, want explicit endpoint mismatch")
@@ -237,7 +300,7 @@ func TestRequestAttestorComponentSignaturesFallsBackToCurrentSigner(t *testing.T
 		context.Background(),
 		groupBytesHex,
 		group,
-		[]attestedOriginalTarget{{Index: 0, Account: txn.Sender.String(), AttestorPublicKey: attestorHex}},
+		[]attestedOriginalTarget{ed25519AttestedTarget(txn.Sender.String(), attestorHex)},
 	)
 	if err != nil {
 		t.Fatalf("requestAttestorComponentSignatures() error = %v", err)
@@ -265,8 +328,13 @@ func TestDecodeAttestedSignedGroupReturnsSignedObjects(t *testing.T) {
 
 func newAttestedSubmitTestEngine(t *testing.T, sender string, lsigSize int, attestorPublicKey string) *Engine {
 	t.Helper()
+	return newAttestedSubmitTestEngineForKeyType(t, sender, keytypes.AttestedFalcon1024V1, lsigSize, attestorPublicKey)
+}
+
+func newAttestedSubmitTestEngineForKeyType(t *testing.T, sender, keyType string, lsigSize int, attestorPublicKey string) *Engine {
+	t.Helper()
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(sender, keytypes.AttestedFalcon1024V1)
+	signerCache.AddAddress(sender, keyType)
 	if lsigSize > 0 {
 		signerCache.SetLsigSize(sender, lsigSize)
 	}
@@ -287,6 +355,28 @@ func testAttestorPublicKeyHex(prefix byte) string {
 	var publicKey [ed25519.PublicKeySize]byte
 	publicKey[0] = prefix
 	return hex.EncodeToString(publicKey[:])
+}
+
+func testFalconAttestorPublicKeyHex(prefix byte) string {
+	publicKey := make([]byte, falconfamily.PublicKeySize)
+	publicKey[0] = prefix
+	return hex.EncodeToString(publicKey)
+}
+
+func ed25519AttestedTarget(account, attestorHex string) attestedOriginalTarget {
+	return attestedOriginalTarget{
+		Index:                    0,
+		Account:                  account,
+		AttestorComponentKeyType: keytypes.AttestorComponentEd25519V1,
+		AttestorPublicKey:        attestorHex,
+	}
+}
+
+func ed25519AttestorRequestKey(attestorHex string) attestorRequestKey {
+	return attestorRequestKey{
+		ComponentKeyType: keytypes.AttestorComponentEd25519V1,
+		PublicKey:        attestorHex,
+	}
 }
 
 func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey ed25519.PrivateKey, token string, signCalls *atomic.Int32) *httptest.Server {

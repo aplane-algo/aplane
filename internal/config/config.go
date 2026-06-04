@@ -4,7 +4,6 @@
 package config
 
 import (
-	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -14,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 )
 
 const (
@@ -42,7 +43,7 @@ type AttestorEndpointConfig struct {
 	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// attestor endpoints"`
 }
 
-// AttestorEndpointConfigs is keyed by canonical lower-case Ed25519 attestor
+// AttestorEndpointConfigs is keyed by canonical lower-case embedded attestor
 // public-key hex.
 type AttestorEndpointConfigs map[string]AttestorEndpointConfig
 
@@ -271,10 +272,24 @@ func normalizeAttestorEndpointSelector(selector string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("attestor public key must be hex: %w", err)
 	}
-	if len(decoded) != ed25519.PublicKeySize {
-		return "", fmt.Errorf("attestor public key length %d invalid (expected %d bytes)", len(decoded), ed25519.PublicKeySize)
+	if !isSupportedAttestorEndpointPublicKeySize(len(decoded)) {
+		edSize, _ := keytypes.ComponentPublicKeySize(keytypes.AttestorComponentEd25519V1)
+		falconSize, _ := keytypes.ComponentPublicKeySize(keytypes.AttestorComponentFalcon1024V1)
+		return "", fmt.Errorf("attestor public key length %d invalid (expected %d or %d bytes)", len(decoded), edSize, falconSize)
 	}
 	return hex.EncodeToString(decoded), nil
+}
+
+func isSupportedAttestorEndpointPublicKeySize(size int) bool {
+	for _, keyType := range []string{
+		keytypes.AttestorComponentEd25519V1,
+		keytypes.AttestorComponentFalcon1024V1,
+	} {
+		if want, ok := keytypes.ComponentPublicKeySize(keyType); ok && size == want {
+			return true
+		}
+	}
+	return false
 }
 
 func validateAttestorEndpointConfig(selector string, endpoint AttestorEndpointConfig) error {

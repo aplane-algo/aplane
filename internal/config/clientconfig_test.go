@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
 func TestLoadConfigSignerStatusPollInterval(t *testing.T) {
@@ -136,6 +138,33 @@ attestor_endpoints:
 		t.Fatalf("LoadConfigFromPath: %v", err)
 	}
 	want := attestorEndpointTestHex("d6")
+	endpoint, ok := cfg.AttestorEndpoints[want]
+	if !ok {
+		t.Fatalf("canonical endpoint %s missing from %#v", want, cfg.AttestorEndpoints)
+	}
+	if endpoint.URL != "self" {
+		t.Fatalf("endpoint URL = %q, want self", endpoint.URL)
+	}
+}
+
+func TestLoadConfigAttestorEndpointsAcceptFalcon1024Selectors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	selector := "0X" + strings.ToUpper(attestorEndpointTestHexN("d6", falconfamily.PublicKeySize))
+	if err := os.WriteFile(path, []byte(fmt.Sprintf(`
+network: testnet
+attestor_endpoints:
+  ? "%s"
+  :
+    url: self
+`, selector)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfigFromPath(path)
+	if err != nil {
+		t.Fatalf("LoadConfigFromPath: %v", err)
+	}
+	want := attestorEndpointTestHexN("d6", falconfamily.PublicKeySize)
 	endpoint, ok := cfg.AttestorEndpoints[want]
 	if !ok {
 		t.Fatalf("canonical endpoint %s missing from %#v", want, cfg.AttestorEndpoints)
@@ -355,5 +384,9 @@ func decodeClientConfigKnownFields(data []byte) error {
 }
 
 func attestorEndpointTestHex(prefix string) string {
-	return prefix + strings.Repeat("00", 31)
+	return attestorEndpointTestHexN(prefix, 32)
+}
+
+func attestorEndpointTestHexN(prefix string, size int) string {
+	return prefix + strings.Repeat("00", size-1)
 }

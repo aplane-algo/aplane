@@ -36,28 +36,28 @@ func (r *resolvedAttestorEndpoint) close() {
 	}
 }
 
-func (e *Engine) resolveAttestorEndpoint(ctx context.Context, attestorPublicKey string) (*resolvedAttestorEndpoint, error) {
-	if endpoint, ok := e.AttestorEndpoints[attestorPublicKey]; ok {
+func (e *Engine) resolveAttestorEndpoint(ctx context.Context, attestorKey attestorRequestKey) (*resolvedAttestorEndpoint, error) {
+	if endpoint, ok := e.AttestorEndpoints[attestorKey.PublicKey]; ok {
 		if endpoint.URL == "self" {
-			if err := verifyAttestorEndpointAdvertises(ctx, e.Connection, attestorPublicKey, "configured self attestor endpoint"); err != nil {
+			if err := verifyAttestorEndpointAdvertises(ctx, e.Connection, attestorKey, "configured self attestor endpoint"); err != nil {
 				return nil, err
 			}
 			return &resolvedAttestorEndpoint{client: e.Connection, source: "self"}, nil
 		}
 		client, cleanup, source, err := e.connectConfiguredAttestorEndpoint(ctx, endpoint)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect attestor endpoint for public key %s: %w", attestorPublicKey, err)
+			return nil, fmt.Errorf("failed to connect attestor endpoint for public key %s: %w", attestorKey.PublicKey, err)
 		}
 		resolved := &resolvedAttestorEndpoint{client: client, source: source, cleanup: cleanup}
-		if err := verifyAttestorEndpointAdvertises(ctx, client, attestorPublicKey, source); err != nil {
+		if err := verifyAttestorEndpointAdvertises(ctx, client, attestorKey, source); err != nil {
 			resolved.close()
 			return nil, err
 		}
 		return resolved, nil
 	}
 
-	if err := verifyAttestorEndpointAdvertises(ctx, e.Connection, attestorPublicKey, "current signer"); err != nil {
-		return nil, fmt.Errorf("no attestor endpoint configured for public key %s and current signer does not advertise a matching component key: %w", attestorPublicKey, err)
+	if err := verifyAttestorEndpointAdvertises(ctx, e.Connection, attestorKey, "current signer"); err != nil {
+		return nil, fmt.Errorf("no attestor endpoint configured for public key %s and current signer does not advertise a matching component key: %w", attestorKey.PublicKey, err)
 	}
 	return &resolvedAttestorEndpoint{client: e.Connection, source: "current signer"}, nil
 }
@@ -129,12 +129,12 @@ func (e *Engine) signerProgressWriter() io.Writer {
 	return e.Connection.SignerProgressOut
 }
 
-func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorComponentClient, attestorPublicKey string, source string) error {
-	expectedPublicKey, err := normalizeAttestorEd25519PublicKeyHex(attestorPublicKey)
+func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorComponentClient, attestorKey attestorRequestKey, source string) error {
+	expectedPublicKey, err := normalizeAttestorPublicKeyHex(attestorKey.PublicKey, attestorKey.ComponentKeyType)
 	if err != nil {
 		return fmt.Errorf("invalid expected attestor public key: %w", err)
 	}
-	expectedSelector, err := attestorEd25519ComponentSelector(expectedPublicKey)
+	expectedSelector, err := attestorComponentSelector(attestorKey.ComponentKeyType, expectedPublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to derive expected attestor component selector: %w", err)
 	}
@@ -143,10 +143,10 @@ func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorCompon
 		return fmt.Errorf("failed to inspect %s component keys for attestation: %w", source, err)
 	}
 	for _, key := range keys.Keys {
-		if key.KeyType != keytypes.AttestorComponentEd25519V1 || !key.IsComponentKey {
+		if key.KeyType != attestorKey.ComponentKeyType || !key.IsComponentKey {
 			continue
 		}
-		publicKey, err := normalizeAttestorEd25519PublicKeyHex(key.PublicKeyHex)
+		publicKey, err := normalizeAttestorPublicKeyHex(key.PublicKeyHex, attestorKey.ComponentKeyType)
 		if err != nil {
 			continue
 		}

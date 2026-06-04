@@ -13,10 +13,13 @@ import (
 	falconkeys "github.com/aplane-algo/aplane/lsig/falcon1024/keys"
 )
 
-type metadata struct{}
+type metadata struct {
+	family        string
+	signatureSize int
+}
 
-func (metadata) Family() string               { return FamilyName }
-func (metadata) CryptoSignatureSize() int     { return SignatureSize }
+func (m metadata) Family() string             { return m.family }
+func (m metadata) CryptoSignatureSize() int   { return m.signatureSize }
 func (metadata) MnemonicWordCount() int       { return family.MnemonicWordCount }
 func (metadata) SupportsMnemonicImport() bool { return false }
 func (metadata) MnemonicScheme() string       { return family.MnemonicScheme }
@@ -31,7 +34,10 @@ var registerClientOnce sync.Once
 func RegisterClient() {
 	registerClientOnce.Do(func() {
 		logicsigdsa.Register(NewProviderV1())
-		algorithm.RegisterMetadata(metadata{})
+		logicsigdsa.Register(NewFalconAttestorProviderV1())
+		algorithm.RegisterMetadata(metadata{family: FamilyName, signatureSize: SignatureSize})
+		algorithm.RegisterMetadata(metadata{family: FamilyNameFalcon1024, signatureSize: SignatureSizeFalcon1024})
 		addressderive.Register(KeyTypeV1, falconkeys.GetFalconAddressDeriverForType(KeyTypeV1))
+		addressderive.Register(KeyTypeFalcon1024V1, falconkeys.GetFalconAddressDeriverForType(KeyTypeFalcon1024V1))
 	})
 }

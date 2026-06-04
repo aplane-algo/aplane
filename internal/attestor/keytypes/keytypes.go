@@ -24,13 +24,22 @@ const (
 	// It is not an Algorand spending account and must not be accepted by /sign.
 	AttestorComponentFalcon1024V1 = "aplane.attestor-falcon1024.v1"
 
-	// AttestedFalcon1024V1 is the MVP user-account key type whose LogicSig
+	// AttestedFalcon1024AttEd25519V1 is the user-account key type whose LogicSig
 	// verifies a Falcon-1024 user signature plus an Ed25519 attestor component
 	// signature.
-	AttestedFalcon1024V1 = "aplane.falcon1024-att-ed25519.v1"
+	AttestedFalcon1024AttEd25519V1 = "aplane.falcon1024-att-ed25519.v1"
+
+	// AttestedFalcon1024AttFalcon1024V1 is the user-account key type whose
+	// LogicSig verifies a Falcon-1024 user signature plus a Falcon-1024
+	// attestor component signature.
+	AttestedFalcon1024AttFalcon1024V1 = "aplane.falcon1024-att-falcon1024.v1"
+
+	// AttestedFalcon1024V1 is the original Ed25519-attestor Falcon account key
+	// type. Keep this alias for existing internal call sites.
+	AttestedFalcon1024V1 = AttestedFalcon1024AttEd25519V1
 
 	// ParameterAttestorPublicKey is the durable creation parameter that records
-	// the attestor Ed25519 public key embedded in an attested account LogicSig.
+	// the attestor public key embedded in an attested account LogicSig.
 	ParameterAttestorPublicKey = "attestor_public_key"
 
 	// ComponentKeySelectorPrefix marks APlane attestor component-key selectors.
@@ -51,13 +60,31 @@ func IsAttestorComponentKeyType(keyType string) bool {
 // IsAttestedAccountKeyType reports whether keyType names an attested spending
 // account that requires the component signing and assembly flow.
 func IsAttestedAccountKeyType(keyType string) bool {
-	return keyType == AttestedFalcon1024V1
+	switch keyType {
+	case AttestedFalcon1024AttEd25519V1, AttestedFalcon1024AttFalcon1024V1:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsAttestorMVPKeyType reports whether keyType is any key type reserved by the
 // attestor MVP.
 func IsAttestorMVPKeyType(keyType string) bool {
 	return IsAttestorComponentKeyType(keyType) || IsAttestedAccountKeyType(keyType)
+}
+
+// AttestorComponentKeyTypeForAttestedAccount returns the attestor component
+// key type embedded by an attested account key type.
+func AttestorComponentKeyTypeForAttestedAccount(keyType string) (string, bool) {
+	switch keyType {
+	case AttestedFalcon1024AttEd25519V1:
+		return AttestorComponentEd25519V1, true
+	case AttestedFalcon1024AttFalcon1024V1:
+		return AttestorComponentFalcon1024V1, true
+	default:
+		return "", false
+	}
 }
 
 // ComponentKeySelector returns the canonical selector for an attestor component

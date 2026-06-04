@@ -39,17 +39,24 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 func TestRegisterClientMarksFalcon1024AttestedDefaultEnabled(t *testing.T) {
 	RegisterClient()
 
-	if !lsigprovider.Has(falcon1024attested.KeyTypeV1) {
-		t.Fatalf("RegisterClient() did not register %s", falcon1024attested.KeyTypeV1)
-	}
-	if !keytypecatalog.IsDefaultEnabled(falcon1024attested.KeyTypeV1) {
-		t.Fatalf("%s should be default-enabled", falcon1024attested.KeyTypeV1)
-	}
-	if keytypecatalog.IsLibraryVisible(falcon1024attested.KeyTypeV1) {
-		t.Fatalf("%s should not be library-visible", falcon1024attested.KeyTypeV1)
-	}
-	if !containsKeyType(keymgmt.GetValidKeyTypes(), falcon1024attested.KeyTypeV1) {
-		t.Fatalf("%s should be in default generation key types", falcon1024attested.KeyTypeV1)
+	for _, keyType := range []string{
+		falcon1024attested.KeyTypeV1,
+		falcon1024attested.KeyTypeFalcon1024V1,
+	} {
+		t.Run(keyType, func(t *testing.T) {
+			if !lsigprovider.Has(keyType) {
+				t.Fatalf("RegisterClient() did not register %s", keyType)
+			}
+			if !keytypecatalog.IsDefaultEnabled(keyType) {
+				t.Fatalf("%s should be default-enabled", keyType)
+			}
+			if keytypecatalog.IsLibraryVisible(keyType) {
+				t.Fatalf("%s should not be library-visible", keyType)
+			}
+			if !containsKeyType(keymgmt.GetValidKeyTypes(), keyType) {
+				t.Fatalf("%s should be in default generation key types", keyType)
+			}
+		})
 	}
 }
 
