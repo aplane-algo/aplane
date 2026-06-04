@@ -24,6 +24,7 @@ func TestEndpointImportDryRunDoesNotWriteFiles(t *testing.T) {
 	envelopePath, publicKeyHex := writeEndpointEnvelope(t, dataDir, endpointrefs.RoleAttestation)
 
 	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
+		Alias:  "attestor-local",
 		Path:   envelopePath,
 		DryRun: true,
 	})
@@ -49,7 +50,7 @@ func TestEndpointImportWritesEndpointAndAttestorMapping(t *testing.T) {
 	app := newEndpointTestApp(t, dataDir)
 	envelopePath, publicKeyHex := writeEndpointEnvelope(t, dataDir, endpointrefs.RoleAttestation)
 
-	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: envelopePath})
+	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{Alias: "attestor-local", Path: envelopePath})
 	if err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
@@ -87,7 +88,7 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	envelopePath, publicKeyHex := writeEndpointEnvelope(t, dataDir, endpointrefs.RoleAttestation)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: envelopePath}); err != nil {
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Alias: "attestor-local", Path: envelopePath}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
 	tokenPath := filepath.Join(dataDir, "tokens", "attestor-local.token")
@@ -129,7 +130,7 @@ func TestEndpointDefaultRejectsAttestationEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	envelopePath, _ := writeEndpointEnvelope(t, dataDir, endpointrefs.RoleAttestation)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: envelopePath}); err != nil {
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Alias: "attestor-local", Path: envelopePath}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
 
@@ -142,8 +143,8 @@ func TestEndpointDefaultRejectsAttestationEndpoint(t *testing.T) {
 func TestEndpointDefaultSetsSigningEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	envelopePath, _ := writeEndpointEnvelopeWithAlias(t, dataDir, "signer-local", endpointrefs.RoleSigning)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: envelopePath}); err != nil {
+	envelopePath, _ := writeEndpointEnvelopeWithName(t, dataDir, "signer-local", endpointrefs.RoleSigning)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Alias: "signer-local", Path: envelopePath}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
 
@@ -168,7 +169,7 @@ func TestEndpointDeleteRejectsMappedAttestorEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	envelopePath, publicKeyHex := writeEndpointEnvelope(t, dataDir, endpointrefs.RoleAttestation)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: envelopePath}); err != nil {
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Alias: "attestor-local", Path: envelopePath}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
 
@@ -184,12 +185,12 @@ func TestEndpointDeleteRejectsMappedAttestorEndpoint(t *testing.T) {
 func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	primaryPath, _ := writeEndpointEnvelopeWithAlias(t, dataDir, "primary", endpointrefs.RoleSigning)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: primaryPath}); err != nil {
+	primaryPath, _ := writeEndpointEnvelopeWithName(t, dataDir, "primary", endpointrefs.RoleSigning)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Alias: "primary", Path: primaryPath}); err != nil {
 		t.Fatalf("EndpointImport(primary) error = %v", err)
 	}
-	secondaryPath, _ := writeEndpointEnvelopeWithAlias(t, dataDir, "secondary", endpointrefs.RoleSigning)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: secondaryPath}); err != nil {
+	secondaryPath, _ := writeEndpointEnvelopeWithName(t, dataDir, "secondary", endpointrefs.RoleSigning)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Alias: "secondary", Path: secondaryPath}); err != nil {
 		t.Fatalf("EndpointImport(secondary) error = %v", err)
 	}
 
@@ -219,10 +220,10 @@ func newEndpointTestApp(t *testing.T, dataDir string) *App {
 
 func writeEndpointEnvelope(t *testing.T, dir, role string) (string, string) {
 	t.Helper()
-	return writeEndpointEnvelopeWithAlias(t, dir, "attestor-local", role)
+	return writeEndpointEnvelopeWithName(t, dir, "attestor-local", role)
 }
 
-func writeEndpointEnvelopeWithAlias(t *testing.T, dir, alias, role string) (string, string) {
+func writeEndpointEnvelopeWithName(t *testing.T, dir, name, role string) (string, string) {
 	t.Helper()
 	publicKey := make([]byte, 32)
 	for i := range publicKey {
@@ -236,7 +237,6 @@ func writeEndpointEnvelopeWithAlias(t *testing.T, dir, alias, role string) (stri
 	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
 		Kind:          endpointrefs.Kind,
 		SchemaVersion: endpointrefs.SchemaVersion,
-		Alias:         alias,
 		Role:          role,
 		URL:           "ssh://127.0.0.1:2223",
 		SignerPort:    11270,
@@ -249,7 +249,7 @@ func writeEndpointEnvelopeWithAlias(t *testing.T, dir, alias, role string) (stri
 	if err != nil {
 		t.Fatalf("endpointrefs.Marshal() error = %v", err)
 	}
-	path := filepath.Join(dir, alias+".endpoint.json")
+	path := filepath.Join(dir, name+".endpoint.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatalf("WriteFile(endpoint) error = %v", err)
 	}

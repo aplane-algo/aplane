@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
-	"github.com/aplane-algo/aplane/internal/config"
 )
 
 const (
@@ -33,7 +32,6 @@ const (
 type Envelope struct {
 	Kind               string              `json:"kind"`
 	SchemaVersion      int                 `json:"schema_version"`
-	Alias              string              `json:"alias"`
 	Role               string              `json:"role"`
 	URL                string              `json:"url"`
 	SignerPort         int                 `json:"signer_port,omitempty"`
@@ -94,11 +92,6 @@ func Normalize(env Envelope) (Envelope, error) {
 	}
 	if env.SchemaVersion != SchemaVersion {
 		return Envelope{}, fmt.Errorf("unsupported endpoint envelope schema_version %d", env.SchemaVersion)
-	}
-
-	env.Alias = strings.TrimSpace(env.Alias)
-	if err := config.ValidateClientEndpointAlias(env.Alias); err != nil {
-		return Envelope{}, fmt.Errorf("invalid alias: %w", err)
 	}
 
 	env.Role = strings.ToLower(strings.TrimSpace(env.Role))

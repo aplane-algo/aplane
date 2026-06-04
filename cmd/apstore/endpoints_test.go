@@ -20,7 +20,6 @@ func TestCmdEndpointsExportAttestationStdout(t *testing.T) {
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoints([]string{
 				"export",
-				"--alias", "attestor-local",
 				"--role", "attestation",
 				"--url", "ssh://127.0.0.1:2223",
 				"--signer-port", "11270",
@@ -37,8 +36,11 @@ func TestCmdEndpointsExportAttestationStdout(t *testing.T) {
 		if err != nil {
 			t.Fatalf("endpoint envelope parse error = %v\n%s", err, out)
 		}
-		if env.Alias != "attestor-local" || env.Role != endpointrefs.RoleAttestation {
-			t.Fatalf("envelope alias/role = %q/%q, want attestor-local/attestation", env.Alias, env.Role)
+		if env.Role != endpointrefs.RoleAttestation {
+			t.Fatalf("envelope role = %q, want attestation", env.Role)
+		}
+		if strings.Contains(out, `"alias"`) {
+			t.Fatalf("endpoint envelope contains client-local alias: %s", out)
 		}
 		if env.SignerPort != 11270 {
 			t.Fatalf("SignerPort = %d, want 11270", env.SignerPort)
@@ -62,7 +64,6 @@ func TestCmdEndpointsExportHostDerivesSSHURLFromConfig(t *testing.T) {
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoints([]string{
 				"export",
-				"--alias", "attestor-local",
 				"--role", "attestation",
 				"--host", "attestor.example",
 			})
@@ -91,7 +92,6 @@ func TestCmdEndpointsExportURLOverridesHost(t *testing.T) {
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoints([]string{
 				"export",
-				"--alias", "primary",
 				"--role", "signing",
 				"--host", "ignored.example",
 				"--url", "ssh://explicit.example:2200",
@@ -121,7 +121,6 @@ func TestCmdEndpointsExportHostUsesDefaultPortsWhenConfigUnset(t *testing.T) {
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoints([]string{
 				"export",
-				"--alias", "primary",
 				"--role", "signing",
 				"--host", "127.0.0.1",
 			})
@@ -149,7 +148,6 @@ func TestCmdEndpointsExportSigningOmitsAttestorKeys(t *testing.T) {
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoints([]string{
 				"export",
-				"--alias", "primary",
 				"--role", "signing",
 				"--url", "ssh://signer.example:2222",
 			})
@@ -171,7 +169,6 @@ func TestCmdEndpointsExportRejectsSelfURL(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
 		err := cmdEndpoints([]string{
 			"export",
-			"--alias", "attestor-local",
 			"--role", "attestation",
 			"--url", "self",
 		})
@@ -193,7 +190,6 @@ func TestCmdEndpointsExportRequiresPublicMetadata(t *testing.T) {
 
 		err := cmdEndpoints([]string{
 			"export",
-			"--alias", "attestor-local",
 			"--role", "attestation",
 			"--url", "ssh://127.0.0.1:2223",
 		})

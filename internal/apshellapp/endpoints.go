@@ -17,6 +17,7 @@ import (
 
 // EndpointImportRequest imports one public endpoint handoff envelope.
 type EndpointImportRequest struct {
+	Alias  string
 	Path   string
 	DryRun bool
 }
@@ -68,6 +69,9 @@ func (a *App) EndpointShow(_ context.Context, alias string) (*EndpointShowResult
 // EndpointImport imports an apstore-exported public endpoint envelope into the
 // local client registry. It does not copy tokens or host-key trust.
 func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*EndpointImportResult, error) {
+	if err := config.ValidateClientEndpointAlias(req.Alias); err != nil {
+		return nil, fmt.Errorf("endpoint alias is required: %w", err)
+	}
 	if req.Path == "" {
 		return nil, fmt.Errorf("endpoint envelope path is required")
 	}
@@ -80,7 +84,7 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		return nil, err
 	}
 
-	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, env.Alias, config.ClientEndpointConfig{
+	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, config.ClientEndpointConfig{
 		Role:       env.Role,
 		URL:        env.URL,
 		SignerPort: env.SignerPort,
@@ -91,13 +95,13 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	}
 
 	publicKeys := endpointImportAttestorPublicKeys(env)
-	mappingPlan, err := config.PlanClientAttestorEndpointAliases(a.DataDir, env.Alias, publicKeys)
+	mappingPlan, err := config.PlanClientAttestorEndpointAliases(a.DataDir, req.Alias, publicKeys)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &EndpointImportResult{
-		Alias:              env.Alias,
+		Alias:              req.Alias,
 		Role:               env.Role,
 		URL:                endpointPlan.Endpoint.URL,
 		SignerPort:         endpointPlan.Endpoint.SignerPort,

@@ -19,7 +19,7 @@ import (
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 )
 
-const endpointsExportUsage = "usage: apstore endpoints export --alias <alias> --role signing|attestation|dual (--host <host> | --url <url>) [--signer-port <port>] [--local-port <port>] [--out endpoint.json]"
+const endpointsExportUsage = "usage: apstore endpoints export --role signing|attestation|dual (--host <host> | --url <url>) [--signer-port <port>] [--local-port <port>] [--out endpoint.json]"
 
 func cmdEndpoints(args []string) error {
 	if len(args) == 0 {
@@ -36,7 +36,6 @@ func cmdEndpoints(args []string) error {
 func cmdEndpointsExport(args []string) error {
 	fs := flag.NewFlagSet("apstore endpoints export", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	alias := fs.String("alias", "", "endpoint alias")
 	role := fs.String("role", "", "endpoint role: signing, attestation, or dual")
 	host := fs.String("host", "", "client-reachable SSH host or IP")
 	endpointURL := fs.String("url", "", "endpoint URL")
@@ -62,7 +61,6 @@ func cmdEndpointsExport(args []string) error {
 	env := endpointrefs.Envelope{
 		Kind:          endpointrefs.Kind,
 		SchemaVersion: endpointrefs.SchemaVersion,
-		Alias:         *alias,
 		Role:          *role,
 		URL:           urlValue,
 		SignerPort:    signerPortValue,

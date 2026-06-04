@@ -1279,26 +1279,25 @@ in the common case:
 ```bash
 # signer side
 apstore -d "$APSIGNER_DATA" endpoints export \
-  --alias attestor-local \
   --role attestation \
   --host attestor.example \
-  --out attestor-local.endpoint.json
+  --out attestor.endpoint.json
 
 # client side
 apshell -d "$APCLIENT_DATA"
-> endpoints import attestor-local.endpoint.json
+> endpoints import --alias attestor-local attestor.endpoint.json
 > endpoints show attestor-local
 > request-token --endpoint attestor-local
 ```
 
 The exported `aplane.endpoint.v1` envelope is public routing metadata only. It
-contains no API token, private key, mnemonic, encrypted key payload,
-passphrase, or `known_hosts` entry, and it cannot use `url: self`. Importing
-the envelope only configures where the client asks for an attestor component
-signature; the trust anchor remains the attestor public key that was selected
-at user-key generation and embedded in the LogicSig. `endpoints import
---dry-run` must run the same validation and conflict checks as a real import
-without writing files.
+contains no client-local alias, API token, private key, mnemonic, encrypted
+key payload, passphrase, or `known_hosts` entry, and it cannot use `url: self`.
+Importing the envelope with a client-chosen alias only configures where
+the client asks for an attestor component signature; the trust anchor remains
+the attestor public key that was selected at user-key generation and embedded
+in the LogicSig. `endpoints import --alias <alias> --dry-run` must run the same
+validation and conflict checks as a real import without writing files.
 
 A logical attestor may have multiple equivalent endpoints for availability.
 The client may call each endpoint's `/keys` projection to check whether it

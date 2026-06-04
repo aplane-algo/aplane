@@ -21,7 +21,6 @@ func TestParseNormalizesEndpointEnvelope(t *testing.T) {
 	data := []byte(`{
   "kind": "aplane.endpoint.v1",
   "schema_version": 1,
-  "alias": "attestor-local",
   "role": "ATTESTATION",
   "url": "ssh://signer.example:2223/",
   "signer_port": 11270,
@@ -58,7 +57,6 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 	valid := `{
   "kind": "aplane.endpoint.v1",
   "schema_version": 1,
-  "alias": "attestor-local",
   "role": "attestation",
   "url": "ssh://signer.example:2223",
   "attestor_public_keys": [
@@ -77,7 +75,7 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 	}{
 		{
 			name:    "unknown field",
-			data:    strings.Replace(valid, `"alias":`, `"extra": true, "alias":`, 1),
+			data:    strings.Replace(valid, `"role":`, `"extra": true, "role":`, 1),
 			wantErr: "unknown field",
 		},
 		{
@@ -139,7 +137,6 @@ func TestNormalizeRejectsDuplicateAttestorKeys(t *testing.T) {
 	_, err = Normalize(Envelope{
 		Kind:          Kind,
 		SchemaVersion: SchemaVersion,
-		Alias:         "attestor-local",
 		Role:          RoleAttestation,
 		URL:           "ssh://signer.example:2223",
 		AttestorPublicKeys: []AttestorPublicKey{
@@ -167,7 +164,6 @@ func TestMarshalValidatesEnvelope(t *testing.T) {
 	_, err := Marshal(Envelope{
 		Kind:          Kind,
 		SchemaVersion: SchemaVersion,
-		Alias:         "attestor-local",
 		Role:          RoleAttestation,
 		URL:           "self",
 	})
@@ -185,7 +181,6 @@ func TestMarshalParseRoundTripStable(t *testing.T) {
 	env := Envelope{
 		Kind:          Kind,
 		SchemaVersion: SchemaVersion,
-		Alias:         "attestor-local",
 		Role:          RoleAttestation,
 		URL:           "ssh://signer.example:2223",
 		SignerPort:    11270,

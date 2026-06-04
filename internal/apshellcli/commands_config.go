@@ -66,7 +66,7 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import [--dry-run] <endpoint-json> | endpoints default <alias> | endpoints delete <alias>")
+		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import --alias <alias> [--dry-run] <endpoint-json> | endpoints default <alias> | endpoints delete <alias>")
 	}
 	switch args[0] {
 	case "list":
@@ -161,22 +161,32 @@ func (r *REPLState) cmdConfig(_ []string, _ interface{}) error {
 
 func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, error) {
 	var req apshellapp.EndpointImportRequest
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch arg {
 		case "--dry-run":
 			req.DryRun = true
+		case "--alias", "-a":
+			if req.Alias != "" {
+				return req, fmt.Errorf("usage: endpoints import --alias <alias> [--dry-run] <endpoint-json>")
+			}
+			i++
+			if i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-") {
+				return req, fmt.Errorf("usage: endpoints import --alias <alias> [--dry-run] <endpoint-json>")
+			}
+			req.Alias = args[i]
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return req, fmt.Errorf("unknown endpoints import flag %q", arg)
 			}
 			if req.Path != "" {
-				return req, fmt.Errorf("usage: endpoints import [--dry-run] <endpoint-json>")
+				return req, fmt.Errorf("usage: endpoints import --alias <alias> [--dry-run] <endpoint-json>")
 			}
 			req.Path = arg
 		}
 	}
-	if req.Path == "" {
-		return req, fmt.Errorf("usage: endpoints import [--dry-run] <endpoint-json>")
+	if req.Alias == "" || req.Path == "" {
+		return req, fmt.Errorf("usage: endpoints import --alias <alias> [--dry-run] <endpoint-json>")
 	}
 	return req, nil
 }

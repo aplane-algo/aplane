@@ -612,7 +612,7 @@ Manage client-local signer endpoint profiles.
 ```
 endpoints list
 endpoints show <alias>
-endpoints import [--dry-run] <endpoint-json>
+endpoints import --alias <alias> [--dry-run] <endpoint-json>
 endpoints default <alias>
 endpoints delete <alias>
 ```
@@ -624,8 +624,8 @@ It does not copy tokens or SSH host trust.
 
 **Examples:**
 ```
-endpoints import attestor-local.endpoint.json
-endpoints import --dry-run attestor-local.endpoint.json
+endpoints import --alias attestor-local attestor.endpoint.json
+endpoints import --alias attestor-local --dry-run attestor.endpoint.json
 endpoints list
 endpoints show attestor-local
 endpoints default primary
