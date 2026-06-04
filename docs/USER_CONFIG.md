@@ -187,8 +187,7 @@ to import it:
 apstore -d "$APSIGNER_DATA" endpoints export \
   --alias attestor-local \
   --role attestation \
-  --url ssh://attestor.example.com:1127 \
-  --signer-port 11270 \
+  --host attestor.example.com \
   --out attestor-local.endpoint.json
 
 # client side, inside apshell

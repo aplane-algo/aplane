@@ -1281,8 +1281,7 @@ in the common case:
 apstore -d "$APSIGNER_DATA" endpoints export \
   --alias attestor-local \
   --role attestation \
-  --url ssh://attestor.example:1127 \
-  --signer-port 11270 \
+  --host attestor.example \
   --out attestor-local.endpoint.json
 
 # client side
