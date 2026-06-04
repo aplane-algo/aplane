@@ -4,7 +4,11 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,6 +31,21 @@ type SSHClientConfig struct {
 	KnownHostsPath string `yaml:"known_hosts_path" description:"Known hosts file path (relative to data dir)" default:".ssh/known_hosts"`
 }
 
+// AttestorEndpointConfig maps an embedded attestor public key to the signer
+// endpoint that can produce attestor-role component signatures for that key.
+type AttestorEndpointConfig struct {
+	URL            string `yaml:"url" description:"Attestor endpoint URL: self, https://..., loopback http://..., or ssh://host[:port]"`
+	TokenFile      string `yaml:"token_file,omitempty" description:"Path to the attestor endpoint API token file"`
+	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// attestor endpoints"`
+	LocalPort      int    `yaml:"local_port,omitempty" description:"Local tunnel port for ssh:// attestor endpoints (0 = choose automatically)"`
+	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path for ssh:// attestor endpoints"`
+	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// attestor endpoints"`
+}
+
+// AttestorEndpointConfigs is keyed by canonical lower-case Ed25519 attestor
+// public-key hex.
+type AttestorEndpointConfigs map[string]AttestorEndpointConfig
+
 // Config holds apshell configuration settings
 type Config struct {
 	Network         string   `yaml:"network" description:"Default network context token" default:"testnet"`
@@ -39,6 +58,10 @@ type Config struct {
 
 	// SSH tunnel config (required for connecting to signer)
 	SSH *SSHClientConfig `yaml:"ssh" description:"SSH tunnel settings (required for signer connection)"`
+
+	// AttestorEndpoints maps attested-account embedded attestor public keys to
+	// signer endpoints for attestor-role component signing.
+	AttestorEndpoints AttestorEndpointConfigs `yaml:"attestor_endpoints,omitempty" description:"Attestor endpoint routing by embedded attestor public-key hex"`
 
 	// Grouped network settings. This is the canonical on-disk network config.
 	Networks ClientNetworkConfigs `yaml:"networks" description:"Grouped settings per network context token"`
@@ -106,6 +129,7 @@ func LoadConfig(dataDir string) (Config, error) {
 		config.SSH.IdentityFile = ResolvePath(config.SSH.IdentityFile, dataDir)
 		config.SSH.KnownHostsPath = ResolvePath(config.SSH.KnownHostsPath, dataDir)
 	}
+	config.resolveAttestorEndpointPaths(dataDir)
 
 	return config, nil
 }
@@ -193,8 +217,142 @@ func LoadConfigFromPath(path string) (Config, error) {
 			config.SSH.KnownHostsPath = sshDefaults.KnownHostsPath
 		}
 	}
+	if err := config.validateAndCanonicalizeAttestorEndpoints(); err != nil {
+		return Config{}, fmt.Errorf("invalid attestor_endpoints in config: %w", err)
+	}
 
 	return config, nil
+}
+
+// Clone returns a shallow copy of endpoint configs.
+func (c AttestorEndpointConfigs) Clone() AttestorEndpointConfigs {
+	if len(c) == 0 {
+		return nil
+	}
+	clone := make(AttestorEndpointConfigs, len(c))
+	for k, v := range c {
+		clone[k] = v
+	}
+	return clone
+}
+
+func (c *Config) validateAndCanonicalizeAttestorEndpoints() error {
+	if len(c.AttestorEndpoints) == 0 {
+		return nil
+	}
+	canonical := make(AttestorEndpointConfigs, len(c.AttestorEndpoints))
+	for selector, endpoint := range c.AttestorEndpoints {
+		normalized, err := normalizeAttestorEndpointSelector(selector)
+		if err != nil {
+			return fmt.Errorf("%q: %w", selector, err)
+		}
+		if _, exists := canonical[normalized]; exists {
+			return fmt.Errorf("duplicate endpoint for attestor public key %s", normalized)
+		}
+		if err := validateAttestorEndpointConfig(normalized, endpoint); err != nil {
+			return err
+		}
+		if strings.HasPrefix(endpoint.URL, "ssh://") && endpoint.SignerPort == 0 {
+			endpoint.SignerPort = c.SignerPort
+		}
+		canonical[normalized] = endpoint
+	}
+	c.AttestorEndpoints = canonical
+	return nil
+}
+
+func normalizeAttestorEndpointSelector(selector string) (string, error) {
+	raw := strings.TrimSpace(selector)
+	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "0x"), "0X")
+	if raw == "" {
+		return "", fmt.Errorf("attestor public key is required")
+	}
+	decoded, err := hex.DecodeString(raw)
+	if err != nil {
+		return "", fmt.Errorf("attestor public key must be hex: %w", err)
+	}
+	if len(decoded) != ed25519.PublicKeySize {
+		return "", fmt.Errorf("attestor public key length %d invalid (expected %d bytes)", len(decoded), ed25519.PublicKeySize)
+	}
+	return hex.EncodeToString(decoded), nil
+}
+
+func validateAttestorEndpointConfig(selector string, endpoint AttestorEndpointConfig) error {
+	if strings.TrimSpace(endpoint.URL) == "" {
+		return fmt.Errorf("attestor endpoint %s: url is required", selector)
+	}
+	if endpoint.SignerPort < 0 || endpoint.SignerPort > 65535 {
+		return fmt.Errorf("attestor endpoint %s: signer_port must be 1-65535 when set", selector)
+	}
+	if endpoint.LocalPort < 0 || endpoint.LocalPort > 65535 {
+		return fmt.Errorf("attestor endpoint %s: local_port must be 1-65535 when set", selector)
+	}
+	if endpoint.URL == "self" {
+		return nil
+	}
+	parsed, err := url.Parse(endpoint.URL)
+	if err != nil {
+		return fmt.Errorf("attestor endpoint %s: invalid url: %w", selector, err)
+	}
+	switch parsed.Scheme {
+	case "ssh", "https", "http":
+	default:
+		return fmt.Errorf("attestor endpoint %s: unsupported url scheme %q", selector, parsed.Scheme)
+	}
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("attestor endpoint %s: url host is required", selector)
+	}
+	if parsed.Port() != "" {
+		port, err := strconv.Atoi(parsed.Port())
+		if err != nil || port <= 0 || port > 65535 {
+			return fmt.Errorf("attestor endpoint %s: invalid url port %q", selector, parsed.Port())
+		}
+	}
+	if parsed.Scheme == "http" && !isLoopbackEndpointHost(parsed.Hostname()) {
+		return fmt.Errorf("attestor endpoint %s: raw http endpoints must be loopback; use ssh:// or https:// for remote attestors", selector)
+	}
+	if strings.TrimSpace(endpoint.TokenFile) == "" {
+		return fmt.Errorf("attestor endpoint %s: token_file is required for non-self endpoints", selector)
+	}
+	return nil
+}
+
+func isLoopbackEndpointHost(host string) bool {
+	host = strings.Trim(strings.ToLower(host), "[]")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func (c *Config) resolveAttestorEndpointPaths(dataDir string) {
+	if len(c.AttestorEndpoints) == 0 {
+		return
+	}
+	defaultSSH := DefaultSSHClientConfig()
+	globalIdentityFile := defaultSSH.IdentityFile
+	globalKnownHostsPath := defaultSSH.KnownHostsPath
+	if c.SSH != nil {
+		globalIdentityFile = c.SSH.IdentityFile
+		globalKnownHostsPath = c.SSH.KnownHostsPath
+	}
+	for selector, endpoint := range c.AttestorEndpoints {
+		if endpoint.TokenFile != "" {
+			endpoint.TokenFile = ResolvePath(endpoint.TokenFile, dataDir)
+		}
+		if strings.HasPrefix(endpoint.URL, "ssh://") {
+			if endpoint.IdentityFile == "" {
+				endpoint.IdentityFile = globalIdentityFile
+			}
+			if endpoint.KnownHostsPath == "" {
+				endpoint.KnownHostsPath = globalKnownHostsPath
+			}
+			endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
+			endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
+		}
+		c.AttestorEndpoints[selector] = endpoint
+	}
 }
 
 // ParseSignerStatusPollInterval parses the apshell background /status polling interval.

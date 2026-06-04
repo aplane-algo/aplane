@@ -119,6 +119,152 @@ ssh:
 	}
 }
 
+func TestLoadConfigAttestorEndpointsCanonicalizesSelectors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	selector := "0X" + strings.ToUpper(attestorEndpointTestHex("d6"))
+	if err := os.WriteFile(path, []byte(fmt.Sprintf(`
+network: testnet
+attestor_endpoints:
+  %s:
+    url: self
+`, selector)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfigFromPath(path)
+	if err != nil {
+		t.Fatalf("LoadConfigFromPath: %v", err)
+	}
+	want := attestorEndpointTestHex("d6")
+	endpoint, ok := cfg.AttestorEndpoints[want]
+	if !ok {
+		t.Fatalf("canonical endpoint %s missing from %#v", want, cfg.AttestorEndpoints)
+	}
+	if endpoint.URL != "self" {
+		t.Fatalf("endpoint URL = %q, want self", endpoint.URL)
+	}
+}
+
+func TestLoadConfigAttestorEndpointsRequireValidSelector(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+network: testnet
+attestor_endpoints:
+  deadbeef:
+    url: self
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfigFromPath(path)
+	if err == nil {
+		t.Fatal("LoadConfigFromPath error = nil, want invalid attestor endpoint selector")
+	}
+	if !strings.Contains(err.Error(), "attestor public key length") {
+		t.Fatalf("LoadConfigFromPath error = %q, want attestor public key length", err)
+	}
+}
+
+func TestLoadConfigAttestorEndpointsRejectDuplicateCanonicalSelectors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	selector := attestorEndpointTestHex("d6")
+	if err := os.WriteFile(path, []byte(fmt.Sprintf(`
+network: testnet
+attestor_endpoints:
+  %s:
+    url: self
+  0X%s:
+    url: self
+`, selector, strings.ToUpper(selector))), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfigFromPath(path)
+	if err == nil {
+		t.Fatal("LoadConfigFromPath error = nil, want duplicate canonical selector")
+	}
+	if !strings.Contains(err.Error(), "duplicate endpoint") {
+		t.Fatalf("LoadConfigFromPath error = %q, want duplicate endpoint", err)
+	}
+}
+
+func TestLoadConfigAttestorEndpointsRequireTokenForNonSelf(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(fmt.Sprintf(`
+network: testnet
+attestor_endpoints:
+  %s:
+    url: https://attestor.example
+`, attestorEndpointTestHex("d6"))), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfigFromPath(path)
+	if err == nil {
+		t.Fatal("LoadConfigFromPath error = nil, want missing token_file")
+	}
+	if !strings.Contains(err.Error(), "token_file is required") {
+		t.Fatalf("LoadConfigFromPath error = %q, want token_file", err)
+	}
+}
+
+func TestLoadConfigAttestorEndpointsRejectRemoteHTTP(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(fmt.Sprintf(`
+network: testnet
+attestor_endpoints:
+  %s:
+    url: http://attestor.example:11270
+    token_file: token
+`, attestorEndpointTestHex("d6"))), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfigFromPath(path)
+	if err == nil {
+		t.Fatal("LoadConfigFromPath error = nil, want remote http rejection")
+	}
+	if !strings.Contains(err.Error(), "raw http endpoints must be loopback") {
+		t.Fatalf("LoadConfigFromPath error = %q, want raw http endpoints must be loopback", err)
+	}
+}
+
+func TestLoadConfigAttestorEndpointsResolvePaths(t *testing.T) {
+	dataDir := t.TempDir()
+	path := filepath.Join(dataDir, "config.yaml")
+	selector := attestorEndpointTestHex("d6")
+	if err := os.WriteFile(path, []byte(fmt.Sprintf(`
+network: testnet
+signer_port: 12270
+ssh:
+  host: signer.example
+attestor_endpoints:
+  %s:
+    url: ssh://attestor.example:2222
+    token_file: tokens/attestor.token
+`, selector)), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	endpoint := cfg.AttestorEndpoints[selector]
+	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "attestor.token") {
+		t.Fatalf("token_file = %q, want data-dir relative", endpoint.TokenFile)
+	}
+	if endpoint.IdentityFile != filepath.Join(dataDir, ".ssh", "id_ed25519") {
+		t.Fatalf("identity_file = %q, want default relative to data dir", endpoint.IdentityFile)
+	}
+	if endpoint.KnownHostsPath != filepath.Join(dataDir, ".ssh", "known_hosts") {
+		t.Fatalf("known_hosts_path = %q, want default relative to data dir", endpoint.KnownHostsPath)
+	}
+	if endpoint.SignerPort != 12270 {
+		t.Fatalf("signer_port = %d, want 12270", endpoint.SignerPort)
+	}
+}
+
 func TestClientConfigExamplesUseKnownFields(t *testing.T) {
 	repoRoot := filepath.Clean(filepath.Join("..", ".."))
 	installer, err := os.ReadFile(filepath.Join(repoRoot, "install.sh"))
@@ -206,4 +352,8 @@ func decodeClientConfigKnownFields(data []byte) error {
 		return fmt.Errorf("signer_port must be set in example config")
 	}
 	return nil
+}
+
+func attestorEndpointTestHex(prefix string) string {
+	return prefix + strings.Repeat("00", 31)
 }

@@ -42,9 +42,10 @@ type Engine struct {
 
 	// Remote Signing
 	// Configuration
-	WriteMode bool
-	Verbose   bool // Controls detailed signing output (default: false)
-	Simulate  bool // Simulate mode: transactions are simulated instead of submitted (default: false)
+	WriteMode         bool
+	Verbose           bool // Controls detailed signing output (default: false)
+	Simulate          bool // Simulate mode: transactions are simulated instead of submitted (default: false)
+	AttestorEndpoints config.AttestorEndpointConfigs
 }
 
 // EngineOption is a functional option for configuring the Engine
@@ -72,6 +73,14 @@ func NewEngine(network string, opts ...EngineOption) (*Engine, error) {
 func WithDataDir(dataDir string) EngineOption {
 	return func(e *Engine) error {
 		e.DataDir = dataDir
+		return nil
+	}
+}
+
+// WithAttestorEndpoints sets explicit attestor endpoint routing.
+func WithAttestorEndpoints(endpoints config.AttestorEndpointConfigs) EngineOption {
+	return func(e *Engine) error {
+		e.AttestorEndpoints = endpoints.Clone()
 		return nil
 	}
 }

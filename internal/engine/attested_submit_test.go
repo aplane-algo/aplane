@@ -4,10 +4,17 @@
 package engine
 
 import (
+	"context"
 	"crypto/ed25519"
 	cryptorand "crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
@@ -17,6 +24,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/attestor/message"
 	attestorverify "github.com/aplane-algo/aplane/internal/attestor/verify"
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/internal/signerclient"
 )
 
 func TestAttestedOriginalTargetsNormalizeAttestorPublicKey(t *testing.T) {
@@ -121,6 +131,122 @@ func TestVerifyAttestorComponentSignaturesUsesSharedMessage(t *testing.T) {
 	}
 }
 
+func TestRequestAttestorComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(cryptorand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	attestorHex := hex.EncodeToString(publicKey)
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
+	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
+	group, err := attestorverify.DecodeCanonicalGroupHex(groupBytesHex)
+	if err != nil {
+		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
+	}
+	server := newAttestorEndpointTestServer(t, attestorHex, privateKey, "attestor-token", nil)
+	defer server.Close()
+	tokenFile := writeAttestorTokenFile(t, "attestor-token")
+	eng := newAttestedSubmitTestEngine(t, txn.Sender.String(), 1500, attestorHex)
+	eng.AttestorEndpoints = config.AttestorEndpointConfigs{
+		attestorHex: {URL: server.URL, TokenFile: tokenFile},
+	}
+
+	signatures, requestIDs, err := eng.requestAttestorComponentSignatures(
+		context.Background(),
+		groupBytesHex,
+		group,
+		[]attestedOriginalTarget{{Index: 0, Account: txn.Sender.String(), AttestorPublicKey: attestorHex}},
+	)
+	if err != nil {
+		t.Fatalf("requestAttestorComponentSignatures() error = %v", err)
+	}
+	if signatures[0] == "" {
+		t.Fatal("signature for target 0 is empty")
+	}
+	if requestIDs[attestorHex] == "" {
+		t.Fatal("request ID for attestor is empty")
+	}
+}
+
+func TestRequestAttestorComponentSignaturesExplicitMismatchDoesNotFallback(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(cryptorand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	wrongPublicKey, wrongPrivateKey, err := ed25519.GenerateKey(cryptorand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	attestorHex := hex.EncodeToString(publicKey)
+	wrongHex := hex.EncodeToString(wrongPublicKey)
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
+	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
+	group, err := attestorverify.DecodeCanonicalGroupHex(groupBytesHex)
+	if err != nil {
+		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
+	}
+
+	selfServer := newAttestorEndpointTestServer(t, attestorHex, privateKey, "", nil)
+	defer selfServer.Close()
+	var wrongSignCalls atomic.Int32
+	wrongServer := newAttestorEndpointTestServer(t, wrongHex, wrongPrivateKey, "attestor-token", &wrongSignCalls)
+	defer wrongServer.Close()
+	tokenFile := writeAttestorTokenFile(t, "attestor-token")
+
+	eng := newAttestedSubmitTestEngine(t, txn.Sender.String(), 1500, attestorHex)
+	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(selfServer.URL, "")
+	eng.AttestorEndpoints = config.AttestorEndpointConfigs{
+		attestorHex: {URL: wrongServer.URL, TokenFile: tokenFile},
+	}
+
+	_, _, err = eng.requestAttestorComponentSignatures(
+		context.Background(),
+		groupBytesHex,
+		group,
+		[]attestedOriginalTarget{{Index: 0, Account: txn.Sender.String(), AttestorPublicKey: attestorHex}},
+	)
+	if err == nil {
+		t.Fatal("requestAttestorComponentSignatures() error = nil, want explicit endpoint mismatch")
+	}
+	if !strings.Contains(err.Error(), "did not advertise attestor component key") {
+		t.Fatalf("requestAttestorComponentSignatures() error = %q, want endpoint mismatch", err)
+	}
+	if got := wrongSignCalls.Load(); got != 0 {
+		t.Fatalf("wrong endpoint /sign/component calls = %d, want 0", got)
+	}
+}
+
+func TestRequestAttestorComponentSignaturesFallsBackToCurrentSigner(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(cryptorand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	attestorHex := hex.EncodeToString(publicKey)
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
+	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
+	group, err := attestorverify.DecodeCanonicalGroupHex(groupBytesHex)
+	if err != nil {
+		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
+	}
+	server := newAttestorEndpointTestServer(t, attestorHex, privateKey, "", nil)
+	defer server.Close()
+	eng := newAttestedSubmitTestEngine(t, txn.Sender.String(), 1500, attestorHex)
+	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+
+	signatures, _, err := eng.requestAttestorComponentSignatures(
+		context.Background(),
+		groupBytesHex,
+		group,
+		[]attestedOriginalTarget{{Index: 0, Account: txn.Sender.String(), AttestorPublicKey: attestorHex}},
+	)
+	if err != nil {
+		t.Fatalf("requestAttestorComponentSignatures() error = %v", err)
+	}
+	if signatures[0] == "" {
+		t.Fatal("signature for target 0 is empty")
+	}
+}
+
 func TestDecodeAttestedSignedGroupReturnsSignedObjects(t *testing.T) {
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
 	signedHex := []string{hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))}
@@ -161,4 +287,67 @@ func testAttestorPublicKeyHex(prefix byte) string {
 	var publicKey [ed25519.PublicKeySize]byte
 	publicKey[0] = prefix
 	return hex.EncodeToString(publicKey[:])
+}
+
+func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey ed25519.PrivateKey, token string, signCalls *atomic.Int32) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
+		if token != "" && r.Header.Get("Authorization") != "aplane "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
+			Count: 1,
+			Keys: []signerapi.KeyInfo{{
+				Address:        publicKeyHex,
+				PublicKeyHex:   publicKeyHex,
+				KeyType:        keytypes.AttestorComponentEd25519V1,
+				IsComponentKey: true,
+			}},
+		})
+	})
+	mux.HandleFunc("/sign/component", func(w http.ResponseWriter, r *http.Request) {
+		if token != "" && r.Header.Get("Authorization") != "aplane "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if signCalls != nil {
+			signCalls.Add(1)
+		}
+		var req signerapi.ComponentSignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		group, err := attestorverify.DecodeCanonicalGroupHex(req.GroupBytesHex)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := signerapi.ComponentSignResponse{
+			RequestID:    req.RequestID,
+			ComponentKey: req.ComponentKey,
+			Signatures:   make([]signerapi.ComponentSignature, 0, len(req.TargetIndices)),
+		}
+		for _, index := range req.TargetIndices {
+			msg := message.ComponentMessage(message.RoleAttestor, group.Entries[index].TxID)
+			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
+				TargetIndex:     index,
+				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				Signature:       hex.EncodeToString(ed25519.Sign(privateKey, msg[:])),
+			})
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+	return httptest.NewServer(mux)
+}
+
+func writeAttestorTokenFile(t *testing.T, token string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "aplane.token")
+	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
+		t.Fatalf("write token file: %v", err)
+	}
+	return path
 }

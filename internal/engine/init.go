@@ -36,6 +36,7 @@ func NewInitializedEngine(network string, config *config.Config, dataDir string)
 	eng, err := NewEngine(network,
 		WithAlgodClient(algodClient),
 		WithDataDir(state.DataDir),
+		WithAttestorEndpoints(configuredAttestorEndpoints(config)),
 		WithCacheStore(state.CacheStore),
 		WithASACache(state.AsaCache),
 		WithAliasCache(state.AliasCache),
@@ -48,4 +49,11 @@ func NewInitializedEngine(network string, config *config.Config, dataDir string)
 	}
 
 	return eng, nil
+}
+
+func configuredAttestorEndpoints(cfg *config.Config) config.AttestorEndpointConfigs {
+	if cfg == nil {
+		return nil
+	}
+	return cfg.AttestorEndpoints
 }

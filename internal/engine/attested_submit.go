@@ -291,10 +291,6 @@ func (e *Engine) requestUserComponentSignatures(ctx context.Context, groupBytesH
 }
 
 func (e *Engine) requestAttestorComponentSignatures(ctx context.Context, groupBytesHex []string, group *attestorverify.CanonicalGroup, targets []attestedOriginalTarget) (map[int]string, map[string]string, error) {
-	if err := e.verifySelfAttestorComponents(ctx, targets); err != nil {
-		return nil, nil, err
-	}
-
 	byAttestor := make(map[string][]int)
 	for _, target := range targets {
 		byAttestor[target.AttestorPublicKey] = append(byAttestor[target.AttestorPublicKey], target.Index)
@@ -302,51 +298,38 @@ func (e *Engine) requestAttestorComponentSignatures(ctx context.Context, groupBy
 	signatures := make(map[int]string, len(targets))
 	requestIDs := make(map[string]string, len(byAttestor))
 	for attestorPublicKey, indices := range byAttestor {
-		resp, err := e.Connection.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
-			Role:          signerapi.ComponentSignRoleAttestor,
-			ComponentKey:  attestorPublicKey,
-			GroupBytesHex: groupBytesHex,
-			TargetIndices: indices,
-		})
+		requestID, err := e.requestOneAttestorComponentSignatureSet(ctx, groupBytesHex, group, attestorPublicKey, indices, signatures)
 		if err != nil {
-			return nil, nil, fmt.Errorf("attestor component signing failed for public key %s: %w", attestorPublicKey, err)
-		}
-		if err := collectComponentSignatures(resp, indices, keytypes.AttestorComponentEd25519V1, signatures); err != nil {
-			return nil, nil, fmt.Errorf("attestor component signing failed for public key %s: %w", attestorPublicKey, err)
-		}
-		if err := verifyAttestorComponentSignatures(attestorPublicKey, group, indices, signatures); err != nil {
 			return nil, nil, err
 		}
-		requestIDs[attestorPublicKey] = resp.RequestID
+		requestIDs[attestorPublicKey] = requestID
 	}
 	return signatures, requestIDs, nil
 }
 
-func (e *Engine) verifySelfAttestorComponents(ctx context.Context, targets []attestedOriginalTarget) error {
-	keys, err := e.Connection.GetKeysWithContext(ctx)
+func (e *Engine) requestOneAttestorComponentSignatureSet(ctx context.Context, groupBytesHex []string, group *attestorverify.CanonicalGroup, attestorPublicKey string, indices []int, signatures map[int]string) (string, error) {
+	endpoint, err := e.resolveAttestorEndpoint(ctx, attestorPublicKey)
 	if err != nil {
-		return fmt.Errorf("failed to inspect signer component keys for attestation: %w", err)
+		return "", err
 	}
-	needed := make(map[string]bool)
-	for _, target := range targets {
-		needed[target.AttestorPublicKey] = true
+	defer endpoint.close()
+
+	resp, err := endpoint.client.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
+		Role:          signerapi.ComponentSignRoleAttestor,
+		ComponentKey:  attestorPublicKey,
+		GroupBytesHex: groupBytesHex,
+		TargetIndices: indices,
+	})
+	if err != nil {
+		return "", fmt.Errorf("attestor component signing failed for public key %s via %s: %w", attestorPublicKey, endpoint.source, err)
 	}
-	for _, key := range keys.Keys {
-		if key.KeyType != keytypes.AttestorComponentEd25519V1 {
-			continue
-		}
-		selector, err := keytypes.NormalizeComponentKeySelector(firstNonEmpty(key.PublicKeyHex, key.Address))
-		if err != nil {
-			continue
-		}
-		delete(needed, selector)
+	if err := collectComponentSignatures(resp, indices, keytypes.AttestorComponentEd25519V1, signatures); err != nil {
+		return "", fmt.Errorf("attestor component signing failed for public key %s via %s: %w", attestorPublicKey, endpoint.source, err)
 	}
-	if len(needed) > 0 {
-		for attestorPublicKey := range needed {
-			return fmt.Errorf("no attestor endpoint configured for public key %s and current signer does not advertise a matching component key", attestorPublicKey)
-		}
+	if err := verifyAttestorComponentSignatures(attestorPublicKey, group, indices, signatures); err != nil {
+		return "", err
 	}
-	return nil
+	return resp.RequestID, nil
 }
 
 func collectComponentSignatures(resp *signerapi.ComponentSignResponse, expected []int, expectedScheme string, dst map[int]string) error {
