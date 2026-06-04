@@ -178,6 +178,17 @@ type ClientAttestorEndpointAliasPlan struct {
 	PublicKeys []string
 }
 
+// ClientAttestorEndpointAliasRebuildPlan describes a full replacement of
+// alias-managed attestor endpoint routes in config.yaml.
+type ClientAttestorEndpointAliasRebuildPlan struct {
+	Mappings                  map[string][]string
+	PublicKeyCount            int
+	PreviousAliasRouteCount   int
+	PreservedInlineRouteCount int
+
+	doc *yaml.Node
+}
+
 // PlanClientAttestorEndpointAliases validates attestor public-key mappings for
 // one endpoint alias without touching config.yaml.
 func PlanClientAttestorEndpointAliases(dataDir, alias string, publicKeys []string) (ClientAttestorEndpointAliasPlan, error) {
@@ -261,6 +272,95 @@ func UpsertClientAttestorEndpointAliases(dataDir, alias string, publicKeys []str
 		return err
 	}
 	return ApplyClientAttestorEndpointAliases(dataDir, plan)
+}
+
+// PlanClientAttestorEndpointAliasRebuild validates and plans a full rebuild of
+// alias-managed attestor endpoint mappings. Inline legacy routes are preserved;
+// discovered public keys that collide with inline routes fail closed.
+func PlanClientAttestorEndpointAliasRebuild(dataDir string, mappings map[string][]string) (ClientAttestorEndpointAliasRebuildPlan, error) {
+	normalizedMappings, keyToAlias, publicKeys, err := normalizeAttestorAliasMappings(mappings)
+	if err != nil {
+		return ClientAttestorEndpointAliasRebuildPlan{}, err
+	}
+	doc, err := loadClientYAMLDocument(GetConfigPath(dataDir))
+	if err != nil {
+		return ClientAttestorEndpointAliasRebuildPlan{}, err
+	}
+	root, err := clientYAMLDocumentMapping(doc)
+	if err != nil {
+		return ClientAttestorEndpointAliasRebuildPlan{}, err
+	}
+	routes, _, err := ensureClientYAMLMappingValue(root, "attestor_endpoints")
+	if err != nil {
+		return ClientAttestorEndpointAliasRebuildPlan{}, err
+	}
+
+	type preservedRoute struct {
+		publicKey string
+		value     *yaml.Node
+	}
+	var preserved []preservedRoute
+	previousAliasRoutes := 0
+	for i := 0; i+1 < len(routes.Content); i += 2 {
+		publicKey, err := normalizeAttestorEndpointSelector(routes.Content[i].Value)
+		if err != nil {
+			return ClientAttestorEndpointAliasRebuildPlan{}, err
+		}
+		_, aliasRoute, err := attestorRouteAlias(routes.Content[i+1])
+		if err != nil {
+			return ClientAttestorEndpointAliasRebuildPlan{}, err
+		}
+		if aliasRoute {
+			previousAliasRoutes++
+			continue
+		}
+		if alias, ok := keyToAlias[publicKey]; ok {
+			return ClientAttestorEndpointAliasRebuildPlan{}, fmt.Errorf("discovered attestor public key %s for endpoint alias %q conflicts with an inline attestor route", publicKey, alias)
+		}
+		preserved = append(preserved, preservedRoute{
+			publicKey: publicKey,
+			value:     routes.Content[i+1],
+		})
+	}
+
+	sort.Slice(preserved, func(i, j int) bool {
+		return preserved[i].publicKey < preserved[j].publicKey
+	})
+	routes.Content = routes.Content[:0]
+	for _, route := range preserved {
+		routes.Content = append(routes.Content, clientYAMLStringNode(route.publicKey, 0), route.value)
+	}
+	for _, publicKey := range publicKeys {
+		routes.Content = append(routes.Content, clientYAMLStringNode(publicKey, 0), endpointAliasNode(keyToAlias[publicKey]))
+	}
+
+	return ClientAttestorEndpointAliasRebuildPlan{
+		Mappings:                  normalizedMappings,
+		PublicKeyCount:            len(publicKeys),
+		PreviousAliasRouteCount:   previousAliasRoutes,
+		PreservedInlineRouteCount: len(preserved),
+		doc:                       doc,
+	}, nil
+}
+
+// ApplyClientAttestorEndpointAliasRebuild writes a previously planned
+// attestor endpoint mapping rebuild.
+func ApplyClientAttestorEndpointAliasRebuild(dataDir string, plan ClientAttestorEndpointAliasRebuildPlan) error {
+	if plan.doc == nil {
+		return fmt.Errorf("missing planned attestor endpoint rebuild document")
+	}
+	return writeClientYAMLDocumentAtomic(GetConfigPath(dataDir), plan.doc, 0o600)
+}
+
+func RebuildClientAttestorEndpointAliases(dataDir string, mappings map[string][]string) (ClientAttestorEndpointAliasRebuildPlan, error) {
+	plan, err := PlanClientAttestorEndpointAliasRebuild(dataDir, mappings)
+	if err != nil {
+		return ClientAttestorEndpointAliasRebuildPlan{}, err
+	}
+	if err := ApplyClientAttestorEndpointAliasRebuild(dataDir, plan); err != nil {
+		return ClientAttestorEndpointAliasRebuildPlan{}, err
+	}
+	return plan, nil
 }
 
 func ClientAttestorEndpointMappingsByAlias(dataDir string) (map[string][]string, error) {
@@ -394,6 +494,41 @@ func normalizeAttestorPublicKeys(publicKeys []string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+func normalizeAttestorAliasMappings(mappings map[string][]string) (map[string][]string, map[string]string, []string, error) {
+	normalizedMappings := map[string][]string{}
+	keyToAlias := map[string]string{}
+	publicKeys := make([]string, 0)
+	aliases := make([]string, 0, len(mappings))
+	for alias := range mappings {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	for _, alias := range aliases {
+		if err := ValidateClientEndpointAlias(alias); err != nil {
+			return nil, nil, nil, err
+		}
+		normalizedKeys, err := normalizeAttestorPublicKeys(mappings[alias])
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("endpoint alias %q: %w", alias, err)
+		}
+		if len(normalizedKeys) == 0 {
+			continue
+		}
+		normalizedMappings[alias] = normalizedKeys
+		for _, publicKey := range normalizedKeys {
+			if existingAlias, ok := keyToAlias[publicKey]; ok && existingAlias != alias {
+				return nil, nil, nil, fmt.Errorf("attestor public key %s advertised by both endpoint aliases %q and %q", publicKey, existingAlias, alias)
+			}
+			if _, ok := keyToAlias[publicKey]; !ok {
+				publicKeys = append(publicKeys, publicKey)
+			}
+			keyToAlias[publicKey] = alias
+		}
+	}
+	sort.Strings(publicKeys)
+	return normalizedMappings, keyToAlias, publicKeys, nil
 }
 
 func attestorRouteAlias(node *yaml.Node) (string, bool, error) {

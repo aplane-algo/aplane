@@ -613,6 +613,7 @@ Manage client-local signer endpoint profiles.
 endpoints list
 endpoints show <alias>
 endpoints import --alias <alias> [--dry-run] <endpoint-json>
+endpoints discover-attestors [--dry-run]
 endpoints default <alias>
 endpoints delete <alias>
 ```
@@ -624,10 +625,18 @@ discover attestor keys. Re-importing with the same alias replaces that alias's
 endpoint data. Importing a URL already assigned to a different alias fails
 without writing.
 
+`endpoints discover-attestors` queries `/keys` on every configured endpoint
+using that endpoint's token and rebuilds local attestor-key routing in
+`config.yaml`. Run it after importing endpoints and requesting endpoint tokens.
+Use `--dry-run` to inspect the discovered mappings without writing.
+
 **Examples:**
 ```
 endpoints import --alias attestor-local attestor.endpoint.json
 endpoints import --alias attestor-local --dry-run attestor.endpoint.json
+request-token --endpoint attestor-local
+endpoints discover-attestors
+endpoints discover-attestors --dry-run
 endpoints list
 endpoints show attestor-local
 endpoints default primary

@@ -746,6 +746,31 @@ type EndpointDeleteResult struct {
 	RenderLines []string
 }
 
+// DiscoveredEndpointAttestorKey describes one attestor component key advertised
+// by an endpoint during discovery.
+type DiscoveredEndpointAttestorKey struct {
+	PublicKey    string
+	ComponentKey string
+	KeyType      string
+}
+
+// EndpointAttestorDiscovery describes discovered attestor keys for one endpoint.
+type EndpointAttestorDiscovery struct {
+	Alias string
+	Keys  []DiscoveredEndpointAttestorKey
+}
+
+// EndpointDiscoverAttestorsResult describes a full attestor endpoint mapping
+// rebuild from endpoint /keys inventories.
+type EndpointDiscoverAttestorsResult struct {
+	DryRun                    bool
+	Endpoints                 []EndpointAttestorDiscovery
+	PublicKeyCount            int
+	PreviousAliasRouteCount   int
+	PreservedInlineRouteCount int
+	RenderLines               []string
+}
+
 // StartupConnectDecision describes what apshell should do at startup about signer connectivity.
 type StartupConnectDecision struct {
 	EndpointName  string

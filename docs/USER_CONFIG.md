@@ -192,6 +192,7 @@ apstore -d "$APSIGNER_DATA" endpoint export \
 endpoints import --alias attestor-local attestor.endpoint.json
 endpoints show attestor-local
 request-token --endpoint attestor-local
+endpoints discover-attestors
 ```
 
 Importing an endpoint creates routing/configuration only. It does not copy API
@@ -199,6 +200,10 @@ tokens, SSH host trust, private keys, or passphrases. Tokens are still obtained
 with `request-token --endpoint <alias>`. Re-import with the same alias replaces
 that alias's endpoint data. Import fails without writing if the imported URL is
 already assigned to a different alias.
+
+After endpoint tokens are enrolled, `endpoints discover-attestors` queries
+`/keys` on each configured endpoint and rebuilds `attestor_endpoints` routing in
+`config.yaml` from the advertised attestor component public keys.
 
 The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 
@@ -230,6 +235,7 @@ Useful local commands:
 endpoints list
 endpoints show attestor-local
 endpoints import --alias attestor-local --dry-run attestor.endpoint.json
+endpoints discover-attestors --dry-run
 endpoints default primary
 endpoints delete old-attestor
 ```

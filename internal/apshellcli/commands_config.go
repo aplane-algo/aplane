@@ -67,7 +67,7 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import --alias <alias> [--dry-run] <endpoint-json> | endpoints default <alias> | endpoints delete <alias>")
+		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import --alias <alias> [--dry-run] <endpoint-json> | endpoints discover-attestors [--dry-run] | endpoints default <alias> | endpoints delete <alias>")
 	}
 	switch args[0] {
 	case "list":
@@ -110,6 +110,25 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 		}
 		if !result.DryRun {
 			r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
+		}
+		return nil
+	case "discover-attestors":
+		req, err := parseEndpointDiscoverAttestorsArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		result, err := r.app().EndpointDiscoverAttestors(r.commandContext(), req)
+		if err != nil {
+			return err
+		}
+		if !result.DryRun {
+			if cfg, err := config.LoadConfig(r.DataDir); err == nil {
+				r.Config = cfg
+				r.app().Config = cfg
+			}
+		}
+		for _, line := range result.RenderLines {
+			r.println(line)
 		}
 		return nil
 	case "default":
@@ -189,6 +208,23 @@ func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, e
 	}
 	if req.Alias == "" || req.Path == "" {
 		return req, errors.New(usage)
+	}
+	return req, nil
+}
+
+func parseEndpointDiscoverAttestorsArgs(args []string) (apshellapp.EndpointDiscoverAttestorsRequest, error) {
+	var req apshellapp.EndpointDiscoverAttestorsRequest
+	const usage = "usage: endpoints discover-attestors [--dry-run]"
+	for _, arg := range args {
+		switch arg {
+		case "--dry-run":
+			if req.DryRun {
+				return req, errors.New(usage)
+			}
+			req.DryRun = true
+		default:
+			return req, errors.New(usage)
+		}
 	}
 	return req, nil
 }

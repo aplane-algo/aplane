@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -28,6 +29,14 @@ type resolvedAttestorEndpoint struct {
 	client  attestorComponentClient
 	source  string
 	cleanup func()
+}
+
+// DiscoveredAttestorComponentKey is public attestor component-key metadata
+// advertised by a signer endpoint through /keys.
+type DiscoveredAttestorComponentKey struct {
+	PublicKey    string
+	ComponentKey string
+	KeyType      string
 }
 
 func (r *resolvedAttestorEndpoint) close() {
@@ -108,6 +117,43 @@ func (e *Engine) connectConfiguredAttestorEndpoint(ctx context.Context, endpoint
 	}
 }
 
+// DiscoverAttestorComponentKeysWithContext queries one endpoint and returns
+// attestor component public keys that can be mapped for attested signing.
+func (e *Engine) DiscoverAttestorComponentKeysWithContext(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredAttestorComponentKey, error) {
+	var client attestorComponentClient
+	var cleanup func()
+	if endpoint.URL == "self" {
+		client = e.Connection
+	} else {
+		resolved := config.AttestorEndpointConfig{
+			URL:            endpoint.URL,
+			TokenFile:      endpoint.TokenFile,
+			SignerPort:     endpoint.SignerPort,
+			LocalPort:      endpoint.LocalPort,
+			IdentityFile:   endpoint.IdentityFile,
+			KnownHostsPath: endpoint.KnownHostsPath,
+		}
+		c, closeFn, _, err := e.connectConfiguredAttestorEndpoint(ctx, resolved)
+		if err != nil {
+			return nil, err
+		}
+		client = c
+		cleanup = closeFn
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+
+	keys, err := client.GetKeysWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if keys.Locked {
+		return nil, fmt.Errorf("endpoint signer is locked")
+	}
+	return discoverAttestorComponentKeys(keys.Keys)
+}
+
 func readAttestorEndpointToken(path string) (string, error) {
 	token, err := tokenfile.ReadToken(path)
 	if err != nil {
@@ -117,6 +163,47 @@ func readAttestorEndpointToken(path string) (string, error) {
 		return "", fmt.Errorf("attestor token file %s is empty", path)
 	}
 	return token, nil
+}
+
+func discoverAttestorComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredAttestorComponentKey, error) {
+	discovered := make([]DiscoveredAttestorComponentKey, 0)
+	seen := map[string]struct{}{}
+	for _, key := range keys {
+		if !key.IsComponentKey || !keytypes.IsAttestorComponentKeyType(key.KeyType) {
+			continue
+		}
+		publicKey, err := normalizeAttestorPublicKeyHex(key.PublicKeyHex, key.KeyType)
+		if err != nil {
+			return nil, fmt.Errorf("attestor component key %q has invalid public_key_hex: %w", key.Address, err)
+		}
+		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
+		if err != nil {
+			return nil, fmt.Errorf("attestor component public key %s has invalid component selector %q: %w", publicKey, key.Address, err)
+		}
+		expectedSelector, err := attestorComponentSelector(key.KeyType, publicKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to derive component selector for attestor public key %s: %w", publicKey, err)
+		}
+		if selector != expectedSelector {
+			return nil, fmt.Errorf("attestor component public key %s advertised selector %s, want %s", publicKey, selector, expectedSelector)
+		}
+		if _, ok := seen[publicKey]; ok {
+			continue
+		}
+		seen[publicKey] = struct{}{}
+		discovered = append(discovered, DiscoveredAttestorComponentKey{
+			PublicKey:    publicKey,
+			ComponentKey: selector,
+			KeyType:      key.KeyType,
+		})
+	}
+	sort.Slice(discovered, func(i, j int) bool {
+		if discovered[i].PublicKey != discovered[j].PublicKey {
+			return discovered[i].PublicKey < discovered[j].PublicKey
+		}
+		return discovered[i].KeyType < discovered[j].KeyType
+	})
+	return discovered, nil
 }
 
 func (e *Engine) signerProgressWriter() io.Writer {

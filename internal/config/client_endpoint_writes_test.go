@@ -169,6 +169,84 @@ attestor_endpoints:
 	}
 }
 
+func TestRebuildClientAttestorEndpointAliasesReplacesAliasRoutesAndPreservesInline(t *testing.T) {
+	dataDir := t.TempDir()
+	staleKey := attestorEndpointTestHex("a1")
+	newKey := attestorEndpointTestHex("b2")
+	inlineKey := attestorEndpointTestHex("c3")
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
+attestor_endpoints:
+  `+staleKey+`:
+    endpoint: attestor-local
+  `+inlineKey+`:
+    url: self
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile(config.yaml) error = %v", err)
+	}
+
+	plan, err := RebuildClientAttestorEndpointAliases(dataDir, map[string][]string{
+		"attestor-local": {newKey},
+	})
+	if err != nil {
+		t.Fatalf("RebuildClientAttestorEndpointAliases() error = %v", err)
+	}
+	if plan.PublicKeyCount != 1 || plan.PreviousAliasRouteCount != 1 || plan.PreservedInlineRouteCount != 1 {
+		t.Fatalf("plan counts = public:%d previous:%d inline:%d, want 1/1/1",
+			plan.PublicKeyCount, plan.PreviousAliasRouteCount, plan.PreservedInlineRouteCount)
+	}
+	mappings, err := ClientAttestorEndpointMappingsByAlias(dataDir)
+	if err != nil {
+		t.Fatalf("ClientAttestorEndpointMappingsByAlias() error = %v", err)
+	}
+	if got := mappings["attestor-local"]; len(got) != 1 || got[0] != newKey {
+		t.Fatalf("attestor-local mappings = %#v, want only new key", got)
+	}
+	if strings.Contains(readTestFile(t, filepath.Join(dataDir, "config.yaml")), staleKey) {
+		t.Fatal("stale alias-managed attestor key remained after rebuild")
+	}
+	if !strings.Contains(readTestFile(t, filepath.Join(dataDir, "config.yaml")), inlineKey) {
+		t.Fatal("inline attestor route was not preserved")
+	}
+}
+
+func TestRebuildClientAttestorEndpointAliasesRejectsDuplicateDiscoveredKey(t *testing.T) {
+	dataDir := t.TempDir()
+	publicKey := attestorEndpointTestHex("d4")
+
+	_, err := PlanClientAttestorEndpointAliasRebuild(dataDir, map[string][]string{
+		"attestor-a": {publicKey},
+		"attestor-b": {publicKey},
+	})
+	if err == nil {
+		t.Fatal("PlanClientAttestorEndpointAliasRebuild() error = nil, want duplicate rejection")
+	}
+	if !strings.Contains(err.Error(), "advertised by both endpoint aliases") {
+		t.Fatalf("duplicate error = %v", err)
+	}
+}
+
+func TestRebuildClientAttestorEndpointAliasesRejectsInlineCollision(t *testing.T) {
+	dataDir := t.TempDir()
+	publicKey := attestorEndpointTestHex("e5")
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
+attestor_endpoints:
+  `+publicKey+`:
+    url: self
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile(config.yaml) error = %v", err)
+	}
+
+	_, err := PlanClientAttestorEndpointAliasRebuild(dataDir, map[string][]string{
+		"attestor-local": {publicKey},
+	})
+	if err == nil {
+		t.Fatal("PlanClientAttestorEndpointAliasRebuild() error = nil, want inline collision rejection")
+	}
+	if !strings.Contains(err.Error(), "conflicts with an inline attestor route") {
+		t.Fatalf("inline collision error = %v", err)
+	}
+}
+
 func TestSetStoredClientEndpointDefaultMaterializesLegacyPrimary(t *testing.T) {
 	dataDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
@@ -191,4 +269,13 @@ signer_port: 12270
 	if endpoint.URL != "ssh://signer.example:2222" || endpoint.TokenFile != "aplane.token" {
 		t.Fatalf("primary endpoint = %#v, want legacy primary materialized", endpoint)
 	}
+}
+
+func readTestFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	return string(data)
 }

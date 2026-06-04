@@ -22,6 +22,12 @@ type EndpointImportRequest struct {
 	DryRun bool
 }
 
+// EndpointDiscoverAttestorsRequest rebuilds attestor endpoint mappings by
+// querying configured endpoint inventories.
+type EndpointDiscoverAttestorsRequest struct {
+	DryRun bool
+}
+
 // EndpointsList returns the resolved client endpoint registry plus local
 // attestor mappings.
 func (a *App) EndpointsList(_ context.Context) (*EndpointsListResult, error) {
@@ -114,6 +120,69 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		}
 	}
 	result.RenderLines = endpointImportRenderLines(result)
+	return result, nil
+}
+
+// EndpointDiscoverAttestors queries every configured endpoint's /keys
+// inventory, extracts attestor component public keys, and atomically rebuilds
+// client-local attestor endpoint mappings from that live inventory.
+func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscoverAttestorsRequest) (*EndpointDiscoverAttestorsResult, error) {
+	cfg, err := config.LoadConfig(a.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	a.Config = cfg
+
+	aliases := make([]string, 0, len(cfg.Endpoints.Endpoints))
+	for alias := range cfg.Endpoints.Endpoints {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	if len(aliases) == 0 {
+		return nil, fmt.Errorf("no endpoints configured")
+	}
+
+	mappings := map[string][]string{}
+	discoveries := make([]EndpointAttestorDiscovery, 0, len(aliases))
+	for _, alias := range aliases {
+		endpoint := cfg.Endpoints.Endpoints[alias]
+		keys, err := a.eng.DiscoverAttestorComponentKeysWithContext(ctx, endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
+		}
+		discovery := EndpointAttestorDiscovery{Alias: alias}
+		for _, key := range keys {
+			discovery.Keys = append(discovery.Keys, DiscoveredEndpointAttestorKey{
+				PublicKey:    key.PublicKey,
+				ComponentKey: key.ComponentKey,
+				KeyType:      key.KeyType,
+			})
+			mappings[alias] = append(mappings[alias], key.PublicKey)
+		}
+		discoveries = append(discoveries, discovery)
+	}
+
+	plan, err := config.PlanClientAttestorEndpointAliasRebuild(a.DataDir, mappings)
+	if err != nil {
+		return nil, err
+	}
+	result := &EndpointDiscoverAttestorsResult{
+		DryRun:                    req.DryRun,
+		Endpoints:                 discoveries,
+		PublicKeyCount:            plan.PublicKeyCount,
+		PreviousAliasRouteCount:   plan.PreviousAliasRouteCount,
+		PreservedInlineRouteCount: plan.PreservedInlineRouteCount,
+	}
+	if !req.DryRun {
+		if err := config.ApplyClientAttestorEndpointAliasRebuild(a.DataDir, plan); err != nil {
+			return nil, err
+		}
+		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
+			a.Config = cfg
+			a.eng.AttestorEndpoints = cfg.AttestorEndpoints.Clone()
+		}
+	}
+	result.RenderLines = endpointDiscoverAttestorsRenderLines(result)
 	return result, nil
 }
 
@@ -232,6 +301,32 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 	}
 	if result.DefaultChanged {
 		lines = append(lines, "  default: yes")
+	}
+	return lines
+}
+
+func endpointDiscoverAttestorsRenderLines(result *EndpointDiscoverAttestorsResult) []string {
+	action := "Rebuilt"
+	if result.DryRun {
+		action = "Would rebuild"
+	}
+	lines := []string{
+		fmt.Sprintf("%s attestor endpoint mappings from %d endpoint(s): %d key(s)",
+			action, len(result.Endpoints), result.PublicKeyCount),
+		fmt.Sprintf("  previous alias-managed mappings: %d", result.PreviousAliasRouteCount),
+	}
+	if result.PreservedInlineRouteCount > 0 {
+		lines = append(lines, fmt.Sprintf("  preserved inline routes: %d", result.PreservedInlineRouteCount))
+	}
+	for _, endpoint := range result.Endpoints {
+		if len(endpoint.Keys) == 0 {
+			lines = append(lines, fmt.Sprintf("  %s: none", endpoint.Alias))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("  %s:", endpoint.Alias))
+		for _, key := range endpoint.Keys {
+			lines = append(lines, fmt.Sprintf("    %s (%s, %s)", key.PublicKey, key.KeyType, key.ComponentKey))
+		}
 	}
 	return lines
 }

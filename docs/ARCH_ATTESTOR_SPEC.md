@@ -699,7 +699,7 @@ Request `Content-Type` is not enforced in the MVP unless the broader HTTP
 contract changes. Malformed JSON still returns `400`, and oversized bodies
 still return `413`.
 
-Endpoint role dispatch must honor identity mode:
+HTTP service role dispatch must honor identity mode:
 
 - `signing` identities may use `/sign`, `/plan`, `/simulate`, user-role
   `/sign/component`, and `/sign/assemble`. Attestor-role `/sign/component`
@@ -1285,6 +1285,7 @@ apshell -d "$APCLIENT_DATA"
 > endpoints import --alias attestor-local attestor.endpoint.json
 > endpoints show attestor-local
 > request-token --endpoint attestor-local
+> endpoints discover-attestors
 ```
 
 The exported `aplane.endpoint.v1` envelope is public routing metadata only and
@@ -1299,6 +1300,14 @@ generation and embedded in the LogicSig. Import replaces existing endpoint
 data for the same alias, and rejects a URL already assigned to a different
 alias without writing. Dry-run import must run the same validation and conflict
 checks as a real import without writing files.
+
+After endpoint tokens and SSH host trust are established, `apshell endpoints
+discover-attestors [--dry-run]` queries `/keys` on every configured endpoint,
+extracts attestor component-key `public_key_hex` values, and atomically
+rebuilds alias-managed `attestor_endpoints` mappings in client `config.yaml`.
+The rebuild preserves inline legacy routes, rejects duplicate public keys
+advertised by multiple endpoint aliases, rejects collisions with inline routes,
+and leaves files unchanged on any endpoint/query/validation failure.
 
 A logical attestor may have multiple equivalent endpoints for availability.
 The client may call each endpoint's `/keys` projection to check whether it

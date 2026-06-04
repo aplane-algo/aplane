@@ -5,14 +5,20 @@ package apshellapp
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
@@ -190,6 +196,101 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	}
 }
 
+func TestEndpointDiscoverAttestorsRebuildsMappingsFromAllEndpoints(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+
+	publicKeyHex := testAttestorPublicKeyHex()
+	componentSelector := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
+		Address:        componentSelector,
+		PublicKeyHex:   strings.ToUpper(publicKeyHex),
+		KeyType:        keytypes.AttestorComponentEd25519V1,
+		IsComponentKey: true,
+	}})
+	signerServer := newEndpointKeysServer(t, "sign-token", []signerapi.KeyInfo{{
+		Address: "ADDR",
+		KeyType: keytypes.AttestedFalcon1024AttEd25519V1,
+	}})
+
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "signer-local", config.ClientEndpointConfig{
+		URL: signerServer.URL,
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(signer-local) error = %v", err)
+	}
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+		URL: attestorServer.URL,
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+	}
+	writeEndpointToken(t, dataDir, "signer-local", "sign-token")
+	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
+	staleKeyHex := strings.Repeat("cd", 32)
+	writeAttestorEndpointMapping(t, dataDir, staleKeyHex, "attestor-local")
+
+	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	if err != nil {
+		t.Fatalf("EndpointDiscoverAttestors() error = %v", err)
+	}
+	if result.PublicKeyCount != 1 || result.PreviousAliasRouteCount != 1 {
+		t.Fatalf("discovery counts = public:%d previous:%d, want 1/1", result.PublicKeyCount, result.PreviousAliasRouteCount)
+	}
+	if len(result.Endpoints) != 2 {
+		t.Fatalf("discovered endpoints = %d, want 2", len(result.Endpoints))
+	}
+
+	cfg, err := config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	route, ok := cfg.AttestorEndpoints[publicKeyHex]
+	if !ok {
+		t.Fatalf("attestor endpoint route for %s missing from %#v", publicKeyHex, cfg.AttestorEndpoints)
+	}
+	if route.Endpoint != "attestor-local" {
+		t.Fatalf("route endpoint = %q, want attestor-local", route.Endpoint)
+	}
+	if _, ok := cfg.AttestorEndpoints[staleKeyHex]; ok {
+		t.Fatalf("stale attestor endpoint route %s remained after discovery", staleKeyHex)
+	}
+	if _, ok := app.eng.AttestorEndpoints[publicKeyHex]; !ok {
+		t.Fatalf("engine attestor routing was not refreshed for %s", publicKeyHex)
+	}
+}
+
+func TestEndpointDiscoverAttestorsDryRunDoesNotWriteMappings(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+	publicKeyHex := testAttestorPublicKeyHex()
+	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
+		Address:        testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex),
+		PublicKeyHex:   publicKeyHex,
+		KeyType:        keytypes.AttestorComponentEd25519V1,
+		IsComponentKey: true,
+	}})
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+		URL: attestorServer.URL,
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+	}
+	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
+
+	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{DryRun: true})
+	if err != nil {
+		t.Fatalf("EndpointDiscoverAttestors(dry-run) error = %v", err)
+	}
+	if !result.DryRun || result.PublicKeyCount != 1 {
+		t.Fatalf("dry-run result = dry:%v public:%d, want true/1", result.DryRun, result.PublicKeyCount)
+	}
+	cfg, err := config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if len(cfg.AttestorEndpoints) != 0 {
+		t.Fatalf("AttestorEndpoints = %#v, want none after dry-run", cfg.AttestorEndpoints)
+	}
+}
+
 func TestEndpointDefaultSetsSigningEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
@@ -319,4 +420,49 @@ func writeAttestorEndpointMapping(t *testing.T, dir, publicKeyHex, alias string)
 
 func testAttestorPublicKeyHex() string {
 	return strings.Repeat("ab", 32)
+}
+
+func writeEndpointToken(t *testing.T, dir, alias, token string) {
+	t.Helper()
+	path := filepath.Join(dir, "tokens", alias+".token")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll(tokens) error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(token) error = %v", err)
+	}
+}
+
+func testComponentSelector(t *testing.T, keyType, publicKeyHex string) string {
+	t.Helper()
+	publicKey, err := hex.DecodeString(publicKeyHex)
+	if err != nil {
+		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
+	}
+	selector, err := keytypes.ComponentKeySelector(keyType, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+	return selector
+}
+
+func newEndpointKeysServer(t *testing.T, token string, keys []signerapi.KeyInfo) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/keys" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "aplane "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
+			Count: len(keys),
+			Keys:  keys,
+		})
+	}))
+	t.Cleanup(server.Close)
+	return server
 }
