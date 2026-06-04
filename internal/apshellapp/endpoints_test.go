@@ -160,7 +160,7 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
 	publicKeyHex := testAttestorPublicKeyHex()
-	writeAttestorEndpointMapping(t, dataDir, publicKeyHex, "attestor-local")
+	writePublishedAttestor(t, dataDir, "attestor-local", publicKeyHex)
 	tokenPath := filepath.Join(dataDir, "tokens", "attestor-local.token")
 	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
 		t.Fatalf("MkdirAll(tokens) error = %v", err)
@@ -180,8 +180,8 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	if entry.Alias != "attestor-local" || !entry.TokenPresent {
 		t.Fatalf("list entry = %#v, want attestor-local with token present", entry)
 	}
-	if got := entry.LocalAttestorPublicKeys; len(got) != 1 || got[0] != publicKeyHex {
-		t.Fatalf("LocalAttestorPublicKeys = %#v, want %s", got, publicKeyHex)
+	if got := entry.PublishedAttestorPublicKeys; len(got) != 1 || got[0] != publicKeyHex {
+		t.Fatalf("PublishedAttestorPublicKeys = %#v, want %s", got, publicKeyHex)
 	}
 
 	show, err := app.EndpointShow(context.Background(), "attestor-local")
@@ -226,14 +226,14 @@ func TestEndpointDiscoverAttestorsRebuildsMappingsFromAllEndpoints(t *testing.T)
 	writeEndpointToken(t, dataDir, "signer-local", "sign-token")
 	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
 	staleKeyHex := strings.Repeat("cd", 32)
-	writeAttestorEndpointMapping(t, dataDir, staleKeyHex, "attestor-local")
+	writePublishedAttestor(t, dataDir, "attestor-local", staleKeyHex)
 
 	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
 	if err != nil {
 		t.Fatalf("EndpointDiscoverAttestors() error = %v", err)
 	}
-	if result.PublicKeyCount != 1 || result.PreviousAliasRouteCount != 1 {
-		t.Fatalf("discovery counts = public:%d previous:%d, want 1/1", result.PublicKeyCount, result.PreviousAliasRouteCount)
+	if result.PublicKeyCount != 1 || result.PreviousPublishedCount != 1 {
+		t.Fatalf("discovery counts = public:%d previous:%d, want 1/1", result.PublicKeyCount, result.PreviousPublishedCount)
 	}
 	if len(result.Endpoints) != 2 {
 		t.Fatalf("discovered endpoints = %d, want 2", len(result.Endpoints))
@@ -330,7 +330,7 @@ func TestEndpointDeleteRejectsMappedAttestorEndpoint(t *testing.T) {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
 	publicKeyHex := testAttestorPublicKeyHex()
-	writeAttestorEndpointMapping(t, dataDir, publicKeyHex, "attestor-local")
+	writePublishedAttestor(t, dataDir, "attestor-local", publicKeyHex)
 
 	_, err := app.EndpointDelete(context.Background(), "attestor-local")
 	if err == nil {
@@ -410,11 +410,19 @@ func writeEndpointEnvelopeWithOptions(t *testing.T, dir, name, rawURL string, si
 	return path
 }
 
-func writeAttestorEndpointMapping(t *testing.T, dir, publicKeyHex, alias string) {
+func writePublishedAttestor(t *testing.T, dir, alias, publicKeyHex string) {
 	t.Helper()
-	data := []byte("attestor_endpoints:\n  " + publicKeyHex + ":\n    endpoint: " + alias + "\n")
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), data, 0o600); err != nil {
-		t.Fatalf("WriteFile(config.yaml) error = %v", err)
+	_, err := config.RebuildStoredClientEndpointPublishedAttestors(dir, map[string]map[string]config.ClientEndpointPublishedAttestor{
+		alias: {
+			publicKeyHex: {
+				ComponentKey: testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex),
+				KeyType:      keytypes.AttestorComponentEd25519V1,
+				LastSeenAt:   "2026-06-04T00:00:00Z",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RebuildStoredClientEndpointPublishedAttestors() error = %v", err)
 	}
 }
 

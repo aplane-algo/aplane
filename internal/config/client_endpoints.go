@@ -4,14 +4,18 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
@@ -39,6 +43,19 @@ type ClientEndpointConfig struct {
 	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path for ssh:// endpoints"`
 	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// endpoints"`
 	TokenFile      string `yaml:"token_file,omitempty" description:"Path to this endpoint's API token file"`
+
+	// PublishedAttestors is endpoint-local live inventory learned from
+	// authenticated /keys discovery. It is routing metadata, not proof of
+	// ownership.
+	PublishedAttestors map[string]ClientEndpointPublishedAttestor `yaml:"published_attestors,omitempty"`
+}
+
+// ClientEndpointPublishedAttestor records one attestor component key
+// advertised by an endpoint.
+type ClientEndpointPublishedAttestor struct {
+	ComponentKey string `yaml:"component_key"`
+	KeyType      string `yaml:"key_type"`
+	LastSeenAt   string `yaml:"last_seen_at,omitempty"`
 }
 
 func GetClientEndpointsPath(dataDir string) string {
@@ -201,6 +218,11 @@ func normalizeClientEndpointConfig(dataDir string, cfg Config, alias string, end
 		endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
 		endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
 	}
+	published, err := normalizeClientEndpointPublishedAttestors(endpoint.PublishedAttestors)
+	if err != nil {
+		return endpoint, err
+	}
+	endpoint.PublishedAttestors = published
 	return endpoint, nil
 }
 
@@ -238,6 +260,15 @@ func validateClientEndpointURL(alias string, endpoint ClientEndpointConfig) erro
 	return nil
 }
 
+func isLoopbackEndpointHost(host string) bool {
+	host = strings.Trim(strings.ToLower(host), "[]")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func (r ClientEndpointRegistry) Clone() ClientEndpointRegistry {
 	out := ClientEndpointRegistry{
 		SchemaVersion: r.SchemaVersion,
@@ -246,7 +277,7 @@ func (r ClientEndpointRegistry) Clone() ClientEndpointRegistry {
 	if len(r.Endpoints) > 0 {
 		out.Endpoints = make(map[string]ClientEndpointConfig, len(r.Endpoints))
 		for alias, endpoint := range r.Endpoints {
-			out.Endpoints[alias] = endpoint
+			out.Endpoints[alias] = cloneClientEndpointConfig(endpoint)
 		}
 	}
 	return out
@@ -258,12 +289,31 @@ func (r ClientEndpointRegistry) DefaultEndpoint() (string, ClientEndpointConfig,
 		return "", ClientEndpointConfig{}, false
 	}
 	endpoint, ok := r.Endpoints[alias]
-	return alias, endpoint, ok
+	return alias, cloneClientEndpointConfig(endpoint), ok
 }
 
 func (r ClientEndpointRegistry) Endpoint(alias string) (ClientEndpointConfig, bool) {
 	endpoint, ok := r.Endpoints[alias]
-	return endpoint, ok
+	return cloneClientEndpointConfig(endpoint), ok
+}
+
+func cloneClientEndpointConfig(endpoint ClientEndpointConfig) ClientEndpointConfig {
+	if len(endpoint.PublishedAttestors) == 0 {
+		return endpoint
+	}
+	endpoint.PublishedAttestors = cloneClientEndpointPublishedAttestors(endpoint.PublishedAttestors)
+	return endpoint
+}
+
+func cloneClientEndpointPublishedAttestors(in map[string]ClientEndpointPublishedAttestor) map[string]ClientEndpointPublishedAttestor {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]ClientEndpointPublishedAttestor, len(in))
+	for publicKey, published := range in {
+		out[publicKey] = published
+	}
+	return out
 }
 
 func (c Config) ClientEndpointsOrDefault(dataDir string) ClientEndpointRegistry {
@@ -273,29 +323,114 @@ func (c Config) ClientEndpointsOrDefault(dataDir string) ClientEndpointRegistry 
 	return legacyPrimaryEndpointRegistry(dataDir, c)
 }
 
-func (r ClientEndpointRegistry) ResolveAttestorEndpointConfigs(routes AttestorEndpointConfigs) (AttestorEndpointConfigs, error) {
-	if len(routes) == 0 {
+// PublishedAttestorEndpointConfigs derives attestor public-key routing from
+// endpoint-local published_attestors inventory.
+func (r ClientEndpointRegistry) PublishedAttestorEndpointConfigs() (AttestorEndpointConfigs, error) {
+	resolved := AttestorEndpointConfigs{}
+	aliases := make([]string, 0, len(r.Endpoints))
+	for alias := range r.Endpoints {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	for _, alias := range aliases {
+		endpoint := r.Endpoints[alias]
+		publicKeys := make([]string, 0, len(endpoint.PublishedAttestors))
+		for publicKey := range endpoint.PublishedAttestors {
+			publicKeys = append(publicKeys, publicKey)
+		}
+		sort.Strings(publicKeys)
+		for _, publicKey := range publicKeys {
+			if _, exists := resolved[publicKey]; exists {
+				return nil, fmt.Errorf("attestor public key %s is published by multiple endpoint aliases", publicKey)
+			}
+			resolved[publicKey] = AttestorEndpointConfig{
+				Endpoint:       alias,
+				URL:            endpoint.URL,
+				TokenFile:      endpoint.TokenFile,
+				SignerPort:     endpoint.SignerPort,
+				LocalPort:      endpoint.LocalPort,
+				IdentityFile:   endpoint.IdentityFile,
+				KnownHostsPath: endpoint.KnownHostsPath,
+			}
+		}
+	}
+	if len(resolved) == 0 {
 		return nil, nil
 	}
-	resolved := make(AttestorEndpointConfigs, len(routes))
-	for publicKey, route := range routes {
-		if route.Endpoint == "" {
-			resolved[publicKey] = route
-			continue
-		}
-		endpoint, ok := r.Endpoint(route.Endpoint)
-		if !ok {
-			return nil, fmt.Errorf("attestor endpoint %s references unknown endpoint alias %q", publicKey, route.Endpoint)
-		}
-		resolved[publicKey] = AttestorEndpointConfig{
-			Endpoint:       route.Endpoint,
-			URL:            endpoint.URL,
-			TokenFile:      endpoint.TokenFile,
-			SignerPort:     endpoint.SignerPort,
-			LocalPort:      endpoint.LocalPort,
-			IdentityFile:   endpoint.IdentityFile,
-			KnownHostsPath: endpoint.KnownHostsPath,
+	return resolved, nil
+}
+
+// PublishedAttestorPublicKeysByAlias returns the public-key inventory currently
+// stored under each endpoint alias.
+func (r ClientEndpointRegistry) PublishedAttestorPublicKeysByAlias() map[string][]string {
+	out := map[string][]string{}
+	for alias, endpoint := range r.Endpoints {
+		for publicKey := range endpoint.PublishedAttestors {
+			out[alias] = append(out[alias], publicKey)
 		}
 	}
-	return resolved, nil
+	for alias := range out {
+		sort.Strings(out[alias])
+	}
+	return out
+}
+
+func normalizeClientEndpointPublishedAttestors(in map[string]ClientEndpointPublishedAttestor) (map[string]ClientEndpointPublishedAttestor, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]ClientEndpointPublishedAttestor, len(in))
+	for rawPublicKey, published := range in {
+		publicKey, err := normalizePublishedAttestorPublicKey(rawPublicKey, published.KeyType)
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := out[publicKey]; exists {
+			return nil, fmt.Errorf("duplicate published attestor public key %s", publicKey)
+		}
+		if !keytypes.IsAttestorComponentKeyType(published.KeyType) {
+			return nil, fmt.Errorf("published attestor %s has invalid key_type %q", publicKey, published.KeyType)
+		}
+		selector, err := keytypes.NormalizeComponentKeySelector(published.ComponentKey)
+		if err != nil {
+			return nil, fmt.Errorf("published attestor %s has invalid component_key: %w", publicKey, err)
+		}
+		publicKeyBytes, err := hex.DecodeString(publicKey)
+		if err != nil {
+			return nil, err
+		}
+		expectedSelector, err := keytypes.ComponentKeySelector(published.KeyType, publicKeyBytes)
+		if err != nil {
+			return nil, err
+		}
+		if selector != expectedSelector {
+			return nil, fmt.Errorf("published attestor %s component_key %s does not match public key-derived selector %s", publicKey, selector, expectedSelector)
+		}
+		out[publicKey] = ClientEndpointPublishedAttestor{
+			ComponentKey: selector,
+			KeyType:      published.KeyType,
+			LastSeenAt:   strings.TrimSpace(published.LastSeenAt),
+		}
+	}
+	return out, nil
+}
+
+func normalizePublishedAttestorPublicKey(raw, keyType string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	trimmed = strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
+	if trimmed == "" {
+		return "", fmt.Errorf("published attestor public key is required")
+	}
+	publicKey, err := hex.DecodeString(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("published attestor public key must be hex: %w", err)
+	}
+	wantSize, ok := keytypes.ComponentPublicKeySize(keyType)
+	if !ok {
+		return "", fmt.Errorf("published attestor key_type %q is not an attestor component key type", keyType)
+	}
+	if len(publicKey) != wantSize {
+		return "", fmt.Errorf("published attestor public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
+	}
+	return hex.EncodeToString(publicKey), nil
 }

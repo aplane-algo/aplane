@@ -235,14 +235,14 @@ func (r *REPLState) renderEndpointsList(result *apshellapp.EndpointsListResult) 
 		return
 	}
 	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ALIAS\tDEFAULT\tURL\tTOKEN\tMAPPED")
+	_, _ = fmt.Fprintln(w, "ALIAS\tDEFAULT\tURL\tTOKEN\tATTESTORS")
 	for _, endpoint := range result.Endpoints {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\n",
 			endpoint.Alias,
 			yesNo(endpoint.IsDefault),
 			endpoint.URL,
 			tokenStatusLabel(endpoint),
-			len(endpoint.LocalAttestorPublicKeys),
+			len(endpoint.PublishedAttestorPublicKeys),
 		)
 	}
 	_ = w.Flush()
@@ -259,12 +259,12 @@ func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
 	r.printf("Known hosts: %s\n", endpoint.KnownHostsPath)
 	r.printf("Token file: %s\n", endpoint.TokenFile)
 	r.printf("Token present: %s\n", tokenStatusLabel(endpoint))
-	if len(endpoint.LocalAttestorPublicKeys) == 0 {
-		r.println("Locally mapped attestors: none")
+	if len(endpoint.PublishedAttestorPublicKeys) == 0 {
+		r.println("Published attestors: none")
 		return
 	}
-	r.println("Locally mapped attestors:")
-	for _, publicKey := range endpoint.LocalAttestorPublicKeys {
+	r.println("Published attestors:")
+	for _, publicKey := range endpoint.PublishedAttestorPublicKeys {
 		r.printf("  %s\n", publicKey)
 	}
 }

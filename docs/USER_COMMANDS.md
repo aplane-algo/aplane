@@ -626,9 +626,10 @@ endpoint data. Importing a URL already assigned to a different alias fails
 without writing.
 
 `endpoints discover-attestors` queries `/keys` on every configured endpoint
-using that endpoint's token and rebuilds local attestor-key routing in
-`config.yaml`. Run it after importing endpoints and requesting endpoint tokens.
-Use `--dry-run` to inspect the discovered mappings without writing.
+using that endpoint's token and rebuilds each endpoint's `published_attestors`
+inventory in `endpoints.yaml`. Attested-send routing is derived from that
+inventory. Run it after importing endpoints and requesting endpoint tokens. Use
+`--dry-run` to inspect the discovered inventory without writing.
 
 **Examples:**
 ```

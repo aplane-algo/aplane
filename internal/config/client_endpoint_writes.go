@@ -4,7 +4,6 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -171,232 +170,101 @@ func DeleteStoredClientEndpoint(dataDir, alias string) (ClientEndpointRegistry, 
 	return registry, nil
 }
 
-// ClientAttestorEndpointAliasPlan describes config.yaml attestor route mappings
-// that would be written for one endpoint alias.
-type ClientAttestorEndpointAliasPlan struct {
-	Alias      string
-	PublicKeys []string
+// ClientEndpointPublishedAttestorRebuildPlan describes an endpoints.yaml
+// rewrite that refreshes endpoint-published attestor inventory.
+type ClientEndpointPublishedAttestorRebuildPlan struct {
+	Registry               ClientEndpointRegistry
+	PublicKeyCount         int
+	PreviousPublishedCount int
 }
 
-// ClientAttestorEndpointAliasRebuildPlan describes a full replacement of
-// alias-managed attestor endpoint routes in config.yaml.
-type ClientAttestorEndpointAliasRebuildPlan struct {
-	Mappings                  map[string][]string
-	PublicKeyCount            int
-	PreviousAliasRouteCount   int
-	PreservedInlineRouteCount int
-
-	doc *yaml.Node
-}
-
-// PlanClientAttestorEndpointAliases validates attestor public-key mappings for
-// one endpoint alias without touching config.yaml.
-func PlanClientAttestorEndpointAliases(dataDir, alias string, publicKeys []string) (ClientAttestorEndpointAliasPlan, error) {
-	if err := ValidateClientEndpointAlias(alias); err != nil {
-		return ClientAttestorEndpointAliasPlan{}, err
-	}
-	normalizedKeys, err := normalizeAttestorPublicKeys(publicKeys)
+// PlanStoredClientEndpointPublishedAttestorRebuild validates and plans a full
+// refresh of endpoint-local published_attestors inventory in endpoints.yaml.
+func PlanStoredClientEndpointPublishedAttestorRebuild(dataDir string, publications map[string]map[string]ClientEndpointPublishedAttestor) (ClientEndpointPublishedAttestorRebuildPlan, error) {
+	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
-		return ClientAttestorEndpointAliasPlan{}, err
+		return ClientEndpointPublishedAttestorRebuildPlan{}, err
 	}
-	doc, err := loadClientYAMLDocument(GetConfigPath(dataDir))
-	if err != nil {
-		return ClientAttestorEndpointAliasPlan{}, err
-	}
-	root, err := clientYAMLDocumentMapping(doc)
-	if err != nil {
-		return ClientAttestorEndpointAliasPlan{}, err
-	}
-	routes := clientYAMLMappingValue(root, "attestor_endpoints")
-	if routes != nil && routes.Kind != yaml.MappingNode {
-		return ClientAttestorEndpointAliasPlan{}, fmt.Errorf("attestor_endpoints must be a mapping")
+	previousCount := 0
+	for alias, endpoint := range registry.Endpoints {
+		previousCount += len(endpoint.PublishedAttestors)
+		endpoint.PublishedAttestors = nil
+		registry.Endpoints[alias] = endpoint
 	}
 
-	for _, publicKey := range normalizedKeys {
-		if routes == nil {
-			continue
+	aliases := make([]string, 0, len(publications))
+	for alias := range publications {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+
+	keyToAlias := map[string]string{}
+	publicKeyCount := 0
+	for _, alias := range aliases {
+		if err := ValidateClientEndpointAlias(alias); err != nil {
+			return ClientEndpointPublishedAttestorRebuildPlan{}, err
 		}
-		existing := clientYAMLMappingValue(routes, publicKey)
-		if existing == nil {
-			continue
-		}
-		existingAlias, ok, err := attestorRouteAlias(existing)
+		normalizedPublished, err := normalizeClientEndpointPublishedAttestors(publications[alias])
 		if err != nil {
-			return ClientAttestorEndpointAliasPlan{}, err
+			return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint %q: %w", alias, err)
 		}
+
+		endpoint, ok := registry.Endpoints[alias]
 		if !ok {
-			return ClientAttestorEndpointAliasPlan{}, fmt.Errorf("attestor endpoint %s already has an inline route; replace is required to move it to endpoint alias %q", publicKey, alias)
+			if alias != DefaultClientEndpointName || len(normalizedPublished) == 0 {
+				if len(normalizedPublished) == 0 {
+					continue
+				}
+				return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q is not defined", alias)
+			}
+			legacy, hasLegacy := storedLegacyPrimaryEndpoint(dataDir)
+			if !hasLegacy {
+				return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q is not defined", alias)
+			}
+			endpoint = legacy
 		}
-		if existingAlias != alias {
-			return ClientAttestorEndpointAliasPlan{}, fmt.Errorf("attestor endpoint %s already maps to endpoint alias %q", publicKey, existingAlias)
+
+		for publicKey := range normalizedPublished {
+			if existingAlias, exists := keyToAlias[publicKey]; exists && existingAlias != alias {
+				return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("attestor public key %s advertised by both endpoint aliases %q and %q", publicKey, existingAlias, alias)
+			}
+			keyToAlias[publicKey] = alias
+		}
+		if len(normalizedPublished) > 0 {
+			publicKeyCount += len(normalizedPublished)
+			endpoint.PublishedAttestors = normalizedPublished
+			registry.Endpoints[alias] = endpoint
+		} else if _, exists := registry.Endpoints[alias]; exists {
+			endpoint.PublishedAttestors = nil
+			registry.Endpoints[alias] = endpoint
 		}
 	}
 
-	return ClientAttestorEndpointAliasPlan{
-		Alias:      alias,
-		PublicKeys: normalizedKeys,
+	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
+		return ClientEndpointPublishedAttestorRebuildPlan{}, err
+	}
+	return ClientEndpointPublishedAttestorRebuildPlan{
+		Registry:               registry,
+		PublicKeyCount:         publicKeyCount,
+		PreviousPublishedCount: previousCount,
 	}, nil
 }
 
-// ApplyClientAttestorEndpointAliases writes a previously planned set of
-// attestor endpoint mappings.
-func ApplyClientAttestorEndpointAliases(dataDir string, plan ClientAttestorEndpointAliasPlan) error {
-	if err := ValidateClientEndpointAlias(plan.Alias); err != nil {
-		return err
-	}
-	normalizedKeys, err := normalizeAttestorPublicKeys(plan.PublicKeys)
-	if err != nil {
-		return err
-	}
-	doc, err := loadClientYAMLDocument(GetConfigPath(dataDir))
-	if err != nil {
-		return err
-	}
-	root, err := clientYAMLDocumentMapping(doc)
-	if err != nil {
-		return err
-	}
-	routes, _, err := ensureClientYAMLMappingValue(root, "attestor_endpoints")
-	if err != nil {
-		return err
-	}
-	for _, publicKey := range normalizedKeys {
-		setClientYAMLMappingValue(routes, publicKey, endpointAliasNode(plan.Alias))
-	}
-	return writeClientYAMLDocumentAtomic(GetConfigPath(dataDir), doc, 0o600)
+// ApplyStoredClientEndpointPublishedAttestorRebuild writes a previously
+// planned published_attestors refresh.
+func ApplyStoredClientEndpointPublishedAttestorRebuild(dataDir string, plan ClientEndpointPublishedAttestorRebuildPlan) error {
+	return SaveStoredClientEndpointRegistry(dataDir, plan.Registry)
 }
 
-func UpsertClientAttestorEndpointAliases(dataDir, alias string, publicKeys []string) error {
-	plan, err := PlanClientAttestorEndpointAliases(dataDir, alias, publicKeys)
+func RebuildStoredClientEndpointPublishedAttestors(dataDir string, publications map[string]map[string]ClientEndpointPublishedAttestor) (ClientEndpointPublishedAttestorRebuildPlan, error) {
+	plan, err := PlanStoredClientEndpointPublishedAttestorRebuild(dataDir, publications)
 	if err != nil {
-		return err
+		return ClientEndpointPublishedAttestorRebuildPlan{}, err
 	}
-	return ApplyClientAttestorEndpointAliases(dataDir, plan)
-}
-
-// PlanClientAttestorEndpointAliasRebuild validates and plans a full rebuild of
-// alias-managed attestor endpoint mappings. Inline legacy routes are preserved;
-// discovered public keys that collide with inline routes fail closed.
-func PlanClientAttestorEndpointAliasRebuild(dataDir string, mappings map[string][]string) (ClientAttestorEndpointAliasRebuildPlan, error) {
-	normalizedMappings, keyToAlias, publicKeys, err := normalizeAttestorAliasMappings(mappings)
-	if err != nil {
-		return ClientAttestorEndpointAliasRebuildPlan{}, err
-	}
-	doc, err := loadClientYAMLDocument(GetConfigPath(dataDir))
-	if err != nil {
-		return ClientAttestorEndpointAliasRebuildPlan{}, err
-	}
-	root, err := clientYAMLDocumentMapping(doc)
-	if err != nil {
-		return ClientAttestorEndpointAliasRebuildPlan{}, err
-	}
-	routes, _, err := ensureClientYAMLMappingValue(root, "attestor_endpoints")
-	if err != nil {
-		return ClientAttestorEndpointAliasRebuildPlan{}, err
-	}
-
-	type preservedRoute struct {
-		publicKey string
-		value     *yaml.Node
-	}
-	var preserved []preservedRoute
-	previousAliasRoutes := 0
-	for i := 0; i+1 < len(routes.Content); i += 2 {
-		publicKey, err := normalizeAttestorEndpointSelector(routes.Content[i].Value)
-		if err != nil {
-			return ClientAttestorEndpointAliasRebuildPlan{}, err
-		}
-		_, aliasRoute, err := attestorRouteAlias(routes.Content[i+1])
-		if err != nil {
-			return ClientAttestorEndpointAliasRebuildPlan{}, err
-		}
-		if aliasRoute {
-			previousAliasRoutes++
-			continue
-		}
-		if alias, ok := keyToAlias[publicKey]; ok {
-			return ClientAttestorEndpointAliasRebuildPlan{}, fmt.Errorf("discovered attestor public key %s for endpoint alias %q conflicts with an inline attestor route", publicKey, alias)
-		}
-		preserved = append(preserved, preservedRoute{
-			publicKey: publicKey,
-			value:     routes.Content[i+1],
-		})
-	}
-
-	sort.Slice(preserved, func(i, j int) bool {
-		return preserved[i].publicKey < preserved[j].publicKey
-	})
-	routes.Content = routes.Content[:0]
-	for _, route := range preserved {
-		routes.Content = append(routes.Content, clientYAMLStringNode(route.publicKey, 0), route.value)
-	}
-	for _, publicKey := range publicKeys {
-		routes.Content = append(routes.Content, clientYAMLStringNode(publicKey, 0), endpointAliasNode(keyToAlias[publicKey]))
-	}
-
-	return ClientAttestorEndpointAliasRebuildPlan{
-		Mappings:                  normalizedMappings,
-		PublicKeyCount:            len(publicKeys),
-		PreviousAliasRouteCount:   previousAliasRoutes,
-		PreservedInlineRouteCount: len(preserved),
-		doc:                       doc,
-	}, nil
-}
-
-// ApplyClientAttestorEndpointAliasRebuild writes a previously planned
-// attestor endpoint mapping rebuild.
-func ApplyClientAttestorEndpointAliasRebuild(dataDir string, plan ClientAttestorEndpointAliasRebuildPlan) error {
-	if plan.doc == nil {
-		return fmt.Errorf("missing planned attestor endpoint rebuild document")
-	}
-	return writeClientYAMLDocumentAtomic(GetConfigPath(dataDir), plan.doc, 0o600)
-}
-
-func RebuildClientAttestorEndpointAliases(dataDir string, mappings map[string][]string) (ClientAttestorEndpointAliasRebuildPlan, error) {
-	plan, err := PlanClientAttestorEndpointAliasRebuild(dataDir, mappings)
-	if err != nil {
-		return ClientAttestorEndpointAliasRebuildPlan{}, err
-	}
-	if err := ApplyClientAttestorEndpointAliasRebuild(dataDir, plan); err != nil {
-		return ClientAttestorEndpointAliasRebuildPlan{}, err
+	if err := ApplyStoredClientEndpointPublishedAttestorRebuild(dataDir, plan); err != nil {
+		return ClientEndpointPublishedAttestorRebuildPlan{}, err
 	}
 	return plan, nil
-}
-
-func ClientAttestorEndpointMappingsByAlias(dataDir string) (map[string][]string, error) {
-	doc, err := loadClientYAMLDocument(GetConfigPath(dataDir))
-	if err != nil {
-		return nil, err
-	}
-	root, err := clientYAMLDocumentMapping(doc)
-	if err != nil {
-		return nil, err
-	}
-	routes := clientYAMLMappingValue(root, "attestor_endpoints")
-	if routes == nil {
-		return map[string][]string{}, nil
-	}
-	if routes.Kind != yaml.MappingNode {
-		return nil, fmt.Errorf("attestor_endpoints must be a mapping")
-	}
-	out := map[string][]string{}
-	for i := 0; i+1 < len(routes.Content); i += 2 {
-		publicKey, err := normalizeAttestorEndpointSelector(routes.Content[i].Value)
-		if err != nil {
-			return nil, err
-		}
-		alias, ok, err := attestorRouteAlias(routes.Content[i+1])
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			out[alias] = append(out[alias], publicKey)
-		}
-	}
-	for alias := range out {
-		sort.Strings(out[alias])
-	}
-	return out, nil
 }
 
 func emptyStoredClientEndpointRegistry() ClientEndpointRegistry {
@@ -446,6 +314,11 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 	if err := validateClientEndpointURL(alias, endpoint); err != nil {
 		return ClientEndpointConfig{}, err
 	}
+	published, err := normalizeClientEndpointPublishedAttestors(endpoint.PublishedAttestors)
+	if err != nil {
+		return ClientEndpointConfig{}, err
+	}
+	endpoint.PublishedAttestors = published
 	if endpoint.TokenFile == "" && endpoint.URL != "self" {
 		if alias == DefaultClientEndpointName {
 			endpoint.TokenFile = "aplane.token"
@@ -457,7 +330,24 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 }
 
 func storedClientEndpointsEqual(a, b ClientEndpointConfig) bool {
-	return a == b
+	if a.Role != b.Role ||
+		a.URL != b.URL ||
+		a.SignerPort != b.SignerPort ||
+		a.LocalPort != b.LocalPort ||
+		a.IdentityFile != b.IdentityFile ||
+		a.KnownHostsPath != b.KnownHostsPath ||
+		a.TokenFile != b.TokenFile {
+		return false
+	}
+	if len(a.PublishedAttestors) != len(b.PublishedAttestors) {
+		return false
+	}
+	for publicKey, aPublished := range a.PublishedAttestors {
+		if bPublished, ok := b.PublishedAttestors[publicKey]; !ok || bPublished != aPublished {
+			return false
+		}
+	}
+	return true
 }
 
 func storedLegacyPrimaryEndpoint(dataDir string) (ClientEndpointConfig, bool) {
@@ -476,189 +366,4 @@ func storedLegacyPrimaryEndpoint(dataDir string) (ClientEndpointConfig, bool) {
 		return ClientEndpointConfig{}, false
 	}
 	return endpoint, true
-}
-
-func normalizeAttestorPublicKeys(publicKeys []string) ([]string, error) {
-	out := make([]string, 0, len(publicKeys))
-	seen := map[string]struct{}{}
-	for _, publicKey := range publicKeys {
-		normalized, err := normalizeAttestorEndpointSelector(publicKey)
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := seen[normalized]; ok {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		out = append(out, normalized)
-	}
-	sort.Strings(out)
-	return out, nil
-}
-
-func normalizeAttestorAliasMappings(mappings map[string][]string) (map[string][]string, map[string]string, []string, error) {
-	normalizedMappings := map[string][]string{}
-	keyToAlias := map[string]string{}
-	publicKeys := make([]string, 0)
-	aliases := make([]string, 0, len(mappings))
-	for alias := range mappings {
-		aliases = append(aliases, alias)
-	}
-	sort.Strings(aliases)
-	for _, alias := range aliases {
-		if err := ValidateClientEndpointAlias(alias); err != nil {
-			return nil, nil, nil, err
-		}
-		normalizedKeys, err := normalizeAttestorPublicKeys(mappings[alias])
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("endpoint alias %q: %w", alias, err)
-		}
-		if len(normalizedKeys) == 0 {
-			continue
-		}
-		normalizedMappings[alias] = normalizedKeys
-		for _, publicKey := range normalizedKeys {
-			if existingAlias, ok := keyToAlias[publicKey]; ok && existingAlias != alias {
-				return nil, nil, nil, fmt.Errorf("attestor public key %s advertised by both endpoint aliases %q and %q", publicKey, existingAlias, alias)
-			}
-			if _, ok := keyToAlias[publicKey]; !ok {
-				publicKeys = append(publicKeys, publicKey)
-			}
-			keyToAlias[publicKey] = alias
-		}
-	}
-	sort.Strings(publicKeys)
-	return normalizedMappings, keyToAlias, publicKeys, nil
-}
-
-func attestorRouteAlias(node *yaml.Node) (string, bool, error) {
-	if node.Kind != yaml.MappingNode {
-		return "", false, fmt.Errorf("attestor endpoint route must be a mapping")
-	}
-	aliasNode := clientYAMLMappingValue(node, "endpoint")
-	if aliasNode == nil {
-		return "", false, nil
-	}
-	if aliasNode.Kind != yaml.ScalarNode {
-		return "", false, fmt.Errorf("attestor endpoint alias must be a scalar")
-	}
-	alias := strings.TrimSpace(aliasNode.Value)
-	if err := ValidateClientEndpointAlias(alias); err != nil {
-		return "", false, err
-	}
-	return alias, true, nil
-}
-
-func endpointAliasNode(alias string) *yaml.Node {
-	return &yaml.Node{
-		Kind: yaml.MappingNode,
-		Tag:  "!!map",
-		Content: []*yaml.Node{
-			clientYAMLStringNode("endpoint", 0),
-			clientYAMLStringNode(alias, 0),
-		},
-	}
-}
-
-func loadClientYAMLDocument(path string) (*yaml.Node, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return emptyClientYAMLDocument(), nil
-		}
-		return nil, fmt.Errorf("read YAML file %s: %w", path, err)
-	}
-	if len(bytes.TrimSpace(data)) == 0 {
-		return emptyClientYAMLDocument(), nil
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("parse YAML file %s: %w", path, err)
-	}
-	return &doc, nil
-}
-
-func emptyClientYAMLDocument() *yaml.Node {
-	return &yaml.Node{
-		Kind: yaml.DocumentNode,
-		Content: []*yaml.Node{{
-			Kind: yaml.MappingNode,
-			Tag:  "!!map",
-		}},
-	}
-}
-
-func clientYAMLDocumentMapping(doc *yaml.Node) (*yaml.Node, error) {
-	if doc.Kind == 0 {
-		*doc = *emptyClientYAMLDocument()
-	}
-	if doc.Kind != yaml.DocumentNode {
-		return nil, fmt.Errorf("YAML root must be a document")
-	}
-	if len(doc.Content) == 0 {
-		doc.Content = append(doc.Content, &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"})
-	}
-	root := doc.Content[0]
-	if root.Kind != yaml.MappingNode {
-		return nil, fmt.Errorf("YAML root must be a mapping")
-	}
-	return root, nil
-}
-
-func ensureClientYAMLMappingValue(parent *yaml.Node, key string) (*yaml.Node, bool, error) {
-	value := clientYAMLMappingValue(parent, key)
-	if value == nil {
-		node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-		parent.Content = append(parent.Content, clientYAMLStringNode(key, 0), node)
-		return node, true, nil
-	}
-	if value.Kind != yaml.MappingNode {
-		return nil, false, fmt.Errorf("%s must be a mapping", key)
-	}
-	return value, false, nil
-}
-
-func clientYAMLMappingValue(parent *yaml.Node, key string) *yaml.Node {
-	if parent == nil || parent.Kind != yaml.MappingNode {
-		return nil
-	}
-	for i := 0; i+1 < len(parent.Content); i += 2 {
-		if parent.Content[i].Value == key {
-			return parent.Content[i+1]
-		}
-	}
-	return nil
-}
-
-func setClientYAMLMappingValue(parent *yaml.Node, key string, value *yaml.Node) {
-	for i := 0; i+1 < len(parent.Content); i += 2 {
-		if parent.Content[i].Value == key {
-			parent.Content[i+1] = value
-			return
-		}
-	}
-	parent.Content = append(parent.Content, clientYAMLStringNode(key, 0), value)
-}
-
-func clientYAMLStringNode(value string, style yaml.Style) *yaml.Node {
-	return &yaml.Node{
-		Kind:  yaml.ScalarNode,
-		Tag:   "!!str",
-		Value: value,
-		Style: style,
-	}
-}
-
-func writeClientYAMLDocumentAtomic(path string, doc *yaml.Node, mode os.FileMode) error {
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(doc); err != nil {
-		_ = enc.Close()
-		return fmt.Errorf("marshal YAML: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return fmt.Errorf("marshal YAML: %w", err)
-	}
-	return writeConfigAtomic(path, buf.Bytes(), mode)
 }

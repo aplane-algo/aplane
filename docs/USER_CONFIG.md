@@ -202,8 +202,9 @@ that alias's endpoint data. Import fails without writing if the imported URL is
 already assigned to a different alias.
 
 After endpoint tokens are enrolled, `endpoints discover-attestors` queries
-`/keys` on each configured endpoint and rebuilds `attestor_endpoints` routing in
-`config.yaml` from the advertised attestor component public keys.
+`/keys` on each configured endpoint and rebuilds that endpoint's
+`published_attestors` inventory in `endpoints.yaml`. Attested-send routing is
+derived from this endpoint-local inventory.
 
 The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 
@@ -219,6 +220,11 @@ endpoints:
     url: ssh://127.0.0.1:2223
     signer_port: 11270
     token_file: tokens/attestor-local.token
+    published_attestors:
+      d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a:
+        component_key: a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078
+        key_type: aplane.attestor-ed25519.v1
+        last_seen_at: "2026-06-04T00:00:00Z"
 ```
 
 Then:

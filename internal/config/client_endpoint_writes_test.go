@@ -4,11 +4,16 @@
 package config
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 )
+
+const endpointPublishedTestSeenAt = "2026-06-04T00:00:00Z"
 
 func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	dataDir := t.TempDir()
@@ -121,129 +126,72 @@ signer_port: 12270
 	}
 }
 
-func TestUpsertClientAttestorEndpointAliasesAtomicConflict(t *testing.T) {
+func TestRebuildStoredClientEndpointPublishedAttestorsReplacesInventory(t *testing.T) {
 	dataDir := t.TempDir()
-	publicKey1 := attestorEndpointTestHex("a1")
-	publicKey2 := attestorEndpointTestHex("b2")
-	if err := UpsertClientAttestorEndpointAliases(dataDir, "attestor-local", []string{publicKey1}); err != nil {
-		t.Fatalf("UpsertClientAttestorEndpointAliases(first) error = %v", err)
+	if _, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
+		URL: "ssh://127.0.0.1:2223",
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
 	}
-
-	err := UpsertClientAttestorEndpointAliases(dataDir, "other-attestor", []string{publicKey1, publicKey2})
-	if err == nil {
-		t.Fatal("UpsertClientAttestorEndpointAliases(conflict) error = nil, want conflict")
-	}
-	if !strings.Contains(err.Error(), "already maps to endpoint alias") {
-		t.Fatalf("conflict error = %v", err)
-	}
-
-	mappings, err := ClientAttestorEndpointMappingsByAlias(dataDir)
-	if err != nil {
-		t.Fatalf("ClientAttestorEndpointMappingsByAlias() error = %v", err)
-	}
-	if got := mappings["attestor-local"]; len(got) != 1 || got[0] != publicKey1 {
-		t.Fatalf("attestor-local mappings = %#v, want only publicKey1", got)
-	}
-	if got := mappings["other-attestor"]; len(got) != 0 {
-		t.Fatalf("other-attestor mappings = %#v, want none after atomic conflict", got)
-	}
-}
-
-func TestUpsertClientAttestorEndpointAliasesRejectsInlineRoute(t *testing.T) {
-	dataDir := t.TempDir()
-	publicKey := attestorEndpointTestHex("c3")
-	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
-attestor_endpoints:
-  `+publicKey+`:
-    url: self
-`), 0o600); err != nil {
-		t.Fatalf("WriteFile(config) error = %v", err)
-	}
-
-	err := UpsertClientAttestorEndpointAliases(dataDir, "attestor-local", []string{publicKey})
-	if err == nil {
-		t.Fatal("UpsertClientAttestorEndpointAliases(inline) error = nil, want conflict")
-	}
-	if !strings.Contains(err.Error(), "inline route") {
-		t.Fatalf("inline conflict error = %v", err)
-	}
-}
-
-func TestRebuildClientAttestorEndpointAliasesReplacesAliasRoutesAndPreservesInline(t *testing.T) {
-	dataDir := t.TempDir()
 	staleKey := attestorEndpointTestHex("a1")
-	newKey := attestorEndpointTestHex("b2")
-	inlineKey := attestorEndpointTestHex("c3")
-	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
-attestor_endpoints:
-  `+staleKey+`:
-    endpoint: attestor-local
-  `+inlineKey+`:
-    url: self
-`), 0o600); err != nil {
-		t.Fatalf("WriteFile(config.yaml) error = %v", err)
+	if _, err := RebuildStoredClientEndpointPublishedAttestors(dataDir, map[string]map[string]ClientEndpointPublishedAttestor{
+		"attestor-local": {
+			staleKey: endpointPublishedTestAttestor(t, staleKey),
+		},
+	}); err != nil {
+		t.Fatalf("RebuildStoredClientEndpointPublishedAttestors(stale) error = %v", err)
 	}
 
-	plan, err := RebuildClientAttestorEndpointAliases(dataDir, map[string][]string{
-		"attestor-local": {newKey},
+	newKey := attestorEndpointTestHex("b2")
+	plan, err := RebuildStoredClientEndpointPublishedAttestors(dataDir, map[string]map[string]ClientEndpointPublishedAttestor{
+		"attestor-local": {
+			newKey: endpointPublishedTestAttestor(t, newKey),
+		},
 	})
 	if err != nil {
-		t.Fatalf("RebuildClientAttestorEndpointAliases() error = %v", err)
+		t.Fatalf("RebuildStoredClientEndpointPublishedAttestors(new) error = %v", err)
 	}
-	if plan.PublicKeyCount != 1 || plan.PreviousAliasRouteCount != 1 || plan.PreservedInlineRouteCount != 1 {
-		t.Fatalf("plan counts = public:%d previous:%d inline:%d, want 1/1/1",
-			plan.PublicKeyCount, plan.PreviousAliasRouteCount, plan.PreservedInlineRouteCount)
+	if plan.PublicKeyCount != 1 || plan.PreviousPublishedCount != 1 {
+		t.Fatalf("plan counts = public:%d previous:%d, want 1/1", plan.PublicKeyCount, plan.PreviousPublishedCount)
 	}
-	mappings, err := ClientAttestorEndpointMappingsByAlias(dataDir)
+
+	cfg, err := LoadConfig(dataDir)
 	if err != nil {
-		t.Fatalf("ClientAttestorEndpointMappingsByAlias() error = %v", err)
+		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if got := mappings["attestor-local"]; len(got) != 1 || got[0] != newKey {
-		t.Fatalf("attestor-local mappings = %#v, want only new key", got)
+	published := cfg.Endpoints.Endpoints["attestor-local"].PublishedAttestors
+	if _, ok := published[staleKey]; ok {
+		t.Fatalf("stale published attestor %s remained in %#v", staleKey, published)
 	}
-	if strings.Contains(readTestFile(t, filepath.Join(dataDir, "config.yaml")), staleKey) {
-		t.Fatal("stale alias-managed attestor key remained after rebuild")
+	if got := published[newKey]; got.ComponentKey == "" || got.KeyType != keytypes.AttestorComponentEd25519V1 {
+		t.Fatalf("new published attestor = %#v, want Ed25519 component metadata", got)
 	}
-	if !strings.Contains(readTestFile(t, filepath.Join(dataDir, "config.yaml")), inlineKey) {
-		t.Fatal("inline attestor route was not preserved")
+	if route := cfg.AttestorEndpoints[newKey]; route.Endpoint != "attestor-local" {
+		t.Fatalf("derived route = %#v, want attestor-local", route)
 	}
 }
 
-func TestRebuildClientAttestorEndpointAliasesRejectsDuplicateDiscoveredKey(t *testing.T) {
+func TestRebuildStoredClientEndpointPublishedAttestorsRejectsDuplicatePublicKey(t *testing.T) {
 	dataDir := t.TempDir()
-	publicKey := attestorEndpointTestHex("d4")
-
-	_, err := PlanClientAttestorEndpointAliasRebuild(dataDir, map[string][]string{
-		"attestor-a": {publicKey},
-		"attestor-b": {publicKey},
+	for _, alias := range []string{"attestor-a", "attestor-b"} {
+		if _, err := UpsertStoredClientEndpoint(dataDir, alias, ClientEndpointConfig{URL: "ssh://" + alias + ":2223"}, true); err != nil {
+			t.Fatalf("UpsertStoredClientEndpoint(%s) error = %v", alias, err)
+		}
+	}
+	publicKey := attestorEndpointTestHex("c3")
+	_, err := PlanStoredClientEndpointPublishedAttestorRebuild(dataDir, map[string]map[string]ClientEndpointPublishedAttestor{
+		"attestor-a": {
+			publicKey: endpointPublishedTestAttestor(t, publicKey),
+		},
+		"attestor-b": {
+			publicKey: endpointPublishedTestAttestor(t, publicKey),
+		},
 	})
 	if err == nil {
-		t.Fatal("PlanClientAttestorEndpointAliasRebuild() error = nil, want duplicate rejection")
+		t.Fatal("PlanStoredClientEndpointPublishedAttestorRebuild() error = nil, want duplicate rejection")
 	}
 	if !strings.Contains(err.Error(), "advertised by both endpoint aliases") {
 		t.Fatalf("duplicate error = %v", err)
-	}
-}
-
-func TestRebuildClientAttestorEndpointAliasesRejectsInlineCollision(t *testing.T) {
-	dataDir := t.TempDir()
-	publicKey := attestorEndpointTestHex("e5")
-	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
-attestor_endpoints:
-  `+publicKey+`:
-    url: self
-`), 0o600); err != nil {
-		t.Fatalf("WriteFile(config.yaml) error = %v", err)
-	}
-
-	_, err := PlanClientAttestorEndpointAliasRebuild(dataDir, map[string][]string{
-		"attestor-local": {publicKey},
-	})
-	if err == nil {
-		t.Fatal("PlanClientAttestorEndpointAliasRebuild() error = nil, want inline collision rejection")
-	}
-	if !strings.Contains(err.Error(), "conflicts with an inline attestor route") {
-		t.Fatalf("inline collision error = %v", err)
 	}
 }
 
@@ -271,11 +219,24 @@ signer_port: 12270
 	}
 }
 
-func readTestFile(t *testing.T, path string) string {
+func endpointPublishedTestAttestor(t *testing.T, publicKeyHex string) ClientEndpointPublishedAttestor {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	return ClientEndpointPublishedAttestor{
+		ComponentKey: attestorEndpointTestComponentKey(t, keytypes.AttestorComponentEd25519V1, publicKeyHex),
+		KeyType:      keytypes.AttestorComponentEd25519V1,
+		LastSeenAt:   endpointPublishedTestSeenAt,
 	}
-	return string(data)
+}
+
+func attestorEndpointTestComponentKey(t *testing.T, keyType, publicKeyHex string) string {
+	t.Helper()
+	publicKey, err := hex.DecodeString(publicKeyHex)
+	if err != nil {
+		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
+	}
+	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+	return componentKey
 }

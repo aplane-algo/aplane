@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
@@ -22,8 +23,8 @@ type EndpointImportRequest struct {
 	DryRun bool
 }
 
-// EndpointDiscoverAttestorsRequest rebuilds attestor endpoint mappings by
-// querying configured endpoint inventories.
+// EndpointDiscoverAttestorsRequest rebuilds endpoint-published attestor
+// inventory by querying configured endpoint inventories.
 type EndpointDiscoverAttestorsRequest struct {
 	DryRun bool
 }
@@ -123,9 +124,8 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	return result, nil
 }
 
-// EndpointDiscoverAttestors queries every configured endpoint's /keys
-// inventory, extracts attestor component public keys, and atomically rebuilds
-// client-local attestor endpoint mappings from that live inventory.
+// EndpointDiscoverAttestors queries every configured endpoint's /keys inventory
+// and atomically rebuilds endpoint-local published_attestors inventory.
 func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscoverAttestorsRequest) (*EndpointDiscoverAttestorsResult, error) {
 	cfg, err := config.LoadConfig(a.DataDir)
 	if err != nil {
@@ -142,7 +142,8 @@ func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscove
 		return nil, fmt.Errorf("no endpoints configured")
 	}
 
-	mappings := map[string][]string{}
+	lastSeenAt := time.Now().UTC().Format(time.RFC3339)
+	publications := map[string]map[string]config.ClientEndpointPublishedAttestor{}
 	discoveries := make([]EndpointAttestorDiscovery, 0, len(aliases))
 	for _, alias := range aliases {
 		endpoint := cfg.Endpoints.Endpoints[alias]
@@ -150,6 +151,7 @@ func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscove
 		if err != nil {
 			return nil, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
 		}
+		publications[alias] = map[string]config.ClientEndpointPublishedAttestor{}
 		discovery := EndpointAttestorDiscovery{Alias: alias}
 		for _, key := range keys {
 			discovery.Keys = append(discovery.Keys, DiscoveredEndpointAttestorKey{
@@ -157,24 +159,27 @@ func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscove
 				ComponentKey: key.ComponentKey,
 				KeyType:      key.KeyType,
 			})
-			mappings[alias] = append(mappings[alias], key.PublicKey)
+			publications[alias][key.PublicKey] = config.ClientEndpointPublishedAttestor{
+				ComponentKey: key.ComponentKey,
+				KeyType:      key.KeyType,
+				LastSeenAt:   lastSeenAt,
+			}
 		}
 		discoveries = append(discoveries, discovery)
 	}
 
-	plan, err := config.PlanClientAttestorEndpointAliasRebuild(a.DataDir, mappings)
+	plan, err := config.PlanStoredClientEndpointPublishedAttestorRebuild(a.DataDir, publications)
 	if err != nil {
 		return nil, err
 	}
 	result := &EndpointDiscoverAttestorsResult{
-		DryRun:                    req.DryRun,
-		Endpoints:                 discoveries,
-		PublicKeyCount:            plan.PublicKeyCount,
-		PreviousAliasRouteCount:   plan.PreviousAliasRouteCount,
-		PreservedInlineRouteCount: plan.PreservedInlineRouteCount,
+		DryRun:                 req.DryRun,
+		Endpoints:              discoveries,
+		PublicKeyCount:         plan.PublicKeyCount,
+		PreviousPublishedCount: plan.PreviousPublishedCount,
 	}
 	if !req.DryRun {
-		if err := config.ApplyClientAttestorEndpointAliasRebuild(a.DataDir, plan); err != nil {
+		if err := config.ApplyStoredClientEndpointPublishedAttestorRebuild(a.DataDir, plan); err != nil {
 			return nil, err
 		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
@@ -218,11 +223,11 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
 		return nil, err
 	}
-	mappings, err := config.ClientAttestorEndpointMappingsByAlias(a.DataDir)
+	cfg, err := config.LoadConfig(a.DataDir)
 	if err != nil {
 		return nil, err
 	}
-	blocking := append([]string(nil), mappings[alias]...)
+	blocking := append([]string(nil), attestorEndpointMappingsByAlias(cfg.AttestorEndpoints)[alias]...)
 	sort.Strings(blocking)
 	if len(blocking) > 0 {
 		return nil, fmt.Errorf("endpoint alias %q is referenced by attestor mappings:\n  %s", alias, strings.Join(blocking, "\n  "))
@@ -244,11 +249,22 @@ func (a *App) loadEndpointView() (config.Config, config.ClientEndpointRegistry, 
 	if err != nil {
 		return config.Config{}, config.ClientEndpointRegistry{}, nil, err
 	}
-	mappings, err := config.ClientAttestorEndpointMappingsByAlias(a.DataDir)
-	if err != nil {
-		return config.Config{}, config.ClientEndpointRegistry{}, nil, err
-	}
+	mappings := cfg.Endpoints.PublishedAttestorPublicKeysByAlias()
 	return cfg, cfg.Endpoints, mappings, nil
+}
+
+func attestorEndpointMappingsByAlias(routes config.AttestorEndpointConfigs) map[string][]string {
+	out := map[string][]string{}
+	for publicKey, route := range routes {
+		if route.Endpoint == "" {
+			continue
+		}
+		out[route.Endpoint] = append(out[route.Endpoint], publicKey)
+	}
+	for alias := range out {
+		sort.Strings(out[alias])
+	}
+	return out
 }
 
 func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, isDefault bool, publicKeys []string) EndpointEntry {
@@ -256,17 +272,17 @@ func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, 
 	keys := append([]string(nil), publicKeys...)
 	sort.Strings(keys)
 	return EndpointEntry{
-		Alias:                   alias,
-		URL:                     endpoint.URL,
-		SignerPort:              endpoint.SignerPort,
-		LocalPort:               endpoint.LocalPort,
-		IdentityFile:            endpoint.IdentityFile,
-		KnownHostsPath:          endpoint.KnownHostsPath,
-		TokenFile:               endpoint.TokenFile,
-		TokenPresent:            tokenPresent,
-		TokenError:              tokenError,
-		IsDefault:               isDefault,
-		LocalAttestorPublicKeys: keys,
+		Alias:                       alias,
+		URL:                         endpoint.URL,
+		SignerPort:                  endpoint.SignerPort,
+		LocalPort:                   endpoint.LocalPort,
+		IdentityFile:                endpoint.IdentityFile,
+		KnownHostsPath:              endpoint.KnownHostsPath,
+		TokenFile:                   endpoint.TokenFile,
+		TokenPresent:                tokenPresent,
+		TokenError:                  tokenError,
+		IsDefault:                   isDefault,
+		PublishedAttestorPublicKeys: keys,
 	}
 }
 
@@ -311,12 +327,9 @@ func endpointDiscoverAttestorsRenderLines(result *EndpointDiscoverAttestorsResul
 		action = "Would rebuild"
 	}
 	lines := []string{
-		fmt.Sprintf("%s attestor endpoint mappings from %d endpoint(s): %d key(s)",
+		fmt.Sprintf("%s endpoint-published attestor inventory from %d endpoint(s): %d key(s)",
 			action, len(result.Endpoints), result.PublicKeyCount),
-		fmt.Sprintf("  previous alias-managed mappings: %d", result.PreviousAliasRouteCount),
-	}
-	if result.PreservedInlineRouteCount > 0 {
-		lines = append(lines, fmt.Sprintf("  preserved inline routes: %d", result.PreservedInlineRouteCount))
+		fmt.Sprintf("  previous published keys: %d", result.PreviousPublishedCount),
 	}
 	for _, endpoint := range result.Endpoints {
 		if len(endpoint.Keys) == 0 {

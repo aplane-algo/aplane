@@ -4,17 +4,12 @@
 package config
 
 import (
-	"encoding/hex"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 )
 
 const (
@@ -62,8 +57,10 @@ type Config struct {
 	SSH *SSHClientConfig `yaml:"ssh" description:"SSH tunnel settings (required for signer connection)"`
 
 	// AttestorEndpoints maps attested-account embedded attestor public keys to
-	// signer endpoints for attestor-role component signing.
-	AttestorEndpoints AttestorEndpointConfigs `yaml:"attestor_endpoints,omitempty" description:"Attestor endpoint routing by embedded attestor public-key hex"`
+	// signer endpoints for attestor-role component signing. It is derived
+	// runtime state from endpoints.yaml published_attestors and is not part of
+	// config.yaml.
+	AttestorEndpoints AttestorEndpointConfigs `yaml:"-"`
 
 	// Endpoints is loaded from endpoints.yaml and is not part of config.yaml.
 	Endpoints ClientEndpointRegistry `yaml:"-"`
@@ -134,16 +131,14 @@ func LoadConfig(dataDir string) (Config, error) {
 		config.SSH.IdentityFile = ResolvePath(config.SSH.IdentityFile, dataDir)
 		config.SSH.KnownHostsPath = ResolvePath(config.SSH.KnownHostsPath, dataDir)
 	}
-	config.resolveAttestorEndpointPaths(dataDir)
 	endpoints, err := LoadClientEndpointRegistry(dataDir, config)
 	if err != nil {
 		return Config{}, err
 	}
 	config.Endpoints = endpoints
-	if resolved, err := endpoints.ResolveAttestorEndpointConfigs(config.AttestorEndpoints); err != nil {
+	config.AttestorEndpoints, err = endpoints.PublishedAttestorEndpointConfigs()
+	if err != nil {
 		return Config{}, err
-	} else {
-		config.AttestorEndpoints = resolved
 	}
 
 	return config, nil
@@ -232,10 +227,6 @@ func LoadConfigFromPath(path string) (Config, error) {
 			config.SSH.KnownHostsPath = sshDefaults.KnownHostsPath
 		}
 	}
-	if err := config.validateAndCanonicalizeAttestorEndpoints(); err != nil {
-		return Config{}, fmt.Errorf("invalid attestor_endpoints in config: %w", err)
-	}
-
 	return config, nil
 }
 
@@ -249,148 +240,6 @@ func (c AttestorEndpointConfigs) Clone() AttestorEndpointConfigs {
 		clone[k] = v
 	}
 	return clone
-}
-
-func (c *Config) validateAndCanonicalizeAttestorEndpoints() error {
-	if len(c.AttestorEndpoints) == 0 {
-		return nil
-	}
-	canonical := make(AttestorEndpointConfigs, len(c.AttestorEndpoints))
-	for selector, endpoint := range c.AttestorEndpoints {
-		normalized, err := normalizeAttestorEndpointSelector(selector)
-		if err != nil {
-			return fmt.Errorf("%q: %w", selector, err)
-		}
-		if _, exists := canonical[normalized]; exists {
-			return fmt.Errorf("duplicate endpoint for attestor public key %s", normalized)
-		}
-		if err := validateAttestorEndpointConfig(normalized, endpoint); err != nil {
-			return err
-		}
-		if strings.HasPrefix(endpoint.URL, "ssh://") && endpoint.SignerPort == 0 {
-			endpoint.SignerPort = c.SignerPort
-		}
-		canonical[normalized] = endpoint
-	}
-	c.AttestorEndpoints = canonical
-	return nil
-}
-
-func normalizeAttestorEndpointSelector(selector string) (string, error) {
-	raw := strings.TrimSpace(selector)
-	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "0x"), "0X")
-	if raw == "" {
-		return "", fmt.Errorf("attestor public key is required")
-	}
-	decoded, err := hex.DecodeString(raw)
-	if err != nil {
-		return "", fmt.Errorf("attestor public key must be hex: %w", err)
-	}
-	if !isSupportedAttestorEndpointPublicKeySize(len(decoded)) {
-		edSize, _ := keytypes.ComponentPublicKeySize(keytypes.AttestorComponentEd25519V1)
-		falconSize, _ := keytypes.ComponentPublicKeySize(keytypes.AttestorComponentFalcon1024V1)
-		return "", fmt.Errorf("attestor public key length %d invalid (expected %d or %d bytes)", len(decoded), edSize, falconSize)
-	}
-	return hex.EncodeToString(decoded), nil
-}
-
-func isSupportedAttestorEndpointPublicKeySize(size int) bool {
-	for _, keyType := range []string{
-		keytypes.AttestorComponentEd25519V1,
-		keytypes.AttestorComponentFalcon1024V1,
-	} {
-		if want, ok := keytypes.ComponentPublicKeySize(keyType); ok && size == want {
-			return true
-		}
-	}
-	return false
-}
-
-func validateAttestorEndpointConfig(selector string, endpoint AttestorEndpointConfig) error {
-	if strings.TrimSpace(endpoint.Endpoint) != "" {
-		if err := ValidateClientEndpointAlias(endpoint.Endpoint); err != nil {
-			return fmt.Errorf("attestor endpoint %s: invalid endpoint alias: %w", selector, err)
-		}
-		if endpoint.URL != "" || endpoint.TokenFile != "" || endpoint.SignerPort != 0 || endpoint.LocalPort != 0 || endpoint.IdentityFile != "" || endpoint.KnownHostsPath != "" {
-			return fmt.Errorf("attestor endpoint %s: endpoint alias cannot be combined with inline endpoint fields", selector)
-		}
-		return nil
-	}
-	if strings.TrimSpace(endpoint.URL) == "" {
-		return fmt.Errorf("attestor endpoint %s: url is required", selector)
-	}
-	if endpoint.SignerPort < 0 || endpoint.SignerPort > 65535 {
-		return fmt.Errorf("attestor endpoint %s: signer_port must be 1-65535 when set", selector)
-	}
-	if endpoint.LocalPort < 0 || endpoint.LocalPort > 65535 {
-		return fmt.Errorf("attestor endpoint %s: local_port must be 1-65535 when set", selector)
-	}
-	if endpoint.URL == "self" {
-		return nil
-	}
-	parsed, err := url.Parse(endpoint.URL)
-	if err != nil {
-		return fmt.Errorf("attestor endpoint %s: invalid url: %w", selector, err)
-	}
-	switch parsed.Scheme {
-	case "ssh", "https", "http":
-	default:
-		return fmt.Errorf("attestor endpoint %s: unsupported url scheme %q", selector, parsed.Scheme)
-	}
-	if parsed.Hostname() == "" {
-		return fmt.Errorf("attestor endpoint %s: url host is required", selector)
-	}
-	if parsed.Port() != "" {
-		port, err := strconv.Atoi(parsed.Port())
-		if err != nil || port <= 0 || port > 65535 {
-			return fmt.Errorf("attestor endpoint %s: invalid url port %q", selector, parsed.Port())
-		}
-	}
-	if parsed.Scheme == "http" && !isLoopbackEndpointHost(parsed.Hostname()) {
-		return fmt.Errorf("attestor endpoint %s: raw http endpoints must be loopback; use ssh:// or https:// for remote attestors", selector)
-	}
-	if strings.TrimSpace(endpoint.TokenFile) == "" {
-		return fmt.Errorf("attestor endpoint %s: token_file is required for non-self endpoints", selector)
-	}
-	return nil
-}
-
-func isLoopbackEndpointHost(host string) bool {
-	host = strings.Trim(strings.ToLower(host), "[]")
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
-func (c *Config) resolveAttestorEndpointPaths(dataDir string) {
-	if len(c.AttestorEndpoints) == 0 {
-		return
-	}
-	defaultSSH := DefaultSSHClientConfig()
-	globalIdentityFile := defaultSSH.IdentityFile
-	globalKnownHostsPath := defaultSSH.KnownHostsPath
-	if c.SSH != nil {
-		globalIdentityFile = c.SSH.IdentityFile
-		globalKnownHostsPath = c.SSH.KnownHostsPath
-	}
-	for selector, endpoint := range c.AttestorEndpoints {
-		if endpoint.TokenFile != "" {
-			endpoint.TokenFile = ResolvePath(endpoint.TokenFile, dataDir)
-		}
-		if strings.HasPrefix(endpoint.URL, "ssh://") {
-			if endpoint.IdentityFile == "" {
-				endpoint.IdentityFile = globalIdentityFile
-			}
-			if endpoint.KnownHostsPath == "" {
-				endpoint.KnownHostsPath = globalKnownHostsPath
-			}
-			endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
-			endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
-		}
-		c.AttestorEndpoints[selector] = endpoint
-	}
 }
 
 // ParseSignerStatusPollInterval parses the apshell background /status polling interval.

@@ -1243,11 +1243,10 @@ connection or tunnel lifecycle.
 Client-side credential routing is separate local client config. Signer
 endpoint connection profiles live in `$APCLIENT_DATA/endpoints.yaml`; API
 tokens remain in endpoint-scoped token files referenced by those profiles.
-Attestor endpoint mappings use the expected attestor public key hex as the map
-key and normally point to an endpoint alias, not to policy facts. Falcon-1024
-public-key hex values exceed the YAML simple-key length in some parsers, so
-`config.yaml` should write them as explicit mapping keys (`? "<hex>"` followed
-by `:`). Tokens are never stored in attested LogicSig metadata.
+Endpoint-published attestor inventory uses the expected attestor public key hex
+as the map key under that endpoint's `published_attestors`; runtime routing is
+derived from this inventory. Tokens are never stored in attested LogicSig
+metadata.
 
 Example:
 
@@ -1264,11 +1263,11 @@ endpoints:
     url: ssh://127.0.0.1:2223
     signer_port: 11270
     token_file: tokens/attestor-local.token
-
-# $APCLIENT_DATA/config.yaml
-attestor_endpoints:
-  "<embedded-attestor-public-key-hex>":
-    endpoint: attestor-local
+    published_attestors:
+      "<embedded-attestor-public-key-hex>":
+        component_key: a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078
+        key_type: aplane.attestor-ed25519.v1
+        last_seen_at: "2026-06-04T00:00:00Z"
 ```
 
 Operator handoff uses a public endpoint envelope rather than manual YAML edits
@@ -1304,10 +1303,9 @@ checks as a real import without writing files.
 After endpoint tokens and SSH host trust are established, `apshell endpoints
 discover-attestors [--dry-run]` queries `/keys` on every configured endpoint,
 extracts attestor component-key `public_key_hex` values, and atomically
-rebuilds alias-managed `attestor_endpoints` mappings in client `config.yaml`.
-The rebuild preserves inline legacy routes, rejects duplicate public keys
-advertised by multiple endpoint aliases, rejects collisions with inline routes,
-and leaves files unchanged on any endpoint/query/validation failure.
+rebuilds each endpoint's `published_attestors` inventory in `endpoints.yaml`.
+The rebuild rejects duplicate public keys advertised by multiple endpoint
+aliases and leaves files unchanged on any endpoint/query/validation failure.
 
 A logical attestor may have multiple equivalent endpoints for availability.
 The client may call each endpoint's `/keys` projection to check whether it
@@ -1324,9 +1322,9 @@ verification.
 
 Endpoint resolution rules:
 
-- If an explicit `attestor_endpoints[attestor_public_key]` mapping exists, the
-  client uses only the configured endpoint set for that public key. A `/keys`
-  mismatch for an explicitly configured endpoint is a hard configuration error,
+- If an endpoint's `published_attestors[attestor_public_key]` inventory exists,
+  the client routes attestor-role signing to that endpoint for that public key.
+  A `/keys` mismatch for a configured endpoint is a hard configuration error,
   not permission to fall back to local self-discovery.
 - If no explicit mapping exists, development self-discovery may resolve to the
   currently connected signer when that signer advertises a matching

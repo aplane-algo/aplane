@@ -696,17 +696,17 @@ type RequestTokenResult struct {
 
 // EndpointEntry describes one client-local signer endpoint profile.
 type EndpointEntry struct {
-	Alias                   string
-	URL                     string
-	SignerPort              int
-	LocalPort               int
-	IdentityFile            string
-	KnownHostsPath          string
-	TokenFile               string
-	TokenPresent            bool
-	TokenError              string
-	IsDefault               bool
-	LocalAttestorPublicKeys []string
+	Alias                       string
+	URL                         string
+	SignerPort                  int
+	LocalPort                   int
+	IdentityFile                string
+	KnownHostsPath              string
+	TokenFile                   string
+	TokenPresent                bool
+	TokenError                  string
+	IsDefault                   bool
+	PublishedAttestorPublicKeys []string
 }
 
 // EndpointsListResult describes the endpoint registry entries visible to apshell.
@@ -763,12 +763,11 @@ type EndpointAttestorDiscovery struct {
 // EndpointDiscoverAttestorsResult describes a full attestor endpoint mapping
 // rebuild from endpoint /keys inventories.
 type EndpointDiscoverAttestorsResult struct {
-	DryRun                    bool
-	Endpoints                 []EndpointAttestorDiscovery
-	PublicKeyCount            int
-	PreviousAliasRouteCount   int
-	PreservedInlineRouteCount int
-	RenderLines               []string
+	DryRun                 bool
+	Endpoints              []EndpointAttestorDiscovery
+	PublicKeyCount         int
+	PreviousPublishedCount int
+	RenderLines            []string
 }
 
 // StartupConnectDecision describes what apshell should do at startup about signer connectivity.
