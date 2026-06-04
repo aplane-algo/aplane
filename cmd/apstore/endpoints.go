@@ -56,11 +56,10 @@ func cmdEndpointsExport(args []string) error {
 	}
 
 	env := endpointrefs.Envelope{
-		Kind:          endpointrefs.Kind,
-		SchemaVersion: endpointrefs.SchemaVersion,
-		URL:           urlValue,
-		SignerPort:    signerPortValue,
-		LocalPort:     *localPort,
+		Schema:     endpointrefs.Schema,
+		URL:        urlValue,
+		SignerPort: signerPortValue,
+		LocalPort:  *localPort,
 	}
 	env, err = endpointrefs.Normalize(env)
 	if err != nil {

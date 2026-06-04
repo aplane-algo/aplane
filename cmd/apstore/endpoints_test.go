@@ -31,7 +31,11 @@ func TestCmdEndpointsExportStdout(t *testing.T) {
 		if err != nil {
 			t.Fatalf("endpoint envelope parse error = %v\n%s", err, out)
 		}
-		if strings.Contains(out, `"alias"`) || strings.Contains(out, `"role"`) || strings.Contains(out, `"attestor_public_keys"`) {
+		if strings.Contains(out, `"alias"`) ||
+			strings.Contains(out, `"kind"`) ||
+			strings.Contains(out, `"role"`) ||
+			strings.Contains(out, `"schema_version"`) ||
+			strings.Contains(out, `"attestor_public_keys"`) {
 			t.Fatalf("endpoint envelope contains non-connection fields: %s", out)
 		}
 		if env.SignerPort != 11270 {

@@ -17,17 +17,15 @@ import (
 )
 
 const (
-	Kind          = "aplane.endpoint.v1"
-	SchemaVersion = 1
+	Schema = "aplane.endpoint.v1"
 )
 
 // Envelope is the public, portable endpoint handoff document.
 type Envelope struct {
-	Kind          string `json:"kind"`
-	SchemaVersion int    `json:"schema_version"`
-	URL           string `json:"url"`
-	SignerPort    int    `json:"signer_port,omitempty"`
-	LocalPort     int    `json:"local_port,omitempty"`
+	Schema     string `json:"schema"`
+	URL        string `json:"url"`
+	SignerPort int    `json:"signer_port,omitempty"`
+	LocalPort  int    `json:"local_port,omitempty"`
 }
 
 // Parse decodes and validates a strict endpoint envelope.
@@ -61,20 +59,11 @@ func Marshal(env Envelope) ([]byte, error) {
 
 // Normalize validates and canonicalizes an endpoint envelope.
 func Normalize(env Envelope) (Envelope, error) {
-	if strings.TrimSpace(env.Kind) == "" {
-		return Envelope{}, fmt.Errorf("kind is required")
+	if strings.TrimSpace(env.Schema) == "" {
+		return Envelope{}, fmt.Errorf("schema is required")
 	}
-	if env.Kind != Kind {
-		return Envelope{}, fmt.Errorf("unsupported endpoint envelope kind %q", env.Kind)
-	}
-	if env.SchemaVersion == 0 {
-		return Envelope{}, fmt.Errorf("schema_version is required and must be %d", SchemaVersion)
-	}
-	if env.SchemaVersion > SchemaVersion {
-		return Envelope{}, fmt.Errorf("unsupported future endpoint envelope schema_version %d", env.SchemaVersion)
-	}
-	if env.SchemaVersion != SchemaVersion {
-		return Envelope{}, fmt.Errorf("unsupported endpoint envelope schema_version %d", env.SchemaVersion)
+	if env.Schema != Schema {
+		return Envelope{}, fmt.Errorf("unsupported endpoint envelope schema %q", env.Schema)
 	}
 
 	env.URL = strings.TrimRight(strings.TrimSpace(env.URL), "/")

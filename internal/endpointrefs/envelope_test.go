@@ -11,8 +11,7 @@ import (
 
 func TestParseNormalizesEndpointEnvelope(t *testing.T) {
 	data := []byte(`{
-  "kind": "aplane.endpoint.v1",
-  "schema_version": 1,
+  "schema": "aplane.endpoint.v1",
   "url": "ssh://signer.example:2223/",
   "signer_port": 11270
 }`)
@@ -20,6 +19,9 @@ func TestParseNormalizesEndpointEnvelope(t *testing.T) {
 	env, err := Parse(data)
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
+	}
+	if env.Schema != Schema {
+		t.Fatalf("Schema = %q, want %q", env.Schema, Schema)
 	}
 	if env.URL != "ssh://signer.example:2223" {
 		t.Fatalf("URL = %q, want trimmed URL", env.URL)
@@ -31,8 +33,7 @@ func TestParseNormalizesEndpointEnvelope(t *testing.T) {
 
 func TestParseRejectsInvalidEnvelope(t *testing.T) {
 	valid := `{
-  "kind": "aplane.endpoint.v1",
-  "schema_version": 1,
+  "schema": "aplane.endpoint.v1",
   "url": "ssh://signer.example:2223"
 }`
 
@@ -47,6 +48,16 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 			wantErr: "unknown field",
 		},
 		{
+			name:    "stale kind field",
+			data:    strings.Replace(valid, `"schema":`, `"kind": "aplane.endpoint.v1", "schema":`, 1),
+			wantErr: "unknown field",
+		},
+		{
+			name:    "stale schema version field",
+			data:    strings.Replace(valid, `"url":`, `"schema_version": 1, "url":`, 1),
+			wantErr: "unknown field",
+		},
+		{
 			name:    "stale role field",
 			data:    strings.Replace(valid, `"url":`, `"role": "attestation", "url":`, 1),
 			wantErr: "unknown field",
@@ -57,19 +68,14 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 			wantErr: "unknown field",
 		},
 		{
-			name:    "missing kind",
-			data:    strings.Replace(valid, `"kind": "aplane.endpoint.v1",`, ``, 1),
-			wantErr: "kind is required",
+			name:    "missing schema",
+			data:    strings.Replace(valid, `"schema": "aplane.endpoint.v1",`, ``, 1),
+			wantErr: "schema is required",
 		},
 		{
-			name:    "zero schema version",
-			data:    strings.Replace(valid, `"schema_version": 1`, `"schema_version": 0`, 1),
-			wantErr: "schema_version is required",
-		},
-		{
-			name:    "future schema version",
-			data:    strings.Replace(valid, `"schema_version": 1`, `"schema_version": 2`, 1),
-			wantErr: "unsupported future",
+			name:    "unsupported schema",
+			data:    strings.Replace(valid, `"schema": "aplane.endpoint.v1"`, `"schema": "aplane.endpoint.v2"`, 1),
+			wantErr: "unsupported endpoint envelope schema",
 		},
 		{
 			name:    "self url",
@@ -103,9 +109,8 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 
 func TestMarshalValidatesEnvelope(t *testing.T) {
 	_, err := Marshal(Envelope{
-		Kind:          Kind,
-		SchemaVersion: SchemaVersion,
-		URL:           "self",
+		Schema: Schema,
+		URL:    "self",
 	})
 	if err == nil {
 		t.Fatal("Marshal() error = nil, want validation error")
@@ -114,11 +119,10 @@ func TestMarshalValidatesEnvelope(t *testing.T) {
 
 func TestMarshalParseRoundTripStable(t *testing.T) {
 	env := Envelope{
-		Kind:          Kind,
-		SchemaVersion: SchemaVersion,
-		URL:           "ssh://signer.example:2223",
-		SignerPort:    11270,
-		LocalPort:     12001,
+		Schema:     Schema,
+		URL:        "ssh://signer.example:2223",
+		SignerPort: 11270,
+		LocalPort:  12001,
 	}
 
 	first, err := Marshal(env)

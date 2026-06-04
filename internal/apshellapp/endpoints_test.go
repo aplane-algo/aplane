@@ -247,10 +247,9 @@ func writeEndpointEnvelope(t *testing.T, dir string) string {
 func writeEndpointEnvelopeWithName(t *testing.T, dir, name string) string {
 	t.Helper()
 	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
-		Kind:          endpointrefs.Kind,
-		SchemaVersion: endpointrefs.SchemaVersion,
-		URL:           "ssh://127.0.0.1:2223",
-		SignerPort:    11270,
+		Schema:     endpointrefs.Schema,
+		URL:        "ssh://127.0.0.1:2223",
+		SignerPort: 11270,
 	})
 	if err != nil {
 		t.Fatalf("endpointrefs.Marshal() error = %v", err)

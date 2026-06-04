@@ -1289,15 +1289,16 @@ apshell -d "$APCLIENT_DATA"
 > request-token --endpoint attestor-local
 ```
 
-The exported `aplane.endpoint.v1` envelope is public routing metadata only. It
-contains no client-local alias, endpoint role, attestor public-key metadata,
-API token, private key, mnemonic, encrypted key payload, passphrase, or
-`known_hosts` entry, and it cannot use `url: self`. Importing the envelope with
-a client-chosen alias and role only configures the endpoint profile. It does
-not discover attestor keys or prove endpoint ownership; the trust anchor
-remains the attestor public key that was selected at user-key generation and
-embedded in the LogicSig. Dry-run import must run the same validation and
-conflict checks as a real import without writing files.
+The exported `aplane.endpoint.v1` envelope is public routing metadata only and
+uses the same `schema: "aplane.<name>.vN"` JSON-envelope convention as attestor
+public-key exports. It contains no client-local alias, endpoint role, attestor
+public-key metadata, API token, private key, mnemonic, encrypted key payload,
+passphrase, or `known_hosts` entry, and it cannot use `url: self`. Importing
+the envelope with a client-chosen alias and role only configures the endpoint
+profile. It does not discover attestor keys or prove endpoint ownership; the
+trust anchor remains the attestor public key that was selected at user-key
+generation and embedded in the LogicSig. Dry-run import must run the same
+validation and conflict checks as a real import without writing files.
 
 A logical attestor may have multiple equivalent endpoints for availability.
 The client may call each endpoint's `/keys` projection to check whether it
