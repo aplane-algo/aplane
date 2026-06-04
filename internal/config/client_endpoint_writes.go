@@ -147,6 +147,14 @@ func DeleteStoredClientEndpoint(dataDir, alias string) (ClientEndpointRegistry, 
 	if registry.Default == alias {
 		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is the default endpoint", alias)
 	}
+	if _, ok := registry.Endpoints[alias]; !ok {
+		if alias == DefaultClientEndpointName {
+			if _, hasLegacy := storedLegacyPrimaryEndpoint(dataDir); hasLegacy {
+				return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is defined by config.yaml ssh settings; edit config.yaml to remove it", alias)
+			}
+		}
+		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is not defined", alias)
+	}
 	delete(registry.Endpoints, alias)
 	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
 		return ClientEndpointRegistry{}, err

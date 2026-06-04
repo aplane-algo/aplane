@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
@@ -124,6 +125,63 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	}
 	result.RenderLines = endpointImportRenderLines(result)
 	return result, nil
+}
+
+// EndpointDefault sets the default signing endpoint alias.
+func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefaultResult, error) {
+	if err := config.ValidateClientEndpointAlias(alias); err != nil {
+		return nil, err
+	}
+	cfg, err := config.LoadConfig(a.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	endpoint, ok := cfg.Endpoints.Endpoint(alias)
+	if !ok {
+		return nil, fmt.Errorf("unknown endpoint alias %q", alias)
+	}
+	if endpoint.Role == endpointrefs.RoleAttestation {
+		return nil, fmt.Errorf("endpoint alias %q has role attestation and cannot be the default signing endpoint", alias)
+	}
+	previousAlias, _, _ := cfg.Endpoints.DefaultEndpoint()
+	if _, err := config.SetStoredClientEndpointDefault(a.DataDir, alias); err != nil {
+		return nil, err
+	}
+	if cfg, err := config.LoadConfig(a.DataDir); err == nil {
+		a.Config = cfg
+	}
+	return &EndpointDefaultResult{
+		Alias:         alias,
+		PreviousAlias: previousAlias,
+		RenderLines:   []string{fmt.Sprintf("Default endpoint set to %s", alias)},
+	}, nil
+}
+
+// EndpointDelete deletes a stored endpoint alias when it is not the default and
+// no local attestor routes still reference it.
+func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteResult, error) {
+	if err := config.ValidateClientEndpointAlias(alias); err != nil {
+		return nil, err
+	}
+	mappings, err := config.ClientAttestorEndpointMappingsByAlias(a.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	blocking := append([]string(nil), mappings[alias]...)
+	sort.Strings(blocking)
+	if len(blocking) > 0 {
+		return nil, fmt.Errorf("endpoint alias %q is referenced by attestor mappings:\n  %s", alias, strings.Join(blocking, "\n  "))
+	}
+	if _, err := config.DeleteStoredClientEndpoint(a.DataDir, alias); err != nil {
+		return nil, err
+	}
+	if cfg, err := config.LoadConfig(a.DataDir); err == nil {
+		a.Config = cfg
+	}
+	return &EndpointDeleteResult{
+		Alias:       alias,
+		RenderLines: []string{fmt.Sprintf("Deleted endpoint %s", alias)},
+	}, nil
 }
 
 func (a *App) loadEndpointView() (config.Config, config.ClientEndpointRegistry, map[string][]string, error) {

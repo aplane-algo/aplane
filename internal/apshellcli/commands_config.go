@@ -66,7 +66,7 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import [--dry-run] <endpoint-json>")
+		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import [--dry-run] <endpoint-json> | endpoints default <alias> | endpoints delete <alias>")
 	}
 	switch args[0] {
 	case "list":
@@ -109,6 +109,38 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 		}
 		if !result.DryRun {
 			r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
+		}
+		return nil
+	case "default":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: endpoints default <alias>")
+		}
+		result, err := r.app().EndpointDefault(r.commandContext(), args[1])
+		if err != nil {
+			return err
+		}
+		if cfg, err := config.LoadConfig(r.DataDir); err == nil {
+			r.Config = cfg
+			r.app().Config = cfg
+		}
+		for _, line := range result.RenderLines {
+			r.println(line)
+		}
+		return nil
+	case "delete":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: endpoints delete <alias>")
+		}
+		result, err := r.app().EndpointDelete(r.commandContext(), args[1])
+		if err != nil {
+			return err
+		}
+		if cfg, err := config.LoadConfig(r.DataDir); err == nil {
+			r.Config = cfg
+			r.app().Config = cfg
+		}
+		for _, line := range result.RenderLines {
+			r.println(line)
 		}
 		return nil
 	default:

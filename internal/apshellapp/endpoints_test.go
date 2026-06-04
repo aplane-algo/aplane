@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
@@ -124,6 +125,89 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	}
 }
 
+func TestEndpointDefaultRejectsAttestationEndpoint(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+	envelopePath, _ := writeEndpointEnvelope(t, dataDir, endpointrefs.RoleAttestation)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: envelopePath}); err != nil {
+		t.Fatalf("EndpointImport() error = %v", err)
+	}
+
+	_, err := app.EndpointDefault(context.Background(), "attestor-local")
+	if err == nil {
+		t.Fatal("EndpointDefault(attestation) error = nil, want rejection")
+	}
+}
+
+func TestEndpointDefaultSetsSigningEndpoint(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+	envelopePath, _ := writeEndpointEnvelopeWithAlias(t, dataDir, "signer-local", endpointrefs.RoleSigning)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: envelopePath}); err != nil {
+		t.Fatalf("EndpointImport() error = %v", err)
+	}
+
+	result, err := app.EndpointDefault(context.Background(), "signer-local")
+	if err != nil {
+		t.Fatalf("EndpointDefault() error = %v", err)
+	}
+	if result.Alias != "signer-local" {
+		t.Fatalf("Alias = %q, want signer-local", result.Alias)
+	}
+	cfg, err := config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	alias, _, ok := cfg.Endpoints.DefaultEndpoint()
+	if !ok || alias != "signer-local" {
+		t.Fatalf("DefaultEndpoint() = %q/%v, want signer-local/true", alias, ok)
+	}
+}
+
+func TestEndpointDeleteRejectsMappedAttestorEndpoint(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+	envelopePath, publicKeyHex := writeEndpointEnvelope(t, dataDir, endpointrefs.RoleAttestation)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: envelopePath}); err != nil {
+		t.Fatalf("EndpointImport() error = %v", err)
+	}
+
+	_, err := app.EndpointDelete(context.Background(), "attestor-local")
+	if err == nil {
+		t.Fatal("EndpointDelete(mapped) error = nil, want rejection")
+	}
+	if !strings.Contains(err.Error(), publicKeyHex) {
+		t.Fatalf("EndpointDelete(mapped) error = %v, want blocking key", err)
+	}
+}
+
+func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+	primaryPath, _ := writeEndpointEnvelopeWithAlias(t, dataDir, "primary", endpointrefs.RoleSigning)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: primaryPath}); err != nil {
+		t.Fatalf("EndpointImport(primary) error = %v", err)
+	}
+	secondaryPath, _ := writeEndpointEnvelopeWithAlias(t, dataDir, "secondary", endpointrefs.RoleSigning)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{Path: secondaryPath}); err != nil {
+		t.Fatalf("EndpointImport(secondary) error = %v", err)
+	}
+
+	if _, err := app.EndpointDelete(context.Background(), "secondary"); err != nil {
+		t.Fatalf("EndpointDelete(secondary) error = %v", err)
+	}
+	cfg, err := config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if _, ok := cfg.Endpoints.Endpoint("secondary"); ok {
+		t.Fatal("secondary endpoint still present after delete")
+	}
+	if alias, _, ok := cfg.Endpoints.DefaultEndpoint(); !ok || alias != "primary" {
+		t.Fatalf("DefaultEndpoint() = %q/%v, want primary/true", alias, ok)
+	}
+}
+
 func newEndpointTestApp(t *testing.T, dataDir string) *App {
 	t.Helper()
 	eng, err := engine.NewEngine("testnet")
@@ -134,6 +218,11 @@ func newEndpointTestApp(t *testing.T, dataDir string) *App {
 }
 
 func writeEndpointEnvelope(t *testing.T, dir, role string) (string, string) {
+	t.Helper()
+	return writeEndpointEnvelopeWithAlias(t, dir, "attestor-local", role)
+}
+
+func writeEndpointEnvelopeWithAlias(t *testing.T, dir, alias, role string) (string, string) {
 	t.Helper()
 	publicKey := make([]byte, 32)
 	for i := range publicKey {
@@ -147,7 +236,7 @@ func writeEndpointEnvelope(t *testing.T, dir, role string) (string, string) {
 	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
 		Kind:          endpointrefs.Kind,
 		SchemaVersion: endpointrefs.SchemaVersion,
-		Alias:         "attestor-local",
+		Alias:         alias,
 		Role:          role,
 		URL:           "ssh://127.0.0.1:2223",
 		SignerPort:    11270,
@@ -160,7 +249,7 @@ func writeEndpointEnvelope(t *testing.T, dir, role string) (string, string) {
 	if err != nil {
 		t.Fatalf("endpointrefs.Marshal() error = %v", err)
 	}
-	path := filepath.Join(dir, "endpoint.json")
+	path := filepath.Join(dir, alias+".endpoint.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatalf("WriteFile(endpoint) error = %v", err)
 	}

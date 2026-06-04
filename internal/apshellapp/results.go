@@ -736,6 +736,19 @@ type EndpointImportResult struct {
 	RenderLines        []string
 }
 
+// EndpointDefaultResult describes a default endpoint change.
+type EndpointDefaultResult struct {
+	Alias         string
+	PreviousAlias string
+	RenderLines   []string
+}
+
+// EndpointDeleteResult describes an endpoint deletion.
+type EndpointDeleteResult struct {
+	Alias       string
+	RenderLines []string
+}
+
 // StartupConnectDecision describes what apshell should do at startup about signer connectivity.
 type StartupConnectDecision struct {
 	EndpointName  string
