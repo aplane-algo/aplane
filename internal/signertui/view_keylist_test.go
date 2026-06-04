@@ -35,6 +35,28 @@ func TestBuildDetailsParameterLinesFormatsAddressList(t *testing.T) {
 	}
 }
 
+func TestBuildDetailsParameterLinesAttestedShowsAttestorSelector(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType:     keytypes.AttestedFalcon1024AttEd25519V1,
+		DisplayName: "Falcon Attested",
+		CreationParams: []protocol.TemplateParamInfo{{
+			Name:  keytypes.ParameterAttestorPublicKey,
+			Label: "Attestor public key",
+			Type:  "bytes",
+		}},
+	}})
+
+	got := buildDetailsParameterLines(keytypes.AttestedFalcon1024AttEd25519V1, map[string]string{
+		"Attestor":                          "a_abc123",
+		keytypes.ParameterAttestorPublicKey: "aabbccdd",
+	})
+	want := []string{"Attestor: a_abc123"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("buildDetailsParameterLines(attested) = %#v, want %#v", got, want)
+	}
+}
+
 func TestRenderKeyDetailsShowsAddressListOnePerLine(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{

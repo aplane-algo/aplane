@@ -235,6 +235,29 @@ func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
 	}
 }
 
+func TestKeyDetailsParametersProjectsAttestedAttestorSelector(t *testing.T) {
+	publicKey := bytes.Repeat([]byte{0xab}, 32)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+
+	got := keyDetailsParameters(keytypes.AttestedFalcon1024AttEd25519V1, map[string]string{
+		keytypes.ParameterAttestorPublicKey: hex.EncodeToString(publicKey),
+		"other":                             "kept",
+	})
+
+	if got[keyDetailsAttestorLabel] != componentKey {
+		t.Fatalf("Attestor = %q, want %q", got[keyDetailsAttestorLabel], componentKey)
+	}
+	if _, ok := got[keytypes.ParameterAttestorPublicKey]; ok {
+		t.Fatalf("projected parameters exposed raw attestor public key: %#v", got)
+	}
+	if got["other"] != "kept" {
+		t.Fatalf("other parameter = %q, want kept", got["other"])
+	}
+}
+
 func TestServiceGenerateKeyRejectsKeyTypeDisallowedByMode(t *testing.T) {
 	ir := setupIdentityRuntime(t)
 	svc := Service{}

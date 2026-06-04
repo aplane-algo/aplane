@@ -4,6 +4,11 @@
 package keyadmin
 
 import (
+	"encoding/hex"
+	"fmt"
+	"maps"
+	"strings"
+
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -67,7 +72,7 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 			if keytypes.IsAttestorComponentKeyType(info.Type) {
 				result.PublicKeyHex = info.PublicKeyHex
 			}
-			result.Parameters = info.Parameters
+			result.Parameters = keyDetailsParameters(info.Type, info.Parameters)
 			result.TemplateProvenanceStatus, result.TemplateProvenanceNote = keys.CompareTemplateFingerprint(info.Type, info.TemplateFingerprint)
 			result.DisplayTEAL, _ = keymgmt.GetDisplayTEALWithMasterKey(keyFile, mk)
 		}
@@ -78,6 +83,44 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 	}
 
 	return result, nil
+}
+
+const keyDetailsAttestorLabel = "Attestor"
+
+func keyDetailsParameters(keyType string, parameters map[string]string) map[string]string {
+	if !keytypes.IsAttestedAccountKeyType(keyType) {
+		return maps.Clone(parameters)
+	}
+
+	projected := make(map[string]string)
+	for key, value := range parameters {
+		if key == keytypes.ParameterAttestorPublicKey {
+			continue
+		}
+		projected[key] = value
+	}
+
+	componentKey, err := attestorComponentSelectorForDetails(keyType, parameters[keytypes.ParameterAttestorPublicKey])
+	if err != nil {
+		projected[keyDetailsAttestorLabel] = fmt.Sprintf("invalid attestor public key (%v)", err)
+		return projected
+	}
+	projected[keyDetailsAttestorLabel] = componentKey
+	return projected
+}
+
+func attestorComponentSelectorForDetails(keyType, publicKeyHex string) (string, error) {
+	componentKeyType, ok := keytypes.AttestorComponentKeyTypeForAttestedAccount(keyType)
+	if !ok {
+		return "", fmt.Errorf("unknown attested account key type %q", keyType)
+	}
+	value := strings.TrimSpace(publicKeyHex)
+	value = strings.TrimPrefix(strings.TrimPrefix(value, "0x"), "0X")
+	publicKey, err := hex.DecodeString(value)
+	if err != nil {
+		return "", err
+	}
+	return keytypes.ComponentKeySelector(componentKeyType, publicKey)
 }
 
 func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {

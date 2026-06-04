@@ -8,6 +8,7 @@ package tui
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -37,6 +38,10 @@ func truncateLongHex(line string, maxLen int) string {
 }
 
 func buildDetailsParameterLines(keyType string, parameters map[string]string) []string {
+	if keytypes.IsAttestedAccountKeyType(keyType) {
+		return buildAttestedDetailsParameterLines(parameters)
+	}
+
 	var lines []string
 	if spec := getParamSpecForKeyType(keyType); spec != nil {
 		for _, paramDef := range spec.Params {
@@ -50,6 +55,27 @@ func buildDetailsParameterLines(keyType string, parameters map[string]string) []
 
 	for key, value := range parameters {
 		lines = append(lines, fmt.Sprintf("%s: %s", key, value), "")
+	}
+	return trimTrailingBlankLines(lines)
+}
+
+func buildAttestedDetailsParameterLines(parameters map[string]string) []string {
+	var lines []string
+	if value, ok := parameters["Attestor"]; ok {
+		lines = append(lines, formatParameterDisplayLines("Attestor", "", value)...)
+		lines = append(lines, "")
+	}
+
+	keys := make([]string, 0, len(parameters))
+	for key := range parameters {
+		if key == "Attestor" || key == keytypes.ParameterAttestorPublicKey {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		lines = append(lines, fmt.Sprintf("%s: %s", key, parameters[key]), "")
 	}
 	return trimTrailingBlankLines(lines)
 }
