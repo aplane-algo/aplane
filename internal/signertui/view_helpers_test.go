@@ -187,6 +187,35 @@ func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 	}
 }
 
+func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType:     "aplane.falcon1024-att-falcon1024.v1",
+		DisplayName: "Falcon-1024 / Falcon-1024 Attested",
+		CreationParams: []protocol.TemplateParamInfo{{
+			Name:    "attestor",
+			Label:   "Attestor",
+			Type:    "select",
+			Options: []string{"test1"},
+			Default: "test1",
+		}},
+	}})
+
+	m := Model{
+		width:                  100,
+		height:                 30,
+		generateFocus:          0,
+		genericLSigParams:      map[string]string{"attestor": ""},
+		genericLSigParamModes:  map[string]int{"attestor": 0},
+		genericLSigParamScroll: map[string]int{"attestor": 0},
+	}
+
+	rendered := m.renderParameterModalForKeyType("aplane.falcon1024-att-falcon1024.v1", "GENERATE", "")
+	if !strings.Contains(stripANSI(rendered), "test1_") {
+		t.Fatalf("focused select did not render default option:\n%s", stripANSI(rendered))
+	}
+}
+
 func TestBytesParameterFieldUsesDeclaredHexLength(t *testing.T) {
 	if got := getFieldWidthForType("bytes", 64); got != 66 {
 		t.Fatalf("bytes field width = %d, want 66", got)

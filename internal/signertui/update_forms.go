@@ -991,6 +991,9 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 
 	for _, paramDef := range params {
 		value := m.genericLSigParams[paramDef.Name]
+		if value == "" && len(paramDef.Options) > 0 {
+			value = defaultParamValue(paramDef)
+		}
 		if paramDef.Type == "address[]" {
 			var err error
 			value, err = resolveAddressListValue(m.dataDir, value)

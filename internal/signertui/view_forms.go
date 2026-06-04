@@ -317,13 +317,20 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		if m.genericLSigParams != nil {
 			value = m.genericLSigParams[paramDef.Name]
 		}
+		if value == "" && len(paramDef.Options) > 0 {
+			value = defaultParamValue(paramDef)
+		}
 		if value == "" {
 			value = getPlaceholderForType(paramDef.Type)
 		}
 
 		lines := paramInputLines(value)
 		if isFieldFocused && m.genericLSigParams != nil {
-			currentLines := paramInputLines(m.genericLSigParams[paramDef.Name])
+			currentValue := m.genericLSigParams[paramDef.Name]
+			if currentValue == "" && len(paramDef.Options) > 0 {
+				currentValue = defaultParamValue(paramDef)
+			}
+			currentLines := paramInputLines(currentValue)
 			currentLines[len(currentLines)-1] += "_"
 			lines = currentLines
 		}
