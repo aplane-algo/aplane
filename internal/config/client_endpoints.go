@@ -30,6 +30,8 @@ type ClientEndpointRegistry struct {
 
 // ClientEndpointConfig describes one signer endpoint connection profile.
 type ClientEndpointConfig struct {
+	// Role is a deprecated field accepted only so older endpoint registries can
+	// load and be rewritten without role metadata.
 	Role           string `yaml:"role,omitempty"`
 	URL            string `yaml:"url" description:"Endpoint URL: self, https://..., loopback http://..., or ssh://host[:port]"`
 	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// endpoints"`
@@ -126,7 +128,6 @@ func legacyPrimaryEndpointRegistry(dataDir string, cfg Config) ClientEndpointReg
 		tokenFile = filepath.Join(dataDir, tokenfile.APlaneTokenFile)
 	}
 	endpoint := ClientEndpointConfig{
-		Role:           "signing",
 		URL:            fmt.Sprintf("ssh://%s:%d", cfg.SSH.Host, cfg.SSH.Port),
 		SignerPort:     cfg.SignerPort,
 		IdentityFile:   cfg.SSH.IdentityFile,
@@ -158,15 +159,7 @@ func ValidateClientEndpointAlias(alias string) error {
 }
 
 func normalizeClientEndpointConfig(dataDir string, cfg Config, alias string, endpoint ClientEndpointConfig) (ClientEndpointConfig, error) {
-	endpoint.Role = strings.ToLower(strings.TrimSpace(endpoint.Role))
-	switch endpoint.Role {
-	case "", "signing", "attestation", "dual":
-	default:
-		return endpoint, fmt.Errorf("role must be signing, attestation, or dual")
-	}
-	if endpoint.Role == "" {
-		endpoint.Role = "dual"
-	}
+	endpoint.Role = ""
 	endpoint.URL = strings.TrimRight(strings.TrimSpace(endpoint.URL), "/")
 	if endpoint.URL == "" {
 		return endpoint, fmt.Errorf("url is required")

@@ -67,7 +67,7 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import --alias <alias> --role signing|attestation|dual [--dry-run] <endpoint-json> | endpoints default <alias> | endpoints delete <alias>")
+		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints import --alias <alias> [--dry-run] <endpoint-json> | endpoints default <alias> | endpoints delete <alias>")
 	}
 	switch args[0] {
 	case "list":
@@ -162,7 +162,7 @@ func (r *REPLState) cmdConfig(_ []string, _ interface{}) error {
 
 func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, error) {
 	var req apshellapp.EndpointImportRequest
-	const usage = "usage: endpoints import --alias <alias> --role signing|attestation|dual [--dry-run] <endpoint-json>"
+	const usage = "usage: endpoints import --alias <alias> [--dry-run] <endpoint-json>"
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
@@ -177,15 +177,6 @@ func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, e
 				return req, errors.New(usage)
 			}
 			req.Alias = args[i]
-		case "--role", "-r":
-			if req.Role != "" {
-				return req, errors.New(usage)
-			}
-			i++
-			if i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-") {
-				return req, errors.New(usage)
-			}
-			req.Role = args[i]
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return req, fmt.Errorf("unknown endpoints import flag %q", arg)
@@ -196,7 +187,7 @@ func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, e
 			req.Path = arg
 		}
 	}
-	if req.Alias == "" || req.Role == "" || req.Path == "" {
+	if req.Alias == "" || req.Path == "" {
 		return req, errors.New(usage)
 	}
 	return req, nil
@@ -208,11 +199,10 @@ func (r *REPLState) renderEndpointsList(result *apshellapp.EndpointsListResult) 
 		return
 	}
 	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ALIAS\tROLE\tDEFAULT\tURL\tTOKEN\tMAPPED")
+	_, _ = fmt.Fprintln(w, "ALIAS\tDEFAULT\tURL\tTOKEN\tMAPPED")
 	for _, endpoint := range result.Endpoints {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\n",
 			endpoint.Alias,
-			endpoint.Role,
 			yesNo(endpoint.IsDefault),
 			endpoint.URL,
 			tokenStatusLabel(endpoint),
@@ -225,7 +215,6 @@ func (r *REPLState) renderEndpointsList(result *apshellapp.EndpointsListResult) 
 func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
 	endpoint := result.Endpoint
 	r.printf("Alias: %s\n", endpoint.Alias)
-	r.printf("Role: %s\n", endpoint.Role)
 	r.printf("Default: %s\n", yesNo(endpoint.IsDefault))
 	r.printf("URL: %s\n", endpoint.URL)
 	r.printf("Signer port: %d\n", endpoint.SignerPort)

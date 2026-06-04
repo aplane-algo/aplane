@@ -612,7 +612,7 @@ Manage client-local signer endpoint profiles.
 ```
 endpoints list
 endpoints show <alias>
-endpoints import --alias <alias> --role signing|attestation|dual [--dry-run] <endpoint-json>
+endpoints import --alias <alias> [--dry-run] <endpoint-json>
 endpoints default <alias>
 endpoints delete <alias>
 ```
@@ -626,8 +626,8 @@ without writing.
 
 **Examples:**
 ```
-endpoints import --alias attestor-local --role attestation attestor.endpoint.json
-endpoints import --alias attestor-local --role attestation --dry-run attestor.endpoint.json
+endpoints import --alias attestor-local attestor.endpoint.json
+endpoints import --alias attestor-local --dry-run attestor.endpoint.json
 endpoints list
 endpoints show attestor-local
 endpoints default primary

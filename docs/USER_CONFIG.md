@@ -189,7 +189,7 @@ apstore -d "$APSIGNER_DATA" endpoint export \
   --out attestor.endpoint.json
 
 # client side, inside apshell
-endpoints import --alias attestor-local --role attestation attestor.endpoint.json
+endpoints import --alias attestor-local attestor.endpoint.json
 endpoints show attestor-local
 request-token --endpoint attestor-local
 ```
@@ -207,12 +207,10 @@ schema_version: 1
 default: primary
 endpoints:
   primary:
-    role: signing
     url: ssh://signer.example.com:1127
     signer_port: 11270
     token_file: aplane.token
   attestor-local:
-    role: attestation
     url: ssh://127.0.0.1:2223
     signer_port: 11270
     token_file: tokens/attestor-local.token
@@ -231,7 +229,7 @@ Useful local commands:
 ```bash
 endpoints list
 endpoints show attestor-local
-endpoints import --alias attestor-local --role attestation --dry-run attestor.endpoint.json
+endpoints import --alias attestor-local --dry-run attestor.endpoint.json
 endpoints default primary
 endpoints delete old-attestor
 ```

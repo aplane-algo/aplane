@@ -92,12 +92,8 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	if exists && !storedClientEndpointsEqual(existing, normalized) && !replace {
 		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint alias %q already exists with different settings", alias)
 	}
-	wasEmpty := len(registry.Endpoints) == 0
 	oldDefault := registry.Default
 	registry.Endpoints[alias] = normalized
-	if registry.Default == "" && wasEmpty && endpointEligibleForDefault(normalized) {
-		registry.Default = alias
-	}
 	return StoredClientEndpointUpsertPlan{
 		Registry:       registry,
 		Alias:          alias,
@@ -345,15 +341,7 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 	if err := ValidateClientEndpointAlias(alias); err != nil {
 		return ClientEndpointConfig{}, err
 	}
-	endpoint.Role = strings.ToLower(strings.TrimSpace(endpoint.Role))
-	switch endpoint.Role {
-	case "", "signing", "attestation", "dual":
-	default:
-		return ClientEndpointConfig{}, fmt.Errorf("role must be signing, attestation, or dual")
-	}
-	if endpoint.Role == "" {
-		endpoint.Role = "dual"
-	}
+	endpoint.Role = ""
 	endpoint.URL = strings.TrimRight(strings.TrimSpace(endpoint.URL), "/")
 	if err := validateClientEndpointURL(alias, endpoint); err != nil {
 		return ClientEndpointConfig{}, err
@@ -372,17 +360,12 @@ func storedClientEndpointsEqual(a, b ClientEndpointConfig) bool {
 	return a == b
 }
 
-func endpointEligibleForDefault(endpoint ClientEndpointConfig) bool {
-	return endpoint.Role == "signing" || endpoint.Role == "dual"
-}
-
 func storedLegacyPrimaryEndpoint(dataDir string) (ClientEndpointConfig, bool) {
 	cfg, err := LoadConfigFromPath(GetConfigPath(dataDir))
 	if err != nil || cfg.SSH == nil {
 		return ClientEndpointConfig{}, false
 	}
 	endpoint, err := normalizeStoredClientEndpoint(DefaultClientEndpointName, ClientEndpointConfig{
-		Role:           "signing",
 		URL:            fmt.Sprintf("ssh://%s:%d", cfg.SSH.Host, cfg.SSH.Port),
 		SignerPort:     cfg.SignerPort,
 		IdentityFile:   cfg.SSH.IdentityFile,

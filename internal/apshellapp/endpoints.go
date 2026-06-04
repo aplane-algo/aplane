@@ -18,7 +18,6 @@ import (
 // EndpointImportRequest imports one public endpoint handoff envelope.
 type EndpointImportRequest struct {
 	Alias  string
-	Role   string
 	Path   string
 	DryRun bool
 }
@@ -84,13 +83,8 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	if err != nil {
 		return nil, err
 	}
-	role, err := normalizeEndpointImportRole(req.Role)
-	if err != nil {
-		return nil, err
-	}
 
 	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, config.ClientEndpointConfig{
-		Role:       role,
 		URL:        env.URL,
 		SignerPort: env.SignerPort,
 		LocalPort:  env.LocalPort,
@@ -101,7 +95,6 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 
 	result := &EndpointImportResult{
 		Alias:          req.Alias,
-		Role:           role,
 		URL:            endpointPlan.Endpoint.URL,
 		SignerPort:     endpointPlan.Endpoint.SignerPort,
 		LocalPort:      endpointPlan.Endpoint.LocalPort,
@@ -133,12 +126,8 @@ func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefault
 	if err != nil {
 		return nil, err
 	}
-	endpoint, ok := cfg.Endpoints.Endpoint(alias)
-	if !ok {
+	if _, ok := cfg.Endpoints.Endpoint(alias); !ok {
 		return nil, fmt.Errorf("unknown endpoint alias %q", alias)
-	}
-	if endpoint.Role == "attestation" {
-		return nil, fmt.Errorf("endpoint alias %q has role attestation and cannot be the default signing endpoint", alias)
 	}
 	previousAlias, _, _ := cfg.Endpoints.DefaultEndpoint()
 	if _, err := config.SetStoredClientEndpointDefault(a.DataDir, alias); err != nil {
@@ -199,7 +188,6 @@ func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, 
 	sort.Strings(keys)
 	return EndpointEntry{
 		Alias:                   alias,
-		Role:                    endpoint.Role,
 		URL:                     endpoint.URL,
 		SignerPort:              endpoint.SignerPort,
 		LocalPort:               endpoint.LocalPort,
@@ -239,7 +227,6 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 
 	lines := []string{
 		fmt.Sprintf("%s endpoint %s (%s)", action, result.Alias, state),
-		fmt.Sprintf("  role: %s", result.Role),
 		fmt.Sprintf("  url: %s", result.URL),
 		fmt.Sprintf("  token file: %s", result.TokenFile),
 	}
@@ -247,14 +234,4 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 		lines = append(lines, "  default: yes")
 	}
 	return lines
-}
-
-func normalizeEndpointImportRole(role string) (string, error) {
-	role = strings.ToLower(strings.TrimSpace(role))
-	switch role {
-	case "signing", "attestation", "dual":
-		return role, nil
-	default:
-		return "", fmt.Errorf("endpoint role must be signing, attestation, or dual")
-	}
 }

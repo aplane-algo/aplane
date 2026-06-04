@@ -23,7 +23,6 @@ func TestEndpointImportDryRunDoesNotWriteFiles(t *testing.T) {
 
 	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias:  "attestor-local",
-		Role:   "attestation",
 		Path:   envelopePath,
 		DryRun: true,
 	})
@@ -48,7 +47,6 @@ func TestEndpointImportWritesEndpointOnly(t *testing.T) {
 
 	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
-		Role:  "attestation",
 		Path:  envelopePath,
 	})
 	if err != nil {
@@ -83,7 +81,6 @@ func TestEndpointImportReplacesSameAlias(t *testing.T) {
 	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local", "ssh://127.0.0.1:2223", 11270)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
-		Role:  "attestation",
 		Path:  firstPath,
 	}); err != nil {
 		t.Fatalf("EndpointImport(first) error = %v", err)
@@ -92,7 +89,6 @@ func TestEndpointImportReplacesSameAlias(t *testing.T) {
 	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local-updated", "ssh://127.0.0.1:2224", 12270)
 	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
-		Role:  "dual",
 		Path:  secondPath,
 	})
 	if err != nil {
@@ -110,8 +106,8 @@ func TestEndpointImportReplacesSameAlias(t *testing.T) {
 	if !ok {
 		t.Fatal("attestor-local endpoint missing")
 	}
-	if endpoint.Role != "dual" || endpoint.URL != "ssh://127.0.0.1:2224" || endpoint.SignerPort != 12270 {
-		t.Fatalf("endpoint after replace = %#v, want updated role/url/signer_port", endpoint)
+	if endpoint.URL != "ssh://127.0.0.1:2224" || endpoint.SignerPort != 12270 {
+		t.Fatalf("endpoint after replace = %#v, want updated url/signer_port", endpoint)
 	}
 }
 
@@ -121,7 +117,6 @@ func TestEndpointImportRejectsExistingURLWithDifferentAlias(t *testing.T) {
 	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local", "ssh://127.0.0.1:2223/", 11270)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
-		Role:  "attestation",
 		Path:  firstPath,
 	}); err != nil {
 		t.Fatalf("EndpointImport(first) error = %v", err)
@@ -130,7 +125,6 @@ func TestEndpointImportRejectsExistingURLWithDifferentAlias(t *testing.T) {
 	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-copy", "ssh://127.0.0.1:2223", 11270)
 	_, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-copy",
-		Role:  "attestation",
 		Path:  secondPath,
 	})
 	if err == nil {
@@ -155,7 +149,6 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	envelopePath := writeEndpointEnvelope(t, dataDir)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
-		Role:  "attestation",
 		Path:  envelopePath,
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
@@ -197,31 +190,12 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	}
 }
 
-func TestEndpointDefaultRejectsAttestationEndpoint(t *testing.T) {
-	dataDir := t.TempDir()
-	app := newEndpointTestApp(t, dataDir)
-	envelopePath := writeEndpointEnvelope(t, dataDir)
-	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "attestor-local",
-		Role:  "attestation",
-		Path:  envelopePath,
-	}); err != nil {
-		t.Fatalf("EndpointImport() error = %v", err)
-	}
-
-	_, err := app.EndpointDefault(context.Background(), "attestor-local")
-	if err == nil {
-		t.Fatal("EndpointDefault(attestation) error = nil, want rejection")
-	}
-}
-
 func TestEndpointDefaultSetsSigningEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	envelopePath := writeEndpointEnvelopeWithName(t, dataDir, "signer-local")
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "signer-local",
-		Role:  "signing",
 		Path:  envelopePath,
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
@@ -250,7 +224,6 @@ func TestEndpointDeleteRejectsMappedAttestorEndpoint(t *testing.T) {
 	envelopePath := writeEndpointEnvelope(t, dataDir)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
-		Role:  "attestation",
 		Path:  envelopePath,
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
@@ -273,7 +246,6 @@ func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
 	primaryPath := writeEndpointEnvelopeWithName(t, dataDir, "primary")
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "primary",
-		Role:  "signing",
 		Path:  primaryPath,
 	}); err != nil {
 		t.Fatalf("EndpointImport(primary) error = %v", err)
@@ -281,7 +253,6 @@ func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
 	secondaryPath := writeEndpointEnvelopeWithOptions(t, dataDir, "secondary", "ssh://127.0.0.1:2224", 11270)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "secondary",
-		Role:  "signing",
 		Path:  secondaryPath,
 	}); err != nil {
 		t.Fatalf("EndpointImport(secondary) error = %v", err)
@@ -297,8 +268,8 @@ func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
 	if _, ok := cfg.Endpoints.Endpoint("secondary"); ok {
 		t.Fatal("secondary endpoint still present after delete")
 	}
-	if alias, _, ok := cfg.Endpoints.DefaultEndpoint(); !ok || alias != "primary" {
-		t.Fatalf("DefaultEndpoint() = %q/%v, want primary/true", alias, ok)
+	if alias, _, ok := cfg.Endpoints.DefaultEndpoint(); ok || alias != "" {
+		t.Fatalf("DefaultEndpoint() = %q/%v, want none after import-only flow", alias, ok)
 	}
 }
 

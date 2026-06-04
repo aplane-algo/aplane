@@ -697,7 +697,6 @@ type RequestTokenResult struct {
 // EndpointEntry describes one client-local signer endpoint profile.
 type EndpointEntry struct {
 	Alias                   string
-	Role                    string
 	URL                     string
 	SignerPort              int
 	LocalPort               int
@@ -723,7 +722,6 @@ type EndpointShowResult struct {
 // EndpointImportResult describes a public endpoint-envelope import.
 type EndpointImportResult struct {
 	Alias          string
-	Role           string
 	URL            string
 	SignerPort     int
 	LocalPort      int

@@ -10,18 +10,17 @@ import (
 	"testing"
 )
 
-func TestUpsertStoredClientEndpointFirstImportDefaultRules(t *testing.T) {
+func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	dataDir := t.TempDir()
 	registry, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
-		Role:       "attestation",
 		URL:        "ssh://127.0.0.1:2223",
 		SignerPort: 11270,
 	}, false)
 	if err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestation) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
 	}
 	if registry.Default != "" {
-		t.Fatalf("Default = %q, want empty for first attestation endpoint", registry.Default)
+		t.Fatalf("Default = %q, want empty for first endpoint", registry.Default)
 	}
 
 	cfg, err := LoadConfig(dataDir)
@@ -38,31 +37,17 @@ func TestUpsertStoredClientEndpointFirstImportDefaultRules(t *testing.T) {
 	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "attestor-local.token") {
 		t.Fatalf("TokenFile = %q, want resolved default token path", endpoint.TokenFile)
 	}
-
-	signingDir := t.TempDir()
-	registry, err = UpsertStoredClientEndpoint(signingDir, "primary", ClientEndpointConfig{
-		Role: "signing",
-		URL:  "ssh://signer.example:2222",
-	}, false)
-	if err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(signing) error = %v", err)
-	}
-	if registry.Default != "primary" {
-		t.Fatalf("Default = %q, want primary", registry.Default)
-	}
 }
 
 func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 	dataDir := t.TempDir()
 	if _, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
-		Role: "attestation",
-		URL:  "ssh://127.0.0.1:2223",
+		URL: "ssh://127.0.0.1:2223",
 	}, false); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
 	}
 	_, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
-		Role: "attestation",
-		URL:  "ssh://127.0.0.1:2224",
+		URL: "ssh://127.0.0.1:2224",
 	}, false)
 	if err == nil {
 		t.Fatal("UpsertStoredClientEndpoint(conflict) error = nil, want conflict")
@@ -82,15 +67,13 @@ func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 func TestUpsertStoredClientEndpointRejectsDuplicateURLAcrossAliases(t *testing.T) {
 	dataDir := t.TempDir()
 	if _, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
-		Role: "attestation",
-		URL:  "ssh://127.0.0.1:2223/",
+		URL: "ssh://127.0.0.1:2223/",
 	}, false); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
 	}
 
 	_, err := UpsertStoredClientEndpoint(dataDir, "attestor-copy", ClientEndpointConfig{
-		Role: "attestation",
-		URL:  "ssh://127.0.0.1:2223",
+		URL: "ssh://127.0.0.1:2223",
 	}, true)
 	if err == nil {
 		t.Fatal("UpsertStoredClientEndpoint(duplicate URL) error = nil, want conflict")
@@ -120,8 +103,7 @@ signer_port: 12270
 	}
 
 	_, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
-		Role: "attestation",
-		URL:  "ssh://signer.example:2222",
+		URL: "ssh://signer.example:2222",
 	}, true)
 	if err == nil {
 		t.Fatal("UpsertStoredClientEndpoint(legacy duplicate URL) error = nil, want conflict")

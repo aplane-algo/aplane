@@ -291,7 +291,7 @@ when implemented with these constraints:
   `attestation.yaml` and policy document domains are defined in
   [ARCH_POLICY.md#role-domains](ARCH_POLICY.md#role-domains).
 - Identity mode is loaded from identity config before key generation, import,
-  scan/load, and endpoint role dispatch; the mode check is enforced against key
+  scan/load, and signing service dispatch; the mode check is enforced against key
   type/category metadata, not string appearance.
 - `/sign` never reaches attestor component keys or attested-account key types;
   component signing uses `/sign/component`.
@@ -1257,12 +1257,10 @@ schema_version: 1
 default: primary
 endpoints:
   primary:
-    role: signing
     url: ssh://signer.example:1127
     signer_port: 11270
     token_file: aplane.token
   attestor-local:
-    role: attestation
     url: ssh://127.0.0.1:2223
     signer_port: 11270
     token_file: tokens/attestor-local.token
@@ -1284,18 +1282,18 @@ apstore -d "$APSIGNER_DATA" endpoint export \
 
 # client side
 apshell -d "$APCLIENT_DATA"
-> endpoints import --alias attestor-local --role attestation attestor.endpoint.json
+> endpoints import --alias attestor-local attestor.endpoint.json
 > endpoints show attestor-local
 > request-token --endpoint attestor-local
 ```
 
 The exported `aplane.endpoint.v1` envelope is public routing metadata only and
 uses the same `schema: "aplane.<name>.vN"` JSON-envelope convention as attestor
-public-key exports. It contains no client-local alias, endpoint role, attestor
-public-key metadata, API token, private key, mnemonic, encrypted key payload,
-passphrase, or `known_hosts` entry, and it cannot use `url: self`. Importing
-the envelope with a client-chosen alias and role only configures the endpoint
-profile. It does not discover attestor keys or prove endpoint ownership; the
+public-key exports. It contains no client-local alias, attestor public-key
+metadata, API token, private key, mnemonic, encrypted key payload, passphrase,
+or `known_hosts` entry, and it cannot use `url: self`. Importing the envelope
+with a client-chosen alias only configures the endpoint profile. It does not
+discover attestor keys or prove endpoint ownership; the
 trust anchor remains the attestor public key that was selected at user-key
 generation and embedded in the LogicSig. Import replaces existing endpoint
 data for the same alias, and rejects a URL already assigned to a different
@@ -1515,7 +1513,7 @@ The MVP is complete when:
 
 - each identity has an enforced `mode` with omitted mode defaulting to
   `signing`, and invalid modes fail config load,
-- key generation, import, restore/load, and endpoint role dispatch reject key
+- key generation, import, restore/load, and signing service dispatch reject key
   classes disallowed by the identity mode,
 - attestor component keys cannot sign through `/sign`,
 - attested account keys cannot sign through `/sign`,

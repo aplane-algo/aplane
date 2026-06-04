@@ -335,6 +335,9 @@ endpoints:
 	if attestor.TokenFile != filepath.Join(dataDir, "tokens", "attestor-local.token") {
 		t.Fatalf("attestor token_file = %q, want default endpoint token path", attestor.TokenFile)
 	}
+	if attestor.Role != "" {
+		t.Fatalf("attestor role = %q, want deprecated role field cleared", attestor.Role)
+	}
 	if attestor.IdentityFile != filepath.Join(dataDir, ".ssh", "id_ed25519") {
 		t.Fatalf("attestor identity_file = %q, want default SSH identity", attestor.IdentityFile)
 	}
