@@ -15,19 +15,19 @@ import (
 
 func cmdKey(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore key <export-public>")
+		return fmt.Errorf("usage: apstore key <export-att>")
 	}
 	switch args[0] {
-	case "export-public":
-		return cmdKeyExportPublic(args[1:])
+	case "export-att":
+		return cmdKeyExportAtt(args[1:])
 	default:
-		return fmt.Errorf("usage: apstore key <export-public>")
+		return fmt.Errorf("usage: apstore key <export-att>")
 	}
 }
 
-func cmdKeyExportPublic(args []string) error {
+func cmdKeyExportAtt(args []string) error {
 	if len(args) < 1 || len(args) > 2 {
-		return fmt.Errorf("usage: apstore key export-public <component-key> [output-json]")
+		return fmt.Errorf("usage: apstore key export-att <component-key> [output-json]")
 	}
 	componentKey, err := keytypes.NormalizeComponentKeySelector(args[0])
 	if err != nil {

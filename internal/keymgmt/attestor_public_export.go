@@ -24,8 +24,6 @@ type AttestorPublicKeyExport struct {
 	PublicKeyHex      string `json:"public_key_hex"`
 	PublicKeySize     int    `json:"public_key_size"`
 	PublicKeySHA256   string `json:"public_key_sha256"`
-	IsComponentKey    bool   `json:"is_component_key"`
-	IsSpendingAccount bool   `json:"is_spending_account"`
 }
 
 // BuildAttestorPublicKeyExport validates decrypted key metadata and returns a
@@ -81,7 +79,5 @@ func NewAttestorPublicKeyExport(componentKey, keyType, publicKeyHex string) (*At
 		PublicKeyHex:      hex.EncodeToString(publicKeyBytes),
 		PublicKeySize:     len(publicKeyBytes),
 		PublicKeySHA256:   hex.EncodeToString(publicKeySHA256[:]),
-		IsComponentKey:    true,
-		IsSpendingAccount: false,
 	}, nil
 }

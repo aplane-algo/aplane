@@ -61,7 +61,7 @@ apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.
 apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
 apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
 apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
-apstore -d $APSIGNER_DATA key export-public a_<sha256-public-key> attestor-public.json
+apstore -d $APSIGNER_DATA key export-att a_<sha256-public-key> attestor-public.json
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -90,17 +90,17 @@ Attestor component keys, such as `aplane.attestor-ed25519.v1` and
 locally by their `a_` component-key selector, but attested account generation
 needs the full component public key hex.
 
-Use `apstore key export-public` on the attestor signer host to export a
-public-only JSON envelope:
+Use `apstore key export-att` on the attestor signer host to export a public-only
+JSON envelope:
 
 ```bash
-apstore -d $APSIGNER_DATA key export-public a_<sha256-public-key> attestor-public.json
+apstore -d $APSIGNER_DATA key export-att a_<sha256-public-key> attestor-public.json
 ```
 
 If the output path is omitted, the JSON envelope is written to stdout:
 
 ```bash
-apstore -d $APSIGNER_DATA key export-public a_<sha256-public-key>
+apstore -d $APSIGNER_DATA key export-att a_<sha256-public-key>
 ```
 
 The command prompts for the store passphrase, decrypts the local key file only
@@ -115,9 +115,7 @@ matches `a_ + sha256(public_key)`, and writes:
   "public_key_encoding": "hex",
   "public_key_hex": "<full public key hex>",
   "public_key_size": 1793,
-  "public_key_sha256": "<sha256-public-key>",
-  "is_component_key": true,
-  "is_spending_account": false
+  "public_key_sha256": "<sha256-public-key>"
 }
 ```
 

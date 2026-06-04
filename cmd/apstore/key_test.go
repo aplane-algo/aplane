@@ -17,15 +17,15 @@ import (
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 )
 
-func TestCmdKeyExportPublicWritesEnvelopeFile(t *testing.T) {
+func TestCmdKeyExportAttWritesEnvelopeFile(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		result, publicKeyHex := generateTestAttestorComponentKey(t, passphrase)
 		outputPath := filepath.Join(t.TempDir(), "attestor-public.json")
 
 		if err := withTestStdin(string(passphrase)+"\n", func() error {
-			return cmdKey([]string{"export-public", result.Address, outputPath})
+			return cmdKey([]string{"export-att", result.Address, outputPath})
 		}); err != nil {
-			t.Fatalf("cmdKey(export-public) error = %v", err)
+			t.Fatalf("cmdKey(export-att) error = %v", err)
 		}
 
 		data, err := os.ReadFile(outputPath)
@@ -48,23 +48,20 @@ func TestCmdKeyExportPublicWritesEnvelopeFile(t *testing.T) {
 		if env.PublicKeyHex != publicKeyHex {
 			t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, publicKeyHex)
 		}
-		if !env.IsComponentKey || env.IsSpendingAccount {
-			t.Fatalf("component/spending flags = %v/%v, want true/false", env.IsComponentKey, env.IsSpendingAccount)
-		}
 	})
 }
 
-func TestCmdKeyExportPublicStdoutIsJSONOnly(t *testing.T) {
+func TestCmdKeyExportAttStdoutIsJSONOnly(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		result, _ := generateTestAttestorComponentKey(t, passphrase)
 
 		out, err := withCapturedStdout(func() error {
 			return withTestStdin(string(passphrase)+"\n", func() error {
-				return cmdKey([]string{"export-public", result.Address})
+				return cmdKey([]string{"export-att", result.Address})
 			})
 		})
 		if err != nil {
-			t.Fatalf("cmdKey(export-public stdout) error = %v", err)
+			t.Fatalf("cmdKey(export-att stdout) error = %v", err)
 		}
 		if strings.Contains(out, "Enter store passphrase") {
 			t.Fatalf("stdout contains passphrase prompt: %q", out)
@@ -79,7 +76,7 @@ func TestCmdKeyExportPublicStdoutIsJSONOnly(t *testing.T) {
 	})
 }
 
-func TestCmdKeyExportPublicRejectsSpendingKey(t *testing.T) {
+func TestCmdKeyExportAttRejectsSpendingKey(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		masterKey := deriveTestMasterKey(t, passphrase)
 		defer crypto.ZeroBytes(masterKey)
@@ -89,13 +86,13 @@ func TestCmdKeyExportPublicRejectsSpendingKey(t *testing.T) {
 			t.Fatalf("GenerateKey(ed25519) error = %v", err)
 		}
 		err = withTestStdin(string(passphrase)+"\n", func() error {
-			return cmdKey([]string{"export-public", result.Address})
+			return cmdKey([]string{"export-att", result.Address})
 		})
 		if err == nil {
-			t.Fatal("cmdKey(export-public spending key) error = nil, want rejection")
+			t.Fatal("cmdKey(export-att spending key) error = nil, want rejection")
 		}
 		if !strings.Contains(err.Error(), "invalid component key selector") {
-			t.Fatalf("cmdKey(export-public spending key) error = %v, want component selector rejection", err)
+			t.Fatalf("cmdKey(export-att spending key) error = %v, want component selector rejection", err)
 		}
 	})
 }

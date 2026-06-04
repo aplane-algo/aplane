@@ -46,12 +46,6 @@ func TestNewAttestorPublicKeyExportEd25519(t *testing.T) {
 	if env.PublicKeySHA256 != hex.EncodeToString(sum[:]) {
 		t.Fatalf("PublicKeySHA256 = %q, want %q", env.PublicKeySHA256, hex.EncodeToString(sum[:]))
 	}
-	if !env.IsComponentKey {
-		t.Fatal("IsComponentKey = false, want true")
-	}
-	if env.IsSpendingAccount {
-		t.Fatal("IsSpendingAccount = true, want false")
-	}
 }
 
 func TestNewAttestorPublicKeyExportFalcon1024(t *testing.T) {

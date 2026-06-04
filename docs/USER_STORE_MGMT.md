@@ -574,7 +574,7 @@ From the key details view:
 ./apstore keytype deactivate <key-type>
 
 # Public-only attestor key export
-./apstore key export-public <component-key> [output-json]
+./apstore key export-att <component-key> [output-json]
 ```
 
 For the operator-facing key type availability model and the distinction between
