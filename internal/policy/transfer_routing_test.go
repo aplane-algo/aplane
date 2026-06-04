@@ -815,6 +815,7 @@ key_overrides:
 	override := cfg.ForKey(overrideKey).TransferPolicy
 	if override == nil {
 		t.Fatal("override TransferPolicy = nil")
+		return
 	}
 	if got := override.OnNoRoute; got != TransferOnNoRouteReject {
 		t.Fatalf("override OnNoRoute = %q, want %q", got, TransferOnNoRouteReject)
@@ -892,6 +893,7 @@ key_overrides:
 	override := cfg.ForKey(overrideKey).TransferPolicy
 	if override == nil {
 		t.Fatal("override TransferPolicy = nil")
+		return
 	}
 	if got := len(override.Routes); got != 1 || override.Routes[0].ID != "override_route" {
 		t.Fatalf("override routes = %+v", override.Routes)
@@ -940,6 +942,7 @@ key_overrides:
 		override := cfg.ForKey(overrideKey).TransferPolicy
 		if override == nil {
 			t.Fatal("override TransferPolicy = nil")
+			return
 		}
 		if got := len(override.Routes); got != 0 {
 			t.Fatalf("override routes len = %d, want explicit clear", got)

@@ -94,6 +94,7 @@ func TestSaveKeyFileAllowsCanonicalWriteWithNonCanonicalKeyPresent(t *testing.T)
 	}
 	if result == nil {
 		t.Fatal("SaveKeyFile() result = nil, want saved key")
+		return
 	}
 	if result.PrivateFile != paths.KeyFilePath("default", address) {
 		t.Fatalf("SaveKeyFile() path = %q, want canonical key file", result.PrivateFile)

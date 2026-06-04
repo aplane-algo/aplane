@@ -49,10 +49,12 @@ func cmdKeysList() error {
 
 	logInfof("found %d key(s)", len(addresses))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ADDRESS/SELECTOR\tKEY TYPE\tCATEGORY\tCREATED\tFILE")
+	if _, err := fmt.Fprintln(w, "ADDRESS/SELECTOR\tKEY TYPE\tCATEGORY\tCREATED\tFILE"); err != nil {
+		return err
+	}
 	for _, address := range addresses {
 		info := report.Keys[address]
-		fmt.Fprintf(
+		if _, err := fmt.Fprintf(
 			w,
 			"%s\t%s\t%s\t%s\t%s\n",
 			address,
@@ -60,7 +62,9 @@ func cmdKeysList() error {
 			displayValue(info.Category),
 			displayValue(info.CreatedAt),
 			displayKeyFile(info.KeyFile),
-		)
+		); err != nil {
+			return err
+		}
 	}
 	return w.Flush()
 }

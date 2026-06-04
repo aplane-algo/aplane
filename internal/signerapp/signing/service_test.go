@@ -697,6 +697,7 @@ func TestSignGroupForSimulationRejectsHardPolicyBeforeExecution(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("SignGroupForSimulationWithContext() error = nil, want policy rejection")
+		return
 	}
 	if err.Kind != ErrorForbidden || !strings.Contains(err.Message, "policy engine rejected request") {
 		t.Fatalf("error = %#v, want forbidden policy rejection", err)
@@ -802,6 +803,7 @@ func TestSignGroupWithPlanEvaluatesFinalizedTxnsNotCallerDrafts(t *testing.T) {
 			}
 			if err == nil {
 				t.Fatal("signGroupWithPlanContext() error = nil")
+				return
 			}
 			if err.Kind != tt.wantKind || !strings.Contains(err.Message, tt.wantMessage) {
 				t.Fatalf("error = %#v, want kind %q containing %q", err, tt.wantKind, tt.wantMessage)

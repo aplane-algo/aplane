@@ -33,6 +33,7 @@ func TestAlgodForTransactionGroupRejectsUnrecognizedGenesisHashBeforeAlgod(t *te
 
 	if err == nil {
 		t.Fatal("algodForTransactionGroup() error = nil, want unrecognized genesis hash")
+		return
 	}
 	if err.Kind != signersigning.ErrorBadRequest {
 		t.Fatalf("error kind = %s, want %s", err.Kind, signersigning.ErrorBadRequest)

@@ -484,6 +484,7 @@ func TestServiceSimulateRejectsForeignPlaceholders(t *testing.T) {
 	_, err := svc.Simulate(context.Background(), ir, signerapi.GroupSignRequest{Requests: []signerapi.SignRequest{{AuthAddress: "ADDR"}}})
 	if err == nil {
 		t.Fatal("Simulate() error = nil, want foreign placeholder rejection")
+		return
 	}
 	if err.Kind != signersigning.ErrorBadRequest || !strings.Contains(err.Message, "foreign placeholder") {
 		t.Fatalf("Simulate() error = %#v, want foreign placeholder bad request", err)

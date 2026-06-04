@@ -844,6 +844,7 @@ func TestReplacePolicy_PersistsUploadedBytesAndApplies(t *testing.T) {
 	got := ir.Policy()
 	if got == nil {
 		t.Fatal("Policy() = nil")
+		return
 	}
 	if got.RejectForeignRekey {
 		t.Fatal("RejectForeignRekey = true, want false")

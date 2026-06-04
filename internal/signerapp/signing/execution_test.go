@@ -115,6 +115,7 @@ func TestExecutorExecuteGroupSigningHonorsCanceledContext(t *testing.T) {
 	}, "default", nil)
 	if err == nil {
 		t.Fatal("ExecuteGroupSigning() error = nil, want cancellation")
+		return
 	}
 	if err.Kind != ErrorUnavailable {
 		t.Fatalf("error kind = %q, want %q", err.Kind, ErrorUnavailable)
@@ -141,6 +142,7 @@ func TestExecutorSignSingleTransactionZeroesKeyAfterPostLoadCancel(t *testing.T)
 	_, _, err := exec.signSingleTransaction(types.Transaction{}, "AUTHADDR", "", nil, session, "default", ctx)
 	if err == nil {
 		t.Fatal("signSingleTransaction() error = nil, want cancellation")
+		return
 	}
 	if err.Kind != ErrorUnavailable {
 		t.Fatalf("error kind = %q, want %q", err.Kind, ErrorUnavailable)
@@ -208,6 +210,7 @@ func TestExecutorRejectsAttestorKeyTypesBeforeSessionLoad(t *testing.T) {
 	_, err := exec.ExecuteGroupSigning(context.Background(), plan, req, "default", nil)
 	if err == nil {
 		t.Fatal("ExecuteGroupSigning() error = nil, want attestor key type rejection")
+		return
 	}
 	if err.Kind != ErrorBadRequest {
 		t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
@@ -247,6 +250,7 @@ func TestExecutorSignCryptoKeyRejectsAttestorKeyTypesBeforeProviderLookup(t *tes
 			)
 			if err == nil {
 				t.Fatal("signCryptoKey() error = nil, want attestor key type rejection")
+				return
 			}
 			if keyType != tt.keyType {
 				t.Fatalf("keyType = %q, want %q", keyType, tt.keyType)
@@ -285,6 +289,7 @@ func TestExecutorSignCryptoKeyRejectsInvalidAuthAddress(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("signCryptoKey() error = nil, want invalid auth address")
+		return
 	}
 	if gotKeyType != keyType {
 		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
@@ -404,6 +409,7 @@ func TestExecutorSignGenericLSigRejectsMissingSigningMetadata(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("signGenericLSig() error = nil, want missing signing metadata rejection")
+		return
 	}
 	if gotKeyType != keyType {
 		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
@@ -446,6 +452,7 @@ func TestExecutorSignGenericLSigUsesStoredSigningArgsWithoutProvider(t *testing.
 	)
 	if err == nil {
 		t.Fatal("signGenericLSig() error = nil, want missing runtime arg rejection")
+		return
 	}
 	if gotKeyType != keyType {
 		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
@@ -615,6 +622,7 @@ func TestExecutorAssembleDSALogicSigRejectsMissingSigningMetadata(t *testing.T) 
 	)
 	if err == nil {
 		t.Fatal("assembleDSALogicSig() error = nil, want missing signing metadata rejection")
+		return
 	}
 	if gotKeyType != keyType {
 		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
@@ -665,6 +673,7 @@ func TestExecutorAssembleDSALogicSigUsesStoredSigningArgsWithoutComposedProvider
 	)
 	if err == nil {
 		t.Fatal("assembleDSALogicSig() error = nil, want missing runtime arg rejection")
+		return
 	}
 	if gotKeyType != keyType {
 		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
@@ -809,6 +818,7 @@ func TestExecutorAssembleDSALogicSigRejectsMissingStoredBaseProvider(t *testing.
 	)
 	if err == nil {
 		t.Fatal("assembleDSALogicSig() error = nil, want missing base provider rejection")
+		return
 	}
 	if gotKeyType != keyType {
 		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)

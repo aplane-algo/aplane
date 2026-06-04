@@ -110,6 +110,7 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 	}
 	if second == nil {
 		t.Fatal("ImportKey(second) result = nil, want imported key")
+		return
 	}
 	if second.KeyFile != first.KeyFile {
 		t.Fatalf("ImportKey(second) key file = %q, want canonical path %q", second.KeyFile, first.KeyFile)

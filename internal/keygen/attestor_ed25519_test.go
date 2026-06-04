@@ -175,6 +175,7 @@ func assertComponentMaterial(t *testing.T, km *signing.KeyMaterial, wantSelector
 	t.Helper()
 	if km == nil {
 		t.Fatal("key material is nil")
+		return
 	}
 	material, ok := km.Value.(*signing.ComponentKeyMaterial)
 	if !ok {

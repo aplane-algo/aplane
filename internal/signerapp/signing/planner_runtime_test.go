@@ -95,6 +95,7 @@ func TestVerifySignableKeysRequiresKeyTypeMetadata(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("verifySignableKeys() error = nil, want fail-closed metadata error")
+		return
 	}
 	if err.Kind != ErrorInternal {
 		t.Fatalf("verifySignableKeys() error kind = %q, want %q", err.Kind, ErrorInternal)
@@ -120,6 +121,7 @@ func TestVerifySignableKeysRequiresKeyFileInSnapshot(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("verifySignableKeys() error = nil, want missing key failure")
+		return
 	}
 	if err.Kind != ErrorBadRequest {
 		t.Fatalf("verifySignableKeys() error kind = %q, want %q", err.Kind, ErrorBadRequest)
@@ -170,6 +172,7 @@ func TestVerifySignableKeysRejectsAttestorKeyTypes(t *testing.T) {
 			}
 			if err == nil {
 				t.Fatal("verifySignableKeys() error = nil, want attestor key type rejection")
+				return
 			}
 			if err.Kind != ErrorBadRequest {
 				t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)

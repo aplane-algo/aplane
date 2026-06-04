@@ -130,6 +130,7 @@ func TestPassphraseCommandConfigFromUnlock(t *testing.T) {
 	})
 	if got == nil {
 		t.Fatal("passphrase command config = nil, want config")
+		return
 	}
 	if len(got.Argv) != 2 || got.Argv[0] != "/bin/helper" || got.Argv[1] != "read" {
 		t.Fatalf("Argv = %#v, want helper argv", got.Argv)
