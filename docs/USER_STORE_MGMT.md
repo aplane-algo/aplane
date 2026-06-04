@@ -40,6 +40,7 @@ Key management is handled by **apadmin** and **apstore**, not directly by apsign
 │    • Preview/apply managed restores                         │
 │    • Change passphrase                                      │
 │    • Manage templates and key-type activation               │
+│    • Export public attestor key envelopes                   │
 │                                                             │
 │  apstore rescue    ─────────►  File System                  │
 │    • Verify backup archives                                 │
@@ -571,10 +572,14 @@ From the key details view:
 ./apstore template remove <key-type>
 ./apstore keytype activate <key-type>
 ./apstore keytype deactivate <key-type>
+
+# Public-only attestor key export
+./apstore key export-public <component-key> [output-json]
 ```
 
 For the operator-facing key type availability model and the distinction between
-compiled-provider activation and YAML-template import/enable, see
+compiled-provider activation and YAML-template import/enable, plus the attestor
+public-key export envelope, see
 `docs/USER_KEYTYPES.md`.
 
 ---

@@ -819,6 +819,36 @@ informational provenance only: inventory surfaces may report a template
 conflict or unavailable template, but that status does not invalidate the key
 or alter signing behavior.
 
+#### Attestor Public Key Export Envelope
+
+`apstore key export-public <component-key> [output-json]` emits a public-only
+JSON envelope for an attestor component key. The command decrypts the local
+`.key` file using the identity store passphrase, reads stored public-key
+metadata, verifies that `<component-key>` equals the canonical selector derived
+from the public key, and never emits private key material.
+
+The envelope schema is:
+
+```json
+{
+  "schema": "aplane.attestor-public-key.v1",
+  "component_key": "a_<sha256-public-key>",
+  "key_type": "aplane.attestor-falcon1024.v1",
+  "public_key_encoding": "hex",
+  "public_key_hex": "<full public key hex>",
+  "public_key_size": 1793,
+  "public_key_sha256": "<sha256-public-key>",
+  "is_component_key": true,
+  "is_spending_account": false
+}
+```
+
+`component_key` is always the `a_` selector used to select a local attestor
+component key. `public_key_hex` is the raw component public key encoded in hex;
+it is the value embedded into attested-account LogicSig bytecode and supplied
+as `attestor_public_key` during attested account generation. The envelope makes
+no endpoint, policy, ownership, freshness, or trust claim.
+
 ### Template Files (`.template`)
 
 Encrypted YAML using master-key encryption. `BaseTemplateSpec` contains:

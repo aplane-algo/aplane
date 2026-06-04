@@ -61,6 +61,7 @@ apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.
 apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
 apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
 apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA key export-public a_<sha256-public-key> attestor-public.json
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -81,6 +82,50 @@ APlane-published key types may be displayed and entered without the leading
 `aplane.` publisher, for example `timed-whitelist.v1`; third-party publishers remain
 explicit, for example `example.my_escrow.v1`. Files, IPC/HTTP responses, and
 JSON fields still use the canonical `publisher.family.vN` identifier.
+
+## Attestor Public Key Export
+
+Attestor component keys, such as `aplane.attestor-ed25519.v1` and
+`aplane.attestor-falcon1024.v1`, are not spending accounts. They are selected
+locally by their `a_` component-key selector, but attested account generation
+needs the full component public key hex.
+
+Use `apstore key export-public` on the attestor signer host to export a
+public-only JSON envelope:
+
+```bash
+apstore -d $APSIGNER_DATA key export-public a_<sha256-public-key> attestor-public.json
+```
+
+If the output path is omitted, the JSON envelope is written to stdout:
+
+```bash
+apstore -d $APSIGNER_DATA key export-public a_<sha256-public-key>
+```
+
+The command prompts for the store passphrase, decrypts the local key file only
+long enough to read its stored public-key metadata, verifies that the selector
+matches `a_ + sha256(public_key)`, and writes:
+
+```json
+{
+  "schema": "aplane.attestor-public-key.v1",
+  "component_key": "a_<sha256-public-key>",
+  "key_type": "aplane.attestor-falcon1024.v1",
+  "public_key_encoding": "hex",
+  "public_key_hex": "<full public key hex>",
+  "public_key_size": 1793,
+  "public_key_sha256": "<sha256-public-key>",
+  "is_component_key": true,
+  "is_spending_account": false
+}
+```
+
+`public_key_hex` is the value to pass as `attestor_public_key` when generating
+an attested account. `component_key` is the local selector used when asking the
+attestor signer to produce component signatures. The envelope is not encrypted
+and contains no private key material, endpoint credential, policy, or trust
+claim.
 
 ## Compiled Providers
 

@@ -171,13 +171,17 @@ func loadPolicyDocumentForCheck(name, path string, parser func([]byte) (*policy.
 }
 
 func readPolicyMasterKey() ([]byte, error) {
-	fmt.Print("Enter store passphrase: ")
+	return readStoreMasterKey()
+}
+
+func readStoreMasterKey() ([]byte, error) {
+	fmt.Fprint(os.Stderr, "Enter store passphrase: ")
 	passphrase, err := readPassword()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read passphrase: %w", err)
 	}
 	defer crypto.ZeroBytes(passphrase)
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 
 	meta, err := crypto.LoadKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()))
 	if err != nil {

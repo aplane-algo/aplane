@@ -32,6 +32,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] template remove <key-type>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype activate <key-type>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype deactivate <key-type>\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] key export-public <component-key> [output-json]\n")
 	fmt.Fprintf(os.Stderr, "\nOptions:\n")
 	fmt.Fprintf(os.Stderr, "  -d path              Data directory (or set APSIGNER_DATA env var)\n")
 	fmt.Fprintf(os.Stderr, "\nExamples:\n")
@@ -53,4 +54,5 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore template remove example.my_escrow.v1\n")
 	fmt.Fprintf(os.Stderr, "  apstore keytype activate falcon1024_ed25519.v1\n")
 	fmt.Fprintf(os.Stderr, "  apstore keytype deactivate falcon1024_ed25519.v1\n")
+	fmt.Fprintf(os.Stderr, "  apstore key export-public a_<sha256-public-key> attestor-public.json\n")
 }

@@ -92,6 +92,11 @@ func dispatchApstoreCommand(args []string) {
 			exitWithError(err)
 		}
 
+	case "key":
+		if err := cmdKey(args[1:]); err != nil {
+			exitWithError(err)
+		}
+
 	default:
 		logErrorf("unknown command: %s", command)
 		flag.Usage()

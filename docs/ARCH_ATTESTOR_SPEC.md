@@ -379,6 +379,17 @@ exact additive fields:
 The client obtains the attestor component public key from the attestor signer's
 `/keys` projection before generating an attested account. That public key, not
 an endpoint URL or credential, is embedded in the generated LogicSig.
+For Falcon-sized public keys or offline provisioning, the attestor operator may
+instead export the same public key through:
+
+```text
+apstore key export-public <component_key> [output-json]
+```
+
+The exported JSON envelope has schema `aplane.attestor-public-key.v1`; its
+`public_key_hex` field is the value to embed as `attestor_public_key`, and its
+`component_key` field is the local `a_` selector. The envelope is public-only
+and carries no private key material or endpoint trust claim.
 
 For all component-key rows, `address` is the `a_` selector and
 `public_key_hex` is the full component public key. Existing spending account
@@ -1169,11 +1180,15 @@ Attestor signer:
 ```text
 apshell generate aplane.attestor-ed25519.v1
 apshell generate aplane.attestor-falcon1024.v1
+apstore key export-public <component_key> [output-json]
 ```
 
 The MVP does not add an `apstore generate` surface. Attestor component keys are
 generated through the existing signer/admin key-generation path exposed by
 `apshell generate` and `POST /admin/generate`, guarded by `keys.generate`.
+`apstore key export-public` is an offline public-only export of the verifier
+input for an already-created attestor component key; it does not generate keys
+and does not bypass the disabled private-key export path.
 If a later implementation adds offline `apstore` generation, it must define the
 command ownership, authorization behavior, audit behavior, and tests in the
 same change.
@@ -1433,6 +1448,9 @@ The MVP is complete when:
 - attested account keys cannot sign through `/sign`,
 - attestor component key generation exposes canonical `a_` selectors derived
   as `a_<sha256(pubkey)>` and marks them as non-spending component keys,
+- `apstore key export-public` emits a public-only
+  `aplane.attestor-public-key.v1` envelope and rejects selector/public-key
+  mismatches,
 - `/plan` handles attested account metadata,
 - no registration endpoint, account-binding store, profile store, or trust-root
   store is required for attestation,
