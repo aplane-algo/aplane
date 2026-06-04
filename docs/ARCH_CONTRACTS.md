@@ -850,7 +850,7 @@ no endpoint, policy, ownership, freshness, or trust claim.
 
 #### Attestor Public Key Reference Library
 
-`apstore attestor import <export-json> <name>` imports an
+`apstore attestor import-public <export-json> <name>` imports an
 `aplane.attestor-public-key.v1` envelope into the target identity's public
 attestor reference library:
 

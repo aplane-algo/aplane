@@ -62,7 +62,7 @@ apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
 apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
 apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
 apstore -d $APSIGNER_DATA attestor export-public a_<sha256-public-key> attestor-public.json
-apstore -d $APSIGNER_DATA attestor import attestor-public.json lab-att
+apstore -d $APSIGNER_DATA attestor import-public attestor-public.json lab-att
 apstore -d $APSIGNER_DATA attestor list
 ```
 
@@ -131,7 +131,7 @@ To avoid pasting large public keys when creating user-side attested accounts,
 import the exported envelope into the user signer's attestor reference library:
 
 ```bash
-apstore -d $USER_APSIGNER_DATA attestor import attestor-public.json lab-att
+apstore -d $USER_APSIGNER_DATA attestor import-public attestor-public.json lab-att
 apstore -d $USER_APSIGNER_DATA attestor list
 apstore -d $USER_APSIGNER_DATA attestor show lab-att
 ```

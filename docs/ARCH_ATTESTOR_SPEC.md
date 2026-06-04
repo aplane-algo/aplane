@@ -394,7 +394,7 @@ The user signer may import that envelope into its local public attestor
 reference library with:
 
 ```text
-apstore attestor import <export-json> <name>
+apstore attestor import-public <export-json> <name>
 ```
 
 After import, generation may use `attestor=<name>` instead of
@@ -1197,7 +1197,7 @@ Attestor signer:
 apshell generate aplane.attestor-ed25519.v1
 apshell generate aplane.attestor-falcon1024.v1
 apstore attestor export-public <component_key> [output-json]
-apstore attestor import <export-json> <name>
+apstore attestor import-public <export-json> <name>
 ```
 
 The MVP does not add an `apstore generate` surface. Attestor component keys are
@@ -1470,7 +1470,7 @@ The MVP is complete when:
 - `apstore attestor export-public` emits a public-only
   `aplane.attestor-public-key.v1` envelope and rejects selector/public-key
   mismatches,
-- `apstore attestor import/list/show/remove` manages identity-scoped
+- `apstore attestor import-public/list/show/remove` manages identity-scoped
   public-only attestor references, attested-account generation accepts
   `attestor=<name>` as a local alias for `attestor_public_key=<hex>`, and
   identity-scoped key-type metadata exposes matching references as select

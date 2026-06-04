@@ -14,15 +14,15 @@ import (
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 )
 
-func TestCmdAttestorImportListShowRemove(t *testing.T) {
+func TestCmdAttestorImportPublicListShowRemove(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
 		exportPath := filepath.Join(t.TempDir(), "attestor-public.json")
 		if err := os.WriteFile(exportPath, testAttestorExportJSON(t), 0o600); err != nil {
 			t.Fatalf("WriteFile(export) error = %v", err)
 		}
 
-		if err := cmdAttestor([]string{"import", exportPath, "Lab-Att"}); err != nil {
-			t.Fatalf("cmdAttestor(import) error = %v", err)
+		if err := cmdAttestor([]string{"import-public", exportPath, "Lab-Att"}); err != nil {
+			t.Fatalf("cmdAttestor(import-public) error = %v", err)
 		}
 
 		listOut, err := withCapturedStdout(func() error {

@@ -16,14 +16,14 @@ import (
 
 func cmdAttestor(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore attestor <export-public|import|list|show|remove>")
+		return fmt.Errorf("usage: apstore attestor <export-public|import-public|list|show|remove>")
 	}
 	switch args[0] {
 	case "export-public":
 		return cmdAttestorExportPublic(args[1:])
-	case "import":
+	case "import-public":
 		if len(args) != 3 {
-			return fmt.Errorf("usage: apstore attestor import <export-json> <name>")
+			return fmt.Errorf("usage: apstore attestor import-public <export-json> <name>")
 		}
 		return cmdAttestorImport(args[1], args[2])
 	case "list":
@@ -42,7 +42,7 @@ func cmdAttestor(args []string) error {
 		}
 		return cmdAttestorRemove(args[1])
 	default:
-		return fmt.Errorf("usage: apstore attestor <export-public|import|list|show|remove>")
+		return fmt.Errorf("usage: apstore attestor <export-public|import-public|list|show|remove>")
 	}
 }
 
