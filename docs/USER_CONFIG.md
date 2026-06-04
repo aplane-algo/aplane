@@ -196,7 +196,9 @@ request-token --endpoint attestor-local
 
 Importing an endpoint creates routing/configuration only. It does not copy API
 tokens, SSH host trust, private keys, or passphrases. Tokens are still obtained
-with `request-token --endpoint <alias>`.
+with `request-token --endpoint <alias>`. Re-import with the same alias replaces
+that alias's endpoint data. Import fails without writing if the imported URL is
+already assigned to a different alias.
 
 The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 

@@ -620,7 +620,9 @@ endpoints delete <alias>
 `endpoints import` reads a public `aplane.endpoint.v1` envelope produced by
 `apstore endpoint export`. Import writes local endpoint routing only:
 `endpoints.yaml`. It does not copy tokens or SSH host trust, and it does not
-discover attestor keys.
+discover attestor keys. Re-importing with the same alias replaces that alias's
+endpoint data. Importing a URL already assigned to a different alias fails
+without writing.
 
 **Examples:**
 ```

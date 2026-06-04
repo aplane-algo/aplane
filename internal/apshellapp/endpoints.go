@@ -94,7 +94,7 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		URL:        env.URL,
 		SignerPort: env.SignerPort,
 		LocalPort:  env.LocalPort,
-	}, false)
+	}, true)
 	if err != nil {
 		return nil, err
 	}

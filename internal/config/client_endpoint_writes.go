@@ -76,6 +76,19 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint %q: %w", alias, err)
 	}
 	existing, exists := registry.Endpoints[alias]
+	for existingAlias, existingEndpoint := range registry.Endpoints {
+		if existingAlias == alias {
+			continue
+		}
+		if existingEndpoint.URL == normalized.URL {
+			return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint URL %q already belongs to alias %q", normalized.URL, existingAlias)
+		}
+	}
+	if _, hasStoredPrimary := registry.Endpoints[DefaultClientEndpointName]; !hasStoredPrimary && alias != DefaultClientEndpointName {
+		if legacyPrimary, ok := storedLegacyPrimaryEndpoint(dataDir); ok && legacyPrimary.URL == normalized.URL {
+			return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint URL %q already belongs to alias %q", normalized.URL, DefaultClientEndpointName)
+		}
+	}
 	if exists && !storedClientEndpointsEqual(existing, normalized) && !replace {
 		return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint alias %q already exists with different settings", alias)
 	}

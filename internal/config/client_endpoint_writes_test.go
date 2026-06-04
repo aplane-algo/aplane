@@ -79,6 +79,66 @@ func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 	}
 }
 
+func TestUpsertStoredClientEndpointRejectsDuplicateURLAcrossAliases(t *testing.T) {
+	dataDir := t.TempDir()
+	if _, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
+		Role: "attestation",
+		URL:  "ssh://127.0.0.1:2223/",
+	}, false); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
+	}
+
+	_, err := UpsertStoredClientEndpoint(dataDir, "attestor-copy", ClientEndpointConfig{
+		Role: "attestation",
+		URL:  "ssh://127.0.0.1:2223",
+	}, true)
+	if err == nil {
+		t.Fatal("UpsertStoredClientEndpoint(duplicate URL) error = nil, want conflict")
+	}
+	if !strings.Contains(err.Error(), "already belongs to alias") {
+		t.Fatalf("duplicate URL error = %v", err)
+	}
+
+	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	if err != nil {
+		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
+	}
+	if _, ok := registry.Endpoints["attestor-copy"]; ok {
+		t.Fatal("attestor-copy endpoint was written despite duplicate URL conflict")
+	}
+}
+
+func TestUpsertStoredClientEndpointRejectsDuplicateLegacyPrimaryURL(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
+ssh:
+  host: signer.example
+  port: 2222
+signer_port: 12270
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	_, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
+		Role: "attestation",
+		URL:  "ssh://signer.example:2222",
+	}, true)
+	if err == nil {
+		t.Fatal("UpsertStoredClientEndpoint(legacy duplicate URL) error = nil, want conflict")
+	}
+	if !strings.Contains(err.Error(), `alias "primary"`) {
+		t.Fatalf("legacy duplicate URL error = %v, want primary alias conflict", err)
+	}
+
+	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	if err != nil {
+		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
+	}
+	if _, ok := registry.Endpoints["attestor-local"]; ok {
+		t.Fatal("attestor-local endpoint was written despite legacy primary URL conflict")
+	}
+}
+
 func TestUpsertClientAttestorEndpointAliasesAtomicConflict(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKey1 := attestorEndpointTestHex("a1")

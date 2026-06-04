@@ -1297,8 +1297,10 @@ passphrase, or `known_hosts` entry, and it cannot use `url: self`. Importing
 the envelope with a client-chosen alias and role only configures the endpoint
 profile. It does not discover attestor keys or prove endpoint ownership; the
 trust anchor remains the attestor public key that was selected at user-key
-generation and embedded in the LogicSig. Dry-run import must run the same
-validation and conflict checks as a real import without writing files.
+generation and embedded in the LogicSig. Import replaces existing endpoint
+data for the same alias, and rejects a URL already assigned to a different
+alias without writing. Dry-run import must run the same validation and conflict
+checks as a real import without writing files.
 
 A logical attestor may have multiple equivalent endpoints for availability.
 The client may call each endpoint's `/keys` projection to check whether it

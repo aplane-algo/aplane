@@ -77,6 +77,78 @@ func TestEndpointImportWritesEndpointOnly(t *testing.T) {
 	}
 }
 
+func TestEndpointImportReplacesSameAlias(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local", "ssh://127.0.0.1:2223", 11270)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
+		Alias: "attestor-local",
+		Role:  "attestation",
+		Path:  firstPath,
+	}); err != nil {
+		t.Fatalf("EndpointImport(first) error = %v", err)
+	}
+
+	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local-updated", "ssh://127.0.0.1:2224", 12270)
+	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
+		Alias: "attestor-local",
+		Role:  "dual",
+		Path:  secondPath,
+	})
+	if err != nil {
+		t.Fatalf("EndpointImport(replace) error = %v", err)
+	}
+	if !result.Updated || result.Created {
+		t.Fatalf("replace result Created/Updated = %v/%v, want false/true", result.Created, result.Updated)
+	}
+
+	cfg, err := config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	endpoint, ok := cfg.Endpoints.Endpoint("attestor-local")
+	if !ok {
+		t.Fatal("attestor-local endpoint missing")
+	}
+	if endpoint.Role != "dual" || endpoint.URL != "ssh://127.0.0.1:2224" || endpoint.SignerPort != 12270 {
+		t.Fatalf("endpoint after replace = %#v, want updated role/url/signer_port", endpoint)
+	}
+}
+
+func TestEndpointImportRejectsExistingURLWithDifferentAlias(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local", "ssh://127.0.0.1:2223/", 11270)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
+		Alias: "attestor-local",
+		Role:  "attestation",
+		Path:  firstPath,
+	}); err != nil {
+		t.Fatalf("EndpointImport(first) error = %v", err)
+	}
+
+	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-copy", "ssh://127.0.0.1:2223", 11270)
+	_, err := app.EndpointImport(context.Background(), EndpointImportRequest{
+		Alias: "attestor-copy",
+		Role:  "attestation",
+		Path:  secondPath,
+	})
+	if err == nil {
+		t.Fatal("EndpointImport(duplicate URL) error = nil, want conflict")
+	}
+	if !strings.Contains(err.Error(), "already belongs to alias") {
+		t.Fatalf("EndpointImport(duplicate URL) error = %v, want duplicate URL conflict", err)
+	}
+
+	cfg, err := config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if _, ok := cfg.Endpoints.Endpoint("attestor-copy"); ok {
+		t.Fatal("attestor-copy endpoint was written despite duplicate URL conflict")
+	}
+}
+
 func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
@@ -206,7 +278,7 @@ func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("EndpointImport(primary) error = %v", err)
 	}
-	secondaryPath := writeEndpointEnvelopeWithName(t, dataDir, "secondary")
+	secondaryPath := writeEndpointEnvelopeWithOptions(t, dataDir, "secondary", "ssh://127.0.0.1:2224", 11270)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "secondary",
 		Role:  "signing",
@@ -246,10 +318,15 @@ func writeEndpointEnvelope(t *testing.T, dir string) string {
 
 func writeEndpointEnvelopeWithName(t *testing.T, dir, name string) string {
 	t.Helper()
+	return writeEndpointEnvelopeWithOptions(t, dir, name, "ssh://127.0.0.1:2223", 11270)
+}
+
+func writeEndpointEnvelopeWithOptions(t *testing.T, dir, name, rawURL string, signerPort int) string {
+	t.Helper()
 	data, err := endpointrefs.Marshal(endpointrefs.Envelope{
 		Schema:     endpointrefs.Schema,
-		URL:        "ssh://127.0.0.1:2223",
-		SignerPort: 11270,
+		URL:        rawURL,
+		SignerPort: signerPort,
 	})
 	if err != nil {
 		t.Fatalf("endpointrefs.Marshal() error = %v", err)
