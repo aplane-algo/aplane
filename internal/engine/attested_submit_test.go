@@ -208,7 +208,7 @@ func TestRequestAttestorComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 	if err == nil {
 		t.Fatal("requestAttestorComponentSignatures() error = nil, want explicit endpoint mismatch")
 	}
-	if !strings.Contains(err.Error(), "did not advertise attestor component key") {
+	if !strings.Contains(err.Error(), "did not advertise attestor component public key") {
 		t.Fatalf("requestAttestorComponentSignatures() error = %q, want endpoint mismatch", err)
 	}
 	if got := wrongSignCalls.Load(); got != 0 {
@@ -291,6 +291,14 @@ func testAttestorPublicKeyHex(prefix byte) string {
 
 func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey ed25519.PrivateKey, token string, signCalls *atomic.Int32) *httptest.Server {
 	t.Helper()
+	publicKey, err := hex.DecodeString(publicKeyHex)
+	if err != nil {
+		t.Fatalf("decode attestor public key: %v", err)
+	}
+	componentSelector, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("component selector: %v", err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
 		if token != "" && r.Header.Get("Authorization") != "aplane "+token {
@@ -300,7 +308,7 @@ func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
 			Count: 1,
 			Keys: []signerapi.KeyInfo{{
-				Address:        publicKeyHex,
+				Address:        componentSelector,
 				PublicKeyHex:   publicKeyHex,
 				KeyType:        keytypes.AttestorComponentEd25519V1,
 				IsComponentKey: true,
@@ -318,6 +326,10 @@ func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 		var req signerapi.ComponentSignRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Role != signerapi.ComponentSignRoleAttestor || req.ComponentKey != componentSelector {
+			http.Error(w, "wrong attestor component key", http.StatusBadRequest)
 			return
 		}
 		group, err := attestorverify.DecodeCanonicalGroupHex(req.GroupBytesHex)

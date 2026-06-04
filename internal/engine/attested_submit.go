@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -152,17 +153,46 @@ func (e *Engine) attestedOriginalTargets(txns []types.Transaction) ([]attestedOr
 		if !ok || attestorPublicKey == "" {
 			return nil, fmt.Errorf("attested account %s is missing attestor_public_key metadata; run keys refresh", sender)
 		}
-		selector, err := keytypes.NormalizeComponentKeySelector(attestorPublicKey)
+		canonicalPublicKey, err := normalizeAttestorEd25519PublicKeyHex(attestorPublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("attested account %s has invalid attestor_public_key metadata: %w", sender, err)
 		}
 		targets = append(targets, attestedOriginalTarget{
 			Index:             i,
 			Account:           sender,
-			AttestorPublicKey: selector,
+			AttestorPublicKey: canonicalPublicKey,
 		})
 	}
 	return targets, nil
+}
+
+func normalizeAttestorEd25519PublicKeyHex(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("attestor public key is required")
+	}
+	trimmed = strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
+	publicKey, err := hex.DecodeString(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("attestor public key must be hex: %w", err)
+	}
+	wantSize, _ := keytypes.ComponentPublicKeySize(keytypes.AttestorComponentEd25519V1)
+	if len(publicKey) != wantSize {
+		return "", fmt.Errorf("attestor public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
+	}
+	return hex.EncodeToString(publicKey), nil
+}
+
+func attestorEd25519ComponentSelector(attestorPublicKey string) (string, error) {
+	canonicalPublicKey, err := normalizeAttestorEd25519PublicKeyHex(attestorPublicKey)
+	if err != nil {
+		return "", err
+	}
+	publicKey, err := hex.DecodeString(canonicalPublicKey)
+	if err != nil {
+		return "", err
+	}
+	return keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
 }
 
 func (e *Engine) planAttestedGroup(txns []types.Transaction, targets []attestedOriginalTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
@@ -314,9 +344,14 @@ func (e *Engine) requestOneAttestorComponentSignatureSet(ctx context.Context, gr
 	}
 	defer endpoint.close()
 
+	componentSelector, err := attestorEd25519ComponentSelector(attestorPublicKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to derive attestor component selector for public key %s: %w", attestorPublicKey, err)
+	}
+
 	resp, err := endpoint.client.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  attestorPublicKey,
+		ComponentKey:  componentSelector,
 		GroupBytesHex: groupBytesHex,
 		TargetIndices: indices,
 	})
@@ -363,7 +398,11 @@ func collectComponentSignatures(resp *signerapi.ComponentSignResponse, expected 
 }
 
 func verifyAttestorComponentSignatures(attestorPublicKey string, group *attestorverify.CanonicalGroup, indices []int, signatures map[int]string) error {
-	publicKey, err := hex.DecodeString(attestorPublicKey)
+	canonicalPublicKey, err := normalizeAttestorEd25519PublicKeyHex(attestorPublicKey)
+	if err != nil {
+		return err
+	}
+	publicKey, err := hex.DecodeString(canonicalPublicKey)
 	if err != nil {
 		return fmt.Errorf("attestor public key must be hex: %w", err)
 	}
@@ -413,13 +452,4 @@ func writeAttestedSubmittedTransactions(writer func(types.Transaction, string), 
 			writer(txns[i], txIDs[i])
 		}
 	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }

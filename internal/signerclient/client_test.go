@@ -654,8 +654,8 @@ func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if got.Role != signerapi.ComponentSignRoleAttestor || got.ComponentKey != "001122" {
-			t.Fatalf("component request = %+v, want attestor component_key 001122", got)
+		if got.Role != signerapi.ComponentSignRoleAttestor || got.ComponentKey != "a_0000000000000000000000000000000000000000000000000000000000000000" {
+			t.Fatalf("component request = %+v, want attestor component_key a_0000000000000000000000000000000000000000000000000000000000000000", got)
 		}
 		resp := signerapi.ComponentSignResponse{
 			RequestID: got.RequestID,
@@ -670,7 +670,7 @@ func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
 
 	got, err := c.RequestComponentSign(signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  "001122",
+		ComponentKey:  "a_0000000000000000000000000000000000000000000000000000000000000000",
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},
 	})

@@ -339,21 +339,19 @@ Generated attestor component keys are selected by a canonical component-key
 selector:
 
 ```text
-aplane.attestor-ed25519.v1:
-  component_key = lower_hex(attestor_public_key_bytes)
-
-aplane.attestor-falcon1024.v1:
-  component_key = "apc_" || lower_hex(sha256(attestor_public_key_bytes))
+all attestor component keys:
+  component_key = "a_" || lower_hex(sha256(public_key_bytes))
 ```
 
-The selector is public, deterministic, and not an Algorand address. For
-Ed25519 component keys the selector is also the same public key value embedded
-in `aplane.falcon1024-att-ed25519.v1` LogicSig bytecode and used for attestor
-endpoint routing. For Falcon component keys the selector is a short filesystem
-and wire locator; the full public key remains exposed in `public_key_hex` and
-is the value a future Falcon-attestor LogicSig would embed. Component signing
-requests use the selector in the `component_key` field when selecting a
-specific attestor component key.
+`a_` means "APlane component selector." The selector is public,
+deterministic, not an Algorand address, and always a 66-character
+`a_<64 lowercase hex>` string. The hash input is the canonical public-key bytes
+for the component key type, independent of key family or public-key size. The
+full component public key remains exposed in `public_key_hex`; for Ed25519
+attestors, that public key is the value embedded in
+`aplane.falcon1024-att-ed25519.v1` LogicSig bytecode and used for endpoint
+routing. Component signing requests use the selector in the `component_key`
+field when selecting a specific local attestor component key.
 
 If an attestor identity has exactly one active attestor component key, clients
 may omit `component_key` for role `attestor` and the signer may select that key
@@ -372,7 +370,7 @@ exact additive fields:
 
 ```json
 {
-  "address": "<attestor_component_key_selector>",
+  "address": "a_<sha256-public-key>",
   "public_key_hex": "...",
   "key_type": "aplane.attestor-ed25519.v1",
   "is_component_key": true,
@@ -384,19 +382,17 @@ The client obtains the attestor component public key from the attestor signer's
 `/keys` projection before generating an attested account. That public key, not
 an endpoint URL or credential, is embedded in the generated LogicSig.
 
-For Ed25519 component-key rows, `address` is exactly the same string as
-`public_key_hex`. For Falcon component-key rows, `address` is the `apc_`
-selector and `public_key_hex` is the full Falcon public key. Existing spending
-account rows omit `is_component_key` or set it to `false`, and omit
+For all component-key rows, `address` is the `a_` selector and
+`public_key_hex` is the full component public key. Existing spending account
+rows omit `is_component_key` or set it to `false`, and omit
 `is_spending_account` or set it to `true`. SDKs and shell UI must treat absent
 `is_component_key` as `false`. They must not infer that an `address` field is
 an Algorand address when `is_component_key:true` or `is_spending_account:false`.
 Every ingestion point that accepts account-like strings must rely on key
 type/category metadata and the `is_component_key` / `is_spending_account`
-projection, not string shape. Ed25519 component selectors are 64-character hex,
-and Falcon selectors have the non-address `apc_` prefix. Both forms must be
-rejected wherever an Algorand account address is required, including transaction
-sender, `auth_address`, and rekey target inputs.
+projection, not string shape. Component selectors must be rejected wherever an
+Algorand account address is required, including transaction sender,
+`auth_address`, and rekey target inputs.
 
 `POST /admin/generate` for a component key returns the same fields plus the
 existing `parameters` field when parameters are present. Contract fixtures must
@@ -487,9 +483,9 @@ registered and enabled for the authenticated identity.
 Generation tests must prove:
 
 - `aplane.attestor-ed25519.v1` generation returns canonical `public_key_hex`
-  and uses it as the component-key selector,
+  and uses a stable `a_` component-key selector derived from that public key,
 - `aplane.attestor-falcon1024.v1` generation returns canonical
-  `public_key_hex` and uses a stable `apc_` component-key selector derived from
+  `public_key_hex` and uses a stable `a_` component-key selector derived from
   that public key,
 - `aplane.falcon1024-att-ed25519.v1` generation uses the attested-account
   generator, not the Falcon base generator through fallback.
@@ -816,7 +812,7 @@ Request:
 {
   "request_id": "cli-123",
   "role": "attestor",
-  "component_key": "<attestor_component_key_selector>",
+  "component_key": "a_<sha256-public-key>",
   "group_bytes_hex": ["5458..."],
   "target_indices": [0]
 }
@@ -827,7 +823,7 @@ Response:
 ```json
 {
   "request_id": "cli-123",
-  "component_key": "<attestor_component_key_selector>",
+  "component_key": "a_<sha256-public-key>",
   "signatures": [
     {
       "target_index": 0,
@@ -1317,9 +1313,9 @@ Phase 0 contract tests:
 
 - group hash vectors pass.
 - component message vectors pass.
-- component-key selector vectors prove canonical Ed25519 public-key-hex
-  normalization, canonical Falcon `apc_` selector normalization, and prove
-  selectors are not accepted as Algorand spending addresses.
+- component-key selector vectors prove all attestor component-key selectors are
+  `a_<sha256(pubkey)>` regardless of key type, prove the hash and prefix are
+  stable, and prove selectors are not accepted as Algorand spending addresses.
 - `/keys` and `/admin/generate` component-key fixtures include `address`,
   `public_key_hex`, `key_type`, `is_component_key:true`, and
   `is_spending_account:false`.
@@ -1424,8 +1420,8 @@ The MVP is complete when:
   classes disallowed by the identity mode,
 - attestor component keys cannot sign through `/sign`,
 - attested account keys cannot sign through `/sign`,
-- attestor component key generation exposes canonical public-key-hex selectors
-  and marks them as non-spending component keys,
+- attestor component key generation exposes canonical `a_` selectors derived
+  as `a_<sha256(pubkey)>` and marks them as non-spending component keys,
 - `/plan` handles attested account metadata,
 - no registration endpoint, account-binding store, profile store, or trust-root
   store is required for attestation,

@@ -130,6 +130,14 @@ func (e *Engine) signerProgressWriter() io.Writer {
 }
 
 func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorComponentClient, attestorPublicKey string, source string) error {
+	expectedPublicKey, err := normalizeAttestorEd25519PublicKeyHex(attestorPublicKey)
+	if err != nil {
+		return fmt.Errorf("invalid expected attestor public key: %w", err)
+	}
+	expectedSelector, err := attestorEd25519ComponentSelector(expectedPublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to derive expected attestor component selector: %w", err)
+	}
 	keys, err := client.GetKeysWithContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to inspect %s component keys for attestation: %w", source, err)
@@ -138,13 +146,21 @@ func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorCompon
 		if key.KeyType != keytypes.AttestorComponentEd25519V1 || !key.IsComponentKey {
 			continue
 		}
-		selector, err := keytypes.NormalizeComponentKeySelector(firstNonEmpty(key.PublicKeyHex, key.Address))
+		publicKey, err := normalizeAttestorEd25519PublicKeyHex(key.PublicKeyHex)
 		if err != nil {
 			continue
 		}
-		if selector == attestorPublicKey {
-			return nil
+		if publicKey != expectedPublicKey {
+			continue
 		}
+		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
+		if err != nil {
+			return fmt.Errorf("%s advertised attestor public key %s with invalid component selector %q: %w", source, expectedPublicKey, key.Address, err)
+		}
+		if selector != expectedSelector {
+			return fmt.Errorf("%s advertised attestor public key %s with component selector %s, want %s", source, expectedPublicKey, selector, expectedSelector)
+		}
+		return nil
 	}
-	return fmt.Errorf("%s did not advertise attestor component key %s", source, attestorPublicKey)
+	return fmt.Errorf("%s did not advertise attestor component public key %s", source, expectedPublicKey)
 }

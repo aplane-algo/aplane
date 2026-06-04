@@ -41,8 +41,11 @@ func TestAttestorEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	if result.PublicKeyHex == "" {
 		t.Fatal("PublicKeyHex is empty")
 	}
-	if result.Address != result.PublicKeyHex {
-		t.Fatalf("Address = %q, want public key hex %q", result.Address, result.PublicKeyHex)
+	if !strings.HasPrefix(result.Address, keytypes.ComponentKeySelectorPrefix) {
+		t.Fatalf("Address = %q, want %s selector", result.Address, keytypes.ComponentKeySelectorPrefix)
+	}
+	if result.Address == result.PublicKeyHex {
+		t.Fatal("Address unexpectedly equals public key hex")
 	}
 	if result.Mnemonic != "" {
 		t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)
@@ -107,8 +110,8 @@ func TestAttestorFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	if len(result.PublicKeyHex) != falconfamily.PublicKeySize*2 {
 		t.Fatalf("PublicKeyHex length = %d, want %d", len(result.PublicKeyHex), falconfamily.PublicKeySize*2)
 	}
-	if !strings.HasPrefix(result.Address, "apc_") {
-		t.Fatalf("Address = %q, want apc_ selector", result.Address)
+	if !strings.HasPrefix(result.Address, keytypes.ComponentKeySelectorPrefix) {
+		t.Fatalf("Address = %q, want %s selector", result.Address, keytypes.ComponentKeySelectorPrefix)
 	}
 	if result.Address == result.PublicKeyHex {
 		t.Fatalf("Address unexpectedly equals full Falcon public key hex")

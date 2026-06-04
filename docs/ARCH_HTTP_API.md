@@ -213,9 +213,9 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - optional `is_generic_lsig`
 - optional `is_component_key` and `is_spending_account`: component-key rows use
   `address` as the component-key selector, not as an Algorand spending address.
-  Ed25519 attestor component selectors equal `public_key_hex`; Falcon-1024
-  attestor component selectors use the short `apc_` selector while
-  `public_key_hex` carries the full Falcon public key.
+  Attestor component selectors are always `a_` plus lowercase SHA-256 of the
+  canonical component public-key bytes; `public_key_hex` carries the full
+  component public key.
 - optional `signing_args`: the key file's stored signing schema captured at
   generation time, not the live template/provider schema; this is what the
   signer enforces at sign time for that specific key. SDK consumers must treat

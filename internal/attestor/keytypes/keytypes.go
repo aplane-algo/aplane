@@ -32,6 +32,9 @@ const (
 	// ParameterAttestorPublicKey is the durable creation parameter that records
 	// the attestor Ed25519 public key embedded in an attested account LogicSig.
 	ParameterAttestorPublicKey = "attestor_public_key"
+
+	// ComponentKeySelectorPrefix marks APlane attestor component-key selectors.
+	ComponentKeySelectorPrefix = "a_"
 )
 
 // IsAttestorComponentKeyType reports whether keyType names a component key
@@ -58,7 +61,8 @@ func IsAttestorMVPKeyType(keyType string) bool {
 }
 
 // ComponentKeySelector returns the canonical selector for an attestor component
-// key. Selectors are lower-case public-key hex.
+// key. Selectors are a_ plus lower-case SHA-256 of the canonical public key
+// bytes, independent of the component key family.
 func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 	if !IsAttestorComponentKeyType(keyType) {
 		return "", fmt.Errorf("key type %q is not an attestor component key type", keyType)
@@ -71,45 +75,32 @@ func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 		return "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
 	}
 
-	switch keyType {
-	case AttestorComponentEd25519V1:
-		return hex.EncodeToString(publicKey), nil
-	case AttestorComponentFalcon1024V1:
-		sum := sha256.Sum256(publicKey)
-		return "apc_" + hex.EncodeToString(sum[:]), nil
-	default:
-		return "", fmt.Errorf("key type %q is not an attestor component key type", keyType)
-	}
+	sum := sha256.Sum256(publicKey)
+	return ComponentKeySelectorPrefix + hex.EncodeToString(sum[:]), nil
 }
 
 // NormalizeComponentKeySelector validates and canonicalizes a component-key
-// selector. Ed25519 selectors are public-key hex and accept an optional 0x
-// prefix and upper-case hex. Hashed component selectors use the apc_ prefix.
+// selector. Selectors must already be canonical a_<lower-hex-sha256>.
 func NormalizeComponentKeySelector(selector string) (string, error) {
 	raw := strings.TrimSpace(selector)
-	if strings.HasPrefix(strings.ToLower(raw), "apc_") {
-		hashHex := strings.TrimPrefix(strings.TrimPrefix(raw, "apc_"), "APC_")
-		decoded, err := hex.DecodeString(hashHex)
-		if err != nil {
-			return "", fmt.Errorf("component key selector hash must be hex: %w", err)
-		}
-		if len(decoded) != sha256.Size {
-			return "", fmt.Errorf("component key selector hash length %d invalid (expected %d bytes)", len(decoded), sha256.Size)
-		}
-		return "apc_" + hex.EncodeToString(decoded), nil
-	}
-	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "0x"), "0X")
 	if raw == "" {
 		return "", fmt.Errorf("component key selector is required")
 	}
-	publicKey, err := hex.DecodeString(raw)
+	if !strings.HasPrefix(raw, ComponentKeySelectorPrefix) {
+		return "", fmt.Errorf("component key selector must start with %q", ComponentKeySelectorPrefix)
+	}
+	hashHex := strings.TrimPrefix(raw, ComponentKeySelectorPrefix)
+	decoded, err := hex.DecodeString(hashHex)
 	if err != nil {
-		return "", fmt.Errorf("component key selector must be hex: %w", err)
+		return "", fmt.Errorf("component key selector hash must be hex: %w", err)
 	}
-	if len(publicKey) != ed25519.PublicKeySize {
-		return "", fmt.Errorf("component key selector length %d invalid (expected %d bytes, or apc_<sha256>)", len(publicKey), ed25519.PublicKeySize)
+	if len(decoded) != sha256.Size {
+		return "", fmt.Errorf("component key selector hash length %d invalid (expected %d bytes)", len(decoded), sha256.Size)
 	}
-	return hex.EncodeToString(publicKey), nil
+	if hex.EncodeToString(decoded) != hashHex {
+		return "", fmt.Errorf("component key selector hash must be lowercase hex")
+	}
+	return raw, nil
 }
 
 // IsComponentKeySelector reports whether selector is a syntactically valid

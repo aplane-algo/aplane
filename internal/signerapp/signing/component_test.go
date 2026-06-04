@@ -86,7 +86,7 @@ func TestPrepareComponentSigningUsesAttestorRoleDomain(t *testing.T) {
 
 	req := signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}
@@ -158,7 +158,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 
 	_, err := (&Service{}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, nil)
@@ -180,7 +180,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 }
 
 func TestSignComponentAttestorRequiresPolicyBeforeKeyLoad(t *testing.T) {
-	componentKey := strings.Repeat("ab", stded25519.PublicKeySize)
+	componentKey := testEd25519ComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
 	store := &componentKeyStore{}
 
@@ -206,7 +206,7 @@ func TestSignComponentAttestorRequiresTransferPolicyBeforeKeyLoad(t *testing.T) 
 	cfg := routingPolicyConfigForSigningTest(t, `
 attestation: {}
 `)
-	componentKey := strings.Repeat("ab", stded25519.PublicKeySize)
+	componentKey := testEd25519ComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
 	store := &componentKeyStore{}
 
@@ -246,7 +246,7 @@ func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-appl",
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -272,7 +272,7 @@ func TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-route-miss",
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -302,7 +302,7 @@ attestation: {}
 	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-review-route-miss",
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -341,7 +341,7 @@ attestation: {}
 	_, err := (&Service{Policy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-review-above",
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -366,7 +366,7 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	_, err := (&Service{Policy: attestationRoutePolicy(t, source, dest)}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-rekey",
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  strings.Repeat("ab", stded25519.PublicKeySize),
+		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -864,7 +864,7 @@ func TestSignPreparedAttestorComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T
 }
 
 func TestSignPreparedAttestorComponentsRejectsWrongKeyType(t *testing.T) {
-	plan := preparedAttestorComponentPlan(t, strings.Repeat("11", stded25519.PublicKeySize))
+	plan := preparedAttestorComponentPlan(t, testEd25519ComponentSelector(t, 0x11))
 	session := &componentKeyTestSession{key: &coresigning.KeyMaterial{Type: "ed25519"}}
 
 	_, err := signPreparedAttestorComponents(nil, plan, session)
@@ -979,6 +979,16 @@ func preparedAttestorComponentPlan(t *testing.T, componentKey string) *Component
 	return plan
 }
 
+func testEd25519ComponentSelector(t *testing.T, fill byte) string {
+	t.Helper()
+	publicKey := bytes.Repeat([]byte{fill}, stded25519.PublicKeySize)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+	return componentKey
+}
+
 type componentKeyTestSession struct {
 	key        *coresigning.KeyMaterial
 	err        error
@@ -1075,7 +1085,7 @@ func (p *componentUserTestProvider) DetectKeyType(_ []byte, _ string) bool {
 
 func TestLoadAttestorComponentKeyMapsMissingKey(t *testing.T) {
 	session := &componentKeyTestSession{err: keystore.ErrKeyNotFound}
-	_, _, err := loadAttestorComponentKey(nil, session, strings.Repeat("22", stded25519.PublicKeySize))
+	_, _, err := loadAttestorComponentKey(nil, session, testEd25519ComponentSelector(t, 0x22))
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("loadAttestorComponentKey() error = %#v, want bad request", err)
 	}

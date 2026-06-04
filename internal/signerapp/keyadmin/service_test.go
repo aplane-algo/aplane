@@ -203,18 +203,11 @@ func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
 			if result.PublicKeyHex == "" {
 				t.Fatal("GenerateKey(component) public key is empty")
 			}
-			switch keyType {
-			case keytypes.AttestorComponentEd25519V1:
-				if result.Address != result.PublicKeyHex {
-					t.Fatalf("GenerateKey(component) address = %q, want public key hex %q", result.Address, result.PublicKeyHex)
-				}
-			case keytypes.AttestorComponentFalcon1024V1:
-				if !strings.HasPrefix(result.Address, "apc_") {
-					t.Fatalf("GenerateKey(component) address = %q, want apc_ selector", result.Address)
-				}
-				if result.Address == result.PublicKeyHex {
-					t.Fatal("GenerateKey(component) Falcon address unexpectedly equals public key hex")
-				}
+			if !strings.HasPrefix(result.Address, keytypes.ComponentKeySelectorPrefix) {
+				t.Fatalf("GenerateKey(component) address = %q, want %s selector", result.Address, keytypes.ComponentKeySelectorPrefix)
+			}
+			if result.Address == result.PublicKeyHex {
+				t.Fatal("GenerateKey(component) address unexpectedly equals public key hex")
 			}
 			details, svcErr := svc.GetKeyDetails(ir, result.Address)
 			if svcErr != nil {

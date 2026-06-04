@@ -271,18 +271,11 @@ func TestGenerateKeyAttestorComponent(t *testing.T) {
 			if result.PublicKeyHex == "" {
 				t.Fatal("PublicKeyHex is empty")
 			}
-			switch keyType {
-			case keytypes.AttestorComponentEd25519V1:
-				if result.Address != result.PublicKeyHex {
-					t.Fatalf("Address = %q, want public key hex %q", result.Address, result.PublicKeyHex)
-				}
-			case keytypes.AttestorComponentFalcon1024V1:
-				if !strings.HasPrefix(result.Address, "apc_") {
-					t.Fatalf("Address = %q, want apc_ selector", result.Address)
-				}
-				if result.Address == result.PublicKeyHex {
-					t.Fatal("Falcon component address unexpectedly equals public key hex")
-				}
+			if !strings.HasPrefix(result.Address, keytypes.ComponentKeySelectorPrefix) {
+				t.Fatalf("Address = %q, want %s selector", result.Address, keytypes.ComponentKeySelectorPrefix)
+			}
+			if result.Address == result.PublicKeyHex {
+				t.Fatal("component address unexpectedly equals public key hex")
 			}
 			if result.Mnemonic != "" {
 				t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)

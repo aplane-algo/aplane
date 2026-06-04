@@ -40,7 +40,8 @@ func TestComponentKeySelectorKnownVector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	const want = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+	sum := sha256.Sum256(pub)
+	want := ComponentKeySelectorPrefix + hex.EncodeToString(sum[:])
 	if got != want {
 		t.Fatalf("ComponentKeySelector() = %q, want %q", got, want)
 	}
@@ -60,7 +61,7 @@ func TestFalconComponentKeySelectorKnownVector(t *testing.T) {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 	sum := sha256.Sum256(pub)
-	want := "apc_" + hex.EncodeToString(sum[:])
+	want := ComponentKeySelectorPrefix + hex.EncodeToString(sum[:])
 	if got != want {
 		t.Fatalf("ComponentKeySelector() = %q, want %q", got, want)
 	}
@@ -77,22 +78,13 @@ func TestComponentKeySelectorRejectsNonComponentKeyType(t *testing.T) {
 }
 
 func TestNormalizeComponentKeySelector(t *testing.T) {
-	const want = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-	got, err := NormalizeComponentKeySelector("0X000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F")
+	const want = "a_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+	got, err := NormalizeComponentKeySelector(" " + want + " ")
 	if err != nil {
 		t.Fatalf("NormalizeComponentKeySelector() error = %v", err)
 	}
 	if got != want {
 		t.Fatalf("NormalizeComponentKeySelector() = %q, want %q", got, want)
-	}
-
-	const wantHash = "apc_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-	got, err = NormalizeComponentKeySelector("APC_000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F")
-	if err != nil {
-		t.Fatalf("NormalizeComponentKeySelector(apc) error = %v", err)
-	}
-	if got != wantHash {
-		t.Fatalf("NormalizeComponentKeySelector(apc) = %q, want %q", got, wantHash)
 	}
 }
 
@@ -101,11 +93,17 @@ func TestIsComponentKeySelectorRejectsInvalidValues(t *testing.T) {
 		"",
 		"not-an-address",
 		"zzzz",
+		"a_",
 		"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
 		"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		"0X000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
 		"apc_zzzz",
 		"apc_" + strings.Repeat("00", sha256.Size-1),
 		"apc_" + strings.Repeat("00", sha256.Size+1),
+		"A_" + strings.Repeat("00", sha256.Size),
+		"a_" + strings.Repeat("AA", sha256.Size),
+		"a_" + strings.Repeat("00", sha256.Size-1),
+		"a_" + strings.Repeat("00", sha256.Size+1),
 		strings.Repeat("00", falconfamily.PublicKeySize),
 	}
 	for _, id := range tests {
