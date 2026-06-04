@@ -156,7 +156,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	receiver := types.Address{8}.String()
 	txn := paymentTransaction(t, sender, receiver, 10)
 
-	_, err := (&Service{}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -169,7 +169,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 		t.Fatalf("SignComponentWithContext() error = %q, want missing attestation policy", err.Message)
 	}
 
-	_, err = (&Service{}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err = (&Service{}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleUser,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -184,7 +184,7 @@ func TestSignComponentAttestorRequiresPolicyBeforeKeyLoad(t *testing.T) {
 	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-no-policy",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  componentKey,
@@ -208,7 +208,7 @@ func TestSignComponentAttestorRequiresTransferPolicyBeforeKeyLoad(t *testing.T) 
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-no-routing",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  componentKey,
@@ -241,7 +241,7 @@ func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	}
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-appl",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -267,7 +267,7 @@ func TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	txn := testnetPaymentTransaction(t, source, blocked, 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-route-miss",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -346,7 +346,7 @@ transfer_policy:
 	txn := testnetPaymentTransaction(t, types.Address{33}.String(), types.Address{34}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-review-route-miss",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -384,7 +384,7 @@ transfer_policy:
 	txn := testnetPaymentTransaction(t, source, dest, 2)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-review-above",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -409,7 +409,7 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	txn.RekeyTo = types.Address{30}
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: attestationRoutePolicy(t, source, dest)}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{AttestationPolicy: attestationRoutePolicy(t, source, dest)}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-rekey",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -454,7 +454,7 @@ func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
 	result, signErr := (&Service{
 		AttestationPolicy: attestationRoutePolicy(t, source, dest),
 		AuditLog:          audit,
-	}).SignComponentWithContext(nil, "default", signerapi.ComponentSignRequest{
+	}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-policy-pass",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  componentKey,
@@ -520,7 +520,7 @@ func TestSignPreparedUserComponentsSignsAttestedAccountMessages(t *testing.T) {
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
 
-	result, signErr := signPreparedUserComponents(nil, plan, session)
+	result, signErr := signPreparedUserComponents(context.Background(), plan, session)
 	if signErr != nil {
 		t.Fatalf("signPreparedUserComponents() error = %v", signErr)
 	}
@@ -576,7 +576,7 @@ func TestSignPreparedUserComponentsRejectsSenderMismatchBeforeKeyLoad(t *testing
 	}
 	session := &componentKeyTestSession{}
 
-	result, signErr := signPreparedUserComponents(nil, plan, session)
+	result, signErr := signPreparedUserComponents(context.Background(), plan, session)
 	if result != nil {
 		t.Fatalf("result = %#v, want nil", result)
 	}
@@ -589,7 +589,7 @@ func TestSignPreparedUserComponentsRejectsSenderMismatchBeforeKeyLoad(t *testing
 }
 
 func TestSigningServiceAssembleAttestedDispatchesAfterValidation(t *testing.T) {
-	_, err := (&Service{}).AssembleAttestedWithContext(nil, "default", signerapi.AttestedAssemblyRequest{
+	_, err := (&Service{}).AssembleAttestedWithContext(context.Background(), "default", signerapi.AttestedAssemblyRequest{
 		RequestID:     "asm-1",
 		GroupBytesHex: []string{"5458aa"},
 		Targets: []signerapi.AttestedAssemblyTarget{{
@@ -606,7 +606,7 @@ func TestSigningServiceAssembleAttestedDispatchesAfterValidation(t *testing.T) {
 		t.Fatalf("AssembleAttestedWithContext() error = %q, want decode transaction", err.Message)
 	}
 
-	_, err = (&Service{}).AssembleAttestedWithContext(nil, "default", signerapi.AttestedAssemblyRequest{}, nil)
+	_, err = (&Service{}).AssembleAttestedWithContext(context.Background(), "default", signerapi.AttestedAssemblyRequest{}, nil)
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("AssembleAttestedWithContext(invalid) error = %#v, want bad request", err)
 	}
@@ -666,7 +666,7 @@ func TestAssembleDecodedAttestedVerifiesAndBuildsSignedGroup(t *testing.T) {
 		}},
 	}
 
-	result, signErr := assembleDecodedAttested(nil, req, group, session)
+	result, signErr := assembleDecodedAttested(context.Background(), req, group, session)
 	if signErr != nil {
 		t.Fatalf("assembleDecodedAttested() error = %v", signErr)
 	}
@@ -751,7 +751,7 @@ func TestAssembleDecodedAttestedVerifiesFalconAttestorAndBuildsSignedGroup(t *te
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
 
-	result, signErr := assembleDecodedAttested(nil, signerapi.AttestedAssemblyRequest{
+	result, signErr := assembleDecodedAttested(context.Background(), signerapi.AttestedAssemblyRequest{
 		RequestID:     "asm-falcon-attestor",
 		GroupBytesHex: groupBytesHex,
 		Targets: []signerapi.AttestedAssemblyTarget{{
@@ -827,7 +827,7 @@ func TestAssembleDecodedAttestedRejectsWrongAttestorSignature(t *testing.T) {
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
 
-	result, signErr := assembleDecodedAttested(nil, signerapi.AttestedAssemblyRequest{
+	result, signErr := assembleDecodedAttested(context.Background(), signerapi.AttestedAssemblyRequest{
 		RequestID:     "asm-bad-attestor",
 		GroupBytesHex: groupBytesHex,
 		Targets: []signerapi.AttestedAssemblyTarget{{
@@ -869,7 +869,7 @@ func TestSignPreparedAttestorComponentsSignsEd25519Messages(t *testing.T) {
 	session := &componentKeyTestSession{key: keyMaterial}
 	plan := preparedAttestorComponentPlan(t, componentKey)
 
-	result, signErr := signPreparedAttestorComponents(nil, plan, session)
+	result, signErr := signPreparedAttestorComponents(context.Background(), plan, session)
 	if signErr != nil {
 		t.Fatalf("signPreparedAttestorComponents() error = %v", signErr)
 	}
@@ -927,7 +927,7 @@ func TestSignPreparedAttestorComponentsSignsFalcon1024Messages(t *testing.T) {
 	session := &componentKeyTestSession{key: keyMaterial}
 	plan := preparedAttestorComponentPlan(t, componentKey)
 
-	result, signErr := signPreparedAttestorComponents(nil, plan, session)
+	result, signErr := signPreparedAttestorComponents(context.Background(), plan, session)
 	if signErr != nil {
 		t.Fatalf("signPreparedAttestorComponents() error = %v", signErr)
 	}
@@ -976,7 +976,7 @@ func TestSignPreparedAttestorComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T
 	}
 	session := &componentKeyTestSession{}
 
-	result, signErr := signPreparedAttestorComponents(nil, plan, session)
+	result, signErr := signPreparedAttestorComponents(context.Background(), plan, session)
 	if result != nil {
 		t.Fatalf("result = %#v, want nil", result)
 	}
@@ -992,7 +992,7 @@ func TestSignPreparedAttestorComponentsRejectsWrongKeyType(t *testing.T) {
 	plan := preparedAttestorComponentPlan(t, testEd25519ComponentSelector(t, 0x11))
 	session := &componentKeyTestSession{key: &coresigning.KeyMaterial{Type: "ed25519"}}
 
-	_, err := signPreparedAttestorComponents(nil, plan, session)
+	_, err := signPreparedAttestorComponents(context.Background(), plan, session)
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("signPreparedAttestorComponents() error = %#v, want bad request", err)
 	}
@@ -1208,7 +1208,7 @@ func (p *componentUserTestProvider) DetectKeyType(_ []byte, _ string) bool {
 
 func TestLoadAttestorComponentKeyMapsMissingKey(t *testing.T) {
 	session := &componentKeyTestSession{err: keystore.ErrKeyNotFound}
-	_, _, err := loadAttestorComponentKey(nil, session, testEd25519ComponentSelector(t, 0x22))
+	_, _, err := loadAttestorComponentKey(context.Background(), session, testEd25519ComponentSelector(t, 0x22))
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("loadAttestorComponentKey() error = %#v, want bad request", err)
 	}
@@ -1233,7 +1233,7 @@ func TestLoadAttestorComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T)
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
 
-	_, _, loadErr := loadAttestorComponentKey(nil, session, componentKey)
+	_, _, loadErr := loadAttestorComponentKey(context.Background(), session, componentKey)
 	if loadErr == nil || loadErr.Kind != ErrorInternal {
 		t.Fatalf("loadAttestorComponentKey() error = %#v, want internal", loadErr)
 	}
