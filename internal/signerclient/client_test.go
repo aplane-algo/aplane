@@ -6,6 +6,7 @@ package signerclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -359,6 +360,10 @@ func TestGetKeys_ForbiddenNonLocked(t *testing.T) {
 	if !strings.Contains(err.Error(), "Forbidden") {
 		t.Errorf("error = %v, want Forbidden", err)
 	}
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusForbidden {
+		t.Fatalf("error = %T %[1]v, want HTTPStatusError 403", err)
+	}
 }
 
 func TestGetKeys_ServerError(t *testing.T) {
@@ -372,6 +377,24 @@ func TestGetKeys_ServerError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "500") {
 		t.Errorf("error should contain status code: %v", err)
+	}
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("error = %T %[1]v, want HTTPStatusError 500", err)
+	}
+}
+
+func TestGetKeys_InvalidJSONIsTyped(t *testing.T) {
+	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
+		return mockResponse(200, `{`), nil
+	})
+
+	_, err := c.GetKeys()
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+	if !errors.Is(err, ErrInvalidResponse) {
+		t.Fatalf("error = %T %[1]v, want ErrInvalidResponse", err)
 	}
 }
 

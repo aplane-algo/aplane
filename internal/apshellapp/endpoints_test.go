@@ -283,6 +283,7 @@ func TestEndpointDiscoverAttestorsPreservesUnreachableEndpointInventory(t *testi
 		t.Fatalf("UpsertStoredClientEndpoint(attestor-offline) error = %v", err)
 	}
 	writeEndpointToken(t, dataDir, "attestor-online", "att-token")
+	writeEndpointToken(t, dataDir, "attestor-offline", "att-token")
 	writePublishedAttestors(t, dataDir, map[string]map[string]config.ClientEndpointPublishedAttestor{
 		"attestor-online": {
 			oldOnlineKey: endpointPublishedAttestorForTest(t, oldOnlineKey),
@@ -330,6 +331,87 @@ func TestEndpointDiscoverAttestorsPreservesUnreachableEndpointInventory(t *testi
 	}
 	if _, ok := app.eng.AttestorEndpoints[offlineKey]; !ok {
 		t.Fatalf("engine route for preserved offline key %s missing", offlineKey)
+	}
+}
+
+func TestEndpointDiscoverAttestorsPreservesLockedEndpointInventory(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+
+	staleKeyHex := strings.Repeat("cd", 32)
+	attestorServer := newEndpointKeysStatusServer(t, "att-token", http.StatusForbidden, `{"error":"signer is locked"}`)
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+		URL: attestorServer.URL,
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+	}
+	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
+	writePublishedAttestor(t, dataDir, "attestor-local", staleKeyHex)
+
+	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	if err != nil {
+		t.Fatalf("EndpointDiscoverAttestors(locked) error = %v", err)
+	}
+	if result.PublicKeyCount != 1 {
+		t.Fatalf("PublicKeyCount = %d, want preserved stale key", result.PublicKeyCount)
+	}
+	if len(result.Endpoints) != 1 || !result.Endpoints[0].Skipped || result.Endpoints[0].PreservedCount != 1 {
+		t.Fatalf("endpoint discovery = %#v, want one skipped endpoint with preserved key", result.Endpoints)
+	}
+}
+
+func TestEndpointDiscoverAttestorsPreservesServerErrorEndpointInventory(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+
+	staleKeyHex := strings.Repeat("cd", 32)
+	attestorServer := newEndpointKeysStatusServer(t, "att-token", http.StatusServiceUnavailable, `service unavailable`)
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+		URL: attestorServer.URL,
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+	}
+	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
+	writePublishedAttestor(t, dataDir, "attestor-local", staleKeyHex)
+
+	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	if err != nil {
+		t.Fatalf("EndpointDiscoverAttestors(5xx) error = %v", err)
+	}
+	if len(result.Endpoints) != 1 || !result.Endpoints[0].Skipped || result.Endpoints[0].PreservedCount != 1 {
+		t.Fatalf("endpoint discovery = %#v, want one skipped endpoint with preserved key", result.Endpoints)
+	}
+}
+
+func TestEndpointDiscoverAttestorsRejectsAuthFailure(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+
+	staleKeyHex := strings.Repeat("cd", 32)
+	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{})
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+		URL: attestorServer.URL,
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+	}
+	writeEndpointToken(t, dataDir, "attestor-local", "wrong-token")
+	writePublishedAttestor(t, dataDir, "attestor-local", staleKeyHex)
+
+	_, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	if err == nil {
+		t.Fatal("EndpointDiscoverAttestors(auth failure) error = nil, want rejection")
+	}
+	if !strings.Contains(err.Error(), "attestor endpoint authentication failed") {
+		t.Fatalf("EndpointDiscoverAttestors(auth failure) error = %v, want auth rejection", err)
+	}
+
+	cfg, err := config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	published := cfg.Endpoints.Endpoints["attestor-local"].PublishedAttestors
+	if _, ok := published[staleKeyHex]; !ok {
+		t.Fatalf("stale attestor %s was not preserved after failed auth in %#v", staleKeyHex, published)
 	}
 }
 
@@ -624,6 +706,24 @@ func newEndpointKeysServer(t *testing.T, token string, keys []signerapi.KeyInfo)
 			Count: len(keys),
 			Keys:  keys,
 		})
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func newEndpointKeysStatusServer(t *testing.T, token string, status int, body string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/keys" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "aplane "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(server.Close)
 	return server

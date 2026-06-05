@@ -205,9 +205,11 @@ already assigned to a different alias.
 
 After endpoint tokens are enrolled, `endpoints discover-attestors` queries
 `/keys` on configured endpoints and rebuilds each reachable endpoint's
-`published_attestors` inventory in `endpoints.yaml`. If an endpoint is down or
-cannot be queried, its existing published-attestor entries are preserved.
-Attested-send routing is derived from this endpoint-local inventory.
+`published_attestors` inventory in `endpoints.yaml`. If an endpoint is
+temporarily unavailable or its signer identity is locked, its existing
+published-attestor entries are preserved. Token/auth failures, endpoint config
+errors, malformed responses, and invalid component-key metadata fail without
+writing. Attested-send routing is derived from this endpoint-local inventory.
 
 If the user signer will generate attested account keys through `apadmin` or
 another signer-side key-generation client, run `endpoints sync-attestors` while

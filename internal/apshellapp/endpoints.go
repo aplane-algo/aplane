@@ -161,7 +161,8 @@ func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscove
 		endpoint := cfg.Endpoints.Endpoints[alias]
 		keys, err := a.eng.DiscoverAttestorComponentKeysWithContext(ctx, endpoint)
 		if err != nil {
-			if errors.Is(err, engine.ErrAttestorDiscoveryInvalidMetadata) {
+			if !errors.Is(err, engine.ErrAttestorDiscoveryUnavailable) &&
+				!errors.Is(err, engine.ErrAttestorDiscoveryLocked) {
 				return nil, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
 			}
 			preserved := clonePublishedAttestors(endpoint.PublishedAttestors)

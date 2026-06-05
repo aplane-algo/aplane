@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -39,6 +40,24 @@ type Client struct {
 }
 
 type KeysResult = signerapi.KeysResult
+
+// ErrInvalidResponse marks a syntactically invalid response from a signer
+// endpoint after the HTTP request itself succeeded.
+var ErrInvalidResponse = errors.New("invalid signer response")
+
+// HTTPStatusError preserves non-success signer HTTP status codes for callers
+// that need to distinguish auth/config/server failures.
+type HTTPStatusError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *HTTPStatusError) Error() string {
+	if e == nil {
+		return "signer error"
+	}
+	return fmt.Sprintf("signer error (%d): %s", e.StatusCode, e.Message)
+}
 
 const (
 	healthTimeout             = 3 * time.Second
@@ -645,16 +664,16 @@ func (c *Client) GetKeysWithContext(ctx context.Context) (*KeysResult, error) {
 		if strings.Contains(strings.ToLower(msg), "locked") {
 			return &KeysResult{Locked: true}, nil
 		}
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, msg)
+		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Message: msg}
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Message: readErrorResponse(resp)}
 	}
 
 	var keysResp signerapi.KeysResponse
 	if err := json.NewDecoder(resp.Body).Decode(&keysResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("%w: failed to decode response: %v", ErrInvalidResponse, err)
 	}
 
 	return &KeysResult{KeysResponse: keysResp}, nil

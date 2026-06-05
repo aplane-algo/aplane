@@ -628,11 +628,13 @@ without writing.
 
 `endpoints discover-attestors` queries `/keys` on configured endpoints using
 that endpoint's token and rebuilds each reachable endpoint's
-`published_attestors` inventory in `endpoints.yaml`. If an endpoint is down or
-cannot be queried, its existing published-attestor entries are preserved.
-Attested-send routing is derived from that inventory. Run it after importing
-endpoints and requesting endpoint tokens. Use `--dry-run` to inspect the
-discovered and skipped endpoints without writing.
+`published_attestors` inventory in `endpoints.yaml`. If an endpoint is
+temporarily unavailable or its signer identity is locked, its existing
+published-attestor entries are preserved. Token/auth failures, endpoint config
+errors, malformed responses, and invalid component-key metadata fail without
+writing. Attested-send routing is derived from that inventory. Run it after
+importing endpoints and requesting endpoint tokens. Use `--dry-run` to inspect
+the discovered and skipped endpoints without writing.
 
 `endpoints sync-attestors` publishes that local discovered inventory to the
 currently connected signer identity as public attestor reference options for

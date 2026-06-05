@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -19,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
+	"golang.org/x/crypto/ssh"
 )
 
 type attestorComponentClient interface {
@@ -26,9 +29,30 @@ type attestorComponentClient interface {
 	RequestComponentSignWithContext(context.Context, signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error)
 }
 
-// ErrAttestorDiscoveryInvalidMetadata marks malformed attestor component-key
-// metadata returned by an endpoint's /keys response.
-var ErrAttestorDiscoveryInvalidMetadata = errors.New("invalid attestor discovery metadata")
+var (
+	// ErrAttestorDiscoveryInvalidMetadata marks malformed attestor component-key
+	// metadata returned by an endpoint's /keys response.
+	ErrAttestorDiscoveryInvalidMetadata = errors.New("invalid attestor discovery metadata")
+
+	// ErrAttestorDiscoveryUnavailable marks a temporary failure to query an
+	// endpoint, such as a network outage, timeout, or server-side 5xx response.
+	ErrAttestorDiscoveryUnavailable = errors.New("attestor endpoint unavailable")
+
+	// ErrAttestorDiscoveryLocked marks an endpoint whose signer is reachable but
+	// locked, so its /keys inventory cannot currently be queried.
+	ErrAttestorDiscoveryLocked = errors.New("attestor endpoint signer locked")
+
+	// ErrAttestorDiscoveryAuth marks missing, rejected, or invalid endpoint
+	// credentials.
+	ErrAttestorDiscoveryAuth = errors.New("attestor endpoint authentication failed")
+
+	// ErrAttestorDiscoveryConfig marks endpoint configuration that is invalid or
+	// incompatible with attestor discovery.
+	ErrAttestorDiscoveryConfig = errors.New("attestor endpoint configuration invalid")
+
+	errAttestorEndpointAuth   = errors.New("attestor endpoint auth")
+	errAttestorEndpointConfig = errors.New("attestor endpoint config")
+)
 
 type resolvedAttestorEndpoint struct {
 	client  attestorComponentClient
@@ -83,7 +107,7 @@ func (e *Engine) connectConfiguredAttestorEndpoint(ctx context.Context, endpoint
 	}
 	parsed, err := url.Parse(endpoint.URL)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("invalid endpoint URL: %w", err)
+		return nil, nil, "", fmt.Errorf("%w: invalid endpoint URL: %v", errAttestorEndpointConfig, err)
 	}
 
 	switch parsed.Scheme {
@@ -94,7 +118,7 @@ func (e *Engine) connectConfiguredAttestorEndpoint(ctx context.Context, endpoint
 		if parsed.Port() != "" {
 			port, err := strconv.Atoi(parsed.Port())
 			if err != nil || port <= 0 || port > 65535 {
-				return nil, nil, "", fmt.Errorf("invalid SSH port %q", parsed.Port())
+				return nil, nil, "", fmt.Errorf("%w: invalid SSH port %q", errAttestorEndpointConfig, parsed.Port())
 			}
 			sshPort = port
 		}
@@ -118,7 +142,7 @@ func (e *Engine) connectConfiguredAttestorEndpoint(ctx context.Context, endpoint
 		}
 		return client, cleanup, endpoint.URL, nil
 	default:
-		return nil, nil, "", fmt.Errorf("unsupported endpoint URL scheme %q", parsed.Scheme)
+		return nil, nil, "", fmt.Errorf("%w: unsupported endpoint URL scheme %q", errAttestorEndpointConfig, parsed.Scheme)
 	}
 }
 
@@ -140,7 +164,7 @@ func (e *Engine) DiscoverAttestorComponentKeysWithContext(ctx context.Context, e
 		}
 		c, closeFn, _, err := e.connectConfiguredAttestorEndpoint(ctx, resolved)
 		if err != nil {
-			return nil, err
+			return nil, classifyAttestorDiscoveryConnectError(err)
 		}
 		client = c
 		cleanup = closeFn
@@ -151,10 +175,10 @@ func (e *Engine) DiscoverAttestorComponentKeysWithContext(ctx context.Context, e
 
 	keys, err := client.GetKeysWithContext(ctx)
 	if err != nil {
-		return nil, err
+		return nil, classifyAttestorDiscoveryQueryError(err)
 	}
 	if keys.Locked {
-		return nil, fmt.Errorf("endpoint signer is locked")
+		return nil, fmt.Errorf("%w", ErrAttestorDiscoveryLocked)
 	}
 	return discoverAttestorComponentKeys(keys.Keys)
 }
@@ -162,12 +186,66 @@ func (e *Engine) DiscoverAttestorComponentKeysWithContext(ctx context.Context, e
 func readAttestorEndpointToken(path string) (string, error) {
 	token, err := tokenfile.ReadToken(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to read attestor token file %s: %w", path, err)
+		return "", fmt.Errorf("%w: failed to read attestor token file %s: %v", errAttestorEndpointAuth, path, err)
 	}
 	if token == "" {
-		return "", fmt.Errorf("attestor token file %s is empty", path)
+		return "", fmt.Errorf("%w: attestor token file %s is empty", errAttestorEndpointAuth, path)
 	}
 	return token, nil
+}
+
+func classifyAttestorDiscoveryConnectError(err error) error {
+	switch {
+	case errors.Is(err, errAttestorEndpointAuth):
+		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryAuth, err)
+	case errors.Is(err, errAttestorEndpointConfig):
+		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryConfig, err)
+	case isNetworkUnavailableError(err):
+		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryUnavailable, err)
+	}
+
+	var sshAuthErr *ssh.ServerAuthError
+	if errors.As(err, &sshAuthErr) {
+		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryAuth, err)
+	}
+	return fmt.Errorf("%w: %w", ErrAttestorDiscoveryConfig, err)
+}
+
+func classifyAttestorDiscoveryQueryError(err error) error {
+	if errors.Is(err, signerclient.ErrInvalidResponse) {
+		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryInvalidMetadata, err)
+	}
+
+	var statusErr *signerclient.HTTPStatusError
+	if errors.As(err, &statusErr) {
+		switch {
+		case statusErr.StatusCode == http.StatusUnauthorized || statusErr.StatusCode == http.StatusForbidden:
+			return fmt.Errorf("%w: %w", ErrAttestorDiscoveryAuth, err)
+		case statusErr.StatusCode == http.StatusRequestTimeout ||
+			statusErr.StatusCode == http.StatusTooManyRequests ||
+			statusErr.StatusCode >= http.StatusInternalServerError:
+			return fmt.Errorf("%w: %w", ErrAttestorDiscoveryUnavailable, err)
+		default:
+			return fmt.Errorf("%w: %w", ErrAttestorDiscoveryConfig, err)
+		}
+	}
+
+	if isNetworkUnavailableError(err) {
+		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryUnavailable, err)
+	}
+	return fmt.Errorf("%w: %w", ErrAttestorDiscoveryConfig, err)
+}
+
+func isNetworkUnavailableError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	var urlErr *url.Error
+	return errors.As(err, &urlErr)
 }
 
 func discoverAttestorComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredAttestorComponentKey, error) {

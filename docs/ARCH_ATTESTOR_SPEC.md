@@ -1306,10 +1306,11 @@ After endpoint tokens and SSH host trust are established, `apshell endpoints
 discover-attestors [--dry-run]` queries `/keys` on configured endpoints,
 extracts attestor component-key `public_key_hex` values, and atomically
 rebuilds reachable endpoints' `published_attestors` inventory in
-`endpoints.yaml`. Endpoints that cannot be queried are skipped and preserve
-their existing `published_attestors` entries. The rebuild rejects duplicate
-public keys advertised by multiple endpoint aliases and leaves files unchanged
-on validation failure.
+`endpoints.yaml`. Temporarily unavailable endpoints, including locked signer
+identities, are skipped and preserve their existing `published_attestors`
+entries. Authentication failures, endpoint configuration errors, malformed
+responses, duplicate public keys advertised by multiple endpoint aliases, and
+component-key validation failures are hard errors and leave files unchanged.
 
 `apshell endpoints sync-attestors [--dry-run]` then copies that local
 `published_attestors` inventory into the connected user signer identity as
