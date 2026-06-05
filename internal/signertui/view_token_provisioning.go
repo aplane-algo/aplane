@@ -54,10 +54,7 @@ func (m Model) renderTokenProvisioningPopup() string {
 	rows = append(rows, buttons)
 	sb.WriteString(buttons)
 
-	popup := m.renderPopup(tokenProvisioningPopupWidth(rows), sb.String())
-
-	// Center the popup (simple version)
-	return "\n" + popup
+	return m.renderPopup(tokenProvisioningPopupWidth(rows), sb.String())
 }
 
 func tokenProvisioningPopupWidth(rows []string) int {
