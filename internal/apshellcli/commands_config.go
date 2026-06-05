@@ -150,8 +150,14 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 		if err != nil {
 			return err
 		}
-		for _, line := range result.RenderLines {
-			r.println(line)
+		if result.NeedsConfirmation {
+			for _, line := range result.RenderLines {
+				r.progressPrintln(line)
+			}
+		} else {
+			for _, line := range result.RenderLines {
+				r.println(line)
+			}
 		}
 		if result.NeedsConfirmation {
 			if !r.app().IsConnected() {
