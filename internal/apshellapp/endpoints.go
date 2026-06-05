@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
@@ -310,7 +309,7 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	blocking := append([]string(nil), attestorEndpointMappingsByAlias(cfg.AttestorEndpoints)[alias]...)
 	sort.Strings(blocking)
 	if len(blocking) > 0 {
-		return nil, fmt.Errorf("endpoint alias %q is referenced by attestor mappings:\n  %s", alias, strings.Join(blocking, "\n  "))
+		return nil, fmt.Errorf("endpoint alias %q is referenced by %d attestor mapping(s)", alias, len(blocking))
 	}
 	if _, err := config.DeleteStoredClientEndpoint(a.DataDir, alias); err != nil {
 		return nil, err
@@ -388,6 +387,7 @@ func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, 
 	tokenPresent, tokenError := endpointTokenStatus(endpoint.TokenFile)
 	keys := append([]string(nil), publicKeys...)
 	sort.Strings(keys)
+	components := endpointPublishedAttestorComponents(endpoint)
 	return EndpointEntry{
 		Alias:                       alias,
 		URL:                         endpoint.URL,
@@ -400,7 +400,19 @@ func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, 
 		TokenError:                  tokenError,
 		IsDefault:                   isDefault,
 		PublishedAttestorPublicKeys: keys,
+		PublishedAttestorComponents: components,
 	}
+}
+
+func endpointPublishedAttestorComponents(endpoint config.ClientEndpointConfig) []string {
+	components := make([]string, 0, len(endpoint.PublishedAttestors))
+	for _, published := range endpoint.PublishedAttestors {
+		if published.ComponentKey != "" {
+			components = append(components, published.ComponentKey)
+		}
+	}
+	sort.Strings(components)
+	return components
 }
 
 func endpointTokenStatus(path string) (bool, string) {
@@ -453,9 +465,7 @@ func endpointSyncAttestorsRenderLines(result *EndpointSyncAttestorsResult) []str
 			fmt.Sprintf("  removed stale: %d", result.Removed),
 		)
 	}
-	for _, rec := range result.Records {
-		lines = append(lines, fmt.Sprintf("  %s: %s (%s, %s)", rec.Name, rec.PublicKey, rec.KeyType, rec.EndpointAlias))
-	}
+	lines = append(lines, endpointSyncAttestorSummaryLines(result.Records)...)
 	return lines
 }
 
@@ -478,10 +488,61 @@ func endpointDiscoverAttestorsRenderLines(result *EndpointDiscoverAttestorsResul
 			lines = append(lines, fmt.Sprintf("  %s: none", endpoint.Alias))
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("  %s:", endpoint.Alias))
-		for _, key := range endpoint.Keys {
-			lines = append(lines, fmt.Sprintf("    %s (%s, %s)", key.PublicKey, key.KeyType, key.ComponentKey))
+		lines = append(lines, fmt.Sprintf("  %s: %d key(s)", endpoint.Alias, len(endpoint.Keys)))
+		lines = append(lines, endpointKeyTypeSummaryLines(endpointDiscoveredKeyTypeCounts(endpoint.Keys))...)
+	}
+	return lines
+}
+
+func endpointSyncAttestorSummaryLines(records []SyncedEndpointAttestorReference) []string {
+	if len(records) == 0 {
+		return nil
+	}
+	counts := map[string]map[string]int{}
+	for _, rec := range records {
+		if counts[rec.EndpointAlias] == nil {
+			counts[rec.EndpointAlias] = map[string]int{}
 		}
+		counts[rec.EndpointAlias][rec.KeyType]++
+	}
+	aliases := make([]string, 0, len(counts))
+	for alias := range counts {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+
+	lines := make([]string, 0, len(records)+len(aliases))
+	for _, alias := range aliases {
+		total := 0
+		for _, count := range counts[alias] {
+			total += count
+		}
+		lines = append(lines, fmt.Sprintf("  %s: %d key(s)", alias, total))
+		lines = append(lines, endpointKeyTypeSummaryLines(counts[alias])...)
+	}
+	return lines
+}
+
+func endpointDiscoveredKeyTypeCounts(keys []DiscoveredEndpointAttestorKey) map[string]int {
+	counts := make(map[string]int, len(keys))
+	for _, key := range keys {
+		counts[key.KeyType]++
+	}
+	return counts
+}
+
+func endpointKeyTypeSummaryLines(counts map[string]int) []string {
+	if len(counts) == 0 {
+		return nil
+	}
+	keyTypes := make([]string, 0, len(counts))
+	for keyType := range counts {
+		keyTypes = append(keyTypes, keyType)
+	}
+	sort.Strings(keyTypes)
+	lines := make([]string, 0, len(keyTypes))
+	for _, keyType := range keyTypes {
+		lines = append(lines, fmt.Sprintf("    %s: %d", keyType, counts[keyType]))
 	}
 	return lines
 }

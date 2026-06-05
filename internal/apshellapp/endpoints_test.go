@@ -183,6 +183,10 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	if got := entry.PublishedAttestorPublicKeys; len(got) != 1 || got[0] != publicKeyHex {
 		t.Fatalf("PublishedAttestorPublicKeys = %#v, want %s", got, publicKeyHex)
 	}
+	componentID := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	if got := entry.PublishedAttestorComponents; len(got) != 1 || got[0] != componentID {
+		t.Fatalf("PublishedAttestorComponents = %#v, want %s", got, componentID)
+	}
 
 	show, err := app.EndpointShow(context.Background(), "attestor-local")
 	if err != nil {
@@ -564,8 +568,8 @@ func TestEndpointDeleteRejectsMappedAttestorEndpoint(t *testing.T) {
 	if err == nil {
 		t.Fatal("EndpointDelete(mapped) error = nil, want rejection")
 	}
-	if !strings.Contains(err.Error(), publicKeyHex) {
-		t.Fatalf("EndpointDelete(mapped) error = %v, want blocking key", err)
+	if strings.Contains(err.Error(), publicKeyHex) || !strings.Contains(err.Error(), "1 attestor mapping") {
+		t.Fatalf("EndpointDelete(mapped) error = %v, want count-only blocking message", err)
 	}
 }
 

@@ -272,7 +272,7 @@ func (r *REPLState) renderEndpointsList(result *apshellapp.EndpointsListResult) 
 			yesNo(endpoint.IsDefault),
 			endpoint.URL,
 			tokenStatusLabel(endpoint),
-			len(endpoint.PublishedAttestorPublicKeys),
+			len(endpoint.PublishedAttestorComponents),
 		)
 	}
 	_ = w.Flush()
@@ -289,13 +289,13 @@ func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
 	r.printf("Known hosts: %s\n", endpoint.KnownHostsPath)
 	r.printf("Token file: %s\n", endpoint.TokenFile)
 	r.printf("Token present: %s\n", tokenStatusLabel(endpoint))
-	if len(endpoint.PublishedAttestorPublicKeys) == 0 {
+	if len(endpoint.PublishedAttestorComponents) == 0 {
 		r.println("Published attestors: none")
 		return
 	}
 	r.println("Published attestors:")
-	for _, publicKey := range endpoint.PublishedAttestorPublicKeys {
-		r.printf("  %s\n", publicKey)
+	for _, componentID := range endpoint.PublishedAttestorComponents {
+		r.printf("  %s\n", componentID)
 	}
 }
 

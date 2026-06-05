@@ -707,6 +707,7 @@ type EndpointEntry struct {
 	TokenError                  string
 	IsDefault                   bool
 	PublishedAttestorPublicKeys []string
+	PublishedAttestorComponents []string
 }
 
 // EndpointsListResult describes the endpoint registry entries visible to apshell.
