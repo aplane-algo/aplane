@@ -159,6 +159,7 @@ ssh:
 schema_version: 1
 endpoints:
   attestor-local:
+    role: attestor
     url: ssh://127.0.0.1:2223
     signer_port: 12271
     published_attestors:

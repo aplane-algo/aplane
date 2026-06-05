@@ -29,6 +29,7 @@ func TestEndpointImportDryRunDoesNotWriteFiles(t *testing.T) {
 
 	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias:  "attestor-local",
+		Role:   config.ClientEndpointRoleAttestor,
 		Path:   envelopePath,
 		DryRun: true,
 	})
@@ -53,6 +54,7 @@ func TestEndpointImportWritesEndpointOnly(t *testing.T) {
 
 	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
+		Role:  config.ClientEndpointRoleAttestor,
 		Path:  envelopePath,
 	})
 	if err != nil {
@@ -87,6 +89,7 @@ func TestEndpointImportReplacesSameAlias(t *testing.T) {
 	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local", "ssh://127.0.0.1:2223", 11270)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
+		Role:  config.ClientEndpointRoleAttestor,
 		Path:  firstPath,
 	}); err != nil {
 		t.Fatalf("EndpointImport(first) error = %v", err)
@@ -95,6 +98,7 @@ func TestEndpointImportReplacesSameAlias(t *testing.T) {
 	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local-updated", "ssh://127.0.0.1:2224", 12270)
 	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
+		Role:  config.ClientEndpointRoleAttestor,
 		Path:  secondPath,
 	})
 	if err != nil {
@@ -123,6 +127,7 @@ func TestEndpointImportRejectsExistingURLWithDifferentAlias(t *testing.T) {
 	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local", "ssh://127.0.0.1:2223/", 11270)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
+		Role:  config.ClientEndpointRoleAttestor,
 		Path:  firstPath,
 	}); err != nil {
 		t.Fatalf("EndpointImport(first) error = %v", err)
@@ -131,6 +136,7 @@ func TestEndpointImportRejectsExistingURLWithDifferentAlias(t *testing.T) {
 	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-copy", "ssh://127.0.0.1:2223", 11270)
 	_, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-copy",
+		Role:  config.ClientEndpointRoleAttestor,
 		Path:  secondPath,
 	})
 	if err == nil {
@@ -155,6 +161,7 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	envelopePath := writeEndpointEnvelope(t, dataDir)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
+		Role:  config.ClientEndpointRoleAttestor,
 		Path:  envelopePath,
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
@@ -218,12 +225,14 @@ func TestEndpointDiscoverAttestorsRebuildsMappingsFromAllEndpoints(t *testing.T)
 	}})
 
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "signer-local", config.ClientEndpointConfig{
-		URL: signerServer.URL,
+		Role: config.ClientEndpointRoleSigner,
+		URL:  signerServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(signer-local) error = %v", err)
 	}
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
-		URL: attestorServer.URL,
+		Role: config.ClientEndpointRoleAttestor,
+		URL:  attestorServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
 	}
@@ -239,8 +248,8 @@ func TestEndpointDiscoverAttestorsRebuildsMappingsFromAllEndpoints(t *testing.T)
 	if result.PublicKeyCount != 1 || result.PreviousPublishedCount != 1 {
 		t.Fatalf("discovery counts = public:%d previous:%d, want 1/1", result.PublicKeyCount, result.PreviousPublishedCount)
 	}
-	if len(result.Endpoints) != 2 {
-		t.Fatalf("discovered endpoints = %d, want 2", len(result.Endpoints))
+	if len(result.Endpoints) != 1 {
+		t.Fatalf("discovered endpoints = %d, want 1", len(result.Endpoints))
 	}
 
 	cfg, err := config.LoadConfig(dataDir)
@@ -277,12 +286,14 @@ func TestEndpointDiscoverAttestorsPreservesUnreachableEndpointInventory(t *testi
 	}})
 
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-online", config.ClientEndpointConfig{
-		URL: attestorServer.URL,
+		Role: config.ClientEndpointRoleAttestor,
+		URL:  attestorServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor-online) error = %v", err)
 	}
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-offline", config.ClientEndpointConfig{
-		URL: "http://127.0.0.1:1",
+		Role: config.ClientEndpointRoleAttestor,
+		URL:  "http://127.0.0.1:1",
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor-offline) error = %v", err)
 	}
@@ -345,7 +356,8 @@ func TestEndpointDiscoverAttestorsPreservesLockedEndpointInventory(t *testing.T)
 	staleKeyHex := strings.Repeat("cd", 32)
 	attestorServer := newEndpointKeysStatusServer(t, "att-token", http.StatusForbidden, `{"error":"signer is locked"}`)
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
-		URL: attestorServer.URL,
+		Role: config.ClientEndpointRoleAttestor,
+		URL:  attestorServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
 	}
@@ -371,7 +383,8 @@ func TestEndpointDiscoverAttestorsPreservesServerErrorEndpointInventory(t *testi
 	staleKeyHex := strings.Repeat("cd", 32)
 	attestorServer := newEndpointKeysStatusServer(t, "att-token", http.StatusServiceUnavailable, `service unavailable`)
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
-		URL: attestorServer.URL,
+		Role: config.ClientEndpointRoleAttestor,
+		URL:  attestorServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
 	}
@@ -394,7 +407,8 @@ func TestEndpointDiscoverAttestorsRejectsAuthFailure(t *testing.T) {
 	staleKeyHex := strings.Repeat("cd", 32)
 	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
-		URL: attestorServer.URL,
+		Role: config.ClientEndpointRoleAttestor,
+		URL:  attestorServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
 	}
@@ -432,7 +446,8 @@ func TestEndpointDiscoverAttestorsRejectsInvalidEndpointMetadata(t *testing.T) {
 		IsComponentKey: true,
 	}})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
-		URL: attestorServer.URL,
+		Role: config.ClientEndpointRoleAttestor,
+		URL:  attestorServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
 	}
@@ -471,7 +486,8 @@ func TestEndpointDiscoverAttestorsDryRunDoesNotWriteMappings(t *testing.T) {
 		IsComponentKey: true,
 	}})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
-		URL: attestorServer.URL,
+		Role: config.ClientEndpointRoleAttestor,
+		URL:  attestorServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
 	}
@@ -498,10 +514,12 @@ func TestEndpointSyncAttestorsDryRunUsesPublishedInventory(t *testing.T) {
 	app := newEndpointTestApp(t, dataDir)
 	publicKeyHex := testAttestorPublicKeyHex()
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
-		URL: "http://127.0.0.1:12345",
+		Role: config.ClientEndpointRoleAttestor,
+		URL:  "http://127.0.0.1:12345",
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint() error = %v", err)
 	}
+	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
 	writePublishedAttestor(t, dataDir, "attestor-local", publicKeyHex)
 
 	result, err := app.EndpointSyncAttestors(context.Background(), EndpointSyncAttestorsRequest{DryRun: true})
@@ -529,6 +547,7 @@ func TestEndpointDefaultSetsSigningEndpoint(t *testing.T) {
 	envelopePath := writeEndpointEnvelopeWithName(t, dataDir, "signer-local")
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "signer-local",
+		Role:  config.ClientEndpointRoleSigner,
 		Path:  envelopePath,
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
@@ -557,6 +576,7 @@ func TestEndpointDeleteRejectsMappedAttestorEndpoint(t *testing.T) {
 	envelopePath := writeEndpointEnvelope(t, dataDir)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "attestor-local",
+		Role:  config.ClientEndpointRoleAttestor,
 		Path:  envelopePath,
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
@@ -579,6 +599,7 @@ func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
 	primaryPath := writeEndpointEnvelopeWithName(t, dataDir, "primary")
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "primary",
+		Role:  config.ClientEndpointRoleSigner,
 		Path:  primaryPath,
 	}); err != nil {
 		t.Fatalf("EndpointImport(primary) error = %v", err)
@@ -586,6 +607,7 @@ func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
 	secondaryPath := writeEndpointEnvelopeWithOptions(t, dataDir, "secondary", "ssh://127.0.0.1:2224", 11270)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
 		Alias: "secondary",
+		Role:  config.ClientEndpointRoleAttestor,
 		Path:  secondaryPath,
 	}); err != nil {
 		t.Fatalf("EndpointImport(secondary) error = %v", err)
@@ -601,8 +623,8 @@ func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
 	if _, ok := cfg.Endpoints.Endpoint("secondary"); ok {
 		t.Fatal("secondary endpoint still present after delete")
 	}
-	if alias, _, ok := cfg.Endpoints.DefaultEndpoint(); ok || alias != "" {
-		t.Fatalf("DefaultEndpoint() = %q/%v, want none after import-only flow", alias, ok)
+	if alias, _, ok := cfg.Endpoints.DefaultEndpoint(); !ok || alias != "primary" {
+		t.Fatalf("DefaultEndpoint() = %q/%v, want primary after deleting attestor endpoint", alias, ok)
 	}
 }
 

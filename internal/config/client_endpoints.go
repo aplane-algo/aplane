@@ -22,6 +22,9 @@ import (
 const (
 	ClientEndpointsFile       = "endpoints.yaml"
 	DefaultClientEndpointName = "primary"
+
+	ClientEndpointRoleSigner   = "signer"
+	ClientEndpointRoleAttestor = "attestor"
 )
 
 // ClientEndpointRegistry stores client-local signer endpoint profiles loaded
@@ -34,9 +37,9 @@ type ClientEndpointRegistry struct {
 
 // ClientEndpointConfig describes one signer endpoint connection profile.
 type ClientEndpointConfig struct {
-	// Role is a deprecated field accepted only so older endpoint registries can
-	// load and be rewritten without role metadata.
-	Role           string `yaml:"role,omitempty"`
+	// Role declares how apshell may use this endpoint. A client has at most one
+	// signer endpoint and any number of attestor endpoints.
+	Role           string `yaml:"role"`
 	URL            string `yaml:"url" description:"Endpoint URL: self, https://..., loopback http://..., or ssh://host[:port]"`
 	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// endpoints"`
 	LocalPort      int    `yaml:"local_port,omitempty" description:"Local tunnel port for ssh:// endpoints (0 = choose automatically)"`
@@ -68,15 +71,15 @@ func GetClientEndpointsPath(dataDir string) string {
 // LoadClientEndpointRegistry loads endpoints.yaml and overlays the legacy
 // config.yaml/aplane.token primary endpoint when possible.
 func LoadClientEndpointRegistry(dataDir string, cfg Config) (ClientEndpointRegistry, error) {
-	registry := legacyPrimaryEndpointRegistry(dataDir, cfg)
+	legacy := legacyPrimaryEndpointRegistry(dataDir, cfg)
 	path := GetClientEndpointsPath(dataDir)
 	if path == "" {
-		return registry, nil
+		return legacy, nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return registry, nil
+			return legacy, nil
 		}
 		return ClientEndpointRegistry{}, fmt.Errorf("failed to read %s: %w", path, err)
 	}
@@ -91,28 +94,8 @@ func LoadClientEndpointRegistry(dataDir string, cfg Config) (ClientEndpointRegis
 	if stored.SchemaVersion != 1 {
 		return ClientEndpointRegistry{}, fmt.Errorf("%s schema_version = %d, want 1", ClientEndpointsFile, stored.SchemaVersion)
 	}
-	hasLegacyPrimary := false
-	if registry.Endpoints != nil {
-		_, hasLegacyPrimary = registry.Endpoints[DefaultClientEndpointName]
-	}
-	stored.Default = strings.TrimSpace(stored.Default)
-	if stored.Default == "" && hasLegacyPrimary {
-		stored.Default = DefaultClientEndpointName
-	}
-	if stored.Default != "" {
-		if err := ValidateClientEndpointAlias(stored.Default); err != nil {
-			return ClientEndpointRegistry{}, fmt.Errorf("%s default: %w", ClientEndpointsFile, err)
-		}
-	}
 	if stored.Endpoints == nil {
 		stored.Endpoints = map[string]ClientEndpointConfig{}
-	}
-	if hasLegacyPrimary {
-		if _, exists := stored.Endpoints[DefaultClientEndpointName]; !exists {
-			if legacy, ok := registry.Endpoints[DefaultClientEndpointName]; ok {
-				stored.Endpoints[DefaultClientEndpointName] = legacy
-			}
-		}
 	}
 	for alias, endpoint := range stored.Endpoints {
 		if err := ValidateClientEndpointAlias(alias); err != nil {
@@ -124,10 +107,16 @@ func LoadClientEndpointRegistry(dataDir string, cfg Config) (ClientEndpointRegis
 		}
 		stored.Endpoints[alias] = normalized
 	}
-	if stored.Default != "" {
-		if _, ok := stored.Endpoints[stored.Default]; !ok {
-			return ClientEndpointRegistry{}, fmt.Errorf("%s default endpoint %q is not defined", ClientEndpointsFile, stored.Default)
+	if !clientEndpointRegistryHasSigner(stored) {
+		if legacyEndpoint, ok := legacy.Endpoints[DefaultClientEndpointName]; ok {
+			if _, exists := stored.Endpoints[DefaultClientEndpointName]; exists {
+				return ClientEndpointRegistry{}, fmt.Errorf("%s endpoint %q already exists but no signer endpoint is configured", ClientEndpointsFile, DefaultClientEndpointName)
+			}
+			stored.Endpoints[DefaultClientEndpointName] = legacyEndpoint
 		}
+	}
+	if err := normalizeClientEndpointRegistryRoleState(&stored); err != nil {
+		return ClientEndpointRegistry{}, err
 	}
 	return stored, nil
 }
@@ -145,6 +134,7 @@ func legacyPrimaryEndpointRegistry(dataDir string, cfg Config) ClientEndpointReg
 		tokenFile = filepath.Join(dataDir, tokenfile.APlaneTokenFile)
 	}
 	endpoint := ClientEndpointConfig{
+		Role:           ClientEndpointRoleSigner,
 		URL:            fmt.Sprintf("ssh://%s:%d", cfg.SSH.Host, cfg.SSH.Port),
 		SignerPort:     cfg.SignerPort,
 		IdentityFile:   cfg.SSH.IdentityFile,
@@ -175,8 +165,22 @@ func ValidateClientEndpointAlias(alias string) error {
 	return nil
 }
 
+func ValidateClientEndpointRole(role string) error {
+	switch strings.TrimSpace(role) {
+	case ClientEndpointRoleSigner, ClientEndpointRoleAttestor:
+		return nil
+	case "":
+		return fmt.Errorf("role is required (expected %q or %q)", ClientEndpointRoleSigner, ClientEndpointRoleAttestor)
+	default:
+		return fmt.Errorf("unsupported role %q (expected %q or %q)", role, ClientEndpointRoleSigner, ClientEndpointRoleAttestor)
+	}
+}
+
 func normalizeClientEndpointConfig(dataDir string, cfg Config, alias string, endpoint ClientEndpointConfig) (ClientEndpointConfig, error) {
-	endpoint.Role = ""
+	endpoint.Role = strings.TrimSpace(endpoint.Role)
+	if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
+		return endpoint, err
+	}
 	endpoint.URL = strings.TrimRight(strings.TrimSpace(endpoint.URL), "/")
 	if endpoint.URL == "" {
 		return endpoint, fmt.Errorf("url is required")
@@ -223,6 +227,9 @@ func normalizeClientEndpointConfig(dataDir string, cfg Config, alias string, end
 		return endpoint, err
 	}
 	endpoint.PublishedAttestors = published
+	if endpoint.Role != ClientEndpointRoleAttestor && len(endpoint.PublishedAttestors) > 0 {
+		return endpoint, fmt.Errorf("published_attestors are only valid on %q endpoints", ClientEndpointRoleAttestor)
+	}
 	return endpoint, nil
 }
 
@@ -323,6 +330,52 @@ func (c Config) ClientEndpointsOrDefault(dataDir string) ClientEndpointRegistry 
 	return legacyPrimaryEndpointRegistry(dataDir, c)
 }
 
+func clientEndpointRegistryHasSigner(registry ClientEndpointRegistry) bool {
+	for _, endpoint := range registry.Endpoints {
+		if endpoint.Role == ClientEndpointRoleSigner {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) error {
+	registry.Default = strings.TrimSpace(registry.Default)
+	if registry.Default != "" {
+		if err := ValidateClientEndpointAlias(registry.Default); err != nil {
+			return fmt.Errorf("%s default: %w", ClientEndpointsFile, err)
+		}
+	}
+
+	signerAlias := ""
+	for alias, endpoint := range registry.Endpoints {
+		if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
+			return fmt.Errorf("endpoint %q: %w", alias, err)
+		}
+		if endpoint.Role != ClientEndpointRoleAttestor && len(endpoint.PublishedAttestors) > 0 {
+			return fmt.Errorf("endpoint %q: published_attestors are only valid on %q endpoints", alias, ClientEndpointRoleAttestor)
+		}
+		if endpoint.Role != ClientEndpointRoleSigner {
+			continue
+		}
+		if signerAlias != "" {
+			return fmt.Errorf("%s may contain at most one %q endpoint (found %q and %q)", ClientEndpointsFile, ClientEndpointRoleSigner, signerAlias, alias)
+		}
+		signerAlias = alias
+	}
+	if signerAlias == "" {
+		if registry.Default != "" {
+			return fmt.Errorf("%s default endpoint %q is set but no %q endpoint is configured", ClientEndpointsFile, registry.Default, ClientEndpointRoleSigner)
+		}
+		return nil
+	}
+	if registry.Default != "" && registry.Default != signerAlias {
+		return fmt.Errorf("%s default endpoint %q must be the %q endpoint %q", ClientEndpointsFile, registry.Default, ClientEndpointRoleSigner, signerAlias)
+	}
+	registry.Default = signerAlias
+	return nil
+}
+
 // PublishedAttestorEndpointConfigs derives attestor public-key routing from
 // endpoint-local published_attestors inventory.
 func (r ClientEndpointRegistry) PublishedAttestorEndpointConfigs() (AttestorEndpointConfigs, error) {
@@ -334,6 +387,9 @@ func (r ClientEndpointRegistry) PublishedAttestorEndpointConfigs() (AttestorEndp
 	sort.Strings(aliases)
 	for _, alias := range aliases {
 		endpoint := r.Endpoints[alias]
+		if endpoint.Role != ClientEndpointRoleAttestor {
+			continue
+		}
 		publicKeys := make([]string, 0, len(endpoint.PublishedAttestors))
 		for publicKey := range endpoint.PublishedAttestors {
 			publicKeys = append(publicKeys, publicKey)
@@ -365,6 +421,9 @@ func (r ClientEndpointRegistry) PublishedAttestorEndpointConfigs() (AttestorEndp
 func (r ClientEndpointRegistry) PublishedAttestorPublicKeysByAlias() map[string][]string {
 	out := map[string][]string{}
 	for alias, endpoint := range r.Endpoints {
+		if endpoint.Role != ClientEndpointRoleAttestor {
+			continue
+		}
 		for publicKey := range endpoint.PublishedAttestors {
 			out[alias] = append(out[alias], publicKey)
 		}

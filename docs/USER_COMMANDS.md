@@ -612,55 +612,55 @@ Manage client-local signer endpoint profiles.
 ```
 endpoints list
 endpoints show <alias>
-endpoints import --alias <alias> [--dry-run] <endpoint-json>
-endpoints discover-attestors [--dry-run]
-endpoints sync-attestors [--dry-run]
+endpoints attestors
+endpoints import-public --alias <alias> --role signer|attestor [--dry-run] <endpoint-json>
+endpoints sync-attestors [--dry-run] [--yes]
 endpoints default <alias>
 endpoints delete <alias>
 ```
 
-`endpoints import` reads a public `aplane.endpoint.v1` envelope produced by
+`endpoints import-public` reads a public `aplane.endpoint.v1` envelope produced by
 `apstore endpoint export`. Import writes local endpoint routing only:
-`endpoints.yaml`. It does not copy tokens or SSH host trust, and it does not
-discover attestor keys. Re-importing with the same alias replaces that alias's
-endpoint data. Importing a URL already assigned to a different alias fails
-without writing.
+`endpoints.yaml`. The role is client-local intent: one endpoint should be
+`signer`, and attestor nodes should be imported as `attestor`. It does not copy
+tokens or SSH host trust, and it does not discover attestor keys. Re-importing
+with the same alias replaces that alias's endpoint data. Importing the same URL
+under a different alias is allowed only when the role differs, such as a dev
+node used both as the client signer and as a local attestor.
 
-`endpoints discover-attestors` queries `/keys` on configured endpoints using
-that endpoint's token and rebuilds each reachable endpoint's
+`endpoints sync-attestors` queries `/keys` on configured `attestor` endpoints
+using each endpoint's token and rebuilds each reachable endpoint's
 `published_attestors` inventory in `endpoints.yaml`. If an endpoint is
 temporarily unavailable or its signer identity is locked, its existing
 published-attestor entries are preserved. Token/auth failures, endpoint config
-errors, malformed responses, and invalid component-key metadata fail without
-writing. Attested-send routing is derived from that inventory. Run it after
-importing endpoints and requesting endpoint tokens. Use `--dry-run` to inspect
-the discovered and skipped endpoints without writing.
+errors, malformed responses, duplicate public keys, and invalid component-key
+metadata fail without writing. The command then shows the attestor component
+IDs it is about to publish to the connected signer identity and asks for
+confirmation, unless `--yes` is provided. `--dry-run` inspects the discovered
+and skipped endpoints without writing files or updating the signer library.
 
-`endpoints sync-attestors` publishes that local discovered inventory to the
-currently connected signer identity as public attestor reference options for
-key generation. Run it after `endpoints discover-attestors` when you want
-`apadmin` or `generate ... attestor=<name>` to offer endpoint-discovered
-attestors. It syncs public metadata only and does not move endpoint tokens or
-SSH trust.
+`endpoints attestors` lists the client-local endpoint-discovered attestor
+inventory by component ID. It does not call remote endpoints.
 
 **Examples:**
 ```
-endpoints import --alias attestor-local attestor.endpoint.json
-endpoints import --alias attestor-local --dry-run attestor.endpoint.json
+endpoints import-public --alias main --role signer signer.endpoint.json
+endpoints import-public --alias attestor-local --role attestor attestor.endpoint.json
+endpoints import-public --alias attestor-local --role attestor --dry-run attestor.endpoint.json
 request-token --endpoint attestor-local
-endpoints discover-attestors
-endpoints discover-attestors --dry-run
-connect primary
+connect main
 endpoints sync-attestors
+endpoints sync-attestors --yes
 endpoints sync-attestors --dry-run
+endpoints attestors
 endpoints list
 endpoints show attestor-local
-endpoints default primary
+endpoints default main
 endpoints delete old-attestor
 request-token --endpoint attestor-local
 ```
 
-`endpoints delete` refuses to remove the default endpoint or an endpoint still
+`endpoints delete` refuses to remove the signer endpoint or an endpoint still
 referenced by local attestor mappings.
 
 ---

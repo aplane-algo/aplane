@@ -79,12 +79,12 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 		if existingAlias == alias {
 			continue
 		}
-		if existingEndpoint.URL == normalized.URL {
+		if existingEndpoint.Role == normalized.Role && existingEndpoint.URL == normalized.URL {
 			return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint URL %q already belongs to alias %q", normalized.URL, existingAlias)
 		}
 	}
 	if _, hasStoredPrimary := registry.Endpoints[DefaultClientEndpointName]; !hasStoredPrimary && alias != DefaultClientEndpointName {
-		if legacyPrimary, ok := storedLegacyPrimaryEndpoint(dataDir); ok && legacyPrimary.URL == normalized.URL {
+		if legacyPrimary, ok := storedLegacyPrimaryEndpoint(dataDir); ok && legacyPrimary.Role == normalized.Role && legacyPrimary.URL == normalized.URL {
 			return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint URL %q already belongs to alias %q", normalized.URL, DefaultClientEndpointName)
 		}
 	}
@@ -93,10 +93,13 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	}
 	oldDefault := registry.Default
 	registry.Endpoints[alias] = normalized
+	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
+		return StoredClientEndpointUpsertPlan{}, err
+	}
 	return StoredClientEndpointUpsertPlan{
 		Registry:       registry,
 		Alias:          alias,
-		Endpoint:       normalized,
+		Endpoint:       registry.Endpoints[alias],
 		Created:        !exists,
 		Updated:        exists && !storedClientEndpointsEqual(existing, normalized),
 		DefaultChanged: oldDefault != registry.Default,
@@ -130,12 +133,17 @@ func SetStoredClientEndpointDefault(dataDir, alias string) (ClientEndpointRegist
 	if err != nil {
 		return ClientEndpointRegistry{}, err
 	}
-	if _, ok := registry.Endpoints[alias]; !ok {
+	endpoint, ok := registry.Endpoints[alias]
+	if !ok {
 		legacy, ok := storedLegacyPrimaryEndpoint(dataDir)
 		if alias != DefaultClientEndpointName || !ok {
 			return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is not defined", alias)
 		}
 		registry.Endpoints[alias] = legacy
+		endpoint = legacy
+	}
+	if endpoint.Role != ClientEndpointRoleSigner {
+		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q has role %q; default endpoint must have role %q", alias, endpoint.Role, ClientEndpointRoleSigner)
 	}
 	registry.Default = alias
 	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
@@ -187,6 +195,9 @@ func PlanStoredClientEndpointPublishedAttestorRebuild(dataDir string, publicatio
 	}
 	previousCount := 0
 	for alias, endpoint := range registry.Endpoints {
+		if endpoint.Role != ClientEndpointRoleAttestor {
+			continue
+		}
 		previousCount += len(endpoint.PublishedAttestors)
 		endpoint.PublishedAttestors = nil
 		registry.Endpoints[alias] = endpoint
@@ -222,6 +233,9 @@ func PlanStoredClientEndpointPublishedAttestorRebuild(dataDir string, publicatio
 				return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q is not defined", alias)
 			}
 			endpoint = legacy
+		}
+		if endpoint.Role != ClientEndpointRoleAttestor {
+			return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q has role %q; published_attestors require role %q", alias, endpoint.Role, ClientEndpointRoleAttestor)
 		}
 
 		for publicKey := range normalizedPublished {
@@ -297,10 +311,8 @@ func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) err
 		}
 		registry.Endpoints[alias] = normalized
 	}
-	if registry.Default != "" {
-		if _, ok := registry.Endpoints[registry.Default]; !ok {
-			return fmt.Errorf("%s default endpoint %q is not defined", ClientEndpointsFile, registry.Default)
-		}
+	if err := normalizeClientEndpointRegistryRoleState(registry); err != nil {
+		return err
 	}
 	return nil
 }
@@ -309,7 +321,10 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 	if err := ValidateClientEndpointAlias(alias); err != nil {
 		return ClientEndpointConfig{}, err
 	}
-	endpoint.Role = ""
+	endpoint.Role = strings.TrimSpace(endpoint.Role)
+	if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
+		return ClientEndpointConfig{}, err
+	}
 	endpoint.URL = strings.TrimRight(strings.TrimSpace(endpoint.URL), "/")
 	if err := validateClientEndpointURL(alias, endpoint); err != nil {
 		return ClientEndpointConfig{}, err
@@ -319,6 +334,9 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 		return ClientEndpointConfig{}, err
 	}
 	endpoint.PublishedAttestors = published
+	if endpoint.Role != ClientEndpointRoleAttestor && len(endpoint.PublishedAttestors) > 0 {
+		return ClientEndpointConfig{}, fmt.Errorf("published_attestors are only valid on %q endpoints", ClientEndpointRoleAttestor)
+	}
 	if endpoint.TokenFile == "" && endpoint.URL != "self" {
 		if alias == DefaultClientEndpointName {
 			endpoint.TokenFile = "aplane.token"
@@ -356,6 +374,7 @@ func storedLegacyPrimaryEndpoint(dataDir string) (ClientEndpointConfig, bool) {
 		return ClientEndpointConfig{}, false
 	}
 	endpoint, err := normalizeStoredClientEndpoint(DefaultClientEndpointName, ClientEndpointConfig{
+		Role:           ClientEndpointRoleSigner,
 		URL:            fmt.Sprintf("ssh://%s:%d", cfg.SSH.Host, cfg.SSH.Port),
 		SignerPort:     cfg.SignerPort,
 		IdentityFile:   cfg.SSH.IdentityFile,

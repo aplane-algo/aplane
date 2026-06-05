@@ -178,56 +178,67 @@ and the token from `$APCLIENT_DATA/aplane.token`:
 connect
 ```
 
-For multiple signer endpoints, use endpoint aliases. The preferred handoff is
-for the signer operator to export a public endpoint envelope and for the client
-to import it:
+For endpoint aliases, import one client signer endpoint and zero or more
+attestor endpoints. The preferred handoff is for the signer operator to export
+a public endpoint envelope and for the client to import it with a local role:
 
 ```bash
 # signer side
+apstore -d "$APSIGNER_DATA" endpoint export \
+  --host signer.example.com \
+  --out signer.endpoint.json
+
+# attestor side
 apstore -d "$APSIGNER_DATA" endpoint export \
   --host attestor.example.com \
   --out attestor.endpoint.json
 
 # client side, inside apshell
-endpoints import --alias attestor-local attestor.endpoint.json
+endpoints import-public --alias main --role signer signer.endpoint.json
+endpoints import-public --alias attestor-local --role attestor attestor.endpoint.json
 endpoints show attestor-local
 request-token --endpoint attestor-local
-endpoints discover-attestors
-connect primary
+connect main
 endpoints sync-attestors
 ```
 
 Importing an endpoint creates routing/configuration only. It does not copy API
 tokens, SSH host trust, private keys, or passphrases. Tokens are still obtained
 with `request-token --endpoint <alias>`. Re-import with the same alias replaces
-that alias's endpoint data. Import fails without writing if the imported URL is
-already assigned to a different alias.
+that alias's endpoint data. The same URL may be imported under two aliases only
+when the roles differ, such as a dev node serving both the client signer and a
+local attestor.
 
-After endpoint tokens are enrolled, `endpoints discover-attestors` queries
-`/keys` on configured endpoints and rebuilds each reachable endpoint's
+After endpoint tokens are enrolled, `endpoints sync-attestors` queries `/keys`
+on configured `attestor` endpoints and rebuilds each reachable endpoint's
 `published_attestors` inventory in `endpoints.yaml`. If an endpoint is
 temporarily unavailable or its signer identity is locked, its existing
 published-attestor entries are preserved. Token/auth failures, endpoint config
-errors, malformed responses, and invalid component-key metadata fail without
-writing. Attested-send routing is derived from this endpoint-local inventory.
+errors, malformed responses, duplicate public keys, and invalid component-key
+metadata fail without writing. Attested-send routing is derived from this
+endpoint-local inventory.
 
 If the user signer will generate attested account keys through `apadmin` or
 another signer-side key-generation client, run `endpoints sync-attestors` while
-connected to that user signer. The command publishes only the discovered public
-attestor metadata into the signer identity's attestor reference catalog so the
-attestors appear as selectable generation options.
+connected to that user signer. The command prints the component IDs it is about
+to publish and asks for confirmation before copying public attestor metadata
+into the signer identity's attestor reference catalog. Use
+`endpoints attestors` to inspect the local discovered inventory later without
+calling remote endpoints.
 
 The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 
 ```yaml
 schema_version: 1
-default: primary
+default: main
 endpoints:
-  primary:
+  main:
+    role: signer
     url: ssh://signer.example.com:1127
     signer_port: 11270
     token_file: aplane.token
   attestor-local:
+    role: attestor
     url: ssh://127.0.0.1:2223
     signer_port: 11270
     token_file: tokens/attestor-local.token
@@ -242,7 +253,7 @@ Then:
 
 ```bash
 connect                 # default endpoint
-connect primary
+connect main
 request-token --endpoint attestor-local
 ```
 
@@ -251,9 +262,10 @@ Useful local commands:
 ```bash
 endpoints list
 endpoints show attestor-local
-endpoints import --alias attestor-local --dry-run attestor.endpoint.json
-endpoints discover-attestors --dry-run
-endpoints default primary
+endpoints attestors
+endpoints import-public --alias attestor-local --role attestor --dry-run attestor.endpoint.json
+endpoints sync-attestors --dry-run
+endpoints default main
 endpoints delete old-attestor
 ```
 

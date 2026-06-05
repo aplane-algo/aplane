@@ -18,6 +18,7 @@ const endpointPublishedTestSeenAt = "2026-06-04T00:00:00Z"
 func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	dataDir := t.TempDir()
 	registry, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
+		Role:       ClientEndpointRoleAttestor,
 		URL:        "ssh://127.0.0.1:2223",
 		SignerPort: 11270,
 	}, false)
@@ -47,12 +48,14 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 	dataDir := t.TempDir()
 	if _, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
-		URL: "ssh://127.0.0.1:2223",
+		Role: ClientEndpointRoleAttestor,
+		URL:  "ssh://127.0.0.1:2223",
 	}, false); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
 	}
 	_, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
-		URL: "ssh://127.0.0.1:2224",
+		Role: ClientEndpointRoleAttestor,
+		URL:  "ssh://127.0.0.1:2224",
 	}, false)
 	if err == nil {
 		t.Fatal("UpsertStoredClientEndpoint(conflict) error = nil, want conflict")
@@ -72,13 +75,15 @@ func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 func TestUpsertStoredClientEndpointRejectsDuplicateURLAcrossAliases(t *testing.T) {
 	dataDir := t.TempDir()
 	if _, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
-		URL: "ssh://127.0.0.1:2223/",
+		Role: ClientEndpointRoleAttestor,
+		URL:  "ssh://127.0.0.1:2223/",
 	}, false); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
 	}
 
 	_, err := UpsertStoredClientEndpoint(dataDir, "attestor-copy", ClientEndpointConfig{
-		URL: "ssh://127.0.0.1:2223",
+		Role: ClientEndpointRoleAttestor,
+		URL:  "ssh://127.0.0.1:2223",
 	}, true)
 	if err == nil {
 		t.Fatal("UpsertStoredClientEndpoint(duplicate URL) error = nil, want conflict")
@@ -96,6 +101,22 @@ func TestUpsertStoredClientEndpointRejectsDuplicateURLAcrossAliases(t *testing.T
 	}
 }
 
+func TestUpsertStoredClientEndpointAllowsDuplicateURLAcrossRoles(t *testing.T) {
+	dataDir := t.TempDir()
+	if _, err := UpsertStoredClientEndpoint(dataDir, "main", ClientEndpointConfig{
+		Role: ClientEndpointRoleSigner,
+		URL:  "ssh://127.0.0.1:2223",
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(signer) error = %v", err)
+	}
+	if _, err := UpsertStoredClientEndpoint(dataDir, "local-attestor", ClientEndpointConfig{
+		Role: ClientEndpointRoleAttestor,
+		URL:  "ssh://127.0.0.1:2223",
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(attestor same URL) error = %v", err)
+	}
+}
+
 func TestUpsertStoredClientEndpointRejectsDuplicateLegacyPrimaryURL(t *testing.T) {
 	dataDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
@@ -107,8 +128,9 @@ signer_port: 12270
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	_, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
-		URL: "ssh://signer.example:2222",
+	_, err := UpsertStoredClientEndpoint(dataDir, "signer-local", ClientEndpointConfig{
+		Role: ClientEndpointRoleSigner,
+		URL:  "ssh://signer.example:2222",
 	}, true)
 	if err == nil {
 		t.Fatal("UpsertStoredClientEndpoint(legacy duplicate URL) error = nil, want conflict")
@@ -121,15 +143,16 @@ signer_port: 12270
 	if err != nil {
 		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
 	}
-	if _, ok := registry.Endpoints["attestor-local"]; ok {
-		t.Fatal("attestor-local endpoint was written despite legacy primary URL conflict")
+	if _, ok := registry.Endpoints["signer-local"]; ok {
+		t.Fatal("signer-local endpoint was written despite legacy primary URL conflict")
 	}
 }
 
 func TestRebuildStoredClientEndpointPublishedAttestorsReplacesInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	if _, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
-		URL: "ssh://127.0.0.1:2223",
+		Role: ClientEndpointRoleAttestor,
+		URL:  "ssh://127.0.0.1:2223",
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
 	}
@@ -174,7 +197,10 @@ func TestRebuildStoredClientEndpointPublishedAttestorsReplacesInventory(t *testi
 func TestRebuildStoredClientEndpointPublishedAttestorsRejectsDuplicatePublicKey(t *testing.T) {
 	dataDir := t.TempDir()
 	for _, alias := range []string{"attestor-a", "attestor-b"} {
-		if _, err := UpsertStoredClientEndpoint(dataDir, alias, ClientEndpointConfig{URL: "ssh://" + alias + ":2223"}, true); err != nil {
+		if _, err := UpsertStoredClientEndpoint(dataDir, alias, ClientEndpointConfig{
+			Role: ClientEndpointRoleAttestor,
+			URL:  "ssh://" + alias + ":2223",
+		}, true); err != nil {
 			t.Fatalf("UpsertStoredClientEndpoint(%s) error = %v", alias, err)
 		}
 	}

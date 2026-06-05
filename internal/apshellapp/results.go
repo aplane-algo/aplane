@@ -697,6 +697,7 @@ type RequestTokenResult struct {
 // EndpointEntry describes one client-local signer endpoint profile.
 type EndpointEntry struct {
 	Alias                       string
+	Role                        string
 	URL                         string
 	SignerPort                  int
 	LocalPort                   int
@@ -723,6 +724,7 @@ type EndpointShowResult struct {
 // EndpointImportResult describes a public endpoint-envelope import.
 type EndpointImportResult struct {
 	Alias          string
+	Role           string
 	URL            string
 	SignerPort     int
 	LocalPort      int
@@ -744,6 +746,21 @@ type EndpointDefaultResult struct {
 // EndpointDeleteResult describes an endpoint deletion.
 type EndpointDeleteResult struct {
 	Alias       string
+	RenderLines []string
+}
+
+// EndpointAttestorEntry describes one attestor component advertised by a
+// client-local attestor endpoint.
+type EndpointAttestorEntry struct {
+	EndpointAlias string
+	ComponentKey  string
+	KeyType       string
+	LastSeenAt    string
+}
+
+// EndpointAttestorsResult describes the client-local attestor inventory.
+type EndpointAttestorsResult struct {
+	Attestors   []EndpointAttestorEntry
 	RenderLines []string
 }
 
@@ -787,13 +804,15 @@ type SyncedEndpointAttestorReference struct {
 // EndpointSyncAttestorsResult describes syncing endpoint-published attestors
 // into signer-side key-generation reference options.
 type EndpointSyncAttestorsResult struct {
-	DryRun         bool
-	CandidateCount int
-	Added          int
-	Updated        int
-	Removed        int
-	Records        []SyncedEndpointAttestorReference
-	RenderLines    []string
+	DryRun            bool
+	NeedsConfirmation bool
+	Discovery         *EndpointDiscoverAttestorsResult
+	CandidateCount    int
+	Added             int
+	Updated           int
+	Removed           int
+	Records           []SyncedEndpointAttestorReference
+	RenderLines       []string
 }
 
 // StartupConnectDecision describes what apshell should do at startup about signer connectivity.

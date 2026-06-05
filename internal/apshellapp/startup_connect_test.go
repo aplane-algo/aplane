@@ -76,6 +76,7 @@ func TestStartupConnectDecisionUsesDefaultEndpointToken(t *testing.T) {
 		Default:       "primary-alt",
 		Endpoints: map[string]config.ClientEndpointConfig{
 			"primary-alt": {
+				Role:           config.ClientEndpointRoleSigner,
 				URL:            "ssh://signer.example:2222",
 				SignerPort:     12270,
 				IdentityFile:   "/tmp/id_ed25519",

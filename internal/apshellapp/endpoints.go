@@ -22,6 +22,7 @@ import (
 // EndpointImportRequest imports one public endpoint handoff envelope.
 type EndpointImportRequest struct {
 	Alias  string
+	Role   string
 	Path   string
 	DryRun bool
 }
@@ -35,7 +36,8 @@ type EndpointDiscoverAttestorsRequest struct {
 // EndpointSyncAttestorsRequest syncs endpoint-published attestor inventory into
 // the connected signer identity's public attestor reference catalog.
 type EndpointSyncAttestorsRequest struct {
-	DryRun bool
+	DryRun            bool
+	ApproveSignerSync bool
 }
 
 // EndpointsList returns the resolved client endpoint registry plus local
@@ -101,6 +103,7 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	}
 
 	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, config.ClientEndpointConfig{
+		Role:       req.Role,
 		URL:        env.URL,
 		SignerPort: env.SignerPort,
 		LocalPort:  env.LocalPort,
@@ -111,6 +114,7 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 
 	result := &EndpointImportResult{
 		Alias:          req.Alias,
+		Role:           endpointPlan.Endpoint.Role,
 		URL:            endpointPlan.Endpoint.URL,
 		SignerPort:     endpointPlan.Endpoint.SignerPort,
 		LocalPort:      endpointPlan.Endpoint.LocalPort,
@@ -138,19 +142,30 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 // Unreachable endpoints are preserved as no-ops so temporary outages do not
 // erase client routing state.
 func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscoverAttestorsRequest) (*EndpointDiscoverAttestorsResult, error) {
-	cfg, err := config.LoadConfig(a.DataDir)
+	result, _, err := a.discoverEndpointAttestors(ctx, req.DryRun)
 	if err != nil {
 		return nil, err
+	}
+	result.RenderLines = endpointDiscoverAttestorsRenderLines(result)
+	return result, nil
+}
+
+func (a *App) discoverEndpointAttestors(ctx context.Context, dryRun bool) (*EndpointDiscoverAttestorsResult, config.ClientEndpointRegistry, error) {
+	cfg, err := config.LoadConfig(a.DataDir)
+	if err != nil {
+		return nil, config.ClientEndpointRegistry{}, err
 	}
 	a.Config = cfg
 
 	aliases := make([]string, 0, len(cfg.Endpoints.Endpoints))
-	for alias := range cfg.Endpoints.Endpoints {
-		aliases = append(aliases, alias)
+	for alias, endpoint := range cfg.Endpoints.Endpoints {
+		if endpoint.Role == config.ClientEndpointRoleAttestor {
+			aliases = append(aliases, alias)
+		}
 	}
 	sort.Strings(aliases)
 	if len(aliases) == 0 {
-		return nil, fmt.Errorf("no endpoints configured")
+		return nil, config.ClientEndpointRegistry{}, fmt.Errorf("no attestor endpoints configured")
 	}
 
 	lastSeenAt := time.Now().UTC().Format(time.RFC3339)
@@ -162,7 +177,7 @@ func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscove
 		if err != nil {
 			if !errors.Is(err, engine.ErrAttestorDiscoveryUnavailable) &&
 				!errors.Is(err, engine.ErrAttestorDiscoveryLocked) {
-				return nil, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
+				return nil, config.ClientEndpointRegistry{}, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
 			}
 			preserved := clonePublishedAttestors(endpoint.PublishedAttestors)
 			publications[alias] = preserved
@@ -193,70 +208,89 @@ func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscove
 
 	plan, err := config.PlanStoredClientEndpointPublishedAttestorRebuild(a.DataDir, publications)
 	if err != nil {
-		return nil, err
+		return nil, config.ClientEndpointRegistry{}, err
 	}
 	result := &EndpointDiscoverAttestorsResult{
-		DryRun:                 req.DryRun,
+		DryRun:                 dryRun,
 		Endpoints:              discoveries,
 		PublicKeyCount:         plan.PublicKeyCount,
 		PreviousPublishedCount: plan.PreviousPublishedCount,
 	}
-	if !req.DryRun {
+	if !dryRun {
 		if err := config.ApplyStoredClientEndpointPublishedAttestorRebuild(a.DataDir, plan); err != nil {
-			return nil, err
+			return nil, config.ClientEndpointRegistry{}, err
 		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
 			a.Config = cfg
 			a.eng.AttestorEndpoints = cfg.AttestorEndpoints.Clone()
 		}
 	}
-	result.RenderLines = endpointDiscoverAttestorsRenderLines(result)
-	return result, nil
+	return result, plan.Registry, nil
 }
 
 // EndpointSyncAttestors publishes endpoint-discovered attestor metadata into
 // the connected signer identity so signer-side key generation can select those
 // attestors by name.
 func (a *App) EndpointSyncAttestors(ctx context.Context, req EndpointSyncAttestorsRequest) (*EndpointSyncAttestorsResult, error) {
-	cfg, err := config.LoadConfig(a.DataDir)
+	discovery, registry, err := a.discoverEndpointAttestors(ctx, req.DryRun)
 	if err != nil {
 		return nil, err
 	}
-	a.Config = cfg
 
-	candidates := endpointAttestorCandidates(cfg.Endpoints)
+	candidates := endpointAttestorCandidates(registry)
 	result := &EndpointSyncAttestorsResult{
 		DryRun:         req.DryRun,
+		Discovery:      discovery,
 		CandidateCount: len(candidates),
 	}
-	if req.DryRun {
-		for _, candidate := range candidates {
-			name, err := attrefs.SyncedReferenceName(candidate.EndpointAlias, candidate.ComponentKey)
-			if err != nil {
-				return nil, err
-			}
-			result.Records = append(result.Records, SyncedEndpointAttestorReference{
-				Name:          name,
-				EndpointAlias: candidate.EndpointAlias,
-				PublicKey:     candidate.PublicKeyHex,
-				ComponentKey:  candidate.ComponentKey,
-				KeyType:       candidate.KeyType,
-			})
+	for _, candidate := range candidates {
+		name, err := attrefs.SyncedReferenceName(candidate.EndpointAlias, candidate.ComponentKey)
+		if err != nil {
+			return nil, err
 		}
+		result.Records = append(result.Records, SyncedEndpointAttestorReference{
+			Name:          name,
+			EndpointAlias: candidate.EndpointAlias,
+			PublicKey:     candidate.PublicKeyHex,
+			ComponentKey:  candidate.ComponentKey,
+			KeyType:       candidate.KeyType,
+		})
+	}
+	if req.DryRun {
 		result.RenderLines = endpointSyncAttestorsRenderLines(result)
 		return result, nil
 	}
-
-	if !a.eng.IsConnected() {
-		return nil, fmt.Errorf("not connected to Signer")
+	if !req.ApproveSignerSync {
+		result.NeedsConfirmation = true
+		result.RenderLines = endpointSyncAttestorsRenderLines(result)
+		return result, nil
 	}
-	resp, err := a.eng.AdminSyncAttestorReferencesWithContext(ctx, candidates)
-	if err != nil {
+	if err := a.syncEndpointAttestorsToSigner(ctx, result); err != nil {
 		return nil, err
 	}
+	result.RenderLines = endpointSyncAttestorsRenderLines(result)
+	return result, nil
+}
+
+func (a *App) syncEndpointAttestorsToSigner(ctx context.Context, result *EndpointSyncAttestorsResult) error {
+	if !a.eng.IsConnected() {
+		return fmt.Errorf("not connected to Signer")
+	}
+	cfg, err := config.LoadConfig(a.DataDir)
+	if err != nil {
+		return err
+	}
+	a.Config = cfg
+	candidates := endpointAttestorCandidates(cfg.Endpoints)
+	resp, err := a.eng.AdminSyncAttestorReferencesWithContext(ctx, candidates)
+	if err != nil {
+		return err
+	}
+	result.CandidateCount = len(candidates)
 	result.Added = resp.Added
 	result.Updated = resp.Updated
 	result.Removed = resp.Removed
+	result.Records = nil
 	for _, rec := range resp.Records {
 		result.Records = append(result.Records, SyncedEndpointAttestorReference{
 			Name:          rec.Name,
@@ -266,7 +300,41 @@ func (a *App) EndpointSyncAttestors(ctx context.Context, req EndpointSyncAttesto
 			KeyType:       rec.KeyType,
 		})
 	}
+	return nil
+}
+
+// EndpointConfirmSyncAttestors publishes the current endpoint-discovered
+// attestor inventory to the connected signer identity after user confirmation.
+func (a *App) EndpointConfirmSyncAttestors(ctx context.Context) (*EndpointSyncAttestorsResult, error) {
+	result := &EndpointSyncAttestorsResult{}
+	if err := a.syncEndpointAttestorsToSigner(ctx, result); err != nil {
+		return nil, err
+	}
 	result.RenderLines = endpointSyncAttestorsRenderLines(result)
+	return result, nil
+}
+
+// EndpointAttestors returns the client-local attestor inventory learned from
+// endpoint discovery.
+func (a *App) EndpointAttestors(_ context.Context) (*EndpointAttestorsResult, error) {
+	cfg, err := config.LoadConfig(a.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	a.Config = cfg
+	candidates := endpointAttestorCandidates(cfg.Endpoints)
+	result := &EndpointAttestorsResult{
+		Attestors: make([]EndpointAttestorEntry, 0, len(candidates)),
+	}
+	for _, candidate := range candidates {
+		result.Attestors = append(result.Attestors, EndpointAttestorEntry{
+			EndpointAlias: candidate.EndpointAlias,
+			ComponentKey:  candidate.ComponentKey,
+			KeyType:       candidate.KeyType,
+			LastSeenAt:    candidate.LastSeenAt,
+		})
+	}
+	result.RenderLines = endpointAttestorsRenderLines(result)
 	return result, nil
 }
 
@@ -364,6 +432,9 @@ func endpointAttestorCandidates(registry config.ClientEndpointRegistry) []signer
 	candidates := make([]signerapi.AttestorReferenceCandidate, 0)
 	for _, alias := range aliases {
 		endpoint := registry.Endpoints[alias]
+		if endpoint.Role != config.ClientEndpointRoleAttestor {
+			continue
+		}
 		publicKeys := make([]string, 0, len(endpoint.PublishedAttestors))
 		for publicKey := range endpoint.PublishedAttestors {
 			publicKeys = append(publicKeys, publicKey)
@@ -390,6 +461,7 @@ func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, 
 	components := endpointPublishedAttestorComponents(endpoint)
 	return EndpointEntry{
 		Alias:                       alias,
+		Role:                        endpoint.Role,
 		URL:                         endpoint.URL,
 		SignerPort:                  endpoint.SignerPort,
 		LocalPort:                   endpoint.LocalPort,
@@ -440,7 +512,7 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 	}
 
 	lines := []string{
-		fmt.Sprintf("%s endpoint %s (%s)", action, result.Alias, state),
+		fmt.Sprintf("%s %s endpoint %s (%s)", action, result.Role, result.Alias, state),
 		fmt.Sprintf("  url: %s", result.URL),
 		fmt.Sprintf("  token file: %s", result.TokenFile),
 	}
@@ -458,7 +530,13 @@ func endpointSyncAttestorsRenderLines(result *EndpointSyncAttestorsResult) []str
 	lines := []string{
 		fmt.Sprintf("%s %d endpoint-discovered attestor reference(s) to signer", action, result.CandidateCount),
 	}
-	if !result.DryRun {
+	if result.Discovery != nil {
+		lines = append(lines, endpointDiscoverAttestorsRenderLines(result.Discovery)...)
+	}
+	if result.NeedsConfirmation {
+		lines = append(lines, "Confirm before syncing these attestors to the signer library.")
+	}
+	if !result.DryRun && !result.NeedsConfirmation {
 		lines = append(lines,
 			fmt.Sprintf("  added: %d", result.Added),
 			fmt.Sprintf("  updated: %d", result.Updated),
@@ -489,7 +567,7 @@ func endpointDiscoverAttestorsRenderLines(result *EndpointDiscoverAttestorsResul
 			continue
 		}
 		lines = append(lines, fmt.Sprintf("  %s: %d key(s)", endpoint.Alias, len(endpoint.Keys)))
-		lines = append(lines, endpointKeyTypeSummaryLines(endpointDiscoveredKeyTypeCounts(endpoint.Keys))...)
+		lines = append(lines, endpointDiscoveredComponentLines(endpoint.Keys)...)
 	}
 	return lines
 }
@@ -518,31 +596,40 @@ func endpointSyncAttestorSummaryLines(records []SyncedEndpointAttestorReference)
 			total += count
 		}
 		lines = append(lines, fmt.Sprintf("  %s: %d key(s)", alias, total))
-		lines = append(lines, endpointKeyTypeSummaryLines(counts[alias])...)
+		for _, rec := range records {
+			if rec.EndpointAlias == alias {
+				lines = append(lines, fmt.Sprintf("    %s (%s)", rec.ComponentKey, rec.KeyType))
+			}
+		}
 	}
 	return lines
 }
 
-func endpointDiscoveredKeyTypeCounts(keys []DiscoveredEndpointAttestorKey) map[string]int {
-	counts := make(map[string]int, len(keys))
+func endpointDiscoveredComponentLines(keys []DiscoveredEndpointAttestorKey) []string {
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].ComponentKey == keys[j].ComponentKey {
+			return keys[i].KeyType < keys[j].KeyType
+		}
+		return keys[i].ComponentKey < keys[j].ComponentKey
+	})
+	lines := make([]string, 0, len(keys))
 	for _, key := range keys {
-		counts[key.KeyType]++
+		lines = append(lines, fmt.Sprintf("    %s (%s)", key.ComponentKey, key.KeyType))
 	}
-	return counts
+	return lines
 }
 
-func endpointKeyTypeSummaryLines(counts map[string]int) []string {
-	if len(counts) == 0 {
-		return nil
+func endpointAttestorsRenderLines(result *EndpointAttestorsResult) []string {
+	if len(result.Attestors) == 0 {
+		return []string{"No endpoint-discovered attestors"}
 	}
-	keyTypes := make([]string, 0, len(counts))
-	for keyType := range counts {
-		keyTypes = append(keyTypes, keyType)
-	}
-	sort.Strings(keyTypes)
-	lines := make([]string, 0, len(keyTypes))
-	for _, keyType := range keyTypes {
-		lines = append(lines, fmt.Sprintf("    %s: %d", keyType, counts[keyType]))
+	lines := []string{fmt.Sprintf("Endpoint-discovered attestors: %d", len(result.Attestors))}
+	for _, attestor := range result.Attestors {
+		line := fmt.Sprintf("  %s: %s (%s)", attestor.EndpointAlias, attestor.ComponentKey, attestor.KeyType)
+		if attestor.LastSeenAt != "" {
+			line += " last_seen=" + attestor.LastSeenAt
+		}
+		lines = append(lines, line)
 	}
 	return lines
 }

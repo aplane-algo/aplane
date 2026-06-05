@@ -1276,16 +1276,21 @@ in the common case:
 ```bash
 # signer side
 apstore -d "$APSIGNER_DATA" endpoint export \
+  --host signer.example \
+  --out signer.endpoint.json
+
+# attestor side
+apstore -d "$APSIGNER_DATA" endpoint export \
   --host attestor.example \
   --out attestor.endpoint.json
 
 # client side
 apshell -d "$APCLIENT_DATA"
-> endpoints import --alias attestor-local attestor.endpoint.json
+> endpoints import-public --alias main --role signer signer.endpoint.json
+> endpoints import-public --alias attestor-local --role attestor attestor.endpoint.json
 > endpoints show attestor-local
 > request-token --endpoint attestor-local
-> endpoints discover-attestors
-> connect primary
+> connect main
 > endpoints sync-attestors
 ```
 
@@ -1298,27 +1303,30 @@ with a client-chosen alias only configures the endpoint profile. It does not
 discover attestor keys or prove endpoint ownership; the
 trust anchor remains the attestor public key that was selected at user-key
 generation and embedded in the LogicSig. Import replaces existing endpoint
-data for the same alias, and rejects a URL already assigned to a different
-alias without writing. Dry-run import must run the same validation and conflict
-checks as a real import without writing files.
+data for the same alias. The same URL may be imported under two aliases only
+when the roles differ, such as a dev node serving both the client signer and a
+local attestor. Dry-run import must run the same validation and conflict checks
+as a real import without writing files.
 
 After endpoint tokens and SSH host trust are established, `apshell endpoints
-discover-attestors [--dry-run]` queries `/keys` on configured endpoints,
-extracts attestor component-key `public_key_hex` values, and atomically
-rebuilds reachable endpoints' `published_attestors` inventory in
+sync-attestors [--dry-run] [--yes]` queries `/keys` on configured `attestor`
+endpoints, extracts attestor component-key `public_key_hex` values, and
+atomically rebuilds reachable endpoints' `published_attestors` inventory in
 `endpoints.yaml`. Temporarily unavailable endpoints, including locked signer
 identities, are skipped and preserve their existing `published_attestors`
 entries. Authentication failures, endpoint configuration errors, malformed
 responses, duplicate public keys advertised by multiple endpoint aliases, and
 component-key validation failures are hard errors and leave files unchanged.
 
-`apshell endpoints sync-attestors [--dry-run]` then copies that local
-`published_attestors` inventory into the connected user signer identity as
-source-marked public attestor reference records. This sync is for generation UX:
-it makes endpoint-discovered attestors selectable in `/keytypes` consumers such
-as `apadmin`. It carries only public metadata and does not move endpoint tokens,
-SSH trust, or any private key material. The signer continues to resolve the
-selected reference to the embedded attestor public key at generation time.
+After discovery, `sync-attestors` prints the attestor component IDs it is about
+to publish and requires confirmation, unless `--yes` is provided, before
+copying that local `published_attestors` inventory into the connected user
+signer identity as source-marked public attestor reference records. This sync is
+for generation UX: it makes endpoint-discovered attestors selectable in
+`/keytypes` consumers such as `apadmin`. It carries only public metadata and
+does not move endpoint tokens, SSH trust, or any private key material. The
+signer continues to resolve the selected reference to the embedded attestor
+public key at generation time.
 
 A logical attestor may have multiple equivalent endpoints for availability.
 The client may call each endpoint's `/keys` projection to check whether it
