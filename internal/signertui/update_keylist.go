@@ -126,7 +126,7 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.generateError = ""
 		m.generateParamScrollOffset = 0 // Reset scroll
 		m.viewState = ViewGenerateForm
-		return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
+		return m, tea.Batch(m.sendListKeyTypesCmd(), m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
 
 	case "i":
 		// Import key

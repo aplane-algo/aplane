@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -27,6 +28,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -488,6 +490,41 @@ func TestAdminGenerateTimelockV1(t *testing.T) {
 	// Verify parameters are echoed back
 	if resp.Parameters["unlock_round"] == "" {
 		t.Error("Expected parameters to include unlock_round")
+	}
+}
+
+func TestAdminSyncAttestorsNotifiesAdminKeyTypesChanged(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+	hub := &recordingAdminHub{}
+	server.hub = hub
+
+	publicKeyBytes := bytes.Repeat([]byte{0xab}, 32)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKeyBytes)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+	reqBody, _ := json.Marshal(signerapi.AdminSyncAttestorReferencesRequest{
+		Candidates: []signerapi.AttestorReferenceCandidate{{
+			EndpointAlias: "attestor-local",
+			ComponentKey:  componentKey,
+			KeyType:       keytypes.AttestorComponentEd25519V1,
+			PublicKeyHex:  strings.Repeat("ab", 32),
+		}},
+	})
+
+	w := httptest.NewRecorder()
+	server.handleAdminSyncAttestors(w, requestWithIdentity(http.MethodPost, "/admin/attestors/sync", reqBody))
+	if w.Code != http.StatusOK {
+		t.Fatalf("handleAdminSyncAttestors status = %d: %s", w.Code, w.Body.String())
+	}
+	var resp signerapi.AdminSyncAttestorReferencesResponse
+	decodeResponse(t, w, &resp)
+	if resp.Added != 1 {
+		t.Fatalf("Added = %d, want 1", resp.Added)
+	}
+	if hub.keysIdentity != auth.CurrentProductIdentityID() {
+		t.Fatalf("NotifyKeysChanged identity = %q, want %q", hub.keysIdentity, auth.CurrentProductIdentityID())
 	}
 }
 

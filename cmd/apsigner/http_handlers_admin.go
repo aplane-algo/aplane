@@ -6,6 +6,7 @@ package main
 import (
 	"net/http"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -36,6 +37,11 @@ func (fs *Signer) handleAdminSyncAttestors(w http.ResponseWriter, r *http.Reques
 	if statusCode != http.StatusOK {
 		writeErrorJSON(w, statusCode, response.Error)
 		return
+	}
+	if response.Added > 0 || response.Updated > 0 || response.Removed > 0 {
+		if hub := fs.adminHub(); hub != nil {
+			hub.NotifyKeysChanged(ir.ID(), adminproto.KeysChangedNotification{KeyCount: ir.KeyCount()})
+		}
 	}
 	writeJSON(w, statusCode, response)
 }
