@@ -201,12 +201,12 @@ func (m Model) handlePolicyViewerListPopupKeys(msg tea.KeyMsg) (tea.Model, tea.C
 	case "end":
 		m.policyViewListPopupScroll = len(m.policyViewerListPopupItems())
 	case "pgup":
-		m.policyViewListPopupScroll -= m.policyViewerListPopupVisibleLines()
+		m.policyViewListPopupScroll -= m.policyViewerListPopupVisibleLines(m.policyViewerListPopupMaxHeight())
 		if m.policyViewListPopupScroll < 0 {
 			m.policyViewListPopupScroll = 0
 		}
 	case "pgdown":
-		m.policyViewListPopupScroll += m.policyViewerListPopupVisibleLines()
+		m.policyViewListPopupScroll += m.policyViewerListPopupVisibleLines(m.policyViewerListPopupMaxHeight())
 	}
 	return m.ensurePolicyViewListPopupVisible(), nil
 }
@@ -473,7 +473,7 @@ func (m Model) ensurePolicyViewGuardFieldVisible() Model {
 
 func (m Model) ensurePolicyViewListPopupVisible() Model {
 	items := m.policyViewerListPopupItems()
-	visible := m.policyViewerListPopupVisibleLines()
+	visible := m.policyViewerListPopupVisibleLines(m.policyViewerListPopupMaxHeight())
 	maxOffset := len(items) - visible
 	if maxOffset < 0 {
 		maxOffset = 0

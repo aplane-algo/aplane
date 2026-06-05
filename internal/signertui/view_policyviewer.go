@@ -22,13 +22,10 @@ type policyViewerGuardField struct {
 func (m Model) renderPolicyViewer() string {
 	var sb strings.Builder
 
-	sb.WriteString(titleStyle.Render("Policy"))
-	sb.WriteString("\n")
-	sb.WriteString(subtitleStyle.Render("Read-only active signer policy"))
-	sb.WriteString("\n\n")
+	sb.WriteString(m.renderPolicyViewerHeader())
 
 	if m.policyViewListPopupField != "" {
-		sb.WriteString(m.renderPolicyViewerListPopup())
+		sb.WriteString(m.renderPolicyViewerListPopup(m.policyViewerListPopupMaxHeight()))
 		return m.constrainPolicyViewerBody(sb.String())
 	}
 	if m.policyLoadState != policyLoadIdle {
@@ -68,6 +65,19 @@ func (m Model) renderPolicyViewer() string {
 	}
 
 	return m.constrainPolicyViewerBody(sb.String())
+}
+
+func (m Model) renderPolicyViewerHeader() string {
+	var sb strings.Builder
+	sb.WriteString(titleStyle.Render("Policy"))
+	sb.WriteString("\n")
+	sb.WriteString(subtitleStyle.Render("Read-only active signer policy"))
+	sb.WriteString("\n\n")
+	return sb.String()
+}
+
+func (m Model) policyViewerListPopupMaxHeight() int {
+	return m.policyViewerContentHeight() - strings.Count(m.renderPolicyViewerHeader(), "\n")
 }
 
 func (m Model) renderPolicyViewerOverview() string {
@@ -505,7 +515,7 @@ func (m Model) renderPolicyViewerSelectedGuardDescription(group policyview.Trans
 	return ellipsize("Description: "+description, m.policyViewerRowWidth())
 }
 
-func (m Model) renderPolicyViewerListPopup() string {
+func (m Model) renderPolicyViewerListPopup(maxHeight int) string {
 	field := m.currentPolicyViewerListPopupField()
 	title := field.label
 	if title == "" {
@@ -516,7 +526,7 @@ func (m Model) renderPolicyViewerListPopup() string {
 		items = []string{"*"}
 	}
 	displayModel := m.ensurePolicyViewListPopupVisible()
-	visible := displayModel.policyViewerListPopupVisibleLines()
+	visible := displayModel.policyViewerListPopupVisibleLines(maxHeight)
 	offset := displayModel.policyViewListPopupScroll
 	end := offset + visible
 	if end > len(items) {
@@ -528,7 +538,7 @@ func (m Model) renderPolicyViewerListPopup() string {
 		bodyWidth = displayModel.policyViewerRowWidth()
 	}
 	var body strings.Builder
-	body.WriteString(titleStyle.Render(title))
+	body.WriteString(titleStyle.MarginBottom(0).Render(title))
 	body.WriteString("\n")
 	if above := scrollMoreAboveLine(offset); above != "" {
 		body.WriteString(above)
@@ -542,7 +552,7 @@ func (m Model) renderPolicyViewerListPopup() string {
 		body.WriteString(below)
 		body.WriteString("\n")
 	}
-	return displayModel.renderPopup(96, strings.TrimRight(body.String(), "\n"))
+	return displayModel.renderPopupWithinHeight(96, strings.TrimRight(body.String(), "\n"), maxHeight)
 }
 
 func (m Model) policyViewerGuardFields() []policyViewerGuardField {
@@ -597,11 +607,15 @@ func (m Model) policyViewerListPopupItems() []string {
 	return append([]string(nil), m.currentPolicyViewerListPopupField().items...)
 }
 
-func (m Model) policyViewerListPopupVisibleLines() int {
-	if m.height <= 0 {
+func (m Model) policyViewerListPopupVisibleLines(maxHeight int) int {
+	if m.height <= 0 && maxHeight <= 0 {
 		return 8
 	}
-	visible := m.popupContentHeight() - 4
+	contentHeight := m.popupContentHeight()
+	if maxHeight > 0 {
+		contentHeight = popupContentHeightForRenderedHeight(maxHeight)
+	}
+	visible := contentHeight - 4
 	if visible < 3 {
 		return 3
 	}

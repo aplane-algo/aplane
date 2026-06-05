@@ -148,13 +148,17 @@ func (m Model) popupBodyWidth(max int) int {
 }
 
 func (m Model) popupContentHeight() int {
-	containerHeight := m.windowBodyHeight()
-	if containerHeight <= 0 {
+	return popupContentHeightForRenderedHeight(m.windowBodyHeight())
+}
+
+func popupContentHeightForRenderedHeight(renderedHeight int) int {
+	if renderedHeight <= 0 {
 		return 0
 	}
-	// popupStyle adds 4 chrome rows (2 border + 2 padding). The top-level View
-	// has already reserved header, footer, and status rows from windowBodyHeight.
-	h := containerHeight - 4
+	// popupStyle adds four chrome rows: two border rows plus one padding row
+	// above and below the body.
+	const popupVerticalChrome = 4
+	h := renderedHeight - popupVerticalChrome
 	if h < 1 {
 		return 1
 	}
@@ -162,7 +166,13 @@ func (m Model) popupContentHeight() int {
 }
 
 func (m Model) renderPopup(maxWidth int, body string) string {
-	return popupStyle.Width(m.popupWidth(maxWidth)).Render(constrainPopupBody(body, m.popupContentHeight()))
+	return m.renderPopupWithinHeight(maxWidth, body, m.windowBodyHeight())
+}
+
+func (m Model) renderPopupWithinHeight(maxWidth int, body string, maxHeight int) string {
+	return popupStyle.Width(m.popupWidth(maxWidth)).Render(
+		constrainPopupBody(body, popupContentHeightForRenderedHeight(maxHeight)),
+	)
 }
 
 func constrainPopupBody(body string, maxLines int) string {

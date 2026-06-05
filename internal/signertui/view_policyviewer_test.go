@@ -321,6 +321,42 @@ func TestPolicyViewerGuardDetailOpensReadOnlyListPopup(t *testing.T) {
 	}
 }
 
+func TestPolicyViewerListPopupFitsShortPane(t *testing.T) {
+	m := Model{
+		viewState:                    ViewPolicyViewer,
+		width:                        58,
+		height:                       12,
+		policyViewLoaded:             true,
+		policyViewMode:               policyViewerModeGuardDetail,
+		policyViewSelectedGuardField: policyViewerGuardFieldIndex("destinations"),
+		policyViewListPopupField:     "destinations",
+		policyView: policyview.Model{
+			TransferGuards: []policyview.TransferGuardGroup{{
+				ID:       "guardname",
+				Networks: []string{"mainnet"},
+				Sources:  []string{"*"},
+				Destinations: []string{
+					"ONE",
+					"TWO",
+					"THREE",
+					"FOUR",
+					"FIVE",
+					"SIX",
+				},
+			}},
+		},
+	}
+
+	rendered := m.renderPolicyViewer()
+	if lines, maxLines := visibleLineCount(rendered), m.policyViewerContentHeight(); lines > maxLines {
+		t.Fatalf("policy viewer list popup rendered %d lines, want <= %d:\n%s",
+			lines, maxLines, stripANSI(rendered))
+	}
+	if !strings.Contains(stripANSI(rendered), "╚") {
+		t.Fatalf("policy viewer list popup missing bottom border:\n%s", stripANSI(rendered))
+	}
+}
+
 func TestPolicyViewerGuardDetailDoesNotOpenPopupForSingleListValue(t *testing.T) {
 	m := Model{
 		viewState:                    ViewPolicyViewer,
