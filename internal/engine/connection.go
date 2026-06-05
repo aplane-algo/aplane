@@ -71,11 +71,16 @@ func (e *Engine) GetConnectionTarget() string {
 // The token is returned to the caller (UI layer) for saving and display.
 // hostKeyApproval is called for TOFU when connecting to an unknown server (can be nil to reject unknown hosts).
 func (e *Engine) RequestToken(host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStart func()) (string, error) {
+	return e.RequestTokenWithContext(context.Background(), host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
+}
+
+// RequestTokenWithContext connects to the SSH server and requests a token provisioning.
+func (e *Engine) RequestTokenWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStart func()) (string, error) {
 	// Disconnect if currently connected (old token will be invalid after provisioning)
 	if e.IsTunnelConnected() {
 		_ = e.Disconnect()
 	}
-	return e.Connection.RequestToken(host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
+	return e.Connection.RequestTokenWithContext(ctx, host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
 }
 
 func (e *Engine) GetKeysWithContext(ctx context.Context) (*signerapi.KeysResult, error) {

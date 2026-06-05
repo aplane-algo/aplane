@@ -708,6 +708,9 @@ func (c *Client) OpenSubsystem(subsystem string) (io.ReadWriteCloser, error) {
 // This is a one-shot operation: connect, request, receive token, disconnect.
 // The identityID is typically the current product identity.
 func (c *Client) RequestToken(ctx context.Context, identityID string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	authMethod, agentConn, err := c.authMethod()
 	if err != nil {
 		return "", err
@@ -746,6 +749,12 @@ func (c *Client) RequestToken(ctx context.Context, identityID string) (string, e
 	}
 	defer func() { _ = session.Close() }()
 
+	stopCancel := context.AfterFunc(ctx, func() {
+		_ = session.Close()
+		_ = sshClient.Close()
+	})
+	defer stopCancel()
+
 	// Set up pipes for output
 	stdout, err := session.StdoutPipe()
 	if err != nil {
@@ -759,6 +768,9 @@ func (c *Client) RequestToken(ctx context.Context, identityID string) (string, e
 
 	// Run the "provision" command
 	if err := session.Start("provision"); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		return "", fmt.Errorf("failed to start provisioning: %w", err)
 	}
 	c.mu.Lock()
@@ -771,14 +783,23 @@ func (c *Client) RequestToken(ctx context.Context, identityID string) (string, e
 	// Read stdout (should contain the token on success)
 	output, err := io.ReadAll(stdout)
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
 	// Read stderr for error message
 	errOutput, _ := io.ReadAll(stderr)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 
 	// Wait for command to complete
 	if err := session.Wait(); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		errMsg := strings.TrimSpace(string(errOutput))
 		if errMsg == "" {
 			errMsg = strings.TrimSpace(string(output))

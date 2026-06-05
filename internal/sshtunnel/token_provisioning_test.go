@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 func TestParseExecCommandRejectsOversizedLength(t *testing.T) {
@@ -376,6 +378,76 @@ func TestTokenProvisioningApprovalCanceledOnClientDisconnect(t *testing.T) {
 	case <-serverDone:
 	case <-time.After(time.Second):
 		t.Fatal("server did not finish after client disconnect")
+	}
+}
+
+func TestClientRequestTokenContextCancelClosesProvisioning(t *testing.T) {
+	srv, tmpDir := testServer(t)
+
+	approvalStarted := make(chan struct{})
+	approvalDone := make(chan error, 1)
+	setTokenProvisioningHooks(srv, TokenProvisioningHooks{
+		ApproveContext: func(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (bool, error) {
+			close(approvalStarted)
+			<-ctx.Done()
+			approvalDone <- ctx.Err()
+			return false, ctx.Err()
+		},
+		Issue: func(identityID string) (string, error) {
+			t.Fatal("issuance callback should not be called after client cancellation")
+			return "", nil
+		},
+	})
+
+	serverCtx, stopServer := context.WithCancel(context.Background())
+	defer stopServer()
+	if err := srv.Start(serverCtx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer func() { _ = srv.Stop() }()
+
+	_, _, identityPath := generateClientIdentityFile(t, tmpDir)
+	host, port := splitHostPort(t, srv.listener.Addr().String())
+	knownHostsPath := filepath.Join(tmpDir, "known_hosts")
+	line := knownhosts.Line([]string{hostWithPort(host, port)}, srv.hostKey.PublicKey()) + "\n"
+	if err := os.WriteFile(knownHostsPath, []byte(line), 0600); err != nil {
+		t.Fatalf("WriteFile(known_hosts) error = %v", err)
+	}
+
+	client := NewClient(host, port, 0, 0, identityPath, knownHostsPath)
+	reqCtx, cancelReq := context.WithCancel(context.Background())
+	resultCh := make(chan error, 1)
+	go func() {
+		token, err := client.RequestToken(reqCtx, "default")
+		if token != "" {
+			resultCh <- fmt.Errorf("token = %q, want empty", token)
+			return
+		}
+		resultCh <- err
+	}()
+
+	select {
+	case <-approvalStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("approval callback did not start")
+	}
+	cancelReq()
+
+	select {
+	case err := <-resultCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("RequestToken() error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("RequestToken() did not return after cancellation")
+	}
+	select {
+	case err := <-approvalDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("approval context error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server approval context was not canceled")
 	}
 }
 

@@ -164,6 +164,19 @@ func (s *ConnectionState) RequestToken(
 	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
 	onProvisioningStart func(),
 ) (string, error) {
+	return s.RequestTokenWithContext(context.Background(), host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
+}
+
+// RequestTokenWithContext requests a signer token over SSH.
+func (s *ConnectionState) RequestTokenWithContext(
+	ctx context.Context,
+	host string,
+	sshPort int,
+	identityFile string,
+	knownHostsPath string,
+	hostKeyApproval sshtunnel.HostKeyApprovalHandler,
+	onProvisioningStart func(),
+) (string, error) {
 	client := sshtunnel.NewClient(host, sshPort, 0, 0, identityFile, knownHostsPath)
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)
@@ -171,7 +184,6 @@ func (s *ConnectionState) RequestToken(
 	if onProvisioningStart != nil {
 		client.SetProvisioningStartCallback(onProvisioningStart)
 	}
-	ctx := context.Background()
 	token, err := client.RequestToken(ctx, auth.CurrentProductIdentityID())
 	if err != nil {
 		return "", fmt.Errorf("token request failed: %w", err)

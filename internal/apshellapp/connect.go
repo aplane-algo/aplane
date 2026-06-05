@@ -154,9 +154,9 @@ func (a *App) Disconnect(_ context.Context) (*DisconnectResult, error) {
 }
 
 // RequestToken requests and persists a fresh apshell token for the configured client data dir.
-func (a *App) RequestToken(_ context.Context, req RequestTokenRequest) (*RequestTokenResult, error) {
+func (a *App) RequestToken(ctx context.Context, req RequestTokenRequest) (*RequestTokenResult, error) {
 	wasConnected := a.eng.IsTunnelConnected()
-	token, err := a.eng.RequestToken(req.Host, req.SSHPort, req.IdentityFile, req.KnownHostsPath, req.HostKeyApproval, req.OnProvisioningStarted)
+	token, err := a.eng.RequestTokenWithContext(ctx, req.Host, req.SSHPort, req.IdentityFile, req.KnownHostsPath, req.HostKeyApproval, req.OnProvisioningStarted)
 	if err != nil {
 		return nil, err
 	}
