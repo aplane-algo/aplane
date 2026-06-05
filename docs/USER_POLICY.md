@@ -69,15 +69,19 @@ For byte-preserving scripted edits:
 
 ```bash
 appolicy -d "$APSIGNER_DATA" --yaml > policy.yaml
-APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save < policy.yaml
+APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save-policy < policy.yaml
+APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save-attestation < attestation.yaml
 ```
 
 `appolicy --sha256` verifies the current sidecar and prints the SHA-256 digest
 of the trusted `policy.yaml` bytes. `appolicy --yaml` verifies the current
-sidecar and emits those trusted bytes. `appolicy --save` reads replacement YAML
-from stdin, validates it, writes `policy.yaml`, and writes a fresh sidecar.
-Because stdin is the policy stream for `--save`, provide the passphrase through
-the environment or an interactive terminal.
+sidecar and emits those trusted bytes. `appolicy --save-policy` reads
+replacement signing-policy YAML from stdin, validates it, writes `policy.yaml`,
+and writes a fresh sidecar. `appolicy --save-attestation` does the same for
+direct `attestation.yaml`. The older `appolicy --save` flag remains a
+compatibility alias for `--save-policy`. Because stdin is the document stream
+for save modes, provide the passphrase through the environment or an
+interactive terminal.
 
 With a positional YAML file, `appolicy --check draft.yaml`,
 `appolicy --yaml draft.yaml`, and `appolicy --sha256 draft.yaml` validate the
@@ -100,7 +104,8 @@ apstore -d "$APSIGNER_DATA" policy verify
 Direct YAML edits take effect only after the next successful signer reload,
 unlock, or restart. `apstore policy check`, `apstore policy sign`, and
 `apstore policy verify` process both `policy.yaml` and `attestation.yaml`.
-`appolicy --save` updates only `policy.yaml`. These are offline store
+`appolicy --save-policy` updates only `policy.yaml`; `appolicy --save-attestation`
+updates only `attestation.yaml`. These are offline store
 mutations, so the normal workflow is to run them while `apsigner` is stopped
 or before starting it.
 
@@ -355,7 +360,7 @@ Before relying on a policy:
    `clawback_on_no_route: reject`.
 3. Confirm address and asset set names resolve on the intended networks.
 4. Confirm amount thresholds use raw units in YAML.
-5. Sign the policy sidecar with `appolicy --save` or `apstore policy sign`.
+5. Sign the policy sidecar with `appolicy --save-policy` or `apstore policy sign`.
 6. Reload, unlock, or restart the signer so the new verified policy is active.
 
 ## Troubleshooting

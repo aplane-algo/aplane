@@ -673,9 +673,11 @@ Policy load behavior:
 - admin policy writes require an unlocked identity and replace `policy.yaml`
 - direct YAML edits to either document require offline `apstore policy sign`
   before the signer trusts them
-- `appolicy --yaml` emits the exact verified `policy.yaml` bytes, and
-  `appolicy --save` reads replacement bytes from stdin, validates them, and
-  writes those exact bytes plus a fresh sidecar under the store mutation lock
+- `appolicy --yaml` emits the exact verified `policy.yaml` bytes;
+  `appolicy --save-policy` reads replacement policy bytes from stdin,
+  validates them, and writes those exact bytes plus a fresh sidecar under the
+  store mutation lock; `appolicy --save-attestation` does the same for direct
+  `attestation.yaml`
 - `apstore policy check|verify|sign` checks, verifies, or signs both policy
   documents
 
@@ -1185,13 +1187,14 @@ to run.
 Client-signing `transfer_policy` is persisted in `policy.yaml`; attestor
 component `transfer_policy` is persisted in `attestation.yaml`. Both are
 validated by the normal policy load path and by `apstore policy
-check/sign/verify`. `appolicy` and apadmin whole-file replacement target
-`policy.yaml`. Transfer policy is not projected through mutable admin IPC
+check/sign/verify`. `appolicy --save-policy` and apadmin whole-file replacement
+target `policy.yaml`; `appolicy --save-attestation` targets
+`attestation.yaml`. Transfer policy is not projected through mutable admin IPC
 policy settings and has no guided `apadmin` editor surface; `apadmin` can
 request an active signing-policy snapshot for inspection and can ask the signer
-to hot-replace the whole signing-policy YAML file. The `appolicy
---yaml`/`--save` CLI path is the scriptable offline editor for
-byte-preserving route-table edits.
+to hot-replace the whole signing-policy YAML file. The `appolicy --yaml` /
+`--save-policy` / `--save-attestation` CLI path is the scriptable offline
+editor for byte-preserving route-table edits.
 Route matches are allow-to-continue, not approvals.
 
 Transaction-level hard policy skips passthrough and foreign slots because those

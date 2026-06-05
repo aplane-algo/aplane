@@ -93,6 +93,28 @@ func (s OfflineStore) Validate(ctx context.Context, stored *policy.StoredConfig)
 	return nil
 }
 
+// ValidateAttestation compiles a stored attestation policy using the same
+// runtime defaults as apsigner. It does not read or write attestation.yaml.
+func (s OfflineStore) ValidateAttestation(ctx context.Context, stored *policy.StoredConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.identityID() == "" {
+		return fmt.Errorf("identity ID is required")
+	}
+	if stored == nil {
+		stored = &policy.StoredConfig{}
+	}
+	serverCfg, err := s.serverConfig()
+	if err != nil {
+		return err
+	}
+	if _, err := policyruntime.ApplyAttestationStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
+		return fmt.Errorf("invalid attestation policy: %w", err)
+	}
+	return nil
+}
+
 // Save verifies the current on-disk policy first, validates the requested
 // replacement, then writes policy.yaml plus a fresh integrity sidecar.
 func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) error {
@@ -179,6 +201,53 @@ func (s OfflineStore) SaveYAML(ctx context.Context, data []byte) error {
 	}
 	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(s.DataDir, s.identityID(), masterKey); err != nil {
 		return fmt.Errorf("saved policy failed verification: %w", err)
+	}
+	return nil
+}
+
+// SaveAttestationYAML verifies the current on-disk attestation policy first,
+// parses and validates the requested replacement, then writes the exact YAML
+// bytes plus a fresh sidecar.
+func (s OfflineStore) SaveAttestationYAML(ctx context.Context, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := s.validateOptions(); err != nil {
+		return err
+	}
+	stored, err := policy.ParseStoredAttestationConfig(data)
+	if err != nil {
+		return fmt.Errorf("failed to parse attestation YAML: %w", err)
+	}
+	guard, err := storelock.AcquireExclusive(s.DataDir)
+	if err != nil {
+		return fmt.Errorf("failed to acquire offline store lock: %w (stop apsigner and other store-mutating tools before editing policy offline)", err)
+	}
+	defer func() { _ = guard.Close() }()
+
+	masterKey, clear, err := s.unlock(ctx)
+	if err != nil {
+		return err
+	}
+	defer clear()
+
+	if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(s.DataDir, s.identityID(), masterKey); err != nil {
+		return fmt.Errorf("refusing to overwrite unverified attestation policy: %w", err)
+	}
+	if err := s.ValidateAttestation(ctx, stored); err != nil {
+		return err
+	}
+	if err := policy.SaveAttestationBytesWithMasterKey(
+		s.DataDir,
+		s.identityID(),
+		data,
+		masterKey,
+		s.now(),
+	); err != nil {
+		return err
+	}
+	if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(s.DataDir, s.identityID(), masterKey); err != nil {
+		return fmt.Errorf("saved attestation policy failed verification: %w", err)
 	}
 	return nil
 }

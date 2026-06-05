@@ -34,7 +34,7 @@ appolicy -d "$APSIGNER_DATA"
 appolicy -d "$APSIGNER_DATA" -check
 appolicy -d "$APSIGNER_DATA" --sha256
 appolicy -d "$APSIGNER_DATA" --yaml > policy.yaml
-APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save < policy.yaml
+APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save-policy < policy.yaml
 appolicy draft-policy.yaml
 ```
 
@@ -47,11 +47,11 @@ time. For automation, `APPOLICY_PASSPHRASE` wins over `APSIGNER_PASSPHRASE`.
 digest of the trusted `policy.yaml` bytes. `--yaml` verifies the current
 sidecar and writes only those trusted bytes to stdout. With a positional YAML
 file, `--check`, `--yaml`, and `--sha256` validate that file directly and do
-not verify or update the production sidecar. `--save` reads policy YAML from
+not verify or update the production sidecar. `--save-policy` reads policy YAML from
 stdin, validates it with the signer policy compiler, preserves the submitted
 YAML bytes, and writes `policy.yaml` plus a fresh sidecar. Because stdin is the
-policy stream for `--save`, provide the passphrase through the environment or
-an interactive terminal.
+policy stream for `--save-policy`, provide the passphrase through the
+environment or an interactive terminal.
 
 Inside the TUI, `a` applies the current draft to production by writing
 `policy.yaml` plus a fresh sidecar. `w` writes the current draft to a YAML file
@@ -59,7 +59,7 @@ you choose without applying it to the signer store or writing a sidecar. Use
 this when you want to inspect or hand off a modified policy draft before
 production apply.
 
-When you apply from the `appolicy` TUI or use `appolicy --save`, it writes
+When you apply from the `appolicy` TUI or use `appolicy --save-policy`, it writes
 `policy.yaml` and a fresh sidecar itself; you do not need to run `apstore
 policy sign` afterward.
 
@@ -109,7 +109,7 @@ Sets screen seeds the draft with the same `usdc` set so it appears in the list.
 
 Advanced route shapes remain supported by YAML but are read-only in the guard
 editor. The TUI marks these as YAML-only and offers the full policy YAML view.
-Use `--yaml`/`--save` or direct `policy.yaml` edits for non-uniform
+Use `--yaml`/`--save-policy` or direct `policy.yaml` edits for non-uniform
 `limits_by_network`, multi-asset route entries, clawback routes, and other
 advanced fields. After direct in-place YAML edits, check it, sign it, and then
 reload or restart the signer:

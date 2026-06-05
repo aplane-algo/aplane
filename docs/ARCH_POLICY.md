@@ -803,12 +803,16 @@ still round-trip through YAML and can be edited directly with
 The `client_signing:` block follows the same rule: until guided role-aware
 editing lands in `appolicy`, it is preserved through YAML round-trip and edited
 directly through checked/signed YAML. `appolicy` edits `policy.yaml`; direct
-`attestation.yaml` edits are checked and signed with `apstore policy`.
+`attestation.yaml` edits are checked and signed with
+`appolicy --save-attestation` or `apstore policy`.
 `appolicy --sha256` verifies the sidecar and prints the SHA-256 digest of the
 exact trusted `policy.yaml` bytes. `appolicy --yaml` verifies the sidecar and
-emits those bytes to stdout. `appolicy --save` reads exact replacement YAML
-bytes from stdin, parses and runtime-validates them, and writes those bytes
-plus a fresh sidecar while holding the same lock.
+emits those bytes to stdout. `appolicy --save-policy` reads exact replacement
+signing-policy YAML bytes from stdin, parses and runtime-validates them, and
+writes `policy.yaml` plus a fresh sidecar while holding the same lock.
+`appolicy --save-attestation` performs the same exact-byte replacement flow for
+direct `attestation.yaml`. The older `appolicy --save` flag remains a
+compatibility alias for `--save-policy`.
 `appolicy --to-attestation` parses and runtime-validates a signing
 `policy.yaml`, projects the deterministic "could allow" envelope into direct
 `attestation.yaml`, and prints the result to stdout. The projection preserves

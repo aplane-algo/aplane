@@ -143,6 +143,50 @@ func TestOfflineStoreSaveYAMLPreservesPolicyBytes(t *testing.T) {
 	}
 }
 
+func TestOfflineStoreSaveAttestationYAMLPreservesPolicyBytes(t *testing.T) {
+	dataDir, passphrase := initializedPolicyStore(t)
+	attestationBytes := []byte(`# replacement attestation
+reject_rekey: true
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  routes:
+    - id: allow_algo
+      networks: [testnet]
+      sources: ["*"]
+      assets: [algo]
+      destinations: ["*"]
+`)
+	store := OfflineStore{
+		DataDir:    dataDir,
+		IdentityID: DefaultIdentityID,
+		Passphrase: passphrase,
+	}
+
+	if err := store.SaveAttestationYAML(context.Background(), attestationBytes); err != nil {
+		t.Fatalf("SaveAttestationYAML() error = %v", err)
+	}
+	gotBytes, err := os.ReadFile(policy.AttestationPath(dataDir, DefaultIdentityID))
+	if err != nil {
+		t.Fatalf("ReadFile(attestation) error = %v", err)
+	}
+	if string(gotBytes) != string(attestationBytes) {
+		t.Fatalf("attestation bytes changed during SaveAttestationYAML:\ngot:\n%s\nwant:\n%s", gotBytes, attestationBytes)
+	}
+	masterKey, clear, err := store.unlock(context.Background())
+	if err != nil {
+		t.Fatalf("unlock() error = %v", err)
+	}
+	defer clear()
+	stored, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataDir, DefaultIdentityID, masterKey)
+	if err != nil {
+		t.Fatalf("LoadVerifiedAttestationConfigWithMasterKey() after SaveAttestationYAML() error = %v", err)
+	}
+	if stored.RejectRekey == nil || !*stored.RejectRekey {
+		t.Fatalf("RejectRekey = %v, want true", stored.RejectRekey)
+	}
+}
+
 func TestOfflineStoreSaveRejectsInvalidPolicyWithoutWriting(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStore(t)
 	path := policy.PolicyPath(dataDir, DefaultIdentityID)

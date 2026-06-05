@@ -54,25 +54,61 @@ func TestRunSHA256PrintsVerifiedPolicyDigestOnly(t *testing.T) {
 	}
 }
 
-func TestRunSaveReadsPolicyFromStdin(t *testing.T) {
+func TestRunSavePolicyReadsPolicyFromStdin(t *testing.T) {
 	dataDir, passphrase := initializedAppolicyStore(t)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
 	policyBytes := []byte("# saved through appolicy\nreject_foreign_rekey: false\n")
 	var stdout, stderr bytes.Buffer
 
-	code := run(context.Background(), []string{"-d", dataDir, "--save"}, bytes.NewReader(policyBytes), &stdout, &stderr)
+	code := run(context.Background(), []string{"-d", dataDir, "--save-policy"}, bytes.NewReader(policyBytes), &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("run(--save) code = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("run(--save-policy) code = %d, stderr = %q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "policy saved:") {
-		t.Fatalf("--save stdout = %q, want saved status", stdout.String())
+		t.Fatalf("--save-policy stdout = %q, want saved status", stdout.String())
 	}
 	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, policyeditor.DefaultIdentityID))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
 	if string(gotBytes) != string(policyBytes) {
-		t.Fatalf("--save changed policy bytes:\ngot:\n%s\nwant:\n%s", gotBytes, policyBytes)
+		t.Fatalf("--save-policy changed policy bytes:\ngot:\n%s\nwant:\n%s", gotBytes, policyBytes)
+	}
+}
+
+func TestRunSaveAttestationReadsAttestationFromStdin(t *testing.T) {
+	dataDir, passphrase := initializedAppolicyStore(t)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+	attestationBytes := []byte(`# saved through appolicy
+reject_rekey: true
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  routes:
+    - id: allow_algo
+      networks: [testnet]
+      sources: ["*"]
+      assets: [algo]
+      destinations: ["*"]
+`)
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"-d", dataDir, "--save-attestation"}, bytes.NewReader(attestationBytes), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run(--save-attestation) code = %d, stderr = %q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "attestation policy saved:") {
+		t.Fatalf("--save-attestation stdout = %q, want saved status", stdout.String())
+	}
+	gotBytes, err := os.ReadFile(policy.AttestationPath(dataDir, policyeditor.DefaultIdentityID))
+	if err != nil {
+		t.Fatalf("ReadFile(attestation) error = %v", err)
+	}
+	if string(gotBytes) != string(attestationBytes) {
+		t.Fatalf("--save-attestation changed attestation bytes:\ngot:\n%s\nwant:\n%s", gotBytes, attestationBytes)
+	}
+	if _, err := policy.ParseStoredAttestationConfig(gotBytes); err != nil {
+		t.Fatalf("saved attestation YAML does not parse: %v", err)
 	}
 }
 
@@ -170,15 +206,34 @@ transfer_policy:
 	}
 }
 
-func TestRunSaveRejectsPolicyFileArgument(t *testing.T) {
+func TestRunSavePolicyAliasReadsPolicyFromStdin(t *testing.T) {
+	dataDir, passphrase := initializedAppolicyStore(t)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+	policyBytes := []byte("reject_foreign_rekey: false\n")
 	var stdout, stderr bytes.Buffer
 
-	code := run(context.Background(), []string{"--save", "policy.yaml"}, strings.NewReader(""), &stdout, &stderr)
-	if code != 2 {
-		t.Fatalf("run(--save file) code = %d, want 2", code)
+	code := run(context.Background(), []string{"-d", dataDir, "--save"}, bytes.NewReader(policyBytes), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run(--save alias) code = %d, stderr = %q", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "does not accept a file argument") {
-		t.Fatalf("stderr = %q, want file argument rejection", stderr.String())
+	if !strings.Contains(stdout.String(), "policy saved:") {
+		t.Fatalf("--save alias stdout = %q, want policy saved status", stdout.String())
+	}
+}
+
+func TestRunSaveRejectsPolicyFileArgument(t *testing.T) {
+	for _, flag := range []string{"--save-policy", "--save-attestation"} {
+		t.Run(flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+
+			code := run(context.Background(), []string{flag, "policy.yaml"}, strings.NewReader(""), &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("run(%s file) code = %d, want 2", flag, code)
+			}
+			if !strings.Contains(stderr.String(), "does not accept a file argument") {
+				t.Fatalf("stderr = %q, want file argument rejection", stderr.String())
+			}
+		})
 	}
 }
 

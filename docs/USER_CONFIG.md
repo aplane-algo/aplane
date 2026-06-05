@@ -537,10 +537,12 @@ to either policy document, run `apstore policy check`, review the change, then
 run `apstore policy sign`; `apstore policy verify` confirms both signed policy
 documents with the store passphrase.
 For byte-preserving scripted edits, `appolicy --yaml` emits the verified policy
-bytes and `appolicy --save` reads replacement YAML from stdin, validates it,
-and writes a fresh sidecar. `apstore policy sign` and `appolicy --save` are
-offline store mutations, so run them while `apsigner` is stopped or before
-starting the signer. Direct YAML edits are active only after the next
+bytes and `appolicy --save-policy` reads replacement policy YAML from stdin,
+validates it, and writes a fresh sidecar. `appolicy --save-attestation` does
+the same for direct `attestation.yaml`. `apstore policy sign` and `appolicy`
+save modes are offline store mutations, so run them while `apsigner` is
+stopped or before starting the signer. Direct YAML edits are active only after
+the next
 successful signer reload, unlock, or restart; until then, an already running
 signer keeps the previous verified in-memory policy.
 
@@ -626,8 +628,8 @@ component cosigning it lives in `attestation.yaml`. It is not exposed in
 transfer guards, or edit advanced routing fields directly in `policy.yaml`,
 then run `apstore policy check` and `apstore policy sign` before starting or
 reloading the signer. For scripts, use `appolicy --yaml` to export the verified
-signing policy and `appolicy --save` to validate, save, and sign replacement YAML from
-stdin.
+signing policy and `appolicy --save-policy` to validate, save, and sign
+replacement YAML from stdin.
 
 For the broader operator policy guide, see [USER_POLICY.md](USER_POLICY.md).
 For the transfer routing deep dive with worked examples, validation rules, and
@@ -907,9 +909,10 @@ appolicy -d "$APSIGNER_DATA"
 ```
 
 For scripted flows, `appolicy --yaml` writes the verified policy bytes to
-stdout, and `appolicy --save` reads replacement YAML from stdin, validates it,
-and writes a fresh sidecar for `policy.yaml`. Direct YAML editing for either
-policy document remains available through `apstore policy check`,
+stdout, and `appolicy --save-policy` reads replacement YAML from stdin,
+validates it, and writes a fresh sidecar for `policy.yaml`. Use
+`appolicy --save-attestation` for direct `attestation.yaml`. Direct YAML
+editing for either policy document remains available through `apstore policy check`,
 `apstore policy sign`, and `apstore policy verify`.
 
 The legacy global transfer guard fields remain supported in `policy.yaml` for
@@ -939,7 +942,7 @@ and are converted back to raw YAML units on save.
 IDs able to query configured algod when the local cache is cold. Routes with
 multiple asset terms, `limits_by_network`, clawback `asset_sources`, wildcard
 or asset-set amount limits, or other advanced YAML-only fields remain supported
-but are edited through the full YAML view or the `--yaml` / `--save` flow.
+but are edited through the full YAML view or the `--yaml` / `--save-policy` flow.
 
 ### Approval vs Policy
 

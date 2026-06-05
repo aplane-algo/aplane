@@ -394,8 +394,9 @@ apstore -d "$APSIGNER_DATA" policy verify
 For interactive offline edits, use `appolicy -d "$APSIGNER_DATA"` after
 stopping `apsigner`; it validates and saves `policy.yaml` with a fresh sidecar.
 For scriptable byte-preserving edits or imports, use `appolicy --yaml` to emit
-the verified current policy and `appolicy --save` to read replacement YAML from
-stdin, validate it, and save it with a fresh sidecar.
+the verified current policy and `appolicy --save-policy` to read replacement
+YAML from stdin, validate it, and save it with a fresh sidecar. Use
+`appolicy --save-attestation` for direct `attestation.yaml`.
 
 After signing, reload, unlock, or restart the signer before relying on the new
 policy. The running signer keeps the previous in-memory policy until the next
@@ -563,7 +564,8 @@ From the key details view:
 ./apstore policy sign
 ./appolicy -check
 ./appolicy --yaml
-./appolicy --save < policy.yaml
+./appolicy --save-policy < policy.yaml
+./appolicy --save-attestation < attestation.yaml
 ./appolicy
 
 # Template management (for custom LogicSigs)
