@@ -291,7 +291,7 @@ func (m Model) renderKeyListView() string {
 
 	if m.keyListUsesTabs() {
 		sb.WriteString(m.renderKeyListTabs())
-		sb.WriteString("\n\n")
+		sb.WriteString("\n")
 	}
 
 	// Filter input
