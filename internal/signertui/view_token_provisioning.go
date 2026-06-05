@@ -20,11 +20,8 @@ func (m Model) renderTokenProvisioningPopup() string {
 
 	rows := []string{
 		"Client Enrollment Request",
-		fmt.Sprintf("Identity:    %s", m.pendingTokenRequest.IdentityID),
 		fmt.Sprintf("SSH Key:     %s", m.pendingTokenRequest.SSHFingerprint),
 		fmt.Sprintf("Remote Addr: %s", m.pendingTokenRequest.RemoteAddr),
-		fmt.Sprintf("Timestamp:   %s", m.pendingTokenRequest.Timestamp.Format("15:04:05")),
-		"⚠ This will issue an API token and register this SSH key",
 	}
 	var sb strings.Builder
 
@@ -33,12 +30,7 @@ func (m Model) renderTokenProvisioningPopup() string {
 
 	sb.WriteString(rows[1] + "\n")
 	sb.WriteString(rows[2] + "\n")
-	sb.WriteString(rows[3] + "\n")
-	sb.WriteString(rows[4] + "\n")
 	sb.WriteString("\n")
-
-	sb.WriteString(warningStyle.Render(rows[5]))
-	sb.WriteString("\n\n")
 
 	// Buttons - use JoinHorizontal for proper alignment
 	var approveBtn, rejectBtn string

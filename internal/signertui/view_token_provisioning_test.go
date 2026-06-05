@@ -6,7 +6,6 @@ package tui
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestTokenProvisioningPopupFitsPanelBody(t *testing.T) {
@@ -19,7 +18,6 @@ func TestTokenProvisioningPopupFitsPanelBody(t *testing.T) {
 			IdentityID:     "default",
 			SSHFingerprint: "SHA256:abcdefghijklmnopqrstuvwxyz",
 			RemoteAddr:     "127.0.0.1:12345",
-			Timestamp:      time.Unix(0, 0),
 		},
 	}
 
@@ -31,5 +29,10 @@ func TestTokenProvisioningPopupFitsPanelBody(t *testing.T) {
 	clean := stripANSI(rendered)
 	if !strings.Contains(clean, "╚") && !strings.Contains(clean, "╰") {
 		t.Fatalf("token provisioning popup missing bottom border:\n%s", clean)
+	}
+	for _, unwanted := range []string{"Identity:", "Timestamp:", "This will issue"} {
+		if strings.Contains(clean, unwanted) {
+			t.Fatalf("token provisioning popup contains %q:\n%s", unwanted, clean)
+		}
 	}
 }
