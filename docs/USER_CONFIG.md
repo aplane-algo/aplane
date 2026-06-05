@@ -204,9 +204,10 @@ that alias's endpoint data. Import fails without writing if the imported URL is
 already assigned to a different alias.
 
 After endpoint tokens are enrolled, `endpoints discover-attestors` queries
-`/keys` on each configured endpoint and rebuilds that endpoint's
-`published_attestors` inventory in `endpoints.yaml`. Attested-send routing is
-derived from this endpoint-local inventory.
+`/keys` on configured endpoints and rebuilds each reachable endpoint's
+`published_attestors` inventory in `endpoints.yaml`. If an endpoint is down or
+cannot be queried, its existing published-attestor entries are preserved.
+Attested-send routing is derived from this endpoint-local inventory.
 
 If the user signer will generate attested account keys through `apadmin` or
 another signer-side key-generation client, run `endpoints sync-attestors` while

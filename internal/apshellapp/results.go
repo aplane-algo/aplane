@@ -756,8 +756,11 @@ type DiscoveredEndpointAttestorKey struct {
 
 // EndpointAttestorDiscovery describes discovered attestor keys for one endpoint.
 type EndpointAttestorDiscovery struct {
-	Alias string
-	Keys  []DiscoveredEndpointAttestorKey
+	Alias          string
+	Keys           []DiscoveredEndpointAttestorKey
+	Skipped        bool
+	PreservedCount int
+	Error          string
 }
 
 // EndpointDiscoverAttestorsResult describes a full attestor endpoint mapping

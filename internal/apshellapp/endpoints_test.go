@@ -258,6 +258,122 @@ func TestEndpointDiscoverAttestorsRebuildsMappingsFromAllEndpoints(t *testing.T)
 	}
 }
 
+func TestEndpointDiscoverAttestorsPreservesUnreachableEndpointInventory(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+
+	newOnlineKey := strings.Repeat("ab", 32)
+	oldOnlineKey := strings.Repeat("cd", 32)
+	offlineKey := strings.Repeat("ef", 32)
+	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
+		Address:        testComponentSelector(t, keytypes.AttestorComponentEd25519V1, newOnlineKey),
+		PublicKeyHex:   newOnlineKey,
+		KeyType:        keytypes.AttestorComponentEd25519V1,
+		IsComponentKey: true,
+	}})
+
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-online", config.ClientEndpointConfig{
+		URL: attestorServer.URL,
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(attestor-online) error = %v", err)
+	}
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-offline", config.ClientEndpointConfig{
+		URL: "http://127.0.0.1:1",
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(attestor-offline) error = %v", err)
+	}
+	writeEndpointToken(t, dataDir, "attestor-online", "att-token")
+	writePublishedAttestors(t, dataDir, map[string]map[string]config.ClientEndpointPublishedAttestor{
+		"attestor-online": {
+			oldOnlineKey: endpointPublishedAttestorForTest(t, oldOnlineKey),
+		},
+		"attestor-offline": {
+			offlineKey: endpointPublishedAttestorForTest(t, offlineKey),
+		},
+	})
+
+	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	if err != nil {
+		t.Fatalf("EndpointDiscoverAttestors() error = %v", err)
+	}
+	if result.PublicKeyCount != 2 || result.PreviousPublishedCount != 2 {
+		t.Fatalf("discovery counts = public:%d previous:%d, want 2/2", result.PublicKeyCount, result.PreviousPublishedCount)
+	}
+	var skipped EndpointAttestorDiscovery
+	for _, endpoint := range result.Endpoints {
+		if endpoint.Alias == "attestor-offline" {
+			skipped = endpoint
+			break
+		}
+	}
+	if !skipped.Skipped || skipped.PreservedCount != 1 {
+		t.Fatalf("offline discovery = %#v, want skipped with one preserved key", skipped)
+	}
+
+	cfg, err := config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	publishedOnline := cfg.Endpoints.Endpoints["attestor-online"].PublishedAttestors
+	if _, ok := publishedOnline[newOnlineKey]; !ok {
+		t.Fatalf("new online attestor %s missing from %#v", newOnlineKey, publishedOnline)
+	}
+	if _, ok := publishedOnline[oldOnlineKey]; ok {
+		t.Fatalf("old online attestor %s was not cleared from %#v", oldOnlineKey, publishedOnline)
+	}
+	publishedOffline := cfg.Endpoints.Endpoints["attestor-offline"].PublishedAttestors
+	if _, ok := publishedOffline[offlineKey]; !ok {
+		t.Fatalf("offline attestor %s was not preserved in %#v", offlineKey, publishedOffline)
+	}
+	if route := cfg.AttestorEndpoints[offlineKey]; route.Endpoint != "attestor-offline" {
+		t.Fatalf("offline route = %#v, want attestor-offline", route)
+	}
+	if _, ok := app.eng.AttestorEndpoints[offlineKey]; !ok {
+		t.Fatalf("engine route for preserved offline key %s missing", offlineKey)
+	}
+}
+
+func TestEndpointDiscoverAttestorsRejectsInvalidEndpointMetadata(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+
+	publicKeyHex := testAttestorPublicKeyHex()
+	staleKeyHex := strings.Repeat("cd", 32)
+	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
+		Address:        "a_bad",
+		PublicKeyHex:   publicKeyHex,
+		KeyType:        keytypes.AttestorComponentEd25519V1,
+		IsComponentKey: true,
+	}})
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+		URL: attestorServer.URL,
+	}, true); err != nil {
+		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+	}
+	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
+	writePublishedAttestor(t, dataDir, "attestor-local", staleKeyHex)
+
+	_, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	if err == nil {
+		t.Fatal("EndpointDiscoverAttestors(invalid metadata) error = nil, want rejection")
+	}
+	if !strings.Contains(err.Error(), "invalid attestor discovery metadata") {
+		t.Fatalf("EndpointDiscoverAttestors(invalid metadata) error = %v, want metadata rejection", err)
+	}
+
+	cfg, err := config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	published := cfg.Endpoints.Endpoints["attestor-local"].PublishedAttestors
+	if _, ok := published[staleKeyHex]; !ok {
+		t.Fatalf("stale attestor %s was not preserved after failed discovery in %#v", staleKeyHex, published)
+	}
+	if _, ok := published[publicKeyHex]; ok {
+		t.Fatalf("invalid attestor %s was written despite metadata failure", publicKeyHex)
+	}
+}
+
 func TestEndpointDiscoverAttestorsDryRunDoesNotWriteMappings(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
@@ -442,17 +558,25 @@ func writeEndpointEnvelopeWithOptions(t *testing.T, dir, name, rawURL string, si
 
 func writePublishedAttestor(t *testing.T, dir, alias, publicKeyHex string) {
 	t.Helper()
-	_, err := config.RebuildStoredClientEndpointPublishedAttestors(dir, map[string]map[string]config.ClientEndpointPublishedAttestor{
-		alias: {
-			publicKeyHex: {
-				ComponentKey: testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex),
-				KeyType:      keytypes.AttestorComponentEd25519V1,
-				LastSeenAt:   "2026-06-04T00:00:00Z",
-			},
-		},
+	writePublishedAttestors(t, dir, map[string]map[string]config.ClientEndpointPublishedAttestor{
+		alias: {publicKeyHex: endpointPublishedAttestorForTest(t, publicKeyHex)},
 	})
+}
+
+func writePublishedAttestors(t *testing.T, dir string, publications map[string]map[string]config.ClientEndpointPublishedAttestor) {
+	t.Helper()
+	_, err := config.RebuildStoredClientEndpointPublishedAttestors(dir, publications)
 	if err != nil {
 		t.Fatalf("RebuildStoredClientEndpointPublishedAttestors() error = %v", err)
+	}
+}
+
+func endpointPublishedAttestorForTest(t *testing.T, publicKeyHex string) config.ClientEndpointPublishedAttestor {
+	t.Helper()
+	return config.ClientEndpointPublishedAttestor{
+		ComponentKey: testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex),
+		KeyType:      keytypes.AttestorComponentEd25519V1,
+		LastSeenAt:   "2026-06-04T00:00:00Z",
 	}
 }
 

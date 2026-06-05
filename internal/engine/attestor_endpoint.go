@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -24,6 +25,10 @@ type attestorComponentClient interface {
 	GetKeysWithContext(context.Context) (*signerapi.KeysResult, error)
 	RequestComponentSignWithContext(context.Context, signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error)
 }
+
+// ErrAttestorDiscoveryInvalidMetadata marks malformed attestor component-key
+// metadata returned by an endpoint's /keys response.
+var ErrAttestorDiscoveryInvalidMetadata = errors.New("invalid attestor discovery metadata")
 
 type resolvedAttestorEndpoint struct {
 	client  attestorComponentClient
@@ -174,18 +179,18 @@ func discoverAttestorComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredAttest
 		}
 		publicKey, err := normalizeAttestorPublicKeyHex(key.PublicKeyHex, key.KeyType)
 		if err != nil {
-			return nil, fmt.Errorf("attestor component key %q has invalid public_key_hex: %w", key.Address, err)
+			return nil, fmt.Errorf("%w: attestor component key %q has invalid public_key_hex: %v", ErrAttestorDiscoveryInvalidMetadata, key.Address, err)
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
 		if err != nil {
-			return nil, fmt.Errorf("attestor component public key %s has invalid component selector %q: %w", publicKey, key.Address, err)
+			return nil, fmt.Errorf("%w: attestor component public key %s has invalid component selector %q: %v", ErrAttestorDiscoveryInvalidMetadata, publicKey, key.Address, err)
 		}
 		expectedSelector, err := attestorComponentSelector(key.KeyType, publicKey)
 		if err != nil {
-			return nil, fmt.Errorf("failed to derive component selector for attestor public key %s: %w", publicKey, err)
+			return nil, fmt.Errorf("%w: failed to derive component selector for attestor public key %s: %v", ErrAttestorDiscoveryInvalidMetadata, publicKey, err)
 		}
 		if selector != expectedSelector {
-			return nil, fmt.Errorf("attestor component public key %s advertised selector %s, want %s", publicKey, selector, expectedSelector)
+			return nil, fmt.Errorf("%w: attestor component public key %s advertised selector %s, want %s", ErrAttestorDiscoveryInvalidMetadata, publicKey, selector, expectedSelector)
 		}
 		if _, ok := seen[publicKey]; ok {
 			continue

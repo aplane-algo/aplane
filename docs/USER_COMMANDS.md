@@ -626,11 +626,13 @@ discover attestor keys. Re-importing with the same alias replaces that alias's
 endpoint data. Importing a URL already assigned to a different alias fails
 without writing.
 
-`endpoints discover-attestors` queries `/keys` on every configured endpoint
-using that endpoint's token and rebuilds each endpoint's `published_attestors`
-inventory in `endpoints.yaml`. Attested-send routing is derived from that
-inventory. Run it after importing endpoints and requesting endpoint tokens. Use
-`--dry-run` to inspect the discovered inventory without writing.
+`endpoints discover-attestors` queries `/keys` on configured endpoints using
+that endpoint's token and rebuilds each reachable endpoint's
+`published_attestors` inventory in `endpoints.yaml`. If an endpoint is down or
+cannot be queried, its existing published-attestor entries are preserved.
+Attested-send routing is derived from that inventory. Run it after importing
+endpoints and requesting endpoint tokens. Use `--dry-run` to inspect the
+discovered and skipped endpoints without writing.
 
 `endpoints sync-attestors` publishes that local discovered inventory to the
 currently connected signer identity as public attestor reference options for

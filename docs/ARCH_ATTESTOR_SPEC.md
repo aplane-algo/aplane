@@ -1303,11 +1303,13 @@ alias without writing. Dry-run import must run the same validation and conflict
 checks as a real import without writing files.
 
 After endpoint tokens and SSH host trust are established, `apshell endpoints
-discover-attestors [--dry-run]` queries `/keys` on every configured endpoint,
+discover-attestors [--dry-run]` queries `/keys` on configured endpoints,
 extracts attestor component-key `public_key_hex` values, and atomically
-rebuilds each endpoint's `published_attestors` inventory in `endpoints.yaml`.
-The rebuild rejects duplicate public keys advertised by multiple endpoint
-aliases and leaves files unchanged on any endpoint/query/validation failure.
+rebuilds reachable endpoints' `published_attestors` inventory in
+`endpoints.yaml`. Endpoints that cannot be queried are skipped and preserve
+their existing `published_attestors` entries. The rebuild rejects duplicate
+public keys advertised by multiple endpoint aliases and leaves files unchanged
+on validation failure.
 
 `apshell endpoints sync-attestors [--dry-run]` then copies that local
 `published_attestors` inventory into the connected user signer identity as

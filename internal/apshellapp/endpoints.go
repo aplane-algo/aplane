@@ -5,6 +5,7 @@ package apshellapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
+	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
@@ -132,8 +134,10 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	return result, nil
 }
 
-// EndpointDiscoverAttestors queries every configured endpoint's /keys inventory
-// and atomically rebuilds endpoint-local published_attestors inventory.
+// EndpointDiscoverAttestors queries configured endpoint /keys inventories and
+// atomically rebuilds reachable endpoint published_attestors inventory.
+// Unreachable endpoints are preserved as no-ops so temporary outages do not
+// erase client routing state.
 func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscoverAttestorsRequest) (*EndpointDiscoverAttestorsResult, error) {
 	cfg, err := config.LoadConfig(a.DataDir)
 	if err != nil {
@@ -157,7 +161,18 @@ func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscove
 		endpoint := cfg.Endpoints.Endpoints[alias]
 		keys, err := a.eng.DiscoverAttestorComponentKeysWithContext(ctx, endpoint)
 		if err != nil {
-			return nil, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
+			if errors.Is(err, engine.ErrAttestorDiscoveryInvalidMetadata) {
+				return nil, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
+			}
+			preserved := clonePublishedAttestors(endpoint.PublishedAttestors)
+			publications[alias] = preserved
+			discoveries = append(discoveries, EndpointAttestorDiscovery{
+				Alias:          alias,
+				Skipped:        true,
+				PreservedCount: len(preserved),
+				Error:          err.Error(),
+			})
+			continue
 		}
 		publications[alias] = map[string]config.ClientEndpointPublishedAttestor{}
 		discovery := EndpointAttestorDiscovery{Alias: alias}
@@ -331,6 +346,14 @@ func attestorEndpointMappingsByAlias(routes config.AttestorEndpointConfigs) map[
 	return out
 }
 
+func clonePublishedAttestors(in map[string]config.ClientEndpointPublishedAttestor) map[string]config.ClientEndpointPublishedAttestor {
+	out := make(map[string]config.ClientEndpointPublishedAttestor, len(in))
+	for publicKey, published := range in {
+		out[publicKey] = published
+	}
+	return out
+}
+
 func endpointAttestorCandidates(registry config.ClientEndpointRegistry) []signerapi.AttestorReferenceCandidate {
 	aliases := make([]string, 0, len(registry.Endpoints))
 	for alias := range registry.Endpoints {
@@ -446,6 +469,10 @@ func endpointDiscoverAttestorsRenderLines(result *EndpointDiscoverAttestorsResul
 		fmt.Sprintf("  previous published keys: %d", result.PreviousPublishedCount),
 	}
 	for _, endpoint := range result.Endpoints {
+		if endpoint.Skipped {
+			lines = append(lines, fmt.Sprintf("  %s: skipped, preserved %d key(s): %s", endpoint.Alias, endpoint.PreservedCount, endpoint.Error))
+			continue
+		}
 		if len(endpoint.Keys) == 0 {
 			lines = append(lines, fmt.Sprintf("  %s: none", endpoint.Alias))
 			continue
