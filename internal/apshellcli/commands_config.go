@@ -352,9 +352,16 @@ func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
 		return
 	}
 	r.println("Published attestors:")
-	for _, componentID := range endpoint.PublishedAttestorComponents {
-		r.printf("  %s\n", componentID)
+	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "  COMPONENT\tKEY TYPE\tLAST SEEN")
+	for _, attestor := range endpoint.PublishedAttestors {
+		_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\n",
+			attestor.ComponentKey,
+			attestor.KeyType,
+			attestor.LastSeenAt,
+		)
 	}
+	_ = w.Flush()
 }
 
 func (r *REPLState) renderEndpointAttestors(result *apshellapp.EndpointAttestorsResult) {
@@ -363,13 +370,12 @@ func (r *REPLState) renderEndpointAttestors(result *apshellapp.EndpointAttestors
 		return
 	}
 	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ENDPOINT\tCOMPONENT\tKEY TYPE\tLAST SEEN")
+	_, _ = fmt.Fprintln(w, "ENDPOINT\tCOMPONENT\tKEY TYPE")
 	for _, attestor := range result.Attestors {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n",
 			attestor.EndpointAlias,
 			attestor.ComponentKey,
 			attestor.KeyType,
-			attestor.LastSeenAt,
 		)
 	}
 	_ = w.Flush()

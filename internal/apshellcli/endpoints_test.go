@@ -89,6 +89,55 @@ func TestEndpointSyncAttestorsProgressListsComponentsBeforePrompt(t *testing.T) 
 	}
 }
 
+func TestRenderEndpointAttestorsOmitsLastSeen(t *testing.T) {
+	var out bytes.Buffer
+	state := &REPLState{Out: &out}
+
+	state.renderEndpointAttestors(&apshellapp.EndpointAttestorsResult{
+		Attestors: []apshellapp.EndpointAttestorEntry{{
+			EndpointAlias: "attestor-local",
+			ComponentKey:  "a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078",
+			KeyType:       keytypes.AttestorComponentEd25519V1,
+			LastSeenAt:    "2026-06-04T00:00:00Z",
+		}},
+	})
+
+	rendered := out.String()
+	if strings.Contains(rendered, "LAST SEEN") || strings.Contains(rendered, "2026-06-04T00:00:00Z") {
+		t.Fatalf("rendered attestors = %q, want no last-seen column or timestamp", rendered)
+	}
+	if !strings.Contains(rendered, "a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078") {
+		t.Fatalf("rendered attestors = %q, want component key", rendered)
+	}
+}
+
+func TestRenderEndpointShowIncludesAttestorLastSeen(t *testing.T) {
+	var out bytes.Buffer
+	state := &REPLState{Out: &out}
+
+	state.renderEndpointShow(&apshellapp.EndpointShowResult{
+		Endpoint: apshellapp.EndpointEntry{
+			Alias: "attestor-local",
+			Role:  config.ClientEndpointRoleAttestor,
+			URL:   "ssh://127.0.0.1:2223",
+			PublishedAttestorComponents: []string{
+				"a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078",
+			},
+			PublishedAttestors: []apshellapp.EndpointAttestorEntry{{
+				EndpointAlias: "attestor-local",
+				ComponentKey:  "a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078",
+				KeyType:       keytypes.AttestorComponentEd25519V1,
+				LastSeenAt:    "2026-06-04T00:00:00Z",
+			}},
+		},
+	})
+
+	rendered := out.String()
+	if !strings.Contains(rendered, "LAST SEEN") || !strings.Contains(rendered, "2026-06-04T00:00:00Z") {
+		t.Fatalf("rendered endpoint show = %q, want last-seen detail", rendered)
+	}
+}
+
 func endpointCLITestComponentSelector(t *testing.T, keyType, publicKeyHex string) string {
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)

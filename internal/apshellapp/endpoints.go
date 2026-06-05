@@ -458,7 +458,8 @@ func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, 
 	tokenPresent, tokenError := endpointTokenStatus(endpoint.TokenFile)
 	keys := append([]string(nil), publicKeys...)
 	sort.Strings(keys)
-	components := endpointPublishedAttestorComponents(endpoint)
+	attestors := endpointPublishedAttestors(alias, endpoint)
+	components := endpointPublishedAttestorComponents(attestors)
 	return EndpointEntry{
 		Alias:                       alias,
 		Role:                        endpoint.Role,
@@ -473,15 +474,36 @@ func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, 
 		IsDefault:                   isDefault,
 		PublishedAttestorPublicKeys: keys,
 		PublishedAttestorComponents: components,
+		PublishedAttestors:          attestors,
 	}
 }
 
-func endpointPublishedAttestorComponents(endpoint config.ClientEndpointConfig) []string {
-	components := make([]string, 0, len(endpoint.PublishedAttestors))
-	for _, published := range endpoint.PublishedAttestors {
-		if published.ComponentKey != "" {
-			components = append(components, published.ComponentKey)
+func endpointPublishedAttestors(alias string, endpoint config.ClientEndpointConfig) []EndpointAttestorEntry {
+	publicKeys := make([]string, 0, len(endpoint.PublishedAttestors))
+	for publicKey := range endpoint.PublishedAttestors {
+		publicKeys = append(publicKeys, publicKey)
+	}
+	sort.Strings(publicKeys)
+	attestors := make([]EndpointAttestorEntry, 0, len(publicKeys))
+	for _, publicKey := range publicKeys {
+		published := endpoint.PublishedAttestors[publicKey]
+		if published.ComponentKey == "" {
+			continue
 		}
+		attestors = append(attestors, EndpointAttestorEntry{
+			EndpointAlias: alias,
+			ComponentKey:  published.ComponentKey,
+			KeyType:       published.KeyType,
+			LastSeenAt:    published.LastSeenAt,
+		})
+	}
+	return attestors
+}
+
+func endpointPublishedAttestorComponents(attestors []EndpointAttestorEntry) []string {
+	components := make([]string, 0, len(attestors))
+	for _, attestor := range attestors {
+		components = append(components, attestor.ComponentKey)
 	}
 	sort.Strings(components)
 	return components
@@ -625,11 +647,7 @@ func endpointAttestorsRenderLines(result *EndpointAttestorsResult) []string {
 	}
 	lines := []string{fmt.Sprintf("Endpoint-discovered attestors: %d", len(result.Attestors))}
 	for _, attestor := range result.Attestors {
-		line := fmt.Sprintf("  %s: %s (%s)", attestor.EndpointAlias, attestor.ComponentKey, attestor.KeyType)
-		if attestor.LastSeenAt != "" {
-			line += " last_seen=" + attestor.LastSeenAt
-		}
-		lines = append(lines, line)
+		lines = append(lines, fmt.Sprintf("  %s: %s (%s)", attestor.EndpointAlias, attestor.ComponentKey, attestor.KeyType))
 	}
 	return lines
 }

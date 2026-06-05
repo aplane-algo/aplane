@@ -640,7 +640,9 @@ confirmation, unless `--yes` is provided. `--dry-run` inspects the discovered
 and skipped endpoints without writing files or updating the signer library.
 
 `endpoints attestors` lists the client-local endpoint-discovered attestor
-inventory by component ID. It does not call remote endpoints.
+inventory by endpoint alias, component ID, and key type. It does not call
+remote endpoints. Use `endpoints show <alias>` to see `last_seen_at` for an
+endpoint's published attestors.
 
 **Examples:**
 ```
