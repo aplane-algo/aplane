@@ -25,14 +25,15 @@ import (
 )
 
 type options struct {
-	dataDir    string
-	identityID string
-	check      bool
-	yaml       bool
-	sha256     bool
-	save       bool
-	online     bool
-	version    bool
+	dataDir       string
+	identityID    string
+	check         bool
+	yaml          bool
+	sha256        bool
+	save          bool
+	toAttestation bool
+	online        bool
+	version       bool
 }
 
 func main() {
@@ -49,6 +50,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	fs.BoolVar(&opts.yaml, "yaml", false, "verify policy.yaml or a policy file and print it to stdout")
 	fs.BoolVar(&opts.sha256, "sha256", false, "verify policy.yaml or a policy file and print its SHA-256 digest")
 	fs.BoolVar(&opts.save, "save", false, "read policy YAML from stdin, validate, save, and sign it")
+	fs.BoolVar(&opts.toAttestation, "to-attestation", false, "convert policy.yaml or a policy file to direct attestation.yaml and print it to stdout")
 	fs.BoolVar(&opts.online, "online", false, "disabled placeholder for future apsigner-connected policy editing")
 	fs.BoolVar(&opts.version, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
@@ -62,8 +64,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		writeLine(stderr, "appolicy online mode is not implemented yet")
 		return 2
 	}
-	if modeCount(opts.check, opts.yaml, opts.sha256, opts.save) > 1 {
-		writeLine(stderr, "appolicy: choose only one of -check, -yaml, -sha256, or -save")
+	if modeCount(opts.check, opts.yaml, opts.sha256, opts.save, opts.toAttestation) > 1 {
+		writeLine(stderr, "appolicy: choose only one of -check, -yaml, -sha256, -save, or -to-attestation")
 		return 2
 	}
 	policyFile := ""
@@ -162,6 +164,20 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		writef(stdout, "%s\n", policy.PolicySHA256(data))
 		return 0
 	}
+	if opts.toAttestation {
+		data, err := os.ReadFile(policy.PolicyPath(dataDir, identityID))
+		if err != nil {
+			writef(stderr, "appolicy: failed to read policy YAML: %v\n", err)
+			return 1
+		}
+		out, err := policy.ConvertSigningPolicyToAttestationYAML(data)
+		if err != nil {
+			writef(stderr, "appolicy: failed to convert policy to attestation.yaml: %v\n", err)
+			return 1
+		}
+		_, _ = stdout.Write(out)
+		return 0
+	}
 
 	writef(stdout, "policy OK: %s\n", policy.PolicyPath(dataDir, identityID))
 	if opts.check {
@@ -203,6 +219,20 @@ func runPolicyFile(ctx context.Context, path string, opts options, store *policy
 	}
 	if opts.sha256 {
 		writef(stdout, "%s\n", policy.PolicySHA256(data))
+		return 0
+	}
+	if opts.toAttestation {
+		out, err := policy.ConvertSigningPolicyToAttestation(stored)
+		if err != nil {
+			writef(stderr, "appolicy: failed to convert policy to attestation.yaml: %v\n", err)
+			return 1
+		}
+		data, err := policy.MarshalStoredAttestationConfig(out)
+		if err != nil {
+			writef(stderr, "appolicy: failed to marshal attestation.yaml: %v\n", err)
+			return 1
+		}
+		_, _ = stdout.Write(data)
 		return 0
 	}
 

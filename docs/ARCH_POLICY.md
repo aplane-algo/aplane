@@ -809,6 +809,12 @@ exact trusted `policy.yaml` bytes. `appolicy --yaml` verifies the sidecar and
 emits those bytes to stdout. `appolicy --save` reads exact replacement YAML
 bytes from stdin, parses and runtime-validates them, and writes those bytes
 plus a fresh sidecar while holding the same lock.
+`appolicy --to-attestation` parses and runtime-validates a signing
+`policy.yaml`, projects the deterministic "could allow" envelope into direct
+`attestation.yaml`, and prints the result to stdout. The projection preserves
+hard-reject bounds and transfer routes, removes review-only route thresholds,
+and fails closed for route-miss `review` or `operator_default` behavior because
+attestor policy has no human-review verdict.
 With a positional YAML file, `--check`, `--yaml`, and `--sha256` parse and
 runtime-validate the file without reading the production sidecar or requesting
 the store passphrase.

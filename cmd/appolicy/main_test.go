@@ -130,6 +130,46 @@ func TestRunCheckPolicyFileRejectsAttestationBlock(t *testing.T) {
 	}
 }
 
+func TestRunToAttestationPolicyFilePrintsDirectAttestationYAML(t *testing.T) {
+	t.Setenv("APPOLICY_PASSPHRASE", "")
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	t.Setenv("APSIGNER_DATA", "")
+	path := filepath.Join(t.TempDir(), "policy.yaml")
+	raw := `
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  on_no_route: reject
+  routes:
+    - id: route
+      networks: [testnet]
+      sources: ["*"]
+      assets: [algo]
+      destinations: ["*"]
+      limits:
+        review_above: 10
+        reject_above: 20
+`
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatalf("WriteFile(policy) error = %v", err)
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"--to-attestation", path}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run(--to-attestation file) code = %d, stderr = %q", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "policy OK") || strings.Contains(stdout.String(), "attestation:") || strings.Contains(stdout.String(), "review_above") {
+		t.Fatalf("--to-attestation stdout contains status, wrapper, or review threshold:\n%s", stdout.String())
+	}
+	if _, err := policy.ParseStoredAttestationConfig(stdout.Bytes()); err != nil {
+		t.Fatalf("--to-attestation stdout is not valid attestation YAML: %v\n%s", err, stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "reject_above: 20") {
+		t.Fatalf("--to-attestation stdout missing reject_above:\n%s", stdout.String())
+	}
+}
+
 func TestRunSaveRejectsPolicyFileArgument(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
@@ -147,7 +187,7 @@ func TestRunRejectsCombinedCLIModes(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
 	var stdout, stderr bytes.Buffer
 
-	code := run(context.Background(), []string{"-d", dataDir, "--yaml", "--check"}, strings.NewReader(""), &stdout, &stderr)
+	code := run(context.Background(), []string{"-d", dataDir, "--yaml", "--to-attestation"}, strings.NewReader(""), &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("run(combined modes) code = %d, want 2", code)
 	}

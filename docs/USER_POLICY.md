@@ -49,6 +49,7 @@ Use `appolicy` for normal signing-policy work:
 appolicy -d "$APSIGNER_DATA"
 appolicy -d "$APSIGNER_DATA" -check
 appolicy -d "$APSIGNER_DATA" --sha256
+appolicy --to-attestation draft-policy.yaml > attestation.yaml
 appolicy draft-policy.yaml
 ```
 
@@ -81,6 +82,12 @@ the environment or an interactive terminal.
 With a positional YAML file, `appolicy --check draft.yaml`,
 `appolicy --yaml draft.yaml`, and `appolicy --sha256 draft.yaml` validate the
 file itself and do not verify or update the production sidecar.
+
+`appolicy --to-attestation draft.yaml` converts a signing `policy.yaml` draft
+into direct `attestation.yaml` and prints it to stdout. The conversion preserves
+deterministic hard-reject bounds and transfer routes, removes review-only
+thresholds from matched routes, and rejects route-miss review/operator-default
+behavior because attestor policy cannot ask a human to decide a miss.
 
 For deliberate direct YAML edits:
 
