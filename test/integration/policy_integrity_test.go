@@ -128,16 +128,18 @@ func writeAndSignIntegrationPolicy(t *testing.T, apstore *harness.ApStoreHarness
 	if err != nil {
 		t.Fatalf("apstore policy sign failed: %v\noutput:\n%s", err, output)
 	}
-	if !strings.Contains(output, "policy sidecar signed") {
-		t.Fatalf("apstore policy sign output missing success marker:\n%s", output)
+	if !strings.Contains(output, "policy.yaml sidecar signed") ||
+		!strings.Contains(output, "attestation.yaml sidecar signed") {
+		t.Fatalf("apstore policy sign output missing success markers:\n%s", output)
 	}
 
 	output, err = apstore.RunWithInput(passphrase+"\n", "policy", "verify")
 	if err != nil {
 		t.Fatalf("apstore policy verify failed: %v\noutput:\n%s", err, output)
 	}
-	if !strings.Contains(output, "policy integrity verified") {
-		t.Fatalf("apstore policy verify output missing success marker:\n%s", output)
+	if !strings.Contains(output, "policy.yaml integrity verified") ||
+		!strings.Contains(output, "attestation.yaml integrity verified") {
+		t.Fatalf("apstore policy verify output missing success markers:\n%s", output)
 	}
 }
 
