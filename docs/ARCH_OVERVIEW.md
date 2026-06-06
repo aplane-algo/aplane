@@ -55,8 +55,8 @@ a key.
 | **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes while preserving existing app interfaces | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
-| **apstore** | Keystore management client for signer-owned backup, restore, template, key type, passphrase, and init operations over IPC, plus local backup import admission, verification, and rebuild rescue flows | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
-| **appolicy** | Offline policy checker/editor for identity-scoped `policy.yaml` | UI (TUI) + Policy + Store Mutation |
+| **apstore** | Keystore management client for signer-owned backup, restore, template, key type, passphrase, endpoint export, public attestor references, and init operations over IPC, plus local backup import admission, verification, and rebuild rescue flows | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
+| **appolicy** | Offline policy checker/editor for identity-scoped signing `policy.yaml`, plus signing-to-attestation conversion and `attestation.yaml` save/sign flows | UI (TUI) + Policy + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
 | **aplocalnet** | LocalNet setup TUI/CLI for apclient default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
 | **approbe** | Installer-facing liveness probe for signer IPC reachability before replacing local binaries | Installer helper + admin protocol probe |
@@ -264,10 +264,16 @@ Applications read from `config.yaml` in their data directory:
 - apshell: `$APCLIENT_DATA/config.yaml` or `-d <path>`
 - apsigner: `$APSIGNER_DATA/config.yaml` or `-d <path>`
 
+apshell uses `config.yaml` for network, theme, and polling defaults. Signer and
+attestor endpoint routing lives in `$APCLIENT_DATA/endpoints.yaml`; top-level
+client `ssh:` signer routing is not supported by managed startup in this
+new-install-only release.
+
 apsigner also reads per-identity configuration overlays:
-- `identities/<identity>/config.yaml` — identity-scoped settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `decommissioned`) that override process-global defaults
+- `identities/<identity>/config.yaml` — identity-scoped settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `mode`, `decommissioned`) that override process-global defaults
 - `identities/<identity>/unlock.yaml` — identity-scoped passphrase helper configuration
 - `identities/<identity>/policy.yaml` — identity-scoped signer safety policy
+- `identities/<identity>/attestation.yaml` — identity-scoped attestor component policy
 - `identities/<identity>/keytypes/<key_type>.json` — identity-scoped state records for optional key types
 - `identities/<identity>/keytypes/<key_type>.template` — encrypted installed YAML templates
 
@@ -339,13 +345,14 @@ Each identity owns an `identity.Runtime` containing:
 - effective policy config
 - lock state
 - file watcher lifecycle
-- identity-scoped config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`)
+- identity-scoped config (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `mode`)
 
 The on-disk layout is identity-scoped: keys under
 `identities/<identityID>/keys/`, encrypted templates and state records under
 `identities/<identityID>/keytypes/`, deleted key/template
 archives under `identities/<identityID>/deleted/`, policy at
-`identities/<identityID>/policy.yaml`, and config at
+`identities/<identityID>/policy.yaml`, attestor component policy at
+`identities/<identityID>/attestation.yaml`, and config at
 `identities/<identityID>/config.yaml`. HTTP handlers extract the authenticated
 identity from request context; admin sessions over IPC or the SSH
 `aplane-admin` subsystem bind to one identity at auth time.

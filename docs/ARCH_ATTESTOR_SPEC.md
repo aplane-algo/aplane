@@ -1220,12 +1220,12 @@ apshell generate aplane.falcon1024-att-ed25519.v1 attestor_public_key=<hex>
 apshell generate aplane.falcon1024-att-falcon1024.v1 attestor_public_key=<hex>
 apshell generate aplane.falcon1024-att-ed25519.v1 attestor=<name>
 apshell generate aplane.falcon1024-att-falcon1024.v1 attestor=<name>
-apshell attest sign <group-or-transaction> --attestor <endpoint-or-name>
-apshell attest assemble <group-or-transaction> --user-sig <sig> --attestor-sig <sig>
+apshell send <amount> algo from <attested-account> to <receiver>
 ```
 
-The exact shell syntax may change during implementation, but the workflow
-should stay simple:
+`apshell send` detects attested-account key types and performs the user
+component-signing call, attestor component-signing call, local user-signer
+assembly call, and algod submit transparently.
 
 1. The user generates an attested account key that hard-codes the attestor
    public key in the LogicSig program.
@@ -1550,7 +1550,7 @@ The MVP is complete when:
 - `apstore attestor export-public` emits a public-only
   `aplane.attestor-public-key.v1` envelope and rejects selector/public-key
   mismatches,
-- `apstore attestor import-public/list/show/remove` manages identity-scoped
+- `apstore attestor import-public/list` manages identity-scoped
   public-only attestor references, attested-account generation accepts
   `attestor=<name>` as a local alias for `attestor_public_key=<hex>`, and
   identity-scoped key-type metadata exposes matching references as select

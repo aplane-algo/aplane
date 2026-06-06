@@ -151,8 +151,8 @@ This proves the signer can build, sign, and submit a real testnet transaction wi
 By default, APlane exposes only the `ed25519` and Falcon-1024
 (`aplane.falcon1024.v1`) key types. To try additional LogicSig templates from
 the bundled library, open the signer admin pane, press `s` for settings, then
-press `k` for key types. The KeyType Library lets you enable or activate more
-templates for the current identity.
+press `k` for key types. The KeyType Library lets you enable additional
+compiled providers and templates for the current identity.
 
 For more detail, see [USER_KEYTYPES.md](USER_KEYTYPES.md).
 

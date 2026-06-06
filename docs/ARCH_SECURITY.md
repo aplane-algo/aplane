@@ -14,7 +14,7 @@ Product compatibility maps credentials to the reserved `system:product-admin`
 principal and bootstrap grants. See
 [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) for the detailed model.
 
-**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for identity-scoped `policy.yaml` guards such as rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings, and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests.
+**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for identity-scoped signing policy in `policy.yaml` and attestor component policy in `attestation.yaml`, with guards such as rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings, and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests.
 
 **Deployment scope:** identity model is described in [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model).
 
@@ -433,9 +433,14 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 - Token auth still required per HTTP request (2FA: SSH key + token)
 
 **Configuration:**
-- The `ssh:` block in config.yaml is required for all connections
-- `ssh.host` can be `localhost`, `127.0.0.1`, or a remote address
-- `request-token` also uses SSH for token provisioning
+- Client connection profiles live in `$APCLIENT_DATA/endpoints.yaml`
+- An endpoint URL can be `ssh://host[:port]` for tunneled signer access
+- Endpoint records carry the SSH identity file, `known_hosts` path, and token
+  file; relative paths resolve against the client data directory
+- Server SSH listener settings still live in the signer `config.yaml` `ssh:`
+  block
+- `request-token` also uses SSH for token provisioning and writes the selected
+  endpoint's token file
 
 **Bootstrap requirement:**
 Non-interactive modes (scripts, JS runner) reject unknown SSH hosts — they require the signer's host key to already be in `known_hosts`. Users must first connect interactively with `apshell` (via `connect` or `request-token`), which prompts for TOFU host key approval and saves it. After that, scripts and automation can connect without prompts.
@@ -961,7 +966,7 @@ Helpers that only support `read` should exit non-zero on `write`. The caller wil
 | LogicSig delegation | "Program" prefix blocked (prevents standing spend authorization) |
 | MITM on SSH | TOFU host key verification via known_hosts |
 | Cache tampering | HMAC-signed cache files (see below) |
-| Policy tampering | `policy.yaml.hmac` authenticates identity-scoped policy with a key derived from the identity master key; missing or mismatched policy integrity fails closed |
+| Policy tampering | `policy.yaml.hmac` and `attestation.yaml.hmac` authenticate identity-scoped policy documents with keys derived from the identity master key; missing or mismatched policy integrity fails closed |
 | Plugin filesystem access | External plugins require OS sandboxing and checksum verification |
 | Manual production startup | `.prod` signer data marker blocks startup unless systemd-managed |
 

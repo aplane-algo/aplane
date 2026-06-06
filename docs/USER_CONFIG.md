@@ -953,7 +953,7 @@ Signer uses an identity-scoped token for authenticating API requests from apshel
 
 ### How It Works
 
-1. **Token generation**: On first run, apsigner generates a cryptographically secure 256-bit random token
+1. **Token generation**: `apstore initialize` creates a cryptographically secure 256-bit random token for the identity
 2. **Token storage**: Saved to `identities/default/aplane.token`, alongside the keys it grants access to
 3. **Token provisioning**: Clients request tokens via SSH (requires operator approval in apadmin)
 4. **Request authentication**: Clients send the token via `Authorization: aplane <token>` HTTP header
@@ -1001,8 +1001,9 @@ cp $APSIGNER_DATA/identities/default/aplane.token $APCLIENT_DATA/
 ```
 
 > **Note:** The `request-token` flow is preferred — it handles both key enrollment and token delivery in a single operator-approved step.
-After approval, interactive `apshell` immediately attempts to establish the signer
-SSH tunnel with the newly issued token.
+After approval, interactive `apshell` writes the token to the selected endpoint's
+configured token file and immediately attempts to establish the signer SSH tunnel
+when that endpoint is the default signer.
 
 ### Token Revocation
 

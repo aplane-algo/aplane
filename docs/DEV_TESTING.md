@@ -306,6 +306,9 @@ This creates `/tmp/aplane-test-env/` containing:
 │       ├── .keystore              # Initialized keystore metadata
 │       ├── aplane.token           # Generated API token
 │       ├── policy.yaml            # Permissive integration-test policy
+│       ├── policy.yaml.hmac       # Integrity sidecar for policy.yaml
+│       ├── attestation.yaml       # Permissive integration-test attestor policy
+│       ├── attestation.yaml.hmac  # Integrity sidecar for attestation.yaml
 │       └── keys/                  # Empty key directory (tests generate keys)
 ├── library/templates/              # Plaintext KeyType Library copied from repo
 └── apclient/                      # Client data directory (APCLIENT_DATA)
@@ -590,7 +593,8 @@ defer apadmin.StopUnlockBackground()
 #### **ApshellHarness** (`harness/apshell.go`)
 Provides programmatic interface to apshell CLI:
 - Builds apshell binary from project root
-- Requires `APCLIENT_DATA` to be set (connect uses config.yaml, not CLI args)
+- Requires `APCLIENT_DATA` to be set; signer routing is loaded from
+  `endpoints.yaml`
 - Parses transaction IDs from command output
 
 ```go

@@ -870,6 +870,8 @@ $APSIGNER_DATA/identities/default/
 ├── config.yaml       # Identity-scoped runtime setting overrides
 ├── policy.yaml       # Identity-scoped signer safety policy
 ├── policy.yaml.hmac  # Integrity sidecar for policy.yaml
+├── attestation.yaml       # Identity-scoped attestor component policy
+├── attestation.yaml.hmac  # Integrity sidecar for attestation.yaml
 ├── unlock.yaml       # Identity-scoped passphrase helper settings
 ├── .ssh/
 │   └── authorized_keys  # Identity-scoped enrolled client public keys
@@ -881,13 +883,15 @@ $APSIGNER_DATA/identities/default/
 ├── deleted/          # Identity-local deletion archive
 │   ├── keys/
 │   └── keytypes/
-├── aplane.token      # API token (created after first request-token approval)
+├── aplane.token      # Identity API token created by apstore initialize
 └── passphrase.cred   # systemd-creds-encrypted passphrase (auto-unlock only)
 ```
 
-`policy.yaml` and `policy.yaml.hmac` are created by `apstore initialize`.
+`policy.yaml`, `attestation.yaml`, and their `.hmac` sidecars are created by
+`apstore initialize`.
 `config.yaml` and `unlock.yaml` are created on first edit through `apadmin` or
-`appass`. `aplane.token` is created when the first client is enrolled via
+`appass`. The signer-side `aplane.token` is created during initialization;
+client-side token files are written when a client is enrolled via
 `request-token`. `passphrase.cred` exists only when `appass` configures
 auto-unlock with `systemd-creds`.
 
@@ -898,6 +902,7 @@ $APCLIENT_DATA/
 ├── config.yaml           # Network and UI defaults
 ├── endpoints.yaml        # Signer endpoint routing
 ├── aplane.token          # API token (created after request-token approval)
+├── tokens/               # Optional endpoint-specific API tokens
 ├── .mcp.json             # Installer-written MCP client config for apshell --mcp
 ├── .ssh/
 │   ├── id_ed25519        # SSH private key for authentication
