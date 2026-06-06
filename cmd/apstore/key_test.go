@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 )
 
 func TestCmdAttestorExportPublicWritesEnvelopeFile(t *testing.T) {
@@ -22,9 +23,7 @@ func TestCmdAttestorExportPublicWritesEnvelopeFile(t *testing.T) {
 		result, publicKeyHex := generateTestAttestorComponentKey(t, passphrase)
 		outputPath := filepath.Join(t.TempDir(), "attestor-public.json")
 
-		if err := withTestStdin(string(passphrase)+"\n", func() error {
-			return cmdAttestor([]string{"export-public", result.Address, outputPath})
-		}); err != nil {
+		if err := cmdAttestor([]string{"export-public", result.Address, outputPath}); err != nil {
 			t.Fatalf("cmdAttestor(export-public) error = %v", err)
 		}
 
@@ -56,9 +55,7 @@ func TestCmdAttestorExportPublicStdoutIsJSONOnly(t *testing.T) {
 		result, _ := generateTestAttestorComponentKey(t, passphrase)
 
 		out, err := withCapturedStdout(func() error {
-			return withTestStdin(string(passphrase)+"\n", func() error {
-				return cmdAttestor([]string{"export-public", result.Address})
-			})
+			return cmdAttestor([]string{"export-public", result.Address})
 		})
 		if err != nil {
 			t.Fatalf("cmdAttestor(export-public stdout) error = %v", err)
@@ -72,6 +69,24 @@ func TestCmdAttestorExportPublicStdoutIsJSONOnly(t *testing.T) {
 		}
 		if env.ComponentKey != result.Address {
 			t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, result.Address)
+		}
+	})
+}
+
+func TestCmdAttestorExportPublicRequiresPublicSidecar(t *testing.T) {
+	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
+		result, _ := generateTestAttestorComponentKey(t, passphrase)
+		path := apkeys.ComponentPublicMetadataPath(keystorePaths(), productIdentityID(), result.Address)
+		if err := os.Remove(path); err != nil {
+			t.Fatalf("Remove(component public metadata) error = %v", err)
+		}
+
+		err := cmdAttestor([]string{"export-public", result.Address})
+		if err == nil {
+			t.Fatal("cmdAttestor(export-public missing sidecar) error = nil, want missing metadata rejection")
+		}
+		if !strings.Contains(err.Error(), "component public metadata") {
+			t.Fatalf("cmdAttestor(export-public missing sidecar) error = %v, want metadata context", err)
 		}
 	})
 }

@@ -132,7 +132,7 @@ DTOs and contract fixtures.
 | Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
 | Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Signing key | Signer identity | `identities/<identity>/keys/*.key` | address/selector -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
-| Attestor public sidecar | Signer identity | `identities/<identity>/keys/<a_selector>.public.json` | public component-key export/list metadata | `apstore attestor export-public/list` | `internal/keys`, `internal/attestor/attrefs` |
+| Attestor public sidecar | Signer identity | `identities/<identity>/keys/<a_selector>.public.json` | public component-key export metadata | `apstore attestor export-public` | `internal/keys`, `internal/attestor/attrefs` |
 | Public attestor reference | Signer identity | `identities/<identity>/attestors/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/attestor/attrefs`, `internal/signerapp/rest`, `cmd/apstore` |
 | Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |

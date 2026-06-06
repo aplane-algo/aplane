@@ -6,6 +6,7 @@ package attrefs
 import (
 	"encoding/hex"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -55,6 +56,24 @@ func TestImportGetListDelete(t *testing.T) {
 	_, ok, err = Get(paths, "default", "lab-att")
 	if err != nil || ok {
 		t.Fatalf("Get(after delete) = (_, %v, %v), want absent", ok, err)
+	}
+}
+
+func TestListRejectsInvalidReferenceRecord(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	if err := os.MkdirAll(paths.AttestorRefsDir("default"), 0o700); err != nil {
+		t.Fatalf("MkdirAll(attestors) error = %v", err)
+	}
+	if err := os.WriteFile(paths.AttestorRefPath("default", "bad"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile(bad reference) error = %v", err)
+	}
+
+	_, err := List(paths, "default")
+	if err == nil {
+		t.Fatal("List() error = nil, want invalid reference rejection")
+	}
+	if !strings.Contains(err.Error(), "invalid attestor reference bad") {
+		t.Fatalf("List() error = %v, want invalid reference context", err)
 	}
 }
 

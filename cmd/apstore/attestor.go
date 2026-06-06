@@ -10,8 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
-	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/keymgmt"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 )
 
 func cmdAttestor(args []string) error {
@@ -55,20 +54,12 @@ func cmdAttestorExportPublic(args []string) error {
 		return fmt.Errorf("invalid component key selector: %w", err)
 	}
 
-	masterKey, err := readStoreMasterKey()
+	envelope, ok, err := apkeys.ReadComponentPublicMetadata(keystorePaths(), productIdentityID(), componentKey)
 	if err != nil {
 		return err
 	}
-	defer crypto.ZeroBytes(masterKey)
-
-	keyFile := keystorePaths().KeyFilePath(productIdentityID(), componentKey)
-	info, err := keymgmt.DetectKeyInfoFromFileWithMasterKey(keyFile, masterKey)
-	if err != nil {
-		return fmt.Errorf("failed to read key file %s: %w", keyFile, err)
-	}
-	envelope, err := keymgmt.BuildAttestorPublicKeyExport(componentKey, info)
-	if err != nil {
-		return err
+	if !ok {
+		return fmt.Errorf("component public metadata for %s not found; regenerate the attestor component key or run a metadata backfill before exporting", componentKey)
 	}
 	data, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {

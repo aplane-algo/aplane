@@ -1208,8 +1208,9 @@ The MVP does not add an `apstore generate` surface. Attestor component keys are
 generated through the existing signer/admin key-generation path exposed by
 `apshell generate` and `POST /admin/generate`, guarded by `keys.generate`.
 `apstore attestor export-public` is an offline public-only export of the verifier
-input for an already-created attestor component key; it does not generate keys
-and does not bypass the disabled private-key export path.
+input for an already-created attestor component key. It reads only the
+component key's public metadata sidecar, does not generate keys, and does not
+bypass the disabled private-key export path.
 If a later implementation adds offline `apstore` generation, it must define the
 command ownership, authorization behavior, audit behavior, and tests in the
 same change.

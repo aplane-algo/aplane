@@ -299,7 +299,10 @@ func List(paths storepaths.Paths, identityID string) ([]Record, error) {
 		}
 		name := strings.TrimSuffix(entry.Name(), ".json")
 		rec, ok, err := Get(paths, identityID, name)
-		if err != nil || !ok {
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
 			continue
 		}
 		records = append(records, rec)

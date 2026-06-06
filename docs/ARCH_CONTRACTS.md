@@ -841,10 +841,12 @@ reported while still listing keys that scanned successfully.
 #### Attestor Public Key Export Envelope
 
 `apstore attestor export-public <component-key> [output-json]` emits a public-only
-JSON envelope for an attestor component key. The command decrypts the local
-`.key` file using the identity store passphrase, reads stored public-key
-metadata, verifies that `<component-key>` equals the canonical selector derived
-from the public key, and never emits private key material.
+JSON envelope for an attestor component key. The command reads the
+`keys/<component-key>.public.json` sidecar, verifies that `<component-key>`
+equals the canonical selector derived from the public key, and never reads or
+decrypts private key material. If the sidecar is missing or malformed, export
+fails closed; the operator must regenerate the attestor component key or run an
+explicit metadata backfill before exporting.
 
 The envelope schema is:
 
