@@ -246,6 +246,8 @@ grant accidentally contains the same typo.
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `identity.decommission` | Decommission identity | `identity` | No |
 | `sign.request` | Request transaction signing, signing plan, simulation, or sign-request cancellation | `transaction` | Yes for signing/cancel |
+| `sign.component` | Request user-role or attestor-role component signatures for the attested signing flow | `transaction` | Yes |
+| `sign.assemble` | Assemble verified user and attestor component signatures into signed attested transactions | `transaction` | Yes |
 | `sign.approve` | Approve or reject signing request | `sign_request` | No |
 | `keys.view` | List keys or view key details | `keys`, `key` | Yes for key list/details |
 | `keys.generate` | Generate a key or manage generation inputs | `key` | Yes for key generation; no for public attestor reference sync |
@@ -299,6 +301,8 @@ grants:
       - identity.passphrase
       - identity.decommission
       - sign.request
+      - sign.component
+      - sign.assemble
       - sign.approve
       - keys.view
       - keys.generate
@@ -339,9 +343,10 @@ response handling, token rotation, or policy/settings changes.
 
 Enforced callsites:
 
-- `cmd/apsigner/http_runtime.go` wraps HTTP `/sign`, `/plan`, `/simulate`,
-  `/status`, `/keys`, `/keytypes`, `/admin/generate`,
-  `/admin/attestors/sync`, and `/admin/keys` with `requireAuth`.
+- `cmd/apsigner/http_runtime.go` wraps HTTP `/sign`, `/sign/component`,
+  `/sign/assemble`, `/plan`, `/simulate`, `/status`, `/keys`, `/keytypes`,
+  `/admin/generate`, `/admin/attestors/sync`, and `/admin/keys` with
+  `requireAuth`.
 - `cmd/apsigner/http_auth.go` calls `Authorizer.Authorize` after
   authentication and before the handler executes.
 - `internal/adminproto/session.go` gates auth-time unlock through

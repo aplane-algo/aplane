@@ -21,6 +21,8 @@ coverage.
 | `GET` | `/keys` | yes | yes |
 | `GET` | `/keytypes` | yes | no (but template-backed types appear only after unlock) |
 | `POST` | `/sign` | yes | yes |
+| `POST` | `/sign/component` | yes | yes |
+| `POST` | `/sign/assemble` | yes | yes |
 | `POST` | `/sign/cancel` | yes | no |
 | `POST` | `/plan` | yes | yes |
 | `POST` | `/simulate` | yes | yes |
@@ -30,7 +32,9 @@ coverage.
 
 Method enforcement:
 
-- `/sign`, `/sign/cancel`, `/plan`, `/simulate`, `/status`, `/admin/generate`, `/admin/attestors/sync`, and `/admin/keys` enforce their HTTP method.
+- `/sign`, `/sign/component`, `/sign/assemble`, `/sign/cancel`, `/plan`,
+  `/simulate`, `/status`, `/admin/generate`, `/admin/attestors/sync`, and
+  `/admin/keys` enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
 
 Transport behavior:
@@ -51,7 +55,8 @@ Timeout behavior:
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
   mutations including `/admin/attestors/sync` 60 seconds, `/plan` 60 seconds,
-  `/simulate` 60 seconds, and `/sign` based on approval wait.
+  `/simulate` 60 seconds, `/sign/component` 60 seconds, `/sign/assemble` 60
+  seconds, and `/sign` based on approval wait.
 - caller-provided contexts with earlier deadlines are preserved.
 - before `/sign`, `internal/signerclient` attempts `/status` discovery; when
   `approval_wait_seconds` is known and valid, the `/sign` deadline is
@@ -137,6 +142,48 @@ compatibility; it is not the `/sign` wire response.
 - passthrough entries contain the original signed transaction bytes, returned unchanged.
 - foreign entries contain the empty string `""`.
 - server-added dummy slots appear as appended signed dummy transactions.
+
+`/sign/component` request (`signerapi.ComponentSignRequest`):
+
+- optional `request_id`
+- `role`: `user` or `attestor`
+- `component_key`: attested account address for `user`, attestor component
+  selector for `attestor`
+- `group_bytes_hex[]`: final TX-prefixed transaction bytes for the whole group
+- `target_indices[]`: zero-based indices to sign
+
+For `role:"user"`, `component_key` identifies the local attested account key to
+use for user-role component signing. For `role:"attestor"`, `component_key`
+identifies the local attestor component-key selector. Each target index is
+signed independently using the role-separated attestor message derived from
+that target's TxID.
+
+`/sign/component` response (`signerapi.ComponentSignResponse`):
+
+- `request_id`
+- optional `component_key`
+- `signatures[]`
+- each signature has `target_index`, `signature`, and `signature_scheme`
+
+`/sign/assemble` request (`signerapi.AttestedAssemblyRequest`):
+
+- optional `request_id`
+- `group_bytes_hex[]`
+- optional `targets[]`
+- optional `passthrough[]`
+
+Each target has `target_index`, `attested_account`, `user_signature`,
+`attestor_signature`, optional source request IDs, and optional `runtime_args`.
+Each passthrough item has `target_index` and `signed_txn_hex`.
+
+`/sign/assemble` response (`signerapi.AttestedAssemblyResponse`):
+
+- `request_id`
+- `signed_group[]`
+
+Assembly verifies the attestor signature against the attestor public key
+embedded in the local attested account key. It does not trust endpoint-provided
+metadata or `/keys` self-reporting as ownership proof.
 
 `/sign/cancel` request (`signerapi.CancelSignRequest`):
 

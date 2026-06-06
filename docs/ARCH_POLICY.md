@@ -9,16 +9,13 @@ This document covers two domains:
 
 - the **client-signing** policy implemented today: tier-based verdicts over
   signer-controlled transactions with an operator default fallback,
-- the **attestation** policy planned in
-  [ARCH_ATTESTOR_SPEC.md](ARCH_ATTESTOR_SPEC.md): policy-as-authorization for
-  attestor component signing, no operator default, no review verdict.
+- the **attestation** policy implemented for attestor component signing:
+  policy-as-authorization for `/sign/component`, no operator default, no
+  review verdict.
 
 Both domains share one YAML grammar, one parser, one fixture corpus, and one
 verdict-model description. Fields that apply to only one domain are tagged
-inline. The attestation sections are forward-looking until
-`ARCH_ATTESTOR_SPEC.md` is promoted; until then, every active deployment uses
-only the client-signing domain. Promotion TODO: remove this current-deployment
-freshness note when attestor component signing ships.
+inline.
 
 ## Scope
 
@@ -880,8 +877,8 @@ policy decision:
 - `[USER AUTO-APPROVE] ...` when Operator Default approves without prompting.
 
 Attestor component signing uses the same policy rule identifiers for decoded
-transaction facts, but records component-specific audit events. Those planned
-events are documented in [ARCH_ATTESTOR_SPEC.md §17](ARCH_ATTESTOR_SPEC.md#17-audit).
+transaction facts, but records component-specific audit events. Those events
+are documented in [ARCH_ATTESTOR_SPEC.md §17](ARCH_ATTESTOR_SPEC.md#17-audit).
 
 ## Source Files
 
