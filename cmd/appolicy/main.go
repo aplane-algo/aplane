@@ -118,7 +118,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	passphrases := &passphraseCache{
 		stdin:              stdin,
 		stderr:             stderr,
-		allowStdinFallback: !(savePolicy || saveAttestation),
+		allowStdinFallback: !savePolicy && !saveAttestation,
 	}
 	defer passphrases.Clear()
 
