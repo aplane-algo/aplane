@@ -309,7 +309,8 @@ This creates `/tmp/aplane-test-env/` containing:
 │       └── keys/                  # Empty key directory (tests generate keys)
 ├── library/templates/              # Plaintext KeyType Library copied from repo
 └── apclient/                      # Client data directory (APCLIENT_DATA)
-    ├── config.yaml                # Client config (SSH to localhost, TOFU enabled)
+    ├── config.yaml                # Client config (network and algod settings)
+    ├── endpoints.yaml             # Client endpoint registry (SSH signer route)
     ├── aplane.token               # Copy of API token
     └── .ssh/
         ├── id_ed25519             # Generated client SSH key
@@ -325,7 +326,8 @@ The script also writes `.env.test` in the project root, which the Makefile sourc
 2. Generates ed25519 SSH client key and authorizes it on the signer
 3. Picks random available ports for REST API and SSH (avoids collisions with running services)
 4. Writes signer `config.yaml` (random ports, `user_auto_approve:true`, no admin idle timeout)
-5. Writes client `config.yaml` (SSH to localhost with matching port, `known_hosts_path`, and algod for the selected integration network)
+5. Writes client `config.yaml` for network/algod settings and `endpoints.yaml`
+   for the SSH signer route, token file, and `known_hosts_path`
 6. Writes passphrase file for the signer
 7. Initializes the keystore non-interactively by piping the generated test passphrase to `apstore initialize`
 8. Copies the generated API token to the client data directory
@@ -337,7 +339,11 @@ The script also writes `.env.test` in the project root, which the Makefile sourc
 
 #### Test environment ports
 
-The setup script picks random available ports at creation time to avoid collisions with running services or other test runs. The chosen ports are written into both config files and can be inspected in `config.yaml` after setup. Production defaults are 11270 (REST) and 1127 (SSH).
+The setup script picks random available ports at creation time to avoid
+collisions with running services or other test runs. The signer REST and SSH
+ports are written to signer `config.yaml`; the client-facing signer route is
+written to `apclient/endpoints.yaml`. Production defaults are 11270 (REST) and
+1127 (SSH).
 
 #### Teardown
 
@@ -750,7 +756,7 @@ REPL (Read-Eval-Print-Loop) testing validates the interactive command-line user 
 REPL testing is performed manually by running commands in the apshell shell:
 
 ```bash
-# Start apshell and connect to signer (connection target from config.yaml)
+# Start apshell and connect to signer (connection target from endpoints.yaml)
 bin/apshell -d /path/to/apclient
 apshell> connect
 apshell> network <testnet|localnet>

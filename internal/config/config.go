@@ -84,7 +84,7 @@ func DefaultConfig() Config {
 		SignerPort:               DefaultRESTPort,
 		Theme:                    "auto",
 		SignerStatusPollInterval: DefaultSignerStatusPollIntervalString,
-		SSH:                      nil, // Must be set in config.yaml
+		SSH:                      nil,
 		// Algod URLs intentionally empty - must be explicitly configured
 	}
 }
@@ -399,14 +399,14 @@ func DisplayConfig(dataDir string) {
 	} else {
 		fmt.Printf("Allowed:     all networks\n")
 	}
-	fmt.Printf("Signer port: %d\n", config.SignerPort)
+	fmt.Printf("Signer port: %d (compatibility fallback; current routing is endpoints.yaml)\n", config.SignerPort)
 	if config.SSH != nil {
 		fmt.Printf("SSH host:    %s\n", config.SSH.Host)
 		fmt.Printf("SSH port:    %d\n", config.SSH.Port)
 		fmt.Printf("SSH key:     %s\n", config.SSH.IdentityFile)
 		fmt.Printf("known_hosts: %s\n", config.SSH.KnownHostsPath)
 	} else {
-		fmt.Printf("SSH:         not configured (required — add ssh block to config.yaml)\n")
+		fmt.Printf("SSH:         not configured in config.yaml (current signer routing is endpoints.yaml)\n")
 	}
 	for network, cfg := range config.Algod {
 		if cfg != nil && cfg.Server != "" {

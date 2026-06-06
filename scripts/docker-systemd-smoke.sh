@@ -322,8 +322,13 @@ populate_known_hosts() {
     local pub
     pub="$(docker_exec_bash "ssh-keygen -y -f /var/lib/apsigner/.ssh/ssh_host_key")"
     [ -n "$pub" ] || die "could not derive signer host pubkey"
-    # The systemd config pins ssh.port to 1127 (install.sh:1300).
-    docker_exec_as_tester "printf '[localhost]:1127 %s\n' '$pub' > $OPERATOR_ROOT/apclient/.ssh/known_hosts && \
+    docker_exec_as_tester "ssh_url=\$(awk '
+            \$1 == \"primary:\" { in_primary=1; next }
+            in_primary && \$1 == \"url:\" { print \$2; exit }
+        ' $OPERATOR_ROOT/apclient/endpoints.yaml)
+        ssh_port=\${ssh_url##*:}
+        [ -n \"\$ssh_port\" ] && [ \"\$ssh_port\" != \"\$ssh_url\" ] || { echo 'could not read primary endpoint SSH port'; exit 1; }
+        printf '[localhost]:%s %s\n' \"\$ssh_port\" '$pub' > $OPERATOR_ROOT/apclient/.ssh/known_hosts && \
         chmod 600 $OPERATOR_ROOT/apclient/.ssh/known_hosts"
 }
 

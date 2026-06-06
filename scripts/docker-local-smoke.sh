@@ -305,10 +305,12 @@ populate_known_hosts() {
     docker_exec_as_tester '
         set -e
         root="/home/'"$TEST_USER"'/aplane"
-        # ssh.port sits inside the ssh: block at 2-space indent; signer_port
-        # is top-level so the "^  port:" anchor cleanly disambiguates.
-        ssh_port=$(awk "/^  port:/ {print \$2; exit}" "$root/apclient/config.yaml")
-        [ -n "$ssh_port" ] || { echo "could not read ssh.port"; exit 1; }
+        ssh_url=$(awk "
+            \$1 == \"primary:\" { in_primary=1; next }
+            in_primary && \$1 == \"url:\" { print \$2; exit }
+        " "$root/apclient/endpoints.yaml")
+        ssh_port=${ssh_url##*:}
+        [ -n "$ssh_port" ] && [ "$ssh_port" != "$ssh_url" ] || { echo "could not read primary endpoint SSH port"; exit 1; }
         # apsigner only persists the private host key (no .pub sidecar), so
         # derive the public half with ssh-keygen -y.
         pub=$(ssh-keygen -y -f "$root/apsigner/.ssh/ssh_host_key")

@@ -6,6 +6,7 @@ package config
 import (
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,6 +103,29 @@ unknown_setting: true
 	}
 }
 
+func TestDisplayConfigPointsSignerRoutingAtEndpoints(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
+network: testnet
+networks:
+  testnet:
+    algod:
+      server: http://localhost:4001
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		DisplayConfig(dataDir)
+	})
+	if strings.Contains(out, "add ssh block to config.yaml") {
+		t.Fatalf("DisplayConfig output points at legacy ssh config:\n%s", out)
+	}
+	if !strings.Contains(out, "current signer routing is endpoints.yaml") {
+		t.Fatalf("DisplayConfig output missing endpoint routing guidance:\n%s", out)
+	}
+}
+
 func TestLoadConfigRejectsUnknownNestedFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(`
@@ -140,6 +164,35 @@ attestor_endpoints:
 	if !strings.Contains(err.Error(), "field attestor_endpoints not found") {
 		t.Fatalf("LoadConfigFromPath error = %q, want attestor_endpoints unknown field", err)
 	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+	})
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	os.Stdout = oldStdout
+
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("close reader: %v", err)
+	}
+	return string(out)
 }
 
 func TestLoadConfigEndpointRegistryDerivesAttestorRoutesFromPublishedInventory(t *testing.T) {
