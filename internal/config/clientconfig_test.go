@@ -230,6 +230,45 @@ func TestClientConfigExamplesUseKnownFields(t *testing.T) {
 	}
 }
 
+func TestClientEndpointExamplesUseKnownFields(t *testing.T) {
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	installer, err := os.ReadFile(filepath.Join(repoRoot, "install.sh"))
+	if err != nil {
+		t.Fatalf("read install.sh: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{
+			name: "examples/config/apclient/endpoints.yaml.example",
+			data: mustReadTestFile(t, filepath.Join(repoRoot, "examples", "config", "apclient", "endpoints.yaml.example")),
+		},
+		{
+			name: "install.sh write_apshell_endpoint_registry",
+			data: []byte(strings.NewReplacer(
+				"$host", "localhost",
+				"$signer_port", "11270",
+				"$ssh_port", "1127",
+			).Replace(extractInstallHereDocAfter(
+				t,
+				string(installer),
+				"write_apshell_endpoint_registry() {",
+				`cat > "$target" <<EOF`,
+			))),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := decodeClientEndpointRegistryKnownFields(tt.data); err != nil {
+				t.Fatalf("endpoint registry contains invalid fields: %v", err)
+			}
+		})
+	}
+}
+
 func mustReadTestFile(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -271,10 +310,15 @@ func decodeClientConfigKnownFields(data []byte) error {
 	if err := unmarshalKnownFields(data, &cfg); err != nil {
 		return err
 	}
-	if cfg.SignerPort == 0 {
-		return fmt.Errorf("signer_port must be set in example config")
-	}
 	return nil
+}
+
+func decodeClientEndpointRegistryKnownFields(data []byte) error {
+	var registry ClientEndpointRegistry
+	if err := unmarshalKnownFields(data, &registry); err != nil {
+		return err
+	}
+	return normalizeStoredClientEndpointRegistry(&registry)
 }
 
 func attestorEndpointTestHex(prefix string) string {

@@ -8,7 +8,7 @@ There are two distinct config.yaml formats:
 
 | Tool | Purpose |
 |------|---------|
-| **apshell** | Client configuration (network, signer connection) |
+| **apshell** | Client configuration (network defaults); endpoint routing lives in `endpoints.yaml` |
 | **apsigner, apadmin, apapprover, apstore** | Server/admin configuration (keystore, ports, admin interface) |
 
 Both programs use a **data directory** for configuration and state:
@@ -31,35 +31,35 @@ See [USER_INSTALL.md](USER_INSTALL.md) for the installation directory layout and
 
 ## apshell Configuration
 
-The apshell CLI uses config.yaml to store connection settings. See [USER_CONFIG_REFERENCE.md](USER_CONFIG_REFERENCE.md) for field-level reference.
+The apshell CLI uses `config.yaml` for network and UI defaults. Signer and
+attestor endpoint routing lives in `$APCLIENT_DATA/endpoints.yaml`. See
+[USER_CONFIG_REFERENCE.md](USER_CONFIG_REFERENCE.md) for field-level reference.
 
-### Example (Local Signer via SSH Tunnel)
-
-```yaml
-network: testnet
-signer_port: 11270
-signer_status_poll_interval: "10s"
-ssh:
-  host: localhost
-  port: 1127
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
-```
-
-### Example (Remote Signer via SSH Tunnel)
+### Example config.yaml
 
 ```yaml
 network: testnet
-signer_port: 11270
 signer_status_poll_interval: "10s"
-ssh:
-  host: signer.example.com
-  port: 1127
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
 ```
 
-Note: SSH paths are relative to the data directory (installer default: `~/aplane/apclient`). The `.ssh/` subdirectory is created automatically when needed. SSH authentication uses 2FA (API token as username + public key).
+### Example endpoints.yaml
+
+```yaml
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.example.com:1127
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
+```
+
+Note: endpoint SSH paths are relative to the data directory (installer default:
+`~/aplane/apclient`). The `.ssh/` subdirectory is created automatically when
+needed. SSH authentication uses 2FA (API token as username + public key).
 
 `signer_status_poll_interval` controls interactive apshell's background
 authenticated `/status` checks. The default is `"10s"`. Use a larger duration
@@ -141,13 +141,21 @@ ssh-keygen -t ed25519 -f "$APCLIENT_DATA/.ssh/id_ed25519" -N ""
 # Create config.yaml (or start from examples/config/apclient/config.yaml)
 cat > "$APCLIENT_DATA/config.yaml" << 'EOF'
 network: testnet
-signer_port: 11270
 signer_status_poll_interval: "10s"
-ssh:
-  host: signer.example.com  # Your signer host
-  port: 1127
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
+EOF
+
+# Create endpoints.yaml (or start from examples/config/apclient/endpoints.yaml)
+cat > "$APCLIENT_DATA/endpoints.yaml" << 'EOF'
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.example.com:1127
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
 EOF
 
 # Request token from signer (requires operator approval)
@@ -164,19 +172,28 @@ export APCLIENT_DATA=/custom/path
 - Ready-to-copy example configs live under [`examples/config/`](../examples/config/), including [`examples/config/apclient/`](../examples/config/apclient/) and [`examples/config/apsigner/`](../examples/config/apsigner/).
 
 - All connections use SSH tunneling for uniform per-client identity
-- The `ssh:` block is required for connecting to the signer
-- The `connect` command reads from config.yaml or the optional endpoint registry but never modifies it
-- Edit config.yaml manually to change connection settings
+- New clients store signer routing in `endpoints.yaml`; older clients without
+  `endpoints.yaml` can still derive the primary signer from the legacy `ssh:`
+  block in `config.yaml`
+- Interactive `apshell` prompts before creating `endpoints.yaml` from old
+  `config.yaml` signer settings
+- Edit `endpoints.yaml` or use `endpoints import-public` to change endpoint
+  routing
 
 ### Connect Command Behavior
 
 The `connect` command with no arguments connects to the default signer. In the
-legacy single-endpoint setup, it reads connection settings from `config.yaml`
-and the token from `$APCLIENT_DATA/aplane.token`:
+normal endpoint-registry setup, it reads the default signer from
+`endpoints.yaml` and that endpoint's configured token file:
 
 ```bash
 connect
 ```
+
+Older single-endpoint clients without `endpoints.yaml` still derive the default
+signer from `config.yaml` and read the token from `$APCLIENT_DATA/aplane.token`.
+The first interactive startup prompt or endpoint write can materialize that
+legacy signer as the `primary` endpoint.
 
 For endpoint aliases, import one client signer endpoint and zero or more
 attestor endpoints. The preferred handoff is for the signer operator to export
@@ -421,8 +438,8 @@ Local IPC remains the default admin transport:
 - local apadmin and apapprover connect via this socket
 
 Remote `apadmin` over SSH uses:
-- the client `ssh:` block from the client data directory (`APCLIENT_DATA` or `--client-data`)
-- the client `aplane.token` as the SSH username/token credential
+- the default signer endpoint from the client data directory (`APCLIENT_DATA` or `--client-data`)
+- that endpoint's token file as the SSH username/token credential
 - the same passphrase-based admin auth after the SSH stream is established
 - an already trusted signer host in the client `known_hosts` file
 

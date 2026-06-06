@@ -647,6 +647,80 @@ read_ssh_port() {
     ' "$path"
 }
 
+read_primary_endpoint_signer_port() {
+    local path="$1"
+    [ -f "$path" ] || return 0
+    awk -F: '
+        function indent_width(line) {
+            match(line, /^[[:space:]]*/)
+            return RLENGTH
+        }
+        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
+            next
+        }
+        {
+            indent = indent_width($0)
+            if (indent == 0 && $0 ~ /^endpoints[[:space:]]*:/) {
+                in_endpoints = 1
+                next
+            }
+            if (in_endpoints && indent == 2 && $0 ~ /^[[:space:]]*primary[[:space:]]*:/) {
+                in_primary = 1
+                next
+            }
+            if (in_primary && indent <= 2 && $0 !~ /^[[:space:]]*primary[[:space:]]*:/) {
+                in_primary = 0
+            }
+            if (in_primary && $0 ~ /^[[:space:]]*signer_port[[:space:]]*:/) {
+                value = $2
+                sub(/[[:space:]]*#.*/, "", value)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+                print value
+                exit
+            }
+        }
+    ' "$path"
+}
+
+read_primary_endpoint_ssh_port() {
+    local path="$1"
+    [ -f "$path" ] || return 0
+    awk -F: '
+        function indent_width(line) {
+            match(line, /^[[:space:]]*/)
+            return RLENGTH
+        }
+        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
+            next
+        }
+        {
+            indent = indent_width($0)
+            if (indent == 0 && $0 ~ /^endpoints[[:space:]]*:/) {
+                in_endpoints = 1
+                next
+            }
+            if (in_endpoints && indent == 2 && $0 ~ /^[[:space:]]*primary[[:space:]]*:/) {
+                in_primary = 1
+                next
+            }
+            if (in_primary && indent <= 2 && $0 !~ /^[[:space:]]*primary[[:space:]]*:/) {
+                in_primary = 0
+            }
+            if (in_primary && $0 ~ /^[[:space:]]*url[[:space:]]*:/) {
+                value = $0
+                sub(/^[[:space:]]*url[[:space:]]*:[[:space:]]*/, "", value)
+                sub(/[[:space:]]*#.*/, "", value)
+                gsub(/^[[:space:]\"\047]+|[[:space:]\"\047]+$/, "", value)
+                n = split(value, parts, ":")
+                if (n >= 3) {
+                    print parts[n]
+                }
+                exit
+            }
+        }
+    ' "$path"
+}
+
 sync_client_ports_to_signer() {
     local client_config="$1"
     local signer_port="$2"
@@ -697,11 +771,19 @@ check_local_config_consistency() {
     [ -f "$signer_config" ] || return 0
     [ -f "$client_config" ] || return 0
 
-    local signer_signer_port signer_ssh_port client_signer_port client_ssh_port
+    local signer_signer_port signer_ssh_port client_signer_port client_ssh_port client_ports_source
+    client_ports_source="config"
     signer_signer_port="$(read_top_level_int "$signer_config" "signer_port")"
     signer_ssh_port="$(read_ssh_port "$signer_config")"
     client_signer_port="$(read_top_level_int "$client_config" "signer_port")"
     client_ssh_port="$(read_ssh_port "$client_config")"
+    if [ -z "$client_signer_port" ] || [ -z "$client_ssh_port" ]; then
+        local client_endpoints
+        client_endpoints="$(dirname "$client_config")/endpoints.yaml"
+        client_signer_port="$(read_primary_endpoint_signer_port "$client_endpoints")"
+        client_ssh_port="$(read_primary_endpoint_ssh_port "$client_endpoints")"
+        client_ports_source="endpoints"
+    fi
 
     if [ -z "$signer_signer_port" ] || [ -z "$signer_ssh_port" ] || [ -z "$client_signer_port" ] || [ -z "$client_ssh_port" ]; then
         echo "Warning: could not verify local signer/client port consistency."
@@ -723,7 +805,12 @@ check_local_config_consistency() {
     echo "    signer_port: $client_signer_port"
     echo "    ssh.port:    $client_ssh_port"
     echo ""
-    echo "Plain 'apshell request-token' and 'connect' use the client config."
+    if [ "$client_ports_source" = "endpoints" ]; then
+        echo "Plain 'apshell request-token' and 'connect' use $client_endpoints."
+        echo "Edit $client_endpoints manually before connecting."
+        return 0
+    fi
+    echo "Plain 'apshell request-token' and 'connect' use legacy client config."
     local answer
     read -rp "Update client config to match signer ports? [Y/n] " answer </dev/tty
     if [ -z "$answer" ] || [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
@@ -794,8 +881,6 @@ EOF
 
 write_apshell_local_config() {
     local target="$1"
-    local signer_port="${2:-11270}"
-    local ssh_port="${3:-1127}"
     cat > "$target" <<EOF
 # apshell configuration (local signer)
 # See docs/USER_CONFIG.md for full documentation.
@@ -805,15 +890,7 @@ networks_allowed:
   - mainnet
   - testnet
 
-signer_port: $signer_port
-
 signer_status_poll_interval: "10s"
-
-ssh:
-  host: localhost
-  port: $ssh_port
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
 
 networks:
   testnet:
@@ -828,6 +905,28 @@ networks:
     algod:
       server: http://localhost:4001
       token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+EOF
+}
+
+write_apshell_endpoint_registry() {
+    local target="$1"
+    local host="${2:-localhost}"
+    local signer_port="${3:-11270}"
+    local ssh_port="${4:-1127}"
+    cat > "$target" <<EOF
+# apshell endpoint registry
+# See docs/USER_CONFIG.md for full documentation.
+
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://$host:$ssh_port
+    signer_port: $signer_port
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
 EOF
 }
 
@@ -1508,6 +1607,8 @@ if [ "$CLIENT_MODE" = "1" ]; then
     echo "=== apshell configuration ==="
     echo ""
     APCLIENT_CONFIG="$APCLIENT_DIR/config.yaml"
+    APCLIENT_ENDPOINTS="$APCLIENT_DIR/endpoints.yaml"
+    WROTE_APCLIENT_CONFIG=0
     if [ -f "$APCLIENT_CONFIG" ]; then
         echo "Config already exists at $APCLIENT_CONFIG; leaving it unchanged."
     else
@@ -1521,15 +1622,7 @@ networks_allowed:
   - mainnet
   - testnet
 
-signer_port: 11270
-
 signer_status_poll_interval: "10s"
-
-ssh:
-  host: CHANGE_ME              # Set to your signer host
-  port: 1127
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
 
 networks:
   testnet:
@@ -1545,6 +1638,13 @@ networks:
       server: http://localhost:4001
       token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 EOF
+        WROTE_APCLIENT_CONFIG=1
+    fi
+    if [ -f "$APCLIENT_ENDPOINTS" ]; then
+        echo "Endpoint registry already exists at $APCLIENT_ENDPOINTS; leaving it unchanged."
+    elif [ "$WROTE_APCLIENT_CONFIG" = "1" ]; then
+        echo "Writing $APCLIENT_ENDPOINTS..."
+        write_apshell_endpoint_registry "$APCLIENT_ENDPOINTS" "CHANGE_ME" 11270 1127
     fi
 
     # Generate SSH key for signer tunnel (optional, skip if ssh-keygen not available)
@@ -1799,11 +1899,20 @@ STARTEOF
     install_builtin_plugins "$APCLIENT_DIR"
 
     APCLIENT_CONFIG="$APCLIENT_DIR/config.yaml"
+    APCLIENT_ENDPOINTS="$APCLIENT_DIR/endpoints.yaml"
+    WROTE_APCLIENT_CONFIG=0
     if [ -f "$APCLIENT_CONFIG" ]; then
         echo "Config already exists at $APCLIENT_CONFIG; leaving it unchanged."
     else
         echo "Writing $APCLIENT_CONFIG..."
         write_apshell_local_config "$APCLIENT_CONFIG" "$SIGNER_PORT" "$SSH_PORT"
+        WROTE_APCLIENT_CONFIG=1
+    fi
+    if [ -f "$APCLIENT_ENDPOINTS" ]; then
+        echo "Endpoint registry already exists at $APCLIENT_ENDPOINTS; leaving it unchanged."
+    elif [ "$WROTE_APCLIENT_CONFIG" = "1" ]; then
+        echo "Writing $APCLIENT_ENDPOINTS..."
+        write_apshell_endpoint_registry "$APCLIENT_ENDPOINTS" localhost "$SIGNER_PORT" "$SSH_PORT"
     fi
 
     check_local_config_consistency "$CONFIG_PATH" "$APCLIENT_CONFIG"
@@ -2058,11 +2167,20 @@ if [ -n "$SUDO_USER" ]; then
     install_builtin_plugins "$APCLIENT_DIR" "$SUDO_USER"
 
     APCLIENT_CONFIG="$APCLIENT_DIR/config.yaml"
+    APCLIENT_ENDPOINTS="$APCLIENT_DIR/endpoints.yaml"
+    WROTE_APCLIENT_CONFIG=0
     if [ -f "$APCLIENT_CONFIG" ]; then
         echo "Config already exists at $APCLIENT_CONFIG; leaving it unchanged."
     else
         echo "Writing $APCLIENT_CONFIG..."
         write_apshell_local_config "$APCLIENT_CONFIG"
+        WROTE_APCLIENT_CONFIG=1
+    fi
+    if [ -f "$APCLIENT_ENDPOINTS" ]; then
+        echo "Endpoint registry already exists at $APCLIENT_ENDPOINTS; leaving it unchanged."
+    elif [ "$WROTE_APCLIENT_CONFIG" = "1" ]; then
+        echo "Writing $APCLIENT_ENDPOINTS..."
+        write_apshell_endpoint_registry "$APCLIENT_ENDPOINTS" localhost 11270 1127
     fi
     write_mcp_config "$APCLIENT_DIR" "$BINDIR/apshell"
 

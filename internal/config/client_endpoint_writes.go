@@ -37,6 +37,51 @@ func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, b
 	return registry, true, nil
 }
 
+// StoredClientPrimaryEndpointMaterializationNeeded reports whether the client
+// still relies on legacy config.yaml SSH primary endpoint settings that can be
+// promoted into endpoints.yaml.
+func StoredClientPrimaryEndpointMaterializationNeeded(dataDir string) (bool, error) {
+	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	if err != nil {
+		return false, err
+	}
+	if clientEndpointRegistryHasSigner(registry) {
+		return false, nil
+	}
+	if _, exists := registry.Endpoints[DefaultClientEndpointName]; exists {
+		return false, fmt.Errorf("%s endpoint %q already exists but no signer endpoint is configured", ClientEndpointsFile, DefaultClientEndpointName)
+	}
+	_, ok := storedLegacyPrimaryEndpoint(dataDir)
+	return ok, nil
+}
+
+// MaterializeStoredClientPrimaryEndpoint writes the legacy config.yaml SSH
+// primary endpoint into endpoints.yaml when no stored signer endpoint exists.
+// It is the explicit compatibility bridge from pre-endpoint clients to the
+// endpoint registry shape.
+func MaterializeStoredClientPrimaryEndpoint(dataDir string) (ClientEndpointRegistry, bool, error) {
+	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	if err != nil {
+		return ClientEndpointRegistry{}, false, err
+	}
+	if clientEndpointRegistryHasSigner(registry) {
+		return registry, false, nil
+	}
+	legacy, ok := storedLegacyPrimaryEndpoint(dataDir)
+	if !ok {
+		return registry, false, nil
+	}
+	if _, exists := registry.Endpoints[DefaultClientEndpointName]; exists {
+		return ClientEndpointRegistry{}, false, fmt.Errorf("%s endpoint %q already exists but no signer endpoint is configured", ClientEndpointsFile, DefaultClientEndpointName)
+	}
+	registry.Endpoints[DefaultClientEndpointName] = legacy
+	registry.Default = DefaultClientEndpointName
+	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
+		return ClientEndpointRegistry{}, false, err
+	}
+	return registry, true, nil
+}
+
 func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointRegistry) error {
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
 		return err
@@ -86,6 +131,16 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 	if _, hasStoredPrimary := registry.Endpoints[DefaultClientEndpointName]; !hasStoredPrimary && alias != DefaultClientEndpointName {
 		if legacyPrimary, ok := storedLegacyPrimaryEndpoint(dataDir); ok && legacyPrimary.Role == normalized.Role && legacyPrimary.URL == normalized.URL {
 			return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint URL %q already belongs to alias %q", normalized.URL, DefaultClientEndpointName)
+		}
+	}
+	if normalized.Role != ClientEndpointRoleSigner && !clientEndpointRegistryHasSigner(registry) {
+		legacyPrimary, ok := storedLegacyPrimaryEndpoint(dataDir)
+		if ok {
+			if _, exists := registry.Endpoints[DefaultClientEndpointName]; exists {
+				return StoredClientEndpointUpsertPlan{}, fmt.Errorf("%s endpoint %q already exists but no signer endpoint is configured", ClientEndpointsFile, DefaultClientEndpointName)
+			}
+			registry.Endpoints[DefaultClientEndpointName] = legacyPrimary
+			registry.Default = DefaultClientEndpointName
 		}
 	}
 	if exists && !storedClientEndpointsEqual(existing, normalized) && !replace {

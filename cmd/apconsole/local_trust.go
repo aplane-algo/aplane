@@ -24,10 +24,16 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg config.ServerConfig
 	if err != nil {
 		return "", fmt.Errorf("load client config: %w", err)
 	}
-	if clientCfg.SSH == nil {
+	registry := clientCfg.ClientEndpointsOrDefault(clientDataDir)
+	_, endpoint, ok := registry.DefaultEndpoint()
+	if !ok {
 		return "", nil
 	}
-	if !isLoopbackSSHHost(clientCfg.SSH.Host) {
+	host, sshPort, err := config.ClientEndpointSSHHostPort(endpoint)
+	if err != nil {
+		return "", nil
+	}
+	if !isLoopbackSSHHost(host) {
 		return "", nil
 	}
 
@@ -36,14 +42,14 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg config.ServerConfig
 		return "", fmt.Errorf("load local signer SSH host key: %w", err)
 	}
 	if localSignerHostKeyProbe != nil {
-		if err := localSignerHostKeyProbe(clientCfg.SSH.Host, clientCfg.SSH.Port, hostKey); err != nil {
+		if err := localSignerHostKeyProbe(host, sshPort, hostKey); err != nil {
 			return "", err
 		}
 	}
 
-	address := knownHostAddress(clientCfg.SSH.Host, clientCfg.SSH.Port)
+	address := knownHostAddress(host, sshPort)
 	line := knownhosts.Line([]string{address}, hostKey)
-	knownHostsPath := clientCfg.SSH.KnownHostsPath
+	knownHostsPath := endpoint.KnownHostsPath
 	if knownHostsPath == "" {
 		return "", nil
 	}

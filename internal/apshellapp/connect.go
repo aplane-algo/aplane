@@ -7,8 +7,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/config"
@@ -227,26 +225,7 @@ func (a *App) tokenPathForRequest(tokenPath string) (string, error) {
 }
 
 func sshEndpointHostPort(endpoint config.ClientEndpointConfig) (string, int, error) {
-	parsed, err := url.Parse(endpoint.URL)
-	if err != nil {
-		return "", 0, fmt.Errorf("invalid endpoint URL: %w", err)
-	}
-	if parsed.Scheme != "ssh" {
-		return "", 0, fmt.Errorf("endpoint %q cannot be used for primary signer connection; connect requires ssh://", endpoint.URL)
-	}
-	host := parsed.Hostname()
-	if host == "" {
-		return "", 0, fmt.Errorf("endpoint %q has no SSH host", endpoint.URL)
-	}
-	sshPort := config.DefaultSSHPort
-	if parsed.Port() != "" {
-		port, err := strconv.Atoi(parsed.Port())
-		if err != nil || port <= 0 || port > 65535 {
-			return "", 0, fmt.Errorf("invalid SSH port %q", parsed.Port())
-		}
-		sshPort = port
-	}
-	return host, sshPort, nil
+	return config.ClientEndpointSSHHostPort(endpoint)
 }
 
 func decorateConnectResult(res *ConnectResult) {

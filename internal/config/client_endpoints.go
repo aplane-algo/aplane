@@ -267,6 +267,32 @@ func validateClientEndpointURL(alias string, endpoint ClientEndpointConfig) erro
 	return nil
 }
 
+// ClientEndpointSSHHostPort returns the SSH host and port for an ssh://
+// endpoint. It is shared by signer-facing clients so endpoint routing does not
+// depend on legacy config.yaml ssh fields.
+func ClientEndpointSSHHostPort(endpoint ClientEndpointConfig) (string, int, error) {
+	parsed, err := url.Parse(endpoint.URL)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+	if parsed.Scheme != "ssh" {
+		return "", 0, fmt.Errorf("endpoint %q requires ssh://", endpoint.URL)
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return "", 0, fmt.Errorf("endpoint %q has no SSH host", endpoint.URL)
+	}
+	sshPort := DefaultSSHPort
+	if parsed.Port() != "" {
+		port, err := strconv.Atoi(parsed.Port())
+		if err != nil || port <= 0 || port > 65535 {
+			return "", 0, fmt.Errorf("invalid SSH port %q", parsed.Port())
+		}
+		sshPort = port
+	}
+	return host, sshPort, nil
+}
+
 func isLoopbackEndpointHost(host string) bool {
 	host = strings.Trim(strings.ToLower(host), "[]")
 	if host == "localhost" {

@@ -24,15 +24,21 @@ func TestTrustLocalSignerHostKeyWritesKnownHosts(t *testing.T) {
 	stubLocalSignerHostKeyProbe(t, nil)
 	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte(`
 network: testnet
-signer_port: 11270
-ssh:
-  host: localhost
-  port: 56870
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
 `), 0o600); err != nil {
 		t.Fatalf("write client config: %v", err)
 	}
+	writeClientEndpointRegistry(t, clientDir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://localhost:56870
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
+`)
 
 	notice, err := trustLocalSignerHostKey(clientDir, config.ServerConfig{
 		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
@@ -205,6 +211,13 @@ func fileMode(t *testing.T, path string) os.FileMode {
 		t.Fatalf("stat %s: %v", path, err)
 	}
 	return info.Mode().Perm()
+}
+
+func writeClientEndpointRegistry(t *testing.T, dir string, contents string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "endpoints.yaml"), []byte(strings.TrimSpace(contents)+"\n"), 0o600); err != nil {
+		t.Fatalf("write endpoints: %v", err)
+	}
 }
 
 func stubLocalSignerHostKeyProbe(t *testing.T, fn func(string, int, ssh.PublicKey) error) {

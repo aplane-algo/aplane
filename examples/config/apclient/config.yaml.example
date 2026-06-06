@@ -10,18 +10,8 @@ networks_allowed:
   - mainnet
   - testnet
 
-# Signer REST API port (local port for tunnel)
-signer_port: 11270
-
 # Background /status polling interval for keyset refresh ("0" disables)
 signer_status_poll_interval: "10s"
-
-# SSH tunnel settings (required — use localhost for same-machine signer)
-ssh:
-  host: localhost            # Change to remote host if signer is on another machine
-  port: 1127
-  identity_file: .ssh/id_ed25519      # Relative to $APCLIENT_DATA
-  known_hosts_path: .ssh/known_hosts  # Relative to $APCLIENT_DATA
 
 # Color theme: auto (detect terminal), dark, or light
 # theme: auto

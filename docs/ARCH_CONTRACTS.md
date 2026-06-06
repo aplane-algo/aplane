@@ -219,9 +219,9 @@ Validation:
 - `network`, `networks_allowed`, and `networks` keys are network context tokens
 - network context tokens must be 1-64 characters, start with a lowercase ASCII letter or digit, and contain only lowercase ASCII letters, digits, `_`, or `-`
 - if `networks_allowed` is set, `network` must be in it
-- SSH block requires `host`
-- omitted `ssh.port`, `identity_file`, and `known_hosts_path` are defaulted
-- relative SSH paths resolve against the client data dir
+- legacy `ssh:` blocks require `host` when present
+- omitted legacy `ssh.port`, `identity_file`, and `known_hosts_path` are defaulted
+- relative SSH paths in legacy config and endpoint records resolve against the client data dir
 - `theme` is a local client UI preference for apshell/apadmin/apconsole before
   any signer-admin setting is received; it does not mutate signer config
 - `signer_status_poll_interval` parses as a Go duration string; empty defaults
@@ -495,8 +495,8 @@ Additional client-state notes:
 - systemd installs/upgrades refuse to proceed while `apsigner.service` is `active`, `activating`, `reloading`, or `deactivating`; operators must stop the service first, then rerun the same install/bootstrap command
 - local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
 - `apconsole.yaml` supports `mode: local|remote`, `client_data`, and local-mode `signer_data`; relative paths resolve against the profile file
-- `endpoints.yaml` is an optional client-local endpoint registry with `schema_version: 1`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
-- if `endpoints.yaml` is absent, the legacy primary endpoint is derived from `config.yaml` `ssh:` plus `signer_port`, and uses `APCLIENT_DATA/aplane.token`.
+- `endpoints.yaml` is the normal client-local endpoint registry for new installs, with `schema_version: 1`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
+- if `endpoints.yaml` is absent, the legacy primary endpoint is derived read-only from `config.yaml` `ssh:` plus `signer_port`, and uses `APCLIENT_DATA/aplane.token`. Interactive `apshell` prompts before materializing that legacy primary into `endpoints.yaml`; non-interactive modes keep the read-only fallback. Endpoint registry writes that add a non-signer endpoint also materialize the legacy primary first, so old-shape clients become new-shape after their first endpoint mutation.
 - endpoint records carry connection profile fields together: required `role` (`signer` or `attestor`), `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, `token_file`, and endpoint-published `published_attestors`. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. `published_attestors` is valid only on `attestor` endpoints.
 - endpoint token files are bearer credentials. The legacy default endpoint continues to use `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
 - `published_attestors` is keyed by canonical embedded attestor public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime attested-send routing derives the endpoint for an embedded attestor public key from this endpoint-local inventory.
@@ -508,15 +508,15 @@ Additional client-state notes:
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
 - for interactive `apshell`, token presence and SSH host trust are enforced when the shell attempts `connect`, startup auto-connect, or `request-token` flows; they are not preflight requirements for process startup
 - after a successful interactive `request-token` for the default endpoint, `apshell` immediately attempts to establish the signer SSH tunnel with the newly issued token; `request-token --endpoint <alias>` saves that endpoint's token and only auto-connects when `<alias>` is the default endpoint.
-- `apshell --mcp` has a stricter startup contract than interactive `apshell`: MCP startup is non-interactive and refuses to start unless the client is already enrolled (`ssh:` config, `aplane.token`, trusted `known_hosts`)
+- `apshell --mcp` has a stricter startup contract than interactive `apshell`: MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted `known_hosts`)
 - `apshell --mcp` also requires the startup signer connection to succeed; it does not start in a disconnected or partially enrolled state, and it cannot perform first-use trust or token enrollment itself
 - `apconsole` resolves startup inputs per field in this order: flags, environment variables, explicitly selected profile (`-config` or `APCONSOLE_CONFIG`), auto-discovered profile, then defaults
 - conflicting explicit inputs do not auto-resolve: if flags, environment variables, or an explicitly selected profile disagree, `apconsole` exits and requires the operator to remove the conflict or make the values match
 - auto-discovered profile values are convenience defaults only; if they differ from explicit flags or environment variables, `apconsole` keeps the explicit values and emits a warning naming the ignored profile value
 - local-mode `apconsole` may start before client enrollment is complete; it requires valid local client/signer data paths, but it allows the embedded shell to perform first-time `request-token` while the local signer/admin panes are available for approval
 - for local-mode `apconsole`, when the client SSH host is loopback, the local signer's configured SSH host key is probed against the live loopback SSH endpoint before being pinned into the client `known_hosts` file; a mismatch aborts the trust write and shell startup, and token presence is enforced when the embedded shell attempts startup auto-connect, `connect`, or `request-token`
-- remote-mode `apconsole` requires the configured client data directory to be enrolled before the UI starts: `config.yaml` must contain an `ssh:` block, `aplane.token` must exist, and the configured signer host must already be present in `ssh.known_hosts_path`
-- remote `apadmin` has the same client enrollment prerequisite as `apconsole`: it requires `ssh:` config, `aplane.token`, and a trusted signer host in `ssh.known_hosts_path`; it does not prompt for first-use host trust
+- remote-mode `apconsole` requires the configured client data directory to be enrolled before the UI starts: `endpoints.yaml` must define a default signer endpoint, that endpoint's token file must exist, and the configured signer host must already be present in the endpoint `known_hosts_path`
+- remote `apadmin` has the same client enrollment prerequisite as `apconsole`: it requires a default signer endpoint, the endpoint token, and a trusted signer host in the endpoint `known_hosts_path`; it does not prompt for first-use host trust
 - shared non-interactive client-enrollment preflight lives in `internal/clientenroll/preflight.go` and is used by `apshell --mcp` and remote-mode `apconsole`; remote `apadmin` has a separate implementation in `cmd/apadmin/remote.go`
 - tombstones suppress locally deleted proposals for that local actor
 - cache files are signed JSON with a per-client `.cache_key` and are local, rebuildable client state; the signed envelope has `version: 1`, and versioned cache payloads carry `schema_version: 1` with missing payload versions treated as legacy v1
@@ -1761,7 +1761,7 @@ Cross-SDK compatibility-bearing behavior:
 Go SDK specifics:
 
 - `ConnectSSH(host, token, sshKeyPath, opts)` establishes SSH tunnel then HTTP
-- `FromEnv(opts)` resolves config/token from client data dir and requires SSH config
+- `FromEnv(opts)` resolves config/token from client data dir and requires signer endpoint routing
 - `NewSignerClientWithToken(baseURL, token)` supports caller-owned transport and direct client construction
 - `SetHTTPClient(client)` overrides the HTTP transport for advanced callers.
   If caller-owned transport sets a global timeout shorter than the effective

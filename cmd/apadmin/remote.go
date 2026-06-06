@@ -47,17 +47,32 @@ func loadRemoteAdminConfig(clientDataDirFlag string, _ bool) (*remoteAdminConfig
 	if err != nil {
 		return nil, fmt.Errorf("invalid remote client configuration: %w", err)
 	}
-	if cfg.SSH == nil {
-		return nil, fmt.Errorf("remote mode requires ssh configuration in %s/config.yaml", clientDataDir)
+	registry := cfg.ClientEndpointsOrDefault(clientDataDir)
+	_, endpoint, ok := registry.DefaultEndpoint()
+	if !ok {
+		return nil, fmt.Errorf("remote mode requires a default signer endpoint in %s/endpoints.yaml", clientDataDir)
+	}
+	host, sshPort, err := config.ClientEndpointSSHHostPort(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("remote mode default signer endpoint is invalid: %w", err)
+	}
+	cfg.SSH = &config.SSHClientConfig{
+		Host:           host,
+		Port:           sshPort,
+		IdentityFile:   endpoint.IdentityFile,
+		KnownHostsPath: endpoint.KnownHostsPath,
 	}
 	theme.Init(cfg.Theme)
 
-	token, err := tokenfile.LoadApshellTokenFromDataDir(clientDataDir)
+	tokenPath := endpoint.TokenFile
+	if tokenPath == "" {
+		tokenPath, _ = tokenfile.GetApshellTokenPathForDataDir(clientDataDir)
+	}
+	token, err := tokenfile.ReadToken(tokenPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load token from %s: %w", clientDataDir, err)
+		return nil, fmt.Errorf("failed to load token from %s: %w", tokenPath, err)
 	}
 	if token == "" {
-		tokenPath, _ := tokenfile.GetApshellTokenPathForDataDir(clientDataDir)
 		return nil, fmt.Errorf("no token configured for remote mode; copy aplane.token to %s or enroll via apshell", tokenPath)
 	}
 	if err := requireRemoteKnownHost(cfg); err != nil {

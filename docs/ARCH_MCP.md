@@ -60,7 +60,7 @@ the config, caches, token, plugin catalog, and plugin activation config.
 
 ## Startup Sequence
 
-1. Run the shared `clientenroll.LoadEnrolledClient` preflight: `ssh:` config, `aplane.token`, and a trusted signer host in `known_hosts` are required, with MCP-specific hints. Failure exits non-zero before any other startup work.
+1. Run the shared `clientenroll.LoadEnrolledClient` preflight: a default signer endpoint, that endpoint's token file, and a trusted signer host in the endpoint `known_hosts_path` are required, with MCP-specific hints. Failure exits non-zero before any other startup work.
 2. Create `REPLState` with initialized runtime state and app facade.
 3. Set `AutoConfirm: true` (non-interactive) and redirect REPL/app output to `os.Stderr`.
 4. Save the real stdout for MCP transport, then redirect `os.Stdout` to `os.Stderr` so stray prints do not corrupt the JSON-RPC stream.

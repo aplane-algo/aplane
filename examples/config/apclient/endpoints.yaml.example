@@ -1,0 +1,14 @@
+# apshell endpoint registry
+# Copy to $APCLIENT_DATA/endpoints.yaml and customize as needed.
+# See docs/USER_CONFIG.md for full documentation.
+
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://localhost:1127
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token

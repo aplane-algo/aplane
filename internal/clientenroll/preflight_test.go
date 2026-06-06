@@ -18,17 +18,17 @@ import (
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
-func TestLoadEnrolledClientRequiresSSHConfig(t *testing.T) {
+func TestLoadEnrolledClientRequiresDefaultSignerEndpoint(t *testing.T) {
 	dir := t.TempDir()
 
 	got, err := LoadEnrolledClient(dir, testOptions())
 	if err == nil {
-		t.Fatal("err = nil, want missing ssh config error")
+		t.Fatal("err = nil, want missing signer endpoint error")
 	}
 	if got != nil {
 		t.Fatalf("got = %#v, want nil", got)
 	}
-	if !strings.Contains(err.Error(), "requires ssh configuration") {
+	if !strings.Contains(err.Error(), "requires a default signer endpoint") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -109,13 +109,24 @@ func TestLoadEnrolledClientBuildsPrereqs(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `
 network: testnet
-ssh:
-  host: signer.local
-  port: 2222
-  identity_file: keys/operator
-  known_hosts_path: hosts/known_hosts
 `)
-	if err := tokenfile.WriteToken(filepath.Join(dir, "aplane.token"), "test-token"); err != nil {
+	writeRemoteEndpointRegistry(t, dir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.local:2222
+    signer_port: 11270
+    identity_file: keys/operator
+    known_hosts_path: hosts/known_hosts
+    token_file: tokens/primary.token
+`)
+	tokenPath := filepath.Join(dir, "tokens/primary.token")
+	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
+		t.Fatalf("mkdir token dir: %v", err)
+	}
+	if err := tokenfile.WriteToken(tokenPath, "test-token"); err != nil {
 		t.Fatalf("write token: %v", err)
 	}
 	writeKnownHost(t, filepath.Join(dir, "hosts/known_hosts"), "signer.local", 2222)
@@ -151,6 +162,13 @@ func writeRemoteConfig(t *testing.T, dir string, contents string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(strings.TrimSpace(contents)+"\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
+	}
+}
+
+func writeRemoteEndpointRegistry(t *testing.T, dir string, contents string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "endpoints.yaml"), []byte(strings.TrimSpace(contents)+"\n"), 0o600); err != nil {
+		t.Fatalf("write endpoints: %v", err)
 	}
 }
 

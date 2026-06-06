@@ -32,23 +32,39 @@ type Prereqs struct {
 	Token   string
 }
 
-// LoadEnrolledClient validates that the client is already enrolled for a non-interactive,
-// signer-facing surface. It requires ssh config, a client token, and a trusted known_hosts entry.
+// LoadEnrolledClient validates that the client is already enrolled for a
+// non-interactive, signer-facing surface. It requires a default signer endpoint
+// or legacy ssh config, a client token, and a trusted known_hosts entry.
 func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("invalid client configuration for %s: %w", opts.Product, err)
 	}
-	if cfg.SSH == nil {
-		return nil, fmt.Errorf("%s requires ssh configuration in %s/config.yaml; %s", opts.Product, dataDir, opts.MissingSSHHint)
+	registry := cfg.ClientEndpointsOrDefault(dataDir)
+	_, endpoint, ok := registry.DefaultEndpoint()
+	if !ok {
+		return nil, fmt.Errorf("%s requires a default signer endpoint in %s/endpoints.yaml; %s", opts.Product, dataDir, opts.MissingSSHHint)
+	}
+	host, sshPort, err := config.ClientEndpointSSHHostPort(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("%s default signer endpoint is invalid: %w", opts.Product, err)
+	}
+	cfg.SSH = &config.SSHClientConfig{
+		Host:           host,
+		Port:           sshPort,
+		IdentityFile:   endpoint.IdentityFile,
+		KnownHostsPath: endpoint.KnownHostsPath,
 	}
 
-	token, err := tokenfile.LoadApshellTokenFromDataDir(dataDir)
+	tokenPath := endpoint.TokenFile
+	if tokenPath == "" {
+		tokenPath, _ = tokenfile.GetApshellTokenPathForDataDir(dataDir)
+	}
+	token, err := tokenfile.ReadToken(tokenPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load token from %s: %w", dataDir, err)
+		return nil, fmt.Errorf("failed to load token from %s: %w", tokenPath, err)
 	}
 	if token == "" {
-		tokenPath, _ := tokenfile.GetApshellTokenPathForDataDir(dataDir)
 		return nil, fmt.Errorf("%s requires an enrolled client token at %s; %s", opts.Product, tokenPath, opts.MissingTokenHint)
 	}
 

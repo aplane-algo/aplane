@@ -88,7 +88,8 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │       └── .ssh/          # Identity-scoped authorized_keys after token enrollment
 ├── apclient/              # Client data directory ($APCLIENT_DATA)
 │   ├── bin/               # apshell
-│   ├── config.yaml        # Client config (network, signer connection)
+│   ├── config.yaml        # Client config (network and UI defaults)
+│   ├── endpoints.yaml     # Client endpoint registry
 │   ├── .mcp.json          # MCP client config for apshell --mcp
 │   ├── plugins.yaml       # Enabled plugin names
 │   ├── plugins.available/  # Installed plugin catalog entries
@@ -100,7 +101,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 
 ### Ports
 
-Each local install selects **random available ports** in the dynamic range (49152–65535) for both the signer REST API and the SSH tunnel. This allows multiple independent APlane instances on the same machine without port conflicts. The selected ports are written into both `apsigner/config.yaml` and `apclient/config.yaml`.
+Each local install selects **random available ports** in the dynamic range (49152–65535) for both the signer REST API and the SSH tunnel. This allows multiple independent APlane instances on the same machine without port conflicts. The selected ports are written into `apsigner/config.yaml` and the primary signer record in `apclient/endpoints.yaml`.
 
 ### Confirmation prompt
 
@@ -213,7 +214,7 @@ When the signer is stopped, re-running is safe:
 - Plugin activation is controlled by `apclient/plugins.yaml`. On first install
   the installer creates an empty activation list; existing activation choices
   are preserved on upgrade.
-- If local signer/client ports disagree, the installer warns and can update `apclient/config.yaml` to match `apsigner/config.yaml`
+- If local signer/client ports disagree, the installer warns and can update legacy client signer settings to match `apsigner/config.yaml`
 - A canonical template is written to `config.yaml.aplane-installer.new` for review
 - Keystore init is skipped if `.keystore` already exists
 
@@ -398,7 +399,8 @@ Or from an extracted release tarball:
 
 This installs:
 - `~/aplane/apclient/bin/apshell` — the transaction shell binary
-- `~/aplane/apclient/config.yaml` — client configuration (network, signer address, SSH tunnel)
+- `~/aplane/apclient/config.yaml` — client configuration (network and UI defaults)
+- `~/aplane/apclient/endpoints.yaml` — client endpoint registry; new installs start with a `primary` signer endpoint
 - `~/aplane/apclient/.mcp.json` — MCP client configuration for `apshell --mcp`
 - `~/aplane/apclient/.ssh/id_ed25519` — SSH key for signer tunnel, generated during install if `ssh-keygen` is available or by `apshell request-token` when first needed
 - `~/aplane/apclient/plugins.yaml` — enabled plugin names; new installs start with an empty activation list
@@ -408,7 +410,7 @@ This installs:
 **After installing:**
 
 1. Ensure `~/aplane/apclient/bin` is on your `PATH`, or invoke `apshell` by full path
-2. Edit `~/aplane/apclient/config.yaml` to set your remote signer host
+2. Edit `~/aplane/apclient/endpoints.yaml` to set your remote signer host
 3. Run `apshell`, then use `request-token` to generate or reuse your SSH key and request an API token
 4. Ask the signer operator to approve the token enrollment in `apadmin` or `apapprover`
 
@@ -961,7 +963,8 @@ The client data directory grows over time as well:
 
 ```
 $APCLIENT_DATA/
-├── config.yaml           # Connection settings (network, signer SSH host)
+├── config.yaml           # Network and UI defaults
+├── endpoints.yaml        # Signer and attestor endpoint routing
 ├── aplane.token          # API token (created after request-token approval)
 ├── .mcp.json             # Installer-written MCP client config for apshell --mcp
 ├── .ssh/
