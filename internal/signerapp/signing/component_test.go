@@ -901,6 +901,98 @@ func TestAssembleDecodedAttestedRejectsWrongAttestorSignature(t *testing.T) {
 	}
 }
 
+func TestAssembleDecodedAttestedRejectsWrongUserSignature(t *testing.T) {
+	attestorPrivateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x57}, stded25519.SeedSize))
+	attestorPublicKey := append([]byte(nil), attestorPrivateKey.Public().(stded25519.PublicKey)...)
+
+	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x58}, 64))
+	if err != nil {
+		t.Fatalf("GenerateKeypair(user) error = %v", err)
+	}
+	_, wrongUserPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x59}, 64))
+	if err != nil {
+		t.Fatalf("GenerateKeypair(wrong user) error = %v", err)
+	}
+	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x9a, 0xbc}
+	attestedAccount := logicSigAddressForTest(t, bytecode)
+	txn := paymentTransaction(t, attestedAccount, types.Address{20}.String(), 15)
+	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
+	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
+	if decodeErr != nil {
+		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
+	}
+
+	userMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
+	wrongUserSignature, err := signerops.New(nil).Sign(wrongUserPrivateKey, userMsg[:])
+	if err != nil {
+		t.Fatalf("Sign(wrong user) error = %v", err)
+	}
+	attestorMsg := message.ComponentMessage(message.RoleAttestor, group.Entries[0].TxID)
+	attestorSignature := stded25519.Sign(attestorPrivateKey, attestorMsg[:])
+
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:                   keytypes.AttestedFalcon1024V1,
+		Category:               keys.CategoryDSALsig,
+		BaseKeyType:            falcon1024attested.BaseKeyType,
+		PublicKey:              append([]byte(nil), userPublicKey...),
+		Bytecode:               append([]byte(nil), bytecode...),
+		Parameters:             map[string]string{keytypes.ParameterAttestorPublicKey: hex.EncodeToString(attestorPublicKey)},
+		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
+	}
+	session := &componentKeyTestSession{key: keyMaterial}
+
+	result, signErr := assembleDecodedAttested(context.Background(), signerapi.AttestedAssemblyRequest{
+		RequestID:     "asm-bad-user",
+		GroupBytesHex: groupBytesHex,
+		Targets: []signerapi.AttestedAssemblyTarget{{
+			TargetIndex:       0,
+			AttestedAccount:   attestedAccount,
+			UserSignature:     hex.EncodeToString(wrongUserSignature),
+			AttestorSignature: hex.EncodeToString(attestorSignature),
+		}},
+	}, group, session)
+	if result != nil {
+		t.Fatalf("result = %#v, want nil", result)
+	}
+	if signErr == nil || signErr.Kind != ErrorBadRequest {
+		t.Fatalf("assembleDecodedAttested() error = %#v, want bad request", signErr)
+	}
+	if !strings.Contains(signErr.Message, "user_signature invalid") {
+		t.Fatalf("assembleDecodedAttested() error = %q, want user_signature invalid", signErr.Message)
+	}
+}
+
+func TestAssembleDecodedAttestedRejectsMismatchedPassthrough(t *testing.T) {
+	sender := types.Address{21}.String()
+	txn := paymentTransaction(t, sender, types.Address{22}.String(), 16)
+	wrongTxn := paymentTransaction(t, sender, types.Address{23}.String(), 17)
+	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
+	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
+	if decodeErr != nil {
+		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
+	}
+	wrongSignedBytes := msgpack.Encode(types.SignedTxn{Txn: wrongTxn})
+
+	result, signErr := assembleDecodedAttested(context.Background(), signerapi.AttestedAssemblyRequest{
+		RequestID:     "asm-bad-passthrough",
+		GroupBytesHex: groupBytesHex,
+		Passthrough: []signerapi.AttestedPassthroughItem{{
+			TargetIndex:  0,
+			SignedTxnHex: hex.EncodeToString(wrongSignedBytes),
+		}},
+	}, group, &componentKeyTestSession{})
+	if result != nil {
+		t.Fatalf("result = %#v, want nil", result)
+	}
+	if signErr == nil || signErr.Kind != ErrorBadRequest {
+		t.Fatalf("assembleDecodedAttested() error = %#v, want bad request", signErr)
+	}
+	if !strings.Contains(signErr.Message, "signed transaction does not match group transaction") {
+		t.Fatalf("assembleDecodedAttested() error = %q, want passthrough mismatch", signErr.Message)
+	}
+}
+
 func TestSignPreparedAttestorComponentsSignsEd25519Messages(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x42}, stded25519.SeedSize)
 	privateKey := stded25519.NewKeyFromSeed(seed)

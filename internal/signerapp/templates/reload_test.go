@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -436,6 +437,51 @@ func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing
 	}
 	if !reflect.DeepEqual(notifications, []KeysChangedNotification{{KeyCount: 0}}) {
 		t.Fatalf("notifications = %#v, want key count 0", notifications)
+	}
+}
+
+func TestReloadModeValidationRejectsConflictingInventoryBeforePublish(t *testing.T) {
+	store := &fakeKeyStore{
+		cache:     map[string]string{"ADDR": "/keys/ADDR.key"},
+		keyTypes:  map[string]string{"ADDR": keytypes.AttestorComponentEd25519V1},
+		lsigSizes: map[string]int{"ADDR": 0},
+	}
+	session := &fakeSession{}
+	publishedKeys := map[string]string{"OLD": "/keys/OLD.key"}
+	publishedKeyTypes := map[string]string{"OLD": "ed25519"}
+	publishedLsigSizes := map[string]int{"OLD": 0}
+	service := &ReloadService{
+		KeyStore:        store,
+		Session:         session,
+		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
+		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
+			if keyTypes["ADDR"] == keytypes.AttestorComponentEd25519V1 {
+				return errors.New(`identity mode "signing" rejects key inventory: ADDR:aplane.attestor-ed25519.v1`)
+			}
+			return nil
+		},
+		PublishSnapshot: func(keys map[string]string, keyTypes map[string]string, lsigSizes map[string]int) {
+			publishedKeys = keys
+			publishedKeyTypes = keyTypes
+			publishedLsigSizes = lsigSizes
+		},
+	}
+
+	_, err := service.Reload("default", nil)
+	if err == nil {
+		t.Fatal("Reload() error = nil, want mode validation failure")
+	}
+	if !strings.Contains(err.Error(), `identity mode "signing"`) {
+		t.Fatalf("Reload() error = %q, want signing mode rejection", err)
+	}
+	if len(publishedKeys) != 0 || len(publishedKeyTypes) != 0 || len(publishedLsigSizes) != 0 {
+		t.Fatalf("published snapshot = (%#v, %#v, %#v), want empty maps after mode rejection", publishedKeys, publishedKeyTypes, publishedLsigSizes)
+	}
+	if store.clearCache != 1 {
+		t.Fatalf("ClearCache() calls = %d, want 1", store.clearCache)
+	}
+	if session.initialized {
+		t.Fatal("session initialized after rejected mode validation")
 	}
 }
 

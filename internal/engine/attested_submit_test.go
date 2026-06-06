@@ -194,6 +194,82 @@ func TestVerifyAttestorComponentSignaturesUsesFalcon1024Scheme(t *testing.T) {
 	}
 }
 
+func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
+	tests := []struct {
+		name        string
+		resp        *signerapi.ComponentSignResponse
+		wantMessage string
+	}{
+		{
+			name:        "empty response",
+			resp:        nil,
+			wantMessage: "empty component sign response",
+		},
+		{
+			name: "unexpected target index",
+			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+				TargetIndex:     9,
+				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				Signature:       "aa",
+			}}},
+			wantMessage: "unexpected signature for target index 9",
+		},
+		{
+			name: "duplicate target index",
+			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+				TargetIndex:     0,
+				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				Signature:       "aa",
+			}, {
+				TargetIndex:     0,
+				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				Signature:       "bb",
+			}}},
+			wantMessage: "duplicate signature for target index 0",
+		},
+		{
+			name: "wrong scheme",
+			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+				TargetIndex:     0,
+				SignatureScheme: keytypes.AttestorComponentFalcon1024V1,
+				Signature:       "aa",
+			}, {
+				TargetIndex:     1,
+				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				Signature:       "bb",
+			}}},
+			wantMessage: "signature for target index 0 used scheme",
+		},
+		{
+			name: "missing target index",
+			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
+				TargetIndex:     0,
+				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				Signature:       "aa",
+			}}},
+			wantMessage: "missing signature for target index 1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dst := map[int]string{}
+			err := collectComponentSignatures(
+				tt.resp,
+				[]int{0, 1},
+				keytypes.AttestorComponentEd25519V1,
+				dst,
+			)
+			if err == nil {
+				t.Fatal("collectComponentSignatures() error = nil, want malformed response rejection")
+			}
+			if !strings.Contains(err.Error(), tt.wantMessage) {
+				t.Fatalf("collectComponentSignatures() error = %q, want %q", err, tt.wantMessage)
+			}
+		})
+	}
+}
+
 func TestRequestAttestorComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(cryptorand.Reader)
 	if err != nil {

@@ -27,12 +27,19 @@ Primary sources for the first tranche:
   alignment, status behavior, and `/sign/cancel`.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing policy,
   lifecycle, reload, key-file, SDK, and backup/restore contracts.
+- [ARCH_ATTESTOR_SPEC.md](ARCH_ATTESTOR_SPEC.md): attested-account component
+  signing, attestor endpoint routing, assembly verification, and identity mode
+  separation.
 - [ARCH_POLICY.md](ARCH_POLICY.md): current signer policy verdict model,
-  precedence, snapshot semantics, and rule inventory.
+  precedence, attestor component policy, snapshot semantics, and rule
+  inventory.
 - [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): principal/action authorization
   and sensitive-operation attribution.
 - [ARCH_NETWORKS.md](ARCH_NETWORKS.md): genesis-hash network identity and
   policy network lookup.
+- [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md) and
+  [ARCH_DATA_CATALOG.md](ARCH_DATA_CATALOG.md): durable and in-memory objects
+  that cross subsystem boundaries.
 
 ## Scope
 
@@ -42,8 +49,10 @@ The formalization work should proceed in small, composable models:
 2. Policy precedence and approval outcomes.
 3. LogicSig key-file signing authority.
 4. Runtime lifecycle and decommission signing-stop behavior.
-5. LogicSig template and bytecode-generation invariants.
-6. Machine-checkable models for the highest-value surfaces.
+5. Attested account component signing, attestor policy, endpoint routing, and
+   assembly verification.
+6. LogicSig template and bytecode-generation invariants.
+7. Machine-checkable models for the highest-value surfaces.
 
 Each model should state:
 
@@ -78,7 +87,8 @@ Initial models should not include:
 - approval coordinator cancellation/timeout state machines,
 - LogicSig budget computation internals,
 - LogicSig template and bytecode-generation semantics,
-- future witness/compliance-signer concepts that are not current contracts.
+- future registration, witness, compliance-signer, or profile-trust concepts
+  that are not current attestor contracts.
 
 Those areas can be connected later through assumptions or separate models if
 their contracts become security-critical.
@@ -93,6 +103,7 @@ Deliver:
 - [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md)
 - [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md)
 - [FORMAL_LIFECYCLE_MODEL.md](FORMAL_LIFECYCLE_MODEL.md)
+- [FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md)
 
 Done means each document has concrete invariants and a clear source-of-truth
 mapping back to existing docs and code owners.
@@ -122,6 +133,11 @@ Preferred test targets:
 - `/simulate` boundary: hard-policy enforcement, no signed bytes in response,
   foreign-slot rejection, decommission/lock rejection,
 - `auth_address` -> key file resolution via runtime index.
+- attested signing assembly: wrong user signature rejection, wrong attestor
+  signature rejection, passthrough transaction-ID binding,
+- attestor endpoint routing: explicit mismatch hard-fails without fallback,
+  malformed component responses reject, unavailable endpoint sync preserves
+  prior inventory while hard failures write nothing.
 
 ### M3: Deferred Companion English Models
 
@@ -199,14 +215,24 @@ counterexample).
 
 Next likely modules:
 
-1. **Lifecycle-aware composition.** Compose the temporal lifecycle
+1. **Attested signing and assembly.** Translate
+   [FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md) into a
+   small one-shot module. The first version should abstract cryptographic
+   verification as predicates and check that successful assembly requires the
+   local user key, the embedded attestor key, exact target coverage, and
+   passthrough transaction-ID binding.
+2. **Endpoint routing state.** Model client endpoint inventory separately if
+   the attested module becomes too large: explicit mismatch hard-fails, self
+   fallback is only available when no explicit route exists, and hard discovery
+   failures do not partially rewrite routing state.
+3. **Lifecycle-aware composition.** Compose the temporal lifecycle
    model with the existing one-shot sign-boundary, policy-precedence,
    and composition modules. Requires reconciling temporal-transition
    state with one-shot Init state — non-trivial but valuable.
-2. **Approval coordinator state machine.** State machine for pending
+4. **Approval coordinator state machine.** State machine for pending
    approvals, timeouts, cancellations, and mid-flight decommission.
    Would compose with this lifecycle module to verify L8.
-3. **Liveness on lifecycle.** Add weak fairness on
+5. **Liveness on lifecycle.** Add weak fairness on
    `AdminAcquireWrite` and `AdminMarkDecommissioned`; verify
    `Decommission` eventually completes given fair admin progress.
 
@@ -259,6 +285,12 @@ decommission and lifecycle lease semantics that gate final signing, the
 read/write lock relationship between `BeginOperation` and `Decommission`,
 and the fixed reload step order.
 
+[FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md) captures
+the attested-account co-signing workflow: role-separated component messages,
+attestor transfer policy, endpoint routing as non-trust metadata, local
+assembly verification against stored key-file anchors, passthrough binding,
+endpoint sync behavior, and identity mode gates.
+
 ## Handoff Notes
 
 This section exists so a team picking up the formalization track later can
@@ -269,19 +301,20 @@ and the relationship between the Non-Goals list above and M3.
 
 ### Snapshot HEAD
 
-The state described below corresponds to commit
+The first-wave formalization snapshot corresponded to commit
 **`89decbb`** ("Close lifecycle formalization test gaps") on `main`.
-If the repository has moved since, run `git log --oneline 89decbb..HEAD`
-to see what changed.
+The current roadmap has since been extended for the attested signing system.
+If the repository has moved since the attested update, run `git log --oneline`
+from the relevant formalization commit to see what changed.
 
 ### Milestone status
 
 | Milestone | Status | Notes |
 |---|---|---|
-| M1: Precise English Models | Complete | Four `FORMAL_*_MODEL.md` docs stable. |
-| M2: Implementation Test Alignment | Complete | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
-| M3: Deferred Companion English Models | Not started | Four companion docs still pending; see "Non-Goals vs M3" below. |
-| M4: Machine-Checkable Model | First wave complete | Four TLA+ modules shipped. ~14 of 50 numbered invariants are machine-checked. |
+| M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus attested signing. |
+| M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
+| M3: Deferred Companion English Models | Not started | Approval coordinator, cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
+| M4: Machine-Checkable Model | First wave complete | Four TLA+ modules shipped. ~14 of 63 numbered invariants are machine-checked. |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
 Machine-checked invariants by module:
@@ -293,8 +326,8 @@ Machine-checked invariants by module:
 | `composition.tla` | 3 seam claims + 2 sign-boundary rechecks under derived verdict | 84,096 | 1 |
 | `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency | 48 | 10 |
 
-Not yet machine-checked: S1-S13 (entire signing-authority surface), I4-I6,
-IS1-IS6, P1-P3, P8-P10, L1-L3, L8-L11.
+Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A13
+(attested signing), I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L8-L11.
 
 ### Verification methodology by module
 

@@ -26,6 +26,18 @@ No actionable test gaps remain. Per-invariant status lives in
 audit is closed by the explicit lease-release and writer-pending tests
 named in the L4 and L5 rows.
 
+The attested signing audit added
+[FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md) and
+closed the new A-series gaps in the same pass. The focused tests added for that
+audit cover:
+
+- wrong user component signature rejection during `/sign/assemble`,
+- passthrough signed-transaction txid mismatch rejection during
+  `/sign/assemble`,
+- direct `/sign` rejection for both attested account key types,
+- malformed component-sign response rejection before local attestor signature
+  verification.
+
 ## Deferred until design decision
 
 No deferred gaps remain. Decisions previously parked here (S10

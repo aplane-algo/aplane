@@ -1,8 +1,8 @@
 # Formal Policy Model
 
 > Status: precise English model, not machine-checked.
-> This document formalizes the current signer policy verdict semantics used by
-> APlane after transaction planning.
+> This document formalizes the current client-signing policy verdict semantics
+> used by APlane after transaction planning.
 > Invariant status (implemented / intended / derived / etc.) is tracked in
 > [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
 
@@ -36,12 +36,18 @@ Verdict` means the decision procedure returns that verdict.
 
 ## Scope
 
-Signer policy decides whether a planned signing request is:
+Client-signing policy decides whether a planned signing request is:
 
 - rejected before approval,
 - forced to manual review,
 - explicitly approved without manual review,
 - handled by the operator default.
+
+Attestor component policy is a separate deterministic surface stored in
+`attestation.yaml`: no manual-review verdict and no operator default. This
+document defines the shared snapshot and sparse-override vocabulary; the
+attestor-specific decision rules are modeled in
+[FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md).
 
 Policy also gates `/simulate`, but only at the Always Deny tier. `/simulate`
 does not wait on operator approval and does not block on Always Review
@@ -61,7 +67,7 @@ Policy is separate from:
 ### Policy Snapshot
 
 `PolicySnapshot` is the immutable effective policy observed by one signing
-request. It includes:
+request. For client-signing requests it includes:
 
 - identity-wide policy fields,
 - YAML-only `key_overrides`,
@@ -232,17 +238,20 @@ matched. It is controlled by `user_auto_approve` in
 For signer-controlled slots, the effective policy may be modified by
 `key_overrides`.
 
-Rules:
+Client-signing rules:
 
 1. Client-signing overrides are keyed by the signing auth address.
 2. The auth address is selected from the key that will sign, not from the
    transaction sender.
 3. This matters for rekeyed accounts: the auth address controls the override.
-4. Attestor component overrides are keyed by the `a_...` component selector.
-5. Missing key-type metadata for a signer-controlled slot still fails closed before a
+4. Missing key-type metadata for a signer-controlled slot still fails closed before a
    policy decision can silently fall back to the wrong override.
 5. Override fields are sparse overlays over the identity-wide policy; nested
    overrides are rejected.
+
+Attestor component overrides are keyed by the `a_...` component selector and
+are consumed only by the attestor-role component-signing flow modeled in
+[FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md).
 
 ## Network Selection
 

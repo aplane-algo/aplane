@@ -107,6 +107,26 @@ Source: [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md)
 | S12 | implemented | S12 | `service.go::authPolicyKeysFromRequest` uses `txReq.AuthAddress` for policy override selection; `policyCfg.ForKey` consumes it | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesUsesKeyOverride`; `service_test.go::TestEvaluateAutoRejectionRulesAppliesKeyOverrides` | |
 | S13 | implemented | Canonical Filename Binding; S13 | Scan derives payload address and skips filename mismatches in `internal/keys/keys.go`; canonical writers use `paths.KeyFilePath(identityID, address)` without write-time directory preflight | `internal/keys/keys_test.go::TestScanKeysDirectoryWithMasterKey/filename_address_mismatch_is_skipped`; `internal/keys/save_test.go::TestSaveKeyFileAllowsCanonicalWriteWithNonCanonicalKeyPresent`; `internal/keymgmt/operations_test.go::TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical`; `internal/backup/restore_test.go::TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical` | Open Question 3 resolved as filename binding; address-collision invalidation remains a defensive fallback. |
 
+## Attested Signing Model
+
+Source: [FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md)
+
+| ID | Status | Source § | Code anchor | Test anchor | Notes |
+|---|---|---|---|---|---|
+| A1 | implemented | A1 | `internal/attestor/message/message.go`; `internal/signerapp/signing/component.go::PrepareComponentSigning` | `internal/signerapp/signing/component_test.go::TestPrepareComponentSigningUsesAttestorRoleDomain`; `internal/engine/attested_submit_test.go::TestVerifyAttestorComponentSignaturesUsesSharedMessage` | Role byte separates user and attestor signatures for the same target txid. |
+| A2 | implemented | A2 | `internal/signerapp/signing/attestor_gate.go`; `internal/signerapp/signing/execution.go` | `internal/signerapp/signing/execution_test.go::TestExecutorRejectsAttestorKeyTypesBeforeSessionLoad`; `::TestExecutorSignCryptoKeyRejectsAttestorKeyTypesBeforeProviderLookup` | Covers both attestor component key types and both attested account key types. |
+| A3 | implemented | A3 | `internal/signerapp/signing/component_sign.go::signPreparedUserComponents` | `internal/signerapp/signing/component_test.go::TestSignPreparedUserComponentsRejectsSenderMismatchBeforeKeyLoad`; `::TestSignPreparedUserComponentsSignsAttestedAccountMessages` | Sender mismatch rejects before local attested key load. |
+| A4 | implemented | A4 | `internal/signerapp/signing/service.go::SignComponentWithContext`; `internal/signerapp/signing/attestor_policy.go`; `internal/policy` | `internal/signerapp/signing/component_test.go::TestSignComponentAttestorRequiresPolicyBeforeKeyLoad`; `::TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad`; `::TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad`; `::TestSignComponentAttestorRejectsInheritedReviewRouteMissBeforeKeyLoad`; `::TestSignComponentAttestorRejectsRekeyBeforeKeyLoad` | Attestor policy is deterministic: no review and no operator default. |
+| A5 | implemented | A5 | `internal/signerapp/signing/component_sign.go::loadAttestorComponentKey`; `internal/attestor/keytypes/keytypes.go` | `internal/signerapp/signing/component_test.go::TestSignPreparedAttestorComponentsRejectsWrongKeyType`; `::TestLoadAttestorComponentKeyRejectsMismatchedPublicPrivateKey`; `::TestSignPreparedAttestorComponentsSignsEd25519Messages`; `::TestSignPreparedAttestorComponentsSignsFalcon1024Messages` | Selector, category, key type, and public/private pair must agree. |
+| A6 | implemented | A6 | `internal/signerapp/signing/component_assemble.go::assembleAttestedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedAttestedRejectsWrongUserSignature`; `::TestAssembleDecodedAttestedVerifiesAndBuildsSignedGroup` | User signature is checked against the user public key stored in the local attested account key. |
+| A7 | implemented | A7 | `internal/signerapp/signing/component_assemble.go::assembleAttestedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedAttestedRejectsWrongAttestorSignature`; `::TestAssembleDecodedAttestedVerifiesFalconAttestorAndBuildsSignedGroup` | Attestor signature is checked against the attestor public key embedded in local key metadata/bytecode, not endpoint metadata. |
+| A8 | implemented | A8 | `internal/signerapp/signing/component_assemble.go::validateAttestedPassthrough` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedAttestedRejectsMismatchedPassthrough`; `::TestAssembleDecodedAttestedVerifiesAndBuildsSignedGroup` | Passthrough bytes are preserved only when their decoded txid matches the canonical group entry. |
+| A9 | implemented | A9 | `internal/engine/attested_submit.go::resolveAttestorEndpoint`; `::verifyAttestorEndpointAdvertises` | `internal/engine/attested_submit_test.go::TestRequestAttestorComponentSignaturesExplicitMismatchDoesNotFallback`; `::TestRequestAttestorComponentSignaturesFallsBackToCurrentSigner` | `/keys` is an ergonomic precheck only; explicit mismatch prevents silent self fallback. |
+| A10 | implemented | A10 | `internal/engine/attested_submit.go::verifyAttestorComponentSignatures`; `internal/attestor/verify` | `internal/engine/attested_submit_test.go::TestVerifyAttestorComponentSignaturesUsesSharedMessage`; `::TestVerifyAttestorComponentSignaturesUsesFalcon1024Scheme` | Client precheck reuses shared message/verification primitives. |
+| A11 | implemented | A11 | `internal/engine/attested_submit.go::collectComponentSignatures`; `pkg/signerapi/attestor.go` | `internal/engine/attested_submit_test.go::TestCollectComponentSignaturesRejectsMalformedResponses`; `pkg/signerapi/attestor_test.go::TestComponentSignResponseValidate` | Client requires exact response coverage and expected scheme before local attestor signature verification. |
+| A12 | implemented | A12 | `internal/engine/attestor_endpoint.go`; `internal/config/client_endpoint_writes.go`; `internal/apshellapp/endpoints.go` | `internal/apshellapp/endpoints_test.go::TestEndpointDiscoverAttestorsPreservesUnreachableEndpointInventory`; `::TestEndpointDiscoverAttestorsPreservesLockedEndpointInventory`; `::TestEndpointDiscoverAttestorsRejectsAuthFailure`; `::TestEndpointDiscoverAttestorsRejectsInvalidEndpointMetadata`; `internal/config/client_endpoint_writes_test.go::TestRebuildStoredClientEndpointPublishedAttestorsRejectsDuplicatePublicKey` | Unavailable/locked endpoints preserve previous inventory; hard failures write nothing. |
+| A13 | implemented | A13 | `internal/signerapp/identity/mode.go`; `cmd/apsigner/admin_services.go`; `internal/signerapp/keyadmin/service.go`; `internal/signerapp/templates/reload.go` | `internal/signerapp/identity/mode_test.go::TestModeAllowsKeyType`; `::TestValidateKeyTypesAllowedReportsConflicts`; `cmd/apsigner/admin_services_test.go::TestUpdateAdminSettingModeRejectsConflictingInventory`; `internal/signerapp/keyadmin/service_test.go::TestServiceGenerateKeyRejectsKeyTypeDisallowedByMode`; `::TestServiceImportKeyRejectsKeyTypeDisallowedByMode`; `internal/signerapp/templates/reload_test.go::TestReloadModeValidationRejectsConflictingInventoryBeforePublish` | Mode gates generation/import and reload-time publication; tightening rejects conflicting inventory. |
+
 ## Open Cross-Cutting Gaps
 
 No open cross-cutting gaps. The concrete sketches that previously lived
@@ -237,11 +257,13 @@ The following invariants have no TLA+ representation yet:
   (pending-approval cascade, deferred to a future approval-coordinator
   model).
 - All of S1-S13 (signing authority).
+- All of A1-A13 (attested signing, assembly, endpoint routing, and identity
+  mode).
 
 Lifecycle-aware composition (joining the temporal lifecycle model
 with the existing one-shot sign-boundary/policy-precedence/composition
 modules) is the next likely module per the extension plans in the
-four prose companion docs.
+formal prose companion docs.
 
 ## Update Workflow
 

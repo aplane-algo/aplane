@@ -193,30 +193,42 @@ func TestExecutorSignCryptoKeyRejectsUnsupportedKeyType(t *testing.T) {
 }
 
 func TestExecutorRejectsAttestorKeyTypesBeforeSessionLoad(t *testing.T) {
-	exec := &Executor{}
-	plan := &PlanResult{
-		AllTxns:            []types.Transaction{{}},
-		PassthroughIndices: map[int]bool{},
-		ForeignIndices:     map[int]bool{},
-		AuthKeyTypes:       []string{keytypes.AttestedFalcon1024V1},
-	}
-	req := signerapi.GroupSignRequest{
-		Requests: []signerapi.SignRequest{{
-			AuthAddress: "AUTHADDR",
-			TxnBytesHex: "deadbeef",
-		}},
+	tests := []struct {
+		name    string
+		keyType string
+	}{
+		{name: "falcon attested ed25519 attestor", keyType: keytypes.AttestedFalcon1024V1},
+		{name: "falcon attested falcon attestor", keyType: keytypes.AttestedFalcon1024AttFalcon1024V1},
 	}
 
-	_, err := exec.ExecuteGroupSigning(context.Background(), plan, req, "default", nil)
-	if err == nil {
-		t.Fatal("ExecuteGroupSigning() error = nil, want attestor key type rejection")
-		return
-	}
-	if err.Kind != ErrorBadRequest {
-		t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
-	}
-	if !strings.Contains(err.Message, attestedAccountSignRejectMessage) {
-		t.Fatalf("error message = %q, want %q", err.Message, attestedAccountSignRejectMessage)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exec := &Executor{}
+			plan := &PlanResult{
+				AllTxns:            []types.Transaction{{}},
+				PassthroughIndices: map[int]bool{},
+				ForeignIndices:     map[int]bool{},
+				AuthKeyTypes:       []string{tt.keyType},
+			}
+			req := signerapi.GroupSignRequest{
+				Requests: []signerapi.SignRequest{{
+					AuthAddress: "AUTHADDR",
+					TxnBytesHex: "deadbeef",
+				}},
+			}
+
+			_, err := exec.ExecuteGroupSigning(context.Background(), plan, req, "default", nil)
+			if err == nil {
+				t.Fatal("ExecuteGroupSigning() error = nil, want attestor key type rejection")
+				return
+			}
+			if err.Kind != ErrorBadRequest {
+				t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
+			}
+			if !strings.Contains(err.Message, attestedAccountSignRejectMessage) {
+				t.Fatalf("error message = %q, want %q", err.Message, attestedAccountSignRejectMessage)
+			}
+		})
 	}
 }
 
@@ -228,7 +240,8 @@ func TestExecutorSignCryptoKeyRejectsAttestorKeyTypesBeforeProviderLookup(t *tes
 	}{
 		{name: "ed25519 component", keyType: keytypes.AttestorComponentEd25519V1, want: attestorComponentSignRejectMessage},
 		{name: "falcon component", keyType: keytypes.AttestorComponentFalcon1024V1, want: attestorComponentSignRejectMessage},
-		{name: "attested", keyType: keytypes.AttestedFalcon1024V1, want: attestedAccountSignRejectMessage},
+		{name: "attested ed25519 attestor", keyType: keytypes.AttestedFalcon1024V1, want: attestedAccountSignRejectMessage},
+		{name: "attested falcon attestor", keyType: keytypes.AttestedFalcon1024AttFalcon1024V1, want: attestedAccountSignRejectMessage},
 	}
 
 	for _, tt := range tests {
