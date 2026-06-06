@@ -73,15 +73,21 @@ func TestTrustLocalSignerHostKeySkipsRemoteHost(t *testing.T) {
 	})
 	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte(`
 network: testnet
-signer_port: 11270
-ssh:
-  host: signer.example.com
-  port: 56870
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
 `), 0o600); err != nil {
 		t.Fatalf("write client config: %v", err)
 	}
+	writeClientEndpointRegistry(t, clientDir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.example.com:56870
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
+`)
 
 	notice, err := trustLocalSignerHostKey(clientDir, config.ServerConfig{
 		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
@@ -115,15 +121,21 @@ func TestTrustLocalSignerHostKeyDoesNotDuplicateEntry(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte(`
 network: testnet
-signer_port: 11270
-ssh:
-  host: 127.0.0.1
-  port: 56870
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
 `), 0o600); err != nil {
 		t.Fatalf("write client config: %v", err)
 	}
+	writeClientEndpointRegistry(t, clientDir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://127.0.0.1:56870
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
+`)
 
 	notice, err := trustLocalSignerHostKey(clientDir, config.ServerConfig{
 		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
@@ -154,6 +166,41 @@ func TestTrustLocalSignerHostKeyRejectsForwardedLoopbackEndpoint(t *testing.T) {
 	})
 	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte(`
 network: testnet
+`), 0o600); err != nil {
+		t.Fatalf("write client config: %v", err)
+	}
+	writeClientEndpointRegistry(t, clientDir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://127.0.0.1:56870
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
+`)
+
+	notice, err := trustLocalSignerHostKey(clientDir, config.ServerConfig{
+		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
+	})
+	if err == nil {
+		t.Fatal("trustLocalSignerHostKey error = nil, want mismatch")
+	}
+	if notice != "" {
+		t.Fatalf("notice = %q, want empty", notice)
+	}
+	if _, err := os.Stat(filepath.Join(clientDir, ".ssh/known_hosts")); !os.IsNotExist(err) {
+		t.Fatalf("known_hosts stat err = %v, want not exist", err)
+	}
+}
+
+func TestTrustLocalSignerHostKeyRefusesLegacyClientEndpointConfig(t *testing.T) {
+	clientDir := t.TempDir()
+	hostKeyPath := writeTestSSHHostKey(t, t.TempDir())
+	if err := os.WriteFile(filepath.Join(clientDir, "config.yaml"), []byte(`
+network: testnet
 signer_port: 11270
 ssh:
   host: 127.0.0.1
@@ -168,7 +215,10 @@ ssh:
 		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
 	})
 	if err == nil {
-		t.Fatal("trustLocalSignerHostKey error = nil, want mismatch")
+		t.Fatal("trustLocalSignerHostKey error = nil, want legacy endpoint config error")
+	}
+	if !strings.Contains(err.Error(), "legacy apclient endpoint config") {
+		t.Fatalf("error = %v, want legacy endpoint config message", err)
 	}
 	if notice != "" {
 		t.Fatalf("notice = %q, want empty", notice)

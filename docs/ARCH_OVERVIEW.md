@@ -60,7 +60,6 @@ a key.
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
 | **aplocalnet** | LocalNet setup TUI/CLI for apclient default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
 | **approbe** | Installer-facing liveness probe for signer IPC reachability before local upgrades | Installer helper + admin protocol probe |
-| **apkey-migrate** | Standalone key-file state repair utility | Crypto + key-file migration |
 
 ## Identity Model
 
@@ -175,7 +174,6 @@ aplane/
 │   ├── appass-file/               # Dev passphrase helper
 │   ├── appass-systemd-creds/      # systemd-creds passphrase helper
 │   ├── approbe/                   # Installer liveness probe for signer IPC
-│   ├── apkey-migrate/             # Key-file state repair utility
 │   └── applugin-checksum/         # Plugin checksum generator
 │
 ├── internal/                      # Shared packages

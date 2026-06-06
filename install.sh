@@ -721,50 +721,6 @@ read_primary_endpoint_ssh_port() {
     ' "$path"
 }
 
-sync_client_ports_to_signer() {
-    local client_config="$1"
-    local signer_port="$2"
-    local ssh_port="$3"
-    local backup="$client_config.aplane-installer.bak"
-    local tmp
-
-    cp "$client_config" "$backup"
-    tmp="$(mktemp "$client_config.tmp.XXXXXX")"
-    awk -v signer_port="$signer_port" -v ssh_port="$ssh_port" '
-        function indent_width(line) {
-            match(line, /^[[:space:]]*/)
-            return RLENGTH
-        }
-        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
-            print
-            next
-        }
-        {
-            indent = indent_width($0)
-            if (in_ssh && indent == 0 && $0 ~ /^[^[:space:]#][^:]*:/) {
-                in_ssh = 0
-            }
-            if (indent == 0 && $0 ~ /^[[:space:]]*signer_port[[:space:]]*:/) {
-                print "signer_port: " signer_port
-                next
-            }
-            if (indent == 0 && $0 ~ /^[[:space:]]*ssh[[:space:]]*:[[:space:]]*($|#)/) {
-                in_ssh = 1
-                print
-                next
-            }
-            if (in_ssh && $0 ~ /^[[:space:]]*port[[:space:]]*:/) {
-                print substr($0, 1, indent) "port: " ssh_port
-                next
-            }
-            print
-        }
-    ' "$client_config" > "$tmp"
-    mv "$tmp" "$client_config"
-    echo "Updated $client_config to match signer ports."
-    echo "Backup written to $backup"
-}
-
 check_local_config_consistency() {
     local signer_config="$1"
     local client_config="$2"
@@ -806,18 +762,14 @@ check_local_config_consistency() {
     echo "    ssh.port:    $client_ssh_port"
     echo ""
     if [ "$client_ports_source" = "endpoints" ]; then
-        echo "Plain 'apshell request-token' and 'connect' use $client_endpoints."
+        echo "'apshell request-token' and 'connect' use $client_endpoints."
         echo "Edit $client_endpoints manually before connecting."
         return 0
     fi
-    echo "Plain 'apshell request-token' and 'connect' use legacy client config."
-    local answer
-    read -rp "Update client config to match signer ports? [Y/n] " answer </dev/tty
-    if [ -z "$answer" ] || [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
-        sync_client_ports_to_signer "$client_config" "$signer_signer_port" "$signer_ssh_port"
-    else
-        echo "Leaving client config unchanged. Edit $client_config manually before connecting."
-    fi
+    echo "Client config still uses legacy signer settings in $client_config."
+    echo "apshell now requires $client_endpoints for default signer routing."
+    echo "Run migrate-config-v1 -d \"$(dirname "$client_config")\" after install, then rerun this check if needed."
+    return 0
 }
 
 # Resolve script directory (works from repo checkout and extracted tarball)
@@ -1582,7 +1534,7 @@ if [ "$CLIENT_MODE" = "1" ]; then
     echo ""
     echo "  Source:    $SCRIPT_DIR"
     echo "  Root:      $CLIENT_PATH"
-    echo "  Binaries:  $APCLIENT_DIR/bin/apshell"
+    echo "  Binaries:  $APCLIENT_DIR/bin/apshell, migrate-config-v1"
     echo "  Config:    $APCLIENT_DIR/config.yaml"
     echo ""
 
@@ -1595,6 +1547,11 @@ if [ "$CLIENT_MODE" = "1" ]; then
     cp "$BIN_SRC/apshell" "$BINDIR/apshell"
     chmod 755 "$BINDIR/apshell"
     repair_macos_binary "$BINDIR/apshell"
+    if [ -f "$BIN_SRC/migrate-config-v1" ]; then
+        cp "$BIN_SRC/migrate-config-v1" "$BINDIR/migrate-config-v1"
+        chmod 755 "$BINDIR/migrate-config-v1"
+        repair_macos_binary "$BINDIR/migrate-config-v1"
+    fi
     if [ -f "$BIN_SRC/aplocalnet" ]; then
         cp "$BIN_SRC/aplocalnet" "$BINDIR/aplocalnet"
         chmod 755 "$BINDIR/aplocalnet"
@@ -1773,12 +1730,16 @@ if [ "$LOCAL_MODE" = "1" ]; then
     # Create directories
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
 
-    # Copy binaries (apshell/aplocalnet → apclient/bin, everything else → apsigner/bin)
+    # Copy binaries (apshell/aplocalnet/migrate-config-v1 → apclient/bin, everything else → apsigner/bin)
     echo "Installing binaries..."
     for bin in "$BIN_SRC"/*; do
         [ -f "$bin" ] || continue
         name="$(basename "$bin")"
-        if [ "$name" = "apshell" ] || [ "$name" = "aplocalnet" ]; then
+        if [ "$name" = "apkey-migrate" ]; then
+            echo "  skipping obsolete $name"
+            continue
+        fi
+        if [ "$name" = "apshell" ] || [ "$name" = "aplocalnet" ] || [ "$name" = "migrate-config-v1" ]; then
             cp "$bin" "$CLIENT_BINDIR/"
             chmod 755 "$CLIENT_BINDIR/$name"
             repair_macos_binary "$CLIENT_BINDIR/$name"
@@ -2091,8 +2052,12 @@ fi
 echo "Installing binaries to $BINDIR..."
 for bin in "$BIN_SRC"/*; do
     [ -f "$bin" ] || continue
-    cp "$bin" "$BINDIR/"
     name="$(basename "$bin")"
+    if [ "$name" = "apkey-migrate" ]; then
+        echo "  skipping obsolete $name"
+        continue
+    fi
+    cp "$bin" "$BINDIR/"
     # Passphrase helpers must be executable by the unprivileged service user.
     # The appass-file secret itself stays protected by identity-scoped 0600 files.
     case "$name" in

@@ -214,7 +214,7 @@ When the signer is stopped, re-running is safe:
 - Plugin activation is controlled by `apclient/plugins.yaml`. On first install
   the installer creates an empty activation list; existing activation choices
   are preserved on upgrade.
-- If local signer/client ports disagree, the installer warns and can update legacy client signer settings to match `apsigner/config.yaml`
+- If local signer/client ports disagree, the installer warns. Previous-shape client config is converted with `migrate-config-v1`; current-shape endpoint routing is edited in `apclient/endpoints.yaml`.
 - A canonical template is written to `config.yaml.aplane-installer.new` for review
 - Keystore init is skipped if `.keystore` already exists
 
@@ -355,23 +355,12 @@ installer state where it can do so safely.
 
 ### Pre-`v1.0` Upgrade Notes
 
-Before APlane reaches `v1.0`, the only release-to-release compatibility promise
-is that existing signing keys remain migratable. Config files, identity
-settings, admin/API field names, caches, and examples may need to be recreated
-or reviewed after upgrade. Where keys created by an older release require
-conversion, run the standalone `apkey-migrate` utility before relying on the
-upgraded signer:
-
-```bash
-apkey-migrate -d /path/to/apsigner-data --apply
-```
-
-The utility detects known outdated key-file states rather than source release
-versions. Without `--apply`, it performs a dry run. With `--apply`, it unlocks
-the store, repairs supported key-file states, and leaves backups of the
-original key files. Use `apkey-migrate --list-supported` to see the states
-supported by the installed release. The normal signer does not auto-migrate old
-key files and reports `apkey-migrate` in the load-failure message.
+Before APlane reaches `v1.0`, compatibility is release-to-release. Existing
+signing keys remain supported as-is. Config files, identity settings, admin/API
+field names, caches, and examples may need to be recreated or reviewed after
+upgrade unless this guide names a specific transition. For this release, the
+explicit transition is previous-shape apclient signer routing to
+`endpoints.yaml` with `migrate-config-v1`.
 
 If an existing initialized store has `policy.yaml` but no `policy.yaml.hmac`,
 the upgrade prompts to sign the current policy with the store passphrase. The
@@ -399,6 +388,7 @@ Or from an extracted release tarball:
 
 This installs:
 - `~/aplane/apclient/bin/apshell` — the transaction shell binary
+- `~/aplane/apclient/bin/migrate-config-v1` — one-time legacy client endpoint migration utility
 - `~/aplane/apclient/config.yaml` — client configuration (network and UI defaults)
 - `~/aplane/apclient/endpoints.yaml` — client endpoint registry; new installs start with a `primary` signer endpoint
 - `~/aplane/apclient/.mcp.json` — MCP client configuration for `apshell --mcp`
@@ -587,7 +577,7 @@ make all applugin-checksum
 
 # Install binaries
 sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appolicy bin/appass bin/aplocalnet \
-        bin/appass-file bin/appass-systemd-creds bin/approbe bin/apkey-migrate bin/applugin-checksum /usr/local/bin/
+        bin/appass-file bin/appass-systemd-creds bin/approbe bin/migrate-config-v1 bin/applugin-checksum /usr/local/bin/
 sudo chmod 755 /usr/local/bin/appass-systemd-creds
 
 # Create service user
@@ -672,7 +662,7 @@ This produces statically linked binaries in `bin/`:
 | `aplocalnet` | LocalNet setup TUI/CLI for apshell default network, signer config, plugin activation, and KMD override persistence |
 | `appass-file` | Development-only plaintext passphrase helper |
 | `approbe` | Installer/helper liveness probe for signer IPC reachability |
-| `apkey-migrate` | Standalone key-file state repair utility |
+| `migrate-config-v1` | Standalone client config migration utility for legacy `config.yaml` signer routing |
 | `apshell` | Transaction shell (client) |
 
 `applugin-checksum` is built by `make applugin-checksum` and is included in release
@@ -687,7 +677,7 @@ Copy the server-side binaries to a system path:
 
 ```bash
 sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appolicy bin/appass bin/aplocalnet \
-        bin/appass-file bin/appass-systemd-creds bin/approbe bin/apkey-migrate bin/applugin-checksum /usr/local/bin/
+        bin/appass-file bin/appass-systemd-creds bin/approbe bin/migrate-config-v1 bin/applugin-checksum /usr/local/bin/
 sudo chmod 755 /usr/local/bin/appass-systemd-creds
 ```
 
@@ -964,7 +954,7 @@ The client data directory grows over time as well:
 ```
 $APCLIENT_DATA/
 ├── config.yaml           # Network and UI defaults
-├── endpoints.yaml        # Signer and attestor endpoint routing
+├── endpoints.yaml        # Signer endpoint routing
 ├── aplane.token          # API token (created after request-token approval)
 ├── .mcp.json             # Installer-written MCP client config for apshell --mcp
 ├── .ssh/

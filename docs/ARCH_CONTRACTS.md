@@ -30,31 +30,18 @@
 ## Current Upgrade Compatibility Scope
 
 Until APlane reaches a stable `v1.0` compatibility contract, release-to-release
-compatibility is intentionally narrow:
+compatibility is intentionally narrow. This release's upgrade contract is:
 
-- existing signing keys have an upgrade path,
-- normal runtime code may reject old key payload schemas,
-- old config files, identity settings, admin IPC names, SDK DTO field names,
-  caches, and generated docs examples may be reset or reshaped by a release.
-
-Old key payload knowledge belongs in standalone migration utilities, not in
-long-term `apsigner` or `apstore` runtime paths. When the normal signer/runtime
-encounters an incompatible old key payload, it fails that key load with a
-remediation message that points the operator at the appropriate migration
-utility.
-
-The stable standalone key migration utility is `apkey-migrate`. It detects
-known outdated key-file states rather than dispatching on source release names:
-missing canonical payload header fields, legacy field names, and recoverable
-LogicSig signing metadata are repaired when the required values can be inferred
-safely from the decrypted payload. Ambiguous or unrecoverable states fail
-closed. `apkey-migrate --list-supported` reports the state repairs supported by
-the installed release.
+- existing signing keys remain supported as-is,
+- the previous apclient signer-routing shape is converted to `endpoints.yaml`
+  only by `migrate-config-v1`,
+- config files, identity settings, admin IPC names, SDK DTO field names, caches,
+  and generated docs examples may be reset or reshaped by a release.
 
 This section deliberately does not weaken the security-sensitive key contracts
 below: encrypted key files, keystore metadata, and signing provider lookup still
-define whether an existing key can be unlocked, validated, and signed after
-migration.
+define whether an existing key can be unlocked, validated, and signed after an
+upgrade.
 
 ## Key Type Identifier Contract
 
@@ -496,9 +483,10 @@ Additional client-state notes:
 - local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
 - `apconsole.yaml` supports `mode: local|remote`, `client_data`, and local-mode `signer_data`; relative paths resolve against the profile file
 - `endpoints.yaml` is the normal client-local endpoint registry for new installs, with `schema_version: 1`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
-- if `endpoints.yaml` is absent, the legacy primary endpoint is derived read-only from `config.yaml` `ssh:` plus `signer_port`, and uses `APCLIENT_DATA/aplane.token`. Interactive `apshell` prompts before materializing that legacy primary into `endpoints.yaml`; non-interactive modes keep the read-only fallback. Endpoint registry writes that add a non-signer endpoint also materialize the legacy primary first, so old-shape clients become new-shape after their first endpoint mutation.
+- if `config.yaml` contains legacy `ssh:` signer settings but `endpoints.yaml` has no signer endpoint, `apshell` startup and the apconsole shell pane fail closed with an operator-facing migration message that names `migrate-config-v1 -d <APCLIENT_DATA>`. Startup never materializes or rewrites endpoint routing; the standalone `migrate-config-v1` utility is the only documented conversion path.
+- `migrate-config-v1` is the explicit client-config migration utility for this transition. It reads legacy `config.yaml` signer SSH settings plus `signer_port`, writes `endpoints.yaml` with a `primary` signer endpoint, leaves `config.yaml` unchanged, and supports `--dry-run`.
 - endpoint records carry connection profile fields together: required `role` (`signer` or `attestor`), `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, `token_file`, and endpoint-published `published_attestors`. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. `published_attestors` is valid only on `attestor` endpoints.
-- endpoint token files are bearer credentials. The legacy default endpoint continues to use `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
+- endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
 - `published_attestors` is keyed by canonical embedded attestor public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime attested-send routing derives the endpoint for an embedded attestor public key from this endpoint-local inventory.
 - `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. The common form takes `--host <client-reachable-host>` and derives `ssh://<host>:<configured-ssh-port>` plus the configured signer REST port; `--url <url>` overrides that URL for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, attestor public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
 - `apshell endpoints import-public --alias <alias> --role signer|attestor [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `attestor` alias for dev co-location. Import is not an ownership or trust proof and does not discover attestor keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.

@@ -69,7 +69,7 @@ func TestDisconnectNoOpWhenNotConnected(t *testing.T) {
 	}
 }
 
-func TestConnectConfiguredRequiresSSHBlock(t *testing.T) {
+func TestConnectConfiguredRequiresDefaultSignerEndpoint(t *testing.T) {
 	eng, err := engine.NewEngine("testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
@@ -77,12 +77,12 @@ func TestConnectConfiguredRequiresSSHBlock(t *testing.T) {
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
 	_, err = app.ConnectConfigured(context.Background(), nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "no ssh block in config.yaml") {
-		t.Fatalf("ConnectConfigured() error = %v, want missing ssh block error", err)
+	if err == nil || !strings.Contains(err.Error(), "no default signer endpoint") {
+		t.Fatalf("ConnectConfigured() error = %v, want missing default endpoint error", err)
 	}
 }
 
-func TestRequestTokenConfiguredRequiresSSHBlock(t *testing.T) {
+func TestRequestTokenConfiguredRequiresDefaultSignerEndpoint(t *testing.T) {
 	eng, err := engine.NewEngine("testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)

@@ -31,8 +31,8 @@ See [USER_INSTALL.md](USER_INSTALL.md) for the installation directory layout and
 
 ## apshell Configuration
 
-The apshell CLI uses `config.yaml` for network and UI defaults. Signer and
-attestor endpoint routing lives in `$APCLIENT_DATA/endpoints.yaml`. See
+The apshell CLI uses `config.yaml` for network and UI defaults. Signer endpoint
+routing lives in `$APCLIENT_DATA/endpoints.yaml`. See
 [USER_CONFIG_REFERENCE.md](USER_CONFIG_REFERENCE.md) for field-level reference.
 
 ### Example config.yaml
@@ -172,13 +172,13 @@ export APCLIENT_DATA=/custom/path
 - Ready-to-copy example configs live under [`examples/config/`](../examples/config/), including [`examples/config/apclient/`](../examples/config/apclient/) and [`examples/config/apsigner/`](../examples/config/apsigner/).
 
 - All connections use SSH tunneling for uniform per-client identity
-- New clients store signer routing in `endpoints.yaml`; older clients without
-  `endpoints.yaml` can still derive the primary signer from the legacy `ssh:`
-  block in `config.yaml`
-- Interactive `apshell` prompts before creating `endpoints.yaml` from old
-  `config.yaml` signer settings
-- Edit `endpoints.yaml` or use `endpoints import-public` to change endpoint
-  routing
+- Clients store signer routing in `endpoints.yaml`
+- If `config.yaml` still contains legacy `ssh:` signer settings and
+  `endpoints.yaml` has no signer endpoint, `apshell` and the apconsole shell
+  pane refuse to start. Run `migrate-config-v1 -d "$APCLIENT_DATA"` to create
+  `endpoints.yaml` explicitly.
+- Edit `endpoints.yaml` or use `endpoints import-public` to change signer
+  endpoint routing
 
 ### Connect Command Behavior
 
@@ -190,14 +190,13 @@ normal endpoint-registry setup, it reads the default signer from
 connect
 ```
 
-Older single-endpoint clients without `endpoints.yaml` still derive the default
-signer from `config.yaml` and read the token from `$APCLIENT_DATA/aplane.token`.
-The first interactive startup prompt or endpoint write can materialize that
-legacy signer as the `primary` endpoint.
+Older single-endpoint clients that still keep signer routing in the `ssh:`
+block of `config.yaml` must be converted to `endpoints.yaml` before starting
+`apshell` or the apconsole shell pane. Startup does not rewrite client config;
+run `migrate-config-v1 -d "$APCLIENT_DATA"` to perform the one-time conversion.
 
-For endpoint aliases, import one client signer endpoint and zero or more
-attestor endpoints. The preferred handoff is for the signer operator to export
-a public endpoint envelope and for the client to import it with a local role:
+For endpoint aliases, the preferred handoff is for the signer operator to
+export a public endpoint envelope and for the client to import it:
 
 ```bash
 # signer side
@@ -205,43 +204,17 @@ apstore -d "$APSIGNER_DATA" endpoint export \
   --host signer.example.com \
   --out signer.endpoint.json
 
-# attestor side
-apstore -d "$APSIGNER_DATA" endpoint export \
-  --host attestor.example.com \
-  --out attestor.endpoint.json
-
 # client side, inside apshell
 endpoints import-public --alias main --role signer signer.endpoint.json
-endpoints import-public --alias attestor-local --role attestor attestor.endpoint.json
-endpoints show attestor-local
-request-token --endpoint attestor-local
+endpoints show main
+request-token --endpoint main
 connect main
-endpoints sync-attestors
 ```
 
 Importing an endpoint creates routing/configuration only. It does not copy API
 tokens, SSH host trust, private keys, or passphrases. Tokens are still obtained
 with `request-token --endpoint <alias>`. Re-import with the same alias replaces
-that alias's endpoint data. The same URL may be imported under two aliases only
-when the roles differ, such as a dev node serving both the client signer and a
-local attestor.
-
-After endpoint tokens are enrolled, `endpoints sync-attestors` queries `/keys`
-on configured `attestor` endpoints and rebuilds each reachable endpoint's
-`published_attestors` inventory in `endpoints.yaml`. If an endpoint is
-temporarily unavailable or its signer identity is locked, its existing
-published-attestor entries are preserved. Token/auth failures, endpoint config
-errors, malformed responses, duplicate public keys, and invalid component-key
-metadata fail without writing. Attested-send routing is derived from this
-endpoint-local inventory.
-
-If the user signer will generate attested account keys through `apadmin` or
-another signer-side key-generation client, run `endpoints sync-attestors` while
-connected to that user signer. The command prints the component IDs it is about
-to publish and asks for confirmation before copying public attestor metadata
-into the signer identity's attestor reference catalog. Use
-`endpoints attestors` to inspect the local discovered inventory later without
-calling remote endpoints.
+that alias's endpoint data.
 
 The imported local registry is stored in `$APCLIENT_DATA/endpoints.yaml`:
 
@@ -254,16 +227,6 @@ endpoints:
     url: ssh://signer.example.com:1127
     signer_port: 11270
     token_file: aplane.token
-  attestor-local:
-    role: attestor
-    url: ssh://127.0.0.1:2223
-    signer_port: 11270
-    token_file: tokens/attestor-local.token
-    published_attestors:
-      d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a:
-        component_key: a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078
-        key_type: aplane.attestor-ed25519.v1
-        last_seen_at: "2026-06-04T00:00:00Z"
 ```
 
 Then:
@@ -271,19 +234,17 @@ Then:
 ```bash
 connect                 # default endpoint
 connect main
-request-token --endpoint attestor-local
+request-token --endpoint main
 ```
 
 Useful local commands:
 
 ```bash
 endpoints list
-endpoints show attestor-local
-endpoints attestors
-endpoints import-public --alias attestor-local --role attestor --dry-run attestor.endpoint.json
-endpoints sync-attestors --dry-run
+endpoints show main
+endpoints import-public --alias main --role signer --dry-run signer.endpoint.json
 endpoints default main
-endpoints delete old-attestor
+endpoints delete old-signer
 ```
 
 To request a token from a one-off host for enrollment, use
@@ -331,10 +292,8 @@ change one of these settings through admin IPC, the signer writes it as an
 identity-scoped override at `identities/<identity>/config.yaml`. `approval_wait`
 is YAML-only.
 
-Identity config also supports `mode: signing|attestation|dual`. Omitted mode
-defaults to `signing`. `attestation` identities may hold attestor component
-keys only; `signing` identities may hold account/signing keys only; `dual`
-allows both key classes and should be an explicit operational choice.
+Identity config mode defaults to normal signing. Standard installations do not
+need to set a mode field.
 
 In `apadmin`, the operator-default shortcut is shown as `User Auto-Approve`:
 `ON` means `user_auto_approve: true`; `OFF` means `user_auto_approve: false`.
@@ -525,8 +484,7 @@ Note: SSH paths are relative to the data directory (`$APSIGNER_DATA`). The `.ssh
 - Relative paths in config are resolved from the data directory
 - apadmin and apapprover connect via the IPC socket
 - `user_auto_approve` is the `User Auto-Approve` runtime admin setting persisted with identity config
-- signer safety guards live in identity-scoped `policy.yaml`; attestor
-  component policy lives in `attestation.yaml`
+- signer safety guards live in identity-scoped `policy.yaml`
 - See [Headless Operation](#headless-operation) for unattended deployment
 
 ---
@@ -540,17 +498,15 @@ Signer safety policy is identity-scoped and stored at:
 
 ```text
 $APSIGNER_DATA/identities/<identity>/policy.yaml
-$APSIGNER_DATA/identities/<identity>/attestation.yaml
 ```
 
-Each file has a sibling `.hmac` sidecar that authenticates the exact YAML
-bytes. `apstore initialize` creates the signed baseline, and the signer
-verifies both policy documents on unlock/reload before it loads keys. A missing
-or mismatched sidecar fails closed instead of falling back to default policy.
+The file has a sibling `.hmac` sidecar that authenticates the exact YAML bytes.
+`apstore initialize` creates the signed baseline, and the signer verifies the
+policy document on unlock/reload before it loads keys. A missing or mismatched
+sidecar fails closed instead of falling back to default policy.
 
 `policy.yaml` controls hard-reject, forced-review, and explicit auto-approval
-rules for normal signing. `attestation.yaml` controls attestor component
-cosigning policy. They are separate from:
+rules for signing. It is separate from:
 
 - process/identity runtime settings like `signer_port`, `user_auto_approve`, and SSH
 - approval UI state such as which pending request an operator is viewing
@@ -562,16 +518,15 @@ configuration reference for the policy fields.
 Use `appolicy` for signing-policy edits. It verifies the existing sidecar,
 validates the edited policy, and writes `policy.yaml` plus a fresh sidecar
 while holding the offline store mutation lock. For deliberate direct YAML edits
-to either policy document, run `apstore policy check`, review the change, then
-run `apstore policy sign`; `apstore policy verify` confirms both signed policy
-documents with the store passphrase.
+to the policy document, run `apstore policy check`, review the change, then
+run `apstore policy sign`; `apstore policy verify` confirms the signed policy
+document with the store passphrase.
 For byte-preserving scripted edits, `appolicy --yaml` emits the verified policy
 bytes and `appolicy --save-policy` reads replacement policy YAML from stdin,
-validates it, and writes a fresh sidecar. `appolicy --save-attestation` does
-the same for direct `attestation.yaml`. `apstore policy sign` and `appolicy`
-save modes are offline store mutations, so run them while `apsigner` is
-stopped or before starting the signer. Direct YAML edits are active only after
-the next
+validates it, and writes a fresh sidecar. `apstore policy sign` and
+`appolicy` save modes are offline store mutations, so run them while
+`apsigner` is stopped or before starting the signer. Direct YAML edits are
+active only after the next
 successful signer reload, unlock, or restart; until then, an already running
 signer keeps the previous verified in-memory policy.
 
@@ -650,9 +605,7 @@ max_asa_amounts:
 ### Transfer Routing
 
 `transfer_policy` is the route table for direct `pay` and `axfer`
-transactions. For normal signing it lives in `policy.yaml`; for attestor
-component cosigning it lives in `attestation.yaml`. It is not exposed in
-`apadmin`. Use
+transactions. It is not exposed in `apadmin`. Use
 `appolicy -d "$APSIGNER_DATA"` for offline guided editing of common policy and
 transfer guards, or edit advanced routing fields directly in `policy.yaml`,
 then run `apstore policy check` and `apstore policy sign` before starting or
@@ -900,13 +853,11 @@ For normative implementation details, see
 ### Key Overrides
 
 `key_overrides` lets the identity relax or tighten specific guards for one
-concrete signing key without changing the identity-wide defaults. For normal
-transaction signing, map keys are Algorand auth addresses. For attestor
-component signing, map keys are `a_...` component-key selectors. Fields left
-unset in an override inherit from the identity-wide settings. Overrides do not
-nest. If an override includes a `transfer_policy` block, that block still
-requires `schema_version` and an explicit `enabled: true` or
-`enabled: false`.
+concrete signing key without changing the identity-wide defaults. Map keys are
+Algorand auth addresses. Fields left unset in an override inherit from the
+identity-wide settings. Overrides do not nest. If an override includes a
+`transfer_policy` block, that block still requires `schema_version` and an
+explicit `enabled: true` or `enabled: false`.
 
 When a transaction is linted, the signer picks the override block for the auth
 address that will actually sign it and applies that block on top of the
@@ -939,10 +890,9 @@ appolicy -d "$APSIGNER_DATA"
 
 For scripted flows, `appolicy --yaml` writes the verified policy bytes to
 stdout, and `appolicy --save-policy` reads replacement YAML from stdin,
-validates it, and writes a fresh sidecar for `policy.yaml`. Use
-`appolicy --save-attestation` for direct `attestation.yaml`. Direct YAML
-editing for either policy document remains available through `apstore policy check`,
-`apstore policy sign`, and `apstore policy verify`.
+validates it, and writes a fresh sidecar for `policy.yaml`. Direct YAML
+editing remains available through `apstore policy check`, `apstore policy sign`,
+and `apstore policy verify`.
 
 The legacy global transfer guard fields remain supported in `policy.yaml` for
 compatibility:
@@ -1030,7 +980,7 @@ Use the `request-token` command to obtain a token securely via SSH:
 > request-token
 
 # For a named endpoint in endpoints.yaml
-> request-token --endpoint attestor-local
+> request-token --endpoint main
 
 # In Python SDK
 from aplane import request_token_to_file

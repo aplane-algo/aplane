@@ -20,6 +20,9 @@ import (
 var localSignerHostKeyProbe = probeLoopbackSignerHostKey
 
 func trustLocalSignerHostKey(clientDataDir string, signerCfg config.ServerConfig) (string, error) {
+	if err := config.CheckNoLegacyClientEndpointConfig(clientDataDir); err != nil {
+		return "", err
+	}
 	clientCfg, err := config.LoadConfig(clientDataDir)
 	if err != nil {
 		return "", fmt.Errorf("load client config: %w", err)

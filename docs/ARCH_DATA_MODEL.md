@@ -694,11 +694,10 @@ generation availability, provenance, and policy editing behavior.
 
 ## Compatibility Invariants
 
-- Normal runtime compatibility before `v1.0` is key-only. Existing keys get an
-  upgrade path through the standalone `apkey-migrate` utility, which repairs
-  known outdated key-file states when they are safely inferable; old config,
-  setting, admin protocol, SDK DTO, cache, and docs-example shapes may be reset
-  or renamed.
+- Before `v1.0`, runtime compatibility is release-to-release. Existing key
+  files remain signing authority; config, setting, admin protocol, SDK DTO,
+  cache, and docs-example shapes may be reset or renamed unless this document
+  names a specific transition.
 - Canonical `key_type` strings are stored and transmitted exactly; display
   labels are not identifiers.
 - Key files are signing authority for existing keys.

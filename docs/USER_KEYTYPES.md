@@ -15,11 +15,8 @@ APlane has two optional key type paths:
 | Compiled provider | `aplane.falcon1024_ed25519.v1` | Go code in the current binary | `apstore keytype activate` or apadmin KeyType Library |
 | YAML template | `aplane.whitelist.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apstore template import` or apadmin KeyType Library |
 
-Default-enabled compiled providers, such as `ed25519`,
-`aplane.falcon1024.v1`, `aplane.attestor-ed25519.v1`,
-`aplane.attestor-falcon1024.v1`, `aplane.falcon1024-att-ed25519.v1`, and
-`aplane.falcon1024-att-falcon1024.v1`, are available without extra steps when
-the identity mode allows that key class.
+Default-enabled compiled providers, such as `ed25519` and
+`aplane.falcon1024.v1`, are available without extra steps.
 Library-visible compiled providers are present in the binary but require an
 identity-local activation record before that identity can discover or generate
 them.
@@ -61,9 +58,6 @@ apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.
 apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
 apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
 apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
-apstore -d $APSIGNER_DATA attestor export-public a_<sha256-public-key> attestor-public.json
-apstore -d $APSIGNER_DATA attestor import-public attestor-public.json lab-att
-apstore -d $APSIGNER_DATA attestor list
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -84,75 +78,6 @@ APlane-published key types may be displayed and entered without the leading
 `aplane.` publisher, for example `timed-whitelist.v1`; third-party publishers remain
 explicit, for example `example.my_escrow.v1`. Files, IPC/HTTP responses, and
 JSON fields still use the canonical `publisher.family.vN` identifier.
-
-## Attestor Public Key Export
-
-Attestor component keys, such as `aplane.attestor-ed25519.v1` and
-`aplane.attestor-falcon1024.v1`, are not spending accounts. They are selected
-locally by their `a_` component-key selector, but attested account generation
-needs the full component public key hex.
-
-Use `apstore attestor export-public` on the attestor signer host to export a public-only
-JSON envelope:
-
-```bash
-apstore -d $APSIGNER_DATA attestor export-public a_<sha256-public-key> attestor-public.json
-```
-
-If the output path is omitted, the JSON envelope is written to stdout:
-
-```bash
-apstore -d $APSIGNER_DATA attestor export-public a_<sha256-public-key>
-```
-
-The command prompts for the store passphrase, decrypts the local key file only
-long enough to read its stored public-key metadata, verifies that the selector
-matches `a_ + sha256(public_key)`, and writes:
-
-```json
-{
-  "schema": "aplane.attestor-public-key.v1",
-  "component_key": "a_<sha256-public-key>",
-  "key_type": "aplane.attestor-falcon1024.v1",
-  "public_key_encoding": "hex",
-  "public_key_hex": "<full public key hex>",
-  "public_key_size": 1793,
-  "public_key_sha256": "<sha256-public-key>"
-}
-```
-
-`public_key_hex` is the value to pass as `attestor_public_key` when generating
-an attested account. `component_key` is the local selector used when asking the
-attestor signer to produce component signatures. The envelope is not encrypted
-and contains no private key material, endpoint credential, policy, or trust
-claim.
-
-To avoid pasting large public keys when creating user-side attested accounts,
-import the exported envelope into the user signer's attestor reference library:
-
-```bash
-apstore -d $USER_APSIGNER_DATA attestor import-public attestor-public.json lab-att
-apstore -d $USER_APSIGNER_DATA attestor list
-apstore -d $USER_APSIGNER_DATA attestor show lab-att
-```
-
-Imported references are public-only records under the user identity and are
-selected by name during generation:
-
-```text
-generate aplane.falcon1024-att-ed25519.v1 attestor=lab-att
-generate aplane.falcon1024-att-falcon1024.v1 attestor=lab-att
-```
-
-The signer resolves `attestor=<name>` to the imported record's
-`public_key_hex`, validates that the selected attestor key type matches the
-attested account key type, and stores only the resolved `attestor_public_key`
-in the generated key file. Supplying both `attestor=<name>` and
-`attestor_public_key=<hex>` is rejected.
-
-In `apadmin`, imported references whose key family matches the attested account
-type appear as selectable generation options, so the raw public key does not
-need to be pasted into the form.
 
 ## Compiled Providers
 

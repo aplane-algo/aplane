@@ -14,7 +14,7 @@ import (
 // SSH prompts and host trust remain in the shell; connection orchestration lives in apshellapp.
 func connectTunnelWithKey(r *REPLState, host string, sshPort, signerPort int) error {
 	if r.Config.SSH == nil {
-		return fmt.Errorf("SSH not configured. Add an 'ssh:' block to config.yaml with identity_file and known_hosts_path")
+		return fmt.Errorf("SSH defaults are not configured; use 'connect <endpoint-alias>' with an endpoints.yaml profile")
 	}
 
 	// Build TOFU callback (UI concern - stays in REPL)
@@ -114,7 +114,7 @@ func requestToken(r *REPLState, host string, sshPort int) error {
 	r.println()
 
 	if r.Config.SSH == nil {
-		return fmt.Errorf("SSH not configured. Add an 'ssh:' block to config.yaml with identity_file and known_hosts_path")
+		return fmt.Errorf("SSH defaults are not configured; use 'request-token --endpoint <alias>' with an endpoints.yaml profile")
 	}
 
 	hostKeyApproval := buildHostKeyApproval(r)
@@ -145,7 +145,7 @@ func requestTokenConfigured(r *REPLState) error {
 		return fmt.Errorf("usage: request-token [<host> [--ssh-port <port>]]\n\n" +
 			"Request an API token from the Signer. Requires an operator\n" +
 			"(apadmin) to approve the request on the server.\n" +
-			"If no arguments are given, apshell uses the ssh block from config.yaml.\n\n" +
+			"If no arguments are given, apshell uses the default signer endpoint from endpoints.yaml.\n\n" +
 			"Examples:\n" +
 			"  request-token\n" +
 			"  request-token 192.168.1.100\n" +

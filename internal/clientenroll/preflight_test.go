@@ -37,8 +37,18 @@ func TestLoadEnrolledClientRequiresToken(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `
 network: testnet
-ssh:
-  host: signer.local
+`)
+	writeRemoteEndpointRegistry(t, dir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.local:1127
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
 `)
 
 	got, err := LoadEnrolledClient(dir, testOptions())
@@ -57,8 +67,18 @@ func TestLoadEnrolledClientRequiresKnownHost(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `
 network: testnet
-ssh:
-  host: signer.local
+`)
+	writeRemoteEndpointRegistry(t, dir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.local:1127
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
 `)
 	if err := tokenfile.WriteToken(filepath.Join(dir, "aplane.token"), "test-token"); err != nil {
 		t.Fatalf("write token: %v", err)
@@ -83,10 +103,18 @@ func TestLoadEnrolledClientRejectsDummyKnownHostEntry(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `
 network: testnet
-ssh:
-  host: signer.local
-  port: 2222
-  known_hosts_path: hosts/known_hosts
+`)
+	writeRemoteEndpointRegistry(t, dir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.local:2222
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: hosts/known_hosts
+    token_file: aplane.token
 `)
 	if err := tokenfile.WriteToken(filepath.Join(dir, "aplane.token"), "test-token"); err != nil {
 		t.Fatalf("write token: %v", err)
@@ -102,6 +130,26 @@ ssh:
 	}
 	if !strings.Contains(err.Error(), "invalid placeholder key") {
 		t.Fatalf("err = %v, want placeholder key rejection", err)
+	}
+}
+
+func TestLoadEnrolledClientRefusesLegacyClientEndpointConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeRemoteConfig(t, dir, `
+network: testnet
+ssh:
+  host: signer.local
+`)
+
+	got, err := LoadEnrolledClient(dir, testOptions())
+	if err == nil {
+		t.Fatal("err = nil, want legacy endpoint config error")
+	}
+	if got != nil {
+		t.Fatalf("got = %#v, want nil", got)
+	}
+	if !strings.Contains(err.Error(), "legacy apclient endpoint config") {
+		t.Fatalf("err = %v, want legacy endpoint config message", err)
 	}
 }
 

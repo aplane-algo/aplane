@@ -73,8 +73,6 @@ func startREPL(network string, config config.Config, dataDir string) {
 	state.Config = config                               // Store config for network restrictions
 	state.CommandRegistry = state.initCommandRegistry() // Initialize command registry with plugin support
 
-	maybePromptClientEndpointMigration(state)
-
 	if err := initPluginRuntime(state); err != nil {
 		fmt.Printf("Error: failed to initialize plugins: %v\n", err)
 		os.Exit(1)

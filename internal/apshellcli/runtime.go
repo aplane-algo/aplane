@@ -49,8 +49,8 @@ func printInteractiveStartupConnectionStatus(r *REPLState) {
 		return
 	}
 	if !decision.ShouldConnect {
-		fmt.Println("Error: No ssh block in config.yaml.")
-		fmt.Println("  Add ssh host, port, and identity_file to connect.")
+		fmt.Println("Error: No default signer endpoint in endpoints.yaml.")
+		fmt.Println("  Add a signer endpoint to connect.")
 		return
 	}
 

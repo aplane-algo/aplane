@@ -9,15 +9,11 @@ Policy is stored beside the identity keys:
 ```text
 identities/<identity>/policy.yaml
 identities/<identity>/policy.yaml.hmac
-identities/<identity>/attestation.yaml
-identities/<identity>/attestation.yaml.hmac
 ```
 
-`policy.yaml` controls normal account signing. `attestation.yaml` controls
-attestor component signing for attested accounts. Each `.hmac` sidecar
-authenticates the exact YAML bytes. After the signed baseline exists, a
-missing or mismatched sidecar fails closed rather than silently loading
-defaults.
+`policy.yaml` controls account signing. Its `.hmac` sidecar authenticates the
+exact YAML bytes. After the signed baseline exists, a missing or mismatched
+sidecar fails closed rather than silently loading defaults.
 
 ## What Policy Controls
 
@@ -49,7 +45,6 @@ Use `appolicy` for normal signing-policy work:
 appolicy -d "$APSIGNER_DATA"
 appolicy -d "$APSIGNER_DATA" -check
 appolicy -d "$APSIGNER_DATA" --sha256
-appolicy --to-attestation draft-policy.yaml > attestation.yaml
 appolicy draft-policy.yaml
 ```
 
@@ -70,15 +65,13 @@ For byte-preserving scripted edits:
 ```bash
 appolicy -d "$APSIGNER_DATA" --yaml > policy.yaml
 APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save-policy < policy.yaml
-APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save-attestation < attestation.yaml
 ```
 
 `appolicy --sha256` verifies the current sidecar and prints the SHA-256 digest
 of the trusted `policy.yaml` bytes. `appolicy --yaml` verifies the current
 sidecar and emits those trusted bytes. `appolicy --save-policy` reads
 replacement signing-policy YAML from stdin, validates it, writes `policy.yaml`,
-and writes a fresh sidecar. `appolicy --save-attestation` does the same for
-direct `attestation.yaml`. The older `appolicy --save` flag remains a
+and writes a fresh sidecar. The older `appolicy --save` flag remains a
 compatibility alias for `--save-policy`. Because stdin is the document stream
 for save modes, provide the passphrase through the environment or an
 interactive terminal.
@@ -86,12 +79,6 @@ interactive terminal.
 With a positional YAML file, `appolicy --check draft.yaml`,
 `appolicy --yaml draft.yaml`, and `appolicy --sha256 draft.yaml` validate the
 file itself and do not verify or update the production sidecar.
-
-`appolicy --to-attestation draft.yaml` converts a signing `policy.yaml` draft
-into direct `attestation.yaml` and prints it to stdout. The conversion preserves
-deterministic hard-reject bounds and transfer routes, removes review-only
-thresholds from matched routes, and rejects route-miss review/operator-default
-behavior because attestor policy cannot ask a human to decide a miss.
 
 For deliberate direct YAML edits:
 
@@ -102,12 +89,8 @@ apstore -d "$APSIGNER_DATA" policy verify
 ```
 
 Direct YAML edits take effect only after the next successful signer reload,
-unlock, or restart. `apstore policy check`, `apstore policy sign`, and
-`apstore policy verify` process both `policy.yaml` and `attestation.yaml`.
-`appolicy --save-policy` updates only `policy.yaml`; `appolicy --save-attestation`
-updates only `attestation.yaml`. These are offline store
-mutations, so the normal workflow is to run them while `apsigner` is stopped
-or before starting it.
+unlock, or restart. These are offline store mutations, so the normal workflow
+is to run them while `apsigner` is stopped or before starting it.
 
 From the main key list in `apadmin`, press `p` to inspect the active signer
 policy. The same viewer is also available from the Settings `Policy` row. It
@@ -125,8 +108,6 @@ active policy changed before the upload was applied.
 ## Top-Level Fields
 
 `policy.yaml` is sparse. Omitted fields resolve through product defaults.
-It must not contain an `attestation:` block; attestor component policy lives in
-`attestation.yaml` without a wrapper.
 
 | Field | Meaning |
 |-------|---------|
@@ -280,10 +261,8 @@ asset-set amount-limit combinations.
 edit overrides.
 
 Overrides let one concrete signing key use tighter or looser policy than the
-identity-wide policy. For normal transaction signing, the override is selected
-by the auth address that will actually sign, not necessarily by the transaction
-sender. For attestor component signing, the override is selected by the
-`a_...` component-key selector.
+identity-wide policy. The override is selected by the auth address that will
+actually sign, not necessarily by the transaction sender.
 
 Example:
 
@@ -344,10 +323,9 @@ are rejected, except for routing-exempt self no-op shapes.
 add blocked destinations but cannot remove identity-wide blocked destinations.
 
 Use overrides when one key has materially different signing constraints, such
-as a LogicSig account whose TEAL enforces a separate whitelist, or one attestor
-component key that should attest a narrower route set than the identity
-default. Avoid overrides when normal identity-wide routes can express the rule;
-simpler policy is easier to audit.
+as a LogicSig account whose TEAL enforces a separate whitelist. Avoid overrides
+when normal identity-wide routes can express the rule; simpler policy is easier
+to audit.
 
 ## Validation Checklist
 

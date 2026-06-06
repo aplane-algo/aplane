@@ -894,8 +894,7 @@ Close-out and clawback misses still use `close_on_no_route` and
 ## Key Overrides
 
 `key_overrides` can provide sparse routing policy for one concrete signing key.
-Use an Algorand auth address for normal transaction signing, or an `a_...`
-component selector for attestor component signing:
+Use an Algorand auth address as the override key:
 
 ```yaml
 transfer_policy:
@@ -944,10 +943,8 @@ Inheritance rules:
 - `routes`, when absent, inherits the identity route list,
 - nested `key_overrides` are rejected.
 
-During normal signing, the effective override is selected by the auth address
-that will actually sign, not necessarily by the transaction sender. During
-attestor component signing, it is selected by the `component_key` selector in
-the `/sign/component` request.
+The effective override is selected by the auth address that will actually
+sign, not necessarily by the transaction sender.
 
 ## Validation Rules
 

@@ -53,6 +53,40 @@ func TestLoadConfiguresStartupAndStorePaths(t *testing.T) {
 	}
 }
 
+func TestLoadRefusesLegacyClientEndpointConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	configYAML := []byte(`
+network: testnet
+ssh:
+  host: signer.local
+networks:
+  testnet:
+    algod:
+      server: http://localhost:4001
+`)
+	if err := os.WriteFile(configPath, configYAML, 0600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	startup, err := Load(tmpDir, "")
+	if err == nil {
+		t.Fatal("Load() error = nil, want legacy endpoint config error")
+	}
+	if startup != nil {
+		t.Fatalf("startup = %#v, want nil", startup)
+	}
+	if !strings.Contains(err.Error(), "legacy apclient endpoint config") {
+		t.Fatalf("error = %v, want legacy endpoint config message", err)
+	}
+	if !strings.Contains(err.Error(), "endpoints.yaml") {
+		t.Fatalf("error = %v, want endpoints.yaml instruction", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(tmpDir, "endpoints.yaml")); !os.IsNotExist(statErr) {
+		t.Fatalf("endpoints.yaml stat error = %v, want not exist", statErr)
+	}
+}
+
 func TestLoadReturnsErrorWhenRequestedNetworkMissingFromAlgodConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")

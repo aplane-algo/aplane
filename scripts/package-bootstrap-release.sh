@@ -108,7 +108,6 @@ copy_required_binaries() {
         appass-file
         appass-systemd-creds
         approbe
-        apkey-migrate
         applugin-checksum
     )
 

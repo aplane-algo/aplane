@@ -548,11 +548,10 @@ connect [endpoint-alias]
 ```
 
 With no arguments, `connect` opens the default signer endpoint from
-`$APCLIENT_DATA/endpoints.yaml`. Older single-endpoint clients that do not yet
-have `endpoints.yaml` derive the default from the `ssh:` block in
-`config.yaml`; interactive `apshell` prompts before converting that legacy
-primary signer into `endpoints.yaml`. Passing an endpoint alias connects to
-that named profile.
+`$APCLIENT_DATA/endpoints.yaml`. Passing an endpoint alias connects to that
+named profile. Legacy clients that still store signer routing in the `ssh:`
+block of `config.yaml` must run `migrate-config-v1 -d "$APCLIENT_DATA"` before
+starting `apshell`.
 
 **Examples:**
 ```
@@ -582,14 +581,13 @@ request-token
 ```
 
 The command always uses the client SSH key and known-hosts path from the
-selected endpoint profile, or from the legacy `ssh:` config block only when no
-endpoint registry exists. With no arguments, it uses the default endpoint. With
-`--endpoint`, it saves the token to that endpoint's token file.
+selected endpoint profile. With no arguments, it uses the default endpoint.
+With `--endpoint`, it saves the token to that endpoint's token file.
 
 **Examples:**
 ```
 request-token
-request-token --endpoint attestor-local
+request-token --endpoint main
 request-token 192.168.1.100
 request-token 192.168.1.100 --ssh-port 2222
 ```
@@ -613,61 +611,30 @@ Manage client-local signer endpoint profiles.
 ```
 endpoints list
 endpoints show <alias>
-endpoints attestors
-endpoints import-public --alias <alias> --role signer|attestor [--dry-run] <endpoint-json>
-endpoints sync-attestors [--dry-run] [--yes]
+endpoints import-public --alias <alias> --role signer [--dry-run] <endpoint-json>
 endpoints default <alias>
 endpoints delete <alias>
 ```
 
 `endpoints import-public` reads a public `aplane.endpoint.v1` envelope produced by
 `apstore endpoint export`. Import writes local endpoint routing only:
-`endpoints.yaml`. If an older client still relies on `config.yaml` for its
-primary signer and imports an attestor endpoint, apshell first writes that
-legacy primary signer into `endpoints.yaml` as `primary`. The role is
-client-local intent: one endpoint should be `signer`, and attestor nodes should
-be imported as `attestor`. It does not copy tokens or SSH host trust, and it
-does not discover attestor keys. Re-importing with the same alias replaces that
-alias's endpoint data. Importing the same URL under a different alias is
-allowed only when the role differs, such as a dev node used both as the client
-signer and as a local attestor.
-
-`endpoints sync-attestors` queries `/keys` on configured `attestor` endpoints
-using each endpoint's token and rebuilds each reachable endpoint's
-`published_attestors` inventory in `endpoints.yaml`. If an endpoint is
-temporarily unavailable or its signer identity is locked, its existing
-published-attestor entries are preserved. Token/auth failures, endpoint config
-errors, malformed responses, duplicate public keys, and invalid component-key
-metadata fail without writing. The command then shows the attestor component
-IDs it is about to publish to the connected signer identity and asks for
-confirmation, unless `--yes` is provided. `--dry-run` inspects the discovered
-and skipped endpoints without writing files or updating the signer library.
-
-`endpoints attestors` lists the client-local endpoint-discovered attestor
-inventory by endpoint alias, component ID, and key type. It does not call
-remote endpoints. Use `endpoints show <alias>` to see `last_seen_at` for an
-endpoint's published attestors.
+`endpoints.yaml`. The normal role is `signer`. Import does not copy tokens or
+SSH host trust. Re-importing with the same alias replaces that alias's endpoint
+data.
 
 **Examples:**
 ```
 endpoints import-public --alias main --role signer signer.endpoint.json
-endpoints import-public --alias attestor-local --role attestor attestor.endpoint.json
-endpoints import-public --alias attestor-local --role attestor --dry-run attestor.endpoint.json
-request-token --endpoint attestor-local
+endpoints import-public --alias main --role signer --dry-run signer.endpoint.json
+request-token --endpoint main
 connect main
-endpoints sync-attestors
-endpoints sync-attestors --yes
-endpoints sync-attestors --dry-run
-endpoints attestors
 endpoints list
-endpoints show attestor-local
+endpoints show main
 endpoints default main
-endpoints delete old-attestor
-request-token --endpoint attestor-local
+endpoints delete old-signer
 ```
 
-`endpoints delete` refuses to remove the signer endpoint or an endpoint still
-referenced by local attestor mappings.
+`endpoints delete` refuses to remove the signer endpoint.
 
 ---
 

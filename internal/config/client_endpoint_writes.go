@@ -4,6 +4,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+var ErrLegacyClientEndpointConfig = errors.New("legacy apclient endpoint config")
 
 // LoadStoredClientEndpointRegistry loads only endpoints.yaml, without
 // overlaying the legacy config.yaml ssh primary endpoint.
@@ -55,11 +58,38 @@ func StoredClientPrimaryEndpointMaterializationNeeded(dataDir string) (bool, err
 	return ok, nil
 }
 
+// CheckNoLegacyClientEndpointConfig fails when a client still relies on the
+// pre-endpoint config.yaml ssh signer settings instead of endpoints.yaml.
+func CheckNoLegacyClientEndpointConfig(dataDir string) error {
+	needed, err := StoredClientPrimaryEndpointMaterializationNeeded(dataDir)
+	if err != nil {
+		return err
+	}
+	if !needed {
+		return nil
+	}
+	return fmt.Errorf("%w: config.yaml contains signer ssh settings, but %s has no signer endpoint; run migrate-config-v1 -d %s before starting apshell or the apconsole shell", ErrLegacyClientEndpointConfig, ClientEndpointsFile, dataDir)
+}
+
 // MaterializeStoredClientPrimaryEndpoint writes the legacy config.yaml SSH
 // primary endpoint into endpoints.yaml when no stored signer endpoint exists.
 // It is the explicit compatibility bridge from pre-endpoint clients to the
 // endpoint registry shape.
 func MaterializeStoredClientPrimaryEndpoint(dataDir string) (ClientEndpointRegistry, bool, error) {
+	registry, changed, err := MaterializeStoredClientPrimaryEndpointPlan(dataDir)
+	if err != nil || !changed {
+		return registry, changed, err
+	}
+	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
+		return ClientEndpointRegistry{}, false, err
+	}
+	return registry, true, nil
+}
+
+// MaterializeStoredClientPrimaryEndpointPlan returns the endpoint registry that
+// would be written by MaterializeStoredClientPrimaryEndpoint. It does not touch
+// endpoints.yaml.
+func MaterializeStoredClientPrimaryEndpointPlan(dataDir string) (ClientEndpointRegistry, bool, error) {
 	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
 		return ClientEndpointRegistry{}, false, err
@@ -76,7 +106,7 @@ func MaterializeStoredClientPrimaryEndpoint(dataDir string) (ClientEndpointRegis
 	}
 	registry.Endpoints[DefaultClientEndpointName] = legacy
 	registry.Default = DefaultClientEndpointName
-	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
+	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
 		return ClientEndpointRegistry{}, false, err
 	}
 	return registry, true, nil

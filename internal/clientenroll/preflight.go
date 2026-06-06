@@ -36,6 +36,9 @@ type Prereqs struct {
 // non-interactive, signer-facing surface. It requires a default signer endpoint
 // or legacy ssh config, a client token, and a trusted known_hosts entry.
 func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
+	if err := config.CheckNoLegacyClientEndpointConfig(dataDir); err != nil {
+		return nil, err
+	}
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("invalid client configuration for %s: %w", opts.Product, err)

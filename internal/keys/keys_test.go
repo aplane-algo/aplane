@@ -835,8 +835,8 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsIncompatibleFormatWarnings(t
 	if warning.Code != KeyScanWarningIncompatibleFormat {
 		t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningIncompatibleFormat)
 	}
-	if !contains(warning.Message(), "apkey-migrate") {
-		t.Fatalf("warning message = %q, want migration utility mention", warning.Message())
+	if !contains(warning.Message(), "restore or regenerate") {
+		t.Fatalf("warning message = %q, want restore/regenerate guidance", warning.Message())
 	}
 }
 

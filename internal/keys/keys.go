@@ -30,15 +30,12 @@ import (
 var ErrMissingLogicSigSaltCounter = errors.New("logic sig key file missing salt_counter")
 
 // ErrIncompatibleKeyFormat indicates a key payload belongs to a state that this
-// runtime no longer loads directly. Use apkey-migrate for known outdated
-// key-file states.
+// runtime no longer loads directly.
 var ErrIncompatibleKeyFormat = errors.New("incompatible key file format")
 
 // ErrAddressCollision indicates multiple key files resolve to the same signing
 // address. The keyset is ambiguous and must not publish a runtime key snapshot.
 var ErrAddressCollision = errors.New("address collision")
-
-const keyMigrationUtility = "apkey-migrate"
 
 // AddressCollisionError reports one or more duplicate signing addresses found
 // during key scan.
@@ -134,7 +131,7 @@ func validateCurrentKeyPayloadMetadata(meta KeyPayloadMetadata) (KeyPayloadHeade
 }
 
 func incompatibleKeyFormat(format string, args ...interface{}) error {
-	return fmt.Errorf("%w: %s; run %s to repair known outdated key-file state", ErrIncompatibleKeyFormat, fmt.Sprintf(format, args...), keyMigrationUtility)
+	return fmt.Errorf("%w: %s; restore or regenerate the key file using the current key schema", ErrIncompatibleKeyFormat, fmt.Sprintf(format, args...))
 }
 
 // KeyScanInfo holds information about a scanned key file.

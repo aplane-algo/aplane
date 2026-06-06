@@ -40,8 +40,6 @@ Key management is handled by **apadmin** and **apstore**, not directly by apsign
 │    • Preview/apply managed restores                         │
 │    • Change passphrase                                      │
 │    • Manage templates and key-type activation               │
-│    • Export public attestor key envelopes                   │
-│    • Manage public attestor key references                  │
 │                                                             │
 │  apstore rescue    ─────────►  File System                  │
 │    • Verify backup archives                                 │
@@ -395,8 +393,7 @@ For interactive offline edits, use `appolicy -d "$APSIGNER_DATA"` after
 stopping `apsigner`; it validates and saves `policy.yaml` with a fresh sidecar.
 For scriptable byte-preserving edits or imports, use `appolicy --yaml` to emit
 the verified current policy and `appolicy --save-policy` to read replacement
-YAML from stdin, validate it, and save it with a fresh sidecar. Use
-`appolicy --save-attestation` for direct `attestation.yaml`.
+YAML from stdin, validate it, and save it with a fresh sidecar.
 
 After signing, reload, unlock, or restart the signer before relying on the new
 policy. The running signer keeps the previous in-memory policy until the next
@@ -565,7 +562,6 @@ From the key details view:
 ./appolicy -check
 ./appolicy --yaml
 ./appolicy --save-policy < policy.yaml
-./appolicy --save-attestation < attestation.yaml
 ./appolicy
 
 # Template management (for custom LogicSigs)
@@ -575,18 +571,10 @@ From the key details view:
 ./apstore template remove <key-type>
 ./apstore keytype activate <key-type>
 ./apstore keytype deactivate <key-type>
-
-# Public-only attestor key export
-./apstore attestor export-public <component-key> [output-json]
-./apstore attestor import-public <export-json> <name>
-./apstore attestor list
-./apstore attestor show <name>
-./apstore attestor remove <name>
 ```
 
 For the operator-facing key type availability model and the distinction between
-compiled-provider activation and YAML-template import/enable, plus the attestor
-public-key export and reference library, see
+compiled-provider activation and YAML-template import/enable, see
 `docs/USER_KEYTYPES.md`.
 
 ---

@@ -104,12 +104,12 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 	return res, nil
 }
 
-// ConnectConfigured establishes an SSH tunnel using the configured ssh block.
+// ConnectConfigured establishes an SSH tunnel using the configured default endpoint.
 func (a *App) ConnectConfigured(ctx context.Context, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
 	registry := a.Config.ClientEndpointsOrDefault(a.DataDir)
 	alias, endpoint, ok := registry.DefaultEndpoint()
 	if !ok {
-		return nil, fmt.Errorf("no ssh block in config.yaml — add ssh host, port, and identity_file")
+		return nil, fmt.Errorf("no default signer endpoint in endpoints.yaml")
 	}
 	return a.ConnectEndpoint(ctx, alias, endpoint, hostKeyApproval, onDisconnect)
 }
@@ -179,7 +179,7 @@ func (a *App) RequestToken(ctx context.Context, req RequestTokenRequest) (*Reque
 	return result, nil
 }
 
-// RequestTokenConfigured requests and persists a fresh apshell token using the configured ssh block.
+// RequestTokenConfigured requests and persists a fresh apshell token using the configured default endpoint.
 func (a *App) RequestTokenConfigured(ctx context.Context, hostKeyApproval sshtunnel.HostKeyApprovalHandler) (*RequestTokenResult, error) {
 	registry := a.Config.ClientEndpointsOrDefault(a.DataDir)
 	alias, endpoint, ok := registry.DefaultEndpoint()
@@ -187,7 +187,7 @@ func (a *App) RequestTokenConfigured(ctx context.Context, hostKeyApproval sshtun
 		return nil, fmt.Errorf("usage: request-token [<host> [--ssh-port <port>]]\n\n" +
 			"Request an API token from the Signer. Requires an operator\n" +
 			"(apadmin) to approve the request on the server.\n" +
-			"If no arguments are given, apshell uses the ssh block from config.yaml.\n\n" +
+			"If no arguments are given, apshell uses the default signer endpoint from endpoints.yaml.\n\n" +
 			"Examples:\n" +
 			"  request-token\n" +
 			"  request-token 192.168.1.100\n" +

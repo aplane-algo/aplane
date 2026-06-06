@@ -34,6 +34,9 @@ func Load(dataDirFlag, networkFlag string) (*Startup, error) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("config file not found: %s", configPath)
 	}
+	if err := apconfig.CheckNoLegacyClientEndpointConfig(dataDir); err != nil {
+		return nil, err
+	}
 
 	cache.InitLogger()
 
