@@ -43,6 +43,9 @@ func loadRemoteAdminConfig(clientDataDirFlag string, _ bool) (*remoteAdminConfig
 		return nil, fmt.Errorf("client data directory not specified: pass --client-data <path> or set APCLIENT_DATA")
 	}
 
+	if err := config.CheckSupportedClientEndpointConfig(clientDataDir); err != nil {
+		return nil, err
+	}
 	cfg, err := config.LoadConfig(clientDataDir)
 	if err != nil {
 		return nil, fmt.Errorf("invalid remote client configuration: %w", err)

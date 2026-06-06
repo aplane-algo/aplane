@@ -18,8 +18,9 @@ const (
 	MinSignerStatusPollInterval           = 1 * time.Second
 )
 
-// SSHClientConfig holds SSH tunnel configuration for connecting to signer.
-// Required for all client connections (localhost or remote).
+// SSHClientConfig is compatibility-only client SSH configuration retained for
+// old command forms. Current signer and attestor endpoint routing lives in
+// ClientEndpointConfig records loaded from endpoints.yaml.
 type SSHClientConfig struct {
 	Host           string `yaml:"host" description:"Signer host to SSH to (required)"`
 	Port           int    `yaml:"port" description:"SSH port" default:"1127"`
@@ -47,14 +48,15 @@ type AttestorEndpointConfigs map[string]AttestorEndpointConfig
 type Config struct {
 	Network         string   `yaml:"network" description:"Default network context token" default:"testnet"`
 	NetworksAllowed []string `yaml:"networks_allowed" description:"Restrict allowed networks (empty = all)" default:"[]"`
-	SignerPort      int      `yaml:"signer_port" description:"Local REST port for apsigner" default:"11270"`
+	SignerPort      int      `yaml:"signer_port" configdoc:"skip" description:"Compatibility fallback for legacy client routing; current endpoint signer_port lives in endpoints.yaml" default:"11270"`
 	Theme           string   `yaml:"theme" description:"Local client UI theme: auto, dark, or light (auto detects terminal)" default:"auto"`
 	// SignerStatusPollInterval controls how often interactive apshell sessions
 	// poll /status for keyset revision changes. "0" disables background polling.
 	SignerStatusPollInterval string `yaml:"signer_status_poll_interval" description:"Background /status polling interval for signer keyset refresh (0=disabled)" default:"10s"`
 
-	// SSH tunnel config (required for connecting to signer)
-	SSH *SSHClientConfig `yaml:"ssh" description:"SSH tunnel settings (required for signer connection)"`
+	// SSH is compatibility-only client routing state. New installs and normal
+	// connections use endpoint records from endpoints.yaml.
+	SSH *SSHClientConfig `yaml:"ssh" configdoc:"skip" description:"Compatibility SSH tunnel settings; current endpoint SSH fields live in endpoints.yaml"`
 
 	// AttestorEndpoints maps attested-account embedded attestor public keys to
 	// signer endpoints for attestor-role component signing. It is derived
@@ -74,7 +76,7 @@ type Config struct {
 
 // DefaultConfig returns the default configuration for runtime use.
 // Algod URLs are empty - user must explicitly configure them.
-// SSH is nil by default (must be configured in config.yaml).
+// SSH is nil by default; normal routing is loaded from endpoints.yaml.
 func DefaultConfig() Config {
 	return Config{
 		Network:                  "testnet",

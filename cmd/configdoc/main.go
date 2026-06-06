@@ -36,6 +36,8 @@ func main() {
 	fmt.Println()
 	printStructTable(reflect.TypeOf(config.Config{}))
 	fmt.Println()
+	printClientEndpointReference()
+	fmt.Println()
 
 	// apsigner config
 	fmt.Println("## apsigner Configuration")
@@ -43,6 +45,9 @@ func main() {
 	fmt.Println("File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, required)")
 	fmt.Println()
 	printStructTable(reflect.TypeOf(config.ServerConfig{}))
+	fmt.Println()
+	fmt.Println("Identity-scoped `identities/<identity>/config.yaml` defaults to normal signing")
+	fmt.Println("mode. Standard installations do not need to set a mode field.")
 	fmt.Println()
 
 	// Environment variables
@@ -63,6 +68,9 @@ func printStructTableWithPrefix(t reflect.Type, prefix string) {
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
+		if field.Tag.Get("configdoc") == "skip" {
+			continue
+		}
 
 		// Get yaml tag first, fall back to json tag
 		tag := field.Tag.Get("yaml")
@@ -142,6 +150,27 @@ func printStructTableWithPrefix(t reflect.Type, prefix string) {
 	}
 }
 
+func printClientEndpointReference() {
+	fmt.Println("## apshell Endpoint Registry")
+	fmt.Println()
+	fmt.Println("File: `endpoints.yaml` in apshell data directory (`-d` or `APCLIENT_DATA`)")
+	fmt.Println()
+	fmt.Println("Signer and attestor endpoint routing lives here, not in `config.yaml`.")
+	fmt.Println()
+	fmt.Println("| Field | Type | Default | Description |")
+	fmt.Println("|-------|------|---------|-------------|")
+	fmt.Println("| `schema_version` | int | `1` | Endpoint registry schema version |")
+	fmt.Println("| `default` | string | `primary` | Default signer endpoint alias |")
+	fmt.Println("| `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `attestor` |")
+	fmt.Println("| `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported |")
+	fmt.Println("| `endpoints.<alias>.signer_port` | int | `11270` | Remote apsigner REST port for `ssh://` endpoints |")
+	fmt.Println("| `endpoints.<alias>.local_port` | int | `0` | Local tunnel port for `ssh://` endpoints; `0` chooses automatically |")
+	fmt.Println("| `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path, resolved relative to `APCLIENT_DATA` |")
+	fmt.Println("| `endpoints.<alias>.known_hosts_path` | string | `.ssh/known_hosts` | SSH known-hosts path, resolved relative to `APCLIENT_DATA` |")
+	fmt.Println("| `endpoints.<alias>.token_file` | string | `aplane.token` or `tokens/<alias>.token` | Endpoint API token file, resolved relative to `APCLIENT_DATA` |")
+	fmt.Println("| `endpoints.<alias>.published_attestors` | map | `(none)` | Attestor endpoint inventory learned from authenticated `/keys` discovery; routing metadata, not trust proof |")
+}
+
 func formatType(t reflect.Type) string {
 	switch t.Kind() {
 	case reflect.String:
@@ -210,7 +239,7 @@ func printEnvVars() {
 func init() {
 	// Ensure we exit cleanly
 	if len(os.Args) > 1 && os.Args[1] == "--help" {
-		fmt.Println("Usage: go run ./cmd/configdoc > docs/CONFIG_REFERENCE.md")
+		fmt.Println("Usage: go run ./cmd/configdoc > docs/USER_CONFIG_REFERENCE.md")
 		fmt.Println()
 		fmt.Println("Generates markdown documentation from Go struct tags.")
 		os.Exit(0)

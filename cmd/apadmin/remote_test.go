@@ -140,6 +140,38 @@ endpoints:
 	}
 }
 
+func TestLoadRemoteAdminConfigRefusesUnsupportedClientEndpointConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeRemoteConfig(t, dir, `
+network: testnet
+ssh:
+  host: signer.local
+`)
+	writeRemoteEndpointRegistry(t, dir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.local:1127
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
+`)
+
+	cfg, err := loadRemoteAdminConfig(dir, false)
+	if err == nil {
+		t.Fatal("err = nil, want unsupported endpoint config error")
+	}
+	if cfg != nil {
+		t.Fatalf("cfg = %#v, want nil", cfg)
+	}
+	if !strings.Contains(err.Error(), "unsupported apclient endpoint config") {
+		t.Fatalf("err = %v, want unsupported endpoint config message", err)
+	}
+}
+
 func TestLoadRemoteAdminConfigBuildsConnectorWithTrustedHost(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `
