@@ -34,8 +34,8 @@ const (
 	// attestor component signature.
 	AttestedFalcon1024AttFalcon1024V1 = "aplane.falcon1024-att-falcon1024.v1"
 
-	// AttestedFalcon1024V1 is the original Ed25519-attestor Falcon account key
-	// type. Keep this alias for existing internal call sites.
+	// AttestedFalcon1024V1 is a Go-level compatibility alias for the canonical
+	// Ed25519-attestor Falcon account key type.
 	AttestedFalcon1024V1 = AttestedFalcon1024AttEd25519V1
 
 	// ParameterAttestorPublicKey is the durable creation parameter that records

@@ -280,8 +280,10 @@ Validation:
   30 minutes. The default is `60s`. Identity config may override the process
   default for that identity.
 - identity `mode`, when present, must be one of `signing`, `attestation`, or
-  `dual`. Omitted mode defaults to `signing`. Key generation, import, and
-  key reload reject key classes disallowed by the effective identity mode.
+  `dual`. Omitted mode defaults to `signing`. Managed key generation,
+  mnemonic import, and signer key reload reject key classes disallowed by the
+  effective identity mode; out-of-band restore or hand-placed key files are
+  not usable until reload accepts the resulting inventory.
 - `require_memory_protection:true` requires disabled core dumps and successful memory locking
 
 Built-in Algorand genesis-hash mappings are source-defined:

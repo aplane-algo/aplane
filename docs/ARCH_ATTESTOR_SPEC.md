@@ -290,9 +290,9 @@ when implemented with these constraints:
 - Attestor policy, unlock state, token, and audit records are identity-scoped;
   `attestation.yaml` and policy document domains are defined in
   [ARCH_POLICY.md#role-domains](ARCH_POLICY.md#role-domains).
-- Identity mode is loaded from identity config before key generation, import,
-  scan/load, and signing service dispatch; the mode check is enforced against key
-  type/category metadata, not string appearance.
+- Identity mode is loaded from identity config before key generation, mnemonic
+  import, scan/load, and signing service dispatch; the mode check is enforced
+  against key type/category metadata, not string appearance.
 - `/sign` never reaches attestor component keys or attested-account key types;
   component signing uses `/sign/component`.
 - `/plan` continues to own canonical group shaping and uses attested-account
@@ -1548,8 +1548,8 @@ The MVP is complete when:
 
 - each identity has an enforced `mode` with omitted mode defaulting to
   `signing`, and invalid modes fail config load,
-- key generation, import, restore/load, and signing service dispatch reject key
-  classes disallowed by the identity mode,
+- key generation, mnemonic import, signer reload/load, and signing service
+  dispatch reject key classes disallowed by the identity mode,
 - attestor component keys cannot sign through `/sign`,
 - attested account keys cannot sign through `/sign`,
 - attestor component key generation exposes canonical `a_` selectors derived
