@@ -123,8 +123,8 @@ All under `cmd/`:
 | `apadmin` | TUI admin client over IPC or SSH admin transport |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
-| `apstore` | Local keystore management client: daemon-owned backup, restore, template, key type, changepass, and initialize over IPC, policy integrity check/verify/sign, plus local `verify` and `rebuild` rescue flows |
-| `appolicy` | Offline policy checker/editor TUI for identity-scoped signing `policy.yaml`; validates and signs signing-policy edits while holding the store mutation lock |
+| `apstore` | Local keystore management client: daemon-owned backup, restore, template, key type, changepass, and initialize over IPC, policy integrity check/verify/sign, public endpoint export, public attestor reference import/export/list, plus local `verify` and `rebuild` rescue flows |
+| `appolicy` | Offline policy checker/editor TUI for identity-scoped signing `policy.yaml`, plus scriptable signing-policy save, signing-to-attestation conversion, and direct `attestation.yaml` save/sign flows while holding the store mutation lock |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, apclient default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
 | `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |
@@ -145,10 +145,10 @@ Documentation notes:
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/engine`, `internal/clientstate`, `internal/engine/connect`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/policy`, `internal/approvalpolicy` |
-| Provider | `internal/signing`, `lsig/`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealsubst`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/policy`, `internal/approvalpolicy` |
+| Provider | `internal/signing`, `lsig/`, `internal/attestor`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealsubst`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/storemut`, `internal/storeinit`, `internal/storepass`, `internal/clientdata`, `internal/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
-| Integration | `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
+| Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/integration`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
 This table is an orientation map rather than an ownership API. Small support
@@ -388,14 +388,29 @@ Identity plumbing rules specific to this spec:
 
 If neither is set, `apshell` errors out; there is no implicit default.
 
-Client config includes:
+Current client config includes:
 
 - default network context token,
 - allowed network context tokens,
-- signer REST port,
-- optional SSH connection block,
 - per-network-context algod configuration,
 - theme settings.
+- signer status polling interval.
+
+Signer and attestor routing is not stored as active top-level `config.yaml`
+state. Normal client routing lives in `endpoints.yaml` through
+`internal/config.ClientEndpointRegistry`: at most one `signer` endpoint and zero
+or more `attestor` endpoints. Endpoint records carry URL, SSH tunnel ports,
+identity file, `known_hosts`, token file, and endpoint-published attestor
+inventory. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
+handoff envelope used by `apstore endpoint export` and
+`apshell endpoints import-public`.
+
+`internal/config.Config` still has compatibility fields named
+`LegacySignerPort` and `LegacySSH` with YAML tags `signer_port` and `ssh`, but
+managed `apshell` startup calls `CheckSupportedClientEndpointConfig` and
+rejects top-level `ssh:` signer routing in this new-install-only release.
+Those fields are retained for old command forms and narrow internal
+materialization, not as the current routing contract.
 
 ### Server Configuration
 
@@ -1160,6 +1175,9 @@ Verification expectations remain:
 - token provisioning and revocation remain compatible with the SSH client flow,
 - plugin discovery precedence and manifest validation remain unchanged unless explicitly versioned,
 - on-disk compatibility is checked for `.keystore`, `.key`, `.template`, `config.yaml`, `audit.log`, and token files.
+- client endpoint compatibility is checked for `endpoints.yaml`,
+  endpoint token files, endpoint handoff envelopes, and public attestor
+  reference records when those surfaces change.
 
 ## Authentication
 

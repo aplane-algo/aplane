@@ -34,7 +34,9 @@ new-install-only:
 
 - existing install directories are not a supported in-place upgrade target,
 - no config, key, cache, or endpoint migration utility is shipped,
-- apclient signer routing must be present in `endpoints.yaml`,
+- usable apclient signer routing is endpoint-based and lives in
+  `endpoints.yaml`; top-level `config.yaml` `ssh:` signer routing is rejected
+  by managed client startup in this release,
 - config files, identity settings, admin IPC names, SDK DTO field names, caches,
   and generated docs examples may be reset or reshaped by a release before
   `v1.0`.
@@ -56,6 +58,15 @@ Canonical forms:
   `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
   decimal version, for example `aplane.falcon1024.v1`,
   `aplane.htlc.v1`, and `aplane.falcon1024-whitelist.v1`
+- attestor component keys use the same canonical key-type identifier contract,
+  for example `aplane.attestor-ed25519.v1` and
+  `aplane.attestor-falcon1024.v1`; they are component-signing keys selected by
+  `a_...` component selector, not spending accounts
+- attested account key types name both the account DSA and the attestor DSA,
+  for example `aplane.falcon1024-att-ed25519.v1` and
+  `aplane.falcon1024-att-falcon1024.v1`; the older Go-level
+  `AttestedFalcon1024V1` symbol is a compatibility alias for the Ed25519
+  attestor form and is not a separate persisted identifier
 
 YAML templates declare `publisher`, `family`, and integer `version`; the
 computed key type is `publisher.family.v<version>`. Clients and tools must send
@@ -196,6 +207,12 @@ Installer-written client configs include `networks` entries for `testnet`,
 `testnet` by default; existing configs are left unchanged if the installer is
 pointed at an existing path, but this release is not an in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader.
+
+The Go `Config` type contains compatibility-only `LegacySignerPort` and
+`LegacySSH` fields whose YAML names remain `signer_port` and `ssh`. They are
+not the current routing contract. Current signer and attestor routing is loaded
+from `endpoints.yaml` into `ClientEndpointRegistry`, and managed client
+startup rejects top-level `ssh:` signer routing before connecting.
 
 `apshell` process startup goes through `internal/bootstrap/shell.Load`: it
 requires a resolved client data directory, requires `<data_dir>/config.yaml` to
@@ -495,9 +512,9 @@ Additional client-state notes:
 - `published_attestors` is keyed by canonical embedded attestor public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime attested-send routing derives the endpoint for an embedded attestor public key from this endpoint-local inventory.
 - `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. The common form takes `--host <client-reachable-host>` and derives `ssh://<host>:<configured-ssh-port>` plus the configured signer REST port; `--url <url>` overrides that URL for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, attestor public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
 - `apshell endpoints import-public --alias <alias> --role signer|attestor [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `attestor` alias for dev co-location. Import is not an ownership or trust proof and does not discover attestor keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
-- `apshell endpoints sync-attestors [--dry-run] [--yes]` scans configured `attestor` endpoints with authenticated `/keys`, extracts attestor component-key `public_key_hex` values, validates each `component_key`, and atomically rebuilds endpoint-local `published_attestors` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_attestors` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and component-key validation failures are hard errors and leave files unchanged. After discovery, the command prints component IDs and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public attestor reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered attestors selectable from signer-side key generation clients such as `apadmin`.
+- `apshell endpoints sync-attestors [--dry-run] [--yes]` scans configured `attestor` endpoints with authenticated `/keys`, extracts attestor component-key `public_key_hex` values, validates each `component_key`, and atomically rebuilds endpoint-local `published_attestors` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_attestors` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and component-key validation failures are hard errors and leave files unchanged. After discovery, the command prints component IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public attestor reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered attestors selectable from signer-side key generation clients such as `apadmin`.
 - `apshell endpoints attestors` lists the local endpoint-discovered attestor inventory by endpoint alias, component ID, and key type without calling remote endpoints.
-- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. `show` is local-only, does not call `/keys`, and includes `last_seen_at` for that endpoint's published attestors; `delete` refuses to remove the signer endpoint or an endpoint with published attestors still referenced by derived runtime routing.
+- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. Human endpoint output identifies attestors by `a_...` component ID and must not print raw attestor public keys. `show` is local-only, does not call `/keys`, and includes `last_seen_at` for that endpoint's published attestors; `delete` refuses to remove the signer endpoint or an endpoint with published attestors still referenced by derived runtime routing.
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
 - for interactive `apshell`, token presence and SSH host trust are enforced when the shell attempts `connect`, startup auto-connect, or `request-token` flows; they are not preflight requirements for process startup
 - after a successful interactive `request-token` for the default endpoint, `apshell` immediately attempts to establish the signer SSH tunnel with the newly issued token; `request-token --endpoint <alias>` saves that endpoint's token and only auto-connects when `<alias>` is the default endpoint.
