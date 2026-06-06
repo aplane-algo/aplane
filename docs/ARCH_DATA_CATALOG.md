@@ -223,7 +223,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 |---|---|---|---|---|---|
 | Admin envelope | wire contract | line-delimited JSON `kind`, `type`, `id` | request/response/notification routing | `internal/protocol`, `internal/transport` | Missing/unsupported messages yield protocol error. |
 | Passphrase messages | secret wire fields | JSON string decoded as `protocol.SensitiveBytes` | auth/unlock/changepass/store messages | `internal/protocol`, `internal/adminproto` | Handlers clone/zero mutable buffers where possible. |
-| Key management messages | wire contract | `generate_key`, `delete_key`, `import_key`, details/list | admin key operations | `internal/protocol`, `internal/adminproto` | Import mnemonic accepted only over local IPC. |
+| Key management messages | wire contract | `generate_key`, `delete_key`, `import_key`, details/list | admin key operations | `internal/protocol`, `internal/adminproto` | Import mnemonic accepted only over local IPC; generate responses omit mnemonic; export messages are retained only to deny/decode legacy requests. |
 | Template management messages | wire contract | library/install/show/import/remove/activate/deactivate messages | template/key type lifecycle | `internal/adminproto`, `internal/signertui` | Decrypted installed template source is local IPC only. |
 | Sign approval prompt | runtime wire model | signer approval coordinator request | admin `sign_request` | `internal/signerapp/approval`, `internal/adminproto` | Approval prompts carry descriptions; response attaches approver principal. |
 | Token provisioning prompt | runtime wire model | SSH enrollment request | admin token provisioning messages | `internal/signerapp/sshprovision`, `internal/adminproto` | Admin approval required before token delivery. |
@@ -311,12 +311,30 @@ maintainer explicitly reopens them:
 | `attestors/<name>.json` records are public generation references. | They help the TUI select an attestor public key but do not prove endpoint ownership or signer custody. |
 | Attested account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
 | `signerapi.SignResponse` remains source-compatibility residue. | Live `/sign` uses `GroupSignResponse`; the old type is not a separate wire authority. |
+| Admin export mnemonic messages remain compatibility residue. | Current servers deny `export_key`, `GenerateResultMessage.Mnemonic` is omitted, and recovery material is handled through encrypted backups instead of admin result payloads. |
+| `internal/signerapp/signing` still uses SDK DTOs at the service boundary. | This is deferred boundary cleanup, not a duplicate durable authority; new request DTO changes still belong in `pkg/signerapi` with fixtures. |
+| Plugin manifest `manifest_format` is the only manifest schema field. | The old `protocol_version` alias is rejected before execution; plugin JSON-RPC protocol and manifest schema are separate models. |
+| Template `ReloadReport` is a reload projection. | It verifies identity-local activation results but does not persist template authority; encrypted template files and key type state records remain the durable sources. |
 
-## Remaining Audit Backlog
+## Slice 8 Audit Closure
 
-The baseline catalog is complete enough to guide the remaining audit slices.
-The next passes should work one concrete authority/projection mismatch at a
-time:
+The final general-debt pass checked the old refactor backlog against the live
+codebase after attestation landed:
+
+| Item | Outcome |
+|---|---|
+| `cache.LSigConfig` / `cache/lsig.go` | No live code remains; the old cleanup item is obsolete. |
+| `pkg/signerapi.SignResponse` | Retained and documented as source-compatibility residue only; live `/sign` uses `GroupSignResponse`. |
+| `internal/signerapi.KeysResult.Locked` | Already documented as an internal wrapper around `/keys`, not an HTTP DTO field. |
+| Admin mnemonic export shapes | Protocol messages remain only for deny/decode compatibility; current generate/export projections do not return recovery material. |
+| Policy view/editor duplicate shapes | Current split is intentional: `appolicy` owns guided offline editing; apadmin owns whole-file view/replacement and signer policy snapshots. |
+| Template reload reports | Current report is a request/reload projection used for activation verification, not a separate persistence model. |
+| Plugin manifest schema | `manifest_format` is canonical and `protocol_version` is rejected by parser tests. |
+
+## Audit Slice Record
+
+The attestation-aware audit slices are complete. Future work should treat this
+table as the completed pass record, not as open backlog:
 
 | Slice | Focus |
 |---|---|
@@ -327,7 +345,7 @@ time:
 | 5 | Split policy storage, attestation authorization semantics, `appolicy --to-attestation`, sidecars, and audit events. |
 | 6 | HTTP/admin/SDK authorization contracts and signerapi fixtures. |
 | 7 | New-install-only config/install guarantees and generated config docs. |
-| 8 | Remaining general data-model debt after attestation authority is clean. |
+| 8 | Completed: remaining general data-model debt triaged as fixed, obsolete, compatibility residue, or deferred boundary cleanup. |
 
 ## Representative Test And Fixture Index
 
