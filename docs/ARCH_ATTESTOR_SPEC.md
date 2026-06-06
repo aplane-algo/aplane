@@ -981,12 +981,14 @@ after verifying that their decoded TxID matches `group_bytes_hex[target_index]`.
 `/sign/assemble` does not perform private signing and does not run policy.
 
 `user_source_request_id` and `attestor_source_request_id` are caller-asserted
-forensic fields. The handler records them as claims only. They are not
-cryptographic provenance until a future signed component-receipt mechanism is
-added.
+forensic fields. In the current MVP they are response/request correlation
+claims only and are not written as structured assembly audit fields. They are
+not cryptographic provenance until a future signed component-receipt mechanism
+is added.
 
-Schema-valid requests emit `ATTESTED_ASSEMBLY` audit events whether assembly
-succeeds or fails.
+Structured assembly audit is deferred. Until that lands, assembly failures are
+reported to the caller through the HTTP response and do not emit a dedicated
+`ATTESTED_ASSEMBLY` audit event.
 
 ## 14. Group Consistency
 
@@ -1112,7 +1114,22 @@ available for authentication, revocation, audit, and rate limiting.
 
 ## 17. Audit
 
-Add audit events:
+Current MVP audit behavior:
+
+- attestor-role component approvals are recorded through existing
+  `SIGN_APPROVED` audit entries,
+- attestor-role component policy rejections are recorded through existing
+  `SIGN_REJECTED` audit entries,
+- `txn_auth` carries the attestor component selector,
+- `txn_sender` carries the decoded target transaction sender,
+- `txn_details`/`reason` identify the attestation component-signing outcome,
+- `policy_rule_id` is present when a deterministic attestation policy rule
+  caused rejection.
+
+This keeps attestor component decisions visible without adding a new audit
+schema during the beta/invisible feature window.
+
+Future structured audit work may add dedicated events:
 
 ```text
 ATTESTOR_COMPONENT_REQUEST
@@ -1126,7 +1143,7 @@ USER_COMPONENT_FAILED
 ATTESTED_ASSEMBLY
 ```
 
-Component audit records include:
+Future component audit records should include:
 
 - identity ID,
 - request ID,
@@ -1145,7 +1162,7 @@ Component audit records include:
 - policy verdict phase,
 - policy rule ID when applicable.
 
-`ATTESTED_ASSEMBLY` records:
+Future `ATTESTED_ASSEMBLY` records should include:
 
 - identity ID,
 - request ID,
@@ -1547,7 +1564,8 @@ The MVP is complete when:
 - signer-side `POST /simulate` rejects attested accounts with a clear MVP
   limitation error, while `apshell send --simulate` can use the full attested
   orchestration flow and algod simulation,
-- audit records component signing and assembly,
+- audit records attestor component approvals/rejections through existing sign
+  audit events; structured component and assembly audit events are deferred,
 - backup and restore preserve attestor component keys through the normal key
   backup path,
 - contract fixtures and integration tests pass,

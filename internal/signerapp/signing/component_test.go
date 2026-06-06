@@ -427,8 +427,12 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	txn := testnetPaymentTransaction(t, source, dest, 1)
 	txn.RekeyTo = types.Address{30}
 	store := &componentKeyStore{}
+	audit := &testAuditLogger{}
 
-	_, err := (&Service{AttestationPolicy: attestationRoutePolicy(t, source, dest)}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{
+		AttestationPolicy: attestationRoutePolicy(t, source, dest),
+		AuditLog:          audit,
+	}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-rekey",
 		Role:          signerapi.ComponentSignRoleAttestor,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -443,6 +447,12 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	}
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
+	}
+	if len(audit.rejected) != 1 {
+		t.Fatalf("rejected audit entries = %#v, want one", audit.rejected)
+	}
+	if got := audit.rejected[0].policyRule; got != policy.AttestationRekeyRuleID {
+		t.Fatalf("audit policyRule = %q, want %q", got, policy.AttestationRekeyRuleID)
 	}
 }
 

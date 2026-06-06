@@ -1029,6 +1029,10 @@ Signing-audit semantics:
 - `SIGN_APPROVED` is emitted only for transactions the signer actually signs
 - foreign and passthrough entries may appear in `SIGN_REQUEST`/planning context, but are not recorded as `SIGN_APPROVED`
 - signing audit over HTTP records `transport:"http"` and the token-authenticated identity as requester
+- attestor-role component signing currently records approvals and policy
+  rejections through `SIGN_APPROVED`/`SIGN_REJECTED`; `txn_auth` is the
+  attestor component selector, `txn_sender` is the decoded target sender, and
+  `policy_rule_id` carries the deterministic attestation rule when present
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, target identity, principal attribution, action/resource details in `reason`, and remote address when available
