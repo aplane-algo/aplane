@@ -208,10 +208,10 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Group sign response | wire projection | finalized signed group | `signerapi.GroupSignResponse` | `internal/signerapp/signing` | Signed array aligns to finalized group positions. |
 | Group simulate response | wire projection | signer-internal simulation result | `signerapi.GroupSimulateResponse` | `internal/signerapp/rest` | Signed bytes do not leave signer. |
 | Mutation report | wire projection | canonicalization effects | `signerapi.MutationReport` | `internal/signerapp/signing` | Observability only, not durable authority. |
-| Cancel sign request/response | wire request/projection | live request registry lookup | `signerapi.CancelSign*` | `internal/signerapp/approval` | Request IDs are live runtime state only. |
+| Cancel sign request/response | wire request/projection | live request registry lookup | `signerapi.CancelSign*` | `internal/signerapp/approval` | Only `/sign` request IDs are live cancel handles; component/assembly IDs are correlation only. |
 | Admin generate DTOs | wire request/projection | enabled key type plus parameters | `signerapi.AdminGenerate*` | `internal/signerapp/keyadmin` | No mnemonic in REST response. |
 | Admin delete DTO | wire request/projection | address query parameter | delete response or error | `cmd/apsigner`, `internal/signerapp/keyadmin` | Missing address 400; missing key 404. |
-| Component sign request | wire request | canonical group bytes and target indices | `signerapi.ComponentSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Role is `user` or `attestor`; component key meaning is role-specific. |
+| Component sign request | wire request | canonical group bytes and target indices | `signerapi.ComponentSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Role is `user` or `attestor`; component key meaning is role-specific; omitted request IDs are generated. |
 | Component sign response | wire projection | per-target component signatures | `signerapi.ComponentSignResponse` | `internal/signerapp/signing` | Signature scheme is user key type or attestor component key type. |
 | Attested assembly request | wire request | group bytes plus user/attestor signatures | `signerapi.AttestedAssemblyRequest` | `internal/signerapp/signing` | Verifies attestor signature against embedded key in local account key. |
 | Attested assembly response | wire projection | assembled signed group bytes | `signerapi.AttestedAssemblyResponse` | `internal/signerapp/signing` | Assembly does not trust endpoint-advertised public keys. |
@@ -243,7 +243,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Attestor component message | request-scoped signing input | role byte plus target TxID | 32-byte message digest | `internal/attestor/message` | Shared by client optional verify, signer assembly, and TEAL vectors. |
 | Component signature set | request-scoped wire data | `/sign/component` response | per-target signatures by target index | `internal/signerapp/signing`, `pkg/signerapi` | Each signature is bound to one target TxID and role. |
 | Attested assembly target | request-scoped wire data | `/sign/assemble` request targets | LogicSig args packing plan | `internal/signerapp/signing` | User and attestor signatures are verified before packed bytes are returned. |
-| Attested send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | user component call, attestor call, assembly, algod submit | `internal/engine`, `internal/apshellapp` | Client holds no key material; endpoint routing is not trust. |
+| Attested send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | user component call, attestor call, assembly, algod submit/simulate | `internal/engine`, `internal/apshellapp` | Client holds no key material; endpoint routing is not trust; MVP requires every original sender to be attested. |
 
 ## Plugin, JavaScript, And MCP Models
 
@@ -280,7 +280,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 |---|---|---|---|---|---|
 | Audit event | authoritative audit record | JSONL line in `audit.log` | operational/accountability history | `internal/signerapp/audit` | Event fields are not signing inputs. |
 | Policy rule ID | stable identifier | policy constants and dynamic route grammar | audit/prompt/error context | `internal/policy` | Typos should be caught by tests; route IDs are persistent audit identifiers. |
-| Request ID | runtime correlation ID | optional request field or generated server ID | audit/cancel/prompt correlation | `pkg/signerapi`, `internal/signerapp/approval` | Syntax-limited; live cancelability is request-scoped only. |
+| Request ID | runtime correlation ID | optional request field or generated server ID | audit/cancel/prompt correlation | `pkg/signerapi`, `internal/signerapp/approval` | Syntax-limited; only live `/sign` IDs are cancelable in MVP. |
 | Keyset revision | runtime freshness marker | in-memory identity key snapshot counter | `/status` and client refresh logic | `internal/signerapp/identity`, `internal/engine` | Process-local; must not be compared across restarts. |
 
 ## Initial Audit Findings

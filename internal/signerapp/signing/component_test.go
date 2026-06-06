@@ -79,6 +79,25 @@ func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
 	}
 }
 
+func TestPrepareComponentSigningGeneratesRequestIDWhenMissing(t *testing.T) {
+	sender := types.Address{1}.String()
+	receiver := types.Address{2}.String()
+	txn := paymentTransaction(t, sender, receiver, 7)
+
+	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
+		Role:          signerapi.ComponentSignRoleUser,
+		ComponentKey:  sender,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	})
+	if err != nil {
+		t.Fatalf("PrepareComponentSigning() error = %v", err)
+	}
+	if !strings.HasPrefix(plan.RequestID, "cmp-") {
+		t.Fatalf("RequestID = %q, want cmp- prefix", plan.RequestID)
+	}
+}
+
 func TestPrepareComponentSigningUsesAttestorRoleDomain(t *testing.T) {
 	sender := types.Address{3}.String()
 	receiver := types.Address{4}.String()
@@ -707,6 +726,30 @@ func TestAssembleDecodedAttestedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil || keyMaterial.PublicKey != nil {
 		t.Fatalf("key material was not zeroed after assembly: %#v", keyMaterial)
+	}
+}
+
+func TestAssembleDecodedAttestedGeneratesRequestIDWhenMissing(t *testing.T) {
+	txn := paymentTransaction(t, types.Address{17}.String(), types.Address{18}.String(), 7)
+	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
+	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
+	if decodeErr != nil {
+		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
+	}
+	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txn})
+
+	result, signErr := assembleDecodedAttested(context.Background(), signerapi.AttestedAssemblyRequest{
+		GroupBytesHex: groupBytesHex,
+		Passthrough: []signerapi.AttestedPassthroughItem{{
+			TargetIndex:  0,
+			SignedTxnHex: hex.EncodeToString(passthroughBytes),
+		}},
+	}, group, &componentKeyTestSession{})
+	if signErr != nil {
+		t.Fatalf("assembleDecodedAttested() error = %v", signErr)
+	}
+	if !strings.HasPrefix(result.RequestID, "asm-") {
+		t.Fatalf("RequestID = %q, want asm- prefix", result.RequestID)
 	}
 }
 

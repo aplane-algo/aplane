@@ -17,6 +17,9 @@ const (
 )
 
 // ComponentSignRequest is the request payload for POST /sign/component.
+// RequestID is optional. When omitted, apsigner returns a generated response
+// ID for correlation only; component signing is not a /sign/cancel live handle
+// in the current MVP.
 type ComponentSignRequest struct {
 	RequestID     string            `json:"request_id,omitempty"`
 	Role          ComponentSignRole `json:"role"`
@@ -40,6 +43,8 @@ type ComponentSignResponse struct {
 }
 
 // AttestedAssemblyRequest is the request payload for POST /sign/assemble.
+// RequestID is optional. When omitted, apsigner returns a generated response
+// ID for correlation only; assembly is not a /sign/cancel live handle.
 type AttestedAssemblyRequest struct {
 	RequestID     string                    `json:"request_id,omitempty"`
 	GroupBytesHex []string                  `json:"group_bytes_hex"`

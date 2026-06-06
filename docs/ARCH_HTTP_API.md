@@ -165,6 +165,11 @@ that target's TxID.
 - `signatures[]`
 - each signature has `target_index`, `signature`, and `signature_scheme`
 
+If the request omits `request_id`, apsigner returns a generated opaque ID with
+the same syntax limits as `/sign` request IDs. Component request IDs are
+correlation fields only in the current attestor MVP; they are not registered in
+the live `/sign/cancel` registry.
+
 `/sign/assemble` request (`signerapi.AttestedAssemblyRequest`):
 
 - optional `request_id`
@@ -185,6 +190,10 @@ Assembly verifies the attestor signature against the attestor public key
 embedded in the local attested account key. It does not trust endpoint-provided
 metadata or `/keys` self-reporting as ownership proof.
 
+If the request omits `request_id`, apsigner returns a generated opaque ID.
+Assembly request IDs are response/audit correlation fields only and are not
+cancelable through `/sign/cancel`.
+
 `/sign/cancel` request (`signerapi.CancelSignRequest`):
 
 - `request_id`
@@ -195,10 +204,12 @@ metadata or `/keys` self-reporting as ownership proof.
 - `state`
 - optional `error`
 
-`/sign/cancel` withdraws a live synchronous `/sign` request. It is
-idempotent for client behavior. A valid, authenticated cancel request returns
-`200` with `success:true`; cancellation miss is represented in `state`, not as
-an HTTP error.
+`/sign/cancel` withdraws a live synchronous `/sign` request. It is idempotent
+for client behavior. A valid, authenticated cancel request returns `200` with
+`success:true`; cancellation miss is represented in `state`, not as an HTTP
+error. `/sign/component` and `/sign/assemble` request IDs are not live cancel
+handles in the current MVP and return `not_found` if supplied to
+`/sign/cancel`.
 
 Cancel response states:
 

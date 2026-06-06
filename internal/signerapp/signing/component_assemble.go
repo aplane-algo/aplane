@@ -37,6 +37,7 @@ func assembleDecodedAttested(ctx context.Context, req signerapi.AttestedAssembly
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
+	req.RequestID = attestedRequestID("asm", req.RequestID)
 	if len(group.Entries) != len(req.GroupBytesHex) {
 		return nil, internal("attested assembly group length does not match request")
 	}
