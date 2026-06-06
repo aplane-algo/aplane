@@ -191,7 +191,7 @@ func runRemoteMode(clientDataDirFlag string) {
 		os.Exit(1)
 	}
 
-	logInfof("connecting to signer via SSH admin subsystem (%s:%d)", remoteCfg.config.SSH.Host, remoteCfg.config.SSH.Port)
+	logInfof("connecting to signer via SSH admin subsystem (%s:%d)", remoteCfg.config.LegacySSH.Host, remoteCfg.config.LegacySSH.Port)
 	if isTestMode() {
 		runRemoteTestMode(remoteCfg, flag.Args())
 		return

@@ -189,11 +189,11 @@ endpoints:
 	if got.Token != "test-token" {
 		t.Fatalf("Token = %q, want test-token", got.Token)
 	}
-	if got.Config.SSH.Host != "signer.local" {
-		t.Fatalf("Host = %q", got.Config.SSH.Host)
+	if got.Config.LegacySSH.Host != "signer.local" {
+		t.Fatalf("Host = %q", got.Config.LegacySSH.Host)
 	}
-	if got.Config.SSH.KnownHostsPath != filepath.Join(dir, "hosts/known_hosts") {
-		t.Fatalf("KnownHostsPath = %q", got.Config.SSH.KnownHostsPath)
+	if got.Config.LegacySSH.KnownHostsPath != filepath.Join(dir, "hosts/known_hosts") {
+		t.Fatalf("KnownHostsPath = %q", got.Config.LegacySSH.KnownHostsPath)
 	}
 }
 

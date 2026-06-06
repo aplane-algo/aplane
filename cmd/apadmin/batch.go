@@ -260,11 +260,11 @@ func runRemoteTestMode(remoteCfg *remoteAdminConfig, args []string) {
 
 	client := newTestModeClient()
 	conn := transport.NewSSHAdmin(
-		remoteCfg.config.SSH.Host,
-		remoteCfg.config.SSH.Port,
+		remoteCfg.config.LegacySSH.Host,
+		remoteCfg.config.LegacySSH.Port,
 		remoteCfg.token,
-		remoteCfg.config.SSH.IdentityFile,
-		remoteCfg.config.SSH.KnownHostsPath,
+		remoteCfg.config.LegacySSH.IdentityFile,
+		remoteCfg.config.LegacySSH.KnownHostsPath,
 	)
 	if err := client.Connect(conn); err != nil {
 		logErrorf("%v", formatRemoteConnectError(err, false))

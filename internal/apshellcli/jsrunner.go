@@ -28,13 +28,13 @@ func runJSScriptMode(network string, config config.Config, dataDir string, scrip
 	}
 
 	// Auto-connect to Signer via SSH tunnel (best-effort)
-	if config.SSH != nil {
+	if config.LegacySSH != nil {
 		token, _ := tokenfile.LoadApshellTokenFromDataDir(dataDir)
 		if token != "" {
 			localPort, portErr := jsRunnerFindAvailablePort()
 			if portErr == nil {
-				target := fmt.Sprintf("%s (ssh:%d, signer:%d)", config.SSH.Host, config.SSH.Port, config.SignerPort)
-				_, _ = eng.ConnectWithTunnel(target, config.SSH.Host, config.SSH.Port, localPort, config.SignerPort, token, config.SSH.IdentityFile, config.SSH.KnownHostsPath, nil, nil)
+				target := fmt.Sprintf("%s (ssh:%d, signer:%d)", config.LegacySSH.Host, config.LegacySSH.Port, config.LegacySignerPort)
+				_, _ = eng.ConnectWithTunnel(target, config.LegacySSH.Host, config.LegacySSH.Port, localPort, config.LegacySignerPort, token, config.LegacySSH.IdentityFile, config.LegacySSH.KnownHostsPath, nil, nil)
 			}
 		}
 	}
@@ -74,13 +74,13 @@ func runJSExpression(network string, config config.Config, dataDir string, expr 
 	}
 
 	// Auto-connect to Signer via SSH tunnel (best-effort)
-	if config.SSH != nil {
+	if config.LegacySSH != nil {
 		token, _ := tokenfile.LoadApshellTokenFromDataDir(dataDir)
 		if token != "" {
 			localPort, portErr := jsRunnerFindAvailablePort()
 			if portErr == nil {
-				target := fmt.Sprintf("%s (ssh:%d, signer:%d)", config.SSH.Host, config.SSH.Port, config.SignerPort)
-				_, _ = eng.ConnectWithTunnel(target, config.SSH.Host, config.SSH.Port, localPort, config.SignerPort, token, config.SSH.IdentityFile, config.SSH.KnownHostsPath, nil, nil)
+				target := fmt.Sprintf("%s (ssh:%d, signer:%d)", config.LegacySSH.Host, config.LegacySSH.Port, config.LegacySignerPort)
+				_, _ = eng.ConnectWithTunnel(target, config.LegacySSH.Host, config.LegacySSH.Port, localPort, config.LegacySignerPort, token, config.LegacySSH.IdentityFile, config.LegacySSH.KnownHostsPath, nil, nil)
 			}
 		}
 	}

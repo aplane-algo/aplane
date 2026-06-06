@@ -41,6 +41,11 @@ type PublishSnapshotFunc func(keys map[string]string, keyTypes map[string]string
 type WarnFunc func(msg string)
 type InfoFunc func(msg string)
 
+// ReloadReport is a request-scoped projection of one identity reload. It
+// describes what the reload accepted or rejected for callers such as template
+// administration; it is not persisted and is not template/key-type state.
+// Durable authority remains in encrypted template files and keytypestate
+// records.
 type ReloadReport struct {
 	KeyCount         int
 	TemplateNotices  []string

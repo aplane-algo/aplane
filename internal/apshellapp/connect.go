@@ -121,7 +121,7 @@ func (a *App) ConnectEndpoint(ctx context.Context, alias string, endpoint config
 	}
 	signerPort := endpoint.SignerPort
 	if signerPort == 0 {
-		signerPort = a.Config.SignerPort
+		signerPort = a.Config.LegacySignerPort
 	}
 	return a.Connect(ctx, ConnectRequest{
 		Host:            host,

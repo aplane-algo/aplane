@@ -172,8 +172,8 @@ func normalizeClientEndpointConfig(dataDir string, cfg Config, alias string, end
 	if strings.HasPrefix(endpoint.URL, "ssh://") {
 		defaultSSH := DefaultSSHClientConfig()
 		if endpoint.SignerPort == 0 {
-			if cfg.SignerPort != 0 {
-				endpoint.SignerPort = cfg.SignerPort
+			if cfg.LegacySignerPort != 0 {
+				endpoint.SignerPort = cfg.LegacySignerPort
 			} else {
 				endpoint.SignerPort = DefaultRESTPort
 			}

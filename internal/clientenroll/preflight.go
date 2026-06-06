@@ -52,7 +52,7 @@ func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s default signer endpoint is invalid: %w", opts.Product, err)
 	}
-	cfg.SSH = &config.SSHClientConfig{
+	cfg.LegacySSH = &config.SSHClientConfig{
 		Host:           host,
 		Port:           sshPort,
 		IdentityFile:   endpoint.IdentityFile,
@@ -83,7 +83,7 @@ func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 }
 
 func requireKnownHost(cfg config.Config, opts Options) error {
-	knownHostsPath := cfg.SSH.KnownHostsPath
+	knownHostsPath := cfg.LegacySSH.KnownHostsPath
 	callback, err := knownhosts.New(knownHostsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -97,8 +97,8 @@ func requireKnownHost(cfg config.Config, opts Options) error {
 		return fmt.Errorf("failed to prepare known_hosts check: %w", err)
 	}
 
-	address := net.JoinHostPort(cfg.SSH.Host, strconv.Itoa(cfg.SSH.Port))
-	remote := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: cfg.SSH.Port}
+	address := net.JoinHostPort(cfg.LegacySSH.Host, strconv.Itoa(cfg.LegacySSH.Port))
+	remote := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: cfg.LegacySSH.Port}
 	err = callback(address, remote, dummyKey)
 	if err == nil {
 		return fmt.Errorf("%s known_hosts entry for %s matches an invalid placeholder key; remove it from %s and trust the real signer host key", opts.Product, address, knownHostsPath)

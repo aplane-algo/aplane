@@ -169,6 +169,59 @@ func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
 	}
 }
 
+func TestSyncDiscoveredRejectsMismatchedComponentSelector(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	pub := bytesOfLen(32, 0xab)
+	otherPub := bytesOfLen(32, 0xcd)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, otherPub)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+
+	_, err = SyncDiscovered(paths, "default", []DiscoveredRecord{{
+		EndpointAlias: "attestor-local",
+		ComponentKey:  componentKey,
+		KeyType:       keytypes.AttestorComponentEd25519V1,
+		PublicKeyHex:  hex.EncodeToString(pub),
+	}})
+	if err == nil {
+		t.Fatal("SyncDiscovered() error = nil, want selector/public-key mismatch rejection")
+	}
+	if !strings.Contains(err.Error(), "does not match public key") {
+		t.Fatalf("SyncDiscovered() error = %v, want component selector mismatch", err)
+	}
+}
+
+func TestSyncDiscoveredRejectsSamePublicKeyFromMultipleEndpoints(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	pub := bytesOfLen(32, 0xab)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, pub)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+
+	_, err = SyncDiscovered(paths, "default", []DiscoveredRecord{
+		{
+			EndpointAlias: "attestor-a",
+			ComponentKey:  componentKey,
+			KeyType:       keytypes.AttestorComponentEd25519V1,
+			PublicKeyHex:  hex.EncodeToString(pub),
+		},
+		{
+			EndpointAlias: "attestor-b",
+			ComponentKey:  componentKey,
+			KeyType:       keytypes.AttestorComponentEd25519V1,
+			PublicKeyHex:  strings.ToUpper(hex.EncodeToString(pub)),
+		},
+	})
+	if err == nil {
+		t.Fatal("SyncDiscovered() error = nil, want duplicate public-key route rejection")
+	}
+	if !strings.Contains(err.Error(), "appears under multiple endpoint aliases") {
+		t.Fatalf("SyncDiscovered() error = %v, want duplicate endpoint rejection", err)
+	}
+}
+
 func TestSyncDiscoveredReplacesOnlyClientDiscoveryReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	manualPub := bytesOfLen(32, 0xab)

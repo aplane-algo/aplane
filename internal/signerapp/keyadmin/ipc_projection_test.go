@@ -4,7 +4,9 @@
 package keyadmin
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/keymgmt"
@@ -26,6 +28,13 @@ func TestProjectGenerateIPC(t *testing.T) {
 	}
 	if got, want := result.Parameters["owner"], "alice"; got != want {
 		t.Fatalf("Parameters[owner] = %q, want %q", got, want)
+	}
+	wire, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Marshal(result) error = %v", err)
+	}
+	if strings.Contains(strings.ToLower(string(wire)), "mnemonic") || strings.Contains(string(wire), "one two three") {
+		t.Fatalf("Generate IPC projection leaked mnemonic material: %s", wire)
 	}
 
 	errCases := []struct {

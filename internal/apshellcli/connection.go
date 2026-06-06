@@ -13,7 +13,7 @@ import (
 // connectTunnelWithKey establishes an SSH tunnel using public key authentication.
 // SSH prompts and host trust remain in the shell; connection orchestration lives in apshellapp.
 func connectTunnelWithKey(r *REPLState, host string, sshPort, signerPort int) error {
-	if r.Config.SSH == nil {
+	if r.Config.LegacySSH == nil {
 		return fmt.Errorf("SSH defaults are not configured; use 'connect <endpoint-alias>' with an endpoints.yaml profile")
 	}
 
@@ -27,8 +27,8 @@ func connectTunnelWithKey(r *REPLState, host string, sshPort, signerPort int) er
 		Host:            host,
 		SSHPort:         sshPort,
 		SignerPort:      signerPort,
-		IdentityFile:    r.Config.SSH.IdentityFile,
-		KnownHostsPath:  r.Config.SSH.KnownHostsPath,
+		IdentityFile:    r.Config.LegacySSH.IdentityFile,
+		KnownHostsPath:  r.Config.LegacySSH.KnownHostsPath,
 		HostKeyApproval: hostKeyApproval,
 		OnDisconnect: func() {
 			r.println("⚠️  Disconnected from signer")
@@ -113,7 +113,7 @@ func requestToken(r *REPLState, host string, sshPort int) error {
 	r.println("This requires an operator (apadmin) to approve on the server.")
 	r.println()
 
-	if r.Config.SSH == nil {
+	if r.Config.LegacySSH == nil {
 		return fmt.Errorf("SSH defaults are not configured; use 'request-token --endpoint <alias>' with an endpoints.yaml profile")
 	}
 
@@ -122,8 +122,8 @@ func requestToken(r *REPLState, host string, sshPort int) error {
 	result, err := r.app().RequestToken(r.commandContext(), apshellapp.RequestTokenRequest{
 		Host:                  host,
 		SSHPort:               sshPort,
-		IdentityFile:          r.Config.SSH.IdentityFile,
-		KnownHostsPath:        r.Config.SSH.KnownHostsPath,
+		IdentityFile:          r.Config.LegacySSH.IdentityFile,
+		KnownHostsPath:        r.Config.LegacySSH.KnownHostsPath,
 		HostKeyApproval:       hostKeyApproval,
 		OnProvisioningStarted: r.printTokenProvisioningWait,
 	})
@@ -135,7 +135,7 @@ func requestToken(r *REPLState, host string, sshPort int) error {
 		r.println(line)
 	}
 	r.println("Connecting to signer with new token...")
-	return connectTunnelWithKey(r, host, sshPort, r.Config.SignerPort)
+	return connectTunnelWithKey(r, host, sshPort, r.Config.LegacySignerPort)
 }
 
 func requestTokenConfigured(r *REPLState) error {

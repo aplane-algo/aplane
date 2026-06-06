@@ -25,11 +25,11 @@ func loadRemoteAdminConfig(clientDataDirFlag string) (*remoteAdminConfig, error)
 	theme.Init(cfg.Theme)
 
 	connector := &tui.SSHAdminConnector{
-		Host:           cfg.SSH.Host,
-		Port:           cfg.SSH.Port,
+		Host:           cfg.LegacySSH.Host,
+		Port:           cfg.LegacySSH.Port,
 		Token:          prereqs.token,
-		IdentityFile:   cfg.SSH.IdentityFile,
-		KnownHostsPath: cfg.SSH.KnownHostsPath,
+		IdentityFile:   cfg.LegacySSH.IdentityFile,
+		KnownHostsPath: cfg.LegacySSH.KnownHostsPath,
 	}
 
 	return &remoteAdminConfig{

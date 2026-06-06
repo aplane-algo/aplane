@@ -84,6 +84,9 @@ func TestEndpointSyncAttestorsProgressListsComponentsBeforePrompt(t *testing.T) 
 	if !strings.Contains(joined, componentKey) {
 		t.Fatalf("progress output = %q, want component key %s", joined, componentKey)
 	}
+	if strings.Contains(joined, publicKeyHex) || strings.Contains(joined, strings.ToUpper(publicKeyHex)) {
+		t.Fatalf("progress output leaked raw attestor public key: %q", joined)
+	}
 	if strings.Contains(out.String(), componentKey) {
 		t.Fatalf("captured output = %q, component key should be live progress before prompt", out.String())
 	}
@@ -93,10 +96,12 @@ func TestRenderEndpointAttestorsOmitsLastSeen(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
+	publicKeyHex := strings.Repeat("ab", 32)
+	componentKey := endpointCLITestComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
 	state.renderEndpointAttestors(&apshellapp.EndpointAttestorsResult{
 		Attestors: []apshellapp.EndpointAttestorEntry{{
 			EndpointAlias: "attestor-local",
-			ComponentKey:  "a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078",
+			ComponentKey:  componentKey,
 			KeyType:       keytypes.AttestorComponentEd25519V1,
 			LastSeenAt:    "2026-06-04T00:00:00Z",
 		}},
@@ -106,8 +111,11 @@ func TestRenderEndpointAttestorsOmitsLastSeen(t *testing.T) {
 	if strings.Contains(rendered, "LAST SEEN") || strings.Contains(rendered, "2026-06-04T00:00:00Z") {
 		t.Fatalf("rendered attestors = %q, want no last-seen column or timestamp", rendered)
 	}
-	if !strings.Contains(rendered, "a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078") {
+	if !strings.Contains(rendered, componentKey) {
 		t.Fatalf("rendered attestors = %q, want component key", rendered)
+	}
+	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
+		t.Fatalf("rendered attestors leaked raw attestor public key: %q", rendered)
 	}
 }
 
@@ -115,17 +123,19 @@ func TestRenderEndpointShowIncludesAttestorLastSeen(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
+	publicKeyHex := strings.Repeat("cd", 32)
+	componentKey := endpointCLITestComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
 	state.renderEndpointShow(&apshellapp.EndpointShowResult{
 		Endpoint: apshellapp.EndpointEntry{
 			Alias: "attestor-local",
 			Role:  config.ClientEndpointRoleAttestor,
 			URL:   "ssh://127.0.0.1:2223",
 			PublishedAttestorComponents: []string{
-				"a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078",
+				componentKey,
 			},
 			PublishedAttestors: []apshellapp.EndpointAttestorEntry{{
 				EndpointAlias: "attestor-local",
-				ComponentKey:  "a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078",
+				ComponentKey:  componentKey,
 				KeyType:       keytypes.AttestorComponentEd25519V1,
 				LastSeenAt:    "2026-06-04T00:00:00Z",
 			}},
@@ -135,6 +145,12 @@ func TestRenderEndpointShowIncludesAttestorLastSeen(t *testing.T) {
 	rendered := out.String()
 	if !strings.Contains(rendered, "LAST SEEN") || !strings.Contains(rendered, "2026-06-04T00:00:00Z") {
 		t.Fatalf("rendered endpoint show = %q, want last-seen detail", rendered)
+	}
+	if !strings.Contains(rendered, componentKey) {
+		t.Fatalf("rendered endpoint show = %q, want component key", rendered)
+	}
+	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
+		t.Fatalf("rendered endpoint show leaked raw attestor public key: %q", rendered)
 	}
 }
 

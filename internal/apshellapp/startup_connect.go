@@ -25,7 +25,7 @@ func (a *App) StartupConnectDecision() *StartupConnectDecision {
 		if err == nil {
 			signerPort := endpoint.SignerPort
 			if signerPort == 0 {
-				signerPort = a.Config.SignerPort
+				signerPort = a.Config.LegacySignerPort
 			}
 			decision.HasSSHConfig = true
 			decision.Host = host

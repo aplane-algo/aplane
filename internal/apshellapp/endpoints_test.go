@@ -207,6 +207,28 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	}
 }
 
+func TestEndpointAttestorsRenderComponentSelectorsOnly(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+	envelopePath := writeEndpointEnvelope(t, dataDir)
+	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
+		Alias: "attestor-local",
+		Role:  config.ClientEndpointRoleAttestor,
+		Path:  envelopePath,
+	}); err != nil {
+		t.Fatalf("EndpointImport() error = %v", err)
+	}
+	publicKeyHex := testAttestorPublicKeyHex()
+	componentID := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	writePublishedAttestor(t, dataDir, "attestor-local", publicKeyHex)
+
+	attestors, err := app.EndpointAttestors(context.Background())
+	if err != nil {
+		t.Fatalf("EndpointAttestors() error = %v", err)
+	}
+	assertHumanEndpointOutputUsesComponentOnly(t, attestors.RenderLines, publicKeyHex, componentID)
+}
+
 func TestEndpointDiscoverAttestorsRebuildsMappingsFromAllEndpoints(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
@@ -251,6 +273,7 @@ func TestEndpointDiscoverAttestorsRebuildsMappingsFromAllEndpoints(t *testing.T)
 	if len(result.Endpoints) != 1 {
 		t.Fatalf("discovered endpoints = %d, want 1", len(result.Endpoints))
 	}
+	assertHumanEndpointOutputUsesComponentOnly(t, result.RenderLines, publicKeyHex, componentSelector)
 
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
@@ -539,6 +562,8 @@ func TestEndpointSyncAttestorsDryRunUsesPublishedInventory(t *testing.T) {
 	if !strings.HasPrefix(rec.Name, "endpoint-attestor-local-a_") {
 		t.Fatalf("record name = %q, want endpoint-attestor-local-a_ prefix", rec.Name)
 	}
+	componentID := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	assertHumanEndpointOutputUsesComponentOnly(t, result.RenderLines, publicKeyHex, componentID)
 }
 
 func TestEndpointDefaultSetsSigningEndpoint(t *testing.T) {
@@ -714,6 +739,17 @@ func testComponentSelector(t *testing.T, keyType, publicKeyHex string) string {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 	return selector
+}
+
+func assertHumanEndpointOutputUsesComponentOnly(t *testing.T, lines []string, publicKeyHex, componentID string) {
+	t.Helper()
+	output := strings.Join(lines, "\n")
+	if !strings.Contains(output, componentID) {
+		t.Fatalf("endpoint output = %q, want component selector %s", output, componentID)
+	}
+	if strings.Contains(output, publicKeyHex) || strings.Contains(output, strings.ToUpper(publicKeyHex)) {
+		t.Fatalf("endpoint output leaked raw attestor public key: %q", output)
+	}
 }
 
 func newEndpointKeysServer(t *testing.T, token string, keys []signerapi.KeyInfo) *httptest.Server {

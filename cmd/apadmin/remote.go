@@ -59,7 +59,7 @@ func loadRemoteAdminConfig(clientDataDirFlag string, _ bool) (*remoteAdminConfig
 	if err != nil {
 		return nil, fmt.Errorf("remote mode default signer endpoint is invalid: %w", err)
 	}
-	cfg.SSH = &config.SSHClientConfig{
+	cfg.LegacySSH = &config.SSHClientConfig{
 		Host:           host,
 		Port:           sshPort,
 		IdentityFile:   endpoint.IdentityFile,
@@ -83,11 +83,11 @@ func loadRemoteAdminConfig(clientDataDirFlag string, _ bool) (*remoteAdminConfig
 	}
 
 	connector := tui.SSHAdminConnector{
-		Host:           cfg.SSH.Host,
-		Port:           cfg.SSH.Port,
+		Host:           cfg.LegacySSH.Host,
+		Port:           cfg.LegacySSH.Port,
 		Token:          token,
-		IdentityFile:   cfg.SSH.IdentityFile,
-		KnownHostsPath: cfg.SSH.KnownHostsPath,
+		IdentityFile:   cfg.LegacySSH.IdentityFile,
+		KnownHostsPath: cfg.LegacySSH.KnownHostsPath,
 	}
 
 	return &remoteAdminConfig{
@@ -99,7 +99,7 @@ func loadRemoteAdminConfig(clientDataDirFlag string, _ bool) (*remoteAdminConfig
 }
 
 func requireRemoteKnownHost(cfg config.Config) error {
-	knownHostsPath := cfg.SSH.KnownHostsPath
+	knownHostsPath := cfg.LegacySSH.KnownHostsPath
 	callback, err := knownhosts.New(knownHostsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -113,8 +113,8 @@ func requireRemoteKnownHost(cfg config.Config) error {
 		return fmt.Errorf("failed to prepare known_hosts check: %w", err)
 	}
 
-	address := net.JoinHostPort(cfg.SSH.Host, strconv.Itoa(cfg.SSH.Port))
-	remote := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: cfg.SSH.Port}
+	address := net.JoinHostPort(cfg.LegacySSH.Host, strconv.Itoa(cfg.LegacySSH.Port))
+	remote := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: cfg.LegacySSH.Port}
 	err = callback(address, remote, dummyKey)
 	if err == nil {
 		return fmt.Errorf("remote apadmin known_hosts entry for %s matches an invalid placeholder key; remove it from %s and trust the real signer host key", address, knownHostsPath)
