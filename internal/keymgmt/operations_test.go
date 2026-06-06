@@ -171,17 +171,23 @@ func TestValidKeyTypesIncludeAttestorComponentKey(t *testing.T) {
 	}
 }
 
-func TestValidKeyTypesIncludeFalcon1024AttestedKey(t *testing.T) {
+func TestValidKeyTypesIncludeActivatedFalcon1024AttestedKey(t *testing.T) {
 	for _, keyType := range []string{
 		falcon1024attested.KeyTypeV1,
 		falcon1024attested.KeyTypeFalcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
-			if !containsKeyType(GetValidKeyTypes(), keyType) {
-				t.Fatalf("GetValidKeyTypes() missing %s", keyType)
+			if containsKeyType(GetValidKeyTypes(), keyType) {
+				t.Fatalf("GetValidKeyTypes() included library-only provider %s without activation", keyType)
 			}
-			if !IsValidKeyType(keyType) {
-				t.Fatalf("IsValidKeyType() rejected %s", keyType)
+			if IsValidKeyType(keyType) {
+				t.Fatalf("IsValidKeyType() accepted library-only provider %s without activation", keyType)
+			}
+			if !containsKeyType(GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
+				t.Fatalf("GetValidKeyTypesWithActivated() missing activated %s", keyType)
+			}
+			if !IsValidKeyTypeWithActivated(keyType, []string{keyType}) {
+				t.Fatalf("IsValidKeyTypeWithActivated() rejected activated %s", keyType)
 			}
 		})
 	}
@@ -196,7 +202,7 @@ func TestGenerateKeyFalcon1024AttestedRequiresAttestorPublicKey(t *testing.T) {
 		falcon1024attested.KeyTypeFalcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
-			_, err := GenerateKey(paths, "test-identity", keyType, masterKey, nil)
+			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, masterKey, nil, []string{keyType})
 			if err == nil || !strings.Contains(err.Error(), "missing required parameter: attestor_public_key") {
 				t.Fatalf("GenerateKey(attested missing params) error = %v, want missing attestor_public_key", err)
 			}
@@ -226,9 +232,17 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
 			masterKey := []byte("0123456789abcdef0123456789abcdef")
 
-			result, err := GenerateKey(paths, "test-identity", tt.keyType, masterKey, map[string]string{
-				falcon1024attested.ParamAttestorPublicKey: tt.attestorPublicKey,
-			})
+			result, err := GenerateKeyWithActivatedContext(
+				context.Background(),
+				paths,
+				"test-identity",
+				tt.keyType,
+				masterKey,
+				map[string]string{
+					falcon1024attested.ParamAttestorPublicKey: tt.attestorPublicKey,
+				},
+				[]string{tt.keyType},
+			)
 			if err != nil {
 				t.Fatalf("GenerateKey(attested) error = %v", err)
 			}

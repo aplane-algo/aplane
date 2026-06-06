@@ -173,10 +173,10 @@ export APCLIENT_DATA=/custom/path
 
 - All connections use SSH tunneling for uniform per-client identity
 - Clients store signer routing in `endpoints.yaml`
-- If `config.yaml` still contains legacy `ssh:` signer settings and
-  `endpoints.yaml` has no signer endpoint, `apshell` and the apconsole shell
-  pane refuse to start. Run `migrate-config-v1 -d "$APCLIENT_DATA"` to create
-  `endpoints.yaml` explicitly.
+- This release is new-install-only for apclient routing. Top-level `ssh:`
+  signer settings in `config.yaml` are not supported by `apshell` or the
+  apconsole shell pane; create a fresh apclient data directory or write signer
+  routing in `endpoints.yaml`.
 - Edit `endpoints.yaml` or use `endpoints import-public` to change signer
   endpoint routing
 
@@ -190,10 +190,8 @@ normal endpoint-registry setup, it reads the default signer from
 connect
 ```
 
-Older single-endpoint clients that still keep signer routing in the `ssh:`
-block of `config.yaml` must be converted to `endpoints.yaml` before starting
-`apshell` or the apconsole shell pane. Startup does not rewrite client config;
-run `migrate-config-v1 -d "$APCLIENT_DATA"` to perform the one-time conversion.
+Client signer routing must be present in `endpoints.yaml`. Startup does not
+rewrite client config or synthesize endpoint records from `config.yaml`.
 
 For endpoint aliases, the preferred handoff is for the signer operator to
 export a public endpoint envelope and for the client to import it:

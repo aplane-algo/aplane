@@ -138,9 +138,7 @@ source /path/to/aplane/apenv.sh
 ```
 
 This adds the binary directories to `PATH` and exports
-`APLANE_INSTALL_ROOT`, `APSIGNER_DATA`, and `APCLIENT_DATA`. After sourcing
-it, rerunning `./install.sh` without a path reinstalls the same local root
-because `APLANE_INSTALL_ROOT` supplies the omitted `[path]`.
+`APLANE_INSTALL_ROOT`, `APSIGNER_DATA`, and `APCLIENT_DATA`.
 
 ### Starting the system
 
@@ -194,14 +192,13 @@ Simply install to different paths:
 
 Each instance gets its own random ports, keystore, and `start.sh` launcher. They can run simultaneously without interference.
 
-### Re-running the installer
+### Existing install paths
 
-Re-running `install.sh` on an existing path is the local upgrade path. Stop
-the signer for that install first; on existing local installs, the installer
-uses bundled `approbe` to test the signer's IPC socket and refuses to replace
-binaries while that socket is reachable.
+This release is new-install-only. Do not install it over an existing APlane
+data directory as an upgrade target; create a fresh install root and fresh
+`apclient`/`apsigner` data directories.
 
-When the signer is stopped, re-running is safe:
+The installer is still conservative when pointed at an existing path:
 - Existing `config.yaml` files are left unchanged
 - `apconsole.yaml` is refreshed with the local console profile
 - Bundled plugin catalog payloads, currently
@@ -213,10 +210,12 @@ When the signer is stopped, re-running is safe:
   remediation command instead of leaving stale bundled plugins in place.
 - Plugin activation is controlled by `apclient/plugins.yaml`. On first install
   the installer creates an empty activation list; existing activation choices
-  are preserved on upgrade.
-- If local signer/client ports disagree, the installer warns. Previous-shape client config is converted with `migrate-config-v1`; current-shape endpoint routing is edited in `apclient/endpoints.yaml`.
+  are preserved when the installer is re-run.
+- If local signer/client ports disagree, the installer warns. Client signer
+  routing is edited in `apclient/endpoints.yaml`.
 - A canonical template is written to `config.yaml.aplane-installer.new` for review
-- Keystore init is skipped if `.keystore` already exists
+- If an initialized signer keystore already exists, the installer stops and
+  asks you to use a fresh install root
 
 To inspect an environment without changing it, run:
 
@@ -277,10 +276,6 @@ This bootstrap script:
 - Runs the bundled `install.sh`
 - In `--systemd` mode, enables and starts the `apsigner` systemd service
 
-Re-running the same bootstrap command is the upgrade path for users who do not
-have a repo checkout. It downloads the selected release and runs the bundled
-idempotent `install.sh` again.
-
 Useful options:
 
 ```bash
@@ -312,60 +307,13 @@ curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-i
 
 ---
 
-## Upgrading
+## New-Install-Only Release
 
-APlane upgrades use the same `install.sh` flow as first-time installs. Do not
-uninstall first unless you intentionally want to remove installer-managed
-files; uninstall preserves state by default, but it is not required for an
-upgrade.
-
-For repo-less local installs, stop any running signer for that install, then
-rerun the bootstrap command with the same path:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
-  bash -s -- /path/to/aplane
-```
-
-For existing local installs, `install.sh` uses the bundled `approbe` helper to
-test the signer's IPC socket before replacing binaries. If the signer is still
-running, the installer refuses to continue until it is stopped.
-
-For Systemd installs, stop the service, then rerun bootstrap with the
-same systemd options:
-
-```bash
-sudo systemctl stop apsigner
-curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \
-  bash -s -- --systemd
-```
-
-From an extracted release tarball, run the bundled installer again:
-
-```bash
-./install.sh /path/to/aplane
-sudo systemctl stop apsigner
-sudo ./install.sh --systemd
-```
-
-On existing installs, `install.sh` replaces binaries and refreshed helper
-files, preserves existing `config.yaml` files and keystores, writes
-`config.yaml.aplane-installer.new` for review, and repairs known partial
-installer state where it can do so safely.
-
-### Pre-`v1.0` Upgrade Notes
-
-Before APlane reaches `v1.0`, compatibility is release-to-release. Existing
-signing keys remain supported as-is. Config files, identity settings, admin/API
-field names, caches, and examples may need to be recreated or reviewed after
-upgrade unless this guide names a specific transition. For this release, the
-explicit transition is previous-shape apclient signer routing to
-`endpoints.yaml` with `migrate-config-v1`.
-
-If an existing initialized store has `policy.yaml` but no `policy.yaml.hmac`,
-the upgrade prompts to sign the current policy with the store passphrase. The
-signer requires that sidecar before unlock/reload. If no `policy.yaml` exists,
-the installer creates an empty policy baseline and signs it.
+This release is not an in-place upgrade target for existing APlane installs.
+Install into a fresh root and initialize fresh `apclient` and `apsigner` data
+directories. Preserve old install directories separately until you have
+confirmed the fresh environment has the keys, policy, endpoint routing, tokens,
+and network configuration you intend to use.
 
 ---
 
@@ -388,7 +336,6 @@ Or from an extracted release tarball:
 
 This installs:
 - `~/aplane/apclient/bin/apshell` — the transaction shell binary
-- `~/aplane/apclient/bin/migrate-config-v1` — one-time legacy client endpoint migration utility
 - `~/aplane/apclient/config.yaml` — client configuration (network and UI defaults)
 - `~/aplane/apclient/endpoints.yaml` — client endpoint registry; new installs start with a `primary` signer endpoint
 - `~/aplane/apclient/.mcp.json` — MCP client configuration for `apshell --mcp`
@@ -453,7 +400,7 @@ aplane/
 ├── library/
 │   └── templates/  # Optional template library copied into $APSIGNER_DATA/library/templates
 ├── plugins.available/ # Bundled plugin catalog
-├── install.sh      # Idempotent installer and upgrade path
+├── install.sh      # Installer
 └── uninstall.sh    # State-preserving uninstaller
 ```
 
@@ -473,14 +420,14 @@ across `sudo` explicitly:
 sudo APLANE_INSTALL_ROOT="$APLANE_INSTALL_ROOT" APLANE_BINDIR="$APLANE_BINDIR" ./install.sh --systemd
 ```
 
-Re-running `install.sh` from an extracted tarball is safe and is the supported
-upgrade path, subject to the same live-process gates as bootstrap upgrades:
-stop the local signer before local upgrades, and stop `apsigner.service` before
-`--systemd` upgrades.
+Do not use this release to upgrade an existing install in place. For a fresh
+install, run `install.sh` against a new local root or use `--systemd` with a
+fresh signer data directory.
 
 - Existing `config.yaml` is left unchanged
 - A canonical template is written to `config.yaml.aplane-installer.new`
-- Keystore init is skipped if `.keystore` already exists
+- If an initialized signer keystore already exists, the installer stops and
+  asks you to use a fresh install root
 
 If `config.yaml.aplane-installer.new` is created, review and merge intentionally:
 
@@ -536,27 +483,23 @@ For unattended operation, install normally first, stop the service, then use
 `sudo appass -d /var/lib/apsigner` to configure a passphrase helper such as
 `systemd-creds`.
 
-### Re-running systemd install
+### Existing systemd installs
 
-Re-running `sudo ./install.sh --systemd` is intended to be safe after the
-service is stopped. The installer refuses to continue while
-`apsigner.service` is active, activating, reloading, or deactivating so it does
-not replace binaries under a live daemon.
+This release is new-install-only for systemd deployments too. Use a fresh
+signer data directory instead of installing over an existing one.
+
+The installer still refuses to continue while `apsigner.service` is active,
+activating, reloading, or deactivating so it does not replace binaries under a
+live daemon.
 
 ```bash
 sudo systemctl stop apsigner
 sudo ./install.sh --systemd
 ```
 
-It reinstalls binaries and service files, repairs the systemd data-directory
-permissions, leaves an existing `config.yaml` unchanged, writes
-`config.yaml.aplane-installer.new` for review, and skips keystore
-initialization when `identities/default/.keystore` already exists. The
-operator workspace under `~<installing-user>/aplane/`, or the operator root
-path passed to `--systemd`, is refreshed with `apenv.sh`, `apconsole.yaml`,
-the bundled plugin catalog entry `apclient/plugins.available/algokit-localnet`,
-a preserved or newly created `apclient/plugins.yaml` activation file, and an
-`apclient/` config if one is not already present.
+When pointed at an existing systemd install after the service is stopped, the
+installer stops if `identities/default/.keystore` already exists. Treat that
+behavior as a safety guard, not an upgrade guarantee.
 
 If a previous install left `identities/<id>/passphrase.cred` in place, the
 installer re-adds the matching `LoadCredentialEncrypted=` directive to the
@@ -577,7 +520,7 @@ make all applugin-checksum
 
 # Install binaries
 sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appolicy bin/appass bin/aplocalnet \
-        bin/appass-file bin/appass-systemd-creds bin/approbe bin/migrate-config-v1 bin/applugin-checksum /usr/local/bin/
+        bin/appass-file bin/appass-systemd-creds bin/approbe bin/applugin-checksum /usr/local/bin/
 sudo chmod 755 /usr/local/bin/appass-systemd-creds
 
 # Create service user
@@ -662,7 +605,6 @@ This produces statically linked binaries in `bin/`:
 | `aplocalnet` | LocalNet setup TUI/CLI for apshell default network, signer config, plugin activation, and KMD override persistence |
 | `appass-file` | Development-only plaintext passphrase helper |
 | `approbe` | Installer/helper liveness probe for signer IPC reachability |
-| `migrate-config-v1` | Standalone client config migration utility for legacy `config.yaml` signer routing |
 | `apshell` | Transaction shell (client) |
 
 `applugin-checksum` is built by `make applugin-checksum` and is included in release
@@ -677,7 +619,7 @@ Copy the server-side binaries to a system path:
 
 ```bash
 sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appolicy bin/appass bin/aplocalnet \
-        bin/appass-file bin/appass-systemd-creds bin/approbe bin/migrate-config-v1 bin/applugin-checksum /usr/local/bin/
+        bin/appass-file bin/appass-systemd-creds bin/approbe bin/applugin-checksum /usr/local/bin/
 sudo chmod 755 /usr/local/bin/appass-systemd-creds
 ```
 
@@ -1094,8 +1036,7 @@ that recorded value. If no operator root is recorded and no `[operator-root]`
 is provided, systemd uninstall leaves user client directories untouched
 instead of guessing at `$SUDO_USER_HOME/aplane`. It preserves
 `/var/lib/apsigner` and the `aplane:aplane` account so the signer keystore,
-configuration, audit log, and ownership remain available for backup or a
-future reinstall.
+configuration, audit log, and ownership remain available for backup.
 
 Local uninstall follows the same preservation principle: it removes generated
 local binaries and launcher/env files, but keeps `apsigner/` and `apclient/`
@@ -1119,7 +1060,7 @@ every retained path with a one-line label. Security-relevant entries:
   forensics unless you have already exported it.
 - **`backups/`** -- encrypted backup tarballs (same protections as keys).
 - **`config.yaml`** -- operator-edited configuration (algod endpoints, ports,
-  policy). Preserved so reinstall does not silently change behavior.
+  policy). Preserved so uninstall does not silently discard operator state.
 
 What `uninstall.sh` *removes*: the `apsigner` systemd unit, the
 `/etc/sudoers.d/99-apsigner-systemctl` rule, the installed APlane binaries
@@ -1127,11 +1068,9 @@ under the configured binary directory, and the operator workspace under the
 operator root.
 
 The systemd `LoadCredentialEncrypted=` binding lives in the unit file and is
-removed along with it, but the underlying `passphrase.cred` is preserved. On
-reinstall, `install.sh` re-detects the existing `.cred` and re-adds the
-binding automatically. If you reinstall by other means (an older packaged
-release without this fix, or a hand-edited unit), run
-`sudo appass -d /var/lib/apsigner` to rebind explicitly.
+removed along with it, but the underlying `passphrase.cred` is preserved. On a
+fresh systemd install, use `sudo appass -d /var/lib/apsigner` to configure
+auto-unlock explicitly.
 
 To delete everything manually, `uninstall.sh` prints the exact command
 sequence at the end of its output. **`sudo rm -rf /var/lib/apsigner` is
@@ -1160,9 +1099,8 @@ This only applies to auto-unlock mode. Common causes:
   ls -la /var/lib/apsigner/identities/default/passphrase.cred
   ```
 
-- The unit file is missing the `LoadCredentialEncrypted=` directive (e.g.,
-  after an uninstall/reinstall with an older installer, or a hand-edited
-  unit):
+- The unit file is missing the `LoadCredentialEncrypted=` directive, for
+  example after a hand-edited unit:
 
   ```bash
   grep LoadCredentialEncrypted /etc/systemd/system/apsigner.service

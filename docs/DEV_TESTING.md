@@ -719,7 +719,7 @@ Contract decoding policy:
 
 ## Docker Install Smoke Tests
 
-The installer smoke tests build or consume a release tarball and run it inside Ubuntu containers. They validate packaging, install layouts, uninstall behavior, and the upgrade gates that prevent replacing files while a signer is running.
+The installer smoke tests build or consume a release tarball and run it inside Ubuntu containers. They validate packaging, install layouts, uninstall behavior, and the live-daemon gates that prevent replacing files while a signer is running.
 
 ```bash
 # Local, rootless install mode in a non-systemd container
@@ -729,9 +729,9 @@ make docker-local-test
 make docker-systemd-test
 ```
 
-`make docker-local-test` uses `scripts/docker-local-smoke.sh`. It verifies the rootless layout, bundled binaries including `approbe`, `appass --check`, token request approval through `apapprover`, `apshell status`, the `approbe`-based reinstall gate while the locally installed signer is running, stopped in-place reinstall, installed-uninstaller behavior, uninstall state preservation, and reinstall over preserved local state.
+`make docker-local-test` uses `scripts/docker-local-smoke.sh`. It verifies the rootless layout, bundled binaries including `approbe`, `appass --check`, token request approval through `apapprover`, `apshell status`, the live-signer install gate, stopped in-place reinstall rejection for this new-install-only release, installed-uninstaller behavior, and uninstall state preservation.
 
-`make docker-systemd-test` uses `scripts/docker-systemd-smoke.sh`. It verifies `/usr/local/bin` and `/var/lib/apsigner` layout, systemd service status, memory-locking unit settings, `appass --check`, token request approval, the systemd-active reinstall gate while `apsigner.service` is active, stopped in-place systemd reinstall, uninstall signer-state preservation, and systemd-credential artifact rebind across systemd uninstall/reinstall.
+`make docker-systemd-test` uses `scripts/docker-systemd-smoke.sh`. It verifies `/usr/local/bin` and `/var/lib/apsigner` layout, systemd service status, memory-locking unit settings, `appass --check`, token request approval, the active-service install gate, stopped in-place systemd reinstall rejection for this new-install-only release, and uninstall signer-state preservation.
 
 ## REPL Testing
 

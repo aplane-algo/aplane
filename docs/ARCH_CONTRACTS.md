@@ -8,7 +8,7 @@
 
 ## Contents
 
-- [Current Upgrade Compatibility Scope](#current-upgrade-compatibility-scope)
+- [Current Release Compatibility Scope](#current-release-compatibility-scope)
 - [Key Type Identifier Contract](#key-type-identifier-contract)
 - [HTTP API Contract](#http-api-contract)
 - [Admin Protocol](#admin-protocol)
@@ -27,21 +27,22 @@
 - [SDK Contracts](#sdk-contracts)
 - [Swap Contract](#swap-contract)
 
-## Current Upgrade Compatibility Scope
+## Current Release Compatibility Scope
 
-Until APlane reaches a stable `v1.0` compatibility contract, release-to-release
-compatibility is intentionally narrow. This release's upgrade contract is:
+Until APlane reaches a stable `v1.0` compatibility contract, this release is
+new-install-only:
 
-- existing signing keys remain supported as-is,
-- the previous apclient signer-routing shape is converted to `endpoints.yaml`
-  only by `migrate-config-v1`,
+- existing install directories are not a supported in-place upgrade target,
+- no config, key, cache, or endpoint migration utility is shipped,
+- apclient signer routing must be present in `endpoints.yaml`,
 - config files, identity settings, admin IPC names, SDK DTO field names, caches,
-  and generated docs examples may be reset or reshaped by a release.
+  and generated docs examples may be reset or reshaped by a release before
+  `v1.0`.
 
 This section deliberately does not weaken the security-sensitive key contracts
 below: encrypted key files, keystore metadata, and signing provider lookup still
-define whether an existing key can be unlocked, validated, and signed after an
-upgrade.
+define whether an existing key can be unlocked, validated, and signed by a
+future release.
 
 ## Key Type Identifier Contract
 
@@ -192,7 +193,8 @@ separately. The client data directory is resolved from the first of:
 Client config is loaded from `config.yaml` under the resolved data directory.
 Installer-written client configs include `networks` entries for `testnet`,
 `mainnet`, and `localnet`, but restrict `networks_allowed` to `mainnet` and
-`testnet` by default; existing configs are preserved on reinstall/upgrade.
+`testnet` by default; existing configs are left unchanged if the installer is
+pointed at an existing path, but this release is not an in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader.
 
 `apshell` process startup goes through `internal/bootstrap/shell.Load`: it
@@ -206,9 +208,9 @@ Validation:
 - `network`, `networks_allowed`, and `networks` keys are network context tokens
 - network context tokens must be 1-64 characters, start with a lowercase ASCII letter or digit, and contain only lowercase ASCII letters, digits, `_`, or `-`
 - if `networks_allowed` is set, `network` must be in it
-- legacy `ssh:` blocks require `host` when present
-- omitted legacy `ssh.port`, `identity_file`, and `known_hosts_path` are defaulted
-- relative SSH paths in legacy config and endpoint records resolve against the client data dir
+- top-level client `ssh:` signer routing is not supported by `apshell` startup
+  in this release; signer routing lives in `endpoints.yaml`
+- relative SSH paths in endpoint records resolve against the client data dir
 - `theme` is a local client UI preference for apshell/apadmin/apconsole before
   any signer-admin setting is received; it does not mutate signer config
 - `signer_status_poll_interval` parses as a Go duration string; empty defaults
@@ -228,7 +230,9 @@ Source: `internal/config/serverconfig.go`
 
 Loaded from `-d <path>` or `APSIGNER_DATA`.
 Installer-written signer configs include `networks` entries for `testnet`,
-`mainnet`, and `localnet`; existing configs are preserved on reinstall/upgrade.
+`mainnet`, and `localnet`; existing configs are left unchanged if the installer
+is pointed at an existing path, but this release is not an in-place upgrade
+target.
 Unknown YAML fields are rejected by the Go loader.
 
 For compatibility with pre-`user_auto_approve` signer configs, the Go loader
@@ -473,18 +477,17 @@ Additional client-state notes:
   user-managed client state, while bundled plugin directories are
   installer-managed reserved paths.
   `plugins.available/algokit-localnet` is refreshed atomically from the release
-  or repo payload on install/upgrade. Existing `plugins.yaml` activation
-  choices are preserved.
+  or repo payload on install or installer re-run. Existing `plugins.yaml`
+  activation choices are preserved.
 - local-mode installers write generated launcher `start.sh` and `apconsole.yaml` alongside `apenv.sh` in the local install root; systemd writes the same operator-side `apenv.sh`/`apconsole.yaml` shape under the selected operator root (default `~<installing-user>/aplane/`) while keeping signer data in `/var/lib/apsigner`; these are installer-managed convenience entrypoints/config for `apconsole`, not client data under `APCLIENT_DATA`; generated `apenv.sh` files export `APLANE_INSTALL_ROOT`, and systemd operator env files also export `APLANE_BINDIR`
 - installer path precedence is explicit CLI argument, then `APLANE_INSTALL_ROOT`, then prompts/defaults; systemd binary directory precedence is `--bindir`, then `APLANE_BINDIR`, then `/usr/local/bin`
 - systemd records the selected operator root in `/var/lib/apsigner/install/operator-root`; systemd uninstall removes the operator-side client workspace only when an operator root is explicitly provided or recorded by the installer, and does not guess `$SUDO_USER_HOME/aplane` for deletion
 - existing local-mode installs are probed with the bundled `approbe` helper before binaries are replaced; reachable signer IPC aborts the install, missing/stale/refused IPC is treated as stopped, and unknown probe errors fail closed
-- systemd installs/upgrades refuse to proceed while `apsigner.service` is `active`, `activating`, `reloading`, or `deactivating`; operators must stop the service first, then rerun the same install/bootstrap command
+- systemd installs refuse to proceed while `apsigner.service` is `active`, `activating`, `reloading`, or `deactivating`; operators must stop the service before running the installer against that data directory
 - local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
 - `apconsole.yaml` supports `mode: local|remote`, `client_data`, and local-mode `signer_data`; relative paths resolve against the profile file
 - `endpoints.yaml` is the normal client-local endpoint registry for new installs, with `schema_version: 1`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
-- if `config.yaml` contains legacy `ssh:` signer settings but `endpoints.yaml` has no signer endpoint, `apshell` startup and the apconsole shell pane fail closed with an operator-facing migration message that names `migrate-config-v1 -d <APCLIENT_DATA>`. Startup never materializes or rewrites endpoint routing; the standalone `migrate-config-v1` utility is the only documented conversion path.
-- `migrate-config-v1` is the explicit client-config migration utility for this transition. It reads legacy `config.yaml` signer SSH settings plus `signer_port`, writes `endpoints.yaml` with a `primary` signer endpoint, leaves `config.yaml` unchanged, and supports `--dry-run`.
+- if client `config.yaml` contains top-level `ssh:` signer settings, `apshell` startup and the apconsole shell pane fail closed with an operator-facing message that says this release is new-install-only. Startup never materializes or rewrites endpoint routing.
 - endpoint records carry connection profile fields together: required `role` (`signer` or `attestor`), `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, `token_file`, and endpoint-published `published_attestors`. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. `published_attestors` is valid only on `attestor` endpoints.
 - endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
 - `published_attestors` is keyed by canonical embedded attestor public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime attested-send routing derives the endpoint for an embedded attestor public key from this endpoint-local inventory.
@@ -552,7 +555,7 @@ There are two plaintext library locations with the same relative layout:
 - signer installations may carry a copy under `<APSIGNER_DATA>/library/templates/`.
 
 The signer-data path is defined by `internal/storepaths.Paths.TemplateLibraryDir()`. Release installers,
-upgrades, and test setup flows may refresh this directory from the repository or packaged copy. Files in this
+installer re-runs, and test setup flows may refresh this directory from the repository or packaged copy. Files in this
 directory are reference material and are not active key types by themselves.
 
 `apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the
@@ -1362,7 +1365,8 @@ enabled_plugins: []
 On first install, installers create an empty activation list. `algokit-localnet`
 is staged under `plugins.available/` but never enabled by default; `aplocalnet`
 is the supported utility that explicitly activates it for LocalNet setups.
-Existing `plugins.yaml` activation choices are preserved on upgrade.
+Existing `plugins.yaml` activation choices are preserved when the installer is
+run again against the same client data directory.
 
 The in-tree reference plugin at `examples/external_plugins/echo-plugin/` is not
 bundled into release archives; it is the canonical example for plugin authors

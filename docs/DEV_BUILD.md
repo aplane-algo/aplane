@@ -14,10 +14,9 @@ This project builds several first-party commands and developer helpers:
 10. **appass-file** - dev-only plaintext passphrase helper
 11. **appass-systemd-creds** - Linux/systemd production passphrase helper using systemd credentials
 12. **approbe** - installer-facing signer liveness probe
-13. **migrate-config-v1** - standalone legacy client endpoint config migration utility
-14. **applugin-checksum** - plugin checksum generator
-15. **compile_teal** - TEAL-to-Go bytecode generator used by development workflows
-16. **configdoc** - configuration reference generator
+13. **applugin-checksum** - plugin checksum generator
+14. **compile_teal** - TEAL-to-Go bytecode generator used by development workflows
+15. **configdoc** - configuration reference generator
 
 ## Project Structure
 
@@ -36,7 +35,6 @@ aplane/
 │   ├── appass-file/            # Dev passphrase helper
 │   ├── appass-systemd-creds/   # Linux systemd-creds passphrase helper
 │   ├── approbe/                # Installer liveness probe
-│   ├── migrate-config-v1/      # Legacy client endpoint config migration utility
 │   ├── applugin-checksum/      # Plugin integrity helper
 │   ├── compile_teal/         # TEAL-to-Go bytecode generator
 │   └── configdoc/            # Config reference generator
@@ -136,7 +134,6 @@ make aplocalnet
 make appass-file
 make appass-systemd-creds
 make approbe
-make migrate-config-v1
 make applugin-checksum
 
 # Generate development artifacts
@@ -208,7 +205,6 @@ CGO_ENABLED=0 go build -o bin/aplocalnet ./cmd/aplocalnet
 CGO_ENABLED=0 go build -o bin/appass-file ./cmd/appass-file
 CGO_ENABLED=0 go build -o bin/appass-systemd-creds ./cmd/appass-systemd-creds
 CGO_ENABLED=0 go build -o bin/approbe ./cmd/approbe
-CGO_ENABLED=0 go build -o bin/migrate-config-v1 ./cmd/migrate-config-v1
 CGO_ENABLED=0 go build -o bin/applugin-checksum ./cmd/applugin-checksum
 CGO_ENABLED=0 go build -o bin/compile_teal ./cmd/compile_teal
 CGO_ENABLED=0 go build -o bin/configdoc ./cmd/configdoc
@@ -470,7 +466,7 @@ workflows and do not need this capability.
 - **appass** edits identity-scoped auto-unlock configuration while `apsigner` is stopped
 - **aplocalnet** configures a running AlgoKit LocalNet as apshell's default network, updates apsigner genesis mapping, enables the LocalNet plugin, and can persist a KMD URL override for plugin processes
 - **appass-systemd-creds** is built for Linux/systemd releases; Darwin release archives omit it
-- **approbe** checks local signer IPC liveness for installer upgrade gating
+- **approbe** checks local signer IPC liveness for installer live-daemon gating
 - Signature operations require admin approval unless the identity has `user_auto_approve:true`
 - Plugin system uses external processes communicating via JSON-RPC
 - Cross-compilation targets Linux ARM64/AMD64 and Darwin ARM64/AMD64

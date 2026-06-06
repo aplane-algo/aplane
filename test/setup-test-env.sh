@@ -210,13 +210,6 @@ cat > "$CLIENT_DATA/config.yaml" << YAML
 # Test environment client config
 network: $INTEGRATION_NETWORK
 networks_allowed: [$INTEGRATION_NETWORK]
-signer_port: $SIGNER_PORT
-
-ssh:
-  host: localhost
-  port: $SSH_PORT
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
 
 networks:
   $INTEGRATION_NETWORK:
@@ -225,6 +218,21 @@ networks:
       token: "$ALGOD_TOKEN"
 YAML
 echo "  Wrote client config.yaml"
+
+cat > "$CLIENT_DATA/endpoints.yaml" << YAML
+# Test environment endpoint registry
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://localhost:$SSH_PORT
+    signer_port: $SIGNER_PORT
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
+YAML
+echo "  Wrote client endpoints.yaml"
 
 # ---------------------------------------------------------------------------
 # Write passphrase file

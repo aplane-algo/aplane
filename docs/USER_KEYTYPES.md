@@ -31,8 +31,8 @@ new keys of this type right now?
 
 | Display | Meaning |
 |---|---|
-| Available to create | The identity can discover this key type and generate new keys. |
-| Not available to create | The key type needs to be enabled, activated, imported, or repaired before new keys can be generated. |
+| Enabled | The identity can discover this key type and generate new keys. |
+| Disabled | The key type needs to be enabled, imported, or repaired before new keys can be generated. |
 | Template provenance | An existing key has an informational template-provenance note, such as a missing or changed creation template. The precise reason is shown in details. |
 
 Existing keys remain signable from their stored key metadata. A template provenance note
@@ -40,11 +40,12 @@ does not mean the key has stopped working; it means the original creation
 template should be reviewed before relying on provenance or creating more keys
 of that type.
 
-The precise terms matter in management and authoring workflows:
-`activate`/`deactivate` apply to compiled providers, while
-`import`/`enable`/`disable`/`remove` apply to YAML templates. Template authors,
-including LLM-assisted authors, should use the canonical vocabulary in
-this guide, [DEV_KEYTYPES.md](DEV_KEYTYPES.md), and
+The apadmin KeyType Library uses `Enable` and `Disable` for both compiled
+providers and YAML templates. The lower-level `apstore keytype` CLI still uses
+`activate` and `deactivate` for compiled providers because those commands write
+or remove the identity activation record directly. Template authors, including
+LLM-assisted authors, should use the canonical vocabulary in this guide,
+[DEV_KEYTYPES.md](DEV_KEYTYPES.md), and
 [USER_LOGICSIG_GUIDELINES.md](USER_LOGICSIG_GUIDELINES.md).
 
 ## Useful Commands
@@ -62,9 +63,8 @@ apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
 providers and importable YAML templates. It is the normal interactive path for
-making key types available to create. Detail and confirmation screens use
-the exact action names, such as enable, disable, and activate, so the management
-operation is clear.
+enabling and disabling key types for generation. Detail and confirmation
+screens use `Enable` and `Disable` consistently for both source types.
 
 In `apshell`, use:
 

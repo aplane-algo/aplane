@@ -1000,8 +1000,8 @@ Release archives stage runtime plugin payloads at
 covering Linux and macOS amd64/arm64) and installers copy them into
 `$APCLIENT_DATA/plugins.available/`.
 Catalog entries are not loaded by `apshell` unless their directory names are
-listed in `$APCLIENT_DATA/plugins.yaml`; install/upgrade refreshes staged
-catalog entries and preserves existing activation choices.
+listed in `$APCLIENT_DATA/plugins.yaml`; installer runs refresh staged catalog
+entries and preserve existing activation choices.
 
 ### Security Model
 

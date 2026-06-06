@@ -68,18 +68,17 @@ func GetClientEndpointsPath(dataDir string) string {
 	return filepath.Join(dataDir, ClientEndpointsFile)
 }
 
-// LoadClientEndpointRegistry loads endpoints.yaml and overlays the legacy
-// config.yaml/aplane.token primary endpoint when possible.
+// LoadClientEndpointRegistry loads endpoints.yaml. Client signer routing lives
+// only in endpoints.yaml; config.yaml ssh settings are not a fallback.
 func LoadClientEndpointRegistry(dataDir string, cfg Config) (ClientEndpointRegistry, error) {
-	legacy := legacyPrimaryEndpointRegistry(dataDir, cfg)
 	path := GetClientEndpointsPath(dataDir)
 	if path == "" {
-		return legacy, nil
+		return emptyClientEndpointRegistry(), nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return legacy, nil
+			return emptyClientEndpointRegistry(), nil
 		}
 		return ClientEndpointRegistry{}, fmt.Errorf("failed to read %s: %w", path, err)
 	}
@@ -107,46 +106,16 @@ func LoadClientEndpointRegistry(dataDir string, cfg Config) (ClientEndpointRegis
 		}
 		stored.Endpoints[alias] = normalized
 	}
-	if !clientEndpointRegistryHasSigner(stored) {
-		if legacyEndpoint, ok := legacy.Endpoints[DefaultClientEndpointName]; ok {
-			if _, exists := stored.Endpoints[DefaultClientEndpointName]; exists {
-				return ClientEndpointRegistry{}, fmt.Errorf("%s endpoint %q already exists but no signer endpoint is configured", ClientEndpointsFile, DefaultClientEndpointName)
-			}
-			stored.Endpoints[DefaultClientEndpointName] = legacyEndpoint
-		}
-	}
 	if err := normalizeClientEndpointRegistryRoleState(&stored); err != nil {
 		return ClientEndpointRegistry{}, err
 	}
 	return stored, nil
 }
 
-func legacyPrimaryEndpointRegistry(dataDir string, cfg Config) ClientEndpointRegistry {
-	if cfg.SSH == nil {
-		return ClientEndpointRegistry{
-			SchemaVersion: 1,
-			Default:       DefaultClientEndpointName,
-			Endpoints:     map[string]ClientEndpointConfig{},
-		}
-	}
-	tokenFile, err := tokenfile.GetApshellTokenPathForDataDir(dataDir)
-	if err != nil {
-		tokenFile = filepath.Join(dataDir, tokenfile.APlaneTokenFile)
-	}
-	endpoint := ClientEndpointConfig{
-		Role:           ClientEndpointRoleSigner,
-		URL:            fmt.Sprintf("ssh://%s:%d", cfg.SSH.Host, cfg.SSH.Port),
-		SignerPort:     cfg.SignerPort,
-		IdentityFile:   cfg.SSH.IdentityFile,
-		KnownHostsPath: cfg.SSH.KnownHostsPath,
-		TokenFile:      tokenFile,
-	}
+func emptyClientEndpointRegistry() ClientEndpointRegistry {
 	return ClientEndpointRegistry{
 		SchemaVersion: 1,
-		Default:       DefaultClientEndpointName,
-		Endpoints: map[string]ClientEndpointConfig{
-			DefaultClientEndpointName: endpoint,
-		},
+		Endpoints:     map[string]ClientEndpointConfig{},
 	}
 }
 
@@ -202,10 +171,6 @@ func normalizeClientEndpointConfig(dataDir string, cfg Config, alias string, end
 
 	if strings.HasPrefix(endpoint.URL, "ssh://") {
 		defaultSSH := DefaultSSHClientConfig()
-		if cfg.SSH != nil {
-			defaultSSH.IdentityFile = cfg.SSH.IdentityFile
-			defaultSSH.KnownHostsPath = cfg.SSH.KnownHostsPath
-		}
 		if endpoint.SignerPort == 0 {
 			if cfg.SignerPort != 0 {
 				endpoint.SignerPort = cfg.SignerPort
@@ -349,20 +314,11 @@ func cloneClientEndpointPublishedAttestors(in map[string]ClientEndpointPublished
 	return out
 }
 
-func (c Config) ClientEndpointsOrDefault(dataDir string) ClientEndpointRegistry {
+func (c Config) ClientEndpointsOrDefault(_ string) ClientEndpointRegistry {
 	if len(c.Endpoints.Endpoints) > 0 || c.Endpoints.Default != "" {
 		return c.Endpoints.Clone()
 	}
-	return legacyPrimaryEndpointRegistry(dataDir, c)
-}
-
-func clientEndpointRegistryHasSigner(registry ClientEndpointRegistry) bool {
-	for _, endpoint := range registry.Endpoints {
-		if endpoint.Role == ClientEndpointRoleSigner {
-			return true
-		}
-	}
-	return false
+	return emptyClientEndpointRegistry()
 }
 
 func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) error {

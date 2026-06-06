@@ -32,19 +32,24 @@ func TestStartupConnectDecisionNoTokenNoSSH(t *testing.T) {
 	}
 }
 
-func TestStartupConnectDecisionWithSSHConfig(t *testing.T) {
+func TestStartupConnectDecisionWithDefaultSignerEndpoint(t *testing.T) {
 	eng, err := engine.NewEngine("testnet")
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 
 	cfg := config.DefaultConfig()
-	cfg.SSH = &config.SSHClientConfig{
-		Host:         "signer.example",
-		Port:         1127,
-		IdentityFile: "/tmp/id_ed25519",
+	cfg.Endpoints = config.ClientEndpointRegistry{
+		SchemaVersion: 1,
+		Default:       "primary",
+		Endpoints: map[string]config.ClientEndpointConfig{
+			"primary": {
+				Role:       config.ClientEndpointRoleSigner,
+				URL:        "ssh://signer.example:1127",
+				SignerPort: 11270,
+			},
+		},
 	}
-	cfg.SignerPort = 11270
 	app := New(eng, cfg, t.TempDir())
 
 	decision := app.StartupConnectDecision()

@@ -1,4 +1,4 @@
-.PHONY: all clean apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe migrate-config-v1 applugin-checksum applugin-checksums help compile-teal compile-docassets test check formal-test race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 migrate-config-v1-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: all clean apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets test check formal-test race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -61,7 +61,7 @@ internal/lsig/dummy.teal.tok: resources/dummy.teal.tok
 	@echo "✓ Updated internal/lsig/dummy.teal.tok"
 
 # Default: Build all first-party binaries and official bundled plugins.
-all: compile-teal apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe migrate-config-v1 bundled-plugins
+all: compile-teal apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe bundled-plugins
 
 # Build apshell
 apshell: compile-teal compile-docassets
@@ -106,9 +106,6 @@ aplocalnet:
 # approbe is an installer-facing liveness probe (pure Go)
 approbe:
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/approbe ./cmd/approbe
-
-migrate-config-v1:
-	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/migrate-config-v1 ./cmd/migrate-config-v1
 
 # applugin-checksum doesn't need CGO (pure Go crypto)
 applugin-checksum:
@@ -159,14 +156,11 @@ aplocalnet-arm64:
 approbe-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o approbe-arm64 ./cmd/approbe
 
-migrate-config-v1-arm64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o migrate-config-v1-arm64 ./cmd/migrate-config-v1
-
 applugin-checksum-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o applugin-checksum-arm64 ./cmd/applugin-checksum
 
 # Build all binaries for arm64 into bin/arm64/
-bin-arm64: apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 migrate-config-v1-arm64 applugin-checksum-arm64
+bin-arm64: apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64
 	@mkdir -p bin/arm64
 	@mv apshell-arm64 bin/arm64/apshell
 	@mv apsigner-arm64 bin/arm64/apsigner
@@ -182,7 +176,6 @@ bin-arm64: apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-ar
 	@mv appass-systemd-creds-arm64 bin/arm64/appass-systemd-creds
 	@chmod 700 bin/arm64/appass-systemd-creds
 	@mv approbe-arm64 bin/arm64/approbe
-	@mv migrate-config-v1-arm64 bin/arm64/migrate-config-v1
 	@mv applugin-checksum-arm64 bin/arm64/applugin-checksum
 	@echo "✓ Built arm64 binaries in bin/arm64/"
 
@@ -203,7 +196,6 @@ bin-amd64: compile-teal compile-docassets
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/appass ./cmd/appass
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/aplocalnet ./cmd/aplocalnet
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/approbe ./cmd/approbe
-	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/migrate-config-v1 ./cmd/migrate-config-v1
 	CGO_ENABLED=0 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/amd64/applugin-checksum ./cmd/applugin-checksum
 	@echo "✓ Built amd64 binaries in bin/amd64/"
 
@@ -225,7 +217,6 @@ bin-darwin-arm64: compile-teal compile-docassets
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/appass ./cmd/appass
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/aplocalnet ./cmd/aplocalnet
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/approbe ./cmd/approbe
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/migrate-config-v1 ./cmd/migrate-config-v1
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/applugin-checksum ./cmd/applugin-checksum
 	@if command -v codesign >/dev/null 2>&1; then \
 		for bin in bin/darwin-arm64/*; do \
@@ -249,7 +240,6 @@ bin-darwin-amd64: compile-teal compile-docassets
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/appass ./cmd/appass
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/aplocalnet ./cmd/aplocalnet
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/approbe ./cmd/approbe
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/migrate-config-v1 ./cmd/migrate-config-v1
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/applugin-checksum ./cmd/applugin-checksum
 	@if command -v codesign >/dev/null 2>&1; then \
 		for bin in bin/darwin-amd64/*; do \
@@ -280,7 +270,7 @@ release-local: bin-amd64 bin-arm64 bundled-plugins-linux
 		   bin/$${arch}/aplocalnet \
 		   bin/$${arch}/appass-file \
 		   bin/$${arch}/appass-systemd-creds \
-		   bin/$${arch}/approbe bin/$${arch}/migrate-config-v1 \
+		   bin/$${arch}/approbe \
 		   bin/$${arch}/applugin-checksum dist/staging/aplane/bin/; \
 		cp installer/apsigner.service installer/apsigner.service.template \
 		   installer/sudoers.template \
@@ -304,7 +294,7 @@ release-local: bin-amd64 bin-arm64 bundled-plugins-linux
 		   $${darwindir}apapprover $${darwindir}apstore $${darwindir}appolicy $${darwindir}appass \
 		   $${darwindir}aplocalnet \
 		   $${darwindir}appass-file \
-		   $${darwindir}approbe $${darwindir}migrate-config-v1 \
+		   $${darwindir}approbe \
 		   $${darwindir}applugin-checksum dist/staging/aplane/bin/; \
 		cp installer/scripts/aplane-env-audit.sh installer/scripts/config-mcp.sh dist/staging/aplane/installer/scripts/; \
 		cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/; \
@@ -412,8 +402,8 @@ docker-systemd-test:
 
 # End-to-end local install test. Builds a release tarball, boots a stock
 # (non-systemd) Ubuntu 24.04 container, creates a non-root user, runs
-# install.sh in local mode, verifies the user-directory layout, state
-# preservation across stopped reinstall and uninstall/reinstall, and appass
+# install.sh in local mode, verifies the user-directory layout, running-install
+# gating, stopped-reinstall rejection, uninstall state preservation, and appass
 # local-mode detection.
 # Requires docker. Pass extra flags via ARGS.
 docker-local-test:
@@ -800,7 +790,6 @@ help:
 	@echo "  make appolicy    - Build appolicy (offline policy editor/checker)"
 	@echo "  make aplocalnet  - Build aplocalnet (LocalNet setup TUI)"
 	@echo "  make approbe     - Build approbe (installer liveness probe)"
-	@echo "  make migrate-config-v1 - Build client config migration utility"
 	@echo "  make applugin-checksum - Build applugin-checksum (generate checksums.sha256)"
 	@echo "  make all             - Build all first-party binaries and bundled plugins"
 	@echo "  make clean           - Remove built binaries"

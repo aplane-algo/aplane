@@ -276,7 +276,7 @@ Rule of thumb:
 - key generation/provider registration belongs in `internal/keygen` and provider packages,
 - installed-template file persistence belongs in `templatestore`; key type
   state writes belong in `templatelibrary` or `signerapp/templateadmin`,
-- plaintext library import/upgrade behavior belongs in `templatelibrary`,
+- plaintext library import/refresh behavior belongs in `templatelibrary`,
 - runtime template reload behavior belongs in `internal/signerapp/templates`,
 - user/admin template workflows belong in `internal/signerapp/templateadmin`.
 

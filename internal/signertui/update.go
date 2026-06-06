@@ -625,11 +625,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.templateInstallError = msg.Error
 		if m.templateInstallError == "" {
-			if msg.TemplateType == libraryTypeCompiledProvider {
-				m.templateInstallError = "Key type activation failed"
-			} else {
-				m.templateInstallError = "Template key type enable failed"
-			}
+			m.templateInstallError = "Key type enable failed"
 		}
 		m.viewState = ViewTemplateInstallConfirm
 		return m, m.waitForMessageCmd()

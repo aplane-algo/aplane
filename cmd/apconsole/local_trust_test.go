@@ -215,10 +215,10 @@ ssh:
 		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
 	})
 	if err == nil {
-		t.Fatal("trustLocalSignerHostKey error = nil, want legacy endpoint config error")
+		t.Fatal("trustLocalSignerHostKey error = nil, want unsupported endpoint config error")
 	}
-	if !strings.Contains(err.Error(), "legacy apclient endpoint config") {
-		t.Fatalf("error = %v, want legacy endpoint config message", err)
+	if !strings.Contains(err.Error(), "unsupported apclient endpoint config") {
+		t.Fatalf("error = %v, want unsupported endpoint config message", err)
 	}
 	if notice != "" {
 		t.Fatalf("notice = %q, want empty", notice)

@@ -165,7 +165,6 @@ jobs:
               '' \
               'Files:' \
               '  bin/apshell       - General shell client' \
-              '  bin/migrate-config-v1 - Convert legacy client config to endpoints.yaml' \
               '  config.yaml       - Configuration template (edit signer host/ports)' \
               '  .ssh/             - SSH keys and known_hosts (created/managed locally)' \
               '  installer/scripts/config-mcp.sh - Optional helper to write .mcp.json after extraction' \
@@ -183,7 +182,7 @@ jobs:
                bin/${arch}/apapprover bin/${arch}/apstore bin/${arch}/appass \
                bin/${arch}/appass-file \
                bin/${arch}/appass-systemd-creds \
-               bin/${arch}/approbe bin/${arch}/migrate-config-v1 \
+               bin/${arch}/approbe \
                bin/${arch}/applugin-checksum dist/staging/aplane/bin/
             cp installer/apsigner.service installer/apsigner.service.template \
                installer/sudoers.template \
@@ -202,7 +201,7 @@ jobs:
             archive="aplane-client_${VERSION}_linux_${arch}.tar.gz"
             rm -rf dist/staging
             mkdir -p dist/staging/aplane-client/{bin,.ssh,installer/scripts}
-            cp bin/${arch}/apshell bin/${arch}/migrate-config-v1 dist/staging/aplane-client/bin/
+            cp bin/${arch}/apshell dist/staging/aplane-client/bin/
             cp examples/config/apclient/config.yaml.example dist/staging/aplane-client/config.yaml
             cp installer/scripts/config-mcp.sh dist/staging/aplane-client/installer/scripts/
             write_client_readme
@@ -221,7 +220,7 @@ jobs:
                bin/darwin-${arch}/apapprover \
                bin/darwin-${arch}/apstore bin/darwin-${arch}/appass \
                bin/darwin-${arch}/appass-file \
-               bin/darwin-${arch}/approbe bin/darwin-${arch}/migrate-config-v1 \
+               bin/darwin-${arch}/approbe \
                bin/darwin-${arch}/applugin-checksum dist/staging/aplane/bin/
             cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/
             cp installer/scripts/aplane-env-audit.sh installer/scripts/config-mcp.sh dist/staging/aplane/installer/scripts/
@@ -236,7 +235,7 @@ jobs:
             archive="aplane-client_${VERSION}_darwin_${arch}.tar.gz"
             rm -rf dist/staging
             mkdir -p dist/staging/aplane-client/{bin,.ssh,installer/scripts}
-            cp bin/darwin-${arch}/apshell bin/darwin-${arch}/migrate-config-v1 dist/staging/aplane-client/bin/
+            cp bin/darwin-${arch}/apshell dist/staging/aplane-client/bin/
             cp examples/config/apclient/config.yaml.example dist/staging/aplane-client/config.yaml
             cp installer/scripts/config-mcp.sh dist/staging/aplane-client/installer/scripts/
             write_client_readme

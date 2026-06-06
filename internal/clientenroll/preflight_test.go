@@ -133,7 +133,7 @@ endpoints:
 	}
 }
 
-func TestLoadEnrolledClientRefusesLegacyClientEndpointConfig(t *testing.T) {
+func TestLoadEnrolledClientRefusesUnsupportedClientEndpointConfig(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `
 network: testnet
@@ -143,13 +143,13 @@ ssh:
 
 	got, err := LoadEnrolledClient(dir, testOptions())
 	if err == nil {
-		t.Fatal("err = nil, want legacy endpoint config error")
+		t.Fatal("err = nil, want unsupported endpoint config error")
 	}
 	if got != nil {
 		t.Fatalf("got = %#v, want nil", got)
 	}
-	if !strings.Contains(err.Error(), "legacy apclient endpoint config") {
-		t.Fatalf("err = %v, want legacy endpoint config message", err)
+	if !strings.Contains(err.Error(), "unsupported apclient endpoint config") {
+		t.Fatalf("err = %v, want unsupported endpoint config message", err)
 	}
 }
 

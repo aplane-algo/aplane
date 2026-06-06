@@ -22,7 +22,8 @@ func TestCloneSharedTestEnvUsesOriginalSharedSource(t *testing.T) {
 	mustWriteFile(t, filepath.Join(sharedSigner, "passphrase"), []byte("test-passphrase\n"), 0o600)
 	mustWriteFile(t, filepath.Join(sharedSigner, "config.yaml"), []byte("signer_port: 55195\n"), 0o600)
 	mustWriteFile(t, filepath.Join(sharedSigner, ".ssh", "ssh_host_key.pub"), []byte("ssh-ed25519 AAAAHOST test\n"), 0o600)
-	mustWriteFile(t, filepath.Join(sharedClient, "config.yaml"), []byte("signer_port: 55195\nssh:\n  host: 127.0.0.1\n  port: 55295\n"), 0o600)
+	mustWriteFile(t, filepath.Join(sharedClient, "config.yaml"), []byte("network: testnet\n"), 0o600)
+	mustWriteFile(t, filepath.Join(sharedClient, "endpoints.yaml"), []byte("schema_version: 1\ndefault: primary\nendpoints:\n  primary:\n    role: signer\n    url: ssh://127.0.0.1:55295\n    signer_port: 55195\n    identity_file: .ssh/id_ed25519\n    known_hosts_path: .ssh/known_hosts\n    token_file: aplane.token\n"), 0o600)
 	mustWriteFile(t, filepath.Join(sharedClient, ".ssh", "id_ed25519.pub"), []byte("ssh-ed25519 AAAATEST test\n"), 0o600)
 
 	t.Setenv("APLANE_SHARED_APSIGNER_DATA", sharedSigner)
@@ -41,7 +42,8 @@ func TestCloneSharedTestEnvUsesOriginalSharedSource(t *testing.T) {
 func TestSyncClonedKnownHostsAllowsMissingSignerHostKey(t *testing.T) {
 	signerDataDir := t.TempDir()
 	clientDataDir := t.TempDir()
-	mustWriteFile(t, filepath.Join(clientDataDir, "config.yaml"), []byte("ssh:\n  host: 127.0.0.1\n  port: 55295\n"), 0o600)
+	mustWriteFile(t, filepath.Join(clientDataDir, "config.yaml"), []byte("network: testnet\n"), 0o600)
+	mustWriteFile(t, filepath.Join(clientDataDir, "endpoints.yaml"), []byte("schema_version: 1\ndefault: primary\nendpoints:\n  primary:\n    role: signer\n    url: ssh://127.0.0.1:55295\n    signer_port: 55195\n"), 0o600)
 
 	if err := syncClonedKnownHosts(signerDataDir, clientDataDir); err != nil {
 		t.Fatalf("syncClonedKnownHosts() error = %v", err)

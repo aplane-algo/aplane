@@ -698,6 +698,13 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 	if _, err := attrefs.Import(ir.KeyPaths(), ir.ID(), "lab-att", data); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
+	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+		KeyType: keytypes.AttestedFalcon1024AttEd25519V1,
+		Source:  keytypestate.SourceCompiled,
+		State:   keytypestate.StateEnabled,
+	}); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
 
 	resp, svcErr := Service{}.KeyTypesForIdentity(ir)
 	if svcErr != nil {

@@ -45,7 +45,7 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	}
 }
 
-func TestUpsertStoredClientEndpointMaterializesLegacyPrimaryForAttestor(t *testing.T) {
+func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForAttestor(t *testing.T) {
 	dataDir := t.TempDir()
 	writeLegacyClientEndpointConfig(t, dataDir)
 
@@ -57,12 +57,11 @@ func TestUpsertStoredClientEndpointMaterializesLegacyPrimaryForAttestor(t *testi
 	if err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor) error = %v", err)
 	}
-	if registry.Default != DefaultClientEndpointName {
-		t.Fatalf("Default = %q, want %q", registry.Default, DefaultClientEndpointName)
+	if registry.Default != "" {
+		t.Fatalf("Default = %q, want empty", registry.Default)
 	}
-	primary := registry.Endpoints[DefaultClientEndpointName]
-	if primary.Role != ClientEndpointRoleSigner || primary.URL != "ssh://signer.example:2222" || primary.TokenFile != "aplane.token" {
-		t.Fatalf("primary endpoint = %#v, want materialized legacy signer", primary)
+	if _, ok := registry.Endpoints[DefaultClientEndpointName]; ok {
+		t.Fatal("primary endpoint was materialized from legacy config")
 	}
 	if _, ok := registry.Endpoints["attestor-local"]; !ok {
 		t.Fatal("attestor-local endpoint missing")
@@ -75,8 +74,8 @@ func TestUpsertStoredClientEndpointMaterializesLegacyPrimaryForAttestor(t *testi
 	if !exists {
 		t.Fatal("endpoints.yaml was not written")
 	}
-	if _, ok := stored.Endpoints[DefaultClientEndpointName]; !ok {
-		t.Fatal("stored primary endpoint missing after attestor upsert")
+	if _, ok := stored.Endpoints[DefaultClientEndpointName]; ok {
+		t.Fatal("stored primary endpoint was materialized from legacy config")
 	}
 }
 
@@ -149,30 +148,6 @@ func TestUpsertStoredClientEndpointAllowsDuplicateURLAcrossRoles(t *testing.T) {
 		URL:  "ssh://127.0.0.1:2223",
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(attestor same URL) error = %v", err)
-	}
-}
-
-func TestUpsertStoredClientEndpointRejectsDuplicateLegacyPrimaryURL(t *testing.T) {
-	dataDir := t.TempDir()
-	writeLegacyClientEndpointConfig(t, dataDir)
-
-	_, err := UpsertStoredClientEndpoint(dataDir, "signer-local", ClientEndpointConfig{
-		Role: ClientEndpointRoleSigner,
-		URL:  "ssh://signer.example:2222",
-	}, true)
-	if err == nil {
-		t.Fatal("UpsertStoredClientEndpoint(legacy duplicate URL) error = nil, want conflict")
-	}
-	if !strings.Contains(err.Error(), `alias "primary"`) {
-		t.Fatalf("legacy duplicate URL error = %v, want primary alias conflict", err)
-	}
-
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
-	if err != nil {
-		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
-	}
-	if _, ok := registry.Endpoints["signer-local"]; ok {
-		t.Fatal("signer-local endpoint was written despite legacy primary URL conflict")
 	}
 }
 
@@ -249,67 +224,71 @@ func TestRebuildStoredClientEndpointPublishedAttestorsRejectsDuplicatePublicKey(
 	}
 }
 
-func TestSetStoredClientEndpointDefaultMaterializesLegacyPrimary(t *testing.T) {
+func TestSetStoredClientEndpointDefaultDoesNotMaterializeLegacyPrimary(t *testing.T) {
 	dataDir := t.TempDir()
 	writeLegacyClientEndpointConfig(t, dataDir)
 
-	registry, err := SetStoredClientEndpointDefault(dataDir, "primary")
-	if err != nil {
-		t.Fatalf("SetStoredClientEndpointDefault(primary) error = %v", err)
+	_, err := SetStoredClientEndpointDefault(dataDir, "primary")
+	if err == nil {
+		t.Fatal("SetStoredClientEndpointDefault(primary) error = nil, want missing endpoint")
 	}
-	if registry.Default != "primary" {
-		t.Fatalf("Default = %q, want primary", registry.Default)
-	}
-	endpoint := registry.Endpoints["primary"]
-	if endpoint.URL != "ssh://signer.example:2222" || endpoint.TokenFile != "aplane.token" {
-		t.Fatalf("primary endpoint = %#v, want legacy primary materialized", endpoint)
+	if !strings.Contains(err.Error(), "not defined") {
+		t.Fatalf("error = %v, want not defined", err)
 	}
 }
 
-func TestMaterializeStoredClientPrimaryEndpoint(t *testing.T) {
+func TestCheckSupportedClientEndpointConfigRejectsLegacySSH(t *testing.T) {
 	dataDir := t.TempDir()
 	writeLegacyClientEndpointConfig(t, dataDir)
 
-	needed, err := StoredClientPrimaryEndpointMaterializationNeeded(dataDir)
-	if err != nil {
-		t.Fatalf("StoredClientPrimaryEndpointMaterializationNeeded() error = %v", err)
+	err := CheckSupportedClientEndpointConfig(dataDir)
+	if err == nil {
+		t.Fatal("CheckSupportedClientEndpointConfig() error = nil, want unsupported config")
 	}
-	if !needed {
-		t.Fatal("needed = false, want true")
+	if !strings.Contains(err.Error(), "new-install-only") {
+		t.Fatalf("error = %v, want new-install-only guidance", err)
+	}
+}
+
+func TestCheckSupportedClientEndpointConfigRejectsLegacySSHWithSignerEndpoint(t *testing.T) {
+	dataDir := t.TempDir()
+	writeLegacyClientEndpointConfig(t, dataDir)
+	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(`
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.example:2222
+    signer_port: 12270
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile(endpoints) error = %v", err)
 	}
 
-	registry, changed, err := MaterializeStoredClientPrimaryEndpoint(dataDir)
-	if err != nil {
-		t.Fatalf("MaterializeStoredClientPrimaryEndpoint() error = %v", err)
+	err := CheckSupportedClientEndpointConfig(dataDir)
+	if err == nil {
+		t.Fatal("CheckSupportedClientEndpointConfig() error = nil, want unsupported config")
 	}
-	if !changed {
-		t.Fatal("changed = false, want true")
+	if !strings.Contains(err.Error(), "top-level ssh") {
+		t.Fatalf("error = %v, want top-level ssh guidance", err)
 	}
-	if registry.Default != DefaultClientEndpointName {
-		t.Fatalf("Default = %q, want %q", registry.Default, DefaultClientEndpointName)
-	}
-	endpoint := registry.Endpoints[DefaultClientEndpointName]
-	if endpoint.Role != ClientEndpointRoleSigner || endpoint.URL != "ssh://signer.example:2222" {
-		t.Fatalf("primary endpoint = %#v, want legacy signer", endpoint)
+}
+
+func TestCheckSupportedClientEndpointConfigRejectsMalformedLegacySSH(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
+network: testnet
+ssh: {}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	registry, changed, err = MaterializeStoredClientPrimaryEndpoint(dataDir)
-	if err != nil {
-		t.Fatalf("MaterializeStoredClientPrimaryEndpoint(second) error = %v", err)
+	err := CheckSupportedClientEndpointConfig(dataDir)
+	if err == nil {
+		t.Fatal("CheckSupportedClientEndpointConfig() error = nil, want unsupported config")
 	}
-	if changed {
-		t.Fatal("changed = true on second materialize, want false")
-	}
-	if registry.Default != DefaultClientEndpointName {
-		t.Fatalf("second Default = %q, want %q", registry.Default, DefaultClientEndpointName)
-	}
-
-	needed, err = StoredClientPrimaryEndpointMaterializationNeeded(dataDir)
-	if err != nil {
-		t.Fatalf("StoredClientPrimaryEndpointMaterializationNeeded(after) error = %v", err)
-	}
-	if needed {
-		t.Fatal("needed = true after materialize, want false")
+	if !strings.Contains(err.Error(), "top-level ssh") {
+		t.Fatalf("error = %v, want top-level ssh guidance", err)
 	}
 }
 

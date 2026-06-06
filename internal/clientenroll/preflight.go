@@ -33,10 +33,10 @@ type Prereqs struct {
 }
 
 // LoadEnrolledClient validates that the client is already enrolled for a
-// non-interactive, signer-facing surface. It requires a default signer endpoint
-// or legacy ssh config, a client token, and a trusted known_hosts entry.
+// non-interactive, signer-facing surface. It requires a default signer endpoint,
+// a client token, and a trusted known_hosts entry.
 func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
-	if err := config.CheckNoLegacyClientEndpointConfig(dataDir); err != nil {
+	if err := config.CheckSupportedClientEndpointConfig(dataDir); err != nil {
 		return nil, err
 	}
 	cfg, err := config.LoadConfig(dataDir)

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"gopkg.in/yaml.v3"
 )
@@ -283,29 +284,24 @@ func syncClonedKnownHosts(signerDataDir, clientDataDir string) error {
 		return err
 	}
 
-	clientCfgPath := filepath.Join(clientDataDir, "config.yaml")
-	data, err := os.ReadFile(clientCfgPath)
+	cfg, err := config.LoadConfig(clientDataDir)
 	if err != nil {
 		return err
 	}
-	var cfg struct {
-		SSH struct {
-			Host string `yaml:"host"`
-			Port int    `yaml:"port"`
-		} `yaml:"ssh"`
+	_, endpoint, ok := cfg.Endpoints.DefaultEndpoint()
+	if !ok {
+		return fmt.Errorf("client endpoint registry missing default signer endpoint")
 	}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	host, port, err := config.ClientEndpointSSHHostPort(endpoint)
+	if err != nil {
 		return err
-	}
-	if cfg.SSH.Host == "" || cfg.SSH.Port == 0 {
-		return fmt.Errorf("client ssh config missing host/port")
 	}
 
 	knownHostsDir := filepath.Join(clientDataDir, ".ssh")
 	if err := os.MkdirAll(knownHostsDir, 0o700); err != nil {
 		return err
 	}
-	entry := fmt.Sprintf("[%s]:%d %s\n", cfg.SSH.Host, cfg.SSH.Port, strings.TrimSpace(string(pubKey)))
+	entry := fmt.Sprintf("[%s]:%d %s\n", host, port, strings.TrimSpace(string(pubKey)))
 	return os.WriteFile(filepath.Join(knownHostsDir, "known_hosts"), []byte(entry), 0o600)
 }
 
@@ -356,10 +352,11 @@ func assignClonedPorts(signerDataDir, clientDataDir string) error {
 	if err := setYAMLPath(filepath.Join(signerDataDir, "config.yaml"), sshPort, "ssh", "port"); err != nil {
 		return err
 	}
-	if err := setYAMLPath(filepath.Join(clientDataDir, "config.yaml"), signerPort, "signer_port"); err != nil {
+	endpointsPath := filepath.Join(clientDataDir, config.ClientEndpointsFile)
+	if err := setYAMLPath(endpointsPath, "ssh://localhost:"+fmt.Sprint(sshPort), "endpoints", config.DefaultClientEndpointName, "url"); err != nil {
 		return err
 	}
-	return setYAMLPath(filepath.Join(clientDataDir, "config.yaml"), sshPort, "ssh", "port")
+	return setYAMLPath(endpointsPath, signerPort, "endpoints", config.DefaultClientEndpointName, "signer_port")
 }
 
 func reserveTCPPorts(count int) ([]int, error) {

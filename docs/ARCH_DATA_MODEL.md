@@ -439,7 +439,8 @@ enabled_plugins:
 Release-archive installs create an empty activation list on first install
 (when `plugins.yaml` does not already exist). The bundled `algokit-localnet`
 plugin is staged under `plugins.available/` but not enabled by default.
-Existing `plugins.yaml` activation choices are preserved on upgrade.
+Existing `plugins.yaml` activation choices are preserved when the installer is
+run again against the same client data directory.
 
 A plugin is executable only when it appears in `plugins.yaml`, exists under
 `plugins.available/<name>`, has a valid manifest, passes checksum validation,
@@ -694,10 +695,10 @@ generation availability, provenance, and policy editing behavior.
 
 ## Compatibility Invariants
 
-- Before `v1.0`, runtime compatibility is release-to-release. Existing key
-  files remain signing authority; config, setting, admin protocol, SDK DTO,
-  cache, and docs-example shapes may be reset or renamed unless this document
-  names a specific transition.
+- Before `v1.0`, this release is new-install-only. Key files created by this
+  release are signing authority; config, setting, admin protocol, SDK DTO,
+  cache, and docs-example shapes may be reset or renamed by later releases
+  unless a later contract explicitly says otherwise.
 - Canonical `key_type` strings are stored and transmitted exactly; display
   labels are not identifiers.
 - Key files are signing authority for existing keys.

@@ -36,30 +36,6 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 	}
 }
 
-func TestRegisterClientMarksFalcon1024AttestedDefaultEnabled(t *testing.T) {
-	RegisterClient()
-
-	for _, keyType := range []string{
-		falcon1024attested.KeyTypeV1,
-		falcon1024attested.KeyTypeFalcon1024V1,
-	} {
-		t.Run(keyType, func(t *testing.T) {
-			if !lsigprovider.Has(keyType) {
-				t.Fatalf("RegisterClient() did not register %s", keyType)
-			}
-			if !keytypecatalog.IsDefaultEnabled(keyType) {
-				t.Fatalf("%s should be default-enabled", keyType)
-			}
-			if keytypecatalog.IsLibraryVisible(keyType) {
-				t.Fatalf("%s should not be library-visible", keyType)
-			}
-			if !containsKeyType(keymgmt.GetValidKeyTypes(), keyType) {
-				t.Fatalf("%s should be in default generation key types", keyType)
-			}
-		})
-	}
-}
-
 // TestRegisterClientMarksLibraryVisible pins the "compiled in but gated behind
 // per-identity activation" contract for every library-availability DSA
 // provider. Adding a new library-gated provider without a row here is a
@@ -68,6 +44,8 @@ func TestRegisterClientMarksLibraryVisible(t *testing.T) {
 	RegisterClient()
 
 	libraryGatedKeyTypes := []string{
+		falcon1024attested.KeyTypeV1,
+		falcon1024attested.KeyTypeFalcon1024V1,
 		falcon1024ed25519.KeyTypeV1,
 		ecdsak1.KeyTypeV1,
 	}
@@ -87,6 +65,9 @@ func TestRegisterClientMarksLibraryVisible(t *testing.T) {
 				if validType == keyType {
 					t.Fatalf("%s should not be in default generation key types", keyType)
 				}
+			}
+			if !containsKeyType(keymgmt.GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
+				t.Fatalf("%s should be in generation key types after activation", keyType)
 			}
 		})
 	}

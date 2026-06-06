@@ -88,7 +88,7 @@ func TestTemplateLibraryDescriptionIsSingleLineEllipsized(t *testing.T) {
 	}
 }
 
-func TestDisabledInstalledTemplateStatusIsNotAvailableToCreate(t *testing.T) {
+func TestDisabledInstalledTemplateStatusIsDisabled(t *testing.T) {
 	tmpl := protocol.LibraryTemplateInfo{
 		KeyType:      "aplane.falcon1024-whitelist.v1",
 		TemplateType: "falcon",
@@ -96,8 +96,8 @@ func TestDisabledInstalledTemplateStatusIsNotAvailableToCreate(t *testing.T) {
 		Enabled:      false,
 	}
 
-	if got := templateLibraryStatus(tmpl); got != "not available to create" {
-		t.Fatalf("templateLibraryStatus() = %q, want not available to create", got)
+	if got := templateLibraryStatus(tmpl); got != "Disabled" {
+		t.Fatalf("templateLibraryStatus() = %q, want Disabled", got)
 	}
 	if libraryEntryEnabled(tmpl) {
 		t.Fatal("libraryEntryEnabled() = true, want false for disabled installed template")
@@ -113,20 +113,20 @@ func TestCompiledProviderLifecycleVocabulary(t *testing.T) {
 		TemplateType: libraryTypeCompiledProvider,
 		Installed:    false,
 	}
-	if got := libraryActionVerb(inactive); got != "activate" {
-		t.Fatalf("inactive compiled provider action = %q, want activate", got)
+	if got := libraryActionVerb(inactive); got != "enable" {
+		t.Fatalf("inactive compiled provider action = %q, want enable", got)
 	}
-	if got := libraryConfirmTitle(inactive); got != "Activate Compiled Provider" {
-		t.Fatalf("inactive compiled provider title = %q, want Activate Compiled Provider", got)
+	if got := libraryConfirmTitle(inactive); got != "Enable Key Type" {
+		t.Fatalf("inactive compiled provider title = %q, want Enable Key Type", got)
 	}
 
 	active := inactive
 	active.Installed = true
-	if got := libraryActionVerb(active); got != "deactivate" {
-		t.Fatalf("active compiled provider action = %q, want deactivate", got)
+	if got := libraryActionVerb(active); got != "disable" {
+		t.Fatalf("active compiled provider action = %q, want disable", got)
 	}
-	if got := libraryConfirmTitle(active); got != "Deactivate Compiled Provider" {
-		t.Fatalf("active compiled provider title = %q, want Deactivate Compiled Provider", got)
+	if got := libraryConfirmTitle(active); got != "Disable Key Type" {
+		t.Fatalf("active compiled provider title = %q, want Disable Key Type", got)
 	}
 }
 
@@ -263,7 +263,7 @@ func TestCompiledProviderLibraryEntryUsesActivationLanguage(t *testing.T) {
 	for _, want := range []string{
 		"KeyType Library",
 		"falcon",
-		"not available to create",
+		"Disabled",
 		"Source: built-in key type",
 		"Publisher: aplane",
 		"Toggle availability",
@@ -280,7 +280,7 @@ func TestCompiledProviderLibraryEntryUsesActivationLanguage(t *testing.T) {
 	}
 
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Activate Compiled Provider", "Key type:  falcon1024_ed25519.v1", "Publisher: aplane", "Source:    falcon", "ACTIVATE"} {
+	for _, want := range []string{"Enable Key Type", "Key type:  falcon1024_ed25519.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -305,7 +305,7 @@ func TestUninstalledTemplateOpensEnableConfirmation(t *testing.T) {
 		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Enable Template Key Type", "Key type:  timed-whitelist.v1", "Publisher: aplane", "Source:    generic", "ENABLE"} {
+	for _, want := range []string{"Enable Key Type", "Key type:  timed-whitelist.v1", "Publisher: aplane", "Source:    generic", "ENABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -326,8 +326,8 @@ func TestCompiledProviderLibraryEntryUsesECDSAColumn(t *testing.T) {
 	if got := libraryTypeColumn(tmpl); got != "ecdsa" {
 		t.Fatalf("libraryTypeColumn() = %q, want ecdsa", got)
 	}
-	if got := templateLibraryStatus(tmpl); got != "available to create" {
-		t.Fatalf("templateLibraryStatus() = %q, want available to create", got)
+	if got := templateLibraryStatus(tmpl); got != "Enabled" {
+		t.Fatalf("templateLibraryStatus() = %q, want Enabled", got)
 	}
 }
 
@@ -339,8 +339,8 @@ func TestCompiledProviderInstallResultUsesActivatedStatus(t *testing.T) {
 		KeyType: "aplane.falcon1024_ed25519.v1",
 	})
 	got := next.(Model)
-	if got.templateInstallStatus != "falcon1024_ed25519.v1 available to create" {
-		t.Fatalf("templateInstallStatus = %q, want available-to-create status", got.templateInstallStatus)
+	if got.templateInstallStatus != "falcon1024_ed25519.v1 Enabled" {
+		t.Fatalf("templateInstallStatus = %q, want Enabled status", got.templateInstallStatus)
 	}
 }
 
@@ -353,8 +353,8 @@ func TestTemplateInstallResultUsesEnabledStatus(t *testing.T) {
 		TemplateType: "generic",
 	})
 	got := next.(Model)
-	if got.templateInstallStatus != "timed-whitelist.v1 available to create" {
-		t.Fatalf("templateInstallStatus = %q, want available-to-create status", got.templateInstallStatus)
+	if got.templateInstallStatus != "timed-whitelist.v1 Enabled" {
+		t.Fatalf("templateInstallStatus = %q, want Enabled status", got.templateInstallStatus)
 	}
 }
 
@@ -372,11 +372,11 @@ func TestCompiledProviderAlreadyActivatedStatus(t *testing.T) {
 	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
 	if got.viewState != ViewTemplateInstallConfirm || got.pendingTemplate == nil {
-		t.Fatalf("enter moved to %v pending=%#v, want deactivate confirm", got.viewState, got.pendingTemplate)
+		t.Fatalf("enter moved to %v pending=%#v, want disable confirm", got.viewState, got.pendingTemplate)
 	}
 
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Deactivate Compiled Provider", "Key type:  falcon1024_ed25519.v1", "Publisher: aplane", "Source:    falcon", "DEACTIVATE"} {
+	for _, want := range []string{"Disable Key Type", "Key type:  falcon1024_ed25519.v1", "Publisher: aplane", "Source:    falcon", "DISABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -392,8 +392,8 @@ func TestCompiledProviderDeactivateResultUsesDeactivatedStatus(t *testing.T) {
 		Removed: true,
 	})
 	got := next.(Model)
-	if got.templateInstallStatus != "falcon1024_ed25519.v1 not available to create" {
-		t.Fatalf("templateInstallStatus = %q, want not-available-to-create status", got.templateInstallStatus)
+	if got.templateInstallStatus != "falcon1024_ed25519.v1 Disabled" {
+		t.Fatalf("templateInstallStatus = %q, want Disabled status", got.templateInstallStatus)
 	}
 }
 
@@ -415,7 +415,7 @@ func TestInstalledEnabledTemplateOpensDisableConfirmation(t *testing.T) {
 		t.Fatalf("enter moved to %v pending=%#v, want disable confirm", got.viewState, got.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Disable Template Key Type", "Key type:  timed-whitelist.v1", "Publisher: aplane", "Source:    generic", "DISABLE"} {
+	for _, want := range []string{"Disable Key Type", "Key type:  timed-whitelist.v1", "Publisher: aplane", "Source:    generic", "DISABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -440,7 +440,7 @@ func TestInstalledDisabledTemplateOpensEnableConfirmation(t *testing.T) {
 		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Enable Template Key Type", "Key type:  falcon1024-whitelist.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {
+	for _, want := range []string{"Enable Key Type", "Key type:  falcon1024-whitelist.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}

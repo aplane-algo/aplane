@@ -47,8 +47,18 @@ func TestLoadRemoteAdminConfigRequiresKnownHost(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `
 network: testnet
-ssh:
-  host: signer.local
+`)
+	writeRemoteEndpointRegistry(t, dir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.local:1127
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
 `)
 	if err := tokenfile.WriteToken(filepath.Join(dir, "aplane.token"), "test-token"); err != nil {
 		t.Fatalf("write token: %v", err)
@@ -70,10 +80,18 @@ func TestLoadRemoteAdminConfigRejectsDummyKnownHostEntry(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `
 network: testnet
-ssh:
-  host: signer.local
-  port: 2222
-  known_hosts_path: hosts/known_hosts
+`)
+	writeRemoteEndpointRegistry(t, dir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.local:2222
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: hosts/known_hosts
+    token_file: aplane.token
 `)
 	if err := tokenfile.WriteToken(filepath.Join(dir, "aplane.token"), "test-token"); err != nil {
 		t.Fatalf("write token: %v", err)
@@ -96,8 +114,18 @@ func TestLoadRemoteAdminConfigRequiresToken(t *testing.T) {
 	dir := t.TempDir()
 	writeRemoteConfig(t, dir, `
 network: testnet
-ssh:
-  host: signer.local
+`)
+	writeRemoteEndpointRegistry(t, dir, `
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.local:1127
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
 `)
 
 	cfg, err := loadRemoteAdminConfig(dir, false)

@@ -549,9 +549,8 @@ connect [endpoint-alias]
 
 With no arguments, `connect` opens the default signer endpoint from
 `$APCLIENT_DATA/endpoints.yaml`. Passing an endpoint alias connects to that
-named profile. Legacy clients that still store signer routing in the `ssh:`
-block of `config.yaml` must run `migrate-config-v1 -d "$APCLIENT_DATA"` before
-starting `apshell`.
+named profile. This release does not support top-level `ssh:` signer routing in
+client `config.yaml`; write signer routing in `endpoints.yaml`.
 
 **Examples:**
 ```

@@ -53,7 +53,7 @@ func TestLoadConfiguresStartupAndStorePaths(t *testing.T) {
 	}
 }
 
-func TestLoadRefusesLegacyClientEndpointConfig(t *testing.T) {
+func TestLoadRefusesUnsupportedClientEndpointConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	configYAML := []byte(`
@@ -71,16 +71,16 @@ networks:
 
 	startup, err := Load(tmpDir, "")
 	if err == nil {
-		t.Fatal("Load() error = nil, want legacy endpoint config error")
+		t.Fatal("Load() error = nil, want unsupported endpoint config error")
 	}
 	if startup != nil {
 		t.Fatalf("startup = %#v, want nil", startup)
 	}
-	if !strings.Contains(err.Error(), "legacy apclient endpoint config") {
-		t.Fatalf("error = %v, want legacy endpoint config message", err)
+	if !strings.Contains(err.Error(), "unsupported apclient endpoint config") {
+		t.Fatalf("error = %v, want unsupported endpoint config message", err)
 	}
-	if !strings.Contains(err.Error(), "endpoints.yaml") {
-		t.Fatalf("error = %v, want endpoints.yaml instruction", err)
+	if !strings.Contains(err.Error(), "new-install-only") {
+		t.Fatalf("error = %v, want new-install-only guidance", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(tmpDir, "endpoints.yaml")); !os.IsNotExist(statErr) {
 		t.Fatalf("endpoints.yaml stat error = %v, want not exist", statErr)

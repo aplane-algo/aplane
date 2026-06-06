@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Smoke-test the bootstrap release tarball in a non-systemd Ubuntu container,
 # running install.sh in local (rootless, user-directory) mode as a regular
-# user. Asserts the install layout, exercises stopped reinstall, running
-# reinstall gating, uninstall, and reinstall over preserved state.
+# user. Asserts the install layout, exercises running-install gating, verifies
+# stopped reinstall is rejected for this new-install-only release, and checks
+# uninstall state preservation.
 
 set -euo pipefail
 
@@ -33,12 +34,12 @@ Options:
 This test requires Docker privileges. It starts a stock ubuntu:24.04 container
 (no systemd), creates a non-root test user, runs install.sh in local mode,
 verifies the install layout, exercises appass --check, starts apsigner,
-verifies the installer refuses to upgrade while that signer is running, starts
+verifies the installer refuses to run while that signer is running, starts
 apapprover, drives `apshell request-token` end-to-end (including the
 apapprover-side approval), confirms the client can reach the signer with the
-issued token, verifies a stopped in-place reinstall preserves state, then runs
-the installed uninstaller, verifies state preservation, reinstalls over the
-preserved state, and performs a final uninstall cleanup.
+issued token, verifies a stopped in-place reinstall is rejected as
+new-install-only without changing state, then runs the installed uninstaller
+and verifies state preservation.
 EOF
 }
 
@@ -439,22 +440,25 @@ diff -u /tmp/local-state-baseline.stat /tmp/local-state-current.stat"
 run_local_reinstaller() {
     docker_exec_as_tester "cd /home/$TEST_USER/src/aplane && expect <<'EXPECT'
 set timeout 180
-set completed 0
+set rejected 0
 spawn ./install.sh /home/$TEST_USER/aplane
 expect {
   \"Proceed with installation?*\" { send \"\r\"; exp_continue }
   \"Enable enforced memory locking for apsigner?*\" { send \"n\r\"; exp_continue }
   \"Add apenv.sh to *\" { send \"y\r\"; exp_continue }
-  \"=== Installation complete ===\" { set completed 1; exp_continue }
+  \"new-install-only\" { set rejected 1; exp_continue }
   timeout { exit 18 }
   eof {}
 }
 set result [wait]
 set rc [lindex \$result 3]
-if {\$completed != 1} {
+if {\$rejected != 1} {
   exit 19
 }
-exit \$rc
+if {\$rc == 0} {
+  exit 20
+}
+exit 0
 EXPECT"
 }
 
@@ -585,7 +589,7 @@ main() {
     log "Starting apsigner (background)"
     start_apsigner
 
-    log "Checking approbe gating blocks local reinstall while signer runs"
+    log "Checking approbe gating blocks local install while signer runs"
     verify_approbe_gating_install
 
     log "Seeding client known_hosts with signer host key"
@@ -609,23 +613,14 @@ main() {
     log "Shutting down signer and approver"
     shutdown_services
 
-    log "Reinstalling local install while signer is stopped"
+    log "Checking new-install-only rejects stopped local reinstall"
     run_local_reinstaller
 
-    log "Verifying local layout after stopped reinstall"
+    log "Verifying local layout after rejected stopped reinstall"
     verify_install
 
-    log "Verifying local state survived stopped reinstall"
+    log "Verifying local state survived rejected stopped reinstall"
     verify_local_state_fingerprint
-
-    log "Starting apsigner after stopped reinstall"
-    start_apsigner
-
-    log "Verifying client can reach signer after stopped reinstall"
-    verify_signer_reachable
-
-    log "Shutting down signer after stopped reinstall"
-    shutdown_services
 
     log "Configuring appass-file auto-unlock"
     setup_appass_file_unlock
@@ -644,30 +639,6 @@ main() {
 
     log "Verifying local state survived uninstall"
     verify_local_state_fingerprint
-
-    log "Reinstalling local install over preserved state"
-    run_local_reinstaller
-
-    log "Verifying local layout after uninstall/reinstall"
-    verify_install
-
-    log "Verifying local state survived uninstall/reinstall"
-    verify_local_state_fingerprint
-
-    log "Starting apsigner after uninstall/reinstall"
-    start_apsigner
-
-    log "Verifying client can reach signer after uninstall/reinstall"
-    verify_signer_reachable
-
-    log "Shutting down signer after uninstall/reinstall"
-    shutdown_services
-
-    log "Running final local uninstaller cleanup"
-    run_uninstaller
-
-    log "Verifying final uninstall removed installed files"
-    verify_uninstall
 
     log "Docker local smoke test passed"
 }

@@ -6,8 +6,8 @@ package keytypeux
 import "github.com/aplane-algo/aplane/internal/keys"
 
 const (
-	AvailableToCreate    = "available to create"
-	NotAvailableToCreate = "not available to create"
+	AvailableToCreate    = "Enabled"
+	NotAvailableToCreate = "Disabled"
 	TemplateProvenance   = "template provenance"
 )
 

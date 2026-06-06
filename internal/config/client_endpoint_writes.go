@@ -14,10 +14,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var ErrLegacyClientEndpointConfig = errors.New("legacy apclient endpoint config")
+var ErrUnsupportedClientEndpointConfig = errors.New("unsupported apclient endpoint config")
 
-// LoadStoredClientEndpointRegistry loads only endpoints.yaml, without
-// overlaying the legacy config.yaml ssh primary endpoint.
+// LoadStoredClientEndpointRegistry loads only endpoints.yaml.
 func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, bool, error) {
 	path := GetClientEndpointsPath(dataDir)
 	if path == "" {
@@ -26,7 +25,7 @@ func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, b
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return emptyStoredClientEndpointRegistry(), false, nil
+			return emptyClientEndpointRegistry(), false, nil
 		}
 		return ClientEndpointRegistry{}, false, fmt.Errorf("failed to read %s: %w", path, err)
 	}
@@ -40,76 +39,38 @@ func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, b
 	return registry, true, nil
 }
 
-// StoredClientPrimaryEndpointMaterializationNeeded reports whether the client
-// still relies on legacy config.yaml SSH primary endpoint settings that can be
-// promoted into endpoints.yaml.
-func StoredClientPrimaryEndpointMaterializationNeeded(dataDir string) (bool, error) {
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
-	if err != nil {
-		return false, err
-	}
-	if clientEndpointRegistryHasSigner(registry) {
-		return false, nil
-	}
-	if _, exists := registry.Endpoints[DefaultClientEndpointName]; exists {
-		return false, fmt.Errorf("%s endpoint %q already exists but no signer endpoint is configured", ClientEndpointsFile, DefaultClientEndpointName)
-	}
-	_, ok := storedLegacyPrimaryEndpoint(dataDir)
-	return ok, nil
-}
-
-// CheckNoLegacyClientEndpointConfig fails when a client still relies on the
-// pre-endpoint config.yaml ssh signer settings instead of endpoints.yaml.
-func CheckNoLegacyClientEndpointConfig(dataDir string) error {
-	needed, err := StoredClientPrimaryEndpointMaterializationNeeded(dataDir)
+// CheckSupportedClientEndpointConfig rejects pre-endpoint client config. This
+// release is new-install-only and does not convert config.yaml ssh routing.
+func CheckSupportedClientEndpointConfig(dataDir string) error {
+	hasSSH, err := clientConfigHasTopLevelSSH(dataDir)
 	if err != nil {
 		return err
 	}
-	if !needed {
-		return nil
+	if hasSSH {
+		return fmt.Errorf("%w: config.yaml contains top-level ssh signer settings; this release is new-install-only, create a fresh apclient data directory or write signer routing in %s", ErrUnsupportedClientEndpointConfig, ClientEndpointsFile)
 	}
-	return fmt.Errorf("%w: config.yaml contains signer ssh settings, but %s has no signer endpoint; run migrate-config-v1 -d %s before starting apshell or the apconsole shell", ErrLegacyClientEndpointConfig, ClientEndpointsFile, dataDir)
+	_, _, err = LoadStoredClientEndpointRegistry(dataDir)
+	return err
 }
 
-// MaterializeStoredClientPrimaryEndpoint writes the legacy config.yaml SSH
-// primary endpoint into endpoints.yaml when no stored signer endpoint exists.
-// It is the explicit compatibility bridge from pre-endpoint clients to the
-// endpoint registry shape.
-func MaterializeStoredClientPrimaryEndpoint(dataDir string) (ClientEndpointRegistry, bool, error) {
-	registry, changed, err := MaterializeStoredClientPrimaryEndpointPlan(dataDir)
-	if err != nil || !changed {
-		return registry, changed, err
+func clientConfigHasTopLevelSSH(dataDir string) (bool, error) {
+	path := GetConfigPath(dataDir)
+	if path == "" {
+		return false, nil
 	}
-	if err := SaveStoredClientEndpointRegistry(dataDir, registry); err != nil {
-		return ClientEndpointRegistry{}, false, err
-	}
-	return registry, true, nil
-}
-
-// MaterializeStoredClientPrimaryEndpointPlan returns the endpoint registry that
-// would be written by MaterializeStoredClientPrimaryEndpoint. It does not touch
-// endpoints.yaml.
-func MaterializeStoredClientPrimaryEndpointPlan(dataDir string) (ClientEndpointRegistry, bool, error) {
-	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return ClientEndpointRegistry{}, false, err
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to read %s: %w", path, err)
 	}
-	if clientEndpointRegistryHasSigner(registry) {
-		return registry, false, nil
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return false, nil
 	}
-	legacy, ok := storedLegacyPrimaryEndpoint(dataDir)
-	if !ok {
-		return registry, false, nil
-	}
-	if _, exists := registry.Endpoints[DefaultClientEndpointName]; exists {
-		return ClientEndpointRegistry{}, false, fmt.Errorf("%s endpoint %q already exists but no signer endpoint is configured", ClientEndpointsFile, DefaultClientEndpointName)
-	}
-	registry.Endpoints[DefaultClientEndpointName] = legacy
-	registry.Default = DefaultClientEndpointName
-	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
-		return ClientEndpointRegistry{}, false, err
-	}
-	return registry, true, nil
+	_, ok := raw["ssh"]
+	return ok, nil
 }
 
 func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointRegistry) error {
@@ -156,21 +117,6 @@ func PlanStoredClientEndpointUpsert(dataDir, alias string, endpoint ClientEndpoi
 		}
 		if existingEndpoint.Role == normalized.Role && existingEndpoint.URL == normalized.URL {
 			return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint URL %q already belongs to alias %q", normalized.URL, existingAlias)
-		}
-	}
-	if _, hasStoredPrimary := registry.Endpoints[DefaultClientEndpointName]; !hasStoredPrimary && alias != DefaultClientEndpointName {
-		if legacyPrimary, ok := storedLegacyPrimaryEndpoint(dataDir); ok && legacyPrimary.Role == normalized.Role && legacyPrimary.URL == normalized.URL {
-			return StoredClientEndpointUpsertPlan{}, fmt.Errorf("endpoint URL %q already belongs to alias %q", normalized.URL, DefaultClientEndpointName)
-		}
-	}
-	if normalized.Role != ClientEndpointRoleSigner && !clientEndpointRegistryHasSigner(registry) {
-		legacyPrimary, ok := storedLegacyPrimaryEndpoint(dataDir)
-		if ok {
-			if _, exists := registry.Endpoints[DefaultClientEndpointName]; exists {
-				return StoredClientEndpointUpsertPlan{}, fmt.Errorf("%s endpoint %q already exists but no signer endpoint is configured", ClientEndpointsFile, DefaultClientEndpointName)
-			}
-			registry.Endpoints[DefaultClientEndpointName] = legacyPrimary
-			registry.Default = DefaultClientEndpointName
 		}
 	}
 	if exists && !storedClientEndpointsEqual(existing, normalized) && !replace {
@@ -220,12 +166,7 @@ func SetStoredClientEndpointDefault(dataDir, alias string) (ClientEndpointRegist
 	}
 	endpoint, ok := registry.Endpoints[alias]
 	if !ok {
-		legacy, ok := storedLegacyPrimaryEndpoint(dataDir)
-		if alias != DefaultClientEndpointName || !ok {
-			return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is not defined", alias)
-		}
-		registry.Endpoints[alias] = legacy
-		endpoint = legacy
+		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is not defined", alias)
 	}
 	if endpoint.Role != ClientEndpointRoleSigner {
 		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q has role %q; default endpoint must have role %q", alias, endpoint.Role, ClientEndpointRoleSigner)
@@ -249,11 +190,6 @@ func DeleteStoredClientEndpoint(dataDir, alias string) (ClientEndpointRegistry, 
 		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is the default endpoint", alias)
 	}
 	if _, ok := registry.Endpoints[alias]; !ok {
-		if alias == DefaultClientEndpointName {
-			if _, hasLegacy := storedLegacyPrimaryEndpoint(dataDir); hasLegacy {
-				return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is defined by config.yaml ssh settings; edit config.yaml to remove it", alias)
-			}
-		}
 		return ClientEndpointRegistry{}, fmt.Errorf("endpoint alias %q is not defined", alias)
 	}
 	delete(registry.Endpoints, alias)
@@ -307,17 +243,10 @@ func PlanStoredClientEndpointPublishedAttestorRebuild(dataDir string, publicatio
 
 		endpoint, ok := registry.Endpoints[alias]
 		if !ok {
-			if alias != DefaultClientEndpointName || len(normalizedPublished) == 0 {
-				if len(normalizedPublished) == 0 {
-					continue
-				}
-				return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q is not defined", alias)
+			if len(normalizedPublished) == 0 {
+				continue
 			}
-			legacy, hasLegacy := storedLegacyPrimaryEndpoint(dataDir)
-			if !hasLegacy {
-				return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q is not defined", alias)
-			}
-			endpoint = legacy
+			return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q is not defined", alias)
 		}
 		if endpoint.Role != ClientEndpointRoleAttestor {
 			return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q has role %q; published_attestors require role %q", alias, endpoint.Role, ClientEndpointRoleAttestor)
@@ -364,13 +293,6 @@ func RebuildStoredClientEndpointPublishedAttestors(dataDir string, publications 
 		return ClientEndpointPublishedAttestorRebuildPlan{}, err
 	}
 	return plan, nil
-}
-
-func emptyStoredClientEndpointRegistry() ClientEndpointRegistry {
-	return ClientEndpointRegistry{
-		SchemaVersion: 1,
-		Endpoints:     map[string]ClientEndpointConfig{},
-	}
 }
 
 func normalizeStoredClientEndpointRegistry(registry *ClientEndpointRegistry) error {
@@ -451,23 +373,4 @@ func storedClientEndpointsEqual(a, b ClientEndpointConfig) bool {
 		}
 	}
 	return true
-}
-
-func storedLegacyPrimaryEndpoint(dataDir string) (ClientEndpointConfig, bool) {
-	cfg, err := LoadConfigFromPath(GetConfigPath(dataDir))
-	if err != nil || cfg.SSH == nil {
-		return ClientEndpointConfig{}, false
-	}
-	endpoint, err := normalizeStoredClientEndpoint(DefaultClientEndpointName, ClientEndpointConfig{
-		Role:           ClientEndpointRoleSigner,
-		URL:            fmt.Sprintf("ssh://%s:%d", cfg.SSH.Host, cfg.SSH.Port),
-		SignerPort:     cfg.SignerPort,
-		IdentityFile:   cfg.SSH.IdentityFile,
-		KnownHostsPath: cfg.SSH.KnownHostsPath,
-		TokenFile:      "aplane.token",
-	})
-	if err != nil {
-		return ClientEndpointConfig{}, false
-	}
-	return endpoint, true
 }

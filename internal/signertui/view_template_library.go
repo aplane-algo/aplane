@@ -347,17 +347,8 @@ func libraryEntryEnabled(tmpl LibraryTemplateInfo) bool {
 }
 
 func libraryActionVerb(tmpl LibraryTemplateInfo) string {
-	if isCompiledProviderLibraryEntry(tmpl) {
-		if tmpl.Installed {
-			return "deactivate"
-		}
-		return "activate"
-	}
-	if tmpl.Installed {
-		if tmpl.Enabled {
-			return "disable"
-		}
-		return "enable"
+	if libraryEntryEnabled(tmpl) {
+		return "disable"
 	}
 	return "enable"
 }
@@ -383,17 +374,11 @@ func (m Model) libraryEntryForResult(keyType, fallbackTemplateType string) Libra
 }
 
 func libraryActivateFailure(tmpl LibraryTemplateInfo) string {
-	if isCompiledProviderLibraryEntry(tmpl) {
-		return "Compiled provider activation failed"
-	}
-	return "Template key type enable failed"
+	return "Key type enable failed"
 }
 
 func libraryDeactivateFailure(tmpl LibraryTemplateInfo) string {
-	if isCompiledProviderLibraryEntry(tmpl) {
-		return "Compiled provider deactivation failed"
-	}
-	return "Template key type disable failed"
+	return "Key type disable failed"
 }
 
 func libraryEntryNoun(tmpl LibraryTemplateInfo) string {
@@ -433,17 +418,8 @@ func compiledKeyTypeColumn(tmpl LibraryTemplateInfo) string {
 }
 
 func libraryConfirmTitle(tmpl LibraryTemplateInfo) string {
-	if isCompiledProviderLibraryEntry(tmpl) {
-		if tmpl.Installed {
-			return "Deactivate Compiled Provider"
-		}
-		return "Activate Compiled Provider"
+	if libraryEntryEnabled(tmpl) {
+		return "Disable Key Type"
 	}
-	if tmpl.Installed {
-		if tmpl.Enabled {
-			return "Disable Template Key Type"
-		}
-		return "Enable Template Key Type"
-	}
-	return "Enable Template Key Type"
+	return "Enable Key Type"
 }

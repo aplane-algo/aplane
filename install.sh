@@ -547,8 +547,10 @@ classify_local_install() {
     fi
 
     if [ -f "$keystore_file" ]; then
-        printf '%s\n' "upgrade"
-        return
+        echo "Error: existing initialized signer store found at $identity_dir" >&2
+        echo "This release is new-install-only and does not support installing over an existing APlane data directory." >&2
+        echo "Create a fresh install root, or move the existing install aside before running install.sh." >&2
+        exit 1
     fi
 
     if [ -d "$identity_dir" ] && ! dir_is_empty "$identity_dir"; then
@@ -584,19 +586,9 @@ print_local_install_plan() {
     echo "  Install to:  $local_path"
     echo "  Signer:      $signer_dir"
     echo "  Client:      $client_dir"
-    if [ "$mode" = "upgrade" ]; then
-        echo "  Binaries:    will be replaced"
-        echo "  Config:      existing config files will be preserved"
-        echo "  Keystore:    initialized, will be preserved"
-    else
-        echo "  Signer port: $signer_port"
-        echo "  SSH port:    $ssh_port"
-        if [ -f "$keystore_file" ]; then
-            echo "  Keystore:    initialized, will be preserved"
-        else
-            echo "  Keystore:    will be initialized"
-        fi
-    fi
+    echo "  Signer port: $signer_port"
+    echo "  SSH port:    $ssh_port"
+    echo "  Keystore:    will be initialized"
     echo ""
 }
 
@@ -686,6 +678,17 @@ read_primary_endpoint_ssh_port() {
     local path="$1"
     [ -f "$path" ] || return 0
     awk -F: '
+        function trim_endpoint_url(value, quote) {
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+            quote = sprintf("%c", 39)
+            if (substr(value, 1, 1) == "\"" || substr(value, 1, 1) == quote) {
+                value = substr(value, 2)
+            }
+            if (substr(value, length(value), 1) == "\"" || substr(value, length(value), 1) == quote) {
+                value = substr(value, 1, length(value) - 1)
+            }
+            return value
+        }
         function indent_width(line) {
             match(line, /^[[:space:]]*/)
             return RLENGTH
@@ -710,7 +713,7 @@ read_primary_endpoint_ssh_port() {
                 value = $0
                 sub(/^[[:space:]]*url[[:space:]]*:[[:space:]]*/, "", value)
                 sub(/[[:space:]]*#.*/, "", value)
-                gsub(/^[[:space:]\"\047]+|[[:space:]\"\047]+$/, "", value)
+                value = trim_endpoint_url(value)
                 n = split(value, parts, ":")
                 if (n >= 3) {
                     print parts[n]
@@ -768,7 +771,7 @@ check_local_config_consistency() {
     fi
     echo "Client config still uses legacy signer settings in $client_config."
     echo "apshell now requires $client_endpoints for default signer routing."
-    echo "Run migrate-config-v1 -d \"$(dirname "$client_config")\" after install, then rerun this check if needed."
+    echo "This release is new-install-only; create a fresh apclient data directory or write $client_endpoints manually."
     return 0
 }
 
@@ -1367,7 +1370,7 @@ ensure_policy_integrity_sidecar() {
     echo ""
 
     if [ ! -r /dev/tty ]; then
-        echo "Error: cannot sign policy during upgrade without a TTY." >&2
+        echo "Error: cannot sign policy without a TTY." >&2
         echo "Run this manually before starting apsigner:" >&2
         if [ ! -f "$policy_file" ]; then
             echo "  printf '\\n' > $(shell_quote "$policy_file")" >&2
@@ -1534,7 +1537,7 @@ if [ "$CLIENT_MODE" = "1" ]; then
     echo ""
     echo "  Source:    $SCRIPT_DIR"
     echo "  Root:      $CLIENT_PATH"
-    echo "  Binaries:  $APCLIENT_DIR/bin/apshell, migrate-config-v1"
+    echo "  Binaries:  $APCLIENT_DIR/bin/apshell"
     echo "  Config:    $APCLIENT_DIR/config.yaml"
     echo ""
 
@@ -1547,11 +1550,6 @@ if [ "$CLIENT_MODE" = "1" ]; then
     cp "$BIN_SRC/apshell" "$BINDIR/apshell"
     chmod 755 "$BINDIR/apshell"
     repair_macos_binary "$BINDIR/apshell"
-    if [ -f "$BIN_SRC/migrate-config-v1" ]; then
-        cp "$BIN_SRC/migrate-config-v1" "$BINDIR/migrate-config-v1"
-        chmod 755 "$BINDIR/migrate-config-v1"
-        repair_macos_binary "$BINDIR/migrate-config-v1"
-    fi
     if [ -f "$BIN_SRC/aplocalnet" ]; then
         cp "$BIN_SRC/aplocalnet" "$BINDIR/aplocalnet"
         chmod 755 "$BINDIR/aplocalnet"
@@ -1730,16 +1728,16 @@ if [ "$LOCAL_MODE" = "1" ]; then
     # Create directories
     mkdir -p "$SIGNER_BINDIR" "$CLIENT_BINDIR"
 
-    # Copy binaries (apshell/aplocalnet/migrate-config-v1 → apclient/bin, everything else → apsigner/bin)
+    # Copy binaries (apshell/aplocalnet → apclient/bin, everything else → apsigner/bin)
     echo "Installing binaries..."
     for bin in "$BIN_SRC"/*; do
         [ -f "$bin" ] || continue
         name="$(basename "$bin")"
-        if [ "$name" = "apkey-migrate" ]; then
+        if [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
             echo "  skipping obsolete $name"
             continue
         fi
-        if [ "$name" = "apshell" ] || [ "$name" = "aplocalnet" ] || [ "$name" = "migrate-config-v1" ]; then
+        if [ "$name" = "apshell" ] || [ "$name" = "aplocalnet" ]; then
             cp "$bin" "$CLIENT_BINDIR/"
             chmod 755 "$CLIENT_BINDIR/$name"
             repair_macos_binary "$CLIENT_BINDIR/$name"
@@ -1841,15 +1839,11 @@ STARTEOF
         chmod +x "$LOCAL_PATH/uninstall.sh"
     fi
 
-    # Initialize keystore (skip if already initialized)
+    # Initialize keystore
     echo ""
     echo "=== Keystore initialization ==="
     echo ""
-    if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
-        echo "Keystore already initialized; skipping."
-    else
-        "$SIGNER_BINDIR/apstore" -d "$DATA_DIR" initialize </dev/tty
-    fi
+    "$SIGNER_BINDIR/apstore" -d "$DATA_DIR" initialize </dev/tty
     ensure_policy_integrity_sidecar "$DATA_DIR" "$SIGNER_BINDIR/apstore"
 
     # Configure apshell
@@ -2025,6 +2019,12 @@ if [ -z "$DATA_DIR" ]; then
     echo "Error: could not determine home directory for $SVC_USER" >&2
     exit 1
 fi
+if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
+    echo "Error: existing initialized signer store found at $DATA_DIR/identities/default" >&2
+    echo "This release is new-install-only and does not support installing over an existing APlane data directory." >&2
+    echo "Use a fresh signer data directory before running install.sh --systemd." >&2
+    exit 1
+fi
 
 if [ ! -d "$DATA_DIR" ]; then
     echo "Recreating missing data directory $DATA_DIR..."
@@ -2053,7 +2053,7 @@ echo "Installing binaries to $BINDIR..."
 for bin in "$BIN_SRC"/*; do
     [ -f "$bin" ] || continue
     name="$(basename "$bin")"
-    if [ "$name" = "apkey-migrate" ]; then
+    if [ "$name" = "apkey-migrate" ] || [ "$name" = "migrate-config-v1" ]; then
         echo "  skipping obsolete $name"
         continue
     fi
@@ -2113,13 +2113,8 @@ fi
 echo ""
 echo "=== Keystore initialization ==="
 echo ""
-if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
-    echo "Keystore already initialized; skipping."
-    repair_prod_store_lock_permissions "$DATA_DIR"
-else
-    "$BINDIR/apstore" -d "$DATA_DIR" initialize </dev/tty
-    repair_prod_store_lock_permissions "$DATA_DIR"
-fi
+"$BINDIR/apstore" -d "$DATA_DIR" initialize </dev/tty
+repair_prod_store_lock_permissions "$DATA_DIR"
 ensure_policy_integrity_sidecar "$DATA_DIR" "$BINDIR/apstore"
 
 # Step 7: Configure apshell for the installing user

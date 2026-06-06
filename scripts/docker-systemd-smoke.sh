@@ -30,20 +30,17 @@ Options:
 
 This test requires Docker privileges. It starts an Ubuntu 24.04 container with
 systemd, installs the local release tarball in --systemd mode, verifies the
-service/files/permissions, verifies the installer refuses to upgrade while the
+service/files/permissions, verifies the installer refuses to run while the
 systemd service is active, runs appass --check to confirm systemd-mode detection,
 drives `apshell request-token` end-to-end as the non-root installing user (with
 apapprover unlocking the signer and auto-approving), confirms the client can
 reach the signer with the issued token, verifies a stopped in-place systemd
-reinstall preserves signer and operator state, stages the on-disk state of
+reinstall is rejected as new-install-only without changing state, stages the on-disk state of
 `appass set systemd-creds` (passphrase.cred + unlock.yaml + unit
-LoadCredentialEncrypted= directive), exercises an uninstall/reinstall
-round-trip to validate that signer data is preserved and the unit directive is
-auto-rebound on reinstall, then runs the bundled systemd uninstaller and
-verifies signer data is preserved. (Runtime auto-unlock via systemd's
+LoadCredentialEncrypted= directive), then runs the bundled systemd uninstaller
+and verifies signer data is preserved. (Runtime auto-unlock via systemd's
 credential namespace is not asserted: LoadCredential[Encrypted]= is silently a
-no-op in privileged systemd containers, so the test validates the static rebind
-in systemd-setup.sh rather than the runtime behavior.)
+no-op in privileged systemd containers.)
 EOF
 }
 
@@ -448,21 +445,24 @@ run_stopped_systemd_reinstaller() {
     docker_exec systemctl stop apsigner
 docker_exec_bash "cd /tmp/aplane && expect <<'EXPECT'
 set timeout 180
-set completed 0
+set rejected 0
 spawn env SUDO_USER=$TEST_USER ./install.sh --systemd $OPERATOR_ROOT
 expect {
   \"Proceed with systemd install?*\" { send \"\r\"; exp_continue }
   \"Add apenv.sh to *\" { send \"y\r\"; exp_continue }
-  \"=== Installation complete ===\" { set completed 1; exp_continue }
+  \"new-install-only\" { set rejected 1; exp_continue }
   timeout { exit 17 }
   eof {}
 }
 set result [wait]
 set rc [lindex \$result 3]
-if {\$completed != 1} {
+if {\$rejected != 1} {
   exit 18
 }
-exit \$rc
+if {\$rc == 0} {
+  exit 19
+}
+exit 0
 EXPECT"
 }
 
@@ -557,8 +557,8 @@ setup_systemd_creds_artifacts() {
     # NOT restart the daemon: systemd's credential-namespace mounting at
     # /run/credentials/<service>/ is unreliable in privileged containers
     # (LoadCredential[Encrypted]= is silently a no-op), so runtime auto-unlock
-    # is not testable here. The fix this test validates is the *static*
-    # rebind in systemd-setup.sh, which is fully exercised below.
+    # is not testable here. This smoke test only validates that the public
+    # uninstall flow preserves those files.
     local cred_file="/var/lib/apsigner/identities/default/passphrase.cred"
     local unlock_file="/var/lib/apsigner/identities/default/unlock.yaml"
 
@@ -618,35 +618,6 @@ verify_cred_preserved_after_uninstall() {
     docker_exec_bash "test ! -e /etc/systemd/system/apsigner.service"
 }
 
-run_reinstaller() {
-    # --no-start: systemd-creds runtime is unreliable in this container, so
-    # we skip starting the daemon and validate the rebind by inspecting the
-    # unit file. The reinstaller still writes and enables the unit, which is
-    # what the rebind actually modifies.
-docker_exec_bash "cd /tmp/aplane && expect <<'EXPECT'
-set timeout 180
-set completed 0
-spawn env SUDO_USER=$TEST_USER ./install.sh --systemd $OPERATOR_ROOT --no-start
-expect {
-  \"Proceed with systemd install?*\" { send \"\r\"; exp_continue }
-  \"Add apenv.sh to *\" { send \"y\r\"; exp_continue }
-  \"=== Installation complete ===\" { set completed 1; exp_continue }
-  timeout { exit 10 }
-  eof {}
-}
-set result [wait]
-set rc [lindex \$result 3]
-if {\$completed != 1} {
-  exit 16
-}
-exit \$rc
-EXPECT"
-}
-
-verify_systemd_creds_rebind() {
-    docker_exec_bash "grep -qF 'LoadCredentialEncrypted=aplane-passphrase:/var/lib/apsigner/identities/default/passphrase.cred' /etc/systemd/system/apsigner.service"
-}
-
 main() {
     parse_args "$@"
     command -v docker >/dev/null 2>&1 || die "docker not found"
@@ -674,7 +645,7 @@ main() {
     log "Verifying installed systemd layout"
     verify_install
 
-    log "Checking systemd status gating blocks systemd reinstall while service runs"
+    log "Checking systemd status gating blocks systemd install while service runs"
     verify_systemd_status_gating_install
 
     log "Checking appass systemd-mode detection"
@@ -704,17 +675,14 @@ main() {
     log "Shutting down client-side services"
     shutdown_client_services
 
-    log "Reinstalling systemd install while service is stopped"
+    log "Checking new-install-only rejects stopped systemd reinstall"
     run_stopped_systemd_reinstaller
 
-    log "Verifying systemd layout after stopped reinstall"
+    log "Verifying systemd layout after rejected stopped reinstall"
     verify_install
 
-    log "Verifying systemd state survived stopped reinstall"
+    log "Verifying systemd state survived rejected stopped reinstall"
     verify_systemd_in_place_state_fingerprint
-
-    log "Verifying client can reach signer after stopped reinstall"
-    verify_signer_reachable
 
     log "Configuring appass-file auto-unlock"
     setup_appass_file_unlock
@@ -741,15 +709,6 @@ main() {
     verify_cred_preserved_after_uninstall
 
     log "Verifying signer state survived systemd uninstall"
-    verify_systemd_signer_state_fingerprint
-
-    log "Reinstalling (exercises systemd-setup.sh rebind block)"
-    run_reinstaller
-
-    log "Verifying systemd-creds binding was auto-rebound on reinstall"
-    verify_systemd_creds_rebind
-
-    log "Verifying signer state survived systemd uninstall/reinstall"
     verify_systemd_signer_state_fingerprint
 
     log "Verifying uninstall without recorded operator root leaves user clients untouched"

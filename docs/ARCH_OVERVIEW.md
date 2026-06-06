@@ -59,7 +59,7 @@ a key.
 | **appolicy** | Offline policy checker/editor for identity-scoped `policy.yaml` | UI (TUI) + Policy + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
 | **aplocalnet** | LocalNet setup TUI/CLI for apclient default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
-| **approbe** | Installer-facing liveness probe for signer IPC reachability before local upgrades | Installer helper + admin protocol probe |
+| **approbe** | Installer-facing liveness probe for signer IPC reachability before replacing local binaries | Installer helper + admin protocol probe |
 
 ## Identity Model
 

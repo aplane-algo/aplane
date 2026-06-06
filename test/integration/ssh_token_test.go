@@ -27,7 +27,6 @@ import (
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
 	"golang.org/x/crypto/ssh"
-	"gopkg.in/yaml.v3"
 )
 
 func TestRequestTokenHappyPathEnrollsKeyAndConnectWorks(t *testing.T) {
@@ -580,13 +579,13 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
-	clientCfg := mustLoadClientConfig(t)
+	endpoint, clientCfg := mustLoadDefaultSignerEndpoint(t)
 	eng, err := engine.NewEngine(harness.IntegrationNetwork())
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
 
-	token, err := requestTokenViaEngineWithIdentity(t, eng, *clientCfg.SSH, "", ipcClient, nil)
+	token, err := requestTokenViaEngineWithIdentity(t, eng, clientCfg, "", ipcClient, nil)
 	if err != nil {
 		t.Fatalf("agent-backed request-token failed unexpectedly: %v", err)
 	}
@@ -611,14 +610,14 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 
 	localPort := mustAvailableLocalPort(t)
 	result, err := eng.ConnectWithTunnel(
-		fmt.Sprintf("%s:%d", clientCfg.SSH.Host, clientCfg.SSH.Port),
-		clientCfg.SSH.Host,
-		clientCfg.SSH.Port,
+		fmt.Sprintf("%s:%d", clientCfg.Host, clientCfg.Port),
+		clientCfg.Host,
+		clientCfg.Port,
 		localPort,
-		clientCfg.SignerPort,
+		endpoint.SignerPort,
 		token,
 		"",
-		clientCfg.SSH.KnownHostsPath,
+		clientCfg.KnownHostsPath,
 		nil,
 		nil,
 	)
@@ -639,7 +638,7 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create engine for no-agent check: %v", err)
 	}
-	_, err = engNoAgent.RequestToken(clientCfg.SSH.Host, clientCfg.SSH.Port, "", clientCfg.SSH.KnownHostsPath, nil, nil)
+	_, err = engNoAgent.RequestToken(clientCfg.Host, clientCfg.Port, "", clientCfg.KnownHostsPath, nil, nil)
 	if err == nil {
 		t.Fatal("expected missing-agent request-token to fail")
 	}
@@ -665,6 +664,7 @@ func TestActiveTunnelFailsCleanlyWhenTokenRevoked(t *testing.T) {
 		t.Fatalf("failed to create engine: %v", err)
 	}
 	sshCfg := mustLoadClientSSHConfig(t)
+	endpoint := mustLoadDefaultSignerEndpointOnly(t)
 
 	token, err := requestTokenViaEngine(t, eng, sshCfg, ipcClient, func(host, fingerprint string) (bool, error) {
 		return true, nil
@@ -689,7 +689,7 @@ func TestActiveTunnelFailsCleanlyWhenTokenRevoked(t *testing.T) {
 		sshCfg.Host,
 		sshCfg.Port,
 		localPort,
-		mustLoadClientConfig(t).SignerPort,
+		endpoint.SignerPort,
 		token,
 		sshCfg.IdentityFile,
 		sshCfg.KnownHostsPath,
@@ -734,13 +734,13 @@ func TestRequestTokenReplacesOldTokenAndReconnects(t *testing.T) {
 	ipcClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer ipcClient.Close()
 
-	cfg := mustLoadClientConfig(t)
+	endpoint, sshCfg := mustLoadDefaultSignerEndpoint(t)
 	eng, err := engine.NewEngine(harness.IntegrationNetwork())
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
 
-	firstToken, err := requestTokenViaEngine(t, eng, *cfg.SSH, ipcClient, func(host, fingerprint string) (bool, error) {
+	firstToken, err := requestTokenViaEngine(t, eng, sshCfg, ipcClient, func(host, fingerprint string) (bool, error) {
 		return true, nil
 	})
 	if err != nil {
@@ -759,14 +759,14 @@ func TestRequestTokenReplacesOldTokenAndReconnects(t *testing.T) {
 	}
 	localPort := mustAvailableLocalPort(t)
 	if _, err := eng.ConnectWithTunnel(
-		fmt.Sprintf("%s:%d", cfg.SSH.Host, cfg.SSH.Port),
-		cfg.SSH.Host,
-		cfg.SSH.Port,
+		fmt.Sprintf("%s:%d", sshCfg.Host, sshCfg.Port),
+		sshCfg.Host,
+		sshCfg.Port,
 		localPort,
-		cfg.SignerPort,
+		endpoint.SignerPort,
 		firstToken,
-		cfg.SSH.IdentityFile,
-		cfg.SSH.KnownHostsPath,
+		sshCfg.IdentityFile,
+		sshCfg.KnownHostsPath,
 		nil,
 		onDisconnect,
 	); err != nil {
@@ -784,7 +784,7 @@ func TestRequestTokenReplacesOldTokenAndReconnects(t *testing.T) {
 		t.Fatal("timed out waiting for disconnect after token revocation")
 	}
 
-	secondToken, err := requestTokenViaEngine(t, eng, *cfg.SSH, ipcClient, nil)
+	secondToken, err := requestTokenViaEngine(t, eng, sshCfg, ipcClient, nil)
 	if err != nil {
 		t.Fatalf("second request-token failed unexpectedly: %v", err)
 	}
@@ -800,14 +800,14 @@ func TestRequestTokenReplacesOldTokenAndReconnects(t *testing.T) {
 
 	reconnectPort := mustAvailableLocalPort(t)
 	result, err := eng.ConnectWithTunnel(
-		fmt.Sprintf("%s:%d", cfg.SSH.Host, cfg.SSH.Port),
-		cfg.SSH.Host,
-		cfg.SSH.Port,
+		fmt.Sprintf("%s:%d", sshCfg.Host, sshCfg.Port),
+		sshCfg.Host,
+		sshCfg.Port,
 		reconnectPort,
-		cfg.SignerPort,
+		endpoint.SignerPort,
 		secondToken,
-		cfg.SSH.IdentityFile,
-		cfg.SSH.KnownHostsPath,
+		sshCfg.IdentityFile,
+		sshCfg.KnownHostsPath,
 		nil,
 		nil,
 	)
@@ -1131,34 +1131,46 @@ func writeSSHIdentity(t *testing.T, privateKeyPath, publicKeyPath string) {
 func mustClientSSHHostPort(t *testing.T) (string, int) {
 	t.Helper()
 
-	configPath := filepath.Join(os.Getenv("APCLIENT_DATA"), "config.yaml")
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("failed to read client config: %v", err)
-	}
-	var cfg struct {
-		SSH struct {
-			Host string `yaml:"host"`
-			Port int    `yaml:"port"`
-		} `yaml:"ssh"`
-	}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		t.Fatalf("failed to parse client config: %v", err)
-	}
-	if cfg.SSH.Host == "" || cfg.SSH.Port == 0 {
-		t.Fatalf("client SSH config missing host/port: %+v", cfg.SSH)
-	}
-	return cfg.SSH.Host, cfg.SSH.Port
+	_, sshCfg := mustLoadDefaultSignerEndpoint(t)
+	return sshCfg.Host, sshCfg.Port
 }
 
 func mustLoadClientSSHConfig(t *testing.T) config.SSHClientConfig {
 	t.Helper()
 
+	_, sshCfg := mustLoadDefaultSignerEndpoint(t)
+	return sshCfg
+}
+
+func mustLoadDefaultSignerEndpointOnly(t *testing.T) config.ClientEndpointConfig {
+	t.Helper()
+
+	endpoint, _ := mustLoadDefaultSignerEndpoint(t)
+	return endpoint
+}
+
+func mustLoadDefaultSignerEndpoint(t *testing.T) (config.ClientEndpointConfig, config.SSHClientConfig) {
+	t.Helper()
+
 	cfg := mustLoadClientConfig(t)
-	if cfg.SSH == nil {
-		t.Fatal("client config missing ssh block")
+	alias, endpoint, ok := cfg.Endpoints.DefaultEndpoint()
+	if !ok {
+		t.Fatal("client endpoint registry missing default signer endpoint")
 	}
-	return *cfg.SSH
+	if endpoint.Role != config.ClientEndpointRoleSigner {
+		t.Fatalf("default endpoint %q role = %q, want signer", alias, endpoint.Role)
+	}
+	host, port, err := config.ClientEndpointSSHHostPort(endpoint)
+	if err != nil {
+		t.Fatalf("default endpoint %q has invalid SSH URL: %v", alias, err)
+	}
+	sshCfg := config.SSHClientConfig{
+		Host:           host,
+		Port:           port,
+		IdentityFile:   endpoint.IdentityFile,
+		KnownHostsPath: endpoint.KnownHostsPath,
+	}
+	return endpoint, sshCfg
 }
 
 func mustLoadClientConfig(t *testing.T) config.Config {

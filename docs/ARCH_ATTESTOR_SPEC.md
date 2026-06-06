@@ -459,6 +459,10 @@ The attested account key stores the attestor public key selected by the user at
 generation time. That public key is a LogicSig verifier input, not attestor-side
 authorization state.
 
+Both attested account key types are library-visible compiled providers, not
+default-enabled key types. An identity must activate the relevant key type from
+the KeyType Library before the generation surface offers it.
+
 The `falcon1024-att-ed25519` and `falcon1024-att-falcon1024` families name
 both component signature schemes: Falcon-1024 for the user role and either
 Ed25519 or Falcon-1024 for the attestor role. The stored template metadata and
@@ -1213,6 +1217,8 @@ same change.
 User signer/client:
 
 ```text
+apstore keytype activate falcon1024-att-ed25519.v1
+apstore keytype activate falcon1024-att-falcon1024.v1
 apshell generate aplane.falcon1024-att-ed25519.v1 attestor_public_key=<hex>
 apshell generate aplane.falcon1024-att-falcon1024.v1 attestor_public_key=<hex>
 apshell generate aplane.falcon1024-att-ed25519.v1 attestor=<name>
