@@ -1034,7 +1034,12 @@ The multi-channel design separates concerns:
 - **IPC**: Optimized for human interaction, key security, session management
 - **SSH**: Secure transport for remote access, public key + token authentication (2FA)
 
-**Admin endpoint separation:** `/admin/generate` and `/admin/keys` use separate stable actions (`keys.generate`, `keys.delete`) from signing (`sign.request`). Key management operations can be granted only to elevated principals or groups so signing-only clients cannot generate or delete keys.
+**Admin endpoint separation:** `/admin/generate` and `/admin/keys` use
+separate stable actions (`keys.generate`, `keys.delete`) from signing
+(`sign.request`). `/admin/attestors/sync` uses `attestors.sync` because it
+mutates public attestor reference metadata, not private key material. Key
+management operations can be granted only to elevated principals or groups so
+signing-only clients cannot generate or delete keys.
 
 Authorization behavior is documented in
 [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).

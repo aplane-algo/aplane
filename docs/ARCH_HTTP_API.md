@@ -356,7 +356,10 @@ uses.
 
 This endpoint writes public attestor reference records for generation UX only.
 It does not require the identity to be unlocked and never carries tokens, SSH
-trust, or private key material.
+trust, or private key material. It is authorized with stable action
+`attestors.sync` and resource type `attestors`; it is intentionally separate
+from `keys.generate` because it mutates public generation reference metadata
+rather than creating key material.
 
 `/admin/keys`:
 

@@ -150,6 +150,7 @@ func ProductBootstrapActions() []auth.Action {
 		auth.ActionKeysImport,
 		auth.ActionKeysExport,
 		auth.ActionKeysDelete,
+		auth.ActionAttestorsSync,
 		auth.ActionKeyTypesView,
 		auth.ActionKeyTypesActivate,
 		auth.ActionKeyTypesDeactivate,

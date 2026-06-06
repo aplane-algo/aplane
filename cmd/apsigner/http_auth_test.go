@@ -154,6 +154,29 @@ func TestRequireAuthForbidden(t *testing.T) {
 	}
 }
 
+func TestHTTPRouteAdminAttestorSyncUsesDedicatedAction(t *testing.T) {
+	server, cleanup := newAuthTestSigner(t)
+	defer cleanup()
+
+	authz := &stubAuthorizer{err: auth.ErrForbidden}
+	server.authorizer = authz
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/admin/attestors/sync", nil)
+	r.Header.Set("Authorization", "aplane test-token")
+	buildHTTPServer(server, 0).Handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", w.Code)
+	}
+	if authz.got.action != auth.ActionAttestorsSync {
+		t.Fatalf("action = %q, want %q", authz.got.action, auth.ActionAttestorsSync)
+	}
+	if authz.got.resource.Type != "attestors" || authz.got.resource.IdentityID != auth.DefaultIdentityID {
+		t.Fatalf("resource = %#v", authz.got.resource)
+	}
+}
+
 func TestRequireAuthInjectsIdentityOnSuccess(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()

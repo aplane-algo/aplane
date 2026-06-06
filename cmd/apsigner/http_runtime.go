@@ -27,7 +27,7 @@ func buildHTTPServer(server *Signer, port int) *http.Server {
 	mux.HandleFunc("/keys", server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, server.handleKeys))
 	mux.HandleFunc("/keytypes", server.requireAuth(auth.ActionKeyTypesView, auth.Resource{Type: "keytypes"}, server.handleKeyTypes))
 	mux.HandleFunc("/admin/generate", server.requireAuth(auth.ActionKeysGenerate, auth.Resource{Type: "key"}, server.handleAdminGenerate))
-	mux.HandleFunc("/admin/attestors/sync", server.requireAuth(auth.ActionKeysGenerate, auth.Resource{Type: "key"}, server.handleAdminSyncAttestors))
+	mux.HandleFunc("/admin/attestors/sync", server.requireAuth(auth.ActionAttestorsSync, auth.Resource{Type: "attestors"}, server.handleAdminSyncAttestors))
 	mux.HandleFunc("/admin/keys", server.requireAuth(auth.ActionKeysDelete, auth.Resource{Type: "key"}, server.handleAdminDelete))
 	mux.HandleFunc("/health", server.handleHealth)
 

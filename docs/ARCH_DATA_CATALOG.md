@@ -215,7 +215,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Component sign response | wire projection | per-target component signatures | `signerapi.ComponentSignResponse` | `internal/signerapp/signing` | Signature scheme is user key type or attestor component key type. |
 | Attested assembly request | wire request | group bytes plus user/attestor signatures | `signerapi.AttestedAssemblyRequest` | `internal/signerapp/signing` | Verifies attestor signature against embedded key in local account key. |
 | Attested assembly response | wire projection | assembled signed group bytes | `signerapi.AttestedAssemblyResponse` | `internal/signerapp/signing` | Assembly does not trust endpoint-advertised public keys. |
-| Admin attestor sync DTOs | wire request/projection | public candidate list | `signerapi.AdminSyncAttestorReferences*` | `internal/signerapp/rest`, `internal/attestor/attrefs` | Writes public signer-side reference catalog only; no tokens or private keys. |
+| Admin attestor sync DTOs | wire request/projection | public candidate list | `signerapi.AdminSyncAttestorReferences*` | `internal/signerapp/rest`, `internal/attestor/attrefs` | Writes public signer-side reference catalog only; HTTP authorizes as `attestors.sync`; no tokens or private keys. |
 
 ## Admin IPC Wire Models
 

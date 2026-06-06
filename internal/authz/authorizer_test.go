@@ -137,6 +137,12 @@ func TestProductSingleAuthorizerUsesBootstrapGrant(t *testing.T) {
 			resource: auth.Resource{Type: "template", IdentityID: auth.DefaultIdentityID},
 		},
 		{
+			name:     "product principal can sync public attestors",
+			identity: NewProductPrincipalIdentity("ipc-passphrase"),
+			action:   auth.ActionAttestorsSync,
+			resource: auth.Resource{Type: "attestors", IdentityID: auth.DefaultIdentityID},
+		},
+		{
 			name:     "unknown action denied before grant matching",
 			identity: NewProductPrincipalIdentity("ipc-passphrase"),
 			action:   auth.Action("unknown.action"),
