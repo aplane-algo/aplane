@@ -58,7 +58,7 @@ an interactive terminal.
 
 Inside the TUI, `a` applies the current draft to production by writing
 the selected policy document plus a fresh sidecar. `w` writes the current
-draft to a YAML file you choose without applying it to the signer store or
+draft to a YAML file you choose without applying it to the identity store or
 writing a sidecar. Use this when you want to inspect or hand off a modified
 policy draft before production apply.
 

@@ -1751,7 +1751,7 @@ func (m Model) applyPassphraseView() string {
 	var b strings.Builder
 	b.WriteString(sectionStyle.Render("Apply To Production"))
 	b.WriteString("\n\n")
-	b.WriteString(descriptionStyle.Render(fmt.Sprintf("Enter the signer store passphrase to write %s and a fresh sidecar.", m.target.DocumentName())))
+	b.WriteString(descriptionStyle.Render(fmt.Sprintf("Enter the identity store passphrase to write %s and a fresh sidecar.", m.target.DocumentName())))
 	b.WriteString("\n\n")
 	b.WriteString(inputActiveStyle.Render(fixedWidthFieldLine(value, m.routeTextInputWidth())))
 	b.WriteString("\n\n")
@@ -1763,7 +1763,7 @@ func (m Model) writeFileView() string {
 	var b strings.Builder
 	b.WriteString(sectionStyle.Render("Write " + m.target.Label() + " Draft"))
 	b.WriteString("\n\n")
-	b.WriteString(descriptionStyle.Render(fmt.Sprintf("Write the current in-memory %s draft to a YAML file without applying it to the signer store.", m.target.StatusNoun())))
+	b.WriteString(descriptionStyle.Render(fmt.Sprintf("Write the current in-memory %s draft to a YAML file without applying it to the identity store.", m.target.StatusNoun())))
 	b.WriteString("\n\n")
 	b.WriteString(inputActiveStyle.Render(fixedWidthFieldLine(m.writePathDisplayValue(), m.routeTextInputWidth())))
 	b.WriteString("\n\n")

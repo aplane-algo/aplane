@@ -819,7 +819,7 @@ runtime-validate the file without reading the production sidecar or requesting
 the store passphrase.
 Inside the TUI, `a` applies the current in-memory draft to production. `w`
 exports the current draft to an operator-selected YAML file only; it does not
-write a sidecar, update the signer store, or mark the draft clean.
+write a sidecar, update the identity store, or mark the draft clean.
 
 The signer retains compatibility support for authenticated admin IPC policy
 changes. The identity must be unlocked so the signer can verify the current

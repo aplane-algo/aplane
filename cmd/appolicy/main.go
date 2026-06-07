@@ -373,7 +373,7 @@ func readPassphrase(stdin io.Reader, stderr io.Writer, allowStdinFallback bool) 
 			}
 			return passphrase, nil
 		}
-		return nil, fmt.Errorf("passphrase must come from APPOLICY_PASSPHRASE, APSIGNER_PASSPHRASE, or an interactive terminal when policy YAML is read from stdin")
+		return nil, fmt.Errorf("passphrase must come from APPOLICY_PASSPHRASE, APSIGNER_PASSPHRASE, or an interactive terminal when selected policy YAML is read from stdin")
 	}
 
 	line, err := bufio.NewReader(stdin).ReadString('\n')
