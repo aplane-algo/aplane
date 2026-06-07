@@ -264,11 +264,11 @@ unlock/reload after passphrase verification through
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
 - `policy_settings`: `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, `reject_clawback`, `always_review_warnings`, `auto_approve_self_noop_transfer`, `max_fee_microalgos`, `review_algo_payments`, `max_algo_payments`, `policy_networks`, `review_asa_amounts`, `max_asa_amounts`, optional `policy_asa_metadata`; compatibility fields `max_asa_amounts_mainnet`, `max_asa_amounts_testnet`, and `max_asa_amounts_betanet` may also be present; `key_overrides` is not projected over admin IPC
-- `get_policy_snapshot`: optional `target` (`signer` or `attestation`, omitted means `signer`); requests the active signer-owned stored policy projection for display/editing
+- `get_policy_snapshot`: optional `target` (`signer` or `sentry`, omitted means `signer`); requests the active signer-owned stored policy projection for display/editing
 - `policy_snapshot`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
-- `validate_policy`: optional `target` (`signer` or `attestation`, omitted means `signer`), `policy_yaml`; parses and runtime-validates the submitted YAML in the selected policy domain without writing it
+- `validate_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`; parses and runtime-validates the submitted YAML in the selected policy domain without writing it
 - `validate_policy_result`: `success`, optional `target`, optional `canonical`, optional `policy_sha256`, optional `code`, optional `error`; on success, `canonical` is true when the submitted bytes are already the canonical YAML representation and `policy_sha256` is the SHA-256 of the submitted bytes
-- `replace_policy`: optional `target` (`signer` or `attestation`, omitted means `signer`), `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of the selected policy document with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
+- `replace_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of the selected policy document with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
 - `replace_policy_result`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, the response is the resulting active canonical snapshot, not necessarily the exact uploaded bytes
 - `update_policy_setting`: `key`, `value` (string-typed on wire)
 - `update_policy_setting_result`: `success`, `key`, optional `value`, `code`, `error`
@@ -320,11 +320,11 @@ Key-type override semantics:
 - override blocks inherit unset fields from the identity-wide effective policy
 - nested `key_overrides` are rejected at policy load
 - normal signing selects an override by signing auth address, not by transaction sender, so rekeyed accounts use the auth address
-- attestor component signing selects an override by the request `component_key` selector
+- sentry component signing selects an override by the request `component_key` selector
 - overrides are YAML-only; admin IPC/TUI settings do not expose or mutate `key_overrides`
 - `get_policy_snapshot` may expose key overrides read-only as part of the canonical YAML snapshot
 - `replace_policy` may replace YAML that contains `key_overrides`; it validates the complete policy in the selected target before writing and applies immediately on success
-- `policy.yaml` and attestor-domain `policy.yaml` are verified against their `.hmac` sidecars and loaded into the bound identity runtime on unlock/reload; policy-mutation admin IPC requires an unlocked identity and writes the selected document plus sidecar; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
+- `policy.yaml` and sentry-domain `policy.yaml` are verified against their `.hmac` sidecars and loaded into the bound identity runtime on unlock/reload; policy-mutation admin IPC requires an unlocked identity and writes the selected document plus sidecar; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
 
 Whole-policy replacement:
 

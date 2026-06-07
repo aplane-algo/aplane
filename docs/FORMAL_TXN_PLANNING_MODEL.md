@@ -519,7 +519,7 @@ This model does not prove:
 - filesystem reload ordering,
 - decommission lifecycle races,
 - backup/restore behavior,
-- future witness or compliance-attestation semantics.
+- future witness or compliance-sentry semantics.
 
 Those belong in separate models or assumptions.
 

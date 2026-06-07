@@ -171,7 +171,7 @@ func (s *AdminStore) resolvedTarget() (Target, error) {
 		target = s.Target
 	}
 	switch target {
-	case TargetSigner, TargetAttestation:
+	case TargetSigner, TargetSentry:
 		return target, nil
 	default:
 		return "", fmt.Errorf("invalid admin policy target %q", target)

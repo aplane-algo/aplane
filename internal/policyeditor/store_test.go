@@ -33,22 +33,22 @@ func TestOfflineStoreLoadVerifiesPolicy(t *testing.T) {
 	}
 }
 
-func TestOfflineStoreLoadVerifiesAttestationTarget(t *testing.T) {
+func TestOfflineStoreLoadVerifiesSentryTarget(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
 	store := OfflineStore{
 		DataDir:    dataDir,
 		IdentityID: DefaultIdentityID,
-		Target:     TargetAttestation,
+		Target:     TargetSentry,
 		Passphrase: passphrase,
 	}
-	attestationBytes := []byte("reject_rekey: true\n")
-	if err := store.SaveYAML(context.Background(), attestationBytes); err != nil {
-		t.Fatalf("SaveYAML(attestation target) error = %v", err)
+	sentryBytes := []byte("reject_rekey: true\n")
+	if err := store.SaveYAML(context.Background(), sentryBytes); err != nil {
+		t.Fatalf("SaveYAML(sentry target) error = %v", err)
 	}
 
 	stored, err := store.Load(context.Background())
 	if err != nil {
-		t.Fatalf("Load(attestation target) error = %v", err)
+		t.Fatalf("Load(sentry target) error = %v", err)
 	}
 	if stored.RejectRekey == nil || !*stored.RejectRekey {
 		t.Fatalf("RejectRekey = %v, want true", stored.RejectRekey)
@@ -62,8 +62,8 @@ func TestResolveTargetUsesNodeRole(t *testing.T) {
 	if got, err := ResolveTarget(signerDir, TargetAuto); err != nil || got != TargetSigner {
 		t.Fatalf("ResolveTarget(signer) = %q, %v; want %q", got, err, TargetSigner)
 	}
-	if got, err := ResolveTarget(attestorDir, TargetAuto); err != nil || got != TargetAttestation {
-		t.Fatalf("ResolveTarget(attestor) = %q, %v; want %q", got, err, TargetAttestation)
+	if got, err := ResolveTarget(attestorDir, TargetAuto); err != nil || got != TargetSentry {
+		t.Fatalf("ResolveTarget(attestor) = %q, %v; want %q", got, err, TargetSentry)
 	}
 }
 
@@ -178,9 +178,9 @@ func TestOfflineStoreSaveYAMLPreservesPolicyBytes(t *testing.T) {
 	}
 }
 
-func TestOfflineStoreSaveAttestationYAMLPreservesPolicyBytes(t *testing.T) {
+func TestOfflineStoreSaveSentryYAMLPreservesPolicyBytes(t *testing.T) {
 	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
-	attestationBytes := []byte(`# replacement attestation
+	sentryBytes := []byte(`# replacement sentry
 reject_rekey: true
 transfer_policy:
   schema_version: 1
@@ -198,24 +198,24 @@ transfer_policy:
 		Passphrase: passphrase,
 	}
 
-	if err := store.SaveAttestationYAML(context.Background(), attestationBytes); err != nil {
-		t.Fatalf("SaveAttestationYAML() error = %v", err)
+	if err := store.SaveSentryYAML(context.Background(), sentryBytes); err != nil {
+		t.Fatalf("SaveSentryYAML() error = %v", err)
 	}
 	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, DefaultIdentityID))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
-	if string(gotBytes) != string(attestationBytes) {
-		t.Fatalf("attestation bytes changed during SaveAttestationYAML:\ngot:\n%s\nwant:\n%s", gotBytes, attestationBytes)
+	if string(gotBytes) != string(sentryBytes) {
+		t.Fatalf("sentry bytes changed during SaveSentryYAML:\ngot:\n%s\nwant:\n%s", gotBytes, sentryBytes)
 	}
 	masterKey, clear, err := store.unlock(context.Background())
 	if err != nil {
 		t.Fatalf("unlock() error = %v", err)
 	}
 	defer clear()
-	stored, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataDir, DefaultIdentityID, masterKey)
+	stored, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataDir, DefaultIdentityID, masterKey)
 	if err != nil {
-		t.Fatalf("LoadVerifiedAttestationConfigWithMasterKey() after SaveAttestationYAML() error = %v", err)
+		t.Fatalf("LoadVerifiedSentryConfigWithMasterKey() after SaveSentryYAML() error = %v", err)
 	}
 	if stored.RejectRekey == nil || !*stored.RejectRekey {
 		t.Fatalf("RejectRekey = %v, want true", stored.RejectRekey)

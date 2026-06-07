@@ -176,7 +176,7 @@ func (m Model) loadPolicyEditorCmd(target policyeditor.Target) tea.Cmd {
 
 func (m Model) defaultPolicyEditorTarget() policyeditor.Target {
 	if m.adminSettings != nil && strings.EqualFold(strings.TrimSpace(m.adminSettings.NodeRole), "attestor") {
-		return policyeditor.TargetAttestation
+		return policyeditor.TargetSentry
 	}
 	return policyeditor.TargetSigner
 }

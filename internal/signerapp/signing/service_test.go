@@ -402,15 +402,15 @@ func routingPolicyConfigForSigningTest(t *testing.T, raw string) *policy.Config 
 	return cfg
 }
 
-func attestationPolicyConfigForSigningTest(t *testing.T, raw string) *policy.Config {
+func sentryPolicyConfigForSigningTest(t *testing.T, raw string) *policy.Config {
 	t.Helper()
-	stored, err := policy.ParseStoredAttestationConfig([]byte(raw))
+	stored, err := policy.ParseStoredSentryConfig([]byte(raw))
 	if err != nil {
-		t.Fatalf("ParseStoredAttestationConfig() error = %v", err)
+		t.Fatalf("ParseStoredSentryConfig() error = %v", err)
 	}
-	cfg, err := stored.ApplyAttestation(policy.DefaultConfig())
+	cfg, err := stored.ApplySentry(policy.DefaultConfig())
 	if err != nil {
-		t.Fatalf("ApplyAttestation() error = %v", err)
+		t.Fatalf("ApplySentry() error = %v", err)
 	}
 	return cfg
 }

@@ -9,7 +9,7 @@ This document covers two domains:
 
 - the **client-signing** policy implemented today: tier-based verdicts over
   signer-controlled transactions with an operator default fallback,
-- the **attestation** policy implemented for attestor component signing:
+- the **sentry** policy implemented for sentry component signing:
   policy-as-authorization for `/sign/component`, no operator default, no
   review verdict.
 
@@ -21,13 +21,13 @@ inline.
 
 Signer policy decides what `apsigner` may produce a signature for after
 request planning has identified the signable units. For client signing, the
-unit is a signer-controlled transaction; for attestation, the unit is a
+unit is a signer-controlled transaction; for sentry, the unit is a
 target transaction in `/sign/component`. Policy is separate from:
 
 - authentication and authorization, which decide who may ask for signing,
 - key ownership and unlock state, which decide whether signing keys are usable,
 - the operator default, which decides whether unmatched client-signing requests
-  need manual review. Attestation has no operator default.
+  need manual review. Sentry has no operator default.
 
 ## Storage
 
@@ -65,7 +65,7 @@ identities/<identity>/config.yaml
 policy rule; it is the user/operator default used only when policy has no
 matching verdict.
 
-Signing and attestor component policy use the same filename, selected by the
+Signing and sentry component policy use the same filename, selected by the
 root `node.yaml` role:
 
 ```text
@@ -86,8 +86,8 @@ defaults to `true`, while `reject_close_remainder`, `reject_asset_close`,
 empty. `transfer_policy` may be absent entirely; if it is present, it must
 satisfy the explicit routing schema below.
 
-On attestor nodes, `policy.yaml` is the attestor component policy. It uses the
-same sparse field names but is direct: there is no top-level `attestation:`
+On sentry nodes, `policy.yaml` is the sentry component policy. It uses the
+same sparse field names but is direct: there is no top-level `sentry:`
 wrapper. Review-producing fields are invalid in this document, and route
 misses default to deterministic `reject` when `transfer_policy.enabled:true`.
 
@@ -125,34 +125,34 @@ Operational flow:
    - `user_auto_approve:true` signs without approval.
 
 For client signing, Always Review blocks both `user_auto_approve:true` and any
-matching Always Approve rule. Attestation rejects review-producing policy
+matching Always Approve rule. Sentry rejects review-producing policy
 instead of treating it as a promptable phase.
 
 ### Verdict Mapping By Role
 
 The four-tier model is the canonical shape for **client-signing** requests.
-**Attestation** is policy-as-authorization with no human in the loop, so its
+**Sentry** is policy-as-authorization with no human in the loop, so its
 normal verdict surface has two outcomes (reject or sign). The shared phase
-order is still used, but review is not a valid attestation outcome:
+order is still used, but review is not a valid sentry outcome:
 
-| Phase | Client signing | Attestation |
+| Phase | Client signing | Sentry |
 |-------|----------------|-------------|
 | Always Deny | Reject | Reject |
 | Always Review | Require operator approval | Invalid outcome; fail closed as config error |
 | Always Approve | Sign without approval | Sign |
-| Operator Default | Per `user_auto_approve` | Not applicable; unmatched attestor requests reject |
+| Operator Default | Per `user_auto_approve` | Not applicable; unmatched sentry requests reject |
 
-The deterministic attestation surface is enforced by keeping review-producing
-fields out of attestor-domain `policy.yaml`. Policy load rejects
+The deterministic sentry surface is enforced by keeping review-producing
+fields out of sentry-domain `policy.yaml`. Policy load rejects
 `always_review_warnings`, `review_algo_payments`, `review_asa_amounts`,
 `transfer_policy.on_no_route: review`, route `review_above`, and equivalent
-review-producing behavior in attestor policy. If implementation ever
-encounters a review verdict while evaluating an attestor component request,
+review-producing behavior in sentry policy. If implementation ever
+encounters a review verdict while evaluating a sentry component request,
 the request fails closed as a policy configuration error rather than waiting
 for a prompt.
 
 `user_auto_approve` is client-signing-only. It lives in
-`identities/<identity>/config.yaml` and has no attestation analog.
+`identities/<identity>/config.yaml` and has no sentry analog.
 
 ## Role Domains
 
@@ -178,7 +178,7 @@ client_signing:
   # top-level client-signing values.
 ```
 
-Attestor-node `policy.yaml` is the attestor component policy document:
+Attestor-node `policy.yaml` is the sentry component policy document:
 
 ```yaml
 reject_rekey: true
@@ -192,12 +192,12 @@ transfer_policy:
 
 On signer nodes, the accepted top-level keys in `policy.yaml` are the
 client-signing field set, `client_signing`, and `key_overrides`.
-Signer-domain `policy.yaml` rejects `attestation:` and top-level
-`reject_rekey`; those belong to the attestor policy domain.
+Signer-domain `policy.yaml` rejects `sentry:` and top-level
+`reject_rekey`; those belong to the sentry policy domain.
 
-On attestor nodes, the accepted top-level keys in `policy.yaml` are the
+On sentry nodes, the accepted top-level keys in `policy.yaml` are the
 attestor field set and `key_overrides`. Attestor-domain `policy.yaml` rejects
-`client_signing:` and `attestation:` wrappers. Unknown top-level keys fail
+`client_signing:` and `sentry:` wrappers. Unknown top-level keys fail
 validation in both domains.
 
 Client-signing semantics:
@@ -210,9 +210,9 @@ Client-signing semantics:
   `on_no_route: review`). It may also nest its own `transfer_policy:` /
   amount-guard maps that override common values for client-signing evaluation.
 
-Attestation semantics:
+Sentry semantics:
 
-- Top-level fields in attestor-domain `policy.yaml` are the attestor policy.
+- Top-level fields in sentry-domain `policy.yaml` are the sentry policy.
 - `reject_rekey` is valid only here.
 - `reject_foreign_rekey`, `always_review_warnings`,
   `auto_approve_self_noop_transfer`, `review_algo_payments`, and
@@ -221,7 +221,7 @@ Attestation semantics:
   miss behavior is deterministic reject.
 
 Both policy domains are validated by schema, not by the identity's current key
-inventory. An attestor node can carry attestor-domain `policy.yaml` before an
+inventory. A sentry node can carry sentry-domain `policy.yaml` before an
 attestor key is installed.
 
 Legacy compatibility: a `policy.yaml` written before role domains existed
@@ -234,8 +234,8 @@ migrating an existing policy can move these fields explicitly under
 `client_signing:` without semantic change. A top-level `transfer_policy` that
 contains review-producing behavior (`on_no_route: review`, `review_above`,
 and similar fields) is valid for client signing, but it is not a complete
-attestation allow-list; an attestation request that would need those review
-outcomes fails closed unless attestor-domain `policy.yaml` supplies a
+sentry allow-list; a sentry request that would need those review
+outcomes fails closed unless sentry-domain `policy.yaml` supplies a
 deterministic replacement.
 
 ## Runtime Snapshot Semantics
@@ -262,25 +262,25 @@ Policy fields by domain:
 | Field | Domain | Meaning |
 |-------|--------|---------|
 | `reject_foreign_rekey` | client_signing | Reject transactions whose non-zero `RekeyTo` target is not held by the current signer identity |
-| `reject_rekey` | attestation | Reject any transaction with non-zero `RekeyTo` |
+| `reject_rekey` | sentry | Reject any transaction with non-zero `RekeyTo` |
 | `reject_close_remainder` | common | Reject payment transactions with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | common | Reject ASA transfers with non-zero `AssetCloseTo` |
 | `reject_clawback` | common | Reject ASA clawback transactions using `AssetSender` |
 | `max_fee_microalgos` | common | Reject transactions whose raw microAlgo fee exceeds the configured ceiling |
 | `max_algo_payments` | common | Per-network raw microAlgo ceilings for ALGO payments |
 | `max_asa_amounts` | common | Per-network raw unit ceilings for ASA transfers |
-| `transfer_policy` | common | For client signing, produces deny verdicts for blocked destinations, route misses, close/clawback misses, and `reject_above`; for attestation, routing is the positive authorization surface |
+| `transfer_policy` | common | For client signing, produces deny verdicts for blocked destinations, route misses, close/clawback misses, and `reject_above`; for sentry, routing is the positive authorization surface |
 
 `reject_foreign_rekey` evaluates the rekey target against the set of addresses
 held by the current signer, which is meaningful only when the signer owns the
 sender. `reject_rekey` is the attestor analog and ignores key ownership: any
-non-zero `RekeyTo` rejects. The MVP attestation default is `reject_rekey:true`;
+non-zero `RekeyTo` rejects. The MVP sentry default is `reject_rekey:true`;
 allowing attested rekeys requires explicit policy that does not yet exist.
 
 Network-scoped rules derive transaction network identity from `GenesisHash`,
 not `GenesisID`. Unknown genesis hashes fail closed when a network-scoped rule
-must be evaluated. For attestation, an unknown genesis hash always fails
-closed regardless of which rules are configured, because attestation is
+must be evaluated. For sentry, an unknown genesis hash always fails
+closed regardless of which rules are configured, because sentry is
 authorization rather than a guardrail and cannot fall through to operator
 default.
 
@@ -299,15 +299,15 @@ close-out misses according to `close_on_no_route`, clawback misses according to
 matched clawback movements without `clawback.allow:true`, and matching
 movements above a route's `reject_above` threshold. For client signing, routes
 never auto-approve a request; a route match only lets the movement continue
-through the remaining policy phases. For attestation, routing is the positive
+through the remaining policy phases. For sentry, routing is the positive
 authorization surface. See [Transfer Routing](#transfer-routing).
 
 ## Always Review
 
 Always Review rules force a human approval prompt even when the operator default
 is configured to skip review. The whole tier is client-signing-only: the
-attestation domain has no operator above the signer, so review-producing
-fields are rejected in attestor-domain `policy.yaml` at policy load time.
+sentry domain has no operator above the signer, so review-producing
+fields are rejected in sentry-domain `policy.yaml` at policy load time.
 Legacy top-level review-producing fields are client-signing-only compatibility
 fields. If a review verdict is still reachable while evaluating an attestor
 component request, the request fails closed as a policy configuration error.
@@ -333,7 +333,7 @@ been rejected by a matching `max_asa_amounts` threshold.
 For client signing, unknown genesis hashes trigger a distinct fail-closed rule
 that forces review when a configured transfer-guard review threshold cannot be
 mapped to a network token. This rule is independent of the configured threshold
-values. Attestation rejects unknown genesis hashes when network-scoped policy
+values. Sentry rejects unknown genesis hashes when network-scoped policy
 must be evaluated because it has no review fallback.
 
 Transfer routing review outcomes are evaluated after hard-reject policy passes
@@ -366,10 +366,10 @@ Policy fields by domain:
 
 `auto_approve_self_noop_transfer` is client-signing-only because its "self"
 predicate references the signer-owned account. It has no defined meaning for
-attestation: an attestor is not the owner of the sender it is authorizing.
-The field is rejected at load time in attestor-domain `policy.yaml`. If an invalid
-effective attestor policy is injected in tests or by compatibility code, the
-rule simply does not match an attestor request because no signer-owned address
+sentry: an attestor is not the owner of the sender it is authorizing.
+The field is rejected at load time in sentry-domain `policy.yaml`. If an invalid
+effective sentry policy is injected in tests or by compatibility code, the
+rule simply does not match a sentry request because no signer-owned address
 is in scope to compare against.
 
 `auto_approve_self_noop_transfer` applies only to a single signer-controlled
@@ -396,7 +396,7 @@ controls only whether that shape skips manual approval.
 
 Operator Default is not policy. It is the fallback behavior for client-signing
 requests that did not match Always Deny, Always Review, or Always Approve. It
-does not apply to attestation: an unmatched attestor component request is
+does not apply to sentry: an unmatched sentry component request is
 Always Deny per [Verdict Mapping By Role](#verdict-mapping-by-role).
 
 The setting is:
@@ -415,56 +415,56 @@ Behavior:
 
 - `user_auto_approve:false`: unmatched client-signing requests require operator review.
 - `user_auto_approve:true`: unmatched client-signing requests sign without operator review.
-- attestor component requests: ignored; the verdict is reject.
+- sentry component requests: ignored; the verdict is reject.
 
 ## Transfer Routing
 
 `transfer_policy` is the implemented v1 route table for direct transfer
 movements. The same routing engine applies to both client-signing and
-attestation evaluation. Client-signing routes live in `policy.yaml`; attestor
-component routes live in attestor-domain `policy.yaml`. Transfer routing is not projected
+sentry evaluation. Client-signing routes live in `policy.yaml`; attestor
+component routes live in sentry-domain `policy.yaml`. Transfer routing is not projected
 through admin IPC.
 
 For client signing, a route match means "allowed to continue through the
 normal policy phases"; it does not approve signing and never produces an
 Always Approve verdict.
 
-For attestation, routing is the positive authorization surface. An attestor
+For sentry, routing is the positive authorization surface. An attestor
 component request is eligible to sign only when all evaluated target
 transactions are supported transfer shapes, every extracted target movement is
 covered by a matching route, no route or transaction guard produces a deny
-verdict, and the effective attestation routing block contains no
+verdict, and the effective sentry routing block contains no
 review-producing behavior. In other words: for client signing, routing is a
-guardrail; for attestation, routing is an allow-list.
+guardrail; for sentry, routing is an allow-list.
 
-Always Deny and deterministic transaction guards run before attestation
+Always Deny and deterministic transaction guards run before sentry
 allow-list success. A route match cannot rescue a target rejected by rekey,
 close-out, clawback, fee, amount, blocked-destination, or unsupported-shape
 rules.
 
 In `policy.yaml`, a `transfer_policy:` block may also be nested inside
 `client_signing:` to override the top-level client-signing routes. In
-attestor-domain `policy.yaml`, the top-level `transfer_policy:` is the attestor
+sentry-domain `policy.yaml`, the top-level `transfer_policy:` is the attestor
 allow-list. These blocks follow the same schema, validation, and overlay rules
-except for attestation route-miss boilerplate. In attestor-domain `policy.yaml`,
+except for sentry route-miss boilerplate. In sentry-domain `policy.yaml`,
 route-miss behavior is not configurable:
 `on_no_route`, `close_on_no_route`, and `clawback_on_no_route` may be omitted
 and are interpreted as `reject`; if present, the only accepted value is
 `reject`. `review_above` under `limits` or `limits_by_network` is rejected.
 
 For client-signing evaluation, an `on_no_route: review` miss produces Always
-Review. For attestation evaluation, review or operator-default routing outcomes
+Review. For sentry evaluation, review or operator-default routing outcomes
 are not valid authorization outcomes. Examples include `on_no_route: review`,
 `close_on_no_route: operator_default`, and route-level `review_above`. If such
-behavior appears in the effective attestation routing block, the attestor
+behavior appears in the effective sentry routing block, the attestor
 request fails closed as a policy configuration error. Operators can keep review
-behavior in `policy.yaml` and provide a deterministic attestor-domain `policy.yaml`
-transfer policy for attestor component signing.
+behavior in `policy.yaml` and provide a deterministic sentry-domain `policy.yaml`
+transfer policy for sentry component signing.
 
 For example, a legacy top-level `transfer_policy` with one deterministic
-`A -> B` route and `on_no_route: review` can authorize an attestor request for
+`A -> B` route and `on_no_route: review` can authorize a sentry request for
 `A -> B` if no other guard denies it. A request for `A -> D` fails closed
-because the route miss would need a review verdict, which attestation cannot
+because the route miss would need a review verdict, which sentry cannot
 produce.
 
 For operator examples and troubleshooting, see
@@ -476,7 +476,7 @@ Routing's shape is deliberately conservative:
   A matching route is allow-to-continue, not approval, because fee, rekey,
   close-out, clawback, warning, legacy transfer-guard, and Operator Default
   behavior must still be able to apply.
-- For attestation, it is an allow-list: every target movement must be covered
+- For sentry, it is an allow-list: every target movement must be covered
   by a matching route, and any deny verdict rejects the request.
 - It denies by absence rather than by general explicit deny routes. In v1,
   operators grant allowed source/asset/destination paths and use `on_no_route`
@@ -501,12 +501,12 @@ Routing is disabled unless `transfer_policy.enabled:true`. If a
 `transfer_policy` or route entries fail validation. For top-level and
 `client_signing.transfer_policy` blocks, `on_no_route` must be explicit when
 routing is enabled unless the block is a key override that inherits an
-identity-wide `on_no_route` value. attestor-domain `policy.yaml` omits that choice and
+identity-wide `on_no_route` value. sentry-domain `policy.yaml` omits that choice and
 treats route misses as `reject`. For top-level and
 `client_signing.transfer_policy` blocks, `close_on_no_route` and
 `clawback_on_no_route` default to `reject` and may be set explicitly to
 document or override the stricter close-out and clawback route-miss behavior.
-For attestor-domain `policy.yaml` transfer policy, those values are implicit `reject` as
+For sentry-domain `policy.yaml` transfer policy, those values are implicit `reject` as
 described above.
 
 Top-level routing schema:
@@ -572,12 +572,12 @@ transactions:
   and `destinations`.
 
 Together, `pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, and
-`clawback` are the supported attestation transfer-movement surface in MVP; a
+`clawback` are the supported sentry transfer-movement surface in MVP; a
 target transaction must extract at least one of these movements to be eligible
 for attestor-role component signing.
 
 For client signing, other transaction types produce no routing movement and
-continue through the remaining policy phases. For attestation MVP, target
+continue through the remaining policy phases. For sentry MVP, target
 transactions that produce no supported transfer movement are rejected because
 there is no route coverage that can authorize them. Passthrough, foreign, and
 non-target group slots are not governed by this signer's route table because
@@ -619,9 +619,9 @@ Verdict production for each movement:
    are Always Review.
 11. Otherwise, client-signing routing produces no verdict and the request
    continues to warning review, explicit auto-approval, or Operator Default.
-   For attestation routing, a target movement that reaches this step is
+   For sentry routing, a target movement that reaches this step is
    covered by policy; if every target movement is covered and no deny guard
-   matched, the transfer-policy portion of attestation authorization succeeds.
+   matched, the transfer-policy portion of sentry authorization succeeds.
 
 `limits_by_network` overrides global `limits` for that network. If both review
 and reject thresholds are set, `reject_above` must be greater than or equal to
@@ -635,7 +635,7 @@ signer-generated LogicSig-budget dummy transactions, is routing-exempt. Routing
 exemption suppresses all routing verdicts for that shape. Non-routing guards
 such as warning analysis, fee checks, rekey/close/clawback guards, and the
 self no-op auto-approval predicate still apply according to their own rules.
-For attestation, the self no-op predicate never fires because it requires
+For sentry, the self no-op predicate never fires because it requires
 signer-owned address context.
 
 Key override routing blocks are sparse overlays, except `enabled` must be
@@ -665,21 +665,21 @@ Routing rule IDs:
 The per-route IDs use the stable grammar
 `transfer_policy:<route_id>:<outcome>`, where `<outcome>` is one of
 `close_rejected`, `clawback_rejected`, `reject_above`, or `review_above`.
-`review_above` rule IDs are client-signing-only. Attestation can emit
+`review_above` rule IDs are client-signing-only. Sentry can emit
 blocked-destination, route-miss, close/clawback rejection, unknown-genesis, and
 `reject_above` IDs, but review-producing route outcomes are invalid for
-attestor component requests.
+sentry component requests.
 
 Attestor component policy rule IDs:
 
-- `attestation_policy:missing`
-- `attestation_policy:transfer_policy_required`
-- `attestation_policy:deterministic_routing_required`
-- `attestation_policy:non_transfer`
-- `attestation_policy:reject_rekey`
+- `sentry_policy:missing`
+- `sentry_policy:transfer_policy_required`
+- `sentry_policy:deterministic_routing_required`
+- `sentry_policy:non_transfer`
+- `sentry_policy:reject_rekey`
 
 These rule IDs are emitted when the attestor role has no effective
-attestor-domain `policy.yaml` policy, lacks an enabled positive transfer policy, has
+sentry-domain `policy.yaml` policy, lacks an enabled positive transfer policy, has
 route-miss behavior that is not deterministic `reject`, is asked to attest a
 target with no supported transfer movement, or sees a non-zero `RekeyTo`.
 
@@ -687,8 +687,8 @@ target with no supported transfer movement, or sees a non-zero `RekeyTo`.
 
 Both policy domains may contain `key_overrides`, a map from concrete signing
 authority selector to sparse policy blocks. In signer-domain `policy.yaml`,
-selectors are Algorand auth addresses for client signing. In attestor-domain
-`policy.yaml`, selectors are attestor component-key selectors.
+selectors are Algorand auth addresses for client signing. In sentry-domain
+`policy.yaml`, selectors are sentry component-key selectors.
 
 During normal transaction signing, the effective policy is selected by the
 `auth_address` key that will sign, not by transaction sender. This matters for
@@ -703,9 +703,9 @@ explicit `enabled`; the remaining transfer routing fields use the overlay rules
 described in [Transfer Routing](#transfer-routing).
 
 If no matching selector exists, the identity-wide effective policy for that
-document applies. Override blocks in attestor-domain `policy.yaml` are direct sparse
-attestor policy blocks and must satisfy the same validation as the
-identity-wide attestor policy: no review-producing route outcomes.
+document applies. Override blocks in sentry-domain `policy.yaml` are direct sparse
+sentry policy blocks and must satisfy the same validation as the
+identity-wide sentry policy: no review-producing route outcomes.
 
 ## Transaction Scope
 
@@ -715,17 +715,17 @@ are not signed by this signer, so they are not evaluated by this signer's
 transaction-level policy. They still participate in request planning, group
 context, warning display, and approval rendering.
 
-For attestation, the evaluated slots are the `target_indices` of a
+For sentry, the evaluated slots are the `target_indices` of a
 `/sign/component` request. The attestor identity does not own the sender
 account; "target" means "transaction this attestor is being asked to attest"
 rather than "transaction signed by a key this identity holds." Non-target
 group members (including passthrough slots prepared by the user signer and
 foreign slots) participate in group context, warning display, and the
 operator-facing approval description, but they do not receive their own
-attestor policy verdict.
+sentry policy verdict.
 
 Groups receive group-level approval. A grouped request does not fan out into
-separate per-transaction human approvals. For attestation this is trivially
+separate per-transaction human approvals. For sentry this is trivially
 true because no human approval is involved.
 
 ## Admin Surface
@@ -740,16 +740,16 @@ plus a fresh sidecar, and updates the active runtime policy immediately.
 
 The admin protocol and `internal/signerapp/admin` expose target-aware policy
 messages: `get_policy_snapshot`, `validate_policy`, and `replace_policy`.
-Targets are `signer` and `attestation` policy domains; the filename is always
+Targets are `signer` and `sentry` policy domains; the filename is always
 `policy.yaml`. Omitted targets default from the node role. Signer nodes reject
-the attestation target, and attestor nodes reject the signer target. New policy
+the sentry target, and sentry nodes reject the signer target. New policy
 UI work should reuse `internal/policytui` with an appropriate store rather than
 adding a second field-editing model.
 
-Client-signing and attestor component `transfer_policy` are both persisted in
+Client-signing and sentry component `transfer_policy` are both persisted in
 `policy.yaml`, with schema validation selected by node role. `apstore policy
 check|sign|verify` operates on the active node-role policy. `appolicy`
-auto-targets the policy domain from `node.yaml`; `--target signer|attestation`
+auto-targets the policy domain from `node.yaml`; `--target signer|sentry`
 can explicitly select a domain for standalone-file review, while store-backed
 role-incompatible targets fail closed. `apadmin` uses the same node-role target
 selection online. Transfer policy is not projected through the mutable admin IPC policy
@@ -758,7 +758,7 @@ canonical YAML.
 
 `appolicy` is the local offline policy editor. In production mode it defaults
 to `--target auto`, reads root `node.yaml`, and edits `policy.yaml` using the
-signer or attestor policy domain selected by the node role. It verifies the
+signer or sentry policy domain selected by the node role. It verifies the
 HMAC sidecar with the store passphrase, validates changes through the same
 runtime compiler as `apsigner`, and applies the draft to production by saving
 the document plus a fresh sidecar while holding the store mutation lock.
@@ -803,14 +803,14 @@ of the exact trusted selected document bytes. `appolicy --yaml` verifies the
 sidecar and emits those bytes to stdout. `appolicy --save` reads exact
 replacement YAML bytes from stdin, parses and runtime-validates them in the
 selected policy domain, and writes `policy.yaml` plus a fresh sidecar
-while holding the same lock. `--target signer|attestation` explicitly selects
+while holding the same lock. `--target signer|sentry` explicitly selects
 the domain when auto-selection is not desired.
-`appolicy --to-attestation` parses and runtime-validates a signing
+`appolicy --to-sentry` parses and runtime-validates a signing
 `policy.yaml`, projects the deterministic "could allow" envelope into direct
-attestor-domain `policy.yaml`, and prints the result to stdout. The projection preserves
+sentry-domain `policy.yaml`, and prints the result to stdout. The projection preserves
 hard-reject bounds and transfer routes, removes review-only route thresholds,
 and fails closed for route-miss `review` or `operator_default` behavior because
-attestor policy has no human-review verdict.
+sentry policy has no human-review verdict.
 With a positional YAML file, `--check`, `--yaml`, and `--sha256` parse and
 runtime-validate the file without reading the production sidecar or requesting
 the store passphrase.

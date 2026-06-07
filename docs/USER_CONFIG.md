@@ -530,7 +530,7 @@ documents with the store passphrase.
 For byte-preserving scripted edits, `appolicy --yaml` emits the verified
 selected document bytes and `appolicy --save` reads replacement YAML from
 stdin, validates it in the selected policy domain, and writes a fresh sidecar.
-Use `--target signer|attestation` to override auto-selection. `apstore policy sign` and
+Use `--target signer|sentry` to override auto-selection. `apstore policy sign` and
 `appolicy` save modes are offline store mutations, so run them while
 `apsigner` is stopped or before starting the signer. Direct YAML edits are
 active only after the next

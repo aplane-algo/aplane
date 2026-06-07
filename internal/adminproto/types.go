@@ -205,8 +205,8 @@ type PolicySettings struct {
 type PolicyTarget string
 
 const (
-	PolicyTargetSigner      PolicyTarget = "signer"
-	PolicyTargetAttestation PolicyTarget = "attestation"
+	PolicyTargetSigner PolicyTarget = "signer"
+	PolicyTargetSentry PolicyTarget = "sentry"
 )
 
 // NormalizePolicyTarget maps the legacy omitted target to signer and trims the

@@ -15,21 +15,21 @@ func (s *Service) evaluateAttestorComponentPolicy(identityID string, plan *Compo
 	if plan == nil {
 		return internal("component sign plan is nil")
 	}
-	cfg := attestationPolicyConfig(s.AttestationPolicy, plan.ComponentKey)
+	cfg := sentryPolicyConfig(s.SentryPolicy, plan.ComponentKey)
 	if cfg == nil {
 		return s.rejectAttestorComponentPolicy(identityID, plan, []policy.LintViolation{{
-			RuleID:   policy.AttestationPolicyMissingRuleID,
+			RuleID:   policy.SentryPolicyMissingRuleID,
 			Scope:    "group",
 			TxnIndex: -1,
-			Message:  "attestor policy is not configured",
+			Message:  "sentry policy is not configured",
 		}})
 	}
 	if cfg.TransferPolicy == nil || !cfg.TransferPolicy.Enabled {
 		return s.rejectAttestorComponentPolicy(identityID, plan, []policy.LintViolation{{
-			RuleID:   policy.AttestationTransferPolicyRequiredRuleID,
+			RuleID:   policy.SentryTransferPolicyRequiredRuleID,
 			Scope:    "group",
 			TxnIndex: -1,
-			Message:  "attestation.transfer_policy.enabled:true is required",
+			Message:  "sentry.transfer_policy.enabled:true is required",
 		}})
 	}
 	if violations := attestorTransferPolicyConfigLints(cfg.TransferPolicy); len(violations) > 0 {
@@ -47,7 +47,7 @@ func (s *Service) evaluateAttestorComponentPolicy(identityID string, plan *Compo
 	return nil
 }
 
-func attestationPolicyConfig(cfg *policy.Config, componentKey string) *policy.Config {
+func sentryPolicyConfig(cfg *policy.Config, componentKey string) *policy.Config {
 	if cfg == nil {
 		return nil
 	}
@@ -72,10 +72,10 @@ func attestorTransferPolicyConfigLints(tp *policy.TransferPolicy) []policy.LintV
 			continue
 		}
 		violations = append(violations, policy.LintViolation{
-			RuleID:   policy.AttestationDeterministicRoutingRuleID,
+			RuleID:   policy.SentryDeterministicRoutingRuleID,
 			Scope:    "group",
 			TxnIndex: -1,
-			Message:  fmt.Sprintf("attestation transfer_policy.%s must be reject, got %q", check.field, check.value),
+			Message:  fmt.Sprintf("sentry transfer_policy.%s must be reject, got %q", check.field, check.value),
 		})
 	}
 	return violations
@@ -85,18 +85,18 @@ func attestorTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *poli
 	var violations []policy.LintViolation
 	if len(policy.ExtractTransferMovements(txn)) == 0 {
 		violations = append(violations, policy.LintViolation{
-			RuleID:   policy.AttestationNonTransferRuleID,
+			RuleID:   policy.SentryNonTransferRuleID,
 			Scope:    "txn",
 			TxnIndex: targetIndex,
-			Message:  fmt.Sprintf("attestor policy only supports direct pay and axfer targets, got %s", txn.Type),
+			Message:  fmt.Sprintf("sentry policy only supports direct pay and axfer targets, got %s", txn.Type),
 		})
 	}
 	if cfg.RejectRekey && !txn.RekeyTo.IsZero() {
 		violations = append(violations, policy.LintViolation{
-			RuleID:   policy.AttestationRekeyRuleID,
+			RuleID:   policy.SentryRekeyRuleID,
 			Scope:    "txn",
 			TxnIndex: targetIndex,
-			Message:  "rekey transactions are rejected by attestor policy",
+			Message:  "rekey transactions are rejected by sentry policy",
 		})
 	}
 
@@ -128,10 +128,10 @@ func withTargetIndex(violations []policy.LintViolation, targetIndex int) []polic
 func (s *Service) rejectAttestorComponentPolicy(identityID string, plan *ComponentSignPlan, violations []policy.LintViolation) *ServiceError {
 	reason := policy.JoinLintViolations(violations)
 	if reason == "" {
-		reason = "attestor policy rejected request"
+		reason = "sentry policy rejected request"
 	}
 	s.logAttestorPolicyRejections(identityID, plan, reason, firstPolicyRuleID(violations))
-	return forbidden("attestor policy rejected request: " + reason)
+	return forbidden("sentry policy rejected request: " + reason)
 }
 
 func firstPolicyRuleID(violations []policy.LintViolation) string {
@@ -153,11 +153,11 @@ func (s *Service) logAttestorPolicyRejections(identityID string, plan *Component
 		}
 		if policyRuleID != "" {
 			if ruleLogger, ok := s.AuditLog.(AuditRejectPolicyRuleLogger); ok && ruleLogger != nil {
-				ruleLogger.LogSignRejectedWithPolicyRule(identityID, plan.ComponentKey, sender, "attestation_policy_rejected: "+reason, policyRuleID)
+				ruleLogger.LogSignRejectedWithPolicyRule(identityID, plan.ComponentKey, sender, "sentry_policy_rejected: "+reason, policyRuleID)
 				continue
 			}
 		}
-		rejectLogger.LogSignRejected(identityID, plan.ComponentKey, sender, "attestation_policy_rejected: "+reason)
+		rejectLogger.LogSignRejected(identityID, plan.ComponentKey, sender, "sentry_policy_rejected: "+reason)
 	}
 }
 
@@ -174,7 +174,7 @@ func (s *Service) logAttestorComponentApproved(identityID string, plan *Componen
 			identityID,
 			componentKey,
 			target.Sender,
-			fmt.Sprintf("attestor component signature target %d signed", target.TargetIndex),
+			fmt.Sprintf("sentry component signature target %d signed", target.TargetIndex),
 		)
 	}
 }

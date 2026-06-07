@@ -10,7 +10,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func TestConvertSigningPolicyToAttestationDropsReviewAndPreservesHardBounds(t *testing.T) {
+func TestConvertSigningPolicyToSentryDropsReviewAndPreservesHardBounds(t *testing.T) {
 	raw := `
 always_review_warnings: true
 review_algo_payments:
@@ -42,9 +42,9 @@ transfer_policy:
 		t.Fatalf("ParseStoredConfig() error = %v", err)
 	}
 
-	converted, err := ConvertSigningPolicyToAttestation(stored)
+	converted, err := ConvertSigningPolicyToSentry(stored)
 	if err != nil {
-		t.Fatalf("ConvertSigningPolicyToAttestation() error = %v", err)
+		t.Fatalf("ConvertSigningPolicyToSentry() error = %v", err)
 	}
 	if converted.RejectRekey == nil || !*converted.RejectRekey {
 		t.Fatal("RejectRekey = nil/false, want true")
@@ -66,19 +66,19 @@ transfer_policy:
 		t.Fatalf("limits_by_network review_above = %d, want nil", *got)
 	}
 
-	data, err := MarshalStoredAttestationConfig(converted)
+	data, err := MarshalStoredSentryConfig(converted)
 	if err != nil {
-		t.Fatalf("MarshalStoredAttestationConfig() error = %v", err)
+		t.Fatalf("MarshalStoredSentryConfig() error = %v", err)
 	}
-	if strings.Contains(string(data), "review_") || strings.Contains(string(data), "attestation:") {
-		t.Fatalf("converted attestation YAML contains review fields or wrapper:\n%s", data)
+	if strings.Contains(string(data), "review_") || strings.Contains(string(data), "sentry:") {
+		t.Fatalf("converted sentry YAML contains review fields or wrapper:\n%s", data)
 	}
-	if _, err := ParseStoredAttestationConfig(data); err != nil {
-		t.Fatalf("ParseStoredAttestationConfig(converted) error = %v\nyaml:\n%s", err, data)
+	if _, err := ParseStoredSentryConfig(data); err != nil {
+		t.Fatalf("ParseStoredSentryConfig(converted) error = %v\nyaml:\n%s", err, data)
 	}
 }
 
-func TestConvertSigningPolicyToAttestationUsesClientSigningOverlay(t *testing.T) {
+func TestConvertSigningPolicyToSentryUsesClientSigningOverlay(t *testing.T) {
 	raw := `
 transfer_policy:
   schema_version: 1
@@ -107,16 +107,16 @@ client_signing:
 		t.Fatalf("ParseStoredConfig() error = %v", err)
 	}
 
-	converted, err := ConvertSigningPolicyToAttestation(stored)
+	converted, err := ConvertSigningPolicyToSentry(stored)
 	if err != nil {
-		t.Fatalf("ConvertSigningPolicyToAttestation() error = %v", err)
+		t.Fatalf("ConvertSigningPolicyToSentry() error = %v", err)
 	}
 	if got := converted.TransferPolicy.Routes[0].ID; got != "client_only" {
 		t.Fatalf("converted route ID = %q, want client_only", got)
 	}
 }
 
-func TestConvertSigningPolicyToAttestationRejectsUnrepresentableRouteMiss(t *testing.T) {
+func TestConvertSigningPolicyToSentryRejectsUnrepresentableRouteMiss(t *testing.T) {
 	raw := `
 transfer_policy:
   schema_version: 1
@@ -128,16 +128,16 @@ transfer_policy:
 		t.Fatalf("ParseStoredConfig() error = %v", err)
 	}
 
-	_, err = ConvertSigningPolicyToAttestation(stored)
+	_, err = ConvertSigningPolicyToSentry(stored)
 	if err == nil {
-		t.Fatal("ConvertSigningPolicyToAttestation() error = nil, want route-miss rejection")
+		t.Fatal("ConvertSigningPolicyToSentry() error = nil, want route-miss rejection")
 	}
 	if !strings.Contains(err.Error(), "cannot be converted") {
-		t.Fatalf("ConvertSigningPolicyToAttestation() error = %v, want cannot be converted", err)
+		t.Fatalf("ConvertSigningPolicyToSentry() error = %v, want cannot be converted", err)
 	}
 }
 
-func TestConvertSigningPolicyToAttestationRejectsKeyOverrides(t *testing.T) {
+func TestConvertSigningPolicyToSentryRejectsKeyOverrides(t *testing.T) {
 	addr := types.Address{1}.String()
 	raw := `
 transfer_policy:
@@ -153,11 +153,11 @@ key_overrides:
 		t.Fatalf("ParseStoredConfig() error = %v", err)
 	}
 
-	_, err = ConvertSigningPolicyToAttestation(stored)
+	_, err = ConvertSigningPolicyToSentry(stored)
 	if err == nil {
-		t.Fatal("ConvertSigningPolicyToAttestation() error = nil, want key_overrides rejection")
+		t.Fatal("ConvertSigningPolicyToSentry() error = nil, want key_overrides rejection")
 	}
 	if !strings.Contains(err.Error(), "key_overrides cannot be converted") {
-		t.Fatalf("ConvertSigningPolicyToAttestation() error = %v, want key_overrides rejection", err)
+		t.Fatalf("ConvertSigningPolicyToSentry() error = %v, want key_overrides rejection", err)
 	}
 }

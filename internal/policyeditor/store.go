@@ -91,9 +91,9 @@ func (s OfflineStore) Validate(ctx context.Context, stored *policy.StoredConfig)
 		return err
 	}
 	switch s.target() {
-	case TargetAttestation:
-		if _, err := policyruntime.ApplyAttestationStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
-			return fmt.Errorf("invalid attestor policy: %w", err)
+	case TargetSentry:
+		if _, err := policyruntime.ApplySentryStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
+			return fmt.Errorf("invalid sentry policy: %w", err)
 		}
 	default:
 		if _, err := policyruntime.ApplyStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
@@ -103,9 +103,9 @@ func (s OfflineStore) Validate(ctx context.Context, stored *policy.StoredConfig)
 	return nil
 }
 
-// ValidateAttestation compiles a stored attestor policy using the same runtime
+// ValidateSentry compiles a stored sentry policy using the same runtime
 // defaults as apsigner. It does not read or write policy files.
-func (s OfflineStore) ValidateAttestation(ctx context.Context, stored *policy.StoredConfig) error {
+func (s OfflineStore) ValidateSentry(ctx context.Context, stored *policy.StoredConfig) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -119,8 +119,8 @@ func (s OfflineStore) ValidateAttestation(ctx context.Context, stored *policy.St
 	if err != nil {
 		return err
 	}
-	if _, err := policyruntime.ApplyAttestationStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
-		return fmt.Errorf("invalid attestor policy: %w", err)
+	if _, err := policyruntime.ApplySentryStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
+		return fmt.Errorf("invalid sentry policy: %w", err)
 	}
 	return nil
 }
@@ -155,8 +155,8 @@ func (s OfflineStore) Save(ctx context.Context, stored *policy.StoredConfig) err
 		return err
 	}
 	switch s.target() {
-	case TargetAttestation:
-		if _, err := policyruntime.SaveStoredAttestationConfigWithMasterKey(
+	case TargetSentry:
+		if _, err := policyruntime.SaveStoredSentryConfigWithMasterKey(
 			s.DataDir,
 			s.identityID(),
 			&serverCfg,
@@ -225,11 +225,11 @@ func (s OfflineStore) SaveYAML(ctx context.Context, data []byte) error {
 	return nil
 }
 
-// SaveAttestationYAML verifies the current on-disk attestor policy first,
+// SaveSentryYAML verifies the current on-disk sentry policy first,
 // parses and validates the requested replacement, then writes the exact YAML
 // bytes to policy.yaml plus a fresh sidecar.
-func (s OfflineStore) SaveAttestationYAML(ctx context.Context, data []byte) error {
-	s.Target = TargetAttestation
+func (s OfflineStore) SaveSentryYAML(ctx context.Context, data []byte) error {
+	s.Target = TargetSentry
 	return s.SaveYAML(ctx, data)
 }
 
@@ -381,8 +381,8 @@ func (s OfflineStore) unlock(ctx context.Context) ([]byte, func(), error) {
 
 func (s OfflineStore) loadVerifiedWithMasterKey(masterKey []byte) (*policy.StoredConfig, error) {
 	switch s.target() {
-	case TargetAttestation:
-		return policy.LoadVerifiedAttestationConfigWithMasterKey(s.DataDir, s.identityID(), masterKey)
+	case TargetSentry:
+		return policy.LoadVerifiedSentryConfigWithMasterKey(s.DataDir, s.identityID(), masterKey)
 	default:
 		return policy.LoadVerifiedStoredConfigWithMasterKey(s.DataDir, s.identityID(), masterKey)
 	}
@@ -390,8 +390,8 @@ func (s OfflineStore) loadVerifiedWithMasterKey(masterKey []byte) (*policy.Store
 
 func (s OfflineStore) saveBytesWithMasterKey(data, masterKey []byte) error {
 	switch s.target() {
-	case TargetAttestation:
-		return policy.SaveAttestationBytesWithMasterKey(s.DataDir, s.identityID(), data, masterKey, s.now())
+	case TargetSentry:
+		return policy.SaveSentryBytesWithMasterKey(s.DataDir, s.identityID(), data, masterKey, s.now())
 	default:
 		return policy.SavePolicyBytesWithMasterKey(s.DataDir, s.identityID(), data, masterKey, s.now())
 	}

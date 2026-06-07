@@ -125,15 +125,15 @@ func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *identity.Runtim
 
 	err = ir.WithMasterKey(func(masterKey []byte) error {
 		switch target {
-		case adminproto.PolicyTargetAttestation:
-			if err := policy.SaveStoredAttestationConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
+		case adminproto.PolicyTargetSentry:
+			if err := policy.SaveStoredSentryConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
 				return err
 			}
-			verified, effective, err := policyruntime.LoadVerifiedAttestationWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
+			verified, effective, err := policyruntime.LoadVerifiedSentryWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
 			if err != nil {
 				return err
 			}
-			ir.SetAttestationPolicyState(verified, effective)
+			ir.SetSentryPolicyState(verified, effective)
 		default:
 			if err := policy.SaveStoredConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
 				return err
@@ -423,43 +423,43 @@ func TestBuildPolicySnapshotReportsUnavailableSnapshot(t *testing.T) {
 	}
 }
 
-func TestBuildAttestationPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
+func TestBuildSentryPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
 	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
-	stored := storedAttestationPolicyForAdminTest(t, "allow_initial")
-	effective, err := policyruntime.ApplyAttestationStoredConfig(svc.Deps.DataDir(), svc.Deps.Config(), stored)
+	stored := storedSentryPolicyForAdminTest(t, "allow_initial")
+	effective, err := policyruntime.ApplySentryStoredConfig(svc.Deps.DataDir(), svc.Deps.Config(), stored)
 	if err != nil {
-		t.Fatalf("ApplyAttestationStoredConfig(): %v", err)
+		t.Fatalf("ApplySentryStoredConfig(): %v", err)
 	}
-	ir.SetAttestationPolicyState(stored, effective)
+	ir.SetSentryPolicyState(stored, effective)
 
-	snapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetAttestation)
+	snapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetSentry)
 	if !snapshot.Success {
-		t.Fatalf("BuildPolicySnapshot(attestation) success = false, code %q error %q", snapshot.Code, snapshot.Error)
+		t.Fatalf("BuildPolicySnapshot(sentry) success = false, code %q error %q", snapshot.Code, snapshot.Error)
 	}
-	if snapshot.Target != adminproto.PolicyTargetAttestation {
-		t.Fatalf("Target = %q, want attestation", snapshot.Target)
+	if snapshot.Target != adminproto.PolicyTargetSentry {
+		t.Fatalf("Target = %q, want sentry", snapshot.Target)
 	}
 	if !snapshot.Canonical {
 		t.Fatal("Canonical = false, want true")
 	}
-	if strings.Contains(snapshot.PolicyYAML, "attestation:") {
-		t.Fatalf("attestation snapshot contains wrapper:\n%s", snapshot.PolicyYAML)
+	if strings.Contains(snapshot.PolicyYAML, "sentry:") {
+		t.Fatalf("sentry snapshot contains wrapper:\n%s", snapshot.PolicyYAML)
 	}
 	if !strings.Contains(snapshot.PolicyYAML, "allow_initial") ||
 		!strings.Contains(snapshot.PolicyYAML, "transfer_policy:") {
-		t.Fatalf("PolicyYAML missing expected attestor policy fields:\n%s", snapshot.PolicyYAML)
+		t.Fatalf("PolicyYAML missing expected sentry policy fields:\n%s", snapshot.PolicyYAML)
 	}
 }
 
 func TestValidatePolicyUsesTargetParserAndRoleGate(t *testing.T) {
 	svc, signerIR, _ := setupAdminServiceWithRole(t, noderole.RoleSigner)
-	attestationYAML := attestationPolicyYAMLForAdminTest("allow_validate")
+	sentryYAML := sentryPolicyYAMLForAdminTest("allow_validate")
 	result := svc.ValidatePolicy(signerIR, adminproto.ValidatePolicyRequest{
-		Target:     adminproto.PolicyTargetAttestation,
-		PolicyYAML: attestationYAML,
+		Target:     adminproto.PolicyTargetSentry,
+		PolicyYAML: sentryYAML,
 	})
 	if result.Success {
-		t.Fatalf("ValidatePolicy(attestation on signer) success = true, want false")
+		t.Fatalf("ValidatePolicy(sentry on signer) success = true, want false")
 	}
 	if result.Code != "policy_target_not_allowed_for_node_role" {
 		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)
@@ -467,37 +467,37 @@ func TestValidatePolicyUsesTargetParserAndRoleGate(t *testing.T) {
 
 	attestorSvc, attestorIR, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
 	result = attestorSvc.ValidatePolicy(attestorIR, adminproto.ValidatePolicyRequest{
-		Target:     adminproto.PolicyTargetAttestation,
-		PolicyYAML: attestationYAML,
+		Target:     adminproto.PolicyTargetSentry,
+		PolicyYAML: sentryYAML,
 	})
 	if !result.Success {
-		t.Fatalf("ValidatePolicy(attestation) success = false, code %q error %q", result.Code, result.Error)
+		t.Fatalf("ValidatePolicy(sentry) success = false, code %q error %q", result.Code, result.Error)
 	}
-	if result.Target != adminproto.PolicyTargetAttestation {
-		t.Fatalf("Target = %q, want attestation", result.Target)
+	if result.Target != adminproto.PolicyTargetSentry {
+		t.Fatalf("Target = %q, want sentry", result.Target)
 	}
 }
 
-func TestReplaceAttestationPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
+func TestReplaceSentryPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
-	initial := storedAttestationPolicyForAdminTest(t, "allow_initial")
-	unlockAdminServicePolicyTest(t, svc, ir, adminproto.PolicyTargetAttestation, initial)
-	initialSnapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetAttestation)
+	initial := storedSentryPolicyForAdminTest(t, "allow_initial")
+	unlockAdminServicePolicyTest(t, svc, ir, adminproto.PolicyTargetSentry, initial)
+	initialSnapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetSentry)
 	if !initialSnapshot.Success {
 		t.Fatalf("initial snapshot success = false, code %q error %q", initialSnapshot.Code, initialSnapshot.Error)
 	}
 
-	updatedYAML := attestationPolicyYAMLForAdminTest("allow_updated")
+	updatedYAML := sentryPolicyYAMLForAdminTest("allow_updated")
 	result := svc.ReplacePolicy(ir, adminproto.ReplacePolicyRequest{
-		Target:                adminproto.PolicyTargetAttestation,
+		Target:                adminproto.PolicyTargetSentry,
 		PolicyYAML:            updatedYAML,
 		ExpectedCurrentSHA256: initialSnapshot.PolicySHA256,
 	})
 	if !result.Success {
-		t.Fatalf("ReplacePolicy(attestation) success = false, code %q error %q", result.Code, result.Error)
+		t.Fatalf("ReplacePolicy(sentry) success = false, code %q error %q", result.Code, result.Error)
 	}
-	if result.Target != adminproto.PolicyTargetAttestation {
-		t.Fatalf("Target = %q, want attestation", result.Target)
+	if result.Target != adminproto.PolicyTargetSentry {
+		t.Fatalf("Target = %q, want sentry", result.Target)
 	}
 	if !strings.Contains(result.PolicyYAML, "allow_updated") {
 		t.Fatalf("result PolicyYAML missing updated route:\n%s", result.PolicyYAML)
@@ -506,23 +506,23 @@ func TestReplaceAttestationPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 	var verified *policy.StoredConfig
 	err := ir.WithMasterKey(func(masterKey []byte) error {
 		var err error
-		verified, err = policy.LoadVerifiedAttestationConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), masterKey)
+		verified, err = policy.LoadVerifiedSentryConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), masterKey)
 		return err
 	})
 	if err != nil {
-		t.Fatalf("LoadVerifiedAttestationConfigWithMasterKey(): %v", err)
+		t.Fatalf("LoadVerifiedSentryConfigWithMasterKey(): %v", err)
 	}
-	verifiedData, err := policy.MarshalStoredAttestationConfig(verified)
+	verifiedData, err := policy.MarshalStoredSentryConfig(verified)
 	if err != nil {
-		t.Fatalf("MarshalStoredAttestationConfig(): %v", err)
+		t.Fatalf("MarshalStoredSentryConfig(): %v", err)
 	}
 	if !strings.Contains(string(verifiedData), "allow_updated") {
-		t.Fatalf("verified attestor policy missing updated route:\n%s", verifiedData)
+		t.Fatalf("verified sentry policy missing updated route:\n%s", verifiedData)
 	}
-	stored, _ := ir.AttestationPolicySnapshot()
+	stored, _ := ir.SentryPolicySnapshot()
 	if stored == nil || stored.TransferPolicy == nil || len(stored.TransferPolicy.Routes) != 1 ||
 		stored.TransferPolicy.Routes[0].ID != "allow_updated" {
-		t.Fatalf("runtime stored attestor policy = %+v, want allow_updated route", stored)
+		t.Fatalf("runtime stored sentry policy = %+v, want allow_updated route", stored)
 	}
 }
 
@@ -540,16 +540,16 @@ func TestReplacePolicyRejectsOppositeNodeRoleTarget(t *testing.T) {
 	}
 }
 
-func storedAttestationPolicyForAdminTest(t *testing.T, routeID string) *policy.StoredConfig {
+func storedSentryPolicyForAdminTest(t *testing.T, routeID string) *policy.StoredConfig {
 	t.Helper()
-	stored, err := policy.ParseStoredAttestationConfig([]byte(attestationPolicyYAMLForAdminTest(routeID)))
+	stored, err := policy.ParseStoredSentryConfig([]byte(sentryPolicyYAMLForAdminTest(routeID)))
 	if err != nil {
-		t.Fatalf("ParseStoredAttestationConfig(): %v", err)
+		t.Fatalf("ParseStoredSentryConfig(): %v", err)
 	}
 	return stored
 }
 
-func attestationPolicyYAMLForAdminTest(routeID string) string {
+func sentryPolicyYAMLForAdminTest(routeID string) string {
 	return fmt.Sprintf(`transfer_policy:
   schema_version: 1
   enabled: true

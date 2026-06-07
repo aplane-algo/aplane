@@ -26,7 +26,7 @@ Normative inputs:
 This model covers how an existing key file authorizes signing behavior after it
 has been created, imported, restored, or loaded by `apsigner`.
 
-Guarded account keys and attestor component keys are existing key files, but
+Guarded account keys and sentry component keys are existing key files, but
 their request path is not ordinary `/sign`: direct signing rejects those key
 types and the component-signing plus assembly workflow is modeled separately in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).

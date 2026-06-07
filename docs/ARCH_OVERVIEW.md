@@ -52,11 +52,11 @@ a key.
 |-------------|---------|-----------------|
 | **apshell** | Interactive shell, scripting runtime, plugin host, and MCP surface | UI + Shell App + Engine + Providers |
 | **apadmin** | Signer admin TUI over IPC or SSH admin transport | UI (TUI) + admin protocol + Providers |
-| **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes; local attestor nodes show admin plus daemon/status only | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
+| **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes; local sentry nodes show admin plus daemon/status only | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
 | **apstore** | Keystore management client for local initialize, policy integrity, endpoint export, public attestor references, backup import admission, verification, and rebuild rescue flows; live backup, restore, template, key type, and passphrase operations use the admin protocol | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
-| **appolicy** | Offline policy checker/editor for the node-role policy document (`policy.yaml` for signer nodes, attestor-domain `policy.yaml` for attestor nodes), plus signing-to-attestation conversion | UI (TUI) + Policy + Store Mutation |
+| **appolicy** | Offline policy checker/editor for the node-role policy document (`policy.yaml` for signer nodes, sentry-domain `policy.yaml` for sentry nodes), plus signing-to-sentry conversion | UI (TUI) + Policy + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
 | **aplocalnet** | LocalNet setup TUI/CLI for apclient default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
 | **approbe** | Installer-facing liveness probe for signer IPC reachability before replacing local binaries | Installer helper + admin protocol probe |

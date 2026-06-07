@@ -699,7 +699,7 @@ Policy load behavior:
 - `appolicy --yaml` emits the exact verified selected document bytes;
   `appolicy --save` reads replacement YAML bytes from stdin, validates them in
   the selected policy domain, and writes those exact bytes plus a fresh sidecar
-  under the store mutation lock; `--target signer|attestation` explicitly
+  under the store mutation lock; `--target signer|sentry` explicitly
   selects the domain; store-backed role-incompatible targets fail closed
 - `apstore policy check|verify|sign` checks, verifies, or signs the active
   node-role policy
@@ -1066,7 +1066,7 @@ Signing-audit semantics:
 - sentry-role component signing currently records approvals and policy
   rejections through `SIGN_APPROVED`/`SIGN_REJECTED`; `txn_auth` is the
   sentry component selector, `txn_sender` is the decoded target sender, and
-  `policy_rule_id` carries the deterministic attestation rule when present
+  `policy_rule_id` carries the deterministic sentry rule when present
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
 - admin authorization-denial audit records event `AUTHORIZATION_DENIED`, outcome `denied`, admin session ID, transport, target identity, principal attribution, action/resource details in `reason`, and remote address when available
@@ -1220,7 +1220,7 @@ to run.
 Client-signing and sentry component `transfer_policy` are both persisted in
 `policy.yaml`, with schema selected by node role. Both domains are validated by
 the normal policy load path and by `apstore policy check/sign/verify`.
-`appolicy` auto-targets the node-role domain and `--target signer|attestation`
+`appolicy` auto-targets the node-role domain and `--target signer|sentry`
 can explicitly select a domain for offline
 work; `apadmin` uses the node-role target online through admin IPC. Transfer
 policy is not projected through mutable admin IPC policy settings; guided edits

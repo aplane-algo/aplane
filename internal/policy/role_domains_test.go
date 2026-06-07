@@ -58,7 +58,7 @@ func TestStoredConfigApplyClientSigningRoleOverridesLegacyTopLevel(t *testing.T)
 	}
 }
 
-func TestStoredConfigApplyAttestationRole(t *testing.T) {
+func TestStoredConfigApplySentryRole(t *testing.T) {
 	rejectRekey := true
 	enabled := true
 	addr := types.Address{1}.String()
@@ -77,9 +77,9 @@ func TestStoredConfigApplyAttestationRole(t *testing.T) {
 		},
 	}
 
-	cfg, err := stored.ApplyAttestation(DefaultConfig())
+	cfg, err := stored.ApplySentry(DefaultConfig())
 	if err != nil {
-		t.Fatalf("ApplyAttestation() error = %v", err)
+		t.Fatalf("ApplySentry() error = %v", err)
 	}
 	if !cfg.RejectRekey {
 		t.Fatal("RejectRekey = false, want true")
@@ -89,9 +89,9 @@ func TestStoredConfigApplyAttestationRole(t *testing.T) {
 	}
 }
 
-func TestParseStoredConfigRejectsAttestationPolicyFields(t *testing.T) {
+func TestParseStoredConfigRejectsSentryPolicyFields(t *testing.T) {
 	for _, raw := range []string{
-		"attestation: {}\n",
+		"sentry: {}\n",
 		"reject_rekey: true\n",
 	} {
 		_, err := ParseStoredConfig([]byte(raw))
@@ -101,7 +101,7 @@ func TestParseStoredConfigRejectsAttestationPolicyFields(t *testing.T) {
 	}
 }
 
-func TestParseStoredAttestationConfigRejectsReviewProducingFields(t *testing.T) {
+func TestParseStoredSentryConfigRejectsReviewProducingFields(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
@@ -112,7 +112,7 @@ func TestParseStoredAttestationConfigRejectsReviewProducingFields(t *testing.T) 
 			raw: `
 always_review_warnings: true
 `,
-			want: "attestation.always_review_warnings",
+			want: "sentry.always_review_warnings",
 		},
 		{
 			name: "review algo payments",
@@ -120,7 +120,7 @@ always_review_warnings: true
 review_algo_payments:
   testnet: 1
 `,
-			want: "attestation.review_algo_payments",
+			want: "sentry.review_algo_payments",
 		},
 		{
 			name: "route miss review",
@@ -130,7 +130,7 @@ transfer_policy:
   enabled: true
   on_no_route: review
 `,
-			want: "attestation.transfer_policy.on_no_route",
+			want: "sentry.transfer_policy.on_no_route",
 		},
 		{
 			name: "route review above",
@@ -153,27 +153,27 @@ transfer_policy:
 		{
 			name: "wrapper",
 			raw: `
-attestation: {}
+sentry: {}
 `,
-			want: "attestor policy must not contain an attestation wrapper",
+			want: "sentry policy must not contain a sentry wrapper",
 		},
 		{
 			name: "client reject rekey",
 			raw: `
 client_signing: {}
 `,
-			want: "attestor policy client_signing",
+			want: "sentry policy client_signing",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseStoredAttestationConfig([]byte(tt.raw))
+			_, err := ParseStoredSentryConfig([]byte(tt.raw))
 			if err == nil {
-				t.Fatal("ParseStoredAttestationConfig() error = nil, want role-domain rejection")
+				t.Fatal("ParseStoredSentryConfig() error = nil, want role-domain rejection")
 			}
 			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("ParseStoredAttestationConfig() error = %v, want containing %q", err, tt.want)
+				t.Fatalf("ParseStoredSentryConfig() error = %v, want containing %q", err, tt.want)
 			}
 		})
 	}
@@ -185,5 +185,5 @@ func roleDomainFixturePath(t *testing.T) string {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	return filepath.Join(filepath.Dir(file), "..", "..", "test", "contracts", "policy", "role_domains_attestation.yaml")
+	return filepath.Join(filepath.Dir(file), "..", "..", "test", "contracts", "policy", "role_domains_sentry.yaml")
 }

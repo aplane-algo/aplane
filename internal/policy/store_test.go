@@ -61,18 +61,18 @@ func TestSaveAndLoadVerifiedStoredConfigWithMasterKey(t *testing.T) {
 	}
 }
 
-func TestSaveAndLoadVerifiedAttestationConfigWithMasterKey(t *testing.T) {
+func TestSaveAndLoadVerifiedSentryConfigWithMasterKey(t *testing.T) {
 	root := t.TempDir()
 	masterKey := []byte("test master key")
 	rejectRekey := true
 	want := &StoredConfig{RejectRekey: &rejectRekey}
 
-	if err := SaveStoredAttestationConfigWithMasterKey(root, "alice", want, masterKey, time.Unix(1700000000, 0)); err != nil {
-		t.Fatalf("SaveStoredAttestationConfigWithMasterKey() error = %v", err)
+	if err := SaveStoredSentryConfigWithMasterKey(root, "alice", want, masterKey, time.Unix(1700000000, 0)); err != nil {
+		t.Fatalf("SaveStoredSentryConfigWithMasterKey() error = %v", err)
 	}
-	got, err := LoadVerifiedAttestationConfigWithMasterKey(root, "alice", masterKey)
+	got, err := LoadVerifiedSentryConfigWithMasterKey(root, "alice", masterKey)
 	if err != nil {
-		t.Fatalf("LoadVerifiedAttestationConfigWithMasterKey() error = %v", err)
+		t.Fatalf("LoadVerifiedSentryConfigWithMasterKey() error = %v", err)
 	}
 	if got.RejectRekey == nil || !*got.RejectRekey {
 		t.Fatalf("RejectRekey = %#v, want true", got.RejectRekey)

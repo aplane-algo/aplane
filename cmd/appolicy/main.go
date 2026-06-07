@@ -25,16 +25,16 @@ import (
 )
 
 type options struct {
-	dataDir       string
-	identityID    string
-	target        string
-	check         bool
-	yaml          bool
-	sha256        bool
-	save          bool
-	toAttestation bool
-	online        bool
-	version       bool
+	dataDir    string
+	identityID string
+	target     string
+	check      bool
+	yaml       bool
+	sha256     bool
+	save       bool
+	toSentry   bool
+	online     bool
+	version    bool
 }
 
 func main() {
@@ -47,12 +47,12 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	fs.SetOutput(stderr)
 	fs.StringVar(&opts.dataDir, "d", "", "signer data directory (or APSIGNER_DATA)")
 	fs.StringVar(&opts.identityID, "identity", policyeditor.DefaultIdentityID, "identity ID")
-	fs.StringVar(&opts.target, "target", "auto", "policy target: auto, signer, or attestation")
+	fs.StringVar(&opts.target, "target", "auto", "policy target: auto, signer, or sentry")
 	fs.BoolVar(&opts.check, "check", false, "verify and validate the selected policy document or a policy file, then exit")
 	fs.BoolVar(&opts.yaml, "yaml", false, "verify the selected policy document or a policy file and print it to stdout")
 	fs.BoolVar(&opts.sha256, "sha256", false, "verify the selected policy document or a policy file and print its SHA-256 digest")
 	fs.BoolVar(&opts.save, "save", false, "read selected policy YAML from stdin, validate, save, and sign it")
-	fs.BoolVar(&opts.toAttestation, "to-attestation", false, "convert signer policy YAML to direct attestor policy YAML and print it to stdout")
+	fs.BoolVar(&opts.toSentry, "to-sentry", false, "convert signer policy YAML to direct sentry policy YAML and print it to stdout")
 	fs.BoolVar(&opts.online, "online", false, "disabled placeholder for future apsigner-connected policy editing")
 	fs.BoolVar(&opts.version, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
@@ -71,8 +71,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		writef(stderr, "appolicy: %v\n", err)
 		return 2
 	}
-	if modeCount(opts.check, opts.yaml, opts.sha256, opts.save, opts.toAttestation) > 1 {
-		writeLine(stderr, "appolicy: choose only one of -check, -yaml, -sha256, -save, or -to-attestation")
+	if modeCount(opts.check, opts.yaml, opts.sha256, opts.save, opts.toSentry) > 1 {
+		writeLine(stderr, "appolicy: choose only one of -check, -yaml, -sha256, -save, or -to-sentry")
 		return 2
 	}
 	policyFile := ""
@@ -102,7 +102,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	if identityID == "" {
 		identityID = policyeditor.DefaultIdentityID
 	}
-	target, err := resolveRunTarget(dataDir, policyFile, requestedTarget, opts.toAttestation)
+	target, err := resolveRunTarget(dataDir, policyFile, requestedTarget, opts.toSentry)
 	if err != nil {
 		writef(stderr, "appolicy: %v\n", err)
 		return 2
@@ -177,15 +177,15 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		writef(stdout, "%s\n", policy.PolicySHA256(data))
 		return 0
 	}
-	if opts.toAttestation {
+	if opts.toSentry {
 		data, err := os.ReadFile(policy.PolicyPath(dataDir, identityID))
 		if err != nil {
 			writef(stderr, "appolicy: failed to read policy YAML: %v\n", err)
 			return 1
 		}
-		out, err := policy.ConvertSigningPolicyToAttestationYAML(data)
+		out, err := policy.ConvertSigningPolicyToSentryYAML(data)
 		if err != nil {
-			writef(stderr, "appolicy: failed to convert policy to attestor policy: %v\n", err)
+			writef(stderr, "appolicy: failed to convert policy to sentry policy: %v\n", err)
 			return 1
 		}
 		_, _ = stdout.Write(out)
@@ -218,7 +218,7 @@ func runPolicyFile(ctx context.Context, path string, opts options, store *policy
 		return 1
 	}
 	parseTarget := target
-	if opts.toAttestation {
+	if opts.toSentry {
 		parseTarget = policyeditor.TargetSigner
 	}
 	stored, err := parseTarget.Parse(data)
@@ -227,7 +227,7 @@ func runPolicyFile(ctx context.Context, path string, opts options, store *policy
 		return 1
 	}
 	validateStore := *store
-	if opts.toAttestation {
+	if opts.toSentry {
 		validateStore.Target = policyeditor.TargetSigner
 	}
 	if err := validateStore.Validate(ctx, stored); err != nil {
@@ -242,15 +242,15 @@ func runPolicyFile(ctx context.Context, path string, opts options, store *policy
 		writef(stdout, "%s\n", policy.PolicySHA256(data))
 		return 0
 	}
-	if opts.toAttestation {
-		out, err := policy.ConvertSigningPolicyToAttestation(stored)
+	if opts.toSentry {
+		out, err := policy.ConvertSigningPolicyToSentry(stored)
 		if err != nil {
-			writef(stderr, "appolicy: failed to convert policy to attestor policy: %v\n", err)
+			writef(stderr, "appolicy: failed to convert policy to sentry policy: %v\n", err)
 			return 1
 		}
-		data, err := policy.MarshalStoredAttestationConfig(out)
+		data, err := policy.MarshalStoredSentryConfig(out)
 		if err != nil {
-			writef(stderr, "appolicy: failed to marshal attestor policy: %v\n", err)
+			writef(stderr, "appolicy: failed to marshal sentry policy: %v\n", err)
 			return 1
 		}
 		_, _ = stdout.Write(data)
@@ -286,8 +286,8 @@ func modeCount(values ...bool) int {
 	return count
 }
 
-func resolveRunTarget(dataDir, policyFile string, requested policyeditor.Target, toAttestation bool) (policyeditor.Target, error) {
-	if toAttestation {
+func resolveRunTarget(dataDir, policyFile string, requested policyeditor.Target, toSentry bool) (policyeditor.Target, error) {
+	if toSentry {
 		return policyeditor.TargetSigner, nil
 	}
 	if requested == "" || requested == policyeditor.TargetAuto {

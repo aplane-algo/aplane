@@ -74,7 +74,7 @@ This separation is deliberate:
 Component public sidecars are derived public metadata, not independent signing
 authority. They exist so `apstore attestor export-public` can work without
 decrypting private key material. Backup payloads do not need to carry the
-sidecar as a separate authority; restore flows that write attestor component
+sidecar as a separate authority; restore flows that write sentry component
 keys must regenerate the sidecar from the restored component key payload.
 Missing sidecars do not make a component key unable to sign, but they do block
 offline public export until regenerated or backfilled.
@@ -110,7 +110,7 @@ Rules:
 
 - every initialized signer data root has one root `node.yaml`,
 - new installs default to `role: signer` unless the initializer explicitly
-  creates an attestor node,
+  creates a sentry node,
 - there is no `dual` role,
 - there is no supported role-change command,
 - identity-level `mode` is an unsupported pre-release shape and startup rejects
@@ -134,7 +134,7 @@ identities until operator cleanup and restart.
 Local development that needs both roles uses two complete data roots and two
 apsigner processes, for example `~/aplane-signer/` and `~/aplane-attestor/`.
 Running those two nodes on one host is useful for development and operations,
-but it is not independent attestation. Independence remains a deployment-domain
+but it is not independent sentry. Independence remains a deployment-domain
 property.
 
 ## Key Type Lifecycle
@@ -155,7 +155,7 @@ subject to the node role gate above.
 | Unsupported by binary | No provider is registered in the current process. | No. | No, if signing needs that provider; native/DSA key types need registered support. | Install/run a binary that supports the key type. |
 | Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
 | Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Examples include `ed25519` and `aplane.falcon1024.v1`. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid. | None. |
-| Default-enabled attestor component key type | Raw component key generator/signing support is registered and cataloged as default-enabled. Examples are `aplane.sentry-ed25519.v1` and `aplane.sentry-falcon1024.v1`. | Yes on attestor nodes. | Component-signing only on attestor nodes; never normal spending `/sign`. | None. |
+| Default-enabled sentry component key type | Raw component key generator/signing support is registered and cataloged as default-enabled. Examples are `aplane.sentry-ed25519.v1` and `aplane.sentry-falcon1024.v1`. | Yes on sentry nodes. | Component-signing only on sentry nodes; never normal spending `/sign`. | None. |
 | Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apstore keytype enable`. |
 | Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by node role. | Yes, if the key file is valid and allowed by node role. | Disable, if no stored key uses it. |
 | Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apstore keytype enable <key_type>`. |
@@ -208,8 +208,8 @@ key is rejected during reload rather than published as a signable key.
 | Native key valid | Native key payload has valid key material and canonical key type. | Yes on signer nodes. | Restores directly onto signer nodes. |
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
-| Attestor component key valid | Payload category/type is an attestor component key and selector is canonical. | Only through attestor-role component signing on attestor nodes; normal `/sign` and spending paths reject it. | Restores as a component key on attestor nodes, regenerating the public sidecar; never as a spending account. |
-| Guarded account key valid | DSA LogicSig key whose bytecode embeds the attestor public key. | Only on signer nodes through attested orchestration: user component signature, attestor component signature, local assembly. | Restores from stored bytecode and metadata. |
+| Attestor component key valid | Payload category/type is a sentry component key and selector is canonical. | Only through attestor-role component signing on sentry nodes; normal `/sign` and spending paths reject it. | Restores as a component key on sentry nodes, regenerating the public sidecar; never as a spending account. |
+| Guarded account key valid | DSA LogicSig key whose bytecode embeds the attestor public key. | Only on signer nodes through attested orchestration: user component signature, sentry component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig missing `salt_counter` | Payload has LogicSig bytecode but no salt counter. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore rejects instead of reconstructing from template. |
@@ -270,7 +270,7 @@ The relevant order is:
 
 1. derive or reuse the identity master key,
 2. load root `node.yaml` and verify the identity's `node.yaml.hmac`,
-3. load and validate identity config, policy, and attestor policy,
+3. load and validate identity config, policy, and sentry policy,
 4. apply node role to key type discovery and service dispatch,
 5. register enabled compiled/YAML key type state,
 6. register enabled installed templates,
@@ -297,7 +297,7 @@ is not published as valid runtime inventory.
 | Operation | Key type state effect | Key file effect | Notes |
 |---|---|---|---|
 | Initialize node role | Writes root `node.yaml`; each initialized identity writes a matching HMAC sidecar when its master key is available. | None. | Default role is `signer`; attestor role is explicit at initialization. |
-| Verify node role integrity | None. | None. | Required before unlock-dependent key scan, signing, generation, import, restore, or attestor component signing. |
+| Verify node role integrity | None. | None. | Required before unlock-dependent key scan, signing, generation, import, restore, or sentry component signing. |
 | `apstore keytype enable` | Writes/refreshes compiled enabled state, or enables an installed YAML template. | None. | Does not rewrite existing keys. |
 | `apstore keytype disable` | Deletes compiled state or disables an installed YAML template after the unused-key guard. | None. | Provider code and installed template files remain available to the store. |
 | `apstore template import` | Installs encrypted template and enabled state. | None. | Active after reload. |

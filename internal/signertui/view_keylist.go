@@ -195,7 +195,7 @@ func (m Model) keyListMode() string {
 	}
 	switch strings.ToLower(strings.TrimSpace(m.adminSettings.NodeRole)) {
 	case "attestor":
-		return "attestation"
+		return "sentry"
 	default:
 		return "signing"
 	}
@@ -207,7 +207,7 @@ func (m Model) keyListUsesTabs() bool {
 
 func (m Model) effectiveKeyListTab() keyListTab {
 	switch m.keyListMode() {
-	case "attestation":
+	case "sentry":
 		return keyListTabAttestor
 	default:
 		return keyListTabSigning

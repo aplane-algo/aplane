@@ -134,18 +134,18 @@ func policyCommandDocuments() ([]policyCommandDocument, error) {
 	switch nodeDoc.Role {
 	case noderole.RoleSentry:
 		doc.loadCheck = func() (*policy.StoredConfig, error) {
-			return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredAttestationConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
-				return policyruntime.ApplyAttestationStoredConfig(dataDirectory, &config, stored)
+			return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredSentryConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
+				return policyruntime.ApplySentryStoredConfig(dataDirectory, &config, stored)
 			})
 		}
 		doc.verify = func(masterKey []byte) (*policy.StoredConfig, error) {
-			return policy.LoadVerifiedAttestationConfigWithMasterKey(dataDirectory, identityID, masterKey)
+			return policy.LoadVerifiedSentryConfigWithMasterKey(dataDirectory, identityID, masterKey)
 		}
 		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
-			return policyruntime.ApplyAttestationStoredConfig(dataDirectory, &config, stored)
+			return policyruntime.ApplySentryStoredConfig(dataDirectory, &config, stored)
 		}
 		doc.sign = func(masterKey []byte, signedAt time.Time) error {
-			return policy.SignAttestationFileIntegrityWithMasterKey(dataDirectory, identityID, masterKey, signedAt)
+			return policy.SignSentryFileIntegrityWithMasterKey(dataDirectory, identityID, masterKey, signedAt)
 		}
 	case noderole.RoleSigner:
 		doc.loadCheck = func() (*policy.StoredConfig, error) {

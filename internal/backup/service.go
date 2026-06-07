@@ -134,7 +134,7 @@ func copyPolicyFilesToArchive(paths storepaths.Paths, identityID, stageDir strin
 	}
 	switch nodeRole.Role {
 	case noderole.RoleSentry:
-		if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(paths.Root(), identityID, masterKey); err != nil {
+		if _, err := policy.LoadVerifiedSentryConfigWithMasterKey(paths.Root(), identityID, masterKey); err != nil {
 			return fmt.Errorf("failed to verify policy.yaml before backup: %w", err)
 		}
 	case noderole.RoleSigner:

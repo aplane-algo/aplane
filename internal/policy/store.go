@@ -26,16 +26,16 @@ func LoadVerifiedStoredConfig(dataRoot, identityID string, key []byte) (*StoredC
 	)
 }
 
-// LoadVerifiedAttestationConfig reads policy.yaml for an attestor node, verifies
+// LoadVerifiedSentryConfig reads policy.yaml for a sentry node, verifies
 // policy.yaml.hmac against the document bytes, then parses the stored attestor
 // policy.
-func LoadVerifiedAttestationConfig(dataRoot, identityID string, key []byte) (*StoredConfig, error) {
+func LoadVerifiedSentryConfig(dataRoot, identityID string, key []byte) (*StoredConfig, error) {
 	return loadVerifiedStoredConfigAtPath(
-		AttestationPath(dataRoot, identityID),
+		SentryPath(dataRoot, identityID),
 		key,
-		ParseStoredAttestationConfig,
-		"attestor policy",
-		"attestor policy config",
+		ParseStoredSentryConfig,
+		"sentry policy",
+		"sentry policy config",
 	)
 }
 
@@ -72,16 +72,16 @@ func LoadVerifiedStoredConfigWithMasterKey(dataRoot, identityID string, masterKe
 	return LoadVerifiedStoredConfig(dataRoot, identityID, key)
 }
 
-// LoadVerifiedAttestationConfigWithMasterKey derives the policy integrity key
-// from the identity master key, verifies policy.yaml as an attestor policy, and
+// LoadVerifiedSentryConfigWithMasterKey derives the policy integrity key
+// from the identity master key, verifies policy.yaml as a sentry policy, and
 // parses it.
-func LoadVerifiedAttestationConfigWithMasterKey(dataRoot, identityID string, masterKey []byte) (*StoredConfig, error) {
+func LoadVerifiedSentryConfigWithMasterKey(dataRoot, identityID string, masterKey []byte) (*StoredConfig, error) {
 	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
 	if err != nil {
 		return nil, err
 	}
 	defer crypto.ZeroBytes(key)
-	return LoadVerifiedAttestationConfig(dataRoot, identityID, key)
+	return LoadVerifiedSentryConfig(dataRoot, identityID, key)
 }
 
 // SaveStoredConfigWithIntegrity writes policy.yaml and policy.yaml.hmac. The
@@ -98,14 +98,14 @@ func SaveStoredConfigWithIntegrity(dataRoot, identityID string, cfg *StoredConfi
 	return SavePolicyBytesWithIntegrity(dataRoot, identityID, policyBytes, key, signedAt)
 }
 
-// SaveStoredAttestationConfigWithIntegrity writes policy.yaml and
-// policy.yaml.hmac for an attestor node.
-func SaveStoredAttestationConfigWithIntegrity(dataRoot, identityID string, cfg *StoredConfig, key []byte, signedAt time.Time) error {
-	attestationBytes, err := MarshalStoredAttestationConfig(cfg)
+// SaveStoredSentryConfigWithIntegrity writes policy.yaml and
+// policy.yaml.hmac for a sentry node.
+func SaveStoredSentryConfigWithIntegrity(dataRoot, identityID string, cfg *StoredConfig, key []byte, signedAt time.Time) error {
+	sentryBytes, err := MarshalStoredSentryConfig(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal attestor policy config: %w", err)
+		return fmt.Errorf("failed to marshal sentry policy config: %w", err)
 	}
-	return SaveAttestationBytesWithIntegrity(dataRoot, identityID, attestationBytes, key, signedAt)
+	return SaveSentryBytesWithIntegrity(dataRoot, identityID, sentryBytes, key, signedAt)
 }
 
 // SavePolicyBytesWithIntegrity writes exact policy.yaml bytes plus
@@ -115,11 +115,11 @@ func SavePolicyBytesWithIntegrity(dataRoot, identityID string, policyBytes []byt
 	return savePolicyBytesWithIntegrityAtPath(PolicyPath(dataRoot, identityID), policyBytes, key, signedAt, "policy config", "policy integrity sidecar")
 }
 
-// SaveAttestationBytesWithIntegrity writes exact attestor-policy bytes to
+// SaveSentryBytesWithIntegrity writes exact sentry-policy bytes to
 // policy.yaml plus policy.yaml.hmac. The caller owns parsing and runtime
 // validation before calling this lower-level primitive.
-func SaveAttestationBytesWithIntegrity(dataRoot, identityID string, attestationBytes []byte, key []byte, signedAt time.Time) error {
-	return savePolicyBytesWithIntegrityAtPath(AttestationPath(dataRoot, identityID), attestationBytes, key, signedAt, "attestor policy config", "policy integrity sidecar")
+func SaveSentryBytesWithIntegrity(dataRoot, identityID string, sentryBytes []byte, key []byte, signedAt time.Time) error {
+	return savePolicyBytesWithIntegrityAtPath(SentryPath(dataRoot, identityID), sentryBytes, key, signedAt, "sentry policy config", "policy integrity sidecar")
 }
 
 func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, key []byte, signedAt time.Time, configLabel, sidecarLabel string) error {
@@ -182,16 +182,16 @@ func SaveStoredConfigWithMasterKey(dataRoot, identityID string, cfg *StoredConfi
 	return SaveStoredConfigWithIntegrity(dataRoot, identityID, cfg, key, signedAt)
 }
 
-// SaveStoredAttestationConfigWithMasterKey derives the policy integrity key
-// from the identity master key and writes attestor policy.yaml plus
+// SaveStoredSentryConfigWithMasterKey derives the policy integrity key
+// from the identity master key and writes sentry policy.yaml plus
 // policy.yaml.hmac.
-func SaveStoredAttestationConfigWithMasterKey(dataRoot, identityID string, cfg *StoredConfig, masterKey []byte, signedAt time.Time) error {
+func SaveStoredSentryConfigWithMasterKey(dataRoot, identityID string, cfg *StoredConfig, masterKey []byte, signedAt time.Time) error {
 	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
 	if err != nil {
 		return err
 	}
 	defer crypto.ZeroBytes(key)
-	return SaveStoredAttestationConfigWithIntegrity(dataRoot, identityID, cfg, key, signedAt)
+	return SaveStoredSentryConfigWithIntegrity(dataRoot, identityID, cfg, key, signedAt)
 }
 
 // SavePolicyBytesWithMasterKey derives the policy integrity key from the
@@ -205,16 +205,16 @@ func SavePolicyBytesWithMasterKey(dataRoot, identityID string, policyBytes []byt
 	return SavePolicyBytesWithIntegrity(dataRoot, identityID, policyBytes, key, signedAt)
 }
 
-// SaveAttestationBytesWithMasterKey derives the policy integrity key from the
-// identity master key and writes exact attestor-policy bytes plus
+// SaveSentryBytesWithMasterKey derives the policy integrity key from the
+// identity master key and writes exact sentry-policy bytes plus
 // policy.yaml.hmac.
-func SaveAttestationBytesWithMasterKey(dataRoot, identityID string, attestationBytes []byte, masterKey []byte, signedAt time.Time) error {
+func SaveSentryBytesWithMasterKey(dataRoot, identityID string, sentryBytes []byte, masterKey []byte, signedAt time.Time) error {
 	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
 	if err != nil {
 		return err
 	}
 	defer crypto.ZeroBytes(key)
-	return SaveAttestationBytesWithIntegrity(dataRoot, identityID, attestationBytes, key, signedAt)
+	return SaveSentryBytesWithIntegrity(dataRoot, identityID, sentryBytes, key, signedAt)
 }
 
 // SignPolicyFileIntegrity writes policy.yaml.hmac for the current policy.yaml
@@ -224,10 +224,10 @@ func SignPolicyFileIntegrity(dataRoot, identityID string, key []byte, signedAt t
 	return signPolicyFileIntegrityAtPath(PolicyPath(dataRoot, identityID), key, signedAt, ParseStoredConfig, "policy", "policy config", "policy integrity sidecar")
 }
 
-// SignAttestationFileIntegrity writes policy.yaml.hmac for the current
-// attestor-policy bytes in policy.yaml.
-func SignAttestationFileIntegrity(dataRoot, identityID string, key []byte, signedAt time.Time) error {
-	return signPolicyFileIntegrityAtPath(AttestationPath(dataRoot, identityID), key, signedAt, ParseStoredAttestationConfig, "attestor policy", "attestor policy config", "policy integrity sidecar")
+// SignSentryFileIntegrity writes policy.yaml.hmac for the current
+// sentry-policy bytes in policy.yaml.
+func SignSentryFileIntegrity(dataRoot, identityID string, key []byte, signedAt time.Time) error {
+	return signPolicyFileIntegrityAtPath(SentryPath(dataRoot, identityID), key, signedAt, ParseStoredSentryConfig, "sentry policy", "sentry policy config", "policy integrity sidecar")
 }
 
 func signPolicyFileIntegrityAtPath(path string, key []byte, signedAt time.Time, parser storedConfigParser, docLabel, configLabel, sidecarLabel string) error {
@@ -285,16 +285,16 @@ func SignPolicyFileIntegrityWithMasterKey(dataRoot, identityID string, masterKey
 	return SignPolicyFileIntegrity(dataRoot, identityID, key, signedAt)
 }
 
-// SignAttestationFileIntegrityWithMasterKey derives the policy integrity key
-// from the identity master key and signs the current attestor-policy bytes in
+// SignSentryFileIntegrityWithMasterKey derives the policy integrity key
+// from the identity master key and signs the current sentry-policy bytes in
 // policy.yaml.
-func SignAttestationFileIntegrityWithMasterKey(dataRoot, identityID string, masterKey []byte, signedAt time.Time) error {
+func SignSentryFileIntegrityWithMasterKey(dataRoot, identityID string, masterKey []byte, signedAt time.Time) error {
 	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
 	if err != nil {
 		return err
 	}
 	defer crypto.ZeroBytes(key)
-	return SignAttestationFileIntegrity(dataRoot, identityID, key, signedAt)
+	return SignSentryFileIntegrity(dataRoot, identityID, key, signedAt)
 }
 
 func writeSyncedPolicyFile(path string, data []byte, perm os.FileMode) error {

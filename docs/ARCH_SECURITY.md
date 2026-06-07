@@ -14,7 +14,7 @@ Product compatibility maps credentials to the reserved `system:product-admin`
 principal and bootstrap grants. See
 [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) for the detailed model.
 
-**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for identity-scoped signing policy in `policy.yaml` and attestor component policy in attestor-domain `policy.yaml`, with guards such as rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings, and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests.
+**Policy enforcement:** Operator approval and warning surfacing are active. A narrow signer safety policy layer is implemented for identity-scoped signing policy in `policy.yaml` and sentry component policy in sentry-domain `policy.yaml`, with guards such as rekey rejection, close-out rejection, clawback rejection, amount/fee ceilings, transfer review thresholds, forced review for warning-level findings, and a narrow auto-approval rule for single 0-value ALGO/ASA self-transfer requests.
 
 **Deployment scope:** identity model is described in [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) (Identity Model).
 

@@ -245,10 +245,10 @@ func wireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ident
 				switch ir.NodeRole() {
 				case noderole.RoleSentry:
 					ir.SetPolicyState(nil, nil)
-					ir.SetAttestationPolicyState(storedPolicy, effectivePolicy)
+					ir.SetSentryPolicyState(storedPolicy, effectivePolicy)
 				default:
 					ir.SetPolicyState(storedPolicy, effectivePolicy)
-					ir.SetAttestationPolicyState(nil, nil)
+					ir.SetSentryPolicyState(nil, nil)
 				}
 				return nil
 			},

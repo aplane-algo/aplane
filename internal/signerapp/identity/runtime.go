@@ -57,7 +57,7 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	                reloadFromWatcher copies the callback out before releasing
 //	                watcherMu.
 //	policyMu        guards policyCfg/storedPolicyCfg and
-//	                attestationPolicyCfg/storedAttestationPolicyCfg. Held alone.
+//	                sentryPolicyCfg/storedSentryPolicyCfg. Held alone.
 //	sshKeysMu       guards sshKeys. Held alone.
 //	lifecycleMu     guards the decommission lease. BeginOperation takes RLock
 //	                and returns the RUnlock as the release; Decommission takes
@@ -97,15 +97,15 @@ type Runtime struct {
 	dirty         bool // Filesystem changes detected while locked; reconcile on next unlock
 	reloadLock    func() sync.Locker
 
-	approval                   atomic.Pointer[signerapproval.Coordinator]
-	authenticator              auth.Authenticator
-	identityCfg                *IdentityConfig
-	nodeRole                   noderole.Role
-	policyMu                   sync.RWMutex
-	policyCfg                  *policy.Config
-	storedPolicyCfg            *policy.StoredConfig
-	attestationPolicyCfg       *policy.Config
-	storedAttestationPolicyCfg *policy.StoredConfig
+	approval              atomic.Pointer[signerapproval.Coordinator]
+	authenticator         auth.Authenticator
+	identityCfg           *IdentityConfig
+	nodeRole              noderole.Role
+	policyMu              sync.RWMutex
+	policyCfg             *policy.Config
+	storedPolicyCfg       *policy.StoredConfig
+	sentryPolicyCfg       *policy.Config
+	storedSentryPolicyCfg *policy.StoredConfig
 
 	// SSH authorized keys for this identity
 	sshKeys   []ssh.PublicKey
@@ -261,41 +261,41 @@ func (ir *Runtime) PolicySnapshot() (*policy.StoredConfig, *policy.Config) {
 	return stored, effective
 }
 
-// AttestationPolicy returns a copy of the effective attestor component policy
+// SentryPolicy returns a copy of the effective sentry component policy
 // for this identity.
-func (ir *Runtime) AttestationPolicy() *policy.Config {
+func (ir *Runtime) SentryPolicy() *policy.Config {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
-	if ir.attestationPolicyCfg == nil {
+	if ir.sentryPolicyCfg == nil {
 		return nil
 	}
-	return ir.attestationPolicyCfg.Clone()
+	return ir.sentryPolicyCfg.Clone()
 }
 
-// StoredAttestationPolicy returns a copy of the stored attestor policy snapshot
-// that produced the currently active effective attestor policy, if one is
+// StoredSentryPolicy returns a copy of the stored sentry policy snapshot
+// that produced the currently active effective sentry policy, if one is
 // available.
-func (ir *Runtime) StoredAttestationPolicy() *policy.StoredConfig {
+func (ir *Runtime) StoredSentryPolicy() *policy.StoredConfig {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
-	if ir.storedAttestationPolicyCfg == nil {
+	if ir.storedSentryPolicyCfg == nil {
 		return nil
 	}
-	return ir.storedAttestationPolicyCfg.Clone()
+	return ir.storedSentryPolicyCfg.Clone()
 }
 
-// AttestationPolicySnapshot returns copies of the active stored and effective
-// attestor policy state.
-func (ir *Runtime) AttestationPolicySnapshot() (*policy.StoredConfig, *policy.Config) {
+// SentryPolicySnapshot returns copies of the active stored and effective
+// sentry policy state.
+func (ir *Runtime) SentryPolicySnapshot() (*policy.StoredConfig, *policy.Config) {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
 	var stored *policy.StoredConfig
-	if ir.storedAttestationPolicyCfg != nil {
-		stored = ir.storedAttestationPolicyCfg.Clone()
+	if ir.storedSentryPolicyCfg != nil {
+		stored = ir.storedSentryPolicyCfg.Clone()
 	}
 	var effective *policy.Config
-	if ir.attestationPolicyCfg != nil {
-		effective = ir.attestationPolicyCfg.Clone()
+	if ir.sentryPolicyCfg != nil {
+		effective = ir.sentryPolicyCfg.Clone()
 	}
 	return stored, effective
 }
@@ -323,29 +323,29 @@ func (ir *Runtime) SetPolicyState(stored *policy.StoredConfig, cfg *policy.Confi
 	ir.policyCfg = cfg.Clone()
 }
 
-// SetAttestationPolicy installs the effective attestor policy for this
+// SetSentryPolicy installs the effective sentry policy for this
 // identity.
-func (ir *Runtime) SetAttestationPolicy(cfg *policy.Config) {
-	ir.SetAttestationPolicyState(nil, cfg)
+func (ir *Runtime) SetSentryPolicy(cfg *policy.Config) {
+	ir.SetSentryPolicyState(nil, cfg)
 }
 
-// SetAttestationPolicyState installs the stored attestor policy snapshot and
-// the effective attestor policy for this identity as one atomic runtime
+// SetSentryPolicyState installs the stored sentry policy snapshot and
+// the effective sentry policy for this identity as one atomic runtime
 // update.
-func (ir *Runtime) SetAttestationPolicyState(stored *policy.StoredConfig, cfg *policy.Config) {
+func (ir *Runtime) SetSentryPolicyState(stored *policy.StoredConfig, cfg *policy.Config) {
 	ir.policyMu.Lock()
 	defer ir.policyMu.Unlock()
 	if cfg == nil {
-		ir.storedAttestationPolicyCfg = nil
-		ir.attestationPolicyCfg = nil
+		ir.storedSentryPolicyCfg = nil
+		ir.sentryPolicyCfg = nil
 		return
 	}
 	if stored == nil {
-		ir.storedAttestationPolicyCfg = nil
+		ir.storedSentryPolicyCfg = nil
 	} else {
-		ir.storedAttestationPolicyCfg = stored.Clone()
+		ir.storedSentryPolicyCfg = stored.Clone()
 	}
-	ir.attestationPolicyCfg = cfg.Clone()
+	ir.sentryPolicyCfg = cfg.Clone()
 }
 
 // --- Lock state ---

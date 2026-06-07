@@ -6,7 +6,7 @@ package signing
 import "github.com/aplane-algo/aplane/internal/attestor/keytypes"
 
 const (
-	attestorComponentSignRejectMessage = "attestor component keys require /sign/component"
+	attestorComponentSignRejectMessage = "sentry component keys require /sign/component"
 	guardedAccountSignRejectMessage    = "this key type requires the guarded signing flow: use POST /sign/component then POST /sign/assemble"
 )
 

@@ -5,11 +5,11 @@ package policy
 
 import "fmt"
 
-// ConvertSigningPolicyToAttestation projects a signing policy.yaml document to
-// direct attestor policy YAML. The projection preserves deterministic
+// ConvertSigningPolicyToSentry projects a signing policy.yaml document to
+// direct sentry policy YAML. The projection preserves deterministic
 // hard-reject bounds and transfer routes, but removes review-only controls
-// because attestor policy cannot produce review verdicts.
-func ConvertSigningPolicyToAttestation(stored *StoredConfig) (*StoredConfig, error) {
+// because sentry policy cannot produce review verdicts.
+func ConvertSigningPolicyToSentry(stored *StoredConfig) (*StoredConfig, error) {
 	if stored == nil {
 		stored = &StoredConfig{}
 	}
@@ -17,7 +17,7 @@ func ConvertSigningPolicyToAttestation(stored *StoredConfig) (*StoredConfig, err
 		return nil, err
 	}
 	if len(stored.KeyOverrides) > 0 {
-		return nil, fmt.Errorf("key_overrides cannot be converted automatically; signing overrides are keyed by account, attestation overrides are keyed by component selector")
+		return nil, fmt.Errorf("key_overrides cannot be converted automatically; signing overrides are keyed by account, sentry overrides are keyed by component selector")
 	}
 
 	effective := stored.Clone()
@@ -26,12 +26,12 @@ func ConvertSigningPolicyToAttestation(stored *StoredConfig) (*StoredConfig, err
 		effective = mergeStoredRoleConfig(effective, effective.ClientSigning)
 	}
 	effective.ClientSigning = nil
-	effective.Attestation = nil
+	effective.Sentry = nil
 
 	if effective.TransferPolicy == nil {
 		return nil, fmt.Errorf("policy has no transfer_policy to convert")
 	}
-	if err := validateTransferPolicyConvertibleToAttestation(effective.TransferPolicy); err != nil {
+	if err := validateTransferPolicyConvertibleToSentry(effective.TransferPolicy); err != nil {
 		return nil, err
 	}
 
@@ -43,27 +43,27 @@ func ConvertSigningPolicyToAttestation(stored *StoredConfig) (*StoredConfig, err
 		MaxFeeMicroAlgos:     cloneUint64Ptr(effective.MaxFeeMicroAlgos),
 		MaxAlgoPayments:      cloneUintMap(effective.MaxAlgoPayments),
 		MaxASAAmounts:        cloneStoredASAAmounts(effective.MaxASAAmounts),
-		TransferPolicy:       convertTransferPolicyToAttestation(effective.TransferPolicy),
+		TransferPolicy:       convertTransferPolicyToSentry(effective.TransferPolicy),
 	}
-	if err := validateAttestationDocument(out); err != nil {
+	if err := validateSentryDocument(out); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// ConvertSigningPolicyToAttestationYAML converts signer-domain policy.yaml
-// bytes into direct attestor policy YAML suitable for review, signing, and
-// installation as policy.yaml on an attestor node.
-func ConvertSigningPolicyToAttestationYAML(data []byte) ([]byte, error) {
+// ConvertSigningPolicyToSentryYAML converts signer-domain policy.yaml
+// bytes into direct sentry policy YAML suitable for review, signing, and
+// installation as policy.yaml on a sentry node.
+func ConvertSigningPolicyToSentryYAML(data []byte) ([]byte, error) {
 	stored, err := ParseStoredConfig(data)
 	if err != nil {
 		return nil, err
 	}
-	converted, err := ConvertSigningPolicyToAttestation(stored)
+	converted, err := ConvertSigningPolicyToSentry(stored)
 	if err != nil {
 		return nil, err
 	}
-	return MarshalStoredAttestationConfig(converted)
+	return MarshalStoredSentryConfig(converted)
 }
 
 func mergeStoredRoleConfig(base *StoredConfig, role *StoredRoleConfig) *StoredConfig {
@@ -72,7 +72,7 @@ func mergeStoredRoleConfig(base *StoredConfig, role *StoredRoleConfig) *StoredCo
 	}
 	out := base.Clone()
 	out.ClientSigning = nil
-	out.Attestation = nil
+	out.Sentry = nil
 	if role == nil {
 		return out
 	}
@@ -166,7 +166,7 @@ func mergeStoredTransferPolicy(base, overlay *StoredTransferPolicy) *StoredTrans
 	return out
 }
 
-func convertTransferPolicyToAttestation(tp *StoredTransferPolicy) *StoredTransferPolicy {
+func convertTransferPolicyToSentry(tp *StoredTransferPolicy) *StoredTransferPolicy {
 	if tp == nil {
 		return nil
 	}
@@ -192,7 +192,7 @@ func convertTransferPolicyToAttestation(tp *StoredTransferPolicy) *StoredTransfe
 	return out
 }
 
-func validateTransferPolicyConvertibleToAttestation(tp *StoredTransferPolicy) error {
+func validateTransferPolicyConvertibleToSentry(tp *StoredTransferPolicy) error {
 	if tp == nil {
 		return nil
 	}
@@ -208,7 +208,7 @@ func validateTransferPolicyConvertibleToAttestation(tp *StoredTransferPolicy) er
 		if check.value == nil || *check.value == "" || *check.value == string(TransferOnNoRouteReject) {
 			continue
 		}
-		return fmt.Errorf("%s=%q cannot be converted to deterministic attestor policy; set it to %q and encode allowed movements as routes", check.label, *check.value, TransferOnNoRouteReject)
+		return fmt.Errorf("%s=%q cannot be converted to deterministic sentry policy; set it to %q and encode allowed movements as routes", check.label, *check.value, TransferOnNoRouteReject)
 	}
 	return nil
 }

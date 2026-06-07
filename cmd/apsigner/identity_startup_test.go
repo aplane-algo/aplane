@@ -119,7 +119,7 @@ func TestBuildIdentityRuntimeRejectsStoredMode(t *testing.T) {
 	cfg := config.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 
-	if err := identity.SaveStoredSetting(root, "alice", "mode", "attestation"); err != nil {
+	if err := identity.SaveStoredSetting(root, "alice", "mode", "sentry"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := util.LoadAPlaneToken(root, "alice"); err != nil {

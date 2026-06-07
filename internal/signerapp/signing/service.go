@@ -37,7 +37,7 @@ type Service struct {
 	IsUnlocked                    IsUnlockedFunc
 	BeforeExecute                 BeforeExecuteFunc
 	Policy                        *policy.Config
-	AttestationPolicy             *policy.Config
+	SentryPolicy                  *policy.Config
 }
 
 type SignGroupResult struct {

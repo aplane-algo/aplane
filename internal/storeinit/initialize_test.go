@@ -94,7 +94,7 @@ func TestInitializeCreatesExplicitAttestorNodeRole(t *testing.T) {
 	if role.Role != noderole.RoleSentry {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSentry)
 	}
-	if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
+	if _, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
 		t.Fatalf("attestor policy integrity baseline did not verify: %v", err)
 	}
 }

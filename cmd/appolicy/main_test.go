@@ -77,10 +77,10 @@ func TestRunSaveReadsPolicyFromStdin(t *testing.T) {
 	}
 }
 
-func TestRunTargetAttestationSaveReadsAttestationFromStdin(t *testing.T) {
+func TestRunTargetSentrySaveReadsSentryFromStdin(t *testing.T) {
 	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleSentry)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
-	attestationBytes := []byte(`# saved through appolicy
+	sentryBytes := []byte(`# saved through appolicy
 reject_rekey: true
 transfer_policy:
   schema_version: 1
@@ -94,22 +94,22 @@ transfer_policy:
 `)
 	var stdout, stderr bytes.Buffer
 
-	code := run(context.Background(), []string{"-d", dataDir, "--target", "attestation", "--save"}, bytes.NewReader(attestationBytes), &stdout, &stderr)
+	code := run(context.Background(), []string{"-d", dataDir, "--target", "sentry", "--save"}, bytes.NewReader(sentryBytes), &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("run(--target attestation --save) code = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("run(--target sentry --save) code = %d, stderr = %q", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "attestor policy saved:") {
-		t.Fatalf("--target attestation --save stdout = %q, want saved status", stdout.String())
+	if !strings.Contains(stdout.String(), "sentry policy saved:") {
+		t.Fatalf("--target sentry --save stdout = %q, want saved status", stdout.String())
 	}
 	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, policyeditor.DefaultIdentityID))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
-	if string(gotBytes) != string(attestationBytes) {
-		t.Fatalf("--target attestation --save changed attestation bytes:\ngot:\n%s\nwant:\n%s", gotBytes, attestationBytes)
+	if string(gotBytes) != string(sentryBytes) {
+		t.Fatalf("--target sentry --save changed sentry bytes:\ngot:\n%s\nwant:\n%s", gotBytes, sentryBytes)
 	}
-	if _, err := policy.ParseStoredAttestationConfig(gotBytes); err != nil {
-		t.Fatalf("saved attestation YAML does not parse: %v", err)
+	if _, err := policy.ParseStoredSentryConfig(gotBytes); err != nil {
+		t.Fatalf("saved sentry YAML does not parse: %v", err)
 	}
 }
 
@@ -148,26 +148,26 @@ func TestRunCheckPolicyFileDoesNotRequireStorePassphrase(t *testing.T) {
 	}
 }
 
-func TestRunCheckPolicyFileRejectsAttestationBlock(t *testing.T) {
+func TestRunCheckPolicyFileRejectsSentryBlock(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", "")
 	t.Setenv("APSIGNER_PASSPHRASE", "")
 	t.Setenv("APSIGNER_DATA", "")
 	path := filepath.Join(t.TempDir(), "policy.yaml")
-	if err := os.WriteFile(path, []byte("attestation: {}\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("sentry: {}\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(policy) error = %v", err)
 	}
 	var stdout, stderr bytes.Buffer
 
 	code := run(context.Background(), []string{"--check", path}, strings.NewReader(""), &stdout, &stderr)
 	if code == 0 {
-		t.Fatalf("run(--check invalid attestation) code = 0, stdout = %q", stdout.String())
+		t.Fatalf("run(--check invalid sentry) code = 0, stdout = %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "signer policy attestation is not supported") {
-		t.Fatalf("stderr = %q, want attestation block rejection", stderr.String())
+	if !strings.Contains(stderr.String(), "signer policy sentry is not supported") {
+		t.Fatalf("stderr = %q, want sentry block rejection", stderr.String())
 	}
 }
 
-func TestRunToAttestationPolicyFilePrintsDirectAttestationYAML(t *testing.T) {
+func TestRunToSentryPolicyFilePrintsDirectSentryYAML(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", "")
 	t.Setenv("APSIGNER_PASSPHRASE", "")
 	t.Setenv("APSIGNER_DATA", "")
@@ -192,18 +192,18 @@ transfer_policy:
 	}
 	var stdout, stderr bytes.Buffer
 
-	code := run(context.Background(), []string{"--to-attestation", path}, strings.NewReader(""), &stdout, &stderr)
+	code := run(context.Background(), []string{"--to-sentry", path}, strings.NewReader(""), &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("run(--to-attestation file) code = %d, stderr = %q", code, stderr.String())
+		t.Fatalf("run(--to-sentry file) code = %d, stderr = %q", code, stderr.String())
 	}
-	if strings.Contains(stdout.String(), "policy OK") || strings.Contains(stdout.String(), "attestation:") || strings.Contains(stdout.String(), "review_above") {
-		t.Fatalf("--to-attestation stdout contains status, wrapper, or review threshold:\n%s", stdout.String())
+	if strings.Contains(stdout.String(), "policy OK") || strings.Contains(stdout.String(), "sentry:") || strings.Contains(stdout.String(), "review_above") {
+		t.Fatalf("--to-sentry stdout contains status, wrapper, or review threshold:\n%s", stdout.String())
 	}
-	if _, err := policy.ParseStoredAttestationConfig(stdout.Bytes()); err != nil {
-		t.Fatalf("--to-attestation stdout is not valid attestation YAML: %v\n%s", err, stdout.String())
+	if _, err := policy.ParseStoredSentryConfig(stdout.Bytes()); err != nil {
+		t.Fatalf("--to-sentry stdout is not valid sentry YAML: %v\n%s", err, stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "reject_above: 20") {
-		t.Fatalf("--to-attestation stdout missing reject_above:\n%s", stdout.String())
+		t.Fatalf("--to-sentry stdout missing reject_above:\n%s", stdout.String())
 	}
 }
 
@@ -222,34 +222,34 @@ func TestRunSavePolicyAliasReadsPolicyFromStdin(t *testing.T) {
 	}
 }
 
-func TestRunSaveAutoTargetsAttestationOnAttestorNode(t *testing.T) {
+func TestRunSaveAutoTargetsSentryOnAttestorNode(t *testing.T) {
 	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleSentry)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
-	attestationBytes := []byte("reject_rekey: true\n")
+	sentryBytes := []byte("reject_rekey: true\n")
 	var stdout, stderr bytes.Buffer
 
-	code := run(context.Background(), []string{"-d", dataDir, "--save"}, bytes.NewReader(attestationBytes), &stdout, &stderr)
+	code := run(context.Background(), []string{"-d", dataDir, "--save"}, bytes.NewReader(sentryBytes), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("run(attestor --save) code = %d, stderr = %q", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "attestor policy saved:") {
-		t.Fatalf("attestor --save stdout = %q, want attestation saved status", stdout.String())
+	if !strings.Contains(stdout.String(), "sentry policy saved:") {
+		t.Fatalf("attestor --save stdout = %q, want sentry saved status", stdout.String())
 	}
 	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, policyeditor.DefaultIdentityID))
 	if err != nil {
 		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
-	if string(gotBytes) != string(attestationBytes) {
-		t.Fatalf("attestation bytes changed during auto --save:\ngot:\n%s\nwant:\n%s", gotBytes, attestationBytes)
+	if string(gotBytes) != string(sentryBytes) {
+		t.Fatalf("sentry bytes changed during auto --save:\ngot:\n%s\nwant:\n%s", gotBytes, sentryBytes)
 	}
 }
 
-func TestRunYAMLAutoTargetsAttestationOnAttestorNode(t *testing.T) {
+func TestRunYAMLAutoTargetsSentryOnAttestorNode(t *testing.T) {
 	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleSentry)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
-	attestationBytes := []byte("reject_rekey: true\n")
+	sentryBytes := []byte("reject_rekey: true\n")
 	var saveOut, saveErr bytes.Buffer
-	if code := run(context.Background(), []string{"-d", dataDir, "--save"}, bytes.NewReader(attestationBytes), &saveOut, &saveErr); code != 0 {
+	if code := run(context.Background(), []string{"-d", dataDir, "--save"}, bytes.NewReader(sentryBytes), &saveOut, &saveErr); code != 0 {
 		t.Fatalf("run(attestor --save) code = %d, stderr = %q", code, saveErr.String())
 	}
 	var stdout, stderr bytes.Buffer
@@ -258,11 +258,11 @@ func TestRunYAMLAutoTargetsAttestationOnAttestorNode(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("run(attestor --yaml) code = %d, stderr = %q", code, stderr.String())
 	}
-	if stdout.String() != string(attestationBytes) {
-		t.Fatalf("attestor --yaml stdout:\ngot:\n%s\nwant:\n%s", stdout.String(), attestationBytes)
+	if stdout.String() != string(sentryBytes) {
+		t.Fatalf("attestor --yaml stdout:\ngot:\n%s\nwant:\n%s", stdout.String(), sentryBytes)
 	}
-	if _, err := policy.ParseStoredAttestationConfig(stdout.Bytes()); err != nil {
-		t.Fatalf("attestor --yaml stdout is not valid attestation YAML: %v\n%s", err, stdout.String())
+	if _, err := policy.ParseStoredSentryConfig(stdout.Bytes()); err != nil {
+		t.Fatalf("attestor --yaml stdout is not valid sentry YAML: %v\n%s", err, stdout.String())
 	}
 }
 
@@ -297,7 +297,7 @@ func TestRunRejectsCombinedCLIModes(t *testing.T) {
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
 	var stdout, stderr bytes.Buffer
 
-	code := run(context.Background(), []string{"-d", dataDir, "--yaml", "--to-attestation"}, strings.NewReader(""), &stdout, &stderr)
+	code := run(context.Background(), []string{"-d", dataDir, "--yaml", "--to-sentry"}, strings.NewReader(""), &stdout, &stderr)
 	if code != 2 {
 		t.Fatalf("run(combined modes) code = %d, want 2", code)
 	}

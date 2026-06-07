@@ -31,7 +31,7 @@ Primary sources for the first tranche:
   guarded-account component signing, attestor endpoint routing, assembly
   verification, and node role separation.
 - [ARCH_POLICY.md](ARCH_POLICY.md): current signer policy verdict model,
-  precedence, attestor component policy, snapshot semantics, and rule
+  precedence, sentry component policy, snapshot semantics, and rule
   inventory.
 - [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): principal/action authorization
   and sensitive-operation attribution.
@@ -49,7 +49,7 @@ The formalization work should proceed in small, composable models:
 2. Policy precedence and approval outcomes.
 3. LogicSig key-file signing authority.
 4. Runtime lifecycle and decommission signing-stop behavior.
-5. Guarded account component signing, attestor policy, endpoint routing, and
+5. Guarded account component signing, sentry policy, endpoint routing, and
    assembly verification.
 6. LogicSig template and bytecode-generation invariants.
 7. Machine-checkable models for the highest-value surfaces.

@@ -91,7 +91,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	}
 	var policyErr error
 	if role == noderole.RoleSentry {
-		policyErr = policy.SaveStoredAttestationConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now())
+		policyErr = policy.SaveStoredSentryConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now())
 	} else {
 		policyErr = policy.SaveStoredConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now())
 	}

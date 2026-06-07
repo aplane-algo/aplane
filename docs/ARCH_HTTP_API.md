@@ -147,14 +147,14 @@ compatibility; it is not the `/sign` wire response.
 
 - optional `request_id`
 - `role`: `user` or `attestor`
-- `component_key`: guarded account address for `user`, attestor component
+- `component_key`: guarded account address for `user`, sentry component
   selector for `attestor`
 - `group_bytes_hex[]`: final TX-prefixed transaction bytes for the whole group
 - `target_indices[]`: zero-based indices to sign
 
 For `role:"user"`, `component_key` identifies the local guarded account key to
 use for user-role component signing. For `role:"attestor"`, `component_key`
-identifies the local attestor component-key selector. Each target index is
+identifies the local sentry component-key selector. Each target index is
 signed independently using the role-separated attestor message derived from
 that target's TxID.
 

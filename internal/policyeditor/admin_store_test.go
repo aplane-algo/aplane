@@ -84,21 +84,21 @@ func TestAdminStoreLoadParsesSnapshotAndRecordsSHA(t *testing.T) {
 
 func TestAdminStoreValidateUsesTargetMarshalAndClientValidation(t *testing.T) {
 	client := &fakeAdminPolicyClient{
-		validation: AdminPolicyValidation{Success: true, Target: TargetAttestation, IdentityID: "default"},
+		validation: AdminPolicyValidation{Success: true, Target: TargetSentry, IdentityID: "default"},
 	}
-	store := &AdminStore{Client: client, Target: TargetAttestation}
-	stored, err := policy.ParseStoredAttestationConfig([]byte(attestationYAMLForAdminStoreTest("allow_validate")))
+	store := &AdminStore{Client: client, Target: TargetSentry}
+	stored, err := policy.ParseStoredSentryConfig([]byte(sentryYAMLForAdminStoreTest("allow_validate")))
 	if err != nil {
-		t.Fatalf("ParseStoredAttestationConfig(): %v", err)
+		t.Fatalf("ParseStoredSentryConfig(): %v", err)
 	}
 
 	if err := store.Validate(context.Background(), stored); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if client.validateCalls != 1 || client.lastTarget != TargetAttestation {
-		t.Fatalf("ValidatePolicy calls = %d target = %q, want one attestation call", client.validateCalls, client.lastTarget)
+	if client.validateCalls != 1 || client.lastTarget != TargetSentry {
+		t.Fatalf("ValidatePolicy calls = %d target = %q, want one sentry call", client.validateCalls, client.lastTarget)
 	}
-	if strings.Contains(client.lastPolicyYAML, "attestation:") ||
+	if strings.Contains(client.lastPolicyYAML, "sentry:") ||
 		!strings.Contains(client.lastPolicyYAML, "allow_validate") {
 		t.Fatalf("validation YAML has wrong shape:\n%s", client.lastPolicyYAML)
 	}
@@ -167,7 +167,7 @@ func TestAdminStoreFailedSaveDoesNotUpdateExpectedSHA(t *testing.T) {
 	}
 }
 
-func attestationYAMLForAdminStoreTest(routeID string) string {
+func sentryYAMLForAdminStoreTest(routeID string) string {
 	return `transfer_policy:
   schema_version: 1
   enabled: true

@@ -154,7 +154,7 @@ func TestAdminPanelPolicyRowOpensPolicyEditor(t *testing.T) {
 	}
 }
 
-func TestPolicyEditorTargetsAttestationOnAttestorNode(t *testing.T) {
+func TestPolicyEditorTargetsSentryOnAttestorNode(t *testing.T) {
 	m := Model{
 		viewState: ViewAdminPanel,
 		adminSettings: &AdminSettings{
@@ -167,8 +167,8 @@ func TestPolicyEditorTargetsAttestationOnAttestorNode(t *testing.T) {
 	if got.viewState != ViewPolicyEditor {
 		t.Fatalf("viewState = %v, want ViewPolicyEditor", got.viewState)
 	}
-	if got.policyEditorTarget != "attestation" {
-		t.Fatalf("policyEditorTarget = %q, want attestation", got.policyEditorTarget)
+	if got.policyEditorTarget != "sentry" {
+		t.Fatalf("policyEditorTarget = %q, want sentry", got.policyEditorTarget)
 	}
 	if cmd == nil {
 		t.Fatal("cmd = nil, want policy editor load command")

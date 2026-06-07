@@ -11,8 +11,8 @@ identities/<identity>/policy.yaml
 identities/<identity>/policy.yaml.hmac
 ```
 
-`policy.yaml` controls account signing on signer nodes and attestor component
-signing on attestor nodes. Its `.hmac` sidecar authenticates the exact YAML
+`policy.yaml` controls account signing on signer nodes and sentry component
+signing on sentry nodes. Its `.hmac` sidecar authenticates the exact YAML
 bytes. After the signed baseline exists, a missing or mismatched sidecar fails
 closed rather than silently loading defaults.
 
@@ -43,14 +43,14 @@ rule.
 Use `apadmin` for online guided policy edits while `apsigner` is running. From
 the main key list, press `p`, or open Settings and choose `Policy`. `apadmin`
 targets the node-role policy domain automatically: signer nodes edit
-signer-domain `policy.yaml`, and attestor nodes edit attestor-domain
+signer-domain `policy.yaml`, and sentry nodes edit sentry-domain
 `policy.yaml`. It validates drafts with the running signer, applies changes as
 whole-document replacements, writes the fresh sidecar, and activates the
 resulting runtime policy immediately.
 
 Use `appolicy` for offline or scriptable policy work. With `--target auto` (the
 default), `appolicy` reads `$APSIGNER_DATA/node.yaml`: signer nodes edit
-signer-domain `policy.yaml`, and attestor nodes edit attestor-domain
+signer-domain `policy.yaml`, and sentry nodes edit sentry-domain
 `policy.yaml`.
 
 ```bash
@@ -58,7 +58,7 @@ appolicy -d "$APSIGNER_DATA"
 appolicy -d "$APSIGNER_DATA" -check
 appolicy -d "$APSIGNER_DATA" --sha256
 appolicy -d "$APSIGNER_DATA" --target signer
-appolicy -d "$APSIGNER_DATA" --target attestation
+appolicy -d "$APSIGNER_DATA" --target sentry
 appolicy draft-policy.yaml
 ```
 
@@ -86,7 +86,7 @@ of the trusted selected document bytes. `appolicy --yaml` verifies the current
 sidecar and emits those trusted bytes. `appolicy --save` reads replacement YAML
 from stdin, validates it in the selected policy domain, writes the selected
 document, and writes a fresh sidecar. Use `--target signer` or
-`--target attestation` to override auto-selection. Because stdin is the
+`--target sentry` to override auto-selection. Because stdin is the
 document stream for save modes, provide the passphrase through the environment
 or an interactive terminal.
 

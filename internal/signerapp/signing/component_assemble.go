@@ -94,7 +94,7 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 	}
 	attestorComponentKeyType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(keyMaterial.Type)
 	if !ok {
-		return "", internal(fmt.Sprintf("loaded guarded account key type %s has no attestor component key type", keyMaterial.Type))
+		return "", internal(fmt.Sprintf("loaded guarded account key type %s has no sentry component key type", keyMaterial.Type))
 	}
 	attestorPublicKey, err := guardedAccountAttestorPublicKey(keyMaterial.Parameters, attestorComponentKeyType)
 	if err != nil {
@@ -188,7 +188,7 @@ func verifyAttestorAssemblySignature(componentKeyType string, publicKey, msg, si
 	case keytypes.AttestorComponentFalcon1024V1:
 		return attestorverify.VerifyFalcon1024(publicKey, msg, signature)
 	default:
-		return fmt.Errorf("key type %q is not an attestor component key type", componentKeyType)
+		return fmt.Errorf("key type %q is not a sentry component key type", componentKeyType)
 	}
 }
 
@@ -202,7 +202,7 @@ func guardedAccountAttestorPublicKey(parameters map[string]string, componentKeyT
 	}
 	publicKeySize, ok := keytypes.ComponentPublicKeySize(componentKeyType)
 	if !ok {
-		return nil, internal(fmt.Sprintf("key type %q is not an attestor component key type", componentKeyType))
+		return nil, internal(fmt.Sprintf("key type %q is not a sentry component key type", componentKeyType))
 	}
 	publicKey, err := decodeHexBytes(value, publicKeySize, keytypes.ParameterSentryPublicKey)
 	if err != nil {

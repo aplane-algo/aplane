@@ -324,7 +324,7 @@ func policyDocumentsForRotation(paths storepaths.Paths, identityID string) ([]po
 	switch nodeDoc.Role {
 	case noderole.RoleSentry:
 		doc.verifyFunc = func(masterKey []byte) error {
-			_, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataRoot, identityID, masterKey)
+			_, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataRoot, identityID, masterKey)
 			return err
 		}
 	case noderole.RoleSigner:

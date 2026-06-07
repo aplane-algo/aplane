@@ -321,7 +321,7 @@ func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorCompon
 	}
 	keys, err := client.GetKeysWithContext(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to inspect %s component keys for attestation: %w", source, err)
+		return fmt.Errorf("failed to inspect %s component keys for sentry: %w", source, err)
 	}
 	if keys.Locked {
 		return attestorEndpointLockedError{source: source}

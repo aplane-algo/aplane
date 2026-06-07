@@ -122,15 +122,15 @@ transfer_policy:
 	})
 }
 
-func TestCmdPolicyCheckRejectsInvalidAttestationReviewPolicy(t *testing.T) {
+func TestCmdPolicyCheckRejectsInvalidSentryReviewPolicy(t *testing.T) {
 	withPolicyCommandStoreWithRole(t, noderole.RoleSentry, func(root string, _ []byte) {
 		raw := []byte("always_review_warnings: true\n")
 		if err := os.WriteFile(policy.PolicyPath(root, productIdentityID()), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
-		if err == nil || !strings.Contains(err.Error(), "attestation.always_review_warnings") {
-			t.Fatalf("cmdPolicy(check) error = %v, want attestation review rejection", err)
+		if err == nil || !strings.Contains(err.Error(), "sentry.always_review_warnings") {
+			t.Fatalf("cmdPolicy(check) error = %v, want sentry review rejection", err)
 		}
 	})
 }

@@ -2413,8 +2413,8 @@ func (m Model) modified() bool {
 }
 
 func policyFieldsForTarget(target policyeditor.Target) []field {
-	if target == policyeditor.TargetAttestation {
-		return attestationPolicyFields()
+	if target == policyeditor.TargetSentry {
+		return sentryPolicyFields()
 	}
 	return signerPolicyFields()
 }
@@ -2471,7 +2471,7 @@ func signerPolicyFields() []field {
 	}
 }
 
-func attestationPolicyFields() []field {
+func sentryPolicyFields() []field {
 	return []field{
 		boolField("reject_rekey", "Reject rekey", true, func(c *policy.StoredConfig) **bool {
 			return &c.RejectRekey

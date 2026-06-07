@@ -246,7 +246,7 @@ func normalizeAdminPolicyTargetForNodeRole(role noderole.Role, target adminproto
 		return target
 	}
 	if role == noderole.RoleSentry {
-		return adminproto.PolicyTargetAttestation
+		return adminproto.PolicyTargetSentry
 	}
 	return adminproto.PolicyTargetSigner
 }
@@ -301,18 +301,18 @@ func (s Service) policyTargetOps(ir *identity.Runtime, target adminproto.PolicyT
 				ir.SetPolicyState(stored, effective)
 			},
 		}, nil
-	case adminproto.PolicyTargetAttestation:
+	case adminproto.PolicyTargetSentry:
 		return policyTargetOps{
-			snapshotUnavailableCode: "attestation_policy_snapshot_unavailable",
-			snapshotUnavailableErr:  "active stored attestor policy snapshot is unavailable; reload or unlock the identity",
-			marshal:                 policy.MarshalStoredAttestationConfig,
-			parse:                   policy.ParseStoredAttestationConfig,
-			loadVerified:            policy.LoadVerifiedAttestationConfigWithMasterKey,
-			saveBytes:               policy.SaveAttestationBytesWithMasterKey,
-			apply:                   policyruntime.ApplyAttestationStoredConfig,
-			activeSnapshot:          (*identity.Runtime).AttestationPolicySnapshot,
+			snapshotUnavailableCode: "sentry_policy_snapshot_unavailable",
+			snapshotUnavailableErr:  "active stored sentry policy snapshot is unavailable; reload or unlock the identity",
+			marshal:                 policy.MarshalStoredSentryConfig,
+			parse:                   policy.ParseStoredSentryConfig,
+			loadVerified:            policy.LoadVerifiedSentryConfigWithMasterKey,
+			saveBytes:               policy.SaveSentryBytesWithMasterKey,
+			apply:                   policyruntime.ApplySentryStoredConfig,
+			activeSnapshot:          (*identity.Runtime).SentryPolicySnapshot,
 			setState: func(ir *identity.Runtime, stored *policy.StoredConfig, effective *policy.Config) {
-				ir.SetAttestationPolicyState(stored, effective)
+				ir.SetSentryPolicyState(stored, effective)
 			},
 		}, nil
 	default:
@@ -329,7 +329,7 @@ func validatePolicyTargetForNodeRole(role noderole.Role, target adminproto.Polic
 		if role == "" || role == noderole.RoleSigner {
 			return nil
 		}
-	case adminproto.PolicyTargetAttestation:
+	case adminproto.PolicyTargetSentry:
 		if role == noderole.RoleSentry {
 			return nil
 		}

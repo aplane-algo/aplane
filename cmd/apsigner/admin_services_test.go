@@ -206,7 +206,7 @@ func TestUpdateAdminSettingModeIsReadOnly(t *testing.T) {
 
 	err := (signerAdminServices{signer: server}).UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
 		Key:   "mode",
-		Value: "attestation",
+		Value: "sentry",
 	})
 	if err == nil {
 		t.Fatal("UpdateAdminSetting(mode) error = nil")

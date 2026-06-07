@@ -73,12 +73,12 @@ signer settings and status:
 
 `apadmin` embeds `internal/policytui` for online policy editing. The TUI
 requests the active signer-owned snapshot over the admin protocol, selects
-`policy.yaml` on signer nodes or attestor-domain `policy.yaml` on attestor nodes, and
+`policy.yaml` on signer nodes or sentry-domain `policy.yaml` on sentry nodes, and
 applies edits as whole-document replacements guarded by
 `expected_current_sha256`. The signer validates draft YAML in the selected
 policy domain, writes the YAML plus a fresh sidecar, and returns a canonical
 snapshot after a successful apply. `appolicy` uses the same editor offline for
-store-locked edits, scriptable save/check/export, and signing-to-attestation
+store-locked edits, scriptable save/check/export, and signing-to-sentry
 conversion.
 
 ## Local Activity And Idle Locking

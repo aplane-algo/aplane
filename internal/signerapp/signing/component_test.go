@@ -119,7 +119,7 @@ func TestPrepareComponentSigningUsesAttestorRoleDomain(t *testing.T) {
 	}
 	userMsg := message.ComponentMessage(message.RoleUser, plan.Group.Entries[0].TxID)
 	if bytes.Equal(plan.Targets[0].Message[:], userMsg[:]) {
-		t.Fatal("attestor component message matched user-role message")
+		t.Fatal("sentry component message matched user-role message")
 	}
 }
 
@@ -184,8 +184,8 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.AttestationPolicyMissingRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want missing attestor policy", err.Message)
+	if !strings.Contains(err.Message, policy.SentryPolicyMissingRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want missing sentry policy", err.Message)
 	}
 
 	_, err = (&Service{}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
@@ -213,8 +213,8 @@ func TestSignComponentAttestorRequiresPolicyBeforeKeyLoad(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.AttestationPolicyMissingRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want missing attestor policy", err.Message)
+	if !strings.Contains(err.Message, policy.SentryPolicyMissingRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want missing sentry policy", err.Message)
 	}
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
@@ -222,12 +222,12 @@ func TestSignComponentAttestorRequiresPolicyBeforeKeyLoad(t *testing.T) {
 }
 
 func TestSignComponentAttestorRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
-	cfg := attestationPolicyConfigForSigningTest(t, `{}`)
+	cfg := sentryPolicyConfigForSigningTest(t, `{}`)
 	componentKey := testEd25519ComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-no-routing",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
@@ -237,7 +237,7 @@ func TestSignComponentAttestorRequiresTransferPolicyBeforeKeyLoad(t *testing.T) 
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.AttestationTransferPolicyRequiredRuleID) {
+	if !strings.Contains(err.Message, policy.SentryTransferPolicyRequiredRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want transfer policy required", err.Message)
 	}
 	if store.calls != 0 {
@@ -247,7 +247,7 @@ func TestSignComponentAttestorRequiresTransferPolicyBeforeKeyLoad(t *testing.T) 
 
 func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	source := types.Address{24}
-	cfg := wildcardAttestationPolicy(t)
+	cfg := wildcardSentryPolicy(t)
 	txn := types.Transaction{
 		Type: types.ApplicationCallTx,
 		Header: types.Header{
@@ -260,7 +260,7 @@ func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	}
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-appl",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -270,7 +270,7 @@ func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.AttestationNonTransferRuleID) {
+	if !strings.Contains(err.Message, policy.SentryNonTransferRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want non-transfer rejection", err.Message)
 	}
 	if store.calls != 0 {
@@ -282,11 +282,11 @@ func TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	source := types.Address{25}.String()
 	allowed := types.Address{26}.String()
 	blocked := types.Address{27}.String()
-	cfg := attestationRoutePolicy(t, source, allowed)
+	cfg := sentryRoutePolicy(t, source, allowed)
 	txn := testnetPaymentTransaction(t, source, blocked, 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-route-miss",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -310,7 +310,7 @@ func TestAttestorComponentPolicyUsesComponentKeyOverride(t *testing.T) {
 	overrideDest := types.Address{27}.String()
 	componentKey := testEd25519ComponentSelector(t, 0xab)
 	otherComponentKey := testEd25519ComponentSelector(t, 0xcd)
-	cfg := attestationPolicyConfigForSigningTest(t, fmt.Sprintf(`
+	cfg := sentryPolicyConfigForSigningTest(t, fmt.Sprintf(`
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -343,19 +343,19 @@ key_overrides:
 	if err != nil {
 		t.Fatalf("PrepareComponentSigning() error = %v", err)
 	}
-	if signErr := (&Service{AttestationPolicy: cfg}).evaluateAttestorComponentPolicy("default", plan); signErr != nil {
+	if signErr := (&Service{SentryPolicy: cfg}).evaluateAttestorComponentPolicy("default", plan); signErr != nil {
 		t.Fatalf("evaluateAttestorComponentPolicy() error = %v", signErr)
 	}
 
 	plan.ComponentKey = otherComponentKey
-	signErr := (&Service{AttestationPolicy: cfg}).evaluateAttestorComponentPolicy("default", plan)
+	signErr := (&Service{SentryPolicy: cfg}).evaluateAttestorComponentPolicy("default", plan)
 	if signErr == nil || !strings.Contains(signErr.Message, policy.TransferRoutingRouteMissRuleID) {
 		t.Fatalf("evaluateAttestorComponentPolicy(other key) error = %#v, want route miss", signErr)
 	}
 }
 
 func TestSignComponentAttestorRejectsInheritedReviewRouteMissBeforeKeyLoad(t *testing.T) {
-	cfg := attestationPolicyConfigForSigningTest(t, `
+	cfg := sentryPolicyConfigForSigningTest(t, `
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -365,7 +365,7 @@ transfer_policy:
 	txn := testnetPaymentTransaction(t, types.Address{33}.String(), types.Address{34}.String(), 1)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-review-route-miss",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -375,7 +375,7 @@ transfer_policy:
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.AttestationDeterministicRoutingRuleID) {
+	if !strings.Contains(err.Message, policy.SentryDeterministicRoutingRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want deterministic routing rejection", err.Message)
 	}
 	if store.calls != 0 {
@@ -403,7 +403,7 @@ transfer_policy:
 	txn := testnetPaymentTransaction(t, source, dest, 2)
 	store := &componentKeyStore{}
 
-	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
+	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-review-above",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
@@ -430,8 +430,8 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	audit := &testAuditLogger{}
 
 	_, err := (&Service{
-		AttestationPolicy: attestationRoutePolicy(t, source, dest),
-		AuditLog:          audit,
+		SentryPolicy: sentryRoutePolicy(t, source, dest),
+		AuditLog:     audit,
 	}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-rekey",
 		Role:          signerapi.ComponentSignRoleSentry,
@@ -442,7 +442,7 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	if err == nil || err.Kind != ErrorForbidden {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
-	if !strings.Contains(err.Message, policy.AttestationRekeyRuleID) {
+	if !strings.Contains(err.Message, policy.SentryRekeyRuleID) {
 		t.Fatalf("SignComponentWithContext() error = %q, want rekey rejection", err.Message)
 	}
 	if store.calls != 0 {
@@ -451,8 +451,8 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	if len(audit.rejected) != 1 {
 		t.Fatalf("rejected audit entries = %#v, want one", audit.rejected)
 	}
-	if got := audit.rejected[0].policyRule; got != policy.AttestationRekeyRuleID {
-		t.Fatalf("audit policyRule = %q, want %q", got, policy.AttestationRekeyRuleID)
+	if got := audit.rejected[0].policyRule; got != policy.SentryRekeyRuleID {
+		t.Fatalf("audit policyRule = %q, want %q", got, policy.SentryRekeyRuleID)
 	}
 }
 
@@ -481,10 +481,10 @@ func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
 	audit := &testAuditLogger{}
 
 	result, signErr := (&Service{
-		AttestationPolicy: attestationRoutePolicy(t, source, dest),
-		AuditLog:          audit,
+		SentryPolicy: sentryRoutePolicy(t, source, dest),
+		AuditLog:     audit,
 	}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor-policy-pass",
+		RequestID:     "cmp-sentry-policy-pass",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -504,7 +504,7 @@ func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
 		t.Fatalf("DecodeString(signature) error = %v", err)
 	}
 	plan, prepErr := PrepareComponentSigning(signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor-policy-pass",
+		RequestID:     "cmp-sentry-policy-pass",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -1187,9 +1187,9 @@ func testnetPaymentTransaction(t *testing.T, sender, receiver string, amount uin
 	return txn
 }
 
-func wildcardAttestationPolicy(t *testing.T) *policy.Config {
+func wildcardSentryPolicy(t *testing.T) *policy.Config {
 	t.Helper()
-	return attestationPolicyConfigForSigningTest(t, `
+	return sentryPolicyConfigForSigningTest(t, `
 transfer_policy:
   schema_version: 1
   enabled: true
@@ -1202,9 +1202,9 @@ transfer_policy:
 `)
 }
 
-func attestationRoutePolicy(t *testing.T, source, destination string) *policy.Config {
+func sentryRoutePolicy(t *testing.T, source, destination string) *policy.Config {
 	t.Helper()
-	return attestationPolicyConfigForSigningTest(t, fmt.Sprintf(`
+	return sentryPolicyConfigForSigningTest(t, fmt.Sprintf(`
 transfer_policy:
   schema_version: 1
   enabled: true

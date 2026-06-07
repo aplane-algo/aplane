@@ -1,6 +1,6 @@
 # Data Model Refactor Plan
 
-Status: historical pre-v1 refactor tracking. The attestation-era data model
+Status: historical pre-v1 refactor tracking. The sentry-era data model
 audit is now recorded in [ARCH_DATA_CATALOG.md](ARCH_DATA_CATALOG.md), which is
 the current catalog and slice completion record. Treat the slices below as
 lineage and older design context; before using any item as open work, verify it
@@ -10,7 +10,7 @@ against `ARCH_DATA_CATALOG.md`, `ARCH_DATA_MODEL.md`, `ARCH_SPEC.md`, and
 This document records the original accepted data-model refactor plan. The goal
 was to reduce duplicate authority, remove lossy projections, harden persistent
 and wire shapes, and make deferred architecture debt explicit without doing a
-risky one-shot schema rewrite. The current attestation-aware authority map and
+risky one-shot schema rewrite. The current sentry-aware authority map and
 remaining deferred cleanup decisions live in
 [ARCH_DATA_CATALOG.md](ARCH_DATA_CATALOG.md).
 

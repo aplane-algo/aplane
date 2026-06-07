@@ -486,7 +486,7 @@ active document online through the admin protocol while `apsigner` is running.
 Both surfaces select the policy domain from the node role; store-backed
 role-incompatible targets fail closed. Direct edits to `policy.yaml` are checked
 and signed with `apstore policy`. Admin IPC policy messages are
-target-aware (`signer|attestation`), validate replacements before writing, use
+target-aware (`signer|sentry`), validate replacements before writing, use
 `expected_current_sha256` for optimistic concurrency, write the YAML plus a
 fresh sidecar, and update the bound runtime immediately on success. The limited
 admin policy settings payload remains a legacy scalar projection; YAML-only
@@ -1191,7 +1191,7 @@ sentry policy has no manual-review or operator-default verdict. It is
 deterministic authorization: all selected target movements must be positively
 authorized by the effective sentry policy, and deny guards fail closed.
 
-Attestation policy overrides are keyed by sentry component selector.
+Sentry policy overrides are keyed by sentry component selector.
 Client-signing policy overrides are keyed by signing auth address.
 
 Sentry component approvals and rejections are recorded through existing sign
