@@ -141,18 +141,28 @@ func main() {
 	}
 	theme.Init(startup.Config.Theme)
 	configureAlgodOnDSAs(startup.Config)
+	nodeRole, roleWarning := consoleNodeRole(startup.Paths)
 	daemonProcess, daemonStartup := prepareDaemonProcess(startup.DataDir, startup.Config.IPCPath, !*noStartDaemon)
 	if daemonStartup.Status == daemonStatusStarting {
 		waitForDaemonReady(startup.Config.IPCPath, daemonProcess, daemonReadyTimeout)
 	}
-	trustNotice, err := trustLocalSignerHostKey(startupCfg.ClientData, startup.Config)
-	if err != nil {
-		logWarnf("could not pretrust local signer SSH host key: %v", err)
+	if roleWarning != "" {
+		logWarnf("%s", roleWarning)
 	}
-	shellSession, shellStartup := loadShellConsole(startupCfg.ClientData, network)
-	shellStartup = append(consoleStartupNoticeLines(startupCfg.Notices), shellStartup...)
-	if trustNotice != "" {
-		shellStartup = append(shellStartup, "[config] "+trustNotice)
+	var shellSession *apshellcli.Session
+	var shellStartup []string
+	if shellPaneEnabledForNodeRole(nodeRole) {
+		trustNotice, err := trustLocalSignerHostKey(startupCfg.ClientData, startup.Config)
+		if err != nil {
+			logWarnf("could not pretrust local signer SSH host key: %v", err)
+		}
+		shellSession, shellStartup = loadShellConsole(startupCfg.ClientData, network)
+		shellStartup = append(consoleStartupNoticeLines(startupCfg.Notices), shellStartup...)
+		if trustNotice != "" {
+			shellStartup = append(shellStartup, "[config] "+trustNotice)
+		}
+	} else {
+		shellStartup = attestorShellDisabledLines(startupCfg.Notices)
 	}
 	daemon := newDaemonModel(daemonStartup, daemonProcessEventChan(daemonProcess))
 
