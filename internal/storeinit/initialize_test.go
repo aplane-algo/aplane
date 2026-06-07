@@ -66,6 +66,39 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	}
 }
 
+func TestInitializeCreatesExplicitAttestorNodeRole(t *testing.T) {
+	dataDir := t.TempDir()
+	paths := storepaths.NewPaths(dataDir)
+	identityID := "default"
+	passphrase := []byte("init-passphrase")
+	defer crypto.ZeroBytes(passphrase)
+
+	if _, err := Initialize(passphrase, Options{
+		DataDir:    dataDir,
+		Paths:      paths,
+		IdentityID: identityID,
+		Role:       noderole.RoleAttestor,
+	}); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	if err != nil {
+		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+	}
+	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
+	if err != nil {
+		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+	}
+	defer crypto.ZeroBytes(masterKey)
+	role, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, masterKey)
+	if err != nil {
+		t.Fatalf("node role integrity baseline did not verify: %v", err)
+	}
+	if role.Role != noderole.RoleAttestor {
+		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleAttestor)
+	}
+}
+
 func TestInitializeRejectsExistingMetadata(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)

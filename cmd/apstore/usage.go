@@ -11,7 +11,7 @@ import (
 func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "apstore - Signer keystore management\n\n")
 	fmt.Fprintf(os.Stderr, "Usage:\n")
-	fmt.Fprintf(os.Stderr, "  apstore [-d path] initialize\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] initialize [--role signer|attestor]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup create all\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup create address <ADDRESS>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] backup import <archive-path>\n")
@@ -43,6 +43,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  -d path              Data directory (or set APSIGNER_DATA env var)\n")
 	fmt.Fprintf(os.Stderr, "\nExamples:\n")
 	fmt.Fprintf(os.Stderr, "  apstore initialize\n")
+	fmt.Fprintf(os.Stderr, "  apstore initialize --role attestor\n")
 	fmt.Fprintf(os.Stderr, "  apstore backup create all\n")
 	fmt.Fprintf(os.Stderr, "  apstore backup list\n")
 	fmt.Fprintf(os.Stderr, "  apstore backup import /mnt/usb/aplane-backup.tar.gz\n")

@@ -23,7 +23,7 @@ func dispatchApstoreCommand(args []string) {
 
 	switch command {
 	case "initialize":
-		if err := cmdInitialize(); err != nil {
+		if err := cmdInitialize(args[1:]); err != nil {
 			exitWithError(err)
 		}
 

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	utilpaths "github.com/aplane-algo/aplane/internal/storepaths"
@@ -58,20 +59,59 @@ func TestCmdInitializeInitializes(t *testing.T) {
 	config = apconfig.ServerConfig{}
 	stdinReader = nil
 	var gotPassphrase string
-	initializeStoreForCommand = func(passphrase []byte) (protocol.InitializeStoreResultMessage, error) {
+	var gotRole noderole.Role
+	initializeStoreForCommand = func(passphrase []byte, role noderole.Role) (protocol.InitializeStoreResultMessage, error) {
 		gotPassphrase = string(passphrase)
+		gotRole = role
 		return protocol.InitializeStoreResultMessage{
 			Success:     true,
 			MetadataDir: keystorePaths().KeystoreMetadataDir(productIdentityID()),
 		}, nil
 	}
 
-	err := withTestStdin("init-passphrase\ninit-passphrase\n", cmdInitialize)
+	err := withTestStdin("init-passphrase\ninit-passphrase\n", func() error {
+		return cmdInitialize(nil)
+	})
 	if err != nil {
 		t.Fatalf("cmdInitialize() error = %v", err)
 	}
 	if gotPassphrase != "init-passphrase" {
 		t.Fatalf("initialize passphrase = %q, want init-passphrase", gotPassphrase)
+	}
+	if gotRole != noderole.RoleSigner {
+		t.Fatalf("initialize role = %q, want %q", gotRole, noderole.RoleSigner)
+	}
+}
+
+func TestParseInitializeRole(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		want    noderole.Role
+		wantErr string
+	}{
+		{name: "default signer", want: noderole.RoleSigner},
+		{name: "explicit signer", args: []string{"--role", "signer"}, want: noderole.RoleSigner},
+		{name: "explicit attestor", args: []string{"--role", "attestor"}, want: noderole.RoleAttestor},
+		{name: "dual rejected", args: []string{"--role", "dual"}, wantErr: "invalid initialize role"},
+		{name: "extra arg rejected", args: []string{"extra"}, wantErr: "usage: apstore initialize"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseInitializeRole(tt.args)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("parseInitializeRole() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseInitializeRole() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("parseInitializeRole() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -84,7 +124,7 @@ func TestCmdInitializeReturnsInitializeFailure(t *testing.T) {
 	}()
 
 	stdinReader = nil
-	initializeStoreForCommand = func(passphrase []byte) (protocol.InitializeStoreResultMessage, error) {
+	initializeStoreForCommand = func(passphrase []byte, role noderole.Role) (protocol.InitializeStoreResultMessage, error) {
 		return protocol.InitializeStoreResultMessage{
 			Success: false,
 			Code:    "initialize_store_failed",
@@ -92,7 +132,9 @@ func TestCmdInitializeReturnsInitializeFailure(t *testing.T) {
 		}, nil
 	}
 
-	err := withTestStdin("new-passphrase\nnew-passphrase\n", cmdInitialize)
+	err := withTestStdin("new-passphrase\nnew-passphrase\n", func() error {
+		return cmdInitialize(nil)
+	})
 	if err == nil || !strings.Contains(err.Error(), "already initialized") {
 		t.Fatalf("cmdInitialize() error = %v, want initialize failure", err)
 	}

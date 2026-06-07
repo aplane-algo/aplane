@@ -5,10 +5,14 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"flag"
 	"fmt"
+	"io"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -77,7 +81,12 @@ func cmdChangepass() error {
 // cmdInitialize initializes a new keystore with a passphrase.
 // When a passphrase_command_argv helper is configured, the passphrase is
 // stored via the helper after keystore creation.
-func cmdInitialize() error {
+func cmdInitialize(args []string) error {
+	role, err := parseInitializeRole(args)
+	if err != nil {
+		return err
+	}
+
 	logInfof("Keystore Initialization")
 	logInfof("=======================")
 
@@ -121,7 +130,7 @@ func cmdInitialize() error {
 	// Create keystore metadata
 	defer crypto.ZeroBytes(passphrase)
 
-	result, err := initializeStoreForCommand(passphrase)
+	result, err := initializeStoreForCommand(passphrase, role)
 	if err != nil {
 		return err
 	}
@@ -140,7 +149,26 @@ func cmdInitialize() error {
 	return nil
 }
 
-func initializeStoreLocal(passphrase []byte) (protocol.InitializeStoreResultMessage, error) {
+const initializeUsage = "usage: apstore initialize [--role signer|attestor]"
+
+func parseInitializeRole(args []string) (noderole.Role, error) {
+	fs := flag.NewFlagSet("apstore initialize", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	roleArg := fs.String("role", string(noderole.DefaultRole()), "node role")
+	if err := fs.Parse(args); err != nil {
+		return "", errors.New(initializeUsage)
+	}
+	if fs.NArg() != 0 {
+		return "", errors.New(initializeUsage)
+	}
+	role, err := noderole.ParseRole(*roleArg)
+	if err != nil {
+		return "", fmt.Errorf("invalid initialize role: %w", err)
+	}
+	return role, nil
+}
+
+func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.InitializeStoreResultMessage, error) {
 	var result protocol.InitializeStoreResultMessage
 	unlockCfg, err := signerstartup.ResolveUnlockConfig(dataDirectory, productIdentityID(), &config)
 	if err != nil {
@@ -151,6 +179,7 @@ func initializeStoreLocal(passphrase []byte) (protocol.InitializeStoreResultMess
 		DataDir:    dataDirectory,
 		Paths:      keystorePaths(),
 		IdentityID: productIdentityID(),
+		Role:       role,
 		Logf:       logInfof,
 	})
 	if err != nil {
