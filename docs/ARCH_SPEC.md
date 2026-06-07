@@ -3,6 +3,7 @@
 > Orientation map for engineers working on the APlane repository.
 > For compatibility contracts (wire formats, on-disk formats, error mappings, and behavioral guarantees), see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 > For the system-wide durable/runtime/wire data model, see [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md).
+> For key and key type state machines, see [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
 > For the principal/group/grant authorization model, see [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
 > For the current signer policy verdict model, see [ARCH_POLICY.md](ARCH_POLICY.md).
 > For network context tokens and transaction genesis-hash mapping, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
@@ -73,6 +74,10 @@ Read [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md) as the system-wide data map:
 - wire projections,
 - caches and display/provenance data,
 - entity ownership and compatibility invariants.
+
+Read [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md) before changing key file
+schemas, key type state, template install/enable/disable/remove behavior,
+LogicSig signing metadata, or backup/restore rules for keys and key types.
 
 Read [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) before changing
 authorization-sensitive behavior:
@@ -627,6 +632,8 @@ Both locked and headless paths converge through `reloadKeysLocked`, which:
 Template scan precedes key scan so generation/discovery state is current.
 LogicSig key files carry their own bytecode and signing arg contract, so
 signing an existing key does not depend on the installed template definition.
+The complete key file and key type state machines are documented in
+[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
 LogicSig key files without `salt_counter`, or whose stored bytecode derives an
 on-curve address, are rejected during key scan. LogicSig key files without
 `signing_metadata_version` are rejected when signing or restore would need
@@ -1310,4 +1317,5 @@ as active policy. `cmd/apsigner` owns the live daemon restore path for both
 the local `backup import` admission check, `verify` inspection command, policy
 integrity check/sign/verify commands, and `rebuild` replacement-keystore rescue
 path. The wire and on-disk compatibility rules remain in
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md); the key/keytype lifecycle state model
+is in [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).

@@ -97,8 +97,8 @@ func TestAcquireOfflineMutationLockForArgsDoesNotLockIPCKeyTypeCommands(t *testi
 	defer func() { _ = guard.Close() }()
 
 	for _, args := range [][]string{
-		{"keytype", "activate", "example-v1"},
-		{"keytype", "deactivate", "example-v1"},
+		{"keytype", "enable", "example-v1"},
+		{"keytype", "disable", "example-v1"},
 	} {
 		release, err := acquireOfflineMutationLockForArgs(args, dataDir)
 		if err != nil {

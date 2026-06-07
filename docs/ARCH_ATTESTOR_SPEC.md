@@ -1214,8 +1214,8 @@ same change.
 User signer/client:
 
 ```text
-apstore keytype activate falcon1024-att-ed25519.v1
-apstore keytype activate falcon1024-att-falcon1024.v1
+apstore keytype enable falcon1024-att-ed25519.v1
+apstore keytype enable falcon1024-att-falcon1024.v1
 apshell generate aplane.falcon1024-att-ed25519.v1 attestor_public_key=<hex>
 apshell generate aplane.falcon1024-att-falcon1024.v1 attestor_public_key=<hex>
 apshell generate aplane.falcon1024-att-ed25519.v1 attestor=<name>

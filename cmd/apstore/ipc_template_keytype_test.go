@@ -292,8 +292,8 @@ func TestCmdKeyTypeActivateUsesIPC(t *testing.T) {
 	}
 	withFakeApstoreAdminClient(t, fake)
 
-	if err := cmdKeyType([]string{"activate", "aplane.ecdsak1.v1"}); err != nil {
-		t.Fatalf("cmdKeyType(activate) error = %v", err)
+	if err := cmdKeyType([]string{"enable", "aplane.ecdsak1.v1"}); err != nil {
+		t.Fatalf("cmdKeyType(enable) error = %v", err)
 	}
 	if len(fake.requests) != 1 || fake.requests[0] != protocol.MsgTypeActivateKeyType {
 		t.Fatalf("requests = %v, want activate_keytype", fake.requests)
@@ -315,8 +315,8 @@ func TestCmdKeyTypeActivateCanonicalizesDefaultPublisherAlias(t *testing.T) {
 	}
 	withFakeApstoreAdminClient(t, fake)
 
-	if err := cmdKeyType([]string{"activate", "ecdsak1.v1"}); err != nil {
-		t.Fatalf("cmdKeyType(activate alias) error = %v", err)
+	if err := cmdKeyType([]string{"enable", "ecdsak1.v1"}); err != nil {
+		t.Fatalf("cmdKeyType(enable alias) error = %v", err)
 	}
 	if fake.activateRequest.KeyType != "aplane.ecdsak1.v1" {
 		t.Fatalf("activate key type = %q, want aplane.ecdsak1.v1", fake.activateRequest.KeyType)
@@ -334,9 +334,9 @@ func TestCmdKeyTypeDeactivateUsesIPC(t *testing.T) {
 	withFakeApstoreAdminClient(t, fake)
 
 	if err := withTestStdin("y\n", func() error {
-		return cmdKeyType([]string{"deactivate", "aplane.ecdsak1.v1"})
+		return cmdKeyType([]string{"disable", "aplane.ecdsak1.v1"})
 	}); err != nil {
-		t.Fatalf("cmdKeyType(deactivate) error = %v", err)
+		t.Fatalf("cmdKeyType(disable) error = %v", err)
 	}
 	if len(fake.requests) != 1 || fake.requests[0] != protocol.MsgTypeDeactivateKeyType {
 		t.Fatalf("requests = %v, want deactivate_keytype", fake.requests)
@@ -360,9 +360,9 @@ func TestCmdKeyTypeDeactivateCanonicalizesDefaultPublisherAlias(t *testing.T) {
 	withFakeApstoreAdminClient(t, fake)
 
 	if err := withTestStdin("y\n", func() error {
-		return cmdKeyType([]string{"deactivate", "ecdsak1.v1"})
+		return cmdKeyType([]string{"disable", "ecdsak1.v1"})
 	}); err != nil {
-		t.Fatalf("cmdKeyType(deactivate alias) error = %v", err)
+		t.Fatalf("cmdKeyType(disable alias) error = %v", err)
 	}
 	if fake.deactivateRequest.KeyType != "aplane.ecdsak1.v1" {
 		t.Fatalf("deactivate key type = %q, want aplane.ecdsak1.v1", fake.deactivateRequest.KeyType)
@@ -374,12 +374,24 @@ func TestCmdKeyTypeDeactivateCancelledBeforeIPC(t *testing.T) {
 	withFakeApstoreAdminClient(t, fake)
 
 	err := withTestStdin("n\n", func() error {
-		return cmdKeyType([]string{"deactivate", "aplane.ecdsak1.v1"})
+		return cmdKeyType([]string{"disable", "aplane.ecdsak1.v1"})
 	})
 	if err == nil || !strings.Contains(err.Error(), "cancelled") {
-		t.Fatalf("cmdKeyType(deactivate) error = %v, want cancellation", err)
+		t.Fatalf("cmdKeyType(disable) error = %v, want cancellation", err)
 	}
 	if len(fake.requests) != 0 {
 		t.Fatalf("requests = %v, want none", fake.requests)
+	}
+}
+
+func TestCmdKeyTypeRejectsOldActivateDeactivateVerbs(t *testing.T) {
+	for _, verb := range []string{"activate", "deactivate"} {
+		err := cmdKeyType([]string{verb, "aplane.ecdsak1.v1"})
+		if err == nil {
+			t.Fatalf("cmdKeyType(%s) error = nil, want usage error", verb)
+		}
+		if !strings.Contains(err.Error(), "usage: apstore keytype <enable|disable>") {
+			t.Fatalf("cmdKeyType(%s) error = %v, want enable/disable usage", verb, err)
+		}
 	}
 }

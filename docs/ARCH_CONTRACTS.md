@@ -2,6 +2,7 @@
 
 > Compatibility-bearing wire formats, on-disk formats, and behavioral contracts.
 > For system orientation, ownership, and architecture, see [ARCH_SPEC.md](ARCH_SPEC.md).
+> For key and key type lifecycle state machines, see [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
 > For the explanatory network context model, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
 > For the current signer policy verdict model, see [ARCH_POLICY.md](ARCH_POLICY.md).
 > Load this document when working on a specific subsystem, not as general pre-reading.
@@ -140,7 +141,7 @@ error-message codes:
 Consumers should branch on message `type` and `code` first, and use `error` for display or fallback handling.
 
 Specific admin result messages may define additional stable result-local codes,
-including `key_type_in_use` for template disable/removal or compiled-provider deactivation and
+including `key_type_in_use` for template disable/removal or compiled-provider disable and
 `restore_rate_limited` for managed restore preview/restore throttling. See the
 corresponding payload sections and contract tests before treating the central
 protocol list as exhaustive.
@@ -621,14 +622,15 @@ encrypted `.template` installed and sets the identity state record to disabled. 
 moves the `.template` source to the identity-local deleted key type archive and deletes the state record; this
 removal is exposed through authenticated local IPC as `apstore template remove`.
 Disabling or removing an installed YAML template requires that no stored identity
-key depends on that `key_type`; compiled-provider deactivation has the same
+key depends on that `key_type`; compiled-provider disable has the same
 unused-key guard because it removes the identity's compiled-provider opt-in. The
 unused check requires the identity master key, scans existing keys, and returns
 `key_type_in_use` on the live admin protocol when the guard blocks installed
-template disable/removal or compiled-provider deactivation. Live activation,
-deactivation, template install, non-generic key generation, key import, and key
-delete operations are serialized per identity so key creation cannot race a
-lifecycle decision made from a stale state snapshot.
+template disable/removal or compiled-provider disable. Live key type
+enable/disable, template install, non-generic key generation, key import, and
+key delete operations are serialized per identity so key creation cannot race a
+lifecycle decision made from a stale state snapshot. The underlying IPC message
+names remain `activate_key_type` and `deactivate_key_type` for compatibility.
 
 ### Keystore Metadata (`.keystore`)
 
@@ -1653,6 +1655,9 @@ Live signer-managed backup:
   without the provenance check
 - restore preview/apply perform passphrase-backed inspection and mutation
   through the signer daemon
+- the state-machine view of key restore, template restore, disabled key types,
+  and fingerprint conflicts is maintained in
+  [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md)
 
 Live signer-managed restore:
 

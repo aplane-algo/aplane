@@ -100,7 +100,7 @@ func confirmRemoveTemplate(keyType string) bool {
 }
 
 func confirmDeactivateKeyType(keyType string) bool {
-	return confirmYesNo(fmt.Sprintf("Deactivate key type %s? [y/N]: ", displayKeyType(keyType)))
+	return confirmYesNo(fmt.Sprintf("Disable key type %s? [y/N]: ", displayKeyType(keyType)))
 }
 
 func confirmYesNo(prompt string) bool {

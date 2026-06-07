@@ -5,6 +5,8 @@ on runtime use, not on writing new provider code or authoring TEAL policies.
 
 For development details, see [DEV_KEYTYPES.md](DEV_KEYTYPES.md). For LogicSig
 policy design, see [USER_LOGICSIG_GUIDELINES.md](USER_LOGICSIG_GUIDELINES.md).
+For the full architecture-level key/keytype state matrix, see
+[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
 
 ## Concepts
 
@@ -12,7 +14,7 @@ APlane has two optional key type paths:
 
 | Kind | Example | Where definition lives | How to enable |
 |---|---|---|---|
-| Compiled provider | `aplane.falcon1024_ed25519.v1` | Go code in the current binary | `apstore keytype activate` or apadmin KeyType Library |
+| Compiled provider | `aplane.falcon1024_ed25519.v1` | Go code in the current binary | `apstore keytype enable` or apadmin KeyType Library |
 | YAML template | `aplane.whitelist.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apstore template import` or apadmin KeyType Library |
 
 Default-enabled compiled providers, such as `ed25519` and
@@ -40,13 +42,12 @@ does not mean the key has stopped working; it means the original creation
 template should be reviewed before relying on provenance or creating more keys
 of that type.
 
-The apadmin KeyType Library uses `Enable` and `Disable` for both compiled
-providers and YAML templates. The lower-level `apstore keytype` CLI still uses
-`activate` and `deactivate` for compiled providers because those commands write
-or remove the identity activation record directly. Template authors, including
-LLM-assisted authors, should use the canonical vocabulary in this guide,
-[DEV_KEYTYPES.md](DEV_KEYTYPES.md), and
-[USER_LOGICSIG_GUIDELINES.md](USER_LOGICSIG_GUIDELINES.md).
+The apadmin KeyType Library and `apstore keytype` CLI use `Enable` and
+`Disable` for both compiled providers and installed YAML templates. Internally,
+compiled providers write or remove an identity activation record, while YAML
+templates keep their encrypted `.template` file installed and toggle the
+identity state record. Operators do not need separate verbs for those storage
+details.
 
 ## Useful Commands
 
@@ -57,8 +58,8 @@ apstore -d $APSIGNER_DATA template list
 apstore -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
 apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.yaml
 apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
-apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
-apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype enable falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype disable falcon1024_ed25519.v1
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -84,13 +85,13 @@ JSON fields still use the canonical `publisher.family.vN` identifier.
 Compiled providers are registered from Go code when `apsigner` starts. Some are
 default-enabled; others are library-visible and require identity activation.
 
-Activate a library-visible compiled provider:
+Enable a library-visible compiled provider:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype enable falcon1024_ed25519.v1
 ```
 
-Activation writes or updates:
+Enabling writes or updates:
 
 ```text
 identities/<identity>/keytypes/<key_type>.json
@@ -108,17 +109,17 @@ with:
 }
 ```
 
-Deactivate a library-visible compiled provider:
+Disable a library-visible compiled provider:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype deactivate falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype disable falcon1024_ed25519.v1
 ```
 
-Deactivation removes the identity activation record after checking that no
+Disabling removes the identity activation record after checking that no
 existing keys use that key type.
 
-`keytype activate` is not for YAML templates. It only applies to
-library-visible compiled providers.
+`keytype enable` can also re-enable an already-installed disabled YAML template.
+It does not import a new YAML source; use `template import` for that.
 
 ## YAML Templates
 
@@ -173,6 +174,11 @@ templates. Disabling keeps the encrypted `.template` file installed but hides
 the key type from discovery and generation. Like removal, disable is rejected
 when keys of that type exist.
 
+`apstore keytype enable <key-type>` and
+`apstore keytype disable <key-type>` use the same enable/disable vocabulary for
+installed YAML templates as they do for compiled providers. The implementation
+handles the storage difference behind the scenes.
+
 For the full filesystem layout and state-record transitions for disable,
 enable, remove, and reload, see
 [DEV_KEYTYPES.md](DEV_KEYTYPES.md) (Identity Filesystem State).
@@ -211,7 +217,7 @@ change.
 Refresh the activation record:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype activate falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype enable falcon1024_ed25519.v1
 ```
 
 This updates the state-record fingerprint. It does not rewrite existing key

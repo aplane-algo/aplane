@@ -41,20 +41,20 @@ func cmdTemplate(args []string) error {
 
 func cmdKeyType(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore keytype <activate|deactivate>")
+		return fmt.Errorf("usage: apstore keytype <enable|disable>")
 	}
 	switch args[0] {
-	case "activate":
+	case "enable":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: apstore keytype activate <key-type>")
+			return fmt.Errorf("usage: apstore keytype enable <key-type>")
 		}
 		return cmdActivateKeyType(args[1])
-	case "deactivate":
+	case "disable":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: apstore keytype deactivate <key-type>")
+			return fmt.Errorf("usage: apstore keytype disable <key-type>")
 		}
 		return cmdDeactivateKeyType(args[1])
 	default:
-		return fmt.Errorf("usage: apstore keytype <activate|deactivate>")
+		return fmt.Errorf("usage: apstore keytype <enable|disable>")
 	}
 }

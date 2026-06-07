@@ -6,7 +6,8 @@
 This catalog complements [ARCH_DATA_MODEL.md](ARCH_DATA_MODEL.md). The data
 model document explains the conceptual model; this catalog inventories the
 actual elements that cross package, process, request, goroutine, or persistence
-boundaries.
+boundaries. Key file and key type state transitions are documented in
+[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
 
 ## Scope
 

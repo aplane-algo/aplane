@@ -228,14 +228,14 @@ Installed YAML templates use the same record with `source:"yaml_generic"` or
 `source:"yaml_composed"` and store the encrypted template body in the adjacent
 `identities/<identity>/keytypes/<key_type>.template` file.
 
-Activation is exposed over the admin protocol with `activate_key_type`; for
-compiled providers this writes or enables the compiled state record, and for
-installed YAML templates this sets the record state to enabled and reloads the
-identity. Deactivation is exposed over the admin protocol with
-`deactivate_key_type`; for compiled providers this removes the state record
-after verifying that no identity key uses that `key_type`, and for installed
-YAML templates this verifies no identity key uses that `key_type`, then sets
-the record state to disabled without removing the encrypted template. Removing
+The operator-facing CLI and TUI expose these transitions as `Enable` and
+`Disable`. The stable admin protocol wire messages remain `activate_key_type`
+and `deactivate_key_type`: for compiled providers, enable writes or refreshes
+the compiled state record and disable removes it after verifying that no
+identity key uses that `key_type`; for installed YAML templates, enable sets
+the record state to enabled and disable verifies the same unused-key guard, then
+sets the record state to disabled without removing the encrypted template.
+Removing
 a YAML template remains destructive and is also blocked while any stored
 identity key depends on that `key_type`. Restoring a key for a library-visible
 compiled provider also creates the same identity state record idempotently.
@@ -399,7 +399,7 @@ be redefined in place. Disabling an installed YAML template is a reversible
 state-only hide from future discovery and generation, and removing the encrypted
 installed template archives the template file and deletes its state record. Both
 operations are blocked while identity keys still depend on that `key_type`;
-compiled-provider deactivation uses the same unused-key guard because it removes
+compiled-provider disable uses the same unused-key guard because it removes
 the identity's compiled-provider opt-in.
 
 ## Security Notes

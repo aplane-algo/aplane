@@ -27,20 +27,20 @@ func cmdActivateKeyType(keyType string) error {
 		return err
 	}
 	if !result.Success {
-		return resultError("key type activation failed", result.Code, result.Error)
+		return resultError("key type enable failed", result.Code, result.Error)
 	}
 	if result.AlreadyExists {
-		logInfof("key type %s was already activated", displayKeyType(result.KeyType))
+		logInfof("key type %s was already enabled", displayKeyType(result.KeyType))
 		return nil
 	}
-	logInfof("key type %s activated", displayKeyType(result.KeyType))
+	logInfof("key type %s enabled", displayKeyType(result.KeyType))
 	return nil
 }
 
 func cmdDeactivateKeyType(keyType string) error {
 	keyType = canonicalKeyType(keyType)
 	if !confirmDeactivateKeyType(keyType) {
-		return fmt.Errorf("key type deactivation cancelled")
+		return fmt.Errorf("key type disable cancelled")
 	}
 
 	client, err := newApstoreAdminClientForCommand()
@@ -58,12 +58,12 @@ func cmdDeactivateKeyType(keyType string) error {
 		return err
 	}
 	if !result.Success {
-		return resultError("key type deactivation failed", result.Code, result.Error)
+		return resultError("key type disable failed", result.Code, result.Error)
 	}
 	if result.Removed {
-		logInfof("key type %s deactivated", displayKeyType(result.KeyType))
+		logInfof("key type %s disabled", displayKeyType(result.KeyType))
 		return nil
 	}
-	logInfof("key type %s was already deactivated", displayKeyType(result.KeyType))
+	logInfof("key type %s was already disabled", displayKeyType(result.KeyType))
 	return nil
 }

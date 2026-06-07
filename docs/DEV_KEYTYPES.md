@@ -13,6 +13,10 @@ AI agents generating or reviewing custom templates should also read
 [`AGENTS_KEYTYPES.md`](AGENTS_KEYTYPES.md), which gives the operational
 safety checklist for user-loaded YAML templates.
 
+For the complete key file and key type state machines, including backup/restore
+and disabled/fingerprint-conflict behavior, see
+[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
+
 ## Signing Authority
 
 **Signing authority lives in the key file, not in the template.** Every

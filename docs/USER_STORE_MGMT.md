@@ -273,7 +273,10 @@ If any step fails, the operation is rolled back automatically.
 Optional key types and YAML templates are identity-scoped store features, but
 their full lifecycle is documented separately. For installation, enablement,
 disablement, removal, inspection, reload behavior, and recovery guidance, see
-[USER_KEYTYPES.md](USER_KEYTYPES.md).
+[USER_KEYTYPES.md](USER_KEYTYPES.md). For the complete architecture-level
+key/keytype state matrix, including restore behavior for missing, disabled, and
+fingerprint-conflicting key types, see
+[ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
 
 For normal operator use, manage key types from the apadmin **KeyType Library**.
 For scripted maintenance, use the `apstore template` and `apstore keytype`
@@ -576,8 +579,8 @@ From the key details view:
 ./apstore template show <key-type> --show-sensitive-template
 ./apstore template import <yaml-file>
 ./apstore template remove <key-type>
-./apstore keytype activate <key-type>
-./apstore keytype deactivate <key-type>
+./apstore keytype enable <key-type>
+./apstore keytype disable <key-type>
 ```
 
 For the operator-facing key type availability model and the distinction between
