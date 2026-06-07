@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/policyeditor"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -221,8 +222,66 @@ func TestRunSavePolicyAliasReadsPolicyFromStdin(t *testing.T) {
 	}
 }
 
+func TestRunSaveAutoTargetsAttestationOnAttestorNode(t *testing.T) {
+	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleAttestor)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+	attestationBytes := []byte("reject_rekey: true\n")
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"-d", dataDir, "--save"}, bytes.NewReader(attestationBytes), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run(attestor --save) code = %d, stderr = %q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "attestation policy saved:") {
+		t.Fatalf("attestor --save stdout = %q, want attestation saved status", stdout.String())
+	}
+	gotBytes, err := os.ReadFile(policy.AttestationPath(dataDir, policyeditor.DefaultIdentityID))
+	if err != nil {
+		t.Fatalf("ReadFile(attestation) error = %v", err)
+	}
+	if string(gotBytes) != string(attestationBytes) {
+		t.Fatalf("attestation bytes changed during auto --save:\ngot:\n%s\nwant:\n%s", gotBytes, attestationBytes)
+	}
+}
+
+func TestRunYAMLAutoTargetsAttestationOnAttestorNode(t *testing.T) {
+	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleAttestor)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+	attestationBytes := []byte("reject_rekey: true\n")
+	var saveOut, saveErr bytes.Buffer
+	if code := run(context.Background(), []string{"-d", dataDir, "--save"}, bytes.NewReader(attestationBytes), &saveOut, &saveErr); code != 0 {
+		t.Fatalf("run(attestor --save) code = %d, stderr = %q", code, saveErr.String())
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"-d", dataDir, "--yaml"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run(attestor --yaml) code = %d, stderr = %q", code, stderr.String())
+	}
+	if stdout.String() != string(attestationBytes) {
+		t.Fatalf("attestor --yaml stdout:\ngot:\n%s\nwant:\n%s", stdout.String(), attestationBytes)
+	}
+	if _, err := policy.ParseStoredAttestationConfig(stdout.Bytes()); err != nil {
+		t.Fatalf("attestor --yaml stdout is not valid attestation YAML: %v\n%s", err, stdout.String())
+	}
+}
+
+func TestRunTargetOverrideCanReadSignerPolicyOnAttestorNode(t *testing.T) {
+	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleAttestor)
+	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
+	var stdout, stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"-d", dataDir, "--target", "signer", "--yaml"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run(--target signer --yaml) code = %d, stderr = %q", code, stderr.String())
+	}
+	if _, err := policy.ParseStoredConfig(stdout.Bytes()); err != nil {
+		t.Fatalf("--target signer stdout is not valid signer policy YAML: %v\n%s", err, stdout.String())
+	}
+}
+
 func TestRunSaveRejectsPolicyFileArgument(t *testing.T) {
-	for _, flag := range []string{"--save-policy", "--save-attestation"} {
+	for _, flag := range []string{"--save", "--save-policy", "--save-attestation"} {
 		t.Run(flag, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
@@ -253,12 +312,18 @@ func TestRunRejectsCombinedCLIModes(t *testing.T) {
 
 func initializedAppolicyStore(t *testing.T) (string, string) {
 	t.Helper()
+	return initializedAppolicyStoreWithRole(t, noderole.RoleSigner)
+}
+
+func initializedAppolicyStoreWithRole(t *testing.T, role noderole.Role) (string, string) {
+	t.Helper()
 	dataDir := t.TempDir()
 	passphrase := "appolicy-test-passphrase"
 	_, err := storeinit.Initialize([]byte(passphrase), storeinit.Options{
 		DataDir:    dataDir,
 		Paths:      storepaths.NewPaths(dataDir),
 		IdentityID: policyeditor.DefaultIdentityID,
+		Role:       role,
 	})
 	if err != nil {
 		t.Fatalf("Initialize() error = %v", err)

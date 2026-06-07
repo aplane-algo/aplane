@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storelock"
@@ -29,6 +30,40 @@ func TestOfflineStoreLoadVerifiesPolicy(t *testing.T) {
 	}
 	if stored == nil {
 		t.Fatal("Load() returned nil policy")
+	}
+}
+
+func TestOfflineStoreLoadVerifiesAttestationTarget(t *testing.T) {
+	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleAttestor)
+	store := OfflineStore{
+		DataDir:    dataDir,
+		IdentityID: DefaultIdentityID,
+		Target:     TargetAttestation,
+		Passphrase: passphrase,
+	}
+	attestationBytes := []byte("reject_rekey: true\n")
+	if err := store.SaveYAML(context.Background(), attestationBytes); err != nil {
+		t.Fatalf("SaveYAML(attestation target) error = %v", err)
+	}
+
+	stored, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load(attestation target) error = %v", err)
+	}
+	if stored.RejectRekey == nil || !*stored.RejectRekey {
+		t.Fatalf("RejectRekey = %v, want true", stored.RejectRekey)
+	}
+}
+
+func TestResolveTargetUsesNodeRole(t *testing.T) {
+	signerDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleSigner)
+	attestorDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleAttestor)
+
+	if got, err := ResolveTarget(signerDir, TargetAuto); err != nil || got != TargetSigner {
+		t.Fatalf("ResolveTarget(signer) = %q, %v; want %q", got, err, TargetSigner)
+	}
+	if got, err := ResolveTarget(attestorDir, TargetAuto); err != nil || got != TargetAttestation {
+		t.Fatalf("ResolveTarget(attestor) = %q, %v; want %q", got, err, TargetAttestation)
 	}
 }
 
@@ -249,12 +284,18 @@ func TestOfflineStoreSaveLockedStoreErrorHasOperatorHint(t *testing.T) {
 
 func initializedPolicyStore(t *testing.T) (string, []byte) {
 	t.Helper()
+	return initializedPolicyStoreWithRole(t, noderole.RoleSigner)
+}
+
+func initializedPolicyStoreWithRole(t *testing.T, role noderole.Role) (string, []byte) {
+	t.Helper()
 	dataDir := t.TempDir()
 	passphrase := []byte("policyeditor-passphrase")
 	_, err := storeinit.Initialize(passphrase, storeinit.Options{
 		DataDir:    dataDir,
 		Paths:      storepaths.NewPaths(dataDir),
 		IdentityID: DefaultIdentityID,
+		Role:       role,
 	})
 	if err != nil {
 		t.Fatalf("Initialize() error = %v", err)

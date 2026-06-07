@@ -63,6 +63,7 @@ type field struct {
 // Model is the appolicy Bubble Tea model.
 type Model struct {
 	store                     policyeditor.Store
+	target                    policyeditor.Target
 	policy                    *policy.StoredConfig
 	baseline                  []byte
 	dataDir                   string
@@ -175,17 +176,27 @@ const routeEditAssetColumnCount = 3
 const policyFieldLabelWidth = 36
 const policyFieldValueWidth = 34
 
-// New returns an appolicy model initialized with a verified stored policy.
+// New returns an appolicy model initialized with a verified signer policy.
 func New(store policyeditor.Store, stored *policy.StoredConfig, dataDir, identityID string) Model {
-	cp, baseline, err := cloneStored(stored)
+	return NewWithTarget(store, stored, dataDir, identityID, policyeditor.TargetSigner)
+}
+
+// NewWithTarget returns an appolicy model initialized with a verified stored
+// policy document for the selected domain.
+func NewWithTarget(store policyeditor.Store, stored *policy.StoredConfig, dataDir, identityID string, target policyeditor.Target) Model {
+	if target == "" || target == policyeditor.TargetAuto {
+		target = policyeditor.TargetSigner
+	}
+	cp, baseline, err := cloneStoredForTarget(stored, target)
 	m := Model{
 		store:      store,
+		target:     target,
 		policy:     cp,
 		baseline:   baseline,
 		dataDir:    dataDir,
 		identityID: identityID,
-		status:     "loaded verified policy",
-		fields:     policyFields(),
+		status:     fmt.Sprintf("loaded verified %s", target.StatusNoun()),
+		fields:     policyFieldsForTarget(target),
 	}
 	if err != nil {
 		m.err = err.Error()
@@ -257,7 +268,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.baseline = msg.baseline
 		m.err = ""
-		m.status = "applied policy.yaml and policy.yaml.hmac"
+		m.status = fmt.Sprintf("applied %s and %s", m.target.DocumentName(), m.target.SidecarName())
 		if m.quitAfterApply {
 			return m, tea.Quit
 		}
@@ -272,7 +283,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = m.previousScreen
 		m.writePath = ""
 		m.err = ""
-		m.status = fmt.Sprintf("wrote policy draft to %s", msg.path)
+		m.status = fmt.Sprintf("wrote %s draft to %s", m.target.StatusNoun(), msg.path)
 		return m, nil
 	case validateResultMsg:
 		m.busy = false
@@ -282,7 +293,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = ""
-		m.status = "policy validates"
+		m.status = fmt.Sprintf("%s validates", m.target.StatusNoun())
 		return m, nil
 	case routeApplyResultMsg:
 		if msg.token != m.formApplyToken {
@@ -364,7 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.policy = &policy.StoredConfig{}
 		}
 		if m.policy.TransferPolicy == nil {
-			m.policy.TransferPolicy = defaultBlockedDestinationsTransferPolicy()
+			m.policy.TransferPolicy = m.defaultBlockedDestinationsTransferPolicy()
 		}
 		m.policy.TransferPolicy.BlockedDestinations = append([]string(nil), msg.destinations...)
 		m.screen = screenRoutes
@@ -478,7 +489,7 @@ func (m Model) handleRouteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.requestQuit()
 	case "esc", "backspace":
 		m.screen = screenHome
-		m.status = "policy fields"
+		m.status = fmt.Sprintf("%s fields", strings.ToLower(m.target.Label()))
 		m.err = ""
 		return m, nil
 	}
@@ -1285,7 +1296,7 @@ func (m Model) openWriteFile() (tea.Model, tea.Cmd) {
 	m.previousScreen = m.screen
 	m.screen = screenWriteFile
 	m.writePath = ""
-	m.status = "write policy draft"
+	m.status = fmt.Sprintf("write %s draft", m.target.StatusNoun())
 	m.err = ""
 	return m, nil
 }
@@ -1349,13 +1360,15 @@ func (m Model) bodyView() string {
 	if m.modified() {
 		state = "modified"
 	}
-	b.WriteString(titleStyle.Render("APlane Policy"))
+	b.WriteString(titleStyle.Render("APlane " + m.target.Label()))
 	b.WriteString("\n")
-	b.WriteString(subtitleStyle.Render("offline signer policy editor"))
+	b.WriteString(subtitleStyle.Render("offline " + m.target.StatusNoun() + " editor"))
 	b.WriteString("\n\n")
 	b.WriteString(metadataStyle.Render(fmt.Sprintf("store: %s", m.dataDir)))
 	b.WriteString("\n")
 	b.WriteString(metadataStyle.Render(fmt.Sprintf("identity: %s", m.identityID)))
+	b.WriteString("\n")
+	b.WriteString(metadataStyle.Render(fmt.Sprintf("document: %s", m.target.DocumentName())))
 	b.WriteString("\n")
 	b.WriteString(metadataStyle.Render("state: "))
 	b.WriteString(stateStyle(state).Render(state))
@@ -1654,8 +1667,8 @@ func (m Model) appChromeLines() int {
 	// panelStyle adds one border line and one padding line at both top and bottom.
 	const panelBorderAndPadding = 4
 	// Header before screen content: title, subtitle, spacer, store, identity,
-	// state, and spacer before the active screen.
-	lines := 7 + panelBorderAndPadding
+	// document, state, and spacer before the active screen.
+	lines := 8 + panelBorderAndPadding
 	if m.status != "" {
 		lines++
 	}
@@ -1738,7 +1751,7 @@ func (m Model) applyPassphraseView() string {
 	var b strings.Builder
 	b.WriteString(sectionStyle.Render("Apply To Production"))
 	b.WriteString("\n\n")
-	b.WriteString(descriptionStyle.Render("Enter the signer store passphrase to write policy.yaml and a fresh sidecar."))
+	b.WriteString(descriptionStyle.Render(fmt.Sprintf("Enter the signer store passphrase to write %s and a fresh sidecar.", m.target.DocumentName())))
 	b.WriteString("\n\n")
 	b.WriteString(inputActiveStyle.Render(fixedWidthFieldLine(value, m.routeTextInputWidth())))
 	b.WriteString("\n\n")
@@ -1748,9 +1761,9 @@ func (m Model) applyPassphraseView() string {
 
 func (m Model) writeFileView() string {
 	var b strings.Builder
-	b.WriteString(sectionStyle.Render("Write Policy Draft"))
+	b.WriteString(sectionStyle.Render("Write " + m.target.Label() + " Draft"))
 	b.WriteString("\n\n")
-	b.WriteString(descriptionStyle.Render("Write the current in-memory policy draft to a YAML file without applying it to the signer store."))
+	b.WriteString(descriptionStyle.Render(fmt.Sprintf("Write the current in-memory %s draft to a YAML file without applying it to the signer store.", m.target.StatusNoun())))
 	b.WriteString("\n\n")
 	b.WriteString(inputActiveStyle.Render(fixedWidthFieldLine(m.writePathDisplayValue(), m.routeTextInputWidth())))
 	b.WriteString("\n\n")
@@ -2297,7 +2310,7 @@ func stateStyle(state string) lipgloss.Style {
 }
 
 func (m Model) applyProduction() (tea.Model, tea.Cmd) {
-	cp, baseline, err := cloneStored(m.policy)
+	cp, baseline, err := m.cloneStored(m.policy)
 	if err != nil {
 		m.err = err.Error()
 		m.status = "cannot apply"
@@ -2307,7 +2320,7 @@ func (m Model) applyProduction() (tea.Model, tea.Cmd) {
 		return m.openApplyPassphrase()
 	}
 	m.busy = true
-	m.status = "applying policy"
+	m.status = fmt.Sprintf("applying %s", m.target.StatusNoun())
 	m.err = ""
 	return m, func() tea.Msg {
 		if err := m.store.Save(context.Background(), cp); err != nil {
@@ -2324,14 +2337,14 @@ func (m Model) writeDraftFile() (tea.Model, tea.Cmd) {
 		m.status = "write failed"
 		return m, nil
 	}
-	data, err := marshalStored(m.policy)
+	data, err := m.marshalStored(m.policy)
 	if err != nil {
 		m.err = err.Error()
 		m.status = "write failed"
 		return m, nil
 	}
 	m.busy = true
-	m.status = "writing policy draft"
+	m.status = fmt.Sprintf("writing %s draft", m.target.StatusNoun())
 	m.err = ""
 	return m, func() tea.Msg {
 		if err := os.WriteFile(path, data, 0o600); err != nil {
@@ -2342,14 +2355,14 @@ func (m Model) writeDraftFile() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) validate() (tea.Model, tea.Cmd) {
-	cp, _, err := cloneStored(m.policy)
+	cp, _, err := m.cloneStored(m.policy)
 	if err != nil {
 		m.err = err.Error()
 		m.status = "cannot validate"
 		return m, nil
 	}
 	m.busy = true
-	m.status = "validating policy"
+	m.status = fmt.Sprintf("validating %s", m.target.StatusNoun())
 	m.err = ""
 	return m, func() tea.Msg {
 		return validateResultMsg{err: m.store.Validate(context.Background(), cp)}
@@ -2382,7 +2395,7 @@ func friendlyPolicyError(err error) string {
 }
 
 func (m Model) modified() bool {
-	current, err := marshalStored(m.policy)
+	current, err := m.marshalStored(m.policy)
 	if err != nil {
 		return true
 	}
@@ -2390,6 +2403,17 @@ func (m Model) modified() bool {
 }
 
 func policyFields() []field {
+	return policyFieldsForTarget(policyeditor.TargetSigner)
+}
+
+func policyFieldsForTarget(target policyeditor.Target) []field {
+	if target == policyeditor.TargetAttestation {
+		return attestationPolicyFields()
+	}
+	return signerPolicyFields()
+}
+
+func signerPolicyFields() []field {
 	return []field{
 		boolField("reject_foreign_rekey", "Reject foreign rekey", true, func(c *policy.StoredConfig) **bool {
 			return &c.RejectForeignRekey
@@ -2408,6 +2432,52 @@ func policyFields() []field {
 		}),
 		boolField("auto_approve_self_noop_transfer", "Auto-approve self no-op transfer", false, func(c *policy.StoredConfig) **bool {
 			return &c.AutoApproveSelfNoOpTransfer
+		}),
+		{
+			key:   "max_fee_microalgos",
+			label: "Max fee microAlgos",
+			kind:  fieldReadonly,
+			value: func(c *policy.StoredConfig) string {
+				if c == nil || c.MaxFeeMicroAlgos == nil {
+					return "0 (no limit)"
+				}
+				return fmt.Sprintf("%d", *c.MaxFeeMicroAlgos)
+			},
+			source: func(c *policy.StoredConfig) string {
+				if c == nil || c.MaxFeeMicroAlgos == nil {
+					return "default"
+				}
+				return "explicit"
+			},
+		},
+		{
+			key:   "transfer_policy",
+			label: "Transfer routing",
+			kind:  fieldReadonly,
+			value: transferPolicySummary,
+			source: func(c *policy.StoredConfig) string {
+				if c == nil || c.TransferPolicy == nil {
+					return "absent"
+				}
+				return "explicit"
+			},
+		},
+	}
+}
+
+func attestationPolicyFields() []field {
+	return []field{
+		boolField("reject_rekey", "Reject rekey", true, func(c *policy.StoredConfig) **bool {
+			return &c.RejectRekey
+		}),
+		boolField("reject_close_remainder", "Reject close remainder", false, func(c *policy.StoredConfig) **bool {
+			return &c.RejectCloseRemainder
+		}),
+		boolField("reject_asset_close", "Reject asset close", false, func(c *policy.StoredConfig) **bool {
+			return &c.RejectAssetClose
+		}),
+		boolField("reject_clawback", "Reject clawback", false, func(c *policy.StoredConfig) **bool {
+			return &c.RejectClawback
 		}),
 		{
 			key:   "max_fee_microalgos",
@@ -2486,7 +2556,7 @@ func (m Model) transferPolicyYAML() string {
 	if m.policy == nil || m.policy.TransferPolicy == nil {
 		return "transfer_policy: null\n"
 	}
-	data, err := policy.MarshalStoredConfig(&policy.StoredConfig{
+	data, err := m.target.Marshal(&policy.StoredConfig{
 		TransferPolicy: cloneTransferPolicy(m.policy.TransferPolicy),
 	})
 	if err != nil {
@@ -3020,7 +3090,7 @@ func cloneStringSliceMap(in map[string][]string) map[string][]string {
 }
 
 func (m Model) policyWithTransferSettings(tp *policy.StoredTransferPolicy) (*policy.StoredConfig, error) {
-	draft, _, err := cloneStored(m.policy)
+	draft, _, err := m.cloneStored(m.policy)
 	if err != nil {
 		return nil, err
 	}
@@ -3029,20 +3099,23 @@ func (m Model) policyWithTransferSettings(tp *policy.StoredTransferPolicy) (*pol
 }
 
 func (m Model) policyWithBlockedDestinations(destinations []string) (*policy.StoredConfig, error) {
-	draft, _, err := cloneStored(m.policy)
+	draft, _, err := m.cloneStored(m.policy)
 	if err != nil {
 		return nil, err
 	}
 	if draft.TransferPolicy == nil {
-		draft.TransferPolicy = defaultBlockedDestinationsTransferPolicy()
+		draft.TransferPolicy = m.defaultBlockedDestinationsTransferPolicy()
 	}
 	draft.TransferPolicy.BlockedDestinations = append([]string(nil), destinations...)
 	return draft, nil
 }
 
-func defaultBlockedDestinationsTransferPolicy() *policy.StoredTransferPolicy {
+func (m Model) defaultBlockedDestinationsTransferPolicy() *policy.StoredTransferPolicy {
 	enabled := true
-	onNoRoute := string(policy.TransferOnNoRouteOperatorDefault)
+	onNoRoute := string(policy.TransferOnNoRouteReject)
+	if m.target == policyeditor.TargetSigner {
+		onNoRoute = string(policy.TransferOnNoRouteOperatorDefault)
+	}
 	closeOnNoRoute := string(policy.TransferOnNoRouteReject)
 	clawbackOnNoRoute := string(policy.TransferOnNoRouteReject)
 	return &policy.StoredTransferPolicy{
@@ -3056,7 +3129,7 @@ func defaultBlockedDestinationsTransferPolicy() *policy.StoredTransferPolicy {
 }
 
 func (m Model) policyWithEditedAssetSet(oldName, name string, set policy.StoredAssetSet) (*policy.StoredConfig, error) {
-	draft, _, err := cloneStored(m.policy)
+	draft, _, err := m.cloneStored(m.policy)
 	if err != nil {
 		return nil, err
 	}
@@ -3085,7 +3158,7 @@ func (m Model) policyWithEditedAssetSet(oldName, name string, set policy.StoredA
 }
 
 func (m Model) policyWithDeletedAssetSet(name string) (*policy.StoredConfig, error) {
-	draft, _, err := cloneStored(m.policy)
+	draft, _, err := m.cloneStored(m.policy)
 	if err != nil {
 		return nil, err
 	}
@@ -4030,7 +4103,7 @@ func (m Model) routeIDSetExcludingEditedGroup() map[string]struct{} {
 }
 
 func (m Model) policyWithEditedGuardGroup(routes []policy.StoredTransferRoute) (*policy.StoredConfig, error) {
-	draft, _, err := cloneStored(m.policy)
+	draft, _, err := m.cloneStored(m.policy)
 	if err != nil {
 		return nil, err
 	}
@@ -4414,22 +4487,34 @@ func joinAssetTerms(terms []policy.StoredAssetTerm) string {
 	return strings.Join(raw, ",")
 }
 
-func cloneStored(stored *policy.StoredConfig) (*policy.StoredConfig, []byte, error) {
-	data, err := marshalStored(stored)
+func (m Model) cloneStored(stored *policy.StoredConfig) (*policy.StoredConfig, []byte, error) {
+	return cloneStoredForTarget(stored, m.target)
+}
+
+func cloneStoredForTarget(stored *policy.StoredConfig, target policyeditor.Target) (*policy.StoredConfig, []byte, error) {
+	data, err := marshalStoredForTarget(stored, target)
 	if err != nil {
 		return nil, nil, err
 	}
-	cp, err := policy.ParseStoredConfig(data)
+	cp, err := target.Parse(data)
 	if err != nil {
 		return nil, nil, err
 	}
 	return cp, data, nil
 }
 
+func (m Model) marshalStored(stored *policy.StoredConfig) ([]byte, error) {
+	return marshalStoredForTarget(stored, m.target)
+}
+
 func marshalStored(stored *policy.StoredConfig) ([]byte, error) {
-	data, err := policy.MarshalStoredConfig(stored)
+	return marshalStoredForTarget(stored, policyeditor.TargetSigner)
+}
+
+func marshalStoredForTarget(stored *policy.StoredConfig, target policyeditor.Target) ([]byte, error) {
+	data, err := target.Marshal(stored)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal stored policy: %w", err)
+		return nil, fmt.Errorf("failed to marshal stored %s: %w", target.StatusNoun(), err)
 	}
 	return data, nil
 }
