@@ -14,43 +14,43 @@ import (
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 )
 
-func TestCmdAttestorImportPublicListShowRemove(t *testing.T) {
+func TestCmdSentryImportPublicListShowRemove(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
 		exportPath := filepath.Join(t.TempDir(), "sentry-public.json")
-		if err := os.WriteFile(exportPath, testAttestorExportJSON(t), 0o600); err != nil {
+		if err := os.WriteFile(exportPath, testSentryExportJSON(t), 0o600); err != nil {
 			t.Fatalf("WriteFile(export) error = %v", err)
 		}
 
-		if err := cmdAttestor([]string{"import-public", exportPath, "Lab-Att"}); err != nil {
-			t.Fatalf("cmdAttestor(import-public) error = %v", err)
+		if err := cmdSentry([]string{"import-public", exportPath, "Lab-Sentry"}); err != nil {
+			t.Fatalf("cmdSentry(import-public) error = %v", err)
 		}
 
 		listOut, err := withCapturedStdout(func() error {
-			return cmdAttestor([]string{"list"})
+			return cmdSentry([]string{"list"})
 		})
 		if err != nil {
-			t.Fatalf("cmdAttestor(list) error = %v", err)
+			t.Fatalf("cmdSentry(list) error = %v", err)
 		}
-		if !strings.Contains(listOut, "lab-att") || !strings.Contains(listOut, keytypes.AttestorComponentEd25519V1) {
+		if !strings.Contains(listOut, "lab-sentry") || !strings.Contains(listOut, keytypes.AttestorComponentEd25519V1) {
 			t.Fatalf("list output = %q, want imported sentry reference", listOut)
 		}
 
 		showOut, err := withCapturedStdout(func() error {
-			return cmdAttestor([]string{"show", "lab-att"})
+			return cmdSentry([]string{"show", "lab-sentry"})
 		})
 		if err != nil {
-			t.Fatalf("cmdAttestor(show) error = %v", err)
+			t.Fatalf("cmdSentry(show) error = %v", err)
 		}
 		var rec attrefs.Record
 		if err := json.Unmarshal([]byte(showOut), &rec); err != nil {
 			t.Fatalf("show output is not JSON: %v\n%s", err, showOut)
 		}
-		if rec.Name != "lab-att" {
-			t.Fatalf("show Name = %q, want lab-att", rec.Name)
+		if rec.Name != "lab-sentry" {
+			t.Fatalf("show Name = %q, want lab-sentry", rec.Name)
 		}
 
-		if err := cmdAttestor([]string{"remove", "lab-att"}); err != nil {
-			t.Fatalf("cmdAttestor(remove) error = %v", err)
+		if err := cmdSentry([]string{"remove", "lab-sentry"}); err != nil {
+			t.Fatalf("cmdSentry(remove) error = %v", err)
 		}
 		records, err := attrefs.List(keystorePaths(), productIdentityID())
 		if err != nil {
@@ -62,7 +62,7 @@ func TestCmdAttestorImportPublicListShowRemove(t *testing.T) {
 	})
 }
 
-func testAttestorExportJSON(t *testing.T) []byte {
+func testSentryExportJSON(t *testing.T) []byte {
 	t.Helper()
 	pub := make([]byte, 32)
 	for i := range pub {

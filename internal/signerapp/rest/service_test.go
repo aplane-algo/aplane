@@ -699,7 +699,7 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
-	if _, err := attrefs.Import(ir.KeyPaths(), ir.ID(), "lab-att", data); err != nil {
+	if _, err := attrefs.Import(ir.KeyPaths(), ir.ID(), "lab-sentry", data); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
@@ -727,8 +727,8 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 	if params[0].Name != attrefs.ParamSentryName || params[0].Type != "select" {
 		t.Fatalf("sentry param = %#v, want select sentry", params[0])
 	}
-	if !reflect.DeepEqual(params[0].Options, []string{"lab-att"}) || params[0].Default != "lab-att" {
-		t.Fatalf("sentry options/default = %#v/%q, want lab-att", params[0].Options, params[0].Default)
+	if !reflect.DeepEqual(params[0].Options, []string{"lab-sentry"}) || params[0].Default != "lab-sentry" {
+		t.Fatalf("sentry options/default = %#v/%q, want lab-sentry", params[0].Options, params[0].Default)
 	}
 }
 

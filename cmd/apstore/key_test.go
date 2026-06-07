@@ -18,13 +18,13 @@ import (
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 )
 
-func TestCmdAttestorExportPublicWritesEnvelopeFile(t *testing.T) {
+func TestCmdSentryExportPublicWritesEnvelopeFile(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		result, publicKeyHex := generateTestAttestorComponentKey(t, passphrase)
 		outputPath := filepath.Join(t.TempDir(), "sentry-public.json")
 
-		if err := cmdAttestor([]string{"export-public", result.Address, outputPath}); err != nil {
-			t.Fatalf("cmdAttestor(export-public) error = %v", err)
+		if err := cmdSentry([]string{"export-public", result.Address, outputPath}); err != nil {
+			t.Fatalf("cmdSentry(export-public) error = %v", err)
 		}
 
 		data, err := os.ReadFile(outputPath)
@@ -50,15 +50,15 @@ func TestCmdAttestorExportPublicWritesEnvelopeFile(t *testing.T) {
 	})
 }
 
-func TestCmdAttestorExportPublicStdoutIsJSONOnly(t *testing.T) {
+func TestCmdSentryExportPublicStdoutIsJSONOnly(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		result, _ := generateTestAttestorComponentKey(t, passphrase)
 
 		out, err := withCapturedStdout(func() error {
-			return cmdAttestor([]string{"export-public", result.Address})
+			return cmdSentry([]string{"export-public", result.Address})
 		})
 		if err != nil {
-			t.Fatalf("cmdAttestor(export-public stdout) error = %v", err)
+			t.Fatalf("cmdSentry(export-public stdout) error = %v", err)
 		}
 		if strings.Contains(out, "Enter store passphrase") {
 			t.Fatalf("stdout contains passphrase prompt: %q", out)
@@ -73,7 +73,7 @@ func TestCmdAttestorExportPublicStdoutIsJSONOnly(t *testing.T) {
 	})
 }
 
-func TestCmdAttestorExportPublicRequiresPublicSidecar(t *testing.T) {
+func TestCmdSentryExportPublicRequiresPublicSidecar(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		result, _ := generateTestAttestorComponentKey(t, passphrase)
 		path := apkeys.ComponentPublicMetadataPath(keystorePaths(), productIdentityID(), result.Address)
@@ -81,17 +81,17 @@ func TestCmdAttestorExportPublicRequiresPublicSidecar(t *testing.T) {
 			t.Fatalf("Remove(component public metadata) error = %v", err)
 		}
 
-		err := cmdAttestor([]string{"export-public", result.Address})
+		err := cmdSentry([]string{"export-public", result.Address})
 		if err == nil {
-			t.Fatal("cmdAttestor(export-public missing sidecar) error = nil, want missing metadata rejection")
+			t.Fatal("cmdSentry(export-public missing sidecar) error = nil, want missing metadata rejection")
 		}
 		if !strings.Contains(err.Error(), "component public metadata") {
-			t.Fatalf("cmdAttestor(export-public missing sidecar) error = %v, want metadata context", err)
+			t.Fatalf("cmdSentry(export-public missing sidecar) error = %v, want metadata context", err)
 		}
 	})
 }
 
-func TestCmdAttestorExportPublicRejectsSpendingKey(t *testing.T) {
+func TestCmdSentryExportPublicRejectsSpendingKey(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		masterKey := deriveTestMasterKey(t, passphrase)
 		defer crypto.ZeroBytes(masterKey)
@@ -101,13 +101,13 @@ func TestCmdAttestorExportPublicRejectsSpendingKey(t *testing.T) {
 			t.Fatalf("GenerateKey(ed25519) error = %v", err)
 		}
 		err = withTestStdin(string(passphrase)+"\n", func() error {
-			return cmdAttestor([]string{"export-public", result.Address})
+			return cmdSentry([]string{"export-public", result.Address})
 		})
 		if err == nil {
-			t.Fatal("cmdAttestor(export-public spending key) error = nil, want rejection")
+			t.Fatal("cmdSentry(export-public spending key) error = nil, want rejection")
 		}
 		if !strings.Contains(err.Error(), "invalid component key selector") {
-			t.Fatalf("cmdAttestor(export-public spending key) error = %v, want component selector rejection", err)
+			t.Fatalf("cmdSentry(export-public spending key) error = %v, want component selector rejection", err)
 		}
 	})
 }

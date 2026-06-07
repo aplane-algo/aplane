@@ -65,5 +65,5 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore keys list\n")
 	fmt.Fprintf(os.Stderr, "  apstore endpoint export --host 127.0.0.1 --out endpoint.json\n")
 	fmt.Fprintf(os.Stderr, "  apstore sentry export-public <component-selector> sentry-public.json\n")
-	fmt.Fprintf(os.Stderr, "  apstore sentry import-public sentry-public.json lab-att\n")
+	fmt.Fprintf(os.Stderr, "  apstore sentry import-public sentry-public.json lab-sentry\n")
 }

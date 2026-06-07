@@ -139,15 +139,15 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 			Name:    "sentry",
 			Label:   "Sentry",
 			Type:    "select",
-			Options: []string{"lab-att", "backup-att"},
-			Default: "lab-att",
+			Options: []string{"lab-sentry", "backup-sentry"},
+			Default: "lab-sentry",
 		}},
 	}})
 
 	m := Model{generateKeyType: 0}
 	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-sentry-ed25519.v1")
-	if got := m.genericLSigParams["sentry"]; got != "lab-att" {
-		t.Fatalf("default sentry = %q, want lab-att", got)
+	if got := m.genericLSigParams["sentry"]; got != "lab-sentry" {
+		t.Fatalf("default sentry = %q, want lab-sentry", got)
 	}
 
 	m.generateFocus = 0
@@ -156,14 +156,14 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 		t.Fatalf("cycle command = %v, want nil", cmd)
 	}
 	m = next.(Model)
-	if got := m.genericLSigParams["sentry"]; got != "backup-att" {
-		t.Fatalf("cycled sentry = %q, want backup-att", got)
+	if got := m.genericLSigParams["sentry"]; got != "backup-sentry" {
+		t.Fatalf("cycled sentry = %q, want backup-sentry", got)
 	}
 
 	next, _ = m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyLeft})
 	m = next.(Model)
-	if got := m.genericLSigParams["sentry"]; got != "lab-att" {
-		t.Fatalf("left-cycled sentry = %q, want lab-att", got)
+	if got := m.genericLSigParams["sentry"]; got != "lab-sentry" {
+		t.Fatalf("left-cycled sentry = %q, want lab-sentry", got)
 	}
 }
 

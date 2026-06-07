@@ -13,39 +13,39 @@ import (
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 )
 
-func cmdAttestor(args []string) error {
+func cmdSentry(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: apstore sentry <export-public|import-public|list|show|remove>")
 	}
 	switch args[0] {
 	case "export-public":
-		return cmdAttestorExportPublic(args[1:])
+		return cmdSentryExportPublic(args[1:])
 	case "import-public":
 		if len(args) != 3 {
 			return fmt.Errorf("usage: apstore sentry import-public <export-json> <name>")
 		}
-		return cmdAttestorImport(args[1], args[2])
+		return cmdSentryImport(args[1], args[2])
 	case "list":
 		if len(args) != 1 {
 			return fmt.Errorf("usage: apstore sentry list")
 		}
-		return cmdAttestorList()
+		return cmdSentryList()
 	case "show":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: apstore sentry show <name>")
 		}
-		return cmdAttestorShow(args[1])
+		return cmdSentryShow(args[1])
 	case "remove":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: apstore sentry remove <name>")
 		}
-		return cmdAttestorRemove(args[1])
+		return cmdSentryRemove(args[1])
 	default:
 		return fmt.Errorf("usage: apstore sentry <export-public|import-public|list|show|remove>")
 	}
 }
 
-func cmdAttestorExportPublic(args []string) error {
+func cmdSentryExportPublic(args []string) error {
 	if len(args) < 1 || len(args) > 2 {
 		return fmt.Errorf("usage: apstore sentry export-public <component-key> [output-json]")
 	}
@@ -82,7 +82,7 @@ func cmdAttestorExportPublic(args []string) error {
 	return nil
 }
 
-func cmdAttestorImport(path, name string) error {
+func cmdSentryImport(path, name string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("failed to read sentry public key export: %w", err)
@@ -95,7 +95,7 @@ func cmdAttestorImport(path, name string) error {
 	return nil
 }
 
-func cmdAttestorList() error {
+func cmdSentryList() error {
 	records, err := attrefs.List(keystorePaths(), productIdentityID())
 	if err != nil {
 		return err
@@ -111,7 +111,7 @@ func cmdAttestorList() error {
 	return nil
 }
 
-func cmdAttestorShow(name string) error {
+func cmdSentryShow(name string) error {
 	rec, ok, err := attrefs.Get(keystorePaths(), productIdentityID(), name)
 	if err != nil {
 		return err
@@ -128,7 +128,7 @@ func cmdAttestorShow(name string) error {
 	return err
 }
 
-func cmdAttestorRemove(name string) error {
+func cmdSentryRemove(name string) error {
 	removed, err := attrefs.Delete(keystorePaths(), productIdentityID(), name)
 	if err != nil {
 		return err

@@ -920,7 +920,7 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
 ```json
 {
   "schema": "aplane.sentry-public-key-ref.v1",
-  "name": "lab-att",
+  "name": "lab-sentry",
   "component_key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
   "key_type": "aplane.sentry-ed25519.v1",
   "public_key_encoding": "hex",

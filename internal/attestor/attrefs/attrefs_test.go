@@ -19,12 +19,12 @@ func TestImportGetListDelete(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	export := testExportJSON(t, keytypes.AttestorComponentEd25519V1, bytesOfLen(32, 0xab))
 
-	rec, err := Import(paths, "default", "Lab-Att", export)
+	rec, err := Import(paths, "default", "Lab-Sentry", export)
 	if err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
-	if rec.Name != "lab-att" {
-		t.Fatalf("Name = %q, want normalized lab-att", rec.Name)
+	if rec.Name != "lab-sentry" {
+		t.Fatalf("Name = %q, want normalized lab-sentry", rec.Name)
 	}
 	if rec.Schema != RecordSchema {
 		t.Fatalf("Schema = %q, want %q", rec.Schema, RecordSchema)
@@ -33,7 +33,7 @@ func TestImportGetListDelete(t *testing.T) {
 		t.Fatal("ImportedAt is empty")
 	}
 
-	got, ok, err := Get(paths, "default", "lab-att")
+	got, ok, err := Get(paths, "default", "lab-sentry")
 	if err != nil || !ok {
 		t.Fatalf("Get() = (%#v, %v, %v), want record", got, ok, err)
 	}
@@ -45,15 +45,15 @@ func TestImportGetListDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if len(list) != 1 || list[0].Name != "lab-att" {
-		t.Fatalf("List() = %#v, want one lab-att record", list)
+	if len(list) != 1 || list[0].Name != "lab-sentry" {
+		t.Fatalf("List() = %#v, want one lab-sentry record", list)
 	}
 
-	removed, err := Delete(paths, "default", "lab-att")
+	removed, err := Delete(paths, "default", "lab-sentry")
 	if err != nil || !removed {
 		t.Fatalf("Delete() = (%v, %v), want removed", removed, err)
 	}
-	_, ok, err = Get(paths, "default", "lab-att")
+	_, ok, err = Get(paths, "default", "lab-sentry")
 	if err != nil || ok {
 		t.Fatalf("Get(after delete) = (_, %v, %v), want absent", ok, err)
 	}
@@ -80,12 +80,12 @@ func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(32, 0xab)
-	if _, err := Import(paths, "default", "lab-att", testExportJSON(t, keytypes.AttestorComponentEd25519V1, pub)); err != nil {
+	if _, err := Import(paths, "default", "lab-sentry", testExportJSON(t, keytypes.AttestorComponentEd25519V1, pub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 
 	resolved, err := ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
-		ParamSentryName: "lab-att",
+		ParamSentryName: "lab-sentry",
 	})
 	if err != nil {
 		t.Fatalf("ResolveCreationParams() error = %v", err)
@@ -100,7 +100,7 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 
 func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 	_, err := ResolveCreationParams(storepaths.NewPaths(t.TempDir()), "default", keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
-		ParamSentryName:                   "lab-att",
+		ParamSentryName:                   "lab-sentry",
 		keytypes.ParameterSentryPublicKey: strings.Repeat("ab", 32),
 	})
 	if err == nil {

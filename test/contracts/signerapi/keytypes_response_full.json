@@ -81,10 +81,10 @@
           "type": "select",
           "required": true,
           "options": [
-            "lab-att",
-            "backup-att"
+            "lab-sentry",
+            "backup-sentry"
           ],
-          "default": "lab-att"
+          "default": "lab-sentry"
         }
       ],
       "runtime_args": [

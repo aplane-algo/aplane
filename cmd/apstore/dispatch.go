@@ -93,7 +93,7 @@ func dispatchApstoreCommand(args []string) {
 		}
 
 	case "sentry":
-		if err := cmdAttestor(args[1:]); err != nil {
+		if err := cmdSentry(args[1:]); err != nil {
 			exitWithError(err)
 		}
 
