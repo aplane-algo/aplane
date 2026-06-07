@@ -82,7 +82,7 @@ func LoadVerifiedWithStored(dataDir, identityID string, serverCfg *apconfig.Serv
 
 // LoadVerifiedSentryWithStored loads policy.yaml for a sentry node only
 // after verifying its integrity sidecar with the identity master key, then
-// returns both the stored policy snapshot and the applied runtime attestor
+// returns both the stored policy snapshot and the applied runtime sentry
 // policy.
 func LoadVerifiedSentryWithStored(dataDir, identityID string, serverCfg *apconfig.ServerConfig, masterKey []byte) (*policy.StoredConfig, *policy.Config, error) {
 	stored, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataDir, identityID, masterKey)

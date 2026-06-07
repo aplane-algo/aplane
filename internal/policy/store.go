@@ -27,7 +27,7 @@ func LoadVerifiedStoredConfig(dataRoot, identityID string, key []byte) (*StoredC
 }
 
 // LoadVerifiedSentryConfig reads policy.yaml for a sentry node, verifies
-// policy.yaml.hmac against the document bytes, then parses the stored attestor
+// policy.yaml.hmac against the document bytes, then parses the stored sentry
 // policy.
 func LoadVerifiedSentryConfig(dataRoot, identityID string, key []byte) (*StoredConfig, error) {
 	return loadVerifiedStoredConfigAtPath(

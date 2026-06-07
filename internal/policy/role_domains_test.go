@@ -68,7 +68,7 @@ func TestStoredConfigApplySentryRole(t *testing.T) {
 			SchemaVersion: 1,
 			Enabled:       &enabled,
 			Routes: []StoredTransferRoute{{
-				ID:           "attestor_route",
+				ID:           "sentry_route",
 				Networks:     []string{"testnet"},
 				Sources:      []string{"*"},
 				Assets:       []StoredAssetTerm{{Raw: "algo"}},

@@ -15,9 +15,9 @@ func TestComponentMessageSeparatesRoles(t *testing.T) {
 	}
 
 	user := ComponentMessage(RoleUser, txid)
-	attestor := ComponentMessage(RoleSentry, txid)
-	if user == attestor {
-		t.Fatal("user and attestor component messages are identical")
+	sentry := ComponentMessage(RoleSentry, txid)
+	if user == sentry {
+		t.Fatal("user and sentry component messages are identical")
 	}
 }
 

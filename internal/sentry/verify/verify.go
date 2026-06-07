@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package verify contains pure attestor signature and group verification
+// Package verify contains pure sentry signature and group verification
 // helpers. It does not depend on HTTP, signer runtime, approval, or keystore
 // packages.
 package verify

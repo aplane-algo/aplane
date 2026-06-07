@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package message constructs the role-separated messages signed by attestor
+// Package message constructs the role-separated messages signed by sentry
 // MVP component keys.
 package message
 

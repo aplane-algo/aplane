@@ -19,12 +19,12 @@ var ErrNodeRoleConflict = errors.New("node role inventory conflict")
 // NodeRoleAllowsKeyType reports whether the single-purpose node role permits
 // keyType to exist in the identity's key inventory.
 func NodeRoleAllowsKeyType(role noderole.Role, keyType string) bool {
-	isAttestorComponent := keytypes.IsSentryComponentKeyType(keyType)
+	isSentryComponent := keytypes.IsSentryComponentKeyType(keyType)
 	switch role {
 	case noderole.RoleSigner:
-		return !isAttestorComponent
+		return !isSentryComponent
 	case noderole.RoleSentry:
-		return isAttestorComponent
+		return isSentryComponent
 	default:
 		return false
 	}

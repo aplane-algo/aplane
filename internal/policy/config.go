@@ -394,7 +394,7 @@ func (c *Config) ForKey(key string) *Config {
 }
 
 // NormalizeKeyOverrideKey validates and canonicalizes a policy key_overrides
-// selector. Signing-account selectors are Algorand addresses. Attestor
+// selector. Signing-account selectors are Algorand addresses. Sentry
 // component-key selectors are txid-shaped component selectors.
 func NormalizeKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
@@ -414,8 +414,8 @@ func NormalizeKeyOverrideKey(key string) (string, error) {
 	return addr.String(), nil
 }
 
-// NormalizeSentryKeyOverrideKey validates and canonicalizes an attestor
-// policy key_overrides selector. Attestor overrides are always keyed by
+// NormalizeSentryKeyOverrideKey validates and canonicalizes a sentry
+// policy key_overrides selector. Sentry overrides are always keyed by
 // sentry component-key selector, not spending-account address.
 func NormalizeSentryKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
@@ -550,7 +550,7 @@ func PolicyPath(dataRoot, identityID string) string {
 
 // SentryPath returns the path to the policy file used by sentry nodes.
 // Single-mode nodes store the active role policy in policy.yaml; this helper is
-// retained so sentry-domain callers can keep using the attestor parser and
+// retained so sentry-domain callers can keep using the sentry parser and
 // validator without carrying a separate filename.
 func SentryPath(dataRoot, identityID string) string {
 	return PolicyPath(dataRoot, identityID)
@@ -690,7 +690,7 @@ func (c *StoredConfig) ApplySigning(defaults *Config) (*Config, error) {
 	return effective, nil
 }
 
-// ApplySentry overlays attestor-node policy.yaml values onto sentry
+// ApplySentry overlays sentry-node policy.yaml values onto sentry
 // defaults and returns the effective sentry component policy. The document is
 // direct: no sentry: wrapper is used.
 func (c *StoredConfig) ApplySentry(defaults *Config) (*Config, error) {
