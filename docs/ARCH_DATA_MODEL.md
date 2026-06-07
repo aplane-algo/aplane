@@ -128,8 +128,9 @@ DTOs and contract fixtures.
 | Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and attestor connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
 | Endpoint-published attestors | Client data dir | `endpoints.yaml` `published_attestors` | derived `Config.AttestorEndpoints` map keyed by embedded public key hex | attested send orchestration | `internal/config`, `internal/apshellapp`, `internal/engine` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/config.ServerConfig` snapshot | Admin settings subset | `internal/config`, `cmd/apsigner` |
+| Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/<identity>/node.yaml.hmac` | single-purpose signer/attestor role gate | `/status`, service dispatch, key generation/restore gating | signer startup, identity load, keyadmin, restore, signing dispatch |
 | Signing identity | Signer identity | `identities/<identity>/` | `identity.Runtime` | HTTP identity routing, admin session target | `internal/signerapp/identity` |
-| Identity config | Signer identity | `identities/<identity>/config.yaml` | `identity.EffectiveConfig`, including identity mode | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
+| Identity config | Signer identity | `identities/<identity>/config.yaml` | `identity.EffectiveConfig`, excluding key-class role | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
 | Unlock config | Signer identity | `identities/<identity>/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/identity`, `cmd/appass` |
 | Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
 | Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
@@ -672,22 +673,26 @@ projections of shell application results, not a separate backend model.
 ### Signer Startup
 
 1. Load server config.
-2. Discover identity directories.
-3. Skip decommissioned identities.
-4. Build an `identity.Runtime` per live identity.
-5. Start locked, unlock headlessly, or unlock through admin depending on mode.
+2. Load root node role from `node.yaml`.
+3. Discover identity directories.
+4. Skip decommissioned identities.
+5. Build an `identity.Runtime` per live identity.
+6. Start locked, unlock headlessly, or unlock through admin depending on
+   passphrase startup configuration.
 
 ### Unlock And Reload
 
 1. Verify passphrase against `.keystore`.
 2. Derive master key.
-3. Verify and load policy.
-4. Verify and load attestation policy.
-5. Register installed templates.
-6. Scan key files.
-7. Replace key indexes.
-8. Activate key session.
-9. Publish status/keyset notifications.
+3. Verify root `node.yaml` against the identity's role HMAC sidecar.
+4. Verify and load policy.
+5. Verify and load attestation policy.
+6. Apply node role gates.
+7. Register installed templates.
+8. Scan key files.
+9. Replace key indexes.
+10. Activate key session.
+11. Publish status/keyset notifications.
 
 Template registration precedes key scan so generation/discovery state is
 current. Existing key signing still depends on key files.

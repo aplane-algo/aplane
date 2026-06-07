@@ -297,11 +297,14 @@ Validation:
 - `approval_wait` must parse as a positive Go duration between 30 seconds and
   30 minutes. The default is `60s`. Identity config may override the process
   default for that identity.
-- identity `mode`, when present, must be one of `signing`, `attestation`, or
-  `dual`. Omitted mode defaults to `signing`. Managed key generation,
-  mnemonic import, and signer key reload reject key classes disallowed by the
-  effective identity mode; out-of-band restore or hand-placed key files are
-  not usable until reload accepts the resulting inventory.
+- initialized signer data roots must contain root `node.yaml` with role
+  `signer` or `attestor`. New initialization defaults to `signer` unless an
+  attestor node is explicitly requested. Identity config `mode` is an
+  unsupported pre-release field and is rejected.
+- node role gates key generation, mnemonic import, restore, signer key reload,
+  and signing service dispatch. Hand-placed key files or restored keys from the
+  forbidden role are not usable; role-conflicting active inventory fails closed
+  for the node.
 - `require_memory_protection:true` requires disabled core dumps and successful memory locking
 
 Built-in Algorand genesis-hash mappings are source-defined:
@@ -327,8 +330,8 @@ Operational rules:
   `approval_wait`, and `theme`
 - runtime reads that need configuration should use snapshots or narrow accessors rather than holding mutable `ServerConfig` pointers
 - identity-owned settings and policy writes are serialized by the target identity's mutation lock
-- managed identity mode tightening is refused while the active key inventory
-  contains key classes disallowed by the requested target mode
+- node role is immutable in supported tools; create a separate signer data root
+  for the other role
 
 ### LocalNet Setup Utility
 
@@ -411,6 +414,7 @@ config/plugin/env files).
 ```text
 <data_dir>/
   config.yaml
+  node.yaml
   audit.log
   .apstore.lock
   cache/
@@ -424,6 +428,7 @@ config/plugin/env files).
   identities/<identity>/
     keys/*.key
     .keystore
+    node.yaml.hmac
     aplane.token
     config.yaml
     policy.yaml
@@ -1627,6 +1632,9 @@ Managed archive packaging:
 - the archive contains `README.md`, `apb/*.apb`, and policy snapshots at
   `policy/policy.yaml`, `policy/policy.yaml.hmac`,
   `policy/attestation.yaml`, and `policy/attestation.yaml.hmac`
+- managed archives include source node role metadata in the archive manifest
+  going forward. Restore validates payload key classes against the destination
+  node role; it does not change the destination role.
 - the tarball is packaging only; `.apb` remains the cryptographic backup unit
 - the archived policy sidecar is source-store provenance material only; restore
   does not install it as the destination sidecar
@@ -1703,6 +1711,9 @@ Restore:
   surfaced in restore `warnings[]`
 - library-visible compiled providers are activated for the identity when a key of that type is restored; this writes the normal
   `identities/<identity>/keytypes/<key_type>.json` state record and is idempotent
+- `apstore rebuild` restores an absent store using source node role metadata
+  when present. Archives without source role metadata are treated as
+  `signer`, and rebuild has no `--role` override.
 - a LogicSig key restore is rejected when the key payload has bytecode but is not a v1 signing-metadata key; templates are not
   consulted to reconstruct missing signing metadata
 - a generic LogicSig key restores from its key payload alone; a DSA LogicSig key restores when its stored `base_key_type` is

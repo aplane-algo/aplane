@@ -282,9 +282,11 @@ Writable admin settings:
 - `user_auto_approve` (`User Auto-Approve`; operator-default fallback approval switch)
 - `lock_on_disconnect`
 - `passphrase_timeout`
-- `mode` (`signing`, `attestation`, or `dual`; changing to a tighter mode is
-  rejected while conflicting key classes are loaded)
 - `theme`
+
+Node role is not a writable admin setting. It is initialized once in root
+`node.yaml`, integrity-bound to the store, and changed only by creating a
+separate signer data root.
 
 YAML-only runtime settings:
 

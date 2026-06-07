@@ -1,14 +1,14 @@
 # Key And Key Type Lifecycle
 
 > State model for signer key files, key type definitions, key type state
-> records, template provenance, and backup/restore behavior.
+> records, template provenance, node role, and backup/restore behavior.
 
 ## Contents
 
 - [Purpose](#purpose)
 - [Core Rule](#core-rule)
 - [Objects](#objects)
-- [Identity Mode Gate](#identity-mode-gate)
+- [Node Role Gate](#node-role-gate)
 - [Key Type Lifecycle](#key-type-lifecycle)
 - [Key File Lifecycle](#key-file-lifecycle)
 - [Backup And Restore Matrix](#backup-and-restore-matrix)
@@ -58,9 +58,11 @@ This separation is deliberate:
 |---|---|---|
 | Native key file | `identities/<identity>/keys/<address>.key` | Native signing authority. |
 | LogicSig key file | `identities/<identity>/keys/<address>.key` | LogicSig bytecode, salt, signing metadata, and any private DSA key material. |
-| Attestor component key file | `identities/<identity>/keys/<a_selector>.key` | Component-signing authority for `/sign/component`; not an Algorand spending account. |
-| Attestor public sidecar | `identities/<identity>/keys/<a_selector>.public.json` | Public export metadata for component keys. |
-| Identity mode | `identities/<identity>/config.yaml` `mode` | Key-class inventory and service-dispatch gate. |
+| Attestor component key file | `identities/<identity>/keys/<a_selector>.key` | Component-signing authority for attestor-role `/sign/component`; not an Algorand spending account. |
+| Attestor public sidecar | `identities/<identity>/keys/<a_selector>.public.json` | Public export metadata for local component keys. |
+| Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
+| Node role integrity sidecar | `identities/<identity>/node.yaml.hmac` | Per-identity HMAC over the exact root `node.yaml` bytes. |
+| Identity config | `identities/<identity>/config.yaml` | Identity-local runtime settings such as approval/lock timeouts and decommission state; it does not carry key-class role. |
 | Key type state record | `identities/<identity>/keytypes/<key_type>.json` | Identity-local discovery/generation state. |
 | Installed YAML template | `identities/<identity>/keytypes/<key_type>.template` | Encrypted generation source for that identity after reload. |
 | Deleted key archive | `identities/<identity>/deleted/keys/` | Removed key files; outside active scans. |
@@ -77,49 +79,61 @@ keys must regenerate the sidecar from the restored component key payload.
 Missing sidecars do not make a component key unable to sign, but they do block
 offline public export until regenerated or backfilled.
 
-## Identity Mode Gate
+`node.yaml` is plaintext so the process can report its role during early
+startup. That plaintext is only a hint until each initialized identity verifies
+its HMAC sidecar after unlock. The sidecar key is derived from that identity's
+master key, following the same tamper-detection model used by policy sidecars.
 
-Identity mode is an orthogonal key-class gate. It applies before ordinary key
-type state can make a key type usable for generation, and reload rejects a
-scanned key inventory that conflicts with the identity mode.
+## Node Role Gate
 
-| Mode | Stored value | Allowed active key classes | Disallowed active key classes |
+Node role is the single-purpose key-class gate for an apsigner data directory.
+It applies before ordinary key type state can make a key type usable for
+generation, and reload rejects active key inventory that conflicts with the
+node role.
+
+`<APSIGNER_DATA>/node.yaml` has this schema:
+
+```yaml
+schema_version: 1
+role: signer
+created_at: "2026-06-07T00:00:00Z"
+```
+
+Valid roles are exactly `signer` and `attestor`.
+
+| Node role | Allowed active key classes | Disallowed active key classes | Served signing paths |
 |---|---|---|---|
-| Signing | `mode: signing`, or omitted | Native signing keys, ordinary LogicSig keys, attested account keys. | Attestor component keys. |
-| Attestation | `mode: attestation` | Attestor component keys. | Native signing keys, ordinary LogicSig keys, attested account keys. |
-| Dual | `mode: dual` | Both account-signing and attestor component key classes. | None by class. |
+| `signer` | Native signing keys, ordinary LogicSig keys, attested account keys, and public attestor references used for generation. | Attestor component private keys. | Normal `/sign`, user-role `/sign/component`, `/sign/assemble`. |
+| `attestor` | Attestor component private keys and their public sidecars. | Native signing keys, ordinary LogicSig account keys, and attested account keys. | Attestor-role `/sign/component`. |
 
-Mode is not a trust proof and does not replace transaction policy or attestor
-policy. It is a local least-privilege and drift-protection gate:
+Rules:
 
-- key generation and mnemonic import reject key types forbidden by the identity
-  mode,
-- unlock/reload rejects scanned active keys forbidden by the identity mode,
-- account-signing endpoints reject `attestation` mode identities,
-- attestor-role component signing rejects `signing` mode identities,
-- user-role component signing and attested assembly reject `attestation` mode
-  identities.
+- every initialized signer data root has one root `node.yaml`,
+- new installs default to `role: signer` unless the initializer explicitly
+  creates an attestor node,
+- there is no `dual` role,
+- there is no supported role-change command,
+- identity-level `mode` is an unsupported pre-release shape and startup rejects
+  it rather than migrating it,
+- key generation, mnemonic import, restore, and out-of-band key scans must
+  reject key classes forbidden by the node role,
+- service endpoints reject role/use mismatches even if a forbidden key file is
+  present on disk.
 
-`dual` means both key classes are allowed by mode. It does not mean every
-composition of those keys is acceptable. The same-account self-attestation guard
-still forbids one identity from holding both an attested account key and the
-attestor component key embedded in that same account, outside explicitly marked
-local-development flows.
+A node may host multiple identities, but all identities inherit the same root
+node role. Role-conflicting key inventory anywhere in the data directory is a
+node-level store contradiction: startup/reload fails closed for the node rather
+than silently quarantining only one identity. This is a deliberate
+safety/availability tradeoff. A hand-placed conflicting `.key` can make the
+node unavailable until the operator removes it, while supported restore/import
+paths should preflight role before writing so this fail-closed path remains a
+backstop.
 
-Mode changes are guarded transitions:
-
-| Transition | Preconditions | Result |
-|---|---|---|
-| `signing` -> `dual` | Existing inventory is already valid in `signing` mode. | Attestor component keys may be added after the change. |
-| `attestation` -> `dual` | Existing inventory is already valid in `attestation` mode. | Account-signing keys may be added after the change. |
-| `dual` -> `signing` | No active attestor component keys exist. | Account-signing identity; attestor component keys remain forbidden. |
-| `dual` -> `attestation` | No active signing-class keys exist. | Attestor identity; account-signing keys remain forbidden. |
-| `signing` -> `attestation` | No active signing-class keys exist. | Equivalent to tightening to an attestor-only identity; the signer must not delete keys to make this true. |
-| `attestation` -> `signing` | No active attestor component keys exist. | Equivalent to tightening to a signer-only identity; the signer must not delete keys to make this true. |
-
-The signer must refuse a tightening mode change while contradictory active key
-files exist. It must not silently delete keys, and it must not silently ignore
-contradictory keys while claiming the tighter mode.
+Local development that needs both roles uses two complete data roots and two
+apsigner processes, for example `~/aplane-signer/` and `~/aplane-attestor/`.
+Running those two nodes on one host is useful for development and operations,
+but it is not independent attestation. Independence remains a deployment-domain
+property.
 
 ## Key Type Lifecycle
 
@@ -130,24 +144,24 @@ Can this identity discover this key type and generate new keys of this type?
 ```
 
 It does not answer whether an existing key file can sign, and it is still
-subject to the identity mode gate above.
+subject to the node role gate above.
 
 ### Key Type State Matrix
 
 | State | Durable representation | Discovery/generation | Existing-key signing | Normal transition |
 |---|---|---|---|---|
 | Unsupported by binary | No provider is registered in the current process. | No. | No, if signing needs that provider; native/DSA key types need registered support. | Install/run a binary that supports the key type. |
-| Mode-forbidden key type | The identity mode does not allow this key class. | No, even if the provider is default-enabled or activated. | No for active inventory; reload rejects mode-conflicting active keys. | Change mode only after active key inventory already matches the target mode, or remove conflicting keys first. |
-| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Examples include `ed25519` and `aplane.falcon1024.v1`. | Yes when allowed by identity mode. | Yes, if the key file is valid and allowed by identity mode. | None. |
-| Default-enabled attestor component key type | Raw component key generator/signing support is registered and cataloged as default-enabled. Examples are `aplane.attestor-ed25519.v1` and `aplane.attestor-falcon1024.v1`. | Yes in `attestation` or `dual`; no in `signing`. | Component-signing only, if the key file is valid and allowed by identity mode; never normal spending `/sign`. | None. |
-| Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and identity mode allows it. | Enable from KeyType Library or `apstore keytype enable`. |
-| Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by identity mode. | Yes, if the key file is valid and allowed by identity mode. | Disable, if no stored key uses it. |
-| Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and identity mode allows it. | Refresh with `apstore keytype enable <key_type>`. |
+| Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
+| Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Examples include `ed25519` and `aplane.falcon1024.v1`. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid. | None. |
+| Default-enabled attestor component key type | Raw component key generator/signing support is registered and cataloged as default-enabled. Examples are `aplane.attestor-ed25519.v1` and `aplane.attestor-falcon1024.v1`. | Yes on attestor nodes. | Component-signing only on attestor nodes; never normal spending `/sign`. | None. |
+| Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apstore keytype enable`. |
+| Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by node role. | Yes, if the key file is valid and allowed by node role. | Disable, if no stored key uses it. |
+| Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apstore keytype enable <key_type>`. |
 | Signer library YAML only | Plaintext YAML exists under `library/templates/`; no identity install exists. | No. | No effect on existing keys. | Install/import template into identity. |
-| YAML installed and enabled | Encrypted `.template` exists and state record has `source:"yaml_generic"` or `source:"yaml_composed"` plus `state:"enabled"`. | Yes after successful reload, when allowed by identity mode. | Existing keys sign from stored key metadata, not the template, when allowed by identity mode. | Disable or remove, if no stored key uses it. |
-| YAML installed and disabled | Encrypted `.template` exists and state record has `state:"disabled"`. | No. | Existing keys sign from stored key metadata, not the template, when allowed by identity mode. | Enable, remove, or explicit template restore may re-enable. |
-| YAML integrity or fingerprint mismatch | Encrypted `.template` does not match the state record fingerprint, cannot decrypt, or parses to incompatible metadata. | No; reload rejects that template. | Existing keys may still sign from stored key metadata if otherwise valid and allowed by identity mode. | Reinstall through supported template import/install path. |
-| YAML removed | State record is deleted and encrypted `.template` is moved to `deleted/keytypes/`. | No. | Existing keys may still sign from stored key metadata if otherwise valid and allowed by identity mode. | Reinstall/import template. |
+| YAML installed and enabled | Encrypted `.template` exists and state record has `source:"yaml_generic"` or `source:"yaml_composed"` plus `state:"enabled"`. | Yes after successful reload, when allowed by node role. | Existing keys sign from stored key metadata, not the template, when allowed by node role. | Disable or remove, if no stored key uses it. |
+| YAML installed and disabled | Encrypted `.template` exists and state record has `state:"disabled"`. | No. | Existing keys sign from stored key metadata, not the template, when allowed by node role. | Enable, remove, or explicit template restore may re-enable. |
+| YAML integrity or fingerprint mismatch | Encrypted `.template` does not match the state record fingerprint, cannot decrypt, or parses to incompatible metadata. | No; reload rejects that template. | Existing keys may still sign from stored key metadata if otherwise valid and allowed by node role. | Reinstall through supported template import/install path. |
+| YAML removed | State record is deleted and encrypted `.template` is moved to `deleted/keytypes/`. | No. | Existing keys may still sign from stored key metadata if otherwise valid and allowed by node role. | Reinstall/import template. |
 
 ### Key Type Transitions
 
@@ -159,13 +173,13 @@ subject to the identity mode gate above.
 | Disable YAML template | No active key file in the identity uses that key type. | Set state record to `disabled`, keep encrypted `.template`. | Template remains installed but hidden from generation. |
 | Enable YAML template | Encrypted `.template` and state record are valid. | Set state record to `enabled`, reload identity. | Template is visible for generation. |
 | Remove YAML template | No active key file in the identity uses that key type. | Delete state record and move `.template` to `deleted/keytypes/`. | Template leaves active scans. |
-| Binary upgrade with changed compiled fingerprint | Existing state record fingerprint no longer matches provider. | Reload ignores the conflicting activation. | Generation is hidden until re-activated; valid existing keys are not rewritten. |
-| Manual file edit or copy | Operator changes state/template files outside supported paths. | Reload validates and fails closed for invalid records/templates. | Repair through supported install/activate paths. |
+| Binary upgrade with changed compiled fingerprint | Existing state record fingerprint no longer matches provider. | Reload ignores the conflicting activation. | Generation is hidden until re-enabled; valid existing keys are not rewritten. |
+| Manual file edit or copy | Operator changes state/template files outside supported paths. | Reload validates and fails closed for invalid records/templates. | Repair through supported install/enable paths. |
 
-The unused-key guard on disable/remove/deactivate protects operators from
-accidentally hiding the normal generation source for a key type still in use.
-It is not a sign-time dependency rule; a valid existing key file remains the
-signing authority.
+The unused-key guard on disable/remove protects operators from accidentally
+hiding the normal generation source for a key type still in use. It is not a
+sign-time dependency rule; a valid existing key file remains the signing
+authority.
 
 ## Key File Lifecycle
 
@@ -175,8 +189,8 @@ Key file state answers this question:
 Can this stored key be loaded and used for the signing path it belongs to?
 ```
 
-Key files must also be allowed by the identity mode gate. A mode-conflicting
-active key is rejected during reload rather than published as a signable key.
+Key files must also be allowed by the node role gate. A role-conflicting active
+key is rejected during reload rather than published as a signable key.
 
 ### Key File State Matrix
 
@@ -187,32 +201,32 @@ active key is rejected during reload rather than published as a signable key.
 | Present but signer locked | Encrypted `.key` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted key files; restore requires authenticated/unlocked flow. |
 | Present, decrypts, canonical filename matches derived address/selector | Active `.key` basename matches derived address or component selector. | Candidate for signing after category-specific validation. | Backup and restore use canonical filenames. |
 | Misnamed key file | `.key` basename does not match the derived address/selector. | No; scanner rejects/skips it. | Restore writes the canonical filename when it elects to restore. |
-| Mode-forbidden key file | Key type is valid, but the active identity mode does not allow that key class. | No; reload rejects the inventory conflict. | Restore/generation should refuse until the identity mode allows that key class. |
+| Role-forbidden key file | Key type is valid, but the node role does not allow that key class. | No; reload rejects the inventory conflict. | Restore/generation should refuse unless the destination node role allows that key class. |
 | Unknown key type | Payload names a key type unsupported by the current binary. | No. | Restore fails for that key unless support exists. |
-| Native key valid | Native key payload has valid key material and canonical key type. | Yes on native signing paths. | Restores directly. |
-| DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
-| Generic LogicSig key valid | Payload has stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, and stored signing args. | Yes. | Restores from stored metadata; template is not required. |
-| Attestor component key valid | Payload category/type is an attestor component key and selector is canonical. | Only through component-signing role; normal `/sign` and spending paths reject it. | Restores as a component key, regenerating the public sidecar; never as a spending account. |
-| Attested account key valid | DSA LogicSig key whose bytecode embeds the attestor public key. | Only through attested orchestration: user component signature, attestor component signature, local assembly. | Restores from stored bytecode and metadata. |
+| Native key valid | Native key payload has valid key material and canonical key type. | Yes on signer nodes. | Restores directly onto signer nodes. |
+| DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
+| Generic LogicSig key valid | Payload has stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
+| Attestor component key valid | Payload category/type is an attestor component key and selector is canonical. | Only through attestor-role component signing on attestor nodes; normal `/sign` and spending paths reject it. | Restores as a component key on attestor nodes, regenerating the public sidecar; never as a spending account. |
+| Attested account key valid | DSA LogicSig key whose bytecode embeds the attestor public key. | Only on signer nodes through attested orchestration: user component signature, attestor component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig missing `salt_counter` | Payload has LogicSig bytecode but no salt counter. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore rejects instead of reconstructing from template. |
 | DSA key missing supported base provider | DSA LogicSig names a `base_key_type` not registered in the current binary. | No. | Restore fails for that key unless the base provider is supported. |
-| Template provenance unavailable | Key has no matching current template/provider fingerprint for comparison. | Yes, if key metadata is valid. | Warning/inventory note only. |
-| Template provenance conflict | Key's optional `template_fingerprint` differs from current local definition. | Yes, if key metadata is valid. | Warning/inventory note only. |
+| Template provenance unavailable | Key has no matching current template/provider fingerprint for comparison. | Yes, if key metadata is valid and node role allows it. | Warning/inventory note only. |
+| Template provenance conflict | Key's optional `template_fingerprint` differs from current local definition. | Yes, if key metadata is valid and node role allows it. | Warning/inventory note only. |
 
 ### Key File Transitions
 
 | Transition | Preconditions | Write or runtime action | Result |
 |---|---|---|---|
-| Generate key | Key type is discoverable/generatable and required parameters are valid. | Create encrypted canonical `.key`; LogicSig generation stores bytecode, salt, signing metadata, creation params, and optional template fingerprint. | Key becomes active after reload/scan. |
-| Import mnemonic | Provider explicitly supports mnemonic import. | Derive key material and write encrypted canonical `.key`. | Key becomes active after reload/scan. |
+| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create encrypted canonical `.key`; LogicSig generation stores bytecode, salt, signing metadata, creation params, and optional template fingerprint. | Key becomes active after reload/scan. |
+| Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write encrypted canonical `.key`. | Key becomes active after reload/scan. |
 | Delete key | Authenticated admin request selects active key. | Move `.key` to `deleted/keys/`. | Key leaves active scans. |
-| Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive. | Source key files remain unchanged. |
-| Restore preview | Managed archive and passphrase are valid. | Decrypt/inspect payloads without mutation. | Reports addresses, key types, conflicts, errors, and template requirements. |
-| Restore apply | Selected payload passes validation and no unhandled existing-key conflict remains. | Write canonical encrypted `.key`, optionally install/enable needed template or compiled state, then reload identity. | Key becomes active; per-key rollback undoes restore side effects if final key write fails. |
-| Unlock/reload | Master key is available. | Register enabled templates, scan key files, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics. |
-| Repair template provenance | Template/provider state is reinstalled or reactivated. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
+| Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
+| Restore preview | Managed archive and passphrase are valid. | Decrypt/inspect payloads without mutation and compare payload key classes to destination node role. | Reports addresses, key types, conflicts, errors, role mismatches, and template requirements. |
+| Restore apply | Selected payload passes validation, destination node role allows the key class, and no unhandled existing-key conflict remains. | Write canonical encrypted `.key`, optionally install/enable needed template or compiled state, then reload identity. | Key becomes active; per-key rollback undoes restore side effects if final key write fails. |
+| Unlock/reload | Master key is available. | Verify node role integrity, register enabled templates, scan key files, validate node inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
+| Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 
 ## Backup And Restore Matrix
 
@@ -220,11 +234,17 @@ This matrix describes restoring a key whose backup refers to a template-backed
 or library-visible key type. Native default-enabled keys follow the direct key
 restore path.
 
+Backup manifests carry the source node role going forward. Restore validates
+payload key classes against the destination node's role; it does not change the
+destination role. Rebuild uses source role metadata when present and defaults
+missing role metadata to `signer`, matching the new-install-only stance. There
+is no rebuild `--role` override.
+
 | Destination key type state | Key restore | Template/provider restore | Generation after restore |
 |---|---|---|---|
-| Identity mode forbids key class | Fails or is rejected before publishing active inventory. | No template/provider state should be installed for the forbidden class. | No until mode changes and inventory is reconciled. |
+| Destination node role forbids key class | Fails or is rejected before publishing active inventory. | No template/provider state should be installed for the forbidden class. | No on this node. |
 | Key type unsupported by binary | Fails if the key needs that provider or base provider. | Cannot install a runtime provider not supported by the binary. | No. |
-| Key type missing locally | Succeeds when the key payload has complete current-format signing metadata and any needed base provider is supported. | Bundled template may be installed only when no authoritative local source exists; library-visible compiled provider activation is created as needed. | Yes only if restore installs/enables a template or activates a compiled provider. |
+| Key type missing locally | Succeeds when the key payload has complete current-format signing metadata, any needed base provider is supported, and node role allows it. | Bundled template may be installed only when no authoritative local source exists; library-visible compiled provider activation is created as needed. | Yes only if restore installs/enables a template or activates a compiled provider. |
 | Key type imported/installed but disabled | Key restore does not require enabling the template to sign. | Explicit template restore or matching bundled template restore may re-enable it; key restore alone does not need to. | No unless explicitly enabled/re-enabled. |
 | Key type enabled and fingerprint consistent | Normal path. | Restore uses the local authoritative definition; identical bundled definitions are provenance only. | Yes. |
 | Key type enabled but fingerprint inconsistent | Key restore may still succeed from stored signing metadata; reload may ignore the bad activation/template. | Conflicting bundled template is skipped for key restore and surfaced as a warning; explicit template restore rejects conflicts. | No until repaired. |
@@ -246,48 +266,47 @@ Unlock/reload publishes a new runtime snapshot only after validation succeeds.
 The relevant order is:
 
 1. derive or reuse the identity master key,
-2. load and validate identity config, policy, and attestor policy,
-3. apply identity mode to key type discovery and service dispatch,
-4. register enabled compiled/YAML key type state,
-5. register enabled installed templates,
-6. scan active key files and validate the scanned inventory against mode,
-7. publish runtime key indexes and key type discovery data.
+2. load root `node.yaml` and verify the identity's `node.yaml.hmac`,
+3. load and validate identity config, policy, and attestor policy,
+4. apply node role to key type discovery and service dispatch,
+5. register enabled compiled/YAML key type state,
+6. register enabled installed templates,
+7. scan active key files and validate the scanned inventory against node role,
+8. publish runtime key indexes and key type discovery data.
 
 Reload failures fail closed. For policy/config failures, the previous in-memory
 snapshot remains active when one exists. Ordinary malformed, misnamed, or
 unsupported key/template artifacts may be excluded from new runtime indexes and
 surfaced as diagnostics rather than treated as signable authority.
 
-Mode-conflicting key inventory is not ordinary per-item invalidity. It is a
-store-level contradiction for that identity: reload must fail closed without
-publishing a new active key snapshot for the contradictory inventory. This is a
-deliberate safety/availability tradeoff. A hand-placed conflicting `.key` can
-brick the identity until the operator removes it, while supported restore/import
-paths should preflight mode before writing so this fail-closed path remains a
-backstop.
+Role-conflicting key inventory is not ordinary per-item invalidity. It is a
+node-level contradiction: reload must fail closed without publishing a new
+active key snapshot for the contradictory inventory.
 
 Disabled key type state affects discovery and generation. It does not remove
 already-valid key files from active key scans.
 
-Identity mode is stronger than disabled/enabled state: a mode-forbidden active
-key is not published as valid runtime inventory.
+Node role is stronger than disabled/enabled state: a role-forbidden active key
+is not published as valid runtime inventory.
 
 ## Transition Catalog
 
 | Operation | Key type state effect | Key file effect | Notes |
 |---|---|---|---|
-| Change identity mode | None directly; changes which key classes may be discovered/generated. | None; mode change is refused unless existing active key inventory already matches the target mode. | Never silently deletes or ignores conflicting keys. |
+| Initialize node role | Writes root `node.yaml`; each initialized identity writes a matching HMAC sidecar when its master key is available. | None. | Default role is `signer`; attestor role is explicit at initialization. |
+| Verify node role integrity | None. | None. | Required before unlock-dependent key scan, signing, generation, import, restore, or attestor component signing. |
 | `apstore keytype enable` | Writes/refreshes compiled enabled state, or enables an installed YAML template. | None. | Does not rewrite existing keys. |
 | `apstore keytype disable` | Deletes compiled state or disables an installed YAML template after the unused-key guard. | None. | Provider code and installed template files remain available to the store. |
 | `apstore template import` | Installs encrypted template and enabled state. | None. | Active after reload. |
 | `apstore template remove` | Deletes state and archives `.template` after unused-key guard. | None. | Removed template leaves active scans. |
-| Key generation | Requires discoverable/generatable key type allowed by identity mode. | Writes new encrypted key. | LogicSig key stores signing authority at creation time. |
+| Key generation | Requires discoverable/generatable key type allowed by node role. | Writes new encrypted key. | LogicSig key stores signing authority at creation time. |
 | Key deletion | None. | Archives active key file. | Archived keys are not signable. |
-| Backup create | None. | Reads selected active key files into encrypted backup payloads. | Source store unchanged. |
+| Backup create | Records source node role metadata in the managed archive manifest. | Reads selected active key files into encrypted backup payloads. | Source store unchanged. |
 | Backup import | None in active identity. | None in active identity. | Validates archive before publishing to managed backup locker. |
-| Restore preview | None. | None. | Decrypts and reports only. |
-| Restore apply | May install/enable required template or activate compiled provider when identity mode allows it. | Writes selected keys. | Per-key rollback on final write failure. |
-| Store passphrase change | Re-encrypts installed templates and keys. | Re-encrypts keys. | Authority and state are unchanged. |
+| Restore preview | None. | None. | Decrypts and reports only, including node-role mismatch diagnostics. |
+| Restore apply | May install/enable required template or activate compiled provider when node role allows it. | Writes selected keys. | Per-key rollback on final write failure. |
+| Rebuild absent store | Writes root `node.yaml` from source role metadata when present, otherwise `signer`. | Restores selected keys into a new identity store. | No `--role` override; destination starts from backup metadata. |
+| Store passphrase change | Re-encrypts installed templates and keys and rewrites role HMAC sidecars. | Re-encrypts keys. | Authority and state are unchanged. |
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
 | Sign request | None. | Reads already-loaded key metadata. | Key type discovery state is not a sign-time authorization gate. |
 
@@ -297,26 +316,28 @@ key is not published as valid runtime inventory.
 2. Key type state records are discovery/generation state, not signing authority.
 3. Templates are generation/provenance definitions, not reconstruction sources
    for missing signing metadata.
-4. Identity mode gates allowed key classes for generation, reload, and signing
-   endpoint dispatch.
-5. Disabled key types block new-key discovery/generation, not valid existing-key
-   signing.
-6. LogicSig keys must carry durable v1 signing metadata when signing/restore
+4. Node role gates allowed key classes for generation, reload, restore, and
+   signing endpoint dispatch.
+5. Node role is immutable in supported tools and tamper-resistant through
+   per-identity HMAC sidecars over root `node.yaml`.
+6. Role-conflicting active inventory anywhere in a signer data root fails the
+   whole node closed.
+7. Disabled key types block new-key discovery/generation, not valid
+   existing-key signing.
+8. LogicSig keys must carry durable v1 signing metadata when signing/restore
    would need it.
-7. LogicSig key bytecode must derive an off-curve LogicSig address.
-8. DSA LogicSig keys require their stored `base_key_type` provider to be
-   supported at sign time.
-9. Attestor component keys are component-signing keys, not spending accounts.
-10. Attestor component public sidecars are derived public metadata and must not
+9. LogicSig key bytecode must derive an off-curve LogicSig address.
+10. DSA LogicSig keys require their stored `base_key_type` provider to be
+    supported at sign time.
+11. Attestor component keys are component-signing keys, not spending accounts.
+12. Attestor component public sidecars are derived public metadata and must not
     be treated as independent signing authority.
-11. Attested account keys use the attested orchestration flow; normal `/sign`
-   rejects them.
-12. `dual` mode permits both key classes, but it does not waive the
-    same-account self-attestation guard.
-13. Backup restore is per-key and must not silently redefine an existing local
+13. Attested account keys use the attested orchestration flow; normal `/sign`
+    rejects them.
+14. Backup restore is per-key and must not silently redefine an existing local
     `key_type`.
-14. Template/provider fingerprint conflicts are generation/provenance problems,
-    not automatic invalidation of otherwise valid key files.
+15. Template/provider fingerprint conflicts are generation/provenance
+    problems, not automatic invalidation of otherwise valid key files.
 
 ## Source Of Truth
 
@@ -326,8 +347,8 @@ Primary implementation owners:
 - component public sidecars: `internal/keys/component_public_metadata.go`
 - encrypted key and template storage: `internal/keystore`,
   `internal/templatestore`
-- identity mode and key-class gates: `internal/signerapp/identity`,
-  `internal/signerapp/rest`
+- node role and key-class gates: signer startup/identity load, keyadmin,
+  restore, and signing dispatch paths
 - key type state records: `internal/keytypestate`
 - key type catalog: `internal/keytypecatalog`
 - LogicSig provider registry and template loading: `internal/lsigprovider`,

@@ -441,10 +441,25 @@ Identity-sensitive runtime settings are owned separately by `internal/signerapp/
 
 - `user_auto_approve`,
 - `lock_on_disconnect`,
-- `passphrase_timeout` (admin idle disconnect timeout),
-- `mode` (`signing`, `attestation`, or `dual`; defaults to `signing`).
+- `passphrase_timeout` (admin idle disconnect timeout).
 
-Those values are persisted per identity at `identities/<identity>/config.yaml` via `internal/signerapp/identity.StoredConfig`. The same file also carries lifecycle state such as `decommissioned:true` for disabled identities. On startup, stored runtime values overlay process-global defaults (nil/empty means inherit), while omitted `mode` defaults to `signing` and `decommissioned:true` is treated as an explicit disable marker rather than an inherited setting. Runtime reads resolve through the bound identity runtime rather than directly from `ServerConfig`.
+Those values are persisted per identity at
+`identities/<identity>/config.yaml` via
+`internal/signerapp/identity.StoredConfig`. The same file also carries
+lifecycle state such as `decommissioned:true` for disabled identities. On
+startup, stored runtime values overlay process-global defaults (nil/empty means
+inherit), while `decommissioned:true` is treated as an explicit disable marker
+rather than an inherited setting. Runtime reads resolve through the bound
+identity runtime rather than directly from `ServerConfig`.
+
+Key-class role is process/data-root scoped, not identity scoped. An initialized
+signer data directory has a root `node.yaml` with exactly one role:
+`signer` or `attestor`. New installs default to `signer` unless explicitly
+initialized as attestor nodes. The role is immutable in supported tools, is
+integrity-bound per identity with an HMAC sidecar over the exact root
+`node.yaml`, and gates key generation, key import/restore, key scan, and HTTP
+service dispatch. Identity config `mode` is an unsupported pre-release shape
+and must be rejected rather than interpreted.
 
 Passphrase helper configuration is identity-scoped via `internal/signerapp/identity.UnlockConfig`, stored at `identities/<identity>/unlock.yaml`:
 

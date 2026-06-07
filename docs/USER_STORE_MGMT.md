@@ -220,6 +220,10 @@ flow to receive a client-side copy of that token.
 `identities/<identity>/attestation.yaml`, and
 `identities/<identity>/attestation.yaml.hmac`.
 
+It also creates the signer data root role file `node.yaml`. Standard
+initialization creates a signer node. Attestor nodes are initialized explicitly
+and use a separate top-level signer data directory.
+
 `apstore initialize` is a local bootstrap command and does not require
 `apsigner` to be running. It is accepted only before the identity has a
 `.keystore` file; if a partial or existing identity directory is present, move
@@ -459,7 +463,9 @@ not already exist.
 If an existing keystore or identity directory is present, move it aside
 explicitly before rebuilding. `rebuild` creates fresh `.keystore` metadata,
 restores keys from the backup archive, and writes a new store encrypted under
-the new store passphrase you enter.
+the new store passphrase you enter. Rebuild uses source node role metadata
+from the backup archive when present. Archives without role metadata are treated
+as signer backups; rebuild does not accept a role override.
 
 ### Verifying Restoration
 

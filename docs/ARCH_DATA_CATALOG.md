@@ -80,10 +80,10 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
+| Node role | authoritative root config | `<APSIGNER_DATA>/node.yaml` plus `identities/<identity>/node.yaml.hmac` | key-class and service-dispatch gates | signer startup, identity load, keyadmin, restore, signing dispatch | Values: `signer`, `attestor`; no `dual`; no supported role changes; active role conflicts fail the whole node closed. |
 | Signing identity directory | authoritative root | `identities/<identity>/` | `identity.Runtime` | `internal/signerapp/identity` | Product mode exposes `default`; internals are identity-scoped. |
-| Identity config | authoritative config | `identities/<identity>/config.yaml` | `identity.EffectiveConfig` | `internal/signerapp/identity`, `internal/signerapp/admin` | Unknown/invalid settings fail; mode omitted means `signing`. |
-| Identity mode | authoritative config field | identity `config.yaml` `mode` | key-class and service-dispatch gates | `internal/signerapp/identity`, `internal/signerapp/rest` | Values: `signing`, `attestation`, `dual`; managed writes reject conflicting active keys, and reload rejects conflicting scanned keys. |
-| Unlock config | authoritative config | `identities/<identity>/unlock.yaml` | passphrase helper command config | `internal/signerapp/identity`, `cmd/appass` | Helper artifacts are identity-scoped and mode-sensitive. |
+| Identity config | authoritative config | `identities/<identity>/config.yaml` | `identity.EffectiveConfig` | `internal/signerapp/identity`, `internal/signerapp/admin` | Unknown/invalid settings fail; pre-release `mode` fields are rejected. |
+| Unlock config | authoritative config | `identities/<identity>/unlock.yaml` | passphrase helper command config | `internal/signerapp/identity`, `cmd/appass` | Helper artifacts are identity-scoped and independent of node role. |
 | Passphrase helper files | secret helper state | `passphrase`, `passphrase.cred` | startup/headless passphrase source | `cmd/appass`, `cmd/appass-file`, `cmd/appass-systemd-creds` | Mode `0600`; systemd/local ownership rules enforced by appass. |
 | Keystore metadata | authoritative crypto metadata | `.keystore` | passphrase verification and master-key derivation | `internal/crypto`, `internal/keystore` | Version 2 requires explicit KDF params; malformed metadata fails closed. |
 | Master key session | runtime-only secret | derived from passphrase, not persisted | `keystore.KeySession`, `FileKeyStore` | `internal/keystore`, `internal/signerapp/runtime` | Zero on lock; not exposed on wire. |
@@ -341,7 +341,7 @@ table as the completed pass record, not as open backlog:
 |---|---|
 | 1 | Endpoint connection model, token file paths, SSH trust paths, unsupported client config rejection, and endpoint command projections. |
 | 2 | Three attestor public metadata stores: component sidecars, signer reference catalog, and endpoint-published inventory. |
-| 3 | Key class gates, identity mode gates, component selector rejection at address ingestion points, and UI key detail/list projections. |
+| 3 | Key class gates, node role gates, component selector rejection at address ingestion points, and UI key detail/list projections. |
 | 4 | Attested send orchestration, per-target component verification, assembly authority, request IDs, cancellation, and simulate behavior. |
 | 5 | Split policy storage, attestation authorization semantics, `appolicy --to-attestation`, sidecars, and audit events. |
 | 6 | HTTP/admin/SDK authorization contracts and signerapi fixtures. |
@@ -369,7 +369,7 @@ name a test inline:
 - Attestor references and public metadata:
   `internal/attestor/attrefs`, `cmd/apstore/attestor*.go`,
   related package tests.
-- Identity mode and key-class gates: `internal/signerapp/identity`,
+- Node role and key-class gates: signer startup, `internal/signerapp/identity`,
   `internal/signerapp/rest/service_test.go`,
   `internal/signerapp/signing/attestor_gate.go`.
 - Policy domains, integrity, and conversion: `internal/policy/*_test.go`,

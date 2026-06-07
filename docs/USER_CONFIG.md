@@ -290,8 +290,9 @@ change one of these settings through admin IPC, the signer writes it as an
 identity-scoped override at `identities/<identity>/config.yaml`. `approval_wait`
 is YAML-only.
 
-Identity config mode defaults to normal signing. Standard installations do not
-need to set a mode field.
+Node role is stored separately in the signer data root `node.yaml`. Standard
+installations initialize as signer nodes; identity config does not carry a role
+or mode field.
 
 In `apadmin`, the operator-default shortcut is shown as `User Auto-Approve`:
 `ON` means `user_auto_approve: true`; `OFF` means `user_auto_approve: false`.

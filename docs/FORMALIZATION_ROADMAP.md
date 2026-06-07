@@ -28,7 +28,7 @@ Primary sources for the first tranche:
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing policy,
   lifecycle, reload, key-file, SDK, and backup/restore contracts.
 - [ARCH_ATTESTOR_SPEC.md](ARCH_ATTESTOR_SPEC.md): attested-account component
-  signing, attestor endpoint routing, assembly verification, and identity mode
+  signing, attestor endpoint routing, assembly verification, and node role
   separation.
 - [ARCH_POLICY.md](ARCH_POLICY.md): current signer policy verdict model,
   precedence, attestor component policy, snapshot semantics, and rule
@@ -289,7 +289,7 @@ and the fixed reload step order.
 the attested-account co-signing workflow: role-separated component messages,
 attestor transfer policy, endpoint routing as non-trust metadata, local
 assembly verification against stored key-file anchors, passthrough binding,
-endpoint sync behavior, and identity mode gates.
+endpoint sync behavior, and node role gates.
 
 ## Handoff Notes
 

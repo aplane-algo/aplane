@@ -15,7 +15,7 @@ Normative inputs:
   types, attested account key types, endpoint workflow, role-separated
   messages, assembly semantics, and endpoint routing trust model.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): `/keys`, `/sign/component`,
-  `/sign/assemble`, endpoint registry, identity mode, split policy files,
+  `/sign/assemble`, endpoint registry, node role, split policy files,
   and on-disk selector contracts.
 - [ARCH_POLICY.md](ARCH_POLICY.md): `attestation.yaml`, attestor component
   transfer policy, deterministic reject-only route-miss behavior, and
@@ -41,7 +41,7 @@ This model covers the current MVP:
 - `/sign/assemble` verification and LogicSig argument packing,
 - `apshell send` orchestration for attested account senders,
 - client endpoint discovery and sync for attestor routing,
-- identity mode gates for signing, attestation, and dual identities.
+- node role gates for signer nodes and attestor nodes.
 
 It does not model:
 
@@ -317,18 +317,18 @@ attestor public keys reject without writing partial routing updates.
 HardDiscoveryFailure => EndpointRegistryAfter = EndpointRegistryBefore
 ```
 
-### A13: Identity Mode Gates Key Classes
+### A13: Node Role Gates Key Classes
 
-Identity mode controls which key classes may be generated, imported, loaded,
-or activated for that identity:
+Node role controls which key classes may be generated, imported, loaded, or
+activated for a signer data root:
 
 ```text
-mode = signing     => reject attestor component keys
-mode = attestation => reject spending/user signing keys
-mode = dual        => allow both classes subject to same-account guards
+role = signer   => reject attestor component private keys
+role = attestor => reject spending/user signing keys and attested account keys
 ```
 
-Tightening mode fails while conflicting key inventory exists.
+There is no `dual` role and no supported role-change transition. Conflicting
+active key inventory fails closed for the whole node.
 
 ## Assumptions
 
@@ -376,7 +376,7 @@ High-value test anchors:
 - shared client-side attestor signature verification,
 - malformed component response rejection,
 - endpoint sync preserve/abort behavior,
-- identity mode generation/import/reload/admin gates.
+- node role generation/import/reload/service-dispatch gates.
 
 ## Open Questions
 
@@ -386,5 +386,5 @@ These should be answered before a machine-checkable model:
    verification as booleans or model signature roles as uninterpreted tokens.
 2. Decide whether endpoint discovery belongs in the first attested module or
    should be a separate routing-state model joined later.
-3. Decide whether to model identity mode in the attested module or in a
-   separate durable-inventory/mode model.
+3. Decide whether to model node role in the attested module or in a separate
+   durable-inventory/role model.

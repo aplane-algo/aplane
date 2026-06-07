@@ -169,115 +169,112 @@ Future multitenancy must introduce identity routing consistently across
 surfaces. Identity selection must be part of authenticated routing/session
 context, not a free-form transaction request field.
 
-MVP supports these role-placement modes:
+MVP supports single-purpose apsigner nodes:
 
-1. **Independent attestor deployment.** The attestor role runs in a separate
-   attestor `apsigner` deployment/node. This is the mode for independent
-   third-party attestation.
-2. **Co-located attestor identity.** One `apsigner` process has separate
-   identities, for example `identities/default` for user signing and
-   `identities/attestor` for attestor component keys and policy. This separates
-   identity-scoped keys, policy, unlock state, token, and audit records, but it
-   shares the process, host, process-global config, daemon lifecycle, and
-   operator control plane. This can be production-acceptable when the
-   co-located attestor identity attests accounts whose user component keys live
-   on a different apsigner deployment/operator domain.
-3. **Same identity self-attestation.** The product identity holds both ordinary
-   signing keys and attestor component keys. This is the weakest separation and
-   is for local development only. Production UX and docs must not recommend or
-   present self-attestation as a security control.
+1. **Signer node.** The apsigner data root has `node.yaml` `role: signer` and
+   may hold ordinary account-signing keys and attested account keys. It must
+   not hold attestor component private keys.
+2. **Attestor node.** The apsigner data root has `node.yaml` `role: attestor`
+   and may hold attestor component private keys and attestor policy. It must
+   not hold ordinary account-signing keys or attested account keys.
+
+There is no `dual` node role and no supported same-process mixed-role hosting.
+The previous same-process co-location model is removed deliberately. Nothing is
+lost in capability: co-located development or same-host deployments can still
+run one signer data directory/process and one attestor data directory/process.
+What goes away is a single apsigner process that contains both role families,
+and that removal is what provides the structural single-purpose guarantee.
 
 Independence is evaluated per attested account. For a given account, the user
 component private key and the attestor component private key must be held by
 different apsigner deployments/operator domains to claim independent
 attestation.
 
-A two-party reciprocal deployment needs only two apsigner processes on two
-machines. For example:
+A two-party reciprocal deployment that wants independent attestation uses
+separate signer and attestor nodes across operator domains. For example:
 
 ```text
-Machine A apsigner
+Machine A signer node
   identities/default   # A user keys
-  identities/attestor  # attestor keys and policy for B accounts
 
-Machine B apsigner
+Machine A attestor node
+  identities/default   # attestor keys and policy for B accounts
+
+Machine B signer node
   identities/default   # B user keys
-  identities/attestor  # attestor keys and policy for A accounts
+
+Machine B attestor node
+  identities/default   # attestor keys and policy for A accounts
 ```
 
 Accounts owned by A use A's user component key and B's attestor component key.
 Accounts owned by B use B's user component key and A's attestor component key.
-Neither process attests its own local user accounts in production.
+Neither signer node attests its own local user accounts in production.
 
 Multi-attestor-operator co-hosting on one node remains out of scope until the
 broader multi-tenant signer model is hardened and productized.
 
 This does not make `attestor` a product user or tenant. It is an
-operator-controlled service role scoped to an apsigner identity. Product UX and
-docs remain single-operator; the attestor identity is not a customer-management
-surface, and unrelated operators must not be co-hosted under this MVP model.
+operator-controlled service role scoped to an apsigner node. Product UX and
+docs remain single-operator; unrelated operators must not be co-hosted under
+this MVP model.
 
-### 5.1 Identity Mode
+### 5.1 Node Role
 
-Each identity has an identity-scoped key-class mode stored in
-`identities/<identity>/config.yaml`:
+Each signer data root has a node role stored in root `node.yaml`:
 
 ```yaml
-mode: signing
+schema_version: 1
+role: signer
+created_at: "2026-06-07T00:00:00Z"
 ```
 
-Allowed values are:
+Allowed values are exactly:
 
-- `signing`: the identity may hold and use ordinary account/signing keys,
+- `signer`: the node may hold and use ordinary account/signing keys,
   including attested account keys such as `aplane.falcon1024-att-ed25519.v1`.
   It must not hold attestor component keys.
-- `attestation`: the identity may hold and use attestor component keys such as
+- `attestor`: the node may hold and use attestor component keys such as
   `aplane.attestor-ed25519.v1` and `aplane.attestor-falcon1024.v1`. It must
   not hold ordinary account/signing keys.
-- `dual`: the identity may hold both key classes. This is an explicit opt-in
-  for co-located development or carefully reviewed production composition.
 
-The default for an omitted `mode` is `signing`. Unset mode must never mean
-"anything goes". Existing identities therefore continue as signing identities
-unless an operator explicitly changes the stored identity config.
+The default for a new initialization is `signer`. Unset role must never mean
+"anything goes": initialized stores require `node.yaml`, and startup rejects a
+missing, malformed, or unknown node role.
 
-Mode is bound to the identity, not the node. One apsigner process may host a
-`signing` identity and an `attestation` identity when the deployment model
-requires co-location. A future node-level assertion may add outer
-defense-in-depth, but it must not replace the identity-level mode.
+Role is bound to the node/data root, not to an individual identity. A node may
+host multiple identities only when they all share the same role. Identity-level
+`mode` is an unsupported pre-release shape and startup must reject it rather
+than migrate it.
 
-Mode gates key class at every key-ingestion boundary:
+Node role gates key class at every key-ingestion boundary:
 
 - key generation and mnemonic import reject key types disallowed by the
-  authenticated identity's mode;
+  node role;
 - restore, hand-placed key files, and other out-of-band changes fail closed at
   key scan/load when the scanned inventory contains a key type disallowed by
-  the identity's mode;
+  the node role;
 - service endpoints reject role/use mismatches even if a forbidden key file is
   present on disk.
 
-Tightening a mode is only valid after the on-disk key inventory already matches
-the target mode. For example, changing `dual` to `attestation` must be refused
-while any signing-class key exists, and changing `dual` to `signing` must be
-refused while any attestor component key exists. The signer must not silently
-delete keys during a mode change, and it must not silently ignore contradictory
-keys while claiming a tighter mode. If a contradiction arrives through backup
-restore or manual file placement, key load fails closed and surfaces the
-conflict until the operator removes the conflicting key files or explicitly
-chooses a compatible mode.
+There is no role-change operation. An operator that needs both roles creates
+two complete data roots. If a contradiction arrives through backup restore or
+manual file placement, key load fails closed for the node and surfaces the
+conflict until the operator removes the conflicting key files or uses a data
+root initialized for the correct role.
 
-Mode is a key-class and operational guardrail, not an independence proof. A
-node or identity that has ever held signing keys may have backups or history
-containing those keys. Independent attestation remains a deployment-domain
-property: for a given account, the user component private key and embedded
-attestor component private key must be controlled by different operator
-domains.
+`node.yaml` is plaintext for early startup and diagnostics, but the role is
+also integrity-bound per initialized identity by an HMAC sidecar over the exact
+root `node.yaml` bytes. The HMAC is verified after the identity master key is
+available and before unlock-dependent key scan, generation, import, restore, or
+signing service dispatch. A failed role HMAC check fails closed.
 
-Mode also does not replace the same-account self-attestation guard. A `dual`
-identity can be a legitimate co-located operator identity for unrelated
-accounts, but the specific pairing where one identity holds both an attested
-account key and the attestor component key embedded in that same account remains
-forbidden outside explicitly marked local-development flows.
+Node role is a key-class and operational guardrail, not an independence proof.
+A signer and attestor node on one host, or under one operator, are still one
+operational trust and availability domain. Independent attestation remains a
+deployment-domain property: for a given account, the user component private key
+and embedded attestor component private key must be controlled by different
+operator domains.
 
 ### 5.2 APlane Invariant Compatibility
 
@@ -293,9 +290,10 @@ when implemented with these constraints:
 - Attestor policy, unlock state, token, and audit records are identity-scoped;
   `attestation.yaml` and policy document domains are defined in
   [ARCH_POLICY.md#role-domains](ARCH_POLICY.md#role-domains).
-- Identity mode is loaded from identity config before key generation, mnemonic
-  import, scan/load, and signing service dispatch; the mode check is enforced
-  against key type/category metadata, not string appearance.
+- Node role is loaded from root `node.yaml` and integrity-checked before key
+  generation, mnemonic import, scan/load, and signing service dispatch; the
+  role check is enforced against key type/category metadata, not string
+  appearance.
 - `/sign` never reaches attestor component keys or attested-account key types;
   component signing uses `/sign/component`.
 - `/plan` continues to own canonical group shaping and uses attested-account
@@ -303,8 +301,8 @@ when implemented with these constraints:
 - Product UI/docs do not claim tenant isolation or recommend self-attestation
   as a production control.
 
-Violations would be: treating the attestor identity as an unrelated hosted
-tenant, allowing callers to select arbitrary identities in request bodies,
+Violations would be: treating the attestor node identity as an unrelated
+hosted tenant, allowing callers to select arbitrary identities in request bodies,
 sharing one account's user and attestor private keys in the same deployment
 while claiming independent attestation, letting the normal `/sign` provider
 path sign attestor/attested key types, or authorizing attestation from
@@ -706,17 +704,15 @@ Request `Content-Type` is not enforced in the MVP unless the broader HTTP
 contract changes. Malformed JSON still returns `400`, and oversized bodies
 still return `413`.
 
-HTTP service role dispatch must honor identity mode:
+HTTP service role dispatch must honor node role:
 
-- `signing` identities may use `/sign`, `/plan`, `/simulate`, user-role
+- `signer` nodes may use `/sign`, `/plan`, `/simulate`, user-role
   `/sign/component`, and `/sign/assemble`. Attestor-role `/sign/component`
-  must be rejected because the identity is not allowed to hold attestor
-  component keys.
-- `attestation` identities may use attestor-role `/sign/component`. `/sign`,
+  must be rejected because the node is not allowed to hold attestor component
+  private keys.
+- `attestor` nodes may use attestor-role `/sign/component`. `/sign`,
   `/simulate`, user-role `/sign/component`, and `/sign/assemble` must be
-  rejected because the identity is not allowed to hold account/signing keys.
-- `dual` identities may use both role families subject to all narrower
-  key-type, policy, and same-account self-attestation guards.
+  rejected because the node is not allowed to hold account/signing keys.
 
 New DTOs live in:
 
@@ -1458,14 +1454,17 @@ Phase 0 contract tests:
 
 Unit tests:
 
-- identity config parses `mode`, defaults omitted mode to `signing`, and
-  rejects unknown mode values.
-- identity mode rejects disallowed key generation and mnemonic import before
+- node role config parses `node.yaml`, defaults new initialization to
+  `signer`, and rejects missing, malformed, or unknown role values for
+  initialized stores.
+- node role HMAC verification rejects tampered `node.yaml` before publishing
+  unlocked runtime state.
+- identity config rejects pre-release `mode` fields.
+- node role rejects disallowed key generation and mnemonic import before
   writing key files.
 - key reload fails closed and publishes no active key snapshot when scanned key
-  inventory contains a key type disallowed by the identity mode.
-- mode tightening through managed admin settings is refused while conflicting
-  key classes still exist.
+  inventory contains a key type disallowed by the node role.
+- role-conflicting inventory in any identity fails closed for the whole node.
 - `/sign` rejects every attestor component key type.
 - `/sign` rejects every attested-account key type before provider lookup.
 - key generation uses exact-key-type gates for attestor component and
@@ -1539,10 +1538,13 @@ SDK tests:
 
 The MVP is complete when:
 
-- each identity has an enforced `mode` with omitted mode defaulting to
-  `signing`, and invalid modes fail config load,
+- each signer data root has an enforced root `node.yaml` role with new
+  initialization defaulting to `signer`, invalid roles failing config load, and
+  identity-level `mode` rejected as an unsupported pre-release shape,
+- node role is integrity-bound per initialized identity and tampered
+  `node.yaml` fails closed before unlock-dependent signing state is published,
 - key generation, mnemonic import, signer reload/load, and signing service
-  dispatch reject key classes disallowed by the identity mode,
+  dispatch reject key classes disallowed by the node role,
 - attestor component keys cannot sign through `/sign`,
 - attested account keys cannot sign through `/sign`,
 - attestor component key generation exposes canonical `a_` selectors derived
