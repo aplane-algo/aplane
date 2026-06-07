@@ -232,7 +232,7 @@ type policyTargetOps struct {
 }
 
 func (s Service) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
-	target = normalizeAdminPolicyTarget(target)
+	target = normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), target)
 	ops, err := s.policyTargetOps(ir, target)
 	if err != nil {
 		return policySnapshotError(ir.ID(), target, err)
@@ -241,11 +241,14 @@ func (s Service) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.Pol
 	return canonicalPolicySnapshot(ir.ID(), target, ops, stored)
 }
 
-func normalizeAdminPolicyTarget(target adminproto.PolicyTarget) adminproto.PolicyTarget {
-	if target == "" {
-		return adminproto.PolicyTargetSigner
+func normalizeAdminPolicyTargetForNodeRole(role noderole.Role, target adminproto.PolicyTarget) adminproto.PolicyTarget {
+	if target != "" {
+		return target
 	}
-	return target
+	if role == noderole.RoleAttestor {
+		return adminproto.PolicyTargetAttestation
+	}
+	return adminproto.PolicyTargetSigner
 }
 
 func canonicalPolicySnapshot(identityID string, target adminproto.PolicyTarget, ops policyTargetOps, stored *policy.StoredConfig) adminproto.PolicySnapshot {
@@ -301,7 +304,7 @@ func (s Service) policyTargetOps(ir *identity.Runtime, target adminproto.PolicyT
 	case adminproto.PolicyTargetAttestation:
 		return policyTargetOps{
 			snapshotUnavailableCode: "attestation_policy_snapshot_unavailable",
-			snapshotUnavailableErr:  "active stored attestation policy snapshot is unavailable; reload or unlock the identity",
+			snapshotUnavailableErr:  "active stored attestor policy snapshot is unavailable; reload or unlock the identity",
 			marshal:                 policy.MarshalStoredAttestationConfig,
 			parse:                   policy.ParseStoredAttestationConfig,
 			loadVerified:            policy.LoadVerifiedAttestationConfigWithMasterKey,
@@ -379,7 +382,7 @@ func newPolicyReplaceError(code string, err error) policyReplaceError {
 }
 
 func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
-	target := normalizeAdminPolicyTarget(req.Target)
+	target := normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), req.Target)
 	fail := func(code, msg string) adminproto.PolicySnapshot {
 		return adminproto.PolicySnapshot{
 			Success:    false,
@@ -469,7 +472,7 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 }
 
 func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
-	target := normalizeAdminPolicyTarget(req.Target)
+	target := normalizeAdminPolicyTargetForNodeRole(ir.NodeRole(), req.Target)
 	fail := func(code, msg string) adminproto.ValidatePolicyResult {
 		return adminproto.ValidatePolicyResult{
 			Success:    false,
@@ -505,12 +508,7 @@ func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePol
 }
 
 func policyTargetFileName(target adminproto.PolicyTarget) string {
-	switch normalizeAdminPolicyTarget(target) {
-	case adminproto.PolicyTargetAttestation:
-		return "attestation.yaml"
-	default:
-		return "policy.yaml"
-	}
+	return "policy.yaml"
 }
 
 func (s Service) defaultPolicyConfig() *policy.Config {

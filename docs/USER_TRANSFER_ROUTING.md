@@ -42,7 +42,7 @@ appolicy draft-policy.yaml
 When `appolicy` opens production policy from `APSIGNER_DATA` or `-d`, it
 prompts for the store passphrase and auto-selects the document from
 `node.yaml`: signer nodes edit `policy.yaml`, attestor nodes edit
-`attestation.yaml`. Use `--target signer` or `--target attestation` to override
+attestor-domain `policy.yaml`. Use `--target signer` or `--target attestation` to override
 auto-selection. When it opens a standalone YAML file, it validates that file
 without unlocking the store; if the file-backed draft is later applied to
 production with `a`, the passphrase prompt happens at apply time. For

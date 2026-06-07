@@ -185,7 +185,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
 	if !strings.Contains(err.Message, policy.AttestationPolicyMissingRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want missing attestation policy", err.Message)
+		t.Fatalf("SignComponentWithContext() error = %q, want missing attestor policy", err.Message)
 	}
 
 	_, err = (&Service{}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
@@ -214,7 +214,7 @@ func TestSignComponentAttestorRequiresPolicyBeforeKeyLoad(t *testing.T) {
 		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
 	}
 	if !strings.Contains(err.Message, policy.AttestationPolicyMissingRuleID) {
-		t.Fatalf("SignComponentWithContext() error = %q, want missing attestation policy", err.Message)
+		t.Fatalf("SignComponentWithContext() error = %q, want missing attestor policy", err.Message)
 	}
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)

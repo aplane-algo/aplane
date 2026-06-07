@@ -465,7 +465,7 @@ workflows and do not need this capability.
 - **apapprover** handles approval-only workflows over local IPC
 - **apstore** performs local initialize, policy integrity, endpoint export, public attestor reference, backup import admission, verification, and rebuild rescue flows; signer-owned backup, restore, passphrase, key type, and template mutations use the local admin protocol
 - **appolicy** verifies and edits the node-role policy document offline, can
-  convert deterministic signing policy into `attestation.yaml`, and can
+  convert deterministic signing policy into attestor-domain `policy.yaml`, and can
   save/sign either policy document while holding the store mutation lock
 - **appass** edits identity-scoped auto-unlock configuration while `apsigner` is stopped
 - **aplocalnet** configures a running AlgoKit LocalNet as apshell's default network, updates apsigner genesis mapping, enables the LocalNet plugin, and can persist a KMD URL override for plugin processes

@@ -91,7 +91,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | API token | bearer secret | `identities/<identity>/aplane.token` | HTTP authenticator and SSH username matcher | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` | Mode `0600`; token revocation rotates identity credential and closes stale SSH sessions. |
 | SSH authorized keys | authoritative enrollment | `identities/<identity>/.ssh/authorized_keys` | SSH identity key set | `internal/sshtunnel`, `internal/signerapp/sshprovision` | Token plus SSH key required; token provisioning writes after admin approval. |
 | Client-signing policy | authoritative safety policy | `policy.yaml` plus `policy.yaml.hmac` | `policy.Config` runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime` | HMAC over exact YAML; missing/mismatched sidecar fails closed. |
-| Attestor component policy | authoritative co-sign policy | `attestation.yaml` plus `attestation.yaml.hmac` | attestor policy runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/signing` | No review/operator-default outcomes; missing/mismatched sidecar fails closed. |
+| Attestor component policy | authoritative co-sign policy | attestor-domain `policy.yaml` plus `policy.yaml.hmac` | attestor policy runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/signing` | No review/operator-default outcomes; missing/mismatched sidecar fails closed. |
 | Policy sidecar | authoritative integrity metadata | `<policy>.hmac` JSON | HMAC verification result | `internal/policy`, `cmd/appolicy`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
 | Key type state record | authoritative generation state | `keytypes/<key_type>.json` | enabled/disabled identity key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | encrypted `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Encrypted with identity master key; disabled state skips registration. |
@@ -176,13 +176,13 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Client-signing policy config | authoritative policy | `policy.yaml` | effective client-signing policy | `internal/policy`, `internal/signerapp/policyruntime` | Four-tier verdict model with operator default fallback. |
-| Attestation policy config | authoritative policy | `attestation.yaml` | effective attestor component policy | `internal/policy`, `internal/signerapp/signing` | Deterministic reject/sign only; no review or operator default. |
+| Attestor policy config | authoritative policy | attestor-domain `policy.yaml` | effective attestor component policy | `internal/policy`, `internal/signerapp/signing` | Deterministic reject/sign only; no review or operator default. |
 | Transfer policy | authoritative policy section | `transfer_policy` YAML | route table and movement authorization | `internal/policy`, `internal/policyview`, `cmd/appolicy` | `schema_version:1`; route IDs are audit identifiers. |
 | Transfer route | authoritative policy row | `transfer_policy.routes[]` | route match and rule ID source | `internal/policy` | Dynamic rule IDs use `transfer_policy:<route_id>:<outcome>`. |
 | Policy key override | authoritative sparse override | `key_overrides` map | effective per-key policy | `internal/policy` | Signing overrides keyed by auth address; attestation overrides keyed by component selector. |
 | Policy verdict | runtime decision | effective policy plus decoded txn facts | approve/review/reject outcome | `internal/policy`, `internal/signerapp/signing` | Attestation rejects if a review verdict would be required. |
 | Policy editor draft | long-lived UI/runtime state | loaded YAML plus in-memory edits | appolicy TUI draft | `cmd/appolicy`, `internal/policyeditor` | Applies only on explicit save/apply; save writes exact bytes and sidecar. |
-| Attestation conversion output | derived YAML | `appolicy --to-attestation` input policy | deterministic "could allow" `attestation.yaml` | `cmd/appolicy`, `internal/policy` | Drops review-only behavior; fails closed for non-deterministic route misses. |
+| Attestor policy conversion output | derived YAML | `appolicy --to-attestation` input policy | deterministic "could allow" attestor-domain `policy.yaml` | `cmd/appolicy`, `internal/policy` | Drops review-only behavior; fails closed for non-deterministic route misses. |
 
 ## Authorization And Authentication
 

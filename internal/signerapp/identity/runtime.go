@@ -272,9 +272,9 @@ func (ir *Runtime) AttestationPolicy() *policy.Config {
 	return ir.attestationPolicyCfg.Clone()
 }
 
-// StoredAttestationPolicy returns a copy of the stored attestation policy
-// snapshot that produced the currently active effective attestation policy, if
-// one is available.
+// StoredAttestationPolicy returns a copy of the stored attestor policy snapshot
+// that produced the currently active effective attestor policy, if one is
+// available.
 func (ir *Runtime) StoredAttestationPolicy() *policy.StoredConfig {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
@@ -285,7 +285,7 @@ func (ir *Runtime) StoredAttestationPolicy() *policy.StoredConfig {
 }
 
 // AttestationPolicySnapshot returns copies of the active stored and effective
-// attestation policy state.
+// attestor policy state.
 func (ir *Runtime) AttestationPolicySnapshot() (*policy.StoredConfig, *policy.Config) {
 	ir.policyMu.RLock()
 	defer ir.policyMu.RUnlock()
@@ -323,14 +323,14 @@ func (ir *Runtime) SetPolicyState(stored *policy.StoredConfig, cfg *policy.Confi
 	ir.policyCfg = cfg.Clone()
 }
 
-// SetAttestationPolicy installs the effective attestation policy for this
+// SetAttestationPolicy installs the effective attestor policy for this
 // identity.
 func (ir *Runtime) SetAttestationPolicy(cfg *policy.Config) {
 	ir.SetAttestationPolicyState(nil, cfg)
 }
 
-// SetAttestationPolicyState installs the stored attestation policy snapshot
-// and the effective attestation policy for this identity as one atomic runtime
+// SetAttestationPolicyState installs the stored attestor policy snapshot and
+// the effective attestor policy for this identity as one atomic runtime
 // update.
 func (ir *Runtime) SetAttestationPolicyState(stored *policy.StoredConfig, cfg *policy.Config) {
 	ir.policyMu.Lock()

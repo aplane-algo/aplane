@@ -108,7 +108,12 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 		}
 	}
 
-	for _, doc := range policyDocumentsForRotation(paths.Root(), identityID) {
+	policyDocs, err := policyDocumentsForRotation(paths, identityID)
+	if err != nil {
+		cleanupPendingNewFiles(pendingFiles)
+		return result, err
+	}
+	for _, doc := range policyDocs {
 		policySidecar, ok, err := createPendingPolicySidecar(doc, oldMasterKey, newMasterKey, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
@@ -306,25 +311,31 @@ type policyRotationDocument struct {
 	verifyFunc func(masterKey []byte) error
 }
 
-func policyDocumentsForRotation(dataRoot, identityID string) []policyRotationDocument {
-	return []policyRotationDocument{
-		{
-			name: "policy.yaml",
-			path: policy.PolicyPath(dataRoot, identityID),
-			verifyFunc: func(masterKey []byte) error {
-				_, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataRoot, identityID, masterKey)
-				return err
-			},
-		},
-		{
-			name: "attestation.yaml",
-			path: policy.AttestationPath(dataRoot, identityID),
-			verifyFunc: func(masterKey []byte) error {
-				_, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataRoot, identityID, masterKey)
-				return err
-			},
-		},
+func policyDocumentsForRotation(paths storepaths.Paths, identityID string) ([]policyRotationDocument, error) {
+	nodeDoc, _, err := noderole.Load(paths)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load node role: %w", err)
 	}
+	dataRoot := paths.Root()
+	doc := policyRotationDocument{
+		name: "policy.yaml",
+		path: policy.PolicyPath(dataRoot, identityID),
+	}
+	switch nodeDoc.Role {
+	case noderole.RoleAttestor:
+		doc.verifyFunc = func(masterKey []byte) error {
+			_, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataRoot, identityID, masterKey)
+			return err
+		}
+	case noderole.RoleSigner:
+		doc.verifyFunc = func(masterKey []byte) error {
+			_, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataRoot, identityID, masterKey)
+			return err
+		}
+	default:
+		return nil, fmt.Errorf("unsupported node role %q", nodeDoc.Role)
+	}
+	return []policyRotationDocument{doc}, nil
 }
 
 func createPendingPolicySidecar(doc policyRotationDocument, oldMasterKey, newMasterKey []byte, log Logger) (*pendingFile, bool, error) {

@@ -52,7 +52,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	fs.BoolVar(&opts.yaml, "yaml", false, "verify the selected policy document or a policy file and print it to stdout")
 	fs.BoolVar(&opts.sha256, "sha256", false, "verify the selected policy document or a policy file and print its SHA-256 digest")
 	fs.BoolVar(&opts.save, "save", false, "read selected policy YAML from stdin, validate, save, and sign it")
-	fs.BoolVar(&opts.toAttestation, "to-attestation", false, "convert policy.yaml or a policy file to direct attestation.yaml and print it to stdout")
+	fs.BoolVar(&opts.toAttestation, "to-attestation", false, "convert signer policy YAML to direct attestor policy YAML and print it to stdout")
 	fs.BoolVar(&opts.online, "online", false, "disabled placeholder for future apsigner-connected policy editing")
 	fs.BoolVar(&opts.version, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
@@ -185,7 +185,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 		out, err := policy.ConvertSigningPolicyToAttestationYAML(data)
 		if err != nil {
-			writef(stderr, "appolicy: failed to convert policy to attestation.yaml: %v\n", err)
+			writef(stderr, "appolicy: failed to convert policy to attestor policy: %v\n", err)
 			return 1
 		}
 		_, _ = stdout.Write(out)
@@ -245,12 +245,12 @@ func runPolicyFile(ctx context.Context, path string, opts options, store *policy
 	if opts.toAttestation {
 		out, err := policy.ConvertSigningPolicyToAttestation(stored)
 		if err != nil {
-			writef(stderr, "appolicy: failed to convert policy to attestation.yaml: %v\n", err)
+			writef(stderr, "appolicy: failed to convert policy to attestor policy: %v\n", err)
 			return 1
 		}
 		data, err := policy.MarshalStoredAttestationConfig(out)
 		if err != nil {
-			writef(stderr, "appolicy: failed to marshal attestation.yaml: %v\n", err)
+			writef(stderr, "appolicy: failed to marshal attestor policy: %v\n", err)
 			return 1
 		}
 		_, _ = stdout.Write(data)

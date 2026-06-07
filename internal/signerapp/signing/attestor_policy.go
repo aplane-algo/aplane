@@ -21,7 +21,7 @@ func (s *Service) evaluateAttestorComponentPolicy(identityID string, plan *Compo
 			RuleID:   policy.AttestationPolicyMissingRuleID,
 			Scope:    "group",
 			TxnIndex: -1,
-			Message:  "attestation policy is not configured",
+			Message:  "attestor policy is not configured",
 		}})
 	}
 	if cfg.TransferPolicy == nil || !cfg.TransferPolicy.Enabled {
@@ -88,7 +88,7 @@ func attestorTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *poli
 			RuleID:   policy.AttestationNonTransferRuleID,
 			Scope:    "txn",
 			TxnIndex: targetIndex,
-			Message:  fmt.Sprintf("attestation policy only supports direct pay and axfer targets, got %s", txn.Type),
+			Message:  fmt.Sprintf("attestor policy only supports direct pay and axfer targets, got %s", txn.Type),
 		})
 	}
 	if cfg.RejectRekey && !txn.RekeyTo.IsZero() {
@@ -96,7 +96,7 @@ func attestorTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *poli
 			RuleID:   policy.AttestationRekeyRuleID,
 			Scope:    "txn",
 			TxnIndex: targetIndex,
-			Message:  "rekey transactions are rejected by attestation policy",
+			Message:  "rekey transactions are rejected by attestor policy",
 		})
 	}
 
@@ -128,10 +128,10 @@ func withTargetIndex(violations []policy.LintViolation, targetIndex int) []polic
 func (s *Service) rejectAttestorComponentPolicy(identityID string, plan *ComponentSignPlan, violations []policy.LintViolation) *ServiceError {
 	reason := policy.JoinLintViolations(violations)
 	if reason == "" {
-		reason = "attestation policy rejected request"
+		reason = "attestor policy rejected request"
 	}
 	s.logAttestorPolicyRejections(identityID, plan, reason, firstPolicyRuleID(violations))
-	return forbidden("attestation policy rejected request: " + reason)
+	return forbidden("attestor policy rejected request: " + reason)
 }
 
 func firstPolicyRuleID(violations []policy.LintViolation) string {

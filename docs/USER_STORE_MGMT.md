@@ -160,10 +160,9 @@ before the command reports success.
 - All `.apb` files (encrypted with the export passphrase) in the `apb/` subdirectory
 - `README.md` with decryption instructions
 - Any bundled template definition for a template-backed key, embedded inside that key's encrypted payload
-- Verified signing and attestation policy snapshots at `policy/policy.yaml`,
-  `policy/policy.yaml.hmac`, `policy/attestation.yaml`, and
-  `policy/attestation.yaml.hmac` for provenance. Restore workflows do not
-  install archive policy files automatically.
+- Verified active policy snapshots at `policy/policy.yaml` and
+  `policy/policy.yaml.hmac` for provenance. Restore workflows do not install
+  archive policy files automatically.
 
 `apstore` reports the archive checksum and size after creation.
 
@@ -220,11 +219,9 @@ It also creates the identity-scoped `aplane.token` if one does not already
 exist. Normal clients should use the operator-approved `request-token`
 flow to receive a client-side copy of that token.
 
-`apstore initialize` also creates the initial signed policy baselines:
+`apstore initialize` also creates the initial signed policy baseline:
 `identities/<identity>/policy.yaml`,
-`identities/<identity>/policy.yaml.hmac`,
-`identities/<identity>/attestation.yaml`, and
-`identities/<identity>/attestation.yaml.hmac`.
+`identities/<identity>/policy.yaml.hmac`.
 
 It also creates the signer data root role file `node.yaml`. Standard
 initialization creates a signer node. `--role attestor` creates a dedicated
@@ -377,10 +374,9 @@ passphrase.
 
 ### Policy Snapshots in Backups
 
-Backups include `policy/policy.yaml`, `policy/policy.yaml.hmac`,
-`policy/attestation.yaml`, and `policy/attestation.yaml.hmac` so an operator
-can inspect the signing and attestor component policies that were active when
-the backup was created. Normal restore flows restore keys only. `apconsole`
+Backups include `policy/policy.yaml` and `policy/policy.yaml.hmac` so an
+operator can inspect the node-role policy that was active when the backup was
+created. Normal restore flows restore keys only. `apconsole`
 admin restore and `apstore restore apply` do not install or replace the active
 identity policy documents.
 
@@ -412,9 +408,9 @@ apstore -d "$APSIGNER_DATA" policy verify
 ```
 
 For interactive offline edits, use `appolicy -d "$APSIGNER_DATA"` after
-stopping `apsigner`; it auto-selects `policy.yaml` on signer nodes or
-`attestation.yaml` on attestor nodes, validates the draft, and saves the
-selected document with a fresh sidecar. For scriptable byte-preserving edits or
+stopping `apsigner`; it auto-selects the policy domain from the node role,
+validates the draft, and saves `policy.yaml` with a fresh sidecar. For
+scriptable byte-preserving edits or
 imports, use `appolicy --yaml` to emit the verified current document and
 `appolicy --save` to read replacement YAML from stdin, validate it, and save it
 with a fresh sidecar.

@@ -305,10 +305,8 @@ This creates `/tmp/aplane-test-env/` containing:
 │       │   └── authorized_keys        # Identity-scoped SSH client key authorization
 │       ├── .keystore              # Initialized keystore metadata
 │       ├── aplane.token           # Generated API token
-│       ├── policy.yaml            # Permissive integration-test policy
+│       ├── policy.yaml            # Permissive integration-test node-role policy
 │       ├── policy.yaml.hmac       # Integrity sidecar for policy.yaml
-│       ├── attestation.yaml       # Permissive integration-test attestor policy
-│       ├── attestation.yaml.hmac  # Integrity sidecar for attestation.yaml
 │       └── keys/                  # Empty key directory (tests generate keys)
 ├── library/templates/              # Plaintext KeyType Library copied from repo
 └── apclient/                      # Client data directory (APCLIENT_DATA)

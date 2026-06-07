@@ -26,7 +26,7 @@ func TestAttestorShellDisabledLines(t *testing.T) {
 		t.Fatalf("startup lines missing profile notice:\n%s", joined)
 	}
 	if !strings.Contains(joined, "shell pane disabled on attestor nodes") ||
-		!strings.Contains(joined, "press p to edit attestation policy") {
+		!strings.Contains(joined, "press p to edit attestor policy") {
 		t.Fatalf("startup lines missing attestor shell guidance:\n%s", joined)
 	}
 }

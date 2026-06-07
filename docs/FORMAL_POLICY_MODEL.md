@@ -44,7 +44,7 @@ Client-signing policy decides whether a planned signing request is:
 - handled by the operator default.
 
 Attestor component policy is a separate deterministic surface stored in
-`attestation.yaml`: no manual-review verdict and no operator default. This
+attestor-domain `policy.yaml`: no manual-review verdict and no operator default. This
 document defines the shared snapshot and sparse-override vocabulary; the
 attestor-specific decision rules are modeled in
 [FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md).

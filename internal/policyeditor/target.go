@@ -70,12 +70,7 @@ func ResolveTarget(dataDir string, target Target) (Target, error) {
 }
 
 func (t Target) DocumentName() string {
-	switch t {
-	case TargetAttestation:
-		return "attestation.yaml"
-	default:
-		return "policy.yaml"
-	}
+	return "policy.yaml"
 }
 
 func (t Target) SidecarName() string {
@@ -85,7 +80,7 @@ func (t Target) SidecarName() string {
 func (t Target) Label() string {
 	switch t {
 	case TargetAttestation:
-		return "Attestation Policy"
+		return "Attestor Policy"
 	default:
 		return "Signer Policy"
 	}
@@ -94,19 +89,14 @@ func (t Target) Label() string {
 func (t Target) StatusNoun() string {
 	switch t {
 	case TargetAttestation:
-		return "attestation policy"
+		return "attestor policy"
 	default:
 		return "policy"
 	}
 }
 
 func (t Target) Path(dataDir, identityID string) string {
-	switch t {
-	case TargetAttestation:
-		return policy.AttestationPath(dataDir, identityID)
-	default:
-		return policy.PolicyPath(dataDir, identityID)
-	}
+	return policy.PolicyPath(dataDir, identityID)
 }
 
 func (t Target) Parse(data []byte) (*policy.StoredConfig, error) {

@@ -9,15 +9,12 @@ Policy is stored beside the identity keys:
 ```text
 identities/<identity>/policy.yaml
 identities/<identity>/policy.yaml.hmac
-identities/<identity>/attestation.yaml
-identities/<identity>/attestation.yaml.hmac
 ```
 
-`policy.yaml` controls account signing. Its `.hmac` sidecar authenticates the
-exact YAML bytes. After the signed baseline exists, a missing or mismatched
-sidecar fails closed rather than silently loading defaults.
-`attestation.yaml` controls attestor component signing on attestor nodes and
-uses the same sidecar rule.
+`policy.yaml` controls account signing on signer nodes and attestor component
+signing on attestor nodes. Its `.hmac` sidecar authenticates the exact YAML
+bytes. After the signed baseline exists, a missing or mismatched sidecar fails
+closed rather than silently loading defaults.
 
 ## What Policy Controls
 
@@ -45,14 +42,16 @@ rule.
 
 Use `apadmin` for online guided policy edits while `apsigner` is running. From
 the main key list, press `p`, or open Settings and choose `Policy`. `apadmin`
-targets the node-role document automatically: signer nodes edit `policy.yaml`,
-and attestor nodes edit `attestation.yaml`. It validates drafts with the
-running signer, applies changes as whole-document replacements, writes the
-fresh sidecar, and activates the resulting runtime policy immediately.
+targets the node-role policy domain automatically: signer nodes edit
+signer-domain `policy.yaml`, and attestor nodes edit attestor-domain
+`policy.yaml`. It validates drafts with the running signer, applies changes as
+whole-document replacements, writes the fresh sidecar, and activates the
+resulting runtime policy immediately.
 
 Use `appolicy` for offline or scriptable policy work. With `--target auto` (the
 default), `appolicy` reads `$APSIGNER_DATA/node.yaml`: signer nodes edit
-`policy.yaml`, and attestor nodes edit `attestation.yaml`.
+signer-domain `policy.yaml`, and attestor nodes edit attestor-domain
+`policy.yaml`.
 
 ```bash
 appolicy -d "$APSIGNER_DATA"

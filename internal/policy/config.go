@@ -262,16 +262,16 @@ func validateRoleConfig(role string, cfg *StoredRoleConfig) error {
 			return fmt.Errorf("attestation.reject_foreign_rekey is not supported; use attestation.reject_rekey")
 		}
 		if cfg.AlwaysReviewWarnings != nil {
-			return fmt.Errorf("attestation.always_review_warnings is not supported; attestation policy cannot produce review verdicts")
+			return fmt.Errorf("attestation.always_review_warnings is not supported; attestor policy cannot produce review verdicts")
 		}
 		if cfg.AutoApproveSelfNoOpTransfer != nil {
 			return fmt.Errorf("attestation.auto_approve_self_noop_transfer is not supported; attestation has no operator default")
 		}
 		if len(cfg.ReviewAlgoPayments) > 0 {
-			return fmt.Errorf("attestation.review_algo_payments is not supported; attestation policy cannot produce review verdicts")
+			return fmt.Errorf("attestation.review_algo_payments is not supported; attestor policy cannot produce review verdicts")
 		}
 		if len(cfg.ReviewASAAmounts) > 0 {
-			return fmt.Errorf("attestation.review_asa_amounts is not supported; attestation policy cannot produce review verdicts")
+			return fmt.Errorf("attestation.review_asa_amounts is not supported; attestor policy cannot produce review verdicts")
 		}
 		if err := validateAttestationTransferPolicy(cfg.TransferPolicy); err != nil {
 			return err
@@ -297,11 +297,11 @@ func validateAttestationTransferPolicy(tp *StoredTransferPolicy) error {
 	}
 	for _, route := range tp.Routes {
 		if route.Limits != nil && route.Limits.ReviewAbove != nil {
-			return fmt.Errorf("attestation.transfer_policy route %q limits.review_above is not supported; attestation policy cannot produce review verdicts", route.ID)
+			return fmt.Errorf("attestation.transfer_policy route %q limits.review_above is not supported; attestor policy cannot produce review verdicts", route.ID)
 		}
 		for network, limits := range route.LimitsByNetwork {
 			if limits.ReviewAbove != nil {
-				return fmt.Errorf("attestation.transfer_policy route %q limits_by_network[%s].review_above is not supported; attestation policy cannot produce review verdicts", route.ID, network)
+				return fmt.Errorf("attestation.transfer_policy route %q limits_by_network[%s].review_above is not supported; attestor policy cannot produce review verdicts", route.ID, network)
 			}
 		}
 	}
@@ -316,7 +316,7 @@ func requireRejectRouteMiss(label string, value *string) error {
 	case "", string(TransferOnNoRouteReject):
 		return nil
 	default:
-		return fmt.Errorf("%s must be %q for attestation policy, got %q", label, TransferOnNoRouteReject, *value)
+		return fmt.Errorf("%s must be %q for attestor policy, got %q", label, TransferOnNoRouteReject, *value)
 	}
 }
 
@@ -414,9 +414,9 @@ func NormalizeKeyOverrideKey(key string) (string, error) {
 	return addr.String(), nil
 }
 
-// NormalizeAttestationKeyOverrideKey validates and canonicalizes an
-// attestation.yaml key_overrides selector. Attestation overrides are always
-// keyed by attestor component-key selector, not spending-account address.
+// NormalizeAttestationKeyOverrideKey validates and canonicalizes an attestor
+// policy key_overrides selector. Attestor overrides are always keyed by
+// attestor component-key selector, not spending-account address.
 func NormalizeAttestationKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
@@ -548,9 +548,12 @@ func PolicyPath(dataRoot, identityID string) string {
 	return filepath.Join(dataRoot, "identities", identityID, "policy.yaml")
 }
 
-// AttestationPath returns the path to an identity attestation policy file.
+// AttestationPath returns the path to the policy file used by attestor nodes.
+// Single-mode nodes store the active role policy in policy.yaml; this helper is
+// retained so attestor-domain callers can keep using the attestor parser and
+// validator without carrying a separate filename.
 func AttestationPath(dataRoot, identityID string) string {
-	return filepath.Join(dataRoot, "identities", identityID, "attestation.yaml")
+	return PolicyPath(dataRoot, identityID)
 }
 
 // LoadStoredConfig reads the per-identity policy file. Missing files return an empty config.
@@ -571,8 +574,8 @@ func LoadStoredConfig(dataRoot, identityID string) (*StoredConfig, error) {
 	return cfg, nil
 }
 
-// LoadStoredAttestationConfig reads the per-identity attestation policy file.
-// Missing files return an empty config.
+// LoadStoredAttestationConfig reads the per-identity policy file as an
+// attestor policy document. Missing files return an empty config.
 func LoadStoredAttestationConfig(dataRoot, identityID string) (*StoredConfig, error) {
 	path := AttestationPath(dataRoot, identityID)
 	data, err := os.ReadFile(path)
@@ -580,12 +583,12 @@ func LoadStoredAttestationConfig(dataRoot, identityID string) (*StoredConfig, er
 		return &StoredConfig{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read attestation config: %w", err)
+		return nil, fmt.Errorf("failed to read attestor policy config: %w", err)
 	}
 
 	cfg, err := ParseStoredAttestationConfig(data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse attestation config: %w", err)
+		return nil, fmt.Errorf("failed to parse attestor policy config: %w", err)
 	}
 	return cfg, nil
 }
@@ -628,9 +631,9 @@ func ParseStoredConfig(data []byte) (*StoredConfig, error) {
 	return cfg, nil
 }
 
-// ParseStoredAttestationConfig parses attestation.yaml bytes without
-// performing any integrity verification. The document is direct attestation
-// policy; it must not contain an attestation: wrapper.
+// ParseStoredAttestationConfig parses policy.yaml bytes for an attestor node
+// without performing any integrity verification. The document is direct
+// attestor policy; it must not contain an attestation: wrapper.
 func ParseStoredAttestationConfig(data []byte) (*StoredConfig, error) {
 	cfg, err := parseStoredConfig(data)
 	if err != nil {
@@ -661,7 +664,8 @@ func MarshalStoredConfig(cfg *StoredConfig) ([]byte, error) {
 	return yaml.Marshal(cfg)
 }
 
-// MarshalStoredAttestationConfig serializes a whole stored attestation config.
+// MarshalStoredAttestationConfig serializes a whole stored attestor policy
+// config.
 func MarshalStoredAttestationConfig(cfg *StoredConfig) ([]byte, error) {
 	if cfg == nil {
 		cfg = &StoredConfig{}
@@ -673,8 +677,7 @@ func MarshalStoredAttestationConfig(cfg *StoredConfig) ([]byte, error) {
 }
 
 // ApplySigning overlays policy.yaml values onto defaults and returns the
-// effective signing policy. policy.yaml is signing-only; attestation policy
-// lives in attestation.yaml.
+// effective signing policy. On signer nodes, policy.yaml is signing-only.
 func (c *StoredConfig) ApplySigning(defaults *Config) (*Config, error) {
 	if err := validateSigningDocument(c); err != nil {
 		return nil, err
@@ -687,9 +690,9 @@ func (c *StoredConfig) ApplySigning(defaults *Config) (*Config, error) {
 	return effective, nil
 }
 
-// ApplyAttestation overlays attestation.yaml values onto attestation defaults
-// and returns the effective attestor component policy. The document is direct:
-// no attestation: wrapper is used.
+// ApplyAttestation overlays attestor-node policy.yaml values onto attestation
+// defaults and returns the effective attestor component policy. The document is
+// direct: no attestation: wrapper is used.
 func (c *StoredConfig) ApplyAttestation(defaults *Config) (*Config, error) {
 	if err := validateAttestationDocument(c); err != nil {
 		return nil, err
@@ -730,20 +733,20 @@ func validateSigningDocument(c *StoredConfig) error {
 		return nil
 	}
 	if c.RejectRekey != nil {
-		return fmt.Errorf("policy.yaml reject_rekey is not supported; use attestation.yaml")
+		return fmt.Errorf("signer policy reject_rekey is not supported; use attestor policy")
 	}
 	if c.Attestation != nil {
-		return fmt.Errorf("policy.yaml attestation is not supported; use attestation.yaml")
+		return fmt.Errorf("signer policy attestation is not supported; use attestor policy")
 	}
 	for key, override := range c.KeyOverrides {
 		if override == nil {
 			continue
 		}
 		if override.RejectRekey != nil {
-			return fmt.Errorf("key_overrides for %q: reject_rekey is not supported in policy.yaml; use attestation.yaml", key)
+			return fmt.Errorf("key_overrides for %q: reject_rekey is not supported in signer policy; use attestor policy", key)
 		}
 		if override.Attestation != nil {
-			return fmt.Errorf("key_overrides for %q: attestation is not supported in policy.yaml; use attestation.yaml", key)
+			return fmt.Errorf("key_overrides for %q: attestation is not supported in signer policy; use attestor policy", key)
 		}
 	}
 	return nil
@@ -754,10 +757,10 @@ func validateAttestationDocument(c *StoredConfig) error {
 		return nil
 	}
 	if c.ClientSigning != nil {
-		return fmt.Errorf("attestation.yaml client_signing is not supported")
+		return fmt.Errorf("attestor policy client_signing is not supported")
 	}
 	if c.Attestation != nil {
-		return fmt.Errorf("attestation.yaml must not contain an attestation wrapper; put attestation policy fields at top level")
+		return fmt.Errorf("attestor policy must not contain an attestation wrapper; put attestor policy fields at top level")
 	}
 	if err := validateRoleConfig("attestation", c.toStoredRoleConfig()); err != nil {
 		return err
@@ -770,10 +773,10 @@ func validateAttestationDocument(c *StoredConfig) error {
 			continue
 		}
 		if override.ClientSigning != nil {
-			return fmt.Errorf("key_overrides for %q: client_signing is not supported in attestation.yaml", key)
+			return fmt.Errorf("key_overrides for %q: client_signing is not supported in attestor policy", key)
 		}
 		if override.Attestation != nil {
-			return fmt.Errorf("key_overrides for %q: attestation wrapper is not supported in attestation.yaml", key)
+			return fmt.Errorf("key_overrides for %q: attestation wrapper is not supported in attestor policy", key)
 		}
 		if len(override.KeyOverrides) > 0 {
 			return fmt.Errorf("key_overrides for %q: nested key_overrides are not supported", key)

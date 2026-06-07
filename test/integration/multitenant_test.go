@@ -128,9 +128,6 @@ func createIntegrationIdentityWithTemplate(t *testing.T, env *harness.TestEnvClo
 	if err := policy.SaveStoredConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
 		t.Fatalf("failed to create signed %s policy: %v", identityID, err)
 	}
-	if err := policy.SaveStoredAttestationConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
-		t.Fatalf("failed to create signed %s attestation policy: %v", identityID, err)
-	}
 
 	token, err := tokenfile.GenerateToken()
 	if err != nil {

@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 type policyCommandDocument struct {
@@ -40,7 +42,11 @@ func cmdPolicy(args []string) error {
 }
 
 func cmdPolicyCheck() error {
-	for _, doc := range policyCommandDocuments() {
+	docs, err := policyCommandDocuments()
+	if err != nil {
+		return err
+	}
+	for _, doc := range docs {
 		if _, err := doc.loadCheck(); err != nil {
 			return err
 		}
@@ -61,13 +67,17 @@ func cmdPolicyCheck() error {
 }
 
 func cmdPolicyVerify() error {
+	docs, err := policyCommandDocuments()
+	if err != nil {
+		return err
+	}
 	masterKey, err := readPolicyMasterKey()
 	if err != nil {
 		return err
 	}
 	defer crypto.ZeroBytes(masterKey)
 
-	for _, doc := range policyCommandDocuments() {
+	for _, doc := range docs {
 		stored, err := doc.verify(masterKey)
 		if err != nil {
 			return fmt.Errorf("%s integrity verification failed: %w", doc.name, err)
@@ -81,7 +91,10 @@ func cmdPolicyVerify() error {
 }
 
 func cmdPolicySign() error {
-	docs := policyCommandDocuments()
+	docs, err := policyCommandDocuments()
+	if err != nil {
+		return err
+	}
 	for _, doc := range docs {
 		if _, err := doc.loadCheck(); err != nil {
 			return err
@@ -106,50 +119,53 @@ func cmdPolicySign() error {
 	return nil
 }
 
-func policyCommandDocuments() []policyCommandDocument {
+func policyCommandDocuments() ([]policyCommandDocument, error) {
 	identityID := productIdentityID()
 	policyPath := policy.PolicyPath(dataDirectory, identityID)
-	attestationPath := policy.AttestationPath(dataDirectory, identityID)
-	return []policyCommandDocument{
-		{
-			name:    "policy.yaml",
-			path:    policyPath,
-			sidecar: policy.PolicyIntegritySidecarPath(policyPath),
-			loadCheck: func() (*policy.StoredConfig, error) {
-				return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
-					return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
-				})
-			},
-			verify: func(masterKey []byte) (*policy.StoredConfig, error) {
-				return policy.LoadVerifiedStoredConfigWithMasterKey(dataDirectory, identityID, masterKey)
-			},
-			apply: func(stored *policy.StoredConfig) (*policy.Config, error) {
-				return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
-			},
-			sign: func(masterKey []byte, signedAt time.Time) error {
-				return policy.SignPolicyFileIntegrityWithMasterKey(dataDirectory, identityID, masterKey, signedAt)
-			},
-		},
-		{
-			name:    "attestation.yaml",
-			path:    attestationPath,
-			sidecar: policy.PolicyIntegritySidecarPath(attestationPath),
-			loadCheck: func() (*policy.StoredConfig, error) {
-				return loadPolicyDocumentForCheck("attestation.yaml", attestationPath, policy.ParseStoredAttestationConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
-					return policyruntime.ApplyAttestationStoredConfig(dataDirectory, &config, stored)
-				})
-			},
-			verify: func(masterKey []byte) (*policy.StoredConfig, error) {
-				return policy.LoadVerifiedAttestationConfigWithMasterKey(dataDirectory, identityID, masterKey)
-			},
-			apply: func(stored *policy.StoredConfig) (*policy.Config, error) {
-				return policyruntime.ApplyAttestationStoredConfig(dataDirectory, &config, stored)
-			},
-			sign: func(masterKey []byte, signedAt time.Time) error {
-				return policy.SignAttestationFileIntegrityWithMasterKey(dataDirectory, identityID, masterKey, signedAt)
-			},
-		},
+	nodeDoc, _, err := noderole.Load(storepaths.NewPaths(dataDirectory))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load node role: %w", err)
 	}
+	doc := policyCommandDocument{
+		name:    "policy.yaml",
+		path:    policyPath,
+		sidecar: policy.PolicyIntegritySidecarPath(policyPath),
+	}
+	switch nodeDoc.Role {
+	case noderole.RoleAttestor:
+		doc.loadCheck = func() (*policy.StoredConfig, error) {
+			return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredAttestationConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
+				return policyruntime.ApplyAttestationStoredConfig(dataDirectory, &config, stored)
+			})
+		}
+		doc.verify = func(masterKey []byte) (*policy.StoredConfig, error) {
+			return policy.LoadVerifiedAttestationConfigWithMasterKey(dataDirectory, identityID, masterKey)
+		}
+		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
+			return policyruntime.ApplyAttestationStoredConfig(dataDirectory, &config, stored)
+		}
+		doc.sign = func(masterKey []byte, signedAt time.Time) error {
+			return policy.SignAttestationFileIntegrityWithMasterKey(dataDirectory, identityID, masterKey, signedAt)
+		}
+	case noderole.RoleSigner:
+		doc.loadCheck = func() (*policy.StoredConfig, error) {
+			return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
+				return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
+			})
+		}
+		doc.verify = func(masterKey []byte) (*policy.StoredConfig, error) {
+			return policy.LoadVerifiedStoredConfigWithMasterKey(dataDirectory, identityID, masterKey)
+		}
+		doc.apply = func(stored *policy.StoredConfig) (*policy.Config, error) {
+			return policyruntime.ApplyStoredConfig(dataDirectory, &config, stored)
+		}
+		doc.sign = func(masterKey []byte, signedAt time.Time) error {
+			return policy.SignPolicyFileIntegrityWithMasterKey(dataDirectory, identityID, masterKey, signedAt)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported node role %q", nodeDoc.Role)
+	}
+	return []policyCommandDocument{doc}, nil
 }
 
 func loadPolicyDocumentForCheck(name, path string, parser func([]byte) (*policy.StoredConfig, error), apply func(*policy.StoredConfig) (*policy.Config, error)) (*policy.StoredConfig, error) {

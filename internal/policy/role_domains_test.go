@@ -155,14 +155,14 @@ transfer_policy:
 			raw: `
 attestation: {}
 `,
-			want: "attestation.yaml must not contain an attestation wrapper",
+			want: "attestor policy must not contain an attestation wrapper",
 		},
 		{
 			name: "client reject rekey",
 			raw: `
 client_signing: {}
 `,
-			want: "attestation.yaml client_signing",
+			want: "attestor policy client_signing",
 		},
 	}
 

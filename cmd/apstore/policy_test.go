@@ -10,6 +10,7 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -122,10 +123,10 @@ transfer_policy:
 }
 
 func TestCmdPolicyCheckRejectsInvalidAttestationReviewPolicy(t *testing.T) {
-	withPolicyCommandStore(t, func(root string, _ []byte) {
+	withPolicyCommandStoreWithRole(t, noderole.RoleAttestor, func(root string, _ []byte) {
 		raw := []byte("always_review_warnings: true\n")
-		if err := os.WriteFile(policy.AttestationPath(root, productIdentityID()), raw, 0o600); err != nil {
-			t.Fatalf("WriteFile(attestation) error = %v", err)
+		if err := os.WriteFile(policy.PolicyPath(root, productIdentityID()), raw, 0o600); err != nil {
+			t.Fatalf("WriteFile(policy) error = %v", err)
 		}
 		err := cmdPolicy([]string{"check"})
 		if err == nil || !strings.Contains(err.Error(), "attestation.always_review_warnings") {
@@ -135,6 +136,11 @@ func TestCmdPolicyCheckRejectsInvalidAttestationReviewPolicy(t *testing.T) {
 }
 
 func withPolicyCommandStore(t *testing.T, fn func(root string, passphrase []byte)) {
+	t.Helper()
+	withPolicyCommandStoreWithRole(t, noderole.RoleSigner, fn)
+}
+
+func withPolicyCommandStoreWithRole(t *testing.T, role noderole.Role, fn func(root string, passphrase []byte)) {
 	t.Helper()
 	oldDataDirectory := dataDirectory
 	oldConfig := config
@@ -154,6 +160,7 @@ func withPolicyCommandStore(t *testing.T, fn func(root string, passphrase []byte
 		DataDir:    root,
 		Paths:      storepaths.NewPaths(root),
 		IdentityID: productIdentityID(),
+		Role:       role,
 	}); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}

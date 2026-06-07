@@ -13,6 +13,7 @@ import (
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storelock"
@@ -92,7 +93,7 @@ func (s OfflineStore) Validate(ctx context.Context, stored *policy.StoredConfig)
 	switch s.target() {
 	case TargetAttestation:
 		if _, err := policyruntime.ApplyAttestationStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
-			return fmt.Errorf("invalid attestation policy: %w", err)
+			return fmt.Errorf("invalid attestor policy: %w", err)
 		}
 	default:
 		if _, err := policyruntime.ApplyStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
@@ -102,8 +103,8 @@ func (s OfflineStore) Validate(ctx context.Context, stored *policy.StoredConfig)
 	return nil
 }
 
-// ValidateAttestation compiles a stored attestation policy using the same
-// runtime defaults as apsigner. It does not read or write attestation.yaml.
+// ValidateAttestation compiles a stored attestor policy using the same runtime
+// defaults as apsigner. It does not read or write policy files.
 func (s OfflineStore) ValidateAttestation(ctx context.Context, stored *policy.StoredConfig) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -119,7 +120,7 @@ func (s OfflineStore) ValidateAttestation(ctx context.Context, stored *policy.St
 		return err
 	}
 	if _, err := policyruntime.ApplyAttestationStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
-		return fmt.Errorf("invalid attestation policy: %w", err)
+		return fmt.Errorf("invalid attestor policy: %w", err)
 	}
 	return nil
 }
@@ -224,9 +225,9 @@ func (s OfflineStore) SaveYAML(ctx context.Context, data []byte) error {
 	return nil
 }
 
-// SaveAttestationYAML verifies the current on-disk attestation policy first,
+// SaveAttestationYAML verifies the current on-disk attestor policy first,
 // parses and validates the requested replacement, then writes the exact YAML
-// bytes plus a fresh sidecar.
+// bytes to policy.yaml plus a fresh sidecar.
 func (s OfflineStore) SaveAttestationYAML(ctx context.Context, data []byte) error {
 	s.Target = TargetAttestation
 	return s.SaveYAML(ctx, data)
@@ -284,6 +285,19 @@ func (s OfflineStore) validateOptionsWithoutPassphrase() error {
 	if s.identityID() == "" {
 		return fmt.Errorf("identity ID is required")
 	}
+	if target := s.target(); target != TargetAuto {
+		nodeDoc, _, err := noderole.Load(storepaths.NewPaths(s.DataDir))
+		if err != nil {
+			return fmt.Errorf("failed to load node role: %w", err)
+		}
+		roleTarget, err := TargetForNodeRole(nodeDoc.Role)
+		if err != nil {
+			return err
+		}
+		if target != roleTarget {
+			return fmt.Errorf("policy target %q is not allowed on %s nodes", target, nodeDoc.Role)
+		}
+	}
 	return nil
 }
 
@@ -295,10 +309,15 @@ func (s OfflineStore) identityID() string {
 }
 
 func (s OfflineStore) target() Target {
-	if s.Target == "" || s.Target == TargetAuto {
-		return TargetSigner
+	if s.Target != "" && s.Target != TargetAuto {
+		return s.Target
 	}
-	return s.Target
+	if s.DataDir != "" {
+		if target, err := ResolveTarget(s.DataDir, TargetAuto); err == nil {
+			return target
+		}
+	}
+	return TargetSigner
 }
 
 func (s OfflineStore) now() time.Time {

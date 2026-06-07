@@ -89,13 +89,15 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		crypto.ZeroBytes(masterKey)
 		return result, fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 	}
-	if err := policy.SaveStoredConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
-		crypto.ZeroBytes(masterKey)
-		return result, fmt.Errorf("failed to create policy integrity baseline: %w", err)
+	var policyErr error
+	if role == noderole.RoleAttestor {
+		policyErr = policy.SaveStoredAttestationConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now())
+	} else {
+		policyErr = policy.SaveStoredConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now())
 	}
-	if err := policy.SaveStoredAttestationConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
+	if policyErr != nil {
 		crypto.ZeroBytes(masterKey)
-		return result, fmt.Errorf("failed to create attestation policy integrity baseline: %w", err)
+		return result, fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)
 	}
 	crypto.ZeroBytes(masterKey)
 

@@ -264,25 +264,23 @@ only `user_auto_approve`.
 Process-global settings live in `config.yaml`. Identity-scoped settings live in `identities/<identity>/config.yaml` and nil means inherit from process defaults. `decommissioned:true` disables the identity.
 
 Signer policy participates in the ordered approval engine.
-Client-signing policy is identity-scoped and stored in
-`identities/<identity>/policy.yaml`; attestor component policy is stored in
-`identities/<identity>/attestation.yaml`. Each document has a sibling `.hmac`
-sidecar that authenticates the exact YAML bytes with a key derived from the
-identity master key. The default approval fallback is `user_auto_approve`,
-lives in `identities/<identity>/config.yaml`, and is not a policy document
-field. Both policy documents are verified and loaded on unlock/reload before
-the key scan; a missing policy file or missing/mismatched sidecar fails closed
-instead of falling back to defaults. Authenticated admin IPC policy operations
-are target-aware: signer nodes edit `policy.yaml`, attestor nodes edit
-`attestation.yaml`, and role-incompatible targets fail closed. Direct YAML
-edits to either document are checked, signed, and verified through `appolicy`
-or `apstore policy`.
-Both documents support YAML-only `key_overrides` blocks for per-key effective
-policy. Client-signing overrides in `policy.yaml` are keyed by Algorand auth
-address; attestor overrides in `attestation.yaml` are keyed by `a_...`
-component selector. These overrides apply to policy phases, are not exposed
-through admin IPC, and direct YAML edits require offline `apstore policy sign`
-before the signer will trust them.
+The active node-role policy is identity-scoped and stored in
+`identities/<identity>/policy.yaml`, with a sibling `.hmac` sidecar that
+authenticates the exact YAML bytes with a key derived from the identity master
+key. Signer nodes parse it as client-signing policy; attestor nodes parse it as
+direct attestor component policy. The default approval fallback is
+`user_auto_approve`, lives in `identities/<identity>/config.yaml`, and is not a
+policy document field. The policy document is verified and loaded on
+unlock/reload before the key scan; a missing policy file or missing/mismatched
+sidecar fails closed instead of falling back to defaults. Authenticated admin
+IPC policy operations are target-aware by policy domain, and role-incompatible
+targets fail closed. Direct YAML edits are checked, signed, and verified
+through `appolicy` or `apstore policy`.
+Both policy domains support YAML-only `key_overrides` blocks for per-key
+effective policy. Client-signing overrides are keyed by Algorand auth address;
+attestor overrides are keyed by `a_...` component selector. These overrides
+apply to policy phases, are not exposed through admin IPC, and direct YAML edits
+require offline `apstore policy sign` before the signer will trust them.
 
 Validation:
 
@@ -439,8 +437,6 @@ config/plugin/env files).
     config.yaml
     policy.yaml
     policy.yaml.hmac
-    attestation.yaml
-    attestation.yaml.hmac
     unlock.yaml
     .ssh/authorized_keys
     passphrase              # plaintext appass-file helper artifact, mode 0600
@@ -658,12 +654,13 @@ Behavior:
 - version 2 metadata with missing or zero KDF params is rejected
 - version 1 unlock falls back to the older Argon2id time parameter
 
-### Policy Files (`policy.yaml`, `attestation.yaml`)
+### Policy File (`policy.yaml`)
 
-The identity-scoped signer safety policy is stored at
-`identities/<identity>/policy.yaml`. The identity-scoped attestor component
-policy is stored at `identities/<identity>/attestation.yaml`. Each has a JSON
-sidecar at `<document>.hmac` that authenticates the exact YAML bytes.
+The identity-scoped active policy is stored at
+`identities/<identity>/policy.yaml`. Signer nodes parse that file as
+client-signing policy. Attestor nodes parse that same file as direct attestor
+component policy. The JSON sidecar at `policy.yaml.hmac` authenticates the
+exact YAML bytes.
 
 The policy integrity key is derived from the identity master key with HKDF-SHA256
 using info string `aplane policy integrity v1`. The derived key is 32 bytes and
@@ -686,28 +683,26 @@ decision.
 
 Policy load behavior:
 
-- unlock/reload verifies both `policy.yaml.hmac` and
-  `attestation.yaml.hmac` before parsing and applying policy
-- missing `policy.yaml`, missing `attestation.yaml`, or a missing/mismatched
-  sidecar fails closed
+- unlock/reload verifies `policy.yaml.hmac` before parsing and applying policy
+- missing `policy.yaml` or a missing/mismatched sidecar fails closed
 - during initial locked startup, a policy integrity failure prevents the
   admin-auth unlock from completing and is reported as `auth_result` with
   `code:"unlock_failed"`
 - reload failure keeps the previous in-memory policy active
 - admin policy writes require an unlocked identity and replace the
   node-role-selected policy document
-- direct YAML edits to either document require offline `appolicy --save` or
-  `apstore policy sign` before the signer trusts them
+- direct YAML edits require offline `appolicy --save` or `apstore policy sign`
+  before the signer trusts them
 - `appolicy` defaults to `--target auto`; for store-backed operations, auto
-  reads root `node.yaml` and targets `policy.yaml` on signer nodes or
-  `attestation.yaml` on attestor nodes
+  reads root `node.yaml` and targets the signer or attestor policy domain for
+  the single `policy.yaml` file
 - `appolicy --yaml` emits the exact verified selected document bytes;
   `appolicy --save` reads replacement YAML bytes from stdin, validates them in
   the selected policy domain, and writes those exact bytes plus a fresh sidecar
   under the store mutation lock; `--target signer|attestation` explicitly
-  selects the document
-- `apstore policy check|verify|sign` checks, verifies, or signs both policy
-  documents
+  selects the domain; store-backed role-incompatible targets fail closed
+- `apstore policy check|verify|sign` checks, verifies, or signs the active
+  node-role policy
 
 ### Key Files (`.key`)
 
@@ -1218,11 +1213,11 @@ fallback switch stored in identity config and shown in `apadmin` as
 auto-rejection, forced review, and explicit auto-approval have all had a chance
 to run.
 
-Client-signing `transfer_policy` is persisted in `policy.yaml`; attestor
-component `transfer_policy` is persisted in `attestation.yaml`. Both are
-validated by the normal policy load path and by `apstore policy
-check/sign/verify`. `appolicy` auto-targets the node-role document and
-`--target signer|attestation` can explicitly select a document for offline
+Client-signing and attestor component `transfer_policy` are both persisted in
+`policy.yaml`, with schema selected by node role. Both domains are validated by
+the normal policy load path and by `apstore policy check/sign/verify`.
+`appolicy` auto-targets the node-role domain and `--target signer|attestation`
+can explicitly select a domain for offline
 work; `apadmin` uses the node-role target online through admin IPC. Transfer
 policy is not projected through mutable admin IPC policy settings; guided edits
 use the shared full-document editor and are saved as whole-document YAML
@@ -1639,9 +1634,9 @@ Managed archive packaging:
   managed path, or checksum, copies it into a caller-selected destination
   directory using the managed archive filename, creates the destination directory
   when needed, and verifies the copy
-- the archive contains `README.md`, `manifest.json`, `apb/*.apb`, and policy snapshots at
-  `policy/policy.yaml`, `policy/policy.yaml.hmac`,
-  `policy/attestation.yaml`, and `policy/attestation.yaml.hmac`
+- the archive contains `README.md`, `manifest.json`, `apb/*.apb`, and the
+  active policy snapshot at `policy/policy.yaml` and
+  `policy/policy.yaml.hmac`
 - `manifest.json` has schema `aplane.backup.manifest.v1`, `schema_version:1`,
   `source_node_role:"signer"|"attestor"`, and `created_at_unix`. Restore
   validates payload key classes against the destination node role; it does not

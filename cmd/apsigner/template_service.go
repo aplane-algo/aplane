@@ -44,16 +44,18 @@ func (fs *Signer) newReloadServiceForIdentity(ir *identity.Runtime, session *key
 			} else if verifiedRole.Role != ir.NodeRole() {
 				return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", ir.ID(), ir.NodeRole(), verifiedRole.Role)
 			}
-			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedWithStored(fs.dataDir, ir.ID(), fs.config, masterKey)
+			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStored(ir.NodeRole(), fs.dataDir, ir.ID(), fs.config, masterKey)
 			if err != nil {
 				return fmt.Errorf("policy verification failed for identity %q: %w", ir.ID(), err)
 			}
-			storedAttestation, effectiveAttestation, err := policyruntime.LoadVerifiedAttestationWithStored(fs.dataDir, ir.ID(), fs.config, masterKey)
-			if err != nil {
-				return fmt.Errorf("attestation policy verification failed for identity %q: %w", ir.ID(), err)
+			switch ir.NodeRole() {
+			case noderole.RoleAttestor:
+				ir.SetPolicyState(nil, nil)
+				ir.SetAttestationPolicyState(storedPolicy, effectivePolicy)
+			default:
+				ir.SetPolicyState(storedPolicy, effectivePolicy)
+				ir.SetAttestationPolicyState(nil, nil)
 			}
-			ir.SetPolicyState(storedPolicy, effectivePolicy)
-			ir.SetAttestationPolicyState(storedAttestation, effectiveAttestation)
 			return nil
 		},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {

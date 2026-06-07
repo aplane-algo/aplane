@@ -130,7 +130,7 @@ All under `cmd/`:
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
 | `apstore` | Local keystore management client: local `initialize`, policy integrity check/verify/sign, public endpoint export, public attestor reference import/export/list, local `verify`, and local `rebuild` rescue flows; daemon-owned backup, restore, template, key type, and changepass operations use the admin protocol |
-| `appolicy` | Offline policy checker/editor TUI that auto-targets `policy.yaml` on signer nodes and `attestation.yaml` on attestor nodes, plus scriptable save/check/export and signing-to-attestation conversion while holding the store mutation lock |
+| `appolicy` | Offline policy checker/editor TUI that auto-targets the `policy.yaml` domain from the node role, plus scriptable save/check/export and signing-to-attestor-policy conversion while holding the store mutation lock |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, apclient default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
 | `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |
@@ -470,22 +470,22 @@ Passphrase helper configuration is identity-scoped via `internal/signerapp/ident
 Passphrase files are stored at `identities/<identity>/passphrase` or `passphrase.cred` for `systemd-creds`.
 
 Signer policy participates in the ordered approval engine. The current policy
-verdict model is documented in [ARCH_POLICY.md](ARCH_POLICY.md). Client
-signing policy is identity-scoped and stored at
-`identities/<identity>/policy.yaml`; attestor component policy is stored at
-`identities/<identity>/attestation.yaml`. Both files have HMAC sidecars. The
-default approval fallback is `user_auto_approve`, persisted in
+verdict model is documented in [ARCH_POLICY.md](ARCH_POLICY.md). The active
+node-role policy is identity-scoped and stored at
+`identities/<identity>/policy.yaml` with a sibling HMAC sidecar. On signer
+nodes the document is client-signing policy; on attestor nodes the same
+filename is direct attestor component policy. The default approval fallback is
+`user_auto_approve`, persisted in
 `identities/<identity>/config.yaml` and shown in `apadmin` as
 `User Auto-Approve`. Policy is verified with a key derived from the identity
 master key and loaded into the bound identity runtime on unlock/reload before
 the key scan. Guided policy editing is implemented once in
 `internal/policytui` and used through two stores: `appolicy` edits the selected
-document offline while holding the store mutation lock, and `apadmin` edits the
+domain offline while holding the store mutation lock, and `apadmin` edits the
 active document online through the admin protocol while `apsigner` is running.
-Both surfaces select `policy.yaml` on signer nodes and `attestation.yaml` on
-attestor nodes; `appolicy --target signer|attestation` can override
-auto-selection for offline review. Direct edits to either policy document are
-checked and signed with `apstore policy`. Admin IPC policy messages are
+Both surfaces select the policy domain from the node role; store-backed
+role-incompatible targets fail closed. Direct edits to `policy.yaml` are checked
+and signed with `apstore policy`. Admin IPC policy messages are
 target-aware (`signer|attestation`), validate replacements before writing, use
 `expected_current_sha256` for optimistic concurrency, write the YAML plus a
 fresh sidecar, and update the bound runtime immediately on success. The limited
@@ -493,11 +493,11 @@ admin policy settings payload remains a legacy scalar projection; YAML-only
 fields such as `key_overrides` are edited through the shared full-document
 editor and are visible in canonical YAML snapshots.
 
-Both policy documents may contain YAML-only `key_overrides`; during normal
+The policy document may contain YAML-only `key_overrides`; during normal
 signing, the effective policy is selected by signing auth address, not by
 transaction sender, so rekeyed accounts use the policy override for the auth
-address. Attestor component signing selects by the `a_...` component selector
-from `attestation.yaml`.
+address. On attestor nodes, component signing selects overrides by the `a_...`
+component selector from the attestor-domain `policy.yaml`.
 Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
@@ -1019,7 +1019,7 @@ accounts whose LogicSig bytecode requires both:
 - a user component signature produced by the user signer that owns the
   attested-account key file, and
 - an attestor component signature produced by a separate attestor signer that
-  owns an attestor component key and evaluates `attestation.yaml`.
+  owns an attestor component key and evaluates attestor-domain `policy.yaml`.
 
 The client never holds private key material. It orchestrates component signing
 and assembly through authenticated signer endpoints, then submits or simulates
@@ -1100,7 +1100,7 @@ three signer endpoint calls before final algod submit:
 
 The user-role component request proves the user signer controls the
 attested-account component key. The attestor-role component request evaluates
-decoded target transaction facts against `attestation.yaml` and returns
+decoded target transaction facts against attestor-domain `policy.yaml` and returns
 attestor component signatures when allowed. The assembly request verifies both
 component signatures against the local attested account key's stored metadata,
 packs LogicSig arguments, and returns signed group bytes.
@@ -1173,12 +1173,12 @@ development ergonomics, not a production independence claim.
 
 ### Policy And Audit
 
-Signer nodes use `policy.yaml` for account signing. Attestor nodes use
-`attestation.yaml` for attestor component signing. Both documents use the
-shared policy grammar and HMAC sidecar model, but attestation policy has no
-manual-review or operator-default verdict. It is deterministic authorization:
-all selected target movements must be positively authorized by the effective
-attestation policy, and deny guards fail closed.
+Signer nodes use `policy.yaml` for account signing. Attestor nodes also use
+`policy.yaml`, parsed in the attestor policy domain, for attestor component
+signing. Both domains use the shared policy grammar and HMAC sidecar model, but
+attestor policy has no manual-review or operator-default verdict. It is
+deterministic authorization: all selected target movements must be positively
+authorized by the effective attestor policy, and deny guards fail closed.
 
 Attestation policy overrides are keyed by attestor component selector
 (`a_...`). Client-signing policy overrides are keyed by signing auth address.
@@ -1207,7 +1207,7 @@ Primary implementation ownership:
   endpoint envelope handling.
 - `internal/attestor/attrefs`: public attestor reference catalog used by
   generation UIs.
-- `internal/policy`: shared signer/attestation policy grammar, validation, and
+- `internal/policy`: shared signer/attestor policy grammar, validation, and
   evaluation domains.
 
 Compatibility-bearing wire, file, endpoint, policy, backup/restore, and SDK

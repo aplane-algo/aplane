@@ -124,10 +124,6 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("SaveStoredConfigWithMasterKey(%q): %v", identityID, err)
 	}
-	if err := policy.SaveStoredAttestationConfigWithMasterKey(server.dataDir, identityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
-		crypto.ZeroBytes(masterKey)
-		t.Fatalf("SaveStoredAttestationConfigWithMasterKey(%q): %v", identityID, err)
-	}
 	roleDoc, roleBytes, err := noderole.Load(server.keyPaths)
 	if err != nil {
 		crypto.ZeroBytes(masterKey)

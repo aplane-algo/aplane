@@ -447,7 +447,7 @@ func TestBuildAttestationPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T
 	}
 	if !strings.Contains(snapshot.PolicyYAML, "allow_initial") ||
 		!strings.Contains(snapshot.PolicyYAML, "transfer_policy:") {
-		t.Fatalf("PolicyYAML missing expected attestation policy fields:\n%s", snapshot.PolicyYAML)
+		t.Fatalf("PolicyYAML missing expected attestor policy fields:\n%s", snapshot.PolicyYAML)
 	}
 }
 
@@ -517,12 +517,12 @@ func TestReplaceAttestationPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 		t.Fatalf("MarshalStoredAttestationConfig(): %v", err)
 	}
 	if !strings.Contains(string(verifiedData), "allow_updated") {
-		t.Fatalf("verified attestation policy missing updated route:\n%s", verifiedData)
+		t.Fatalf("verified attestor policy missing updated route:\n%s", verifiedData)
 	}
 	stored, _ := ir.AttestationPolicySnapshot()
 	if stored == nil || stored.TransferPolicy == nil || len(stored.TransferPolicy.Routes) != 1 ||
 		stored.TransferPolicy.Routes[0].ID != "allow_updated" {
-		t.Fatalf("runtime stored attestation policy = %+v, want allow_updated route", stored)
+		t.Fatalf("runtime stored attestor policy = %+v, want allow_updated route", stored)
 	}
 }
 

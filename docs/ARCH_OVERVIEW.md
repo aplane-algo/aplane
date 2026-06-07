@@ -56,7 +56,7 @@ a key.
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
 | **apstore** | Keystore management client for local initialize, policy integrity, endpoint export, public attestor references, backup import admission, verification, and rebuild rescue flows; live backup, restore, template, key type, and passphrase operations use the admin protocol | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
-| **appolicy** | Offline policy checker/editor for the node-role policy document (`policy.yaml` for signer nodes, `attestation.yaml` for attestor nodes), plus signing-to-attestation conversion | UI (TUI) + Policy + Store Mutation |
+| **appolicy** | Offline policy checker/editor for the node-role policy document (`policy.yaml` for signer nodes, attestor-domain `policy.yaml` for attestor nodes), plus signing-to-attestation conversion | UI (TUI) + Policy + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
 | **aplocalnet** | LocalNet setup TUI/CLI for apclient default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
 | **approbe** | Installer-facing liveness probe for signer IPC reachability before replacing local binaries | Installer helper + admin protocol probe |
@@ -272,8 +272,7 @@ new-install-only release.
 apsigner also reads per-identity configuration overlays:
 - `identities/<identity>/config.yaml` — identity-scoped settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `mode`, `decommissioned`) that override process-global defaults
 - `identities/<identity>/unlock.yaml` — identity-scoped passphrase helper configuration
-- `identities/<identity>/policy.yaml` — identity-scoped signer safety policy
-- `identities/<identity>/attestation.yaml` — identity-scoped attestor component policy
+- `identities/<identity>/policy.yaml` — identity-scoped node-role policy
 - `identities/<identity>/keytypes/<key_type>.json` — identity-scoped state records for optional key types
 - `identities/<identity>/keytypes/<key_type>.template` — encrypted installed YAML templates
 
@@ -350,9 +349,8 @@ Each identity owns an `identity.Runtime` containing:
 The on-disk layout is identity-scoped: keys under
 `identities/<identityID>/keys/`, encrypted templates and state records under
 `identities/<identityID>/keytypes/`, deleted key/template
-archives under `identities/<identityID>/deleted/`, policy at
-`identities/<identityID>/policy.yaml`, attestor component policy at
-`identities/<identityID>/attestation.yaml`, and config at
+archives under `identities/<identityID>/deleted/`, node-role policy at
+`identities/<identityID>/policy.yaml`, and config at
 `identities/<identityID>/config.yaml`. HTTP handlers extract the authenticated
 identity from request context; admin sessions over IPC or the SSH
 `aplane-admin` subsystem bind to one identity at auth time.

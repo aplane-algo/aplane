@@ -179,7 +179,7 @@ func TestOfflineStoreSaveYAMLPreservesPolicyBytes(t *testing.T) {
 }
 
 func TestOfflineStoreSaveAttestationYAMLPreservesPolicyBytes(t *testing.T) {
-	dataDir, passphrase := initializedPolicyStore(t)
+	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleAttestor)
 	attestationBytes := []byte(`# replacement attestation
 reject_rekey: true
 transfer_policy:
@@ -201,9 +201,9 @@ transfer_policy:
 	if err := store.SaveAttestationYAML(context.Background(), attestationBytes); err != nil {
 		t.Fatalf("SaveAttestationYAML() error = %v", err)
 	}
-	gotBytes, err := os.ReadFile(policy.AttestationPath(dataDir, DefaultIdentityID))
+	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, DefaultIdentityID))
 	if err != nil {
-		t.Fatalf("ReadFile(attestation) error = %v", err)
+		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
 	if string(gotBytes) != string(attestationBytes) {
 		t.Fatalf("attestation bytes changed during SaveAttestationYAML:\ngot:\n%s\nwant:\n%s", gotBytes, attestationBytes)

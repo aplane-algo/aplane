@@ -31,21 +31,19 @@ target transaction in `/sign/component`. Policy is separate from:
 
 ## Storage
 
-Policy is identity-scoped and stored in two documents:
+Policy is identity-scoped and stored in one role-dependent document:
 
 ```text
 identities/<identity>/policy.yaml
-identities/<identity>/attestation.yaml
 ```
 
-The signer keeps sibling integrity sidecars:
+The signer keeps a sibling integrity sidecar:
 
 ```text
 identities/<identity>/policy.yaml.hmac
-identities/<identity>/attestation.yaml.hmac
 ```
 
-The HMAC covers the exact YAML bytes for its document and uses a key derived
+The HMAC covers the exact YAML bytes for the document and uses a key derived
 from the identity master key. Sidecar metadata such as signing time, policy
 SHA-256, and file mtime is diagnostic; the HMAC is the security check. After
 the signed baseline exists, a missing or mismatched sidecar fails closed
@@ -67,32 +65,31 @@ identities/<identity>/config.yaml
 policy rule; it is the user/operator default used only when policy has no
 matching verdict.
 
-Signing and attestor component policy are stored as separate signed YAML
-documents:
+Signing and attestor component policy use the same filename, selected by the
+root `node.yaml` role:
 
 ```text
 identities/<identity>/policy.yaml
 identities/<identity>/policy.yaml.hmac
-identities/<identity>/attestation.yaml
-identities/<identity>/attestation.yaml.hmac
 ```
 
-Both sidecars use the policy integrity key derived from the identity master
-key. Unlock/reload verifies both documents before publishing runtime state; a
+The sidecar uses the policy integrity key derived from the identity master key.
+Unlock/reload verifies the active document before publishing runtime state; a
 missing, malformed, or mismatched sidecar fails closed.
 
-`policy.yaml` is the client-signing policy. It is a sparse map. Absent fields
-resolve through product defaults: `reject_foreign_rekey` defaults to `true`,
-while `reject_close_remainder`, `reject_asset_close`, `reject_clawback`,
-`always_review_warnings`, and `auto_approve_self_noop_transfer` default to
-`false`. An absent `max_fee_microalgos` means no fee ceiling, and absent
-transfer-guard maps are empty. `transfer_policy` may be absent entirely; if it
-is present, it must satisfy the explicit routing schema below.
+On signer nodes, `policy.yaml` is the client-signing policy. It is a sparse
+map. Absent fields resolve through product defaults: `reject_foreign_rekey`
+defaults to `true`, while `reject_close_remainder`, `reject_asset_close`,
+`reject_clawback`, `always_review_warnings`, and
+`auto_approve_self_noop_transfer` default to `false`. An absent
+`max_fee_microalgos` means no fee ceiling, and absent transfer-guard maps are
+empty. `transfer_policy` may be absent entirely; if it is present, it must
+satisfy the explicit routing schema below.
 
-`attestation.yaml` is the attestor component policy. It uses the same sparse
-field names but is direct: there is no top-level `attestation:` wrapper.
-Review-producing fields are invalid in this document, and route misses default
-to deterministic `reject` when `transfer_policy.enabled:true`.
+On attestor nodes, `policy.yaml` is the attestor component policy. It uses the
+same sparse field names but is direct: there is no top-level `attestation:`
+wrapper. Review-producing fields are invalid in this document, and route
+misses default to deterministic `reject` when `transfer_policy.enabled:true`.
 
 The policy loader validates schema and domain constraints independent of the
 identity's current key inventory. Validation runs at unlock/reload and at any
@@ -146,7 +143,7 @@ order is still used, but review is not a valid attestation outcome:
 | Operator Default | Per `user_auto_approve` | Not applicable; unmatched attestor requests reject |
 
 The deterministic attestation surface is enforced by keeping review-producing
-fields out of `attestation.yaml`. Policy load rejects
+fields out of attestor-domain `policy.yaml`. Policy load rejects
 `always_review_warnings`, `review_algo_payments`, `review_asa_amounts`,
 `transfer_policy.on_no_route: review`, route `review_above`, and equivalent
 review-producing behavior in attestor policy. If implementation ever
@@ -181,7 +178,7 @@ client_signing:
   # top-level client-signing values.
 ```
 
-`attestation.yaml` is the attestor component policy document:
+Attestor-node `policy.yaml` is the attestor component policy document:
 
 ```yaml
 reject_rekey: true
@@ -193,14 +190,15 @@ transfer_policy:
   # when enabled, omitted values are interpreted as reject.
 ```
 
-The accepted top-level keys in `policy.yaml` are the client-signing field set,
-`client_signing`, and `key_overrides`. `policy.yaml` rejects `attestation:`
-and top-level `reject_rekey`; those belong to `attestation.yaml`.
+On signer nodes, the accepted top-level keys in `policy.yaml` are the
+client-signing field set, `client_signing`, and `key_overrides`.
+Signer-domain `policy.yaml` rejects `attestation:` and top-level
+`reject_rekey`; those belong to the attestor policy domain.
 
-The accepted top-level keys in `attestation.yaml` are the attestation field
-set and `key_overrides`. `attestation.yaml` rejects `client_signing:` and
-`attestation:` wrappers. Unknown top-level keys fail validation in both
-documents.
+On attestor nodes, the accepted top-level keys in `policy.yaml` are the
+attestor field set and `key_overrides`. Attestor-domain `policy.yaml` rejects
+`client_signing:` and `attestation:` wrappers. Unknown top-level keys fail
+validation in both domains.
 
 Client-signing semantics:
 
@@ -214,7 +212,7 @@ Client-signing semantics:
 
 Attestation semantics:
 
-- Top-level fields in `attestation.yaml` are the attestor policy.
+- Top-level fields in attestor-domain `policy.yaml` are the attestor policy.
 - `reject_rekey` is valid only here.
 - `reject_foreign_rekey`, `always_review_warnings`,
   `auto_approve_self_noop_transfer`, `review_algo_payments`, and
@@ -222,10 +220,9 @@ Attestation semantics:
 - `transfer_policy` is the positive authorization surface. If enabled, route
   miss behavior is deterministic reject.
 
-Both documents are validated by schema and domain, not by the identity's
-current key inventory. An identity can carry `attestation.yaml` before an
-attestor key is installed, and it can carry `policy.yaml` even when it is
-hosted on an attestor node.
+Both policy domains are validated by schema, not by the identity's current key
+inventory. An attestor node can carry attestor-domain `policy.yaml` before an
+attestor key is installed.
 
 Legacy compatibility: a `policy.yaml` written before role domains existed
 places all client-signing-only fields at the top level. The loader treats
@@ -238,7 +235,7 @@ migrating an existing policy can move these fields explicitly under
 contains review-producing behavior (`on_no_route: review`, `review_above`,
 and similar fields) is valid for client signing, but it is not a complete
 attestation allow-list; an attestation request that would need those review
-outcomes fails closed unless `attestation.yaml` supplies a
+outcomes fails closed unless attestor-domain `policy.yaml` supplies a
 deterministic replacement.
 
 ## Runtime Snapshot Semantics
@@ -310,7 +307,7 @@ authorization surface. See [Transfer Routing](#transfer-routing).
 Always Review rules force a human approval prompt even when the operator default
 is configured to skip review. The whole tier is client-signing-only: the
 attestation domain has no operator above the signer, so review-producing
-fields are rejected in `attestation.yaml` at policy load time.
+fields are rejected in attestor-domain `policy.yaml` at policy load time.
 Legacy top-level review-producing fields are client-signing-only compatibility
 fields. If a review verdict is still reachable while evaluating an attestor
 component request, the request fails closed as a policy configuration error.
@@ -370,7 +367,7 @@ Policy fields by domain:
 `auto_approve_self_noop_transfer` is client-signing-only because its "self"
 predicate references the signer-owned account. It has no defined meaning for
 attestation: an attestor is not the owner of the sender it is authorizing.
-The field is rejected at load time in `attestation.yaml`. If an invalid
+The field is rejected at load time in attestor-domain `policy.yaml`. If an invalid
 effective attestor policy is injected in tests or by compatibility code, the
 rule simply does not match an attestor request because no signer-owned address
 is in scope to compare against.
@@ -425,7 +422,7 @@ Behavior:
 `transfer_policy` is the implemented v1 route table for direct transfer
 movements. The same routing engine applies to both client-signing and
 attestation evaluation. Client-signing routes live in `policy.yaml`; attestor
-component routes live in `attestation.yaml`. Transfer routing is not projected
+component routes live in attestor-domain `policy.yaml`. Transfer routing is not projected
 through admin IPC.
 
 For client signing, a route match means "allowed to continue through the
@@ -447,9 +444,9 @@ rules.
 
 In `policy.yaml`, a `transfer_policy:` block may also be nested inside
 `client_signing:` to override the top-level client-signing routes. In
-`attestation.yaml`, the top-level `transfer_policy:` is the attestor
+attestor-domain `policy.yaml`, the top-level `transfer_policy:` is the attestor
 allow-list. These blocks follow the same schema, validation, and overlay rules
-except for attestation route-miss boilerplate. In `attestation.yaml`,
+except for attestation route-miss boilerplate. In attestor-domain `policy.yaml`,
 route-miss behavior is not configurable:
 `on_no_route`, `close_on_no_route`, and `clawback_on_no_route` may be omitted
 and are interpreted as `reject`; if present, the only accepted value is
@@ -461,7 +458,7 @@ are not valid authorization outcomes. Examples include `on_no_route: review`,
 `close_on_no_route: operator_default`, and route-level `review_above`. If such
 behavior appears in the effective attestation routing block, the attestor
 request fails closed as a policy configuration error. Operators can keep review
-behavior in `policy.yaml` and provide a deterministic `attestation.yaml`
+behavior in `policy.yaml` and provide a deterministic attestor-domain `policy.yaml`
 transfer policy for attestor component signing.
 
 For example, a legacy top-level `transfer_policy` with one deterministic
@@ -504,12 +501,12 @@ Routing is disabled unless `transfer_policy.enabled:true`. If a
 `transfer_policy` or route entries fail validation. For top-level and
 `client_signing.transfer_policy` blocks, `on_no_route` must be explicit when
 routing is enabled unless the block is a key override that inherits an
-identity-wide `on_no_route` value. `attestation.yaml` omits that choice and
+identity-wide `on_no_route` value. attestor-domain `policy.yaml` omits that choice and
 treats route misses as `reject`. For top-level and
 `client_signing.transfer_policy` blocks, `close_on_no_route` and
 `clawback_on_no_route` default to `reject` and may be set explicitly to
 document or override the stricter close-out and clawback route-miss behavior.
-For `attestation.yaml` transfer policy, those values are implicit `reject` as
+For attestor-domain `policy.yaml` transfer policy, those values are implicit `reject` as
 described above.
 
 Top-level routing schema:
@@ -682,16 +679,16 @@ Attestor component policy rule IDs:
 - `attestation_policy:reject_rekey`
 
 These rule IDs are emitted when the attestor role has no effective
-`attestation.yaml` policy, lacks an enabled positive transfer policy, has
+attestor-domain `policy.yaml` policy, lacks an enabled positive transfer policy, has
 route-miss behavior that is not deterministic `reject`, is asked to attest a
 target with no supported transfer movement, or sees a non-zero `RekeyTo`.
 
 ## Key Overrides
 
-Both `policy.yaml` and `attestation.yaml` may contain `key_overrides`, a map
-from concrete signing authority selector to sparse policy blocks. In
-`policy.yaml`, selectors are Algorand auth addresses for client signing. In
-`attestation.yaml`, selectors are `a_...` attestor component-key selectors.
+Both policy domains may contain `key_overrides`, a map from concrete signing
+authority selector to sparse policy blocks. In signer-domain `policy.yaml`,
+selectors are Algorand auth addresses for client signing. In attestor-domain
+`policy.yaml`, selectors are `a_...` attestor component-key selectors.
 
 During normal transaction signing, the effective policy is selected by the
 `auth_address` key that will sign, not by transaction sender. This matters for
@@ -706,9 +703,9 @@ explicit `enabled`; the remaining transfer routing fields use the overlay rules
 described in [Transfer Routing](#transfer-routing).
 
 If no matching selector exists, the identity-wide effective policy for that
-document applies. Override blocks in `attestation.yaml` are direct sparse
+document applies. Override blocks in attestor-domain `policy.yaml` are direct sparse
 attestor policy blocks and must satisfy the same validation as the
-identity-wide attestation document: no review-producing route outcomes.
+identity-wide attestor policy: no review-producing route outcomes.
 
 ## Transaction Scope
 
@@ -743,28 +740,28 @@ plus a fresh sidecar, and updates the active runtime policy immediately.
 
 The admin protocol and `internal/signerapp/admin` expose target-aware policy
 messages: `get_policy_snapshot`, `validate_policy`, and `replace_policy`.
-Targets are `signer` for `policy.yaml` and `attestation` for
-`attestation.yaml`; omitted targets default to `signer` for compatibility.
-Signer nodes reject the attestation target, and attestor nodes reject the
-signer target. New policy UI work should reuse `internal/policytui` with an
-appropriate store rather than adding a second field-editing model.
+Targets are `signer` and `attestation` policy domains; the filename is always
+`policy.yaml`. Omitted targets default from the node role. Signer nodes reject
+the attestation target, and attestor nodes reject the signer target. New policy
+UI work should reuse `internal/policytui` with an appropriate store rather than
+adding a second field-editing model.
 
-Client-signing `transfer_policy` is persisted in `policy.yaml`; attestor
-component `transfer_policy` is persisted in `attestation.yaml`. Both are
-validated by the policy load path and by `apstore policy check/sign/verify`.
-`appolicy` auto-targets `policy.yaml` on signer nodes and `attestation.yaml`
-on attestor nodes; `--target signer|attestation` can explicitly select a
-document for offline review. `apadmin` uses the same node-role target selection
-online. Transfer policy is not projected through the mutable admin IPC policy
+Client-signing and attestor component `transfer_policy` are both persisted in
+`policy.yaml`, with schema validation selected by node role. `apstore policy
+check|sign|verify` operates on the active node-role policy. `appolicy`
+auto-targets the policy domain from `node.yaml`; `--target signer|attestation`
+can explicitly select a domain for standalone-file review, while store-backed
+role-incompatible targets fail closed. `apadmin` uses the same node-role target
+selection online. Transfer policy is not projected through the mutable admin IPC policy
 settings payload; the shared full-document editor renders and saves it through
 canonical YAML.
 
 `appolicy` is the local offline policy editor. In production mode it defaults
-to `--target auto`, reads root `node.yaml`, and edits `policy.yaml` for signer
-nodes or `attestation.yaml` for attestor nodes. It verifies the selected HMAC
-sidecar with the store passphrase, validates changes through the same runtime
-compiler as `apsigner`, and applies the draft to production by saving the
-selected document plus a fresh sidecar while holding the store mutation lock.
+to `--target auto`, reads root `node.yaml`, and edits `policy.yaml` using the
+signer or attestor policy domain selected by the node role. It verifies the
+HMAC sidecar with the store passphrase, validates changes through the same
+runtime compiler as `apsigner`, and applies the draft to production by saving
+the document plus a fresh sidecar while holding the store mutation lock.
 When opened with a standalone YAML file, it validates the file without
 unlocking the production store; applying that file-backed draft to production
 is the operation that asks for the passphrase. The TUI exposes common policy
@@ -805,12 +802,12 @@ still round-trip through YAML and can be edited directly with
 of the exact trusted selected document bytes. `appolicy --yaml` verifies the
 sidecar and emits those bytes to stdout. `appolicy --save` reads exact
 replacement YAML bytes from stdin, parses and runtime-validates them in the
-selected policy domain, and writes the selected document plus a fresh sidecar
+selected policy domain, and writes `policy.yaml` plus a fresh sidecar
 while holding the same lock. `--target signer|attestation` explicitly selects
-the document when auto-selection is not desired.
+the domain when auto-selection is not desired.
 `appolicy --to-attestation` parses and runtime-validates a signing
 `policy.yaml`, projects the deterministic "could allow" envelope into direct
-`attestation.yaml`, and prints the result to stdout. The projection preserves
+attestor-domain `policy.yaml`, and prints the result to stdout. The projection preserves
 hard-reject bounds and transfer routes, removes review-only route thresholds,
 and fails closed for route-miss `review` or `operator_default` behavior because
 attestor policy has no human-review verdict.
@@ -840,8 +837,6 @@ Managed backups include a policy snapshot:
 ```text
 policy/policy.yaml
 policy/policy.yaml.hmac
-policy/attestation.yaml
-policy/attestation.yaml.hmac
 ```
 
 The backup path verifies the live policy before copying that snapshot. Restore

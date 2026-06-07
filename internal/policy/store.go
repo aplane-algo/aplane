@@ -26,16 +26,16 @@ func LoadVerifiedStoredConfig(dataRoot, identityID string, key []byte) (*StoredC
 	)
 }
 
-// LoadVerifiedAttestationConfig reads attestation.yaml and
-// attestation.yaml.hmac, verifies the sidecar against the document bytes, then
-// parses the stored attestation policy.
+// LoadVerifiedAttestationConfig reads policy.yaml for an attestor node, verifies
+// policy.yaml.hmac against the document bytes, then parses the stored attestor
+// policy.
 func LoadVerifiedAttestationConfig(dataRoot, identityID string, key []byte) (*StoredConfig, error) {
 	return loadVerifiedStoredConfigAtPath(
 		AttestationPath(dataRoot, identityID),
 		key,
 		ParseStoredAttestationConfig,
-		"attestation policy",
-		"attestation config",
+		"attestor policy",
+		"attestor policy config",
 	)
 }
 
@@ -73,7 +73,8 @@ func LoadVerifiedStoredConfigWithMasterKey(dataRoot, identityID string, masterKe
 }
 
 // LoadVerifiedAttestationConfigWithMasterKey derives the policy integrity key
-// from the identity master key, verifies attestation.yaml, and parses it.
+// from the identity master key, verifies policy.yaml as an attestor policy, and
+// parses it.
 func LoadVerifiedAttestationConfigWithMasterKey(dataRoot, identityID string, masterKey []byte) (*StoredConfig, error) {
 	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
 	if err != nil {
@@ -97,12 +98,12 @@ func SaveStoredConfigWithIntegrity(dataRoot, identityID string, cfg *StoredConfi
 	return SavePolicyBytesWithIntegrity(dataRoot, identityID, policyBytes, key, signedAt)
 }
 
-// SaveStoredAttestationConfigWithIntegrity writes attestation.yaml and
-// attestation.yaml.hmac.
+// SaveStoredAttestationConfigWithIntegrity writes policy.yaml and
+// policy.yaml.hmac for an attestor node.
 func SaveStoredAttestationConfigWithIntegrity(dataRoot, identityID string, cfg *StoredConfig, key []byte, signedAt time.Time) error {
 	attestationBytes, err := MarshalStoredAttestationConfig(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal attestation config: %w", err)
+		return fmt.Errorf("failed to marshal attestor policy config: %w", err)
 	}
 	return SaveAttestationBytesWithIntegrity(dataRoot, identityID, attestationBytes, key, signedAt)
 }
@@ -114,11 +115,11 @@ func SavePolicyBytesWithIntegrity(dataRoot, identityID string, policyBytes []byt
 	return savePolicyBytesWithIntegrityAtPath(PolicyPath(dataRoot, identityID), policyBytes, key, signedAt, "policy config", "policy integrity sidecar")
 }
 
-// SaveAttestationBytesWithIntegrity writes exact attestation.yaml bytes plus
-// attestation.yaml.hmac. The caller owns parsing and runtime validation before
-// calling this lower-level primitive.
+// SaveAttestationBytesWithIntegrity writes exact attestor-policy bytes to
+// policy.yaml plus policy.yaml.hmac. The caller owns parsing and runtime
+// validation before calling this lower-level primitive.
 func SaveAttestationBytesWithIntegrity(dataRoot, identityID string, attestationBytes []byte, key []byte, signedAt time.Time) error {
-	return savePolicyBytesWithIntegrityAtPath(AttestationPath(dataRoot, identityID), attestationBytes, key, signedAt, "attestation config", "attestation integrity sidecar")
+	return savePolicyBytesWithIntegrityAtPath(AttestationPath(dataRoot, identityID), attestationBytes, key, signedAt, "attestor policy config", "policy integrity sidecar")
 }
 
 func savePolicyBytesWithIntegrityAtPath(path string, policyBytes []byte, key []byte, signedAt time.Time, configLabel, sidecarLabel string) error {
@@ -182,8 +183,8 @@ func SaveStoredConfigWithMasterKey(dataRoot, identityID string, cfg *StoredConfi
 }
 
 // SaveStoredAttestationConfigWithMasterKey derives the policy integrity key
-// from the identity master key and writes attestation.yaml plus
-// attestation.yaml.hmac.
+// from the identity master key and writes attestor policy.yaml plus
+// policy.yaml.hmac.
 func SaveStoredAttestationConfigWithMasterKey(dataRoot, identityID string, cfg *StoredConfig, masterKey []byte, signedAt time.Time) error {
 	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
 	if err != nil {
@@ -205,8 +206,8 @@ func SavePolicyBytesWithMasterKey(dataRoot, identityID string, policyBytes []byt
 }
 
 // SaveAttestationBytesWithMasterKey derives the policy integrity key from the
-// identity master key and writes exact attestation.yaml bytes plus
-// attestation.yaml.hmac.
+// identity master key and writes exact attestor-policy bytes plus
+// policy.yaml.hmac.
 func SaveAttestationBytesWithMasterKey(dataRoot, identityID string, attestationBytes []byte, masterKey []byte, signedAt time.Time) error {
 	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
 	if err != nil {
@@ -223,10 +224,10 @@ func SignPolicyFileIntegrity(dataRoot, identityID string, key []byte, signedAt t
 	return signPolicyFileIntegrityAtPath(PolicyPath(dataRoot, identityID), key, signedAt, ParseStoredConfig, "policy", "policy config", "policy integrity sidecar")
 }
 
-// SignAttestationFileIntegrity writes attestation.yaml.hmac for the current
-// attestation.yaml bytes.
+// SignAttestationFileIntegrity writes policy.yaml.hmac for the current
+// attestor-policy bytes in policy.yaml.
 func SignAttestationFileIntegrity(dataRoot, identityID string, key []byte, signedAt time.Time) error {
-	return signPolicyFileIntegrityAtPath(AttestationPath(dataRoot, identityID), key, signedAt, ParseStoredAttestationConfig, "attestation policy", "attestation config", "attestation integrity sidecar")
+	return signPolicyFileIntegrityAtPath(AttestationPath(dataRoot, identityID), key, signedAt, ParseStoredAttestationConfig, "attestor policy", "attestor policy config", "policy integrity sidecar")
 }
 
 func signPolicyFileIntegrityAtPath(path string, key []byte, signedAt time.Time, parser storedConfigParser, docLabel, configLabel, sidecarLabel string) error {
@@ -285,7 +286,8 @@ func SignPolicyFileIntegrityWithMasterKey(dataRoot, identityID string, masterKey
 }
 
 // SignAttestationFileIntegrityWithMasterKey derives the policy integrity key
-// from the identity master key and signs the current attestation.yaml bytes.
+// from the identity master key and signs the current attestor-policy bytes in
+// policy.yaml.
 func SignAttestationFileIntegrityWithMasterKey(dataRoot, identityID string, masterKey []byte, signedAt time.Time) error {
 	key, err := crypto.DerivePolicyIntegrityKey(masterKey)
 	if err != nil {

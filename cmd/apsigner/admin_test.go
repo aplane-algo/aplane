@@ -74,10 +74,6 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Failed to create policy baseline: %v", err)
 	}
-	if err := policy.SaveStoredAttestationConfigWithMasterKey(tmpDir, auth.DefaultIdentityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
-		crypto.ZeroBytes(masterKey)
-		t.Fatalf("Failed to create attestation policy baseline: %v", err)
-	}
 	roleBytes, _, err := noderole.SaveInitial(keyPaths, noderole.RoleSigner, time.Now())
 	if err != nil {
 		crypto.ZeroBytes(masterKey)

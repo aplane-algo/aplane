@@ -18,7 +18,7 @@ Normative inputs:
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): `/keys`, `/sign/component`,
   `/sign/assemble`, endpoint registry, node role, split policy files,
   and on-disk selector contracts.
-- [ARCH_POLICY.md](ARCH_POLICY.md): `attestation.yaml`, attestor component
+- [ARCH_POLICY.md](ARCH_POLICY.md): attestor-domain `policy.yaml`, attestor component
   transfer policy, deterministic reject-only route-miss behavior, and
   component-key overrides.
 - [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md): client-signing policy
@@ -99,7 +99,7 @@ services and optional client-side verification.
 
 ### Attestor Policy Snapshot
 
-`AttestorPolicySnapshot` is the verified effective `attestation.yaml` snapshot
+`AttestorPolicySnapshot` is the verified effective attestor-domain `policy.yaml` snapshot
 for one attestor identity. It contains transfer routing and sparse
 `key_overrides` keyed by component selector.
 
@@ -153,7 +153,7 @@ endpoint and calls:
 POST /sign/component role=attestor component_key=<a_selector>
 ```
 
-The attestor signer evaluates the `attestation.yaml` transfer policy for every
+The attestor signer evaluates the attestor-domain `policy.yaml` transfer policy for every
 target transaction before loading the component private key. The request is
 accepted only when the effective attestor policy authorizes all target
 transactions.
@@ -223,7 +223,7 @@ Exists target: target.sender != component_key =>
 
 ### A4: Attestor Policy Before Key Load
 
-Attestor-role component signing evaluates the effective `attestation.yaml`
+Attestor-role component signing evaluates the effective attestor-domain `policy.yaml`
 policy before loading the component private key.
 
 ```text
@@ -369,7 +369,7 @@ High-value test anchors:
 - direct `/sign` rejection for every attestor component and attested account
   key type,
 - sender binding before user component key load,
-- deterministic `attestation.yaml` policy rejection before attestor key load,
+- deterministic attestor-domain `policy.yaml` policy rejection before attestor key load,
 - component selector/type/category/public-private validation,
 - assembly rejection for wrong user signatures,
 - assembly rejection for wrong attestor signatures,

@@ -54,9 +54,6 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
 		t.Fatalf("policy integrity baseline did not verify: %v", err)
 	}
-	if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
-		t.Fatalf("attestation policy integrity baseline did not verify: %v", err)
-	}
 	role, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, masterKey)
 	if err != nil {
 		t.Fatalf("node role integrity baseline did not verify: %v", err)
@@ -96,6 +93,9 @@ func TestInitializeCreatesExplicitAttestorNodeRole(t *testing.T) {
 	}
 	if role.Role != noderole.RoleAttestor {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleAttestor)
+	}
+	if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
+		t.Fatalf("attestor policy integrity baseline did not verify: %v", err)
 	}
 }
 

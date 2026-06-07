@@ -142,7 +142,7 @@ DTOs and contract fixtures.
 | Library template source | Signer data dir or repo | `library/templates/*.yaml` | parsed install candidate | admin KeyType Library | `internal/templatelibrary`, `internal/signerapp/templateadmin` |
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
 | Signing policy | Signer identity | `policy.yaml` plus `policy.yaml.hmac` | client-signing `policy.Config` on identity runtime | admin policy settings subset | `internal/policy`, `internal/signerapp/admin` |
-| Attestor policy | Signer identity | `attestation.yaml` plus `attestation.yaml.hmac` | attestor component `policy.Config` on identity runtime | appolicy save/check flows | `internal/policy`, `internal/signerapp/policyruntime`, `cmd/appolicy` |
+| Attestor policy | Signer identity | attestor-domain `policy.yaml` plus `policy.yaml.hmac` | attestor component `policy.Config` on identity runtime | appolicy save/check flows | `internal/policy`, `internal/signerapp/policyruntime`, `cmd/appolicy` |
 | Authorization principal/group/grant | Product bootstrap model | source-defined bootstrap records | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | API token | Signer identity and client | signer `identities/<identity>/aplane.token`, client `aplane.token` | token authenticator | HTTP auth, SSH username | `internal/tokenfile`, `internal/auth` |
 | SSH enrollment | Signer identity | `identities/<identity>/.ssh/authorized_keys` | identity SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
@@ -183,7 +183,7 @@ Signer data dir
           -> attestors public references -> /keytypes generation options
           -> key type state + installed templates -> /keytypes and generation
           -> policy + HMAC -> approval verdicts
-          -> attestation policy + HMAC -> component-sign authorization
+          -> attestor policy + HMAC -> component-sign authorization
           -> API token + SSH keys -> authn
           -> approval coordinator -> sign/token prompts
           -> admin sessions -> admin mutations and approvals
@@ -244,8 +244,6 @@ identities/<identity>/
   config.yaml
   policy.yaml
   policy.yaml.hmac
-  attestation.yaml
-  attestation.yaml.hmac
   unlock.yaml
   .ssh/authorized_keys
   attestors/*.json
@@ -357,13 +355,11 @@ or enabled for an identity.
 
 ### Policy
 
-Policy is identity-scoped durable state split by role:
+Policy is identity-scoped durable state selected by node role:
 
 ```text
 policy.yaml
 policy.yaml.hmac
-attestation.yaml
-attestation.yaml.hmac
 ```
 
 Each HMAC authenticates exact YAML bytes with a key derived from the identity
@@ -379,11 +375,11 @@ effective `policy.Config` layered from defaults and stored YAML. It controls:
 - network-scoped ALGO and ASA transfer thresholds,
 - YAML-only `key_overrides`.
 
-`attestation.yaml` is the attestor component policy. It uses the same transfer
-routing model as deterministic authorization for `/sign/component`; it has no
-operator default and no review verdict. Attestation `key_overrides` are keyed by
-`a_...` component selector, while client-signing overrides are keyed by
-Algorand auth address.
+On attestor nodes, `policy.yaml` is the attestor component policy. It uses the
+same transfer routing model as deterministic authorization for
+`/sign/component`; it has no operator default and no review verdict. Attestor
+`key_overrides` are keyed by `a_...` component selector, while client-signing
+overrides are keyed by Algorand auth address.
 
 `user_auto_approve` is not policy. It is the user/operator-default fallback in
 identity config.
@@ -687,7 +683,7 @@ projections of shell application results, not a separate backend model.
 2. Derive master key.
 3. Verify root `node.yaml` against the identity's role HMAC sidecar.
 4. Verify and load policy.
-5. Verify and load attestation policy.
+5. Verify and load attestor policy.
 6. Apply node role gates.
 7. Register installed templates.
 8. Scan key files.
@@ -779,7 +775,7 @@ Restore is per-key:
 | `.key` private material | secret | encrypted at rest; decrypted on demand |
 | Installed `.template` files | sensitive policy material | encrypted in identity store |
 | `policy.yaml` | safety-critical | authenticated by HMAC sidecar |
-| `attestation.yaml` | safety-critical | authenticated by HMAC sidecar; authorizes attestor component signatures |
+| attestor-domain `policy.yaml` | safety-critical | same file contract as `policy.yaml`; authorizes attestor component signatures on attestor nodes |
 | API token | bearer secret | mode `0600`; endpoint-scoped client copies are used for HTTP and SSH token identity |
 | SSH private key | client secret | client-side file, used for tunnel auth |
 | Backup export passphrase | secret | protects `.apb` payloads |
@@ -805,8 +801,8 @@ generation availability, provenance, and policy editing behavior.
 - Server config can seed the default `user_auto_approve`; identity config owns
   the effective live setting; policy owns rule verdicts.
 - Policy HMAC authenticates exact YAML bytes and fails closed on mismatch.
-- `policy.yaml` is client-signing policy; `attestation.yaml` is attestor
-  component policy. Neither file may wrap the other.
+- `policy.yaml` is client-signing policy on signer nodes and attestor component
+  policy on attestor nodes. Neither domain may wrap the other.
 - Client signer and attestor routing authority is `endpoints.yaml`, not
   `config.yaml`.
 - Attestor component selectors are always `a_<sha256(pubkey)>`; embedded

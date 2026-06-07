@@ -78,7 +78,7 @@ func TestRunSaveReadsPolicyFromStdin(t *testing.T) {
 }
 
 func TestRunTargetAttestationSaveReadsAttestationFromStdin(t *testing.T) {
-	dataDir, passphrase := initializedAppolicyStore(t)
+	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleAttestor)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
 	attestationBytes := []byte(`# saved through appolicy
 reject_rekey: true
@@ -98,12 +98,12 @@ transfer_policy:
 	if code != 0 {
 		t.Fatalf("run(--target attestation --save) code = %d, stderr = %q", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "attestation policy saved:") {
+	if !strings.Contains(stdout.String(), "attestor policy saved:") {
 		t.Fatalf("--target attestation --save stdout = %q, want saved status", stdout.String())
 	}
-	gotBytes, err := os.ReadFile(policy.AttestationPath(dataDir, policyeditor.DefaultIdentityID))
+	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, policyeditor.DefaultIdentityID))
 	if err != nil {
-		t.Fatalf("ReadFile(attestation) error = %v", err)
+		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
 	if string(gotBytes) != string(attestationBytes) {
 		t.Fatalf("--target attestation --save changed attestation bytes:\ngot:\n%s\nwant:\n%s", gotBytes, attestationBytes)
@@ -162,7 +162,7 @@ func TestRunCheckPolicyFileRejectsAttestationBlock(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("run(--check invalid attestation) code = 0, stdout = %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "policy.yaml attestation is not supported") {
+	if !strings.Contains(stderr.String(), "signer policy attestation is not supported") {
 		t.Fatalf("stderr = %q, want attestation block rejection", stderr.String())
 	}
 }
@@ -232,12 +232,12 @@ func TestRunSaveAutoTargetsAttestationOnAttestorNode(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("run(attestor --save) code = %d, stderr = %q", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "attestation policy saved:") {
+	if !strings.Contains(stdout.String(), "attestor policy saved:") {
 		t.Fatalf("attestor --save stdout = %q, want attestation saved status", stdout.String())
 	}
-	gotBytes, err := os.ReadFile(policy.AttestationPath(dataDir, policyeditor.DefaultIdentityID))
+	gotBytes, err := os.ReadFile(policy.PolicyPath(dataDir, policyeditor.DefaultIdentityID))
 	if err != nil {
-		t.Fatalf("ReadFile(attestation) error = %v", err)
+		t.Fatalf("ReadFile(policy) error = %v", err)
 	}
 	if string(gotBytes) != string(attestationBytes) {
 		t.Fatalf("attestation bytes changed during auto --save:\ngot:\n%s\nwant:\n%s", gotBytes, attestationBytes)
@@ -266,17 +266,17 @@ func TestRunYAMLAutoTargetsAttestationOnAttestorNode(t *testing.T) {
 	}
 }
 
-func TestRunTargetOverrideCanReadSignerPolicyOnAttestorNode(t *testing.T) {
+func TestRunTargetOverrideRejectsSignerPolicyOnAttestorNode(t *testing.T) {
 	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleAttestor)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
 	var stdout, stderr bytes.Buffer
 
 	code := run(context.Background(), []string{"-d", dataDir, "--target", "signer", "--yaml"}, strings.NewReader(""), &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("run(--target signer --yaml) code = %d, stderr = %q", code, stderr.String())
+	if code == 0 {
+		t.Fatalf("run(--target signer --yaml) code = 0, stdout = %q", stdout.String())
 	}
-	if _, err := policy.ParseStoredConfig(stdout.Bytes()); err != nil {
-		t.Fatalf("--target signer stdout is not valid signer policy YAML: %v\n%s", err, stdout.String())
+	if !strings.Contains(stderr.String(), `policy target "signer" is not allowed on attestor nodes`) {
+		t.Fatalf("run(--target signer --yaml) stderr = %q, want role-target rejection", stderr.String())
 	}
 }
 

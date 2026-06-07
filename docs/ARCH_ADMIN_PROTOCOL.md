@@ -324,7 +324,7 @@ Key-type override semantics:
 - overrides are YAML-only; admin IPC/TUI settings do not expose or mutate `key_overrides`
 - `get_policy_snapshot` may expose key overrides read-only as part of the canonical YAML snapshot
 - `replace_policy` may replace YAML that contains `key_overrides`; it validates the complete policy in the selected target before writing and applies immediately on success
-- `policy.yaml` and `attestation.yaml` are verified against their `.hmac` sidecars and loaded into the bound identity runtime on unlock/reload; policy-mutation admin IPC requires an unlocked identity and writes the selected document plus sidecar; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
+- `policy.yaml` and attestor-domain `policy.yaml` are verified against their `.hmac` sidecars and loaded into the bound identity runtime on unlock/reload; policy-mutation admin IPC requires an unlocked identity and writes the selected document plus sidecar; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
 
 Whole-policy replacement:
 

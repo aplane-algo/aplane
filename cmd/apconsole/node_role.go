@@ -26,7 +26,7 @@ func attestorShellDisabledLines(notices []string) []string {
 	lines := consoleStartupNoticeLines(notices)
 	lines = append(lines,
 		"[config] shell pane disabled on attestor nodes",
-		"Use F1 Admin and press p to edit attestation policy.",
+		"Use F1 Admin and press p to edit attestor policy.",
 	)
 	return lines
 }

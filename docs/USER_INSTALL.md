@@ -889,10 +889,8 @@ The installer creates `identities/default/` with the keystore. As the signer run
 $APSIGNER_DATA/identities/default/
 ├── .keystore         # Keystore metadata (master salt and passphrase verifier)
 ├── config.yaml       # Identity-scoped runtime setting overrides
-├── policy.yaml       # Identity-scoped signer safety policy
+├── policy.yaml       # Identity-scoped node-role policy
 ├── policy.yaml.hmac  # Integrity sidecar for policy.yaml
-├── attestation.yaml       # Identity-scoped attestor component policy
-├── attestation.yaml.hmac  # Integrity sidecar for attestation.yaml
 ├── unlock.yaml       # Identity-scoped passphrase helper settings
 ├── .ssh/
 │   └── authorized_keys  # Identity-scoped enrolled client public keys
@@ -908,8 +906,7 @@ $APSIGNER_DATA/identities/default/
 └── passphrase.cred   # systemd-creds-encrypted passphrase (auto-unlock only)
 ```
 
-`policy.yaml`, `attestation.yaml`, and their `.hmac` sidecars are created by
-`apstore initialize`.
+`policy.yaml` and `policy.yaml.hmac` are created by `apstore initialize`.
 `config.yaml` and `unlock.yaml` are created on first edit through `apadmin` or
 `appass`. The signer-side `aplane.token` is created during initialization;
 client-side token files are written when a client is enrolled via

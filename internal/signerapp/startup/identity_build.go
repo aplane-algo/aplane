@@ -238,16 +238,18 @@ func wireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ident
 				} else if verifiedRole.Role != ir.NodeRole() {
 					return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", identityID, ir.NodeRole(), verifiedRole.Role)
 				}
-				storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedWithStored(opts.DataDir, identityID, opts.Config, masterKey)
+				storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStored(ir.NodeRole(), opts.DataDir, identityID, opts.Config, masterKey)
 				if err != nil {
 					return fmt.Errorf("policy verification failed for identity %q: %w", identityID, err)
 				}
-				storedAttestation, effectiveAttestation, err := policyruntime.LoadVerifiedAttestationWithStored(opts.DataDir, identityID, opts.Config, masterKey)
-				if err != nil {
-					return fmt.Errorf("attestation policy verification failed for identity %q: %w", identityID, err)
+				switch ir.NodeRole() {
+				case noderole.RoleAttestor:
+					ir.SetPolicyState(nil, nil)
+					ir.SetAttestationPolicyState(storedPolicy, effectivePolicy)
+				default:
+					ir.SetPolicyState(storedPolicy, effectivePolicy)
+					ir.SetAttestationPolicyState(nil, nil)
 				}
-				ir.SetPolicyState(storedPolicy, effectivePolicy)
-				ir.SetAttestationPolicyState(storedAttestation, effectiveAttestation)
 				return nil
 			},
 			BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {

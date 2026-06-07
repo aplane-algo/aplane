@@ -6,9 +6,9 @@ package policy
 import "fmt"
 
 // ConvertSigningPolicyToAttestation projects a signing policy.yaml document to
-// a direct attestation.yaml document. The projection preserves deterministic
+// direct attestor policy YAML. The projection preserves deterministic
 // hard-reject bounds and transfer routes, but removes review-only controls
-// because attestation policy cannot produce review verdicts.
+// because attestor policy cannot produce review verdicts.
 func ConvertSigningPolicyToAttestation(stored *StoredConfig) (*StoredConfig, error) {
 	if stored == nil {
 		stored = &StoredConfig{}
@@ -51,8 +51,9 @@ func ConvertSigningPolicyToAttestation(stored *StoredConfig) (*StoredConfig, err
 	return out, nil
 }
 
-// ConvertSigningPolicyToAttestationYAML converts policy.yaml bytes into direct
-// attestation.yaml bytes suitable for review, signing, and installation.
+// ConvertSigningPolicyToAttestationYAML converts signer-domain policy.yaml
+// bytes into direct attestor policy YAML suitable for review, signing, and
+// installation as policy.yaml on an attestor node.
 func ConvertSigningPolicyToAttestationYAML(data []byte) ([]byte, error) {
 	stored, err := ParseStoredConfig(data)
 	if err != nil {
@@ -207,7 +208,7 @@ func validateTransferPolicyConvertibleToAttestation(tp *StoredTransferPolicy) er
 		if check.value == nil || *check.value == "" || *check.value == string(TransferOnNoRouteReject) {
 			continue
 		}
-		return fmt.Errorf("%s=%q cannot be converted to deterministic attestation policy; set it to %q and encode allowed movements as routes", check.label, *check.value, TransferOnNoRouteReject)
+		return fmt.Errorf("%s=%q cannot be converted to deterministic attestor policy; set it to %q and encode allowed movements as routes", check.label, *check.value, TransferOnNoRouteReject)
 	}
 	return nil
 }
