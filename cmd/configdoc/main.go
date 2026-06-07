@@ -46,8 +46,8 @@ func main() {
 	fmt.Println()
 	printStructTable(reflect.TypeOf(config.ServerConfig{}))
 	fmt.Println()
-	fmt.Println("Identity-scoped `identities/<identity>/config.yaml` defaults to normal signing")
-	fmt.Println("mode. Standard installations do not need to set a mode field.")
+	fmt.Println("Identity-scoped `identities/<identity>/config.yaml` contains settings")
+	fmt.Println("only. Node role is stored separately in root `node.yaml`.")
 	fmt.Println()
 
 	// Environment variables
