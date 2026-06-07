@@ -150,7 +150,7 @@ DTOs and contract fixtures.
 | Sign request | Live signer runtime | none durable | approval coordinator pending request | `/sign`, `/sign/cancel`, admin `sign_request` | `internal/signerapp/approval`, `internal/signerapp/signing` |
 | Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign`, `/simulate` | `internal/signerapp/signing`, `pkg/signerapi` |
 | Component signing request | Request-scoped | canonical group bytes and target indices | per-target user or sentry component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
-| Attested assembly request | Request-scoped | user and sentry component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
+| Guarded assembly request | Request-scoped | user and sentry component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
 | App call metadata | Request-scoped | caller/engine prepared request | approval description context | `app_call_info` | `internal/engine`, `internal/signerapp/txdesc` |
 | ASA metadata | Network-scoped cache | `cache/<network>_asa_cache.json` | operation-local metadata lookup | admin ASA search/resolve, client display | client: `internal/cache`, `internal/asa`; signer: `internal/signerapp/asametadata.Store` |
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
@@ -295,7 +295,7 @@ Durable signing metadata includes:
 
 Guarded account keys are DSA LogicSig keys whose stored bytecode embeds an
 sentry public key. They are not accepted by `/sign`; the client must use the
-attested flow: user `/sign/component`, sentry `/sign/component`, user
+guarded flow: user `/sign/component`, sentry `/sign/component`, user
 `/sign/assemble`, then algod submit. Sentry component keys are selected by an
 uppercase, 52-character txid-shaped component selector and are not Algorand
 spending accounts.
@@ -723,7 +723,7 @@ keys.
 Live `/sign` cancellation is request-scoped runtime state only. There is no
 durable sign request table.
 
-### Attested Signing Lifecycle
+### Guarded Signing Lifecycle
 
 1. Client detects a guarded account key from `/keys` metadata and local signer
    inventory.

@@ -178,7 +178,7 @@ client_signing:
   # top-level client-signing values.
 ```
 
-Attestor-node `policy.yaml` is the sentry component policy document:
+Sentry-node `policy.yaml` is the sentry component policy document:
 
 ```yaml
 reject_rekey: true

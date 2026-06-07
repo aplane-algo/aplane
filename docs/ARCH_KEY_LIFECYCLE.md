@@ -132,7 +132,7 @@ the identity registry closed so HTTP and admin identity resolution refuse all
 identities until operator cleanup and restart.
 
 Local development that needs both roles uses two complete data roots and two
-apsigner processes, for example `~/aplane-signer/` and `~/aplane-attestor/`.
+apsigner processes, for example `~/aplane-signer/` and `~/aplane-sentry/`.
 Running those two nodes on one host is useful for development and operations,
 but it is not independent sentry. Independence remains a deployment-domain
 property.
@@ -239,7 +239,7 @@ restore path.
 Backup manifests carry the source node role going forward. Restore validates
 payload key classes against the destination node's role; it does not change the
 destination role. Rebuild treats source role metadata as a default and
-diagnostic, not authority: `apstore rebuild --role signer|attestor` sets the
+diagnostic, not authority: `apstore rebuild --role signer|sentry` sets the
 destination role explicitly, while omitted `--role` uses manifest metadata when
 present and otherwise defaults to `signer`.
 

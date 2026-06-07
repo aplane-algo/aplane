@@ -139,7 +139,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Endpoint alias | local identifier | map key under `endpoints` | endpoint lookup by alias | `internal/config`, `internal/apshellapp` | ASCII letters, digits, `.`, `_`, `-`; aliases are local, not exported. |
 | Endpoint record | authoritative routing record | `endpoints.<alias>` | endpoint connection profile | `internal/config`, `internal/engine/connect` | URL, signer/local ports, token file, identity file, known hosts resolve relative to `APCLIENT_DATA`. |
 | Published sentry inventory | routing metadata | `endpoints.<alias>.published_sentries` | derived sentry endpoint map | `internal/config`, `internal/apshellapp`, `internal/engine` | Keyed by embedded public key hex; route metadata, not ownership proof. |
-| Derived sentry endpoint map | derived runtime | built from `published_sentries` | `Config.SentryEndpoints` | `internal/config`, `internal/engine/attestor_endpoint.go` | Not written to `config.yaml`; conflicts/malformed records fail closed. |
+| Derived sentry endpoint map | derived runtime | built from `published_sentries` | `Config.SentryEndpoints` | `internal/config`, `internal/engine/sentry_endpoint.go` | Not written to `config.yaml`; conflicts/malformed records fail closed. |
 | Endpoint token file | bearer secret | default `aplane.token` or `tokens/<alias>.token` | HTTP auth header and SSH username | `internal/tokenfile`, `internal/engine/connect` | Mode `0600`; request-token writes endpoint-scoped token. |
 | Client SSH identity | client secret | `.ssh/id_ed25519` | SSH tunnel private key | `internal/sshtunnel`, `internal/engine/connect` | Generated/enrolled separately from tokens. |
 | Known hosts | trust store | `.ssh/known_hosts` or endpoint override | SSH host-key verification | `internal/sshtunnel`, `internal/clientenroll`, `cmd/apconsole` | Host trust is not imported through endpoint envelope. |
@@ -201,7 +201,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 |---|---|---|---|---|---|
 | HTTP error response | wire contract | `signerapi.ErrorResponse` | non-2xx JSON error | `pkg/signerapi`, `cmd/apsigner` | Contracted in `ARCH_HTTP_API.md`. |
 | Status response | wire projection | authenticated identity runtime state | `signerapi.StatusResponse` | `cmd/apsigner`, `internal/signerapp/rest` | `keyset_revision` is process-local, not durable. |
-| Keys response | wire projection | loaded key snapshot | `signerapi.KeysResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Component rows use selector as `address`; attested rows expose non-secret params. |
+| Keys response | wire projection | loaded key snapshot | `signerapi.KeysResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Component rows use selector as `address`; guarded rows expose non-secret params. |
 | Key info row | wire projection | loaded key metadata | `signerapi.KeyInfo` | `internal/signerapp/rest` | `is_component_key`/`is_spending_account` disambiguate selectors from accounts. |
 | Key types response | wire projection | enabled providers/templates and sentry refs | `signerapi.KeyTypesResponse` | `internal/signerapp/rest` | Runtime args are generation metadata, not existing-key signing args. |
 | Group sign request | wire request | client transaction bytes | `signerapi.GroupSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Shared by `/sign`, `/plan`, `/simulate`; all-foreign invalid. |
@@ -215,9 +215,9 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Admin delete DTO | wire request/projection | address query parameter | delete response or error | `cmd/apsigner`, `internal/signerapp/keyadmin` | Missing address 400; missing key 404. |
 | Component sign request | wire request | canonical group bytes and target indices | `signerapi.ComponentSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Role is `user` or `sentry`; component key meaning is role-specific; omitted request IDs are generated. |
 | Component sign response | wire projection | per-target component signatures | `signerapi.ComponentSignResponse` | `internal/signerapp/signing` | Signature scheme is user key type or sentry component key type. |
-| Attested assembly request | wire request | group bytes plus user/sentry signatures | `signerapi.GuardedAssemblyRequest` | `internal/signerapp/signing` | Verifies sentry signature against embedded key in local account key. |
-| Attested assembly response | wire projection | assembled signed group bytes | `signerapi.GuardedAssemblyResponse` | `internal/signerapp/signing` | Assembly does not trust endpoint-advertised public keys. |
-| Admin sentry sync DTOs | wire request/projection | public candidate list | `signerapi.AdminSyncAttestorReferences*` | `internal/signerapp/rest`, `internal/sentry/sentryrefs` | Writes public signer-side reference catalog only; HTTP authorizes as `sentries.sync`; no tokens or private keys. |
+| Guarded assembly request | wire request | group bytes plus user/sentry signatures | `signerapi.GuardedAssemblyRequest` | `internal/signerapp/signing` | Verifies sentry signature against embedded key in local account key. |
+| Guarded assembly response | wire projection | assembled signed group bytes | `signerapi.GuardedAssemblyResponse` | `internal/signerapp/signing` | Assembly does not trust endpoint-advertised public keys. |
+| Admin sentry sync DTOs | wire request/projection | public candidate list | `signerapi.AdminSyncSentryReferences*` | `internal/signerapp/rest`, `internal/sentry/sentryrefs` | Writes public signer-side reference catalog only; HTTP authorizes as `sentries.sync`; no tokens or private keys. |
 
 ## Admin IPC Wire Models
 
@@ -245,7 +245,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Sentry component message | request-scoped signing input | role byte plus target TxID | 32-byte message digest | `internal/sentry/message` | Shared by client optional verify, signer assembly, and TEAL vectors. |
 | Component signature set | request-scoped wire data | `/sign/component` response | per-target signatures by target index | `internal/signerapp/signing`, `pkg/signerapi` | Each signature is bound to one target TxID and role. |
 | Guarded assembly target | request-scoped wire data | `/sign/assemble` request targets | LogicSig args packing plan | `internal/signerapp/signing` | User and sentry signatures are verified before packed bytes are returned. |
-| Guarded send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | user component call, sentry call, assembly, algod submit/simulate | `internal/engine`, `internal/apshellapp` | Client holds no key material; endpoint routing is not trust; MVP requires every original sender to be attested. |
+| Guarded send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | user component call, sentry call, assembly, algod submit/simulate | `internal/engine`, `internal/apshellapp` | Client holds no key material; endpoint routing is not trust; MVP requires every original sender to be a guarded account. |
 
 ## Plugin, JavaScript, And MCP Models
 
@@ -327,7 +327,7 @@ name a test inline:
   related package tests.
 - Node role and key-class gates: signer startup, `internal/signerapp/identity`,
   `internal/signerapp/rest/service_test.go`,
-  `internal/signerapp/signing/attestor_gate.go`.
+  `internal/signerapp/signing/sentry_gate.go`.
 - Policy domains, integrity, and conversion: `internal/policy/*_test.go`,
   `cmd/appolicy/main_test.go`, `test/contracts/policy/*.yaml`.
 - Key payload parsing, scan, backup, and restore: `internal/keys`,
