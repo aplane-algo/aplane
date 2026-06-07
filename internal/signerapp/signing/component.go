@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/aplane-algo/aplane/internal/attestor/message"
-	attestorverify "github.com/aplane-algo/aplane/internal/attestor/verify"
+	"github.com/aplane-algo/aplane/internal/sentry/message"
+	attestorverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 

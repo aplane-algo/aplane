@@ -15,11 +15,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
-	"github.com/aplane-algo/aplane/internal/attestor/message"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 

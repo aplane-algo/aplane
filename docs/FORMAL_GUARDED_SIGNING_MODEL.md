@@ -349,9 +349,9 @@ This model assumes:
 
 Implementation areas that should remain aligned with this model:
 
-- `internal/attestor/message`
-- `internal/attestor/verify`
-- `internal/attestor/keytypes`
+- `internal/sentry/message`
+- `internal/sentry/verify`
+- `internal/sentry/keytypes`
 - `internal/signerapp/signing/component.go`
 - `internal/signerapp/signing/component_sign.go`
 - `internal/signerapp/signing/component_assemble.go`

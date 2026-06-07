@@ -13,8 +13,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 )
 
 // hexPattern matches hex strings starting with 0x followed by hex digits

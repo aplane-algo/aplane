@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 )
 
 func TestLoadConfigSignerStatusPollInterval(t *testing.T) {

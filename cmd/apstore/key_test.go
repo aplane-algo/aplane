@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 )
 
 func TestCmdSentryExportPublicWritesEnvelopeFile(t *testing.T) {

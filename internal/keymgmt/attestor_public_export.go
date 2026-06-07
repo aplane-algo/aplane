@@ -6,7 +6,7 @@ package keymgmt
 import (
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
+	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
 )
 
 const AttestorPublicKeyExportSchema = attrefs.ExportSchema

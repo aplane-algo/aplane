@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 )
 
 func TestCmdSentryImportPublicListShowRemove(t *testing.T) {

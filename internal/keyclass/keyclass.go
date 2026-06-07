@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/noderole"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 )
 
 var ErrNodeRoleConflict = errors.New("node role inventory conflict")

@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strings"
 
-	attestorverify "github.com/aplane-algo/aplane/internal/attestor/verify"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
+	attestorverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"

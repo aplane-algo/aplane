@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
 

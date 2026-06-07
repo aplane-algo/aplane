@@ -7,11 +7,11 @@ package signerreg
 import (
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	internalkeygen "github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/keygen"

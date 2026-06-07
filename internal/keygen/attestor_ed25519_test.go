@@ -7,10 +7,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"

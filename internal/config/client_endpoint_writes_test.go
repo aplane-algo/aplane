@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 )
 
 const endpointPublishedTestSeenAt = "2026-06-04T00:00:00Z"

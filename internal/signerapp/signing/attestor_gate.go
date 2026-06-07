@@ -3,7 +3,7 @@
 
 package signing
 
-import "github.com/aplane-algo/aplane/internal/attestor/keytypes"
+import "github.com/aplane-algo/aplane/internal/sentry/keytypes"
 
 const (
 	attestorComponentSignRejectMessage = "sentry component keys require /sign/component"

@@ -6,7 +6,7 @@ package rest
 import (
 	"context"
 
-	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
+	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"

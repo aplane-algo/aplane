@@ -17,10 +17,10 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	utilkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 

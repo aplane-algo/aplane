@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 )
 
 func cmdSentry(args []string) error {

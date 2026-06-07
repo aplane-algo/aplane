@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 

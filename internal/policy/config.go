@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"gopkg.in/yaml.v3"

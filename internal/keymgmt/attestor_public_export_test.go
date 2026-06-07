@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
