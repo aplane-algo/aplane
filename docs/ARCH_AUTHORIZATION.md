@@ -246,7 +246,7 @@ grant accidentally contains the same typo.
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `identity.decommission` | Decommission identity | `identity` | No |
 | `sign.request` | Request transaction signing, signing plan, simulation, or sign-request cancellation | `transaction` | Yes for signing/cancel |
-| `sign.component` | Request user-role or attestor-role component signatures for the attested signing flow | `transaction` | Yes |
+| `sign.component` | Request user-role or attestor-role component signatures for the guarded signing flow | `transaction` | Yes |
 | `sign.assemble` | Assemble verified user and attestor component signatures into signed attested transactions | `transaction` | Yes |
 | `sign.approve` | Approve or reject signing request | `sign_request` | No |
 | `keys.view` | List keys or view key details | `keys`, `key` | Yes for key list/details |

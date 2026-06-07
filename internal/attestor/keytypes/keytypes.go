@@ -24,23 +24,19 @@ const (
 	// It is not an Algorand spending account and must not be accepted by /sign.
 	AttestorComponentFalcon1024V1 = "aplane.sentry-falcon1024.v1"
 
-	// AttestedFalcon1024AttEd25519V1 is the user-account key type whose LogicSig
+	// GuardedFalcon1024SentryEd25519V1 is the user-account key type whose LogicSig
 	// verifies a Falcon-1024 user signature plus an Ed25519 attestor component
 	// signature.
-	AttestedFalcon1024AttEd25519V1 = "aplane.falcon1024-sentry-ed25519.v1"
+	GuardedFalcon1024SentryEd25519V1 = "aplane.falcon1024-sentry-ed25519.v1"
 
-	// AttestedFalcon1024AttFalcon1024V1 is the user-account key type whose
+	// GuardedFalcon1024SentryFalcon1024V1 is the user-account key type whose
 	// LogicSig verifies a Falcon-1024 user signature plus a Falcon-1024
 	// attestor component signature.
-	AttestedFalcon1024AttFalcon1024V1 = "aplane.falcon1024-sentry-falcon1024.v1"
+	GuardedFalcon1024SentryFalcon1024V1 = "aplane.falcon1024-sentry-falcon1024.v1"
 
-	// AttestedFalcon1024V1 is a Go-level compatibility alias for the canonical
-	// Ed25519-attestor Falcon account key type.
-	AttestedFalcon1024V1 = AttestedFalcon1024AttEd25519V1
-
-	// ParameterAttestorPublicKey is the durable creation parameter that records
-	// the attestor public key embedded in an attested account LogicSig.
-	ParameterAttestorPublicKey = "attestor_public_key"
+	// ParameterSentryPublicKey is the durable creation parameter that records
+	// the sentry public key embedded in a guarded account LogicSig.
+	ParameterSentryPublicKey = "sentry_public_key"
 
 	// ComponentKeySelectorLength is the length of a canonical attestor
 	// component-key selector. It matches the visual shape of Algorand
@@ -64,11 +60,11 @@ func IsAttestorComponentKeyType(keyType string) bool {
 	}
 }
 
-// IsAttestedAccountKeyType reports whether keyType names an attested spending
+// IsGuardedAccountKeyType reports whether keyType names an attested spending
 // account that requires the component signing and assembly flow.
-func IsAttestedAccountKeyType(keyType string) bool {
+func IsGuardedAccountKeyType(keyType string) bool {
 	switch keyType {
-	case AttestedFalcon1024AttEd25519V1, AttestedFalcon1024AttFalcon1024V1:
+	case GuardedFalcon1024SentryEd25519V1, GuardedFalcon1024SentryFalcon1024V1:
 		return true
 	default:
 		return false
@@ -78,16 +74,16 @@ func IsAttestedAccountKeyType(keyType string) bool {
 // IsAttestorMVPKeyType reports whether keyType is any key type reserved by the
 // attestor MVP.
 func IsAttestorMVPKeyType(keyType string) bool {
-	return IsAttestorComponentKeyType(keyType) || IsAttestedAccountKeyType(keyType)
+	return IsAttestorComponentKeyType(keyType) || IsGuardedAccountKeyType(keyType)
 }
 
-// AttestorComponentKeyTypeForAttestedAccount returns the attestor component
-// key type embedded by an attested account key type.
-func AttestorComponentKeyTypeForAttestedAccount(keyType string) (string, bool) {
+// AttestorComponentKeyTypeForGuardedAccount returns the attestor component
+// key type embedded by a guarded account key type.
+func AttestorComponentKeyTypeForGuardedAccount(keyType string) (string, bool) {
 	switch keyType {
-	case AttestedFalcon1024AttEd25519V1:
+	case GuardedFalcon1024SentryEd25519V1:
 		return AttestorComponentEd25519V1, true
-	case AttestedFalcon1024AttFalcon1024V1:
+	case GuardedFalcon1024SentryFalcon1024V1:
 		return AttestorComponentFalcon1024V1, true
 	default:
 		return "", false

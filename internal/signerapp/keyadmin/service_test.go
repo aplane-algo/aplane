@@ -247,15 +247,15 @@ func TestKeyDetailsParametersProjectsAttestedAttestorSelector(t *testing.T) {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
-	got := keyDetailsParameters(keytypes.AttestedFalcon1024AttEd25519V1, map[string]string{
-		keytypes.ParameterAttestorPublicKey: hex.EncodeToString(publicKey),
-		"other":                             "kept",
+	got := keyDetailsParameters(keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
+		keytypes.ParameterSentryPublicKey: hex.EncodeToString(publicKey),
+		"other":                           "kept",
 	})
 
 	if got[keyDetailsAttestorLabel] != componentKey {
 		t.Fatalf("Attestor = %q, want %q", got[keyDetailsAttestorLabel], componentKey)
 	}
-	if _, ok := got[keytypes.ParameterAttestorPublicKey]; ok {
+	if _, ok := got[keytypes.ParameterSentryPublicKey]; ok {
 		t.Fatalf("projected parameters exposed raw attestor public key: %#v", got)
 	}
 	if got["other"] != "kept" {

@@ -78,12 +78,12 @@ type stubSigningService struct {
 	gotIdentityID string
 	gotReq        signerapi.GroupSignRequest
 	gotComponent  signerapi.ComponentSignRequest
-	gotAssembly   signerapi.AttestedAssemblyRequest
+	gotAssembly   signerapi.GuardedAssemblyRequest
 	gotSession    *keystore.KeySession
 	gotCtx        context.Context
 	result        *signersigning.SignGroupResult
 	component     *signersigning.ComponentSignResult
-	assembly      *signersigning.AttestedAssemblyResult
+	assembly      *signersigning.GuardedAssemblyResult
 	err           *signersigning.ServiceError
 	componentErr  *signersigning.ServiceError
 	assemblyErr   *signersigning.ServiceError
@@ -115,7 +115,7 @@ func (s *stubSigningService) SignComponentWithContext(ctx context.Context, ident
 	return s.component, s.componentErr
 }
 
-func (s *stubSigningService) AssembleAttestedWithContext(ctx context.Context, identityID string, req signerapi.AttestedAssemblyRequest, session *keystore.KeySession) (*signersigning.AttestedAssemblyResult, *signersigning.ServiceError) {
+func (s *stubSigningService) AssembleGuardedWithContext(ctx context.Context, identityID string, req signerapi.GuardedAssemblyRequest, session *keystore.KeySession) (*signersigning.GuardedAssemblyResult, *signersigning.ServiceError) {
 	s.gotCtx = ctx
 	s.gotIdentityID = identityID
 	s.gotAssembly = req
@@ -288,10 +288,10 @@ func TestServiceSignComponentDelegates(t *testing.T) {
 	}
 }
 
-func TestServiceAssembleAttestedDelegates(t *testing.T) {
+func TestServiceAssembleGuardedDelegates(t *testing.T) {
 	ir := setupIdentityRuntime(t, true)
 	stub := &stubSigningService{
-		assembly: &signersigning.AttestedAssemblyResult{
+		assembly: &signersigning.GuardedAssemblyResult{
 			RequestID:   "asm-1",
 			SignedGroup: []string{"signed"},
 		},
@@ -307,20 +307,20 @@ func TestServiceAssembleAttestedDelegates(t *testing.T) {
 		},
 	}
 
-	req := signerapi.AttestedAssemblyRequest{
+	req := signerapi.GuardedAssemblyRequest{
 		RequestID:     "asm-1",
 		GroupBytesHex: []string{"5458aa"},
-		Targets: []signerapi.AttestedAssemblyTarget{{
-			TargetIndex:       0,
-			AttestedAccount:   "ADDR",
-			UserSignature:     "aa",
-			AttestorSignature: "bb",
+		Targets: []signerapi.GuardedAssemblyTarget{{
+			TargetIndex:     0,
+			GuardedAccount:  "ADDR",
+			UserSignature:   "aa",
+			SentrySignature: "bb",
 		}},
 	}
 	ctx := context.WithValue(context.Background(), testContextKey("assemble"), "ctx")
-	resp, err := svc.AssembleAttested(ctx, ir, req)
+	resp, err := svc.AssembleGuarded(ctx, ir, req)
 	if err != nil {
-		t.Fatalf("AssembleAttested() error = %v", err)
+		t.Fatalf("AssembleGuarded() error = %v", err)
 	}
 	if stub.gotIdentityID != ir.ID() {
 		t.Fatalf("identityID = %q, want %q", stub.gotIdentityID, ir.ID())
@@ -329,13 +329,13 @@ func TestServiceAssembleAttestedDelegates(t *testing.T) {
 		t.Fatalf("got assembly request = %#v, want %#v", stub.gotAssembly, req)
 	}
 	if stub.gotSession == nil {
-		t.Fatal("AssembleAttested() passed nil session")
+		t.Fatal("AssembleGuarded() passed nil session")
 	}
 	if stub.gotCtx != ctx {
-		t.Fatal("AssembleAttested() did not pass caller context to signing service")
+		t.Fatal("AssembleGuarded() did not pass caller context to signing service")
 	}
 	if resp.RequestID != "asm-1" || len(resp.SignedGroup) != 1 || resp.SignedGroup[0] != "signed" {
-		t.Fatalf("AssembleAttested() response = %#v", resp)
+		t.Fatalf("AssembleGuarded() response = %#v", resp)
 	}
 }
 
@@ -574,30 +574,30 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	}
 }
 
-func TestAttestedAccountParametersProjection(t *testing.T) {
+func TestGuardedAccountParametersProjection(t *testing.T) {
 	const attestorPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
 
-	got := attestedAccountParameters(map[string]string{
-		keytypes.ParameterAttestorPublicKey: attestorPublicKey,
-		"unrelated":                         "not-projected",
+	got := guardedAccountParameters(map[string]string{
+		keytypes.ParameterSentryPublicKey: attestorPublicKey,
+		"unrelated":                       "not-projected",
 	})
-	if got[keytypes.ParameterAttestorPublicKey] != attestorPublicKey {
-		t.Fatalf("attestedAccountParameters() = %#v, want sentry public key", got)
+	if got[keytypes.ParameterSentryPublicKey] != attestorPublicKey {
+		t.Fatalf("guardedAccountParameters() = %#v, want sentry public key", got)
 	}
 	if _, ok := got["unrelated"]; ok {
-		t.Fatalf("attestedAccountParameters() projected unrelated parameter: %#v", got)
+		t.Fatalf("guardedAccountParameters() projected unrelated parameter: %#v", got)
 	}
 
-	got[keytypes.ParameterAttestorPublicKey] = "mutated"
-	again := attestedAccountParameters(map[string]string{
-		keytypes.ParameterAttestorPublicKey: attestorPublicKey,
+	got[keytypes.ParameterSentryPublicKey] = "mutated"
+	again := guardedAccountParameters(map[string]string{
+		keytypes.ParameterSentryPublicKey: attestorPublicKey,
 	})
-	if again[keytypes.ParameterAttestorPublicKey] != attestorPublicKey {
-		t.Fatalf("attestedAccountParameters() reused mutable map: %#v", again)
+	if again[keytypes.ParameterSentryPublicKey] != attestorPublicKey {
+		t.Fatalf("guardedAccountParameters() reused mutable map: %#v", again)
 	}
 
-	if empty := attestedAccountParameters(nil); empty != nil {
-		t.Fatalf("attestedAccountParameters(nil) = %#v, want nil", empty)
+	if empty := guardedAccountParameters(nil); empty != nil {
+		t.Fatalf("guardedAccountParameters(nil) = %#v, want nil", empty)
 	}
 }
 
@@ -703,7 +703,7 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 		t.Fatalf("Import() error = %v", err)
 	}
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
-		KeyType: keytypes.AttestedFalcon1024AttEd25519V1,
+		KeyType: keytypes.GuardedFalcon1024SentryEd25519V1,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
@@ -716,7 +716,7 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 	}
 	var params []signerapi.CreationParamInfo
 	for _, info := range resp.KeyTypes {
-		if info.KeyType == keytypes.AttestedFalcon1024AttEd25519V1 {
+		if info.KeyType == keytypes.GuardedFalcon1024SentryEd25519V1 {
 			params = info.CreationParams
 			break
 		}
@@ -1164,8 +1164,8 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 	if _, err := (Service{}).SignComponent(context.Background(), locked, signerapi.ComponentSignRequest{}); err == nil || err.HTTPStatus() != 403 {
 		t.Fatalf("SignComponent(locked) error = %#v, want forbidden", err)
 	}
-	if _, err := (Service{}).AssembleAttested(context.Background(), locked, signerapi.AttestedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 {
-		t.Fatalf("AssembleAttested(locked) error = %#v, want forbidden", err)
+	if _, err := (Service{}).AssembleGuarded(context.Background(), locked, signerapi.GuardedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 {
+		t.Fatalf("AssembleGuarded(locked) error = %#v, want forbidden", err)
 	}
 	if _, err := (Service{}).Keys(locked); err == nil || err.HTTPStatus() != 403 {
 		t.Fatalf("Keys(locked) error = %#v, want forbidden", err)
@@ -1181,8 +1181,8 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 	if _, err := (Service{}).SignComponent(context.Background(), decommissioned, signerapi.ComponentSignRequest{}); err == nil || err.HTTPStatus() != 403 {
 		t.Fatalf("SignComponent(decommissioned) error = %#v, want forbidden", err)
 	}
-	if _, err := (Service{}).AssembleAttested(context.Background(), decommissioned, signerapi.AttestedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 {
-		t.Fatalf("AssembleAttested(decommissioned) error = %#v, want forbidden", err)
+	if _, err := (Service{}).AssembleGuarded(context.Background(), decommissioned, signerapi.GuardedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 {
+		t.Fatalf("AssembleGuarded(decommissioned) error = %#v, want forbidden", err)
 	}
 	if _, err := (Service{}).Plan(decommissioned, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 {
 		t.Fatalf("Plan(decommissioned) error = %#v, want forbidden", err)
@@ -1245,8 +1245,8 @@ func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 	if _, err := (Service{}).SignComponent(context.Background(), attestorOnly, userReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "user component signing") {
 		t.Fatalf("SignComponent(user role in sentry node) error = %#v, want forbidden node role error", err)
 	}
-	if _, err := (Service{}).AssembleAttested(context.Background(), attestorOnly, signerapi.AttestedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "attested assembly") {
-		t.Fatalf("AssembleAttested(sentry node) error = %#v, want forbidden node role error", err)
+	if _, err := (Service{}).AssembleGuarded(context.Background(), attestorOnly, signerapi.GuardedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "guarded assembly") {
+		t.Fatalf("AssembleGuarded(sentry node) error = %#v, want forbidden node role error", err)
 	}
 
 	unknownRole := setupIdentityRuntimeWithRole(t, true, noderole.Role("unknown"))

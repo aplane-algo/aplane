@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package falcon1024attested provides the Falcon-1024 attested-account
+// Package falcon1024attested provides the Falcon-1024 guarded-account
 // LogicSig provider.
 package falcon1024attested
 
@@ -29,17 +29,17 @@ import (
 const (
 	FamilyName           = "falcon1024-sentry-ed25519"
 	FamilyNameFalcon1024 = "falcon1024-sentry-falcon1024"
-	KeyTypeV1            = keytypes.AttestedFalcon1024AttEd25519V1
-	KeyTypeFalcon1024V1  = keytypes.AttestedFalcon1024AttFalcon1024V1
+	KeyTypeV1            = keytypes.GuardedFalcon1024SentryEd25519V1
+	KeyTypeFalcon1024V1  = keytypes.GuardedFalcon1024SentryFalcon1024V1
 	BaseKeyType          = "aplane.falcon1024.v1"
 
-	ParamAttestorPublicKey = keytypes.ParameterAttestorPublicKey
+	ParamAttestorPublicKey = keytypes.ParameterSentryPublicKey
 
 	SignatureSize           = 2 + family.MaxSignatureSize + ed25519.SignatureSize
 	SignatureSizeFalcon1024 = 4 + family.MaxSignatureSize + family.MaxSignatureSize
 )
 
-// Provider implements the attested-account LogicSig shape for a Falcon user
+// Provider implements the guarded-account LogicSig shape for a Falcon user
 // component signature plus an attestor component signature.
 type Provider struct {
 	keyType                  string
@@ -102,12 +102,12 @@ func (p *Provider) MnemonicWordCount() int       { return family.MnemonicWordCou
 func (p *Provider) SupportsMnemonicImport() bool { return false }
 func (p *Provider) CreationParams() []lsigprovider.ParameterDef {
 	attestorLabel := "Attestor public key"
-	attestorDescription := "Hex-encoded attestor public key embedded in the attested account"
+	attestorDescription := "Hex-encoded attestor public key embedded in the guarded account"
 	switch p.attestorComponentKeyType {
 	case keytypes.AttestorComponentEd25519V1:
-		attestorDescription = "Hex-encoded Ed25519 attestor public key embedded in the attested account"
+		attestorDescription = "Hex-encoded Ed25519 attestor public key embedded in the guarded account"
 	case keytypes.AttestorComponentFalcon1024V1:
-		attestorDescription = "Hex-encoded Falcon-1024 attestor public key embedded in the attested account"
+		attestorDescription = "Hex-encoded Falcon-1024 attestor public key embedded in the guarded account"
 	}
 	return []lsigprovider.ParameterDef{{
 		Name:        ParamAttestorPublicKey,
@@ -335,15 +335,15 @@ func UnpackComponentSignatures(signature []byte) ([]byte, []byte, error) {
 func UnpackComponentSignaturesForKeyType(keyType string, signature []byte) ([]byte, []byte, error) {
 	switch keyType {
 	case KeyTypeV1:
-		return unpackEd25519AttestorSignature(signature)
+		return unpackEd25519SentrySignature(signature)
 	case KeyTypeFalcon1024V1:
-		return unpackFalconAttestorSignature(signature)
+		return unpackFalconSentrySignature(signature)
 	default:
 		return nil, nil, fmt.Errorf("key type %q is not an attested Falcon account key type", keyType)
 	}
 }
 
-func unpackEd25519AttestorSignature(signature []byte) ([]byte, []byte, error) {
+func unpackEd25519SentrySignature(signature []byte) ([]byte, []byte, error) {
 	if len(signature) < 2+ed25519.SignatureSize {
 		return nil, nil, fmt.Errorf("attested signature blob is too short")
 	}
@@ -357,7 +357,7 @@ func unpackEd25519AttestorSignature(signature []byte) ([]byte, []byte, error) {
 	return signature[2 : 2+userLen], signature[2+userLen:], nil
 }
 
-func unpackFalconAttestorSignature(signature []byte) ([]byte, []byte, error) {
+func unpackFalconSentrySignature(signature []byte) ([]byte, []byte, error) {
 	if len(signature) < 4 {
 		return nil, nil, fmt.Errorf("attested signature blob is too short")
 	}
@@ -384,10 +384,10 @@ func decodeAttestorPublicKeyForSize(value string, wantSize int) ([]byte, error) 
 	value = strings.TrimPrefix(strings.TrimPrefix(value, "0x"), "0X")
 	decoded, err := hex.DecodeString(value)
 	if err != nil {
-		return nil, fmt.Errorf("attestor_public_key must be hex: %w", err)
+		return nil, fmt.Errorf("sentry_public_key must be hex: %w", err)
 	}
 	if len(decoded) != wantSize {
-		return nil, fmt.Errorf("attestor_public_key length %d invalid (expected %d bytes)", len(decoded), wantSize)
+		return nil, fmt.Errorf("sentry_public_key length %d invalid (expected %d bytes)", len(decoded), wantSize)
 	}
 	return decoded, nil
 }

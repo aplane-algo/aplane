@@ -148,9 +148,9 @@ func TestVerifySignableKeysRejectsAttestorKeyTypes(t *testing.T) {
 			want:    attestorComponentSignRejectMessage,
 		},
 		{
-			name:    "attested account",
-			keyType: keytypes.AttestedFalcon1024V1,
-			want:    attestedAccountSignRejectMessage,
+			name:    "guarded account",
+			keyType: keytypes.GuardedFalcon1024SentryEd25519V1,
+			want:    guardedAccountSignRejectMessage,
 		},
 	}
 

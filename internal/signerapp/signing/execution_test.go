@@ -197,8 +197,8 @@ func TestExecutorRejectsAttestorKeyTypesBeforeSessionLoad(t *testing.T) {
 		name    string
 		keyType string
 	}{
-		{name: "falcon attested ed25519 attestor", keyType: keytypes.AttestedFalcon1024V1},
-		{name: "falcon attested falcon attestor", keyType: keytypes.AttestedFalcon1024AttFalcon1024V1},
+		{name: "falcon attested ed25519 attestor", keyType: keytypes.GuardedFalcon1024SentryEd25519V1},
+		{name: "falcon attested falcon attestor", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1},
 	}
 
 	for _, tt := range tests {
@@ -225,8 +225,8 @@ func TestExecutorRejectsAttestorKeyTypesBeforeSessionLoad(t *testing.T) {
 			if err.Kind != ErrorBadRequest {
 				t.Fatalf("error kind = %q, want %q", err.Kind, ErrorBadRequest)
 			}
-			if !strings.Contains(err.Message, attestedAccountSignRejectMessage) {
-				t.Fatalf("error message = %q, want %q", err.Message, attestedAccountSignRejectMessage)
+			if !strings.Contains(err.Message, guardedAccountSignRejectMessage) {
+				t.Fatalf("error message = %q, want %q", err.Message, guardedAccountSignRejectMessage)
 			}
 		})
 	}
@@ -240,8 +240,8 @@ func TestExecutorSignCryptoKeyRejectsAttestorKeyTypesBeforeProviderLookup(t *tes
 	}{
 		{name: "ed25519 component", keyType: keytypes.AttestorComponentEd25519V1, want: attestorComponentSignRejectMessage},
 		{name: "falcon component", keyType: keytypes.AttestorComponentFalcon1024V1, want: attestorComponentSignRejectMessage},
-		{name: "attested ed25519 attestor", keyType: keytypes.AttestedFalcon1024V1, want: attestedAccountSignRejectMessage},
-		{name: "attested falcon attestor", keyType: keytypes.AttestedFalcon1024AttFalcon1024V1, want: attestedAccountSignRejectMessage},
+		{name: "attested ed25519 attestor", keyType: keytypes.GuardedFalcon1024SentryEd25519V1, want: guardedAccountSignRejectMessage},
+		{name: "attested falcon attestor", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1, want: guardedAccountSignRejectMessage},
 	}
 
 	for _, tt := range tests {

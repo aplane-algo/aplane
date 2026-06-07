@@ -203,8 +203,8 @@ func TestGenerateKeyFalcon1024AttestedRequiresAttestorPublicKey(t *testing.T) {
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, masterKey, nil, []string{keyType})
-			if err == nil || !strings.Contains(err.Error(), "missing required parameter: attestor_public_key") {
-				t.Fatalf("GenerateKey(attested missing params) error = %v, want missing attestor_public_key", err)
+			if err == nil || !strings.Contains(err.Error(), "missing required parameter: sentry_public_key") {
+				t.Fatalf("GenerateKey(attested missing params) error = %v, want missing sentry_public_key", err)
 			}
 		})
 	}
@@ -253,7 +253,7 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 				t.Fatal("Address is empty")
 			}
 			if result.IsComponentKey {
-				t.Fatalf("attested account marked as component: %#v", result)
+				t.Fatalf("guarded account marked as component: %#v", result)
 			}
 
 			decrypted, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(result.KeyFile, masterKey)

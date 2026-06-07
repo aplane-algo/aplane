@@ -47,7 +47,7 @@ Attestor component policy is a separate deterministic surface stored in
 attestor-domain `policy.yaml`: no manual-review verdict and no operator default. This
 document defines the shared snapshot and sparse-override vocabulary; the
 attestor-specific decision rules are modeled in
-[FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md).
+[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
 Policy also gates `/simulate`, but only at the Always Deny tier. `/simulate`
 does not wait on operator approval and does not block on Always Review
@@ -251,7 +251,7 @@ Client-signing rules:
 
 Attestor component overrides are keyed by the component selector and are
 consumed only by the attestor-role component-signing flow modeled in
-[FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md).
+[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
 ## Network Selection
 

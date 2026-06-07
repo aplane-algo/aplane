@@ -170,24 +170,24 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 func TestHandleParamInputBytesAcceptsDeclaredHexLength(t *testing.T) {
 	m := Model{
 		genericLSigParams:     map[string]string{},
-		genericLSigParamOrder: []string{"attestor_public_key"},
+		genericLSigParamOrder: []string{"sentry_public_key"},
 		generateFocus:         0,
 	}
 	input := "D6FB74E10151AC3B0EAA7431B9B92C772C2A4A600C10B88CFD30169EA1AB4D0A"
 	params := []lsigprovider.ParameterDef{{
-		Name:      "attestor_public_key",
+		Name:      "sentry_public_key",
 		Type:      "bytes",
 		MaxLength: 64,
 	}}
 
 	got := m.appendToCurrentParam(input, params)
-	if got.genericLSigParams["attestor_public_key"] != strings.ToLower(input) {
-		t.Fatalf("bytes input = %q, want lowercase 64-char hex", got.genericLSigParams["attestor_public_key"])
+	if got.genericLSigParams["sentry_public_key"] != strings.ToLower(input) {
+		t.Fatalf("bytes input = %q, want lowercase 64-char hex", got.genericLSigParams["sentry_public_key"])
 	}
 
 	got = got.appendToCurrentParam("ffff", params)
-	if got.genericLSigParams["attestor_public_key"] != strings.ToLower(input) {
-		t.Fatalf("bytes input exceeded max length: %q", got.genericLSigParams["attestor_public_key"])
+	if got.genericLSigParams["sentry_public_key"] != strings.ToLower(input) {
+		t.Fatalf("bytes input exceeded max length: %q", got.genericLSigParams["sentry_public_key"])
 	}
 }
 

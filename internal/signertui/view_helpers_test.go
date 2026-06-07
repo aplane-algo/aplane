@@ -155,7 +155,7 @@ func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 			{Name: "recipient", Label: "Recipient", Type: "address", Required: true},
 			{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true},
 			{Name: "unlock_round", Label: "Unlock Round", Type: "uint64", Required: true},
-			{Name: "attestor_public_key", Label: "Attestor public key", Type: "bytes", Required: true, MaxLength: 64},
+			{Name: "sentry_public_key", Label: "Attestor public key", Type: "bytes", Required: true, MaxLength: 64},
 			{Name: "note", Label: "Note", Type: "string", MaxLength: 200},
 		},
 	}})
@@ -166,11 +166,11 @@ func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 		generateKeyType: 0,
 		generateFocus:   1,
 		genericLSigParams: map[string]string{
-			"recipient":           strings.Repeat("A", 58),
-			"recipients":          strings.Repeat("B", 58) + "\n" + strings.Repeat("C", 58),
-			"unlock_round":        "18446744073709551615",
-			"attestor_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
-			"note":                strings.Repeat("D", 200),
+			"recipient":         strings.Repeat("A", 58),
+			"recipients":        strings.Repeat("B", 58) + "\n" + strings.Repeat("C", 58),
+			"unlock_round":      "18446744073709551615",
+			"sentry_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
+			"note":              strings.Repeat("D", 200),
 		},
 		genericLSigParamModes: map[string]int{},
 		genericLSigParamScroll: map[string]int{

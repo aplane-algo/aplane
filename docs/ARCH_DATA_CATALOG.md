@@ -105,7 +105,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Native Ed25519 key | signing authority | `.key` category `ed25519` | address to private key material | `internal/signing`, `internal/keygen`, `internal/keys` | Address derives from key material; private key never leaves signer boundary. |
 | DSA LogicSig key | signing authority | `.key` category `dsa_lsig` | address, bytecode, private signing key, signing args | `internal/keys`, `internal/signerapp/signing`, `lsig/*` | Stored bytecode and `signing_args` are sign-time authority. |
 | Generic LogicSig key | signing authority | `.key` category `generic_lsig` | address, bytecode, runtime arg schema | `internal/keys`, `lsig/generictemplate` | TEAL-only key stores no private signing key; address derives from bytecode. |
-| Attested account key | signing/assembly authority | `.key` category `dsa_lsig`, key type `aplane.falcon1024-att-*` | local user component key plus embedded sentry public key | `lsig/falcon1024_attested`, `internal/signerapp/signing` | `/sign` rejects; user-role `/sign/component` and `/sign/assemble` use stored bytecode/params. |
+| Guarded account key | signing/assembly authority | `.key` category `dsa_lsig`, key type `aplane.falcon1024-att-*` | local user component key plus embedded sentry public key | `lsig/falcon1024_attested`, `internal/signerapp/signing` | `/sign` rejects; user-role `/sign/component` and `/sign/assemble` use stored bytecode/params. |
 | Sentry component key | component-sign authority | `.key` category `component`, key type `aplane.sentry-*` | raw component signing key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | `/sign` rejects; sentry-role `/sign/component` only; not a spending account. |
 | Component selector | public selector | 52-character uppercase base32 SHA-512/256 of domain-separated key type and public key bytes | component key row `address` and `component_key` fields | `internal/sentry/keytypes` | Uniform for Ed25519/Falcon; txid-shaped but not a valid Algorand address; rejected as sender/auth/rekey/destination where address is expected. |
 | Component public metadata sidecar | public metadata | `keys/<component_selector>.public.json` | `apstore sentry export-public` source | `internal/keys`, `internal/sentry/attrefs` | Selector/key type/public key consistency verified; no private material. |
@@ -215,8 +215,8 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Admin delete DTO | wire request/projection | address query parameter | delete response or error | `cmd/apsigner`, `internal/signerapp/keyadmin` | Missing address 400; missing key 404. |
 | Component sign request | wire request | canonical group bytes and target indices | `signerapi.ComponentSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Role is `user` or `sentry`; component key meaning is role-specific; omitted request IDs are generated. |
 | Component sign response | wire projection | per-target component signatures | `signerapi.ComponentSignResponse` | `internal/signerapp/signing` | Signature scheme is user key type or sentry component key type. |
-| Attested assembly request | wire request | group bytes plus user/sentry signatures | `signerapi.AttestedAssemblyRequest` | `internal/signerapp/signing` | Verifies sentry signature against embedded key in local account key. |
-| Attested assembly response | wire projection | assembled signed group bytes | `signerapi.AttestedAssemblyResponse` | `internal/signerapp/signing` | Assembly does not trust endpoint-advertised public keys. |
+| Attested assembly request | wire request | group bytes plus user/sentry signatures | `signerapi.GuardedAssemblyRequest` | `internal/signerapp/signing` | Verifies sentry signature against embedded key in local account key. |
+| Attested assembly response | wire projection | assembled signed group bytes | `signerapi.GuardedAssemblyResponse` | `internal/signerapp/signing` | Assembly does not trust endpoint-advertised public keys. |
 | Admin sentry sync DTOs | wire request/projection | public candidate list | `signerapi.AdminSyncAttestorReferences*` | `internal/signerapp/rest`, `internal/sentry/attrefs` | Writes public signer-side reference catalog only; HTTP authorizes as `sentries.sync`; no tokens or private keys. |
 
 ## Admin IPC Wire Models
@@ -245,7 +245,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Sentry component message | request-scoped signing input | role byte plus target TxID | 32-byte message digest | `internal/sentry/message` | Shared by client optional verify, signer assembly, and TEAL vectors. |
 | Component signature set | request-scoped wire data | `/sign/component` response | per-target signatures by target index | `internal/signerapp/signing`, `pkg/signerapi` | Each signature is bound to one target TxID and role. |
 | Attested assembly target | request-scoped wire data | `/sign/assemble` request targets | LogicSig args packing plan | `internal/signerapp/signing` | User and sentry signatures are verified before packed bytes are returned. |
-| Attested send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | user component call, sentry call, assembly, algod submit/simulate | `internal/engine`, `internal/apshellapp` | Client holds no key material; endpoint routing is not trust; MVP requires every original sender to be attested. |
+| Guarded send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | user component call, sentry call, assembly, algod submit/simulate | `internal/engine`, `internal/apshellapp` | Client holds no key material; endpoint routing is not trust; MVP requires every original sender to be attested. |
 
 ## Plugin, JavaScript, And MCP Models
 
@@ -294,10 +294,10 @@ These decisions are part of the current data model and contract surface:
 |---|---|
 | This release is new-install-only. | Existing install directories are not supported in-place upgrade targets. |
 | `endpoints.yaml` is the client routing authority. | Client `config.yaml` owns network/theme/polling, not signer or sentry endpoint routes. |
-| Endpoint import and `/keys` discovery are routing metadata. | The trust anchor is the sentry public key embedded in the attested account key, then `/sign/assemble` verification and on-chain LogicSig verification. |
+| Endpoint import and `/keys` discovery are routing metadata. | The trust anchor is the sentry public key embedded in the guarded account key, then `/sign/assemble` verification and on-chain LogicSig verification. |
 | `Config.AttestorEndpoints` is derived runtime state. | Durable sentry endpoint inventory lives under endpoint records in `endpoints.yaml`. |
-| `sentries/<name>.json` records are public generation references. | They help the TUI select an sentry public key but do not prove endpoint ownership or signer custody. |
-| Attested account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
+| `sentries/<name>.json` records are public generation references. | They help the TUI select a sentry public key but do not prove endpoint ownership or signer custody. |
+| Guarded account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
 | `signerapi.SignResponse` is not the live `/sign` wire shape. | Live `/sign` uses `GroupSignResponse`; `SignResponse` is not a separate wire authority. |
 | Admin mnemonic export messages do not release recovery material. | Servers deny `export_key`, `GenerateResultMessage.Mnemonic` is omitted, and recovery material is handled through encrypted backups instead of admin result payloads. |
 | `internal/signerapp/signing` uses SDK DTOs at the service boundary. | It is not a duplicate durable authority; new request DTO changes still belong in `pkg/signerapi` with fixtures. |
@@ -317,7 +317,7 @@ name a test inline:
   `internal/config/client_endpoints.go`,
   `internal/config/client_endpoint_writes_test.go`,
   `internal/apshellapp/endpoints_test.go`.
-- Attested send orchestration: `internal/engine/attested_submit_test.go`,
+- Guarded send orchestration: `internal/engine/attested_submit_test.go`,
   `internal/engine/connect/client_test.go`.
 - Sentry component signing and assembly:
   `internal/signerapp/signing/component_test.go`,
@@ -348,4 +348,4 @@ name a test inline:
 - [ARCH_POLICY.md](ARCH_POLICY.md): policy verdict and routing semantics.
 - [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): stable action/resource model.
 - [ARCH_SPEC.md#attested-signing-and-sentry-nodes](ARCH_SPEC.md#attested-signing-and-sentry-nodes):
-  attested signing and sentry node architecture.
+  guarded signing and sentry node architecture.

@@ -41,7 +41,7 @@ func truncateLongHex(line string, maxLen int) string {
 }
 
 func buildDetailsParameterLines(keyType string, parameters map[string]string) []string {
-	if keytypes.IsAttestedAccountKeyType(keyType) {
+	if keytypes.IsGuardedAccountKeyType(keyType) {
 		return buildAttestedDetailsParameterLines(parameters)
 	}
 
@@ -71,7 +71,7 @@ func buildAttestedDetailsParameterLines(parameters map[string]string) []string {
 
 	keys := make([]string, 0, len(parameters))
 	for key := range parameters {
-		if key == "Attestor" || key == keytypes.ParameterAttestorPublicKey {
+		if key == "Attestor" || key == keytypes.ParameterSentryPublicKey {
 			continue
 		}
 		keys = append(keys, key)

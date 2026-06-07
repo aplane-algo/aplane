@@ -1,8 +1,8 @@
-# Formal Attested Signing Model
+# Formal Guarded Signing Model
 
 > Status: precise English model, not machine-checked.
-> This document formalizes the current attested-account component-signing
-> workflow: user component signing, attestor component signing, assembly, and
+> This document formalizes the current guarded-account component-signing
+> workflow: user component signing, sentry component signing, assembly, and
 > client endpoint routing.
 > Invariant status (implemented / intended / derived / etc.) is tracked in
 > [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md).
@@ -11,24 +11,24 @@
 
 Normative inputs:
 
-- [ARCH_SPEC.md#attested-signing-and-attestor-nodes](ARCH_SPEC.md#attested-signing-and-attestor-nodes):
-  attestor component key types, attested account key types, endpoint workflow,
+- [ARCH_SPEC.md#guarded-signing-and-sentry-nodes](ARCH_SPEC.md#guarded-signing-and-sentry-nodes):
+  sentry component key types, guarded account key types, endpoint workflow,
   role-separated messages, assembly semantics, and endpoint routing trust
   model.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): `/keys`, `/sign/component`,
-  `/sign/assemble`, endpoint registry, node role, split policy files,
+  `/sign/assemble`, endpoint registry, node role, `policy.yaml`,
   and on-disk selector contracts.
-- [ARCH_POLICY.md](ARCH_POLICY.md): attestor-domain `policy.yaml`, attestor component
+- [ARCH_POLICY.md](ARCH_POLICY.md): sentry-domain `policy.yaml`, sentry component
   transfer policy, deterministic reject-only route-miss behavior, and
   component-key overrides.
 - [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md): client-signing policy
   precedence. This model imports only the snapshot and overlay concepts; the
-  attestor role has no manual-review or operator-default verdict.
+  sentry role has no manual-review or operator-default verdict.
 - [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md):
   stored key-file authority for existing keys.
 
 This model does not replace
-[ARCH_SPEC.md#attested-signing-and-attestor-nodes](ARCH_SPEC.md#attested-signing-and-attestor-nodes).
+[ARCH_SPEC.md#guarded-signing-and-sentry-nodes](ARCH_SPEC.md#guarded-signing-and-sentry-nodes).
 It extracts the state, transition, and invariant surface that should remain
 stable as the implementation evolves.
 
@@ -36,14 +36,14 @@ stable as the implementation evolves.
 
 This model covers the current MVP:
 
-- attested Falcon account keys whose LogicSig bytecode embeds one attestor
+- guarded Falcon account keys whose LogicSig bytecode embeds one sentry
   public key,
-- attestor component keys selected by txid-shaped component selectors,
-- `/sign/component` for user-role and attestor-role component signatures,
+- sentry component keys selected by txid-shaped component selectors,
+- `/sign/component` for user-role and sentry-role component signatures,
 - `/sign/assemble` verification and LogicSig argument packing,
-- `apshell send` orchestration for attested account senders,
-- client endpoint discovery and sync for attestor routing,
-- node role gates for signer nodes and attestor nodes.
+- `apshell send` orchestration for guarded account senders,
+- client endpoint discovery and sync for sentry routing,
+- node role gates for signer nodes and sentry nodes.
 
 It does not model:
 
@@ -52,29 +52,29 @@ It does not model:
 - account registration or account-binding databases,
 - trust in endpoint metadata as a security control,
 - SSH host-key or token issuance state machines,
-- operator behavior or manual approval for attestor component requests.
+- operator behavior or manual approval for sentry component requests.
 
 ## Abstract Objects
 
-### Attested Account Key
+### Guarded Account Key
 
-`AttestedAccountKey` is a DSA-backed LogicSig key file for an account whose
+`GuardedAccountKey` is a DSA-backed LogicSig key file for an account whose
 program requires two component signatures. The model observes:
 
 - account address derived from stored LogicSig bytecode,
 - stored user public/private component key material,
-- stored attestor public key parameter,
-- stored attested account key type, which determines the attestor component
+- stored sentry public key parameter,
+- stored guarded account key type, which determines the sentry component
   key family,
 - stored signing metadata, bytecode, and runtime argument contract.
 
-The attestor trust decision is made at key generation time by embedding the
-chosen attestor public key into this key's LogicSig program and stored
+The sentry trust decision is made at key generation time by embedding the
+chosen sentry public key into this key's LogicSig program and stored
 parameters. Later endpoint routing does not move that trust anchor.
 
-### Attestor Component Key
+### Sentry Component Key
 
-`AttestorComponentKey` is a non-spending key with:
+`SentryComponentKey` is a non-spending key with:
 
 - key category `component`,
 - key type `aplane.sentry-ed25519.v1` or
@@ -94,17 +94,17 @@ For a canonical target transaction with `txid`, the component-signing message is
 m = SHA512_256("APLANE_ATTESTOR_V1" || role_byte || txid)
 ```
 
-`role_byte = 0x01` for the user role and `role_byte = 0x02` for the attestor
+`role_byte = 0x01` for the user role and `role_byte = 0x02` for the sentry
 role. The same pure message/verification primitives must be used by signer
 services and optional client-side verification.
 
-### Attestor Policy Snapshot
+### Sentry Policy Snapshot
 
-`AttestorPolicySnapshot` is the verified effective attestor-domain `policy.yaml` snapshot
-for one attestor identity. It contains transfer routing and sparse
+`SentryPolicySnapshot` is the verified effective sentry-domain `policy.yaml` snapshot
+for one sentry identity. It contains transfer routing and sparse
 `key_overrides` keyed by component selector.
 
-Unlike client-signing policy, attestor policy has no manual-review verdict and
+Unlike client-signing policy, sentry policy has no manual-review verdict and
 no operator default. If no positive transfer route authorizes every target
 transaction, the request rejects.
 
@@ -112,18 +112,18 @@ transaction, the request rejects.
 
 `EndpointRegistry` is client-local routing state in `endpoints.yaml`.
 
-An endpoint can be role `signer` or `attestor`. A client has one primary signer
-endpoint and zero or more attestor endpoints. Attestor endpoint inventory may
-publish public attestor keys and selectors. That inventory is routing metadata
+An endpoint can be role `signer` or `sentry`. A client has one primary signer
+endpoint and zero or more sentry endpoints. Sentry endpoint inventory may
+publish public sentry keys and selectors. That inventory is routing metadata
 only; it is not proof that the endpoint owns any private key.
 
 ## Transitions
 
-### Detect Attested Send
+### Detect Guarded Send
 
 `apshell send` consults the primary signer's key cache. If any sender is an
-attested account key type, the client uses the attested orchestration path.
-The current MVP rejects mixed ordinary and attested original senders in one
+guarded account key type, the client uses the guarded orchestration path.
+The current MVP rejects mixed ordinary and guarded original senders in one
 group.
 
 ### Build Canonical Group
@@ -138,25 +138,25 @@ this canonical group.
 The client calls the primary signer:
 
 ```text
-POST /sign/component role=user component_key=<attested_account>
+POST /sign/component role=user component_key=<guarded_account>
 ```
 
-The signer loads the local attested account key only if every requested target
+The signer loads the local guarded account key only if every requested target
 sender equals `component_key`. It signs the user-role component message with
-the user component private key stored in that attested account key.
+the user component private key stored in that guarded account key.
 
-### Attestor Component Sign
+### Sentry Component Sign
 
-For each distinct embedded attestor public key, the client resolves an attestor
+For each distinct embedded sentry public key, the client resolves a sentry
 endpoint and calls:
 
 ```text
-POST /sign/component role=attestor component_key=<component_selector>
+POST /sign/component role=sentry component_key=<component_selector>
 ```
 
-The attestor signer evaluates the attestor-domain `policy.yaml` transfer policy for every
+The sentry signer evaluates the sentry-domain `policy.yaml` transfer policy for every
 target transaction before loading the component private key. The request is
-accepted only when the effective attestor policy authorizes all target
+accepted only when the effective sentry policy authorizes all target
 transactions.
 
 ### Assemble
@@ -167,26 +167,26 @@ The client returns to the primary signer:
 POST /sign/assemble
 ```
 
-For each target, the primary signer loads its local attested account key and:
+For each target, the primary signer loads its local guarded account key and:
 
 1. verifies `user_signature` against the user public key stored in that local
    key,
-2. verifies `attestor_signature` against the attestor public key embedded in
+2. verifies `sentry_signature` against the sentry public key embedded in
    that local key,
-3. packs both signatures according to the attested account key type,
+3. packs both signatures according to the guarded account key type,
 4. builds LogicSig args from stored signing metadata,
-5. verifies the resulting LogicSig address equals the attested account,
+5. verifies the resulting LogicSig address equals the guarded account,
 6. returns signed group bytes, preserving passthrough bytes only if their
    decoded transaction ID matches the canonical group entry.
 
 The assembling signer trusts values it stored at generation time. It does not
 trust endpoint metadata supplied during the transaction flow.
 
-### Discover And Sync Attestors
+### Discover And Sync Sentries
 
-`endpoints sync-attestors` queries reachable attestor endpoints with valid
+`endpoints sync-sentries` queries reachable sentry endpoints with valid
 tokens, refreshes their published inventory in `endpoints.yaml`, and then, with
-operator confirmation, syncs the published public attestor references into the
+operator confirmation, syncs the published public sentry references into the
 primary signer's local generation library. Unavailable or locked endpoints keep
 their previous inventory. Authentication, malformed metadata, and duplicate
 public-key routing errors fail without writing partial updates.
@@ -195,50 +195,50 @@ public-key routing errors fail without writing partial updates.
 
 ### A1: Role-Separated Messages
 
-User-role and attestor-role signatures are over different messages for the
+User-role and sentry-role signatures are over different messages for the
 same target transaction.
 
 ```text
-ComponentMessage(user, txid) != ComponentMessage(attestor, txid)
+ComponentMessage(user, txid) != ComponentMessage(sentry, txid)
 ```
 
-### A2: Direct Signing Rejects Attested Key Classes
+### A2: Direct Signing Rejects Guarded Key Classes
 
-`/sign` must reject attestor component key types and attested account key types.
+`/sign` must reject sentry component key types and guarded account key types.
 They can sign only through `/sign/component` plus `/sign/assemble`.
 
 ```text
-KeyType in AttestorComponentTypes union AttestedAccountTypes =>
+KeyType in SentryComponentTypes union GuardedAccountTypes =>
   Reject(/sign, key_type)
 ```
 
 ### A3: User Component Sender Binding
 
-User-role component signing for an attested account signs only target
-transactions whose sender equals the requested attested account.
+User-role component signing for a guarded account signs only target
+transactions whose sender equals the requested guarded account.
 
 ```text
 Exists target: target.sender != component_key =>
   Reject(UserComponentSign)
 ```
 
-### A4: Attestor Policy Before Key Load
+### A4: Sentry Policy Before Key Load
 
-Attestor-role component signing evaluates the effective attestor-domain `policy.yaml`
+Sentry-role component signing evaluates the effective sentry-domain `policy.yaml`
 policy before loading the component private key.
 
 ```text
-not AttestorPolicyAllowsAllTargets(snapshot, request) =>
+not SentryPolicyAllowsAllTargets(snapshot, request) =>
   RejectBeforePrivateKeyLoad(request)
 ```
 
 ### A5: Component Selector Validates Key Class
 
-An attestor component selector may load only a component key whose stored key
+A sentry component selector may load only a component key whose stored key
 type, category, selector, and public/private key pair agree.
 
 ```text
-LoadAttestorComponent(selector) succeeds =>
+LoadSentryComponent(selector) succeeds =>
   key.category = component and
   key.selector = selector and
   key.public_private_pair_valid
@@ -247,22 +247,22 @@ LoadAttestorComponent(selector) succeeds =>
 ### A6: Assembly Verifies User Signature Locally
 
 Assembly accepts a user component signature only if it verifies against the user
-public key stored in the local attested account key.
+public key stored in the local guarded account key.
 
 ```text
 not Verify(user_public_from_local_key, ComponentMessage(user, txid), user_sig)
   => Reject(Assemble)
 ```
 
-### A7: Assembly Verifies Attestor Signature Against Embedded Key
+### A7: Assembly Verifies Sentry Signature Against Embedded Key
 
-Assembly accepts an attestor component signature only if it verifies against
-the attestor public key stored in the local attested account key.
+Assembly accepts a sentry component signature only if it verifies against
+the sentry public key stored in the local guarded account key.
 
 ```text
-not Verify(attestor_public_from_local_key,
-           ComponentMessage(attestor, txid),
-           attestor_sig) => Reject(Assemble)
+not Verify(sentry_public_from_local_key,
+           ComponentMessage(sentry, txid),
+           sentry_sig) => Reject(Assemble)
 ```
 
 ### A8: Passthrough Bytes Remain Bound To Group Entry
@@ -279,7 +279,7 @@ TxID(DecodeSignedTxn(passthrough[i]).txn) != CanonicalGroup[i].txid =>
 
 Endpoint `/keys` metadata can fail early for ergonomics, but it is not an
 ownership proof. If an explicit endpoint mapping fails to advertise the
-embedded attestor public key, the client errors and does not silently fall back
+embedded sentry public key, the client errors and does not silently fall back
 to self-discovery.
 
 ```text
@@ -292,11 +292,11 @@ Security still comes from A7 and from on-chain LogicSig verification.
 
 ### A10: Client Verification Uses Shared Primitive
 
-Any client-side attestor signature precheck derives the message through the
-shared attestor verification package, not by reconstructing bytes ad hoc.
+Any client-side sentry signature precheck derives the message through the
+shared sentry verification package, not by reconstructing bytes ad hoc.
 
 ```text
-ClientVerifyAttestorSig(target) uses ComponentMessage(attestor, target.txid)
+ClientVerifySentrySig(target) uses ComponentMessage(sentry, target.txid)
 ```
 
 ### A11: Component Response Shape Is Exact
@@ -312,9 +312,9 @@ ResponseTargets != RequestedTargets or DuplicateTarget or WrongScheme =>
 
 ### A12: Endpoint Sync Is Atomic Around Hard Failures
 
-Attestor discovery may preserve stale inventory for unavailable or locked
+Sentry discovery may preserve stale inventory for unavailable or locked
 endpoints, but authentication failures, malformed metadata, and duplicate
-attestor public keys reject without writing partial routing updates.
+sentry public keys reject without writing partial routing updates.
 
 ```text
 HardDiscoveryFailure => EndpointRegistryAfter = EndpointRegistryBefore
@@ -326,8 +326,8 @@ Node role controls which key classes may be generated, imported, loaded, or
 activated for a signer data root:
 
 ```text
-role = signer   => reject attestor component private keys
-role = attestor => reject spending/user signing keys and attested account keys
+role = signer   => reject sentry component private keys
+role = sentry => reject spending/user signing keys and guarded account keys
 ```
 
 There is no `dual` role and no supported role-change transition. Conflicting
@@ -339,10 +339,10 @@ This model assumes:
 
 - canonical group decoding and txid computation match algod and SDK rules,
 - cryptographic verification primitives are correct,
-- stored attested account key metadata accurately describes its bytecode and
-  embedded attestor key,
+- stored guarded account key metadata accurately describes its bytecode and
+  embedded sentry key,
 - endpoint tokens and host-key trust are handled by the connection layer,
-- the on-chain LogicSig program enforces the same embedded attestor public key
+- the on-chain LogicSig program enforces the same embedded sentry public key
   requirement that assembly checks locally.
 
 ## Code and Test Anchors
@@ -367,16 +367,16 @@ Implementation areas that should remain aligned with this model:
 High-value test anchors:
 
 - role-separated message generation,
-- direct `/sign` rejection for every attestor component and attested account
+- direct `/sign` rejection for every sentry component and guarded account
   key type,
 - sender binding before user component key load,
-- deterministic attestor-domain `policy.yaml` policy rejection before attestor key load,
+- deterministic sentry-domain `policy.yaml` policy rejection before sentry key load,
 - component selector/type/category/public-private validation,
 - assembly rejection for wrong user signatures,
-- assembly rejection for wrong attestor signatures,
+- assembly rejection for wrong sentry signatures,
 - passthrough transaction-ID mismatch rejection,
 - explicit endpoint mismatch rejection without self fallback,
-- shared client-side attestor signature verification,
+- shared client-side sentry signature verification,
 - malformed component response rejection,
 - endpoint sync preserve/abort behavior,
 - node role generation/import/reload/service-dispatch gates.
@@ -385,9 +385,9 @@ High-value test anchors:
 
 These should be answered before a machine-checkable model:
 
-1. Decide whether the first TLA+ attested model should abstract cryptographic
+1. Decide whether the first TLA+ guarded model should abstract cryptographic
    verification as booleans or model signature roles as uninterpreted tokens.
-2. Decide whether endpoint discovery belongs in the first attested module or
+2. Decide whether endpoint discovery belongs in the first guarded module or
    should be a separate routing-state model joined later.
 3. Decide whether to model node role in the attested module or in a separate
    durable-inventory/role model.

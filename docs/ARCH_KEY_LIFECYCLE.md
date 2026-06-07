@@ -103,8 +103,8 @@ Valid roles are exactly `signer` and `attestor`.
 
 | Node role | Allowed active key classes | Disallowed active key classes | Served signing paths |
 |---|---|---|---|
-| `signer` | Native signing keys, ordinary LogicSig keys, attested account keys, and public attestor references used for generation. | Attestor component private keys. | Normal `/sign`, user-role `/sign/component`, `/sign/assemble`. |
-| `attestor` | Attestor component private keys and their public sidecars. | Native signing keys, ordinary LogicSig account keys, and attested account keys. | Attestor-role `/sign/component`. |
+| `signer` | Native signing keys, ordinary LogicSig keys, guarded account keys, and public attestor references used for generation. | Attestor component private keys. | Normal `/sign`, user-role `/sign/component`, `/sign/assemble`. |
+| `attestor` | Attestor component private keys and their public sidecars. | Native signing keys, ordinary LogicSig account keys, and guarded account keys. | Attestor-role `/sign/component`. |
 
 Rules:
 
@@ -209,7 +209,7 @@ key is rejected during reload rather than published as a signable key.
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Attestor component key valid | Payload category/type is an attestor component key and selector is canonical. | Only through attestor-role component signing on attestor nodes; normal `/sign` and spending paths reject it. | Restores as a component key on attestor nodes, regenerating the public sidecar; never as a spending account. |
-| Attested account key valid | DSA LogicSig key whose bytecode embeds the attestor public key. | Only on signer nodes through attested orchestration: user component signature, attestor component signature, local assembly. | Restores from stored bytecode and metadata. |
+| Guarded account key valid | DSA LogicSig key whose bytecode embeds the attestor public key. | Only on signer nodes through attested orchestration: user component signature, attestor component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig missing `salt_counter` | Payload has LogicSig bytecode but no salt counter. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore rejects instead of reconstructing from template. |
@@ -335,7 +335,7 @@ is not published as valid runtime inventory.
 11. Attestor component keys are component-signing keys, not spending accounts.
 12. Attestor component public sidecars are derived public metadata and must not
     be treated as independent signing authority.
-13. Attested account keys use the attested orchestration flow; normal `/sign`
+13. Guarded account keys use the attested orchestration flow; normal `/sign`
     rejects them.
 14. Backup restore is per-key and must not silently redefine an existing local
     `key_type`.

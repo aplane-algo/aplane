@@ -98,7 +98,7 @@ func signPreparedUserComponents(ctx context.Context, plan *ComponentSignPlan, se
 	for _, target := range plan.Targets {
 		if target.Sender != plan.ComponentKey {
 			return nil, badRequest(fmt.Sprintf(
-				"target index %d sender %q does not match attested account %q",
+				"target index %d sender %q does not match guarded account %q",
 				target.TargetIndex,
 				target.Sender,
 				plan.ComponentKey,
@@ -106,7 +106,7 @@ func signPreparedUserComponents(ctx context.Context, plan *ComponentSignPlan, se
 		}
 	}
 
-	keyMaterial, provider, signatureScheme, err := loadAttestedAccountSigningKey(ctx, session, plan.ComponentKey)
+	keyMaterial, provider, signatureScheme, err := loadGuardedAccountSigningKey(ctx, session, plan.ComponentKey)
 	if err != nil {
 		return nil, err
 	}
@@ -133,48 +133,48 @@ func signPreparedUserComponents(ctx context.Context, plan *ComponentSignPlan, se
 	}, nil
 }
 
-func loadAttestedAccountSigningKey(ctx context.Context, session componentKeyGetter, attestedAccount string) (*coresigning.KeyMaterial, coresigning.Provider, string, *ServiceError) {
-	keyMaterial, err := loadAttestedAccountKeyMaterial(ctx, session, attestedAccount)
+func loadGuardedAccountSigningKey(ctx context.Context, session componentKeyGetter, guardedAccount string) (*coresigning.KeyMaterial, coresigning.Provider, string, *ServiceError) {
+	keyMaterial, err := loadGuardedAccountKeyMaterial(ctx, session, guardedAccount)
 	if err != nil {
 		return nil, nil, "", err
 	}
 	if keyMaterial.BaseKeyType == "" {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, "", internal("loaded attested account key is missing base key type")
+		return nil, nil, "", internal("loaded guarded account key is missing base key type")
 	}
 
 	provider := coresigning.GetProvider(keyMaterial.BaseKeyType)
 	if provider == nil {
 		baseKeyType := keyMaterial.BaseKeyType
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, "", internal(fmt.Sprintf("unsupported attested account base key type: %s", baseKeyType))
+		return nil, nil, "", internal(fmt.Sprintf("unsupported guarded account base key type: %s", baseKeyType))
 	}
 	return keyMaterial, provider, keyMaterial.BaseKeyType, nil
 }
 
-func loadAttestedAccountKeyMaterial(ctx context.Context, session componentKeyGetter, attestedAccount string) (*coresigning.KeyMaterial, *ServiceError) {
-	keyMaterial, err := session.GetKeyWithContext(ctx, attestedAccount)
+func loadGuardedAccountKeyMaterial(ctx context.Context, session componentKeyGetter, guardedAccount string) (*coresigning.KeyMaterial, *ServiceError) {
+	keyMaterial, err := session.GetKeyWithContext(ctx, guardedAccount)
 	if err != nil {
 		switch {
 		case errors.Is(err, keystore.ErrStoreLocked):
 			return nil, forbidden("signer is locked")
 		case errors.Is(err, keystore.ErrKeyNotFound):
-			return nil, badRequest(fmt.Sprintf("attested account key %q not found", attestedAccount))
+			return nil, badRequest(fmt.Sprintf("guarded account key %q not found", guardedAccount))
 		default:
-			return nil, internal(fmt.Sprintf("failed to load attested account key: %v", err))
+			return nil, internal(fmt.Sprintf("failed to load guarded account key: %v", err))
 		}
 	}
 	if keyMaterial == nil {
-		return nil, internal("loaded attested account key material is nil")
+		return nil, internal("loaded guarded account key material is nil")
 	}
-	if !keytypes.IsAttestedAccountKeyType(keyMaterial.Type) {
+	if !keytypes.IsGuardedAccountKeyType(keyMaterial.Type) {
 		gotType := keyMaterial.Type
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, badRequest(fmt.Sprintf("key %q is %s, not an attested account key", attestedAccount, gotType))
+		return nil, badRequest(fmt.Sprintf("key %q is %s, not a guarded account key", guardedAccount, gotType))
 	}
 	if keyMaterial.Category != "" && keyMaterial.Category != keys.CategoryDSALsig {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, badRequest(fmt.Sprintf("key %q is not a dsa_lsig key", attestedAccount))
+		return nil, badRequest(fmt.Sprintf("key %q is not a dsa_lsig key", guardedAccount))
 	}
 	return keyMaterial, nil
 }

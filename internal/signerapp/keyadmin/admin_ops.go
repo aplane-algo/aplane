@@ -89,19 +89,19 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 const keyDetailsAttestorLabel = "Attestor"
 
 func keyDetailsParameters(keyType string, parameters map[string]string) map[string]string {
-	if !keytypes.IsAttestedAccountKeyType(keyType) {
+	if !keytypes.IsGuardedAccountKeyType(keyType) {
 		return maps.Clone(parameters)
 	}
 
 	projected := make(map[string]string)
 	for key, value := range parameters {
-		if key == keytypes.ParameterAttestorPublicKey {
+		if key == keytypes.ParameterSentryPublicKey {
 			continue
 		}
 		projected[key] = value
 	}
 
-	componentKey, err := attestorComponentSelectorForDetails(keyType, parameters[keytypes.ParameterAttestorPublicKey])
+	componentKey, err := attestorComponentSelectorForDetails(keyType, parameters[keytypes.ParameterSentryPublicKey])
 	if err != nil {
 		projected[keyDetailsAttestorLabel] = fmt.Sprintf("invalid attestor public key (%v)", err)
 		return projected
@@ -111,9 +111,9 @@ func keyDetailsParameters(keyType string, parameters map[string]string) map[stri
 }
 
 func attestorComponentSelectorForDetails(keyType, publicKeyHex string) (string, error) {
-	componentKeyType, ok := keytypes.AttestorComponentKeyTypeForAttestedAccount(keyType)
+	componentKeyType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(keyType)
 	if !ok {
-		return "", fmt.Errorf("unknown attested account key type %q", keyType)
+		return "", fmt.Errorf("unknown guarded account key type %q", keyType)
 	}
 	value := strings.TrimSpace(publicKeyHex)
 	value = strings.TrimPrefix(strings.TrimPrefix(value, "0x"), "0X")

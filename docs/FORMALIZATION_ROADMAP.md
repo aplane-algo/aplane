@@ -27,8 +27,8 @@ Primary sources for the first tranche:
   alignment, status behavior, and `/sign/cancel`.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing policy,
   lifecycle, reload, key-file, SDK, and backup/restore contracts.
-- [ARCH_SPEC.md#attested-signing-and-attestor-nodes](ARCH_SPEC.md#attested-signing-and-attestor-nodes):
-  attested-account component signing, attestor endpoint routing, assembly
+- [ARCH_SPEC.md#guarded-signing-and-sentry-nodes](ARCH_SPEC.md#guarded-signing-and-sentry-nodes):
+  guarded-account component signing, attestor endpoint routing, assembly
   verification, and node role separation.
 - [ARCH_POLICY.md](ARCH_POLICY.md): current signer policy verdict model,
   precedence, attestor component policy, snapshot semantics, and rule
@@ -49,7 +49,7 @@ The formalization work should proceed in small, composable models:
 2. Policy precedence and approval outcomes.
 3. LogicSig key-file signing authority.
 4. Runtime lifecycle and decommission signing-stop behavior.
-5. Attested account component signing, attestor policy, endpoint routing, and
+5. Guarded account component signing, attestor policy, endpoint routing, and
    assembly verification.
 6. LogicSig template and bytecode-generation invariants.
 7. Machine-checkable models for the highest-value surfaces.
@@ -103,7 +103,7 @@ Deliver:
 - [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md)
 - [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md)
 - [FORMAL_LIFECYCLE_MODEL.md](FORMAL_LIFECYCLE_MODEL.md)
-- [FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md)
+- [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md)
 
 Done means each document has concrete invariants and a clear source-of-truth
 mapping back to existing docs and code owners.
@@ -133,7 +133,7 @@ Preferred test targets:
 - `/simulate` boundary: hard-policy enforcement, no signed bytes in response,
   foreign-slot rejection, decommission/lock rejection,
 - `auth_address` -> key file resolution via runtime index.
-- attested signing assembly: wrong user signature rejection, wrong attestor
+- guarded signing assembly: wrong user signature rejection, wrong attestor
   signature rejection, passthrough transaction-ID binding,
 - attestor endpoint routing: explicit mismatch hard-fails without fallback,
   malformed component responses reject, unavailable endpoint sync preserves
@@ -215,8 +215,8 @@ counterexample).
 
 Next likely modules:
 
-1. **Attested signing and assembly.** Translate
-   [FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md) into a
+1. **Guarded signing and assembly.** Translate
+   [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md) into a
    small one-shot module. The first version should abstract cryptographic
    verification as predicates and check that successful assembly requires the
    local user key, the embedded attestor key, exact target coverage, and
@@ -285,8 +285,8 @@ decommission and lifecycle lease semantics that gate final signing, the
 read/write lock relationship between `BeginOperation` and `Decommission`,
 and the fixed reload step order.
 
-[FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md) captures
-the attested-account co-signing workflow: role-separated component messages,
+[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md) captures
+the guarded-account co-signing workflow: role-separated component messages,
 attestor transfer policy, endpoint routing as non-trust metadata, local
 assembly verification against stored key-file anchors, passthrough binding,
 endpoint sync behavior, and node role gates.
@@ -303,7 +303,7 @@ and the relationship between the Non-Goals list above and M3.
 
 The first-wave formalization snapshot corresponded to commit
 **`89decbb`** ("Close lifecycle formalization test gaps") on `main`.
-The current roadmap has since been extended for the attested signing system.
+The current roadmap has since been extended for the guarded signing system.
 If the repository has moved since the attested update, run `git log --oneline`
 from the relevant formalization commit to see what changed.
 
@@ -311,7 +311,7 @@ from the relevant formalization commit to see what changed.
 
 | Milestone | Status | Notes |
 |---|---|---|
-| M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus attested signing. |
+| M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
 | M3: Deferred Companion English Models | Not started | Approval coordinator, cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
 | M4: Machine-Checkable Model | First wave complete | Four TLA+ modules shipped. ~14 of 63 numbered invariants are machine-checked. |
@@ -327,7 +327,7 @@ Machine-checked invariants by module:
 | `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency | 48 | 10 |
 
 Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A13
-(attested signing), I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L8-L11.
+(guarded signing), I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L8-L11.
 
 ### Verification methodology by module
 

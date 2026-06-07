@@ -84,14 +84,14 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		t.Fatalf("Import() error = %v", err)
 	}
 
-	resolved, err := ResolveCreationParams(paths, "default", keytypes.AttestedFalcon1024AttEd25519V1, map[string]string{
+	resolved, err := ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
 		ParamAttestorName: "lab-att",
 	})
 	if err != nil {
 		t.Fatalf("ResolveCreationParams() error = %v", err)
 	}
-	if got := resolved[keytypes.ParameterAttestorPublicKey]; got != strings.Repeat("ab", 32) {
-		t.Fatalf("attestor_public_key = %q, want imported public key", got)
+	if got := resolved[keytypes.ParameterSentryPublicKey]; got != strings.Repeat("ab", 32) {
+		t.Fatalf("sentry_public_key = %q, want imported public key", got)
 	}
 	if _, ok := resolved[ParamAttestorName]; ok {
 		t.Fatalf("resolved params still contain %s: %#v", ParamAttestorName, resolved)
@@ -99,9 +99,9 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 }
 
 func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
-	_, err := ResolveCreationParams(storepaths.NewPaths(t.TempDir()), "default", keytypes.AttestedFalcon1024AttEd25519V1, map[string]string{
-		ParamAttestorName:                   "lab-att",
-		keytypes.ParameterAttestorPublicKey: strings.Repeat("ab", 32),
+	_, err := ResolveCreationParams(storepaths.NewPaths(t.TempDir()), "default", keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
+		ParamAttestorName:                 "lab-att",
+		keytypes.ParameterSentryPublicKey: strings.Repeat("ab", 32),
 	})
 	if err == nil {
 		t.Fatal("ResolveCreationParams() error = nil, want conflicting input rejection")
@@ -118,7 +118,7 @@ func TestResolveCreationParamsRejectsMismatchedComponentKeyType(t *testing.T) {
 		t.Fatalf("Import() error = %v", err)
 	}
 
-	_, err := ResolveCreationParams(paths, "default", keytypes.AttestedFalcon1024AttEd25519V1, map[string]string{
+	_, err := ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
 		ParamAttestorName: "falcon-att",
 	})
 	if err == nil {

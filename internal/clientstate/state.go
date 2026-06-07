@@ -166,7 +166,7 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 		if keyInfo.IsGenericLsig {
 			s.SignerCache.SetGenericLsig(keyInfo.Address, true)
 		}
-		if attestorPublicKey := keyInfo.Parameters[keytypes.ParameterAttestorPublicKey]; attestorPublicKey != "" {
+		if attestorPublicKey := keyInfo.Parameters[keytypes.ParameterSentryPublicKey]; attestorPublicKey != "" {
 			s.SignerCache.SetAttestorPublicKeyForAddress(keyInfo.Address, attestorPublicKey)
 		}
 		if len(keyInfo.SigningArgs) > 0 {

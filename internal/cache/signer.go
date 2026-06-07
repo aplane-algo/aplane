@@ -111,7 +111,7 @@ func (cache *SignerCache) SetLsigSize(address string, size int) {
 }
 
 // AttestorPublicKeyForAddress returns the attestor public key embedded in an
-// attested account LogicSig, when signer inventory exposed it.
+// guarded account LogicSig, when signer inventory exposed it.
 func (cache *SignerCache) AttestorPublicKeyForAddress(address string) (string, bool) {
 	if cache.AttestorPublicKeys == nil {
 		return "", false
@@ -121,7 +121,7 @@ func (cache *SignerCache) AttestorPublicKeyForAddress(address string) (string, b
 }
 
 // SetAttestorPublicKeyForAddress stores or clears the embedded attestor public
-// key for an attested account.
+// key for a guarded account.
 func (cache *SignerCache) SetAttestorPublicKeyForAddress(address, publicKeyHex string) {
 	if cache.AttestorPublicKeys == nil {
 		cache.AttestorPublicKeys = make(map[string]string)

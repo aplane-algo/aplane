@@ -7,11 +7,11 @@
   "targets": [
     {
       "target_index": 0,
-      "attested_account": "LOGICSIGACCOUNTADDRESSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "guarded_account": "LOGICSIGACCOUNTADDRESSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "user_signature": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "user_source_request_id": "cli-122",
-      "attestor_signature": "cccccccccccccccccccccccccccccccc",
-      "attestor_source_request_id": "cli-123"
+      "sentry_signature": "cccccccccccccccccccccccccccccccc",
+      "sentry_source_request_id": "cli-123"
     }
   ],
   "passthrough": [

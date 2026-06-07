@@ -38,18 +38,18 @@ func TestBuildDetailsParameterLinesFormatsAddressList(t *testing.T) {
 func TestBuildDetailsParameterLinesAttestedShowsAttestorSelector(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     keytypes.AttestedFalcon1024AttEd25519V1,
+		KeyType:     keytypes.GuardedFalcon1024SentryEd25519V1,
 		DisplayName: "Falcon Attested",
 		CreationParams: []protocol.TemplateParamInfo{{
-			Name:  keytypes.ParameterAttestorPublicKey,
+			Name:  keytypes.ParameterSentryPublicKey,
 			Label: "Attestor public key",
 			Type:  "bytes",
 		}},
 	}})
 
-	got := buildDetailsParameterLines(keytypes.AttestedFalcon1024AttEd25519V1, map[string]string{
-		"Attestor":                          "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
-		keytypes.ParameterAttestorPublicKey: "aabbccdd",
+	got := buildDetailsParameterLines(keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
+		"Attestor":                        "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
+		keytypes.ParameterSentryPublicKey: "aabbccdd",
 	})
 	want := []string{"Attestor: 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA"}
 	if !reflect.DeepEqual(got, want) {

@@ -237,7 +237,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 		Address: "ADDR1",
 		KeyType: "aplane.falcon1024-sentry-ed25519.v1",
 		Parameters: map[string]string{
-			"attestor_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
+			"sentry_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
 		},
 	}})
 	if &state.SignerCache != original {

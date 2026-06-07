@@ -67,7 +67,7 @@ const (
 	groupPlanTimeout          = 60 * time.Second
 	groupSimulateTimeout      = 60 * time.Second
 	componentSignTimeout      = 2 * time.Minute
-	attestedAssemblyTimeout   = 2 * time.Minute
+	guardedAssemblyTimeout    = 2 * time.Minute
 	signCancelTimeout         = 5 * time.Second
 	signApprovalSlack         = 30 * time.Second
 	defaultSignRequestTimeout = 6 * time.Minute
@@ -526,22 +526,22 @@ func (c *Client) RequestComponentSignWithContext(ctx context.Context, reqBody si
 	return &componentResp, nil
 }
 
-// RequestAttestedAssemble sends a verified attested transaction assembly
+// RequestGuardedAssemble sends a verified guarded transaction assembly
 // request to /sign/assemble.
-func (c *Client) RequestAttestedAssemble(req signerapi.AttestedAssemblyRequest) (*signerapi.AttestedAssemblyResponse, error) {
-	return c.RequestAttestedAssembleWithContext(context.Background(), req)
+func (c *Client) RequestGuardedAssemble(req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
+	return c.RequestGuardedAssembleWithContext(context.Background(), req)
 }
 
-func (c *Client) RequestAttestedAssembleWithContext(ctx context.Context, reqBody signerapi.AttestedAssemblyRequest) (*signerapi.AttestedAssemblyResponse, error) {
+func (c *Client) RequestGuardedAssembleWithContext(ctx context.Context, reqBody signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
 	if reqBody.RequestID == "" {
 		requestID, err := newSignRequestID()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create attested assembly request ID: %w", err)
+			return nil, fmt.Errorf("failed to create guarded assembly request ID: %w", err)
 		}
 		reqBody.RequestID = requestID
 	}
 	if err := reqBody.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid attested assembly request: %w", err)
+		return nil, fmt.Errorf("invalid guarded assembly request: %w", err)
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -555,7 +555,7 @@ func (c *Client) RequestAttestedAssembleWithContext(ctx context.Context, reqBody
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	reqCtx, cancel := c.requestContext(ctx, attestedAssemblyTimeout)
+	reqCtx, cancel := c.requestContext(ctx, guardedAssemblyTimeout)
 	defer cancel()
 
 	resp, err := c.doRequest(reqCtx, req)
@@ -572,12 +572,12 @@ func (c *Client) RequestAttestedAssembleWithContext(ctx context.Context, reqBody
 		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
 	}
 
-	var assemblyResp signerapi.AttestedAssemblyResponse
+	var assemblyResp signerapi.GuardedAssemblyResponse
 	if err := json.NewDecoder(resp.Body).Decode(&assemblyResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 	if err := assemblyResp.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid attested assembly response: %w", err)
+		return nil, fmt.Errorf("invalid guarded assembly response: %w", err)
 	}
 	return &assemblyResp, nil
 }

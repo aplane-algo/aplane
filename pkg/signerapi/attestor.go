@@ -42,37 +42,37 @@ type ComponentSignResponse struct {
 	Signatures   []ComponentSignature `json:"signatures"`
 }
 
-// AttestedAssemblyRequest is the request payload for POST /sign/assemble.
+// GuardedAssemblyRequest is the request payload for POST /sign/assemble.
 // RequestID is optional. When omitted, apsigner returns a generated response
 // ID for correlation only; assembly is not a /sign/cancel live handle.
-type AttestedAssemblyRequest struct {
-	RequestID     string                    `json:"request_id,omitempty"`
-	GroupBytesHex []string                  `json:"group_bytes_hex"`
-	Targets       []AttestedAssemblyTarget  `json:"targets,omitempty"`
-	Passthrough   []AttestedPassthroughItem `json:"passthrough,omitempty"`
+type GuardedAssemblyRequest struct {
+	RequestID     string                   `json:"request_id,omitempty"`
+	GroupBytesHex []string                 `json:"group_bytes_hex"`
+	Targets       []GuardedAssemblyTarget  `json:"targets,omitempty"`
+	Passthrough   []GuardedPassthroughItem `json:"passthrough,omitempty"`
 }
 
-// AttestedAssemblyTarget carries one attested-account group position plus its
+// GuardedAssemblyTarget carries one guarded-account group position plus its
 // user and sentry component signatures.
-type AttestedAssemblyTarget struct {
-	TargetIndex             int      `json:"target_index"`
-	AttestedAccount         string   `json:"attested_account"`
-	UserSignature           string   `json:"user_signature"`
-	UserSourceRequestID     string   `json:"user_source_request_id,omitempty"`
-	AttestorSignature       string   `json:"attestor_signature"`
-	AttestorSourceRequestID string   `json:"attestor_source_request_id,omitempty"`
-	RuntimeArgs             []string `json:"runtime_args,omitempty"`
+type GuardedAssemblyTarget struct {
+	TargetIndex           int      `json:"target_index"`
+	GuardedAccount        string   `json:"guarded_account"`
+	UserSignature         string   `json:"user_signature"`
+	UserSourceRequestID   string   `json:"user_source_request_id,omitempty"`
+	SentrySignature       string   `json:"sentry_signature"`
+	SentrySourceRequestID string   `json:"sentry_source_request_id,omitempty"`
+	RuntimeArgs           []string `json:"runtime_args,omitempty"`
 }
 
-// AttestedPassthroughItem carries an already-signed group position to preserve
+// GuardedPassthroughItem carries an already-signed group position to preserve
 // unchanged during assembly.
-type AttestedPassthroughItem struct {
+type GuardedPassthroughItem struct {
 	TargetIndex  int    `json:"target_index"`
 	SignedTxnHex string `json:"signed_txn_hex"`
 }
 
-// AttestedAssemblyResponse is the response payload from POST /sign/assemble.
-type AttestedAssemblyResponse struct {
+// GuardedAssemblyResponse is the response payload from POST /sign/assemble.
+type GuardedAssemblyResponse struct {
 	RequestID   string   `json:"request_id"`
 	SignedGroup []string `json:"signed_group"`
 }
@@ -128,7 +128,7 @@ func (r ComponentSignResponse) Validate() error {
 }
 
 // Validate checks the request shape that can be validated without signer state.
-func (r AttestedAssemblyRequest) Validate() error {
+func (r GuardedAssemblyRequest) Validate() error {
 	if err := validateSignRequestID(r.RequestID); err != nil {
 		return err
 	}
@@ -144,20 +144,20 @@ func (r AttestedAssemblyRequest) Validate() error {
 		if err := validateAssemblyIndex(target.TargetIndex, len(r.GroupBytesHex), covered); err != nil {
 			return fmt.Errorf("target %d: %w", i+1, err)
 		}
-		if target.AttestedAccount == "" {
-			return fmt.Errorf("target %d: attested_account is required", i+1)
+		if target.GuardedAccount == "" {
+			return fmt.Errorf("target %d: guarded_account is required", i+1)
 		}
 		if target.UserSignature == "" {
 			return fmt.Errorf("target %d: user_signature is required", i+1)
 		}
-		if target.AttestorSignature == "" {
-			return fmt.Errorf("target %d: attestor_signature is required", i+1)
+		if target.SentrySignature == "" {
+			return fmt.Errorf("target %d: sentry_signature is required", i+1)
 		}
 		if err := validateOptionalSourceRequestID(target.UserSourceRequestID); err != nil {
 			return fmt.Errorf("target %d: user_source_request_id: %w", i+1, err)
 		}
-		if err := validateOptionalSourceRequestID(target.AttestorSourceRequestID); err != nil {
-			return fmt.Errorf("target %d: attestor_source_request_id: %w", i+1, err)
+		if err := validateOptionalSourceRequestID(target.SentrySourceRequestID); err != nil {
+			return fmt.Errorf("target %d: sentry_source_request_id: %w", i+1, err)
 		}
 	}
 	for i, passthrough := range r.Passthrough {
@@ -177,7 +177,7 @@ func (r AttestedAssemblyRequest) Validate() error {
 }
 
 // Validate checks the response shape.
-func (r AttestedAssemblyResponse) Validate() error {
+func (r GuardedAssemblyResponse) Validate() error {
 	if r.RequestID == "" {
 		return fmt.Errorf("request_id is required")
 	}

@@ -117,7 +117,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	if roleErr := keyclass.ValidateKeyTypeAllowedForNodeRole(ir.NodeRole(), keyType); roleErr != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
 	}
-	if keytypes.IsAttestedAccountKeyType(keyType) {
+	if keytypes.IsGuardedAccountKeyType(keyType) {
 		resolved, err := attrefs.ResolveCreationParams(ir.KeyPaths(), ir.ID(), keyType, params)
 		if err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}

@@ -46,13 +46,13 @@ func TestRequestComponentSignRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	}
 }
 
-func TestRequestAttestedAssembleRejectsInvalidRequestBeforeHTTP(t *testing.T) {
+func TestRequestGuardedAssembleRejectsInvalidRequestBeforeHTTP(t *testing.T) {
 	client := NewSignerClientWithToken("http://127.0.0.1:1", "test-token")
-	_, err := client.RequestAttestedAssemble(signerapi.AttestedAssemblyRequest{
+	_, err := client.RequestGuardedAssemble(signerapi.GuardedAssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "invalid attested assembly request") {
-		t.Fatalf("RequestAttestedAssemble() error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "invalid guarded assembly request") {
+		t.Fatalf("RequestGuardedAssemble() error = %v", err)
 	}
 }
 
@@ -737,41 +737,41 @@ func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
 	}
 }
 
-func TestRequestAttestedAssemblePostsToAssembleEndpoint(t *testing.T) {
+func TestRequestGuardedAssemblePostsToAssembleEndpoint(t *testing.T) {
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path != "/sign/assemble" || req.Method != http.MethodPost {
 			t.Fatalf("request = %s %s, want POST /sign/assemble", req.Method, req.URL.Path)
 		}
-		var got signerapi.AttestedAssemblyRequest
+		var got signerapi.GuardedAssemblyRequest
 		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 			t.Fatalf("Decode(request body) error = %v", err)
 		}
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if len(got.Targets) != 1 || got.Targets[0].AttestedAccount != "ADDR1" {
+		if len(got.Targets) != 1 || got.Targets[0].GuardedAccount != "ADDR1" {
 			t.Fatalf("assembly request targets = %+v, want ADDR1 target", got.Targets)
 		}
-		return mockResponse(http.StatusOK, jsonBody(t, signerapi.AttestedAssemblyResponse{
+		return mockResponse(http.StatusOK, jsonBody(t, signerapi.GuardedAssemblyResponse{
 			RequestID:   got.RequestID,
 			SignedGroup: []string{"ccdd"},
 		})), nil
 	})
 
-	got, err := c.RequestAttestedAssemble(signerapi.AttestedAssemblyRequest{
+	got, err := c.RequestGuardedAssemble(signerapi.GuardedAssemblyRequest{
 		GroupBytesHex: []string{"5458aa"},
-		Targets: []signerapi.AttestedAssemblyTarget{{
-			TargetIndex:       0,
-			AttestedAccount:   "ADDR1",
-			UserSignature:     "aabb",
-			AttestorSignature: "bbcc",
+		Targets: []signerapi.GuardedAssemblyTarget{{
+			TargetIndex:     0,
+			GuardedAccount:  "ADDR1",
+			UserSignature:   "aabb",
+			SentrySignature: "bbcc",
 		}},
 	})
 	if err != nil {
-		t.Fatalf("RequestAttestedAssemble() error = %v", err)
+		t.Fatalf("RequestGuardedAssemble() error = %v", err)
 	}
 	if len(got.SignedGroup) != 1 || got.SignedGroup[0] != "ccdd" {
-		t.Fatalf("RequestAttestedAssemble() = %+v, want signed group ccdd", got)
+		t.Fatalf("RequestGuardedAssemble() = %+v, want signed group ccdd", got)
 	}
 }
 

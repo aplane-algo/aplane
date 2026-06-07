@@ -13,11 +13,11 @@ import (
 )
 
 func TestNodeRoleAllowsKeyType(t *testing.T) {
-	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.AttestedFalcon1024V1) {
-		t.Fatal("signer node rejected attested account key")
+	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.GuardedFalcon1024SentryEd25519V1) {
+		t.Fatal("signer node rejected guarded account key")
 	}
-	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.AttestedFalcon1024AttFalcon1024V1) {
-		t.Fatal("signer node rejected Falcon-attested account key")
+	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.GuardedFalcon1024SentryFalcon1024V1) {
+		t.Fatal("signer node rejected Falcon-guarded account key")
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.AttestorComponentEd25519V1) {
 		t.Fatal("signer node allowed Ed25519 attestor component key")
@@ -34,8 +34,8 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if NodeRoleAllowsKeyType(noderole.RoleSentry, "ed25519") {
 		t.Fatal("attestor node allowed Ed25519 account key")
 	}
-	if NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.AttestedFalcon1024AttFalcon1024V1) {
-		t.Fatal("attestor node allowed attested account key")
+	if NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.GuardedFalcon1024SentryFalcon1024V1) {
+		t.Fatal("attestor node allowed guarded account key")
 	}
 	if NodeRoleAllowsKeyType(noderole.Role("unknown"), "ed25519") {
 		t.Fatal("unknown node role allowed Ed25519 account key")

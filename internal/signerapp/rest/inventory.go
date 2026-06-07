@@ -55,8 +55,8 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			keyInfo.IsComponentKey = true
 			keyInfo.IsSpendingAccount = &spending
 		}
-		if keytypes.IsAttestedAccountKeyType(keyType) {
-			keyInfo.Parameters = attestedAccountParameters(summary.Parameters)
+		if keytypes.IsGuardedAccountKeyType(keyType) {
+			keyInfo.Parameters = guardedAccountParameters(summary.Parameters)
 		}
 		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = keys.CompareTemplateFingerprint(keyType, summary.TemplateFingerprint)
 
@@ -70,13 +70,13 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 	return keyList
 }
 
-func attestedAccountParameters(parameters map[string]string) map[string]string {
-	attestorPublicKey := parameters[keytypes.ParameterAttestorPublicKey]
+func guardedAccountParameters(parameters map[string]string) map[string]string {
+	attestorPublicKey := parameters[keytypes.ParameterSentryPublicKey]
 	if attestorPublicKey == "" {
 		return nil
 	}
 	return map[string]string{
-		keytypes.ParameterAttestorPublicKey: attestorPublicKey,
+		keytypes.ParameterSentryPublicKey: attestorPublicKey,
 	}
 }
 
@@ -304,7 +304,7 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 	}
 
 	for i := range infos {
-		componentType, ok := keytypes.AttestorComponentKeyTypeForAttestedAccount(infos[i].KeyType)
+		componentType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(infos[i].KeyType)
 		if !ok {
 			continue
 		}
@@ -315,7 +315,7 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 		infos[i].CreationParams = []signerapi.CreationParamInfo{{
 			Name:        attrefs.ParamAttestorName,
 			Label:       "Sentry",
-			Description: "Imported sentry public-key reference to embed in the attested account",
+			Description: "Imported sentry public-key reference to embed in the guarded account",
 			Type:        "select",
 			Required:    true,
 			Options:     append([]string(nil), names...),

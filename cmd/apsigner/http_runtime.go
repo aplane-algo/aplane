@@ -56,7 +56,7 @@ func logHTTPStartup(keyCount int, keysSnapshot map[string]string, port int) {
 	logInfof("Endpoints:")
 	logInfof("  POST   /sign                    - Sign transactions (handles groups, dummies, fee pooling)")
 	logInfof("  POST   /sign/component          - Produce sentry MVP component signatures")
-	logInfof("  POST   /sign/assemble           - Assemble attested-account signed groups")
+	logInfof("  POST   /sign/assemble           - Assemble guarded-account signed groups")
 	logInfof("  POST   /sign/cancel             - Cancel a pending sign approval request")
 	logInfof("  POST   /plan                    - Preview group building (no signing, no approval)")
 	logInfof("  POST   /simulate                - Sign internally and run algod simulation (no signed bytes returned)")

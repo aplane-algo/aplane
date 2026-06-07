@@ -51,7 +51,7 @@ type ComponentSignResult struct {
 	Signatures   []signerapi.ComponentSignature
 }
 
-type AttestedAssemblyResult struct {
+type GuardedAssemblyResult struct {
 	RequestID   string
 	SignedGroup []string
 }
@@ -136,7 +136,7 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 	}
 }
 
-func (s *Service) AssembleAttestedWithContext(ctx context.Context, identityID string, req signerapi.AttestedAssemblyRequest, session *keystore.KeySession) (*AttestedAssemblyResult, *ServiceError) {
+func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID string, req signerapi.GuardedAssemblyRequest, session *keystore.KeySession) (*GuardedAssemblyResult, *ServiceError) {
 	_ = identityID
 	if ctx == nil {
 		ctx = context.Background()
@@ -157,7 +157,7 @@ func (s *Service) AssembleAttestedWithContext(ctx context.Context, identityID st
 	if session == nil {
 		return nil, internal("key session is nil")
 	}
-	return assembleDecodedAttested(ctx, req, group, session)
+	return assembleDecodedGuarded(ctx, req, group, session)
 }
 
 func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession, plan *PlanResult, simulation bool) (*SignGroupResult, *ServiceError) {

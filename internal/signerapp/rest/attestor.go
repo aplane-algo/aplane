@@ -44,7 +44,7 @@ func (s Service) SignComponent(ctx context.Context, ir *identity.Runtime, req si
 	}, nil
 }
 
-func (s Service) AssembleAttested(ctx context.Context, ir *identity.Runtime, req signerapi.AttestedAssemblyRequest) (*signerapi.AttestedAssemblyResponse, *signersigning.ServiceError) {
+func (s Service) AssembleGuarded(ctx context.Context, ir *identity.Runtime, req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, *signersigning.ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -57,7 +57,7 @@ func (s Service) AssembleAttested(ctx context.Context, ir *identity.Runtime, req
 	if !ir.IsUnlocked() {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
 	}
-	if roleErr := requireAccountSigningRole(ir, "attested assembly"); roleErr != nil {
+	if roleErr := requireAccountSigningRole(ir, "guarded assembly"); roleErr != nil {
 		return nil, roleErr
 	}
 	if s.Deps.NewSigningService == nil {
@@ -65,12 +65,12 @@ func (s Service) AssembleAttested(ctx context.Context, ir *identity.Runtime, req
 	}
 
 	session := ir.SnapshotKeySession()
-	result, err := s.Deps.NewSigningService(ir).AssembleAttestedWithContext(ctx, ir.ID(), req, session)
+	result, err := s.Deps.NewSigningService(ir).AssembleGuardedWithContext(ctx, ir.ID(), req, session)
 	if err != nil {
 		return nil, err
 	}
 
-	return &signerapi.AttestedAssemblyResponse{
+	return &signerapi.GuardedAssemblyResponse{
 		RequestID:   result.RequestID,
 		SignedGroup: result.SignedGroup,
 	}, nil

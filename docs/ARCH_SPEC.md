@@ -22,7 +22,7 @@
 - [Server Ownership Model](#server-ownership-model)
 - [Client Ownership Model](#client-ownership-model)
 - [Transaction Processing](#transaction-processing)
-- [Attested Signing And Attestor Nodes](#attested-signing-and-attestor-nodes)
+- [Guarded Signing And Sentry Nodes](#guarded-signing-and-sentry-nodes)
 - [Provider and Algorithm Model](#provider-and-algorithm-model)
 - [Keystore and Key Lifecycle](#keystore-and-key-lifecycle)
 - [Plugin System](#plugin-system)
@@ -129,8 +129,8 @@ All under `cmd/`:
 | `apadmin` | TUI admin client over IPC or SSH admin transport |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
-| `apstore` | Local keystore management client: local `initialize`, policy integrity check/verify/sign, public endpoint export, public attestor reference import/export/list, local `verify`, and local `rebuild` rescue flows; daemon-owned backup, restore, template, key type, and changepass operations use the admin protocol |
-| `appolicy` | Offline policy checker/editor TUI that auto-targets the `policy.yaml` domain from the node role, plus scriptable save/check/export and signing-to-attestor-policy conversion while holding the store mutation lock |
+| `apstore` | Local keystore management client: local `initialize`, policy integrity check/verify/sign, public endpoint export, public sentry reference import/export/list, local `verify`, and local `rebuild` rescue flows; daemon-owned backup, restore, template, key type, and changepass operations use the admin protocol |
+| `appolicy` | Offline policy checker/editor TUI that auto-targets the `policy.yaml` domain from the node role, plus scriptable save/check/export and signing-to-sentry-policy conversion while holding the store mutation lock |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, apclient default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
 | `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |
@@ -152,7 +152,7 @@ Documentation notes:
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/engine`, `internal/clientstate`, `internal/engine/connect`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/approvalpolicy` |
-| Provider | `internal/signing`, `lsig/`, `internal/attestor`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealsubst`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealsubst`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/storemut`, `internal/storeinit`, `internal/storepass`, `internal/clientdata`, `internal/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/integration`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
@@ -166,7 +166,7 @@ The UI layer is split between thin binary adapters and reusable shell/admin UI p
 
 - `cmd/apshell`: thin binary adapter and composition entry point for flags, provider registration, bootstrap, and mode selection
 - `internal/apshellcli`: REPL/session mechanics, command registry, scripting mode adapters, MCP surface, plugin argument normalization, and shell rendering
-- `cmd/apconsole`: secure-machine Bubble Tea wrapper for shell/admin/daemon panes, with local attestor nodes using admin plus daemon panes only
+- `cmd/apconsole`: secure-machine Bubble Tea wrapper for shell/admin/daemon panes, with local sentry nodes using admin plus daemon panes only
 - `internal/signertui`: Bubble Tea signer admin UI
 - `cmd/appass`: Bubble Tea passphrase setup UI
 - `cmd/aplocalnet`: Bubble Tea/CLI LocalNet setup adapter; `internal/aplocalnet` owns reachability checks and config/plugin/env mutations
@@ -357,7 +357,7 @@ are minisign-signed.
 - Zero or one product-mode `apadmin`/`apapprover` admin workflow for the exposed product identity, connected over local IPC or the SSH admin subsystem. Remote `apadmin` requires pre-enrolled client SSH config, `aplane.token`, and trusted `known_hosts`; enrollment and first-use host trust happen through standalone `apshell`.
 - One or more `apshell` clients, local or via SSH tunnel. Interactive `apshell` is both the normal client shell and the enrollment/recovery surface: it may start before client enrollment is complete. Startup requires client config/bootstrap inputs, but not a pre-existing `aplane.token` or trusted signer host. Token presence and SSH host trust are enforced when interactive `apshell` attempts a signer connection or token provisioning flow, not before process startup. After successful interactive token provisioning, `apshell` immediately attempts to connect using the newly issued token. Token files are bearer credentials and are rejected if group/world accessible.
 - `apshell --mcp` is a separate operational surface, not an enrollment or inspection surface. MCP startup is non-interactive and refuses to start unless the client is already enrolled (default signer endpoint, endpoint token, trusted endpoint `known_hosts`) and the startup signer connection succeeds. First-time enrollment and trust bootstrap happen through interactive `apshell`, not MCP.
-- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine local versus remote console mode and the client/signer data paths. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-token` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Token presence is enforced when the embedded shell attempts `request-token`, `connect`, or startup auto-connect. In local attestor mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. In remote mode, `apconsole` preflights the client data directory and requires SSH config, an enrolled `aplane.token`, and a trusted signer host in the configured `known_hosts` before the UI starts. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
+- Optional `apconsole` wrapper on the secure signer machine, preserving the same apshell/apadmin/apsigner transport interfaces while composing operator panes. `apconsole` can load `apconsole.yaml` from the install root to determine local versus remote console mode and the client/signer data paths. Startup resolution is deterministic per field: flags win over environment variables, environment variables win over an explicitly selected profile, and an explicitly selected profile wins over auto-discovery. If explicit sources disagree, `apconsole` exits instead of guessing. In local signer mode, `apconsole` may start before client enrollment is complete because it owns or attaches the local signer/admin surfaces needed for first-time `request-token` approval; when the client SSH host is loopback, it probes the live loopback SSH endpoint before pinning the local signer's configured SSH host key into the client `known_hosts` file, and a mismatch aborts startup. Token presence is enforced when the embedded shell attempts `request-token`, `connect`, or startup auto-connect. In local sentry mode, `apconsole` does not create an embedded shell pane; it renders the signer admin pane above the daemon/status pane. In remote mode, `apconsole` preflights the client data directory and requires SSH config, an enrolled `aplane.token`, and a trusted signer host in the configured `known_hosts` before the UI starts. In local mode it attaches to an existing IPC socket or starts `apsigner -d <signer-data>` as a child it owns; the daemon pane reports disabled/attached/starting/ready/failed/exited status and streams owned-daemon logs. When present, the shell pane uses `internal/apshellcli.Session`, preserving apshell command behavior; Ctrl+C cancels a running shell command when the shell pane is focused, and shell `quit`/`exit` closes only that embedded shell pane. Operator controls are root-level function-key pane focus, F4 zoom, Shift+Left/Right pane navigation, and `?`/F5 help overlay.
 - Optional plugin child processes spawned by `apshell`
 
 Trust boundaries:
@@ -402,11 +402,11 @@ Current client config includes:
 - theme settings.
 - signer status polling interval.
 
-Signer and attestor routing is not stored as active top-level `config.yaml`
+Signer and sentry routing is not stored as active top-level `config.yaml`
 state. Normal client routing lives in `endpoints.yaml` through
 `internal/config.ClientEndpointRegistry`: at most one `signer` endpoint and zero
-or more `attestor` endpoints. Endpoint records carry URL, SSH tunnel ports,
-identity file, `known_hosts`, token file, and endpoint-published attestor
+or more `sentry` endpoints. Endpoint records carry URL, SSH tunnel ports,
+identity file, `known_hosts`, token file, and endpoint-published sentry
 inventory. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
 handoff envelope used by `apstore endpoint export` and
 `apshell endpoints import-public`.
@@ -455,8 +455,8 @@ identity runtime rather than directly from `ServerConfig`.
 
 Key-class role is process/data-root scoped, not identity scoped. An initialized
 signer data directory has a root `node.yaml` with exactly one role:
-`signer` or `attestor`. New installs default to `signer` unless explicitly
-initialized as attestor nodes. The role is immutable in supported tools, is
+`signer` or `sentry`. New installs default to `signer` unless explicitly
+initialized as sentry nodes. The role is immutable in supported tools, is
 integrity-bound per identity with an HMAC sidecar over the exact root
 `node.yaml`, and gates key generation, key import/restore, key scan, and HTTP
 service dispatch. Identity config `mode` is an unsupported pre-release shape
@@ -473,8 +473,8 @@ Signer policy participates in the ordered approval engine. The current policy
 verdict model is documented in [ARCH_POLICY.md](ARCH_POLICY.md). The active
 node-role policy is identity-scoped and stored at
 `identities/<identity>/policy.yaml` with a sibling HMAC sidecar. On signer
-nodes the document is client-signing policy; on attestor nodes the same
-filename is direct attestor component policy. The default approval fallback is
+nodes the document is client-signing policy; on sentry nodes the same
+filename is direct sentry component policy. The default approval fallback is
 `user_auto_approve`, persisted in
 `identities/<identity>/config.yaml` and shown in `apadmin` as
 `User Auto-Approve`. Policy is verified with a key derived from the identity
@@ -496,8 +496,8 @@ editor and are visible in canonical YAML snapshots.
 The policy document may contain YAML-only `key_overrides`; during normal
 signing, the effective policy is selected by signing auth address, not by
 transaction sender, so rekeyed accounts use the policy override for the auth
-address. On attestor nodes, component signing selects overrides by the
-txid-shaped component selector from the attestor-domain `policy.yaml`.
+address. On sentry nodes, component signing selects overrides by the
+txid-shaped component selector from the sentry-domain `policy.yaml`.
 Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
@@ -1011,15 +1011,15 @@ Canonicalization rules live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). HTTP requ
 
 See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Key Files / Signing Authority) for the signing authority contract.
 
-## Attested Signing And Attestor Nodes
+## Guarded Signing And Sentry Nodes
 
-Attested signing is APlane's two-party LogicSig authorization path for
+Guarded signing is APlane's two-party LogicSig authorization path for
 accounts whose LogicSig bytecode requires both:
 
 - a user component signature produced by the user signer that owns the
-  attested-account key file, and
-- an attestor component signature produced by a separate attestor signer that
-  owns an attestor component key and evaluates attestor-domain `policy.yaml`.
+  guarded-account key file, and
+- a sentry component signature produced by a separate sentry signer that
+  owns a sentry component key and evaluates sentry-domain `policy.yaml`.
 
 The client never holds private key material. It orchestrates component signing
 and assembly through authenticated signer endpoints, then submits or simulates
@@ -1028,17 +1028,17 @@ the final signed group with algod.
 ### Node Roles
 
 Each initialized signer data root has one immutable root `node.yaml` role:
-`signer` or `attestor`.
+`signer` or `sentry`.
 
 | Node role | May hold | Must not hold |
 |---|---|---|
-| `signer` | ordinary account-signing keys and attested account keys | attestor component private keys |
-| `attestor` | attestor component private keys and attestor policy | ordinary account-signing keys or attested account keys |
+| `signer` | ordinary account-signing keys and guarded account keys | sentry component private keys |
+| `sentry` | sentry component private keys and sentry policy | ordinary account-signing keys or guarded account keys |
 
 There is no `dual` role and no supported same-process mixed-role hosting.
 Same-host development or production co-location uses separate signer and
-attestor data roots and separate `apsigner` processes. Independence is a
-deployment-domain property: a signer node and attestor node operated by the
+sentry data roots and separate `apsigner` processes. Independence is a
+deployment-domain property: a signer node and sentry node operated by the
 same party are still one trust domain, even when their key classes are
 structurally separated.
 
@@ -1051,7 +1051,7 @@ on-disk integrity checks live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 ### Key Types
 
-Attestor component key types are raw component-signing keys, not spending
+Sentry component key types are raw component-signing keys, not spending
 accounts and not LogicSig providers:
 
 - `aplane.sentry-ed25519.v1`
@@ -1069,132 +1069,132 @@ base32_no_padding(SHA512_256(
 
 The selector intentionally has the visual shape of an Algorand transaction ID,
 but it is not a valid Algorand address because addresses are 58 characters.
-The full attestor public key remains the verifier key embedded in attested
+The full sentry public key remains the verifier key embedded in guarded
 account LogicSig bytecode.
 
-Attested account key types name both the account DSA and the attestor DSA:
+Guarded account key types name both the account DSA and the sentry DSA:
 
 - `aplane.falcon1024-sentry-ed25519.v1`
 - `aplane.falcon1024-sentry-falcon1024.v1`
 
-An attested account key file stores the resolved `attestor_public_key` and the
-LogicSig bytecode embeds that same public key. `/sign` rejects attested-account
-key types and attestor component key types. Attested accounts are signed only
+A guarded account key file stores the resolved `sentry_public_key` and the
+LogicSig bytecode embeds that same public key. `/sign` rejects guarded-account
+key types and sentry component key types. Guarded accounts are signed only
 through the component-signing and assembly flow below.
 
 ### Component Message Contract
 
 Component signatures are role-separated. Message construction is owned by
-`internal/attestor/message`, and signature verification is owned by
-`internal/attestor/verify`. Callers must use those shared primitives rather
+`internal/sentry/message`, and signature verification is owned by
+`internal/sentry/verify`. Callers must use those shared primitives rather
 than reconstructing the component message locally.
 
 The message commits to:
 
-- the APlane attestor domain string and version,
-- the component role (`user` or `attestor`), and
+- the APlane sentry domain string and version,
+- the component role (`user` or `sentry`), and
 - the target transaction ID derived from the canonical group entry.
 
-User-role and attestor-role signatures are not interchangeable. The LogicSig
-program and the user signer's assembly step verify the attestor signature
-against the attestor public key embedded in the local attested-account key.
+User-role and sentry-role signatures are not interchangeable. The LogicSig
+program and the user signer's assembly step verify the sentry signature
+against the sentry public key embedded in the local guarded-account key.
 
 ### Runtime Flow
 
-`apshell send` detects attested senders from signer key metadata. For each
-attested original sender, the client builds the canonical group and performs
+`apshell send` detects guarded senders from signer key metadata. For each
+guarded original sender, the client builds the canonical group and performs
 three signer endpoint calls before final algod submit:
 
 1. user signer `/sign/component` with role `user`,
-2. attestor signer `/sign/component` with role `attestor`,
+2. sentry signer `/sign/component` with role `sentry`,
 3. user signer `/sign/assemble`.
 
 The user-role component request proves the user signer controls the
-attested-account component key. The attestor-role component request evaluates
-decoded target transaction facts against attestor-domain `policy.yaml` and returns
-attestor component signatures when allowed. The assembly request verifies both
-component signatures against the local attested account key's stored metadata,
+guarded-account component key. The sentry-role component request evaluates
+decoded target transaction facts against sentry-domain `policy.yaml` and returns
+sentry component signatures when allowed. The assembly request verifies both
+component signatures against the local guarded account key's stored metadata,
 packs LogicSig arguments, and returns signed group bytes.
 
-Current attested signing is limited to original senders:
+Current guarded signing is limited to original senders:
 
 ```text
-txn.Sender == attested_account
+txn.Sender == guarded_account
 ```
 
-An attested LogicSig used as `AuthAddr` for another sender is rejected by
-component signing and assembly. Attestor-role component signing is transfer
+A guarded LogicSig used as `AuthAddr` for another sender is rejected by
+component signing and assembly. Sentry-role component signing is transfer
 policy based: target transactions must produce direct transfer movements
 covered by `transfer_policy`. App calls, key registration, asset
-configuration, and other unsupported target shapes are rejected for attestor
+configuration, and other unsupported target shapes are rejected for sentry
 role because routing cannot authorize them.
 
 ### Trust Model
 
-The trust decision is made at attested-account generation, when the operator
-selects the attestor public key that is baked into the LogicSig bytecode and
+The trust decision is made at guarded-account generation, when the operator
+selects the sentry public key that is baked into the LogicSig bytecode and
 stored in the key file. Later endpoint routing is mechanical:
 
 - endpoint import is not an ownership proof,
 - `/keys` is self-reported inventory and is not an ownership proof,
 - a wrong endpoint can only produce a signature that fails assembly or
-  on-chain LogicSig verification unless it holds the real attestor key.
+  on-chain LogicSig verification unless it holds the real sentry key.
 
 The enforcement layers are:
 
 1. optional client-side component signature verification using
-   `internal/attestor/verify`,
-2. required `/sign/assemble` verification against the attestor public key
-   embedded in the local user signer's attested-account key, and
+   `internal/sentry/verify`,
+2. required `/sign/assemble` verification against the sentry public key
+   embedded in the local user signer's guarded-account key, and
 3. final on-chain LogicSig verification.
 
 ### Endpoint Routing
 
 Client routing lives in `$APCLIENT_DATA/endpoints.yaml`. The registry contains
-at most one `signer` endpoint and zero or more `attestor` endpoints. Endpoint
+at most one `signer` endpoint and zero or more `sentry` endpoints. Endpoint
 records contain connection profile data, endpoint role, token-file path,
 known-hosts path, SSH identity path, and endpoint-local
-`published_attestors`.
+`published_sentrys`.
 
 Operator handoff uses public endpoint envelopes:
 
 - `apstore endpoint export` emits `aplane.endpoint.v1` with portable endpoint
   URL and port data only.
-- `apshell endpoints import-public --alias <name> --role signer|attestor`
+- `apshell endpoints import-public --alias <name> --role signer|sentry`
   writes client-local endpoint routing.
 - bearer tokens are obtained separately with `request-token --endpoint`.
 - SSH host trust remains owned by the existing known-hosts flow.
 
-Attestor inventory is discovered explicitly with
-`apshell endpoints sync-attestors`. It queries authenticated `/keys` on
-configured attestor endpoints, validates component-key metadata, and rebuilds
-reachable endpoints' `published_attestors` inventory. Temporarily unavailable
+Sentry inventory is discovered explicitly with
+`apshell endpoints sync-sentries`. It queries authenticated `/keys` on
+configured sentry endpoints, validates component-key metadata, and rebuilds
+reachable endpoints' `published_sentrys` inventory. Temporarily unavailable
 or locked endpoints preserve their prior local inventory; authentication
 failures, malformed responses, duplicate public keys across endpoints, and
 component-key validation errors are hard failures that leave files unchanged.
 After discovery, the command prints component IDs and asks before syncing the
-public inventory into the connected signer identity's attestor reference
+public inventory into the connected signer identity's sentry reference
 library for generation-time selection.
 
-Runtime attested-send routing maps the embedded attestor public key to the
-endpoint whose `published_attestors` contains that key. If no explicit mapping
+Runtime attested-send routing maps the embedded sentry public key to the
+endpoint whose `published_sentrys` contains that key. If no explicit mapping
 exists, local self-discovery may resolve to the currently connected signer only
-when that endpoint advertises the matching attestor component key; this is
+when that endpoint advertises the matching sentry component key; this is
 development ergonomics, not a production independence claim.
 
 ### Policy And Audit
 
-Signer nodes use `policy.yaml` for account signing. Attestor nodes also use
-`policy.yaml`, parsed in the attestor policy domain, for attestor component
+Signer nodes use `policy.yaml` for account signing. Sentry nodes also use
+`policy.yaml`, parsed in the sentry policy domain, for sentry component
 signing. Both domains use the shared policy grammar and HMAC sidecar model, but
-attestor policy has no manual-review or operator-default verdict. It is
+sentry policy has no manual-review or operator-default verdict. It is
 deterministic authorization: all selected target movements must be positively
-authorized by the effective attestor policy, and deny guards fail closed.
+authorized by the effective sentry policy, and deny guards fail closed.
 
-Attestation policy overrides are keyed by attestor component selector.
+Attestation policy overrides are keyed by sentry component selector.
 Client-signing policy overrides are keyed by signing auth address.
 
-Attestor component approvals and rejections are recorded through existing sign
+Sentry component approvals and rejections are recorded through existing sign
 audit events. Current records put the component selector in `txn_auth`, the
 decoded target sender in `txn_sender`, and the matching deterministic policy
 rule in `policy_rule_id` when one applies.
@@ -1204,11 +1204,11 @@ rule in `policy_rule_id` when one applies.
 Primary implementation ownership:
 
 - `pkg/signerapi`: component-signing and assembly DTOs plus fixtures.
-- `internal/attestor/message`: role-separated component message construction.
-- `internal/attestor/verify`: component signature verification primitives.
-- `internal/attestor/keytypes`: attestor and attested key-type identifiers,
+- `internal/sentry/message`: role-separated component message construction.
+- `internal/sentry/verify`: component signature verification primitives.
+- `internal/sentry/keytypes`: sentry and attested key-type identifiers,
   component selector validation, and DSA mapping.
-- `internal/signerapp/signing`: signer-side component signing, attestor policy
+- `internal/signerapp/signing`: signer-side component signing, sentry policy
   evaluation, and assembly.
 - `internal/signerapp/rest`: HTTP handlers for `/sign/component` and
   `/sign/assemble`.
@@ -1216,9 +1216,9 @@ Primary implementation ownership:
   resolution.
 - `internal/config` and `internal/endpointrefs`: endpoint registry and public
   endpoint envelope handling.
-- `internal/attestor/attrefs`: public attestor reference catalog used by
+- `internal/sentry/attrefs`: public sentry reference catalog used by
   generation UIs.
-- `internal/policy`: shared signer/attestor policy grammar, validation, and
+- `internal/policy`: shared signer/sentry policy grammar, validation, and
   evaluation domains.
 
 Compatibility-bearing wire, file, endpoint, policy, backup/restore, and SDK
@@ -1416,7 +1416,7 @@ Verification expectations remain:
 - plugin discovery precedence and manifest validation remain unchanged unless explicitly versioned,
 - on-disk compatibility is checked for `.keystore`, `.key`, `.template`, `config.yaml`, `audit.log`, and token files.
 - client endpoint compatibility is checked for `endpoints.yaml`,
-  endpoint token files, endpoint handoff envelopes, and public attestor
+  endpoint token files, endpoint handoff envelopes, and public sentry
   reference records when those surfaces change.
 
 ## Authentication
@@ -1531,7 +1531,7 @@ Product-level boundaries:
 | LocalNet Setup | `cmd/aplocalnet/main.go`, `internal/aplocalnet/setup.go`, `plugins/algokit-localnet/algokit-localnet.go`, `plugins/algokit-localnet/manifest.json` |
 | Policy | `internal/policy/config.go`, `internal/policy/store.go`, `internal/policy/integrity.go`, `internal/crypto/policy_integrity.go`, `internal/signerapp/policyruntime/policy.go`, `internal/policy/lint.go`, `internal/policy/review.go`, `internal/signerapp/signing/always_review.go`, `internal/signerapp/signing/service.go`, `internal/signerapp/admin/service.go`, `cmd/apstore/policy.go`, `internal/templatepolicy/outcome.go` |
 | Keystore | `internal/keystore/file.go`, `internal/keystore/session.go` |
-| Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/keyclass/keyclass.go`, `internal/attestor/keytypes/keytypes.go` |
+| Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/keyclass/keyclass.go`, `internal/sentry/keytypes/keytypes.go` |
 | Store Init/Passphrase | `internal/storeinit/initialize.go`, `internal/storepass/rotate.go`, `cmd/apstore/main.go`, `cmd/apsigner/admin_services.go` |
 | Client Data | `internal/clientdata/lock.go`, `internal/clientstate/state.go`, `internal/refname/refname.go` |
 | Identity | `internal/signerapp/identity/runtime.go`, `internal/signerapp/identity/config.go` |

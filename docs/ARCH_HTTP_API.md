@@ -147,12 +147,12 @@ compatibility; it is not the `/sign` wire response.
 
 - optional `request_id`
 - `role`: `user` or `attestor`
-- `component_key`: attested account address for `user`, attestor component
+- `component_key`: guarded account address for `user`, attestor component
   selector for `attestor`
 - `group_bytes_hex[]`: final TX-prefixed transaction bytes for the whole group
 - `target_indices[]`: zero-based indices to sign
 
-For `role:"user"`, `component_key` identifies the local attested account key to
+For `role:"user"`, `component_key` identifies the local guarded account key to
 use for user-role component signing. For `role:"attestor"`, `component_key`
 identifies the local attestor component-key selector. Each target index is
 signed independently using the role-separated attestor message derived from
@@ -170,24 +170,24 @@ the same syntax limits as `/sign` request IDs. Component request IDs are
 correlation fields only in the current attestor MVP; they are not registered in
 the live `/sign/cancel` registry.
 
-`/sign/assemble` request (`signerapi.AttestedAssemblyRequest`):
+`/sign/assemble` request (`signerapi.GuardedAssemblyRequest`):
 
 - optional `request_id`
 - `group_bytes_hex[]`
 - optional `targets[]`
 - optional `passthrough[]`
 
-Each target has `target_index`, `attested_account`, `user_signature`,
-`attestor_signature`, optional source request IDs, and optional `runtime_args`.
+Each target has `target_index`, `guarded_account`, `user_signature`,
+`sentry_signature`, optional source request IDs, and optional `runtime_args`.
 Each passthrough item has `target_index` and `signed_txn_hex`.
 
-`/sign/assemble` response (`signerapi.AttestedAssemblyResponse`):
+`/sign/assemble` response (`signerapi.GuardedAssemblyResponse`):
 
 - `request_id`
 - `signed_group[]`
 
 Assembly verifies the attestor signature against the attestor public key
-embedded in the local attested account key. It does not trust endpoint-provided
+embedded in the local guarded account key. It does not trust endpoint-provided
 metadata or `/keys` self-reporting as ownership proof.
 
 If the request omits `request_id`, apsigner returns a generated opaque ID.
@@ -280,10 +280,10 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
   signer enforces at sign time for that specific key. SDK consumers must treat
   an absent field the same as an empty list.
 - optional `parameters`: non-secret key creation parameters needed by clients
-  to orchestrate key-type-specific workflows. For attested account rows this
-  includes `attestor_public_key`, the attestor public key embedded in the
+  to orchestrate key-type-specific workflows. For guarded account rows this
+  includes `sentry_public_key`, the attestor public key embedded in the
   account LogicSig bytecode. Its key family and size are determined by the
-  attested account `key_type`. SDK consumers must treat this as signer-owned
+  guarded account `key_type`. SDK consumers must treat this as signer-owned
   metadata, not as proof of remote attestor endpoint ownership.
 - optional `template_provenance_status`, `template_provenance_note`; these are
   informational comparisons between stored key template provenance and the

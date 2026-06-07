@@ -38,8 +38,8 @@ func TestAttestedOriginalTargetsNormalizeAttestorPublicKey(t *testing.T) {
 	eng := newAttestedSubmitTestEngine(t, sender, 1500, "0X"+strings.ToUpper(attestorHex))
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
 
-	if !eng.hasAttestedSender([]types.Transaction{txn}) {
-		t.Fatal("hasAttestedSender() = false, want true")
+	if !eng.hasGuardedSender([]types.Transaction{txn}) {
+		t.Fatal("hasGuardedSender() = false, want true")
 	}
 
 	targets, err := eng.attestedOriginalTargets([]types.Transaction{txn})
@@ -63,11 +63,11 @@ func TestAttestedOriginalTargetsNormalizeAttestorPublicKey(t *testing.T) {
 func TestAttestedOriginalTargetsNormalizeFalconAttestorPublicKey(t *testing.T) {
 	sender := testAddress(1).String()
 	attestorHex := testFalconAttestorPublicKeyHex(0xd6)
-	eng := newAttestedSubmitTestEngineForKeyType(t, sender, keytypes.AttestedFalcon1024AttFalcon1024V1, 1500, "0X"+strings.ToUpper(attestorHex))
+	eng := newAttestedSubmitTestEngineForKeyType(t, sender, keytypes.GuardedFalcon1024SentryFalcon1024V1, 1500, "0X"+strings.ToUpper(attestorHex))
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
 
-	if !eng.hasAttestedSender([]types.Transaction{txn}) {
-		t.Fatal("hasAttestedSender() = false, want true")
+	if !eng.hasGuardedSender([]types.Transaction{txn}) {
+		t.Fatal("hasGuardedSender() = false, want true")
 	}
 
 	targets, err := eng.attestedOriginalTargets([]types.Transaction{txn})
@@ -91,8 +91,8 @@ func TestAttestedOriginalTargetsRequireAttestorMetadata(t *testing.T) {
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
 
 	_, err := eng.attestedOriginalTargets([]types.Transaction{txn})
-	if err == nil || !strings.Contains(err.Error(), "missing attestor_public_key") {
-		t.Fatalf("attestedOriginalTargets() error = %v, want missing attestor_public_key", err)
+	if err == nil || !strings.Contains(err.Error(), "missing sentry_public_key") {
+		t.Fatalf("attestedOriginalTargets() error = %v, want missing sentry_public_key", err)
 	}
 }
 
@@ -451,7 +451,7 @@ func TestDecodeAttestedSignedGroupReturnsSignedObjects(t *testing.T) {
 
 func newAttestedSubmitTestEngine(t *testing.T, sender string, lsigSize int, attestorPublicKey string) *Engine {
 	t.Helper()
-	return newAttestedSubmitTestEngineForKeyType(t, sender, keytypes.AttestedFalcon1024V1, lsigSize, attestorPublicKey)
+	return newAttestedSubmitTestEngineForKeyType(t, sender, keytypes.GuardedFalcon1024SentryEd25519V1, lsigSize, attestorPublicKey)
 }
 
 func newAttestedSubmitTestEngineForKeyType(t *testing.T, sender, keyType string, lsigSize int, attestorPublicKey string) *Engine {

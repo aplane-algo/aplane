@@ -63,10 +63,10 @@ Canonical forms:
   for example `aplane.sentry-ed25519.v1` and
   `aplane.sentry-falcon1024.v1`; they are component-signing keys selected by
   52-character txid-shaped component selectors, not spending accounts
-- attested account key types name both the account DSA and the sentry DSA,
+- guarded account key types name both the account DSA and the sentry DSA,
   for example `aplane.falcon1024-sentry-ed25519.v1` and
   `aplane.falcon1024-sentry-falcon1024.v1`; the older Go-level
-  `AttestedFalcon1024V1` symbol is a compatibility alias for the Ed25519
+  `GuardedFalcon1024SentryEd25519V1` symbol is a compatibility alias for the Ed25519
   sentry form and is not a separate persisted identifier
 
 YAML templates declare `publisher`, `family`, and integer `version`; the
@@ -873,7 +873,7 @@ be reported while still listing keys that scanned successfully.
 #### Sentry Public Key Export Envelope
 
 `apstore sentry export-public <component-key> [output-json]` emits a public-only
-JSON envelope for an sentry component key. The command reads the
+JSON envelope for a sentry component key. The command reads the
 `keys/<component-key>.public.json` sidecar, verifies that `<component-key>`
 equals the canonical selector derived from the public key, and never reads or
 decrypts private key material. If the sidecar is missing or malformed, export
@@ -899,8 +899,8 @@ select a local sentry component key. It is derived as
 `base32_no_padding(SHA512_256("APLANE_COMPONENT_KEY_V1" || 0x00 || key_type ||
 0x00 || canonical_public_key_bytes))`; it resembles an Algorand transaction ID
 and is not a valid Algorand address. `public_key_hex` is the raw component
-public key encoded in hex; it is the value embedded into attested-account
-LogicSig bytecode and supplied as `attestor_public_key` during attested account
+public key encoded in hex; it is the value embedded into guarded-account
+LogicSig bytecode and supplied as `sentry_public_key` during guarded account
 generation. The envelope makes no endpoint, policy, ownership, freshness, or
 trust claim.
 
@@ -937,21 +937,21 @@ Endpoint discovery may also populate this catalog through
 `source: "client_discovery"`, a deterministic generated name
 `endpoint-<alias>-<component_key>`, `endpoint_alias`, `last_seen_at`, and
 `synced_at`. They are public candidates derived from the client's
-`endpoints.yaml`; they are not an sentry ownership proof.
+`endpoints.yaml`; they are not a sentry ownership proof.
 
 The library is a generation convenience and trust-input inventory for the user
-signer. When generating an attested account, callers may provide
-`sentry=<name>` instead of `attestor_public_key=<hex>`. The signer resolves
+signer. When generating a guarded account, callers may provide
+`sentry=<name>` instead of `sentry_public_key=<hex>`. The signer resolves
 the name to `public_key_hex`, verifies that the reference key type matches the
-attested-account key type's required sentry component key type, rejects
+guarded-account key type's required sentry component key type, rejects
 requests that provide both forms, and persists only the resolved
-`attestor_public_key` in the key file.
+`sentry_public_key` in the key file.
 
 Identity-scoped `/keytypes` metadata may expose imported references as a
 creation parameter named `sentry` with `type:"select"` and `options[]`
 containing reference names whose component key type matches the attested
 account key type. This is UI metadata for generation clients such as `apadmin`;
-the durable key file still stores the resolved `attestor_public_key`.
+the durable key file still stores the resolved `sentry_public_key`.
 
 ### Template Files (`.template`)
 

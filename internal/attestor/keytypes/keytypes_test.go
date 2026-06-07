@@ -20,10 +20,10 @@ func TestAttestorKeyTypeClassifiers(t *testing.T) {
 	if !IsAttestorComponentKeyType(AttestorComponentFalcon1024V1) {
 		t.Fatal("Falcon component key type was not classified as component")
 	}
-	if !IsAttestedAccountKeyType(AttestedFalcon1024V1) {
+	if !IsGuardedAccountKeyType(GuardedFalcon1024SentryEd25519V1) {
 		t.Fatal("attested Falcon account key type was not classified as attested")
 	}
-	if !IsAttestedAccountKeyType(AttestedFalcon1024AttFalcon1024V1) {
+	if !IsGuardedAccountKeyType(GuardedFalcon1024SentryFalcon1024V1) {
 		t.Fatal("Falcon-attested Falcon account key type was not classified as attested")
 	}
 	if IsAttestorMVPKeyType("aplane.falcon1024.v1") {
@@ -34,21 +34,21 @@ func TestAttestorKeyTypeClassifiers(t *testing.T) {
 	}
 }
 
-func TestAttestorComponentKeyTypeForAttestedAccount(t *testing.T) {
+func TestAttestorComponentKeyTypeForGuardedAccount(t *testing.T) {
 	tests := []struct {
 		keyType string
 		want    string
 		ok      bool
 	}{
-		{AttestedFalcon1024AttEd25519V1, AttestorComponentEd25519V1, true},
-		{AttestedFalcon1024AttFalcon1024V1, AttestorComponentFalcon1024V1, true},
+		{GuardedFalcon1024SentryEd25519V1, AttestorComponentEd25519V1, true},
+		{GuardedFalcon1024SentryFalcon1024V1, AttestorComponentFalcon1024V1, true},
 		{AttestorComponentEd25519V1, "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.keyType, func(t *testing.T) {
-			got, ok := AttestorComponentKeyTypeForAttestedAccount(tt.keyType)
+			got, ok := AttestorComponentKeyTypeForGuardedAccount(tt.keyType)
 			if ok != tt.ok || got != tt.want {
-				t.Fatalf("AttestorComponentKeyTypeForAttestedAccount() = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.ok)
+				t.Fatalf("AttestorComponentKeyTypeForGuardedAccount() = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.ok)
 			}
 		})
 	}
@@ -102,9 +102,9 @@ func TestFalconComponentKeySelectorKnownVector(t *testing.T) {
 }
 
 func TestComponentKeySelectorRejectsNonComponentKeyType(t *testing.T) {
-	_, err := ComponentKeySelector(AttestedFalcon1024V1, make([]byte, 32))
+	_, err := ComponentKeySelector(GuardedFalcon1024SentryEd25519V1, make([]byte, 32))
 	if err == nil {
-		t.Fatal("ComponentKeySelector() accepted attested account key type")
+		t.Fatal("ComponentKeySelector() accepted guarded account key type")
 	}
 }
 

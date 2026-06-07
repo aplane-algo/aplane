@@ -7,15 +7,15 @@ import "github.com/aplane-algo/aplane/internal/attestor/keytypes"
 
 const (
 	attestorComponentSignRejectMessage = "attestor component keys require /sign/component"
-	attestedAccountSignRejectMessage   = "this key type requires the attestor signing flow: use POST /sign/component then POST /sign/assemble"
+	guardedAccountSignRejectMessage    = "this key type requires the guarded signing flow: use POST /sign/component then POST /sign/assemble"
 )
 
 func attestorSignRejectMessage(keyType string) (string, bool) {
 	switch {
 	case keytypes.IsAttestorComponentKeyType(keyType):
 		return attestorComponentSignRejectMessage, true
-	case keytypes.IsAttestedAccountKeyType(keyType):
-		return attestedAccountSignRejectMessage, true
+	case keytypes.IsGuardedAccountKeyType(keyType):
+		return guardedAccountSignRejectMessage, true
 	default:
 		return "", false
 	}

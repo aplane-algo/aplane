@@ -58,7 +58,7 @@ type Config struct {
 	// normal connections use endpoint records from endpoints.yaml.
 	LegacySSH *SSHClientConfig `yaml:"ssh" configdoc:"skip" description:"Compatibility SSH tunnel settings; current endpoint SSH fields live in endpoints.yaml"`
 
-	// AttestorEndpoints maps attested-account embedded sentry public keys to
+	// AttestorEndpoints maps guarded-account embedded sentry public keys to
 	// signer endpoints for sentry-role component signing. It is derived
 	// runtime state from endpoints.yaml published_sentries and is not part of
 	// config.yaml.

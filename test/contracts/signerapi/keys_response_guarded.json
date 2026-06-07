@@ -7,7 +7,7 @@
       "key_type": "aplane.falcon1024-sentry-ed25519.v1",
       "lsig_size": 2048,
       "parameters": {
-        "attestor_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
+        "sentry_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
       }
     }
   ]

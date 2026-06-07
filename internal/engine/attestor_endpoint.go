@@ -159,7 +159,7 @@ func (e *Engine) connectConfiguredAttestorEndpoint(ctx context.Context, endpoint
 }
 
 // DiscoverAttestorComponentKeysWithContext queries one endpoint and returns
-// sentry component public keys that can be mapped for attested signing.
+// sentry component public keys that can be mapped for guarded signing.
 func (e *Engine) DiscoverAttestorComponentKeysWithContext(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredAttestorComponentKey, error) {
 	var client attestorComponentClient
 	var cleanup func()

@@ -35,9 +35,9 @@ type attestorRequestKey struct {
 	PublicKey        string
 }
 
-func (e *Engine) hasAttestedSender(txns []types.Transaction) bool {
+func (e *Engine) hasGuardedSender(txns []types.Transaction) bool {
 	for _, txn := range txns {
-		if keytypes.IsAttestedAccountKeyType(e.signerCacheKeyType(txn.Sender.String())) {
+		if keytypes.IsGuardedAccountKeyType(e.signerCacheKeyType(txn.Sender.String())) {
 			return true
 		}
 	}
@@ -61,10 +61,10 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 		return nil, nil, err
 	}
 	if len(targets) == 0 {
-		return nil, nil, fmt.Errorf("attested signing selected with no attested senders")
+		return nil, nil, fmt.Errorf("guarded signing selected with no guarded senders")
 	}
 	if len(targets) != len(txns) {
-		return nil, nil, fmt.Errorf("attested signing currently requires every original transaction sender to use an attested account key type")
+		return nil, nil, fmt.Errorf("guarded signing currently requires every original transaction sender to use a guarded account key type")
 	}
 
 	plannedTxns, dummyTxns, err := e.planAttestedGroup(txns, targets, w)
@@ -91,10 +91,10 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 		return nil, nil, err
 	}
 
-	assemblyReq := signerapi.AttestedAssemblyRequest{
+	assemblyReq := signerapi.GuardedAssemblyRequest{
 		GroupBytesHex: groupBytesHex,
-		Targets:       make([]signerapi.AttestedAssemblyTarget, 0, len(targets)),
-		Passthrough:   make([]signerapi.AttestedPassthroughItem, 0, len(signedDummyHex)),
+		Targets:       make([]signerapi.GuardedAssemblyTarget, 0, len(targets)),
+		Passthrough:   make([]signerapi.GuardedPassthroughItem, 0, len(signedDummyHex)),
 	}
 	for _, target := range targets {
 		userSig, ok := userSignatures[target.Index]
@@ -105,23 +105,23 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 		if !ok {
 			return nil, nil, fmt.Errorf("attestor endpoint returned no signature for target index %d", target.Index)
 		}
-		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.AttestedAssemblyTarget{
-			TargetIndex:             target.Index,
-			AttestedAccount:         target.Account,
-			UserSignature:           userSig,
-			UserSourceRequestID:     userRequestIDs[target.Account],
-			AttestorSignature:       attestorSig,
-			AttestorSourceRequestID: attestorRequestIDs[target.attestorRequestKey()],
+		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.GuardedAssemblyTarget{
+			TargetIndex:           target.Index,
+			GuardedAccount:        target.Account,
+			UserSignature:         userSig,
+			UserSourceRequestID:   userRequestIDs[target.Account],
+			SentrySignature:       attestorSig,
+			SentrySourceRequestID: attestorRequestIDs[target.attestorRequestKey()],
 		})
 	}
 	for i, signedHex := range signedDummyHex {
-		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.AttestedPassthroughItem{
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{
 			TargetIndex:  len(txns) + i,
 			SignedTxnHex: signedHex,
 		})
 	}
 
-	assemblyResp, err := e.Connection.RequestAttestedAssembleWithContext(opts.Ctx, assemblyReq)
+	assemblyResp, err := e.Connection.RequestGuardedAssembleWithContext(opts.Ctx, assemblyReq)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -152,20 +152,20 @@ func (e *Engine) attestedOriginalTargets(txns []types.Transaction) ([]attestedOr
 		if keyType == "" {
 			return nil, fmt.Errorf("transaction %d sender %s is not in signer cache", i, sender)
 		}
-		if !keytypes.IsAttestedAccountKeyType(keyType) {
+		if !keytypes.IsGuardedAccountKeyType(keyType) {
 			continue
 		}
-		attestorComponentKeyType, ok := keytypes.AttestorComponentKeyTypeForAttestedAccount(keyType)
+		attestorComponentKeyType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(keyType)
 		if !ok {
-			return nil, fmt.Errorf("attested account %s uses unsupported attested key type %s", sender, keyType)
+			return nil, fmt.Errorf("guarded account %s uses unsupported attested key type %s", sender, keyType)
 		}
 		attestorPublicKey, ok := e.signerCacheAttestorPublicKey(sender)
 		if !ok || attestorPublicKey == "" {
-			return nil, fmt.Errorf("attested account %s is missing attestor_public_key metadata; run keys refresh", sender)
+			return nil, fmt.Errorf("guarded account %s is missing sentry_public_key metadata; run keys refresh", sender)
 		}
 		canonicalPublicKey, err := normalizeAttestorPublicKeyHex(attestorPublicKey, attestorComponentKeyType)
 		if err != nil {
-			return nil, fmt.Errorf("attested account %s has invalid attestor_public_key metadata: %w", sender, err)
+			return nil, fmt.Errorf("guarded account %s has invalid sentry_public_key metadata: %w", sender, err)
 		}
 		targets = append(targets, attestedOriginalTarget{
 			Index:                    i,
@@ -224,7 +224,7 @@ func (e *Engine) planAttestedGroup(txns []types.Transaction, targets []attestedO
 	for _, target := range targets {
 		size := e.signerCacheLsigSize(target.Account)
 		if size <= 0 {
-			return nil, nil, fmt.Errorf("attested account %s is missing LogicSig size metadata; run keys refresh", target.Account)
+			return nil, nil, fmt.Errorf("guarded account %s is missing LogicSig size metadata; run keys refresh", target.Account)
 		}
 		totalLsigBytes += size
 		lsigIndices = append(lsigIndices, target.Index)

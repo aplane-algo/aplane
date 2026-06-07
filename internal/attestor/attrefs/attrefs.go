@@ -2,7 +2,7 @@
 // Copyright (C) 2026 APlane Project LLC
 
 // Package attrefs stores identity-scoped public attestor references used when
-// generating attested account keys.
+// generating guarded account keys.
 package attrefs
 
 import (
@@ -328,15 +328,15 @@ func Delete(paths storepaths.Paths, identityID, name string) (bool, error) {
 }
 
 func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, params map[string]string) (map[string]string, error) {
-	if !keytypes.IsAttestedAccountKeyType(keyType) {
+	if !keytypes.IsGuardedAccountKeyType(keyType) {
 		return params, nil
 	}
 	name, hasName := params[ParamAttestorName]
 	if !hasName || strings.TrimSpace(name) == "" {
 		return params, nil
 	}
-	if _, hasPublicKey := params[keytypes.ParameterAttestorPublicKey]; hasPublicKey {
-		return nil, fmt.Errorf("specify either %s or %s, not both", ParamAttestorName, keytypes.ParameterAttestorPublicKey)
+	if _, hasPublicKey := params[keytypes.ParameterSentryPublicKey]; hasPublicKey {
+		return nil, fmt.Errorf("specify either %s or %s, not both", ParamAttestorName, keytypes.ParameterSentryPublicKey)
 	}
 	rec, ok, err := Get(paths, identityID, name)
 	if err != nil {
@@ -345,9 +345,9 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 	if !ok {
 		return nil, fmt.Errorf("attestor reference %q not found", strings.TrimSpace(name))
 	}
-	wantKeyType, ok := keytypes.AttestorComponentKeyTypeForAttestedAccount(keyType)
+	wantKeyType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(keyType)
 	if !ok {
-		return nil, fmt.Errorf("key type %q is not an attested account key type", keyType)
+		return nil, fmt.Errorf("key type %q is not a guarded account key type", keyType)
 	}
 	if rec.KeyType != wantKeyType {
 		return nil, fmt.Errorf("attestor reference %q uses %s, but %s requires %s", rec.Name, rec.KeyType, keyType, wantKeyType)
@@ -360,7 +360,7 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 		}
 		resolved[k] = v
 	}
-	resolved[keytypes.ParameterAttestorPublicKey] = rec.PublicKeyHex
+	resolved[keytypes.ParameterSentryPublicKey] = rec.PublicKeyHex
 	return resolved, nil
 }
 

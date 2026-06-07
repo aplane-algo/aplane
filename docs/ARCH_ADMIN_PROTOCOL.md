@@ -222,7 +222,7 @@ unlock/reload after passphrase verification through
 - `export_key`: `address`, `passphrase` -> `error code:"authorization_denied"`; mnemonic export is disabled, use encrypted backups for recovery
 - `import_key`: `key_type`, `mnemonic`, optional `parameters` -> `import_result`: `success`, optional `address`, `key_type`, `code`, `error`; accepted only over local IPC because it carries recovery material
 - `get_key_details`: `address` -> `key_details`: `success`, optional `address`, `key_type`, `parameters`, `display_teal`, `code`, `error`
-- `key_details.parameters` for attested account keys projects the embedded attestor verifier as `Attestor: <component selector>` and does not expose the raw `attestor_public_key` parameter
+- `key_details.parameters` for guarded account keys projects the embedded attestor verifier as `Attestor: <component selector>` and does not expose the raw `sentry_public_key` parameter
 - `key_details` may include optional `template_provenance_status` and `template_provenance_note`; these are informational comparisons between the key's stored template fingerprint provenance and the registered local definition, and do not gate signing
 - `keys_list`: `keys`, where each key has `address`, `key_type`, optional `name`, optional `template_provenance_status`, optional `template_provenance_note`
 - `keys_changed`: `key_count`

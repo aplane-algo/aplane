@@ -35,7 +35,7 @@ func TestCmdEndpointExportStdout(t *testing.T) {
 			strings.Contains(out, `"kind"`) ||
 			strings.Contains(out, `"role"`) ||
 			strings.Contains(out, `"schema_version"`) ||
-			strings.Contains(out, `"attestor_public_keys"`) {
+			strings.Contains(out, `"sentry_public_keys"`) {
 			t.Fatalf("endpoint envelope contains non-connection fields: %s", out)
 		}
 		if env.SignerPort != 11270 {

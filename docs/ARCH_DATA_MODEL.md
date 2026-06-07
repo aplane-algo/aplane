@@ -73,7 +73,7 @@ Important vocabulary:
   signer policy and group validation.
 - **key type** is the canonical identifier stored and sent on the wire, such as
   `ed25519` or `aplane.falcon1024.v1`.
-- **component selector** means an sentry component key selector: a
+- **component selector** means a sentry component key selector: a
   52-character uppercase base32 SHA-512/256 digest over the domain-separated
   key-type/public-key tuple. It selects a local component key; it is not an
   Algorand account address and is not the embedded verifier public key.
@@ -126,7 +126,7 @@ DTOs and contract fixtures.
 |--------|-------|-------------------|--------------------|-----------------|-------|
 | Client config | Client data dir | `APCLIENT_DATA/config.yaml` | `internal/config.Config` network/theme/polling state | SDK config loaders, shell runtime | `internal/config`, `internal/bootstrap/shell` |
 | Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and sentry connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
-| Endpoint-published sentries | Client data dir | `endpoints.yaml` `published_sentries` | derived `Config.AttestorEndpoints` map keyed by embedded public key hex | attested send orchestration | `internal/config`, `internal/apshellapp`, `internal/engine` |
+| Endpoint-published sentries | Client data dir | `endpoints.yaml` `published_sentries` | derived `Config.SentryEndpoints` map keyed by embedded public key hex | guarded send orchestration | `internal/config`, `internal/apshellapp`, `internal/engine` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/config.ServerConfig` snapshot | Admin settings subset | `internal/config`, `cmd/apsigner` |
 | Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/<identity>/node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | signer startup, identity load, keyadmin, restore, signing dispatch |
 | Signing identity | Signer identity | `identities/<identity>/` | `identity.Runtime` | HTTP identity routing, admin session target | `internal/signerapp/identity` |
@@ -293,7 +293,7 @@ Durable signing metadata includes:
 - optional `template_fingerprint`,
 - creation parameters and timestamps.
 
-Attested account keys are DSA LogicSig keys whose stored bytecode embeds an
+Guarded account keys are DSA LogicSig keys whose stored bytecode embeds an
 sentry public key. They are not accepted by `/sign`; the client must use the
 attested flow: user `/sign/component`, sentry `/sign/component`, user
 `/sign/assemble`, then algod submit. Sentry component keys are selected by an
@@ -605,8 +605,8 @@ Primary projections:
 - `SignRequest`,
 - `ComponentSignRequest`,
 - `ComponentSignResponse`,
-- `AttestedAssemblyRequest`,
-- `AttestedAssemblyResponse`,
+- `GuardedAssemblyRequest`,
+- `GuardedAssemblyResponse`,
 - `GroupPlanResponse`,
 - `GroupSignResponse`,
 - `GroupSimulateResponse`,
@@ -725,15 +725,15 @@ durable sign request table.
 
 ### Attested Signing Lifecycle
 
-1. Client detects an attested account key from `/keys` metadata and local signer
+1. Client detects a guarded account key from `/keys` metadata and local signer
    inventory.
 2. Client prepares the canonical group and target indices.
 3. Client calls the user signer `/sign/component` for user-role signatures.
-4. Client routes by embedded sentry public key to an sentry endpoint from
+4. Client routes by embedded sentry public key to a sentry endpoint from
    `endpoints.yaml` and calls sentry `/sign/component`.
 5. Client calls user signer `/sign/assemble`.
 6. User signer verifies sentry signatures against the sentry public key
-   embedded in the local attested account key, packs LogicSig args, and returns
+   embedded in the local guarded account key, packs LogicSig args, and returns
    signed group bytes.
 7. Client submits the signed bytes to algod.
 

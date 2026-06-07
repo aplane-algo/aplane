@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package signerreg registers Falcon-1024 attested-account signer-side
+// Package signerreg registers Falcon-1024 guarded-account signer-side
 // key-generation support.
 package signerreg
 

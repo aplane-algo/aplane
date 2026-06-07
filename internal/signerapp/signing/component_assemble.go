@@ -24,7 +24,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func assembleDecodedAttested(ctx context.Context, req signerapi.AttestedAssemblyRequest, group *attestorverify.CanonicalGroup, session componentKeyGetter) (*AttestedAssemblyResult, *ServiceError) {
+func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRequest, group *attestorverify.CanonicalGroup, session componentKeyGetter) (*GuardedAssemblyResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -32,14 +32,14 @@ func assembleDecodedAttested(ctx context.Context, req signerapi.AttestedAssembly
 		return nil, canceledSignRequest(err)
 	}
 	if group == nil {
-		return nil, internal("attested assembly group is nil")
+		return nil, internal("guarded assembly group is nil")
 	}
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
-	req.RequestID = attestedRequestID("asm", req.RequestID)
+	req.RequestID = guardedRequestID("asm", req.RequestID)
 	if len(group.Entries) != len(req.GroupBytesHex) {
-		return nil, internal("attested assembly group length does not match request")
+		return nil, internal("guarded assembly group length does not match request")
 	}
 	if session == nil {
 		return nil, internal("key session is nil")
@@ -47,37 +47,37 @@ func assembleDecodedAttested(ctx context.Context, req signerapi.AttestedAssembly
 
 	signedGroup := make([]string, len(group.Entries))
 	for _, target := range req.Targets {
-		signedTxnHex, err := assembleAttestedTarget(ctx, target, group.Entries[target.TargetIndex], session)
+		signedTxnHex, err := assembleGuardedTarget(ctx, target, group.Entries[target.TargetIndex], session)
 		if err != nil {
 			return nil, err
 		}
 		signedGroup[target.TargetIndex] = signedTxnHex
 	}
 	for _, passthrough := range req.Passthrough {
-		signedTxnHex, err := validateAttestedPassthrough(passthrough, group.Entries[passthrough.TargetIndex])
+		signedTxnHex, err := validateGuardedPassthrough(passthrough, group.Entries[passthrough.TargetIndex])
 		if err != nil {
 			return nil, err
 		}
 		signedGroup[passthrough.TargetIndex] = signedTxnHex
 	}
 
-	return &AttestedAssemblyResult{
+	return &GuardedAssemblyResult{
 		RequestID:   req.RequestID,
 		SignedGroup: signedGroup,
 	}, nil
 }
 
-func assembleAttestedTarget(ctx context.Context, target signerapi.AttestedAssemblyTarget, entry attestorverify.CanonicalTxn, session componentKeyGetter) (string, *ServiceError) {
-	if entry.Txn.Sender.String() != target.AttestedAccount {
+func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssemblyTarget, entry attestorverify.CanonicalTxn, session componentKeyGetter) (string, *ServiceError) {
+	if entry.Txn.Sender.String() != target.GuardedAccount {
 		return "", badRequest(fmt.Sprintf(
-			"target index %d sender %q does not match attested_account %q",
+			"target index %d sender %q does not match guarded_account %q",
 			target.TargetIndex,
 			entry.Txn.Sender.String(),
-			target.AttestedAccount,
+			target.GuardedAccount,
 		))
 	}
 
-	keyMaterial, err := loadAttestedAccountKeyMaterial(ctx, session, target.AttestedAccount)
+	keyMaterial, err := loadGuardedAccountKeyMaterial(ctx, session, target.GuardedAccount)
 	if err != nil {
 		return "", err
 	}
@@ -87,16 +87,16 @@ func assembleAttestedTarget(ctx context.Context, target signerapi.AttestedAssemb
 		return "", missingLogicSigSigningMetadata(keyMaterial.Type)
 	}
 	if len(keyMaterial.Bytecode) == 0 {
-		return "", internal("loaded attested account key is missing LogicSig bytecode")
+		return "", internal("loaded guarded account key is missing LogicSig bytecode")
 	}
 	if len(keyMaterial.PublicKey) != family.PublicKeySize {
-		return "", internal(fmt.Sprintf("loaded attested account key has public key length %d", len(keyMaterial.PublicKey)))
+		return "", internal(fmt.Sprintf("loaded guarded account key has public key length %d", len(keyMaterial.PublicKey)))
 	}
-	attestorComponentKeyType, ok := keytypes.AttestorComponentKeyTypeForAttestedAccount(keyMaterial.Type)
+	attestorComponentKeyType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(keyMaterial.Type)
 	if !ok {
-		return "", internal(fmt.Sprintf("loaded attested account key type %s has no attestor component key type", keyMaterial.Type))
+		return "", internal(fmt.Sprintf("loaded guarded account key type %s has no attestor component key type", keyMaterial.Type))
 	}
-	attestorPublicKey, err := attestedAccountAttestorPublicKey(keyMaterial.Parameters, attestorComponentKeyType)
+	attestorPublicKey, err := guardedAccountAttestorPublicKey(keyMaterial.Parameters, attestorComponentKeyType)
 	if err != nil {
 		return "", err
 	}
@@ -106,7 +106,7 @@ func assembleAttestedTarget(ctx context.Context, target signerapi.AttestedAssemb
 		return "", err
 	}
 	defer crypto.ZeroBytes(userSignature)
-	attestorSignature, err := decodeAssemblySignatureHex(target.AttestorSignature, "attestor_signature")
+	attestorSignature, err := decodeAssemblySignatureHex(target.SentrySignature, "sentry_signature")
 	if err != nil {
 		return "", err
 	}
@@ -118,7 +118,7 @@ func assembleAttestedTarget(ctx context.Context, target signerapi.AttestedAssemb
 	}
 	attestorMessage := message.ComponentMessage(message.RoleSentry, entry.TxID)
 	if verifyErr := verifyAttestorAssemblySignature(attestorComponentKeyType, attestorPublicKey, attestorMessage[:], attestorSignature); verifyErr != nil {
-		return "", badRequest(fmt.Sprintf("target index %d attestor_signature invalid: %v", target.TargetIndex, verifyErr))
+		return "", badRequest(fmt.Sprintf("target index %d sentry_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
 
 	packedSignature, packErr := falcon1024attested.PackComponentSignaturesForKeyType(keyMaterial.Type, userSignature, attestorSignature)
@@ -129,7 +129,7 @@ func assembleAttestedTarget(ctx context.Context, target signerapi.AttestedAssemb
 
 	signatureProvider := lsigprovider.Get(keyMaterial.Type)
 	if signatureProvider == nil {
-		return "", internal(fmt.Sprintf("provider not found for attested account key type %s", keyMaterial.Type))
+		return "", internal(fmt.Sprintf("provider not found for guarded account key type %s", keyMaterial.Type))
 	}
 	signatureArgs, buildErr := signatureProvider.BuildArgs(packedSignature, nil)
 	if buildErr != nil {
@@ -151,20 +151,20 @@ func assembleAttestedTarget(ctx context.Context, target signerapi.AttestedAssemb
 	}
 	lsigAddress, addressErr := lsigAcct.Address()
 	if addressErr != nil {
-		return "", internal(fmt.Sprintf("failed to derive attested LogicSig address: %v", addressErr))
+		return "", internal(fmt.Sprintf("failed to derive guarded LogicSig address: %v", addressErr))
 	}
-	if lsigAddress.String() != target.AttestedAccount {
-		return "", internal(fmt.Sprintf("loaded attested account bytecode address %s does not match key %s", lsigAddress.String(), target.AttestedAccount))
+	if lsigAddress.String() != target.GuardedAccount {
+		return "", internal(fmt.Sprintf("loaded guarded account bytecode address %s does not match key %s", lsigAddress.String(), target.GuardedAccount))
 	}
 
 	_, signedTxnBytes, signErr := algocrypto.SignLogicSigAccountTransaction(lsigAcct, entry.Txn)
 	if signErr != nil {
-		return "", internal(fmt.Sprintf("failed to assemble attested LogicSig transaction: %v", signErr))
+		return "", internal(fmt.Sprintf("failed to assemble guarded LogicSig transaction: %v", signErr))
 	}
 	return hex.EncodeToString(signedTxnBytes), nil
 }
 
-func validateAttestedPassthrough(passthrough signerapi.AttestedPassthroughItem, entry attestorverify.CanonicalTxn) (string, *ServiceError) {
+func validateGuardedPassthrough(passthrough signerapi.GuardedPassthroughItem, entry attestorverify.CanonicalTxn) (string, *ServiceError) {
 	signedTxnBytes, err := decodeAssemblySignatureHex(passthrough.SignedTxnHex, "signed_txn_hex")
 	if err != nil {
 		return "", err
@@ -192,26 +192,26 @@ func verifyAttestorAssemblySignature(componentKeyType string, publicKey, msg, si
 	}
 }
 
-func attestedAccountAttestorPublicKey(parameters map[string]string, componentKeyType string) ([]byte, *ServiceError) {
+func guardedAccountAttestorPublicKey(parameters map[string]string, componentKeyType string) ([]byte, *ServiceError) {
 	if parameters == nil {
-		return nil, internal("loaded attested account key is missing creation parameters")
+		return nil, internal("loaded guarded account key is missing creation parameters")
 	}
-	value := parameters[keytypes.ParameterAttestorPublicKey]
+	value := parameters[keytypes.ParameterSentryPublicKey]
 	if strings.TrimSpace(value) == "" {
-		return nil, internal("loaded attested account key is missing attestor_public_key parameter")
+		return nil, internal("loaded guarded account key is missing sentry_public_key parameter")
 	}
 	publicKeySize, ok := keytypes.ComponentPublicKeySize(componentKeyType)
 	if !ok {
 		return nil, internal(fmt.Sprintf("key type %q is not an attestor component key type", componentKeyType))
 	}
-	publicKey, err := decodeHexBytes(value, publicKeySize, keytypes.ParameterAttestorPublicKey)
+	publicKey, err := decodeHexBytes(value, publicKeySize, keytypes.ParameterSentryPublicKey)
 	if err != nil {
 		return nil, internal(err.Error())
 	}
 	return publicKey, nil
 }
 
-func orderedAssemblyRuntimeArgs(target signerapi.AttestedAssemblyTarget, signingArgs []lsigprovider.RuntimeArgDef) ([][]byte, *ServiceError) {
+func orderedAssemblyRuntimeArgs(target signerapi.GuardedAssemblyTarget, signingArgs []lsigprovider.RuntimeArgDef) ([][]byte, *ServiceError) {
 	if len(target.RuntimeArgs) != len(signingArgs) {
 		return nil, badRequest(fmt.Sprintf(
 			"target index %d runtime_args length %d does not match stored signing arg count %d",
