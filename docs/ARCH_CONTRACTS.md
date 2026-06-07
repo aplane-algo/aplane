@@ -308,6 +308,9 @@ Validation:
   and signing service dispatch. Hand-placed key files or restored keys from the
   forbidden role are not usable; role-conflicting active inventory fails closed
   for the node.
+- node role parsing and `node.yaml` integrity sidecars are owned by
+  `internal/noderole`; role-versus-key-type allowance decisions are owned by
+  `internal/keyclass`.
 - `require_memory_protection:true` requires disabled core dumps and successful memory locking
 
 Built-in Algorand genesis-hash mappings are source-defined:
@@ -1742,7 +1745,11 @@ Restore:
 
 Local rescue surface:
 
-- normal `apstore` mutations are local IPC operations owned by the daemon
+- live-store `apstore` mutations for managed backup, restore, template, key
+  type, and changepass operations are admin-protocol operations owned by the
+  daemon
+- `apstore initialize`, `apstore policy`, and `apstore rebuild` are local
+  offline mutations protected by the store lock
 - `apstore verify` is a read-only local archive inspection command
 - `apstore rebuild` is the only local mutating rescue command; it refuses to run when the destination identity directory already exists and uses the store lock to avoid concurrent signer access
 

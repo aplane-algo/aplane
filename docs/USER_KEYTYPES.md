@@ -20,7 +20,7 @@ APlane has two optional key type paths:
 Default-enabled compiled providers, such as `ed25519` and
 `aplane.falcon1024.v1`, are available without extra steps.
 Library-visible compiled providers are present in the binary but require an
-identity-local activation record before that identity can discover or generate
+identity-local enablement record before that identity can discover or generate
 them.
 
 YAML templates are different: a library YAML file is only an install source. It
@@ -44,7 +44,7 @@ of that type.
 
 The apadmin KeyType Library and `apstore keytype` CLI use `Enable` and
 `Disable` for both compiled providers and installed YAML templates. Internally,
-compiled providers write or remove an identity activation record, while YAML
+compiled providers write or remove an identity enablement record, while YAML
 templates keep their encrypted `.template` file installed and toggle the
 identity state record. Operators do not need separate verbs for those storage
 details.
@@ -83,7 +83,8 @@ JSON fields still use the canonical `publisher.family.vN` identifier.
 ## Compiled Providers
 
 Compiled providers are registered from Go code when `apsigner` starts. Some are
-default-enabled; others are library-visible and require identity activation.
+default-enabled; others are library-visible and require identity-local
+enablement.
 
 Enable a library-visible compiled provider:
 
@@ -115,7 +116,7 @@ Disable a library-visible compiled provider:
 apstore -d $APSIGNER_DATA keytype disable falcon1024_ed25519.v1
 ```
 
-Disabling removes the identity activation record after checking that no
+Disabling removes the identity enablement record after checking that no
 existing keys use that key type.
 
 `keytype enable` can also re-enable an already-installed disabled YAML template.
@@ -191,7 +192,7 @@ On unlock or reload, `apsigner`:
 2. Skips disabled installed templates.
 3. Decrypts enabled installed YAML templates.
 4. Registers their providers before scanning keys.
-5. Validates compiled-provider activation records against the current binary.
+5. Validates compiled-provider enablement records against the current binary.
 
 The state records are what `apsigner` trusts. A stray encrypted `.template`
 file without a matching state record is ignored on purpose.
@@ -214,7 +215,7 @@ stored fingerprint does not match the current provider fingerprint in the
 binary. This can happen after a development migration or provider-definition
 change.
 
-Refresh the activation record:
+Refresh the enablement record:
 
 ```bash
 apstore -d $APSIGNER_DATA keytype enable falcon1024_ed25519.v1

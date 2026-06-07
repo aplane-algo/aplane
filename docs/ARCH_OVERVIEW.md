@@ -55,7 +55,7 @@ a key.
 | **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes; local attestor nodes show admin plus daemon/status only | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
-| **apstore** | Keystore management client for signer-owned backup, restore, template, key type, passphrase, endpoint export, public attestor references, and init operations over IPC, plus local backup import admission, verification, and rebuild rescue flows | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
+| **apstore** | Keystore management client for local initialize, policy integrity, endpoint export, public attestor references, backup import admission, verification, and rebuild rescue flows; live backup, restore, template, key type, and passphrase operations use the admin protocol | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
 | **appolicy** | Offline policy checker/editor for the node-role policy document (`policy.yaml` for signer nodes, `attestation.yaml` for attestor nodes), plus signing-to-attestation conversion | UI (TUI) + Policy + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
 | **aplocalnet** | LocalNet setup TUI/CLI for apclient default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
@@ -165,7 +165,7 @@ aplane/
 │   ├── apadmin/                   # Admin TUI over IPC or SSH admin transport
 │   ├── apconsole/                 # Secure-machine console wrapper
 │   ├── apapprover/                # Approval-only IPC client
-│   ├── apstore/                   # Keystore management, IPC-admin flows, verify/rebuild rescue
+│   ├── apstore/                   # Keystore management, local flows, IPC-admin flows
 │   ├── appolicy/                  # Offline policy checker/editor
 │   ├── appass/                    # Passphrase auto-unlock configuration TUI
 │   ├── aplocalnet/                # LocalNet setup TUI/CLI

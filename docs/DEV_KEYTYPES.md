@@ -45,7 +45,7 @@ The source model is:
 Built-in compiled key types are Go-defined in the default build. Default-enabled
 compiled key types are immediately visible. Library-visible compiled key types
 are binary capabilities exposed through the KeyType Library and require
-identity-scoped activation before they appear in generation surfaces.
+identity-scoped enablement before they appear in generation surfaces.
 User-loaded templates are not built-ins; they become available only for the
 identity whose keystore contains the encrypted `.template` file and has not
 disabled that installed template.
@@ -129,7 +129,7 @@ default-visible for generation. Visibility is recorded in
 default-enabled, while `aplane.falcon1024-att-ed25519.v1`,
 `aplane.falcon1024-att-falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, and
 `aplane.ecdsak1.v1` are library-visible and hidden from generation until the
-current identity activates them from the library.
+current identity enables them from the library.
 Opt-in state records are plaintext identity-scoped metadata under
 `identities/<identity>/keytypes/<key_type>.json`; they affect discovery and key
 creation, not the ability to sign with keys that already exist. Mnemonic import
@@ -142,7 +142,7 @@ Installed YAML templates use the same state-record model. The encrypted
 `.template` file under `identities/<identity>/keytypes/<key_type>.template` is
 the durable installed source. The adjacent JSON record stores the source
 (`yaml_generic`, `yaml_composed`, or `compiled`), state (`enabled` or
-`disabled`), compatibility fingerprint, and activation time. Removing a YAML
+`disabled`), compatibility fingerprint, and enablement timestamp. Removing a YAML
 template moves the encrypted template source to the identity-local deleted key
 type archive.
 
@@ -157,13 +157,13 @@ Use these terms consistently:
 | **Default-enabled** | Compiled providers | Catalog availability `default_enabled`; every identity can see and create the key type without an identity-local state record. |
 | **Library-visible** | Compiled providers | Catalog availability `library`; the provider is registered in the binary and appears in the KeyType Library, but an enabled identity state record is required before that identity sees it in generation surfaces. |
 | **Disabled** | Compiled providers | Catalog availability `disabled`; the provider may exist in source but should not be registered or exposed by the runtime path that owns the catalog entry. |
-| **Activated** | Library-visible compiled providers | The identity has an enabled `source:"compiled"` state record, so that compiled key type is enabled for that identity's discovery and generation surfaces. |
+| **Enabled for identity** | Library-visible compiled providers | The identity has an enabled `source:"compiled"` state record, so that compiled key type is enabled for that identity's discovery and generation surfaces. |
 | **Installed** | YAML templates | The identity has an encrypted `.template` file under `identities/<identity>/keytypes/<key_type>.template`; plaintext files under `library/templates/` are only install sources. |
 | **Template disabled** | Installed YAML templates | The identity has a `source:"yaml_*"` state record with `state:"disabled"`; the encrypted template remains installed but is hidden from discovery and generation until re-enabled. |
 | **Registered on reload** | Enabled installed YAML templates | On unlock/reload, the signer decrypts enabled installed templates and registers their providers before key scanning. Disabled installed templates are skipped. |
 
 Avoid using "inactive" as a durable technical term. Prefer precise phrases
-such as "library-visible but not activated for this identity" or
+such as "library-visible but not enabled for this identity" or
 "installed but disabled for this identity".
 
 User-loaded optional templates, if installed:
@@ -815,7 +815,7 @@ Use this checklist for every new key type.
 - [ ] Add or update tests.
 - [ ] Update user-facing docs if the key type is intended for operators.
 - [ ] Update architecture/dev docs if the mechanism or supported family set changed.
-- [ ] Verify the key type appears in runtime discovery in the right state: immediately for default-enabled types, after activation for library-visible compiled providers, and after install plus enable/reload for user-loaded templates.
+- [ ] Verify the key type appears in runtime discovery in the right state: immediately for default-enabled types, after enablement for library-visible compiled providers, and after install plus enable/reload for user-loaded templates.
 
 ## Naming Checklist
 
@@ -856,7 +856,7 @@ Common paths:
 - [ ] Registers product visibility in `internal/keytypecatalog` through `lsig/all.go`
 - [ ] Client-safe metadata/derivation is reachable from `lsig.RegisterClient()`
 - [ ] Signer-side signing/keygen/mnemonic handlers are reachable from `lsig/signerreg.RegisterSigner()`
-- [ ] If library-visible, has activation/discovery tests before generation is allowed
+- [ ] If library-visible, has enablement/discovery tests before generation is allowed
 
 Common paths:
 - `lsig/<family>/register.go`
@@ -953,8 +953,8 @@ Examples:
 ### TUI / Discovery
 
 - [ ] `go test ./cmd/apadmin/...`
-- [ ] ensure default-enabled key types are discoverable without activation
-- [ ] ensure library-visible compiled providers appear in the KeyType Library and become discoverable after identity activation
+- [ ] ensure default-enabled key types are discoverable without identity-local enablement
+- [ ] ensure library-visible compiled providers appear in the KeyType Library and become discoverable after identity-local enablement
 - [ ] ensure user-loaded templates appear after installation and identity reload/unlock, disappear when disabled, and reappear when enabled again
 
 ## User Docs Checklist
@@ -982,10 +982,10 @@ Before considering the key type complete:
 - [ ] build successfully
 - [ ] run focused tests
 - [ ] confirm default-enabled key types appear in `apshell keytypes`
-- [ ] confirm library-visible compiled key types appear in `apshell keytypes` after activation
+- [ ] confirm library-visible compiled key types appear in `apshell keytypes` after enablement
 - [ ] confirm user-loaded key types appear in `apshell keytypes` after installation, enable, and reload/unlock
 - [ ] confirm default-enabled key types appear in `apadmin` generate-key selection
-- [ ] confirm library-visible compiled key types appear in `apadmin` generate-key selection after activation
+- [ ] confirm library-visible compiled key types appear in `apadmin` generate-key selection after enablement
 - [ ] confirm user-loaded key types appear in `apadmin` generate-key selection after installation, enable, and reload/unlock
 - [ ] if applicable, confirm it can be generated end-to-end on a signer instance
 

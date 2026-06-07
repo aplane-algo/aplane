@@ -129,7 +129,7 @@ All under `cmd/`:
 | `apadmin` | TUI admin client over IPC or SSH admin transport |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
-| `apstore` | Local keystore management client: daemon-owned backup, restore, template, key type, changepass, and initialize over IPC, policy integrity check/verify/sign, public endpoint export, public attestor reference import/export/list, plus local `verify` and `rebuild` rescue flows |
+| `apstore` | Local keystore management client: local `initialize`, policy integrity check/verify/sign, public endpoint export, public attestor reference import/export/list, local `verify`, and local `rebuild` rescue flows; daemon-owned backup, restore, template, key type, and changepass operations use the admin protocol |
 | `appolicy` | Offline policy checker/editor TUI that auto-targets `policy.yaml` on signer nodes and `attestation.yaml` on attestor nodes, plus scriptable save/check/export and signing-to-attestation conversion while holding the store mutation lock |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, apclient default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
@@ -151,8 +151,8 @@ Documentation notes:
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/engine`, `internal/clientstate`, `internal/engine/connect`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/bootstrap/signer`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/policy`, `internal/approvalpolicy` |
-| Provider | `internal/signing`, `lsig/`, `internal/attestor`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealsubst`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/approvalpolicy` |
+| Provider | `internal/signing`, `lsig/`, `internal/attestor`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealsubst`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/storemut`, `internal/storeinit`, `internal/storepass`, `internal/clientdata`, `internal/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/integration`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
@@ -1044,7 +1044,9 @@ structurally separated.
 
 The root role gates key generation, mnemonic import, restore, key scan, and
 HTTP signing dispatch. A role-conflicting key in the inventory fails closed for
-the node rather than being silently skipped. The exact node-role contract and
+the node rather than being silently skipped. `internal/noderole` owns
+`node.yaml` parsing and identity-bound integrity sidecars; `internal/keyclass`
+owns role-versus-key-type classification. The exact node-role contract and
 on-disk integrity checks live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 ### Key Types
@@ -1518,6 +1520,7 @@ Product-level boundaries:
 | LocalNet Setup | `cmd/aplocalnet/main.go`, `internal/aplocalnet/setup.go`, `plugins/algokit-localnet/algokit-localnet.go`, `plugins/algokit-localnet/manifest.json` |
 | Policy | `internal/policy/config.go`, `internal/policy/store.go`, `internal/policy/integrity.go`, `internal/crypto/policy_integrity.go`, `internal/signerapp/policyruntime/policy.go`, `internal/policy/lint.go`, `internal/policy/review.go`, `internal/signerapp/signing/always_review.go`, `internal/signerapp/signing/service.go`, `internal/signerapp/admin/service.go`, `cmd/apstore/policy.go`, `internal/templatepolicy/outcome.go` |
 | Keystore | `internal/keystore/file.go`, `internal/keystore/session.go` |
+| Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/keyclass/keyclass.go`, `internal/attestor/keytypes/keytypes.go` |
 | Store Init/Passphrase | `internal/storeinit/initialize.go`, `internal/storepass/rotate.go`, `cmd/apstore/main.go`, `cmd/apsigner/admin_services.go` |
 | Client Data | `internal/clientdata/lock.go`, `internal/clientstate/state.go`, `internal/refname/refname.go` |
 | Identity | `internal/signerapp/identity/runtime.go`, `internal/signerapp/identity/config.go` |
@@ -1533,9 +1536,9 @@ signing-metadata validation, compiled-provider activation, and per-key rollback
 if the final key-file write fails. Managed backup archives also carry a verified
 policy snapshot under `policy/`, but restore paths do not install that snapshot
 as active policy. `cmd/apsigner` owns the live daemon restore path for both
-`apadmin` and local-IPC `apstore` restore commands. `cmd/apstore` retains only
-the local `backup import` admission check, `verify` inspection command, policy
-integrity check/sign/verify commands, and `rebuild` replacement-keystore rescue
-path. The wire and on-disk compatibility rules remain in
+`apadmin` and local-IPC `apstore` restore commands. `cmd/apstore` retains the
+local `initialize` path, local `backup import` admission check, `verify`
+inspection command, policy integrity check/sign/verify commands, and `rebuild`
+replacement-keystore rescue path. The wire and on-disk compatibility rules remain in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md); the key/keytype lifecycle state model
 is in [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).

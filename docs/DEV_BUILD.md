@@ -28,7 +28,7 @@ aplane/
 │   ├── apadmin/             # Admin TUI
 │   ├── apconsole/            # Secure-machine unified console
 │   ├── apapprover/           # Approval-only CLI
-│   ├── apstore/              # Keystore management, IPC-admin flows, verify/rebuild rescue
+│   ├── apstore/              # Keystore management, local flows, IPC-admin flows
 │   ├── appolicy/             # Offline policy checker/editor TUI
 │   ├── appass/               # Passphrase auto-unlock TUI
 │   ├── aplocalnet/           # LocalNet setup TUI/CLI
@@ -308,7 +308,7 @@ export APSIGNER_DATA=~/aplane/apsigner
 bin/apapprover
 ```
 
-### apstore (Local IPC Keystore and Backup Management)
+### apstore (Local And IPC Keystore Management)
 
 ```bash
 # Set data directory
@@ -463,7 +463,7 @@ workflows and do not need this capability.
 - **apadmin** provides TUI admin, approval, key, and KeyType Library workflows
 - **apconsole** composes shell, signer-admin, and daemon panes on the secure signer machine
 - **apapprover** handles approval-only workflows over local IPC
-- **apstore** requests signer-owned backup, restore, passphrase, key type, and template mutations over local IPC; local operation is limited to backup import admission checks, backup verification, and rebuild rescue
+- **apstore** performs local initialize, policy integrity, endpoint export, public attestor reference, backup import admission, verification, and rebuild rescue flows; signer-owned backup, restore, passphrase, key type, and template mutations use the local admin protocol
 - **appolicy** verifies and edits the node-role policy document offline, can
   convert deterministic signing policy into `attestation.yaml`, and can
   save/sign either policy document while holding the store mutation lock

@@ -331,12 +331,12 @@ and `/keytypes` generation metadata still uses `runtime_args`.
 Key type discovery is assembled from three sources:
 
 1. default-enabled compiled providers,
-2. library-visible compiled providers activated by identity state records,
+2. library-visible compiled providers enabled by identity state records,
 3. installed YAML templates that are enabled for the identity.
 
 Only `ed25519` and `aplane.falcon1024.v1` are available by default. Optional
 compiled providers and YAML templates become available only after identity-local
-activation, installation, or enablement.
+enablement or installation.
 
 Identity key type records are plaintext because they are not key material:
 
@@ -353,7 +353,7 @@ Identity key type records are plaintext because they are not key material:
 Installed templates are encrypted adjacent `.template` files under the same
 `keytypes/` directory. Library templates under `library/templates/` are
 plaintext install sources only; they are not active key types until installed
-or activated for an identity.
+or enabled for an identity.
 
 ### Policy
 

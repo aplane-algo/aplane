@@ -35,13 +35,14 @@ Key management is handled by **apadmin** and **apstore**, not directly by apsign
 │    • Managed backup/restore                                 │
 │                                                             │
 │  apstore           ─────────►  Signer Server                │
-│    • Initialize keystore           (local IPC only)         │
 │    • Create/import/list/export/delete managed backups       │
 │    • Preview/apply managed restores                         │
 │    • Change passphrase                                      │
-│    • Manage templates and key-type activation               │
+│    • Manage templates and key-type enablement               │
 │                                                             │
-│  apstore rescue    ─────────►  File System                  │
+│  apstore local     ─────────►  File System                  │
+│    • Initialize keystore                                    │
+│    • Check/sign/verify policy sidecars                      │
 │    • Verify backup archives                                 │
 │    • Rebuild an absent keystore from a backup archive       │
 │                                                             │
@@ -98,9 +99,12 @@ Mnemonic export is disabled. Use encrypted backup archives for recovery.
 ## Managed Backup with apstore
 
 For backing up encrypted key files directly, use the `apstore` CLI tool on the
-signer host. Normal `apstore` operations are local IPC requests to the running
-signer daemon; they are not SSH admin operations and they do not mutate the
-keystore behind the daemon's back.
+signer host. Managed backup, restore, template, key type, and passphrase
+operations use the local admin protocol to the running signer daemon; they are
+not SSH admin operations and they do not mutate the keystore behind the
+daemon's back. Local offline `apstore` operations, such as initialize, policy
+sidecar checks/signing, verify, and rebuild, take the store lock before
+touching files.
 
 ### Create Backups
 
@@ -358,7 +362,7 @@ The restore process:
 4. The daemon decrypts each key using the export passphrase.
 5. It checks any template-backed `key_type` against the local definition before trusting the bundled copy.
 6. It re-encrypts keys with the live identity store master key.
-7. It installs or re-enables required templates or compiled-provider activation needed by the restored key type.
+7. It installs or re-enables required templates or compiled-provider enablement needed by the restored key type.
 8. It reloads the identity runtime after successful restore changes.
 
 Use `--address ADDRESS` one or more times with `restore apply` to restore a
@@ -600,7 +604,7 @@ From the key details view:
 ```
 
 For the operator-facing key type availability model and the distinction between
-compiled-provider activation and YAML-template import/enable, see
+compiled-provider enablement and YAML-template import/enable, see
 `docs/USER_KEYTYPES.md`.
 
 ---
