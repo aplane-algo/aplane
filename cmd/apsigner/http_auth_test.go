@@ -154,7 +154,7 @@ func TestRequireAuthForbidden(t *testing.T) {
 	}
 }
 
-func TestHTTPRouteAdminAttestorSyncUsesDedicatedAction(t *testing.T) {
+func TestHTTPRouteAdminSentrySyncUsesDedicatedAction(t *testing.T) {
 	server, cleanup := newAuthTestSigner(t)
 	defer cleanup()
 

@@ -71,12 +71,12 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 }
 
 func guardedAccountParameters(parameters map[string]string) map[string]string {
-	attestorPublicKey := parameters[keytypes.ParameterSentryPublicKey]
-	if attestorPublicKey == "" {
+	sentryPublicKey := parameters[keytypes.ParameterSentryPublicKey]
+	if sentryPublicKey == "" {
 		return nil
 	}
 	return map[string]string{
-		keytypes.ParameterSentryPublicKey: attestorPublicKey,
+		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 	}
 }
 
@@ -145,7 +145,7 @@ func (s Service) BuildKeyTypesForIdentity(ir *identity.Runtime) ([]signerapi.Key
 		return nil, err
 	}
 	infos := s.buildKeyTypes(validTypes, enabled)
-	applyAttestorReferenceParams(ir, infos)
+	applySentryReferenceParams(ir, infos)
 	return infos, nil
 }
 
@@ -170,7 +170,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		}
 
 		if keytypes.IsSentryComponentKeyType(keyType) {
-			info.Family, info.DisplayName, info.Description = attestorComponentKeyTypeMetadata(keyType)
+			info.Family, info.DisplayName, info.Description = sentryComponentKeyTypeMetadata(keyType)
 			keyTypes = append(keyTypes, info)
 			continue
 		}
@@ -284,7 +284,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 	return keyTypes
 }
 
-func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeInfo) {
+func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeInfo) {
 	if ir == nil {
 		return
 	}
@@ -324,7 +324,7 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 	}
 }
 
-func attestorComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
+func sentryComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
 	switch keyType {
 	case keytypes.SentryComponentEd25519V1:
 		return "sentry-ed25519", "Sentry Ed25519 component key", "Raw Ed25519 sentry component signing key"

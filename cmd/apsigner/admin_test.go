@@ -500,7 +500,7 @@ func TestAdminGenerateTimelockV1(t *testing.T) {
 	}
 }
 
-func TestAdminSyncAttestorsNotifiesAdminKeyTypesChanged(t *testing.T) {
+func TestAdminSyncSentriesNotifiesAdminKeyTypesChanged(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 	hub := &recordingAdminHub{}

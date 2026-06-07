@@ -575,13 +575,13 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 }
 
 func TestGuardedAccountParametersProjection(t *testing.T) {
-	const attestorPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
+	const sentryPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
 
 	got := guardedAccountParameters(map[string]string{
-		keytypes.ParameterSentryPublicKey: attestorPublicKey,
+		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 		"unrelated":                       "not-projected",
 	})
-	if got[keytypes.ParameterSentryPublicKey] != attestorPublicKey {
+	if got[keytypes.ParameterSentryPublicKey] != sentryPublicKey {
 		t.Fatalf("guardedAccountParameters() = %#v, want sentry public key", got)
 	}
 	if _, ok := got["unrelated"]; ok {
@@ -590,9 +590,9 @@ func TestGuardedAccountParametersProjection(t *testing.T) {
 
 	got[keytypes.ParameterSentryPublicKey] = "mutated"
 	again := guardedAccountParameters(map[string]string{
-		keytypes.ParameterSentryPublicKey: attestorPublicKey,
+		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 	})
-	if again[keytypes.ParameterSentryPublicKey] != attestorPublicKey {
+	if again[keytypes.ParameterSentryPublicKey] != sentryPublicKey {
 		t.Fatalf("guardedAccountParameters() reused mutable map: %#v", again)
 	}
 
@@ -680,7 +680,7 @@ func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 	}
 }
 
-func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
+func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	ir := setupIdentityRuntime(t, false)
 	publicKey := strings.Repeat("ab", 32)
 	publicKeyBytes, err := hex.DecodeString(publicKey)
@@ -1231,21 +1231,21 @@ func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 		t.Fatalf("SignComponent(sentry role in signer node) error = %#v, want forbidden node role error", err)
 	}
 
-	attestorOnly := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
-	if _, err := (Service{}).SignGroup(context.Background(), attestorOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account signing") {
+	sentryOnly := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
+	if _, err := (Service{}).SignGroup(context.Background(), sentryOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account signing") {
 		t.Fatalf("SignGroup(sentry node) error = %#v, want forbidden node role error", err)
 	}
-	if _, err := (Service{}).Plan(attestorOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "planning") {
+	if _, err := (Service{}).Plan(sentryOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "planning") {
 		t.Fatalf("Plan(sentry node) error = %#v, want forbidden node role error", err)
 	}
-	if _, err := (Service{}).Simulate(context.Background(), attestorOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "simulation") {
+	if _, err := (Service{}).Simulate(context.Background(), sentryOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "simulation") {
 		t.Fatalf("Simulate(sentry node) error = %#v, want forbidden node role error", err)
 	}
 	userReq := signerapi.ComponentSignRequest{Role: signerapi.ComponentSignRoleUser}
-	if _, err := (Service{}).SignComponent(context.Background(), attestorOnly, userReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "user component signing") {
+	if _, err := (Service{}).SignComponent(context.Background(), sentryOnly, userReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "user component signing") {
 		t.Fatalf("SignComponent(user role in sentry node) error = %#v, want forbidden node role error", err)
 	}
-	if _, err := (Service{}).AssembleGuarded(context.Background(), attestorOnly, signerapi.GuardedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "guarded assembly") {
+	if _, err := (Service{}).AssembleGuarded(context.Background(), sentryOnly, signerapi.GuardedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "guarded assembly") {
 		t.Fatalf("AssembleGuarded(sentry node) error = %#v, want forbidden node role error", err)
 	}
 

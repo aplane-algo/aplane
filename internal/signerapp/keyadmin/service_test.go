@@ -191,7 +191,7 @@ func TestServiceGenerateKeyEd25519(t *testing.T) {
 	}
 }
 
-func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
+func TestServiceGenerateKeySentryComponent(t *testing.T) {
 	for _, keyType := range []string{
 		keytypes.SentryComponentEd25519V1,
 		keytypes.SentryComponentFalcon1024V1,
@@ -240,7 +240,7 @@ func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
 	}
 }
 
-func TestKeyDetailsParametersProjectsAttestedAttestorSelector(t *testing.T) {
+func TestKeyDetailsParametersProjectsGuardedSentrySelector(t *testing.T) {
 	publicKey := bytes.Repeat([]byte{0xab}, 32)
 	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
@@ -252,8 +252,8 @@ func TestKeyDetailsParametersProjectsAttestedAttestorSelector(t *testing.T) {
 		"other":                           "kept",
 	})
 
-	if got[keyDetailsAttestorLabel] != componentKey {
-		t.Fatalf("Sentry = %q, want %q", got[keyDetailsAttestorLabel], componentKey)
+	if got[keyDetailsSentryLabel] != componentKey {
+		t.Fatalf("Sentry = %q, want %q", got[keyDetailsSentryLabel], componentKey)
 	}
 	if _, ok := got[keytypes.ParameterSentryPublicKey]; ok {
 		t.Fatalf("projected parameters exposed raw sentry public key: %#v", got)
@@ -278,10 +278,10 @@ func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	ir = setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
 	result, err = svc.GenerateKey(context.Background(), ir, "ed25519", nil, nil)
 	if result != nil {
-		t.Fatalf("GenerateKey(ed25519 in attestor node) result = %#v, want nil", result)
+		t.Fatalf("GenerateKey(ed25519 in sentry node) result = %#v, want nil", result)
 	}
 	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `node role "sentry"`) {
-		t.Fatalf("GenerateKey(ed25519 in attestor node) error = %#v, want node role invalid input", err)
+		t.Fatalf("GenerateKey(ed25519 in sentry node) error = %#v, want node role invalid input", err)
 	}
 }
 
@@ -500,7 +500,7 @@ func TestServiceDeleteKeyRemovesKeyAndAudits(t *testing.T) {
 	}
 }
 
-func TestServiceDeleteKeyRemovesAttestorComponentKey(t *testing.T) {
+func TestServiceDeleteKeyRemovesSentryComponentKey(t *testing.T) {
 	ir := setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
 	svc := Service{}
 
