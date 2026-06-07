@@ -14,6 +14,7 @@ import (
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
@@ -87,6 +88,22 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	}
 	if _, err := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), address)); err != nil {
 		t.Fatalf("rebuilt key file missing: %v", err)
+	}
+	meta, err := apcrypto.LoadKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()))
+	if err != nil {
+		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+	}
+	masterKey, err := meta.VerifyAndDeriveMasterKey([]byte("new-store-passphrase"))
+	if err != nil {
+		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+	}
+	defer apcrypto.ZeroBytes(masterKey)
+	role, err := noderole.LoadAndVerifyWithMasterKey(keystorePaths(), productIdentityID(), masterKey)
+	if err != nil {
+		t.Fatalf("LoadAndVerifyWithMasterKey() error = %v", err)
+	}
+	if role.Role != noderole.RoleSigner {
+		t.Fatalf("rebuilt node role = %q, want signer", role.Role)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -35,6 +36,9 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	}
 	if err := os.WriteFile(paths.KeyFilePath(identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
+	}
+	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
+		t.Fatalf("SaveInitial(node role) error = %v", err)
 	}
 	if err := policy.SaveStoredConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, testExportMasterKey, timeForBackupTest()); err != nil {
 		t.Fatalf("SaveStoredConfigWithMasterKey() error = %v", err)
@@ -70,6 +74,16 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	}
 	if _, err := os.Stat(filepath.Join(extractDir, "policy", "attestation.yaml.hmac")); err != nil {
 		t.Fatalf("extracted attestation.yaml.hmac stat error = %v", err)
+	}
+	manifest, ok, err := ReadManifest(extractDir)
+	if err != nil {
+		t.Fatalf("ReadManifest() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("backup manifest missing")
+	}
+	if manifest.SourceNodeRole != string(noderole.RoleSigner) {
+		t.Fatalf("manifest source node role = %q, want signer", manifest.SourceNodeRole)
 	}
 }
 

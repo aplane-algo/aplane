@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 )
 
 func cmdRebuild(args []string) error {
@@ -70,6 +72,10 @@ func cmdRebuildFromBackup(source string, addresses []string) error {
 	if err := verifyRebuildSource(sourceRoot, exportPassphrase); err != nil {
 		return err
 	}
+	nodeRole, err := backup.SourceNodeRoleOrDefault(sourceRoot)
+	if err != nil {
+		return err
+	}
 
 	fmt.Print("Enter new store passphrase: ")
 	storePassphrase, err := readPassword()
@@ -97,7 +103,10 @@ func cmdRebuildFromBackup(source string, addresses []string) error {
 	}
 	defer crypto.ZeroBytes(masterKey)
 
-	if err := rebuildRestoreKeys(sourceRoot, addresses, masterKey, exportPassphrase); err != nil {
+	if err := initializeRebuildNodeRole(nodeRole, masterKey); err != nil {
+		return err
+	}
+	if err := rebuildRestoreKeys(sourceRoot, addresses, nodeRole, masterKey, exportPassphrase); err != nil {
 		return err
 	}
 	logInfof("rebuild complete: %s", identityDir)
@@ -115,7 +124,18 @@ func verifyRebuildSource(sourceRoot string, exportPassphrase []byte) error {
 	return nil
 }
 
-func rebuildRestoreKeys(sourceRoot string, addresses []string, masterKey, exportPassphrase []byte) error {
+func initializeRebuildNodeRole(role noderole.Role, masterKey []byte) error {
+	roleBytes, _, err := noderole.SaveInitial(keystorePaths(), role, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to create node role: %w", err)
+	}
+	if err := noderole.SaveIdentitySidecarWithMasterKey(keystorePaths(), productIdentityID(), roleBytes, masterKey, time.Now()); err != nil {
+		return fmt.Errorf("failed to create node role integrity sidecar: %w", err)
+	}
+	return nil
+}
+
+func rebuildRestoreKeys(sourceRoot string, addresses []string, role noderole.Role, masterKey, exportPassphrase []byte) error {
 	keysDir := resolveBackupKeysDir(sourceRoot)
 	if len(addresses) == 0 {
 		var err error
@@ -130,7 +150,10 @@ func rebuildRestoreKeys(sourceRoot string, addresses []string, masterKey, export
 
 	restored := 0
 	for _, address := range addresses {
-		keyType, err := restoreKey(keysDir, address, masterKey, exportPassphrase)
+		keyType, err := backup.NewRestorer(keystorePaths(), productIdentityID()).
+			WithNodeRole(role).
+			WithLogger(logInfof).
+			RestoreKey(keysDir, address, masterKey, exportPassphrase)
 		if err != nil {
 			return fmt.Errorf("failed to rebuild %s: %w", address, err)
 		}

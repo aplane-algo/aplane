@@ -10,8 +10,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -83,6 +85,13 @@ func CreateKeysArchive(paths storepaths.Paths, identityID, archivePath string, a
 		return nil, err
 	}
 	if err := copyPolicyFilesToArchive(paths, identityID, stageDir, masterKey); err != nil {
+		return nil, err
+	}
+	nodeRole, _, err := noderole.Load(paths)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load source node role: %w", err)
+	}
+	if err := WriteManifest(stageDir, nodeRole.Role, time.Now()); err != nil {
 		return nil, err
 	}
 	if err := CreateTarGzArchive(stageDir, archivePath); err != nil {
