@@ -10,7 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
-	attestorverify "github.com/aplane-algo/aplane/internal/sentry/verify"
+	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -125,7 +125,7 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 		if session == nil {
 			return nil, internal("key session is nil")
 		}
-		result, signErr := signPreparedAttestorComponents(ctx, plan, session)
+		result, signErr := signPreparedSentryComponents(ctx, plan, session)
 		if signErr != nil {
 			return nil, signErr
 		}
@@ -147,7 +147,7 @@ func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID str
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
-	group, decodeErr := attestorverify.DecodeCanonicalGroupHex(req.GroupBytesHex)
+	group, decodeErr := sentryverify.DecodeCanonicalGroupHex(req.GroupBytesHex)
 	if decodeErr != nil {
 		return nil, badRequest(decodeErr.Error())
 	}

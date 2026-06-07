@@ -26,10 +26,10 @@ type componentKeyGetter interface {
 	GetKeyWithContext(context.Context, string) (*coresigning.KeyMaterial, error)
 }
 
-// signPreparedAttestorComponents is the narrow private-key operation for
+// signPreparedSentryComponents is the narrow private-key operation for
 // sentry-role component signatures. Callers must run deterministic
 // sentry policy before invoking it.
-func signPreparedAttestorComponents(ctx context.Context, plan *ComponentSignPlan, session componentKeyGetter) (*ComponentSignResult, *ServiceError) {
+func signPreparedSentryComponents(ctx context.Context, plan *ComponentSignPlan, session componentKeyGetter) (*ComponentSignResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -40,7 +40,7 @@ func signPreparedAttestorComponents(ctx context.Context, plan *ComponentSignPlan
 		return nil, internal("component sign plan is nil")
 	}
 	if plan.MessageRole != message.RoleSentry {
-		return nil, badRequest("sentry component signing requires attestor role")
+		return nil, badRequest("sentry component signing requires sentry role")
 	}
 	if plan.ComponentKey == "" {
 		return nil, badRequest("component_key is required for sentry component signing")
@@ -49,7 +49,7 @@ func signPreparedAttestorComponents(ctx context.Context, plan *ComponentSignPlan
 		return nil, internal("key session is nil")
 	}
 
-	keyMaterial, componentKey, err := loadAttestorComponentKey(ctx, session, plan.ComponentKey)
+	keyMaterial, componentKey, err := loadSentryComponentKey(ctx, session, plan.ComponentKey)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func signPreparedAttestorComponents(ctx context.Context, plan *ComponentSignPlan
 
 	signatures := make([]signerapi.ComponentSignature, len(plan.Targets))
 	for i, target := range plan.Targets {
-		signature, signErr := signAttestorComponentMessage(keyMaterial.Type, componentKey.PrivateKey, target.Message[:])
+		signature, signErr := signSentryComponentMessage(keyMaterial.Type, componentKey.PrivateKey, target.Message[:])
 		if signErr != nil {
 			return nil, signErr
 		}
@@ -179,7 +179,7 @@ func loadGuardedAccountKeyMaterial(ctx context.Context, session componentKeyGett
 	return keyMaterial, nil
 }
 
-func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, componentKeySelector string) (*coresigning.KeyMaterial, *coresigning.ComponentKeyMaterial, *ServiceError) {
+func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, componentKeySelector string) (*coresigning.KeyMaterial, *coresigning.ComponentKeyMaterial, *ServiceError) {
 	componentKeySelector, normalizeErr := keytypes.NormalizeComponentKeySelector(componentKeySelector)
 	if normalizeErr != nil {
 		return nil, nil, badRequest(normalizeErr.Error())
@@ -227,14 +227,14 @@ func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, c
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, internal(fmt.Sprintf("loaded sentry component key has public key length %d", len(componentKey.PublicKey)))
 	}
-	if err := validateLoadedAttestorComponentPair(keyMaterial.Type, componentKey.PublicKey, componentKey.PrivateKey); err != nil {
+	if err := validateLoadedSentryComponentPair(keyMaterial.Type, componentKey.PublicKey, componentKey.PrivateKey); err != nil {
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, internal(err.Error())
 	}
 	return keyMaterial, componentKey, nil
 }
 
-func signAttestorComponentMessage(keyType string, privateKey, msg []byte) ([]byte, *ServiceError) {
+func signSentryComponentMessage(keyType string, privateKey, msg []byte) ([]byte, *ServiceError) {
 	switch keyType {
 	case keytypes.SentryComponentEd25519V1:
 		if len(privateKey) != ed25519.PrivateKeySize {
@@ -252,7 +252,7 @@ func signAttestorComponentMessage(keyType string, privateKey, msg []byte) ([]byt
 	}
 }
 
-func validateLoadedAttestorComponentPair(keyType string, publicKey, privateKey []byte) error {
+func validateLoadedSentryComponentPair(keyType string, publicKey, privateKey []byte) error {
 	switch keyType {
 	case keytypes.SentryComponentEd25519V1:
 		derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)

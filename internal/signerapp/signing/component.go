@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"github.com/aplane-algo/aplane/internal/sentry/message"
-	attestorverify "github.com/aplane-algo/aplane/internal/sentry/verify"
+	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -17,7 +17,7 @@ type ComponentSignPlan struct {
 	Role         signerapi.ComponentSignRole
 	MessageRole  message.Role
 	ComponentKey string
-	Group        *attestorverify.CanonicalGroup
+	Group        *sentryverify.CanonicalGroup
 	Targets      []ComponentSignTarget
 }
 
@@ -38,7 +38,7 @@ func PrepareComponentSigning(req signerapi.ComponentSignRequest) (*ComponentSign
 		return nil, badRequest(err.Error())
 	}
 
-	group, decodeErr := attestorverify.DecodeCanonicalGroupHex(req.GroupBytesHex)
+	group, decodeErr := sentryverify.DecodeCanonicalGroupHex(req.GroupBytesHex)
 	if decodeErr != nil {
 		return nil, badRequest(decodeErr.Error())
 	}

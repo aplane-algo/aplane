@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
-	attestorverify "github.com/aplane-algo/aplane/internal/sentry/verify"
+	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024attested "github.com/aplane-algo/aplane/lsig/falcon1024_attested"
@@ -24,7 +24,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRequest, group *attestorverify.CanonicalGroup, session componentKeyGetter) (*GuardedAssemblyResult, *ServiceError) {
+func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRequest, group *sentryverify.CanonicalGroup, session componentKeyGetter) (*GuardedAssemblyResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -67,7 +67,7 @@ func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRe
 	}, nil
 }
 
-func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssemblyTarget, entry attestorverify.CanonicalTxn, session componentKeyGetter) (string, *ServiceError) {
+func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssemblyTarget, entry sentryverify.CanonicalTxn, session componentKeyGetter) (string, *ServiceError) {
 	if entry.Txn.Sender.String() != target.GuardedAccount {
 		return "", badRequest(fmt.Sprintf(
 			"target index %d sender %q does not match guarded_account %q",
@@ -92,11 +92,11 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 	if len(keyMaterial.PublicKey) != family.PublicKeySize {
 		return "", internal(fmt.Sprintf("loaded guarded account key has public key length %d", len(keyMaterial.PublicKey)))
 	}
-	attestorComponentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyMaterial.Type)
+	sentryComponentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyMaterial.Type)
 	if !ok {
 		return "", internal(fmt.Sprintf("loaded guarded account key type %s has no sentry component key type", keyMaterial.Type))
 	}
-	attestorPublicKey, err := guardedAccountAttestorPublicKey(keyMaterial.Parameters, attestorComponentKeyType)
+	sentryPublicKey, err := guardedAccountSentryPublicKey(keyMaterial.Parameters, sentryComponentKeyType)
 	if err != nil {
 		return "", err
 	}
@@ -106,22 +106,22 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 		return "", err
 	}
 	defer crypto.ZeroBytes(userSignature)
-	attestorSignature, err := decodeAssemblySignatureHex(target.SentrySignature, "sentry_signature")
+	sentrySignature, err := decodeAssemblySignatureHex(target.SentrySignature, "sentry_signature")
 	if err != nil {
 		return "", err
 	}
-	defer crypto.ZeroBytes(attestorSignature)
+	defer crypto.ZeroBytes(sentrySignature)
 
 	userMessage := message.ComponentMessage(message.RoleUser, entry.TxID)
-	if verifyErr := attestorverify.VerifyFalcon1024(keyMaterial.PublicKey, userMessage[:], userSignature); verifyErr != nil {
+	if verifyErr := sentryverify.VerifyFalcon1024(keyMaterial.PublicKey, userMessage[:], userSignature); verifyErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d user_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
-	attestorMessage := message.ComponentMessage(message.RoleSentry, entry.TxID)
-	if verifyErr := verifyAttestorAssemblySignature(attestorComponentKeyType, attestorPublicKey, attestorMessage[:], attestorSignature); verifyErr != nil {
+	sentryMessage := message.ComponentMessage(message.RoleSentry, entry.TxID)
+	if verifyErr := verifySentryAssemblySignature(sentryComponentKeyType, sentryPublicKey, sentryMessage[:], sentrySignature); verifyErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d sentry_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
 
-	packedSignature, packErr := falcon1024attested.PackComponentSignaturesForKeyType(keyMaterial.Type, userSignature, attestorSignature)
+	packedSignature, packErr := falcon1024attested.PackComponentSignaturesForKeyType(keyMaterial.Type, userSignature, sentrySignature)
 	if packErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d signatures invalid: %v", target.TargetIndex, packErr))
 	}
@@ -164,7 +164,7 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 	return hex.EncodeToString(signedTxnBytes), nil
 }
 
-func validateGuardedPassthrough(passthrough signerapi.GuardedPassthroughItem, entry attestorverify.CanonicalTxn) (string, *ServiceError) {
+func validateGuardedPassthrough(passthrough signerapi.GuardedPassthroughItem, entry sentryverify.CanonicalTxn) (string, *ServiceError) {
 	signedTxnBytes, err := decodeAssemblySignatureHex(passthrough.SignedTxnHex, "signed_txn_hex")
 	if err != nil {
 		return "", err
@@ -181,18 +181,18 @@ func validateGuardedPassthrough(passthrough signerapi.GuardedPassthroughItem, en
 	return hex.EncodeToString(signedTxnBytes), nil
 }
 
-func verifyAttestorAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {
+func verifySentryAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {
 	switch componentKeyType {
 	case keytypes.SentryComponentEd25519V1:
-		return attestorverify.VerifyEd25519(publicKey, msg, signature)
+		return sentryverify.VerifyEd25519(publicKey, msg, signature)
 	case keytypes.SentryComponentFalcon1024V1:
-		return attestorverify.VerifyFalcon1024(publicKey, msg, signature)
+		return sentryverify.VerifyFalcon1024(publicKey, msg, signature)
 	default:
 		return fmt.Errorf("key type %q is not a sentry component key type", componentKeyType)
 	}
 }
 
-func guardedAccountAttestorPublicKey(parameters map[string]string, componentKeyType string) ([]byte, *ServiceError) {
+func guardedAccountSentryPublicKey(parameters map[string]string, componentKeyType string) ([]byte, *ServiceError) {
 	if parameters == nil {
 		return nil, internal("loaded guarded account key is missing creation parameters")
 	}

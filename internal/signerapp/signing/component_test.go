@@ -98,7 +98,7 @@ func TestPrepareComponentSigningGeneratesRequestIDWhenMissing(t *testing.T) {
 	}
 }
 
-func TestPrepareComponentSigningUsesAttestorRoleDomain(t *testing.T) {
+func TestPrepareComponentSigningUsesSentryRoleDomain(t *testing.T) {
 	sender := types.Address{3}.String()
 	receiver := types.Address{4}.String()
 	txn := paymentTransaction(t, sender, receiver, 7)
@@ -115,7 +115,7 @@ func TestPrepareComponentSigningUsesAttestorRoleDomain(t *testing.T) {
 		t.Fatalf("PrepareComponentSigning() error = %v", err)
 	}
 	if plan.MessageRole != message.RoleSentry {
-		t.Fatalf("MessageRole = %v, want attestor", plan.MessageRole)
+		t.Fatalf("MessageRole = %v, want sentry", plan.MessageRole)
 	}
 	userMsg := message.ComponentMessage(message.RoleUser, plan.Group.Entries[0].TxID)
 	if bytes.Equal(plan.Targets[0].Message[:], userMsg[:]) {
@@ -198,13 +198,13 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	}
 }
 
-func TestSignComponentAttestorRequiresPolicyBeforeKeyLoad(t *testing.T) {
+func TestSignComponentSentryRequiresPolicyBeforeKeyLoad(t *testing.T) {
 	componentKey := testEd25519ComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
 	store := &componentKeyStore{}
 
 	_, err := (&Service{}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor-no-policy",
+		RequestID:     "cmp-sentry-no-policy",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -221,14 +221,14 @@ func TestSignComponentAttestorRequiresPolicyBeforeKeyLoad(t *testing.T) {
 	}
 }
 
-func TestSignComponentAttestorRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
+func TestSignComponentSentryRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
 	cfg := sentryPolicyConfigForSigningTest(t, `{}`)
 	componentKey := testEd25519ComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
 	store := &componentKeyStore{}
 
 	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor-no-routing",
+		RequestID:     "cmp-sentry-no-routing",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -245,7 +245,7 @@ func TestSignComponentAttestorRequiresTransferPolicyBeforeKeyLoad(t *testing.T) 
 	}
 }
 
-func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
+func TestSignComponentSentryRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	source := types.Address{24}
 	cfg := wildcardSentryPolicy(t)
 	txn := types.Transaction{
@@ -261,7 +261,7 @@ func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	store := &componentKeyStore{}
 
 	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor-appl",
+		RequestID:     "cmp-sentry-appl",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -278,7 +278,7 @@ func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	}
 }
 
-func TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad(t *testing.T) {
+func TestSignComponentSentryRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	source := types.Address{25}.String()
 	allowed := types.Address{26}.String()
 	blocked := types.Address{27}.String()
@@ -287,7 +287,7 @@ func TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	store := &componentKeyStore{}
 
 	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor-route-miss",
+		RequestID:     "cmp-sentry-route-miss",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -304,7 +304,7 @@ func TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	}
 }
 
-func TestAttestorComponentPolicyUsesComponentKeyOverride(t *testing.T) {
+func TestSentryComponentPolicyUsesComponentKeyOverride(t *testing.T) {
 	source := types.Address{25}.String()
 	baseDest := types.Address{26}.String()
 	overrideDest := types.Address{27}.String()
@@ -334,7 +334,7 @@ key_overrides:
 `, source, baseDest, componentKey, source, overrideDest))
 	txn := testnetPaymentTransaction(t, source, overrideDest, 1)
 	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor-key-override",
+		RequestID:     "cmp-sentry-key-override",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -354,7 +354,7 @@ key_overrides:
 	}
 }
 
-func TestSignComponentAttestorRejectsInheritedReviewRouteMissBeforeKeyLoad(t *testing.T) {
+func TestSignComponentSentryRejectsInheritedReviewRouteMissBeforeKeyLoad(t *testing.T) {
 	cfg := sentryPolicyConfigForSigningTest(t, `
 transfer_policy:
   schema_version: 1
@@ -366,7 +366,7 @@ transfer_policy:
 	store := &componentKeyStore{}
 
 	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor-review-route-miss",
+		RequestID:     "cmp-sentry-review-route-miss",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -383,7 +383,7 @@ transfer_policy:
 	}
 }
 
-func TestSignComponentAttestorRejectsInheritedReviewAboveBeforeKeyLoad(t *testing.T) {
+func TestSignComponentSentryRejectsInheritedReviewAboveBeforeKeyLoad(t *testing.T) {
 	source := types.Address{35}.String()
 	dest := types.Address{36}.String()
 	cfg := routingPolicyConfigForSigningTest(t, fmt.Sprintf(`
@@ -404,7 +404,7 @@ transfer_policy:
 	store := &componentKeyStore{}
 
 	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor-review-above",
+		RequestID:     "cmp-sentry-review-above",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -421,7 +421,7 @@ transfer_policy:
 	}
 }
 
-func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
+func TestSignComponentSentryRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	source := types.Address{28}.String()
 	dest := types.Address{29}.String()
 	txn := testnetPaymentTransaction(t, source, dest, 1)
@@ -433,7 +433,7 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 		SentryPolicy: sentryRoutePolicy(t, source, dest),
 		AuditLog:     audit,
 	}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor-rekey",
+		RequestID:     "cmp-sentry-rekey",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -456,7 +456,7 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	}
 }
 
-func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
+func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x61}, stded25519.SeedSize)
 	privateKey := stded25519.NewKeyFromSeed(seed)
 	publicKey := append([]byte(nil), privateKey.Public().(stded25519.PublicKey)...)
@@ -514,7 +514,7 @@ func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
 		t.Fatalf("PrepareComponentSigning() error = %v", prepErr)
 	}
 	if !stded25519.Verify(stded25519.PublicKey(publicKey), plan.Targets[0].Message[:], sigBytes) {
-		t.Fatal("attestor signature does not verify over component message")
+		t.Fatal("sentry signature does not verify over component message")
 	}
 	if len(audit.approved) != 1 || audit.approved[0].authAddress != componentKey {
 		t.Fatalf("approved audit entries = %#v, want one component approval", audit.approved)
@@ -641,10 +641,10 @@ func TestSigningServiceAssembleGuardedDispatchesAfterValidation(t *testing.T) {
 	}
 }
 
-func TestAssembleDecodedAttestedVerifiesAndBuildsSignedGroup(t *testing.T) {
-	attestorSeed := bytes.Repeat([]byte{0x52}, stded25519.SeedSize)
-	attestorPrivateKey := stded25519.NewKeyFromSeed(attestorSeed)
-	attestorPublicKey := append([]byte(nil), attestorPrivateKey.Public().(stded25519.PublicKey)...)
+func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
+	sentrySeed := bytes.Repeat([]byte{0x52}, stded25519.SeedSize)
+	sentryPrivateKey := stded25519.NewKeyFromSeed(sentrySeed)
+	sentryPublicKey := append([]byte(nil), sentryPrivateKey.Public().(stded25519.PublicKey)...)
 
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x53}, 64))
 	if err != nil {
@@ -665,8 +665,8 @@ func TestAssembleDecodedAttestedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
-	attestorMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	attestorSignature := stded25519.Sign(attestorPrivateKey, attestorMsg[:])
+	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
+	sentrySignature := stded25519.Sign(sentryPrivateKey, sentryMsg[:])
 	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txns[1]})
 
 	keyMaterial := &coresigning.KeyMaterial{
@@ -675,7 +675,7 @@ func TestAssembleDecodedAttestedVerifiesAndBuildsSignedGroup(t *testing.T) {
 		BaseKeyType:            falcon1024attested.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(attestorPublicKey)},
+		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
 		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
 	}
@@ -687,7 +687,7 @@ func TestAssembleDecodedAttestedVerifiesAndBuildsSignedGroup(t *testing.T) {
 			TargetIndex:     0,
 			GuardedAccount:  guardedAccount,
 			UserSignature:   hex.EncodeToString(userSignature),
-			SentrySignature: hex.EncodeToString(attestorSignature),
+			SentrySignature: hex.EncodeToString(sentrySignature),
 		}},
 		Passthrough: []signerapi.GuardedPassthroughItem{{
 			TargetIndex:  1,
@@ -731,15 +731,15 @@ func TestAssembleDecodedAttestedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	if !bytes.Equal(signedTarget.Lsig.Args[0], userSignature) {
 		t.Fatalf("LogicSig arg 0 = %x, want user signature %x", signedTarget.Lsig.Args[0], userSignature)
 	}
-	if !bytes.Equal(signedTarget.Lsig.Args[1], attestorSignature) {
-		t.Fatalf("LogicSig arg 1 = %x, want attestor signature %x", signedTarget.Lsig.Args[1], attestorSignature)
+	if !bytes.Equal(signedTarget.Lsig.Args[1], sentrySignature) {
+		t.Fatalf("LogicSig arg 1 = %x, want sentry signature %x", signedTarget.Lsig.Args[1], sentrySignature)
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil || keyMaterial.PublicKey != nil {
 		t.Fatalf("key material was not zeroed after assembly: %#v", keyMaterial)
 	}
 }
 
-func TestAssembleDecodedAttestedGeneratesRequestIDWhenMissing(t *testing.T) {
+func TestAssembleDecodedGuardedGeneratesRequestIDWhenMissing(t *testing.T) {
 	txn := paymentTransaction(t, types.Address{17}.String(), types.Address{18}.String(), 7)
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
 	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
@@ -763,10 +763,10 @@ func TestAssembleDecodedAttestedGeneratesRequestIDWhenMissing(t *testing.T) {
 	}
 }
 
-func TestAssembleDecodedAttestedVerifiesFalconAttestorAndBuildsSignedGroup(t *testing.T) {
-	attestorPublicKey, attestorPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x54}, 64))
+func TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup(t *testing.T) {
+	sentryPublicKey, sentryPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x54}, 64))
 	if err != nil {
-		t.Fatalf("GenerateKeypair(attestor) error = %v", err)
+		t.Fatalf("GenerateKeypair(sentry) error = %v", err)
 	}
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x55}, 64))
 	if err != nil {
@@ -786,10 +786,10 @@ func TestAssembleDecodedAttestedVerifiesFalconAttestorAndBuildsSignedGroup(t *te
 	if err != nil {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
-	attestorMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	attestorSignature, err := signerops.New(nil).Sign(attestorPrivateKey, attestorMsg[:])
+	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
+	sentrySignature, err := signerops.New(nil).Sign(sentryPrivateKey, sentryMsg[:])
 	if err != nil {
-		t.Fatalf("Sign(attestor) error = %v", err)
+		t.Fatalf("Sign(sentry) error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
@@ -798,20 +798,20 @@ func TestAssembleDecodedAttestedVerifiesFalconAttestorAndBuildsSignedGroup(t *te
 		BaseKeyType:            falcon1024attested.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(attestorPublicKey)},
+		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
 		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
 
 	result, signErr := assembleDecodedGuarded(context.Background(), signerapi.GuardedAssemblyRequest{
-		RequestID:     "asm-falcon-attestor",
+		RequestID:     "asm-falcon-sentry",
 		GroupBytesHex: groupBytesHex,
 		Targets: []signerapi.GuardedAssemblyTarget{{
 			TargetIndex:     0,
 			GuardedAccount:  guardedAccount,
 			UserSignature:   hex.EncodeToString(userSignature),
-			SentrySignature: hex.EncodeToString(attestorSignature),
+			SentrySignature: hex.EncodeToString(sentrySignature),
 		}},
 	}, group, session)
 	if signErr != nil {
@@ -834,18 +834,18 @@ func TestAssembleDecodedAttestedVerifiesFalconAttestorAndBuildsSignedGroup(t *te
 	if !bytes.Equal(signedTarget.Lsig.Args[0], userSignature) {
 		t.Fatalf("LogicSig arg 0 = %x, want user signature %x", signedTarget.Lsig.Args[0], userSignature)
 	}
-	if !bytes.Equal(signedTarget.Lsig.Args[1], attestorSignature) {
-		t.Fatalf("LogicSig arg 1 = %x, want attestor signature %x", signedTarget.Lsig.Args[1], attestorSignature)
+	if !bytes.Equal(signedTarget.Lsig.Args[1], sentrySignature) {
+		t.Fatalf("LogicSig arg 1 = %x, want sentry signature %x", signedTarget.Lsig.Args[1], sentrySignature)
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil || keyMaterial.PublicKey != nil {
 		t.Fatalf("key material was not zeroed after assembly: %#v", keyMaterial)
 	}
 }
 
-func TestAssembleDecodedAttestedRejectsWrongSentrySignature(t *testing.T) {
-	attestorPrivateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x54}, stded25519.SeedSize))
+func TestAssembleDecodedGuardedRejectsWrongSentrySignature(t *testing.T) {
+	sentryPrivateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x54}, stded25519.SeedSize))
 	wrongPrivateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x55}, stded25519.SeedSize))
-	attestorPublicKey := append([]byte(nil), attestorPrivateKey.Public().(stded25519.PublicKey)...)
+	sentryPublicKey := append([]byte(nil), sentryPrivateKey.Public().(stded25519.PublicKey)...)
 
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x56}, 64))
 	if err != nil {
@@ -865,8 +865,8 @@ func TestAssembleDecodedAttestedRejectsWrongSentrySignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
-	attestorMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	wrongSignature := stded25519.Sign(wrongPrivateKey, attestorMsg[:])
+	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
+	wrongSignature := stded25519.Sign(wrongPrivateKey, sentryMsg[:])
 
 	keyMaterial := &coresigning.KeyMaterial{
 		Type:                   keytypes.GuardedFalcon1024SentryEd25519V1,
@@ -874,14 +874,14 @@ func TestAssembleDecodedAttestedRejectsWrongSentrySignature(t *testing.T) {
 		BaseKeyType:            falcon1024attested.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(attestorPublicKey)},
+		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
 		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
 
 	result, signErr := assembleDecodedGuarded(context.Background(), signerapi.GuardedAssemblyRequest{
-		RequestID:     "asm-bad-attestor",
+		RequestID:     "asm-bad-sentry",
 		GroupBytesHex: groupBytesHex,
 		Targets: []signerapi.GuardedAssemblyTarget{{
 			TargetIndex:     0,
@@ -901,9 +901,9 @@ func TestAssembleDecodedAttestedRejectsWrongSentrySignature(t *testing.T) {
 	}
 }
 
-func TestAssembleDecodedAttestedRejectsWrongUserSignature(t *testing.T) {
-	attestorPrivateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x57}, stded25519.SeedSize))
-	attestorPublicKey := append([]byte(nil), attestorPrivateKey.Public().(stded25519.PublicKey)...)
+func TestAssembleDecodedGuardedRejectsWrongUserSignature(t *testing.T) {
+	sentryPrivateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x57}, stded25519.SeedSize))
+	sentryPublicKey := append([]byte(nil), sentryPrivateKey.Public().(stded25519.PublicKey)...)
 
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x58}, 64))
 	if err != nil {
@@ -927,8 +927,8 @@ func TestAssembleDecodedAttestedRejectsWrongUserSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign(wrong user) error = %v", err)
 	}
-	attestorMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	attestorSignature := stded25519.Sign(attestorPrivateKey, attestorMsg[:])
+	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
+	sentrySignature := stded25519.Sign(sentryPrivateKey, sentryMsg[:])
 
 	keyMaterial := &coresigning.KeyMaterial{
 		Type:                   keytypes.GuardedFalcon1024SentryEd25519V1,
@@ -936,7 +936,7 @@ func TestAssembleDecodedAttestedRejectsWrongUserSignature(t *testing.T) {
 		BaseKeyType:            falcon1024attested.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
-		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(attestorPublicKey)},
+		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
 		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
 	}
@@ -949,7 +949,7 @@ func TestAssembleDecodedAttestedRejectsWrongUserSignature(t *testing.T) {
 			TargetIndex:     0,
 			GuardedAccount:  guardedAccount,
 			UserSignature:   hex.EncodeToString(wrongUserSignature),
-			SentrySignature: hex.EncodeToString(attestorSignature),
+			SentrySignature: hex.EncodeToString(sentrySignature),
 		}},
 	}, group, session)
 	if result != nil {
@@ -963,7 +963,7 @@ func TestAssembleDecodedAttestedRejectsWrongUserSignature(t *testing.T) {
 	}
 }
 
-func TestAssembleDecodedAttestedRejectsMismatchedPassthrough(t *testing.T) {
+func TestAssembleDecodedGuardedRejectsMismatchedPassthrough(t *testing.T) {
 	sender := types.Address{21}.String()
 	txn := paymentTransaction(t, sender, types.Address{22}.String(), 16)
 	wrongTxn := paymentTransaction(t, sender, types.Address{23}.String(), 17)
@@ -993,7 +993,7 @@ func TestAssembleDecodedAttestedRejectsMismatchedPassthrough(t *testing.T) {
 	}
 }
 
-func TestSignPreparedAttestorComponentsSignsEd25519Messages(t *testing.T) {
+func TestSignPreparedSentryComponentsSignsEd25519Messages(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x42}, stded25519.SeedSize)
 	privateKey := stded25519.NewKeyFromSeed(seed)
 	publicKey := append([]byte(nil), privateKey.Public().(stded25519.PublicKey)...)
@@ -1012,11 +1012,11 @@ func TestSignPreparedAttestorComponentsSignsEd25519Messages(t *testing.T) {
 		},
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
-	plan := preparedAttestorComponentPlan(t, componentKey)
+	plan := preparedSentryComponentPlan(t, componentKey)
 
-	result, signErr := signPreparedAttestorComponents(context.Background(), plan, session)
+	result, signErr := signPreparedSentryComponents(context.Background(), plan, session)
 	if signErr != nil {
-		t.Fatalf("signPreparedAttestorComponents() error = %v", signErr)
+		t.Fatalf("signPreparedSentryComponents() error = %v", signErr)
 	}
 	if session.calls != 1 || session.gotAddress != componentKey {
 		t.Fatalf("session calls = %d address %q, want one call for %q", session.calls, session.gotAddress, componentKey)
@@ -1047,7 +1047,7 @@ func TestSignPreparedAttestorComponentsSignsEd25519Messages(t *testing.T) {
 	}
 }
 
-func TestSignPreparedAttestorComponentsSignsFalcon1024Messages(t *testing.T) {
+func TestSignPreparedSentryComponentsSignsFalcon1024Messages(t *testing.T) {
 	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x43}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error = %v", err)
@@ -1070,11 +1070,11 @@ func TestSignPreparedAttestorComponentsSignsFalcon1024Messages(t *testing.T) {
 		},
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
-	plan := preparedAttestorComponentPlan(t, componentKey)
+	plan := preparedSentryComponentPlan(t, componentKey)
 
-	result, signErr := signPreparedAttestorComponents(context.Background(), plan, session)
+	result, signErr := signPreparedSentryComponents(context.Background(), plan, session)
 	if signErr != nil {
-		t.Fatalf("signPreparedAttestorComponents() error = %v", signErr)
+		t.Fatalf("signPreparedSentryComponents() error = %v", signErr)
 	}
 	if session.calls != 1 || session.gotAddress != componentKey {
 		t.Fatalf("session calls = %d address %q, want one call for %q", session.calls, session.gotAddress, componentKey)
@@ -1105,7 +1105,7 @@ func TestSignPreparedAttestorComponentsSignsFalcon1024Messages(t *testing.T) {
 	}
 }
 
-func TestSignPreparedAttestorComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T) {
+func TestSignPreparedSentryComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T) {
 	sender := types.Address{9}.String()
 	receiver := types.Address{10}.String()
 	txn := paymentTransaction(t, sender, receiver, 11)
@@ -1121,25 +1121,25 @@ func TestSignPreparedAttestorComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T
 	}
 	session := &componentKeyTestSession{}
 
-	result, signErr := signPreparedAttestorComponents(context.Background(), plan, session)
+	result, signErr := signPreparedSentryComponents(context.Background(), plan, session)
 	if result != nil {
 		t.Fatalf("result = %#v, want nil", result)
 	}
 	if signErr == nil || signErr.Kind != ErrorBadRequest {
-		t.Fatalf("signPreparedAttestorComponents() error = %#v, want bad request", signErr)
+		t.Fatalf("signPreparedSentryComponents() error = %#v, want bad request", signErr)
 	}
 	if session.calls != 0 {
 		t.Fatalf("session calls = %d, want 0 before role rejection", session.calls)
 	}
 }
 
-func TestSignPreparedAttestorComponentsRejectsWrongKeyType(t *testing.T) {
-	plan := preparedAttestorComponentPlan(t, testEd25519ComponentSelector(t, 0x11))
+func TestSignPreparedSentryComponentsRejectsWrongKeyType(t *testing.T) {
+	plan := preparedSentryComponentPlan(t, testEd25519ComponentSelector(t, 0x11))
 	session := &componentKeyTestSession{key: &coresigning.KeyMaterial{Type: "ed25519"}}
 
-	_, err := signPreparedAttestorComponents(context.Background(), plan, session)
+	_, err := signPreparedSentryComponents(context.Background(), plan, session)
 	if err == nil || err.Kind != ErrorBadRequest {
-		t.Fatalf("signPreparedAttestorComponents() error = %#v, want bad request", err)
+		t.Fatalf("signPreparedSentryComponents() error = %#v, want bad request", err)
 	}
 }
 
@@ -1229,13 +1229,13 @@ func logicSigAddressForTest(t *testing.T, bytecode []byte) string {
 	return address.String()
 }
 
-func preparedAttestorComponentPlan(t *testing.T, componentKey string) *ComponentSignPlan {
+func preparedSentryComponentPlan(t *testing.T, componentKey string) *ComponentSignPlan {
 	t.Helper()
 	sender := types.Address{11}.String()
 	receiver := types.Address{12}.String()
 	txn := paymentTransaction(t, sender, receiver, 12)
 	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
-		RequestID:     "cmp-attestor",
+		RequestID:     "cmp-sentry",
 		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
@@ -1351,15 +1351,15 @@ func (p *componentUserTestProvider) DetectKeyType(_ []byte, _ string) bool {
 	return false
 }
 
-func TestLoadAttestorComponentKeyMapsMissingKey(t *testing.T) {
+func TestLoadSentryComponentKeyMapsMissingKey(t *testing.T) {
 	session := &componentKeyTestSession{err: keystore.ErrKeyNotFound}
-	_, _, err := loadAttestorComponentKey(context.Background(), session, testEd25519ComponentSelector(t, 0x22))
+	_, _, err := loadSentryComponentKey(context.Background(), session, testEd25519ComponentSelector(t, 0x22))
 	if err == nil || err.Kind != ErrorBadRequest {
-		t.Fatalf("loadAttestorComponentKey() error = %#v, want bad request", err)
+		t.Fatalf("loadSentryComponentKey() error = %#v, want bad request", err)
 	}
 }
 
-func TestLoadAttestorComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T) {
+func TestLoadSentryComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T) {
 	privateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x44}, stded25519.SeedSize))
 	wrongPublicKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x45}, stded25519.SeedSize)).Public().(stded25519.PublicKey)
 	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, wrongPublicKey)
@@ -1378,9 +1378,9 @@ func TestLoadAttestorComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T)
 	}
 	session := &componentKeyTestSession{key: keyMaterial}
 
-	_, _, loadErr := loadAttestorComponentKey(context.Background(), session, componentKey)
+	_, _, loadErr := loadSentryComponentKey(context.Background(), session, componentKey)
 	if loadErr == nil || loadErr.Kind != ErrorInternal {
-		t.Fatalf("loadAttestorComponentKey() error = %#v, want internal", loadErr)
+		t.Fatalf("loadSentryComponentKey() error = %#v, want internal", loadErr)
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil {
 		t.Fatalf("key material was not zeroed after mismatch: %#v", keyMaterial)
