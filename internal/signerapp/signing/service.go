@@ -119,7 +119,7 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 		}
 		return signPreparedUserComponents(ctx, plan, session)
 	case signerapi.ComponentSignRoleSentry:
-		if err := s.evaluateAttestorComponentPolicy(identityID, plan); err != nil {
+		if err := s.evaluateSentryComponentPolicy(identityID, plan); err != nil {
 			return nil, err
 		}
 		if session == nil {
@@ -129,7 +129,7 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 		if signErr != nil {
 			return nil, signErr
 		}
-		s.logAttestorComponentApproved(identityID, plan, result)
+		s.logSentryComponentApproved(identityID, plan, result)
 		return result, nil
 	default:
 		return nil, badRequest("unsupported component signing role")

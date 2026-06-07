@@ -81,7 +81,7 @@ func verifySignableKeys(console Console, snapshot PlannerIdentitySnapshot, ident
 		if keyType == "" {
 			return 0, internal(fmt.Sprintf("transaction %d: missing key type metadata for auth address %s", i+1, txReq.AuthAddress))
 		}
-		if msg, ok := attestorSignRejectMessage(keyType); ok {
+		if msg, ok := sentrySignRejectMessage(keyType); ok {
 			return 0, badRequest(fmt.Sprintf("transaction %d: %s", i+1, msg))
 		}
 		consoleOf(console).Printf("[GROUP]   [%d] auth=%s type=%s ok\n", i+1, txReq.AuthAddress[:8]+"...", keytypefmt.Display(keyType))

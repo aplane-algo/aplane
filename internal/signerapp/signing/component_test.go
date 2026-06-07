@@ -343,14 +343,14 @@ key_overrides:
 	if err != nil {
 		t.Fatalf("PrepareComponentSigning() error = %v", err)
 	}
-	if signErr := (&Service{SentryPolicy: cfg}).evaluateAttestorComponentPolicy("default", plan); signErr != nil {
-		t.Fatalf("evaluateAttestorComponentPolicy() error = %v", signErr)
+	if signErr := (&Service{SentryPolicy: cfg}).evaluateSentryComponentPolicy("default", plan); signErr != nil {
+		t.Fatalf("evaluateSentryComponentPolicy() error = %v", signErr)
 	}
 
 	plan.ComponentKey = otherComponentKey
-	signErr := (&Service{SentryPolicy: cfg}).evaluateAttestorComponentPolicy("default", plan)
+	signErr := (&Service{SentryPolicy: cfg}).evaluateSentryComponentPolicy("default", plan)
 	if signErr == nil || !strings.Contains(signErr.Message, policy.TransferRoutingRouteMissRuleID) {
-		t.Fatalf("evaluateAttestorComponentPolicy(other key) error = %#v, want route miss", signErr)
+		t.Fatalf("evaluateSentryComponentPolicy(other key) error = %#v, want route miss", signErr)
 	}
 }
 

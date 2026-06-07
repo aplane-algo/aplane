@@ -11,13 +11,13 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func (s *Service) evaluateAttestorComponentPolicy(identityID string, plan *ComponentSignPlan) *ServiceError {
+func (s *Service) evaluateSentryComponentPolicy(identityID string, plan *ComponentSignPlan) *ServiceError {
 	if plan == nil {
 		return internal("component sign plan is nil")
 	}
 	cfg := sentryPolicyConfig(s.SentryPolicy, plan.ComponentKey)
 	if cfg == nil {
-		return s.rejectAttestorComponentPolicy(identityID, plan, []policy.LintViolation{{
+		return s.rejectSentryComponentPolicy(identityID, plan, []policy.LintViolation{{
 			RuleID:   policy.SentryPolicyMissingRuleID,
 			Scope:    "group",
 			TxnIndex: -1,
@@ -25,24 +25,24 @@ func (s *Service) evaluateAttestorComponentPolicy(identityID string, plan *Compo
 		}})
 	}
 	if cfg.TransferPolicy == nil || !cfg.TransferPolicy.Enabled {
-		return s.rejectAttestorComponentPolicy(identityID, plan, []policy.LintViolation{{
+		return s.rejectSentryComponentPolicy(identityID, plan, []policy.LintViolation{{
 			RuleID:   policy.SentryTransferPolicyRequiredRuleID,
 			Scope:    "group",
 			TxnIndex: -1,
 			Message:  "sentry.transfer_policy.enabled:true is required",
 		}})
 	}
-	if violations := attestorTransferPolicyConfigLints(cfg.TransferPolicy); len(violations) > 0 {
-		return s.rejectAttestorComponentPolicy(identityID, plan, violations)
+	if violations := sentryTransferPolicyConfigLints(cfg.TransferPolicy); len(violations) > 0 {
+		return s.rejectSentryComponentPolicy(identityID, plan, violations)
 	}
 
 	var violations []policy.LintViolation
 	for _, target := range plan.Targets {
 		txn := plan.Group.Entries[target.TargetIndex].Txn
-		violations = append(violations, attestorTargetPolicyLints(txn, target.TargetIndex, cfg)...)
+		violations = append(violations, sentryTargetPolicyLints(txn, target.TargetIndex, cfg)...)
 	}
 	if len(violations) > 0 {
-		return s.rejectAttestorComponentPolicy(identityID, plan, violations)
+		return s.rejectSentryComponentPolicy(identityID, plan, violations)
 	}
 	return nil
 }
@@ -54,7 +54,7 @@ func sentryPolicyConfig(cfg *policy.Config, componentKey string) *policy.Config 
 	return cfg.ForKey(componentKey)
 }
 
-func attestorTransferPolicyConfigLints(tp *policy.TransferPolicy) []policy.LintViolation {
+func sentryTransferPolicyConfigLints(tp *policy.TransferPolicy) []policy.LintViolation {
 	if tp == nil {
 		return nil
 	}
@@ -81,7 +81,7 @@ func attestorTransferPolicyConfigLints(tp *policy.TransferPolicy) []policy.LintV
 	return violations
 }
 
-func attestorTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *policy.Config) []policy.LintViolation {
+func sentryTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *policy.Config) []policy.LintViolation {
 	var violations []policy.LintViolation
 	if len(policy.ExtractTransferMovements(txn)) == 0 {
 		violations = append(violations, policy.LintViolation{
@@ -125,12 +125,12 @@ func withTargetIndex(violations []policy.LintViolation, targetIndex int) []polic
 	return violations
 }
 
-func (s *Service) rejectAttestorComponentPolicy(identityID string, plan *ComponentSignPlan, violations []policy.LintViolation) *ServiceError {
+func (s *Service) rejectSentryComponentPolicy(identityID string, plan *ComponentSignPlan, violations []policy.LintViolation) *ServiceError {
 	reason := policy.JoinLintViolations(violations)
 	if reason == "" {
 		reason = "sentry policy rejected request"
 	}
-	s.logAttestorPolicyRejections(identityID, plan, reason, firstPolicyRuleID(violations))
+	s.logSentryPolicyRejections(identityID, plan, reason, firstPolicyRuleID(violations))
 	return forbidden("sentry policy rejected request: " + reason)
 }
 
@@ -141,7 +141,7 @@ func firstPolicyRuleID(violations []policy.LintViolation) string {
 	return violations[0].RuleID
 }
 
-func (s *Service) logAttestorPolicyRejections(identityID string, plan *ComponentSignPlan, reason, policyRuleID string) {
+func (s *Service) logSentryPolicyRejections(identityID string, plan *ComponentSignPlan, reason, policyRuleID string) {
 	rejectLogger, ok := s.AuditLog.(policyAuditLogger)
 	if !ok || rejectLogger == nil || plan == nil {
 		return
@@ -161,7 +161,7 @@ func (s *Service) logAttestorPolicyRejections(identityID string, plan *Component
 	}
 }
 
-func (s *Service) logAttestorComponentApproved(identityID string, plan *ComponentSignPlan, result *ComponentSignResult) {
+func (s *Service) logSentryComponentApproved(identityID string, plan *ComponentSignPlan, result *ComponentSignResult) {
 	if s.AuditLog == nil || plan == nil || result == nil {
 		return
 	}
