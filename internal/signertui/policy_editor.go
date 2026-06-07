@@ -136,17 +136,7 @@ func adminPolicySnapshotFromProtocol(msg protocol.PolicySnapshotMessage, request
 }
 
 func policySnapshotMessageFromReplace(msg protocol.ReplacePolicyResultMessage) protocol.PolicySnapshotMessage {
-	return protocol.PolicySnapshotMessage{
-		BaseMessage:  msg.BaseMessage,
-		Success:      msg.Success,
-		Target:       msg.Target,
-		IdentityID:   msg.IdentityID,
-		PolicyYAML:   msg.PolicyYAML,
-		PolicySHA256: msg.PolicySHA256,
-		Canonical:    msg.Canonical,
-		Code:         msg.Code,
-		Error:        msg.Error,
-	}
+	return protocol.PolicySnapshotMessage(msg)
 }
 
 func (m Model) openPolicyViewer() (tea.Model, tea.Cmd) {

@@ -69,5 +69,4 @@ func requireComponentNodeRole(ir *identity.Runtime, role signerapi.ComponentSign
 			Message: fmt.Sprintf("unsupported component signing role %q", role),
 		}
 	}
-	return nil
 }

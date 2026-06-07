@@ -2412,10 +2412,6 @@ func (m Model) modified() bool {
 	return string(current) != string(m.baseline)
 }
 
-func policyFields() []field {
-	return policyFieldsForTarget(policyeditor.TargetSigner)
-}
-
 func policyFieldsForTarget(target policyeditor.Target) []field {
 	if target == policyeditor.TargetAttestation {
 		return attestationPolicyFields()
