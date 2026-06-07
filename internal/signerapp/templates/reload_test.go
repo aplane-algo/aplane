@@ -394,7 +394,7 @@ func TestReloadDoesNotClearExistingUnlockOnScanError(t *testing.T) {
 }
 
 func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing.T) {
-	wantErr := errors.New("identity mode rejects key")
+	wantErr := errors.New("node role rejects key")
 	store := &fakeKeyStore{
 		cache:     map[string]string{"ADDR": "/keys/ADDR.key"},
 		keyTypes:  map[string]string{"ADDR": "ed25519"},
@@ -440,7 +440,7 @@ func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing
 	}
 }
 
-func TestReloadModeValidationRejectsConflictingInventoryBeforePublish(t *testing.T) {
+func TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish(t *testing.T) {
 	store := &fakeKeyStore{
 		cache:     map[string]string{"ADDR": "/keys/ADDR.key"},
 		keyTypes:  map[string]string{"ADDR": keytypes.AttestorComponentEd25519V1},
@@ -456,7 +456,7 @@ func TestReloadModeValidationRejectsConflictingInventoryBeforePublish(t *testing
 		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
 			if keyTypes["ADDR"] == keytypes.AttestorComponentEd25519V1 {
-				return errors.New(`identity mode "signing" rejects key inventory: ADDR:aplane.attestor-ed25519.v1`)
+				return errors.New(`node role "signer" rejects key inventory: ADDR:aplane.attestor-ed25519.v1`)
 			}
 			return nil
 		},
@@ -469,19 +469,19 @@ func TestReloadModeValidationRejectsConflictingInventoryBeforePublish(t *testing
 
 	_, err := service.Reload("default", nil)
 	if err == nil {
-		t.Fatal("Reload() error = nil, want mode validation failure")
+		t.Fatal("Reload() error = nil, want node role validation failure")
 	}
-	if !strings.Contains(err.Error(), `identity mode "signing"`) {
-		t.Fatalf("Reload() error = %q, want signing mode rejection", err)
+	if !strings.Contains(err.Error(), `node role "signer"`) {
+		t.Fatalf("Reload() error = %q, want signer node role rejection", err)
 	}
 	if len(publishedKeys) != 0 || len(publishedKeyTypes) != 0 || len(publishedLsigSizes) != 0 {
-		t.Fatalf("published snapshot = (%#v, %#v, %#v), want empty maps after mode rejection", publishedKeys, publishedKeyTypes, publishedLsigSizes)
+		t.Fatalf("published snapshot = (%#v, %#v, %#v), want empty maps after node role rejection", publishedKeys, publishedKeyTypes, publishedLsigSizes)
 	}
 	if store.clearCache != 1 {
 		t.Fatalf("ClearCache() calls = %d, want 1", store.clearCache)
 	}
 	if session.initialized {
-		t.Fatal("session initialized after rejected mode validation")
+		t.Fatal("session initialized after rejected node role validation")
 	}
 }
 

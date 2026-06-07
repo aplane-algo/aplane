@@ -647,7 +647,7 @@ func TestServiceKeyTypesHidesLibraryOnlyCompiledProvider(t *testing.T) {
 	}
 }
 
-func TestServiceKeyTypesForIdentityFiltersByMode(t *testing.T) {
+func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 	ir := setupIdentityRuntime(t, false)
 
 	resp, svcErr := Service{}.KeyTypesForIdentity(ir)

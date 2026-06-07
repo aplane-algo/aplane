@@ -149,7 +149,6 @@ type Config struct {
 	UserAutoApprove     *bool
 	LockOnDisconnect    bool
 	NodeRole            noderole.Role
-	Mode                Mode
 	OnLocked            func() // Called after lock transition completes.
 	PersistDecommission func(identityID string) error
 }
@@ -171,10 +170,6 @@ func New(cfg Config) *Runtime {
 	if nodeRole == "" {
 		nodeRole = noderole.DefaultRole()
 	}
-	mode := NormalizeMode(cfg.Mode)
-	if cfg.Mode == "" {
-		mode = ModeForNodeRole(nodeRole)
-	}
 
 	ir := &Runtime{
 		id:                  cfg.ID,
@@ -183,7 +178,7 @@ func New(cfg Config) *Runtime {
 		lockRuntime:         rt,
 		keySession:          session,
 		authenticator:       cfg.Authenticator,
-		identityCfg:         NewIdentityConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait, mode),
+		identityCfg:         NewIdentityConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait),
 		nodeRole:            nodeRole,
 		keys:                make(map[string]string),
 		keyTypes:            make(map[string]string),

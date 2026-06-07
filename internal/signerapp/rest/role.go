@@ -12,7 +12,7 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
-func requireAccountSigningMode(ir *identity.Runtime, operation string) *signersigning.ServiceError {
+func requireAccountSigningRole(ir *identity.Runtime, operation string) *signersigning.ServiceError {
 	role := ir.NodeRole()
 	if role == noderole.RoleAttestor {
 		return &signersigning.ServiceError{
@@ -23,7 +23,7 @@ func requireAccountSigningMode(ir *identity.Runtime, operation string) *signersi
 	return nil
 }
 
-func requireComponentRoleMode(ir *identity.Runtime, role signerapi.ComponentSignRole) *signersigning.ServiceError {
+func requireComponentNodeRole(ir *identity.Runtime, role signerapi.ComponentSignRole) *signersigning.ServiceError {
 	nodeRole := ir.NodeRole()
 	switch role {
 	case signerapi.ComponentSignRoleAttestor:

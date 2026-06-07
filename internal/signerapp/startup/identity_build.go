@@ -153,7 +153,6 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 	lockOnDisconnect := effectiveCfg.LockOnDisconnect
 	sessionTimeout := effectiveCfg.SessionTimeout
 	approvalWait := effectiveCfg.ApprovalWait
-	mode := identity.ModeForNodeRole(nodeDoc.Role)
 
 	unlockCfg, unlockErr := ResolveUnlockConfig(opts.DataDir, identityID, opts.Config)
 	if unlockErr != nil {
@@ -174,7 +173,6 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 		UserAutoApprove:  &userAutoApprove,
 		LockOnDisconnect: lockOnDisconnect,
 		NodeRole:         nodeDoc.Role,
-		Mode:             mode,
 		PersistDecommission: func(id string) error {
 			return identity.SaveStoredSetting(opts.DataDir, id, "decommissioned", true)
 		},

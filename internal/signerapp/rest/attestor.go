@@ -24,8 +24,8 @@ func (s Service) SignComponent(ctx context.Context, ir *identity.Runtime, req si
 	if !ir.IsUnlocked() {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
 	}
-	if modeErr := requireComponentRoleMode(ir, req.Role); modeErr != nil {
-		return nil, modeErr
+	if roleErr := requireComponentNodeRole(ir, req.Role); roleErr != nil {
+		return nil, roleErr
 	}
 	if s.Deps.NewSigningService == nil {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "signing service not configured"}
@@ -57,8 +57,8 @@ func (s Service) AssembleAttested(ctx context.Context, ir *identity.Runtime, req
 	if !ir.IsUnlocked() {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
 	}
-	if modeErr := requireAccountSigningMode(ir, "attested assembly"); modeErr != nil {
-		return nil, modeErr
+	if roleErr := requireAccountSigningRole(ir, "attested assembly"); roleErr != nil {
+		return nil, roleErr
 	}
 	if s.Deps.NewSigningService == nil {
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "signing service not configured"}

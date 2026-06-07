@@ -113,8 +113,8 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	if keyType == "" {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "key_type is required"}
 	}
-	if modeErr := identity.ValidateKeyTypeAllowedForNodeRole(ir.NodeRole(), keyType); modeErr != nil {
-		return nil, &Error{Kind: ErrorInvalidInput, Message: modeErr.Error()}
+	if roleErr := identity.ValidateKeyTypeAllowedForNodeRole(ir.NodeRole(), keyType); roleErr != nil {
+		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
 	}
 	if keytypes.IsAttestedAccountKeyType(keyType) {
 		resolved, err := attrefs.ResolveCreationParams(ir.KeyPaths(), ir.ID(), keyType, params)
