@@ -210,12 +210,11 @@ symbol or name. If more than one cached ASA has the same unit name, the client
 must ask the operator to choose by numeric ASA ID.
 
 `apadmin` no longer exposes this legacy threshold editor. Current
-operator-facing guided policy work is centered on `appolicy` and the YAML
-`transfer_policy` route table. `apadmin` can inspect the active policy and
-hot-replace the whole policy from YAML, but it does not edit these maps as
-fields. The legacy map fields and admin protocol messages remain documented
-here because existing policy files and compatibility clients may still use
-them.
+operator-facing guided policy work is centered on the shared policy editor and
+the YAML `transfer_policy` route table. `apadmin` uses that editor online
+through the admin protocol; `appolicy` uses the same editor offline. The legacy
+map fields and admin protocol messages remain documented here because existing
+policy files and compatibility clients may still use them.
 
 ## Admin Protocol
 
@@ -279,9 +278,10 @@ Primary files:
 - `internal/signerapp/signing/planner.go` - signer transaction network validation,
 - `internal/policy/lint.go` - policy lookup by transaction genesis hash,
 - `internal/signerapp/asametadata` - signer-wide ASA metadata cache and display formatting,
-- `internal/signerapp/admin/service.go` - compatibility admin policy service, policy snapshots, whole-file replacement, and ASA metadata resolution,
+- `internal/signerapp/admin/service.go` - target-aware admin policy service, policy snapshots, validation/replacement, and ASA metadata resolution,
 - `internal/protocol/messages.go` - admin IPC wire fields,
-- `internal/signertui/view_policyviewer.go` - apadmin policy viewer and whole-file load UI,
+- `internal/signertui/policy_editor.go` - apadmin shared policy editor embedding,
+- `internal/signertui/view_policyviewer.go` - legacy apadmin policy viewer compatibility path,
 - `internal/signertui/update_policypanel.go` - legacy ASA transfer guard editor behavior,
 - external `aplane-algo/aplanesdk/go/config.go` - Go SDK config token validation.
 

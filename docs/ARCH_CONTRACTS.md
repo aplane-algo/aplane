@@ -164,18 +164,19 @@ IPC failure semantics:
 | Signing approval | yes | no | yes | no |
 | Token provisioning approval | yes | no | yes | no |
 | Admin settings | yes | no | no | no |
-| Policy viewer | yes | no | no | no |
-| Policy settings editor | limited | no | no | no |
+| Policy editor | yes | no | no | no |
+| Legacy policy settings editor | limited | no | no | no |
 | Async notifications | yes | limited | limited | no |
 
 `appass` edits config offline; it is outside the live IPC surface.
 
-`apadmin`'s policy settings editor is intentionally limited. It can mutate the
-admin-projected policy settings exposed by `get_policy_settings`,
+`apadmin`'s current policy editor uses the shared full-document editor. The
+older policy settings payload remains intentionally limited for compatibility:
+it can mutate the admin-projected settings exposed by `get_policy_settings`,
 `update_policy_setting`, and `update_policy_asa_amounts`, including scalar
-policy toggles, max fee, and network-scoped transfer guard thresholds. It is not
-a full guided `policy.yaml` editor and does not expose YAML-only fields such as
-`key_overrides`.
+policy toggles, max fee, and network-scoped transfer guard thresholds. YAML-only
+fields such as `key_overrides` are handled through canonical policy YAML, not
+through that legacy scalar settings payload.
 
 These client capabilities describe the product surface for the product
 identity. Backend admin routing is identity-scoped internally; `apadmin`,
@@ -271,9 +272,11 @@ identity master key. The default approval fallback is `user_auto_approve`,
 lives in `identities/<identity>/config.yaml`, and is not a policy document
 field. Both policy documents are verified and loaded on unlock/reload before
 the key scan; a missing policy file or missing/mismatched sidecar fails closed
-instead of falling back to defaults. Authenticated admin IPC policy replacement
-currently writes `policy.yaml`; direct `attestation.yaml` edits are checked,
-signed, and verified through `appolicy` or `apstore policy`.
+instead of falling back to defaults. Authenticated admin IPC policy operations
+are target-aware: signer nodes edit `policy.yaml`, attestor nodes edit
+`attestation.yaml`, and role-incompatible targets fail closed. Direct YAML
+edits to either document are checked, signed, and verified through `appolicy`
+or `apstore policy`.
 Both documents support YAML-only `key_overrides` blocks for per-key effective
 policy. Client-signing overrides in `policy.yaml` are keyed by Algorand auth
 address; attestor overrides in `attestation.yaml` are keyed by `a_...`
@@ -687,7 +690,8 @@ Policy load behavior:
   admin-auth unlock from completing and is reported as `auth_result` with
   `code:"unlock_failed"`
 - reload failure keeps the previous in-memory policy active
-- admin policy writes require an unlocked identity and replace `policy.yaml`
+- admin policy writes require an unlocked identity and replace the
+  node-role-selected policy document
 - direct YAML edits to either document require offline `appolicy --save` or
   `apstore policy sign` before the signer trusts them
 - `appolicy` defaults to `--target auto`; for store-backed operations, auto
@@ -1214,13 +1218,12 @@ Client-signing `transfer_policy` is persisted in `policy.yaml`; attestor
 component `transfer_policy` is persisted in `attestation.yaml`. Both are
 validated by the normal policy load path and by `apstore policy
 check/sign/verify`. `appolicy` auto-targets the node-role document and
-`--target signer|attestation` can explicitly select a document; apadmin
-whole-file replacement targets `policy.yaml`. Transfer policy is not projected
-through mutable admin IPC policy settings and has no guided `apadmin` editor
-surface; `apadmin` can request an active signing-policy snapshot for inspection
-and can ask the signer to hot-replace the whole signing-policy YAML file. The
-`appolicy --yaml` / `--save` CLI path is the scriptable offline editor for
-byte-preserving route-table edits.
+`--target signer|attestation` can explicitly select a document for offline
+work; `apadmin` uses the node-role target online through admin IPC. Transfer
+policy is not projected through mutable admin IPC policy settings; guided edits
+use the shared full-document editor and are saved as whole-document YAML
+replacements. The `appolicy --yaml` / `--save` CLI path remains the scriptable
+offline editor for byte-preserving route-table edits.
 Route matches are allow-to-continue, not approvals.
 
 Transaction-level hard policy skips passthrough and foreign slots because those

@@ -477,19 +477,20 @@ default approval fallback is `user_auto_approve`, persisted in
 `identities/<identity>/config.yaml` and shown in `apadmin` as
 `User Auto-Approve`. Policy is verified with a key derived from the identity
 master key and loaded into the bound identity runtime on unlock/reload before
-the key scan. Operator guided signing-policy editing is centered on
-`appolicy`, which auto-selects `policy.yaml` or `attestation.yaml` from the
-node role, edits the verified document offline while holding the store mutation
-lock, and persists both the YAML and sidecar. `--target signer|attestation`
-can override auto-selection for offline review. Direct edits to either policy
-document are checked and signed with `apstore policy`. Admin IPC policy
-read/write messages remain in the backend for compatibility and target
-`policy.yaml`. `apadmin` exposes an active signing-policy viewer backed by a
-signer-owned snapshot, can hot-replace the whole signing policy from a YAML
-file through the signer, and retains a limited policy settings panel for scalar
-policy toggles, max fee, and transfer guard thresholds. It does not expose the
-full `appolicy`-style guided editor or YAML-only fields such as
-`key_overrides`.
+the key scan. Guided policy editing is implemented once in
+`internal/policytui` and used through two stores: `appolicy` edits the selected
+document offline while holding the store mutation lock, and `apadmin` edits the
+active document online through the admin protocol while `apsigner` is running.
+Both surfaces select `policy.yaml` on signer nodes and `attestation.yaml` on
+attestor nodes; `appolicy --target signer|attestation` can override
+auto-selection for offline review. Direct edits to either policy document are
+checked and signed with `apstore policy`. Admin IPC policy messages are
+target-aware (`signer|attestation`), validate replacements before writing, use
+`expected_current_sha256` for optimistic concurrency, write the YAML plus a
+fresh sidecar, and update the bound runtime immediately on success. The limited
+admin policy settings payload remains a legacy scalar projection; YAML-only
+fields such as `key_overrides` are edited through the shared full-document
+editor and are visible in canonical YAML snapshots.
 
 Both policy documents may contain YAML-only `key_overrides`; during normal
 signing, the effective policy is selected by signing auth address, not by

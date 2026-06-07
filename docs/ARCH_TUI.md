@@ -48,7 +48,7 @@ identifies the current screen. The enum has families for:
 - Managed backup create flow (`ViewBackupConfirm`, `ViewBackingUp`, `ViewBackupDisplay`)
 - Managed backup restore flow (`ViewRestoreList` through `ViewRestoreDisplay`)
 - Destructive confirmations (`ViewDeleteConfirm`, `ViewRevokeTokenConfirm`, `ViewDisplaceConfirm`)
-- Settings panel (`ViewAdminPanel`) and active policy viewer / load workflow (`ViewPolicyViewer`)
+- Settings panel (`ViewAdminPanel`) and shared policy editor workflow (`ViewPolicyEditor`)
 - KeyType Library (`ViewTemplateLibrary`, install confirm/loading, `ViewLibraryTemplateDetails`)
 - `ViewError`
 
@@ -68,20 +68,18 @@ signer settings and status:
 - Signer-managed backup creation and managed backup restore
 - SSH enabled state, port, fingerprint, and connected-client count
 - Signer port, TEAL compile network, and theme
-- An active policy snapshot opened with `p` from the key list, or
+- The shared guided policy editor, opened with `p` from the key list or
   through the secondary `Policy` row in Settings
 
-`apadmin` does not expose guided policy field editing. Its policy surface
-requests a signer-owned snapshot over the admin protocol and renders overview,
-guard detail, YAML, and key override views. From that viewer, the operator
-may load a local YAML file as a whole-policy replacement; the signer validates
-and persists the file and returns a fresh canonical snapshot. Operator guided
-policy edits remain centered on `appolicy`, which auto-targets signer
-`policy.yaml` or attestor `attestation.yaml` from node role, validates and
-signs the selected document offline, and also owns scriptable
-signing-to-attestation conversion. The admin protocol still retains
-compatibility policy messages for older clients and internal service
-boundaries, but the active admin TUI does not present a mutable policy panel.
+`apadmin` embeds `internal/policytui` for online policy editing. The TUI
+requests the active signer-owned snapshot over the admin protocol, selects
+`policy.yaml` on signer nodes or `attestation.yaml` on attestor nodes, and
+applies edits as whole-document replacements guarded by
+`expected_current_sha256`. The signer validates draft YAML in the selected
+policy domain, writes the YAML plus a fresh sidecar, and returns a canonical
+snapshot after a successful apply. `appolicy` uses the same editor offline for
+store-locked edits, scriptable save/check/export, and signing-to-attestation
+conversion.
 
 ## Local Activity And Idle Locking
 
@@ -115,7 +113,8 @@ recoverable view.
 | `internal/signertui/activity.go` | Local keystroke activity reporting and idle lock timers |
 | `internal/signertui/ipc_client.go` | IPC connection to the signer |
 | `internal/signertui/connector.go` | SSH `aplane-admin` connector for remote mode |
-| `internal/signertui/update_policyviewer.go`, `view_policyviewer.go` | Active policy snapshot viewer and whole-file load workflow |
+| `internal/signertui/policy_editor.go` | Shared policy editor embedding and admin-protocol store adapter |
+| `internal/signertui/update_policyviewer.go`, `view_policyviewer.go` | Legacy policy snapshot viewer handlers retained for compatibility paths |
 | `internal/signertui/update_*.go`, `view_*.go` | Per-view handlers and renderers |
 
 ## Related Documentation

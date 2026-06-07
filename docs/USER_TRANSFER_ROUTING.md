@@ -17,14 +17,15 @@ Routing is configured in the identity policy file:
 identities/<identity>/policy.yaml
 ```
 
-In v1 there is no guided `apadmin` editor for routing. `apadmin` can show the
-active policy from the main key list with `p`, and the policy viewer can
-hot-replace `policy.yaml` from a local YAML file with `l`. That replacement is
-whole-file only; it does not merge route changes. Use `appolicy` for the
-offline TUI/checker when you want guided editing of common policy, transfer
-settings, blocked destinations, and transfer guards:
+Use `apadmin` for online guided routing edits while `apsigner` is running: open
+the policy editor from the main key list with `p`, or from Settings with the
+`Policy` row. `apadmin` applies changes as whole-document replacements through
+the running signer; it does not merge independent route fragments. Use
+`appolicy` for the offline TUI/checker when you want guided editing of common
+policy, transfer settings, blocked destinations, and transfer guards without a
+running signer:
 
-A successful hot replacement affects new signing requests after the signer
+A successful policy apply affects new signing requests after the signer
 publishes the replacement policy snapshot. Signing requests that are already in
 flight, including requests waiting for operator approval, continue under the
 policy snapshot they captured when they started.

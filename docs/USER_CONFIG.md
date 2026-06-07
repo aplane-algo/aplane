@@ -265,11 +265,11 @@ moments:
 
 Day-to-day:
 
-- Use `apadmin` to unlock the signer, approve transactions, and change runtime
-  admin settings while `apsigner` is running.
-- Use `appolicy` to inspect, edit, validate, and sign the node-role policy
-  document: `policy.yaml` for signer nodes or `attestation.yaml` for attestor
-  nodes.
+- Use `apadmin` to unlock the signer, approve transactions, change runtime
+  admin settings, and edit the node-role policy while `apsigner` is running.
+- Use `appolicy` for offline or scriptable policy inspection, validation, and
+  signing of the node-role policy document: `policy.yaml` for signer nodes or
+  `attestation.yaml` for attestor nodes.
 - Use `appass` only to switch passphrase auto-handling mode (`prompt`,
   `passfile`, `systemd-creds`).
 - `appass` refuses to run while `apsigner` is active for the same data
@@ -517,11 +517,14 @@ For the operator-facing policy guide, including transfer routing and key type
 override examples, see [USER_POLICY.md](USER_POLICY.md). This section is a
 configuration reference for the policy fields.
 
-Use `appolicy` for policy edits. It auto-selects the policy document from
-`node.yaml`, verifies the existing sidecar, validates the edited policy, and
-writes the selected document plus a fresh sidecar while holding the offline
-store mutation lock. For deliberate direct YAML edits to either policy
-document, run `apstore policy check`, review the change, then run
+Use `apadmin` for online guided policy edits while `apsigner` is running; it
+selects the node-role policy document, validates through the signer, writes the
+selected document plus a fresh sidecar, and activates the result immediately.
+Use `appolicy` for offline or scriptable policy edits. It auto-selects the
+policy document from `node.yaml`, verifies the existing sidecar, validates the
+edited policy, and writes the selected document plus a fresh sidecar while
+holding the offline store mutation lock. For deliberate direct YAML edits to
+either policy document, run `apstore policy check`, review the change, then run
 `apstore policy sign`; `apstore policy verify` confirms the signed policy
 documents with the store passphrase.
 For byte-preserving scripted edits, `appolicy --yaml` emits the verified
@@ -609,13 +612,13 @@ max_asa_amounts:
 ### Transfer Routing
 
 `transfer_policy` is the route table for direct `pay` and `axfer`
-transactions. It is not exposed in `apadmin`. Use
-`appolicy -d "$APSIGNER_DATA"` for offline guided editing of common policy and
-transfer guards, or edit advanced routing fields directly in `policy.yaml` or
-`attestation.yaml`, then run `apstore policy check` and `apstore policy sign`
-before starting or reloading the signer. For scripts, use `appolicy --yaml` to
-export the verified selected policy and `appolicy --save` to validate, save,
-and sign replacement YAML from stdin.
+transactions. Use `apadmin` for online guided editing while the signer is
+running, or `appolicy -d "$APSIGNER_DATA"` for offline guided editing of common
+policy and transfer guards. Advanced routing fields can also be edited directly
+in `policy.yaml` or `attestation.yaml`; then run `apstore policy check` and
+`apstore policy sign` before starting or reloading the signer. For scripts, use
+`appolicy --yaml` to export the verified selected policy and `appolicy --save`
+to validate, save, and sign replacement YAML from stdin.
 
 For the broader operator policy guide, see [USER_POLICY.md](USER_POLICY.md).
 For the transfer routing deep dive with worked examples, validation rules, and
@@ -884,9 +887,10 @@ key_overrides:
 
 ### Policy Editing UI
 
-`apadmin` no longer exposes a guided policy editor. It can show the active
-loaded policy from the main key list with `p`, and that viewer can hot-replace
-`policy.yaml` from a local YAML file. Use `appolicy` for guided offline policy edits:
+`apadmin` exposes the shared guided policy editor from the main key list with
+`p` and from Settings with the `Policy` row. It edits the active node-role
+policy through the running signer and applies changes immediately on success.
+Use `appolicy` for offline guided policy edits:
 
 ```bash
 appolicy -d "$APSIGNER_DATA"

@@ -9,7 +9,7 @@ remote mode.
 APSigner is the primary interactive surface for:
 - unlock and approval operations
 - key generation, import, and deletion
-- runtime/admin settings, active policy inspection, and whole-file policy YAML loading
+- runtime/admin settings and online guided policy editing
 - signer status monitoring
 
 Adjacent tools:
@@ -66,7 +66,7 @@ Remote SSH admin mode:
 ### Signer Operations
 - **Unlock**: Enter passphrase to unlock the signer
 - **Approve/Reject**: Review pending requests
-- **Settings**: Inspect admin settings, view the active policy, load a replacement policy YAML file, create signer-managed backups, and restore from managed backup archives for the bound identity
+- **Settings**: Inspect admin settings, edit the active node-role policy, create signer-managed backups, and restore from managed backup archives for the bound identity
 
 ### Signing Approvals
 When `apsigner` receives a signing request:
@@ -86,9 +86,8 @@ When `apsigner` receives a signing request:
 | `u` | Unlock signer |
 | `b` | Open backup flow from the settings/admin panel |
 | `o` | Open restore flow from the settings/admin panel |
-| `p` | Open the policy viewer |
+| `p` | Open the policy editor |
 | `l` (key list/settings) | Lock signer after confirmation, keeping apadmin open |
-| `l` (policy viewer) | Load a replacement policy YAML file |
 | `q` | Quit |
 
 ## Configuration

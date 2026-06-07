@@ -250,9 +250,9 @@ a partially applied policy.
 Each signing request captures the effective policy snapshot when its signing
 service is constructed. That snapshot governs the request through policy
 evaluation, approval waiting, and final signature execution. A later successful
-policy reload or `apadmin` whole-file hot replacement applies only to signing
-requests that start after the new snapshot is published. In-flight requests are
-not re-evaluated or canceled merely because the policy changed while they were
+policy reload or `apadmin` online policy apply applies only to signing requests
+that start after the new snapshot is published. In-flight requests are not
+re-evaluated or canceled merely because the policy changed while they were
 waiting for approval.
 
 ## Always Deny
@@ -733,31 +733,31 @@ true because no human approval is involved.
 
 ## Admin Surface
 
-`apadmin` exposes a viewer for the active signer-owned stored policy snapshot
-and one live mutation: wholesale replacement from a local YAML file. It is not a
-field editor and it does not merge policy fragments. The replacement path
+`apadmin` embeds the shared guided policy editor and operates against the live
+signer through admin IPC. Its policy store requests the active signer-owned
+snapshot, validates draft YAML with the signer runtime compiler, and applies a
+whole-document replacement with optimistic concurrency. The replacement path
 requires an unlocked identity, verifies the current sidecar, validates the
-submitted YAML with the signer runtime compiler, writes the exact submitted
-bytes plus a fresh sidecar, and updates the active runtime policy immediately.
-Guided policy edits remain centered on `appolicy`, the local offline policy
-editor. This avoids maintaining two mutable operator-facing field-editing
-models while transfer routing becomes the canonical configuration surface.
+submitted YAML in the selected policy domain, writes the exact submitted bytes
+plus a fresh sidecar, and updates the active runtime policy immediately.
 
-The admin protocol and `internal/signerapp/admin` still retain policy
-read/write messages for compatibility and existing service boundaries, plus
-`get_policy_snapshot` for live inspection and `replace_policy` for deliberate
-whole-file hot replacement. New guided field-editing UI work should target
-`appolicy` rather than adding route editors back to `apadmin`.
+The admin protocol and `internal/signerapp/admin` expose target-aware policy
+messages: `get_policy_snapshot`, `validate_policy`, and `replace_policy`.
+Targets are `signer` for `policy.yaml` and `attestation` for
+`attestation.yaml`; omitted targets default to `signer` for compatibility.
+Signer nodes reject the attestation target, and attestor nodes reject the
+signer target. New policy UI work should reuse `internal/policytui` with an
+appropriate store rather than adding a second field-editing model.
 
 Client-signing `transfer_policy` is persisted in `policy.yaml`; attestor
 component `transfer_policy` is persisted in `attestation.yaml`. Both are
 validated by the policy load path and by `apstore policy check/sign/verify`.
 `appolicy` auto-targets `policy.yaml` on signer nodes and `attestation.yaml`
 on attestor nodes; `--target signer|attestation` can explicitly select a
-document for offline review. Apadmin whole-file replacement currently targets
-`policy.yaml`. Transfer policy is not projected through the mutable admin IPC
-policy settings payload and has no guided `apadmin` editor; the apadmin viewer
-renders it from the active signing-policy snapshot.
+document for offline review. `apadmin` uses the same node-role target selection
+online. Transfer policy is not projected through the mutable admin IPC policy
+settings payload; the shared full-document editor renders and saves it through
+canonical YAML.
 
 `appolicy` is the local offline policy editor. In production mode it defaults
 to `--target auto`, reads root `node.yaml`, and edits `policy.yaml` for signer
@@ -823,9 +823,9 @@ write a sidecar, update the identity store, or mark the draft clean.
 
 The signer retains compatibility support for authenticated admin IPC policy
 changes. The identity must be unlocked so the signer can verify the current
-policy and write a fresh sidecar. `apadmin` exposes only live snapshot viewing
-and whole-file replacement, not direct field editing. Its policy viewer displays
-the policy currently held by the signer runtime.
+policy and write a fresh sidecar. `apadmin` presents those capabilities through
+the shared guided editor; the editor displays the policy currently held by the
+signer runtime and applies changes as whole-document replacements.
 For deliberate direct YAML edits, use `apstore policy check`, review the file,
 then run `apstore policy sign`; `apstore policy verify` checks the sidecar with
 the store passphrase. `apstore policy sign` is an offline store mutation and

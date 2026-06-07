@@ -169,6 +169,7 @@ Client to Server:
 - `update_admin_setting`
 - `get_policy_settings`
 - `get_policy_snapshot`
+- `validate_policy`
 - `replace_policy`
 - `update_policy_setting`
 - `update_policy_asa_amounts`
@@ -181,6 +182,7 @@ Server to Client:
 - `update_admin_setting_result`
 - `policy_settings`
 - `policy_snapshot`
+- `validate_policy_result`
 - `replace_policy_result`
 - `update_policy_setting_result`
 - `update_policy_asa_result`
@@ -262,10 +264,12 @@ unlock/reload after passphrase verification through
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
 - `policy_settings`: `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, `reject_clawback`, `always_review_warnings`, `auto_approve_self_noop_transfer`, `max_fee_microalgos`, `review_algo_payments`, `max_algo_payments`, `policy_networks`, `review_asa_amounts`, `max_asa_amounts`, optional `policy_asa_metadata`; compatibility fields `max_asa_amounts_mainnet`, `max_asa_amounts_testnet`, and `max_asa_amounts_betanet` may also be present; `key_overrides` is not projected over admin IPC
-- `get_policy_snapshot`: no payload; requests the active signer-owned stored policy projection for read-only display
-- `policy_snapshot`: `success`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
-- `replace_policy`: `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of `policy.yaml` with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
-- `replace_policy_result`: `success`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, the response is the resulting active canonical snapshot, not necessarily the exact uploaded bytes
+- `get_policy_snapshot`: optional `target` (`signer` or `attestation`, omitted means `signer`); requests the active signer-owned stored policy projection for display/editing
+- `policy_snapshot`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
+- `validate_policy`: optional `target` (`signer` or `attestation`, omitted means `signer`), `policy_yaml`; parses and runtime-validates the submitted YAML in the selected policy domain without writing it
+- `validate_policy_result`: `success`, optional `target`, optional `canonical`, optional `policy_sha256`, optional `code`, optional `error`; on success, `canonical` is true when the submitted bytes are already the canonical YAML representation and `policy_sha256` is the SHA-256 of the submitted bytes
+- `replace_policy`: optional `target` (`signer` or `attestation`, omitted means `signer`), `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of the selected policy document with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
+- `replace_policy_result`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, the response is the resulting active canonical snapshot, not necessarily the exact uploaded bytes
 - `update_policy_setting`: `key`, `value` (string-typed on wire)
 - `update_policy_setting_result`: `success`, `key`, optional `value`, `code`, `error`
 - `update_policy_asa_amounts`: `review_asa_amounts`, `max_asa_amounts`, `review_algo_payments`, and `max_algo_payments` maps keyed by network context token; compatibility fields `mainnet`, `testnet`, and `betanet` are accepted for ASA deny thresholds
@@ -319,12 +323,12 @@ Key-type override semantics:
 - attestor component signing selects an override by the request `component_key` selector
 - overrides are YAML-only; admin IPC/TUI settings do not expose or mutate `key_overrides`
 - `get_policy_snapshot` may expose key overrides read-only as part of the canonical YAML snapshot
-- `replace_policy` may replace YAML that contains `key_overrides`; it validates the complete policy before writing and applies immediately on success
-- `policy.yaml` is verified against `policy.yaml.hmac` and loaded into the bound identity runtime on unlock/reload; policy-mutation admin IPC requires an unlocked identity and writes both files; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
+- `replace_policy` may replace YAML that contains `key_overrides`; it validates the complete policy in the selected target before writing and applies immediately on success
+- `policy.yaml` and `attestation.yaml` are verified against their `.hmac` sidecars and loaded into the bound identity runtime on unlock/reload; policy-mutation admin IPC requires an unlocked identity and writes the selected document plus sidecar; direct `key_overrides` YAML edits apply only after `apstore policy sign` and the next reload/unlock
 
 Whole-policy replacement:
 
-- `replace_policy` first verifies the current on-disk policy sidecar, then parses and runtime-validates the submitted YAML
+- `replace_policy` first verifies the current on-disk sidecar for the selected target, then parses and runtime-validates the submitted YAML
 - successful replacement writes the exact submitted YAML bytes plus a fresh sidecar, verifies the saved file, and updates the bound identity runtime without requiring a restart
 - failure is fail-closed: parse, validation, stale-snapshot, locked-identity, or current-policy verification errors do not overwrite the existing policy
 - `replace_policy_result.policy_yaml` is canonical YAML for display; clients that need byte preservation should retain their own uploaded bytes

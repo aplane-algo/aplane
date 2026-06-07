@@ -43,9 +43,16 @@ rule.
 
 ## Editing Policy
 
-Use `appolicy` for normal policy work. With `--target auto` (the default),
-`appolicy` reads `$APSIGNER_DATA/node.yaml`: signer nodes edit `policy.yaml`,
-and attestor nodes edit `attestation.yaml`.
+Use `apadmin` for online guided policy edits while `apsigner` is running. From
+the main key list, press `p`, or open Settings and choose `Policy`. `apadmin`
+targets the node-role document automatically: signer nodes edit `policy.yaml`,
+and attestor nodes edit `attestation.yaml`. It validates drafts with the
+running signer, applies changes as whole-document replacements, writes the
+fresh sidecar, and activates the resulting runtime policy immediately.
+
+Use `appolicy` for offline or scriptable policy work. With `--target auto` (the
+default), `appolicy` reads `$APSIGNER_DATA/node.yaml`: signer nodes edit
+`policy.yaml`, and attestor nodes edit `attestation.yaml`.
 
 ```bash
 appolicy -d "$APSIGNER_DATA"
@@ -100,18 +107,14 @@ Direct YAML edits take effect only after the next successful signer reload,
 unlock, or restart. These are offline store mutations, so the normal workflow
 is to run them while `apsigner` is stopped or before starting it.
 
-From the main key list in `apadmin`, press `p` to inspect the active signer
-policy. The same viewer is also available from the Settings `Policy` row. It
-shows the policy currently loaded by `apsigner`.
-
-`apadmin` can also hot-replace the policy with a YAML file from that viewer:
-press `l`, enter the local path, review the preview, and confirm. This is a
-whole-file replacement, not a merge. The signer must be unlocked; it verifies
-the current `policy.yaml` sidecar, validates the submitted YAML with the signer
-runtime compiler, writes the exact submitted bytes plus a fresh sidecar, and
-activates the resulting policy immediately. The request includes the SHA-256 of
-the snapshot you were viewing, so the signer rejects the replacement if the
-active policy changed before the upload was applied.
+The `apadmin` editor shows the policy currently loaded by `apsigner`. Applying
+from the editor is a whole-file replacement, not a merge. The signer must be
+unlocked; it verifies the current sidecar for the selected document, validates
+the submitted YAML with the signer runtime compiler, writes the exact submitted
+bytes plus a fresh sidecar, and activates the resulting policy immediately. The
+request includes the SHA-256 of the snapshot you were editing, so the signer
+rejects the replacement if the active policy changed before the upload was
+applied.
 
 ## Top-Level Fields
 

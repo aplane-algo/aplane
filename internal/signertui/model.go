@@ -48,7 +48,7 @@ const (
 	ViewDisplaceConfirm    // Confirmation modal for displacing existing client
 	ViewAdminPanel         // Admin control panel
 	ViewPolicyEditor       // Guided online policy editor
-	ViewPolicyViewer       // Read-only active policy snapshot viewer
+	ViewPolicyViewer       // Legacy active policy snapshot viewer
 	ViewPolicyPanel        // Legacy policy editor state; not exposed from apadmin
 	ViewPolicyASAModal     // Legacy per-network transfer guard editor; not exposed from apadmin
 	ViewTemplateLibrary    // Browse optional KeyType Library entries

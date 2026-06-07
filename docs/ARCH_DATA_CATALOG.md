@@ -231,7 +231,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Token provisioning prompt | runtime wire model | SSH enrollment request | admin token provisioning messages | `internal/signerapp/sshprovision`, `internal/adminproto` | Admin approval required before token delivery. |
 | Backup/restore messages | wire contract | admin backup/restore DTOs | backup admin service calls | `internal/protocol`, `internal/signerapp/backupadmin` | Export passphrases parsed as `SensitiveBytes`. |
 | Admin settings messages | wire contract | settings get/update messages | process/identity config mutation | `internal/adminproto`, `internal/signerapp/admin` | Update paths authorize and apply config-staleness guards. |
-| Policy snapshot/replacement | wire/runtime projection | active policy snapshot or replacement YAML | admin policy viewer/replacer | `internal/adminproto`, `internal/signerapp/admin` | Whole-file replacement writes sidecar; guided edits live in appolicy. |
+| Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | shared policy editor online store | `internal/adminproto`, `internal/signerapp/admin`, `internal/policyeditor` | Target-aware signer/attestation writes replace whole documents and sidecars; apadmin and appolicy share the editor model. |
 
 ## Transaction And Signing Runtime Models
 
@@ -329,7 +329,7 @@ codebase after attestation landed:
 | `pkg/signerapi.SignResponse` | Retained and documented as source-compatibility residue only; live `/sign` uses `GroupSignResponse`. |
 | `internal/signerapi.KeysResult.Locked` | Already documented as an internal wrapper around `/keys`, not an HTTP DTO field. |
 | Admin mnemonic export shapes | Protocol messages remain only for deny/decode compatibility; current generate/export projections do not return recovery material. |
-| Policy view/editor duplicate shapes | Current split is intentional: `appolicy` owns guided offline editing; apadmin owns whole-file view/replacement and signer policy snapshots. |
+| Policy view/editor duplicate shapes | Resolved by shared `internal/policytui`: `appolicy` owns the offline store path and apadmin owns the online admin-protocol store path. |
 | Template reload reports | Current report is a request/reload projection used for activation verification, not a separate persistence model. |
 | Plugin manifest schema | `manifest_format` is canonical and `protocol_version` is rejected by parser tests. |
 
