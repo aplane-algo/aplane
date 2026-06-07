@@ -310,7 +310,7 @@ Use this index when a catalog entry points at an owning subsystem but does not
 name a test inline:
 
 - HTTP DTO and contract fixtures: `pkg/signerapi/types_contract_test.go`,
-  `pkg/signerapi/attestor_test.go`, `test/contracts/signerapi/*.json`.
+  `pkg/signerapi/sentry_test.go`, `test/contracts/signerapi/*.json`.
 - HTTP method/shape enforcement: `cmd/apsigner/method_compat_test.go`,
   `cmd/apsigner/rest_shape_test.go`, `internal/signerclient/client_test.go`.
 - Endpoint registry and endpoint writes:
@@ -347,5 +347,5 @@ name a test inline:
   catalog.
 - [ARCH_POLICY.md](ARCH_POLICY.md): policy verdict and routing semantics.
 - [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): stable action/resource model.
-- [ARCH_SPEC.md#attested-signing-and-sentry-nodes](ARCH_SPEC.md#attested-signing-and-sentry-nodes):
+- [ARCH_SPEC.md#guarded-signing-and-sentry-nodes](ARCH_SPEC.md#guarded-signing-and-sentry-nodes):
   guarded signing and sentry node architecture.

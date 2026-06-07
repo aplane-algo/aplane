@@ -5,7 +5,7 @@ package signerapi
 
 import "fmt"
 
-const maxAttestorGroupSize = 16
+const maxComponentGroupSize = 16
 
 // ComponentSignRole is the role-specific component signature requested from
 // POST /sign/component.
@@ -199,8 +199,8 @@ func validateGroupBytesHex(items []string) error {
 	if len(items) == 0 {
 		return fmt.Errorf("group_bytes_hex is empty")
 	}
-	if len(items) > maxAttestorGroupSize {
-		return fmt.Errorf("group_bytes_hex length %d exceeds max %d", len(items), maxAttestorGroupSize)
+	if len(items) > maxComponentGroupSize {
+		return fmt.Errorf("group_bytes_hex length %d exceeds max %d", len(items), maxComponentGroupSize)
 	}
 	for i, item := range items {
 		if item == "" {
