@@ -8,7 +8,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -155,9 +154,6 @@ func validateAdminSettingValue(key, value string) error {
 	switch key {
 	case adminproto.AdminSettingPassphraseTimeout:
 		_, err := apconfig.ParsePassphraseTimeout(value)
-		return err
-	case adminproto.AdminSettingMode:
-		_, err := identity.ParseMode(value)
 		return err
 	default:
 		return nil

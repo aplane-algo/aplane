@@ -45,7 +45,7 @@ func TestParseModeRejectsUnknown(t *testing.T) {
 	}
 }
 
-func TestStoredConfigApplyMode(t *testing.T) {
+func TestStoredConfigApplyRejectsMode(t *testing.T) {
 	effective, err := (&StoredConfig{}).Apply(ConfigDefaults{})
 	if err != nil {
 		t.Fatalf("Apply(default) error = %v", err)
@@ -54,16 +54,10 @@ func TestStoredConfigApplyMode(t *testing.T) {
 		t.Fatalf("default Mode = %q, want %q", effective.Mode, ModeSigning)
 	}
 
-	effective, err = (&StoredConfig{Mode: "attestation"}).Apply(ConfigDefaults{})
-	if err != nil {
-		t.Fatalf("Apply(attestation) error = %v", err)
-	}
-	if effective.Mode != ModeAttestation {
-		t.Fatalf("stored Mode = %q, want %q", effective.Mode, ModeAttestation)
-	}
-
-	if _, err := (&StoredConfig{Mode: "bad"}).Apply(ConfigDefaults{}); err == nil {
-		t.Fatal("Apply(invalid mode) error = nil")
+	if _, err := (&StoredConfig{Mode: "attestation"}).Apply(ConfigDefaults{}); err == nil {
+		t.Fatal("Apply(mode) error = nil")
+	} else if !strings.Contains(err.Error(), "identity config mode is unsupported") {
+		t.Fatalf("Apply(mode) error = %q, want unsupported mode", err.Error())
 	}
 }
 

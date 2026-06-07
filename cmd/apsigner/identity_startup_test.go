@@ -69,9 +69,6 @@ func TestBuildIdentityRuntimeAppliesStoredConfig(t *testing.T) {
 	if err := identity.SaveStoredSetting(root, "alice", "approval_wait", "10m"); err != nil {
 		t.Fatal(err)
 	}
-	if err := identity.SaveStoredSetting(root, "alice", "mode", "attestation"); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := util.LoadAPlaneToken(root, "alice"); err != nil {
 		t.Fatal(err)
 	}
@@ -99,11 +96,38 @@ func TestBuildIdentityRuntimeAppliesStoredConfig(t *testing.T) {
 	if ir.Config().ApprovalWait() != 10*time.Minute {
 		t.Fatalf("approval wait = %s, want %s", ir.Config().ApprovalWait(), 10*time.Minute)
 	}
-	if ir.Config().Mode() != identity.ModeAttestation {
-		t.Fatalf("mode = %s, want %s", ir.Config().Mode(), identity.ModeAttestation)
-	}
 	if got := ir.Policy(); got != nil {
 		t.Fatalf("policy = %+v, want nil before unlock verification", got)
+	}
+}
+
+func TestBuildIdentityRuntimeRejectsStoredMode(t *testing.T) {
+	root := t.TempDir()
+	server := &Signer{
+		registry: identity.NewRegistry(),
+		keyPaths: utilkeys.NewPaths(root),
+	}
+	cfg := config.DefaultServerConfig()
+
+	if err := identity.SaveStoredSetting(root, "alice", "mode", "attestation"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := util.LoadAPlaneToken(root, "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+		DataDir:               root,
+		KeyPaths:              server.keyPaths,
+		Config:                &cfg,
+		DefaultSessionTimeout: 15 * time.Minute,
+		ProductIdentityID:     auth.CurrentProductIdentityID(),
+	}, signerstartup.IdentityBuildHooks{}, "alice")
+	if err == nil {
+		t.Fatal("BuildIdentityRuntime() error = nil")
+	}
+	if !strings.Contains(err.Error(), "identity config mode is unsupported") {
+		t.Fatalf("BuildIdentityRuntime() error = %q, want unsupported mode", err.Error())
 	}
 }
 

@@ -234,11 +234,7 @@ func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 	}
 
 	if c.Mode != "" {
-		mode, err := ParseMode(c.Mode)
-		if err != nil {
-			return EffectiveConfig{}, fmt.Errorf("invalid identity mode: %w", err)
-		}
-		effective.Mode = mode
+		return EffectiveConfig{}, fmt.Errorf("identity config mode is unsupported in this release; use root node.yaml role")
 	}
 
 	return effective, nil

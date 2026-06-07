@@ -13,7 +13,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/asa"
-	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -95,22 +94,6 @@ func TestBuildAdminSettings_TimeoutZeroInHeadlessMode(t *testing.T) {
 	}
 	if settings.PassphraseMethod != "passfile" {
 		t.Errorf("headless mode: got PassphraseMethod %q, want %q", settings.PassphraseMethod, "passfile")
-	}
-}
-
-func TestBuildAdminSettingsIncludesIdentityMode(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-
-	ir := server.registry.Get(auth.DefaultIdentityID)
-	if ir == nil {
-		t.Fatal("expected default identity runtime")
-	}
-	ir.Config().SetMode(identity.ModeAttestation)
-
-	settings := (signerAdminServices{signer: server}).BuildAdminSettings(ir)
-	if settings.Mode != string(identity.ModeAttestation) {
-		t.Fatalf("settings Mode = %q, want %q", settings.Mode, identity.ModeAttestation)
 	}
 }
 
@@ -207,7 +190,7 @@ func TestUpdateAdminSetting_RejectsPassphraseTimeoutInHeadlessMode(t *testing.T)
 	}
 }
 
-func TestUpdateAdminSettingModePersistsWhenInventoryMatches(t *testing.T) {
+func TestUpdateAdminSettingModeIsReadOnly(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -220,113 +203,16 @@ func TestUpdateAdminSettingModePersistsWhenInventoryMatches(t *testing.T) {
 	if ir == nil {
 		t.Fatal("expected default identity runtime")
 	}
-	svc := signerAdminServices{signer: server}
-
-	err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
-		Key:   adminproto.AdminSettingMode,
-		Value: "attestation",
-	})
-	if err != nil {
-		t.Fatalf("UpdateAdminSetting(mode=attestation) error = %v", err)
-	}
-	if ir.Config().Mode() != identity.ModeAttestation {
-		t.Fatalf("runtime mode = %q, want %q", ir.Config().Mode(), identity.ModeAttestation)
-	}
-	stored, err := identity.LoadStoredConfig(server.dataDir, auth.DefaultIdentityID)
-	if err != nil {
-		t.Fatalf("LoadStoredConfig() error = %v", err)
-	}
-	if stored.Mode != string(identity.ModeAttestation) {
-		t.Fatalf("stored mode = %q, want %q", stored.Mode, identity.ModeAttestation)
-	}
-}
-
-func TestUpdateAdminSettingModeRejectsLockedIdentity(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-
-	configPath := filepath.Join(server.dataDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
-	ir := server.registry.Get(auth.DefaultIdentityID)
-	if ir == nil {
-		t.Fatal("expected default identity runtime")
-	}
-	ir.Lock()
 
 	err := (signerAdminServices{signer: server}).UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
-		Key:   adminproto.AdminSettingMode,
+		Key:   "mode",
 		Value: "attestation",
 	})
 	if err == nil {
-		t.Fatal("UpdateAdminSetting(mode while locked) error = nil")
+		t.Fatal("UpdateAdminSetting(mode) error = nil")
 	}
-	if !strings.Contains(err.Error(), "locked") {
-		t.Fatalf("error = %q, want locked", err.Error())
-	}
-}
-
-func TestUpdateAdminSettingModeAllowsDualWhileLocked(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-
-	configPath := filepath.Join(server.dataDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
-	ir := server.registry.Get(auth.DefaultIdentityID)
-	if ir == nil {
-		t.Fatal("expected default identity runtime")
-	}
-	ir.Lock()
-
-	err := (signerAdminServices{signer: server}).UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
-		Key:   adminproto.AdminSettingMode,
-		Value: "dual",
-	})
-	if err != nil {
-		t.Fatalf("UpdateAdminSetting(mode=dual while locked) error = %v", err)
-	}
-	if ir.Config().Mode() != identity.ModeDual {
-		t.Fatalf("runtime mode = %q, want dual", ir.Config().Mode())
-	}
-}
-
-func TestUpdateAdminSettingModeRejectsConflictingInventory(t *testing.T) {
-	server, cleanup := setupTestSigner(t)
-	defer cleanup()
-
-	configPath := filepath.Join(server.dataDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
-	ir := server.registry.Get(auth.DefaultIdentityID)
-	if ir == nil {
-		t.Fatal("expected default identity runtime")
-	}
-	ir.Config().SetMode(identity.ModeDual)
-	ir.PublishSnapshot(
-		map[string]string{"component": "/keys/component.key"},
-		map[string]string{"component": keytypes.AttestorComponentEd25519V1},
-		map[string]int{"component": 0},
-	)
-
-	err := (signerAdminServices{signer: server}).UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
-		Key:   adminproto.AdminSettingMode,
-		Value: "signing",
-	})
-	if err == nil {
-		t.Fatal("UpdateAdminSetting(mode with conflicting key) error = nil")
-	}
-	if !strings.Contains(err.Error(), `identity mode "signing"`) || !strings.Contains(err.Error(), keytypes.AttestorComponentEd25519V1) {
-		t.Fatalf("error = %q, want mode conflict", err.Error())
-	}
-	if ir.Config().Mode() != identity.ModeDual {
-		t.Fatalf("runtime mode = %q, want unchanged dual", ir.Config().Mode())
+	if !strings.Contains(err.Error(), "unknown or read-only setting") {
+		t.Fatalf("error = %q, want read-only", err.Error())
 	}
 }
 

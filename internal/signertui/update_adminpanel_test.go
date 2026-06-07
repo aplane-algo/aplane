@@ -20,15 +20,6 @@ func TestValidateAdminSettingValuePassphraseTimeout(t *testing.T) {
 	}
 }
 
-func TestValidateAdminSettingValueMode(t *testing.T) {
-	if err := validateAdminSettingValue(adminproto.AdminSettingMode, "attestation"); err != nil {
-		t.Fatalf("validateAdminSettingValue(valid mode) error = %v", err)
-	}
-	if err := validateAdminSettingValue(adminproto.AdminSettingMode, "attestation-only"); err == nil {
-		t.Fatal("validateAdminSettingValue(invalid mode) error = nil")
-	}
-}
-
 func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 	m := Model{
 		transportLabel: "IPC",
@@ -48,7 +39,6 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 		"User Auto-Approve",
 		"Lock-on-disconnect",
 		"Passphrase timeout",
-		"Identity mode",
 		"Color theme",
 	}
 	for i, want := range wantLabels {
@@ -62,8 +52,8 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 			t.Fatalf("row %d editable = false, want true", i)
 		}
 	}
-	if rows[5].section != "Runtime" || rows[5].label != "Admin transport" {
-		t.Fatalf("row 5 = %q/%q, want Runtime/Admin transport", rows[5].section, rows[5].label)
+	if rows[4].section != "Runtime" || rows[4].label != "Admin transport" {
+		t.Fatalf("row 4 = %q/%q, want Runtime/Admin transport", rows[4].section, rows[4].label)
 	}
 	if rows[0].key != adminproto.AdminSettingUserAutoApprove || rows[0].value != "false" {
 		t.Fatalf("user auto-approve row = key %q value %q, want user_auto_approve/false", rows[0].key, rows[0].value)

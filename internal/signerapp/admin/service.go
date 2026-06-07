@@ -68,7 +68,6 @@ func (s Service) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettin
 		LockOnDisconnect:  lockOnDisconnect,
 		PassphraseTimeout: timeoutStr,
 		PassphraseMethod:  passphraseMethod,
-		Mode:              string(icfg.Mode()),
 		SSHEnabled:        sshInfo.Enabled,
 		SSHPort:           sshInfo.Port,
 		SSHFingerprint:    sshInfo.Fingerprint,
@@ -110,7 +109,6 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 	oldIdentityUserAutoApprove := icfg.UserAutoApprove()
 	oldIdentityLockOnDisconnect := icfg.LockOnDisconnect()
 	oldIdentitySessionTimeout := icfg.SessionTimeout()
-	oldIdentityMode := icfg.Mode()
 
 	switch req.Key {
 	case adminproto.AdminSettingUserAutoApprove:
@@ -139,24 +137,6 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 				saveKey, saveValue = adminproto.AdminSettingPassphraseTimeout, req.Value
 			}
 		}
-	case adminproto.AdminSettingMode:
-		mode, parseErr := identity.ParseMode(req.Value)
-		if parseErr != nil {
-			err = parseErr
-		} else if mode == identity.ModeDual {
-			icfg.SetMode(mode)
-			saveKey, saveValue = adminproto.AdminSettingMode, string(mode)
-		} else if !ir.IsUnlocked() {
-			err = fmt.Errorf("cannot change identity mode to %q while signer is locked", mode)
-		} else {
-			_, keyTypes, _ := ir.KeySnapshot()
-			if modeErr := identity.ValidateKeyTypesAllowed(mode, keyTypes); modeErr != nil {
-				err = modeErr
-			} else {
-				icfg.SetMode(mode)
-				saveKey, saveValue = adminproto.AdminSettingMode, string(mode)
-			}
-		}
 	case adminproto.AdminSettingTheme:
 		v := strings.ToLower(req.Value)
 		if v != "auto" && v != "dark" && v != "light" {
@@ -182,7 +162,6 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 			icfg.SetUserAutoApprove(oldIdentityUserAutoApprove)
 			icfg.SetLockOnDisconnect(oldIdentityLockOnDisconnect)
 			icfg.SetSessionTimeout(oldIdentitySessionTimeout)
-			icfg.SetMode(oldIdentityMode)
 			err = fmt.Errorf("failed to save config.yaml: %w", saveErr)
 		}
 	}
