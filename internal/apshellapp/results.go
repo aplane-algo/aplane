@@ -696,20 +696,20 @@ type RequestTokenResult struct {
 
 // EndpointEntry describes one client-local signer endpoint profile.
 type EndpointEntry struct {
-	Alias                       string
-	Role                        string
-	URL                         string
-	SignerPort                  int
-	LocalPort                   int
-	IdentityFile                string
-	KnownHostsPath              string
-	TokenFile                   string
-	TokenPresent                bool
-	TokenError                  string
-	IsDefault                   bool
-	PublishedAttestorPublicKeys []string
-	PublishedAttestorComponents []string
-	PublishedAttestors          []EndpointAttestorEntry
+	Alias                     string
+	Role                      string
+	URL                       string
+	SignerPort                int
+	LocalPort                 int
+	IdentityFile              string
+	KnownHostsPath            string
+	TokenFile                 string
+	TokenPresent              bool
+	TokenError                string
+	IsDefault                 bool
+	PublishedSentryPublicKeys []string
+	PublishedSentryComponents []string
+	PublishedSentries         []EndpointSentryEntry
 }
 
 // EndpointsListResult describes the endpoint registry entries visible to apshell.
@@ -750,51 +750,51 @@ type EndpointDeleteResult struct {
 	RenderLines []string
 }
 
-// EndpointAttestorEntry describes one attestor component advertised by a
-// client-local attestor endpoint.
-type EndpointAttestorEntry struct {
+// EndpointSentryEntry describes one sentry component advertised by a
+// client-local sentry endpoint.
+type EndpointSentryEntry struct {
 	EndpointAlias string
 	ComponentKey  string
 	KeyType       string
 	LastSeenAt    string
 }
 
-// EndpointAttestorsResult describes the client-local attestor inventory.
-type EndpointAttestorsResult struct {
-	Attestors   []EndpointAttestorEntry
+// EndpointSentriesResult describes the client-local sentry inventory.
+type EndpointSentriesResult struct {
+	Sentries    []EndpointSentryEntry
 	RenderLines []string
 }
 
-// DiscoveredEndpointAttestorKey describes one attestor component key advertised
+// DiscoveredEndpointSentryKey describes one sentry component key advertised
 // by an endpoint during discovery.
-type DiscoveredEndpointAttestorKey struct {
+type DiscoveredEndpointSentryKey struct {
 	PublicKey    string
 	ComponentKey string
 	KeyType      string
 }
 
-// EndpointAttestorDiscovery describes discovered attestor keys for one endpoint.
-type EndpointAttestorDiscovery struct {
+// EndpointSentryDiscovery describes discovered sentry keys for one endpoint.
+type EndpointSentryDiscovery struct {
 	Alias          string
-	Keys           []DiscoveredEndpointAttestorKey
+	Keys           []DiscoveredEndpointSentryKey
 	Skipped        bool
 	PreservedCount int
 	Error          string
 }
 
-// EndpointDiscoverAttestorsResult describes a full attestor endpoint mapping
+// EndpointDiscoverSentriesResult describes a full sentry endpoint mapping
 // rebuild from endpoint /keys inventories.
-type EndpointDiscoverAttestorsResult struct {
+type EndpointDiscoverSentriesResult struct {
 	DryRun                 bool
-	Endpoints              []EndpointAttestorDiscovery
+	Endpoints              []EndpointSentryDiscovery
 	PublicKeyCount         int
 	PreviousPublishedCount int
 	RenderLines            []string
 }
 
-// SyncedEndpointAttestorReference describes one endpoint-discovered attestor
+// SyncedEndpointSentryReference describes one endpoint-discovered sentry
 // candidate synced into the connected signer identity.
-type SyncedEndpointAttestorReference struct {
+type SyncedEndpointSentryReference struct {
 	Name          string
 	EndpointAlias string
 	PublicKey     string
@@ -802,17 +802,17 @@ type SyncedEndpointAttestorReference struct {
 	KeyType       string
 }
 
-// EndpointSyncAttestorsResult describes syncing endpoint-published attestors
+// EndpointSyncSentriesResult describes syncing endpoint-published sentries
 // into signer-side key-generation reference options.
-type EndpointSyncAttestorsResult struct {
+type EndpointSyncSentriesResult struct {
 	DryRun            bool
 	NeedsConfirmation bool
-	Discovery         *EndpointDiscoverAttestorsResult
+	Discovery         *EndpointDiscoverSentriesResult
 	CandidateCount    int
 	Added             int
 	Updated           int
 	Removed           int
-	Records           []SyncedEndpointAttestorReference
+	Records           []SyncedEndpointSentryReference
 	RenderLines       []string
 }
 

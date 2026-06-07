@@ -511,9 +511,9 @@ func TestAdminSyncAttestorsNotifiesAdminKeyTypesChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	reqBody, _ := json.Marshal(signerapi.AdminSyncAttestorReferencesRequest{
-		Candidates: []signerapi.AttestorReferenceCandidate{{
-			EndpointAlias: "attestor-local",
+	reqBody, _ := json.Marshal(signerapi.AdminSyncSentryReferencesRequest{
+		Candidates: []signerapi.SentryReferenceCandidate{{
+			EndpointAlias: "sentry-local",
 			ComponentKey:  componentKey,
 			KeyType:       keytypes.AttestorComponentEd25519V1,
 			PublicKeyHex:  strings.Repeat("ab", 32),
@@ -521,11 +521,11 @@ func TestAdminSyncAttestorsNotifiesAdminKeyTypesChanged(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	server.handleAdminSyncAttestors(w, requestWithIdentity(http.MethodPost, "/admin/attestors/sync", reqBody))
+	server.handleAdminSyncSentries(w, requestWithIdentity(http.MethodPost, "/admin/sentries/sync", reqBody))
 	if w.Code != http.StatusOK {
-		t.Fatalf("handleAdminSyncAttestors status = %d: %s", w.Code, w.Body.String())
+		t.Fatalf("handleAdminSyncSentries status = %d: %s", w.Code, w.Body.String())
 	}
-	var resp signerapi.AdminSyncAttestorReferencesResponse
+	var resp signerapi.AdminSyncSentryReferencesResponse
 	decodeResponse(t, w, &resp)
 	if resp.Added != 1 {
 		t.Fatalf("Added = %d, want 1", resp.Added)

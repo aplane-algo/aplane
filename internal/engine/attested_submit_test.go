@@ -348,7 +348,7 @@ func TestRequestAttestorComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 	if err == nil {
 		t.Fatal("requestAttestorComponentSignatures() error = nil, want explicit endpoint mismatch")
 	}
-	if !strings.Contains(err.Error(), "did not advertise attestor component public key") {
+	if !strings.Contains(err.Error(), "did not advertise sentry component public key") {
 		t.Fatalf("requestAttestorComponentSignatures() error = %q, want endpoint mismatch", err)
 	}
 	if got := wrongSignCalls.Load(); got != 0 {

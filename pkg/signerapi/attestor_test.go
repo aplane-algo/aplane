@@ -22,9 +22,9 @@ func TestComponentSignRequestValidate(t *testing.T) {
 		request ComponentSignRequest
 		wantErr string
 	}{
-		{name: "valid attestor", request: valid},
+		{name: "valid sentry", request: valid},
 		{name: "valid user", request: ComponentSignRequest{Role: ComponentSignRoleUser, ComponentKey: "ADDR", GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
-		{name: "attestor may omit component key", request: ComponentSignRequest{Role: ComponentSignRoleSentry, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
+		{name: "sentry may omit component key", request: ComponentSignRequest{Role: ComponentSignRoleSentry, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
 		{name: "invalid request ID", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.RequestID = "bad id" }), wantErr: "request_id contains invalid character"},
 		{name: "missing role", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.Role = "" }), wantErr: "role must be"},
 		{name: "user missing key", request: ComponentSignRequest{Role: ComponentSignRoleUser, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}, wantErr: "component_key is required"},
@@ -77,7 +77,7 @@ func TestAttestedAssemblyRequestValidate(t *testing.T) {
 		{name: "duplicate coverage", request: withAssemblyRequest(valid, func(r *AttestedAssemblyRequest) { r.Passthrough[0].TargetIndex = 0 }), wantErr: "duplicate"},
 		{name: "missing target account", request: withAssemblyRequest(valid, func(r *AttestedAssemblyRequest) { r.Targets[0].AttestedAccount = "" }), wantErr: "attested_account is required"},
 		{name: "missing user signature", request: withAssemblyRequest(valid, func(r *AttestedAssemblyRequest) { r.Targets[0].UserSignature = "" }), wantErr: "user_signature is required"},
-		{name: "missing attestor signature", request: withAssemblyRequest(valid, func(r *AttestedAssemblyRequest) { r.Targets[0].AttestorSignature = "" }), wantErr: "attestor_signature is required"},
+		{name: "missing sentry signature", request: withAssemblyRequest(valid, func(r *AttestedAssemblyRequest) { r.Targets[0].AttestorSignature = "" }), wantErr: "attestor_signature is required"},
 		{name: "bad claimed source ID", request: withAssemblyRequest(valid, func(r *AttestedAssemblyRequest) { r.Targets[0].UserSourceRequestID = "bad id" }), wantErr: "user_source_request_id"},
 	}
 

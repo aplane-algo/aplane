@@ -926,13 +926,13 @@ write_apshell_attestor_endpoint_registry() {
 
 schema_version: 1
 endpoints:
-  local-attestor:
+  local-sentry:
     role: sentry
     url: ssh://$host:$ssh_port
     signer_port: $signer_port
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: tokens/local-attestor.token
+    token_file: tokens/local-sentry.token
 EOF
 }
 
@@ -1957,7 +1957,7 @@ STARTEOF
     if [ "$NODE_ROLE" = "signer" ]; then
         echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
     else
-        echo "Token setup uses SSH provisioning; run 'request-token --endpoint local-attestor' from apshell after install."
+        echo "Token setup uses SSH provisioning; run 'request-token --endpoint local-sentry' from apshell after install."
     fi
 
     # Offer to add apenv.sh to shell rc
@@ -1989,9 +1989,9 @@ STARTEOF
         echo "On first launch, unlock the signer pane, run 'request-token' in the shell pane,"
         echo "and approve the request in the signer pane."
     else
-        echo "On first launch, unlock the attestor pane, run"
-        echo "  request-token --endpoint local-attestor"
-        echo "in the shell pane, and approve the request in the attestor pane."
+        echo "On first launch, unlock the sentry pane, run"
+        echo "  request-token --endpoint local-sentry"
+        echo "in the shell pane, and approve the request in the sentry pane."
     fi
     echo ""
     echo "To uninstall: $(shell_quote "$LOCAL_PATH/uninstall.sh")"
@@ -2238,7 +2238,7 @@ if [ -n "$SUDO_USER" ]; then
     if [ "$NODE_ROLE" = "signer" ]; then
         echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
     else
-        echo "Token setup uses SSH provisioning; run 'request-token --endpoint local-attestor' from apshell after install."
+        echo "Token setup uses SSH provisioning; run 'request-token --endpoint local-sentry' from apshell after install."
     fi
 
     APCONSOLE_CONFIG="$OPERATOR_ROOT/apconsole.yaml"
@@ -2321,7 +2321,7 @@ fi
 if [ "$NODE_ROLE" = "signer" ]; then
     echo "The signer is running but locked. To unlock and manage keys:"
 else
-    echo "The attestor is running but locked. To unlock and manage component keys:"
+    echo "The sentry is running but locked. To unlock and manage component keys:"
 fi
 echo "  apadmin"
 echo ""
@@ -2336,6 +2336,6 @@ echo "apshell is configured at ${APCLIENT_DIR:-\$HOME/aplane/apclient}."
 if [ "$NODE_ROLE" = "signer" ]; then
     echo "Use 'request-token' in apshell to obtain an API token via SSH provisioning."
 else
-    echo "Use 'request-token --endpoint local-attestor' in apshell to obtain an attestor API token via SSH provisioning."
+    echo "Use 'request-token --endpoint local-sentry' in apshell to obtain a sentry API token via SSH provisioning."
 fi
 echo "After token enrollment has written aplane.token and known_hosts, use apconsole for the unified secure-machine console."

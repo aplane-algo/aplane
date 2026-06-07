@@ -28,7 +28,7 @@ func TestEndpointImportDryRunDoesNotWriteFiles(t *testing.T) {
 	envelopePath := writeEndpointEnvelope(t, dataDir)
 
 	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias:  "attestor-local",
+		Alias:  "sentry-local",
 		Role:   config.ClientEndpointRoleSentry,
 		Path:   envelopePath,
 		DryRun: true,
@@ -53,7 +53,7 @@ func TestEndpointImportWritesEndpointOnly(t *testing.T) {
 	envelopePath := writeEndpointEnvelope(t, dataDir)
 
 	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "attestor-local",
+		Alias: "sentry-local",
 		Role:  config.ClientEndpointRoleSentry,
 		Path:  envelopePath,
 	})
@@ -64,18 +64,18 @@ func TestEndpointImportWritesEndpointOnly(t *testing.T) {
 		t.Fatal("Created = false, want true")
 	}
 	if result.DefaultChanged {
-		t.Fatal("DefaultChanged = true, want false for attestor endpoint")
+		t.Fatal("DefaultChanged = true, want false for sentry endpoint")
 	}
 
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	endpoint, ok := cfg.Endpoints.Endpoint("attestor-local")
+	endpoint, ok := cfg.Endpoints.Endpoint("sentry-local")
 	if !ok {
-		t.Fatal("attestor-local endpoint missing")
+		t.Fatal("sentry-local endpoint missing")
 	}
-	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "attestor-local.token") {
+	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "sentry-local.token") {
 		t.Fatalf("TokenFile = %q, want resolved endpoint token path", endpoint.TokenFile)
 	}
 	if len(cfg.AttestorEndpoints) != 0 {
@@ -86,18 +86,18 @@ func TestEndpointImportWritesEndpointOnly(t *testing.T) {
 func TestEndpointImportReplacesSameAlias(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local", "ssh://127.0.0.1:2223", 11270)
+	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "sentry-local", "ssh://127.0.0.1:2223", 11270)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "attestor-local",
+		Alias: "sentry-local",
 		Role:  config.ClientEndpointRoleSentry,
 		Path:  firstPath,
 	}); err != nil {
 		t.Fatalf("EndpointImport(first) error = %v", err)
 	}
 
-	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local-updated", "ssh://127.0.0.1:2224", 12270)
+	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "sentry-local-updated", "ssh://127.0.0.1:2224", 12270)
 	result, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "attestor-local",
+		Alias: "sentry-local",
 		Role:  config.ClientEndpointRoleSentry,
 		Path:  secondPath,
 	})
@@ -112,9 +112,9 @@ func TestEndpointImportReplacesSameAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	endpoint, ok := cfg.Endpoints.Endpoint("attestor-local")
+	endpoint, ok := cfg.Endpoints.Endpoint("sentry-local")
 	if !ok {
-		t.Fatal("attestor-local endpoint missing")
+		t.Fatal("sentry-local endpoint missing")
 	}
 	if endpoint.URL != "ssh://127.0.0.1:2224" || endpoint.SignerPort != 12270 {
 		t.Fatalf("endpoint after replace = %#v, want updated url/signer_port", endpoint)
@@ -124,18 +124,18 @@ func TestEndpointImportReplacesSameAlias(t *testing.T) {
 func TestEndpointImportRejectsExistingURLWithDifferentAlias(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-local", "ssh://127.0.0.1:2223/", 11270)
+	firstPath := writeEndpointEnvelopeWithOptions(t, dataDir, "sentry-local", "ssh://127.0.0.1:2223/", 11270)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "attestor-local",
+		Alias: "sentry-local",
 		Role:  config.ClientEndpointRoleSentry,
 		Path:  firstPath,
 	}); err != nil {
 		t.Fatalf("EndpointImport(first) error = %v", err)
 	}
 
-	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "attestor-copy", "ssh://127.0.0.1:2223", 11270)
+	secondPath := writeEndpointEnvelopeWithOptions(t, dataDir, "sentry-copy", "ssh://127.0.0.1:2223", 11270)
 	_, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "attestor-copy",
+		Alias: "sentry-copy",
 		Role:  config.ClientEndpointRoleSentry,
 		Path:  secondPath,
 	})
@@ -150,8 +150,8 @@ func TestEndpointImportRejectsExistingURLWithDifferentAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if _, ok := cfg.Endpoints.Endpoint("attestor-copy"); ok {
-		t.Fatal("attestor-copy endpoint was written despite duplicate URL conflict")
+	if _, ok := cfg.Endpoints.Endpoint("sentry-copy"); ok {
+		t.Fatal("sentry-copy endpoint was written despite duplicate URL conflict")
 	}
 }
 
@@ -160,15 +160,15 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	app := newEndpointTestApp(t, dataDir)
 	envelopePath := writeEndpointEnvelope(t, dataDir)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "attestor-local",
+		Alias: "sentry-local",
 		Role:  config.ClientEndpointRoleSentry,
 		Path:  envelopePath,
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
 	publicKeyHex := testAttestorPublicKeyHex()
-	writePublishedAttestor(t, dataDir, "attestor-local", publicKeyHex)
-	tokenPath := filepath.Join(dataDir, "tokens", "attestor-local.token")
+	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
+	tokenPath := filepath.Join(dataDir, "tokens", "sentry-local.token")
 	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
 		t.Fatalf("MkdirAll(tokens) error = %v", err)
 	}
@@ -184,18 +184,18 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 		t.Fatalf("EndpointsList entries = %d, want 1", len(list.Endpoints))
 	}
 	entry := list.Endpoints[0]
-	if entry.Alias != "attestor-local" || !entry.TokenPresent {
-		t.Fatalf("list entry = %#v, want attestor-local with token present", entry)
+	if entry.Alias != "sentry-local" || !entry.TokenPresent {
+		t.Fatalf("list entry = %#v, want sentry-local with token present", entry)
 	}
-	if got := entry.PublishedAttestorPublicKeys; len(got) != 1 || got[0] != publicKeyHex {
-		t.Fatalf("PublishedAttestorPublicKeys = %#v, want %s", got, publicKeyHex)
+	if got := entry.PublishedSentryPublicKeys; len(got) != 1 || got[0] != publicKeyHex {
+		t.Fatalf("PublishedSentryPublicKeys = %#v, want %s", got, publicKeyHex)
 	}
 	componentID := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
-	if got := entry.PublishedAttestorComponents; len(got) != 1 || got[0] != componentID {
-		t.Fatalf("PublishedAttestorComponents = %#v, want %s", got, componentID)
+	if got := entry.PublishedSentryComponents; len(got) != 1 || got[0] != componentID {
+		t.Fatalf("PublishedSentryComponents = %#v, want %s", got, componentID)
 	}
 
-	show, err := app.EndpointShow(context.Background(), "attestor-local")
+	show, err := app.EndpointShow(context.Background(), "sentry-local")
 	if err != nil {
 		t.Fatalf("EndpointShow() error = %v", err)
 	}
@@ -207,12 +207,12 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	}
 }
 
-func TestEndpointAttestorsRenderComponentSelectorsOnly(t *testing.T) {
+func TestEndpointSentriesRenderComponentSelectorsOnly(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	envelopePath := writeEndpointEnvelope(t, dataDir)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "attestor-local",
+		Alias: "sentry-local",
 		Role:  config.ClientEndpointRoleSentry,
 		Path:  envelopePath,
 	}); err != nil {
@@ -220,16 +220,16 @@ func TestEndpointAttestorsRenderComponentSelectorsOnly(t *testing.T) {
 	}
 	publicKeyHex := testAttestorPublicKeyHex()
 	componentID := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
-	writePublishedAttestor(t, dataDir, "attestor-local", publicKeyHex)
+	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
 
-	attestors, err := app.EndpointAttestors(context.Background())
+	sentries, err := app.EndpointSentries(context.Background())
 	if err != nil {
-		t.Fatalf("EndpointAttestors() error = %v", err)
+		t.Fatalf("EndpointSentries() error = %v", err)
 	}
-	assertHumanEndpointOutputUsesComponentOnly(t, attestors.RenderLines, publicKeyHex, componentID)
+	assertHumanEndpointOutputUsesComponentOnly(t, sentries.RenderLines, publicKeyHex, componentID)
 }
 
-func TestEndpointDiscoverAttestorsRebuildsMappingsFromAllEndpoints(t *testing.T) {
+func TestEndpointDiscoverSentriesRebuildsMappingsFromAllEndpoints(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
@@ -252,20 +252,20 @@ func TestEndpointDiscoverAttestorsRebuildsMappingsFromAllEndpoints(t *testing.T)
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(signer-local) error = %v", err)
 	}
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  attestorServer.URL,
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
 	writeEndpointToken(t, dataDir, "signer-local", "sign-token")
-	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
+	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
 	staleKeyHex := strings.Repeat("cd", 32)
-	writePublishedAttestor(t, dataDir, "attestor-local", staleKeyHex)
+	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
 
-	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
 	if err != nil {
-		t.Fatalf("EndpointDiscoverAttestors() error = %v", err)
+		t.Fatalf("EndpointDiscoverSentries() error = %v", err)
 	}
 	if result.PublicKeyCount != 1 || result.PreviousPublishedCount != 1 {
 		t.Fatalf("discovery counts = public:%d previous:%d, want 1/1", result.PublicKeyCount, result.PreviousPublishedCount)
@@ -281,20 +281,20 @@ func TestEndpointDiscoverAttestorsRebuildsMappingsFromAllEndpoints(t *testing.T)
 	}
 	route, ok := cfg.AttestorEndpoints[publicKeyHex]
 	if !ok {
-		t.Fatalf("attestor endpoint route for %s missing from %#v", publicKeyHex, cfg.AttestorEndpoints)
+		t.Fatalf("sentry endpoint route for %s missing from %#v", publicKeyHex, cfg.AttestorEndpoints)
 	}
-	if route.Endpoint != "attestor-local" {
-		t.Fatalf("route endpoint = %q, want attestor-local", route.Endpoint)
+	if route.Endpoint != "sentry-local" {
+		t.Fatalf("route endpoint = %q, want sentry-local", route.Endpoint)
 	}
 	if _, ok := cfg.AttestorEndpoints[staleKeyHex]; ok {
-		t.Fatalf("stale attestor endpoint route %s remained after discovery", staleKeyHex)
+		t.Fatalf("stale sentry endpoint route %s remained after discovery", staleKeyHex)
 	}
 	if _, ok := app.eng.AttestorEndpoints[publicKeyHex]; !ok {
-		t.Fatalf("engine attestor routing was not refreshed for %s", publicKeyHex)
+		t.Fatalf("engine sentry routing was not refreshed for %s", publicKeyHex)
 	}
 }
 
-func TestEndpointDiscoverAttestorsPreservesUnreachableEndpointInventory(t *testing.T) {
+func TestEndpointDiscoverSentriesPreservesUnreachableEndpointInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
@@ -308,39 +308,39 @@ func TestEndpointDiscoverAttestorsPreservesUnreachableEndpointInventory(t *testi
 		IsComponentKey: true,
 	}})
 
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-online", config.ClientEndpointConfig{
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-online", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  attestorServer.URL,
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor-online) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry-online) error = %v", err)
 	}
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-offline", config.ClientEndpointConfig{
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-offline", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  "http://127.0.0.1:1",
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor-offline) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry-offline) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "attestor-online", "att-token")
-	writeEndpointToken(t, dataDir, "attestor-offline", "att-token")
-	writePublishedAttestors(t, dataDir, map[string]map[string]config.ClientEndpointPublishedAttestor{
-		"attestor-online": {
-			oldOnlineKey: endpointPublishedAttestorForTest(t, oldOnlineKey),
+	writeEndpointToken(t, dataDir, "sentry-online", "att-token")
+	writeEndpointToken(t, dataDir, "sentry-offline", "att-token")
+	writePublishedSentries(t, dataDir, map[string]map[string]config.ClientEndpointPublishedSentry{
+		"sentry-online": {
+			oldOnlineKey: endpointPublishedSentryForTest(t, oldOnlineKey),
 		},
-		"attestor-offline": {
-			offlineKey: endpointPublishedAttestorForTest(t, offlineKey),
+		"sentry-offline": {
+			offlineKey: endpointPublishedSentryForTest(t, offlineKey),
 		},
 	})
 
-	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
 	if err != nil {
-		t.Fatalf("EndpointDiscoverAttestors() error = %v", err)
+		t.Fatalf("EndpointDiscoverSentries() error = %v", err)
 	}
 	if result.PublicKeyCount != 2 || result.PreviousPublishedCount != 2 {
 		t.Fatalf("discovery counts = public:%d previous:%d, want 2/2", result.PublicKeyCount, result.PreviousPublishedCount)
 	}
-	var skipped EndpointAttestorDiscovery
+	var skipped EndpointSentryDiscovery
 	for _, endpoint := range result.Endpoints {
-		if endpoint.Alias == "attestor-offline" {
+		if endpoint.Alias == "sentry-offline" {
 			skipped = endpoint
 			break
 		}
@@ -353,43 +353,43 @@ func TestEndpointDiscoverAttestorsPreservesUnreachableEndpointInventory(t *testi
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	publishedOnline := cfg.Endpoints.Endpoints["attestor-online"].PublishedAttestors
+	publishedOnline := cfg.Endpoints.Endpoints["sentry-online"].PublishedSentries
 	if _, ok := publishedOnline[newOnlineKey]; !ok {
-		t.Fatalf("new online attestor %s missing from %#v", newOnlineKey, publishedOnline)
+		t.Fatalf("new online sentry %s missing from %#v", newOnlineKey, publishedOnline)
 	}
 	if _, ok := publishedOnline[oldOnlineKey]; ok {
-		t.Fatalf("old online attestor %s was not cleared from %#v", oldOnlineKey, publishedOnline)
+		t.Fatalf("old online sentry %s was not cleared from %#v", oldOnlineKey, publishedOnline)
 	}
-	publishedOffline := cfg.Endpoints.Endpoints["attestor-offline"].PublishedAttestors
+	publishedOffline := cfg.Endpoints.Endpoints["sentry-offline"].PublishedSentries
 	if _, ok := publishedOffline[offlineKey]; !ok {
-		t.Fatalf("offline attestor %s was not preserved in %#v", offlineKey, publishedOffline)
+		t.Fatalf("offline sentry %s was not preserved in %#v", offlineKey, publishedOffline)
 	}
-	if route := cfg.AttestorEndpoints[offlineKey]; route.Endpoint != "attestor-offline" {
-		t.Fatalf("offline route = %#v, want attestor-offline", route)
+	if route := cfg.AttestorEndpoints[offlineKey]; route.Endpoint != "sentry-offline" {
+		t.Fatalf("offline route = %#v, want sentry-offline", route)
 	}
 	if _, ok := app.eng.AttestorEndpoints[offlineKey]; !ok {
 		t.Fatalf("engine route for preserved offline key %s missing", offlineKey)
 	}
 }
 
-func TestEndpointDiscoverAttestorsPreservesLockedEndpointInventory(t *testing.T) {
+func TestEndpointDiscoverSentriesPreservesLockedEndpointInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
 	staleKeyHex := strings.Repeat("cd", 32)
 	attestorServer := newEndpointKeysStatusServer(t, "att-token", http.StatusForbidden, `{"error":"signer is locked"}`)
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  attestorServer.URL,
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
-	writePublishedAttestor(t, dataDir, "attestor-local", staleKeyHex)
+	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
+	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
 
-	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
 	if err != nil {
-		t.Fatalf("EndpointDiscoverAttestors(locked) error = %v", err)
+		t.Fatalf("EndpointDiscoverSentries(locked) error = %v", err)
 	}
 	if result.PublicKeyCount != 1 {
 		t.Fatalf("PublicKeyCount = %d, want preserved stale key", result.PublicKeyCount)
@@ -399,64 +399,64 @@ func TestEndpointDiscoverAttestorsPreservesLockedEndpointInventory(t *testing.T)
 	}
 }
 
-func TestEndpointDiscoverAttestorsPreservesServerErrorEndpointInventory(t *testing.T) {
+func TestEndpointDiscoverSentriesPreservesServerErrorEndpointInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
 	staleKeyHex := strings.Repeat("cd", 32)
 	attestorServer := newEndpointKeysStatusServer(t, "att-token", http.StatusServiceUnavailable, `service unavailable`)
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  attestorServer.URL,
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
-	writePublishedAttestor(t, dataDir, "attestor-local", staleKeyHex)
+	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
+	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
 
-	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
 	if err != nil {
-		t.Fatalf("EndpointDiscoverAttestors(5xx) error = %v", err)
+		t.Fatalf("EndpointDiscoverSentries(5xx) error = %v", err)
 	}
 	if len(result.Endpoints) != 1 || !result.Endpoints[0].Skipped || result.Endpoints[0].PreservedCount != 1 {
 		t.Fatalf("endpoint discovery = %#v, want one skipped endpoint with preserved key", result.Endpoints)
 	}
 }
 
-func TestEndpointDiscoverAttestorsRejectsAuthFailure(t *testing.T) {
+func TestEndpointDiscoverSentriesRejectsAuthFailure(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
 	staleKeyHex := strings.Repeat("cd", 32)
 	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{})
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  attestorServer.URL,
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "attestor-local", "wrong-token")
-	writePublishedAttestor(t, dataDir, "attestor-local", staleKeyHex)
+	writeEndpointToken(t, dataDir, "sentry-local", "wrong-token")
+	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
 
-	_, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	_, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
 	if err == nil {
-		t.Fatal("EndpointDiscoverAttestors(auth failure) error = nil, want rejection")
+		t.Fatal("EndpointDiscoverSentries(auth failure) error = nil, want rejection")
 	}
-	if !strings.Contains(err.Error(), "attestor endpoint authentication failed") {
-		t.Fatalf("EndpointDiscoverAttestors(auth failure) error = %v, want auth rejection", err)
+	if !strings.Contains(err.Error(), "sentry endpoint authentication failed") {
+		t.Fatalf("EndpointDiscoverSentries(auth failure) error = %v, want auth rejection", err)
 	}
 
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	published := cfg.Endpoints.Endpoints["attestor-local"].PublishedAttestors
+	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries
 	if _, ok := published[staleKeyHex]; !ok {
-		t.Fatalf("stale attestor %s was not preserved after failed auth in %#v", staleKeyHex, published)
+		t.Fatalf("stale sentry %s was not preserved after failed auth in %#v", staleKeyHex, published)
 	}
 }
 
-func TestEndpointDiscoverAttestorsRejectsInvalidEndpointMetadata(t *testing.T) {
+func TestEndpointDiscoverSentriesRejectsInvalidEndpointMetadata(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
@@ -468,37 +468,37 @@ func TestEndpointDiscoverAttestorsRejectsInvalidEndpointMetadata(t *testing.T) {
 		KeyType:        keytypes.AttestorComponentEd25519V1,
 		IsComponentKey: true,
 	}})
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  attestorServer.URL,
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
-	writePublishedAttestor(t, dataDir, "attestor-local", staleKeyHex)
+	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
+	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
 
-	_, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{})
+	_, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
 	if err == nil {
-		t.Fatal("EndpointDiscoverAttestors(invalid metadata) error = nil, want rejection")
+		t.Fatal("EndpointDiscoverSentries(invalid metadata) error = nil, want rejection")
 	}
-	if !strings.Contains(err.Error(), "invalid attestor discovery metadata") {
-		t.Fatalf("EndpointDiscoverAttestors(invalid metadata) error = %v, want metadata rejection", err)
+	if !strings.Contains(err.Error(), "invalid sentry discovery metadata") {
+		t.Fatalf("EndpointDiscoverSentries(invalid metadata) error = %v, want metadata rejection", err)
 	}
 
 	cfg, err := config.LoadConfig(dataDir)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	published := cfg.Endpoints.Endpoints["attestor-local"].PublishedAttestors
+	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries
 	if _, ok := published[staleKeyHex]; !ok {
-		t.Fatalf("stale attestor %s was not preserved after failed discovery in %#v", staleKeyHex, published)
+		t.Fatalf("stale sentry %s was not preserved after failed discovery in %#v", staleKeyHex, published)
 	}
 	if _, ok := published[publicKeyHex]; ok {
-		t.Fatalf("invalid attestor %s was written despite metadata failure", publicKeyHex)
+		t.Fatalf("invalid sentry %s was written despite metadata failure", publicKeyHex)
 	}
 }
 
-func TestEndpointDiscoverAttestorsDryRunDoesNotWriteMappings(t *testing.T) {
+func TestEndpointDiscoverSentriesDryRunDoesNotWriteMappings(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	publicKeyHex := testAttestorPublicKeyHex()
@@ -508,17 +508,17 @@ func TestEndpointDiscoverAttestorsDryRunDoesNotWriteMappings(t *testing.T) {
 		KeyType:        keytypes.AttestorComponentEd25519V1,
 		IsComponentKey: true,
 	}})
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  attestorServer.URL,
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
+	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
 
-	result, err := app.EndpointDiscoverAttestors(context.Background(), EndpointDiscoverAttestorsRequest{DryRun: true})
+	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{DryRun: true})
 	if err != nil {
-		t.Fatalf("EndpointDiscoverAttestors(dry-run) error = %v", err)
+		t.Fatalf("EndpointDiscoverSentries(dry-run) error = %v", err)
 	}
 	if !result.DryRun || result.PublicKeyCount != 1 {
 		t.Fatalf("dry-run result = dry:%v public:%d, want true/1", result.DryRun, result.PublicKeyCount)
@@ -532,22 +532,22 @@ func TestEndpointDiscoverAttestorsDryRunDoesNotWriteMappings(t *testing.T) {
 	}
 }
 
-func TestEndpointSyncAttestorsDryRunUsesPublishedInventory(t *testing.T) {
+func TestEndpointSyncSentriesDryRunUsesPublishedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	publicKeyHex := testAttestorPublicKeyHex()
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  "http://127.0.0.1:12345",
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint() error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "attestor-local", "att-token")
-	writePublishedAttestor(t, dataDir, "attestor-local", publicKeyHex)
+	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
+	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
 
-	result, err := app.EndpointSyncAttestors(context.Background(), EndpointSyncAttestorsRequest{DryRun: true})
+	result, err := app.EndpointSyncSentries(context.Background(), EndpointSyncSentriesRequest{DryRun: true})
 	if err != nil {
-		t.Fatalf("EndpointSyncAttestors(dry-run) error = %v", err)
+		t.Fatalf("EndpointSyncSentries(dry-run) error = %v", err)
 	}
 	if !result.DryRun || result.CandidateCount != 1 {
 		t.Fatalf("dry-run result = dry:%v count:%d, want true/1", result.DryRun, result.CandidateCount)
@@ -556,11 +556,11 @@ func TestEndpointSyncAttestorsDryRunUsesPublishedInventory(t *testing.T) {
 		t.Fatalf("records = %d, want 1", len(result.Records))
 	}
 	rec := result.Records[0]
-	if rec.EndpointAlias != "attestor-local" || rec.PublicKey != publicKeyHex {
-		t.Fatalf("record = %#v, want attestor-local %s", rec, publicKeyHex)
+	if rec.EndpointAlias != "sentry-local" || rec.PublicKey != publicKeyHex {
+		t.Fatalf("record = %#v, want sentry-local %s", rec, publicKeyHex)
 	}
 	componentID := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
-	wantName := "endpoint-attestor-local-" + strings.ToLower(componentID)
+	wantName := "endpoint-sentry-local-" + strings.ToLower(componentID)
 	if rec.Name != wantName {
 		t.Fatalf("record name = %q, want %q", rec.Name, wantName)
 	}
@@ -601,20 +601,20 @@ func TestEndpointDeleteRejectsMappedAttestorEndpoint(t *testing.T) {
 	app := newEndpointTestApp(t, dataDir)
 	envelopePath := writeEndpointEnvelope(t, dataDir)
 	if _, err := app.EndpointImport(context.Background(), EndpointImportRequest{
-		Alias: "attestor-local",
+		Alias: "sentry-local",
 		Role:  config.ClientEndpointRoleSentry,
 		Path:  envelopePath,
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
 	publicKeyHex := testAttestorPublicKeyHex()
-	writePublishedAttestor(t, dataDir, "attestor-local", publicKeyHex)
+	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
 
-	_, err := app.EndpointDelete(context.Background(), "attestor-local")
+	_, err := app.EndpointDelete(context.Background(), "sentry-local")
 	if err == nil {
 		t.Fatal("EndpointDelete(mapped) error = nil, want rejection")
 	}
-	if strings.Contains(err.Error(), publicKeyHex) || !strings.Contains(err.Error(), "1 attestor mapping") {
+	if strings.Contains(err.Error(), publicKeyHex) || !strings.Contains(err.Error(), "1 sentry mapping") {
 		t.Fatalf("EndpointDelete(mapped) error = %v, want count-only blocking message", err)
 	}
 }
@@ -650,7 +650,7 @@ func TestEndpointDeleteRemovesUnreferencedEndpoint(t *testing.T) {
 		t.Fatal("secondary endpoint still present after delete")
 	}
 	if alias, _, ok := cfg.Endpoints.DefaultEndpoint(); !ok || alias != "primary" {
-		t.Fatalf("DefaultEndpoint() = %q/%v, want primary after deleting attestor endpoint", alias, ok)
+		t.Fatalf("DefaultEndpoint() = %q/%v, want primary after deleting sentry endpoint", alias, ok)
 	}
 }
 
@@ -665,7 +665,7 @@ func newEndpointTestApp(t *testing.T, dataDir string) *App {
 
 func writeEndpointEnvelope(t *testing.T, dir string) string {
 	t.Helper()
-	return writeEndpointEnvelopeWithName(t, dir, "attestor-local")
+	return writeEndpointEnvelopeWithName(t, dir, "sentry-local")
 }
 
 func writeEndpointEnvelopeWithName(t *testing.T, dir, name string) string {
@@ -690,24 +690,24 @@ func writeEndpointEnvelopeWithOptions(t *testing.T, dir, name, rawURL string, si
 	return path
 }
 
-func writePublishedAttestor(t *testing.T, dir, alias, publicKeyHex string) {
+func writePublishedSentry(t *testing.T, dir, alias, publicKeyHex string) {
 	t.Helper()
-	writePublishedAttestors(t, dir, map[string]map[string]config.ClientEndpointPublishedAttestor{
-		alias: {publicKeyHex: endpointPublishedAttestorForTest(t, publicKeyHex)},
+	writePublishedSentries(t, dir, map[string]map[string]config.ClientEndpointPublishedSentry{
+		alias: {publicKeyHex: endpointPublishedSentryForTest(t, publicKeyHex)},
 	})
 }
 
-func writePublishedAttestors(t *testing.T, dir string, publications map[string]map[string]config.ClientEndpointPublishedAttestor) {
+func writePublishedSentries(t *testing.T, dir string, publications map[string]map[string]config.ClientEndpointPublishedSentry) {
 	t.Helper()
-	_, err := config.RebuildStoredClientEndpointPublishedAttestors(dir, publications)
+	_, err := config.RebuildStoredClientEndpointPublishedSentries(dir, publications)
 	if err != nil {
-		t.Fatalf("RebuildStoredClientEndpointPublishedAttestors() error = %v", err)
+		t.Fatalf("RebuildStoredClientEndpointPublishedSentries() error = %v", err)
 	}
 }
 
-func endpointPublishedAttestorForTest(t *testing.T, publicKeyHex string) config.ClientEndpointPublishedAttestor {
+func endpointPublishedSentryForTest(t *testing.T, publicKeyHex string) config.ClientEndpointPublishedSentry {
 	t.Helper()
-	return config.ClientEndpointPublishedAttestor{
+	return config.ClientEndpointPublishedSentry{
 		ComponentKey: testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex),
 		KeyType:      keytypes.AttestorComponentEd25519V1,
 		LastSeenAt:   "2026-06-04T00:00:00Z",
@@ -749,7 +749,7 @@ func assertHumanEndpointOutputUsesComponentOnly(t *testing.T, lines []string, pu
 		t.Fatalf("endpoint output = %q, want component selector %s", output, componentID)
 	}
 	if strings.Contains(output, publicKeyHex) || strings.Contains(output, strings.ToUpper(publicKeyHex)) {
-		t.Fatalf("endpoint output leaked raw attestor public key: %q", output)
+		t.Fatalf("endpoint output leaked raw sentry public key: %q", output)
 	}
 }
 

@@ -152,7 +152,7 @@ func cmdInitialize(args []string) error {
 	return nil
 }
 
-const initializeUsage = "usage: apstore initialize [--role signer|attestor]"
+const initializeUsage = "usage: apstore initialize [--role signer|sentry]"
 
 func parseInitializeRole(args []string) (noderole.Role, error) {
 	fs := flag.NewFlagSet("apstore initialize", flag.ContinueOnError)

@@ -269,7 +269,7 @@ Day-to-day:
   admin settings, and edit the node-role policy while `apsigner` is running.
 - Use `appolicy` for offline or scriptable policy inspection, validation, and
   signing of the node-role policy document: `policy.yaml` for signer nodes or
-  attestor-domain `policy.yaml` for attestor nodes.
+  sentry-domain `policy.yaml` for sentry nodes.
 - Use `appass` only to switch passphrase auto-handling mode (`prompt`,
   `passfile`, `systemd-creds`).
 - `appass` refuses to run while `apsigner` is active for the same data
@@ -426,7 +426,7 @@ cp examples/config/apsigner/config.yaml.example "$APSIGNER_DATA/config.yaml"
 
 # Initialize the local keystore before starting apsigner
 ./apstore initialize
-# Or, for a dedicated attestor node:
+# Or, for a dedicated sentry node:
 ./apstore initialize --role sentry
 ./apsigner
 ```
@@ -615,7 +615,7 @@ max_asa_amounts:
 transactions. Use `apadmin` for online guided editing while the signer is
 running, or `appolicy -d "$APSIGNER_DATA"` for offline guided editing of common
 policy and transfer guards. Advanced routing fields can also be edited directly
-in `policy.yaml` or attestor-domain `policy.yaml`; then run `apstore policy check` and
+in `policy.yaml` or sentry-domain `policy.yaml`; then run `apstore policy check` and
 `apstore policy sign` before starting or reloading the signer. For scripts, use
 `appolicy --yaml` to export the verified selected policy and `appolicy --save`
 to validate, save, and sign replacement YAML from stdin.

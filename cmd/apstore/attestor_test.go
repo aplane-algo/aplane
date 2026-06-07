@@ -16,7 +16,7 @@ import (
 
 func TestCmdAttestorImportPublicListShowRemove(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		exportPath := filepath.Join(t.TempDir(), "attestor-public.json")
+		exportPath := filepath.Join(t.TempDir(), "sentry-public.json")
 		if err := os.WriteFile(exportPath, testAttestorExportJSON(t), 0o600); err != nil {
 			t.Fatalf("WriteFile(export) error = %v", err)
 		}
@@ -32,7 +32,7 @@ func TestCmdAttestorImportPublicListShowRemove(t *testing.T) {
 			t.Fatalf("cmdAttestor(list) error = %v", err)
 		}
 		if !strings.Contains(listOut, "lab-att") || !strings.Contains(listOut, keytypes.AttestorComponentEd25519V1) {
-			t.Fatalf("list output = %q, want imported attestor reference", listOut)
+			t.Fatalf("list output = %q, want imported sentry reference", listOut)
 		}
 
 		showOut, err := withCapturedStdout(func() error {

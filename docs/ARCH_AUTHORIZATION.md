@@ -254,7 +254,7 @@ grant accidentally contains the same typo.
 | `keys.import` | Import a key | `key` | Yes |
 | `keys.export` | Export a key mnemonic (disabled) | `key` | Yes |
 | `keys.delete` | Delete a key | `key` | Yes |
-| `attestors.sync` | Sync public attestor reference metadata into the signer generation catalog | `attestors` | No |
+| `sentries.sync` | Sync public attestor reference metadata into the signer generation catalog | `attestors` | No |
 | `keytypes.view` | List available key types | `keytypes` | No |
 | `keytypes.activate` | Activate a key type | `keytype` | Yes |
 | `keytypes.deactivate` | Deactivate a key type | `keytype` | Yes |
@@ -310,7 +310,7 @@ grants:
       - keys.import
       - keys.export
       - keys.delete
-      - attestors.sync
+      - sentries.sync
       - keytypes.view
       - keytypes.activate
       - keytypes.deactivate
@@ -347,8 +347,8 @@ Enforced callsites:
 
 - `cmd/apsigner/http_runtime.go` wraps HTTP `/sign`, `/sign/component`,
   `/sign/assemble`, `/plan`, `/simulate`, `/status`, `/keys`, `/keytypes`,
-  `/admin/generate`, `/admin/attestors/sync`, and `/admin/keys` with
-  `requireAuth`. `/admin/attestors/sync` uses `attestors.sync` because it
+  `/admin/generate`, `/admin/sentries/sync`, and `/admin/keys` with
+  `requireAuth`. `/admin/sentries/sync` uses `sentries.sync` because it
   mutates public attestor reference metadata, not private key material.
 - `cmd/apsigner/http_auth.go` calls `Authorizer.Authorize` after
   authentication and before the handler executes.

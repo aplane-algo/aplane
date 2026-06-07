@@ -464,7 +464,7 @@ func (m model) signerPaneTitle() string {
 		return titled.AdminTitle()
 	}
 	if !m.shellEnabled() {
-		return "Attestor Admin"
+		return "Sentry Admin"
 	}
 	return "Signer Admin"
 }

@@ -13,7 +13,7 @@ type ComponentSignRole string
 
 const (
 	ComponentSignRoleUser   ComponentSignRole = "user"
-	ComponentSignRoleSentry ComponentSignRole = "attestor"
+	ComponentSignRoleSentry ComponentSignRole = "sentry"
 )
 
 // ComponentSignRequest is the request payload for POST /sign/component.
@@ -53,7 +53,7 @@ type AttestedAssemblyRequest struct {
 }
 
 // AttestedAssemblyTarget carries one attested-account group position plus its
-// user and attestor component signatures.
+// user and sentry component signatures.
 type AttestedAssemblyTarget struct {
 	TargetIndex             int      `json:"target_index"`
 	AttestedAccount         string   `json:"attested_account"`

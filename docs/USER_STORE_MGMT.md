@@ -206,7 +206,7 @@ Before using apsigner for the first time, you must initialize the keystore:
 
 ```bash
 ./apstore initialize
-# Dedicated attestor node:
+# Dedicated sentry node:
 ./apstore initialize --role sentry
 ```
 
@@ -225,8 +225,8 @@ flow to receive a client-side copy of that token.
 
 It also creates the signer data root role file `node.yaml`. Standard
 initialization creates a signer node. `--role sentry` creates a dedicated
-attestor node. Node roles are immutable in supported tools, so signer and
-attestor nodes use separate top-level signer data directories.
+sentry node. Node roles are immutable in supported tools, so signer and
+sentry nodes use separate top-level signer data directories.
 
 `apstore initialize` is a local bootstrap command and does not require
 `apsigner` to be running. It is accepted only before the identity has a
@@ -463,7 +463,7 @@ not already exist.
 
 ```bash
 ./apstore rebuild /mnt/usb/aplane-backup.tar.gz
-./apstore rebuild /mnt/usb/aplane-attestor-backup.tar.gz --role sentry
+./apstore rebuild /mnt/usb/aplane-sentry-backup.tar.gz --role sentry
 ./apstore rebuild /mnt/usb/aplane-backup.tar.gz --address ABC123...XYZ789
 ```
 
@@ -573,7 +573,7 @@ From the key details view:
 ./apstore restore apply <backup-id|name> [--address ADDRESS ...] [--overwrite]
 
 # Rescue rebuild when no identity keystore exists
-./apstore rebuild <archive-path> [--role signer|attestor] [--address ADDRESS ...]
+./apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...]
 
 # Verify backup
 ./apstore verify <backup-dir|archive-path>

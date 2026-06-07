@@ -40,12 +40,12 @@ func requireComponentNodeRole(ir *identity.Runtime, role signerapi.ComponentSign
 		case noderole.RoleSigner:
 			return &signersigning.ServiceError{
 				Kind:    signersigning.ErrorForbidden,
-				Message: fmt.Sprintf("node role %q does not allow attestor component signing", nodeRole),
+				Message: fmt.Sprintf("node role %q does not allow sentry component signing", nodeRole),
 			}
 		default:
 			return &signersigning.ServiceError{
 				Kind:    signersigning.ErrorForbidden,
-				Message: fmt.Sprintf("unknown node role %q does not allow attestor component signing", nodeRole),
+				Message: fmt.Sprintf("unknown node role %q does not allow sentry component signing", nodeRole),
 			}
 		}
 	case signerapi.ComponentSignRoleUser:

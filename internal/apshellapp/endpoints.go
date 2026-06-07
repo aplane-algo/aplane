@@ -27,21 +27,21 @@ type EndpointImportRequest struct {
 	DryRun bool
 }
 
-// EndpointDiscoverAttestorsRequest rebuilds endpoint-published attestor
+// EndpointDiscoverSentriesRequest rebuilds endpoint-published sentry
 // inventory by querying configured endpoint inventories.
-type EndpointDiscoverAttestorsRequest struct {
+type EndpointDiscoverSentriesRequest struct {
 	DryRun bool
 }
 
-// EndpointSyncAttestorsRequest syncs endpoint-published attestor inventory into
-// the connected signer identity's public attestor reference catalog.
-type EndpointSyncAttestorsRequest struct {
+// EndpointSyncSentriesRequest syncs endpoint-published sentry inventory into
+// the connected signer identity's public sentry reference catalog.
+type EndpointSyncSentriesRequest struct {
 	DryRun            bool
 	ApproveSignerSync bool
 }
 
 // EndpointsList returns the resolved client endpoint registry plus local
-// attestor mappings.
+// sentry mappings.
 func (a *App) EndpointsList(_ context.Context) (*EndpointsListResult, error) {
 	cfg, registry, mappings, err := a.loadEndpointView()
 	if err != nil {
@@ -137,20 +137,20 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 	return result, nil
 }
 
-// EndpointDiscoverAttestors queries configured endpoint /keys inventories and
-// atomically rebuilds reachable endpoint published_attestors inventory.
+// EndpointDiscoverSentries queries configured endpoint /keys inventories and
+// atomically rebuilds reachable endpoint published_sentries inventory.
 // Unreachable endpoints are preserved as no-ops so temporary outages do not
 // erase client routing state.
-func (a *App) EndpointDiscoverAttestors(ctx context.Context, req EndpointDiscoverAttestorsRequest) (*EndpointDiscoverAttestorsResult, error) {
-	result, _, err := a.discoverEndpointAttestors(ctx, req.DryRun)
+func (a *App) EndpointDiscoverSentries(ctx context.Context, req EndpointDiscoverSentriesRequest) (*EndpointDiscoverSentriesResult, error) {
+	result, _, err := a.discoverEndpointSentries(ctx, req.DryRun)
 	if err != nil {
 		return nil, err
 	}
-	result.RenderLines = endpointDiscoverAttestorsRenderLines(result)
+	result.RenderLines = endpointDiscoverSentriesRenderLines(result)
 	return result, nil
 }
 
-func (a *App) discoverEndpointAttestors(ctx context.Context, dryRun bool) (*EndpointDiscoverAttestorsResult, config.ClientEndpointRegistry, error) {
+func (a *App) discoverEndpointSentries(ctx context.Context, dryRun bool) (*EndpointDiscoverSentriesResult, config.ClientEndpointRegistry, error) {
 	cfg, err := config.LoadConfig(a.DataDir)
 	if err != nil {
 		return nil, config.ClientEndpointRegistry{}, err
@@ -165,12 +165,12 @@ func (a *App) discoverEndpointAttestors(ctx context.Context, dryRun bool) (*Endp
 	}
 	sort.Strings(aliases)
 	if len(aliases) == 0 {
-		return nil, config.ClientEndpointRegistry{}, fmt.Errorf("no attestor endpoints configured")
+		return nil, config.ClientEndpointRegistry{}, fmt.Errorf("no sentry endpoints configured")
 	}
 
 	lastSeenAt := time.Now().UTC().Format(time.RFC3339)
-	publications := map[string]map[string]config.ClientEndpointPublishedAttestor{}
-	discoveries := make([]EndpointAttestorDiscovery, 0, len(aliases))
+	publications := map[string]map[string]config.ClientEndpointPublishedSentry{}
+	discoveries := make([]EndpointSentryDiscovery, 0, len(aliases))
 	for _, alias := range aliases {
 		endpoint := cfg.Endpoints.Endpoints[alias]
 		keys, err := a.eng.DiscoverAttestorComponentKeysWithContext(ctx, endpoint)
@@ -179,9 +179,9 @@ func (a *App) discoverEndpointAttestors(ctx context.Context, dryRun bool) (*Endp
 				!errors.Is(err, engine.ErrAttestorDiscoveryLocked) {
 				return nil, config.ClientEndpointRegistry{}, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
 			}
-			preserved := clonePublishedAttestors(endpoint.PublishedAttestors)
+			preserved := clonePublishedSentries(endpoint.PublishedSentries)
 			publications[alias] = preserved
-			discoveries = append(discoveries, EndpointAttestorDiscovery{
+			discoveries = append(discoveries, EndpointSentryDiscovery{
 				Alias:          alias,
 				Skipped:        true,
 				PreservedCount: len(preserved),
@@ -189,15 +189,15 @@ func (a *App) discoverEndpointAttestors(ctx context.Context, dryRun bool) (*Endp
 			})
 			continue
 		}
-		publications[alias] = map[string]config.ClientEndpointPublishedAttestor{}
-		discovery := EndpointAttestorDiscovery{Alias: alias}
+		publications[alias] = map[string]config.ClientEndpointPublishedSentry{}
+		discovery := EndpointSentryDiscovery{Alias: alias}
 		for _, key := range keys {
-			discovery.Keys = append(discovery.Keys, DiscoveredEndpointAttestorKey{
+			discovery.Keys = append(discovery.Keys, DiscoveredEndpointSentryKey{
 				PublicKey:    key.PublicKey,
 				ComponentKey: key.ComponentKey,
 				KeyType:      key.KeyType,
 			})
-			publications[alias][key.PublicKey] = config.ClientEndpointPublishedAttestor{
+			publications[alias][key.PublicKey] = config.ClientEndpointPublishedSentry{
 				ComponentKey: key.ComponentKey,
 				KeyType:      key.KeyType,
 				LastSeenAt:   lastSeenAt,
@@ -206,18 +206,18 @@ func (a *App) discoverEndpointAttestors(ctx context.Context, dryRun bool) (*Endp
 		discoveries = append(discoveries, discovery)
 	}
 
-	plan, err := config.PlanStoredClientEndpointPublishedAttestorRebuild(a.DataDir, publications)
+	plan, err := config.PlanStoredClientEndpointPublishedSentryRebuild(a.DataDir, publications)
 	if err != nil {
 		return nil, config.ClientEndpointRegistry{}, err
 	}
-	result := &EndpointDiscoverAttestorsResult{
+	result := &EndpointDiscoverSentriesResult{
 		DryRun:                 dryRun,
 		Endpoints:              discoveries,
 		PublicKeyCount:         plan.PublicKeyCount,
 		PreviousPublishedCount: plan.PreviousPublishedCount,
 	}
 	if !dryRun {
-		if err := config.ApplyStoredClientEndpointPublishedAttestorRebuild(a.DataDir, plan); err != nil {
+		if err := config.ApplyStoredClientEndpointPublishedSentryRebuild(a.DataDir, plan); err != nil {
 			return nil, config.ClientEndpointRegistry{}, err
 		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
@@ -228,17 +228,17 @@ func (a *App) discoverEndpointAttestors(ctx context.Context, dryRun bool) (*Endp
 	return result, plan.Registry, nil
 }
 
-// EndpointSyncAttestors publishes endpoint-discovered attestor metadata into
+// EndpointSyncSentries publishes endpoint-discovered sentry metadata into
 // the connected signer identity so signer-side key generation can select those
-// attestors by name.
-func (a *App) EndpointSyncAttestors(ctx context.Context, req EndpointSyncAttestorsRequest) (*EndpointSyncAttestorsResult, error) {
-	discovery, registry, err := a.discoverEndpointAttestors(ctx, req.DryRun)
+// sentries by name.
+func (a *App) EndpointSyncSentries(ctx context.Context, req EndpointSyncSentriesRequest) (*EndpointSyncSentriesResult, error) {
+	discovery, registry, err := a.discoverEndpointSentries(ctx, req.DryRun)
 	if err != nil {
 		return nil, err
 	}
 
 	candidates := endpointAttestorCandidates(registry)
-	result := &EndpointSyncAttestorsResult{
+	result := &EndpointSyncSentriesResult{
 		DryRun:         req.DryRun,
 		Discovery:      discovery,
 		CandidateCount: len(candidates),
@@ -248,7 +248,7 @@ func (a *App) EndpointSyncAttestors(ctx context.Context, req EndpointSyncAttesto
 		if err != nil {
 			return nil, err
 		}
-		result.Records = append(result.Records, SyncedEndpointAttestorReference{
+		result.Records = append(result.Records, SyncedEndpointSentryReference{
 			Name:          name,
 			EndpointAlias: candidate.EndpointAlias,
 			PublicKey:     candidate.PublicKeyHex,
@@ -257,22 +257,22 @@ func (a *App) EndpointSyncAttestors(ctx context.Context, req EndpointSyncAttesto
 		})
 	}
 	if req.DryRun {
-		result.RenderLines = endpointSyncAttestorsRenderLines(result)
+		result.RenderLines = endpointSyncSentriesRenderLines(result)
 		return result, nil
 	}
 	if !req.ApproveSignerSync {
 		result.NeedsConfirmation = true
-		result.RenderLines = endpointSyncAttestorsRenderLines(result)
+		result.RenderLines = endpointSyncSentriesRenderLines(result)
 		return result, nil
 	}
-	if err := a.syncEndpointAttestorsToSigner(ctx, result); err != nil {
+	if err := a.syncEndpointSentriesToSigner(ctx, result); err != nil {
 		return nil, err
 	}
-	result.RenderLines = endpointSyncAttestorsRenderLines(result)
+	result.RenderLines = endpointSyncSentriesRenderLines(result)
 	return result, nil
 }
 
-func (a *App) syncEndpointAttestorsToSigner(ctx context.Context, result *EndpointSyncAttestorsResult) error {
+func (a *App) syncEndpointSentriesToSigner(ctx context.Context, result *EndpointSyncSentriesResult) error {
 	if !a.eng.IsConnected() {
 		return fmt.Errorf("not connected to Signer")
 	}
@@ -282,7 +282,7 @@ func (a *App) syncEndpointAttestorsToSigner(ctx context.Context, result *Endpoin
 	}
 	a.Config = cfg
 	candidates := endpointAttestorCandidates(cfg.Endpoints)
-	resp, err := a.eng.AdminSyncAttestorReferencesWithContext(ctx, candidates)
+	resp, err := a.eng.AdminSyncSentryReferencesWithContext(ctx, candidates)
 	if err != nil {
 		return err
 	}
@@ -292,7 +292,7 @@ func (a *App) syncEndpointAttestorsToSigner(ctx context.Context, result *Endpoin
 	result.Removed = resp.Removed
 	result.Records = nil
 	for _, rec := range resp.Records {
-		result.Records = append(result.Records, SyncedEndpointAttestorReference{
+		result.Records = append(result.Records, SyncedEndpointSentryReference{
 			Name:          rec.Name,
 			EndpointAlias: rec.EndpointAlias,
 			PublicKey:     rec.PublicKeyHex,
@@ -303,38 +303,38 @@ func (a *App) syncEndpointAttestorsToSigner(ctx context.Context, result *Endpoin
 	return nil
 }
 
-// EndpointConfirmSyncAttestors publishes the current endpoint-discovered
-// attestor inventory to the connected signer identity after user confirmation.
-func (a *App) EndpointConfirmSyncAttestors(ctx context.Context) (*EndpointSyncAttestorsResult, error) {
-	result := &EndpointSyncAttestorsResult{}
-	if err := a.syncEndpointAttestorsToSigner(ctx, result); err != nil {
+// EndpointConfirmSyncSentries publishes the current endpoint-discovered
+// sentry inventory to the connected signer identity after user confirmation.
+func (a *App) EndpointConfirmSyncSentries(ctx context.Context) (*EndpointSyncSentriesResult, error) {
+	result := &EndpointSyncSentriesResult{}
+	if err := a.syncEndpointSentriesToSigner(ctx, result); err != nil {
 		return nil, err
 	}
-	result.RenderLines = endpointSyncAttestorsRenderLines(result)
+	result.RenderLines = endpointSyncSentriesRenderLines(result)
 	return result, nil
 }
 
-// EndpointAttestors returns the client-local attestor inventory learned from
+// EndpointSentries returns the client-local sentry inventory learned from
 // endpoint discovery.
-func (a *App) EndpointAttestors(_ context.Context) (*EndpointAttestorsResult, error) {
+func (a *App) EndpointSentries(_ context.Context) (*EndpointSentriesResult, error) {
 	cfg, err := config.LoadConfig(a.DataDir)
 	if err != nil {
 		return nil, err
 	}
 	a.Config = cfg
 	candidates := endpointAttestorCandidates(cfg.Endpoints)
-	result := &EndpointAttestorsResult{
-		Attestors: make([]EndpointAttestorEntry, 0, len(candidates)),
+	result := &EndpointSentriesResult{
+		Sentries: make([]EndpointSentryEntry, 0, len(candidates)),
 	}
 	for _, candidate := range candidates {
-		result.Attestors = append(result.Attestors, EndpointAttestorEntry{
+		result.Sentries = append(result.Sentries, EndpointSentryEntry{
 			EndpointAlias: candidate.EndpointAlias,
 			ComponentKey:  candidate.ComponentKey,
 			KeyType:       candidate.KeyType,
 			LastSeenAt:    candidate.LastSeenAt,
 		})
 	}
-	result.RenderLines = endpointAttestorsRenderLines(result)
+	result.RenderLines = endpointSentriesRenderLines(result)
 	return result, nil
 }
 
@@ -365,7 +365,7 @@ func (a *App) EndpointDefault(_ context.Context, alias string) (*EndpointDefault
 }
 
 // EndpointDelete deletes a stored endpoint alias when it is not the default and
-// no local attestor routes still reference it.
+// no local sentry routes still reference it.
 func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteResult, error) {
 	if err := config.ValidateClientEndpointAlias(alias); err != nil {
 		return nil, err
@@ -374,10 +374,10 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	if err != nil {
 		return nil, err
 	}
-	blocking := append([]string(nil), attestorEndpointMappingsByAlias(cfg.AttestorEndpoints)[alias]...)
+	blocking := append([]string(nil), sentryEndpointMappingsByAlias(cfg.AttestorEndpoints)[alias]...)
 	sort.Strings(blocking)
 	if len(blocking) > 0 {
-		return nil, fmt.Errorf("endpoint alias %q is referenced by %d attestor mapping(s)", alias, len(blocking))
+		return nil, fmt.Errorf("endpoint alias %q is referenced by %d sentry mapping(s)", alias, len(blocking))
 	}
 	if _, err := config.DeleteStoredClientEndpoint(a.DataDir, alias); err != nil {
 		return nil, err
@@ -396,11 +396,11 @@ func (a *App) loadEndpointView() (config.Config, config.ClientEndpointRegistry, 
 	if err != nil {
 		return config.Config{}, config.ClientEndpointRegistry{}, nil, err
 	}
-	mappings := cfg.Endpoints.PublishedAttestorPublicKeysByAlias()
+	mappings := cfg.Endpoints.PublishedSentryPublicKeysByAlias()
 	return cfg, cfg.Endpoints, mappings, nil
 }
 
-func attestorEndpointMappingsByAlias(routes config.AttestorEndpointConfigs) map[string][]string {
+func sentryEndpointMappingsByAlias(routes config.AttestorEndpointConfigs) map[string][]string {
 	out := map[string][]string{}
 	for publicKey, route := range routes {
 		if route.Endpoint == "" {
@@ -414,35 +414,35 @@ func attestorEndpointMappingsByAlias(routes config.AttestorEndpointConfigs) map[
 	return out
 }
 
-func clonePublishedAttestors(in map[string]config.ClientEndpointPublishedAttestor) map[string]config.ClientEndpointPublishedAttestor {
-	out := make(map[string]config.ClientEndpointPublishedAttestor, len(in))
+func clonePublishedSentries(in map[string]config.ClientEndpointPublishedSentry) map[string]config.ClientEndpointPublishedSentry {
+	out := make(map[string]config.ClientEndpointPublishedSentry, len(in))
 	for publicKey, published := range in {
 		out[publicKey] = published
 	}
 	return out
 }
 
-func endpointAttestorCandidates(registry config.ClientEndpointRegistry) []signerapi.AttestorReferenceCandidate {
+func endpointAttestorCandidates(registry config.ClientEndpointRegistry) []signerapi.SentryReferenceCandidate {
 	aliases := make([]string, 0, len(registry.Endpoints))
 	for alias := range registry.Endpoints {
 		aliases = append(aliases, alias)
 	}
 	sort.Strings(aliases)
 
-	candidates := make([]signerapi.AttestorReferenceCandidate, 0)
+	candidates := make([]signerapi.SentryReferenceCandidate, 0)
 	for _, alias := range aliases {
 		endpoint := registry.Endpoints[alias]
 		if endpoint.Role != config.ClientEndpointRoleSentry {
 			continue
 		}
-		publicKeys := make([]string, 0, len(endpoint.PublishedAttestors))
-		for publicKey := range endpoint.PublishedAttestors {
+		publicKeys := make([]string, 0, len(endpoint.PublishedSentries))
+		for publicKey := range endpoint.PublishedSentries {
 			publicKeys = append(publicKeys, publicKey)
 		}
 		sort.Strings(publicKeys)
 		for _, publicKey := range publicKeys {
-			published := endpoint.PublishedAttestors[publicKey]
-			candidates = append(candidates, signerapi.AttestorReferenceCandidate{
+			published := endpoint.PublishedSentries[publicKey]
+			candidates = append(candidates, signerapi.SentryReferenceCandidate{
 				EndpointAlias: alias,
 				ComponentKey:  published.ComponentKey,
 				KeyType:       published.KeyType,
@@ -458,52 +458,52 @@ func (a *App) endpointEntry(alias string, endpoint config.ClientEndpointConfig, 
 	tokenPresent, tokenError := endpointTokenStatus(endpoint.TokenFile)
 	keys := append([]string(nil), publicKeys...)
 	sort.Strings(keys)
-	attestors := endpointPublishedAttestors(alias, endpoint)
-	components := endpointPublishedAttestorComponents(attestors)
+	sentries := endpointPublishedSentries(alias, endpoint)
+	components := endpointPublishedSentryComponents(sentries)
 	return EndpointEntry{
-		Alias:                       alias,
-		Role:                        endpoint.Role,
-		URL:                         endpoint.URL,
-		SignerPort:                  endpoint.SignerPort,
-		LocalPort:                   endpoint.LocalPort,
-		IdentityFile:                endpoint.IdentityFile,
-		KnownHostsPath:              endpoint.KnownHostsPath,
-		TokenFile:                   endpoint.TokenFile,
-		TokenPresent:                tokenPresent,
-		TokenError:                  tokenError,
-		IsDefault:                   isDefault,
-		PublishedAttestorPublicKeys: keys,
-		PublishedAttestorComponents: components,
-		PublishedAttestors:          attestors,
+		Alias:                     alias,
+		Role:                      endpoint.Role,
+		URL:                       endpoint.URL,
+		SignerPort:                endpoint.SignerPort,
+		LocalPort:                 endpoint.LocalPort,
+		IdentityFile:              endpoint.IdentityFile,
+		KnownHostsPath:            endpoint.KnownHostsPath,
+		TokenFile:                 endpoint.TokenFile,
+		TokenPresent:              tokenPresent,
+		TokenError:                tokenError,
+		IsDefault:                 isDefault,
+		PublishedSentryPublicKeys: keys,
+		PublishedSentryComponents: components,
+		PublishedSentries:         sentries,
 	}
 }
 
-func endpointPublishedAttestors(alias string, endpoint config.ClientEndpointConfig) []EndpointAttestorEntry {
-	publicKeys := make([]string, 0, len(endpoint.PublishedAttestors))
-	for publicKey := range endpoint.PublishedAttestors {
+func endpointPublishedSentries(alias string, endpoint config.ClientEndpointConfig) []EndpointSentryEntry {
+	publicKeys := make([]string, 0, len(endpoint.PublishedSentries))
+	for publicKey := range endpoint.PublishedSentries {
 		publicKeys = append(publicKeys, publicKey)
 	}
 	sort.Strings(publicKeys)
-	attestors := make([]EndpointAttestorEntry, 0, len(publicKeys))
+	sentries := make([]EndpointSentryEntry, 0, len(publicKeys))
 	for _, publicKey := range publicKeys {
-		published := endpoint.PublishedAttestors[publicKey]
+		published := endpoint.PublishedSentries[publicKey]
 		if published.ComponentKey == "" {
 			continue
 		}
-		attestors = append(attestors, EndpointAttestorEntry{
+		sentries = append(sentries, EndpointSentryEntry{
 			EndpointAlias: alias,
 			ComponentKey:  published.ComponentKey,
 			KeyType:       published.KeyType,
 			LastSeenAt:    published.LastSeenAt,
 		})
 	}
-	return attestors
+	return sentries
 }
 
-func endpointPublishedAttestorComponents(attestors []EndpointAttestorEntry) []string {
-	components := make([]string, 0, len(attestors))
-	for _, attestor := range attestors {
-		components = append(components, attestor.ComponentKey)
+func endpointPublishedSentryComponents(sentries []EndpointSentryEntry) []string {
+	components := make([]string, 0, len(sentries))
+	for _, sentry := range sentries {
+		components = append(components, sentry.ComponentKey)
 	}
 	sort.Strings(components)
 	return components
@@ -544,19 +544,19 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 	return lines
 }
 
-func endpointSyncAttestorsRenderLines(result *EndpointSyncAttestorsResult) []string {
+func endpointSyncSentriesRenderLines(result *EndpointSyncSentriesResult) []string {
 	action := "Synced"
 	if result.DryRun {
 		action = "Would sync"
 	}
 	lines := []string{
-		fmt.Sprintf("%s %d endpoint-discovered attestor reference(s) to signer", action, result.CandidateCount),
+		fmt.Sprintf("%s %d endpoint-discovered sentry reference(s) to signer", action, result.CandidateCount),
 	}
 	if result.Discovery != nil {
-		lines = append(lines, endpointDiscoverAttestorsRenderLines(result.Discovery)...)
+		lines = append(lines, endpointDiscoverSentriesRenderLines(result.Discovery)...)
 	}
 	if result.NeedsConfirmation {
-		lines = append(lines, "Confirm before syncing these attestors to the signer library.")
+		lines = append(lines, "Confirm before syncing these sentries to the signer library.")
 	}
 	if !result.DryRun && !result.NeedsConfirmation {
 		lines = append(lines,
@@ -569,13 +569,13 @@ func endpointSyncAttestorsRenderLines(result *EndpointSyncAttestorsResult) []str
 	return lines
 }
 
-func endpointDiscoverAttestorsRenderLines(result *EndpointDiscoverAttestorsResult) []string {
+func endpointDiscoverSentriesRenderLines(result *EndpointDiscoverSentriesResult) []string {
 	action := "Rebuilt"
 	if result.DryRun {
 		action = "Would rebuild"
 	}
 	lines := []string{
-		fmt.Sprintf("%s endpoint-published attestor inventory from %d endpoint(s): %d key(s)",
+		fmt.Sprintf("%s endpoint-published sentry inventory from %d endpoint(s): %d key(s)",
 			action, len(result.Endpoints), result.PublicKeyCount),
 		fmt.Sprintf("  previous published keys: %d", result.PreviousPublishedCount),
 	}
@@ -594,7 +594,7 @@ func endpointDiscoverAttestorsRenderLines(result *EndpointDiscoverAttestorsResul
 	return lines
 }
 
-func endpointSyncAttestorSummaryLines(records []SyncedEndpointAttestorReference) []string {
+func endpointSyncAttestorSummaryLines(records []SyncedEndpointSentryReference) []string {
 	if len(records) == 0 {
 		return nil
 	}
@@ -627,7 +627,7 @@ func endpointSyncAttestorSummaryLines(records []SyncedEndpointAttestorReference)
 	return lines
 }
 
-func endpointDiscoveredComponentLines(keys []DiscoveredEndpointAttestorKey) []string {
+func endpointDiscoveredComponentLines(keys []DiscoveredEndpointSentryKey) []string {
 	sort.Slice(keys, func(i, j int) bool {
 		if keys[i].ComponentKey == keys[j].ComponentKey {
 			return keys[i].KeyType < keys[j].KeyType
@@ -641,13 +641,13 @@ func endpointDiscoveredComponentLines(keys []DiscoveredEndpointAttestorKey) []st
 	return lines
 }
 
-func endpointAttestorsRenderLines(result *EndpointAttestorsResult) []string {
-	if len(result.Attestors) == 0 {
-		return []string{"No endpoint-discovered attestors"}
+func endpointSentriesRenderLines(result *EndpointSentriesResult) []string {
+	if len(result.Sentries) == 0 {
+		return []string{"No endpoint-discovered sentries"}
 	}
-	lines := []string{fmt.Sprintf("Endpoint-discovered attestors: %d", len(result.Attestors))}
-	for _, attestor := range result.Attestors {
-		lines = append(lines, fmt.Sprintf("  %s: %s (%s)", attestor.EndpointAlias, attestor.ComponentKey, attestor.KeyType))
+	lines := []string{fmt.Sprintf("Endpoint-discovered sentries: %d", len(result.Sentries))}
+	for _, sentry := range result.Sentries {
+		lines = append(lines, fmt.Sprintf("  %s: %s (%s)", sentry.EndpointAlias, sentry.ComponentKey, sentry.KeyType))
 	}
 	return lines
 }

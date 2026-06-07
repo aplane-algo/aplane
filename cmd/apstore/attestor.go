@@ -15,39 +15,39 @@ import (
 
 func cmdAttestor(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore attestor <export-public|import-public|list|show|remove>")
+		return fmt.Errorf("usage: apstore sentry <export-public|import-public|list|show|remove>")
 	}
 	switch args[0] {
 	case "export-public":
 		return cmdAttestorExportPublic(args[1:])
 	case "import-public":
 		if len(args) != 3 {
-			return fmt.Errorf("usage: apstore attestor import-public <export-json> <name>")
+			return fmt.Errorf("usage: apstore sentry import-public <export-json> <name>")
 		}
 		return cmdAttestorImport(args[1], args[2])
 	case "list":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: apstore attestor list")
+			return fmt.Errorf("usage: apstore sentry list")
 		}
 		return cmdAttestorList()
 	case "show":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: apstore attestor show <name>")
+			return fmt.Errorf("usage: apstore sentry show <name>")
 		}
 		return cmdAttestorShow(args[1])
 	case "remove":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: apstore attestor remove <name>")
+			return fmt.Errorf("usage: apstore sentry remove <name>")
 		}
 		return cmdAttestorRemove(args[1])
 	default:
-		return fmt.Errorf("usage: apstore attestor <export-public|import-public|list|show|remove>")
+		return fmt.Errorf("usage: apstore sentry <export-public|import-public|list|show|remove>")
 	}
 }
 
 func cmdAttestorExportPublic(args []string) error {
 	if len(args) < 1 || len(args) > 2 {
-		return fmt.Errorf("usage: apstore attestor export-public <component-key> [output-json]")
+		return fmt.Errorf("usage: apstore sentry export-public <component-key> [output-json]")
 	}
 	componentKey, err := keytypes.NormalizeComponentKeySelector(args[0])
 	if err != nil {
@@ -59,7 +59,7 @@ func cmdAttestorExportPublic(args []string) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("component public metadata for %s not found; regenerate the attestor component key or run a metadata backfill before exporting", componentKey)
+		return fmt.Errorf("component public metadata for %s not found; regenerate the sentry component key or run a metadata backfill before exporting", componentKey)
 	}
 	data, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {
@@ -78,20 +78,20 @@ func cmdAttestorExportPublic(args []string) error {
 	if err := os.WriteFile(outputPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write public key envelope: %w", err)
 	}
-	logInfof("attestor public key envelope written: %s", outputPath)
+	logInfof("sentry public key envelope written: %s", outputPath)
 	return nil
 }
 
 func cmdAttestorImport(path, name string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("failed to read attestor public key export: %w", err)
+		return fmt.Errorf("failed to read sentry public key export: %w", err)
 	}
 	rec, err := attrefs.Import(keystorePaths(), productIdentityID(), name, data)
 	if err != nil {
 		return err
 	}
-	logInfof("attestor reference %s imported for %s", rec.Name, rec.KeyType)
+	logInfof("sentry reference %s imported for %s", rec.Name, rec.KeyType)
 	return nil
 }
 
@@ -101,10 +101,10 @@ func cmdAttestorList() error {
 		return err
 	}
 	if len(records) == 0 {
-		logInfof("no attestor references found")
+		logInfof("no sentry references found")
 		return nil
 	}
-	logInfof("found %d attestor reference(s)", len(records))
+	logInfof("found %d sentry reference(s)", len(records))
 	for _, rec := range records {
 		fmt.Printf("  %s  (%s, %s)\n", rec.Name, rec.KeyType, rec.ComponentKey)
 	}
@@ -117,11 +117,11 @@ func cmdAttestorShow(name string) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("attestor reference %q not found", name)
+		return fmt.Errorf("sentry reference %q not found", name)
 	}
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to encode attestor reference: %w", err)
+		return fmt.Errorf("failed to encode sentry reference: %w", err)
 	}
 	data = append(data, '\n')
 	_, err = os.Stdout.Write(data)
@@ -134,9 +134,9 @@ func cmdAttestorRemove(name string) error {
 		return err
 	}
 	if removed {
-		logInfof("attestor reference %s removed", name)
+		logInfof("sentry reference %s removed", name)
 	} else {
-		logInfof("attestor reference %s was already absent", name)
+		logInfof("sentry reference %s was already absent", name)
 	}
 	return nil
 }

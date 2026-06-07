@@ -119,12 +119,12 @@ func (e *Engine) AdminDeleteKeyWithContext(ctx context.Context, address string) 
 	return e.Connection.AdminDeleteKeyWithContext(ctx, address)
 }
 
-func (e *Engine) AdminSyncAttestorReferences(candidates []signerapi.AttestorReferenceCandidate) (*signerapi.AdminSyncAttestorReferencesResponse, error) {
-	return e.AdminSyncAttestorReferencesWithContext(context.Background(), candidates)
+func (e *Engine) AdminSyncSentryReferences(candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
+	return e.AdminSyncSentryReferencesWithContext(context.Background(), candidates)
 }
 
-func (e *Engine) AdminSyncAttestorReferencesWithContext(ctx context.Context, candidates []signerapi.AttestorReferenceCandidate) (*signerapi.AdminSyncAttestorReferencesResponse, error) {
-	return e.Connection.AdminSyncAttestorReferencesWithContext(ctx, candidates)
+func (e *Engine) AdminSyncSentryReferencesWithContext(ctx context.Context, candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
+	return e.Connection.AdminSyncSentryReferencesWithContext(ctx, candidates)
 }
 
 func (e *Engine) RequestGroupPlanWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {

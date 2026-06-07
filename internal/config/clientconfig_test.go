@@ -211,11 +211,11 @@ ssh:
 	if err := os.WriteFile(filepath.Join(dataDir, ClientEndpointsFile), []byte(fmt.Sprintf(`
 schema_version: 1
 endpoints:
-  attestor-local:
+  sentry-local:
     role: sentry
     url: ssh://127.0.0.1:2223
     signer_port: 12271
-    published_attestors:
+    published_sentries:
       %s:
         component_key: %s
         key_type: %s
@@ -230,14 +230,14 @@ endpoints:
 	}
 	route, ok := cfg.AttestorEndpoints[publicKey]
 	if !ok {
-		t.Fatalf("derived attestor route for %s missing from %#v", publicKey, cfg.AttestorEndpoints)
+		t.Fatalf("derived sentry route for %s missing from %#v", publicKey, cfg.AttestorEndpoints)
 	}
-	if route.Endpoint != "attestor-local" || route.URL != "ssh://127.0.0.1:2223" {
-		t.Fatalf("derived route = %#v, want attestor-local ssh endpoint", route)
+	if route.Endpoint != "sentry-local" || route.URL != "ssh://127.0.0.1:2223" {
+		t.Fatalf("derived route = %#v, want sentry-local ssh endpoint", route)
 	}
-	published := cfg.Endpoints.Endpoints["attestor-local"].PublishedAttestors[publicKey]
+	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries[publicKey]
 	if published.ComponentKey != componentKey || published.KeyType != keytypes.AttestorComponentEd25519V1 {
-		t.Fatalf("published attestor = %#v, want component/key type", published)
+		t.Fatalf("published sentry = %#v, want component/key type", published)
 	}
 }
 

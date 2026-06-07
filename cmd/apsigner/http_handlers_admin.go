@@ -25,15 +25,15 @@ func (fs *Signer) handleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, statusCode, response)
 }
 
-// handleAdminSyncAttestors handles POST /admin/attestors/sync for public
-// attestor reference catalog sync via REST.
-func (fs *Signer) handleAdminSyncAttestors(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.AdminSyncAttestorReferencesRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
+// handleAdminSyncSentries handles POST /admin/sentries/sync for public
+// sentry reference catalog sync via REST.
+func (fs *Signer) handleAdminSyncSentries(w http.ResponseWriter, r *http.Request) {
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.AdminSyncSentryReferencesRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
 	if !ok {
 		return
 	}
 
-	statusCode, response := fs.restService().AdminSyncAttestorReferences(ir, req)
+	statusCode, response := fs.restService().AdminSyncSentryReferences(ir, req)
 	if statusCode != http.StatusOK {
 		writeErrorJSON(w, statusCode, response.Error)
 		return

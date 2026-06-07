@@ -17,7 +17,7 @@ const endpointPublishedTestSeenAt = "2026-06-04T00:00:00Z"
 
 func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	dataDir := t.TempDir()
-	registry, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
+	registry, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
 		Role:       ClientEndpointRoleSentry,
 		URL:        "ssh://127.0.0.1:2223",
 		SignerPort: 11270,
@@ -36,11 +36,11 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	if alias, _, ok := cfg.Endpoints.DefaultEndpoint(); ok || alias != "" {
 		t.Fatalf("DefaultEndpoint() = %q/%v, want none", alias, ok)
 	}
-	endpoint, ok := cfg.Endpoints.Endpoint("attestor-local")
+	endpoint, ok := cfg.Endpoints.Endpoint("sentry-local")
 	if !ok {
-		t.Fatal("attestor-local endpoint missing after LoadConfig")
+		t.Fatal("sentry-local endpoint missing after LoadConfig")
 	}
-	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "attestor-local.token") {
+	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "sentry-local.token") {
 		t.Fatalf("TokenFile = %q, want resolved default token path", endpoint.TokenFile)
 	}
 }
@@ -49,13 +49,13 @@ func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForAttestor(t 
 	dataDir := t.TempDir()
 	writeLegacyClientEndpointConfig(t, dataDir)
 
-	registry, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
+	registry, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
 		Role:       ClientEndpointRoleSentry,
 		URL:        "ssh://127.0.0.1:2223",
 		SignerPort: 11271,
 	}, false)
 	if err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry) error = %v", err)
 	}
 	if registry.Default != "" {
 		t.Fatalf("Default = %q, want empty", registry.Default)
@@ -63,8 +63,8 @@ func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForAttestor(t 
 	if _, ok := registry.Endpoints[DefaultClientEndpointName]; ok {
 		t.Fatal("primary endpoint was materialized from legacy config")
 	}
-	if _, ok := registry.Endpoints["attestor-local"]; !ok {
-		t.Fatal("attestor-local endpoint missing")
+	if _, ok := registry.Endpoints["sentry-local"]; !ok {
+		t.Fatal("sentry-local endpoint missing")
 	}
 
 	stored, exists, err := LoadStoredClientEndpointRegistry(dataDir)
@@ -81,13 +81,13 @@ func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForAttestor(t 
 
 func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
+	if _, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
 		Role: ClientEndpointRoleSentry,
 		URL:  "ssh://127.0.0.1:2223",
 	}, false); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
 	}
-	_, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
+	_, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
 		Role: ClientEndpointRoleSentry,
 		URL:  "ssh://127.0.0.1:2224",
 	}, false)
@@ -101,21 +101,21 @@ func TestUpsertStoredClientEndpointRejectsConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
 	}
-	if got := registry.Endpoints["attestor-local"].URL; got != "ssh://127.0.0.1:2223" {
+	if got := registry.Endpoints["sentry-local"].URL; got != "ssh://127.0.0.1:2223" {
 		t.Fatalf("stored URL = %q, want original URL", got)
 	}
 }
 
 func TestUpsertStoredClientEndpointRejectsDuplicateURLAcrossAliases(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
+	if _, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
 		Role: ClientEndpointRoleSentry,
 		URL:  "ssh://127.0.0.1:2223/",
 	}, false); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(first) error = %v", err)
 	}
 
-	_, err := UpsertStoredClientEndpoint(dataDir, "attestor-copy", ClientEndpointConfig{
+	_, err := UpsertStoredClientEndpoint(dataDir, "sentry-copy", ClientEndpointConfig{
 		Role: ClientEndpointRoleSentry,
 		URL:  "ssh://127.0.0.1:2223",
 	}, true)
@@ -130,8 +130,8 @@ func TestUpsertStoredClientEndpointRejectsDuplicateURLAcrossAliases(t *testing.T
 	if err != nil {
 		t.Fatalf("LoadStoredClientEndpointRegistry() error = %v", err)
 	}
-	if _, ok := registry.Endpoints["attestor-copy"]; ok {
-		t.Fatal("attestor-copy endpoint was written despite duplicate URL conflict")
+	if _, ok := registry.Endpoints["sentry-copy"]; ok {
+		t.Fatal("sentry-copy endpoint was written despite duplicate URL conflict")
 	}
 }
 
@@ -143,39 +143,39 @@ func TestUpsertStoredClientEndpointAllowsDuplicateURLAcrossRoles(t *testing.T) {
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(signer) error = %v", err)
 	}
-	if _, err := UpsertStoredClientEndpoint(dataDir, "local-attestor", ClientEndpointConfig{
+	if _, err := UpsertStoredClientEndpoint(dataDir, "local-sentry", ClientEndpointConfig{
 		Role: ClientEndpointRoleSentry,
 		URL:  "ssh://127.0.0.1:2223",
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor same URL) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry same URL) error = %v", err)
 	}
 }
 
-func TestRebuildStoredClientEndpointPublishedAttestorsReplacesInventory(t *testing.T) {
+func TestRebuildStoredClientEndpointPublishedSentriesReplacesInventory(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := UpsertStoredClientEndpoint(dataDir, "attestor-local", ClientEndpointConfig{
+	if _, err := UpsertStoredClientEndpoint(dataDir, "sentry-local", ClientEndpointConfig{
 		Role: ClientEndpointRoleSentry,
 		URL:  "ssh://127.0.0.1:2223",
 	}, true); err != nil {
-		t.Fatalf("UpsertStoredClientEndpoint(attestor-local) error = %v", err)
+		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
 	staleKey := attestorEndpointTestHex("a1")
-	if _, err := RebuildStoredClientEndpointPublishedAttestors(dataDir, map[string]map[string]ClientEndpointPublishedAttestor{
-		"attestor-local": {
+	if _, err := RebuildStoredClientEndpointPublishedSentries(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
+		"sentry-local": {
 			staleKey: endpointPublishedTestAttestor(t, staleKey),
 		},
 	}); err != nil {
-		t.Fatalf("RebuildStoredClientEndpointPublishedAttestors(stale) error = %v", err)
+		t.Fatalf("RebuildStoredClientEndpointPublishedSentries(stale) error = %v", err)
 	}
 
 	newKey := attestorEndpointTestHex("b2")
-	plan, err := RebuildStoredClientEndpointPublishedAttestors(dataDir, map[string]map[string]ClientEndpointPublishedAttestor{
-		"attestor-local": {
+	plan, err := RebuildStoredClientEndpointPublishedSentries(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
+		"sentry-local": {
 			newKey: endpointPublishedTestAttestor(t, newKey),
 		},
 	})
 	if err != nil {
-		t.Fatalf("RebuildStoredClientEndpointPublishedAttestors(new) error = %v", err)
+		t.Fatalf("RebuildStoredClientEndpointPublishedSentries(new) error = %v", err)
 	}
 	if plan.PublicKeyCount != 1 || plan.PreviousPublishedCount != 1 {
 		t.Fatalf("plan counts = public:%d previous:%d, want 1/1", plan.PublicKeyCount, plan.PreviousPublishedCount)
@@ -185,21 +185,21 @@ func TestRebuildStoredClientEndpointPublishedAttestorsReplacesInventory(t *testi
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	published := cfg.Endpoints.Endpoints["attestor-local"].PublishedAttestors
+	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries
 	if _, ok := published[staleKey]; ok {
-		t.Fatalf("stale published attestor %s remained in %#v", staleKey, published)
+		t.Fatalf("stale published sentry %s remained in %#v", staleKey, published)
 	}
 	if got := published[newKey]; got.ComponentKey == "" || got.KeyType != keytypes.AttestorComponentEd25519V1 {
-		t.Fatalf("new published attestor = %#v, want Ed25519 component metadata", got)
+		t.Fatalf("new published sentry = %#v, want Ed25519 component metadata", got)
 	}
-	if route := cfg.AttestorEndpoints[newKey]; route.Endpoint != "attestor-local" {
-		t.Fatalf("derived route = %#v, want attestor-local", route)
+	if route := cfg.AttestorEndpoints[newKey]; route.Endpoint != "sentry-local" {
+		t.Fatalf("derived route = %#v, want sentry-local", route)
 	}
 }
 
-func TestRebuildStoredClientEndpointPublishedAttestorsRejectsDuplicatePublicKey(t *testing.T) {
+func TestRebuildStoredClientEndpointPublishedSentriesRejectsDuplicatePublicKey(t *testing.T) {
 	dataDir := t.TempDir()
-	for _, alias := range []string{"attestor-a", "attestor-b"} {
+	for _, alias := range []string{"sentry-a", "sentry-b"} {
 		if _, err := UpsertStoredClientEndpoint(dataDir, alias, ClientEndpointConfig{
 			Role: ClientEndpointRoleSentry,
 			URL:  "ssh://" + alias + ":2223",
@@ -208,16 +208,16 @@ func TestRebuildStoredClientEndpointPublishedAttestorsRejectsDuplicatePublicKey(
 		}
 	}
 	publicKey := attestorEndpointTestHex("c3")
-	_, err := PlanStoredClientEndpointPublishedAttestorRebuild(dataDir, map[string]map[string]ClientEndpointPublishedAttestor{
-		"attestor-a": {
+	_, err := PlanStoredClientEndpointPublishedSentryRebuild(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
+		"sentry-a": {
 			publicKey: endpointPublishedTestAttestor(t, publicKey),
 		},
-		"attestor-b": {
+		"sentry-b": {
 			publicKey: endpointPublishedTestAttestor(t, publicKey),
 		},
 	})
 	if err == nil {
-		t.Fatal("PlanStoredClientEndpointPublishedAttestorRebuild() error = nil, want duplicate rejection")
+		t.Fatal("PlanStoredClientEndpointPublishedSentryRebuild() error = nil, want duplicate rejection")
 	}
 	if !strings.Contains(err.Error(), "advertised by both endpoint aliases") {
 		t.Fatalf("duplicate error = %v", err)
@@ -292,9 +292,9 @@ ssh: {}
 	}
 }
 
-func endpointPublishedTestAttestor(t *testing.T, publicKeyHex string) ClientEndpointPublishedAttestor {
+func endpointPublishedTestAttestor(t *testing.T, publicKeyHex string) ClientEndpointPublishedSentry {
 	t.Helper()
-	return ClientEndpointPublishedAttestor{
+	return ClientEndpointPublishedSentry{
 		ComponentKey: attestorEndpointTestComponentKey(t, keytypes.AttestorComponentEd25519V1, publicKeyHex),
 		KeyType:      keytypes.AttestorComponentEd25519V1,
 		LastSeenAt:   endpointPublishedTestSeenAt,

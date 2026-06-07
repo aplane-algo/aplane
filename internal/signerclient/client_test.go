@@ -522,32 +522,32 @@ func TestAdminDeleteKey_ErrorResponse(t *testing.T) {
 	}
 }
 
-// --- AdminSyncAttestorReferences ---
+// --- AdminSyncSentryReferences ---
 
-func TestAdminSyncAttestorReferences_Success(t *testing.T) {
-	resp := signerapi.AdminSyncAttestorReferencesResponse{Added: 1, Count: 1}
+func TestAdminSyncSentryReferences_Success(t *testing.T) {
+	resp := signerapi.AdminSyncSentryReferencesResponse{Added: 1, Count: 1}
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
-		if req.URL.Path != "/admin/attestors/sync" || req.Method != "POST" {
-			t.Errorf("request = %s %s, want POST /admin/attestors/sync", req.Method, req.URL.Path)
+		if req.URL.Path != "/admin/sentries/sync" || req.Method != "POST" {
+			t.Errorf("request = %s %s, want POST /admin/sentries/sync", req.Method, req.URL.Path)
 		}
-		var body signerapi.AdminSyncAttestorReferencesRequest
+		var body signerapi.AdminSyncSentryReferencesRequest
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			t.Fatalf("Decode(request body) error = %v", err)
 		}
-		if len(body.Candidates) != 1 || body.Candidates[0].EndpointAlias != "attestor-local" {
-			t.Fatalf("request body = %#v, want one attestor-local candidate", body)
+		if len(body.Candidates) != 1 || body.Candidates[0].EndpointAlias != "sentry-local" {
+			t.Fatalf("request body = %#v, want one sentry-local candidate", body)
 		}
 		return mockResponse(200, jsonBody(t, resp)), nil
 	})
 
-	got, err := c.AdminSyncAttestorReferences([]signerapi.AttestorReferenceCandidate{{
-		EndpointAlias: "attestor-local",
+	got, err := c.AdminSyncSentryReferences([]signerapi.SentryReferenceCandidate{{
+		EndpointAlias: "sentry-local",
 		ComponentKey:  "I5T6BSFAT7TXWGKF4TQLDR6U6PTAZJDLN54XTY7JLFSQETEJW3JA",
 		KeyType:       "aplane.sentry-ed25519.v1",
 		PublicKeyHex:  strings.Repeat("ab", 32),
 	}})
 	if err != nil {
-		t.Fatalf("AdminSyncAttestorReferences() error = %v", err)
+		t.Fatalf("AdminSyncSentryReferences() error = %v", err)
 	}
 	if got.Added != 1 || got.Count != 1 {
 		t.Fatalf("sync response = %#v, want Added/Count 1", got)
@@ -710,7 +710,7 @@ func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
 			t.Fatal("request_id was not populated")
 		}
 		if got.Role != signerapi.ComponentSignRoleSentry || got.ComponentKey != "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA" {
-			t.Fatalf("component request = %+v, want attestor component_key 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA", got)
+			t.Fatalf("component request = %+v, want sentry component_key 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA", got)
 		}
 		resp := signerapi.ComponentSignResponse{
 			RequestID: got.RequestID,

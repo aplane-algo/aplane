@@ -59,15 +59,15 @@ Canonical forms:
   `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
   decimal version, for example `aplane.falcon1024.v1`,
   `aplane.htlc.v1`, and `aplane.falcon1024-whitelist.v1`
-- attestor component keys use the same canonical key-type identifier contract,
+- sentry component keys use the same canonical key-type identifier contract,
   for example `aplane.sentry-ed25519.v1` and
   `aplane.sentry-falcon1024.v1`; they are component-signing keys selected by
   52-character txid-shaped component selectors, not spending accounts
-- attested account key types name both the account DSA and the attestor DSA,
+- attested account key types name both the account DSA and the sentry DSA,
   for example `aplane.falcon1024-sentry-ed25519.v1` and
   `aplane.falcon1024-sentry-falcon1024.v1`; the older Go-level
   `AttestedFalcon1024V1` symbol is a compatibility alias for the Ed25519
-  attestor form and is not a separate persisted identifier
+  sentry form and is not a separate persisted identifier
 
 YAML templates declare `publisher`, `family`, and integer `version`; the
 computed key type is `publisher.family.v<version>`. Clients and tools must send
@@ -212,7 +212,7 @@ Unknown YAML fields are rejected by the Go loader.
 
 The Go `Config` type contains compatibility-only `LegacySignerPort` and
 `LegacySSH` fields whose YAML names remain `signer_port` and `ssh`. They are
-not the current routing contract. Current signer and attestor routing is loaded
+not the current routing contract. Current signer and sentry routing is loaded
 from `endpoints.yaml` into `ClientEndpointRegistry`, and managed client
 startup rejects top-level `ssh:` signer routing before connecting.
 
@@ -267,8 +267,8 @@ Signer policy participates in the ordered approval engine.
 The active node-role policy is identity-scoped and stored in
 `identities/<identity>/policy.yaml`, with a sibling `.hmac` sidecar that
 authenticates the exact YAML bytes with a key derived from the identity master
-key. Signer nodes parse it as client-signing policy; attestor nodes parse it as
-direct attestor component policy. The default approval fallback is
+key. Signer nodes parse it as client-signing policy; sentry nodes parse it as
+direct sentry component policy. The default approval fallback is
 `user_auto_approve`, lives in `identities/<identity>/config.yaml`, and is not a
 policy document field. The policy document is verified and loaded on
 unlock/reload before the key scan; a missing policy file or missing/mismatched
@@ -278,7 +278,7 @@ targets fail closed. Direct YAML edits are checked, signed, and verified
 through `appolicy` or `apstore policy`.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
-attestor overrides are keyed by component selector. These overrides apply to
+sentry overrides are keyed by component selector. These overrides apply to
 policy phases, are not exposed through admin IPC, and direct YAML edits require
 offline `apstore policy sign` before the signer will trust them.
 
@@ -299,8 +299,8 @@ Validation:
   30 minutes. The default is `60s`. Identity config may override the process
   default for that identity.
 - initialized signer data roots must contain root `node.yaml` with role
-  `signer` or `attestor`. New initialization defaults to `signer` unless an
-  attestor node is explicitly requested. Identity config `mode` is an
+  `signer` or `sentry`. New initialization defaults to `signer` unless an
+  sentry node is explicitly requested. Identity config `mode` is an
   unsupported pre-release field and is rejected.
 - node role gates key generation, mnemonic import, restore, signer key reload,
   and signing service dispatch. Hand-placed key files or restored keys from the
@@ -443,7 +443,7 @@ config/plugin/env files).
     passphrase.cred         # systemd-creds helper artifact, mode 0600
     keytypes/<key_type>.json
     keytypes/<key_type>.template
-    attestors/<name>.json
+    sentries/<name>.json
     deleted/keys/*.key
     deleted/keytypes/<key_type>.template
 ```
@@ -515,14 +515,14 @@ Additional client-state notes:
 - `apconsole.yaml` supports `mode: local|remote`, `client_data`, and local-mode `signer_data`; relative paths resolve against the profile file
 - `endpoints.yaml` is the normal client-local endpoint registry for new installs, with `schema_version: 1`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
 - if client `config.yaml` contains top-level `ssh:` signer settings, `apshell` startup and the apconsole shell pane fail closed with an operator-facing message that says this release is new-install-only. Startup never materializes or rewrites endpoint routing.
-- endpoint records carry connection profile fields together: required `role` (`signer` or `attestor`), `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, `token_file`, and endpoint-published `published_attestors`. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. `published_attestors` is valid only on `attestor` endpoints.
+- endpoint records carry connection profile fields together: required `role` (`signer` or `sentry`), `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, `token_file`, and endpoint-published `published_sentries`. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. `published_sentries` is valid only on `sentry` endpoints.
 - endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
-- `published_attestors` is keyed by canonical embedded attestor public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime attested-send routing derives the endpoint for an embedded attestor public key from this endpoint-local inventory.
-- `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. The common form takes `--host <client-reachable-host>` and derives `ssh://<host>:<configured-ssh-port>` plus the configured signer REST port; `--url <url>` overrides that URL for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, attestor public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
-- `apshell endpoints import-public --alias <alias> --role signer|attestor [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `attestor` alias for dev co-location. Import is not an ownership or trust proof and does not discover attestor keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
-- `apshell endpoints sync-attestors [--dry-run] [--yes]` scans configured `attestor` endpoints with authenticated `/keys`, extracts attestor component-key `public_key_hex` values, validates each `component_key`, and atomically rebuilds endpoint-local `published_attestors` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_attestors` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and component-key validation failures are hard errors and leave files unchanged. After discovery, the command prints component IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public attestor reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered attestors selectable from signer-side key generation clients such as `apadmin`.
-- `apshell endpoints attestors` lists the local endpoint-discovered attestor inventory by endpoint alias, component ID, and key type without calling remote endpoints.
-- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. Human endpoint output identifies attestors by component ID and must not print raw attestor public keys. `show` is local-only, does not call `/keys`, and includes `last_seen_at` for that endpoint's published attestors; `delete` refuses to remove the signer endpoint or an endpoint with published attestors still referenced by derived runtime routing.
+- `published_sentries` is keyed by canonical embedded sentry public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime attested-send routing derives the endpoint for an embedded sentry public key from this endpoint-local inventory.
+- `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. The common form takes `--host <client-reachable-host>` and derives `ssh://<host>:<configured-ssh-port>` plus the configured signer REST port; `--url <url>` overrides that URL for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
+- `apshell endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
+- `apshell endpoints sync-sentries [--dry-run] [--yes]` scans configured `sentry` endpoints with authenticated `/keys`, extracts sentry component-key `public_key_hex` values, validates each `component_key`, and atomically rebuilds endpoint-local `published_sentries` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_sentries` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and component-key validation failures are hard errors and leave files unchanged. After discovery, the command prints component IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public sentry reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered sentries selectable from signer-side key generation clients such as `apadmin`.
+- `apshell endpoints sentries` lists the local endpoint-discovered sentry inventory by endpoint alias, component ID, and key type without calling remote endpoints.
+- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. Human endpoint output identifies sentries by component ID and must not print raw sentry public keys. `show` is local-only, does not call `/keys`, and includes `last_seen_at` for that endpoint's published sentries; `delete` refuses to remove the signer endpoint or an endpoint with published sentries still referenced by derived runtime routing.
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
 - for interactive `apshell`, token presence and SSH host trust are enforced when the shell attempts `connect`, startup auto-connect, or `request-token` flows; they are not preflight requirements for process startup
 - after a successful interactive `request-token` for the default endpoint, `apshell` immediately attempts to establish the signer SSH tunnel with the newly issued token; `request-token --endpoint <alias>` saves that endpoint's token and only auto-connects when `<alias>` is the default endpoint.
@@ -532,7 +532,7 @@ Additional client-state notes:
 - conflicting explicit inputs do not auto-resolve: if flags, environment variables, or an explicitly selected profile disagree, `apconsole` exits and requires the operator to remove the conflict or make the values match
 - auto-discovered profile values are convenience defaults only; if they differ from explicit flags or environment variables, `apconsole` keeps the explicit values and emits a warning naming the ignored profile value
 - local-mode signer `apconsole` may start before client enrollment is complete; it requires valid local client/signer data paths, but it allows the embedded shell to perform first-time `request-token` while the local signer/admin panes are available for approval
-- local-mode attestor `apconsole` suppresses the embedded shell and renders only the admin pane plus daemon/status pane; attestor policy editing happens through apadmin in the admin pane
+- local-mode sentry `apconsole` suppresses the embedded shell and renders only the admin pane plus daemon/status pane; sentry policy editing happens through apadmin in the admin pane
 - for local-mode signer `apconsole`, when the client SSH host is loopback, the local signer's configured SSH host key is probed against the live loopback SSH endpoint before being pinned into the client `known_hosts` file; a mismatch aborts the trust write and shell startup, and token presence is enforced when the embedded shell attempts startup auto-connect, `connect`, or `request-token`
 - remote-mode `apconsole` requires the configured client data directory to be enrolled before the UI starts: `endpoints.yaml` must define a default signer endpoint, that endpoint's token file must exist, and the configured signer host must already be present in the endpoint `known_hosts_path`
 - remote `apadmin` has the same client enrollment prerequisite as `apconsole`: it requires a default signer endpoint, the endpoint token, and a trusted signer host in the endpoint `known_hosts_path`; it does not prompt for first-use host trust
@@ -658,7 +658,7 @@ Behavior:
 
 The identity-scoped active policy is stored at
 `identities/<identity>/policy.yaml`. Signer nodes parse that file as
-client-signing policy. Attestor nodes parse that same file as direct attestor
+client-signing policy. Sentry nodes parse that same file as direct sentry
 component policy. The JSON sidecar at `policy.yaml.hmac` authenticates the
 exact YAML bytes.
 
@@ -694,7 +694,7 @@ Policy load behavior:
 - direct YAML edits require offline `appolicy --save` or `apstore policy sign`
   before the signer trusts them
 - `appolicy` defaults to `--target auto`; for store-backed operations, auto
-  reads root `node.yaml` and targets the signer or attestor policy domain for
+  reads root `node.yaml` and targets the signer or sentry policy domain for
   the single `policy.yaml` file
 - `appolicy --yaml` emits the exact verified selected document bytes;
   `appolicy --save` reads replacement YAML bytes from stdin, validates them in
@@ -867,24 +867,24 @@ and key-file name.
 
 The default human output must not emit private key material, mnemonic material,
 or raw public-key hex. Component keys are identified by their component
-selector, not by the raw attestor public key. Recoverable key-scan warnings may
+selector, not by the raw sentry public key. Recoverable key-scan warnings may
 be reported while still listing keys that scanned successfully.
 
-#### Attestor Public Key Export Envelope
+#### Sentry Public Key Export Envelope
 
-`apstore attestor export-public <component-key> [output-json]` emits a public-only
-JSON envelope for an attestor component key. The command reads the
+`apstore sentry export-public <component-key> [output-json]` emits a public-only
+JSON envelope for an sentry component key. The command reads the
 `keys/<component-key>.public.json` sidecar, verifies that `<component-key>`
 equals the canonical selector derived from the public key, and never reads or
 decrypts private key material. If the sidecar is missing or malformed, export
-fails closed; the operator must regenerate the attestor component key or run an
+fails closed; the operator must regenerate the sentry component key or run an
 explicit metadata backfill before exporting.
 
 The envelope schema is:
 
 ```json
 {
-  "schema": "aplane.attestor-public-key.v1",
+  "schema": "aplane.sentry-public-key.v1",
   "component_key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
   "key_type": "aplane.sentry-ed25519.v1",
   "public_key_encoding": "hex",
@@ -895,7 +895,7 @@ The envelope schema is:
 ```
 
 `component_key` is always the 52-character uppercase base32 selector used to
-select a local attestor component key. It is derived as
+select a local sentry component key. It is derived as
 `base32_no_padding(SHA512_256("APLANE_COMPONENT_KEY_V1" || 0x00 || key_type ||
 0x00 || canonical_public_key_bytes))`; it resembles an Algorand transaction ID
 and is not a valid Algorand address. `public_key_hex` is the raw component
@@ -904,14 +904,14 @@ LogicSig bytecode and supplied as `attestor_public_key` during attested account
 generation. The envelope makes no endpoint, policy, ownership, freshness, or
 trust claim.
 
-#### Attestor Public Key Reference Library
+#### Sentry Public Key Reference Library
 
-`apstore attestor import-public <export-json> <name>` imports an
-`aplane.attestor-public-key.v1` envelope into the target identity's public
-attestor reference library:
+`apstore sentry import-public <export-json> <name>` imports an
+`aplane.sentry-public-key.v1` envelope into the target identity's public
+sentry reference library:
 
 ```text
-identities/<identity>/attestors/<name>.json
+identities/<identity>/sentries/<name>.json
 ```
 
 Reference names are normalized to lowercase and may contain lowercase letters,
@@ -919,7 +919,7 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
 
 ```json
 {
-  "schema": "aplane.attestor-public-key-ref.v1",
+  "schema": "aplane.sentry-public-key-ref.v1",
   "name": "lab-att",
   "component_key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
   "key_type": "aplane.sentry-ed25519.v1",
@@ -933,22 +933,22 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
 ```
 
 Endpoint discovery may also populate this catalog through
-`apshell endpoints sync-attestors`. Synced records use the same schema with
+`apshell endpoints sync-sentries`. Synced records use the same schema with
 `source: "client_discovery"`, a deterministic generated name
 `endpoint-<alias>-<component_key>`, `endpoint_alias`, `last_seen_at`, and
 `synced_at`. They are public candidates derived from the client's
-`endpoints.yaml`; they are not an attestor ownership proof.
+`endpoints.yaml`; they are not an sentry ownership proof.
 
 The library is a generation convenience and trust-input inventory for the user
 signer. When generating an attested account, callers may provide
-`attestor=<name>` instead of `attestor_public_key=<hex>`. The signer resolves
+`sentry=<name>` instead of `attestor_public_key=<hex>`. The signer resolves
 the name to `public_key_hex`, verifies that the reference key type matches the
-attested-account key type's required attestor component key type, rejects
+attested-account key type's required sentry component key type, rejects
 requests that provide both forms, and persists only the resolved
 `attestor_public_key` in the key file.
 
 Identity-scoped `/keytypes` metadata may expose imported references as a
-creation parameter named `attestor` with `type:"select"` and `options[]`
+creation parameter named `sentry` with `type:"select"` and `options[]`
 containing reference names whose component key type matches the attested
 account key type. This is UI metadata for generation clients such as `apadmin`;
 the durable key file still stores the resolved `attestor_public_key`.
@@ -1063,9 +1063,9 @@ Signing-audit semantics:
 - `SIGN_APPROVED` is emitted only for transactions the signer actually signs
 - foreign and passthrough entries may appear in `SIGN_REQUEST`/planning context, but are not recorded as `SIGN_APPROVED`
 - signing audit over HTTP records `transport:"http"` and the token-authenticated identity as requester
-- attestor-role component signing currently records approvals and policy
+- sentry-role component signing currently records approvals and policy
   rejections through `SIGN_APPROVED`/`SIGN_REJECTED`; `txn_auth` is the
-  attestor component selector, `txn_sender` is the decoded target sender, and
+  sentry component selector, `txn_sender` is the decoded target sender, and
   `policy_rule_id` carries the deterministic attestation rule when present
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
@@ -1191,7 +1191,7 @@ Auto-rejection policy includes:
 - `transfer_policy` blocked destinations, route misses,
   close/clawback denials, and `reject_above` thresholds for direct `pay` and
   `axfer` movements
-- YAML-only `key_overrides` keyed by signing auth address or attestor component selector
+- YAML-only `key_overrides` keyed by signing auth address or sentry component selector
 
 Policy enforcement stores and compares `review_algo_payments` and
 `max_algo_payments` in raw microAlgos; admin-facing input, display, and
@@ -1217,7 +1217,7 @@ fallback switch stored in identity config and shown in `apadmin` as
 auto-rejection, forced review, and explicit auto-approval have all had a chance
 to run.
 
-Client-signing and attestor component `transfer_policy` are both persisted in
+Client-signing and sentry component `transfer_policy` are both persisted in
 `policy.yaml`, with schema selected by node role. Both domains are validated by
 the normal policy load path and by `apstore policy check/sign/verify`.
 `appolicy` auto-targets the node-role domain and `--target signer|attestation`
@@ -1722,11 +1722,11 @@ Restore:
   surfaced in restore `warnings[]`
 - library-visible compiled providers are activated for the identity when a key of that type is restored; this writes the normal
   `identities/<identity>/keytypes/<key_type>.json` state record and is idempotent
-- `apstore rebuild <archive-path> [--role signer|attestor]` restores an absent
+- `apstore rebuild <archive-path> [--role signer|sentry]` restores an absent
   store. `manifest.json` `source_node_role` metadata is diagnostic and supplies
   the default destination role when `--role` is omitted. Archives without source
   role metadata default to `signer`; use `--role sentry` when rebuilding an
-  attestor store from such an archive. If `--role` disagrees with the manifest,
+  sentry store from such an archive. If `--role` disagrees with the manifest,
   rebuild warns and uses the explicit destination role. Restored key classes are
   still validated against the destination role before being written.
 - a LogicSig key restore is rejected when the key payload has bytecode but is not a v1 signing-metadata key; templates are not

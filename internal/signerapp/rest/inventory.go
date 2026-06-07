@@ -314,8 +314,8 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 		}
 		infos[i].CreationParams = []signerapi.CreationParamInfo{{
 			Name:        attrefs.ParamAttestorName,
-			Label:       "Attestor",
-			Description: "Imported attestor public-key reference to embed in the attested account",
+			Label:       "Sentry",
+			Description: "Imported sentry public-key reference to embed in the attested account",
 			Type:        "select",
 			Required:    true,
 			Options:     append([]string(nil), names...),
@@ -327,11 +327,11 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 func attestorComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
 	switch keyType {
 	case keytypes.AttestorComponentEd25519V1:
-		return "sentry-ed25519", "Attestor Ed25519 component key", "Raw Ed25519 attestor component signing key"
+		return "sentry-ed25519", "Sentry Ed25519 component key", "Raw Ed25519 sentry component signing key"
 	case keytypes.AttestorComponentFalcon1024V1:
-		return "sentry-falcon1024", "Attestor Falcon-1024 component key", "Raw Falcon-1024 attestor component signing key"
+		return "sentry-falcon1024", "Sentry Falcon-1024 component key", "Raw Falcon-1024 sentry component signing key"
 	default:
-		return keyType, keyType, "Raw attestor component signing key"
+		return keyType, keyType, "Raw sentry component signing key"
 	}
 }
 

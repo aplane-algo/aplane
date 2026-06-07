@@ -61,7 +61,7 @@ type DeleteResult struct {
 	DeletedPath string
 }
 
-type SyncAttestorReferencesResult struct {
+type SyncSentryReferencesResult struct {
 	Added   int
 	Updated int
 	Removed int
@@ -231,7 +231,7 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	return &DeleteResult{DeletedPath: delResult.DeletedPath}, nil
 }
 
-func (s Service) SyncAttestorReferences(ir *identity.Runtime, discovered []attrefs.DiscoveredRecord) (*SyncAttestorReferencesResult, *Error) {
+func (s Service) SyncSentryReferences(ir *identity.Runtime, discovered []attrefs.DiscoveredRecord) (*SyncSentryReferencesResult, *Error) {
 	if ir == nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
 	}
@@ -243,7 +243,7 @@ func (s Service) SyncAttestorReferences(ir *identity.Runtime, discovered []attre
 	if err != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 	}
-	return &SyncAttestorReferencesResult{
+	return &SyncSentryReferencesResult{
 		Added:   result.Added,
 		Updated: result.Updated,
 		Removed: result.Removed,

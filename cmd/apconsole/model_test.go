@@ -123,7 +123,7 @@ func TestShellDisabledSplitLayoutUsesFullWidthSignerAboveDaemon(t *testing.T) {
 	if strings.Contains(got, "Shell") {
 		t.Fatalf("shell pane rendered while disabled:\n%s", got)
 	}
-	signerPos := strings.Index(got, "Attestor Admin")
+	signerPos := strings.Index(got, "Sentry Admin")
 	daemonPos := strings.Index(got, "Daemon")
 	if signerPos < 0 || daemonPos < 0 {
 		t.Fatalf("rendered view missing pane headers: signer=%d daemon=%d\n%s", signerPos, daemonPos, got)
@@ -379,7 +379,7 @@ func TestShellDisabledTabsAndTitleOmitShell(t *testing.T) {
 	if strings.Contains(tabs, "Shell") {
 		t.Fatalf("tabs include shell while disabled: %q", tabs)
 	}
-	if !strings.Contains(tabs, "F1 Attestor Admin") || !strings.Contains(tabs, "F2 Daemon") {
+	if !strings.Contains(tabs, "F1 Sentry Admin") || !strings.Contains(tabs, "F2 Daemon") {
 		t.Fatalf("tabs missing signer/daemon controls: %q", tabs)
 	}
 	if !strings.Contains(tabs, "Shift ↑ ↓ navigate") {

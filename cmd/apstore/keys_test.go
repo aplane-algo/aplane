@@ -42,13 +42,13 @@ func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 			t.Fatalf("list output = %q, want ed25519 key type", out)
 		}
 		if !strings.Contains(out, "sentry-ed25519") {
-			t.Fatalf("list output = %q, want attestor key type display", out)
+			t.Fatalf("list output = %q, want sentry key type display", out)
 		}
 		if strings.Contains(out, edResult.PublicKeyHex) {
 			t.Fatalf("list output exposed Ed25519 public key hex: %q", out)
 		}
 		if strings.Contains(out, attPublicHex) {
-			t.Fatalf("list output exposed attestor public key hex: %q", out)
+			t.Fatalf("list output exposed sentry public key hex: %q", out)
 		}
 	})
 }

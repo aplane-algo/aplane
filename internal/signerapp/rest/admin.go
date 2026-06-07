@@ -53,9 +53,9 @@ func (s Service) AdminDelete(ir *identity.Runtime, address string) (int, signera
 	return 200, signerapi.AdminDeleteResponse{Success: true}
 }
 
-func (s Service) AdminSyncAttestorReferences(ir *identity.Runtime, req signerapi.AdminSyncAttestorReferencesRequest) (int, signerapi.AdminSyncAttestorReferencesResponse) {
+func (s Service) AdminSyncSentryReferences(ir *identity.Runtime, req signerapi.AdminSyncSentryReferencesRequest) (int, signerapi.AdminSyncSentryReferencesResponse) {
 	if ir == nil {
-		return 500, signerapi.AdminSyncAttestorReferencesResponse{Error: "identity runtime is nil"}
+		return 500, signerapi.AdminSyncSentryReferencesResponse{Error: "identity runtime is nil"}
 	}
 	discovered := make([]attrefs.DiscoveredRecord, 0, len(req.Candidates))
 	for _, candidate := range req.Candidates {
@@ -67,13 +67,13 @@ func (s Service) AdminSyncAttestorReferences(ir *identity.Runtime, req signerapi
 			LastSeenAt:    candidate.LastSeenAt,
 		})
 	}
-	result, err := s.Deps.KeyAdmin.SyncAttestorReferences(ir, discovered)
+	result, err := s.Deps.KeyAdmin.SyncSentryReferences(ir, discovered)
 	if err != nil {
-		return mapSyncAttestorReferencesError(err)
+		return mapSyncSentryReferencesError(err)
 	}
-	records := make([]signerapi.SyncedAttestorReferenceInfo, 0, len(result.Records))
+	records := make([]signerapi.SyncedSentryReferenceInfo, 0, len(result.Records))
 	for _, rec := range result.Records {
-		records = append(records, signerapi.SyncedAttestorReferenceInfo{
+		records = append(records, signerapi.SyncedSentryReferenceInfo{
 			Name:          rec.Name,
 			Source:        rec.Source,
 			EndpointAlias: rec.EndpointAlias,
@@ -84,7 +84,7 @@ func (s Service) AdminSyncAttestorReferences(ir *identity.Runtime, req signerapi
 			SyncedAt:      rec.SyncedAt,
 		})
 	}
-	return 200, signerapi.AdminSyncAttestorReferencesResponse{
+	return 200, signerapi.AdminSyncSentryReferencesResponse{
 		Added:   result.Added,
 		Updated: result.Updated,
 		Removed: result.Removed,
@@ -110,15 +110,15 @@ func mapGenerateError(err *keyadmin.Error) (int, signerapi.AdminGenerateResponse
 	}
 }
 
-func mapSyncAttestorReferencesError(err *keyadmin.Error) (int, signerapi.AdminSyncAttestorReferencesResponse) {
+func mapSyncSentryReferencesError(err *keyadmin.Error) (int, signerapi.AdminSyncSentryReferencesResponse) {
 	if err == nil {
-		return 200, signerapi.AdminSyncAttestorReferencesResponse{}
+		return 200, signerapi.AdminSyncSentryReferencesResponse{}
 	}
 	switch err.Kind {
 	case keyadmin.ErrorInvalidInput:
-		return 400, signerapi.AdminSyncAttestorReferencesResponse{Error: err.Message}
+		return 400, signerapi.AdminSyncSentryReferencesResponse{Error: err.Message}
 	default:
-		return 500, signerapi.AdminSyncAttestorReferencesResponse{Error: "attestor reference sync failed"}
+		return 500, signerapi.AdminSyncSentryReferencesResponse{Error: "sentry reference sync failed"}
 	}
 }
 

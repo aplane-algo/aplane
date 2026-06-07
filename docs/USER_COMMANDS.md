@@ -605,14 +605,14 @@ apadmin --remote --client-data ~/aplane/apclient
 
 ### endpoints
 
-Manage client-local signer and attestor endpoint profiles.
+Manage client-local signer and sentry endpoint profiles.
 
 ```
 endpoints list
 endpoints show <alias>
-endpoints attestors
-endpoints import-public --alias <alias> --role signer|attestor [--dry-run] <endpoint-json>
-endpoints sync-attestors [--dry-run] [--yes]
+endpoints sentries
+endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>
+endpoints sync-sentries [--dry-run] [--yes]
 endpoints default <alias>
 endpoints delete <alias>
 ```
@@ -620,30 +620,30 @@ endpoints delete <alias>
 `endpoints import-public` reads a public `aplane.endpoint.v1` envelope produced by
 `apstore endpoint export`. Import writes local endpoint routing only:
 `endpoints.yaml`. Use `role: signer` for the one primary client signer endpoint
-and `role: sentry` for attestor endpoints. Import does not copy tokens or SSH
+and `role: sentry` for sentry endpoints. Import does not copy tokens or SSH
 host trust. Re-importing with the same alias replaces that alias's endpoint
 data.
 
-`endpoints sync-attestors` queries configured attestor endpoints using their
-endpoint token files, refreshes local endpoint-published attestor inventory,
+`endpoints sync-sentries` queries configured sentry endpoints using their
+endpoint token files, refreshes local endpoint-published sentry inventory,
 prints component IDs for confirmation, and then syncs the public
-attestor references into the connected signer identity. Temporarily unavailable
-attestor endpoints are skipped and keep their previous local inventory;
+sentry references into the connected signer identity. Temporarily unavailable
+sentry endpoints are skipped and keep their previous local inventory;
 authentication failures and malformed endpoint metadata fail closed.
 
-`endpoints attestors` lists the local endpoint-discovered attestor inventory by
+`endpoints sentries` lists the local endpoint-discovered sentry inventory by
 endpoint alias, component ID, and key type without calling remote endpoints.
 
 **Examples:**
 ```
 endpoints import-public --alias main --role signer signer.endpoint.json
-endpoints import-public --alias local-attestor --role sentry attestor.endpoint.json
+endpoints import-public --alias local-sentry --role sentry sentry.endpoint.json
 endpoints import-public --alias main --role signer --dry-run signer.endpoint.json
 request-token --endpoint main
-request-token --endpoint local-attestor
+request-token --endpoint local-sentry
 connect main
-endpoints sync-attestors
-endpoints attestors
+endpoints sync-sentries
+endpoints sentries
 endpoints list
 endpoints show main
 endpoints default main
@@ -651,7 +651,7 @@ endpoints delete old-signer
 ```
 
 `endpoints delete` refuses to remove the signer endpoint or an endpoint with
-published attestors still referenced by derived runtime routing.
+published sentries still referenced by derived runtime routing.
 
 ---
 
@@ -1084,13 +1084,13 @@ endpoints:
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
-  local-attestor:
+  local-sentry:
     role: sentry
     url: ssh://192.168.1.101:1127
     signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
-    token_file: tokens/local-attestor.token
+    token_file: tokens/local-sentry.token
 ```
 
 See `docs/USER_CONFIG.md` for full configuration options.

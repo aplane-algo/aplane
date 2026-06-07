@@ -131,7 +131,7 @@ func TestCmdRebuildRoleOverrideRestoresAttestorBackupWithoutManifest(t *testing.
 	if err := backup.WriteReadme(backupRoot); err != nil {
 		t.Fatalf("WriteReadme() error = %v", err)
 	}
-	archivePath := filepath.Join(t.TempDir(), "attestor-rebuild.tar.gz")
+	archivePath := filepath.Join(t.TempDir(), "sentry-rebuild.tar.gz")
 	if err := backup.CreateTarGzArchive(backupRoot, archivePath); err != nil {
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}
@@ -156,7 +156,7 @@ func TestCmdRebuildRoleOverrideRestoresAttestorBackupWithoutManifest(t *testing.
 		t.Fatalf("LoadAndVerifyWithMasterKey() error = %v", err)
 	}
 	if role.Role != noderole.RoleSentry {
-		t.Fatalf("rebuilt node role = %q, want attestor", role.Role)
+		t.Fatalf("rebuilt node role = %q, want sentry", role.Role)
 	}
 	if _, err := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), componentKey)); err != nil {
 		t.Fatalf("rebuilt component key file missing: %v", err)
@@ -184,7 +184,7 @@ func TestSelectRebuildNodeRoleExplicitOverridesManifest(t *testing.T) {
 		t.Fatalf("selectRebuildNodeRole() error = %v", err)
 	}
 	if role != noderole.RoleSentry {
-		t.Fatalf("selectRebuildNodeRole() role = %q, want attestor", role)
+		t.Fatalf("selectRebuildNodeRole() role = %q, want sentry", role)
 	}
 }
 

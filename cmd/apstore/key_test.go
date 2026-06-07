@@ -21,7 +21,7 @@ import (
 func TestCmdAttestorExportPublicWritesEnvelopeFile(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		result, publicKeyHex := generateTestAttestorComponentKey(t, passphrase)
-		outputPath := filepath.Join(t.TempDir(), "attestor-public.json")
+		outputPath := filepath.Join(t.TempDir(), "sentry-public.json")
 
 		if err := cmdAttestor([]string{"export-public", result.Address, outputPath}); err != nil {
 			t.Fatalf("cmdAttestor(export-public) error = %v", err)

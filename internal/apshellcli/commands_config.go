@@ -67,7 +67,7 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints attestors | endpoints import-public --alias <alias> --role signer|attestor [--dry-run] <endpoint-json> | endpoints sync-attestors [--dry-run] [--yes] | endpoints default <alias> | endpoints delete <alias>")
+		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints sentries | endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json> | endpoints sync-sentries [--dry-run] [--yes] | endpoints default <alias> | endpoints delete <alias>")
 	}
 	switch args[0] {
 	case "list":
@@ -90,15 +90,15 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 		}
 		r.renderEndpointShow(result)
 		return nil
-	case "attestors":
+	case "sentries":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: endpoints attestors")
+			return fmt.Errorf("usage: endpoints sentries")
 		}
-		result, err := r.app().EndpointAttestors(r.commandContext())
+		result, err := r.app().EndpointSentries(r.commandContext())
 		if err != nil {
 			return err
 		}
-		r.renderEndpointAttestors(result)
+		r.renderEndpointSentries(result)
 		return nil
 	case "import", "import-public":
 		req, err := parseEndpointImportArgs(args[1:])
@@ -122,12 +122,12 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 			r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
 		}
 		return nil
-	case "discover-attestors":
-		req, err := parseEndpointDiscoverAttestorsArgs(args[1:])
+	case "discover-sentries":
+		req, err := parseEndpointDiscoverSentriesArgs(args[1:])
 		if err != nil {
 			return err
 		}
-		result, err := r.app().EndpointDiscoverAttestors(r.commandContext(), req)
+		result, err := r.app().EndpointDiscoverSentries(r.commandContext(), req)
 		if err != nil {
 			return err
 		}
@@ -141,12 +141,12 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 			r.println(line)
 		}
 		return nil
-	case "sync-attestors":
-		req, err := parseEndpointSyncAttestorsArgs(args[1:])
+	case "sync-sentries":
+		req, err := parseEndpointSyncSentriesArgs(args[1:])
 		if err != nil {
 			return err
 		}
-		result, err := r.app().EndpointSyncAttestors(r.commandContext(), req)
+		result, err := r.app().EndpointSyncSentries(r.commandContext(), req)
 		if err != nil {
 			return err
 		}
@@ -161,12 +161,12 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 		}
 		if result.NeedsConfirmation {
 			if !r.app().IsConnected() {
-				return fmt.Errorf("not connected to Signer; run connect before syncing attestors to the signer library")
+				return fmt.Errorf("not connected to Signer; run connect before syncing sentries to the signer library")
 			}
 			if r.AutoConfirm {
-				return fmt.Errorf("endpoints sync-attestors requires --yes to update the signer library in non-interactive mode")
+				return fmt.Errorf("endpoints sync-sentries requires --yes to update the signer library in non-interactive mode")
 			}
-			response, err := r.readPromptResponse("Sync these attestors to the signer library? [y/N]: ")
+			response, err := r.readPromptResponse("Sync these sentries to the signer library? [y/N]: ")
 			if err != nil {
 				return err
 			}
@@ -174,7 +174,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 				r.println("Sync cancelled")
 				return nil
 			}
-			confirmed, err := r.app().EndpointConfirmSyncAttestors(r.commandContext())
+			confirmed, err := r.app().EndpointConfirmSyncSentries(r.commandContext())
 			if err != nil {
 				return err
 			}
@@ -233,7 +233,7 @@ func (r *REPLState) cmdConfig(_ []string, _ interface{}) error {
 
 func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, error) {
 	var req apshellapp.EndpointImportRequest
-	const usage = "usage: endpoints import-public --alias <alias> --role signer|attestor [--dry-run] <endpoint-json>"
+	const usage = "usage: endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>"
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
@@ -273,9 +273,9 @@ func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, e
 	return req, nil
 }
 
-func parseEndpointDiscoverAttestorsArgs(args []string) (apshellapp.EndpointDiscoverAttestorsRequest, error) {
-	var req apshellapp.EndpointDiscoverAttestorsRequest
-	const usage = "usage: endpoints discover-attestors [--dry-run]"
+func parseEndpointDiscoverSentriesArgs(args []string) (apshellapp.EndpointDiscoverSentriesRequest, error) {
+	var req apshellapp.EndpointDiscoverSentriesRequest
+	const usage = "usage: endpoints discover-sentries [--dry-run]"
 	for _, arg := range args {
 		switch arg {
 		case "--dry-run":
@@ -290,9 +290,9 @@ func parseEndpointDiscoverAttestorsArgs(args []string) (apshellapp.EndpointDisco
 	return req, nil
 }
 
-func parseEndpointSyncAttestorsArgs(args []string) (apshellapp.EndpointSyncAttestorsRequest, error) {
-	var req apshellapp.EndpointSyncAttestorsRequest
-	const usage = "usage: endpoints sync-attestors [--dry-run] [--yes]"
+func parseEndpointSyncSentriesArgs(args []string) (apshellapp.EndpointSyncSentriesRequest, error) {
+	var req apshellapp.EndpointSyncSentriesRequest
+	const usage = "usage: endpoints sync-sentries [--dry-run] [--yes]"
 	for _, arg := range args {
 		switch arg {
 		case "--dry-run":
@@ -329,7 +329,7 @@ func (r *REPLState) renderEndpointsList(result *apshellapp.EndpointsListResult) 
 			yesNo(endpoint.IsDefault),
 			endpoint.URL,
 			tokenStatusLabel(endpoint),
-			len(endpoint.PublishedAttestorComponents),
+			len(endpoint.PublishedSentryComponents),
 		)
 	}
 	_ = w.Flush()
@@ -347,35 +347,35 @@ func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
 	r.printf("Known hosts: %s\n", endpoint.KnownHostsPath)
 	r.printf("Token file: %s\n", endpoint.TokenFile)
 	r.printf("Token present: %s\n", tokenStatusLabel(endpoint))
-	if len(endpoint.PublishedAttestorComponents) == 0 {
-		r.println("Published attestors: none")
+	if len(endpoint.PublishedSentryComponents) == 0 {
+		r.println("Published sentries: none")
 		return
 	}
-	r.println("Published attestors:")
+	r.println("Published sentries:")
 	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "  COMPONENT\tKEY TYPE\tLAST SEEN")
-	for _, attestor := range endpoint.PublishedAttestors {
+	for _, sentry := range endpoint.PublishedSentries {
 		_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\n",
-			attestor.ComponentKey,
-			attestor.KeyType,
-			attestor.LastSeenAt,
+			sentry.ComponentKey,
+			sentry.KeyType,
+			sentry.LastSeenAt,
 		)
 	}
 	_ = w.Flush()
 }
 
-func (r *REPLState) renderEndpointAttestors(result *apshellapp.EndpointAttestorsResult) {
-	if len(result.Attestors) == 0 {
-		r.println("No endpoint-discovered attestors")
+func (r *REPLState) renderEndpointSentries(result *apshellapp.EndpointSentriesResult) {
+	if len(result.Sentries) == 0 {
+		r.println("No endpoint-discovered sentries")
 		return
 	}
 	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "ENDPOINT\tCOMPONENT\tKEY TYPE")
-	for _, attestor := range result.Attestors {
+	for _, sentry := range result.Sentries {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n",
-			attestor.EndpointAlias,
-			attestor.ComponentKey,
-			attestor.KeyType,
+			sentry.EndpointAlias,
+			sentry.ComponentKey,
+			sentry.KeyType,
 		)
 	}
 	_ = w.Flush()

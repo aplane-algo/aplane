@@ -52,7 +52,7 @@ func TestCmdEndpointExportHostDerivesSSHURLFromConfig(t *testing.T) {
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoint([]string{
 				"export",
-				"--host", "attestor.example",
+				"--host", "sentry.example",
 			})
 		})
 		if err != nil {
@@ -62,7 +62,7 @@ func TestCmdEndpointExportHostDerivesSSHURLFromConfig(t *testing.T) {
 		if err != nil {
 			t.Fatalf("endpoint envelope parse error = %v\n%s", err, out)
 		}
-		if env.URL != "ssh://attestor.example:2223" {
+		if env.URL != "ssh://sentry.example:2223" {
 			t.Fatalf("URL = %q, want derived ssh URL", env.URL)
 		}
 		if env.SignerPort != 12345 {

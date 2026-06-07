@@ -370,9 +370,9 @@ type AdminDeleteResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// AttestorReferenceCandidate is public attestor metadata synced from client
+// SentryReferenceCandidate is public sentry metadata synced from client
 // endpoint discovery into a signer identity's generation reference catalog.
-type AttestorReferenceCandidate struct {
+type SentryReferenceCandidate struct {
 	EndpointAlias string `json:"endpoint_alias"`
 	ComponentKey  string `json:"component_key"`
 	KeyType       string `json:"key_type"`
@@ -380,14 +380,14 @@ type AttestorReferenceCandidate struct {
 	LastSeenAt    string `json:"last_seen_at,omitempty"`
 }
 
-// AdminSyncAttestorReferencesRequest is the request payload for
-// POST /admin/attestors/sync.
-type AdminSyncAttestorReferencesRequest struct {
-	Candidates []AttestorReferenceCandidate `json:"candidates"`
+// AdminSyncSentryReferencesRequest is the request payload for
+// POST /admin/sentries/sync.
+type AdminSyncSentryReferencesRequest struct {
+	Candidates []SentryReferenceCandidate `json:"candidates"`
 }
 
-// SyncedAttestorReferenceInfo describes a signer-local reference after sync.
-type SyncedAttestorReferenceInfo struct {
+// SyncedSentryReferenceInfo describes a signer-local reference after sync.
+type SyncedSentryReferenceInfo struct {
 	Name          string `json:"name"`
 	Source        string `json:"source"`
 	EndpointAlias string `json:"endpoint_alias,omitempty"`
@@ -398,13 +398,13 @@ type SyncedAttestorReferenceInfo struct {
 	SyncedAt      string `json:"synced_at,omitempty"`
 }
 
-// AdminSyncAttestorReferencesResponse is the response payload for
-// POST /admin/attestors/sync.
-type AdminSyncAttestorReferencesResponse struct {
-	Added   int                           `json:"added"`
-	Updated int                           `json:"updated"`
-	Removed int                           `json:"removed"`
-	Count   int                           `json:"count"`
-	Records []SyncedAttestorReferenceInfo `json:"records,omitempty"`
-	Error   string                        `json:"error,omitempty"`
+// AdminSyncSentryReferencesResponse is the response payload for
+// POST /admin/sentries/sync.
+type AdminSyncSentryReferencesResponse struct {
+	Added   int                         `json:"added"`
+	Updated int                         `json:"updated"`
+	Removed int                         `json:"removed"`
+	Count   int                         `json:"count"`
+	Records []SyncedSentryReferenceInfo `json:"records,omitempty"`
+	Error   string                      `json:"error,omitempty"`
 }

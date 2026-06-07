@@ -19,7 +19,7 @@ const (
 )
 
 // SSHClientConfig is compatibility-only client SSH configuration retained for
-// old command forms. Current signer and attestor endpoint routing lives in
+// old command forms. Current signer and sentry endpoint routing lives in
 // ClientEndpointConfig records loaded from endpoints.yaml.
 type SSHClientConfig struct {
 	Host           string `yaml:"host" description:"Signer host to SSH to (required)"`
@@ -28,19 +28,19 @@ type SSHClientConfig struct {
 	KnownHostsPath string `yaml:"known_hosts_path" description:"Known hosts file path (relative to data dir)" default:".ssh/known_hosts"`
 }
 
-// AttestorEndpointConfig maps an embedded attestor public key to the signer
-// endpoint that can produce attestor-role component signatures for that key.
+// AttestorEndpointConfig maps an embedded sentry public key to the signer
+// endpoint that can produce sentry-role component signatures for that key.
 type AttestorEndpointConfig struct {
 	Endpoint       string `yaml:"endpoint,omitempty" description:"Endpoint alias from endpoints.yaml"`
-	URL            string `yaml:"url" description:"Attestor endpoint URL: self, https://..., loopback http://..., or ssh://host[:port]"`
-	TokenFile      string `yaml:"token_file,omitempty" description:"Path to the attestor endpoint API token file"`
-	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// attestor endpoints"`
-	LocalPort      int    `yaml:"local_port,omitempty" description:"Local tunnel port for ssh:// attestor endpoints (0 = choose automatically)"`
-	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path for ssh:// attestor endpoints"`
-	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// attestor endpoints"`
+	URL            string `yaml:"url" description:"Sentry endpoint URL: self, https://..., loopback http://..., or ssh://host[:port]"`
+	TokenFile      string `yaml:"token_file,omitempty" description:"Path to the sentry endpoint API token file"`
+	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// sentry endpoints"`
+	LocalPort      int    `yaml:"local_port,omitempty" description:"Local tunnel port for ssh:// sentry endpoints (0 = choose automatically)"`
+	IdentityFile   string `yaml:"identity_file,omitempty" description:"SSH private key path for ssh:// sentry endpoints"`
+	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// sentry endpoints"`
 }
 
-// AttestorEndpointConfigs is keyed by canonical lower-case embedded attestor
+// AttestorEndpointConfigs is keyed by canonical lower-case embedded sentry
 // public-key hex.
 type AttestorEndpointConfigs map[string]AttestorEndpointConfig
 
@@ -58,9 +58,9 @@ type Config struct {
 	// normal connections use endpoint records from endpoints.yaml.
 	LegacySSH *SSHClientConfig `yaml:"ssh" configdoc:"skip" description:"Compatibility SSH tunnel settings; current endpoint SSH fields live in endpoints.yaml"`
 
-	// AttestorEndpoints maps attested-account embedded attestor public keys to
-	// signer endpoints for attestor-role component signing. It is derived
-	// runtime state from endpoints.yaml published_attestors and is not part of
+	// AttestorEndpoints maps attested-account embedded sentry public keys to
+	// signer endpoints for sentry-role component signing. It is derived
+	// runtime state from endpoints.yaml published_sentries and is not part of
 	// config.yaml.
 	AttestorEndpoints AttestorEndpointConfigs `yaml:"-"`
 
@@ -138,7 +138,7 @@ func LoadConfig(dataDir string) (Config, error) {
 		return Config{}, err
 	}
 	config.Endpoints = endpoints
-	config.AttestorEndpoints, err = endpoints.PublishedAttestorEndpointConfigs()
+	config.AttestorEndpoints, err = endpoints.PublishedSentryEndpointConfigs()
 	if err != nil {
 		return Config{}, err
 	}

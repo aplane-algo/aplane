@@ -28,7 +28,7 @@ func (r Role) String() string {
 	case RoleUser:
 		return "user"
 	case RoleSentry:
-		return "attestor"
+		return "sentry"
 	default:
 		return fmt.Sprintf("unknown(%d)", byte(r))
 	}

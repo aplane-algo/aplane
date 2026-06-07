@@ -73,7 +73,7 @@ Important vocabulary:
   signer policy and group validation.
 - **key type** is the canonical identifier stored and sent on the wire, such as
   `ed25519` or `aplane.falcon1024.v1`.
-- **component selector** means an attestor component key selector: a
+- **component selector** means an sentry component key selector: a
   52-character uppercase base32 SHA-512/256 digest over the domain-separated
   key-type/public-key tuple. It selects a local component key; it is not an
   Algorand account address and is not the embedded verifier public key.
@@ -85,10 +85,10 @@ Important vocabulary:
 `apsigner` owns signer data under `APSIGNER_DATA`:
 
 - identity keystores and key files,
-- identity config, signing policy, attestor component policy, tokens, SSH
+- identity config, signing policy, sentry component policy, tokens, SSH
   enrollments, and key type state,
 - encrypted installed templates,
-- public attestor references and component public metadata sidecars,
+- public sentry references and component public metadata sidecars,
 - signer-wide ASA metadata cache,
 - audit log,
 - managed backup archives,
@@ -106,7 +106,7 @@ intent and receive finalized signed transaction bytes, not key material.
 - endpoint-scoped bearer token files copied from signer enrollment,
 - SSH client keys and known-hosts trust,
 - aliases, sets, signer inventory cache, auth cache, ASA cache,
-- endpoint-published attestor inventory,
+- endpoint-published sentry inventory,
 - plugins and plugin activation,
 - saved JavaScript scripts,
 - local swap proposal state.
@@ -125,32 +125,32 @@ DTOs and contract fixtures.
 | Entity | Scope | Durable authority | Runtime projection | Wire projection | Owner |
 |--------|-------|-------------------|--------------------|-----------------|-------|
 | Client config | Client data dir | `APCLIENT_DATA/config.yaml` | `internal/config.Config` network/theme/polling state | SDK config loaders, shell runtime | `internal/config`, `internal/bootstrap/shell` |
-| Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and attestor connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
-| Endpoint-published attestors | Client data dir | `endpoints.yaml` `published_attestors` | derived `Config.AttestorEndpoints` map keyed by embedded public key hex | attested send orchestration | `internal/config`, `internal/apshellapp`, `internal/engine` |
+| Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and sentry connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
+| Endpoint-published sentries | Client data dir | `endpoints.yaml` `published_sentries` | derived `Config.AttestorEndpoints` map keyed by embedded public key hex | attested send orchestration | `internal/config`, `internal/apshellapp`, `internal/engine` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/config.ServerConfig` snapshot | Admin settings subset | `internal/config`, `cmd/apsigner` |
-| Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/<identity>/node.yaml.hmac` | single-purpose signer/attestor role gate | `/status`, service dispatch, key generation/restore gating | signer startup, identity load, keyadmin, restore, signing dispatch |
+| Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/<identity>/node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | signer startup, identity load, keyadmin, restore, signing dispatch |
 | Signing identity | Signer identity | `identities/<identity>/` | `identity.Runtime` | HTTP identity routing, admin session target | `internal/signerapp/identity` |
 | Identity config | Signer identity | `identities/<identity>/config.yaml` | `identity.EffectiveConfig`, excluding key-class role | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
 | Unlock config | Signer identity | `identities/<identity>/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/identity`, `cmd/appass` |
 | Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
 | Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Signing key | Signer identity | `identities/<identity>/keys/*.key` | address/selector -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
-| Attestor public sidecar | Signer identity | `identities/<identity>/keys/<component_selector>.public.json` | public component-key export metadata | `apstore attestor export-public` | `internal/keys`, `internal/attestor/attrefs` |
-| Public attestor reference | Signer identity | `identities/<identity>/attestors/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/attestor/attrefs`, `internal/signerapp/rest`, `cmd/apstore` |
+| Sentry public sidecar | Signer identity | `identities/<identity>/keys/<component_selector>.public.json` | public component-key export metadata | `apstore sentry export-public` | `internal/keys`, `internal/sentry/attrefs` |
+| Public sentry reference | Signer identity | `identities/<identity>/sentries/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/sentry/attrefs`, `internal/signerapp/rest`, `cmd/apstore` |
 | Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |
 | Library template source | Signer data dir or repo | `library/templates/*.yaml` | parsed install candidate | admin KeyType Library | `internal/templatelibrary`, `internal/signerapp/templateadmin` |
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
 | Signing policy | Signer identity | `policy.yaml` plus `policy.yaml.hmac` | client-signing `policy.Config` on identity runtime | admin policy settings subset | `internal/policy`, `internal/signerapp/admin` |
-| Attestor policy | Signer identity | attestor-domain `policy.yaml` plus `policy.yaml.hmac` | attestor component `policy.Config` on identity runtime | appolicy save/check flows | `internal/policy`, `internal/signerapp/policyruntime`, `cmd/appolicy` |
+| Sentry policy | Signer identity | sentry-domain `policy.yaml` plus `policy.yaml.hmac` | sentry component `policy.Config` on identity runtime | appolicy save/check flows | `internal/policy`, `internal/signerapp/policyruntime`, `cmd/appolicy` |
 | Authorization principal/group/grant | Product bootstrap model | source-defined bootstrap records | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | API token | Signer identity and client | signer `identities/<identity>/aplane.token`, client `aplane.token` | token authenticator | HTTP auth, SSH username | `internal/tokenfile`, `internal/auth` |
 | SSH enrollment | Signer identity | `identities/<identity>/.ssh/authorized_keys` | identity SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
 | Admin session | Signer identity | none | `adminproto.SessionContext`, session manager | admin IPC/SSH JSON envelope | `internal/adminproto`, `internal/protocol` |
 | Sign request | Live signer runtime | none durable | approval coordinator pending request | `/sign`, `/sign/cancel`, admin `sign_request` | `internal/signerapp/approval`, `internal/signerapp/signing` |
 | Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign`, `/simulate` | `internal/signerapp/signing`, `pkg/signerapi` |
-| Component signing request | Request-scoped | canonical group bytes and target indices | per-target user or attestor component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
-| Attested assembly request | Request-scoped | user and attestor component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
+| Component signing request | Request-scoped | canonical group bytes and target indices | per-target user or sentry component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
+| Attested assembly request | Request-scoped | user and sentry component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
 | App call metadata | Request-scoped | caller/engine prepared request | approval description context | `app_call_info` | `internal/engine`, `internal/signerapp/txdesc` |
 | ASA metadata | Network-scoped cache | `cache/<network>_asa_cache.json` | operation-local metadata lookup | admin ASA search/resolve, client display | client: `internal/cache`, `internal/asa`; signer: `internal/signerapp/asametadata.Store` |
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
@@ -169,8 +169,8 @@ Client data dir
   -> algod endpoint and client caches
   -> endpoints.yaml
       -> default signer endpoint
-      -> zero or more attestor endpoints
-      -> endpoint-published attestors -> derived runtime attestor routing
+      -> zero or more sentry endpoints
+      -> endpoint-published sentries -> derived runtime sentry routing
   -> endpoint tokens + SSH trust
   -> signer HTTP/admin connection
 
@@ -180,10 +180,10 @@ Signer data dir
       -> identity runtime
           -> keystore metadata -> derived master key -> key session
           -> key files -> runtime key indexes -> /keys and signing
-          -> attestors public references -> /keytypes generation options
+          -> sentries public references -> /keytypes generation options
           -> key type state + installed templates -> /keytypes and generation
           -> policy + HMAC -> approval verdicts
-          -> attestor policy + HMAC -> component-sign authorization
+          -> sentry policy + HMAC -> component-sign authorization
           -> API token + SSH keys -> authn
           -> approval coordinator -> sign/token prompts
           -> admin sessions -> admin mutations and approvals
@@ -194,7 +194,7 @@ The strongest authority chain is:
 ```text
 identity master key
   -> decrypts key files and installed templates
-  -> derives policy integrity key used to verify policy and attestation sidecars
+  -> derives policy integrity key used to verify policy and sentry sidecars
   -> enables runtime signing session
 ```
 
@@ -246,7 +246,7 @@ identities/<identity>/
   policy.yaml.hmac
   unlock.yaml
   .ssh/authorized_keys
-  attestors/*.json
+  sentries/*.json
   keytypes/<key_type>.json
   keytypes/<key_type>.template
   deleted/
@@ -261,7 +261,7 @@ identities/<identity>/
 - token authority,
 - SSH enrollment,
 - effective identity config,
-- effective client-signing and attestor component policies,
+- effective client-signing and sentry component policies,
 - watcher and decommission lifecycle.
 
 Product mode exposes only `default`, but the runtime model is internally
@@ -277,7 +277,7 @@ payload families are:
 | `ed25519` | Native Algorand signing key. |
 | `dsa_lsig` | DSA-backed LogicSig key with private signing key plus stored LogicSig metadata. |
 | `generic_lsig` | TEAL-only LogicSig instance with bytecode and signing args. |
-| `component` | Attestor component key used only through `/sign/component`. |
+| `component` | Sentry component key used only through `/sign/component`. |
 
 Durable signing metadata includes:
 
@@ -294,9 +294,9 @@ Durable signing metadata includes:
 - creation parameters and timestamps.
 
 Attested account keys are DSA LogicSig keys whose stored bytecode embeds an
-attestor public key. They are not accepted by `/sign`; the client must use the
-attested flow: user `/sign/component`, attestor `/sign/component`, user
-`/sign/assemble`, then algod submit. Attestor component keys are selected by an
+sentry public key. They are not accepted by `/sign`; the client must use the
+attested flow: user `/sign/component`, sentry `/sign/component`, user
+`/sign/assemble`, then algod submit. Sentry component keys are selected by an
 uppercase, 52-character txid-shaped component selector and are not Algorand
 spending accounts.
 
@@ -376,9 +376,9 @@ effective `policy.Config` layered from defaults and stored YAML. It controls:
 - network-scoped ALGO and ASA transfer thresholds,
 - YAML-only `key_overrides`.
 
-On attestor nodes, `policy.yaml` is the attestor component policy. It uses the
+On sentry nodes, `policy.yaml` is the sentry component policy. It uses the
 same transfer routing model as deterministic authorization for
-`/sign/component`; it has no operator default and no review verdict. Attestor
+`/sign/component`; it has no operator default and no review verdict. Sentry
 `key_overrides` are keyed by component selector, while client-signing overrides
 are keyed by Algorand auth address.
 
@@ -451,14 +451,14 @@ Client config selects:
 The selected network token scopes algod lookup and cache state. It is a local
 namespace and must not be treated as chain identity.
 
-Signer and attestor endpoint routing lives in `endpoints.yaml`, not in
+Signer and sentry endpoint routing lives in `endpoints.yaml`, not in
 `config.yaml`. The endpoint registry contains a `schema_version`, one default
 signer endpoint alias, and endpoint records with `role: signer` or
 `role: sentry`. Endpoint records own connection details such as URL,
 signer/local ports, token file, SSH identity file, and known-hosts path.
 
-Attestor endpoint records may also contain `published_attestors`, keyed by the
-embedded attestor `public_key_hex`. That inventory is routing metadata derived
+Sentry endpoint records may also contain `published_sentries`, keyed by the
+embedded sentry `public_key_hex`. That inventory is routing metadata derived
 from authenticated `/keys` discovery. It is not proof that the endpoint owns the
 key; assembly and on-chain LogicSig verification remain the trust checks.
 
@@ -615,7 +615,7 @@ Primary projections:
 - `KeyTypesResponse`,
 - `StatusResponse`,
 - admin generate/delete DTOs,
-- admin attestor reference sync DTOs,
+- admin sentry reference sync DTOs,
 - `ErrorResponse`.
 
 HTTP token authentication resolves exactly one identity, and handlers route to
@@ -684,7 +684,7 @@ projections of shell application results, not a separate backend model.
 2. Derive master key.
 3. Verify root `node.yaml` against the identity's role HMAC sidecar.
 4. Verify and load policy.
-5. Verify and load attestor policy.
+5. Verify and load sentry policy.
 6. Apply node role gates.
 7. Register installed templates.
 8. Scan key files.
@@ -729,10 +729,10 @@ durable sign request table.
    inventory.
 2. Client prepares the canonical group and target indices.
 3. Client calls the user signer `/sign/component` for user-role signatures.
-4. Client routes by embedded attestor public key to an attestor endpoint from
-   `endpoints.yaml` and calls attestor `/sign/component`.
+4. Client routes by embedded sentry public key to an sentry endpoint from
+   `endpoints.yaml` and calls sentry `/sign/component`.
 5. Client calls user signer `/sign/assemble`.
-6. User signer verifies attestor signatures against the attestor public key
+6. User signer verifies sentry signatures against the sentry public key
    embedded in the local attested account key, packs LogicSig args, and returns
    signed group bytes.
 7. Client submits the signed bytes to algod.
@@ -776,13 +776,13 @@ Restore is per-key:
 | `.key` private material | secret | encrypted at rest; decrypted on demand |
 | Installed `.template` files | sensitive policy material | encrypted in identity store |
 | `policy.yaml` | safety-critical | authenticated by HMAC sidecar |
-| attestor-domain `policy.yaml` | safety-critical | same file contract as `policy.yaml`; authorizes attestor component signatures on attestor nodes |
+| sentry-domain `policy.yaml` | safety-critical | same file contract as `policy.yaml`; authorizes sentry component signatures on sentry nodes |
 | API token | bearer secret | mode `0600`; endpoint-scoped client copies are used for HTTP and SSH token identity |
 | SSH private key | client secret | client-side file, used for tunnel auth |
 | Backup export passphrase | secret | protects `.apb` payloads |
 | Audit log | sensitive operational record | mode `0600`; append/rotate |
-| Public attestor reference | public metadata | generation input only; not endpoint trust or ownership proof |
-| Endpoint-published attestors | public routing metadata | routing input only; not endpoint trust or ownership proof |
+| Public sentry reference | public metadata | generation input only; not endpoint trust or ownership proof |
+| Endpoint-published sentries | public routing metadata | routing input only; not endpoint trust or ownership proof |
 
 Signer-wide ASA metadata and identity key type state records are not secrets.
 They still must be mutated through supported paths because they affect UX,
@@ -802,13 +802,13 @@ generation availability, provenance, and policy editing behavior.
 - Server config can seed the default `user_auto_approve`; identity config owns
   the effective live setting; policy owns rule verdicts.
 - Policy HMAC authenticates exact YAML bytes and fails closed on mismatch.
-- `policy.yaml` is client-signing policy on signer nodes and attestor component
-  policy on attestor nodes. Neither domain may wrap the other.
-- Client signer and attestor routing authority is `endpoints.yaml`, not
+- `policy.yaml` is client-signing policy on signer nodes and sentry component
+  policy on sentry nodes. Neither domain may wrap the other.
+- Client signer and sentry routing authority is `endpoints.yaml`, not
   `config.yaml`.
-- Attestor component selectors are uppercase 52-character base32-no-padding
+- Sentry component selectors are uppercase 52-character base32-no-padding
   SHA-512/256 digests over the domain-separated key-type/public-key tuple;
-  embedded attestor verifier keys are full public-key hex values.
+  embedded sentry verifier keys are full public-key hex values.
 - Endpoint import and `/keys` discovery are routing/configuration inputs, not
   trust proofs.
 - `/keys` per-key `signing_args` are the key file's durable signing-argument
@@ -838,7 +838,7 @@ generation availability, provenance, and policy editing behavior.
 | Client endpoint registry | `internal/config/client_endpoints.go`, `internal/config/client_endpoint_writes.go` |
 | Identity runtime/config | `internal/signerapp/identity` |
 | Keystore and key files | `internal/crypto`, `internal/keystore`, `internal/keys` |
-| Attestor key types/messages/references | `internal/attestor`, `pkg/signerapi/attestor.go`, [ARCH_SPEC.md#attested-signing-and-attestor-nodes](ARCH_SPEC.md#attested-signing-and-attestor-nodes) |
+| Sentry key types/messages/references | `internal/sentry`, `pkg/signerapi/sentry.go`, [ARCH_SPEC.md#attested-signing-and-sentry-nodes](ARCH_SPEC.md#attested-signing-and-sentry-nodes) |
 | Key type state/catalog | `internal/keytypestate`, `internal/keytypecatalog` |
 | Template library/store | `internal/templatelibrary`, `internal/templatestore`, `internal/signerapp/templates` |
 | Signing flow | `internal/signerapp/signing`, [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) |

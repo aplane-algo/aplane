@@ -582,7 +582,7 @@ func TestAttestedAccountParametersProjection(t *testing.T) {
 		"unrelated":                         "not-projected",
 	})
 	if got[keytypes.ParameterAttestorPublicKey] != attestorPublicKey {
-		t.Fatalf("attestedAccountParameters() = %#v, want attestor public key", got)
+		t.Fatalf("attestedAccountParameters() = %#v, want sentry public key", got)
 	}
 	if _, ok := got["unrelated"]; ok {
 		t.Fatalf("attestedAccountParameters() projected unrelated parameter: %#v", got)
@@ -617,13 +617,13 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 		if keyType.KeyType == keytypes.AttestorComponentEd25519V1 {
 			foundEd25519Component = true
 			if keyType.Family != "sentry-ed25519" || keyType.MnemonicImport {
-				t.Fatalf("Ed25519 component key type info = %#v, want attestor component metadata", keyType)
+				t.Fatalf("Ed25519 component key type info = %#v, want sentry component metadata", keyType)
 			}
 		}
 		if keyType.KeyType == keytypes.AttestorComponentFalcon1024V1 {
 			foundFalconComponent = true
 			if keyType.Family != "sentry-falcon1024" || keyType.MnemonicImport {
-				t.Fatalf("Falcon component key type info = %#v, want attestor component metadata", keyType)
+				t.Fatalf("Falcon component key type info = %#v, want sentry component metadata", keyType)
 			}
 		}
 	}
@@ -667,16 +667,16 @@ func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 	ir = setupIdentityRuntimeWithRole(t, false, noderole.RoleSentry)
 	resp, svcErr = Service{}.KeyTypesForIdentity(ir)
 	if svcErr != nil {
-		t.Fatalf("KeyTypesForIdentity(attestor) error = %v", svcErr)
+		t.Fatalf("KeyTypesForIdentity(sentry) error = %v", svcErr)
 	}
 	if keyTypesResponseContains(resp.KeyTypes, "ed25519") {
-		t.Fatal("attestor node key types included ed25519")
+		t.Fatal("sentry node key types included ed25519")
 	}
 	if !keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentEd25519V1) {
-		t.Fatalf("attestor node key types missing %s", keytypes.AttestorComponentEd25519V1)
+		t.Fatalf("sentry node key types missing %s", keytypes.AttestorComponentEd25519V1)
 	}
 	if !keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentFalcon1024V1) {
-		t.Fatalf("attestor node key types missing %s", keytypes.AttestorComponentFalcon1024V1)
+		t.Fatalf("sentry node key types missing %s", keytypes.AttestorComponentFalcon1024V1)
 	}
 }
 
@@ -722,13 +722,13 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 		}
 	}
 	if len(params) != 1 {
-		t.Fatalf("CreationParams = %#v, want one attestor selector", params)
+		t.Fatalf("CreationParams = %#v, want one sentry selector", params)
 	}
 	if params[0].Name != attrefs.ParamAttestorName || params[0].Type != "select" {
-		t.Fatalf("attestor param = %#v, want select attestor", params[0])
+		t.Fatalf("sentry param = %#v, want select sentry", params[0])
 	}
 	if !reflect.DeepEqual(params[0].Options, []string{"lab-att"}) || params[0].Default != "lab-att" {
-		t.Fatalf("attestor options/default = %#v/%q, want lab-att", params[0].Options, params[0].Default)
+		t.Fatalf("sentry options/default = %#v/%q, want lab-att", params[0].Options, params[0].Default)
 	}
 }
 
@@ -1227,26 +1227,26 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 	signingOnly := setupIdentityRuntime(t, true)
 	componentReq := signerapi.ComponentSignRequest{Role: signerapi.ComponentSignRoleSentry}
-	if _, err := (Service{}).SignComponent(context.Background(), signingOnly, componentReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "attestor component signing") {
-		t.Fatalf("SignComponent(attestor role in signer node) error = %#v, want forbidden node role error", err)
+	if _, err := (Service{}).SignComponent(context.Background(), signingOnly, componentReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "sentry component signing") {
+		t.Fatalf("SignComponent(sentry role in signer node) error = %#v, want forbidden node role error", err)
 	}
 
 	attestorOnly := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
 	if _, err := (Service{}).SignGroup(context.Background(), attestorOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account signing") {
-		t.Fatalf("SignGroup(attestor node) error = %#v, want forbidden node role error", err)
+		t.Fatalf("SignGroup(sentry node) error = %#v, want forbidden node role error", err)
 	}
 	if _, err := (Service{}).Plan(attestorOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "planning") {
-		t.Fatalf("Plan(attestor node) error = %#v, want forbidden node role error", err)
+		t.Fatalf("Plan(sentry node) error = %#v, want forbidden node role error", err)
 	}
 	if _, err := (Service{}).Simulate(context.Background(), attestorOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "simulation") {
-		t.Fatalf("Simulate(attestor node) error = %#v, want forbidden node role error", err)
+		t.Fatalf("Simulate(sentry node) error = %#v, want forbidden node role error", err)
 	}
 	userReq := signerapi.ComponentSignRequest{Role: signerapi.ComponentSignRoleUser}
 	if _, err := (Service{}).SignComponent(context.Background(), attestorOnly, userReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "user component signing") {
-		t.Fatalf("SignComponent(user role in attestor node) error = %#v, want forbidden node role error", err)
+		t.Fatalf("SignComponent(user role in sentry node) error = %#v, want forbidden node role error", err)
 	}
 	if _, err := (Service{}).AssembleAttested(context.Background(), attestorOnly, signerapi.AttestedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "attested assembly") {
-		t.Fatalf("AssembleAttested(attestor node) error = %#v, want forbidden node role error", err)
+		t.Fatalf("AssembleAttested(sentry node) error = %#v, want forbidden node role error", err)
 	}
 
 	unknownRole := setupIdentityRuntimeWithRole(t, true, noderole.Role("unknown"))

@@ -38,7 +38,7 @@ type ClientEndpointRegistry struct {
 // ClientEndpointConfig describes one signer endpoint connection profile.
 type ClientEndpointConfig struct {
 	// Role declares how apshell may use this endpoint. A client has at most one
-	// signer endpoint and any number of attestor endpoints.
+	// signer endpoint and any number of sentry endpoints.
 	Role           string `yaml:"role"`
 	URL            string `yaml:"url" description:"Endpoint URL: self, https://..., loopback http://..., or ssh://host[:port]"`
 	SignerPort     int    `yaml:"signer_port,omitempty" description:"Remote apsigner REST port for ssh:// endpoints"`
@@ -47,15 +47,15 @@ type ClientEndpointConfig struct {
 	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// endpoints"`
 	TokenFile      string `yaml:"token_file,omitempty" description:"Path to this endpoint's API token file"`
 
-	// PublishedAttestors is endpoint-local live inventory learned from
+	// PublishedSentries is endpoint-local live inventory learned from
 	// authenticated /keys discovery. It is routing metadata, not proof of
 	// ownership.
-	PublishedAttestors map[string]ClientEndpointPublishedAttestor `yaml:"published_attestors,omitempty"`
+	PublishedSentries map[string]ClientEndpointPublishedSentry `yaml:"published_sentries,omitempty"`
 }
 
-// ClientEndpointPublishedAttestor records one attestor component key
+// ClientEndpointPublishedSentry records one sentry component key
 // advertised by an endpoint.
-type ClientEndpointPublishedAttestor struct {
+type ClientEndpointPublishedSentry struct {
 	ComponentKey string `yaml:"component_key"`
 	KeyType      string `yaml:"key_type"`
 	LastSeenAt   string `yaml:"last_seen_at,omitempty"`
@@ -187,13 +187,13 @@ func normalizeClientEndpointConfig(dataDir string, cfg Config, alias string, end
 		endpoint.IdentityFile = ResolvePath(endpoint.IdentityFile, dataDir)
 		endpoint.KnownHostsPath = ResolvePath(endpoint.KnownHostsPath, dataDir)
 	}
-	published, err := normalizeClientEndpointPublishedAttestors(endpoint.PublishedAttestors)
+	published, err := normalizeClientEndpointPublishedSentries(endpoint.PublishedSentries)
 	if err != nil {
 		return endpoint, err
 	}
-	endpoint.PublishedAttestors = published
-	if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedAttestors) > 0 {
-		return endpoint, fmt.Errorf("published_attestors are only valid on %q endpoints", ClientEndpointRoleSentry)
+	endpoint.PublishedSentries = published
+	if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedSentries) > 0 {
+		return endpoint, fmt.Errorf("published_sentries are only valid on %q endpoints", ClientEndpointRoleSentry)
 	}
 	return endpoint, nil
 }
@@ -296,18 +296,18 @@ func (r ClientEndpointRegistry) Endpoint(alias string) (ClientEndpointConfig, bo
 }
 
 func cloneClientEndpointConfig(endpoint ClientEndpointConfig) ClientEndpointConfig {
-	if len(endpoint.PublishedAttestors) == 0 {
+	if len(endpoint.PublishedSentries) == 0 {
 		return endpoint
 	}
-	endpoint.PublishedAttestors = cloneClientEndpointPublishedAttestors(endpoint.PublishedAttestors)
+	endpoint.PublishedSentries = cloneClientEndpointPublishedSentries(endpoint.PublishedSentries)
 	return endpoint
 }
 
-func cloneClientEndpointPublishedAttestors(in map[string]ClientEndpointPublishedAttestor) map[string]ClientEndpointPublishedAttestor {
+func cloneClientEndpointPublishedSentries(in map[string]ClientEndpointPublishedSentry) map[string]ClientEndpointPublishedSentry {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make(map[string]ClientEndpointPublishedAttestor, len(in))
+	out := make(map[string]ClientEndpointPublishedSentry, len(in))
 	for publicKey, published := range in {
 		out[publicKey] = published
 	}
@@ -334,8 +334,8 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 		if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
 			return fmt.Errorf("endpoint %q: %w", alias, err)
 		}
-		if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedAttestors) > 0 {
-			return fmt.Errorf("endpoint %q: published_attestors are only valid on %q endpoints", alias, ClientEndpointRoleSentry)
+		if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedSentries) > 0 {
+			return fmt.Errorf("endpoint %q: published_sentries are only valid on %q endpoints", alias, ClientEndpointRoleSentry)
 		}
 		if endpoint.Role != ClientEndpointRoleSigner {
 			continue
@@ -358,9 +358,9 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 	return nil
 }
 
-// PublishedAttestorEndpointConfigs derives attestor public-key routing from
-// endpoint-local published_attestors inventory.
-func (r ClientEndpointRegistry) PublishedAttestorEndpointConfigs() (AttestorEndpointConfigs, error) {
+// PublishedSentryEndpointConfigs derives sentry public-key routing from
+// endpoint-local published_sentries inventory.
+func (r ClientEndpointRegistry) PublishedSentryEndpointConfigs() (AttestorEndpointConfigs, error) {
 	resolved := AttestorEndpointConfigs{}
 	aliases := make([]string, 0, len(r.Endpoints))
 	for alias := range r.Endpoints {
@@ -372,14 +372,14 @@ func (r ClientEndpointRegistry) PublishedAttestorEndpointConfigs() (AttestorEndp
 		if endpoint.Role != ClientEndpointRoleSentry {
 			continue
 		}
-		publicKeys := make([]string, 0, len(endpoint.PublishedAttestors))
-		for publicKey := range endpoint.PublishedAttestors {
+		publicKeys := make([]string, 0, len(endpoint.PublishedSentries))
+		for publicKey := range endpoint.PublishedSentries {
 			publicKeys = append(publicKeys, publicKey)
 		}
 		sort.Strings(publicKeys)
 		for _, publicKey := range publicKeys {
 			if _, exists := resolved[publicKey]; exists {
-				return nil, fmt.Errorf("attestor public key %s is published by multiple endpoint aliases", publicKey)
+				return nil, fmt.Errorf("sentry public key %s is published by multiple endpoint aliases", publicKey)
 			}
 			resolved[publicKey] = AttestorEndpointConfig{
 				Endpoint:       alias,
@@ -398,15 +398,15 @@ func (r ClientEndpointRegistry) PublishedAttestorEndpointConfigs() (AttestorEndp
 	return resolved, nil
 }
 
-// PublishedAttestorPublicKeysByAlias returns the public-key inventory currently
+// PublishedSentryPublicKeysByAlias returns the public-key inventory currently
 // stored under each endpoint alias.
-func (r ClientEndpointRegistry) PublishedAttestorPublicKeysByAlias() map[string][]string {
+func (r ClientEndpointRegistry) PublishedSentryPublicKeysByAlias() map[string][]string {
 	out := map[string][]string{}
 	for alias, endpoint := range r.Endpoints {
 		if endpoint.Role != ClientEndpointRoleSentry {
 			continue
 		}
-		for publicKey := range endpoint.PublishedAttestors {
+		for publicKey := range endpoint.PublishedSentries {
 			out[alias] = append(out[alias], publicKey)
 		}
 	}
@@ -416,25 +416,25 @@ func (r ClientEndpointRegistry) PublishedAttestorPublicKeysByAlias() map[string]
 	return out
 }
 
-func normalizeClientEndpointPublishedAttestors(in map[string]ClientEndpointPublishedAttestor) (map[string]ClientEndpointPublishedAttestor, error) {
+func normalizeClientEndpointPublishedSentries(in map[string]ClientEndpointPublishedSentry) (map[string]ClientEndpointPublishedSentry, error) {
 	if len(in) == 0 {
 		return nil, nil
 	}
-	out := make(map[string]ClientEndpointPublishedAttestor, len(in))
+	out := make(map[string]ClientEndpointPublishedSentry, len(in))
 	for rawPublicKey, published := range in {
-		publicKey, err := normalizePublishedAttestorPublicKey(rawPublicKey, published.KeyType)
+		publicKey, err := normalizePublishedSentryPublicKey(rawPublicKey, published.KeyType)
 		if err != nil {
 			return nil, err
 		}
 		if _, exists := out[publicKey]; exists {
-			return nil, fmt.Errorf("duplicate published attestor public key %s", publicKey)
+			return nil, fmt.Errorf("duplicate published sentry public key %s", publicKey)
 		}
 		if !keytypes.IsAttestorComponentKeyType(published.KeyType) {
-			return nil, fmt.Errorf("published attestor %s has invalid key_type %q", publicKey, published.KeyType)
+			return nil, fmt.Errorf("published sentry %s has invalid key_type %q", publicKey, published.KeyType)
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(published.ComponentKey)
 		if err != nil {
-			return nil, fmt.Errorf("published attestor %s has invalid component_key: %w", publicKey, err)
+			return nil, fmt.Errorf("published sentry %s has invalid component_key: %w", publicKey, err)
 		}
 		publicKeyBytes, err := hex.DecodeString(publicKey)
 		if err != nil {
@@ -445,9 +445,9 @@ func normalizeClientEndpointPublishedAttestors(in map[string]ClientEndpointPubli
 			return nil, err
 		}
 		if selector != expectedSelector {
-			return nil, fmt.Errorf("published attestor %s component_key %s does not match public key-derived selector %s", publicKey, selector, expectedSelector)
+			return nil, fmt.Errorf("published sentry %s component_key %s does not match public key-derived selector %s", publicKey, selector, expectedSelector)
 		}
-		out[publicKey] = ClientEndpointPublishedAttestor{
+		out[publicKey] = ClientEndpointPublishedSentry{
 			ComponentKey: selector,
 			KeyType:      published.KeyType,
 			LastSeenAt:   strings.TrimSpace(published.LastSeenAt),
@@ -456,22 +456,22 @@ func normalizeClientEndpointPublishedAttestors(in map[string]ClientEndpointPubli
 	return out, nil
 }
 
-func normalizePublishedAttestorPublicKey(raw, keyType string) (string, error) {
+func normalizePublishedSentryPublicKey(raw, keyType string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	trimmed = strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
 	if trimmed == "" {
-		return "", fmt.Errorf("published attestor public key is required")
+		return "", fmt.Errorf("published sentry public key is required")
 	}
 	publicKey, err := hex.DecodeString(trimmed)
 	if err != nil {
-		return "", fmt.Errorf("published attestor public key must be hex: %w", err)
+		return "", fmt.Errorf("published sentry public key must be hex: %w", err)
 	}
 	wantSize, ok := keytypes.ComponentPublicKeySize(keyType)
 	if !ok {
-		return "", fmt.Errorf("published attestor key_type %q is not an attestor component key type", keyType)
+		return "", fmt.Errorf("published sentry key_type %q is not an sentry component key type", keyType)
 	}
 	if len(publicKey) != wantSize {
-		return "", fmt.Errorf("published attestor public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
+		return "", fmt.Errorf("published sentry public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
 	}
 	return hex.EncodeToString(publicKey), nil
 }

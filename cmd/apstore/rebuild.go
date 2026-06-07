@@ -16,7 +16,7 @@ import (
 
 func cmdRebuild(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|attestor] [--address ADDRESS ...]")
+		return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...]")
 	}
 	source := args[0]
 	var addresses []string
@@ -26,13 +26,13 @@ func cmdRebuild(args []string) error {
 		switch args[i] {
 		case "--address":
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|attestor] [--address ADDRESS ...]")
+				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...]")
 			}
 			addresses = append(addresses, args[i+1])
 			i++
 		case "--role":
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|attestor] [--address ADDRESS ...]")
+				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|sentry] [--address ADDRESS ...]")
 			}
 			parsed, err := noderole.ParseRole(args[i+1])
 			if err != nil {
@@ -153,7 +153,7 @@ func selectRebuildNodeRole(sourceRoot string, explicitRole noderole.Role, explic
 		return explicitRole, nil
 	}
 	role := noderole.DefaultRole()
-	logWarnf("backup manifest has no source node role metadata; defaulting rebuild destination role to %q (use --role sentry for attestor backups)", role)
+	logWarnf("backup manifest has no source node role metadata; defaulting rebuild destination role to %q (use --role sentry for sentry backups)", role)
 	return role, nil
 }
 

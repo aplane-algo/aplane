@@ -23,7 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
-func TestEndpointSyncAttestorsProgressListsComponentsBeforePrompt(t *testing.T) {
+func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKeyHex := strings.Repeat("ab", 32)
 	componentKey := endpointCLITestComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
@@ -34,13 +34,13 @@ func TestEndpointSyncAttestorsProgressListsComponentsBeforePrompt(t *testing.T) 
 		IsComponentKey: true,
 	}})
 
-	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
+	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  server.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint() error = %v", err)
 	}
-	tokenPath := filepath.Join(dataDir, "tokens", "attestor-local.token")
+	tokenPath := filepath.Join(dataDir, "tokens", "sentry-local.token")
 	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
 		t.Fatalf("MkdirAll(tokens) error = %v", err)
 	}
@@ -64,7 +64,7 @@ func TestEndpointSyncAttestorsProgressListsComponentsBeforePrompt(t *testing.T) 
 		DataDir: dataDir,
 		Config:  cfg,
 		LineReader: func() (string, error) {
-			t.Fatal("sync-attestors should fail before prompting when signer is not connected")
+			t.Fatal("sync-sentries should fail before prompting when signer is not connected")
 			return "", nil
 		},
 		ProgressLine: func(line string) {
@@ -73,34 +73,34 @@ func TestEndpointSyncAttestorsProgressListsComponentsBeforePrompt(t *testing.T) 
 		currentCommandCtx: context.Background(),
 	}
 
-	err = state.cmdEndpoints([]string{"sync-attestors"}, nil)
+	err = state.cmdEndpoints([]string{"sync-sentries"}, nil)
 	if err == nil {
-		t.Fatal("cmdEndpoints(sync-attestors) error = nil, want not connected")
+		t.Fatal("cmdEndpoints(sync-sentries) error = nil, want not connected")
 	}
 	if !strings.Contains(err.Error(), "not connected to Signer") {
-		t.Fatalf("cmdEndpoints(sync-attestors) error = %v, want not connected", err)
+		t.Fatalf("cmdEndpoints(sync-sentries) error = %v, want not connected", err)
 	}
 	joined := strings.Join(progress, "\n")
 	if !strings.Contains(joined, componentKey) {
 		t.Fatalf("progress output = %q, want component key %s", joined, componentKey)
 	}
 	if strings.Contains(joined, publicKeyHex) || strings.Contains(joined, strings.ToUpper(publicKeyHex)) {
-		t.Fatalf("progress output leaked raw attestor public key: %q", joined)
+		t.Fatalf("progress output leaked raw sentry public key: %q", joined)
 	}
 	if strings.Contains(out.String(), componentKey) {
 		t.Fatalf("captured output = %q, component key should be live progress before prompt", out.String())
 	}
 }
 
-func TestRenderEndpointAttestorsOmitsLastSeen(t *testing.T) {
+func TestRenderEndpointSentriesOmitsLastSeen(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
 	publicKeyHex := strings.Repeat("ab", 32)
 	componentKey := endpointCLITestComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
-	state.renderEndpointAttestors(&apshellapp.EndpointAttestorsResult{
-		Attestors: []apshellapp.EndpointAttestorEntry{{
-			EndpointAlias: "attestor-local",
+	state.renderEndpointSentries(&apshellapp.EndpointSentriesResult{
+		Sentries: []apshellapp.EndpointSentryEntry{{
+			EndpointAlias: "sentry-local",
 			ComponentKey:  componentKey,
 			KeyType:       keytypes.AttestorComponentEd25519V1,
 			LastSeenAt:    "2026-06-04T00:00:00Z",
@@ -109,13 +109,13 @@ func TestRenderEndpointAttestorsOmitsLastSeen(t *testing.T) {
 
 	rendered := out.String()
 	if strings.Contains(rendered, "LAST SEEN") || strings.Contains(rendered, "2026-06-04T00:00:00Z") {
-		t.Fatalf("rendered attestors = %q, want no last-seen column or timestamp", rendered)
+		t.Fatalf("rendered sentries = %q, want no last-seen column or timestamp", rendered)
 	}
 	if !strings.Contains(rendered, componentKey) {
-		t.Fatalf("rendered attestors = %q, want component key", rendered)
+		t.Fatalf("rendered sentries = %q, want component key", rendered)
 	}
 	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
-		t.Fatalf("rendered attestors leaked raw attestor public key: %q", rendered)
+		t.Fatalf("rendered sentries leaked raw sentry public key: %q", rendered)
 	}
 }
 
@@ -127,14 +127,14 @@ func TestRenderEndpointShowIncludesAttestorLastSeen(t *testing.T) {
 	componentKey := endpointCLITestComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
 	state.renderEndpointShow(&apshellapp.EndpointShowResult{
 		Endpoint: apshellapp.EndpointEntry{
-			Alias: "attestor-local",
+			Alias: "sentry-local",
 			Role:  config.ClientEndpointRoleSentry,
 			URL:   "ssh://127.0.0.1:2223",
-			PublishedAttestorComponents: []string{
+			PublishedSentryComponents: []string{
 				componentKey,
 			},
-			PublishedAttestors: []apshellapp.EndpointAttestorEntry{{
-				EndpointAlias: "attestor-local",
+			PublishedSentries: []apshellapp.EndpointSentryEntry{{
+				EndpointAlias: "sentry-local",
 				ComponentKey:  componentKey,
 				KeyType:       keytypes.AttestorComponentEd25519V1,
 				LastSeenAt:    "2026-06-04T00:00:00Z",
@@ -150,7 +150,7 @@ func TestRenderEndpointShowIncludesAttestorLastSeen(t *testing.T) {
 		t.Fatalf("rendered endpoint show = %q, want component key", rendered)
 	}
 	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
-		t.Fatalf("rendered endpoint show leaked raw attestor public key: %q", rendered)
+		t.Fatalf("rendered endpoint show leaked raw sentry public key: %q", rendered)
 	}
 }
 

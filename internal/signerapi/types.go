@@ -52,10 +52,10 @@ type KeysResult struct {
 type AdminGenerateRequest = pub.AdminGenerateRequest
 type AdminGenerateResponse = pub.AdminGenerateResponse
 type AdminDeleteResponse = pub.AdminDeleteResponse
-type AttestorReferenceCandidate = pub.AttestorReferenceCandidate
-type AdminSyncAttestorReferencesRequest = pub.AdminSyncAttestorReferencesRequest
-type SyncedAttestorReferenceInfo = pub.SyncedAttestorReferenceInfo
-type AdminSyncAttestorReferencesResponse = pub.AdminSyncAttestorReferencesResponse
+type SentryReferenceCandidate = pub.SentryReferenceCandidate
+type AdminSyncSentryReferencesRequest = pub.AdminSyncSentryReferencesRequest
+type SyncedSentryReferenceInfo = pub.SyncedSentryReferenceInfo
+type AdminSyncSentryReferencesResponse = pub.AdminSyncSentryReferencesResponse
 
 const (
 	RequestModeSign         = pub.RequestModeSign

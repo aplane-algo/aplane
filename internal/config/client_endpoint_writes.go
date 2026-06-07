@@ -199,28 +199,28 @@ func DeleteStoredClientEndpoint(dataDir, alias string) (ClientEndpointRegistry, 
 	return registry, nil
 }
 
-// ClientEndpointPublishedAttestorRebuildPlan describes an endpoints.yaml
-// rewrite that refreshes endpoint-published attestor inventory.
-type ClientEndpointPublishedAttestorRebuildPlan struct {
+// ClientEndpointPublishedSentryRebuildPlan describes an endpoints.yaml
+// rewrite that refreshes endpoint-published sentry inventory.
+type ClientEndpointPublishedSentryRebuildPlan struct {
 	Registry               ClientEndpointRegistry
 	PublicKeyCount         int
 	PreviousPublishedCount int
 }
 
-// PlanStoredClientEndpointPublishedAttestorRebuild validates and plans a full
-// refresh of endpoint-local published_attestors inventory in endpoints.yaml.
-func PlanStoredClientEndpointPublishedAttestorRebuild(dataDir string, publications map[string]map[string]ClientEndpointPublishedAttestor) (ClientEndpointPublishedAttestorRebuildPlan, error) {
+// PlanStoredClientEndpointPublishedSentryRebuild validates and plans a full
+// refresh of endpoint-local published_sentries inventory in endpoints.yaml.
+func PlanStoredClientEndpointPublishedSentryRebuild(dataDir string, publications map[string]map[string]ClientEndpointPublishedSentry) (ClientEndpointPublishedSentryRebuildPlan, error) {
 	registry, _, err := LoadStoredClientEndpointRegistry(dataDir)
 	if err != nil {
-		return ClientEndpointPublishedAttestorRebuildPlan{}, err
+		return ClientEndpointPublishedSentryRebuildPlan{}, err
 	}
 	previousCount := 0
 	for alias, endpoint := range registry.Endpoints {
 		if endpoint.Role != ClientEndpointRoleSentry {
 			continue
 		}
-		previousCount += len(endpoint.PublishedAttestors)
-		endpoint.PublishedAttestors = nil
+		previousCount += len(endpoint.PublishedSentries)
+		endpoint.PublishedSentries = nil
 		registry.Endpoints[alias] = endpoint
 	}
 
@@ -234,11 +234,11 @@ func PlanStoredClientEndpointPublishedAttestorRebuild(dataDir string, publicatio
 	publicKeyCount := 0
 	for _, alias := range aliases {
 		if err := ValidateClientEndpointAlias(alias); err != nil {
-			return ClientEndpointPublishedAttestorRebuildPlan{}, err
+			return ClientEndpointPublishedSentryRebuildPlan{}, err
 		}
-		normalizedPublished, err := normalizeClientEndpointPublishedAttestors(publications[alias])
+		normalizedPublished, err := normalizeClientEndpointPublishedSentries(publications[alias])
 		if err != nil {
-			return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint %q: %w", alias, err)
+			return ClientEndpointPublishedSentryRebuildPlan{}, fmt.Errorf("endpoint %q: %w", alias, err)
 		}
 
 		endpoint, ok := registry.Endpoints[alias]
@@ -246,51 +246,51 @@ func PlanStoredClientEndpointPublishedAttestorRebuild(dataDir string, publicatio
 			if len(normalizedPublished) == 0 {
 				continue
 			}
-			return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q is not defined", alias)
+			return ClientEndpointPublishedSentryRebuildPlan{}, fmt.Errorf("endpoint alias %q is not defined", alias)
 		}
 		if endpoint.Role != ClientEndpointRoleSentry {
-			return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q has role %q; published_attestors require role %q", alias, endpoint.Role, ClientEndpointRoleSentry)
+			return ClientEndpointPublishedSentryRebuildPlan{}, fmt.Errorf("endpoint alias %q has role %q; published_sentries require role %q", alias, endpoint.Role, ClientEndpointRoleSentry)
 		}
 
 		for publicKey := range normalizedPublished {
 			if existingAlias, exists := keyToAlias[publicKey]; exists && existingAlias != alias {
-				return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("attestor public key %s advertised by both endpoint aliases %q and %q", publicKey, existingAlias, alias)
+				return ClientEndpointPublishedSentryRebuildPlan{}, fmt.Errorf("sentry public key %s advertised by both endpoint aliases %q and %q", publicKey, existingAlias, alias)
 			}
 			keyToAlias[publicKey] = alias
 		}
 		if len(normalizedPublished) > 0 {
 			publicKeyCount += len(normalizedPublished)
-			endpoint.PublishedAttestors = normalizedPublished
+			endpoint.PublishedSentries = normalizedPublished
 			registry.Endpoints[alias] = endpoint
 		} else if _, exists := registry.Endpoints[alias]; exists {
-			endpoint.PublishedAttestors = nil
+			endpoint.PublishedSentries = nil
 			registry.Endpoints[alias] = endpoint
 		}
 	}
 
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
-		return ClientEndpointPublishedAttestorRebuildPlan{}, err
+		return ClientEndpointPublishedSentryRebuildPlan{}, err
 	}
-	return ClientEndpointPublishedAttestorRebuildPlan{
+	return ClientEndpointPublishedSentryRebuildPlan{
 		Registry:               registry,
 		PublicKeyCount:         publicKeyCount,
 		PreviousPublishedCount: previousCount,
 	}, nil
 }
 
-// ApplyStoredClientEndpointPublishedAttestorRebuild writes a previously
-// planned published_attestors refresh.
-func ApplyStoredClientEndpointPublishedAttestorRebuild(dataDir string, plan ClientEndpointPublishedAttestorRebuildPlan) error {
+// ApplyStoredClientEndpointPublishedSentryRebuild writes a previously
+// planned published_sentries refresh.
+func ApplyStoredClientEndpointPublishedSentryRebuild(dataDir string, plan ClientEndpointPublishedSentryRebuildPlan) error {
 	return SaveStoredClientEndpointRegistry(dataDir, plan.Registry)
 }
 
-func RebuildStoredClientEndpointPublishedAttestors(dataDir string, publications map[string]map[string]ClientEndpointPublishedAttestor) (ClientEndpointPublishedAttestorRebuildPlan, error) {
-	plan, err := PlanStoredClientEndpointPublishedAttestorRebuild(dataDir, publications)
+func RebuildStoredClientEndpointPublishedSentries(dataDir string, publications map[string]map[string]ClientEndpointPublishedSentry) (ClientEndpointPublishedSentryRebuildPlan, error) {
+	plan, err := PlanStoredClientEndpointPublishedSentryRebuild(dataDir, publications)
 	if err != nil {
-		return ClientEndpointPublishedAttestorRebuildPlan{}, err
+		return ClientEndpointPublishedSentryRebuildPlan{}, err
 	}
-	if err := ApplyStoredClientEndpointPublishedAttestorRebuild(dataDir, plan); err != nil {
-		return ClientEndpointPublishedAttestorRebuildPlan{}, err
+	if err := ApplyStoredClientEndpointPublishedSentryRebuild(dataDir, plan); err != nil {
+		return ClientEndpointPublishedSentryRebuildPlan{}, err
 	}
 	return plan, nil
 }
@@ -336,13 +336,13 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 	if err := validateClientEndpointURL(alias, endpoint); err != nil {
 		return ClientEndpointConfig{}, err
 	}
-	published, err := normalizeClientEndpointPublishedAttestors(endpoint.PublishedAttestors)
+	published, err := normalizeClientEndpointPublishedSentries(endpoint.PublishedSentries)
 	if err != nil {
 		return ClientEndpointConfig{}, err
 	}
-	endpoint.PublishedAttestors = published
-	if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedAttestors) > 0 {
-		return ClientEndpointConfig{}, fmt.Errorf("published_attestors are only valid on %q endpoints", ClientEndpointRoleSentry)
+	endpoint.PublishedSentries = published
+	if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedSentries) > 0 {
+		return ClientEndpointConfig{}, fmt.Errorf("published_sentries are only valid on %q endpoints", ClientEndpointRoleSentry)
 	}
 	if endpoint.TokenFile == "" && endpoint.URL != "self" {
 		if alias == DefaultClientEndpointName {
@@ -364,11 +364,11 @@ func storedClientEndpointsEqual(a, b ClientEndpointConfig) bool {
 		a.TokenFile != b.TokenFile {
 		return false
 	}
-	if len(a.PublishedAttestors) != len(b.PublishedAttestors) {
+	if len(a.PublishedSentries) != len(b.PublishedSentries) {
 		return false
 	}
-	for publicKey, aPublished := range a.PublishedAttestors {
-		if bPublished, ok := b.PublishedAttestors[publicKey]; !ok || bPublished != aPublished {
+	for publicKey, aPublished := range a.PublishedSentries {
+		if bPublished, ok := b.PublishedSentries[publicKey]; !ok || bPublished != aPublished {
 			return false
 		}
 	}

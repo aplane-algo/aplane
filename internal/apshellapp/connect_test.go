@@ -38,7 +38,7 @@ func TestConnectRequiresEndpointToken(t *testing.T) {
 	}
 
 	dataDir := t.TempDir()
-	tokenPath := dataDir + "/tokens/attestor-local.token"
+	tokenPath := dataDir + "/tokens/sentry-local.token"
 	app := New(eng, config.DefaultConfig(), dataDir)
 	_, err = app.Connect(context.Background(), ConnectRequest{
 		Host:           "localhost",

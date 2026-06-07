@@ -770,20 +770,20 @@ func (c *Client) AdminDeleteKeyWithContext(ctx context.Context, address string) 
 	return &delResp, nil
 }
 
-// AdminSyncAttestorReferences syncs public attestor reference candidates into
+// AdminSyncSentryReferences syncs public sentry reference candidates into
 // the connected signer identity.
-func (c *Client) AdminSyncAttestorReferences(candidates []signerapi.AttestorReferenceCandidate) (*signerapi.AdminSyncAttestorReferencesResponse, error) {
-	return c.AdminSyncAttestorReferencesWithContext(context.Background(), candidates)
+func (c *Client) AdminSyncSentryReferences(candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
+	return c.AdminSyncSentryReferencesWithContext(context.Background(), candidates)
 }
 
-func (c *Client) AdminSyncAttestorReferencesWithContext(ctx context.Context, candidates []signerapi.AttestorReferenceCandidate) (*signerapi.AdminSyncAttestorReferencesResponse, error) {
-	reqBody := signerapi.AdminSyncAttestorReferencesRequest{Candidates: candidates}
+func (c *Client) AdminSyncSentryReferencesWithContext(ctx context.Context, candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
+	reqBody := signerapi.AdminSyncSentryReferencesRequest{Candidates: candidates}
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.BaseURL+"/admin/attestors/sync", bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest("POST", c.BaseURL+"/admin/sentries/sync", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -794,7 +794,7 @@ func (c *Client) AdminSyncAttestorReferencesWithContext(ctx context.Context, can
 
 	resp, err := c.doRequest(reqCtx, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sync attestor references: %w", err)
+		return nil, fmt.Errorf("failed to sync sentry references: %w", err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -806,12 +806,12 @@ func (c *Client) AdminSyncAttestorReferencesWithContext(ctx context.Context, can
 		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
 	}
 
-	var syncResp signerapi.AdminSyncAttestorReferencesResponse
+	var syncResp signerapi.AdminSyncSentryReferencesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&syncResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 	if syncResp.Error != "" {
-		return nil, fmt.Errorf("attestor reference sync failed: %s", syncResp.Error)
+		return nil, fmt.Errorf("sentry reference sync failed: %s", syncResp.Error)
 	}
 	return &syncResp, nil
 }

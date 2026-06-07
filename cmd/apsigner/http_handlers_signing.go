@@ -30,7 +30,7 @@ func (fs *Signer) handleSign(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// handleSignComponent handles the /sign/component endpoint for attestor MVP
+// handleSignComponent handles the /sign/component endpoint for sentry MVP
 // role-separated component signatures.
 func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
 	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.ComponentSignRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })

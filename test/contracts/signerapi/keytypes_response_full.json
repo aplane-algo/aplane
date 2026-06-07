@@ -75,9 +75,9 @@
           "default": "aplane"
         },
         {
-          "name": "attestor",
-          "label": "Attestor",
-          "description": "Imported attestor public-key reference",
+          "name": "sentry",
+          "label": "Sentry",
+          "description": "Imported sentry public-key reference",
           "type": "select",
           "required": true,
           "options": [
