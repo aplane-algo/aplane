@@ -34,34 +34,37 @@ appolicy -d "$APSIGNER_DATA"
 appolicy -d "$APSIGNER_DATA" -check
 appolicy -d "$APSIGNER_DATA" --sha256
 appolicy -d "$APSIGNER_DATA" --yaml > policy.yaml
-APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save-policy < policy.yaml
+APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save < policy.yaml
 appolicy draft-policy.yaml
 ```
 
 When `appolicy` opens production policy from `APSIGNER_DATA` or `-d`, it
-prompts for the store passphrase. When it opens a standalone YAML file, it
-validates that file without unlocking the store; if the file-backed draft is
-later applied to production with `a`, the passphrase prompt happens at apply
-time. For automation, `APPOLICY_PASSPHRASE` wins over `APSIGNER_PASSPHRASE`.
-`--sha256` verifies the current production sidecar and prints the SHA-256
-digest of the trusted `policy.yaml` bytes. `--yaml` verifies the current
-sidecar and writes only those trusted bytes to stdout. With a positional YAML
-file, `--check`, `--yaml`, and `--sha256` validate that file directly and do
-not verify or update the production sidecar. `--save-policy` reads policy YAML from
-stdin, validates it with the signer policy compiler, preserves the submitted
-YAML bytes, and writes `policy.yaml` plus a fresh sidecar. Because stdin is the
-policy stream for `--save-policy`, provide the passphrase through the
-environment or an interactive terminal.
+prompts for the store passphrase and auto-selects the document from
+`node.yaml`: signer nodes edit `policy.yaml`, attestor nodes edit
+`attestation.yaml`. Use `--target signer` or `--target attestation` to override
+auto-selection. When it opens a standalone YAML file, it validates that file
+without unlocking the store; if the file-backed draft is later applied to
+production with `a`, the passphrase prompt happens at apply time. For
+automation, `APPOLICY_PASSPHRASE` wins over `APSIGNER_PASSPHRASE`. `--sha256`
+verifies the current production sidecar and prints the SHA-256 digest of the
+trusted selected document bytes. `--yaml` verifies the current sidecar and
+writes only those trusted bytes to stdout. With a positional YAML file,
+`--check`, `--yaml`, and `--sha256` validate that file directly and do not
+verify or update the production sidecar. `--save` reads policy YAML from stdin,
+validates it in the selected policy domain, preserves the submitted YAML bytes,
+and writes the selected document plus a fresh sidecar. Because stdin is the
+policy stream for `--save`, provide the passphrase through the environment or
+an interactive terminal.
 
 Inside the TUI, `a` applies the current draft to production by writing
-`policy.yaml` plus a fresh sidecar. `w` writes the current draft to a YAML file
-you choose without applying it to the signer store or writing a sidecar. Use
-this when you want to inspect or hand off a modified policy draft before
-production apply.
+the selected policy document plus a fresh sidecar. `w` writes the current
+draft to a YAML file you choose without applying it to the signer store or
+writing a sidecar. Use this when you want to inspect or hand off a modified
+policy draft before production apply.
 
-When you apply from the `appolicy` TUI or use `appolicy --save-policy`, it writes
-`policy.yaml` and a fresh sidecar itself; you do not need to run `apstore
-policy sign` afterward.
+When you apply from the `appolicy` TUI or use `appolicy --save`, it writes
+the selected policy document and a fresh sidecar itself; you do not need to run
+`apstore policy sign` afterward.
 
 In the Transfer Guards screen, the list is grouped by guard name plus
 network/source/destination shape and shows the global blocked-destination list
@@ -69,20 +72,21 @@ above the route list. Press `b` from that screen to edit blocked destinations.
 Selecting a guard opens group-level fields for `Name`, `Description`,
 `Networks`, `Sources`, `Destinations`, `Enabled`, and `Close Allow`, plus an
 asset row table with `Asset`, `Review Above`, and `Reject Above` columns. Each
-asset row is saved as one real route in `policy.yaml`; appolicy derives the
-stored route ID as `<guard>_<asset>`, for example `test_algo` and `test_usdc`
-for guard `test`. `Asset` may be `algo`, an ASA ID, `asa:<id>`, cached symbol,
-asset set name, or `*`. Asset-set route IDs use the set name without `@`, and
-appolicy stores asset-set rows in YAML as `@name`. If an existing route ID does
-not follow the generated convention, appolicy preserves it on no-op guard edits;
+asset row is saved as one real route in the selected policy document; appolicy
+derives the stored route ID as `<guard>_<asset>`, for example `test_algo` and
+`test_usdc` for guard `test`. `Asset` may be `algo`, an ASA ID, `asa:<id>`,
+cached symbol, asset set name, or `*`. Asset-set route IDs use the set name
+without `@`, and appolicy stores asset-set rows in YAML as `@name`. If an
+existing route ID does not follow the generated convention, appolicy preserves
+it on no-op guard edits;
 renaming the guard or changing an asset row writes the generated convention.
 
 For `algo`, concrete ASA IDs, and eligible asset-set rows, `Review Above`
 and `Reject Above` use display units just like the old apadmin transfer guard
 editor. `50` means 50 ALGO for `algo`; `5` means 5 display units of the selected
-ASA or asset set. `appolicy` still writes raw base units to `policy.yaml`. This
-is the recommended UI path for rules such as "source A may send ALGO to B up to
-50 ALGO" and "source A may send USDC to B up to 5 USDC."
+ASA or asset set. `appolicy` still writes raw base units to the selected policy
+document. This is the recommended UI path for rules such as "source A may send
+ALGO to B up to 50 ALGO" and "source A may send USDC to B up to 5 USDC."
 
 `Enter` opens a field-specific editor. Text and numeric fields open a
 single-line text popup, tri-state fields open a choice popup, and list fields
@@ -109,7 +113,7 @@ Sets screen seeds the draft with the same `usdc` set so it appears in the list.
 
 Advanced route shapes remain supported by YAML but are read-only in the guard
 editor. The TUI marks these as YAML-only and offers the full policy YAML view.
-Use `--yaml`/`--save-policy` or direct `policy.yaml` edits for non-uniform
+Use `--yaml`/`--save` or direct selected-document YAML edits for non-uniform
 `limits_by_network`, multi-asset route entries, clawback routes, and other
 advanced fields. After direct in-place YAML edits, check it, sign it, and then
 reload or restart the signer:

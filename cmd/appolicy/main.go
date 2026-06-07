@@ -25,18 +25,16 @@ import (
 )
 
 type options struct {
-	dataDir         string
-	identityID      string
-	target          string
-	check           bool
-	yaml            bool
-	sha256          bool
-	save            bool
-	savePolicy      bool
-	saveAttestation bool
-	toAttestation   bool
-	online          bool
-	version         bool
+	dataDir       string
+	identityID    string
+	target        string
+	check         bool
+	yaml          bool
+	sha256        bool
+	save          bool
+	toAttestation bool
+	online        bool
+	version       bool
 }
 
 func main() {
@@ -54,8 +52,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	fs.BoolVar(&opts.yaml, "yaml", false, "verify the selected policy document or a policy file and print it to stdout")
 	fs.BoolVar(&opts.sha256, "sha256", false, "verify the selected policy document or a policy file and print its SHA-256 digest")
 	fs.BoolVar(&opts.save, "save", false, "read selected policy YAML from stdin, validate, save, and sign it")
-	fs.BoolVar(&opts.savePolicy, "save-policy", false, "read policy.yaml from stdin, validate, save, and sign it")
-	fs.BoolVar(&opts.saveAttestation, "save-attestation", false, "read attestation.yaml from stdin, validate, save, and sign it")
 	fs.BoolVar(&opts.toAttestation, "to-attestation", false, "convert policy.yaml or a policy file to direct attestation.yaml and print it to stdout")
 	fs.BoolVar(&opts.online, "online", false, "disabled placeholder for future apsigner-connected policy editing")
 	fs.BoolVar(&opts.version, "version", false, "print version and exit")
@@ -75,10 +71,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		writef(stderr, "appolicy: %v\n", err)
 		return 2
 	}
-	savePolicy := opts.savePolicy
-	saveAttestation := opts.saveAttestation
-	if modeCount(opts.check, opts.yaml, opts.sha256, opts.save, savePolicy, saveAttestation, opts.toAttestation) > 1 {
-		writeLine(stderr, "appolicy: choose only one of -check, -yaml, -sha256, -save, -save-policy, -save-attestation, or -to-attestation")
+	if modeCount(opts.check, opts.yaml, opts.sha256, opts.save, opts.toAttestation) > 1 {
+		writeLine(stderr, "appolicy: choose only one of -check, -yaml, -sha256, -save, or -to-attestation")
 		return 2
 	}
 	policyFile := ""
@@ -90,17 +84,13 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		writeLine(stderr, "appolicy: specify at most one policy YAML file")
 		return 2
 	}
-	if (savePolicy || saveAttestation) && policyFile != "" {
-		writef(stderr, "appolicy: %s reads YAML from stdin and does not accept a file argument\n", saveFlagName(savePolicy, saveAttestation))
-		return 2
-	}
 	if opts.save && policyFile != "" {
 		writeLine(stderr, "appolicy: --save reads YAML from stdin and does not accept a file argument")
 		return 2
 	}
 
 	dataDir := ""
-	if policyFile == "" || savePolicy || saveAttestation || opts.dataDir != "" || os.Getenv("APSIGNER_DATA") != "" {
+	if policyFile == "" || opts.save || opts.dataDir != "" || os.Getenv("APSIGNER_DATA") != "" {
 		var err error
 		dataDir, err = signerbootstrap.ResolveDataDir(opts.dataDir)
 		if err != nil {
@@ -112,13 +102,13 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	if identityID == "" {
 		identityID = policyeditor.DefaultIdentityID
 	}
-	target, err := resolveRunTarget(dataDir, policyFile, requestedTarget, savePolicy, saveAttestation, opts.toAttestation)
+	target, err := resolveRunTarget(dataDir, policyFile, requestedTarget, opts.toAttestation)
 	if err != nil {
 		writef(stderr, "appolicy: %v\n", err)
 		return 2
 	}
 	var saveInput []byte
-	if opts.save || savePolicy || saveAttestation {
+	if opts.save {
 		var err error
 		saveInput, err = io.ReadAll(stdin)
 		if err != nil {
@@ -126,7 +116,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			return 1
 		}
 		if strings.TrimSpace(string(saveInput)) == "" {
-			writef(stderr, "appolicy: %s YAML on stdin is empty\n", saveDocumentName(target, savePolicy, saveAttestation))
+			writef(stderr, "appolicy: %s YAML on stdin is empty\n", target.StatusNoun())
 			return 1
 		}
 	}
@@ -134,7 +124,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	passphrases := &passphraseCache{
 		stdin:              stdin,
 		stderr:             stderr,
-		allowStdinFallback: !opts.save && !savePolicy && !saveAttestation,
+		allowStdinFallback: !opts.save,
 	}
 	defer passphrases.Clear()
 
@@ -144,7 +134,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		Target:     target,
 	}
 	defer store.ClearPassphrase()
-	if policyFile == "" || opts.save || savePolicy || saveAttestation {
+	if policyFile == "" || opts.save {
 		store.PassphraseProvider = passphrases.Get
 	}
 	if policyFile != "" {
@@ -156,24 +146,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			return 1
 		}
 		writef(stdout, "%s saved: %s\n", target.StatusNoun(), target.Path(dataDir, identityID))
-		return 0
-	}
-	if savePolicy {
-		store.Target = policyeditor.TargetSigner
-		if err := store.SaveYAML(ctx, saveInput); err != nil {
-			writef(stderr, "appolicy: %v\n", err)
-			return 1
-		}
-		writef(stdout, "policy saved: %s\n", policy.PolicyPath(dataDir, identityID))
-		return 0
-	}
-	if saveAttestation {
-		store.Target = policyeditor.TargetAttestation
-		if err := store.SaveAttestationYAML(ctx, saveInput); err != nil {
-			writef(stderr, "appolicy: %v\n", err)
-			return 1
-		}
-		writef(stdout, "attestation policy saved: %s\n", policy.AttestationPath(dataDir, identityID))
 		return 0
 	}
 
@@ -314,13 +286,7 @@ func modeCount(values ...bool) int {
 	return count
 }
 
-func resolveRunTarget(dataDir, policyFile string, requested policyeditor.Target, savePolicy, saveAttestation, toAttestation bool) (policyeditor.Target, error) {
-	if savePolicy {
-		return policyeditor.TargetSigner, nil
-	}
-	if saveAttestation {
-		return policyeditor.TargetAttestation, nil
-	}
+func resolveRunTarget(dataDir, policyFile string, requested policyeditor.Target, toAttestation bool) (policyeditor.Target, error) {
 	if toAttestation {
 		return policyeditor.TargetSigner, nil
 	}
@@ -331,26 +297,6 @@ func resolveRunTarget(dataDir, policyFile string, requested policyeditor.Target,
 		return policyeditor.ResolveTarget(dataDir, requested)
 	}
 	return policyeditor.ResolveTarget(dataDir, requested)
-}
-
-func saveFlagName(savePolicy, saveAttestation bool) string {
-	if saveAttestation {
-		return "--save-attestation"
-	}
-	if savePolicy {
-		return "--save-policy"
-	}
-	return "--save-policy"
-}
-
-func saveDocumentName(target policyeditor.Target, savePolicy, saveAttestation bool) string {
-	if saveAttestation {
-		return "attestation"
-	}
-	if savePolicy {
-		return "policy"
-	}
-	return target.StatusNoun()
 }
 
 type passphraseCache struct {

@@ -273,7 +273,7 @@ field. Both policy documents are verified and loaded on unlock/reload before
 the key scan; a missing policy file or missing/mismatched sidecar fails closed
 instead of falling back to defaults. Authenticated admin IPC policy replacement
 currently writes `policy.yaml`; direct `attestation.yaml` edits are checked,
-signed, and verified through `apstore policy`.
+signed, and verified through `appolicy` or `apstore policy`.
 Both documents support YAML-only `key_overrides` blocks for per-key effective
 policy. Client-signing overrides in `policy.yaml` are keyed by Algorand auth
 address; attestor overrides in `attestation.yaml` are keyed by `a_...`
@@ -688,13 +688,16 @@ Policy load behavior:
   `code:"unlock_failed"`
 - reload failure keeps the previous in-memory policy active
 - admin policy writes require an unlocked identity and replace `policy.yaml`
-- direct YAML edits to either document require offline `apstore policy sign`
-  before the signer trusts them
-- `appolicy --yaml` emits the exact verified `policy.yaml` bytes;
-  `appolicy --save-policy` reads replacement policy bytes from stdin,
-  validates them, and writes those exact bytes plus a fresh sidecar under the
-  store mutation lock; `appolicy --save-attestation` does the same for direct
-  `attestation.yaml`
+- direct YAML edits to either document require offline `appolicy --save` or
+  `apstore policy sign` before the signer trusts them
+- `appolicy` defaults to `--target auto`; for store-backed operations, auto
+  reads root `node.yaml` and targets `policy.yaml` on signer nodes or
+  `attestation.yaml` on attestor nodes
+- `appolicy --yaml` emits the exact verified selected document bytes;
+  `appolicy --save` reads replacement YAML bytes from stdin, validates them in
+  the selected policy domain, and writes those exact bytes plus a fresh sidecar
+  under the store mutation lock; `--target signer|attestation` explicitly
+  selects the document
 - `apstore policy check|verify|sign` checks, verifies, or signs both policy
   documents
 
@@ -1210,14 +1213,14 @@ to run.
 Client-signing `transfer_policy` is persisted in `policy.yaml`; attestor
 component `transfer_policy` is persisted in `attestation.yaml`. Both are
 validated by the normal policy load path and by `apstore policy
-check/sign/verify`. `appolicy --save-policy` and apadmin whole-file replacement
-target `policy.yaml`; `appolicy --save-attestation` targets
-`attestation.yaml`. Transfer policy is not projected through mutable admin IPC
-policy settings and has no guided `apadmin` editor surface; `apadmin` can
-request an active signing-policy snapshot for inspection and can ask the signer
-to hot-replace the whole signing-policy YAML file. The `appolicy --yaml` /
-`--save-policy` / `--save-attestation` CLI path is the scriptable offline
-editor for byte-preserving route-table edits.
+check/sign/verify`. `appolicy` auto-targets the node-role document and
+`--target signer|attestation` can explicitly select a document; apadmin
+whole-file replacement targets `policy.yaml`. Transfer policy is not projected
+through mutable admin IPC policy settings and has no guided `apadmin` editor
+surface; `apadmin` can request an active signing-policy snapshot for inspection
+and can ask the signer to hot-replace the whole signing-policy YAML file. The
+`appolicy --yaml` / `--save` CLI path is the scriptable offline editor for
+byte-preserving route-table edits.
 Route matches are allow-to-continue, not approvals.
 
 Transaction-level hard policy skips passthrough and foreign slots because those

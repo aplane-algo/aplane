@@ -1592,5 +1592,5 @@ Deferred from MVP:
 - public attestor profiles for discovery/marketing metadata,
 - stateful account registration or recovery notices,
 - attested-account simulation,
-- guided role-aware editing for `client_signing:` in `appolicy` and
-  dedicated guided editing for `attestation.yaml`.
+- guided role-aware editing for nested `client_signing:` blocks in
+  `policy.yaml`.

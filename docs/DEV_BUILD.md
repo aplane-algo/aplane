@@ -464,9 +464,9 @@ workflows and do not need this capability.
 - **apconsole** composes shell, signer-admin, and daemon panes on the secure signer machine
 - **apapprover** handles approval-only workflows over local IPC
 - **apstore** requests signer-owned backup, restore, passphrase, key type, and template mutations over local IPC; local operation is limited to backup import admission checks, backup verification, and rebuild rescue
-- **appolicy** verifies and edits identity `policy.yaml` offline, can convert
-  deterministic signing policy into `attestation.yaml`, and can save/sign
-  either policy document while holding the store mutation lock
+- **appolicy** verifies and edits the node-role policy document offline, can
+  convert deterministic signing policy into `attestation.yaml`, and can
+  save/sign either policy document while holding the store mutation lock
 - **appass** edits identity-scoped auto-unlock configuration while `apsigner` is stopped
 - **aplocalnet** configures a running AlgoKit LocalNet as apshell's default network, updates apsigner genesis mapping, enables the LocalNet plugin, and can persist a KMD URL override for plugin processes
 - **appass-systemd-creds** is built for Linux/systemd releases; Darwin release archives omit it

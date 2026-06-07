@@ -9,11 +9,15 @@ Policy is stored beside the identity keys:
 ```text
 identities/<identity>/policy.yaml
 identities/<identity>/policy.yaml.hmac
+identities/<identity>/attestation.yaml
+identities/<identity>/attestation.yaml.hmac
 ```
 
 `policy.yaml` controls account signing. Its `.hmac` sidecar authenticates the
 exact YAML bytes. After the signed baseline exists, a missing or mismatched
 sidecar fails closed rather than silently loading defaults.
+`attestation.yaml` controls attestor component signing on attestor nodes and
+uses the same sidecar rule.
 
 ## What Policy Controls
 
@@ -39,20 +43,24 @@ rule.
 
 ## Editing Policy
 
-Use `appolicy` for normal signing-policy work:
+Use `appolicy` for normal policy work. With `--target auto` (the default),
+`appolicy` reads `$APSIGNER_DATA/node.yaml`: signer nodes edit `policy.yaml`,
+and attestor nodes edit `attestation.yaml`.
 
 ```bash
 appolicy -d "$APSIGNER_DATA"
 appolicy -d "$APSIGNER_DATA" -check
 appolicy -d "$APSIGNER_DATA" --sha256
+appolicy -d "$APSIGNER_DATA" --target signer
+appolicy -d "$APSIGNER_DATA" --target attestation
 appolicy draft-policy.yaml
 ```
 
 Inside the TUI, `a` applies the current draft to production by writing
-`policy.yaml` plus a fresh sidecar. `w` writes the current in-memory policy
-draft to a YAML file you choose. This is an export only: it does not update
-production `policy.yaml`, does not write a sidecar, and does not clear the
-modified state.
+the selected policy document plus a fresh sidecar. `w` writes the current
+in-memory policy draft to a YAML file you choose. This is an export only: it
+does not update production policy, does not write a sidecar, and does not clear
+the modified state.
 
 When `appolicy` opens production policy from `APSIGNER_DATA` or `-d`, it needs
 the store passphrase to verify the sidecar. When it opens a standalone YAML
@@ -63,18 +71,18 @@ passphrase at apply time.
 For byte-preserving scripted edits:
 
 ```bash
-appolicy -d "$APSIGNER_DATA" --yaml > policy.yaml
-APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save-policy < policy.yaml
+appolicy -d "$APSIGNER_DATA" --yaml > selected-policy.yaml
+APPOLICY_PASSPHRASE="$passphrase" appolicy -d "$APSIGNER_DATA" --save < selected-policy.yaml
 ```
 
 `appolicy --sha256` verifies the current sidecar and prints the SHA-256 digest
-of the trusted `policy.yaml` bytes. `appolicy --yaml` verifies the current
-sidecar and emits those trusted bytes. `appolicy --save-policy` reads
-replacement signing-policy YAML from stdin, validates it, writes `policy.yaml`,
-and writes a fresh sidecar. The older `appolicy --save` flag remains a
-compatibility alias for `--save-policy`. Because stdin is the document stream
-for save modes, provide the passphrase through the environment or an
-interactive terminal.
+of the trusted selected document bytes. `appolicy --yaml` verifies the current
+sidecar and emits those trusted bytes. `appolicy --save` reads replacement YAML
+from stdin, validates it in the selected policy domain, writes the selected
+document, and writes a fresh sidecar. Use `--target signer` or
+`--target attestation` to override auto-selection. Because stdin is the
+document stream for save modes, provide the passphrase through the environment
+or an interactive terminal.
 
 With a positional YAML file, `appolicy --check draft.yaml`,
 `appolicy --yaml draft.yaml`, and `appolicy --sha256 draft.yaml` validate the
@@ -239,16 +247,17 @@ Guard-level fields include:
 - `Enabled`,
 - `Close Allow`.
 
-Each asset row becomes one stored route in `policy.yaml`. The TUI derives the
-route ID as `<guard>_<asset>`, for example `test_algo` and `test_usdc` for a
-guard named `test`. Asset-set rows accept either `@usdc` or `usdc`; appolicy
-stores the route asset as `@usdc` and uses `test_usdc` as the route ID.
+Each asset row becomes one stored route in the selected policy document. The
+TUI derives the route ID as `<guard>_<asset>`, for example `test_algo` and
+`test_usdc` for a guard named `test`. Asset-set rows accept either `@usdc` or
+`usdc`; appolicy stores the route asset as `@usdc` and uses `test_usdc` as the
+route ID.
 Field edits validate and save into the in-memory draft when the field editor
 closes. Press `a` from the main policy screens to apply that draft to
 production.
 
 For `algo`, concrete ASA IDs, and eligible asset sets, amount fields in the TUI
-use display units. `policy.yaml` stores raw on-chain units: microAlgos for ALGO
+use display units. Policy YAML stores raw on-chain units: microAlgos for ALGO
 and raw ASA units for ASAs.
 
 Advanced route shapes remain YAML-only, including multi-asset routes,
@@ -338,7 +347,7 @@ Before relying on a policy:
    `clawback_on_no_route: reject`.
 3. Confirm address and asset set names resolve on the intended networks.
 4. Confirm amount thresholds use raw units in YAML.
-5. Sign the policy sidecar with `appolicy --save-policy` or `apstore policy sign`.
+5. Sign the policy sidecar with `appolicy --save` or `apstore policy sign`.
 6. Reload, unlock, or restart the signer so the new verified policy is active.
 
 ## Troubleshooting

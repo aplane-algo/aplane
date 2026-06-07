@@ -76,10 +76,10 @@ requests a signer-owned snapshot over the admin protocol and renders overview,
 guard detail, YAML, and key override views. From that viewer, the operator
 may load a local YAML file as a whole-policy replacement; the signer validates
 and persists the file and returns a fresh canonical snapshot. Operator guided
-policy edits remain centered on `appolicy`, which validates and signs
-identity-scoped signing `policy.yaml` offline and also owns scriptable
-signing-to-attestation conversion plus direct `attestation.yaml` save/sign
-flows. The admin protocol still retains
+policy edits remain centered on `appolicy`, which auto-targets signer
+`policy.yaml` or attestor `attestation.yaml` from node role, validates and
+signs the selected document offline, and also owns scriptable
+signing-to-attestation conversion. The admin protocol still retains
 compatibility policy messages for older clients and internal service
 boundaries, but the active admin TUI does not present a mutable policy panel.
 

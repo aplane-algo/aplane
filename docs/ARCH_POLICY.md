@@ -752,24 +752,28 @@ whole-file hot replacement. New guided field-editing UI work should target
 Client-signing `transfer_policy` is persisted in `policy.yaml`; attestor
 component `transfer_policy` is persisted in `attestation.yaml`. Both are
 validated by the policy load path and by `apstore policy check/sign/verify`.
-`appolicy` and apadmin whole-file replacement currently target `policy.yaml`.
-Transfer policy is not projected through the mutable admin IPC policy settings
-payload and has no guided `apadmin` editor; the apadmin viewer renders it from
-the active signing-policy snapshot.
+`appolicy` auto-targets `policy.yaml` on signer nodes and `attestation.yaml`
+on attestor nodes; `--target signer|attestation` can explicitly select a
+document for offline review. Apadmin whole-file replacement currently targets
+`policy.yaml`. Transfer policy is not projected through the mutable admin IPC
+policy settings payload and has no guided `apadmin` editor; the apadmin viewer
+renders it from the active signing-policy snapshot.
 
-`appolicy` is the local offline policy editor. In production mode it loads the
-identity policy, verifies the HMAC sidecar with the store passphrase, validates
-changes through the same runtime compiler as `apsigner`, and applies the draft
-to production by saving `policy.yaml` plus a fresh sidecar while holding the
-store mutation lock. When opened with a standalone YAML file, it validates the
-file without unlocking the production store; applying that file-backed draft to
-production is the operation that asks for the passphrase. The TUI exposes
-common policy fields as effective values with a source column, such as
+`appolicy` is the local offline policy editor. In production mode it defaults
+to `--target auto`, reads root `node.yaml`, and edits `policy.yaml` for signer
+nodes or `attestation.yaml` for attestor nodes. It verifies the selected HMAC
+sidecar with the store passphrase, validates changes through the same runtime
+compiler as `apsigner`, and applies the draft to production by saving the
+selected document plus a fresh sidecar while holding the store mutation lock.
+When opened with a standalone YAML file, it validates the file without
+unlocking the production store; applying that file-backed draft to production
+is the operation that asks for the passphrase. The TUI exposes common policy
+fields as effective values with a source column, such as
 `default`, `explicit`, or `absent`, rather than showing YAML-null markers as
 values. Values that match the product default can still be omitted from saved
-YAML. For common and client-signing transfer policies, transfer settings edit
-the required binary `transfer_policy.enabled` switch and the route-miss
-fallback fields. Guard, transfer-settings, and asset-set field editors
+YAML. For common transfer policies, transfer settings edit the binary
+`transfer_policy.enabled` switch and the route-miss fallback fields. Guard,
+transfer-settings, and asset-set field editors
 validate and commit successful edits into the in-memory draft as each field
 editor closes; applying the draft to production remains a separate `a` action.
 
@@ -797,19 +801,13 @@ Advanced routing structures that are not yet surfaced in the guard editor
 still round-trip through YAML and can be edited directly with
 `apstore policy check/sign/verify`. For non-interactive use,
 `APPOLICY_PASSPHRASE` is checked before `APSIGNER_PASSPHRASE`.
-The `client_signing:` block follows the same rule: until guided role-aware
-editing lands in `appolicy`, it is preserved through YAML round-trip and edited
-directly through checked/signed YAML. `appolicy` edits `policy.yaml`; direct
-`attestation.yaml` edits are checked and signed with
-`appolicy --save-attestation` or `apstore policy`.
-`appolicy --sha256` verifies the sidecar and prints the SHA-256 digest of the
-exact trusted `policy.yaml` bytes. `appolicy --yaml` verifies the sidecar and
-emits those bytes to stdout. `appolicy --save-policy` reads exact replacement
-signing-policy YAML bytes from stdin, parses and runtime-validates them, and
-writes `policy.yaml` plus a fresh sidecar while holding the same lock.
-`appolicy --save-attestation` performs the same exact-byte replacement flow for
-direct `attestation.yaml`. The older `appolicy --save` flag remains a
-compatibility alias for `--save-policy`.
+`appolicy --sha256` verifies the selected sidecar and prints the SHA-256 digest
+of the exact trusted selected document bytes. `appolicy --yaml` verifies the
+sidecar and emits those bytes to stdout. `appolicy --save` reads exact
+replacement YAML bytes from stdin, parses and runtime-validates them in the
+selected policy domain, and writes the selected document plus a fresh sidecar
+while holding the same lock. `--target signer|attestation` explicitly selects
+the document when auto-selection is not desired.
 `appolicy --to-attestation` parses and runtime-validates a signing
 `policy.yaml`, projects the deterministic "could allow" envelope into direct
 `attestation.yaml`, and prints the result to stdout. The projection preserves

@@ -129,7 +129,7 @@ All under `cmd/`:
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
 | `apapprover` | Minimal approval-only CLI over IPC |
 | `apstore` | Local keystore management client: daemon-owned backup, restore, template, key type, changepass, and initialize over IPC, policy integrity check/verify/sign, public endpoint export, public attestor reference import/export/list, plus local `verify` and `rebuild` rescue flows |
-| `appolicy` | Offline policy checker/editor TUI for identity-scoped signing `policy.yaml`, plus scriptable signing-policy save, signing-to-attestation conversion, and direct `attestation.yaml` save/sign flows while holding the store mutation lock |
+| `appolicy` | Offline policy checker/editor TUI that auto-targets `policy.yaml` on signer nodes and `attestation.yaml` on attestor nodes, plus scriptable save/check/export and signing-to-attestation conversion while holding the store mutation lock |
 | `appass` | Passphrase auto-unlock setup TUI |
 | `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, apclient default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
 | `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |
@@ -478,9 +478,11 @@ default approval fallback is `user_auto_approve`, persisted in
 `User Auto-Approve`. Policy is verified with a key derived from the identity
 master key and loaded into the bound identity runtime on unlock/reload before
 the key scan. Operator guided signing-policy editing is centered on
-`appolicy`, which edits verified `policy.yaml` offline while holding the store
-mutation lock and persists both the YAML and sidecar. Direct edits to either
-policy document are checked and signed with `apstore policy`. Admin IPC policy
+`appolicy`, which auto-selects `policy.yaml` or `attestation.yaml` from the
+node role, edits the verified document offline while holding the store mutation
+lock, and persists both the YAML and sidecar. `--target signer|attestation`
+can override auto-selection for offline review. Direct edits to either policy
+document are checked and signed with `apstore policy`. Admin IPC policy
 read/write messages remain in the backend for compatibility and target
 `policy.yaml`. `apadmin` exposes an active signing-policy viewer backed by a
 signer-owned snapshot, can hot-replace the whole signing policy from a YAML
