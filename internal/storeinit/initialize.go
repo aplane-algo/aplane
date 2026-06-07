@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -21,6 +22,7 @@ type Options struct {
 	DataDir    string
 	Paths      storepaths.Paths
 	IdentityID string
+	Role       noderole.Role
 	Logf       func(format string, args ...any)
 }
 
@@ -38,6 +40,13 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	}
 	if opts.IdentityID == "" {
 		return result, fmt.Errorf("identity ID is required")
+	}
+	role := opts.Role
+	if role == "" {
+		role = noderole.DefaultRole()
+	}
+	if _, err := noderole.ParseRole(string(role)); err != nil {
+		return result, err
 	}
 
 	if err := requireLocalOwnerOrRoot(opts.DataDir); err != nil {
@@ -61,6 +70,15 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	_, masterKey, err := crypto.CreateKeystoreMetadata(metadataDir, passphrase)
 	if err != nil {
 		return result, fmt.Errorf("failed to create keystore metadata: %w", err)
+	}
+	roleBytes, _, err := noderole.SaveInitial(opts.Paths, role, time.Now())
+	if err != nil {
+		crypto.ZeroBytes(masterKey)
+		return result, fmt.Errorf("failed to create node role: %w", err)
+	}
+	if err := noderole.SaveIdentitySidecarWithMasterKey(opts.Paths, opts.IdentityID, roleBytes, masterKey, time.Now()); err != nil {
+		crypto.ZeroBytes(masterKey)
+		return result, fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 	}
 	if err := policy.SaveStoredConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
 		crypto.ZeroBytes(masterKey)

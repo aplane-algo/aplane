@@ -30,6 +30,14 @@ func (p Paths) TemplateLibraryDir() string {
 	return filepath.Join(p.root, "library", "templates")
 }
 
+func (p Paths) NodeRolePath() string {
+	return filepath.Join(p.root, "node.yaml")
+}
+
+func (p Paths) NodeRoleIntegritySidecar(identityID string) string {
+	return filepath.Join(p.IdentityDir(identityID), "node.yaml.hmac")
+}
+
 func validatePathComponent(label, s string) {
 	if err := validatePathComponentValue(label, s); err != nil {
 		panic(err.Error())

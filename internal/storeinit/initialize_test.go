@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -55,6 +56,13 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	}
 	if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
 		t.Fatalf("attestation policy integrity baseline did not verify: %v", err)
+	}
+	role, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, masterKey)
+	if err != nil {
+		t.Fatalf("node role integrity baseline did not verify: %v", err)
+	}
+	if role.Role != noderole.RoleSigner {
+		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSigner)
 	}
 }
 

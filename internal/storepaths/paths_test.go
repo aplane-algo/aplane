@@ -16,6 +16,17 @@ func TestTemplateLibraryDirUsesLibraryTemplatesSubdirectory(t *testing.T) {
 	}
 }
 
+func TestNodeRolePaths(t *testing.T) {
+	paths := NewPaths("/tmp/test-keystore")
+	if got, want := paths.NodeRolePath(), filepath.Join("/tmp/test-keystore", "node.yaml"); got != want {
+		t.Fatalf("NodeRolePath() = %q, want %q", got, want)
+	}
+	wantSidecar := filepath.Join("/tmp/test-keystore", "identities", "default", "node.yaml.hmac")
+	if got := paths.NodeRoleIntegritySidecar("default"); got != wantSidecar {
+		t.Fatalf("NodeRoleIntegritySidecar() = %q, want %q", got, wantSidecar)
+	}
+}
+
 func TestKeyTypePathsAreIdentityScoped(t *testing.T) {
 	paths := NewPaths("/tmp/test-keystore")
 	wantDir := filepath.Join("/tmp/test-keystore", "identities", "default", "keytypes")
