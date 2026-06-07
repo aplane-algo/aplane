@@ -4,6 +4,7 @@
 package backup
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,12 +14,15 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatestore"
@@ -65,6 +69,7 @@ type RestoreError struct {
 type Restorer struct {
 	Paths      storepaths.Paths
 	IdentityID string
+	NodeRole   noderole.Role
 	Logf       RestoreLogger
 	Warnf      RestoreWarningHandler
 }
@@ -81,6 +86,25 @@ func (r Restorer) WithLogger(logf RestoreLogger) Restorer {
 func (r Restorer) WithWarningHandler(warnf RestoreWarningHandler) Restorer {
 	r.Warnf = warnf
 	return r
+}
+
+func (r Restorer) WithNodeRole(role noderole.Role) Restorer {
+	r.NodeRole = role
+	return r
+}
+
+func (r Restorer) nodeRole() noderole.Role {
+	if r.NodeRole == "" {
+		return noderole.DefaultRole()
+	}
+	return r.NodeRole
+}
+
+func (r Restorer) validateKeyTypeAllowed(keyType string) error {
+	if err := keyclass.ValidateKeyTypeAllowedForNodeRole(r.nodeRole(), keyType); err != nil {
+		return fmt.Errorf("role-forbidden: %w", err)
+	}
+	return nil
 }
 
 func (r Restorer) logf(format string, args ...any) {
@@ -239,6 +263,10 @@ func StatManagedBackupArchive(archivePath string) (os.FileInfo, error) {
 }
 
 func PreviewRestore(paths storepaths.Paths, identityID, archivePath string, exportPassphrase []byte) (*RestorePreview, error) {
+	return PreviewRestoreWithNodeRole(paths, identityID, archivePath, exportPassphrase, noderole.DefaultRole())
+}
+
+func PreviewRestoreWithNodeRole(paths storepaths.Paths, identityID, archivePath string, exportPassphrase []byte, role noderole.Role) (*RestorePreview, error) {
 	resolvedArchive, err := ResolveManagedBackupPath(paths, identityID, archivePath)
 	if err != nil {
 		return nil, err
@@ -286,6 +314,18 @@ func PreviewRestore(paths storepaths.Paths, identityID, archivePath string, expo
 			errMsg := fmt.Sprintf("address mismatch: expected %s, got %s", address, derivedAddress)
 			preview.Errors = append(preview.Errors, RestoreError{Address: address, Error: errMsg})
 			preview.Keys = append(preview.Keys, RestoreKeyInfo{Address: address, KeyType: keyType, Error: errMsg})
+			continue
+		}
+		if roleErr := keyclass.ValidateKeyTypeAllowedForNodeRole(role, keyType); roleErr != nil {
+			errMsg := fmt.Sprintf("role-forbidden: %v", roleErr)
+			preview.Errors = append(preview.Errors, RestoreError{Address: address, Error: errMsg})
+			preview.Keys = append(preview.Keys, RestoreKeyInfo{
+				Address:      address,
+				KeyType:      keyType,
+				HasTemplate:  len(templateYAML) > 0,
+				TemplateType: tmplType,
+				Error:        errMsg,
+			})
 			continue
 		}
 		_, statErr := os.Stat(paths.KeyFilePath(identityID, address))
@@ -364,6 +404,9 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 
 	if derivedAddress != address {
 		return "", fmt.Errorf("address mismatch: expected %s, got %s", address, derivedAddress)
+	}
+	if err := r.validateKeyTypeAllowed(keyType); err != nil {
+		return "", err
 	}
 	destPath := r.Paths.KeyFilePath(r.IdentityID, address)
 
@@ -521,6 +564,18 @@ func RestoreKeyMetadata(keyJSON []byte) (keyType string, address string, hasLogi
 		return meta.KeyType, addr.String(), true, nil
 	}
 
+	if keytypes.IsAttestorComponentKeyType(meta.KeyType) {
+		publicKey, err := hex.DecodeString(meta.PublicKeyHex)
+		if err != nil {
+			return "", "", false, fmt.Errorf("failed to decode component public key: %w", err)
+		}
+		componentKey, err := keytypes.ComponentKeySelector(meta.KeyType, publicKey)
+		if err != nil {
+			return "", "", false, fmt.Errorf("failed to derive component key selector: %w", err)
+		}
+		return meta.KeyType, componentKey, false, nil
+	}
+
 	deriver, err := addressderive.Get(meta.KeyType)
 	if err != nil {
 		return "", "", false, fmt.Errorf("unsupported key type: %s", meta.KeyType)
@@ -535,6 +590,9 @@ func RestoreKeyMetadata(keyJSON []byte) (keyType string, address string, hasLogi
 // RestoreTemplate saves a template extracted from a backup bundle to the
 // identity template store.
 func (r Restorer) RestoreTemplate(templateYAML []byte, keyType, tmplType string, masterKey []byte) error {
+	if err := r.validateKeyTypeAllowed(keyType); err != nil {
+		return err
+	}
 	restorePlan, err := r.buildTemplateRestorePlan(templateYAML, keyType, tmplType, masterKey, false)
 	if err != nil {
 		return err

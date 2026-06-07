@@ -13,10 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
@@ -237,6 +239,34 @@ func TestPreviewRestoreManagedArchiveReportsKeyMetadataAndExistingConflict(t *te
 	}
 }
 
+func TestPreviewRestoreWithNodeRoleReportsRoleForbiddenKey(t *testing.T) {
+	ed25519.RegisterSigner()
+
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {
+		if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+			t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+		}
+	})
+
+	preview, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("export-passphrase"), noderole.RoleAttestor)
+	if err != nil {
+		t.Fatalf("PreviewRestoreWithNodeRole() error = %v", err)
+	}
+	if len(preview.Errors) != 1 {
+		t.Fatalf("preview errors = %+v, want one role-forbidden error", preview.Errors)
+	}
+	if !strings.Contains(preview.Errors[0].Error, "role-forbidden") ||
+		!strings.Contains(preview.Errors[0].Error, `node role "attestor"`) {
+		t.Fatalf("preview error = %q, want attestor role-forbidden context", preview.Errors[0].Error)
+	}
+	if len(preview.Keys) != 1 || preview.Keys[0].Error == "" {
+		t.Fatalf("preview keys = %+v, want keyed role-forbidden error", preview.Keys)
+	}
+}
+
 func TestPreviewRestoreWrongPassphraseDoesNotLeakAddress(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
@@ -348,6 +378,31 @@ func TestRestoreKeyWritesStorePermissions(t *testing.T) {
 
 	assertStoreDirMode(t, paths.KeysDir(identityID))
 	assertFileMode(t, paths.KeyFilePath(identityID, address), fsutil.StoreFilePerm)
+}
+
+func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	componentKey, keyJSON := testAttestorComponentBackupKeyJSON(t)
+	keysDir := filepath.Join(t.TempDir(), "apb")
+	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll(apb) error = %v", err)
+	}
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, componentKey+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+	}
+
+	restorer := NewRestorer(paths, identityID).WithNodeRole(noderole.RoleSigner)
+	_, err := restorer.RestoreKey(keysDir, componentKey, testExportMasterKey, []byte("export-passphrase"))
+	if err == nil {
+		t.Fatal("RestoreKey() error = nil, want role-forbidden rejection")
+	}
+	if !strings.Contains(err.Error(), "role-forbidden") || !strings.Contains(err.Error(), keytypes.AttestorComponentEd25519V1) {
+		t.Fatalf("RestoreKey() error = %v, want component role-forbidden rejection", err)
+	}
+	if _, err := os.Stat(paths.KeyFilePath(identityID, componentKey)); !os.IsNotExist(err) {
+		t.Fatalf("restored component key stat error = %v, want not exist", err)
+	}
 }
 
 func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T) {
@@ -632,4 +687,34 @@ func writeManagedRestoreArchive(t *testing.T, paths storepaths.Paths, identityID
 		t.Fatalf("CreateTarGzArchive() error = %v", err)
 	}
 	return archivePath
+}
+
+func testAttestorComponentBackupKeyJSON(t *testing.T) (string, []byte) {
+	t.Helper()
+
+	publicKey := bytesOfLen(32, 0xab)
+	privateKey := bytesOfLen(64, 0xcd)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+	keyJSON, err := json.Marshal(apkeys.KeyPair{
+		FormatVersion: apkeys.CurrentKeyFormatVersion,
+		Category:      apkeys.CategoryComponent,
+		KeyType:       keytypes.AttestorComponentEd25519V1,
+		PublicKeyHex:  hex.EncodeToString(publicKey),
+		PrivateKeyHex: hex.EncodeToString(privateKey),
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal(component KeyPair) error = %v", err)
+	}
+	return componentKey, keyJSON
+}
+
+func bytesOfLen(n int, fill byte) []byte {
+	out := make([]byte, n)
+	for i := range out {
+		out[i] = fill
+	}
+	return out
 }

@@ -122,7 +122,7 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 		}
 	}
 
-	preview, err := backup.PreviewRestore(s.Deps.KeyPaths(), ir.ID(), archivePath, passphraseBytes)
+	preview, err := backup.PreviewRestoreWithNodeRole(s.Deps.KeyPaths(), ir.ID(), archivePath, passphraseBytes, ir.NodeRole())
 	if err != nil {
 		limiter.RecordFailure(ir.ID(), archivePath)
 		return adminproto.RestorePreviewResult{
@@ -228,6 +228,7 @@ func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBacku
 				}
 				warningAddress := address
 				restorer := backup.NewRestorer(s.Deps.KeyPaths(), ir.ID()).
+					WithNodeRole(ir.NodeRole()).
 					WithLogger(s.Deps.Logf).
 					WithWarningHandler(func(keyType, warning string) {
 						result.Warnings = append(result.Warnings, adminproto.RestoreWarning{
