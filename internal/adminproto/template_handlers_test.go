@@ -355,6 +355,7 @@ type adminProtoWrite struct {
 	Type       string `json:"type"`
 	ID         string `json:"id"`
 	Success    bool   `json:"success,omitempty"`
+	Target     string `json:"target,omitempty"`
 	PolicyYAML string `json:"policy_yaml,omitempty"`
 	Canonical  bool   `json:"canonical,omitempty"`
 	Code       string `json:"code,omitempty"`

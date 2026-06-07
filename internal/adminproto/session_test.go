@@ -71,6 +71,7 @@ type stubServices struct {
 	restoreBackupCalls     int
 	policySnapshotCalls    int
 	replacePolicyCalls     int
+	validatePolicyCalls    int
 	lastInstallTemplate    InstallLibraryTemplateRequest
 	lastShowInstalled      ShowInstalledTemplateRequest
 	lastShowLibrary        ShowLibraryTemplateRequest
@@ -87,7 +88,9 @@ type stubServices struct {
 	lastChangePassphrase   ChangeStorePassphraseRequest
 	lastPreviewRestore     PreviewRestoreRequest
 	lastRestoreBackup      RestoreBackupRequest
+	lastPolicySnapshot     PolicyTarget
 	lastReplacePolicy      ReplacePolicyRequest
+	lastValidatePolicy     ValidatePolicyRequest
 	listLibraryResult      ListLibraryTemplatesResult
 	installResult          InstallLibraryTemplateResult
 	listInstalledResult    ListInstalledTemplatesResult
@@ -109,6 +112,7 @@ type stubServices struct {
 	restoreBackupResult    RestoreBackupResult
 	policySnapshotResult   PolicySnapshot
 	replacePolicyResult    PolicySnapshot
+	validatePolicyResult   ValidatePolicyResult
 }
 
 func (s *stubServices) ProductIdentityRuntime() *identity.Runtime { return s.runtime }
@@ -162,10 +166,14 @@ func (s *stubServices) UpdateAdminSetting(ir *identity.Runtime, req UpdateAdminS
 func (s *stubServices) BuildPolicySettings(ir *identity.Runtime) PolicySettings {
 	return PolicySettings{}
 }
-func (s *stubServices) BuildPolicySnapshot(ir *identity.Runtime) PolicySnapshot {
+func (s *stubServices) BuildPolicySnapshot(ir *identity.Runtime, target PolicyTarget) PolicySnapshot {
 	s.policySnapshotCalls++
+	s.lastPolicySnapshot = target
 	if s.policySnapshotResult.IdentityID == "" {
 		s.policySnapshotResult.IdentityID = ir.ID()
+	}
+	if s.policySnapshotResult.Target == "" {
+		s.policySnapshotResult.Target = target
 	}
 	return s.policySnapshotResult
 }
@@ -175,7 +183,21 @@ func (s *stubServices) ReplacePolicy(ir *identity.Runtime, req ReplacePolicyRequ
 	if s.replacePolicyResult.IdentityID == "" {
 		s.replacePolicyResult.IdentityID = ir.ID()
 	}
+	if s.replacePolicyResult.Target == "" {
+		s.replacePolicyResult.Target = req.Target
+	}
 	return s.replacePolicyResult
+}
+func (s *stubServices) ValidatePolicy(ir *identity.Runtime, req ValidatePolicyRequest) ValidatePolicyResult {
+	s.validatePolicyCalls++
+	s.lastValidatePolicy = req
+	if s.validatePolicyResult.IdentityID == "" {
+		s.validatePolicyResult.IdentityID = ir.ID()
+	}
+	if s.validatePolicyResult.Target == "" {
+		s.validatePolicyResult.Target = req.Target
+	}
+	return s.validatePolicyResult
 }
 func (s *stubServices) UpdatePolicySetting(ir *identity.Runtime, req UpdatePolicySettingRequest) error {
 	return nil

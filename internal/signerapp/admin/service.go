@@ -218,15 +218,33 @@ func (s Service) BuildPolicySettings(ir *identity.Runtime) adminproto.PolicySett
 	}
 }
 
-func (s Service) BuildPolicySnapshot(ir *identity.Runtime) adminproto.PolicySnapshot {
+func (s Service) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
+	target = normalizeAdminPolicyTarget(target)
+	if target != adminproto.PolicyTargetSigner {
+		return adminproto.PolicySnapshot{
+			Success:    false,
+			Target:     target,
+			IdentityID: ir.ID(),
+			Code:       "policy_target_not_supported",
+			Error:      fmt.Sprintf("policy target %q is not supported by this signer service yet", target),
+		}
+	}
 	stored, _ := ir.PolicySnapshot()
-	return canonicalPolicySnapshot(ir.ID(), stored)
+	return canonicalPolicySnapshot(ir.ID(), target, stored)
 }
 
-func canonicalPolicySnapshot(identityID string, stored *policy.StoredConfig) adminproto.PolicySnapshot {
+func normalizeAdminPolicyTarget(target adminproto.PolicyTarget) adminproto.PolicyTarget {
+	if target == "" {
+		return adminproto.PolicyTargetSigner
+	}
+	return target
+}
+
+func canonicalPolicySnapshot(identityID string, target adminproto.PolicyTarget, stored *policy.StoredConfig) adminproto.PolicySnapshot {
 	if stored == nil {
 		return adminproto.PolicySnapshot{
 			Success:    false,
+			Target:     target,
 			IdentityID: identityID,
 			Code:       "policy_snapshot_unavailable",
 			Error:      "active stored policy snapshot is unavailable; reload or unlock the identity",
@@ -236,6 +254,7 @@ func canonicalPolicySnapshot(identityID string, stored *policy.StoredConfig) adm
 	if err != nil {
 		return adminproto.PolicySnapshot{
 			Success:    false,
+			Target:     target,
 			IdentityID: identityID,
 			Code:       "policy_snapshot_marshal_failed",
 			Error:      err.Error(),
@@ -244,6 +263,7 @@ func canonicalPolicySnapshot(identityID string, stored *policy.StoredConfig) adm
 	sum := sha256.Sum256(data)
 	return adminproto.PolicySnapshot{
 		Success:      true,
+		Target:       target,
 		IdentityID:   identityID,
 		PolicyYAML:   string(data),
 		PolicySHA256: fmt.Sprintf("%x", sum),
@@ -265,13 +285,18 @@ func newPolicyReplaceError(code string, err error) policyReplaceError {
 }
 
 func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
+	target := normalizeAdminPolicyTarget(req.Target)
 	fail := func(code, msg string) adminproto.PolicySnapshot {
 		return adminproto.PolicySnapshot{
 			Success:    false,
+			Target:     target,
 			IdentityID: ir.ID(),
 			Code:       code,
 			Error:      msg,
 		}
+	}
+	if target != adminproto.PolicyTargetSigner {
+		return fail("policy_target_not_supported", fmt.Sprintf("policy target %q is not supported by this signer service yet", target))
 	}
 
 	data := []byte(req.PolicyYAML)
@@ -288,7 +313,7 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 	err = s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		expectedSHA := strings.TrimSpace(req.ExpectedCurrentSHA256)
 		if expectedSHA != "" {
-			current := s.BuildPolicySnapshot(ir)
+			current := s.BuildPolicySnapshot(ir, target)
 			if !current.Success {
 				return policyReplaceError{code: current.Code, msg: current.Error}
 			}
@@ -341,7 +366,38 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 		return fail("policy_replace_failed", err.Error())
 	}
 
-	return canonicalPolicySnapshot(ir.ID(), storedSnapshot)
+	return canonicalPolicySnapshot(ir.ID(), target, storedSnapshot)
+}
+
+func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
+	target := normalizeAdminPolicyTarget(req.Target)
+	fail := func(code, msg string) adminproto.ValidatePolicyResult {
+		return adminproto.ValidatePolicyResult{
+			Success:    false,
+			Target:     target,
+			IdentityID: ir.ID(),
+			Code:       code,
+			Error:      msg,
+		}
+	}
+	if target != adminproto.PolicyTargetSigner {
+		return fail("policy_target_not_supported", fmt.Sprintf("policy target %q is not supported by this signer service yet", target))
+	}
+	if strings.TrimSpace(req.PolicyYAML) == "" {
+		return fail("empty_policy_yaml", "policy YAML is empty")
+	}
+	stored, err := policy.ParseStoredConfig([]byte(req.PolicyYAML))
+	if err != nil {
+		return fail("policy_parse_failed", err.Error())
+	}
+	if _, err := policyruntime.ApplyStoredConfig(s.Deps.DataDir(), s.Deps.Config(), stored); err != nil {
+		return fail("policy_validation_failed", fmt.Sprintf("invalid policy: %v", err))
+	}
+	return adminproto.ValidatePolicyResult{
+		Success:    true,
+		Target:     target,
+		IdentityID: ir.ID(),
+	}
 }
 
 func (s Service) defaultPolicyConfig() *policy.Config {

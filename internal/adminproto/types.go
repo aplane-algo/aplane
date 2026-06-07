@@ -3,7 +3,11 @@
 
 package adminproto
 
-import "github.com/aplane-algo/aplane/internal/signerapi"
+import (
+	"strings"
+
+	"github.com/aplane-algo/aplane/internal/signerapi"
+)
 
 // KeyInfo is the admin-domain view of a key listed over the admin protocol.
 type KeyInfo struct {
@@ -197,11 +201,30 @@ type PolicySettings struct {
 	MaxASAAmountsBetanet        string
 }
 
+// PolicyTarget identifies which policy document an admin policy operation uses.
+type PolicyTarget string
+
+const (
+	PolicyTargetSigner      PolicyTarget = "signer"
+	PolicyTargetAttestation PolicyTarget = "attestation"
+)
+
+// NormalizePolicyTarget maps the legacy omitted target to signer and trims the
+// raw protocol value. Target validity is enforced by the signer service.
+func NormalizePolicyTarget(raw string) PolicyTarget {
+	target := strings.ToLower(strings.TrimSpace(raw))
+	if target == "" {
+		return PolicyTargetSigner
+	}
+	return PolicyTarget(target)
+}
+
 // PolicySnapshot is the admin-domain read-only view of the active signer
 // policy. PolicyYAML is canonical YAML generated from the active stored policy
 // snapshot, not bytes read by the admin client.
 type PolicySnapshot struct {
 	Success      bool
+	Target       PolicyTarget
 	IdentityID   string
 	PolicyYAML   string
 	PolicySHA256 string
@@ -214,8 +237,26 @@ type PolicySnapshot struct {
 // whole file. ExpectedCurrentSHA256 is optional optimistic concurrency against
 // the canonical active snapshot.
 type ReplacePolicyRequest struct {
+	Target                PolicyTarget
 	PolicyYAML            string
 	ExpectedCurrentSHA256 string
+}
+
+// ValidatePolicyRequest is the admin-domain request to validate policy YAML
+// without replacing signer-owned files.
+type ValidatePolicyRequest struct {
+	Target     PolicyTarget
+	PolicyYAML string
+}
+
+// ValidatePolicyResult is the admin-domain response to a validation-only policy
+// request.
+type ValidatePolicyResult struct {
+	Success    bool
+	Target     PolicyTarget
+	IdentityID string
+	Code       string
+	Error      string
 }
 
 const (

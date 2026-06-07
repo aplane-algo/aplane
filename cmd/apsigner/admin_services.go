@@ -116,12 +116,16 @@ func (s signerAdminServices) BuildPolicySettings(ir *identity.Runtime) adminprot
 	return s.adminApp().BuildPolicySettings(ir)
 }
 
-func (s signerAdminServices) BuildPolicySnapshot(ir *identity.Runtime) adminproto.PolicySnapshot {
-	return s.adminApp().BuildPolicySnapshot(ir)
+func (s signerAdminServices) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
+	return s.adminApp().BuildPolicySnapshot(ir, target)
 }
 
 func (s signerAdminServices) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolicyRequest) adminproto.PolicySnapshot {
 	return s.adminApp().ReplacePolicy(ir, req)
+}
+
+func (s signerAdminServices) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
+	return s.adminApp().ValidatePolicy(ir, req)
 }
 
 func (s signerAdminServices) UpdatePolicySetting(ir *identity.Runtime, req adminproto.UpdatePolicySettingRequest) error {

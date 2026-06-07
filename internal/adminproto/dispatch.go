@@ -138,6 +138,14 @@ func (s *Session) Dispatch(raw []byte) bool {
 		}
 		s.HandleReplacePolicy(&msg)
 		return true
+	case protocol.MsgTypeValidatePolicy:
+		var msg protocol.ValidatePolicyMessage
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			sendInvalidRequest("invalid validate policy message")
+			return true
+		}
+		s.HandleValidatePolicy(&msg)
+		return true
 	case protocol.MsgTypeUpdatePolicySetting:
 		var msg protocol.UpdatePolicySettingMessage
 		if err := json.Unmarshal(raw, &msg); err != nil {

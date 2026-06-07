@@ -355,6 +355,7 @@ func ProtocolPolicySnapshotMessage(id string, snapshot PolicySnapshot) protocol.
 	return protocol.PolicySnapshotMessage{
 		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicySnapshot, ID: id},
 		Success:      snapshot.Success,
+		Target:       string(snapshot.Target),
 		IdentityID:   snapshot.IdentityID,
 		PolicyYAML:   snapshot.PolicyYAML,
 		PolicySHA256: snapshot.PolicySHA256,
@@ -368,12 +369,24 @@ func ProtocolReplacePolicyResultMessage(id string, snapshot PolicySnapshot) prot
 	return protocol.ReplacePolicyResultMessage{
 		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeReplacePolicyResult, ID: id},
 		Success:      snapshot.Success,
+		Target:       string(snapshot.Target),
 		IdentityID:   snapshot.IdentityID,
 		PolicyYAML:   snapshot.PolicyYAML,
 		PolicySHA256: snapshot.PolicySHA256,
 		Canonical:    snapshot.Canonical,
 		Code:         snapshot.Code,
 		Error:        snapshot.Error,
+	}
+}
+
+func ProtocolValidatePolicyResultMessage(id string, result ValidatePolicyResult) protocol.ValidatePolicyResultMessage {
+	return protocol.ValidatePolicyResultMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeValidatePolicyResult, ID: id},
+		Success:     result.Success,
+		Target:      string(result.Target),
+		IdentityID:  result.IdentityID,
+		Code:        result.Code,
+		Error:       result.Error,
 	}
 }
 

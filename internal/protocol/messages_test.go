@@ -85,6 +85,8 @@ func TestMessageTypeConstantsAreUnique(t *testing.T) {
 		MsgTypePolicySnapshot,
 		MsgTypeReplacePolicy,
 		MsgTypeReplacePolicyResult,
+		MsgTypeValidatePolicy,
+		MsgTypeValidatePolicyResult,
 		MsgTypeUpdatePolicySetting,
 		MsgTypeUpdatePolicySettingResult,
 		MsgTypeUpdatePolicyASAAmounts,
@@ -799,10 +801,12 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			name: "get_policy_snapshot",
 			msg: GetPolicySnapshotMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeGetPolicySnapshot, ID: "policy-snapshot-1"},
+				Target:      "attestation",
 			},
 			wantMap: map[string]any{
-				"type": MsgTypeGetPolicySnapshot,
-				"id":   "policy-snapshot-1",
+				"type":   MsgTypeGetPolicySnapshot,
+				"id":     "policy-snapshot-1",
+				"target": "attestation",
 			},
 		},
 		{
@@ -810,6 +814,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: PolicySnapshotMessage{
 				BaseMessage:  BaseMessage{Type: MsgTypePolicySnapshot, ID: "policy-snapshot-1"},
 				Success:      true,
+				Target:       "attestation",
 				IdentityID:   "default",
 				PolicyYAML:   "reject_foreign_rekey: true\n",
 				PolicySHA256: "abc123",
@@ -819,6 +824,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"type":          MsgTypePolicySnapshot,
 				"id":            "policy-snapshot-1",
 				"success":       true,
+				"target":        "attestation",
 				"identity_id":   "default",
 				"policy_yaml":   "reject_foreign_rekey: true\n",
 				"policy_sha256": "abc123",
@@ -829,12 +835,14 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			name: "replace_policy",
 			msg: ReplacePolicyMessage{
 				BaseMessage:           BaseMessage{Type: MsgTypeReplacePolicy, ID: "policy-replace-1"},
+				Target:                "attestation",
 				PolicyYAML:            "reject_foreign_rekey: false\n",
 				ExpectedCurrentSHA256: "abc123",
 			},
 			wantMap: map[string]any{
 				"type":                    MsgTypeReplacePolicy,
 				"id":                      "policy-replace-1",
+				"target":                  "attestation",
 				"policy_yaml":             "reject_foreign_rekey: false\n",
 				"expected_current_sha256": "abc123",
 			},
@@ -844,6 +852,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: ReplacePolicyResultMessage{
 				BaseMessage:  BaseMessage{Type: MsgTypeReplacePolicyResult, ID: "policy-replace-1"},
 				Success:      true,
+				Target:       "attestation",
 				IdentityID:   "default",
 				PolicyYAML:   "reject_foreign_rekey: false\n",
 				PolicySHA256: "def456",
@@ -853,10 +862,41 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"type":          MsgTypeReplacePolicyResult,
 				"id":            "policy-replace-1",
 				"success":       true,
+				"target":        "attestation",
 				"identity_id":   "default",
 				"policy_yaml":   "reject_foreign_rekey: false\n",
 				"policy_sha256": "def456",
 				"canonical":     true,
+			},
+		},
+		{
+			name: "validate_policy",
+			msg: ValidatePolicyMessage{
+				BaseMessage: BaseMessage{Type: MsgTypeValidatePolicy, ID: "policy-validate-1"},
+				Target:      "attestation",
+				PolicyYAML:  "attestation:\n  transfer_policy:\n    schema_version: 1\n",
+			},
+			wantMap: map[string]any{
+				"type":        MsgTypeValidatePolicy,
+				"id":          "policy-validate-1",
+				"target":      "attestation",
+				"policy_yaml": "attestation:\n  transfer_policy:\n    schema_version: 1\n",
+			},
+		},
+		{
+			name: "validate_policy_result",
+			msg: ValidatePolicyResultMessage{
+				BaseMessage: BaseMessage{Type: MsgTypeValidatePolicyResult, ID: "policy-validate-1"},
+				Success:     true,
+				Target:      "attestation",
+				IdentityID:  "default",
+			},
+			wantMap: map[string]any{
+				"type":        MsgTypeValidatePolicyResult,
+				"id":          "policy-validate-1",
+				"success":     true,
+				"target":      "attestation",
+				"identity_id": "default",
 			},
 		},
 		{

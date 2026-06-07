@@ -65,7 +65,7 @@ func (s *Session) HandleGetPolicySnapshot(msg *protocol.GetPolicySnapshotMessage
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
 		return
 	}
-	snapshot := s.settingsServices.BuildPolicySnapshot(ir)
+	snapshot := s.settingsServices.BuildPolicySnapshot(ir, NormalizePolicyTarget(msg.Target))
 	_ = s.WriteJSON(ProtocolPolicySnapshotMessage(msg.ID, snapshot))
 }
 
@@ -75,10 +75,23 @@ func (s *Session) HandleReplacePolicy(msg *protocol.ReplacePolicyMessage) {
 		return
 	}
 	result := s.settingsServices.ReplacePolicy(ir, ReplacePolicyRequest{
+		Target:                NormalizePolicyTarget(msg.Target),
 		PolicyYAML:            msg.PolicyYAML,
 		ExpectedCurrentSHA256: msg.ExpectedCurrentSHA256,
 	})
 	_ = s.WriteJSON(ProtocolReplacePolicyResultMessage(msg.ID, result))
+}
+
+func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
+	ir := s.productOrBoundRuntime()
+	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
+		return
+	}
+	result := s.settingsServices.ValidatePolicy(ir, ValidatePolicyRequest{
+		Target:     NormalizePolicyTarget(msg.Target),
+		PolicyYAML: msg.PolicyYAML,
+	})
+	_ = s.WriteJSON(ProtocolValidatePolicyResultMessage(msg.ID, result))
 }
 
 func (s *Session) HandleUpdatePolicySetting(msg *protocol.UpdatePolicySettingMessage) {

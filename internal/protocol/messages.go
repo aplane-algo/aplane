@@ -106,6 +106,8 @@ const (
 	MsgTypePolicySnapshot            = "policy_snapshot"              // Server → client: active read-only policy snapshot
 	MsgTypeReplacePolicy             = "replace_policy"               // Client → server: wholesale replace policy.yaml
 	MsgTypeReplacePolicyResult       = "replace_policy_result"        // Server → client: replacement result and active snapshot
+	MsgTypeValidatePolicy            = "validate_policy"              // Client → server: validate policy YAML without writing
+	MsgTypeValidatePolicyResult      = "validate_policy_result"       // Server → client: validation result
 	MsgTypeUpdatePolicySetting       = "update_policy_setting"        // Client → server: change a policy setting
 	MsgTypeUpdatePolicySettingResult = "update_policy_setting_result" // Server → client: result
 	MsgTypeUpdatePolicyASAAmounts    = "update_policy_asa_amounts"    // Client → server: atomically change transfer guards
@@ -816,6 +818,7 @@ type PolicySettingsMessage struct {
 // synthesized from local apadmin files.
 type GetPolicySnapshotMessage struct {
 	BaseMessage
+	Target string `json:"target,omitempty"`
 }
 
 // PolicySnapshotMessage contains the active signer policy snapshot as canonical
@@ -823,6 +826,7 @@ type GetPolicySnapshotMessage struct {
 type PolicySnapshotMessage struct {
 	BaseMessage
 	Success      bool   `json:"success"`
+	Target       string `json:"target,omitempty"`
 	IdentityID   string `json:"identity_id,omitempty"`
 	PolicyYAML   string `json:"policy_yaml,omitempty"`
 	PolicySHA256 string `json:"policy_sha256,omitempty"`
@@ -837,6 +841,7 @@ type PolicySnapshotMessage struct {
 // since the file was previewed.
 type ReplacePolicyMessage struct {
 	BaseMessage
+	Target                string `json:"target,omitempty"`
 	PolicyYAML            string `json:"policy_yaml"`
 	ExpectedCurrentSHA256 string `json:"expected_current_sha256,omitempty"`
 }
@@ -847,12 +852,30 @@ type ReplacePolicyMessage struct {
 type ReplacePolicyResultMessage struct {
 	BaseMessage
 	Success      bool   `json:"success"`
+	Target       string `json:"target,omitempty"`
 	IdentityID   string `json:"identity_id,omitempty"`
 	PolicyYAML   string `json:"policy_yaml,omitempty"`
 	PolicySHA256 string `json:"policy_sha256,omitempty"`
 	Canonical    bool   `json:"canonical,omitempty"`
 	Code         string `json:"code,omitempty"`
 	Error        string `json:"error,omitempty"`
+}
+
+// ValidatePolicyMessage requests policy validation without mutating signer-owned files.
+type ValidatePolicyMessage struct {
+	BaseMessage
+	Target     string `json:"target,omitempty"`
+	PolicyYAML string `json:"policy_yaml"`
+}
+
+// ValidatePolicyResultMessage is the response to a validation-only policy request.
+type ValidatePolicyResultMessage struct {
+	BaseMessage
+	Success    bool   `json:"success"`
+	Target     string `json:"target,omitempty"`
+	IdentityID string `json:"identity_id,omitempty"`
+	Code       string `json:"code,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // UpdatePolicySettingMessage requests a change to a single policy setting.

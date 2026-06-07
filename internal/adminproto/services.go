@@ -25,8 +25,9 @@ type SettingsServices interface {
 	BuildAdminSettings(ir *identity.Runtime) AdminSettings
 	UpdateAdminSetting(ir *identity.Runtime, req UpdateAdminSettingRequest) error
 	BuildPolicySettings(ir *identity.Runtime) PolicySettings
-	BuildPolicySnapshot(ir *identity.Runtime) PolicySnapshot
+	BuildPolicySnapshot(ir *identity.Runtime, target PolicyTarget) PolicySnapshot
 	ReplacePolicy(ir *identity.Runtime, req ReplacePolicyRequest) PolicySnapshot
+	ValidatePolicy(ir *identity.Runtime, req ValidatePolicyRequest) ValidatePolicyResult
 	UpdatePolicySetting(ir *identity.Runtime, req UpdatePolicySettingRequest) error
 	UpdatePolicyASAAmounts(ir *identity.Runtime, req UpdatePolicyASAAmountsRequest) error
 	SearchASAMetadata(ir *identity.Runtime, req SearchASAMetadataRequest) ASAMetadataResults

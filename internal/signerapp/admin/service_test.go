@@ -329,7 +329,7 @@ func TestBuildPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
 	effective.MaxFeeMicroAlgos = maxFee
 	ir.SetPolicyState(stored, effective)
 
-	snapshot := svc.BuildPolicySnapshot(ir)
+	snapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetSigner)
 	if !snapshot.Success {
 		t.Fatalf("BuildPolicySnapshot() success = false, code %q error %q", snapshot.Code, snapshot.Error)
 	}
@@ -353,7 +353,7 @@ func TestBuildPolicySnapshotReportsUnavailableSnapshot(t *testing.T) {
 	svc, ir, _ := setupAdminService(t)
 	ir.SetPolicy(policy.DefaultConfig())
 
-	snapshot := svc.BuildPolicySnapshot(ir)
+	snapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetSigner)
 	if snapshot.Success {
 		t.Fatal("BuildPolicySnapshot() success = true, want false without stored snapshot")
 	}
