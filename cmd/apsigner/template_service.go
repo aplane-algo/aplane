@@ -49,7 +49,7 @@ func (fs *Signer) newReloadServiceForIdentity(ir *identity.Runtime, session *key
 			return nil
 		},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
-			return identity.ValidateKeyTypesAllowed(ir.Config().Mode(), keyTypes)
+			return identity.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes)
 		},
 		PublishSnapshot:   ir.PublishSnapshot,
 		AuditLog:          auditLog,

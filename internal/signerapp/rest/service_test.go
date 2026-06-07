@@ -25,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
@@ -141,6 +142,10 @@ func rejectAllSimulateDeps(t *testing.T) Dependencies {
 }
 
 func setupIdentityRuntime(t *testing.T, unlocked bool) *identity.Runtime {
+	return setupIdentityRuntimeWithRole(t, unlocked, noderole.RoleSigner)
+}
+
+func setupIdentityRuntimeWithRole(t *testing.T, unlocked bool, role noderole.Role) *identity.Runtime {
 	t.Helper()
 
 	tmpDir := t.TempDir()
@@ -164,6 +169,7 @@ func setupIdentityRuntime(t *testing.T, unlocked bool) *identity.Runtime {
 		KeyStore:      ks,
 		KeyPaths:      keyPaths,
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
+		NodeRole:      role,
 	})
 	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
 		return nil, reloadKeysForTest(ir, keyPaths)
@@ -229,8 +235,7 @@ func TestServiceSignGroupDelegates(t *testing.T) {
 }
 
 func TestServiceSignComponentDelegates(t *testing.T) {
-	ir := setupIdentityRuntime(t, true)
-	ir.Config().SetMode(identity.ModeAttestation)
+	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleAttestor)
 	componentKey := strings.Repeat("ab", 32)
 	stub := &stubSigningService{
 		component: &signersigning.ComponentSignResult{
@@ -524,8 +529,7 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 }
 
 func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
-	ir := setupIdentityRuntime(t, true)
-	ir.Config().SetMode(identity.ModeAttestation)
+	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleAttestor)
 	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{}}}
 
 	status, genResp := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: keytypes.AttestorComponentEd25519V1})
@@ -651,28 +655,28 @@ func TestServiceKeyTypesForIdentityFiltersByMode(t *testing.T) {
 		t.Fatalf("KeyTypesForIdentity(signing) error = %v", svcErr)
 	}
 	if !keyTypesResponseContains(resp.KeyTypes, "ed25519") {
-		t.Fatal("signing mode key types missing ed25519")
+		t.Fatal("signer node key types missing ed25519")
 	}
 	if keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentEd25519V1) {
-		t.Fatalf("signing mode key types included %s", keytypes.AttestorComponentEd25519V1)
+		t.Fatalf("signer node key types included %s", keytypes.AttestorComponentEd25519V1)
 	}
 	if keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentFalcon1024V1) {
-		t.Fatalf("signing mode key types included %s", keytypes.AttestorComponentFalcon1024V1)
+		t.Fatalf("signer node key types included %s", keytypes.AttestorComponentFalcon1024V1)
 	}
 
-	ir.Config().SetMode(identity.ModeAttestation)
+	ir = setupIdentityRuntimeWithRole(t, false, noderole.RoleAttestor)
 	resp, svcErr = Service{}.KeyTypesForIdentity(ir)
 	if svcErr != nil {
-		t.Fatalf("KeyTypesForIdentity(attestation) error = %v", svcErr)
+		t.Fatalf("KeyTypesForIdentity(attestor) error = %v", svcErr)
 	}
 	if keyTypesResponseContains(resp.KeyTypes, "ed25519") {
-		t.Fatal("attestation mode key types included ed25519")
+		t.Fatal("attestor node key types included ed25519")
 	}
 	if !keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentEd25519V1) {
-		t.Fatalf("attestation mode key types missing %s", keytypes.AttestorComponentEd25519V1)
+		t.Fatalf("attestor node key types missing %s", keytypes.AttestorComponentEd25519V1)
 	}
 	if !keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentFalcon1024V1) {
-		t.Fatalf("attestation mode key types missing %s", keytypes.AttestorComponentFalcon1024V1)
+		t.Fatalf("attestor node key types missing %s", keytypes.AttestorComponentFalcon1024V1)
 	}
 }
 
@@ -879,11 +883,13 @@ teal: |
 		ID:            "alice",
 		KeyPaths:      paths,
 		Authenticator: auth.NewTokenAuthenticator("alice-token"),
+		NodeRole:      noderole.RoleSigner,
 	})
 	bob := identity.New(identity.Config{
 		ID:            "bob",
 		KeyPaths:      paths,
 		Authenticator: auth.NewTokenAuthenticator("bob-token"),
+		NodeRole:      noderole.RoleSigner,
 	})
 
 	aliceResp, svcErr := Service{}.KeyTypesForIdentity(alice)
@@ -1052,6 +1058,7 @@ func restMatrixIdentity(paths storepaths.Paths, identityID string) *identity.Run
 		ID:            identityID,
 		KeyPaths:      paths,
 		Authenticator: auth.NewTokenAuthenticator(identityID + "-token"),
+		NodeRole:      noderole.RoleSigner,
 	})
 }
 
@@ -1217,30 +1224,29 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 	}
 }
 
-func TestServiceModeGatesEndpointRoles(t *testing.T) {
+func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 	signingOnly := setupIdentityRuntime(t, true)
 	componentReq := signerapi.ComponentSignRequest{Role: signerapi.ComponentSignRoleAttestor}
 	if _, err := (Service{}).SignComponent(context.Background(), signingOnly, componentReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "attestor component signing") {
-		t.Fatalf("SignComponent(attestor role in signing mode) error = %#v, want forbidden mode error", err)
+		t.Fatalf("SignComponent(attestor role in signer node) error = %#v, want forbidden node role error", err)
 	}
 
-	attestationOnly := setupIdentityRuntime(t, true)
-	attestationOnly.Config().SetMode(identity.ModeAttestation)
-	if _, err := (Service{}).SignGroup(context.Background(), attestationOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account signing") {
-		t.Fatalf("SignGroup(attestation mode) error = %#v, want forbidden mode error", err)
+	attestorOnly := setupIdentityRuntimeWithRole(t, true, noderole.RoleAttestor)
+	if _, err := (Service{}).SignGroup(context.Background(), attestorOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account signing") {
+		t.Fatalf("SignGroup(attestor node) error = %#v, want forbidden node role error", err)
 	}
-	if _, err := (Service{}).Plan(attestationOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "planning") {
-		t.Fatalf("Plan(attestation mode) error = %#v, want forbidden mode error", err)
+	if _, err := (Service{}).Plan(attestorOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "planning") {
+		t.Fatalf("Plan(attestor node) error = %#v, want forbidden node role error", err)
 	}
-	if _, err := (Service{}).Simulate(context.Background(), attestationOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "simulation") {
-		t.Fatalf("Simulate(attestation mode) error = %#v, want forbidden mode error", err)
+	if _, err := (Service{}).Simulate(context.Background(), attestorOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "simulation") {
+		t.Fatalf("Simulate(attestor node) error = %#v, want forbidden node role error", err)
 	}
 	userReq := signerapi.ComponentSignRequest{Role: signerapi.ComponentSignRoleUser}
-	if _, err := (Service{}).SignComponent(context.Background(), attestationOnly, userReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "user component signing") {
-		t.Fatalf("SignComponent(user role in attestation mode) error = %#v, want forbidden mode error", err)
+	if _, err := (Service{}).SignComponent(context.Background(), attestorOnly, userReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "user component signing") {
+		t.Fatalf("SignComponent(user role in attestor node) error = %#v, want forbidden node role error", err)
 	}
-	if _, err := (Service{}).AssembleAttested(context.Background(), attestationOnly, signerapi.AttestedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "attested assembly") {
-		t.Fatalf("AssembleAttested(attestation mode) error = %#v, want forbidden mode error", err)
+	if _, err := (Service{}).AssembleAttested(context.Background(), attestorOnly, signerapi.AttestedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "attested assembly") {
+		t.Fatalf("AssembleAttested(attestor node) error = %#v, want forbidden node role error", err)
 	}
 }
 

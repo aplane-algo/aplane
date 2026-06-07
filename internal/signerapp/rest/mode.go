@@ -6,37 +6,38 @@ package rest
 import (
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
 func requireAccountSigningMode(ir *identity.Runtime, operation string) *signersigning.ServiceError {
-	mode := ir.Config().Mode()
-	if mode == identity.ModeAttestation {
+	role := ir.NodeRole()
+	if role == noderole.RoleAttestor {
 		return &signersigning.ServiceError{
 			Kind:    signersigning.ErrorForbidden,
-			Message: fmt.Sprintf("identity mode %q does not allow %s", mode, operation),
+			Message: fmt.Sprintf("node role %q does not allow %s", role, operation),
 		}
 	}
 	return nil
 }
 
 func requireComponentRoleMode(ir *identity.Runtime, role signerapi.ComponentSignRole) *signersigning.ServiceError {
-	mode := ir.Config().Mode()
+	nodeRole := ir.NodeRole()
 	switch role {
 	case signerapi.ComponentSignRoleAttestor:
-		if mode == identity.ModeSigning {
+		if nodeRole == noderole.RoleSigner {
 			return &signersigning.ServiceError{
 				Kind:    signersigning.ErrorForbidden,
-				Message: fmt.Sprintf("identity mode %q does not allow attestor component signing", mode),
+				Message: fmt.Sprintf("node role %q does not allow attestor component signing", nodeRole),
 			}
 		}
 	case signerapi.ComponentSignRoleUser:
-		if mode == identity.ModeAttestation {
+		if nodeRole == noderole.RoleAttestor {
 			return &signersigning.ServiceError{
 				Kind:    signersigning.ErrorForbidden,
-				Message: fmt.Sprintf("identity mode %q does not allow user component signing", mode),
+				Message: fmt.Sprintf("node role %q does not allow user component signing", nodeRole),
 			}
 		}
 	}

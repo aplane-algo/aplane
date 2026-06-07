@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
@@ -137,7 +138,7 @@ func (s Service) BuildKeyTypesForIdentity(ir *identity.Runtime) ([]signerapi.Key
 	if err != nil {
 		return nil, err
 	}
-	validTypes = filterKeyTypesForMode(validTypes, ir.Config().Mode())
+	validTypes = filterKeyTypesForNodeRole(validTypes, ir.NodeRole())
 	enabled, err := keytypestate.ListEnabled(ir.KeyPaths(), ir.ID())
 	if err != nil {
 		return nil, err
@@ -147,10 +148,10 @@ func (s Service) BuildKeyTypesForIdentity(ir *identity.Runtime) ([]signerapi.Key
 	return infos, nil
 }
 
-func filterKeyTypesForMode(validTypes []string, mode identity.Mode) []string {
+func filterKeyTypesForNodeRole(validTypes []string, role noderole.Role) []string {
 	filtered := make([]string, 0, len(validTypes))
 	for _, keyType := range validTypes {
-		if mode.AllowsKeyType(keyType) {
+		if identity.NodeRoleAllowsKeyType(role, keyType) {
 			filtered = append(filtered, keyType)
 		}
 	}

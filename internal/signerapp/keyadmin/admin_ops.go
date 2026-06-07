@@ -128,7 +128,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 	if ir == nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
 	}
-	if modeErr := identity.ValidateKeyTypeAllowed(ir.Config().Mode(), keyType); modeErr != nil {
+	if modeErr := identity.ValidateKeyTypeAllowedForNodeRole(ir.NodeRole(), keyType); modeErr != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: modeErr.Error()}
 	}
 
