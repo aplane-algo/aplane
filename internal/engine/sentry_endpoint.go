@@ -24,102 +24,102 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type attestorComponentClient interface {
+type sentryComponentClient interface {
 	GetKeysWithContext(context.Context) (*signerapi.KeysResult, error)
 	RequestComponentSignWithContext(context.Context, signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error)
 }
 
 var (
-	// ErrAttestorDiscoveryInvalidMetadata marks malformed attestor component-key
+	// ErrSentryDiscoveryInvalidMetadata marks malformed sentry component-key
 	// metadata returned by an endpoint's /keys response.
-	ErrAttestorDiscoveryInvalidMetadata = errors.New("invalid sentry discovery metadata")
+	ErrSentryDiscoveryInvalidMetadata = errors.New("invalid sentry discovery metadata")
 
-	// ErrAttestorDiscoveryUnavailable marks a temporary failure to query an
+	// ErrSentryDiscoveryUnavailable marks a temporary failure to query an
 	// endpoint, such as a network outage, timeout, or server-side 5xx response.
-	ErrAttestorDiscoveryUnavailable = errors.New("attestor endpoint unavailable")
+	ErrSentryDiscoveryUnavailable = errors.New("sentry endpoint unavailable")
 
-	// ErrAttestorDiscoveryLocked marks an endpoint whose signer is reachable but
+	// ErrSentryDiscoveryLocked marks an endpoint whose signer is reachable but
 	// locked, so its /keys inventory cannot currently be queried.
-	ErrAttestorDiscoveryLocked = errors.New("attestor endpoint signer locked")
+	ErrSentryDiscoveryLocked = errors.New("sentry endpoint signer locked")
 
-	// ErrAttestorDiscoveryAuth marks missing, rejected, or invalid endpoint
+	// ErrSentryDiscoveryAuth marks missing, rejected, or invalid endpoint
 	// credentials.
-	ErrAttestorDiscoveryAuth = errors.New("sentry endpoint authentication failed")
+	ErrSentryDiscoveryAuth = errors.New("sentry endpoint authentication failed")
 
-	// ErrAttestorDiscoveryConfig marks endpoint configuration that is invalid or
-	// incompatible with attestor discovery.
-	ErrAttestorDiscoveryConfig = errors.New("attestor endpoint configuration invalid")
+	// ErrSentryDiscoveryConfig marks endpoint configuration that is invalid or
+	// incompatible with sentry discovery.
+	ErrSentryDiscoveryConfig = errors.New("sentry endpoint configuration invalid")
 
-	errAttestorEndpointAuth   = errors.New("attestor endpoint auth")
-	errAttestorEndpointConfig = errors.New("attestor endpoint config")
+	errSentryEndpointAuth   = errors.New("sentry endpoint auth")
+	errSentryEndpointConfig = errors.New("sentry endpoint config")
 )
 
-type resolvedAttestorEndpoint struct {
-	client  attestorComponentClient
+type resolvedSentryEndpoint struct {
+	client  sentryComponentClient
 	source  string
 	cleanup func()
 }
 
-type attestorEndpointLockedError struct {
+type sentryEndpointLockedError struct {
 	source string
 }
 
-func (e attestorEndpointLockedError) Error() string {
+func (e sentryEndpointLockedError) Error() string {
 	return e.source + " is locked"
 }
 
-func (e attestorEndpointLockedError) Unwrap() error {
-	return ErrAttestorDiscoveryLocked
+func (e sentryEndpointLockedError) Unwrap() error {
+	return ErrSentryDiscoveryLocked
 }
 
-// DiscoveredAttestorComponentKey is public attestor component-key metadata
+// DiscoveredSentryComponentKey is public sentry component-key metadata
 // advertised by a signer endpoint through /keys.
-type DiscoveredAttestorComponentKey struct {
+type DiscoveredSentryComponentKey struct {
 	PublicKey    string
 	ComponentKey string
 	KeyType      string
 }
 
-func (r *resolvedAttestorEndpoint) close() {
+func (r *resolvedSentryEndpoint) close() {
 	if r != nil && r.cleanup != nil {
 		r.cleanup()
 	}
 }
 
-func (e *Engine) resolveAttestorEndpoint(ctx context.Context, attestorKey attestorRequestKey) (*resolvedAttestorEndpoint, error) {
+func (e *Engine) resolveSentryEndpoint(ctx context.Context, attestorKey attestorRequestKey) (*resolvedSentryEndpoint, error) {
 	if endpoint, ok := e.AttestorEndpoints[attestorKey.PublicKey]; ok {
 		if endpoint.URL == "self" {
-			if err := verifyAttestorEndpointAdvertises(ctx, e.Connection, attestorKey, "configured self attestor endpoint"); err != nil {
+			if err := verifySentryEndpointAdvertises(ctx, e.Connection, attestorKey, "configured self sentry endpoint"); err != nil {
 				return nil, err
 			}
-			return &resolvedAttestorEndpoint{client: e.Connection, source: "self"}, nil
+			return &resolvedSentryEndpoint{client: e.Connection, source: "self"}, nil
 		}
-		client, cleanup, source, err := e.connectConfiguredAttestorEndpoint(ctx, endpoint)
+		client, cleanup, source, err := e.connectConfiguredSentryEndpoint(ctx, endpoint)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect attestor endpoint for public key %s: %w", attestorKey.PublicKey, err)
+			return nil, fmt.Errorf("failed to connect sentry endpoint for public key %s: %w", attestorKey.PublicKey, err)
 		}
-		resolved := &resolvedAttestorEndpoint{client: client, source: source, cleanup: cleanup}
-		if err := verifyAttestorEndpointAdvertises(ctx, client, attestorKey, source); err != nil {
+		resolved := &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
+		if err := verifySentryEndpointAdvertises(ctx, client, attestorKey, source); err != nil {
 			resolved.close()
 			return nil, err
 		}
 		return resolved, nil
 	}
 
-	if err := verifyAttestorEndpointAdvertises(ctx, e.Connection, attestorKey, "current signer"); err != nil {
-		return nil, fmt.Errorf("no attestor endpoint configured for public key %s and current signer does not advertise a matching component key: %w", attestorKey.PublicKey, err)
+	if err := verifySentryEndpointAdvertises(ctx, e.Connection, attestorKey, "current signer"); err != nil {
+		return nil, fmt.Errorf("no sentry endpoint configured for public key %s and current signer does not advertise a matching component key: %w", attestorKey.PublicKey, err)
 	}
-	return &resolvedAttestorEndpoint{client: e.Connection, source: "current signer"}, nil
+	return &resolvedSentryEndpoint{client: e.Connection, source: "current signer"}, nil
 }
 
-func (e *Engine) connectConfiguredAttestorEndpoint(ctx context.Context, endpoint config.AttestorEndpointConfig) (*signerclient.Client, func(), string, error) {
-	token, err := readAttestorEndpointToken(endpoint.TokenFile)
+func (e *Engine) connectConfiguredSentryEndpoint(ctx context.Context, endpoint config.AttestorEndpointConfig) (*signerclient.Client, func(), string, error) {
+	token, err := readSentryEndpointToken(endpoint.TokenFile)
 	if err != nil {
 		return nil, nil, "", err
 	}
 	parsed, err := url.Parse(endpoint.URL)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("%w: invalid endpoint URL: %v", errAttestorEndpointConfig, err)
+		return nil, nil, "", fmt.Errorf("%w: invalid endpoint URL: %v", errSentryEndpointConfig, err)
 	}
 
 	switch parsed.Scheme {
@@ -130,7 +130,7 @@ func (e *Engine) connectConfiguredAttestorEndpoint(ctx context.Context, endpoint
 		if parsed.Port() != "" {
 			port, err := strconv.Atoi(parsed.Port())
 			if err != nil || port <= 0 || port > 65535 {
-				return nil, nil, "", fmt.Errorf("%w: invalid SSH port %q", errAttestorEndpointConfig, parsed.Port())
+				return nil, nil, "", fmt.Errorf("%w: invalid SSH port %q", errSentryEndpointConfig, parsed.Port())
 			}
 			sshPort = port
 		}
@@ -139,7 +139,7 @@ func (e *Engine) connectConfiguredAttestorEndpoint(ctx context.Context, endpoint
 			signerPort = config.DefaultRESTPort
 		}
 		progressOut := e.signerProgressWriter()
-		client, cleanup, err := connect.ConnectAttestorWithTunnel(ctx, connect.AttestorTunnelConfig{
+		client, cleanup, err := connect.ConnectSentryWithTunnel(ctx, connect.SentryTunnelConfig{
 			Host:           parsed.Hostname(),
 			SSHPort:        sshPort,
 			LocalPort:      endpoint.LocalPort,
@@ -154,14 +154,14 @@ func (e *Engine) connectConfiguredAttestorEndpoint(ctx context.Context, endpoint
 		}
 		return client, cleanup, endpoint.URL, nil
 	default:
-		return nil, nil, "", fmt.Errorf("%w: unsupported endpoint URL scheme %q", errAttestorEndpointConfig, parsed.Scheme)
+		return nil, nil, "", fmt.Errorf("%w: unsupported endpoint URL scheme %q", errSentryEndpointConfig, parsed.Scheme)
 	}
 }
 
-// DiscoverAttestorComponentKeysWithContext queries one endpoint and returns
+// DiscoverSentryComponentKeysWithContext queries one endpoint and returns
 // sentry component public keys that can be mapped for guarded signing.
-func (e *Engine) DiscoverAttestorComponentKeysWithContext(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredAttestorComponentKey, error) {
-	var client attestorComponentClient
+func (e *Engine) DiscoverSentryComponentKeysWithContext(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredSentryComponentKey, error) {
+	var client sentryComponentClient
 	var cleanup func()
 	if endpoint.URL == "self" {
 		client = e.Connection
@@ -174,9 +174,9 @@ func (e *Engine) DiscoverAttestorComponentKeysWithContext(ctx context.Context, e
 			IdentityFile:   endpoint.IdentityFile,
 			KnownHostsPath: endpoint.KnownHostsPath,
 		}
-		c, closeFn, _, err := e.connectConfiguredAttestorEndpoint(ctx, resolved)
+		c, closeFn, _, err := e.connectConfiguredSentryEndpoint(ctx, resolved)
 		if err != nil {
-			return nil, classifyAttestorDiscoveryConnectError(err)
+			return nil, classifySentryDiscoveryConnectError(err)
 		}
 		client = c
 		cleanup = closeFn
@@ -187,65 +187,65 @@ func (e *Engine) DiscoverAttestorComponentKeysWithContext(ctx context.Context, e
 
 	keys, err := client.GetKeysWithContext(ctx)
 	if err != nil {
-		return nil, classifyAttestorDiscoveryQueryError(err)
+		return nil, classifySentryDiscoveryQueryError(err)
 	}
 	if keys.Locked {
-		return nil, fmt.Errorf("%w", ErrAttestorDiscoveryLocked)
+		return nil, fmt.Errorf("%w", ErrSentryDiscoveryLocked)
 	}
-	return discoverAttestorComponentKeys(keys.Keys)
+	return discoverSentryComponentKeys(keys.Keys)
 }
 
-func readAttestorEndpointToken(path string) (string, error) {
+func readSentryEndpointToken(path string) (string, error) {
 	token, err := tokenfile.ReadToken(path)
 	if err != nil {
-		return "", fmt.Errorf("%w: failed to read attestor token file %s: %v", errAttestorEndpointAuth, path, err)
+		return "", fmt.Errorf("%w: failed to read sentry token file %s: %v", errSentryEndpointAuth, path, err)
 	}
 	if token == "" {
-		return "", fmt.Errorf("%w: attestor token file %s is empty", errAttestorEndpointAuth, path)
+		return "", fmt.Errorf("%w: sentry token file %s is empty", errSentryEndpointAuth, path)
 	}
 	return token, nil
 }
 
-func classifyAttestorDiscoveryConnectError(err error) error {
+func classifySentryDiscoveryConnectError(err error) error {
 	switch {
-	case errors.Is(err, errAttestorEndpointAuth):
-		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryAuth, err)
-	case errors.Is(err, errAttestorEndpointConfig):
-		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryConfig, err)
+	case errors.Is(err, errSentryEndpointAuth):
+		return fmt.Errorf("%w: %w", ErrSentryDiscoveryAuth, err)
+	case errors.Is(err, errSentryEndpointConfig):
+		return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
 	case isNetworkUnavailableError(err):
-		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrSentryDiscoveryUnavailable, err)
 	}
 
 	var sshAuthErr *ssh.ServerAuthError
 	if errors.As(err, &sshAuthErr) {
-		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryAuth, err)
+		return fmt.Errorf("%w: %w", ErrSentryDiscoveryAuth, err)
 	}
-	return fmt.Errorf("%w: %w", ErrAttestorDiscoveryConfig, err)
+	return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
 }
 
-func classifyAttestorDiscoveryQueryError(err error) error {
+func classifySentryDiscoveryQueryError(err error) error {
 	if errors.Is(err, signerclient.ErrInvalidResponse) {
-		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryInvalidMetadata, err)
+		return fmt.Errorf("%w: %w", ErrSentryDiscoveryInvalidMetadata, err)
 	}
 
 	var statusErr *signerclient.HTTPStatusError
 	if errors.As(err, &statusErr) {
 		switch {
 		case statusErr.StatusCode == http.StatusUnauthorized || statusErr.StatusCode == http.StatusForbidden:
-			return fmt.Errorf("%w: %w", ErrAttestorDiscoveryAuth, err)
+			return fmt.Errorf("%w: %w", ErrSentryDiscoveryAuth, err)
 		case statusErr.StatusCode == http.StatusRequestTimeout ||
 			statusErr.StatusCode == http.StatusTooManyRequests ||
 			statusErr.StatusCode >= http.StatusInternalServerError:
-			return fmt.Errorf("%w: %w", ErrAttestorDiscoveryUnavailable, err)
+			return fmt.Errorf("%w: %w", ErrSentryDiscoveryUnavailable, err)
 		default:
-			return fmt.Errorf("%w: %w", ErrAttestorDiscoveryConfig, err)
+			return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
 		}
 	}
 
 	if isNetworkUnavailableError(err) {
-		return fmt.Errorf("%w: %w", ErrAttestorDiscoveryUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrSentryDiscoveryUnavailable, err)
 	}
-	return fmt.Errorf("%w: %w", ErrAttestorDiscoveryConfig, err)
+	return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
 }
 
 func isNetworkUnavailableError(err error) bool {
@@ -260,8 +260,8 @@ func isNetworkUnavailableError(err error) bool {
 	return errors.As(err, &urlErr)
 }
 
-func discoverAttestorComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredAttestorComponentKey, error) {
-	discovered := make([]DiscoveredAttestorComponentKey, 0)
+func discoverSentryComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredSentryComponentKey, error) {
+	discovered := make([]DiscoveredSentryComponentKey, 0)
 	seen := map[string]struct{}{}
 	for _, key := range keys {
 		if !key.IsComponentKey || !keytypes.IsSentryComponentKeyType(key.KeyType) {
@@ -269,24 +269,24 @@ func discoverAttestorComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredAttest
 		}
 		publicKey, err := normalizeAttestorPublicKeyHex(key.PublicKeyHex, key.KeyType)
 		if err != nil {
-			return nil, fmt.Errorf("%w: sentry component key %q has invalid public_key_hex: %v", ErrAttestorDiscoveryInvalidMetadata, key.Address, err)
+			return nil, fmt.Errorf("%w: sentry component key %q has invalid public_key_hex: %v", ErrSentryDiscoveryInvalidMetadata, key.Address, err)
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
 		if err != nil {
-			return nil, fmt.Errorf("%w: sentry component public key %s has invalid component selector %q: %v", ErrAttestorDiscoveryInvalidMetadata, publicKey, key.Address, err)
+			return nil, fmt.Errorf("%w: sentry component public key %s has invalid component selector %q: %v", ErrSentryDiscoveryInvalidMetadata, publicKey, key.Address, err)
 		}
 		expectedSelector, err := attestorComponentSelector(key.KeyType, publicKey)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to derive component selector for sentry public key %s: %v", ErrAttestorDiscoveryInvalidMetadata, publicKey, err)
+			return nil, fmt.Errorf("%w: failed to derive component selector for sentry public key %s: %v", ErrSentryDiscoveryInvalidMetadata, publicKey, err)
 		}
 		if selector != expectedSelector {
-			return nil, fmt.Errorf("%w: sentry component public key %s advertised selector %s, want %s", ErrAttestorDiscoveryInvalidMetadata, publicKey, selector, expectedSelector)
+			return nil, fmt.Errorf("%w: sentry component public key %s advertised selector %s, want %s", ErrSentryDiscoveryInvalidMetadata, publicKey, selector, expectedSelector)
 		}
 		if _, ok := seen[publicKey]; ok {
 			continue
 		}
 		seen[publicKey] = struct{}{}
-		discovered = append(discovered, DiscoveredAttestorComponentKey{
+		discovered = append(discovered, DiscoveredSentryComponentKey{
 			PublicKey:    publicKey,
 			ComponentKey: selector,
 			KeyType:      key.KeyType,
@@ -310,7 +310,7 @@ func (e *Engine) signerProgressWriter() io.Writer {
 	return e.Connection.SignerProgressOut
 }
 
-func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorComponentClient, attestorKey attestorRequestKey, source string) error {
+func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentClient, attestorKey attestorRequestKey, source string) error {
 	expectedPublicKey, err := normalizeAttestorPublicKeyHex(attestorKey.PublicKey, attestorKey.ComponentKeyType)
 	if err != nil {
 		return fmt.Errorf("invalid expected sentry public key: %w", err)
@@ -324,7 +324,7 @@ func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorCompon
 		return fmt.Errorf("failed to inspect %s component keys for sentry: %w", source, err)
 	}
 	if keys.Locked {
-		return attestorEndpointLockedError{source: source}
+		return sentryEndpointLockedError{source: source}
 	}
 	for _, key := range keys.Keys {
 		if key.KeyType != attestorKey.ComponentKeyType || !key.IsComponentKey {

@@ -13,9 +13,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
 
-// AttestorTunnelConfig describes a one-shot SSH tunnel used for attestor
+// SentryTunnelConfig describes a one-shot SSH tunnel used for sentry
 // component signing. It does not mutate the primary signer connection.
-type AttestorTunnelConfig struct {
+type SentryTunnelConfig struct {
 	Host           string
 	SSHPort        int
 	LocalPort      int
@@ -27,7 +27,7 @@ type AttestorTunnelConfig struct {
 }
 
 // FindAvailableLocalPort returns an unused loopback TCP port for a transient
-// attestor tunnel.
+// sentry tunnel.
 func FindAvailableLocalPort() (int, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -41,9 +41,9 @@ func FindAvailableLocalPort() (int, error) {
 	return addr.Port, nil
 }
 
-// ConnectAttestorWithTunnel opens a transient tunnel to a remote attestor
+// ConnectSentryWithTunnel opens a transient tunnel to a remote sentry
 // signer and returns an authenticated HTTP client plus a cleanup callback.
-func ConnectAttestorWithTunnel(ctx context.Context, cfg AttestorTunnelConfig) (*signerclient.Client, func(), error) {
+func ConnectSentryWithTunnel(ctx context.Context, cfg SentryTunnelConfig) (*signerclient.Client, func(), error) {
 	if cfg.Token == "" {
 		return nil, nil, fmt.Errorf("no API token configured")
 	}

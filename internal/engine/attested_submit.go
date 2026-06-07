@@ -103,7 +103,7 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 		}
 		attestorSig, ok := attestorSignatures[target.Index]
 		if !ok {
-			return nil, nil, fmt.Errorf("attestor endpoint returned no signature for target index %d", target.Index)
+			return nil, nil, fmt.Errorf("sentry endpoint returned no signature for target index %d", target.Index)
 		}
 		assemblyReq.Targets = append(assemblyReq.Targets, signerapi.GuardedAssemblyTarget{
 			TargetIndex:           target.Index,
@@ -360,7 +360,7 @@ func (e *Engine) requestAttestorComponentSignatures(ctx context.Context, groupBy
 }
 
 func (e *Engine) requestOneAttestorComponentSignatureSet(ctx context.Context, groupBytesHex []string, group *attestorverify.CanonicalGroup, attestorKey attestorRequestKey, indices []int, signatures map[int]string) (string, error) {
-	endpoint, err := e.resolveAttestorEndpoint(ctx, attestorKey)
+	endpoint, err := e.resolveSentryEndpoint(ctx, attestorKey)
 	if err != nil {
 		return "", err
 	}

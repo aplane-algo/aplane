@@ -155,7 +155,7 @@ func printClientEndpointReference() {
 	fmt.Println()
 	fmt.Println("File: `endpoints.yaml` in apshell data directory (`-d` or `APCLIENT_DATA`)")
 	fmt.Println()
-	fmt.Println("Signer and attestor endpoint routing lives here, not in `config.yaml`.")
+	fmt.Println("Signer and sentry endpoint routing lives here, not in `config.yaml`.")
 	fmt.Println()
 	fmt.Println("| Field | Type | Default | Description |")
 	fmt.Println("|-------|------|---------|-------------|")

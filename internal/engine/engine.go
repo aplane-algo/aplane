@@ -77,7 +77,7 @@ func WithDataDir(dataDir string) EngineOption {
 	}
 }
 
-// WithAttestorEndpoints sets explicit attestor endpoint routing.
+// WithAttestorEndpoints sets explicit sentry endpoint routing.
 func WithAttestorEndpoints(endpoints config.AttestorEndpointConfigs) EngineOption {
 	return func(e *Engine) error {
 		e.AttestorEndpoints = endpoints.Clone()

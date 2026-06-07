@@ -391,8 +391,8 @@ func TestRequestAttestorComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	if err == nil {
 		t.Fatal("requestAttestorComponentSignatures() error = nil, want locked endpoint")
 	}
-	if !errors.Is(err, ErrAttestorDiscoveryLocked) {
-		t.Fatalf("requestAttestorComponentSignatures() error = %q, want ErrAttestorDiscoveryLocked", err)
+	if !errors.Is(err, ErrSentryDiscoveryLocked) {
+		t.Fatalf("requestAttestorComponentSignatures() error = %q, want ErrSentryDiscoveryLocked", err)
 	}
 	if err.Error() != server.URL+" is locked" {
 		t.Fatalf("requestAttestorComponentSignatures() error = %q, want locked endpoint", err)

@@ -173,10 +173,10 @@ func (a *App) discoverEndpointSentries(ctx context.Context, dryRun bool) (*Endpo
 	discoveries := make([]EndpointSentryDiscovery, 0, len(aliases))
 	for _, alias := range aliases {
 		endpoint := cfg.Endpoints.Endpoints[alias]
-		keys, err := a.eng.DiscoverAttestorComponentKeysWithContext(ctx, endpoint)
+		keys, err := a.eng.DiscoverSentryComponentKeysWithContext(ctx, endpoint)
 		if err != nil {
-			if !errors.Is(err, engine.ErrAttestorDiscoveryUnavailable) &&
-				!errors.Is(err, engine.ErrAttestorDiscoveryLocked) {
+			if !errors.Is(err, engine.ErrSentryDiscoveryUnavailable) &&
+				!errors.Is(err, engine.ErrSentryDiscoveryLocked) {
 				return nil, config.ClientEndpointRegistry{}, fmt.Errorf("endpoint %q discovery failed: %w", alias, err)
 			}
 			preserved := clonePublishedSentries(endpoint.PublishedSentries)
