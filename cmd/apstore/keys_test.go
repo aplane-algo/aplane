@@ -41,7 +41,7 @@ func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 		if !strings.Contains(out, "ed25519") {
 			t.Fatalf("list output = %q, want ed25519 key type", out)
 		}
-		if !strings.Contains(out, "attestor-ed25519") {
+		if !strings.Contains(out, "sen-ed25519") {
 			t.Fatalf("list output = %q, want attestor key type display", out)
 		}
 		if strings.Contains(out, edResult.PublicKeyHex) {

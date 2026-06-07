@@ -2,8 +2,8 @@
   "candidates": [
     {
       "endpoint_alias": "attestor-local",
-      "component_key": "EQDWON7R6NAEG7ADEX3NJJASBVCCKDA4D5ZRIKU5OU776HHGWESQ",
-      "key_type": "aplane.attestor-ed25519.v1",
+      "component_key": "Z2FTQYO3TIZJVPW2RVCBQPNVVRTXVQGYVFN34KH2KVM3GSS2GIFA",
+      "key_type": "aplane.sen-ed25519.v1",
       "public_key_hex": "19482fa6b5437b8f9bab1e816dd0cea94e7d43c9f3bbdbe6fdc5b38fe89727a9",
       "last_seen_at": "2026-06-04T00:00:00Z"
     }

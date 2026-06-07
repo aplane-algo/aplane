@@ -27,8 +27,8 @@ import (
 )
 
 const (
-	FamilyName           = "falcon1024-att-ed25519"
-	FamilyNameFalcon1024 = "falcon1024-att-falcon1024"
+	FamilyName           = "falcon1024-sen-ed25519"
+	FamilyNameFalcon1024 = "falcon1024-sen-falcon1024"
 	KeyTypeV1            = keytypes.AttestedFalcon1024AttEd25519V1
 	KeyTypeFalcon1024V1  = keytypes.AttestedFalcon1024AttFalcon1024V1
 	BaseKeyType          = "aplane.falcon1024.v1"

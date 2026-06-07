@@ -1,11 +1,11 @@
 {
   "request_id": "cli-123",
-  "component_key": "33U3YX3HIXBOVCCWBZCJGPO3BGVUC7ONTGKOXFSMOMIAOKGE2AEA",
+  "component_key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
   "signatures": [
     {
       "target_index": 0,
       "signature": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "signature_scheme": "aplane.attestor-ed25519.v1"
+      "signature_scheme": "aplane.sen-ed25519.v1"
     }
   ]
 }

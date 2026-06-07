@@ -616,13 +616,13 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 		}
 		if keyType.KeyType == keytypes.AttestorComponentEd25519V1 {
 			foundEd25519Component = true
-			if keyType.Family != "attestor-ed25519" || keyType.MnemonicImport {
+			if keyType.Family != "sen-ed25519" || keyType.MnemonicImport {
 				t.Fatalf("Ed25519 component key type info = %#v, want attestor component metadata", keyType)
 			}
 		}
 		if keyType.KeyType == keytypes.AttestorComponentFalcon1024V1 {
 			foundFalconComponent = true
-			if keyType.Family != "attestor-falcon1024" || keyType.MnemonicImport {
+			if keyType.Family != "sen-falcon1024" || keyType.MnemonicImport {
 				t.Fatalf("Falcon component key type info = %#v, want attestor component metadata", keyType)
 			}
 		}

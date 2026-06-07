@@ -96,7 +96,7 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 				Signatures: []signerapi.ComponentSignature{{
 					TargetIndex:     0,
 					Signature:       "aabb",
-					SignatureScheme: "aplane.attestor-ed25519.v1",
+					SignatureScheme: "aplane.sen-ed25519.v1",
 				}},
 			}, req), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/sign/assemble":
@@ -134,7 +134,7 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 	}
 	component, err := state.RequestComponentSign(signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  "QQYXOD2APGAT4X4J5KUH5RY54BV3OCZRE4IVB4GGGOS66KSMEP3Q",
+		ComponentKey:  "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},
 	})

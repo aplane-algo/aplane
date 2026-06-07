@@ -229,7 +229,7 @@ func TestReloadServiceClosesRegistryOnNodeRoleConflict(t *testing.T) {
 
 	svc := signer.newReloadServiceForIdentity(ir, nil)
 	err := svc.BeforePublish(nil, map[string]string{
-		"QQYXOD2APGAT4X4J5KUH5RY54BV3OCZRE4IVB4GGGOS66KSMEP3Q": keytypes.AttestorComponentEd25519V1,
+		"75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA": keytypes.AttestorComponentEd25519V1,
 	}, nil)
 	if err == nil {
 		t.Fatal("BeforePublish() error = nil, want node role conflict")

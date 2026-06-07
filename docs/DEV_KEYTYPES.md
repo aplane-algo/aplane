@@ -115,19 +115,19 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | default-enabled | `lsig/falcon1024/v1/standard.go` |
-| `aplane.attestor-ed25519.v1` | Attestor component key | Go-defined | default-enabled | `internal/keygen/attestor_ed25519.go` |
-| `aplane.attestor-falcon1024.v1` | Attestor component key | Go-defined | default-enabled | `internal/keygen/attestor_falcon1024.go` |
-| `aplane.falcon1024-att-ed25519.v1` | Attested-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_attested` |
-| `aplane.falcon1024-att-falcon1024.v1` | Attested-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_attested` |
+| `aplane.sen-ed25519.v1` | Attestor component key | Go-defined | default-enabled | `internal/keygen/attestor_ed25519.go` |
+| `aplane.sen-falcon1024.v1` | Attestor component key | Go-defined | default-enabled | `internal/keygen/attestor_falcon1024.go` |
+| `aplane.falcon1024-sen-ed25519.v1` | Attested-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_attested` |
+| `aplane.falcon1024-sen-falcon1024.v1` | Attested-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_attested` |
 | `aplane.falcon1024_ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_ed25519` |
 | `aplane.ecdsak1.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ecdsak1` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: `ed25519`, `aplane.falcon1024.v1`,
-`aplane.attestor-ed25519.v1`, and `aplane.attestor-falcon1024.v1` are
-default-enabled, while `aplane.falcon1024-att-ed25519.v1`,
-`aplane.falcon1024-att-falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, and
+`aplane.sen-ed25519.v1`, and `aplane.sen-falcon1024.v1` are
+default-enabled, while `aplane.falcon1024-sen-ed25519.v1`,
+`aplane.falcon1024-sen-falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, and
 `aplane.ecdsak1.v1` are library-visible and hidden from generation until the
 current identity enables them from the library.
 Opt-in state records are plaintext identity-scoped metadata under

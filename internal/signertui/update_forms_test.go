@@ -133,7 +133,7 @@ func TestHandleParamInput_AddressListPreservesAliasCase(t *testing.T) {
 func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-att-ed25519.v1",
+		KeyType:     "aplane.falcon1024-sen-ed25519.v1",
 		DisplayName: "Falcon-1024 / Ed25519 Attested",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:    "attestor",
@@ -145,7 +145,7 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	}})
 
 	m := Model{generateKeyType: 0}
-	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-att-ed25519.v1")
+	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-sen-ed25519.v1")
 	if got := m.genericLSigParams["attestor"]; got != "lab-att" {
 		t.Fatalf("default attestor = %q, want lab-att", got)
 	}

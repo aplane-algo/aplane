@@ -60,12 +60,12 @@ Canonical forms:
   decimal version, for example `aplane.falcon1024.v1`,
   `aplane.htlc.v1`, and `aplane.falcon1024-whitelist.v1`
 - attestor component keys use the same canonical key-type identifier contract,
-  for example `aplane.attestor-ed25519.v1` and
-  `aplane.attestor-falcon1024.v1`; they are component-signing keys selected by
+  for example `aplane.sen-ed25519.v1` and
+  `aplane.sen-falcon1024.v1`; they are component-signing keys selected by
   52-character txid-shaped component selectors, not spending accounts
 - attested account key types name both the account DSA and the attestor DSA,
-  for example `aplane.falcon1024-att-ed25519.v1` and
-  `aplane.falcon1024-att-falcon1024.v1`; the older Go-level
+  for example `aplane.falcon1024-sen-ed25519.v1` and
+  `aplane.falcon1024-sen-falcon1024.v1`; the older Go-level
   `AttestedFalcon1024V1` symbol is a compatibility alias for the Ed25519
   attestor form and is not a separate persisted identifier
 
@@ -885,8 +885,8 @@ The envelope schema is:
 ```json
 {
   "schema": "aplane.attestor-public-key.v1",
-  "component_key": "33U3YX3HIXBOVCCWBZCJGPO3BGVUC7ONTGKOXFSMOMIAOKGE2AEA",
-  "key_type": "aplane.attestor-ed25519.v1",
+  "component_key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "key_type": "aplane.sen-ed25519.v1",
   "public_key_encoding": "hex",
   "public_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
   "public_key_size": 32,
@@ -921,8 +921,8 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
 {
   "schema": "aplane.attestor-public-key-ref.v1",
   "name": "lab-att",
-  "component_key": "33U3YX3HIXBOVCCWBZCJGPO3BGVUC7ONTGKOXFSMOMIAOKGE2AEA",
-  "key_type": "aplane.attestor-ed25519.v1",
+  "component_key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
+  "key_type": "aplane.sen-ed25519.v1",
   "public_key_encoding": "hex",
   "public_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
   "public_key_size": 32,

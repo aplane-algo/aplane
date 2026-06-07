@@ -235,7 +235,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 
 	state.PopulateSignerCache([]signerapi.KeyInfo{{
 		Address: "ADDR1",
-		KeyType: "aplane.falcon1024-att-ed25519.v1",
+		KeyType: "aplane.falcon1024-sen-ed25519.v1",
 		Parameters: map[string]string{
 			"attestor_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
 		},
@@ -243,7 +243,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	if &state.SignerCache != original {
 		t.Fatal("PopulateSignerCache replaced SignerCache storage; existing completer pointers would go stale")
 	}
-	if got := original.GetKeyType("ADDR1"); got != "aplane.falcon1024-att-ed25519.v1" {
+	if got := original.GetKeyType("ADDR1"); got != "aplane.falcon1024-sen-ed25519.v1" {
 		t.Fatalf("original pointer key type = %q, want attested key type", got)
 	}
 	if got, ok := original.AttestorPublicKeyForAddress("ADDR1"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
