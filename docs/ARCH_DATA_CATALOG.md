@@ -139,7 +139,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Endpoint alias | local identifier | map key under `endpoints` | endpoint lookup by alias | `internal/config`, `internal/apshellapp` | ASCII letters, digits, `.`, `_`, `-`; aliases are local, not exported. |
 | Endpoint record | authoritative routing record | `endpoints.<alias>` | endpoint connection profile | `internal/config`, `internal/engine/connect` | URL, signer/local ports, token file, identity file, known hosts resolve relative to `APCLIENT_DATA`. |
 | Published sentry inventory | routing metadata | `endpoints.<alias>.published_sentries` | derived sentry endpoint map | `internal/config`, `internal/apshellapp`, `internal/engine` | Keyed by embedded public key hex; route metadata, not ownership proof. |
-| Derived sentry endpoint map | derived runtime | built from `published_sentries` | `Config.AttestorEndpoints` | `internal/config`, `internal/engine/attestor_endpoint.go` | Not written to `config.yaml`; conflicts/malformed records fail closed. |
+| Derived sentry endpoint map | derived runtime | built from `published_sentries` | `Config.SentryEndpoints` | `internal/config`, `internal/engine/attestor_endpoint.go` | Not written to `config.yaml`; conflicts/malformed records fail closed. |
 | Endpoint token file | bearer secret | default `aplane.token` or `tokens/<alias>.token` | HTTP auth header and SSH username | `internal/tokenfile`, `internal/engine/connect` | Mode `0600`; request-token writes endpoint-scoped token. |
 | Client SSH identity | client secret | `.ssh/id_ed25519` | SSH tunnel private key | `internal/sshtunnel`, `internal/engine/connect` | Generated/enrolled separately from tokens. |
 | Known hosts | trust store | `.ssh/known_hosts` or endpoint override | SSH host-key verification | `internal/sshtunnel`, `internal/clientenroll`, `cmd/apconsole` | Host trust is not imported through endpoint envelope. |
@@ -295,7 +295,7 @@ These decisions are part of the current data model and contract surface:
 | This release is new-install-only. | Existing install directories are not supported in-place upgrade targets. |
 | `endpoints.yaml` is the client routing authority. | Client `config.yaml` owns network/theme/polling, not signer or sentry endpoint routes. |
 | Endpoint import and `/keys` discovery are routing metadata. | The trust anchor is the sentry public key embedded in the guarded account key, then `/sign/assemble` verification and on-chain LogicSig verification. |
-| `Config.AttestorEndpoints` is derived runtime state. | Durable sentry endpoint inventory lives under endpoint records in `endpoints.yaml`. |
+| `Config.SentryEndpoints` is derived runtime state. | Durable sentry endpoint inventory lives under endpoint records in `endpoints.yaml`. |
 | `sentries/<name>.json` records are public generation references. | They help the TUI select a sentry public key but do not prove endpoint ownership or signer custody. |
 | Guarded account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
 | `signerapi.SignResponse` is not the live `/sign` wire shape. | Live `/sign` uses `GroupSignResponse`; `SignResponse` is not a separate wire authority. |

@@ -360,8 +360,8 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 
 // PublishedSentryEndpointConfigs derives sentry public-key routing from
 // endpoint-local published_sentries inventory.
-func (r ClientEndpointRegistry) PublishedSentryEndpointConfigs() (AttestorEndpointConfigs, error) {
-	resolved := AttestorEndpointConfigs{}
+func (r ClientEndpointRegistry) PublishedSentryEndpointConfigs() (SentryEndpointConfigs, error) {
+	resolved := SentryEndpointConfigs{}
 	aliases := make([]string, 0, len(r.Endpoints))
 	for alias := range r.Endpoints {
 		aliases = append(aliases, alias)
@@ -381,7 +381,7 @@ func (r ClientEndpointRegistry) PublishedSentryEndpointConfigs() (AttestorEndpoi
 			if _, exists := resolved[publicKey]; exists {
 				return nil, fmt.Errorf("sentry public key %s is published by multiple endpoint aliases", publicKey)
 			}
-			resolved[publicKey] = AttestorEndpointConfig{
+			resolved[publicKey] = SentryEndpointConfig{
 				Endpoint:       alias,
 				URL:            endpoint.URL,
 				TokenFile:      endpoint.TokenFile,

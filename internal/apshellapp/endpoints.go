@@ -222,7 +222,7 @@ func (a *App) discoverEndpointSentries(ctx context.Context, dryRun bool) (*Endpo
 		}
 		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
 			a.Config = cfg
-			a.eng.AttestorEndpoints = cfg.AttestorEndpoints.Clone()
+			a.eng.SentryEndpoints = cfg.SentryEndpoints.Clone()
 		}
 	}
 	return result, plan.Registry, nil
@@ -374,7 +374,7 @@ func (a *App) EndpointDelete(_ context.Context, alias string) (*EndpointDeleteRe
 	if err != nil {
 		return nil, err
 	}
-	blocking := append([]string(nil), sentryEndpointMappingsByAlias(cfg.AttestorEndpoints)[alias]...)
+	blocking := append([]string(nil), sentryEndpointMappingsByAlias(cfg.SentryEndpoints)[alias]...)
 	sort.Strings(blocking)
 	if len(blocking) > 0 {
 		return nil, fmt.Errorf("endpoint alias %q is referenced by %d sentry mapping(s)", alias, len(blocking))
@@ -400,7 +400,7 @@ func (a *App) loadEndpointView() (config.Config, config.ClientEndpointRegistry, 
 	return cfg, cfg.Endpoints, mappings, nil
 }
 
-func sentryEndpointMappingsByAlias(routes config.AttestorEndpointConfigs) map[string][]string {
+func sentryEndpointMappingsByAlias(routes config.SentryEndpointConfigs) map[string][]string {
 	out := map[string][]string{}
 	for publicKey, route := range routes {
 		if route.Endpoint == "" {

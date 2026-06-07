@@ -159,7 +159,7 @@ func TestRebuildStoredClientEndpointPublishedSentriesReplacesInventory(t *testin
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
-	staleKey := attestorEndpointTestHex("a1")
+	staleKey := sentryEndpointTestHex("a1")
 	if _, err := RebuildStoredClientEndpointPublishedSentries(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
 		"sentry-local": {
 			staleKey: endpointPublishedTestAttestor(t, staleKey),
@@ -168,7 +168,7 @@ func TestRebuildStoredClientEndpointPublishedSentriesReplacesInventory(t *testin
 		t.Fatalf("RebuildStoredClientEndpointPublishedSentries(stale) error = %v", err)
 	}
 
-	newKey := attestorEndpointTestHex("b2")
+	newKey := sentryEndpointTestHex("b2")
 	plan, err := RebuildStoredClientEndpointPublishedSentries(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
 		"sentry-local": {
 			newKey: endpointPublishedTestAttestor(t, newKey),
@@ -192,7 +192,7 @@ func TestRebuildStoredClientEndpointPublishedSentriesReplacesInventory(t *testin
 	if got := published[newKey]; got.ComponentKey == "" || got.KeyType != keytypes.SentryComponentEd25519V1 {
 		t.Fatalf("new published sentry = %#v, want Ed25519 component metadata", got)
 	}
-	if route := cfg.AttestorEndpoints[newKey]; route.Endpoint != "sentry-local" {
+	if route := cfg.SentryEndpoints[newKey]; route.Endpoint != "sentry-local" {
 		t.Fatalf("derived route = %#v, want sentry-local", route)
 	}
 }
@@ -207,7 +207,7 @@ func TestRebuildStoredClientEndpointPublishedSentriesRejectsDuplicatePublicKey(t
 			t.Fatalf("UpsertStoredClientEndpoint(%s) error = %v", alias, err)
 		}
 	}
-	publicKey := attestorEndpointTestHex("c3")
+	publicKey := sentryEndpointTestHex("c3")
 	_, err := PlanStoredClientEndpointPublishedSentryRebuild(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
 		"sentry-a": {
 			publicKey: endpointPublishedTestAttestor(t, publicKey),
@@ -295,13 +295,13 @@ ssh: {}
 func endpointPublishedTestAttestor(t *testing.T, publicKeyHex string) ClientEndpointPublishedSentry {
 	t.Helper()
 	return ClientEndpointPublishedSentry{
-		ComponentKey: attestorEndpointTestComponentKey(t, keytypes.SentryComponentEd25519V1, publicKeyHex),
+		ComponentKey: sentryEndpointTestComponentKey(t, keytypes.SentryComponentEd25519V1, publicKeyHex),
 		KeyType:      keytypes.SentryComponentEd25519V1,
 		LastSeenAt:   endpointPublishedTestSeenAt,
 	}
 }
 
-func attestorEndpointTestComponentKey(t *testing.T, keyType, publicKeyHex string) string {
+func sentryEndpointTestComponentKey(t *testing.T, keyType, publicKeyHex string) string {
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {

@@ -42,10 +42,10 @@ type Engine struct {
 
 	// Remote Signing
 	// Configuration
-	WriteMode         bool
-	Verbose           bool // Controls detailed signing output (default: false)
-	Simulate          bool // Simulate mode: transactions are simulated instead of submitted (default: false)
-	AttestorEndpoints config.AttestorEndpointConfigs
+	WriteMode       bool
+	Verbose         bool // Controls detailed signing output (default: false)
+	Simulate        bool // Simulate mode: transactions are simulated instead of submitted (default: false)
+	SentryEndpoints config.SentryEndpointConfigs
 }
 
 // EngineOption is a functional option for configuring the Engine
@@ -77,10 +77,10 @@ func WithDataDir(dataDir string) EngineOption {
 	}
 }
 
-// WithAttestorEndpoints sets explicit sentry endpoint routing.
-func WithAttestorEndpoints(endpoints config.AttestorEndpointConfigs) EngineOption {
+// WithSentryEndpoints sets explicit sentry endpoint routing.
+func WithSentryEndpoints(endpoints config.SentryEndpointConfigs) EngineOption {
 	return func(e *Engine) error {
-		e.AttestorEndpoints = endpoints.Clone()
+		e.SentryEndpoints = endpoints.Clone()
 		return nil
 	}
 }

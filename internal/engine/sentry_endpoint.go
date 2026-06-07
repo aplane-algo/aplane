@@ -87,7 +87,7 @@ func (r *resolvedSentryEndpoint) close() {
 }
 
 func (e *Engine) resolveSentryEndpoint(ctx context.Context, attestorKey attestorRequestKey) (*resolvedSentryEndpoint, error) {
-	if endpoint, ok := e.AttestorEndpoints[attestorKey.PublicKey]; ok {
+	if endpoint, ok := e.SentryEndpoints[attestorKey.PublicKey]; ok {
 		if endpoint.URL == "self" {
 			if err := verifySentryEndpointAdvertises(ctx, e.Connection, attestorKey, "configured self sentry endpoint"); err != nil {
 				return nil, err
@@ -112,7 +112,7 @@ func (e *Engine) resolveSentryEndpoint(ctx context.Context, attestorKey attestor
 	return &resolvedSentryEndpoint{client: e.Connection, source: "current signer"}, nil
 }
 
-func (e *Engine) connectConfiguredSentryEndpoint(ctx context.Context, endpoint config.AttestorEndpointConfig) (*signerclient.Client, func(), string, error) {
+func (e *Engine) connectConfiguredSentryEndpoint(ctx context.Context, endpoint config.SentryEndpointConfig) (*signerclient.Client, func(), string, error) {
 	token, err := readSentryEndpointToken(endpoint.TokenFile)
 	if err != nil {
 		return nil, nil, "", err
@@ -166,7 +166,7 @@ func (e *Engine) DiscoverSentryComponentKeysWithContext(ctx context.Context, end
 	if endpoint.URL == "self" {
 		client = e.Connection
 	} else {
-		resolved := config.AttestorEndpointConfig{
+		resolved := config.SentryEndpointConfig{
 			URL:            endpoint.URL,
 			TokenFile:      endpoint.TokenFile,
 			SignerPort:     endpoint.SignerPort,

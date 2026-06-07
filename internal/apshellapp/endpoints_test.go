@@ -78,8 +78,8 @@ func TestEndpointImportWritesEndpointOnly(t *testing.T) {
 	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "sentry-local.token") {
 		t.Fatalf("TokenFile = %q, want resolved endpoint token path", endpoint.TokenFile)
 	}
-	if len(cfg.AttestorEndpoints) != 0 {
-		t.Fatalf("AttestorEndpoints = %#v, want none from endpoint import", cfg.AttestorEndpoints)
+	if len(cfg.SentryEndpoints) != 0 {
+		t.Fatalf("SentryEndpoints = %#v, want none from endpoint import", cfg.SentryEndpoints)
 	}
 }
 
@@ -279,17 +279,17 @@ func TestEndpointDiscoverSentriesRebuildsMappingsFromAllEndpoints(t *testing.T) 
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	route, ok := cfg.AttestorEndpoints[publicKeyHex]
+	route, ok := cfg.SentryEndpoints[publicKeyHex]
 	if !ok {
-		t.Fatalf("sentry endpoint route for %s missing from %#v", publicKeyHex, cfg.AttestorEndpoints)
+		t.Fatalf("sentry endpoint route for %s missing from %#v", publicKeyHex, cfg.SentryEndpoints)
 	}
 	if route.Endpoint != "sentry-local" {
 		t.Fatalf("route endpoint = %q, want sentry-local", route.Endpoint)
 	}
-	if _, ok := cfg.AttestorEndpoints[staleKeyHex]; ok {
+	if _, ok := cfg.SentryEndpoints[staleKeyHex]; ok {
 		t.Fatalf("stale sentry endpoint route %s remained after discovery", staleKeyHex)
 	}
-	if _, ok := app.eng.AttestorEndpoints[publicKeyHex]; !ok {
+	if _, ok := app.eng.SentryEndpoints[publicKeyHex]; !ok {
 		t.Fatalf("engine sentry routing was not refreshed for %s", publicKeyHex)
 	}
 }
@@ -364,10 +364,10 @@ func TestEndpointDiscoverSentriesPreservesUnreachableEndpointInventory(t *testin
 	if _, ok := publishedOffline[offlineKey]; !ok {
 		t.Fatalf("offline sentry %s was not preserved in %#v", offlineKey, publishedOffline)
 	}
-	if route := cfg.AttestorEndpoints[offlineKey]; route.Endpoint != "sentry-offline" {
+	if route := cfg.SentryEndpoints[offlineKey]; route.Endpoint != "sentry-offline" {
 		t.Fatalf("offline route = %#v, want sentry-offline", route)
 	}
-	if _, ok := app.eng.AttestorEndpoints[offlineKey]; !ok {
+	if _, ok := app.eng.SentryEndpoints[offlineKey]; !ok {
 		t.Fatalf("engine route for preserved offline key %s missing", offlineKey)
 	}
 }
@@ -527,8 +527,8 @@ func TestEndpointDiscoverSentriesDryRunDoesNotWriteMappings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if len(cfg.AttestorEndpoints) != 0 {
-		t.Fatalf("AttestorEndpoints = %#v, want none after dry-run", cfg.AttestorEndpoints)
+	if len(cfg.SentryEndpoints) != 0 {
+		t.Fatalf("SentryEndpoints = %#v, want none after dry-run", cfg.SentryEndpoints)
 	}
 }
 
@@ -596,7 +596,7 @@ func TestEndpointDefaultSetsSigningEndpoint(t *testing.T) {
 	}
 }
 
-func TestEndpointDeleteRejectsMappedAttestorEndpoint(t *testing.T) {
+func TestEndpointDeleteRejectsMappedSentryEndpoint(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 	envelopePath := writeEndpointEnvelope(t, dataDir)

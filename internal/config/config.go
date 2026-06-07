@@ -28,9 +28,9 @@ type SSHClientConfig struct {
 	KnownHostsPath string `yaml:"known_hosts_path" description:"Known hosts file path (relative to data dir)" default:".ssh/known_hosts"`
 }
 
-// AttestorEndpointConfig maps an embedded sentry public key to the signer
+// SentryEndpointConfig maps an embedded sentry public key to the signer
 // endpoint that can produce sentry-role component signatures for that key.
-type AttestorEndpointConfig struct {
+type SentryEndpointConfig struct {
 	Endpoint       string `yaml:"endpoint,omitempty" description:"Endpoint alias from endpoints.yaml"`
 	URL            string `yaml:"url" description:"Sentry endpoint URL: self, https://..., loopback http://..., or ssh://host[:port]"`
 	TokenFile      string `yaml:"token_file,omitempty" description:"Path to the sentry endpoint API token file"`
@@ -40,9 +40,9 @@ type AttestorEndpointConfig struct {
 	KnownHostsPath string `yaml:"known_hosts_path,omitempty" description:"known_hosts path for ssh:// sentry endpoints"`
 }
 
-// AttestorEndpointConfigs is keyed by canonical lower-case embedded sentry
+// SentryEndpointConfigs is keyed by canonical lower-case embedded sentry
 // public-key hex.
-type AttestorEndpointConfigs map[string]AttestorEndpointConfig
+type SentryEndpointConfigs map[string]SentryEndpointConfig
 
 // Config holds apshell configuration settings
 type Config struct {
@@ -58,11 +58,11 @@ type Config struct {
 	// normal connections use endpoint records from endpoints.yaml.
 	LegacySSH *SSHClientConfig `yaml:"ssh" configdoc:"skip" description:"Compatibility SSH tunnel settings; current endpoint SSH fields live in endpoints.yaml"`
 
-	// AttestorEndpoints maps guarded-account embedded sentry public keys to
+	// SentryEndpoints maps guarded-account embedded sentry public keys to
 	// signer endpoints for sentry-role component signing. It is derived
 	// runtime state from endpoints.yaml published_sentries and is not part of
 	// config.yaml.
-	AttestorEndpoints AttestorEndpointConfigs `yaml:"-"`
+	SentryEndpoints SentryEndpointConfigs `yaml:"-"`
 
 	// Endpoints is loaded from endpoints.yaml and is not part of config.yaml.
 	Endpoints ClientEndpointRegistry `yaml:"-"`
@@ -138,7 +138,7 @@ func LoadConfig(dataDir string) (Config, error) {
 		return Config{}, err
 	}
 	config.Endpoints = endpoints
-	config.AttestorEndpoints, err = endpoints.PublishedSentryEndpointConfigs()
+	config.SentryEndpoints, err = endpoints.PublishedSentryEndpointConfigs()
 	if err != nil {
 		return Config{}, err
 	}
@@ -233,11 +233,11 @@ func LoadConfigFromPath(path string) (Config, error) {
 }
 
 // Clone returns a shallow copy of endpoint configs.
-func (c AttestorEndpointConfigs) Clone() AttestorEndpointConfigs {
+func (c SentryEndpointConfigs) Clone() SentryEndpointConfigs {
 	if len(c) == 0 {
 		return nil
 	}
-	clone := make(AttestorEndpointConfigs, len(c))
+	clone := make(SentryEndpointConfigs, len(c))
 	for k, v := range c {
 		clone[k] = v
 	}

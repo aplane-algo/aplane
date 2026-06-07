@@ -146,23 +146,23 @@ ssh:
 	}
 }
 
-func TestLoadConfigRejectsAttestorEndpointsField(t *testing.T) {
+func TestLoadConfigRejectsSentryEndpointsField(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(fmt.Sprintf(`
 network: testnet
-attestor_endpoints:
+sentry_endpoints:
   %s:
     url: self
-`, attestorEndpointTestHex("d6"))), 0o600); err != nil {
+`, sentryEndpointTestHex("d6"))), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	_, err := LoadConfigFromPath(path)
 	if err == nil {
-		t.Fatal("LoadConfigFromPath error = nil, want unknown attestor_endpoints field")
+		t.Fatal("LoadConfigFromPath error = nil, want unknown sentry_endpoints field")
 	}
-	if !strings.Contains(err.Error(), "field attestor_endpoints not found") {
-		t.Fatalf("LoadConfigFromPath error = %q, want attestor_endpoints unknown field", err)
+	if !strings.Contains(err.Error(), "field sentry_endpoints not found") {
+		t.Fatalf("LoadConfigFromPath error = %q, want sentry_endpoints unknown field", err)
 	}
 }
 
@@ -197,8 +197,8 @@ func captureStdout(t *testing.T, fn func()) string {
 
 func TestLoadConfigEndpointRegistryDerivesAttestorRoutesFromPublishedInventory(t *testing.T) {
 	dataDir := t.TempDir()
-	publicKey := attestorEndpointTestHex("d6")
-	componentKey := attestorEndpointConfigTestComponentKey(t, keytypes.SentryComponentEd25519V1, publicKey)
+	publicKey := sentryEndpointTestHex("d6")
+	componentKey := sentryEndpointConfigTestComponentKey(t, keytypes.SentryComponentEd25519V1, publicKey)
 	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
 network: testnet
 signer_port: 12270
@@ -228,9 +228,9 @@ endpoints:
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	route, ok := cfg.AttestorEndpoints[publicKey]
+	route, ok := cfg.SentryEndpoints[publicKey]
 	if !ok {
-		t.Fatalf("derived sentry route for %s missing from %#v", publicKey, cfg.AttestorEndpoints)
+		t.Fatalf("derived sentry route for %s missing from %#v", publicKey, cfg.SentryEndpoints)
 	}
 	if route.Endpoint != "sentry-local" || route.URL != "ssh://127.0.0.1:2223" {
 		t.Fatalf("derived route = %#v, want sentry-local ssh endpoint", route)
@@ -387,15 +387,15 @@ func decodeClientEndpointRegistryKnownFields(data []byte) error {
 	return normalizeStoredClientEndpointRegistry(&registry)
 }
 
-func attestorEndpointTestHex(prefix string) string {
-	return attestorEndpointTestHexN(prefix, 32)
+func sentryEndpointTestHex(prefix string) string {
+	return sentryEndpointTestHexN(prefix, 32)
 }
 
-func attestorEndpointTestHexN(prefix string, size int) string {
+func sentryEndpointTestHexN(prefix string, size int) string {
 	return prefix + strings.Repeat("00", size-1)
 }
 
-func attestorEndpointConfigTestComponentKey(t *testing.T, keyType, publicKeyHex string) string {
+func sentryEndpointConfigTestComponentKey(t *testing.T, keyType, publicKeyHex string) string {
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {

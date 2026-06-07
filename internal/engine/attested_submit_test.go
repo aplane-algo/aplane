@@ -283,11 +283,11 @@ func TestRequestAttestorComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing
 	if err != nil {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
 	}
-	server := newAttestorEndpointTestServer(t, attestorHex, privateKey, "attestor-token", nil)
+	server := newSentryEndpointTestServer(t, attestorHex, privateKey, "attestor-token", nil)
 	defer server.Close()
 	tokenFile := writeAttestorTokenFile(t, "attestor-token")
 	eng := newAttestedSubmitTestEngine(t, txn.Sender.String(), 1500, attestorHex)
-	eng.AttestorEndpoints = config.AttestorEndpointConfigs{
+	eng.SentryEndpoints = config.SentryEndpointConfigs{
 		attestorHex: {URL: server.URL, TokenFile: tokenFile},
 	}
 
@@ -326,16 +326,16 @@ func TestRequestAttestorComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
 	}
 
-	selfServer := newAttestorEndpointTestServer(t, attestorHex, privateKey, "", nil)
+	selfServer := newSentryEndpointTestServer(t, attestorHex, privateKey, "", nil)
 	defer selfServer.Close()
 	var wrongSignCalls atomic.Int32
-	wrongServer := newAttestorEndpointTestServer(t, wrongHex, wrongPrivateKey, "attestor-token", &wrongSignCalls)
+	wrongServer := newSentryEndpointTestServer(t, wrongHex, wrongPrivateKey, "attestor-token", &wrongSignCalls)
 	defer wrongServer.Close()
 	tokenFile := writeAttestorTokenFile(t, "attestor-token")
 
 	eng := newAttestedSubmitTestEngine(t, txn.Sender.String(), 1500, attestorHex)
 	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(selfServer.URL, "")
-	eng.AttestorEndpoints = config.AttestorEndpointConfigs{
+	eng.SentryEndpoints = config.SentryEndpointConfigs{
 		attestorHex: {URL: wrongServer.URL, TokenFile: tokenFile},
 	}
 
@@ -378,7 +378,7 @@ func TestRequestAttestorComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	tokenFile := writeAttestorTokenFile(t, "attestor-token")
 
 	eng := newAttestedSubmitTestEngine(t, txn.Sender.String(), 1500, attestorHex)
-	eng.AttestorEndpoints = config.AttestorEndpointConfigs{
+	eng.SentryEndpoints = config.SentryEndpointConfigs{
 		attestorHex: {URL: server.URL, TokenFile: tokenFile},
 	}
 
@@ -414,7 +414,7 @@ func TestRequestAttestorComponentSignaturesFallsBackToCurrentSigner(t *testing.T
 	if err != nil {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
 	}
-	server := newAttestorEndpointTestServer(t, attestorHex, privateKey, "", nil)
+	server := newSentryEndpointTestServer(t, attestorHex, privateKey, "", nil)
 	defer server.Close()
 	eng := newAttestedSubmitTestEngine(t, txn.Sender.String(), 1500, attestorHex)
 	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
@@ -502,7 +502,7 @@ func ed25519AttestorRequestKey(attestorHex string) attestorRequestKey {
 	}
 }
 
-func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey ed25519.PrivateKey, token string, signCalls *atomic.Int32) *httptest.Server {
+func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey ed25519.PrivateKey, token string, signCalls *atomic.Int32) *httptest.Server {
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
