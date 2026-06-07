@@ -688,7 +688,7 @@ target with no supported transfer movement, or sees a non-zero `RekeyTo`.
 Both policy domains may contain `key_overrides`, a map from concrete signing
 authority selector to sparse policy blocks. In signer-domain `policy.yaml`,
 selectors are Algorand auth addresses for client signing. In attestor-domain
-`policy.yaml`, selectors are `a_...` attestor component-key selectors.
+`policy.yaml`, selectors are attestor component-key selectors.
 
 During normal transaction signing, the effective policy is selected by the
 `auth_address` key that will sign, not by transaction sender. This matters for

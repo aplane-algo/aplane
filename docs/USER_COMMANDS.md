@@ -626,7 +626,7 @@ data.
 
 `endpoints sync-attestors` queries configured attestor endpoints using their
 endpoint token files, refreshes local endpoint-published attestor inventory,
-prints `a_...` component IDs for confirmation, and then syncs the public
+prints component IDs for confirmation, and then syncs the public
 attestor references into the connected signer identity. Temporarily unavailable
 attestor endpoints are skipped and keep their previous local inventory;
 authentication failures and malformed endpoint metadata fail closed.

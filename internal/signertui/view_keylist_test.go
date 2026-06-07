@@ -48,10 +48,10 @@ func TestBuildDetailsParameterLinesAttestedShowsAttestorSelector(t *testing.T) {
 	}})
 
 	got := buildDetailsParameterLines(keytypes.AttestedFalcon1024AttEd25519V1, map[string]string{
-		"Attestor":                          "a_abc123",
+		"Attestor":                          "QQYXOD2APGAT4X4J5KUH5RY54BV3OCZRE4IVB4GGGOS66KSMEP3Q",
 		keytypes.ParameterAttestorPublicKey: "aabbccdd",
 	})
-	want := []string{"Attestor: a_abc123"}
+	want := []string{"Attestor: QQYXOD2APGAT4X4J5KUH5RY54BV3OCZRE4IVB4GGGOS66KSMEP3Q"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buildDetailsParameterLines(attested) = %#v, want %#v", got, want)
 	}

@@ -73,10 +73,10 @@ Important vocabulary:
   signer policy and group validation.
 - **key type** is the canonical identifier stored and sent on the wire, such as
   `ed25519` or `aplane.falcon1024.v1`.
-- **component selector** means an attestor component key selector of the form
-  `a_` plus lower-hex SHA-256 of canonical public key bytes. It selects a local
-  component key; it is not an Algorand account address and is not the embedded
-  verifier public key.
+- **component selector** means an attestor component key selector: a
+  52-character uppercase base32 SHA-512/256 digest over the domain-separated
+  key-type/public-key tuple. It selects a local component key; it is not an
+  Algorand account address and is not the embedded verifier public key.
 
 ## System Boundaries
 
@@ -135,7 +135,7 @@ DTOs and contract fixtures.
 | Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
 | Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Signing key | Signer identity | `identities/<identity>/keys/*.key` | address/selector -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
-| Attestor public sidecar | Signer identity | `identities/<identity>/keys/<a_selector>.public.json` | public component-key export metadata | `apstore attestor export-public` | `internal/keys`, `internal/attestor/attrefs` |
+| Attestor public sidecar | Signer identity | `identities/<identity>/keys/<component_selector>.public.json` | public component-key export metadata | `apstore attestor export-public` | `internal/keys`, `internal/attestor/attrefs` |
 | Public attestor reference | Signer identity | `identities/<identity>/attestors/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/attestor/attrefs`, `internal/signerapp/rest`, `cmd/apstore` |
 | Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |
@@ -297,7 +297,8 @@ Attested account keys are DSA LogicSig keys whose stored bytecode embeds an
 attestor public key. They are not accepted by `/sign`; the client must use the
 attested flow: user `/sign/component`, attestor `/sign/component`, user
 `/sign/assemble`, then algod submit. Attestor component keys are selected by an
-`a_...` component selector and are not Algorand spending accounts.
+uppercase, 52-character txid-shaped component selector and are not Algorand
+spending accounts.
 
 Decrypted key payload metadata is parsed through
 `internal/keys.ParseKeyPayloadMetadata`. That parser owns compatibility aliases:
@@ -378,8 +379,8 @@ effective `policy.Config` layered from defaults and stored YAML. It controls:
 On attestor nodes, `policy.yaml` is the attestor component policy. It uses the
 same transfer routing model as deterministic authorization for
 `/sign/component`; it has no operator default and no review verdict. Attestor
-`key_overrides` are keyed by `a_...` component selector, while client-signing
-overrides are keyed by Algorand auth address.
+`key_overrides` are keyed by component selector, while client-signing overrides
+are keyed by Algorand auth address.
 
 `user_auto_approve` is not policy. It is the user/operator-default fallback in
 identity config.
@@ -805,8 +806,9 @@ generation availability, provenance, and policy editing behavior.
   policy on attestor nodes. Neither domain may wrap the other.
 - Client signer and attestor routing authority is `endpoints.yaml`, not
   `config.yaml`.
-- Attestor component selectors are always `a_<sha256(pubkey)>`; embedded
-  attestor verifier keys are full public-key hex values.
+- Attestor component selectors are uppercase 52-character base32-no-padding
+  SHA-512/256 digests over the domain-separated key-type/public-key tuple;
+  embedded attestor verifier keys are full public-key hex values.
 - Endpoint import and `/keys` discovery are routing/configuration inputs, not
   trust proofs.
 - `/keys` per-key `signing_args` are the key file's durable signing-argument

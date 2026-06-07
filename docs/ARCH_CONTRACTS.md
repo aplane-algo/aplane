@@ -62,7 +62,7 @@ Canonical forms:
 - attestor component keys use the same canonical key-type identifier contract,
   for example `aplane.attestor-ed25519.v1` and
   `aplane.attestor-falcon1024.v1`; they are component-signing keys selected by
-  `a_...` component selector, not spending accounts
+  52-character txid-shaped component selectors, not spending accounts
 - attested account key types name both the account DSA and the attestor DSA,
   for example `aplane.falcon1024-att-ed25519.v1` and
   `aplane.falcon1024-att-falcon1024.v1`; the older Go-level
@@ -278,9 +278,9 @@ targets fail closed. Direct YAML edits are checked, signed, and verified
 through `appolicy` or `apstore policy`.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
-attestor overrides are keyed by `a_...` component selector. These overrides
-apply to policy phases, are not exposed through admin IPC, and direct YAML edits
-require offline `apstore policy sign` before the signer will trust them.
+attestor overrides are keyed by component selector. These overrides apply to
+policy phases, are not exposed through admin IPC, and direct YAML edits require
+offline `apstore policy sign` before the signer will trust them.
 
 Validation:
 
@@ -522,7 +522,7 @@ Additional client-state notes:
 - `apshell endpoints import-public --alias <alias> --role signer|attestor [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `attestor` alias for dev co-location. Import is not an ownership or trust proof and does not discover attestor keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints sync-attestors [--dry-run] [--yes]` scans configured `attestor` endpoints with authenticated `/keys`, extracts attestor component-key `public_key_hex` values, validates each `component_key`, and atomically rebuilds endpoint-local `published_attestors` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_attestors` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and component-key validation failures are hard errors and leave files unchanged. After discovery, the command prints component IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public attestor reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered attestors selectable from signer-side key generation clients such as `apadmin`.
 - `apshell endpoints attestors` lists the local endpoint-discovered attestor inventory by endpoint alias, component ID, and key type without calling remote endpoints.
-- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. Human endpoint output identifies attestors by `a_...` component ID and must not print raw attestor public keys. `show` is local-only, does not call `/keys`, and includes `last_seen_at` for that endpoint's published attestors; `delete` refuses to remove the signer endpoint or an endpoint with published attestors still referenced by derived runtime routing.
+- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. Human endpoint output identifies attestors by component ID and must not print raw attestor public keys. `show` is local-only, does not call `/keys`, and includes `last_seen_at` for that endpoint's published attestors; `delete` refuses to remove the signer endpoint or an endpoint with published attestors still referenced by derived runtime routing.
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
 - for interactive `apshell`, token presence and SSH host trust are enforced when the shell attempts `connect`, startup auto-connect, or `request-token` flows; they are not preflight requirements for process startup
 - after a successful interactive `request-token` for the default endpoint, `apshell` immediately attempts to establish the signer SSH tunnel with the newly issued token; `request-token --endpoint <alias>` saves that endpoint's token and only auto-connects when `<alias>` is the default endpoint.
@@ -866,9 +866,9 @@ component selectors with their key type, durable category, creation timestamp,
 and key-file name.
 
 The default human output must not emit private key material, mnemonic material,
-or raw public-key hex. Component keys are identified by their `a_` selector,
-not by the raw attestor public key. Recoverable key-scan warnings may be
-reported while still listing keys that scanned successfully.
+or raw public-key hex. Component keys are identified by their component
+selector, not by the raw attestor public key. Recoverable key-scan warnings may
+be reported while still listing keys that scanned successfully.
 
 #### Attestor Public Key Export Envelope
 
@@ -885,20 +885,24 @@ The envelope schema is:
 ```json
 {
   "schema": "aplane.attestor-public-key.v1",
-  "component_key": "a_<sha256-public-key>",
-  "key_type": "aplane.attestor-falcon1024.v1",
+  "component_key": "33U3YX3HIXBOVCCWBZCJGPO3BGVUC7ONTGKOXFSMOMIAOKGE2AEA",
+  "key_type": "aplane.attestor-ed25519.v1",
   "public_key_encoding": "hex",
-  "public_key_hex": "<full public key hex>",
-  "public_key_size": 1793,
-  "public_key_sha256": "<sha256-public-key>"
+  "public_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "public_key_size": 32,
+  "public_key_sha256": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd"
 }
 ```
 
-`component_key` is always the `a_` selector used to select a local attestor
-component key. `public_key_hex` is the raw component public key encoded in hex;
-it is the value embedded into attested-account LogicSig bytecode and supplied
-as `attestor_public_key` during attested account generation. The envelope makes
-no endpoint, policy, ownership, freshness, or trust claim.
+`component_key` is always the 52-character uppercase base32 selector used to
+select a local attestor component key. It is derived as
+`base32_no_padding(SHA512_256("APLANE_COMPONENT_KEY_V1" || 0x00 || key_type ||
+0x00 || canonical_public_key_bytes))`; it resembles an Algorand transaction ID
+and is not a valid Algorand address. `public_key_hex` is the raw component
+public key encoded in hex; it is the value embedded into attested-account
+LogicSig bytecode and supplied as `attestor_public_key` during attested account
+generation. The envelope makes no endpoint, policy, ownership, freshness, or
+trust claim.
 
 #### Attestor Public Key Reference Library
 
@@ -917,12 +921,12 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
 {
   "schema": "aplane.attestor-public-key-ref.v1",
   "name": "lab-att",
-  "component_key": "a_<sha256-public-key>",
-  "key_type": "aplane.attestor-falcon1024.v1",
+  "component_key": "33U3YX3HIXBOVCCWBZCJGPO3BGVUC7ONTGKOXFSMOMIAOKGE2AEA",
+  "key_type": "aplane.attestor-ed25519.v1",
   "public_key_encoding": "hex",
-  "public_key_hex": "<full public key hex>",
-  "public_key_size": 1793,
-  "public_key_sha256": "<sha256-public-key>",
+  "public_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "public_key_size": 32,
+  "public_key_sha256": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
   "source": "manual",
   "imported_at": "2026-06-04T00:00:00Z"
 }

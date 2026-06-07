@@ -249,8 +249,8 @@ Client-signing rules:
 5. Override fields are sparse overlays over the identity-wide policy; nested
    overrides are rejected.
 
-Attestor component overrides are keyed by the `a_...` component selector and
-are consumed only by the attestor-role component-signing flow modeled in
+Attestor component overrides are keyed by the component selector and are
+consumed only by the attestor-role component-signing flow modeled in
 [FORMAL_ATTESTED_SIGNING_MODEL.md](FORMAL_ATTESTED_SIGNING_MODEL.md).
 
 ## Network Selection

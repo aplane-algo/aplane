@@ -463,7 +463,7 @@ func TestEndpointDiscoverAttestorsRejectsInvalidEndpointMetadata(t *testing.T) {
 	publicKeyHex := testAttestorPublicKeyHex()
 	staleKeyHex := strings.Repeat("cd", 32)
 	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
-		Address:        "a_bad",
+		Address:        "bad-component-selector",
 		PublicKeyHex:   publicKeyHex,
 		KeyType:        keytypes.AttestorComponentEd25519V1,
 		IsComponentKey: true,
@@ -559,10 +559,11 @@ func TestEndpointSyncAttestorsDryRunUsesPublishedInventory(t *testing.T) {
 	if rec.EndpointAlias != "attestor-local" || rec.PublicKey != publicKeyHex {
 		t.Fatalf("record = %#v, want attestor-local %s", rec, publicKeyHex)
 	}
-	if !strings.HasPrefix(rec.Name, "endpoint-attestor-local-a_") {
-		t.Fatalf("record name = %q, want endpoint-attestor-local-a_ prefix", rec.Name)
-	}
 	componentID := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	wantName := "endpoint-attestor-local-" + strings.ToLower(componentID)
+	if rec.Name != wantName {
+		t.Fatalf("record name = %q, want %q", rec.Name, wantName)
+	}
 	assertHumanEndpointOutputUsesComponentOnly(t, result.RenderLines, publicKeyHex, componentID)
 }
 

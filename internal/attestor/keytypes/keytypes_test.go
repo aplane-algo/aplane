@@ -4,11 +4,12 @@
 package keytypes
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto/sha512"
+	"encoding/base32"
 	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
@@ -63,13 +64,18 @@ func TestComponentKeySelectorKnownVector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	sum := sha256.Sum256(pub)
-	want := ComponentKeySelectorPrefix + hex.EncodeToString(sum[:])
+	want := expectedComponentSelector(AttestorComponentEd25519V1, pub)
 	if got != want {
 		t.Fatalf("ComponentKeySelector() = %q, want %q", got, want)
 	}
+	if len(got) != ComponentKeySelectorLength {
+		t.Fatalf("ComponentKeySelector() length = %d, want %d", len(got), ComponentKeySelectorLength)
+	}
 	if !IsComponentKeySelector(got) {
 		t.Fatalf("IsComponentKeySelector(%q) = false, want true", got)
+	}
+	if _, err := types.DecodeAddress(got); err == nil {
+		t.Fatalf("ComponentKeySelector() = %q decoded as an Algorand address", got)
 	}
 }
 
@@ -83,10 +89,12 @@ func TestFalconComponentKeySelectorKnownVector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	sum := sha256.Sum256(pub)
-	want := ComponentKeySelectorPrefix + hex.EncodeToString(sum[:])
+	want := expectedComponentSelector(AttestorComponentFalcon1024V1, pub)
 	if got != want {
 		t.Fatalf("ComponentKeySelector() = %q, want %q", got, want)
+	}
+	if len(got) != ComponentKeySelectorLength {
+		t.Fatalf("ComponentKeySelector() length = %d, want %d", len(got), ComponentKeySelectorLength)
 	}
 	if !IsComponentKeySelector(got) {
 		t.Fatalf("IsComponentKeySelector(%q) = false, want true", got)
@@ -101,7 +109,7 @@ func TestComponentKeySelectorRejectsNonComponentKeyType(t *testing.T) {
 }
 
 func TestNormalizeComponentKeySelector(t *testing.T) {
-	const want = "a_000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+	const want = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	got, err := NormalizeComponentKeySelector(" " + want + " ")
 	if err != nil {
 		t.Fatalf("NormalizeComponentKeySelector() error = %v", err)
@@ -117,16 +125,17 @@ func TestIsComponentKeySelectorRejectsInvalidValues(t *testing.T) {
 		"not-an-address",
 		"zzzz",
 		"a_",
+		"a_" + strings.Repeat("00", 32),
+		"apc_" + strings.Repeat("00", 32),
 		"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
 		"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
 		"0X000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
-		"apc_zzzz",
-		"apc_" + strings.Repeat("00", sha256.Size-1),
-		"apc_" + strings.Repeat("00", sha256.Size+1),
-		"A_" + strings.Repeat("00", sha256.Size),
-		"a_" + strings.Repeat("AA", sha256.Size),
-		"a_" + strings.Repeat("00", sha256.Size-1),
-		"a_" + strings.Repeat("00", sha256.Size+1),
+		strings.Repeat("A", ComponentKeySelectorLength-1),
+		strings.Repeat("A", ComponentKeySelectorLength+1),
+		strings.Repeat("A", 58),
+		strings.ToLower(strings.Repeat("A", ComponentKeySelectorLength)),
+		strings.Repeat("A", ComponentKeySelectorLength-1) + "=",
+		strings.Repeat("0", ComponentKeySelectorLength),
 		strings.Repeat("00", falconfamily.PublicKeySize),
 	}
 	for _, id := range tests {
@@ -136,4 +145,14 @@ func TestIsComponentKeySelectorRejectsInvalidValues(t *testing.T) {
 			}
 		})
 	}
+}
+
+func expectedComponentSelector(keyType string, publicKey []byte) string {
+	h := sha512.New512_256()
+	_, _ = h.Write([]byte(componentKeySelectorDomain))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(keyType))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write(publicKey)
+	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(h.Sum(nil))
 }

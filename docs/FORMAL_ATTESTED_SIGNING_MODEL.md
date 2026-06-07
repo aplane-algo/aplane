@@ -38,7 +38,7 @@ This model covers the current MVP:
 
 - attested Falcon account keys whose LogicSig bytecode embeds one attestor
   public key,
-- attestor component keys selected by `a_...` component selectors,
+- attestor component keys selected by txid-shaped component selectors,
 - `/sign/component` for user-role and attestor-role component signatures,
 - `/sign/assemble` verification and LogicSig argument packing,
 - `apshell send` orchestration for attested account senders,
@@ -80,7 +80,8 @@ parameters. Later endpoint routing does not move that trust anchor.
 - key type `aplane.attestor-ed25519.v1` or
   `aplane.attestor-falcon1024.v1`,
 - public/private component key material,
-- selector `a_` + lower-hex SHA-256 of canonical public key bytes.
+- selector derived as uppercase base32 SHA-512/256 of the domain-separated key
+  type and canonical public key bytes.
 
 The selector is a routing and policy handle. It is not an Algorand sender,
 auth address, close target, rekey target, or account address.
@@ -150,7 +151,7 @@ For each distinct embedded attestor public key, the client resolves an attestor
 endpoint and calls:
 
 ```text
-POST /sign/component role=attestor component_key=<a_selector>
+POST /sign/component role=attestor component_key=<component_selector>
 ```
 
 The attestor signer evaluates the attestor-domain `policy.yaml` transfer policy for every

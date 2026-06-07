@@ -5,10 +5,10 @@
   "count": 1,
   "records": [
     {
-      "name": "endpoint-attestor-local-a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078",
+      "name": "endpoint-attestor-local-eqdwon7r6naeg7adex3njjasbvcckda4d5zriku5ou776hhgwesq",
       "source": "client_discovery",
       "endpoint_alias": "attestor-local",
-      "component_key": "a_88aa9cc9abffc13e3355b74c100177a9bbd1df04dacf18b6e15974e3dc69b078",
+      "component_key": "EQDWON7R6NAEG7ADEX3NJJASBVCCKDA4D5ZRIKU5OU776HHGWESQ",
       "key_type": "aplane.attestor-ed25519.v1",
       "public_key_hex": "19482fa6b5437b8f9bab1e816dd0cea94e7d43c9f3bbdbe6fdc5b38fe89727a9",
       "last_seen_at": "2026-06-04T00:00:00Z",

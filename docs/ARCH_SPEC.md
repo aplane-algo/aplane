@@ -496,8 +496,8 @@ editor and are visible in canonical YAML snapshots.
 The policy document may contain YAML-only `key_overrides`; during normal
 signing, the effective policy is selected by signing auth address, not by
 transaction sender, so rekeyed accounts use the policy override for the auth
-address. On attestor nodes, component signing selects overrides by the `a_...`
-component selector from the attestor-domain `policy.yaml`.
+address. On attestor nodes, component signing selects overrides by the
+txid-shaped component selector from the attestor-domain `policy.yaml`.
 Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
@@ -1057,9 +1057,20 @@ accounts and not LogicSig providers:
 - `aplane.attestor-ed25519.v1`
 - `aplane.attestor-falcon1024.v1`
 
-They are selected by component selectors of the form
-`a_<sha256(canonical-public-key-bytes)>`. The full attestor public key remains
-the verifier key embedded in attested account LogicSig bytecode.
+They are selected by 52-character uppercase, no-padding base32 component
+selectors derived as:
+
+```text
+base32_no_padding(SHA512_256(
+  "APLANE_COMPONENT_KEY_V1" || 0x00 || key_type || 0x00 ||
+  canonical_public_key_bytes
+))
+```
+
+The selector intentionally has the visual shape of an Algorand transaction ID,
+but it is not a valid Algorand address because addresses are 58 characters.
+The full attestor public key remains the verifier key embedded in attested
+account LogicSig bytecode.
 
 Attested account key types name both the account DSA and the attestor DSA:
 
@@ -1180,8 +1191,8 @@ attestor policy has no manual-review or operator-default verdict. It is
 deterministic authorization: all selected target movements must be positively
 authorized by the effective attestor policy, and deny guards fail closed.
 
-Attestation policy overrides are keyed by attestor component selector
-(`a_...`). Client-signing policy overrides are keyed by signing auth address.
+Attestation policy overrides are keyed by attestor component selector.
+Client-signing policy overrides are keyed by signing auth address.
 
 Attestor component approvals and rejections are recorded through existing sign
 audit events. Current records put the component selector in `txn_auth`, the

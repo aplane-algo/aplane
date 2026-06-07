@@ -12,7 +12,7 @@ func TestComponentSignRequestValidate(t *testing.T) {
 	valid := ComponentSignRequest{
 		RequestID:     "cli.abc_123:test",
 		Role:          ComponentSignRoleAttestor,
-		ComponentKey:  "a_" + strings.Repeat("ab", 32),
+		ComponentKey:  "U232BA3WPJLVONQ4Q5TMURYCOFWJUQLRQNOZSE7UVGF5W2NJ5ABQ",
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},
 	}

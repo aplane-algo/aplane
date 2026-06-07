@@ -134,7 +134,7 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 	}
 	component, err := state.RequestComponentSign(signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleAttestor,
-		ComponentKey:  "a_0000000000000000000000000000000000000000000000000000000000000000",
+		ComponentKey:  "QQYXOD2APGAT4X4J5KUH5RY54BV3OCZRE4IVB4GGGOS66KSMEP3Q",
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},
 	})

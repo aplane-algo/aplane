@@ -58,8 +58,8 @@ This separation is deliberate:
 |---|---|---|
 | Native key file | `identities/<identity>/keys/<address>.key` | Native signing authority. |
 | LogicSig key file | `identities/<identity>/keys/<address>.key` | LogicSig bytecode, salt, signing metadata, and any private DSA key material. |
-| Attestor component key file | `identities/<identity>/keys/<a_selector>.key` | Component-signing authority for attestor-role `/sign/component`; not an Algorand spending account. |
-| Attestor public sidecar | `identities/<identity>/keys/<a_selector>.public.json` | Public export metadata for local component keys. |
+| Attestor component key file | `identities/<identity>/keys/<component_selector>.key` | Component-signing authority for attestor-role `/sign/component`; not an Algorand spending account. |
+| Attestor public sidecar | `identities/<identity>/keys/<component_selector>.public.json` | Public export metadata for local component keys. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | `identities/<identity>/node.yaml.hmac` | Per-identity HMAC over the exact root `node.yaml` bytes. |
 | Identity config | `identities/<identity>/config.yaml` | Identity-local runtime settings such as approval/lock timeouts and decommission state; it does not carry key-class role. |

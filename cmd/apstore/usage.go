@@ -64,6 +64,6 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore keytype disable falcon1024_ed25519.v1\n")
 	fmt.Fprintf(os.Stderr, "  apstore keys list\n")
 	fmt.Fprintf(os.Stderr, "  apstore endpoint export --host 127.0.0.1 --out endpoint.json\n")
-	fmt.Fprintf(os.Stderr, "  apstore attestor export-public a_<sha256-public-key> attestor-public.json\n")
+	fmt.Fprintf(os.Stderr, "  apstore attestor export-public <component-selector> attestor-public.json\n")
 	fmt.Fprintf(os.Stderr, "  apstore attestor import-public attestor-public.json lab-att\n")
 }

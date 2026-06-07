@@ -208,8 +208,8 @@ func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
 			if result.PublicKeyHex == "" {
 				t.Fatal("GenerateKey(component) public key is empty")
 			}
-			if !strings.HasPrefix(result.Address, keytypes.ComponentKeySelectorPrefix) {
-				t.Fatalf("GenerateKey(component) address = %q, want %s selector", result.Address, keytypes.ComponentKeySelectorPrefix)
+			if !keytypes.IsComponentKeySelector(result.Address) {
+				t.Fatalf("GenerateKey(component) address = %q, want component key selector", result.Address)
 			}
 			if result.Address == result.PublicKeyHex {
 				t.Fatal("GenerateKey(component) address unexpectedly equals public key hex")

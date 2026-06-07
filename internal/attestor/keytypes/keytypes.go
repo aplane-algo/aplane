@@ -7,8 +7,8 @@ package keytypes
 
 import (
 	"crypto/ed25519"
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto/sha512"
+	"encoding/base32"
 	"fmt"
 	"strings"
 
@@ -42,9 +42,16 @@ const (
 	// the attestor public key embedded in an attested account LogicSig.
 	ParameterAttestorPublicKey = "attestor_public_key"
 
-	// ComponentKeySelectorPrefix marks APlane attestor component-key selectors.
-	ComponentKeySelectorPrefix = "a_"
+	// ComponentKeySelectorLength is the length of a canonical attestor
+	// component-key selector. It matches the visual shape of Algorand
+	// transaction IDs, but it is shorter than an Algorand address and must not
+	// be treated as one.
+	ComponentKeySelectorLength = 52
+
+	componentKeySelectorDomain = "APLANE_COMPONENT_KEY_V1"
 )
+
+var componentKeySelectorEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 // IsAttestorComponentKeyType reports whether keyType names a component key
 // that may only be used through /sign/component.
@@ -88,8 +95,9 @@ func AttestorComponentKeyTypeForAttestedAccount(keyType string) (string, bool) {
 }
 
 // ComponentKeySelector returns the canonical selector for an attestor component
-// key. Selectors are a_ plus lower-case SHA-256 of the canonical public key
-// bytes, independent of the component key family.
+// key. Selectors are uppercase base32-no-padding SHA-512/256 digests over a
+// domain-separated key-type/public-key tuple, independent of the component key
+// family.
 func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 	if !IsAttestorComponentKeyType(keyType) {
 		return "", fmt.Errorf("key type %q is not an attestor component key type", keyType)
@@ -102,30 +110,35 @@ func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 		return "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
 	}
 
-	sum := sha256.Sum256(publicKey)
-	return ComponentKeySelectorPrefix + hex.EncodeToString(sum[:]), nil
+	h := sha512.New512_256()
+	_, _ = h.Write([]byte(componentKeySelectorDomain))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(keyType))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write(publicKey)
+	return componentKeySelectorEncoding.EncodeToString(h.Sum(nil)), nil
 }
 
 // NormalizeComponentKeySelector validates and canonicalizes a component-key
-// selector. Selectors must already be canonical a_<lower-hex-sha256>.
+// selector. Selectors must already be canonical 52-character uppercase base32
+// values with no padding.
 func NormalizeComponentKeySelector(selector string) (string, error) {
 	raw := strings.TrimSpace(selector)
 	if raw == "" {
 		return "", fmt.Errorf("component key selector is required")
 	}
-	if !strings.HasPrefix(raw, ComponentKeySelectorPrefix) {
-		return "", fmt.Errorf("component key selector must start with %q", ComponentKeySelectorPrefix)
+	if len(raw) != ComponentKeySelectorLength {
+		return "", fmt.Errorf("component key selector length %d invalid (expected %d characters)", len(raw), ComponentKeySelectorLength)
 	}
-	hashHex := strings.TrimPrefix(raw, ComponentKeySelectorPrefix)
-	decoded, err := hex.DecodeString(hashHex)
+	decoded, err := componentKeySelectorEncoding.DecodeString(raw)
 	if err != nil {
-		return "", fmt.Errorf("component key selector hash must be hex: %w", err)
+		return "", fmt.Errorf("component key selector must be uppercase base32 without padding: %w", err)
 	}
-	if len(decoded) != sha256.Size {
-		return "", fmt.Errorf("component key selector hash length %d invalid (expected %d bytes)", len(decoded), sha256.Size)
+	if len(decoded) != sha512.Size256 {
+		return "", fmt.Errorf("component key selector digest length %d invalid (expected %d bytes)", len(decoded), sha512.Size256)
 	}
-	if hex.EncodeToString(decoded) != hashHex {
-		return "", fmt.Errorf("component key selector hash must be lowercase hex")
+	if componentKeySelectorEncoding.EncodeToString(decoded) != raw {
+		return "", fmt.Errorf("component key selector must be canonical uppercase base32 without padding")
 	}
 	return raw, nil
 }

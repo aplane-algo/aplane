@@ -272,9 +272,9 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - optional `is_generic_lsig`
 - optional `is_component_key` and `is_spending_account`: component-key rows use
   `address` as the component-key selector, not as an Algorand spending address.
-  Attestor component selectors are always `a_` plus lowercase SHA-256 of the
-  canonical component public-key bytes; `public_key_hex` carries the full
-  component public key.
+  Attestor component selectors are always 52-character uppercase base32
+  SHA-512/256 digests over the domain-separated key-type/public-key tuple;
+  `public_key_hex` carries the full component public key.
 - optional `signing_args`: the key file's stored signing schema captured at
   generation time, not the live template/provider schema; this is what the
   signer enforces at sign time for that specific key. SDK consumers must treat

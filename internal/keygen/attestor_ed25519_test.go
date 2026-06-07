@@ -5,7 +5,6 @@ package keygen
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
@@ -41,8 +40,8 @@ func TestAttestorEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	if result.PublicKeyHex == "" {
 		t.Fatal("PublicKeyHex is empty")
 	}
-	if !strings.HasPrefix(result.Address, keytypes.ComponentKeySelectorPrefix) {
-		t.Fatalf("Address = %q, want %s selector", result.Address, keytypes.ComponentKeySelectorPrefix)
+	if !keytypes.IsComponentKeySelector(result.Address) {
+		t.Fatalf("Address = %q, want component key selector", result.Address)
 	}
 	if result.Address == result.PublicKeyHex {
 		t.Fatal("Address unexpectedly equals public key hex")
@@ -110,8 +109,8 @@ func TestAttestorFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	if len(result.PublicKeyHex) != falconfamily.PublicKeySize*2 {
 		t.Fatalf("PublicKeyHex length = %d, want %d", len(result.PublicKeyHex), falconfamily.PublicKeySize*2)
 	}
-	if !strings.HasPrefix(result.Address, keytypes.ComponentKeySelectorPrefix) {
-		t.Fatalf("Address = %q, want %s selector", result.Address, keytypes.ComponentKeySelectorPrefix)
+	if !keytypes.IsComponentKeySelector(result.Address) {
+		t.Fatalf("Address = %q, want component key selector", result.Address)
 	}
 	if result.Address == result.PublicKeyHex {
 		t.Fatalf("Address unexpectedly equals full Falcon public key hex")

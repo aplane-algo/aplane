@@ -539,8 +539,8 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	if genResp.PublicKeyHex == "" {
 		t.Fatal("AdminGenerate public key is empty")
 	}
-	if !strings.HasPrefix(genResp.Address, keytypes.ComponentKeySelectorPrefix) {
-		t.Fatalf("AdminGenerate address = %q, want %s selector", genResp.Address, keytypes.ComponentKeySelectorPrefix)
+	if !keytypes.IsComponentKeySelector(genResp.Address) {
+		t.Fatalf("AdminGenerate address = %q, want component key selector", genResp.Address)
 	}
 	if genResp.Address == genResp.PublicKeyHex {
 		t.Fatal("AdminGenerate address unexpectedly equals public key hex")

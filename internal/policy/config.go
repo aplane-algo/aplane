@@ -21,7 +21,7 @@ import (
 //
 // KeyOverrides maps a concrete signing authority key to a fully resolved Config
 // that should be used when that key signs. Signing account overrides are keyed
-// by Algorand auth address. Attestor component overrides are keyed by a_ component
+// by Algorand auth address. Attestor component overrides are keyed by component
 // selector. Overrides inherit from the base config for any field they do not
 // set. Nested overrides are not supported (KeyOverrides on an override value is
 // always nil).
@@ -395,7 +395,7 @@ func (c *Config) ForKey(key string) *Config {
 
 // NormalizeKeyOverrideKey validates and canonicalizes a policy key_overrides
 // selector. Signing-account selectors are Algorand addresses. Attestor
-// component-key selectors are a_ component selectors.
+// component-key selectors are txid-shaped component selectors.
 func NormalizeKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
@@ -404,7 +404,7 @@ func NormalizeKeyOverrideKey(key string) (string, error) {
 	if selector, err := keytypes.NormalizeComponentKeySelector(raw); err == nil {
 		return selector, nil
 	}
-	if strings.HasPrefix(raw, keytypes.ComponentKeySelectorPrefix) {
+	if len(raw) == keytypes.ComponentKeySelectorLength {
 		return "", fmt.Errorf("invalid component key selector %q", raw)
 	}
 	addr, err := types.DecodeAddress(strings.ToUpper(raw))
