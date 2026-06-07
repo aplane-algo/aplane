@@ -55,7 +55,7 @@ a key.
 | **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes; local sentry nodes show admin plus daemon/status only | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
-| **apstore** | Keystore management client for local initialize, policy integrity, endpoint export, public attestor references, backup import admission, verification, and rebuild rescue flows; live backup, restore, template, key type, and passphrase operations use the admin protocol | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
+| **apstore** | Keystore management client for local initialize, policy integrity, endpoint export, public sentry references, backup import admission, verification, and rebuild rescue flows; live backup, restore, template, key type, and passphrase operations use the admin protocol | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
 | **appolicy** | Offline policy checker/editor for the node-role policy document (`policy.yaml` for signer nodes, sentry-domain `policy.yaml` for sentry nodes), plus signing-to-sentry conversion | UI (TUI) + Policy + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
 | **aplocalnet** | LocalNet setup TUI/CLI for apclient default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
@@ -265,7 +265,7 @@ Applications read from `config.yaml` in their data directory:
 - apsigner: `$APSIGNER_DATA/config.yaml` or `-d <path>`
 
 apshell uses `config.yaml` for network, theme, and polling defaults. Signer and
-attestor endpoint routing lives in `$APCLIENT_DATA/endpoints.yaml`; top-level
+sentry endpoint routing lives in `$APCLIENT_DATA/endpoints.yaml`; top-level
 client `ssh:` signer routing is not supported by managed startup in this
 new-install-only release.
 

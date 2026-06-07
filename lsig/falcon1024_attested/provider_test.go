@@ -18,10 +18,10 @@ func TestProviderValidateCreationParams(t *testing.T) {
 	p := NewProviderV1()
 	valid := strings.Repeat("01", ed25519.PublicKeySize)
 
-	if err := p.ValidateCreationParams(map[string]string{ParamAttestorPublicKey: valid}); err != nil {
+	if err := p.ValidateCreationParams(map[string]string{ParamSentryPublicKey: valid}); err != nil {
 		t.Fatalf("ValidateCreationParams(valid) error = %v", err)
 	}
-	if err := p.ValidateCreationParams(map[string]string{ParamAttestorPublicKey: "0x" + valid}); err != nil {
+	if err := p.ValidateCreationParams(map[string]string{ParamSentryPublicKey: "0x" + valid}); err != nil {
 		t.Fatalf("ValidateCreationParams(0x valid) error = %v", err)
 	}
 
@@ -31,9 +31,9 @@ func TestProviderValidateCreationParams(t *testing.T) {
 		want   string
 	}{
 		{name: "missing", params: nil, want: "missing required parameter"},
-		{name: "short", params: map[string]string{ParamAttestorPublicKey: "01"}, want: "expected 32 bytes"},
-		{name: "bad hex", params: map[string]string{ParamAttestorPublicKey: "not-hex"}, want: "invalid hex"},
-		{name: "unknown", params: map[string]string{ParamAttestorPublicKey: valid, "extra": "1"}, want: "unknown parameter"},
+		{name: "short", params: map[string]string{ParamSentryPublicKey: "01"}, want: "expected 32 bytes"},
+		{name: "bad hex", params: map[string]string{ParamSentryPublicKey: "not-hex"}, want: "invalid hex"},
+		{name: "unknown", params: map[string]string{ParamSentryPublicKey: valid, "extra": "1"}, want: "unknown parameter"},
 	}
 
 	for _, tt := range tests {
@@ -50,15 +50,15 @@ func TestFalconAttestorProviderValidateCreationParams(t *testing.T) {
 	p := NewFalconAttestorProviderV1()
 	valid := strings.Repeat("01", family.PublicKeySize)
 
-	if err := p.ValidateCreationParams(map[string]string{ParamAttestorPublicKey: valid}); err != nil {
+	if err := p.ValidateCreationParams(map[string]string{ParamSentryPublicKey: valid}); err != nil {
 		t.Fatalf("ValidateCreationParams(valid) error = %v", err)
 	}
-	if err := p.ValidateCreationParams(map[string]string{ParamAttestorPublicKey: "0x" + valid}); err != nil {
+	if err := p.ValidateCreationParams(map[string]string{ParamSentryPublicKey: "0x" + valid}); err != nil {
 		t.Fatalf("ValidateCreationParams(0x valid) error = %v", err)
 	}
 
 	edSized := strings.Repeat("01", ed25519.PublicKeySize)
-	err := p.ValidateCreationParams(map[string]string{ParamAttestorPublicKey: edSized})
+	err := p.ValidateCreationParams(map[string]string{ParamSentryPublicKey: edSized})
 	if err == nil || !strings.Contains(err.Error(), "expected 1793 bytes") {
 		t.Fatalf("ValidateCreationParams(ed-sized) error = %v, want expected 1793 bytes", err)
 	}
@@ -69,7 +69,7 @@ func TestGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 	userPublicKey := bytes.Repeat([]byte{0xa1}, family.PublicKeySize)
 	attestorPublicKeyHex := strings.Repeat("b2", ed25519.PublicKeySize)
 
-	teal, err := p.GenerateTEAL(userPublicKey, map[string]string{ParamAttestorPublicKey: attestorPublicKeyHex})
+	teal, err := p.GenerateTEAL(userPublicKey, map[string]string{ParamSentryPublicKey: attestorPublicKeyHex})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}
@@ -108,7 +108,7 @@ func TestFalconAttestorGenerateTEALBuildsRoleSeparatedVerifier(t *testing.T) {
 	userPublicKey := bytes.Repeat([]byte{0xa1}, family.PublicKeySize)
 	attestorPublicKeyHex := strings.Repeat("b2", family.PublicKeySize)
 
-	teal, err := p.GenerateTEAL(userPublicKey, map[string]string{ParamAttestorPublicKey: attestorPublicKeyHex})
+	teal, err := p.GenerateTEAL(userPublicKey, map[string]string{ParamSentryPublicKey: attestorPublicKeyHex})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
 	}

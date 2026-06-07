@@ -33,14 +33,14 @@ const (
 	KeyTypeFalcon1024V1  = keytypes.GuardedFalcon1024SentryFalcon1024V1
 	BaseKeyType          = "aplane.falcon1024.v1"
 
-	ParamAttestorPublicKey = keytypes.ParameterSentryPublicKey
+	ParamSentryPublicKey = keytypes.ParameterSentryPublicKey
 
 	SignatureSize           = 2 + family.MaxSignatureSize + ed25519.SignatureSize
 	SignatureSizeFalcon1024 = 4 + family.MaxSignatureSize + family.MaxSignatureSize
 )
 
 // Provider implements the guarded-account LogicSig shape for a Falcon user
-// component signature plus an attestor component signature.
+// component signature plus a sentry component signature.
 type Provider struct {
 	keyType                  string
 	familyName               string
@@ -58,12 +58,12 @@ func NewProviderV1() *Provider {
 	return &Provider{
 		keyType:                  KeyTypeV1,
 		familyName:               FamilyName,
-		displayName:              "Falcon-1024 / Ed25519 Attested",
-		description:              "Falcon-1024 account requiring an Ed25519 attestor signature",
+		displayName:              "Falcon-1024 / Ed25519 Sentry",
+		description:              "Falcon-1024 account requiring an Ed25519 sentry signature",
 		attestorComponentKeyType: keytypes.AttestorComponentEd25519V1,
 		attestorPublicKeySize:    ed25519.PublicKeySize,
 		signatureSize:            SignatureSize,
-		attestorSignatureArg:     "attestor_ed25519_component_signature",
+		attestorSignatureArg:     "sentry_ed25519_component_signature",
 	}
 }
 
@@ -71,12 +71,12 @@ func NewFalconAttestorProviderV1() *Provider {
 	return &Provider{
 		keyType:                  KeyTypeFalcon1024V1,
 		familyName:               FamilyNameFalcon1024,
-		displayName:              "Falcon-1024 / Falcon-1024 Attested",
-		description:              "Falcon-1024 account requiring a Falcon-1024 attestor signature",
+		displayName:              "Falcon-1024 / Falcon-1024 Sentry",
+		description:              "Falcon-1024 account requiring a Falcon-1024 sentry signature",
 		attestorComponentKeyType: keytypes.AttestorComponentFalcon1024V1,
 		attestorPublicKeySize:    family.PublicKeySize,
 		signatureSize:            SignatureSizeFalcon1024,
-		attestorSignatureArg:     "attestor_falcon1024_component_signature",
+		attestorSignatureArg:     "sentry_falcon1024_component_signature",
 	}
 }
 
@@ -101,16 +101,16 @@ func (p *Provider) MnemonicScheme() string       { return family.MnemonicScheme 
 func (p *Provider) MnemonicWordCount() int       { return family.MnemonicWordCount }
 func (p *Provider) SupportsMnemonicImport() bool { return false }
 func (p *Provider) CreationParams() []lsigprovider.ParameterDef {
-	attestorLabel := "Attestor public key"
-	attestorDescription := "Hex-encoded attestor public key embedded in the guarded account"
+	attestorLabel := "Sentry public key"
+	attestorDescription := "Hex-encoded sentry public key embedded in the guarded account"
 	switch p.attestorComponentKeyType {
 	case keytypes.AttestorComponentEd25519V1:
-		attestorDescription = "Hex-encoded Ed25519 attestor public key embedded in the guarded account"
+		attestorDescription = "Hex-encoded Ed25519 sentry public key embedded in the guarded account"
 	case keytypes.AttestorComponentFalcon1024V1:
-		attestorDescription = "Hex-encoded Falcon-1024 attestor public key embedded in the guarded account"
+		attestorDescription = "Hex-encoded Falcon-1024 sentry public key embedded in the guarded account"
 	}
 	return []lsigprovider.ParameterDef{{
-		Name:        ParamAttestorPublicKey,
+		Name:        ParamSentryPublicKey,
 		Label:       attestorLabel,
 		Description: attestorDescription,
 		Type:        "bytes",
@@ -128,7 +128,7 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 	if err := generictemplate.ValidateParameterValues(normalized, p.CreationParams()); err != nil {
 		return err
 	}
-	_, err = decodeAttestorPublicKeyForSize(normalized[ParamAttestorPublicKey], p.attestorPublicKeySize)
+	_, err = decodeAttestorPublicKeyForSize(normalized[ParamSentryPublicKey], p.attestorPublicKeySize)
 	return err
 }
 
@@ -200,7 +200,7 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 	if err := p.ValidateCreationParams(normalized); err != nil {
 		return "", err
 	}
-	attestorPublicKey, err := decodeAttestorPublicKeyForSize(normalized[ParamAttestorPublicKey], p.attestorPublicKeySize)
+	attestorPublicKey, err := decodeAttestorPublicKeyForSize(normalized[ParamSentryPublicKey], p.attestorPublicKeySize)
 	if err != nil {
 		return "", err
 	}
@@ -266,7 +266,7 @@ falcon_verify
 			byte(message.RoleSentry),
 			hex.EncodeToString(attestorPublicKey)), nil
 	default:
-		return "", fmt.Errorf("unsupported attestor component key type %s", p.attestorComponentKeyType)
+		return "", fmt.Errorf("unsupported sentry component key type %s", p.attestorComponentKeyType)
 	}
 }
 

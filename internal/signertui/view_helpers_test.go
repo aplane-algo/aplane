@@ -155,7 +155,7 @@ func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 			{Name: "recipient", Label: "Recipient", Type: "address", Required: true},
 			{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true},
 			{Name: "unlock_round", Label: "Unlock Round", Type: "uint64", Required: true},
-			{Name: "sentry_public_key", Label: "Attestor public key", Type: "bytes", Required: true, MaxLength: 64},
+			{Name: "sentry_public_key", Label: "Sentry public key", Type: "bytes", Required: true, MaxLength: 64},
 			{Name: "note", Label: "Note", Type: "string", MaxLength: 200},
 		},
 	}})
@@ -191,10 +191,10 @@ func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
 		KeyType:     "aplane.falcon1024-sentry-falcon1024.v1",
-		DisplayName: "Falcon-1024 / Falcon-1024 Attested",
+		DisplayName: "Falcon-1024 / Falcon-1024 Sentry",
 		CreationParams: []protocol.TemplateParamInfo{{
-			Name:    "attestor",
-			Label:   "Attestor",
+			Name:    "sentry",
+			Label:   "Sentry",
 			Type:    "select",
 			Options: []string{"test1"},
 			Default: "test1",
@@ -205,9 +205,9 @@ func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 		width:                  100,
 		height:                 30,
 		generateFocus:          0,
-		genericLSigParams:      map[string]string{"attestor": ""},
-		genericLSigParamModes:  map[string]int{"attestor": 0},
-		genericLSigParamScroll: map[string]int{"attestor": 0},
+		genericLSigParams:      map[string]string{"sentry": ""},
+		genericLSigParamModes:  map[string]int{"sentry": 0},
+		genericLSigParamScroll: map[string]int{"sentry": 0},
 	}
 
 	rendered := m.renderParameterModalForKeyType("aplane.falcon1024-sentry-falcon1024.v1", "GENERATE", "")

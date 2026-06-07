@@ -196,7 +196,7 @@ Signer-domain `policy.yaml` rejects `sentry:` and top-level
 `reject_rekey`; those belong to the sentry policy domain.
 
 On sentry nodes, the accepted top-level keys in `policy.yaml` are the
-attestor field set and `key_overrides`. Attestor-domain `policy.yaml` rejects
+sentry field set and `key_overrides`. Sentry-domain `policy.yaml` rejects
 `client_signing:` and `sentry:` wrappers. Unknown top-level keys fail
 validation in both domains.
 
@@ -222,7 +222,7 @@ Sentry semantics:
 
 Both policy domains are validated by schema, not by the identity's current key
 inventory. A sentry node can carry sentry-domain `policy.yaml` before an
-attestor key is installed.
+sentry key is installed.
 
 Legacy compatibility: a `policy.yaml` written before role domains existed
 places all client-signing-only fields at the top level. The loader treats
@@ -273,9 +273,9 @@ Policy fields by domain:
 
 `reject_foreign_rekey` evaluates the rekey target against the set of addresses
 held by the current signer, which is meaningful only when the signer owns the
-sender. `reject_rekey` is the attestor analog and ignores key ownership: any
+sender. `reject_rekey` is the sentry analog and ignores key ownership: any
 non-zero `RekeyTo` rejects. The MVP sentry default is `reject_rekey:true`;
-allowing attested rekeys requires explicit policy that does not yet exist.
+allowing guarded rekeys requires explicit policy that does not yet exist.
 
 Network-scoped rules derive transaction network identity from `GenesisHash`,
 not `GenesisID`. Unknown genesis hashes fail closed when a network-scoped rule
@@ -309,7 +309,7 @@ is configured to skip review. The whole tier is client-signing-only: the
 sentry domain has no operator above the signer, so review-producing
 fields are rejected in sentry-domain `policy.yaml` at policy load time.
 Legacy top-level review-producing fields are client-signing-only compatibility
-fields. If a review verdict is still reachable while evaluating an attestor
+fields. If a review verdict is still reachable while evaluating a sentry
 component request, the request fails closed as a policy configuration error.
 See [Verdict Mapping By Role](#verdict-mapping-by-role).
 
@@ -366,7 +366,7 @@ Policy fields by domain:
 
 `auto_approve_self_noop_transfer` is client-signing-only because its "self"
 predicate references the signer-owned account. It has no defined meaning for
-sentry: an attestor is not the owner of the sender it is authorizing.
+sentry: a sentry is not the owner of the sender it is authorizing.
 The field is rejected at load time in sentry-domain `policy.yaml`. If an invalid
 effective sentry policy is injected in tests or by compatibility code, the
 rule simply does not match a sentry request because no signer-owned address
@@ -421,7 +421,7 @@ Behavior:
 
 `transfer_policy` is the implemented v1 route table for direct transfer
 movements. The same routing engine applies to both client-signing and
-sentry evaluation. Client-signing routes live in `policy.yaml`; attestor
+sentry evaluation. Client-signing routes live in `policy.yaml`; sentry
 component routes live in sentry-domain `policy.yaml`. Transfer routing is not projected
 through admin IPC.
 
@@ -429,7 +429,7 @@ For client signing, a route match means "allowed to continue through the
 normal policy phases"; it does not approve signing and never produces an
 Always Approve verdict.
 
-For sentry, routing is the positive authorization surface. An attestor
+For sentry, routing is the positive authorization surface. A sentry
 component request is eligible to sign only when all evaluated target
 transactions are supported transfer shapes, every extracted target movement is
 covered by a matching route, no route or transaction guard produces a deny
@@ -444,7 +444,7 @@ rules.
 
 In `policy.yaml`, a `transfer_policy:` block may also be nested inside
 `client_signing:` to override the top-level client-signing routes. In
-sentry-domain `policy.yaml`, the top-level `transfer_policy:` is the attestor
+sentry-domain `policy.yaml`, the top-level `transfer_policy:` is the sentry
 allow-list. These blocks follow the same schema, validation, and overlay rules
 except for sentry route-miss boilerplate. In sentry-domain `policy.yaml`,
 route-miss behavior is not configurable:
@@ -456,7 +456,7 @@ For client-signing evaluation, an `on_no_route: review` miss produces Always
 Review. For sentry evaluation, review or operator-default routing outcomes
 are not valid authorization outcomes. Examples include `on_no_route: review`,
 `close_on_no_route: operator_default`, and route-level `review_above`. If such
-behavior appears in the effective sentry routing block, the attestor
+behavior appears in the effective sentry routing block, the sentry
 request fails closed as a policy configuration error. Operators can keep review
 behavior in `policy.yaml` and provide a deterministic sentry-domain `policy.yaml`
 transfer policy for sentry component signing.
@@ -574,7 +574,7 @@ transactions:
 Together, `pay`, `pay_close`, `axfer`, `axfer_optin`, `asset_close`, and
 `clawback` are the supported sentry transfer-movement surface in MVP; a
 target transaction must extract at least one of these movements to be eligible
-for attestor-role component signing.
+for sentry-role component signing.
 
 For client signing, other transaction types produce no routing movement and
 continue through the remaining policy phases. For sentry MVP, target
@@ -670,7 +670,7 @@ blocked-destination, route-miss, close/clawback rejection, unknown-genesis, and
 `reject_above` IDs, but review-producing route outcomes are invalid for
 sentry component requests.
 
-Attestor component policy rule IDs:
+Sentry component policy rule IDs:
 
 - `sentry_policy:missing`
 - `sentry_policy:transfer_policy_required`
@@ -678,7 +678,7 @@ Attestor component policy rule IDs:
 - `sentry_policy:non_transfer`
 - `sentry_policy:reject_rekey`
 
-These rule IDs are emitted when the attestor role has no effective
+These rule IDs are emitted when the sentry role has no effective
 sentry-domain `policy.yaml` policy, lacks an enabled positive transfer policy, has
 route-miss behavior that is not deterministic `reject`, is asked to attest a
 target with no supported transfer movement, or sees a non-zero `RekeyTo`.
@@ -692,7 +692,7 @@ selectors are Algorand auth addresses for client signing. In sentry-domain
 
 During normal transaction signing, the effective policy is selected by the
 `auth_address` key that will sign, not by transaction sender. This matters for
-rekeyed accounts: the auth address controls the override. During attestor
+rekeyed accounts: the auth address controls the override. During sentry
 component signing, the effective policy is selected by the request
 `component_key` selector.
 
@@ -716,8 +716,8 @@ transaction-level policy. They still participate in request planning, group
 context, warning display, and approval rendering.
 
 For sentry, the evaluated slots are the `target_indices` of a
-`/sign/component` request. The attestor identity does not own the sender
-account; "target" means "transaction this attestor is being asked to attest"
+`/sign/component` request. The sentry identity does not own the sender
+account; "target" means "transaction this sentry is being asked to authorize"
 rather than "transaction signed by a key this identity holds." Non-target
 group members (including passthrough slots prepared by the user signer and
 foreign slots) participate in group context, warning display, and the
@@ -869,8 +869,8 @@ policy decision:
   rule forces a prompt.
 - `[USER AUTO-APPROVE] ...` when Operator Default approves without prompting.
 
-Attestor component signing uses the same policy rule identifiers for decoded
-transaction facts. Attestor component approvals and policy rejections are
+Sentry component signing uses the same policy rule identifiers for decoded
+transaction facts. Sentry component approvals and policy rejections are
 recorded through existing `SIGN_APPROVED`/`SIGN_REJECTED` audit events with the
 component selector in `txn_auth`, the decoded sender in `txn_sender`, and the
 policy rule in `policy_rule_id` when applicable. The

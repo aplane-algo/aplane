@@ -35,25 +35,25 @@ func TestBuildDetailsParameterLinesFormatsAddressList(t *testing.T) {
 	}
 }
 
-func TestBuildDetailsParameterLinesAttestedShowsAttestorSelector(t *testing.T) {
+func TestBuildDetailsParameterLinesGuardedShowsSentrySelector(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
 		KeyType:     keytypes.GuardedFalcon1024SentryEd25519V1,
-		DisplayName: "Falcon Attested",
+		DisplayName: "Falcon Sentry",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:  keytypes.ParameterSentryPublicKey,
-			Label: "Attestor public key",
+			Label: "Sentry public key",
 			Type:  "bytes",
 		}},
 	}})
 
 	got := buildDetailsParameterLines(keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
-		"Attestor":                        "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
+		"Sentry":                          "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
 		keytypes.ParameterSentryPublicKey: "aabbccdd",
 	})
-	want := []string{"Attestor: 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA"}
+	want := []string{"Sentry: 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("buildDetailsParameterLines(attested) = %#v, want %#v", got, want)
+		t.Fatalf("buildDetailsParameterLines(guarded) = %#v, want %#v", got, want)
 	}
 }
 
@@ -191,7 +191,7 @@ func TestRenderKeyListViewUsesAttestorNodeWithoutTabs(t *testing.T) {
 		viewState:     ViewKeyList,
 		width:         120,
 		height:        24,
-		adminSettings: &AdminSettings{NodeRole: "attestor"},
+		adminSettings: &AdminSettings{NodeRole: "sentry"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
@@ -216,7 +216,7 @@ func TestRenderKeyListViewUsesAttestorNodeWithoutTabs(t *testing.T) {
 func TestHandleKeyListKeysIgnoresTabOnAttestorNode(t *testing.T) {
 	m := Model{
 		viewState:     ViewKeyList,
-		adminSettings: &AdminSettings{NodeRole: "attestor"},
+		adminSettings: &AdminSettings{NodeRole: "sentry"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
@@ -257,7 +257,7 @@ func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 
 func TestSelectKeyByAddressSwitchesToAttestorTab(t *testing.T) {
 	m := Model{
-		adminSettings: &AdminSettings{NodeRole: "attestor"},
+		adminSettings: &AdminSettings{NodeRole: "sentry"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
@@ -290,7 +290,7 @@ func TestRenderKeyDetailsShowsPreciseTemplateProvenanceNote(t *testing.T) {
 	}
 }
 
-func TestRenderKeyDetailsShowsAttestorPublicKey(t *testing.T) {
+func TestRenderKeyDetailsShowsSentryPublicKey(t *testing.T) {
 	rendered := stripANSI(Model{
 		detailsAddress:      "aabbccdd",
 		detailsKeyType:      keytypes.AttestorComponentEd25519V1,
@@ -298,8 +298,8 @@ func TestRenderKeyDetailsShowsAttestorPublicKey(t *testing.T) {
 		height:              30,
 	}.renderKeyDetails())
 
-	if !strings.Contains(rendered, "Attestor public key: aabbccdd") {
-		t.Fatalf("renderKeyDetails() missing attestor public key:\n%s", rendered)
+	if !strings.Contains(rendered, "Sentry public key: aabbccdd") {
+		t.Fatalf("renderKeyDetails() missing sentry public key:\n%s", rendered)
 	}
 }
 

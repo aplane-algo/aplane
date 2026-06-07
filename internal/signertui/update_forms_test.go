@@ -134,10 +134,10 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
 		KeyType:     "aplane.falcon1024-sentry-ed25519.v1",
-		DisplayName: "Falcon-1024 / Ed25519 Attested",
+		DisplayName: "Falcon-1024 / Ed25519 Sentry",
 		CreationParams: []protocol.TemplateParamInfo{{
-			Name:    "attestor",
-			Label:   "Attestor",
+			Name:    "sentry",
+			Label:   "Sentry",
 			Type:    "select",
 			Options: []string{"lab-att", "backup-att"},
 			Default: "lab-att",
@@ -146,8 +146,8 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 
 	m := Model{generateKeyType: 0}
 	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-sentry-ed25519.v1")
-	if got := m.genericLSigParams["attestor"]; got != "lab-att" {
-		t.Fatalf("default attestor = %q, want lab-att", got)
+	if got := m.genericLSigParams["sentry"]; got != "lab-att" {
+		t.Fatalf("default sentry = %q, want lab-att", got)
 	}
 
 	m.generateFocus = 0
@@ -156,14 +156,14 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 		t.Fatalf("cycle command = %v, want nil", cmd)
 	}
 	m = next.(Model)
-	if got := m.genericLSigParams["attestor"]; got != "backup-att" {
-		t.Fatalf("cycled attestor = %q, want backup-att", got)
+	if got := m.genericLSigParams["sentry"]; got != "backup-att" {
+		t.Fatalf("cycled sentry = %q, want backup-att", got)
 	}
 
 	next, _ = m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyLeft})
 	m = next.(Model)
-	if got := m.genericLSigParams["attestor"]; got != "lab-att" {
-		t.Fatalf("left-cycled attestor = %q, want lab-att", got)
+	if got := m.genericLSigParams["sentry"]; got != "lab-att" {
+		t.Fatalf("left-cycled sentry = %q, want lab-att", got)
 	}
 }
 

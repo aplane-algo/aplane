@@ -58,8 +58,8 @@ This separation is deliberate:
 |---|---|---|
 | Native key file | `identities/<identity>/keys/<address>.key` | Native signing authority. |
 | LogicSig key file | `identities/<identity>/keys/<address>.key` | LogicSig bytecode, salt, signing metadata, and any private DSA key material. |
-| Attestor component key file | `identities/<identity>/keys/<component_selector>.key` | Component-signing authority for attestor-role `/sign/component`; not an Algorand spending account. |
-| Attestor public sidecar | `identities/<identity>/keys/<component_selector>.public.json` | Public export metadata for local component keys. |
+| Sentry component key file | `identities/<identity>/keys/<component_selector>.key` | Component-signing authority for sentry-role `/sign/component`; not an Algorand spending account. |
+| Sentry public sidecar | `identities/<identity>/keys/<component_selector>.public.json` | Public export metadata for local component keys. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | `identities/<identity>/node.yaml.hmac` | Per-identity HMAC over the exact root `node.yaml` bytes. |
 | Identity config | `identities/<identity>/config.yaml` | Identity-local runtime settings such as approval/lock timeouts and decommission state; it does not carry key-class role. |
@@ -99,12 +99,12 @@ role: signer
 created_at: "2026-06-07T00:00:00Z"
 ```
 
-Valid roles are exactly `signer` and `attestor`.
+Valid roles are exactly `signer` and `sentry`.
 
 | Node role | Allowed active key classes | Disallowed active key classes | Served signing paths |
 |---|---|---|---|
-| `signer` | Native signing keys, ordinary LogicSig keys, guarded account keys, and public attestor references used for generation. | Attestor component private keys. | Normal `/sign`, user-role `/sign/component`, `/sign/assemble`. |
-| `attestor` | Attestor component private keys and their public sidecars. | Native signing keys, ordinary LogicSig account keys, and guarded account keys. | Attestor-role `/sign/component`. |
+| `signer` | Native signing keys, ordinary LogicSig keys, guarded account keys, and public sentry references used for generation. | Sentry component private keys. | Normal `/sign`, user-role `/sign/component`, `/sign/assemble`. |
+| `sentry` | Sentry component private keys and their public sidecars. | Native signing keys, ordinary LogicSig account keys, and guarded account keys. | Sentry-role `/sign/component`. |
 
 Rules:
 
@@ -208,8 +208,8 @@ key is rejected during reload rather than published as a signable key.
 | Native key valid | Native key payload has valid key material and canonical key type. | Yes on signer nodes. | Restores directly onto signer nodes. |
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
-| Attestor component key valid | Payload category/type is a sentry component key and selector is canonical. | Only through attestor-role component signing on sentry nodes; normal `/sign` and spending paths reject it. | Restores as a component key on sentry nodes, regenerating the public sidecar; never as a spending account. |
-| Guarded account key valid | DSA LogicSig key whose bytecode embeds the attestor public key. | Only on signer nodes through attested orchestration: user component signature, sentry component signature, local assembly. | Restores from stored bytecode and metadata. |
+| Sentry component key valid | Payload category/type is a sentry component key and selector is canonical. | Only through sentry-role component signing on sentry nodes; normal `/sign` and spending paths reject it. | Restores as a component key on sentry nodes, regenerating the public sidecar; never as a spending account. |
+| Guarded account key valid | DSA LogicSig key whose bytecode embeds the sentry public key. | Only on signer nodes through guarded orchestration: user component signature, sentry component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig missing `salt_counter` | Payload has LogicSig bytecode but no salt counter. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig missing v1 signing metadata | Payload has bytecode but lacks `signing_metadata_version` where signing/restore would need durable metadata. | No. | Restore rejects instead of reconstructing from template. |
@@ -296,7 +296,7 @@ is not published as valid runtime inventory.
 
 | Operation | Key type state effect | Key file effect | Notes |
 |---|---|---|---|
-| Initialize node role | Writes root `node.yaml`; each initialized identity writes a matching HMAC sidecar when its master key is available. | None. | Default role is `signer`; attestor role is explicit at initialization. |
+| Initialize node role | Writes root `node.yaml`; each initialized identity writes a matching HMAC sidecar when its master key is available. | None. | Default role is `signer`; sentry role is explicit at initialization. |
 | Verify node role integrity | None. | None. | Required before unlock-dependent key scan, signing, generation, import, restore, or sentry component signing. |
 | `apstore keytype enable` | Writes/refreshes compiled enabled state, or enables an installed YAML template. | None. | Does not rewrite existing keys. |
 | `apstore keytype disable` | Deletes compiled state or disables an installed YAML template after the unused-key guard. | None. | Provider code and installed template files remain available to the store. |
@@ -332,10 +332,10 @@ is not published as valid runtime inventory.
 9. LogicSig key bytecode must derive an off-curve LogicSig address.
 10. DSA LogicSig keys require their stored `base_key_type` provider to be
     supported at sign time.
-11. Attestor component keys are component-signing keys, not spending accounts.
-12. Attestor component public sidecars are derived public metadata and must not
+11. Sentry component keys are component-signing keys, not spending accounts.
+12. Sentry component public sidecars are derived public metadata and must not
     be treated as independent signing authority.
-13. Guarded account keys use the attested orchestration flow; normal `/sign`
+13. Guarded account keys use the guarded orchestration flow; normal `/sign`
     rejects them.
 14. Backup restore is per-key and must not silently redefine an existing local
     `key_type`.

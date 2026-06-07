@@ -23,20 +23,20 @@ File: `config.yaml` in apshell data directory (`-d` or `APCLIENT_DATA`)
 
 File: `endpoints.yaml` in apshell data directory (`-d` or `APCLIENT_DATA`)
 
-Signer and attestor endpoint routing lives here, not in `config.yaml`.
+Signer and sentry endpoint routing lives here, not in `config.yaml`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `schema_version` | int | `1` | Endpoint registry schema version |
 | `default` | string | `primary` | Default signer endpoint alias |
-| `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `attestor` |
+| `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `sentry` |
 | `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported |
 | `endpoints.<alias>.signer_port` | int | `11270` | Remote apsigner REST port for `ssh://` endpoints |
 | `endpoints.<alias>.local_port` | int | `0` | Local tunnel port for `ssh://` endpoints; `0` chooses automatically |
 | `endpoints.<alias>.identity_file` | string | `.ssh/id_ed25519` | SSH private key path, resolved relative to `APCLIENT_DATA` |
 | `endpoints.<alias>.known_hosts_path` | string | `.ssh/known_hosts` | SSH known-hosts path, resolved relative to `APCLIENT_DATA` |
 | `endpoints.<alias>.token_file` | string | `aplane.token` or `tokens/<alias>.token` | Endpoint API token file, resolved relative to `APCLIENT_DATA` |
-| `endpoints.<alias>.published_attestors` | map | `(none)` | Attestor endpoint inventory learned from authenticated `/keys` discovery; routing metadata, not trust proof |
+| `endpoints.<alias>.published_sentries` | map | `(none)` | Sentry endpoint inventory learned from authenticated `/keys` discovery; routing metadata, not trust proof |
 
 ## apsigner Configuration
 

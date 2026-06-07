@@ -724,7 +724,7 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 	if len(params) != 1 {
 		t.Fatalf("CreationParams = %#v, want one sentry selector", params)
 	}
-	if params[0].Name != attrefs.ParamAttestorName || params[0].Type != "select" {
+	if params[0].Name != attrefs.ParamSentryName || params[0].Type != "select" {
 		t.Fatalf("sentry param = %#v, want select sentry", params[0])
 	}
 	if !reflect.DeepEqual(params[0].Options, []string{"lab-att"}) || params[0].Default != "lab-att" {

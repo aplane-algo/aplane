@@ -1042,7 +1042,7 @@ The multi-channel design separates concerns:
 **Admin endpoint separation:** `/admin/generate` and `/admin/keys` use
 separate stable actions (`keys.generate`, `keys.delete`) from signing
 (`sign.request`). `/admin/sentries/sync` uses `sentries.sync` because it
-mutates public attestor reference metadata, not private key material. Key
+mutates public sentry reference metadata, not private key material. Key
 management operations can be granted only to elevated principals or groups so
 signing-only clients cannot generate or delete keys.
 

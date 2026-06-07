@@ -25,7 +25,7 @@ func BuildAttestorPublicKeyExport(componentKey string, info *KeyFileInfo) (*Atte
 	return NewAttestorPublicKeyExport(componentKey, info.Type, info.PublicKeyHex)
 }
 
-// NewAttestorPublicKeyExport builds an attestor public-key envelope from raw
+// NewAttestorPublicKeyExport builds a sentry public-key envelope from raw
 // metadata values.
 func NewAttestorPublicKeyExport(componentKey, keyType, publicKeyHex string) (*AttestorPublicKeyExport, error) {
 	return attrefs.NewExportEnvelope(componentKey, keyType, publicKeyHex)

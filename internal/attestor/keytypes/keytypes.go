@@ -90,17 +90,17 @@ func AttestorComponentKeyTypeForGuardedAccount(keyType string) (string, bool) {
 	}
 }
 
-// ComponentKeySelector returns the canonical selector for an attestor component
-// key. Selectors are uppercase base32-no-padding SHA-512/256 digests over a
+// ComponentKeySelector returns the canonical selector for a sentry component key.
+// Selectors are uppercase base32-no-padding SHA-512/256 digests over a
 // domain-separated key-type/public-key tuple, independent of the component key
 // family.
 func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 	if !IsAttestorComponentKeyType(keyType) {
-		return "", fmt.Errorf("key type %q is not an attestor component key type", keyType)
+		return "", fmt.Errorf("key type %q is not a sentry component key type", keyType)
 	}
 	wantSize, ok := ComponentPublicKeySize(keyType)
 	if !ok {
-		return "", fmt.Errorf("key type %q is not an attestor component key type", keyType)
+		return "", fmt.Errorf("key type %q is not a sentry component key type", keyType)
 	}
 	if len(publicKey) != wantSize {
 		return "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)

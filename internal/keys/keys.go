@@ -118,7 +118,7 @@ func validateCurrentKeyPayloadMetadata(meta KeyPayloadMetadata) (KeyPayloadHeade
 		return KeyPayloadHeader{}, incompatibleKeyFormat("missing key_type")
 	}
 	if meta.Category == CategoryComponent && !keytypes.IsAttestorComponentKeyType(meta.KeyType) {
-		return KeyPayloadHeader{}, incompatibleKeyFormat("component category requires an attestor component key type, got %q", meta.KeyType)
+		return KeyPayloadHeader{}, incompatibleKeyFormat("component category requires a sentry component key type, got %q", meta.KeyType)
 	}
 	if meta.HasRuntimeArgs {
 		return KeyPayloadHeader{}, incompatibleKeyFormat("legacy runtime_args field; use signing_args")

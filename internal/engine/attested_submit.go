@@ -187,19 +187,19 @@ func (t attestedOriginalTarget) attestorRequestKey() attestorRequestKey {
 func normalizeAttestorPublicKeyHex(raw string, componentKeyType string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return "", fmt.Errorf("attestor public key is required")
+		return "", fmt.Errorf("sentry public key is required")
 	}
 	trimmed = strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
 	publicKey, err := hex.DecodeString(trimmed)
 	if err != nil {
-		return "", fmt.Errorf("attestor public key must be hex: %w", err)
+		return "", fmt.Errorf("sentry public key must be hex: %w", err)
 	}
 	wantSize, ok := keytypes.ComponentPublicKeySize(componentKeyType)
 	if !ok {
-		return "", fmt.Errorf("key type %q is not an attestor component key type", componentKeyType)
+		return "", fmt.Errorf("key type %q is not a sentry component key type", componentKeyType)
 	}
 	if len(publicKey) != wantSize {
-		return "", fmt.Errorf("attestor public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
+		return "", fmt.Errorf("sentry public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
 	}
 	return hex.EncodeToString(publicKey), nil
 }
@@ -426,17 +426,17 @@ func verifyAttestorComponentSignatures(componentKeyType string, attestorPublicKe
 	}
 	publicKey, err := hex.DecodeString(canonicalPublicKey)
 	if err != nil {
-		return fmt.Errorf("attestor public key must be hex: %w", err)
+		return fmt.Errorf("sentry public key must be hex: %w", err)
 	}
 	for _, index := range indices {
 		signatureHex := signatures[index]
 		signature, err := hex.DecodeString(signatureHex)
 		if err != nil {
-			return fmt.Errorf("attestor signature for target index %d must be hex: %w", index, err)
+			return fmt.Errorf("sentry signature for target index %d must be hex: %w", index, err)
 		}
 		msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
 		if err := verifyAttestorComponentSignature(componentKeyType, publicKey, msg[:], signature); err != nil {
-			return fmt.Errorf("attestor signature for target index %d did not verify against embedded attestor public key: %w", index, err)
+			return fmt.Errorf("sentry signature for target index %d did not verify against embedded sentry public key: %w", index, err)
 		}
 	}
 	return nil
@@ -449,7 +449,7 @@ func verifyAttestorComponentSignature(componentKeyType string, publicKey, msg, s
 	case keytypes.AttestorComponentFalcon1024V1:
 		return attestorverify.VerifyFalcon1024(publicKey, msg, signature)
 	default:
-		return fmt.Errorf("key type %q is not an attestor component key type", componentKeyType)
+		return fmt.Errorf("key type %q is not a sentry component key type", componentKeyType)
 	}
 }
 

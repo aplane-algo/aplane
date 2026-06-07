@@ -420,7 +420,7 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 		t.Errorf("ADDR3 signing args = %+v, want [{preimage bytes true}]", args)
 	}
 	if got, ok := loaded.AttestorPublicKeyForAddress("ADDR2"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
-		t.Errorf("ADDR2 attestor public key = %q/%v, want persisted value", got, ok)
+		t.Errorf("ADDR2 sentry public key = %q/%v, want persisted value", got, ok)
 	}
 	if loaded.Locked {
 		t.Error("Locked should not persist across save/load")

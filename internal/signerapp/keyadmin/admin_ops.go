@@ -86,7 +86,7 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 	return result, nil
 }
 
-const keyDetailsAttestorLabel = "Attestor"
+const keyDetailsAttestorLabel = "Sentry"
 
 func keyDetailsParameters(keyType string, parameters map[string]string) map[string]string {
 	if !keytypes.IsGuardedAccountKeyType(keyType) {
@@ -103,7 +103,7 @@ func keyDetailsParameters(keyType string, parameters map[string]string) map[stri
 
 	componentKey, err := attestorComponentSelectorForDetails(keyType, parameters[keytypes.ParameterSentryPublicKey])
 	if err != nil {
-		projected[keyDetailsAttestorLabel] = fmt.Sprintf("invalid attestor public key (%v)", err)
+		projected[keyDetailsAttestorLabel] = fmt.Sprintf("invalid sentry public key (%v)", err)
 		return projected
 	}
 	projected[keyDetailsAttestorLabel] = componentKey

@@ -239,7 +239,7 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 				tt.keyType,
 				masterKey,
 				map[string]string{
-					falcon1024attested.ParamAttestorPublicKey: tt.attestorPublicKey,
+					falcon1024attested.ParamSentryPublicKey: tt.attestorPublicKey,
 				},
 				[]string{tt.keyType},
 			)
@@ -275,8 +275,8 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 			if keyPair.BaseKeyType != falcon1024attested.BaseKeyType {
 				t.Fatalf("BaseKeyType = %q, want %s", keyPair.BaseKeyType, falcon1024attested.BaseKeyType)
 			}
-			if keyPair.Params[falcon1024attested.ParamAttestorPublicKey] != tt.attestorPublicKey {
-				t.Fatalf("attestor public key param = %q, want %q", keyPair.Params[falcon1024attested.ParamAttestorPublicKey], tt.attestorPublicKey)
+			if keyPair.Params[falcon1024attested.ParamSentryPublicKey] != tt.attestorPublicKey {
+				t.Fatalf("sentry public key param = %q, want %q", keyPair.Params[falcon1024attested.ParamSentryPublicKey], tt.attestorPublicKey)
 			}
 			if keyPair.LsigBytecodeHex == "" {
 				t.Fatal("LsigBytecodeHex is empty")

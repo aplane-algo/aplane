@@ -158,7 +158,7 @@ func TestPolicyEditorTargetsSentryOnAttestorNode(t *testing.T) {
 	m := Model{
 		viewState: ViewAdminPanel,
 		adminSettings: &AdminSettings{
-			NodeRole: "attestor",
+			NodeRole: "sentry",
 		},
 	}
 

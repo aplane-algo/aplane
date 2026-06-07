@@ -253,10 +253,10 @@ func TestKeyDetailsParametersProjectsAttestedAttestorSelector(t *testing.T) {
 	})
 
 	if got[keyDetailsAttestorLabel] != componentKey {
-		t.Fatalf("Attestor = %q, want %q", got[keyDetailsAttestorLabel], componentKey)
+		t.Fatalf("Sentry = %q, want %q", got[keyDetailsAttestorLabel], componentKey)
 	}
 	if _, ok := got[keytypes.ParameterSentryPublicKey]; ok {
-		t.Fatalf("projected parameters exposed raw attestor public key: %#v", got)
+		t.Fatalf("projected parameters exposed raw sentry public key: %#v", got)
 	}
 	if got["other"] != "kept" {
 		t.Fatalf("other parameter = %q, want kept", got["other"])

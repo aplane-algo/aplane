@@ -27,7 +27,7 @@ type componentKeyGetter interface {
 }
 
 // signPreparedAttestorComponents is the narrow private-key operation for
-// attestor-role component signatures. Callers must run deterministic
+// sentry-role component signatures. Callers must run deterministic
 // sentry policy before invoking it.
 func signPreparedAttestorComponents(ctx context.Context, plan *ComponentSignPlan, session componentKeyGetter) (*ComponentSignResult, *ServiceError) {
 	if ctx == nil {

@@ -269,7 +269,7 @@ func discoverAttestorComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredAttest
 		}
 		publicKey, err := normalizeAttestorPublicKeyHex(key.PublicKeyHex, key.KeyType)
 		if err != nil {
-			return nil, fmt.Errorf("%w: attestor component key %q has invalid public_key_hex: %v", ErrAttestorDiscoveryInvalidMetadata, key.Address, err)
+			return nil, fmt.Errorf("%w: sentry component key %q has invalid public_key_hex: %v", ErrAttestorDiscoveryInvalidMetadata, key.Address, err)
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
 		if err != nil {
@@ -277,7 +277,7 @@ func discoverAttestorComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredAttest
 		}
 		expectedSelector, err := attestorComponentSelector(key.KeyType, publicKey)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to derive component selector for attestor public key %s: %v", ErrAttestorDiscoveryInvalidMetadata, publicKey, err)
+			return nil, fmt.Errorf("%w: failed to derive component selector for sentry public key %s: %v", ErrAttestorDiscoveryInvalidMetadata, publicKey, err)
 		}
 		if selector != expectedSelector {
 			return nil, fmt.Errorf("%w: sentry component public key %s advertised selector %s, want %s", ErrAttestorDiscoveryInvalidMetadata, publicKey, selector, expectedSelector)
@@ -313,11 +313,11 @@ func (e *Engine) signerProgressWriter() io.Writer {
 func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorComponentClient, attestorKey attestorRequestKey, source string) error {
 	expectedPublicKey, err := normalizeAttestorPublicKeyHex(attestorKey.PublicKey, attestorKey.ComponentKeyType)
 	if err != nil {
-		return fmt.Errorf("invalid expected attestor public key: %w", err)
+		return fmt.Errorf("invalid expected sentry public key: %w", err)
 	}
 	expectedSelector, err := attestorComponentSelector(attestorKey.ComponentKeyType, expectedPublicKey)
 	if err != nil {
-		return fmt.Errorf("failed to derive expected attestor component selector: %w", err)
+		return fmt.Errorf("failed to derive expected sentry component selector: %w", err)
 	}
 	keys, err := client.GetKeysWithContext(ctx)
 	if err != nil {
@@ -339,10 +339,10 @@ func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorCompon
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
 		if err != nil {
-			return fmt.Errorf("%s advertised attestor public key %s with invalid component selector %q: %w", source, expectedPublicKey, key.Address, err)
+			return fmt.Errorf("%s advertised sentry public key %s with invalid component selector %q: %w", source, expectedPublicKey, key.Address, err)
 		}
 		if selector != expectedSelector {
-			return fmt.Errorf("%s advertised attestor public key %s with component selector %s, want %s", source, expectedPublicKey, selector, expectedSelector)
+			return fmt.Errorf("%s advertised sentry public key %s with component selector %s, want %s", source, expectedPublicKey, selector, expectedSelector)
 		}
 		return nil
 	}

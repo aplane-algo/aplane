@@ -389,5 +389,5 @@ These should be answered before a machine-checkable model:
    verification as booleans or model signature roles as uninterpreted tokens.
 2. Decide whether endpoint discovery belongs in the first guarded module or
    should be a separate routing-state model joined later.
-3. Decide whether to model node role in the attested module or in a separate
+3. Decide whether to model node role in the guarded module or in a separate
    durable-inventory/role model.

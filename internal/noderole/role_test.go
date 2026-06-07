@@ -17,7 +17,7 @@ func TestParseRole(t *testing.T) {
 		want Role
 	}{
 		{name: "signer", raw: "signer", want: RoleSigner},
-		{name: "attestor", raw: "sentry", want: RoleSentry},
+		{name: "sentry", raw: "sentry", want: RoleSentry},
 		{name: "trim lower", raw: " Sentry ", want: RoleSentry},
 	}
 	for _, tc := range tests {

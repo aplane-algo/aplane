@@ -244,10 +244,10 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 		t.Fatal("PopulateSignerCache replaced SignerCache storage; existing completer pointers would go stale")
 	}
 	if got := original.GetKeyType("ADDR1"); got != "aplane.falcon1024-sentry-ed25519.v1" {
-		t.Fatalf("original pointer key type = %q, want attested key type", got)
+		t.Fatalf("original pointer key type = %q, want guarded key type", got)
 	}
 	if got, ok := original.AttestorPublicKeyForAddress("ADDR1"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
-		t.Fatalf("attestor public key = %q/%v, want cached value", got, ok)
+		t.Fatalf("sentry public key = %q/%v, want cached value", got, ok)
 	}
 
 	state.PopulateSignerCache(nil)
@@ -255,7 +255,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 		t.Fatalf("original pointer count after empty populate = %d, want 0", original.Count())
 	}
 	if got, ok := original.AttestorPublicKeyForAddress("ADDR1"); ok || got != "" {
-		t.Fatalf("attestor public key after empty populate = %q/%v, want empty false", got, ok)
+		t.Fatalf("sentry public key after empty populate = %q/%v, want empty false", got, ok)
 	}
 }
 

@@ -28,7 +28,7 @@ Primary sources for the first tranche:
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing policy,
   lifecycle, reload, key-file, SDK, and backup/restore contracts.
 - [ARCH_SPEC.md#guarded-signing-and-sentry-nodes](ARCH_SPEC.md#guarded-signing-and-sentry-nodes):
-  guarded-account component signing, attestor endpoint routing, assembly
+  guarded-account component signing, sentry endpoint routing, assembly
   verification, and node role separation.
 - [ARCH_POLICY.md](ARCH_POLICY.md): current signer policy verdict model,
   precedence, sentry component policy, snapshot semantics, and rule
@@ -88,7 +88,7 @@ Initial models should not include:
 - LogicSig budget computation internals,
 - LogicSig template and bytecode-generation semantics,
 - future registration, witness, compliance-signer, or profile-trust concepts
-  that are not current attestor contracts.
+  that are not current sentry contracts.
 
 Those areas can be connected later through assumptions or separate models if
 their contracts become security-critical.
@@ -133,9 +133,9 @@ Preferred test targets:
 - `/simulate` boundary: hard-policy enforcement, no signed bytes in response,
   foreign-slot rejection, decommission/lock rejection,
 - `auth_address` -> key file resolution via runtime index.
-- guarded signing assembly: wrong user signature rejection, wrong attestor
+- guarded signing assembly: wrong user signature rejection, wrong sentry
   signature rejection, passthrough transaction-ID binding,
-- attestor endpoint routing: explicit mismatch hard-fails without fallback,
+- sentry endpoint routing: explicit mismatch hard-fails without fallback,
   malformed component responses reject, unavailable endpoint sync preserves
   prior inventory while hard failures write nothing.
 
@@ -219,10 +219,10 @@ Next likely modules:
    [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md) into a
    small one-shot module. The first version should abstract cryptographic
    verification as predicates and check that successful assembly requires the
-   local user key, the embedded attestor key, exact target coverage, and
+   local user key, the embedded sentry key, exact target coverage, and
    passthrough transaction-ID binding.
 2. **Endpoint routing state.** Model client endpoint inventory separately if
-   the attested module becomes too large: explicit mismatch hard-fails, self
+   the guarded module becomes too large: explicit mismatch hard-fails, self
    fallback is only available when no explicit route exists, and hard discovery
    failures do not partially rewrite routing state.
 3. **Lifecycle-aware composition.** Compose the temporal lifecycle
@@ -287,7 +287,7 @@ and the fixed reload step order.
 
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md) captures
 the guarded-account co-signing workflow: role-separated component messages,
-attestor transfer policy, endpoint routing as non-trust metadata, local
+sentry transfer policy, endpoint routing as non-trust metadata, local
 assembly verification against stored key-file anchors, passthrough binding,
 endpoint sync behavior, and node role gates.
 
@@ -304,7 +304,7 @@ and the relationship between the Non-Goals list above and M3.
 The first-wave formalization snapshot corresponded to commit
 **`89decbb`** ("Close lifecycle formalization test gaps") on `main`.
 The current roadmap has since been extended for the guarded signing system.
-If the repository has moved since the attested update, run `git log --oneline`
+If the repository has moved since the guarded signing update, run `git log --oneline`
 from the relevant formalization commit to see what changed.
 
 ### Milestone status

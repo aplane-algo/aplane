@@ -185,7 +185,7 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 	var resolveErr error
 	params, resolveErr = attrefs.ResolveCreationParams(paths, identityID, keyType, params)
 	if resolveErr != nil {
-		return nil, fmt.Errorf("%w: attestor reference resolution failed: %v", keygen.ErrInvalidParams, resolveErr)
+		return nil, fmt.Errorf("%w: sentry reference resolution failed: %v", keygen.ErrInvalidParams, resolveErr)
 	}
 
 	generator, err := keygen.GetGenerator(keyType)

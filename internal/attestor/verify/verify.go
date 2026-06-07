@@ -40,7 +40,7 @@ type CanonicalGroup struct {
 	GroupID   types.Digest
 }
 
-// VerifyEd25519 verifies an attestor-role component signature.
+// VerifyEd25519 verifies a sentry-role component signature.
 func VerifyEd25519(publicKey, message, signature []byte) error {
 	if len(publicKey) != ed25519.PublicKeySize {
 		return fmt.Errorf("ed25519 public key length %d invalid (expected %d bytes)", len(publicKey), ed25519.PublicKeySize)

@@ -108,7 +108,7 @@ func (p Paths) AttestorRefsDir(identityID string) string {
 }
 
 func (p Paths) AttestorRefPath(identityID, name string) string {
-	validatePathComponent("attestor reference name", name)
+	validatePathComponent("sentry reference name", name)
 	return filepath.Join(p.AttestorRefsDir(identityID), name+".json")
 }
 

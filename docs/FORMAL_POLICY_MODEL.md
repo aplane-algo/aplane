@@ -43,10 +43,10 @@ Client-signing policy decides whether a planned signing request is:
 - explicitly approved without manual review,
 - handled by the operator default.
 
-Attestor component policy is a separate deterministic surface stored in
+Sentry component policy is a separate deterministic surface stored in
 sentry-domain `policy.yaml`: no manual-review verdict and no operator default. This
 document defines the shared snapshot and sparse-override vocabulary; the
-attestor-specific decision rules are modeled in
+sentry-specific decision rules are modeled in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
 Policy also gates `/simulate`, but only at the Always Deny tier. `/simulate`
@@ -249,8 +249,8 @@ Client-signing rules:
 5. Override fields are sparse overlays over the identity-wide policy; nested
    overrides are rejected.
 
-Attestor component overrides are keyed by the component selector and are
-consumed only by the attestor-role component-signing flow modeled in
+Sentry component overrides are keyed by the component selector and are
+consumed only by the sentry-role component-signing flow modeled in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
 ## Network Selection

@@ -35,7 +35,7 @@ audit cover:
 - passthrough signed-transaction txid mismatch rejection during
   `/sign/assemble`,
 - direct `/sign` rejection for both guarded account key types,
-- malformed component-sign response rejection before local attestor signature
+- malformed component-sign response rejection before local sentry signature
   verification.
 
 ## Deferred until design decision

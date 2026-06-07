@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package attrefs stores identity-scoped public attestor references used when
+// Package attrefs stores identity-scoped public sentry references used when
 // generating guarded account keys.
 package attrefs
 
@@ -23,14 +23,14 @@ import (
 )
 
 const (
-	ExportSchema          = "aplane.attestor-public-key.v1"
-	RecordSchema          = "aplane.attestor-public-key-ref.v1"
+	ExportSchema          = "aplane.sentry-public-key.v1"
+	RecordSchema          = "aplane.sentry-public-key-ref.v1"
 	SourceManual          = "manual"
 	SourceClientDiscovery = "client_discovery"
 
-	// ParamAttestorName is the generation parameter that selects an imported
-	// attestor reference by name.
-	ParamAttestorName = "attestor"
+	// ParamSentryName is the generation parameter that selects an imported
+	// sentry reference by name.
+	ParamSentryName = "sentry"
 )
 
 var nameShape = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
@@ -61,7 +61,7 @@ type Record struct {
 	ImportedAt        string `json:"imported_at"`
 }
 
-// DiscoveredRecord is a public attestor reference learned by a client endpoint
+// DiscoveredRecord is a public sentry reference learned by a client endpoint
 // discovery pass and synced into a signer identity for key-generation UX.
 type DiscoveredRecord struct {
 	EndpointAlias string
@@ -71,7 +71,7 @@ type DiscoveredRecord struct {
 	LastSeenAt    string
 }
 
-// SyncResult summarizes one client-discovered attestor reference sync.
+// SyncResult summarizes one client-discovered sentry reference sync.
 type SyncResult struct {
 	Added   int
 	Updated int
@@ -82,13 +82,13 @@ type SyncResult struct {
 func NormalizeName(name string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(name))
 	if normalized == "" {
-		return "", fmt.Errorf("attestor reference name is required")
+		return "", fmt.Errorf("sentry reference name is required")
 	}
 	if !nameShape.MatchString(normalized) {
-		return "", fmt.Errorf("invalid attestor reference name %q: use lowercase letters, numbers, '.', '-' and '_'", name)
+		return "", fmt.Errorf("invalid sentry reference name %q: use lowercase letters, numbers, '.', '-' and '_'", name)
 	}
 	if strings.Contains(normalized, "..") {
-		return "", fmt.Errorf("invalid attestor reference name %q: must not contain '..'", name)
+		return "", fmt.Errorf("invalid sentry reference name %q: must not contain '..'", name)
 	}
 	return normalized, nil
 }
@@ -108,7 +108,7 @@ func NewExportEnvelope(componentKey, keyType, publicKeyHex string) (*ExportEnvel
 		return nil, fmt.Errorf("invalid component key selector: %w", err)
 	}
 	if !keytypes.IsAttestorComponentKeyType(keyType) {
-		return nil, fmt.Errorf("key type %q is not an attestor component key type", keyType)
+		return nil, fmt.Errorf("key type %q is not a sentry component key type", keyType)
 	}
 	publicKeyHex = strings.ToLower(strings.TrimSpace(publicKeyHex))
 	publicKeyBytes, publicKeySHA256, err := validatePublicKey(keyType, componentKey, publicKeyHex)
@@ -150,11 +150,11 @@ func SyncDiscovered(paths storepaths.Paths, identityID string, discovered []Disc
 			return nil, err
 		}
 		if previous, ok := seenPublicKeys[rec.PublicKeyHex]; ok && previous != rec.EndpointAlias {
-			return nil, fmt.Errorf("attestor public key %s appears under multiple endpoint aliases (%s and %s)", rec.PublicKeyHex, previous, rec.EndpointAlias)
+			return nil, fmt.Errorf("sentry public key %s appears under multiple endpoint aliases (%s and %s)", rec.PublicKeyHex, previous, rec.EndpointAlias)
 		}
 		seenPublicKeys[rec.PublicKeyHex] = rec.EndpointAlias
 		if existing, ok := desired[rec.Name]; ok && !sameSyncedRecord(existing, rec) {
-			return nil, fmt.Errorf("multiple discovered attestors resolve to reference name %q", rec.Name)
+			return nil, fmt.Errorf("multiple discovered sentries resolve to reference name %q", rec.Name)
 		}
 		desired[rec.Name] = rec
 	}
@@ -171,7 +171,7 @@ func SyncDiscovered(paths storepaths.Paths, identityID string, discovered []Disc
 	result := &SyncResult{Records: make([]Record, 0, len(desired))}
 	for name, rec := range desired {
 		if current, ok := existingByName[name]; ok && current.Source != SourceClientDiscovery {
-			return nil, fmt.Errorf("synced attestor reference %q collides with existing %s reference", name, current.Source)
+			return nil, fmt.Errorf("synced sentry reference %q collides with existing %s reference", name, current.Source)
 		}
 		if current, ok := existingByName[name]; ok {
 			if !sameSyncedRecord(current, rec) {
@@ -221,10 +221,10 @@ func ParseImport(name string, data []byte) (*Record, error) {
 	}
 	var env ExportEnvelope
 	if err := json.Unmarshal(data, &env); err != nil {
-		return nil, fmt.Errorf("failed to parse attestor public-key envelope: %w", err)
+		return nil, fmt.Errorf("failed to parse sentry public-key envelope: %w", err)
 	}
 	if env.Schema != ExportSchema {
-		return nil, fmt.Errorf("unsupported attestor public-key envelope schema %q", env.Schema)
+		return nil, fmt.Errorf("unsupported sentry public-key envelope schema %q", env.Schema)
 	}
 	env, err = normalizeExportEnvelope(env)
 	if err != nil {
@@ -250,15 +250,15 @@ func Put(paths storepaths.Paths, identityID string, rec Record) error {
 	}
 	path := paths.AttestorRefPath(identityID, normalized.Name)
 	if err := fsutil.MkdirAll(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("failed to create attestor reference directory: %w", err)
+		return fmt.Errorf("failed to create sentry reference directory: %w", err)
 	}
 	data, err := json.MarshalIndent(normalized, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to encode attestor reference: %w", err)
+		return fmt.Errorf("failed to encode sentry reference: %w", err)
 	}
 	data = append(data, '\n')
 	if err := fsutil.WriteFile(path, data); err != nil {
-		return fmt.Errorf("failed to write attestor reference: %w", err)
+		return fmt.Errorf("failed to write sentry reference: %w", err)
 	}
 	return nil
 }
@@ -274,11 +274,11 @@ func Get(paths storepaths.Paths, identityID, name string) (Record, bool, error) 
 		if os.IsNotExist(err) {
 			return Record{}, false, nil
 		}
-		return Record{}, false, fmt.Errorf("failed to read attestor reference %s: %w", name, err)
+		return Record{}, false, fmt.Errorf("failed to read sentry reference %s: %w", name, err)
 	}
 	rec, err := parseRecord(data, name)
 	if err != nil {
-		return Record{}, false, fmt.Errorf("invalid attestor reference %s: %w", name, err)
+		return Record{}, false, fmt.Errorf("invalid sentry reference %s: %w", name, err)
 	}
 	return rec, true, nil
 }
@@ -290,7 +290,7 @@ func List(paths storepaths.Paths, identityID string) ([]Record, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to read attestor reference directory: %w", err)
+		return nil, fmt.Errorf("failed to read sentry reference directory: %w", err)
 	}
 	records := make([]Record, 0, len(entries))
 	for _, entry := range entries {
@@ -322,7 +322,7 @@ func Delete(paths storepaths.Paths, identityID, name string) (bool, error) {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to remove attestor reference %s: %w", name, err)
+		return false, fmt.Errorf("failed to remove sentry reference %s: %w", name, err)
 	}
 	return true, nil
 }
@@ -331,31 +331,31 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 	if !keytypes.IsGuardedAccountKeyType(keyType) {
 		return params, nil
 	}
-	name, hasName := params[ParamAttestorName]
+	name, hasName := params[ParamSentryName]
 	if !hasName || strings.TrimSpace(name) == "" {
 		return params, nil
 	}
 	if _, hasPublicKey := params[keytypes.ParameterSentryPublicKey]; hasPublicKey {
-		return nil, fmt.Errorf("specify either %s or %s, not both", ParamAttestorName, keytypes.ParameterSentryPublicKey)
+		return nil, fmt.Errorf("specify either %s or %s, not both", ParamSentryName, keytypes.ParameterSentryPublicKey)
 	}
 	rec, ok, err := Get(paths, identityID, name)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("attestor reference %q not found", strings.TrimSpace(name))
+		return nil, fmt.Errorf("sentry reference %q not found", strings.TrimSpace(name))
 	}
 	wantKeyType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(keyType)
 	if !ok {
 		return nil, fmt.Errorf("key type %q is not a guarded account key type", keyType)
 	}
 	if rec.KeyType != wantKeyType {
-		return nil, fmt.Errorf("attestor reference %q uses %s, but %s requires %s", rec.Name, rec.KeyType, keyType, wantKeyType)
+		return nil, fmt.Errorf("sentry reference %q uses %s, but %s requires %s", rec.Name, rec.KeyType, keyType, wantKeyType)
 	}
 
 	resolved := make(map[string]string, len(params))
 	for k, v := range params {
-		if k == ParamAttestorName {
+		if k == ParamSentryName {
 			continue
 		}
 		resolved[k] = v
@@ -427,10 +427,10 @@ func normalizeRecord(rec Record) (Record, error) {
 		rec.SyncedAt = ""
 	case SourceClientDiscovery:
 		if strings.TrimSpace(rec.EndpointAlias) == "" {
-			return Record{}, fmt.Errorf("endpoint_alias is required for %s attestor reference", SourceClientDiscovery)
+			return Record{}, fmt.Errorf("endpoint_alias is required for %s sentry reference", SourceClientDiscovery)
 		}
 	default:
-		return Record{}, fmt.Errorf("unsupported attestor reference source %q", source)
+		return Record{}, fmt.Errorf("unsupported sentry reference source %q", source)
 	}
 	return Record{
 		Schema:            RecordSchema,
@@ -452,11 +452,11 @@ func normalizeRecord(rec Record) (Record, error) {
 func recordFromDiscovered(item DiscoveredRecord, syncedAt string) (Record, error) {
 	endpointAlias := strings.TrimSpace(item.EndpointAlias)
 	if endpointAlias == "" {
-		return Record{}, fmt.Errorf("endpoint alias is required for discovered attestor")
+		return Record{}, fmt.Errorf("endpoint alias is required for discovered sentry")
 	}
 	componentKey, err := keytypes.NormalizeComponentKeySelector(item.ComponentKey)
 	if err != nil {
-		return Record{}, fmt.Errorf("invalid discovered attestor component key: %w", err)
+		return Record{}, fmt.Errorf("invalid discovered sentry component key: %w", err)
 	}
 	name, err := SyncedReferenceName(endpointAlias, componentKey)
 	if err != nil {
@@ -527,7 +527,7 @@ func validatePublicKey(keyType, componentKey, publicKeyHex string) ([]byte, stri
 	}
 	wantSize, ok := keytypes.ComponentPublicKeySize(keyType)
 	if !ok {
-		return nil, "", fmt.Errorf("key type %q is not an attestor component key type", keyType)
+		return nil, "", fmt.Errorf("key type %q is not a sentry component key type", keyType)
 	}
 	if len(publicKeyBytes) != wantSize {
 		return nil, "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKeyBytes), wantSize)

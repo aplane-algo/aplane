@@ -64,14 +64,14 @@ func buildDetailsParameterLines(keyType string, parameters map[string]string) []
 
 func buildAttestedDetailsParameterLines(parameters map[string]string) []string {
 	var lines []string
-	if value, ok := parameters["Attestor"]; ok {
-		lines = append(lines, formatParameterDisplayLines("Attestor", "", value)...)
+	if value, ok := parameters["Sentry"]; ok {
+		lines = append(lines, formatParameterDisplayLines("Sentry", "", value)...)
 		lines = append(lines, "")
 	}
 
 	keys := make([]string, 0, len(parameters))
 	for key := range parameters {
-		if key == "Attestor" || key == keytypes.ParameterSentryPublicKey {
+		if key == "Sentry" || key == keytypes.ParameterSentryPublicKey {
 			continue
 		}
 		keys = append(keys, key)
@@ -194,7 +194,7 @@ func (m Model) keyListMode() string {
 		return "signing"
 	}
 	switch strings.ToLower(strings.TrimSpace(m.adminSettings.NodeRole)) {
-	case "attestor":
+	case "sentry":
 		return "sentry"
 	default:
 		return "signing"
@@ -252,7 +252,7 @@ func (m Model) renderKeyListTabs() string {
 		count int
 	}{
 		{tab: keyListTabSigning, label: "Signing", count: signing},
-		{tab: keyListTabAttestor, label: "Attestor", count: attestor},
+		{tab: keyListTabAttestor, label: "Sentry", count: attestor},
 	}
 
 	parts := make([]string, 0, len(labels))
@@ -269,7 +269,7 @@ func (m Model) renderKeyListTabs() string {
 
 func (m Model) activeKeyListTabLabel() string {
 	if m.effectiveKeyListTab() == keyListTabAttestor {
-		return "Attestor"
+		return "Sentry"
 	}
 	return "Signing"
 }
@@ -424,7 +424,7 @@ func (m Model) renderKeyDetails() string {
 	if m.detailsPublicKeyHex != "" {
 		label := "Public key"
 		if keytypes.IsAttestorComponentKeyType(m.detailsKeyType) {
-			label = "Attestor public key"
+			label = "Sentry public key"
 		}
 		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, m.detailsPublicKeyHex), m.popupBodyWidth(62)))
 		sb.WriteString("\n")

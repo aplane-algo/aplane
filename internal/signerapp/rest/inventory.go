@@ -313,7 +313,7 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 			continue
 		}
 		infos[i].CreationParams = []signerapi.CreationParamInfo{{
-			Name:        attrefs.ParamAttestorName,
+			Name:        attrefs.ParamSentryName,
 			Label:       "Sentry",
 			Description: "Imported sentry public-key reference to embed in the guarded account",
 			Type:        "select",

@@ -62,7 +62,7 @@ func TestImportGetListDelete(t *testing.T) {
 func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	if err := os.MkdirAll(paths.AttestorRefsDir("default"), 0o700); err != nil {
-		t.Fatalf("MkdirAll(attestors) error = %v", err)
+		t.Fatalf("MkdirAll(sentries) error = %v", err)
 	}
 	if err := os.WriteFile(paths.AttestorRefPath("default", "bad"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
 		t.Fatalf("WriteFile(bad reference) error = %v", err)
@@ -72,7 +72,7 @@ func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 	if err == nil {
 		t.Fatal("List() error = nil, want invalid reference rejection")
 	}
-	if !strings.Contains(err.Error(), "invalid attestor reference bad") {
+	if !strings.Contains(err.Error(), "invalid sentry reference bad") {
 		t.Fatalf("List() error = %v, want invalid reference context", err)
 	}
 }
@@ -85,7 +85,7 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 	}
 
 	resolved, err := ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
-		ParamAttestorName: "lab-att",
+		ParamSentryName: "lab-att",
 	})
 	if err != nil {
 		t.Fatalf("ResolveCreationParams() error = %v", err)
@@ -93,14 +93,14 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 	if got := resolved[keytypes.ParameterSentryPublicKey]; got != strings.Repeat("ab", 32) {
 		t.Fatalf("sentry_public_key = %q, want imported public key", got)
 	}
-	if _, ok := resolved[ParamAttestorName]; ok {
-		t.Fatalf("resolved params still contain %s: %#v", ParamAttestorName, resolved)
+	if _, ok := resolved[ParamSentryName]; ok {
+		t.Fatalf("resolved params still contain %s: %#v", ParamSentryName, resolved)
 	}
 }
 
 func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 	_, err := ResolveCreationParams(storepaths.NewPaths(t.TempDir()), "default", keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
-		ParamAttestorName:                 "lab-att",
+		ParamSentryName:                   "lab-att",
 		keytypes.ParameterSentryPublicKey: strings.Repeat("ab", 32),
 	})
 	if err == nil {
@@ -119,13 +119,13 @@ func TestResolveCreationParamsRejectsMismatchedComponentKeyType(t *testing.T) {
 	}
 
 	_, err := ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
-		ParamAttestorName: "falcon-att",
+		ParamSentryName: "falcon-att",
 	})
 	if err == nil {
 		t.Fatal("ResolveCreationParams() error = nil, want key type mismatch")
 	}
 	if !strings.Contains(err.Error(), "requires "+keytypes.AttestorComponentEd25519V1) {
-		t.Fatalf("ResolveCreationParams() error = %v, want required Ed25519 attestor", err)
+		t.Fatalf("ResolveCreationParams() error = %v, want required Ed25519 sentry", err)
 	}
 }
 

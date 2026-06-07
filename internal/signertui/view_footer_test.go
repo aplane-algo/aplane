@@ -93,13 +93,13 @@ func TestWindowFooterWrapsAbovePinnedStatus(t *testing.T) {
 	}
 }
 
-func TestAdminTitleUsesAttestorNodeRole(t *testing.T) {
+func TestAdminTitleUsesSentryNodeRole(t *testing.T) {
 	if got := (Model{}).AdminTitle(); got != "Signer Admin" {
 		t.Fatalf("default AdminTitle() = %q, want Signer Admin", got)
 	}
-	m := Model{adminSettings: &AdminSettings{NodeRole: "attestor"}}
-	if got := m.AdminTitle(); got != "Attestor Admin" {
-		t.Fatalf("attestor AdminTitle() = %q, want Attestor Admin", got)
+	m := Model{adminSettings: &AdminSettings{NodeRole: "sentry"}}
+	if got := m.AdminTitle(); got != "Sentry Admin" {
+		t.Fatalf("sentry AdminTitle() = %q, want Sentry Admin", got)
 	}
 }
 

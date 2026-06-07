@@ -237,8 +237,8 @@ func (m Model) View() string {
 
 // AdminTitle returns the role-specific operator-facing title for this admin UI.
 func (m Model) AdminTitle() string {
-	if m.adminSettings != nil && strings.EqualFold(strings.TrimSpace(m.adminSettings.NodeRole), "attestor") {
-		return "Attestor Admin"
+	if m.adminSettings != nil && strings.EqualFold(strings.TrimSpace(m.adminSettings.NodeRole), "sentry") {
+		return "Sentry Admin"
 	}
 	return "Signer Admin"
 }

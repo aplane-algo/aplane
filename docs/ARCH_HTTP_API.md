@@ -27,13 +27,13 @@ coverage.
 | `POST` | `/plan` | yes | yes |
 | `POST` | `/simulate` | yes | yes |
 | `POST` | `/admin/generate` | yes | yes |
-| `POST` | `/admin/attestors/sync` | yes | no |
+| `POST` | `/admin/sentries/sync` | yes | no |
 | `DELETE` | `/admin/keys` | yes | yes |
 
 Method enforcement:
 
 - `/sign`, `/sign/component`, `/sign/assemble`, `/sign/cancel`, `/plan`,
-  `/simulate`, `/status`, `/admin/generate`, `/admin/attestors/sync`, and
+  `/simulate`, `/status`, `/admin/generate`, `/admin/sentries/sync`, and
   `/admin/keys` enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
 
@@ -54,7 +54,7 @@ Timeout behavior:
   the server write deadline.
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
-  mutations including `/admin/attestors/sync` 60 seconds, `/plan` 60 seconds,
+  mutations including `/admin/sentries/sync` 60 seconds, `/plan` 60 seconds,
   `/simulate` 60 seconds, `/sign/component` 60 seconds, `/sign/assemble` 60
   seconds, and `/sign` based on approval wait.
 - caller-provided contexts with earlier deadlines are preserved.
@@ -146,16 +146,16 @@ compatibility; it is not the `/sign` wire response.
 `/sign/component` request (`signerapi.ComponentSignRequest`):
 
 - optional `request_id`
-- `role`: `user` or `attestor`
+- `role`: `user` or `sentry`
 - `component_key`: guarded account address for `user`, sentry component
-  selector for `attestor`
+  selector for `sentry`
 - `group_bytes_hex[]`: final TX-prefixed transaction bytes for the whole group
 - `target_indices[]`: zero-based indices to sign
 
 For `role:"user"`, `component_key` identifies the local guarded account key to
-use for user-role component signing. For `role:"attestor"`, `component_key`
+use for user-role component signing. For `role:"sentry"`, `component_key`
 identifies the local sentry component-key selector. Each target index is
-signed independently using the role-separated attestor message derived from
+signed independently using the role-separated sentry message derived from
 that target's TxID.
 
 `/sign/component` response (`signerapi.ComponentSignResponse`):
@@ -167,7 +167,7 @@ that target's TxID.
 
 If the request omits `request_id`, apsigner returns a generated opaque ID with
 the same syntax limits as `/sign` request IDs. Component request IDs are
-correlation fields only in the current attestor MVP; they are not registered in
+correlation fields only in the current sentry MVP; they are not registered in
 the live `/sign/cancel` registry.
 
 `/sign/assemble` request (`signerapi.GuardedAssemblyRequest`):
@@ -186,7 +186,7 @@ Each passthrough item has `target_index` and `signed_txn_hex`.
 - `request_id`
 - `signed_group[]`
 
-Assembly verifies the attestor signature against the attestor public key
+Assembly verifies the sentry signature against the sentry public key
 embedded in the local guarded account key. It does not trust endpoint-provided
 metadata or `/keys` self-reporting as ownership proof.
 
@@ -272,7 +272,7 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - optional `is_generic_lsig`
 - optional `is_component_key` and `is_spending_account`: component-key rows use
   `address` as the component-key selector, not as an Algorand spending address.
-  Attestor component selectors are always 52-character uppercase base32
+  Sentry component selectors are always 52-character uppercase base32
   SHA-512/256 digests over the domain-separated key-type/public-key tuple;
   `public_key_hex` carries the full component public key.
 - optional `signing_args`: the key file's stored signing schema captured at
@@ -281,10 +281,10 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
   an absent field the same as an empty list.
 - optional `parameters`: non-secret key creation parameters needed by clients
   to orchestrate key-type-specific workflows. For guarded account rows this
-  includes `sentry_public_key`, the attestor public key embedded in the
+  includes `sentry_public_key`, the sentry public key embedded in the
   account LogicSig bytecode. Its key family and size are determined by the
   guarded account `key_type`. SDK consumers must treat this as signer-owned
-  metadata, not as proof of remote attestor endpoint ownership.
+  metadata, not as proof of remote sentry endpoint ownership.
 - optional `template_provenance_status`, `template_provenance_note`; these are
   informational comparisons between stored key template provenance and the
   registered local definition, not signing gates
@@ -344,7 +344,7 @@ uses.
 - response has `address`, `key_type`, optional `parameters`
 - no mnemonic in REST response
 
-`/admin/attestors/sync`:
+`/admin/sentries/sync`:
 
 - request has `candidates[]`
 - each candidate has `endpoint_alias`, `component_key`, `key_type`,
@@ -354,10 +354,10 @@ uses.
 - each record has `name`, `source`, `component_key`, `key_type`,
   `public_key_hex`, and optional `endpoint_alias`, `last_seen_at`, `synced_at`
 
-This endpoint writes public attestor reference records for generation UX only.
+This endpoint writes public sentry reference records for generation UX only.
 It does not require the identity to be unlocked and never carries tokens, SSH
 trust, or private key material. It is authorized with stable action
-`attestors.sync` and resource type `attestors`; it is intentionally separate
+`sentries.sync` and resource type `sentries`; it is intentionally separate
 from `keys.generate` because it mutates public generation reference metadata
 rather than creating key material.
 

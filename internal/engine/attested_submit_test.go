@@ -53,10 +53,10 @@ func TestAttestedOriginalTargetsNormalizeAttestorPublicKey(t *testing.T) {
 		t.Fatalf("target = %+v, want index 0 account %s", targets[0], sender)
 	}
 	if targets[0].AttestorComponentKeyType != keytypes.AttestorComponentEd25519V1 {
-		t.Fatalf("attestor component key type = %q, want %q", targets[0].AttestorComponentKeyType, keytypes.AttestorComponentEd25519V1)
+		t.Fatalf("sentry component key type = %q, want %q", targets[0].AttestorComponentKeyType, keytypes.AttestorComponentEd25519V1)
 	}
 	if targets[0].AttestorPublicKey != attestorHex {
-		t.Fatalf("attestor public key = %q, want %q", targets[0].AttestorPublicKey, attestorHex)
+		t.Fatalf("sentry public key = %q, want %q", targets[0].AttestorPublicKey, attestorHex)
 	}
 }
 
@@ -78,10 +78,10 @@ func TestAttestedOriginalTargetsNormalizeFalconAttestorPublicKey(t *testing.T) {
 		t.Fatalf("len(targets) = %d, want 1", len(targets))
 	}
 	if targets[0].AttestorComponentKeyType != keytypes.AttestorComponentFalcon1024V1 {
-		t.Fatalf("attestor component key type = %q, want %q", targets[0].AttestorComponentKeyType, keytypes.AttestorComponentFalcon1024V1)
+		t.Fatalf("sentry component key type = %q, want %q", targets[0].AttestorComponentKeyType, keytypes.AttestorComponentFalcon1024V1)
 	}
 	if targets[0].AttestorPublicKey != attestorHex {
-		t.Fatalf("attestor public key = %q, want %q", targets[0].AttestorPublicKey, attestorHex)
+		t.Fatalf("sentry public key = %q, want %q", targets[0].AttestorPublicKey, attestorHex)
 	}
 }
 
@@ -506,7 +506,7 @@ func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
-		t.Fatalf("decode attestor public key: %v", err)
+		t.Fatalf("decode sentry public key: %v", err)
 	}
 	componentSelector, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
 	if err != nil {

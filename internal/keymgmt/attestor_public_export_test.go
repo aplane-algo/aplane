@@ -95,7 +95,7 @@ func TestNewAttestorPublicKeyExportRejectsSpendingKeyType(t *testing.T) {
 	if err == nil {
 		t.Fatal("NewAttestorPublicKeyExport() error = nil, want non-component key type rejection")
 	}
-	if !strings.Contains(err.Error(), "is not an attestor component key type") {
+	if !strings.Contains(err.Error(), "is not a sentry component key type") {
 		t.Fatalf("NewAttestorPublicKeyExport() error = %v, want non-component key type rejection", err)
 	}
 }

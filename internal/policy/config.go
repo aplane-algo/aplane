@@ -21,7 +21,7 @@ import (
 //
 // KeyOverrides maps a concrete signing authority key to a fully resolved Config
 // that should be used when that key signs. Signing account overrides are keyed
-// by Algorand auth address. Attestor component overrides are keyed by component
+// by Algorand auth address. Sentry component overrides are keyed by component
 // selector. Overrides inherit from the base config for any field they do not
 // set. Nested overrides are not supported (KeyOverrides on an override value is
 // always nil).

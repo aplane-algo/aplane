@@ -1154,7 +1154,7 @@ Client routing lives in `$APCLIENT_DATA/endpoints.yaml`. The registry contains
 at most one `signer` endpoint and zero or more `sentry` endpoints. Endpoint
 records contain connection profile data, endpoint role, token-file path,
 known-hosts path, SSH identity path, and endpoint-local
-`published_sentrys`.
+`published_sentries`.
 
 Operator handoff uses public endpoint envelopes:
 
@@ -1168,7 +1168,7 @@ Operator handoff uses public endpoint envelopes:
 Sentry inventory is discovered explicitly with
 `apshell endpoints sync-sentries`. It queries authenticated `/keys` on
 configured sentry endpoints, validates component-key metadata, and rebuilds
-reachable endpoints' `published_sentrys` inventory. Temporarily unavailable
+reachable endpoints' `published_sentries` inventory. Temporarily unavailable
 or locked endpoints preserve their prior local inventory; authentication
 failures, malformed responses, duplicate public keys across endpoints, and
 component-key validation errors are hard failures that leave files unchanged.
@@ -1176,8 +1176,8 @@ After discovery, the command prints component IDs and asks before syncing the
 public inventory into the connected signer identity's sentry reference
 library for generation-time selection.
 
-Runtime attested-send routing maps the embedded sentry public key to the
-endpoint whose `published_sentrys` contains that key. If no explicit mapping
+Runtime guarded-send routing maps the embedded sentry public key to the
+endpoint whose `published_sentries` contains that key. If no explicit mapping
 exists, local self-discovery may resolve to the currently connected signer only
 when that endpoint advertises the matching sentry component key; this is
 development ergonomics, not a production independence claim.
@@ -1206,13 +1206,13 @@ Primary implementation ownership:
 - `pkg/signerapi`: component-signing and assembly DTOs plus fixtures.
 - `internal/sentry/message`: role-separated component message construction.
 - `internal/sentry/verify`: component signature verification primitives.
-- `internal/sentry/keytypes`: sentry and attested key-type identifiers,
+- `internal/sentry/keytypes`: sentry and guarded key-type identifiers,
   component selector validation, and DSA mapping.
 - `internal/signerapp/signing`: signer-side component signing, sentry policy
   evaluation, and assembly.
 - `internal/signerapp/rest`: HTTP handlers for `/sign/component` and
   `/sign/assemble`.
-- `internal/engine`: client attested-send orchestration and endpoint
+- `internal/engine`: client guarded-send orchestration and endpoint
   resolution.
 - `internal/config` and `internal/endpointrefs`: endpoint registry and public
   endpoint envelope handling.

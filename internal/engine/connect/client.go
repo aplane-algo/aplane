@@ -88,7 +88,7 @@ func (s *ConnectionState) AdminDeleteKeyWithContext(ctx context.Context, address
 	return client.AdminDeleteKeyWithContext(ctx, address)
 }
 
-// AdminSyncSentryReferences syncs public attestor reference candidates into
+// AdminSyncSentryReferences syncs public sentry reference candidates into
 // the connected signer identity.
 func (s *ConnectionState) AdminSyncSentryReferences(candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
 	return s.AdminSyncSentryReferencesWithContext(context.Background(), candidates)
