@@ -18,7 +18,7 @@ import (
 const ComponentPublicMetadataSuffix = ".public.json"
 
 // ComponentPublicMetadataPath returns the public-only metadata sidecar path for
-// an attestor component key.
+// a sentry component key.
 func ComponentPublicMetadataPath(paths storepaths.Paths, identityID, componentKey string) string {
 	return filepath.Join(paths.KeysDir(identityID), componentKey+ComponentPublicMetadataSuffix)
 }
@@ -56,7 +56,7 @@ func ReadComponentPublicMetadata(paths storepaths.Paths, identityID, componentKe
 }
 
 // WriteComponentPublicMetadataFromKeyJSON writes the public-only sidecar for a
-// restored attestor component key payload. Non-component payloads are ignored.
+// restored sentry component key payload. Non-component payloads are ignored.
 func WriteComponentPublicMetadataFromKeyJSON(paths storepaths.Paths, identityID, address string, keyJSON []byte) (string, bool, error) {
 	var keyPair KeyPair
 	if err := json.Unmarshal(keyJSON, &keyPair); err != nil {

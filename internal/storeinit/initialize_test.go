@@ -63,7 +63,7 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	}
 }
 
-func TestInitializeCreatesExplicitAttestorNodeRole(t *testing.T) {
+func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
 	identityID := "default"
@@ -95,7 +95,7 @@ func TestInitializeCreatesExplicitAttestorNodeRole(t *testing.T) {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSentry)
 	}
 	if _, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
-		t.Fatalf("attestor policy integrity baseline did not verify: %v", err)
+		t.Fatalf("sentry policy integrity baseline did not verify: %v", err)
 	}
 }
 

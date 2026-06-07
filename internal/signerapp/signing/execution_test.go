@@ -192,13 +192,13 @@ func TestExecutorSignCryptoKeyRejectsUnsupportedKeyType(t *testing.T) {
 	}
 }
 
-func TestExecutorRejectsAttestorKeyTypesBeforeSessionLoad(t *testing.T) {
+func TestExecutorRejectsSentryKeyTypesBeforeSessionLoad(t *testing.T) {
 	tests := []struct {
 		name    string
 		keyType string
 	}{
-		{name: "falcon attested ed25519 attestor", keyType: keytypes.GuardedFalcon1024SentryEd25519V1},
-		{name: "falcon attested falcon attestor", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1},
+		{name: "falcon guarded ed25519 sentry", keyType: keytypes.GuardedFalcon1024SentryEd25519V1},
+		{name: "falcon guarded falcon sentry", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1},
 	}
 
 	for _, tt := range tests {
@@ -219,7 +219,7 @@ func TestExecutorRejectsAttestorKeyTypesBeforeSessionLoad(t *testing.T) {
 
 			_, err := exec.ExecuteGroupSigning(context.Background(), plan, req, "default", nil)
 			if err == nil {
-				t.Fatal("ExecuteGroupSigning() error = nil, want attestor key type rejection")
+				t.Fatal("ExecuteGroupSigning() error = nil, want sentry key type rejection")
 				return
 			}
 			if err.Kind != ErrorBadRequest {
@@ -232,7 +232,7 @@ func TestExecutorRejectsAttestorKeyTypesBeforeSessionLoad(t *testing.T) {
 	}
 }
 
-func TestExecutorSignCryptoKeyRejectsAttestorKeyTypesBeforeProviderLookup(t *testing.T) {
+func TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup(t *testing.T) {
 	tests := []struct {
 		name    string
 		keyType string
@@ -240,8 +240,8 @@ func TestExecutorSignCryptoKeyRejectsAttestorKeyTypesBeforeProviderLookup(t *tes
 	}{
 		{name: "ed25519 component", keyType: keytypes.SentryComponentEd25519V1, want: sentryComponentSignRejectMessage},
 		{name: "falcon component", keyType: keytypes.SentryComponentFalcon1024V1, want: sentryComponentSignRejectMessage},
-		{name: "attested ed25519 attestor", keyType: keytypes.GuardedFalcon1024SentryEd25519V1, want: guardedAccountSignRejectMessage},
-		{name: "attested falcon attestor", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1, want: guardedAccountSignRejectMessage},
+		{name: "guarded ed25519 sentry", keyType: keytypes.GuardedFalcon1024SentryEd25519V1, want: guardedAccountSignRejectMessage},
+		{name: "guarded falcon sentry", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1, want: guardedAccountSignRejectMessage},
 	}
 
 	for _, tt := range tests {
@@ -262,7 +262,7 @@ func TestExecutorSignCryptoKeyRejectsAttestorKeyTypesBeforeProviderLookup(t *tes
 				"default",
 			)
 			if err == nil {
-				t.Fatal("signCryptoKey() error = nil, want attestor key type rejection")
+				t.Fatal("signCryptoKey() error = nil, want sentry key type rejection")
 				return
 			}
 			if keyType != tt.keyType {

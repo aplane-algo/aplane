@@ -477,7 +477,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 	return &KeyScanReport{Keys: keysMap, Warnings: warnings}, nil
 }
 
-// IsComponentKey classifies a key payload as an attestor component key.
+// IsComponentKey classifies a key payload as a sentry component key.
 func IsComponentKey(category, keyType string) bool {
 	return category == CategoryComponent
 }

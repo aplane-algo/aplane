@@ -45,7 +45,7 @@ func TestUpsertStoredClientEndpointDoesNotAutoDefault(t *testing.T) {
 	}
 }
 
-func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForAttestor(t *testing.T) {
+func TestUpsertStoredClientEndpointDoesNotMaterializeLegacyPrimaryForSentry(t *testing.T) {
 	dataDir := t.TempDir()
 	writeLegacyClientEndpointConfig(t, dataDir)
 
@@ -162,7 +162,7 @@ func TestRebuildStoredClientEndpointPublishedSentriesReplacesInventory(t *testin
 	staleKey := sentryEndpointTestHex("a1")
 	if _, err := RebuildStoredClientEndpointPublishedSentries(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
 		"sentry-local": {
-			staleKey: endpointPublishedTestAttestor(t, staleKey),
+			staleKey: endpointPublishedTestSentry(t, staleKey),
 		},
 	}); err != nil {
 		t.Fatalf("RebuildStoredClientEndpointPublishedSentries(stale) error = %v", err)
@@ -171,7 +171,7 @@ func TestRebuildStoredClientEndpointPublishedSentriesReplacesInventory(t *testin
 	newKey := sentryEndpointTestHex("b2")
 	plan, err := RebuildStoredClientEndpointPublishedSentries(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
 		"sentry-local": {
-			newKey: endpointPublishedTestAttestor(t, newKey),
+			newKey: endpointPublishedTestSentry(t, newKey),
 		},
 	})
 	if err != nil {
@@ -210,10 +210,10 @@ func TestRebuildStoredClientEndpointPublishedSentriesRejectsDuplicatePublicKey(t
 	publicKey := sentryEndpointTestHex("c3")
 	_, err := PlanStoredClientEndpointPublishedSentryRebuild(dataDir, map[string]map[string]ClientEndpointPublishedSentry{
 		"sentry-a": {
-			publicKey: endpointPublishedTestAttestor(t, publicKey),
+			publicKey: endpointPublishedTestSentry(t, publicKey),
 		},
 		"sentry-b": {
-			publicKey: endpointPublishedTestAttestor(t, publicKey),
+			publicKey: endpointPublishedTestSentry(t, publicKey),
 		},
 	})
 	if err == nil {
@@ -292,7 +292,7 @@ ssh: {}
 	}
 }
 
-func endpointPublishedTestAttestor(t *testing.T, publicKeyHex string) ClientEndpointPublishedSentry {
+func endpointPublishedTestSentry(t *testing.T, publicKeyHex string) ClientEndpointPublishedSentry {
 	t.Helper()
 	return ClientEndpointPublishedSentry{
 		ComponentKey: sentryEndpointTestComponentKey(t, keytypes.SentryComponentEd25519V1, publicKeyHex),

@@ -110,7 +110,7 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	}
 }
 
-func TestCmdRebuildRoleOverrideRestoresAttestorBackupWithoutManifest(t *testing.T) {
+func TestCmdRebuildRoleOverrideRestoresSentryBackupWithoutManifest(t *testing.T) {
 	RegisterProviders()
 
 	oldDataDirectory := dataDirectory
@@ -124,7 +124,7 @@ func TestCmdRebuildRoleOverrideRestoresAttestorBackupWithoutManifest(t *testing.
 	}()
 
 	backupRoot := t.TempDir()
-	componentKey, keyJSON := testAttestorComponentKeyJSONForApstore(t)
+	componentKey, keyJSON := testSentryComponentKeyJSONForApstore(t)
 	if err := writeStandaloneBackup(filepath.Join(backupRoot, "apb"), componentKey, keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
@@ -834,7 +834,7 @@ func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 	}
 }
 
-func testAttestorComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
+func testSentryComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
 	t.Helper()
 
 	privateKey := ed25519.NewKeyFromSeed(bytes32(0xcd))

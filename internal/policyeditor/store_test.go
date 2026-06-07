@@ -57,13 +57,13 @@ func TestOfflineStoreLoadVerifiesSentryTarget(t *testing.T) {
 
 func TestResolveTargetUsesNodeRole(t *testing.T) {
 	signerDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleSigner)
-	attestorDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
+	sentryDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
 
 	if got, err := ResolveTarget(signerDir, TargetAuto); err != nil || got != TargetSigner {
 		t.Fatalf("ResolveTarget(signer) = %q, %v; want %q", got, err, TargetSigner)
 	}
-	if got, err := ResolveTarget(attestorDir, TargetAuto); err != nil || got != TargetSentry {
-		t.Fatalf("ResolveTarget(attestor) = %q, %v; want %q", got, err, TargetSentry)
+	if got, err := ResolveTarget(sentryDir, TargetAuto); err != nil || got != TargetSentry {
+		t.Fatalf("ResolveTarget(sentry) = %q, %v; want %q", got, err, TargetSentry)
 	}
 }
 

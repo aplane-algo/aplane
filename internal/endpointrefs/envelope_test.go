@@ -63,7 +63,7 @@ func TestParseRejectsInvalidEnvelope(t *testing.T) {
 			wantErr: "unknown field",
 		},
 		{
-			name:    "stale attestor keys field",
+			name:    "stale sentry keys field",
 			data:    strings.Replace(valid, `"url":`, `"sentry_public_keys": [], "url":`, 1),
 			wantErr: "unknown field",
 		},

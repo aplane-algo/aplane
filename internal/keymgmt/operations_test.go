@@ -156,7 +156,7 @@ func TestValidKeyTypesIncludeIdentityActivatedYAMLComposedProvider(t *testing.T)
 	}
 }
 
-func TestValidKeyTypesIncludeAttestorComponentKey(t *testing.T) {
+func TestValidKeyTypesIncludeSentryComponentKey(t *testing.T) {
 	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentEd25519V1) {
 		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentEd25519V1)
 	}
@@ -171,7 +171,7 @@ func TestValidKeyTypesIncludeAttestorComponentKey(t *testing.T) {
 	}
 }
 
-func TestValidKeyTypesIncludeActivatedFalcon1024AttestedKey(t *testing.T) {
+func TestValidKeyTypesIncludeActivatedFalcon1024GuardedKey(t *testing.T) {
 	for _, keyType := range []string{
 		falcon1024guarded.KeyTypeV1,
 		falcon1024guarded.KeyTypeFalcon1024V1,
@@ -193,7 +193,7 @@ func TestValidKeyTypesIncludeActivatedFalcon1024AttestedKey(t *testing.T) {
 	}
 }
 
-func TestGenerateKeyFalcon1024AttestedRequiresAttestorPublicKey(t *testing.T) {
+func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
@@ -204,26 +204,26 @@ func TestGenerateKeyFalcon1024AttestedRequiresAttestorPublicKey(t *testing.T) {
 		t.Run(keyType, func(t *testing.T) {
 			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, masterKey, nil, []string{keyType})
 			if err == nil || !strings.Contains(err.Error(), "missing required parameter: sentry_public_key") {
-				t.Fatalf("GenerateKey(attested missing params) error = %v, want missing sentry_public_key", err)
+				t.Fatalf("GenerateKey(guarded missing params) error = %v, want missing sentry_public_key", err)
 			}
 		})
 	}
 }
 
-func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
-	configureAttestedCompileMock(t)
+func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
+	configureGuardedCompileMock(t)
 
 	tests := []struct {
-		keyType           string
-		attestorPublicKey string
+		keyType         string
+		sentryPublicKey string
 	}{
 		{
-			keyType:           falcon1024guarded.KeyTypeV1,
-			attestorPublicKey: strings.Repeat("ab", stded25519.PublicKeySize),
+			keyType:         falcon1024guarded.KeyTypeV1,
+			sentryPublicKey: strings.Repeat("ab", stded25519.PublicKeySize),
 		},
 		{
-			keyType:           falcon1024guarded.KeyTypeFalcon1024V1,
-			attestorPublicKey: strings.Repeat("cd", falconfamily.PublicKeySize),
+			keyType:         falcon1024guarded.KeyTypeFalcon1024V1,
+			sentryPublicKey: strings.Repeat("cd", falconfamily.PublicKeySize),
 		},
 	}
 
@@ -239,12 +239,12 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 				tt.keyType,
 				masterKey,
 				map[string]string{
-					falcon1024guarded.ParamSentryPublicKey: tt.attestorPublicKey,
+					falcon1024guarded.ParamSentryPublicKey: tt.sentryPublicKey,
 				},
 				[]string{tt.keyType},
 			)
 			if err != nil {
-				t.Fatalf("GenerateKey(attested) error = %v", err)
+				t.Fatalf("GenerateKey(guarded) error = %v", err)
 			}
 			if result.KeyType != tt.keyType {
 				t.Fatalf("KeyType = %q, want %s", result.KeyType, tt.keyType)
@@ -275,8 +275,8 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 			if keyPair.BaseKeyType != falcon1024guarded.BaseKeyType {
 				t.Fatalf("BaseKeyType = %q, want %s", keyPair.BaseKeyType, falcon1024guarded.BaseKeyType)
 			}
-			if keyPair.Params[falcon1024guarded.ParamSentryPublicKey] != tt.attestorPublicKey {
-				t.Fatalf("sentry public key param = %q, want %q", keyPair.Params[falcon1024guarded.ParamSentryPublicKey], tt.attestorPublicKey)
+			if keyPair.Params[falcon1024guarded.ParamSentryPublicKey] != tt.sentryPublicKey {
+				t.Fatalf("sentry public key param = %q, want %q", keyPair.Params[falcon1024guarded.ParamSentryPublicKey], tt.sentryPublicKey)
 			}
 			if keyPair.LsigBytecodeHex == "" {
 				t.Fatal("LsigBytecodeHex is empty")
@@ -294,7 +294,7 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 	}
 }
 
-func TestGenerateKeyAttestorComponent(t *testing.T) {
+func TestGenerateKeySentryComponent(t *testing.T) {
 	for _, keyType := range []string{
 		keytypes.SentryComponentEd25519V1,
 		keytypes.SentryComponentFalcon1024V1,
@@ -358,18 +358,18 @@ func containsKeyType(items []string, keyType string) bool {
 	return false
 }
 
-func configureAttestedCompileMock(t *testing.T) {
+func configureGuardedCompileMock(t *testing.T) {
 	t.Helper()
-	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, attestedCompileMockTransport{})
+	client, err := algod.MakeClientWithTransport("http://mock-algod", "", nil, guardedCompileMockTransport{})
 	if err != nil {
 		t.Fatalf("MakeClientWithTransport() error = %v", err)
 	}
 	lsigprovider.ConfigureAlgodClient(client)
 }
 
-type attestedCompileMockTransport struct{}
+type guardedCompileMockTransport struct{}
 
-func (attestedCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (guardedCompileMockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodPost || req.URL.Path != "/v2/teal/compile" {
 		return &http.Response{
 			StatusCode: http.StatusNotFound,
@@ -381,7 +381,7 @@ func (attestedCompileMockTransport) RoundTrip(req *http.Request) (*http.Response
 	if _, err := io.ReadAll(req.Body); err != nil {
 		return nil, err
 	}
-	bytecode := compiledAttestedPushbytesSaltBytecode(0)
+	bytecode := compiledGuardedPushbytesSaltBytecode(0)
 	body := `{"result":"` + base64.StdEncoding.EncodeToString(bytecode) + `","hash":"TESTHASH"}`
 	return &http.Response{
 		StatusCode: http.StatusOK,
@@ -391,7 +391,7 @@ func (attestedCompileMockTransport) RoundTrip(req *http.Request) (*http.Response
 	}, nil
 }
 
-func compiledAttestedPushbytesSaltBytecode(counter byte) []byte {
+func compiledGuardedPushbytesSaltBytecode(counter byte) []byte {
 	marker := lsigsalt.PushbytesSaltMarker(counter)
 	bytecode := []byte{0x0c, 0x80, byte(len(marker))}
 	bytecode = append(bytecode, marker...)

@@ -76,7 +76,7 @@ You will be prompted for the export passphrase used to encrypt the backup.
 The running signer daemon encrypts restored keys into the target keystore. For
 replacement-keystore rescue when no identity directory exists, use
 ` + "`apstore rebuild /path/to/this/backup.tar.gz`" + `, adding
-` + "`--role sentry`" + ` when rebuilding an attestor node from a backup that
+` + "`--role sentry`" + ` when rebuilding an sentry node from a backup that
 does not carry source role metadata.
 
 ### Manual Decryption

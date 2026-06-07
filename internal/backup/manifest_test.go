@@ -29,10 +29,10 @@ func TestManifestSourceNodeRoleOrDefault(t *testing.T) {
 	}
 	role, err = SourceNodeRoleOrDefault(dir)
 	if err != nil {
-		t.Fatalf("SourceNodeRoleOrDefault(attestor) error = %v", err)
+		t.Fatalf("SourceNodeRoleOrDefault(sentry) error = %v", err)
 	}
 	if role != noderole.RoleSentry {
-		t.Fatalf("manifest role = %q, want attestor", role)
+		t.Fatalf("manifest role = %q, want sentry", role)
 	}
 }
 

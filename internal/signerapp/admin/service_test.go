@@ -465,8 +465,8 @@ func TestValidatePolicyUsesTargetParserAndRoleGate(t *testing.T) {
 		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)
 	}
 
-	attestorSvc, attestorIR, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
-	result = attestorSvc.ValidatePolicy(attestorIR, adminproto.ValidatePolicyRequest{
+	sentrySvc, sentryIR, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
+	result = sentrySvc.ValidatePolicy(sentryIR, adminproto.ValidatePolicyRequest{
 		Target:     adminproto.PolicyTargetSentry,
 		PolicyYAML: sentryYAML,
 	})
@@ -533,7 +533,7 @@ func TestReplacePolicyRejectsOppositeNodeRoleTarget(t *testing.T) {
 		PolicyYAML: "reject_foreign_rekey: true\n",
 	})
 	if result.Success {
-		t.Fatal("ReplacePolicy(signer target on attestor) success = true, want false")
+		t.Fatal("ReplacePolicy(signer target on sentry) success = true, want false")
 	}
 	if result.Code != "policy_target_not_allowed_for_node_role" {
 		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)

@@ -195,7 +195,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(out)
 }
 
-func TestLoadConfigEndpointRegistryDerivesAttestorRoutesFromPublishedInventory(t *testing.T) {
+func TestLoadConfigEndpointRegistryDerivesSentryRoutesFromPublishedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKey := sentryEndpointTestHex("d6")
 	componentKey := sentryEndpointConfigTestComponentKey(t, keytypes.SentryComponentEd25519V1, publicKey)

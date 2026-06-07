@@ -260,7 +260,7 @@ func TestPreviewRestoreWithNodeRoleReportsRoleForbiddenKey(t *testing.T) {
 	}
 	if !strings.Contains(preview.Errors[0].Error, "role-forbidden") ||
 		!strings.Contains(preview.Errors[0].Error, `node role "sentry"`) {
-		t.Fatalf("preview error = %q, want attestor role-forbidden context", preview.Errors[0].Error)
+		t.Fatalf("preview error = %q, want sentry role-forbidden context", preview.Errors[0].Error)
 	}
 	if len(preview.Keys) != 1 || preview.Keys[0].Error == "" {
 		t.Fatalf("preview keys = %+v, want keyed role-forbidden error", preview.Keys)
@@ -383,7 +383,7 @@ func TestRestoreKeyWritesStorePermissions(t *testing.T) {
 func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
-	componentKey, keyJSON := testAttestorComponentBackupKeyJSON(t)
+	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll(apb) error = %v", err)
@@ -405,10 +405,10 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	}
 }
 
-func TestRestoreKeyWritesComponentPublicMetadataOnAttestorNode(t *testing.T) {
+func TestRestoreKeyWritesComponentPublicMetadataOnSentryNode(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
-	componentKey, keyJSON := testAttestorComponentBackupKeyJSON(t)
+	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
 	keysDir := filepath.Join(t.TempDir(), "apb")
 	if err := os.MkdirAll(keysDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll(apb) error = %v", err)
@@ -733,7 +733,7 @@ func writeManagedRestoreArchive(t *testing.T, paths storepaths.Paths, identityID
 	return archivePath
 }
 
-func testAttestorComponentBackupKeyJSON(t *testing.T) (string, []byte) {
+func testSentryComponentBackupKeyJSON(t *testing.T) (string, []byte) {
 	t.Helper()
 
 	publicKey := bytesOfLen(32, 0xab)

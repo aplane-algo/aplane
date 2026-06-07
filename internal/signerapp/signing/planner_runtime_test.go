@@ -131,7 +131,7 @@ func TestVerifySignableKeysRequiresKeyFileInSnapshot(t *testing.T) {
 	}
 }
 
-func TestVerifySignableKeysRejectsAttestorKeyTypes(t *testing.T) {
+func TestVerifySignableKeysRejectsSentryKeyTypes(t *testing.T) {
 	tests := []struct {
 		name    string
 		keyType string
@@ -171,7 +171,7 @@ func TestVerifySignableKeysRejectsAttestorKeyTypes(t *testing.T) {
 				t.Fatalf("verifySignableKeys() count = %d, want 0", count)
 			}
 			if err == nil {
-				t.Fatal("verifySignableKeys() error = nil, want attestor key type rejection")
+				t.Fatal("verifySignableKeys() error = nil, want sentry key type rejection")
 				return
 			}
 			if err.Kind != ErrorBadRequest {
