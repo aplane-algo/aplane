@@ -112,6 +112,59 @@ func TestRotateRejectsWrongCurrentPassphraseBeforeMutation(t *testing.T) {
 	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(identityID), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), policy.PolicyIntegritySidecarPath(policy.AttestationPath(paths.Root(), identityID)), paths.NodeRoleIntegritySidecar(identityID))
 }
 
+func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	oldPassphrase := []byte("old-passphrase")
+	newPassphrase := []byte("new-passphrase")
+
+	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	}
+	defer crypto.ZeroBytes(oldMasterKey)
+
+	keyPath := paths.KeyFilePath(identityID, "ADDR")
+	templatePath := paths.KeyTypeTemplate(identityID, "example-v1")
+	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKey)
+	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKey)
+	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+
+	tamperedDoc, err := noderole.NewDocument(noderole.RoleAttestor, time.Unix(1700000001, 0))
+	if err != nil {
+		t.Fatalf("NewDocument() error = %v", err)
+	}
+	tamperedBytes, err := noderole.MarshalDocument(tamperedDoc)
+	if err != nil {
+		t.Fatalf("MarshalDocument() error = %v", err)
+	}
+	if err := os.WriteFile(paths.NodeRolePath(), tamperedBytes, 0o600); err != nil {
+		t.Fatalf("WriteFile(node.yaml) error = %v", err)
+	}
+
+	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{})
+	if err == nil {
+		t.Fatal("Rotate() error = nil, want node role integrity failure")
+	}
+	if !strings.Contains(err.Error(), "failed to verify node role integrity before passphrase rotation") {
+		t.Fatalf("Rotate() error = %v, want node role verification context", err)
+	}
+	if result.NodeRoleSidecarsMigrated != 0 {
+		t.Fatalf("Rotate() result = %+v, want no node role sidecar migration", result)
+	}
+
+	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
+	assertMetadataRejectsPassphrase(t, paths, identityID, newPassphrase)
+	assertDecryptsWithMasterKey(t, keyPath, oldMasterKey)
+	assertDecryptsWithMasterKey(t, templatePath, oldMasterKey)
+	assertPolicyVerifiesWithMasterKey(t, paths, identityID, oldMasterKey)
+	if _, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, oldMasterKey); err == nil {
+		t.Fatal("tampered node role unexpectedly verifies after failed rotation")
+	}
+	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(identityID), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), policy.PolicyIntegritySidecarPath(policy.AttestationPath(paths.Root(), identityID)), paths.NodeRoleIntegritySidecar(identityID))
+}
+
 func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"

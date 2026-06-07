@@ -99,6 +99,29 @@ func TestInitializeCreatesExplicitAttestorNodeRole(t *testing.T) {
 	}
 }
 
+func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
+	dataDir := t.TempDir()
+	paths := storepaths.NewPaths(dataDir)
+	identityID := "default"
+	identityDir := paths.IdentityDir(identityID)
+	if err := os.MkdirAll(filepath.Join(identityDir, "aplane.token"), 0o700); err != nil {
+		t.Fatalf("MkdirAll(aplane.token dir) error = %v", err)
+	}
+
+	_, err := Initialize([]byte("init-passphrase"), Options{
+		DataDir:    dataDir,
+		Paths:      paths,
+		IdentityID: identityID,
+		Role:       noderole.RoleAttestor,
+	})
+	if err == nil || !strings.Contains(err.Error(), "failed to generate API token") {
+		t.Fatalf("Initialize() error = %v, want token failure", err)
+	}
+	if _, statErr := os.Stat(paths.NodeRolePath()); !os.IsNotExist(statErr) {
+		t.Fatalf("node role stat error = %v, want removed node.yaml after failed initialize", statErr)
+	}
+}
+
 func TestInitializeRejectsExistingMetadata(t *testing.T) {
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)

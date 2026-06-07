@@ -21,10 +21,12 @@ var ErrNodeRoleConflict = errors.New("node role inventory conflict")
 func NodeRoleAllowsKeyType(role noderole.Role, keyType string) bool {
 	isAttestorComponent := keytypes.IsAttestorComponentKeyType(keyType)
 	switch role {
+	case noderole.RoleSigner:
+		return !isAttestorComponent
 	case noderole.RoleAttestor:
 		return isAttestorComponent
 	default:
-		return !isAttestorComponent
+		return false
 	}
 }
 

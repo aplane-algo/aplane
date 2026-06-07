@@ -37,6 +37,12 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if NodeRoleAllowsKeyType(noderole.RoleAttestor, keytypes.AttestedFalcon1024AttFalcon1024V1) {
 		t.Fatal("attestor node allowed attested account key")
 	}
+	if NodeRoleAllowsKeyType(noderole.Role("unknown"), "ed25519") {
+		t.Fatal("unknown node role allowed Ed25519 account key")
+	}
+	if NodeRoleAllowsKeyType(noderole.Role("unknown"), keytypes.AttestorComponentEd25519V1) {
+		t.Fatal("unknown node role allowed attestor component key")
+	}
 }
 
 func TestValidateKeyTypesAllowedForNodeRoleReportsConflicts(t *testing.T) {

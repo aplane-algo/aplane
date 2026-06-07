@@ -1248,6 +1248,14 @@ func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 	if _, err := (Service{}).AssembleAttested(context.Background(), attestorOnly, signerapi.AttestedAssemblyRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "attested assembly") {
 		t.Fatalf("AssembleAttested(attestor node) error = %#v, want forbidden node role error", err)
 	}
+
+	unknownRole := setupIdentityRuntimeWithRole(t, true, noderole.Role("unknown"))
+	if _, err := (Service{}).Plan(unknownRole, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "unknown node role") {
+		t.Fatalf("Plan(unknown node role) error = %#v, want fail-closed unknown role error", err)
+	}
+	if _, err := (Service{}).SignComponent(context.Background(), unknownRole, componentReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "unknown node role") {
+		t.Fatalf("SignComponent(unknown node role) error = %#v, want fail-closed unknown role error", err)
+	}
 }
 
 func registerRestGenericTemplate(t *testing.T) {

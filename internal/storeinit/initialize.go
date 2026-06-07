@@ -67,6 +67,14 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to create user directory: %w", err)
 	}
 
+	createdNodeRole := false
+	success := false
+	defer func() {
+		if !success && createdNodeRole {
+			_ = os.Remove(opts.Paths.NodeRolePath())
+		}
+	}()
+
 	_, masterKey, err := crypto.CreateKeystoreMetadata(metadataDir, passphrase)
 	if err != nil {
 		return result, fmt.Errorf("failed to create keystore metadata: %w", err)
@@ -76,6 +84,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		crypto.ZeroBytes(masterKey)
 		return result, fmt.Errorf("failed to create node role: %w", err)
 	}
+	createdNodeRole = true
 	if err := noderole.SaveIdentitySidecarWithMasterKey(opts.Paths, opts.IdentityID, roleBytes, masterKey, time.Now()); err != nil {
 		crypto.ZeroBytes(masterKey)
 		return result, fmt.Errorf("failed to create node role integrity sidecar: %w", err)
@@ -99,6 +108,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	}
 
 	chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths)
+	success = true
 	return result, nil
 }
 
