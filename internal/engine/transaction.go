@@ -97,7 +97,7 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts signing.Submi
 		return nil, nil, ErrNoAlgodClient
 	}
 	if e.hasGuardedSender(txns) {
-		return e.signAndSubmitAttestedGroup(txns, opts)
+		return e.signAndSubmitGuardedGroup(txns, opts)
 	}
 	return e.Connection.SignAndSubmitGroup(txns, &e.AuthCache, e.AlgodClient, opts)
 }

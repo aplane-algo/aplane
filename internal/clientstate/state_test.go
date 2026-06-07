@@ -246,7 +246,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	if got := original.GetKeyType("ADDR1"); got != "aplane.falcon1024-sentry-ed25519.v1" {
 		t.Fatalf("original pointer key type = %q, want guarded key type", got)
 	}
-	if got, ok := original.AttestorPublicKeyForAddress("ADDR1"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
+	if got, ok := original.SentryPublicKeyForAddress("ADDR1"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
 		t.Fatalf("sentry public key = %q/%v, want cached value", got, ok)
 	}
 
@@ -254,7 +254,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	if original.Count() != 0 {
 		t.Fatalf("original pointer count after empty populate = %d, want 0", original.Count())
 	}
-	if got, ok := original.AttestorPublicKeyForAddress("ADDR1"); ok || got != "" {
+	if got, ok := original.SentryPublicKeyForAddress("ADDR1"); ok || got != "" {
 		t.Fatalf("sentry public key after empty populate = %q/%v, want empty false", got, ok)
 	}
 }
@@ -335,9 +335,9 @@ func TestSaveApshellTokenPersistsTokenFile(t *testing.T) {
 
 func TestSaveApshellTokenToPathCreatesEndpointTokenDirectory(t *testing.T) {
 	state := newTestState(t)
-	tokenPath := filepath.Join(state.DataDir, "tokens", "attestor-local.token")
+	tokenPath := filepath.Join(state.DataDir, "tokens", "sentry-local.token")
 
-	gotPath, err := state.SaveApshellTokenToPath(tokenPath, "attestor-token")
+	gotPath, err := state.SaveApshellTokenToPath(tokenPath, "sentry-token")
 	if err != nil {
 		t.Fatalf("SaveApshellTokenToPath() error = %v", err)
 	}
@@ -348,8 +348,8 @@ func TestSaveApshellTokenToPathCreatesEndpointTokenDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadToken() error = %v", err)
 	}
-	if got != "attestor-token" {
-		t.Fatalf("persisted token = %q, want attestor-token", got)
+	if got != "sentry-token" {
+		t.Fatalf("persisted token = %q, want sentry-token", got)
 	}
 }
 

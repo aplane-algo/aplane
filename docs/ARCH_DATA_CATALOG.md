@@ -317,7 +317,7 @@ name a test inline:
   `internal/config/client_endpoints.go`,
   `internal/config/client_endpoint_writes_test.go`,
   `internal/apshellapp/endpoints_test.go`.
-- Guarded send orchestration: `internal/engine/attested_submit_test.go`,
+- Guarded send orchestration: `internal/engine/guarded_submit_test.go`,
   `internal/engine/connect/client_test.go`.
 - Sentry component signing and assembly:
   `internal/signerapp/signing/component_test.go`,

@@ -388,7 +388,7 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	original.SetSigningArgs("ADDR3", []SigningArgInfo{
 		{Name: "preimage", Type: "bytes", Required: true},
 	})
-	original.SetAttestorPublicKeyForAddress("ADDR2", "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a")
+	original.SetSentryPublicKeyForAddress("ADDR2", "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a")
 	original.Locked = true
 
 	// Save
@@ -419,7 +419,7 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	if len(args) != 1 || args[0].Name != "preimage" {
 		t.Errorf("ADDR3 signing args = %+v, want [{preimage bytes true}]", args)
 	}
-	if got, ok := loaded.AttestorPublicKeyForAddress("ADDR2"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
+	if got, ok := loaded.SentryPublicKeyForAddress("ADDR2"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
 		t.Errorf("ADDR2 sentry public key = %q/%v, want persisted value", got, ok)
 	}
 	if loaded.Locked {
@@ -427,20 +427,20 @@ func TestSignerCache_SaveAndLoadRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSignerCache_AttestorPublicKeyHelpers(t *testing.T) {
+func TestSignerCache_SentryPublicKeyHelpers(t *testing.T) {
 	cache := NewSignerCache()
-	if got, ok := cache.AttestorPublicKeyForAddress("ADDR1"); ok || got != "" {
-		t.Fatalf("AttestorPublicKeyForAddress(empty) = %q/%v, want empty false", got, ok)
+	if got, ok := cache.SentryPublicKeyForAddress("ADDR1"); ok || got != "" {
+		t.Fatalf("SentryPublicKeyForAddress(empty) = %q/%v, want empty false", got, ok)
 	}
 
-	cache.SetAttestorPublicKeyForAddress("ADDR1", "abcd")
-	if got, ok := cache.AttestorPublicKeyForAddress("ADDR1"); !ok || got != "abcd" {
-		t.Fatalf("AttestorPublicKeyForAddress() = %q/%v, want abcd true", got, ok)
+	cache.SetSentryPublicKeyForAddress("ADDR1", "abcd")
+	if got, ok := cache.SentryPublicKeyForAddress("ADDR1"); !ok || got != "abcd" {
+		t.Fatalf("SentryPublicKeyForAddress() = %q/%v, want abcd true", got, ok)
 	}
 
-	cache.SetAttestorPublicKeyForAddress("ADDR1", "")
-	if got, ok := cache.AttestorPublicKeyForAddress("ADDR1"); ok || got != "" {
-		t.Fatalf("AttestorPublicKeyForAddress(cleared) = %q/%v, want empty false", got, ok)
+	cache.SetSentryPublicKeyForAddress("ADDR1", "")
+	if got, ok := cache.SentryPublicKeyForAddress("ADDR1"); ok || got != "" {
+		t.Fatalf("SentryPublicKeyForAddress(cleared) = %q/%v, want empty false", got, ok)
 	}
 }
 

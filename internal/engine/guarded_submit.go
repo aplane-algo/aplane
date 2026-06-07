@@ -17,20 +17,20 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
-	attestorverify "github.com/aplane-algo/aplane/internal/sentry/verify"
+	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
-type attestedOriginalTarget struct {
-	Index                    int
-	Account                  string
-	AttestorComponentKeyType string
-	AttestorPublicKey        string
+type guardedOriginalTarget struct {
+	Index                  int
+	Account                string
+	SentryComponentKeyType string
+	SentryPublicKey        string
 }
 
-type attestorRequestKey struct {
+type sentryRequestKey struct {
 	ComponentKeyType string
 	PublicKey        string
 }
@@ -44,7 +44,7 @@ func (e *Engine) hasGuardedSender(txns []types.Transaction) bool {
 	return false
 }
 
-func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signing.SubmitOptions) ([]string, []types.Transaction, error) {
+func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts signing.SubmitOptions) ([]string, []types.Transaction, error) {
 	if len(txns) == 0 {
 		return nil, nil, fmt.Errorf("no transactions provided")
 	}
@@ -56,7 +56,7 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 		w = os.Stdout
 	}
 
-	targets, err := e.attestedOriginalTargets(txns)
+	targets, err := e.guardedOriginalTargets(txns)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -67,17 +67,17 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 		return nil, nil, fmt.Errorf("guarded signing currently requires every original transaction sender to use a guarded account key type")
 	}
 
-	plannedTxns, dummyTxns, err := e.planAttestedGroup(txns, targets, w)
+	plannedTxns, dummyTxns, err := e.planGuardedGroup(txns, targets, w)
 	if err != nil {
 		return nil, nil, err
 	}
 	groupBytesHex := encodeGroupHex(plannedTxns)
-	group, err := attestorverify.DecodeCanonicalGroupHex(groupBytesHex)
+	group, err := sentryverify.DecodeCanonicalGroupHex(groupBytesHex)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to build canonical attested group: %w", err)
+		return nil, nil, fmt.Errorf("failed to build canonical guarded group: %w", err)
 	}
 
-	signedDummyHex, err := signAttestedDummies(dummyTxns)
+	signedDummyHex, err := signGuardedDummies(dummyTxns)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -86,7 +86,7 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 	if err != nil {
 		return nil, nil, err
 	}
-	attestorSignatures, attestorRequestIDs, err := e.requestAttestorComponentSignatures(opts.Ctx, groupBytesHex, group, targets)
+	sentrySignatures, sentryRequestIDs, err := e.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, group, targets)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -101,7 +101,7 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 		if !ok {
 			return nil, nil, fmt.Errorf("user signer returned no signature for target index %d", target.Index)
 		}
-		attestorSig, ok := attestorSignatures[target.Index]
+		sentrySig, ok := sentrySignatures[target.Index]
 		if !ok {
 			return nil, nil, fmt.Errorf("sentry endpoint returned no signature for target index %d", target.Index)
 		}
@@ -110,8 +110,8 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 			GuardedAccount:        target.Account,
 			UserSignature:         userSig,
 			UserSourceRequestID:   userRequestIDs[target.Account],
-			SentrySignature:       attestorSig,
-			SentrySourceRequestID: attestorRequestIDs[target.attestorRequestKey()],
+			SentrySignature:       sentrySig,
+			SentrySourceRequestID: sentryRequestIDs[target.sentryRequestKey()],
 		})
 	}
 	for i, signedHex := range signedDummyHex {
@@ -125,14 +125,14 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 	if err != nil {
 		return nil, nil, err
 	}
-	signedBytes, signedObjects, submittedTxns, err := decodeAttestedSignedGroup(assemblyResp.SignedGroup)
+	signedBytes, signedObjects, submittedTxns, err := decodeGuardedSignedGroup(assemblyResp.SignedGroup)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if opts.Simulate {
 		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(opts.Ctx, signedObjects, e.AlgodClient, w)
-		writeAttestedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
+		writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
 		return txIDs, submittedTxns, simErr
 	}
 
@@ -140,12 +140,12 @@ func (e *Engine) signAndSubmitAttestedGroup(txns []types.Transaction, opts signi
 	if err != nil {
 		return txIDs, submittedTxns, err
 	}
-	writeAttestedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
+	writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
 	return txIDs, submittedTxns, nil
 }
 
-func (e *Engine) attestedOriginalTargets(txns []types.Transaction) ([]attestedOriginalTarget, error) {
-	targets := make([]attestedOriginalTarget, 0, len(txns))
+func (e *Engine) guardedOriginalTargets(txns []types.Transaction) ([]guardedOriginalTarget, error) {
+	targets := make([]guardedOriginalTarget, 0, len(txns))
 	for i, txn := range txns {
 		sender := txn.Sender.String()
 		keyType := e.signerCacheKeyType(sender)
@@ -155,36 +155,36 @@ func (e *Engine) attestedOriginalTargets(txns []types.Transaction) ([]attestedOr
 		if !keytypes.IsGuardedAccountKeyType(keyType) {
 			continue
 		}
-		attestorComponentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
+		sentryComponentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 		if !ok {
-			return nil, fmt.Errorf("guarded account %s uses unsupported attested key type %s", sender, keyType)
+			return nil, fmt.Errorf("guarded account %s uses unsupported guarded key type %s", sender, keyType)
 		}
-		attestorPublicKey, ok := e.signerCacheAttestorPublicKey(sender)
-		if !ok || attestorPublicKey == "" {
+		sentryPublicKey, ok := e.signerCacheSentryPublicKey(sender)
+		if !ok || sentryPublicKey == "" {
 			return nil, fmt.Errorf("guarded account %s is missing sentry_public_key metadata; run keys refresh", sender)
 		}
-		canonicalPublicKey, err := normalizeAttestorPublicKeyHex(attestorPublicKey, attestorComponentKeyType)
+		canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey, sentryComponentKeyType)
 		if err != nil {
 			return nil, fmt.Errorf("guarded account %s has invalid sentry_public_key metadata: %w", sender, err)
 		}
-		targets = append(targets, attestedOriginalTarget{
-			Index:                    i,
-			Account:                  sender,
-			AttestorComponentKeyType: attestorComponentKeyType,
-			AttestorPublicKey:        canonicalPublicKey,
+		targets = append(targets, guardedOriginalTarget{
+			Index:                  i,
+			Account:                sender,
+			SentryComponentKeyType: sentryComponentKeyType,
+			SentryPublicKey:        canonicalPublicKey,
 		})
 	}
 	return targets, nil
 }
 
-func (t attestedOriginalTarget) attestorRequestKey() attestorRequestKey {
-	return attestorRequestKey{
-		ComponentKeyType: t.AttestorComponentKeyType,
-		PublicKey:        t.AttestorPublicKey,
+func (t guardedOriginalTarget) sentryRequestKey() sentryRequestKey {
+	return sentryRequestKey{
+		ComponentKeyType: t.SentryComponentKeyType,
+		PublicKey:        t.SentryPublicKey,
 	}
 }
 
-func normalizeAttestorPublicKeyHex(raw string, componentKeyType string) (string, error) {
+func normalizeSentryPublicKeyHex(raw string, componentKeyType string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return "", fmt.Errorf("sentry public key is required")
@@ -204,8 +204,8 @@ func normalizeAttestorPublicKeyHex(raw string, componentKeyType string) (string,
 	return hex.EncodeToString(publicKey), nil
 }
 
-func attestorComponentSelector(componentKeyType string, attestorPublicKey string) (string, error) {
-	canonicalPublicKey, err := normalizeAttestorPublicKeyHex(attestorPublicKey, componentKeyType)
+func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (string, error) {
+	canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey, componentKeyType)
 	if err != nil {
 		return "", err
 	}
@@ -216,7 +216,7 @@ func attestorComponentSelector(componentKeyType string, attestorPublicKey string
 	return keytypes.ComponentKeySelector(componentKeyType, publicKey)
 }
 
-func (e *Engine) planAttestedGroup(txns []types.Transaction, targets []attestedOriginalTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
+func (e *Engine) planGuardedGroup(txns []types.Transaction, targets []guardedOriginalTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
 	originalCount := len(txns)
 	planned := append([]types.Transaction(nil), txns...)
 	lsigIndices := make([]int, 0, len(targets))
@@ -237,7 +237,7 @@ func (e *Engine) planAttestedGroup(txns []types.Transaction, targets []attestedO
 		dummiesNeeded = (extraBudgetNeeded + lsig.TxLsigBudget - 1) / lsig.TxLsigBudget
 	}
 	if len(planned)+dummiesNeeded > 16 {
-		return nil, nil, fmt.Errorf("attested group would be %d transactions (max 16) after adding %d LogicSig-budget dummies", len(planned)+dummiesNeeded, dummiesNeeded)
+		return nil, nil, fmt.Errorf("guarded group would be %d transactions (max 16) after adding %d LogicSig-budget dummies", len(planned)+dummiesNeeded, dummiesNeeded)
 	}
 
 	var empty types.Digest
@@ -251,7 +251,7 @@ func (e *Engine) planAttestedGroup(txns []types.Transaction, targets []attestedO
 		}
 	}
 	if isPreGrouped && dummiesNeeded > 0 {
-		return nil, nil, fmt.Errorf("pre-grouped attested transactions require %d additional dummies for LogicSig budget but group is immutable", dummiesNeeded)
+		return nil, nil, fmt.Errorf("pre-grouped guarded transactions require %d additional dummies for LogicSig budget but group is immutable", dummiesNeeded)
 	}
 
 	var dummyTxns []types.Transaction
@@ -260,13 +260,13 @@ func (e *Engine) planAttestedGroup(txns []types.Transaction, targets []attestedO
 		var err error
 		dummyTxns, err = lsig.CreateDummyTransactions(dummiesNeeded, sp)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create attested dummy transactions: %w", err)
+			return nil, nil, fmt.Errorf("failed to create guarded dummy transactions: %w", err)
 		}
 		if _, err := signing.ApplyDummyFees(planned, lsigIndices, dummiesNeeded, signing.DefaultMinFee); err != nil {
-			return nil, nil, fmt.Errorf("failed to adjust attested transaction fees: %w", err)
+			return nil, nil, fmt.Errorf("failed to adjust guarded transaction fees: %w", err)
 		}
 		if w != nil {
-			_, _ = fmt.Fprintf(w, "[ATTESTED] Added %d dummy transaction(s) for LogicSig budget\n", dummiesNeeded)
+			_, _ = fmt.Fprintf(w, "[GUARDED] Added %d dummy transaction(s) for LogicSig budget\n", dummiesNeeded)
 		}
 	}
 
@@ -304,10 +304,10 @@ func encodeGroupHex(txns []types.Transaction) []string {
 	return groupHex
 }
 
-func signAttestedDummies(dummyTxns []types.Transaction) ([]string, error) {
+func signGuardedDummies(dummyTxns []types.Transaction) ([]string, error) {
 	signedDummies, err := lsig.SignDummyTransactions(dummyTxns)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign attested dummy transactions: %w", err)
+		return nil, fmt.Errorf("failed to sign guarded dummy transactions: %w", err)
 	}
 	signedHex := make([]string, len(signedDummies))
 	for i, signed := range signedDummies {
@@ -316,7 +316,7 @@ func signAttestedDummies(dummyTxns []types.Transaction) ([]string, error) {
 	return signedHex, nil
 }
 
-func (e *Engine) requestUserComponentSignatures(ctx context.Context, groupBytesHex []string, targets []attestedOriginalTarget) (map[int]string, map[string]string, error) {
+func (e *Engine) requestUserComponentSignatures(ctx context.Context, groupBytesHex []string, targets []guardedOriginalTarget) (map[int]string, map[string]string, error) {
 	byAccount := make(map[string][]int)
 	for _, target := range targets {
 		byAccount[target.Account] = append(byAccount[target.Account], target.Index)
@@ -341,34 +341,34 @@ func (e *Engine) requestUserComponentSignatures(ctx context.Context, groupBytesH
 	return signatures, requestIDs, nil
 }
 
-func (e *Engine) requestAttestorComponentSignatures(ctx context.Context, groupBytesHex []string, group *attestorverify.CanonicalGroup, targets []attestedOriginalTarget) (map[int]string, map[attestorRequestKey]string, error) {
-	byAttestor := make(map[attestorRequestKey][]int)
+func (e *Engine) requestSentryComponentSignatures(ctx context.Context, groupBytesHex []string, group *sentryverify.CanonicalGroup, targets []guardedOriginalTarget) (map[int]string, map[sentryRequestKey]string, error) {
+	bySentry := make(map[sentryRequestKey][]int)
 	for _, target := range targets {
-		key := target.attestorRequestKey()
-		byAttestor[key] = append(byAttestor[key], target.Index)
+		key := target.sentryRequestKey()
+		bySentry[key] = append(bySentry[key], target.Index)
 	}
 	signatures := make(map[int]string, len(targets))
-	requestIDs := make(map[attestorRequestKey]string, len(byAttestor))
-	for attestorKey, indices := range byAttestor {
-		requestID, err := e.requestOneAttestorComponentSignatureSet(ctx, groupBytesHex, group, attestorKey, indices, signatures)
+	requestIDs := make(map[sentryRequestKey]string, len(bySentry))
+	for sentryKey, indices := range bySentry {
+		requestID, err := e.requestOneSentryComponentSignatureSet(ctx, groupBytesHex, group, sentryKey, indices, signatures)
 		if err != nil {
 			return nil, nil, err
 		}
-		requestIDs[attestorKey] = requestID
+		requestIDs[sentryKey] = requestID
 	}
 	return signatures, requestIDs, nil
 }
 
-func (e *Engine) requestOneAttestorComponentSignatureSet(ctx context.Context, groupBytesHex []string, group *attestorverify.CanonicalGroup, attestorKey attestorRequestKey, indices []int, signatures map[int]string) (string, error) {
-	endpoint, err := e.resolveSentryEndpoint(ctx, attestorKey)
+func (e *Engine) requestOneSentryComponentSignatureSet(ctx context.Context, groupBytesHex []string, group *sentryverify.CanonicalGroup, sentryKey sentryRequestKey, indices []int, signatures map[int]string) (string, error) {
+	endpoint, err := e.resolveSentryEndpoint(ctx, sentryKey)
 	if err != nil {
 		return "", err
 	}
 	defer endpoint.close()
 
-	componentSelector, err := attestorComponentSelector(attestorKey.ComponentKeyType, attestorKey.PublicKey)
+	componentSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, sentryKey.PublicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to derive attestor component selector for public key %s: %w", attestorKey.PublicKey, err)
+		return "", fmt.Errorf("failed to derive sentry component selector for public key %s: %w", sentryKey.PublicKey, err)
 	}
 
 	resp, err := endpoint.client.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
@@ -378,12 +378,12 @@ func (e *Engine) requestOneAttestorComponentSignatureSet(ctx context.Context, gr
 		TargetIndices: indices,
 	})
 	if err != nil {
-		return "", fmt.Errorf("attestor component signing failed for public key %s via %s: %w", attestorKey.PublicKey, endpoint.source, err)
+		return "", fmt.Errorf("sentry component signing failed for public key %s via %s: %w", sentryKey.PublicKey, endpoint.source, err)
 	}
-	if err := collectComponentSignatures(resp, indices, attestorKey.ComponentKeyType, signatures); err != nil {
-		return "", fmt.Errorf("attestor component signing failed for public key %s via %s: %w", attestorKey.PublicKey, endpoint.source, err)
+	if err := collectComponentSignatures(resp, indices, sentryKey.ComponentKeyType, signatures); err != nil {
+		return "", fmt.Errorf("sentry component signing failed for public key %s via %s: %w", sentryKey.PublicKey, endpoint.source, err)
 	}
-	if err := verifyAttestorComponentSignatures(attestorKey.ComponentKeyType, attestorKey.PublicKey, group, indices, signatures); err != nil {
+	if err := verifySentryComponentSignatures(sentryKey.ComponentKeyType, sentryKey.PublicKey, group, indices, signatures); err != nil {
 		return "", err
 	}
 	return resp.RequestID, nil
@@ -419,8 +419,8 @@ func collectComponentSignatures(resp *signerapi.ComponentSignResponse, expected 
 	return nil
 }
 
-func verifyAttestorComponentSignatures(componentKeyType string, attestorPublicKey string, group *attestorverify.CanonicalGroup, indices []int, signatures map[int]string) error {
-	canonicalPublicKey, err := normalizeAttestorPublicKeyHex(attestorPublicKey, componentKeyType)
+func verifySentryComponentSignatures(componentKeyType string, sentryPublicKey string, group *sentryverify.CanonicalGroup, indices []int, signatures map[int]string) error {
+	canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey, componentKeyType)
 	if err != nil {
 		return err
 	}
@@ -435,25 +435,25 @@ func verifyAttestorComponentSignatures(componentKeyType string, attestorPublicKe
 			return fmt.Errorf("sentry signature for target index %d must be hex: %w", index, err)
 		}
 		msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
-		if err := verifyAttestorComponentSignature(componentKeyType, publicKey, msg[:], signature); err != nil {
+		if err := verifySentryComponentSignature(componentKeyType, publicKey, msg[:], signature); err != nil {
 			return fmt.Errorf("sentry signature for target index %d did not verify against embedded sentry public key: %w", index, err)
 		}
 	}
 	return nil
 }
 
-func verifyAttestorComponentSignature(componentKeyType string, publicKey, msg, signature []byte) error {
+func verifySentryComponentSignature(componentKeyType string, publicKey, msg, signature []byte) error {
 	switch componentKeyType {
 	case keytypes.SentryComponentEd25519V1:
-		return attestorverify.VerifyEd25519(publicKey, msg, signature)
+		return sentryverify.VerifyEd25519(publicKey, msg, signature)
 	case keytypes.SentryComponentFalcon1024V1:
-		return attestorverify.VerifyFalcon1024(publicKey, msg, signature)
+		return sentryverify.VerifyFalcon1024(publicKey, msg, signature)
 	default:
 		return fmt.Errorf("key type %q is not a sentry component key type", componentKeyType)
 	}
 }
 
-func decodeAttestedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {
+func decodeGuardedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {
 	signedBytes := make([][]byte, len(signedHex))
 	signedObjects := make([]types.SignedTxn, len(signedHex))
 	txns := make([]types.Transaction, len(signedHex))
@@ -473,7 +473,7 @@ func decodeAttestedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn,
 	return signedBytes, signedObjects, txns, nil
 }
 
-func writeAttestedSubmittedTransactions(writer func(types.Transaction, string), txns []types.Transaction, txIDs []string, originalCount int) {
+func writeGuardedSubmittedTransactions(writer func(types.Transaction, string), txns []types.Transaction, txIDs []string, originalCount int) {
 	if writer == nil {
 		return
 	}

@@ -67,10 +67,10 @@ func (e *Engine) signerCacheLsigSize(address string) int {
 	return e.SignerCache.GetLsigSize(address)
 }
 
-func (e *Engine) signerCacheAttestorPublicKey(address string) (string, bool) {
+func (e *Engine) signerCacheSentryPublicKey(address string) (string, bool) {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
-	return e.SignerCache.AttestorPublicKeyForAddress(address)
+	return e.SignerCache.SentryPublicKeyForAddress(address)
 }
 
 func (e *Engine) signerCacheIsGenericLsig(address string) bool {
