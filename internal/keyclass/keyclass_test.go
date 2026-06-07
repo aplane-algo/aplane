@@ -4,6 +4,7 @@
 package keyclass
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -45,6 +46,9 @@ func TestValidateKeyTypesAllowedForNodeRoleReportsConflicts(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("ValidateKeyTypesAllowedForNodeRole() error = nil")
+	}
+	if !errors.Is(err, ErrNodeRoleConflict) {
+		t.Fatalf("error = %v, want ErrNodeRoleConflict", err)
 	}
 	if !strings.Contains(err.Error(), `node role "attestor"`) || !strings.Contains(err.Error(), "ADDR:ed25519") {
 		t.Fatalf("error = %v, want attestor role conflict for ADDR", err)

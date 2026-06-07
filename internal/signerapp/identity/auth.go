@@ -30,6 +30,9 @@ func NewRegistryAuthenticator(r *Registry) *RegistryAuthenticator {
 // matches, returns the error from the last attempt. If multiple match (duplicate
 // tokens across identities), returns an error to prevent nondeterministic routing.
 func (ra *RegistryAuthenticator) Authenticate(ctx context.Context, r *http.Request) (*auth.Identity, error) {
+	if err := ra.registry.CloseError(); err != nil {
+		return nil, err
+	}
 	runtimes := ra.registry.All()
 	if len(runtimes) == 0 {
 		return nil, auth.ErrNoCredentials

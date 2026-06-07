@@ -4,6 +4,7 @@
 package startup
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -42,6 +43,7 @@ type IdentityBuildHooks struct {
 	NotifyLocked                 func(identityID string)
 	NotifyKeysChanged            func(identityID string, keyCount int)
 	ReloadAuditLog               signertemplates.AuditLogger
+	NodeFailClosed               func(error)
 	Info                         func(string)
 	Warn                         func(string)
 }
@@ -249,7 +251,13 @@ func wireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ident
 				return nil
 			},
 			BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
-				return keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes)
+				if err := keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes); err != nil {
+					if errors.Is(err, keyclass.ErrNodeRoleConflict) && hooks.NodeFailClosed != nil {
+						hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict for identity %q: %w", identityID, err))
+					}
+					return err
+				}
+				return nil
 			},
 			PublishSnapshot: ir.PublishSnapshot,
 			AuditLog:        hooks.ReloadAuditLog,

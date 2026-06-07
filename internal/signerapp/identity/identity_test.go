@@ -777,6 +777,34 @@ func TestStoredConfigApplyRejectsMode(t *testing.T) {
 	}
 }
 
+func TestRegistryCloseFailClosedIsSticky(t *testing.T) {
+	reg := NewRegistry()
+	first := errors.New("first role conflict")
+	second := errors.New("second role conflict")
+
+	reg.CloseFailClosed(first)
+	reg.CloseFailClosed(second)
+
+	err := reg.CloseError()
+	if !errors.Is(err, ErrRegistryClosed) {
+		t.Fatalf("CloseError() = %v, want ErrRegistryClosed", err)
+	}
+	if !errors.Is(err, first) {
+		t.Fatalf("CloseError() = %v, want first cause", err)
+	}
+	if errors.Is(err, second) {
+		t.Fatalf("CloseError() = %v, should keep first close cause", err)
+	}
+
+	registerErr := reg.Register(New(Config{
+		ID:            "alice",
+		Authenticator: auth.NewTokenAuthenticator("test-token"),
+	}))
+	if !errors.Is(registerErr, ErrRegistryClosed) {
+		t.Fatalf("Register(after close) error = %v, want ErrRegistryClosed", registerErr)
+	}
+}
+
 func TestStoredConfigApplyUserAutoApprove(t *testing.T) {
 	userAutoApprove := false
 	cfg := &StoredConfig{

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -56,7 +57,13 @@ func (fs *Signer) newReloadServiceForIdentity(ir *identity.Runtime, session *key
 			return nil
 		},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
-			return keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes)
+			if err := keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes); err != nil {
+				if errors.Is(err, keyclass.ErrNodeRoleConflict) && fs.registry != nil {
+					fs.registry.CloseFailClosed(fmt.Errorf("node role inventory conflict for identity %q: %w", ir.ID(), err))
+				}
+				return err
+			}
+			return nil
 		},
 		PublishSnapshot:   ir.PublishSnapshot,
 		AuditLog:          auditLog,

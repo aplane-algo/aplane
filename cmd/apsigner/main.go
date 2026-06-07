@@ -250,6 +250,9 @@ func main() {
 			}
 		},
 		ReloadAuditLog: auditLog,
+		NodeFailClosed: func(err error) {
+			server.registry.CloseFailClosed(err)
+		},
 		Info: func(msg string) {
 			logInfof("%s", msg)
 		},

@@ -4,9 +4,11 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
 
 func authFailureReason(err error) string {
@@ -37,6 +39,10 @@ func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next h
 		if err != nil {
 			if fs.auditLog != nil {
 				fs.auditLog.LogAuthFailed("", r.RemoteAddr, authFailureReason(err))
+			}
+			if errors.Is(err, identity.ErrRegistryClosed) {
+				writeErrorJSON(w, http.StatusServiceUnavailable, err.Error())
+				return
 			}
 			writeErrorJSON(w, http.StatusUnauthorized, authRequiredError(fs.registryAuth.Method()))
 			return

@@ -5,6 +5,7 @@
 package keyclass
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/noderole"
 )
+
+var ErrNodeRoleConflict = errors.New("node role inventory conflict")
 
 // NodeRoleAllowsKeyType reports whether the single-purpose node role permits
 // keyType to exist in the identity's key inventory.
@@ -30,7 +33,7 @@ func ValidateKeyTypeAllowedForNodeRole(role noderole.Role, keyType string) error
 	if NodeRoleAllowsKeyType(role, keyType) {
 		return nil
 	}
-	return fmt.Errorf("node role %q does not allow key type %q", role, keyType)
+	return fmt.Errorf("%w: node role %q does not allow key type %q", ErrNodeRoleConflict, role, keyType)
 }
 
 // ValidateKeyTypesAllowedForNodeRole returns an error if any scanned key type is
@@ -46,5 +49,5 @@ func ValidateKeyTypesAllowedForNodeRole(role noderole.Role, scannedKeyTypes map[
 		return nil
 	}
 	sort.Strings(conflicts)
-	return fmt.Errorf("node role %q does not allow scanned key(s): %s", role, strings.Join(conflicts, ", "))
+	return fmt.Errorf("%w: node role %q does not allow scanned key(s): %s", ErrNodeRoleConflict, role, strings.Join(conflicts, ", "))
 }

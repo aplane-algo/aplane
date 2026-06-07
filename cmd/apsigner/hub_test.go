@@ -4,12 +4,15 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -212,6 +215,27 @@ func TestReloadServiceRoutesKeysChangedByIdentity(t *testing.T) {
 
 	if hub.keysIdentity != "alice" {
 		t.Fatalf("NotifyKeysChanged identity = %q, want alice", hub.keysIdentity)
+	}
+}
+
+func TestReloadServiceClosesRegistryOnNodeRoleConflict(t *testing.T) {
+	reg := identity.NewRegistry()
+	signer := &Signer{registry: reg}
+	ir := identity.New(identity.Config{
+		Authenticator: auth.NewTokenAuthenticator("test-token"),
+		ID:            "alice",
+		NodeRole:      noderole.RoleSigner,
+	})
+
+	svc := signer.newReloadServiceForIdentity(ir, nil)
+	err := svc.BeforePublish(nil, map[string]string{
+		"a_component": keytypes.AttestorComponentEd25519V1,
+	}, nil)
+	if err == nil {
+		t.Fatal("BeforePublish() error = nil, want node role conflict")
+	}
+	if closeErr := reg.CloseError(); !errors.Is(closeErr, identity.ErrRegistryClosed) {
+		t.Fatalf("registry CloseError() = %v, want ErrRegistryClosed", closeErr)
 	}
 }
 

@@ -261,7 +261,9 @@ There is no role-change operation. An operator that needs both roles creates
 two complete data roots. If a contradiction arrives through backup restore or
 manual file placement, key load fails closed for the node and surfaces the
 conflict until the operator removes the conflicting key files or uses a data
-root initialized for the correct role.
+root initialized for the correct role. After a reload detects the contradiction,
+the process marks the identity registry closed so HTTP and admin identity
+resolution refuse all identities until operator cleanup and restart.
 
 `node.yaml` is plaintext for early startup and diagnostics, but the role is
 also integrity-bound per initialized identity by an HMAC sidecar over the exact

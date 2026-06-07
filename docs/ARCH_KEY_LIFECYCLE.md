@@ -127,7 +127,9 @@ than silently quarantining only one identity. This is a deliberate
 safety/availability tradeoff. A hand-placed conflicting `.key` can make the
 node unavailable until the operator removes it, while supported restore/import
 paths should preflight role before writing so this fail-closed path remains a
-backstop.
+backstop. After a reload detects a role inventory conflict, the process marks
+the identity registry closed so HTTP and admin identity resolution refuse all
+identities until operator cleanup and restart.
 
 Local development that needs both roles uses two complete data roots and two
 apsigner processes, for example `~/aplane-signer/` and `~/aplane-attestor/`.

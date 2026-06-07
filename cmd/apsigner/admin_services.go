@@ -54,6 +54,9 @@ func (s signerAdminServices) ProductIdentityRuntime() *identity.Runtime {
 }
 
 func (s signerAdminServices) ResolveIdentity(identityID string) (*identity.Runtime, error) {
+	if err := s.signer.registry.CloseError(); err != nil {
+		return nil, err
+	}
 	targetIdentityID := identityID
 	if targetIdentityID == "" {
 		targetIdentityID = auth.CurrentProductIdentityID()

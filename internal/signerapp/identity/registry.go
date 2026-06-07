@@ -4,17 +4,21 @@
 package identity
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 )
+
+var ErrRegistryClosed = errors.New("identity registry closed")
 
 // Registry manages identity runtimes for the process.
 // The registry lock must only be held long enough to look up or
 // mutate the map; it must be released before acquiring any
 // identity-internal lock or blocking on identity work.
 type Registry struct {
-	mu       sync.RWMutex
-	runtimes map[string]*Runtime
+	mu        sync.RWMutex
+	runtimes  map[string]*Runtime
+	closedErr error
 }
 
 // NewRegistry creates an empty identity registry.
@@ -29,6 +33,9 @@ func NewRegistry() *Registry {
 func (r *Registry) Register(ir *Runtime) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closedErr != nil {
+		return r.closedErr
+	}
 	if _, exists := r.runtimes[ir.id]; exists {
 		return fmt.Errorf("identity already registered: %s", ir.id)
 	}
@@ -68,6 +75,29 @@ func (r *Registry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.runtimes)
+}
+
+// CloseFailClosed records a node-wide fail-closed reason. External request
+// resolution must reject all identities until the process is restarted after
+// operator cleanup.
+func (r *Registry) CloseFailClosed(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closedErr != nil {
+		return
+	}
+	if err == nil {
+		r.closedErr = ErrRegistryClosed
+		return
+	}
+	r.closedErr = fmt.Errorf("%w: %w", ErrRegistryClosed, err)
+}
+
+// CloseError reports the node-wide fail-closed reason, if one has been recorded.
+func (r *Registry) CloseError() error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.closedErr
 }
 
 // Remove deregisters an identity runtime. The caller is responsible for

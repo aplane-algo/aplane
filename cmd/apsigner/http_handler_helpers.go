@@ -47,6 +47,9 @@ func authenticatedIdentityIDFromRequest(r *http.Request) (string, int, string) {
 
 // identityFromRequest resolves the identity runtime for an authenticated request.
 func (fs *Signer) identityFromRequest(r *http.Request) (*identity.Runtime, int, string) {
+	if err := fs.registry.CloseError(); err != nil {
+		return nil, http.StatusServiceUnavailable, err.Error()
+	}
 	identityID, status, errMsg := authenticatedIdentityIDFromRequest(r)
 	if errMsg != "" {
 		return nil, status, errMsg
