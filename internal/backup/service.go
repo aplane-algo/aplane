@@ -133,7 +133,7 @@ func copyPolicyFilesToArchive(paths storepaths.Paths, identityID, stageDir strin
 		return fmt.Errorf("failed to load source node role: %w", err)
 	}
 	switch nodeRole.Role {
-	case noderole.RoleAttestor:
+	case noderole.RoleSentry:
 		if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(paths.Root(), identityID, masterKey); err != nil {
 			return fmt.Errorf("failed to verify policy.yaml before backup: %w", err)
 		}

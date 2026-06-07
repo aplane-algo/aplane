@@ -456,7 +456,7 @@ func TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish(t *tes
 		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
 			if keyTypes["ADDR"] == keytypes.AttestorComponentEd25519V1 {
-				return errors.New(`node role "signer" rejects key inventory: ADDR:aplane.sen-ed25519.v1`)
+				return errors.New(`node role "signer" rejects key inventory: ADDR:aplane.sentry-ed25519.v1`)
 			}
 			return nil
 		},

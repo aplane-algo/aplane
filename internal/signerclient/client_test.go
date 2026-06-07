@@ -543,7 +543,7 @@ func TestAdminSyncAttestorReferences_Success(t *testing.T) {
 	got, err := c.AdminSyncAttestorReferences([]signerapi.AttestorReferenceCandidate{{
 		EndpointAlias: "attestor-local",
 		ComponentKey:  "I5T6BSFAT7TXWGKF4TQLDR6U6PTAZJDLN54XTY7JLFSQETEJW3JA",
-		KeyType:       "aplane.sen-ed25519.v1",
+		KeyType:       "aplane.sentry-ed25519.v1",
 		PublicKeyHex:  strings.Repeat("ab", 32),
 	}})
 	if err != nil {
@@ -709,7 +709,7 @@ func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
 		if got.RequestID == "" {
 			t.Fatal("request_id was not populated")
 		}
-		if got.Role != signerapi.ComponentSignRoleAttestor || got.ComponentKey != "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA" {
+		if got.Role != signerapi.ComponentSignRoleSentry || got.ComponentKey != "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA" {
 			t.Fatalf("component request = %+v, want attestor component_key 75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA", got)
 		}
 		resp := signerapi.ComponentSignResponse{
@@ -717,14 +717,14 @@ func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
 			Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
 				Signature:       "aabb",
-				SignatureScheme: "aplane.sen-ed25519.v1",
+				SignatureScheme: "aplane.sentry-ed25519.v1",
 			}},
 		}
 		return mockResponse(http.StatusOK, jsonBody(t, resp)), nil
 	})
 
 	got, err := c.RequestComponentSign(signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},

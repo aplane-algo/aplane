@@ -245,7 +245,7 @@ func normalizeAdminPolicyTargetForNodeRole(role noderole.Role, target adminproto
 	if target != "" {
 		return target
 	}
-	if role == noderole.RoleAttestor {
+	if role == noderole.RoleSentry {
 		return adminproto.PolicyTargetAttestation
 	}
 	return adminproto.PolicyTargetSigner
@@ -330,7 +330,7 @@ func validatePolicyTargetForNodeRole(role noderole.Role, target adminproto.Polic
 			return nil
 		}
 	case adminproto.PolicyTargetAttestation:
-		if role == noderole.RoleAttestor {
+		if role == noderole.RoleSentry {
 			return nil
 		}
 	default:

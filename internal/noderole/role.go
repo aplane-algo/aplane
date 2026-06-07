@@ -22,8 +22,8 @@ const (
 type Role string
 
 const (
-	RoleSigner   Role = "signer"
-	RoleAttestor Role = "attestor"
+	RoleSigner Role = "signer"
+	RoleSentry Role = "sentry"
 )
 
 var (
@@ -52,10 +52,10 @@ func DefaultRole() Role {
 
 func ParseRole(raw string) (Role, error) {
 	switch role := Role(strings.ToLower(strings.TrimSpace(raw))); role {
-	case RoleSigner, RoleAttestor:
+	case RoleSigner, RoleSentry:
 		return role, nil
 	default:
-		return "", fmt.Errorf("%w: %q must be one of: %s, %s", ErrInvalidRole, raw, RoleSigner, RoleAttestor)
+		return "", fmt.Errorf("%w: %q must be one of: %s, %s", ErrInvalidRole, raw, RoleSigner, RoleSentry)
 	}
 }
 

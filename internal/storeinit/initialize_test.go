@@ -74,7 +74,7 @@ func TestInitializeCreatesExplicitAttestorNodeRole(t *testing.T) {
 		DataDir:    dataDir,
 		Paths:      paths,
 		IdentityID: identityID,
-		Role:       noderole.RoleAttestor,
+		Role:       noderole.RoleSentry,
 	}); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
@@ -91,8 +91,8 @@ func TestInitializeCreatesExplicitAttestorNodeRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("node role integrity baseline did not verify: %v", err)
 	}
-	if role.Role != noderole.RoleAttestor {
-		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleAttestor)
+	if role.Role != noderole.RoleSentry {
+		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSentry)
 	}
 	if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
 		t.Fatalf("attestor policy integrity baseline did not verify: %v", err)
@@ -112,7 +112,7 @@ func TestInitializeRemovesNodeRoleOnLateFailure(t *testing.T) {
 		DataDir:    dataDir,
 		Paths:      paths,
 		IdentityID: identityID,
-		Role:       noderole.RoleAttestor,
+		Role:       noderole.RoleSentry,
 	})
 	if err == nil || !strings.Contains(err.Error(), "failed to generate API token") {
 		t.Fatalf("Initialize() error = %v, want token failure", err)

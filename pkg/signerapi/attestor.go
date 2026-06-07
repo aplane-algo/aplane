@@ -12,8 +12,8 @@ const maxAttestorGroupSize = 16
 type ComponentSignRole string
 
 const (
-	ComponentSignRoleUser     ComponentSignRole = "user"
-	ComponentSignRoleAttestor ComponentSignRole = "attestor"
+	ComponentSignRoleUser   ComponentSignRole = "user"
+	ComponentSignRoleSentry ComponentSignRole = "attestor"
 )
 
 // ComponentSignRequest is the request payload for POST /sign/component.
@@ -87,9 +87,9 @@ func (r ComponentSignRequest) Validate() error {
 		if r.ComponentKey == "" {
 			return fmt.Errorf("component_key is required for user role")
 		}
-	case ComponentSignRoleAttestor:
+	case ComponentSignRoleSentry:
 	default:
-		return fmt.Errorf("role must be %q or %q", ComponentSignRoleUser, ComponentSignRoleAttestor)
+		return fmt.Errorf("role must be %q or %q", ComponentSignRoleUser, ComponentSignRoleSentry)
 	}
 	if err := validateGroupBytesHex(r.GroupBytesHex); err != nil {
 		return err

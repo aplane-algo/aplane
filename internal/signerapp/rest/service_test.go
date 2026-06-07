@@ -235,7 +235,7 @@ func TestServiceSignGroupDelegates(t *testing.T) {
 }
 
 func TestServiceSignComponentDelegates(t *testing.T) {
-	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleAttestor)
+	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
 	componentKey := strings.Repeat("ab", 32)
 	stub := &stubSigningService{
 		component: &signersigning.ComponentSignResult{
@@ -261,7 +261,7 @@ func TestServiceSignComponentDelegates(t *testing.T) {
 
 	req := signerapi.ComponentSignRequest{
 		RequestID:     "cmp-1",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},
@@ -529,7 +529,7 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 }
 
 func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
-	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleAttestor)
+	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
 	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{}}}
 
 	status, genResp := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: keytypes.AttestorComponentEd25519V1})
@@ -616,13 +616,13 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 		}
 		if keyType.KeyType == keytypes.AttestorComponentEd25519V1 {
 			foundEd25519Component = true
-			if keyType.Family != "sen-ed25519" || keyType.MnemonicImport {
+			if keyType.Family != "sentry-ed25519" || keyType.MnemonicImport {
 				t.Fatalf("Ed25519 component key type info = %#v, want attestor component metadata", keyType)
 			}
 		}
 		if keyType.KeyType == keytypes.AttestorComponentFalcon1024V1 {
 			foundFalconComponent = true
-			if keyType.Family != "sen-falcon1024" || keyType.MnemonicImport {
+			if keyType.Family != "sentry-falcon1024" || keyType.MnemonicImport {
 				t.Fatalf("Falcon component key type info = %#v, want attestor component metadata", keyType)
 			}
 		}
@@ -664,7 +664,7 @@ func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 		t.Fatalf("signer node key types included %s", keytypes.AttestorComponentFalcon1024V1)
 	}
 
-	ir = setupIdentityRuntimeWithRole(t, false, noderole.RoleAttestor)
+	ir = setupIdentityRuntimeWithRole(t, false, noderole.RoleSentry)
 	resp, svcErr = Service{}.KeyTypesForIdentity(ir)
 	if svcErr != nil {
 		t.Fatalf("KeyTypesForIdentity(attestor) error = %v", svcErr)
@@ -1226,12 +1226,12 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 
 func TestServiceNodeRoleGatesEndpointRoles(t *testing.T) {
 	signingOnly := setupIdentityRuntime(t, true)
-	componentReq := signerapi.ComponentSignRequest{Role: signerapi.ComponentSignRoleAttestor}
+	componentReq := signerapi.ComponentSignRequest{Role: signerapi.ComponentSignRoleSentry}
 	if _, err := (Service{}).SignComponent(context.Background(), signingOnly, componentReq); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "attestor component signing") {
 		t.Fatalf("SignComponent(attestor role in signer node) error = %#v, want forbidden node role error", err)
 	}
 
-	attestorOnly := setupIdentityRuntimeWithRole(t, true, noderole.RoleAttestor)
+	attestorOnly := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
 	if _, err := (Service{}).SignGroup(context.Background(), attestorOnly, signerapi.GroupSignRequest{}); err == nil || err.HTTPStatus() != 403 || !strings.Contains(err.Message, "account signing") {
 		t.Fatalf("SignGroup(attestor node) error = %#v, want forbidden node role error", err)
 	}

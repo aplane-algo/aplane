@@ -18,21 +18,21 @@ import (
 const (
 	// AttestorComponentEd25519V1 is a raw Ed25519 component-signing key. It is
 	// not an Algorand spending account and must not be accepted by /sign.
-	AttestorComponentEd25519V1 = "aplane.sen-ed25519.v1"
+	AttestorComponentEd25519V1 = "aplane.sentry-ed25519.v1"
 
 	// AttestorComponentFalcon1024V1 is a raw Falcon-1024 component-signing key.
 	// It is not an Algorand spending account and must not be accepted by /sign.
-	AttestorComponentFalcon1024V1 = "aplane.sen-falcon1024.v1"
+	AttestorComponentFalcon1024V1 = "aplane.sentry-falcon1024.v1"
 
 	// AttestedFalcon1024AttEd25519V1 is the user-account key type whose LogicSig
 	// verifies a Falcon-1024 user signature plus an Ed25519 attestor component
 	// signature.
-	AttestedFalcon1024AttEd25519V1 = "aplane.falcon1024-sen-ed25519.v1"
+	AttestedFalcon1024AttEd25519V1 = "aplane.falcon1024-sentry-ed25519.v1"
 
 	// AttestedFalcon1024AttFalcon1024V1 is the user-account key type whose
 	// LogicSig verifies a Falcon-1024 user signature plus a Falcon-1024
 	// attestor component signature.
-	AttestedFalcon1024AttFalcon1024V1 = "aplane.falcon1024-sen-falcon1024.v1"
+	AttestedFalcon1024AttFalcon1024V1 = "aplane.falcon1024-sentry-falcon1024.v1"
 
 	// AttestedFalcon1024V1 is a Go-level compatibility alias for the canonical
 	// Ed25519-attestor Falcon account key type.

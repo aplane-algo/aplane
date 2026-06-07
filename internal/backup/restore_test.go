@@ -251,7 +251,7 @@ func TestPreviewRestoreWithNodeRoleReportsRoleForbiddenKey(t *testing.T) {
 		}
 	})
 
-	preview, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("export-passphrase"), noderole.RoleAttestor)
+	preview, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("export-passphrase"), noderole.RoleSentry)
 	if err != nil {
 		t.Fatalf("PreviewRestoreWithNodeRole() error = %v", err)
 	}
@@ -259,7 +259,7 @@ func TestPreviewRestoreWithNodeRoleReportsRoleForbiddenKey(t *testing.T) {
 		t.Fatalf("preview errors = %+v, want one role-forbidden error", preview.Errors)
 	}
 	if !strings.Contains(preview.Errors[0].Error, "role-forbidden") ||
-		!strings.Contains(preview.Errors[0].Error, `node role "attestor"`) {
+		!strings.Contains(preview.Errors[0].Error, `node role "sentry"`) {
 		t.Fatalf("preview error = %q, want attestor role-forbidden context", preview.Errors[0].Error)
 	}
 	if len(preview.Keys) != 1 || preview.Keys[0].Error == "" {
@@ -421,7 +421,7 @@ func TestRestoreKeyWritesComponentPublicMetadataOnAttestorNode(t *testing.T) {
 		t.Fatalf("json.Unmarshal(component key) error = %v", err)
 	}
 
-	restorer := NewRestorer(paths, identityID).WithNodeRole(noderole.RoleAttestor)
+	restorer := NewRestorer(paths, identityID).WithNodeRole(noderole.RoleSentry)
 	keyType, err := restorer.RestoreKey(keysDir, componentKey, testExportMasterKey, []byte("export-passphrase"))
 	if err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)

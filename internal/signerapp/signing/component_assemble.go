@@ -116,7 +116,7 @@ func assembleAttestedTarget(ctx context.Context, target signerapi.AttestedAssemb
 	if verifyErr := attestorverify.VerifyFalcon1024(keyMaterial.PublicKey, userMessage[:], userSignature); verifyErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d user_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
-	attestorMessage := message.ComponentMessage(message.RoleAttestor, entry.TxID)
+	attestorMessage := message.ComponentMessage(message.RoleSentry, entry.TxID)
 	if verifyErr := verifyAttestorAssemblySignature(attestorComponentKeyType, attestorPublicKey, attestorMessage[:], attestorSignature); verifyErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d attestor_signature invalid: %v", target.TargetIndex, verifyErr))
 	}

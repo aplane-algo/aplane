@@ -11,7 +11,7 @@ import (
 func TestComponentSignRequestValidate(t *testing.T) {
 	valid := ComponentSignRequest{
 		RequestID:     "cli.abc_123:test",
-		Role:          ComponentSignRoleAttestor,
+		Role:          ComponentSignRoleSentry,
 		ComponentKey:  "I5T6BSFAT7TXWGKF4TQLDR6U6PTAZJDLN54XTY7JLFSQETEJW3JA",
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},
@@ -24,7 +24,7 @@ func TestComponentSignRequestValidate(t *testing.T) {
 	}{
 		{name: "valid attestor", request: valid},
 		{name: "valid user", request: ComponentSignRequest{Role: ComponentSignRoleUser, ComponentKey: "ADDR", GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
-		{name: "attestor may omit component key", request: ComponentSignRequest{Role: ComponentSignRoleAttestor, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
+		{name: "attestor may omit component key", request: ComponentSignRequest{Role: ComponentSignRoleSentry, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
 		{name: "invalid request ID", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.RequestID = "bad id" }), wantErr: "request_id contains invalid character"},
 		{name: "missing role", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.Role = "" }), wantErr: "role must be"},
 		{name: "user missing key", request: ComponentSignRequest{Role: ComponentSignRoleUser, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}, wantErr: "component_key is required"},

@@ -159,7 +159,7 @@ func (a *App) discoverEndpointAttestors(ctx context.Context, dryRun bool) (*Endp
 
 	aliases := make([]string, 0, len(cfg.Endpoints.Endpoints))
 	for alias, endpoint := range cfg.Endpoints.Endpoints {
-		if endpoint.Role == config.ClientEndpointRoleAttestor {
+		if endpoint.Role == config.ClientEndpointRoleSentry {
 			aliases = append(aliases, alias)
 		}
 	}
@@ -432,7 +432,7 @@ func endpointAttestorCandidates(registry config.ClientEndpointRegistry) []signer
 	candidates := make([]signerapi.AttestorReferenceCandidate, 0)
 	for _, alias := range aliases {
 		endpoint := registry.Endpoints[alias]
-		if endpoint.Role != config.ClientEndpointRoleAttestor {
+		if endpoint.Role != config.ClientEndpointRoleSentry {
 			continue
 		}
 		publicKeys := make([]string, 0, len(endpoint.PublishedAttestors))

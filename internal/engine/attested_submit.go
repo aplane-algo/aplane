@@ -372,7 +372,7 @@ func (e *Engine) requestOneAttestorComponentSignatureSet(ctx context.Context, gr
 	}
 
 	resp, err := endpoint.client.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentSelector,
 		GroupBytesHex: groupBytesHex,
 		TargetIndices: indices,
@@ -434,7 +434,7 @@ func verifyAttestorComponentSignatures(componentKeyType string, attestorPublicKe
 		if err != nil {
 			return fmt.Errorf("attestor signature for target index %d must be hex: %w", index, err)
 		}
-		msg := message.ComponentMessage(message.RoleAttestor, group.Entries[index].TxID)
+		msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
 		if err := verifyAttestorComponentSignature(componentKeyType, publicKey, msg[:], signature); err != nil {
 			return fmt.Errorf("attestor signature for target index %d did not verify against embedded attestor public key: %w", index, err)
 		}

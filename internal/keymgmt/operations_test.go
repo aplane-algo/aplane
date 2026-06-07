@@ -656,7 +656,7 @@ func TestParseKeyFileInfoPrefersParametersAndFallsBackToParams(t *testing.T) {
 }
 
 func TestParseKeyFileInfoIncludesPublicKey(t *testing.T) {
-	info, err := parseKeyFileInfo([]byte(`{"key_type":"aplane.sen-ed25519.v1","public_key":"aabbccdd"}`))
+	info, err := parseKeyFileInfo([]byte(`{"key_type":"aplane.sentry-ed25519.v1","public_key":"aabbccdd"}`))
 	if err != nil {
 		t.Fatalf("parseKeyFileInfo() error = %v", err)
 	}

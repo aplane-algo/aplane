@@ -13,7 +13,7 @@ func TestProtocolKeyDetailsMessageIncludesPublicKey(t *testing.T) {
 	msg := ProtocolKeyDetailsMessage("details-1", GetKeyDetailsResult{
 		Success:      true,
 		Address:      "ADDR",
-		KeyType:      "aplane.sen-ed25519.v1",
+		KeyType:      "aplane.sentry-ed25519.v1",
 		PublicKeyHex: "aabbccdd",
 	})
 

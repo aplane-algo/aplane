@@ -104,7 +104,7 @@ func LoadVerifiedForNodeRoleWithStored(role noderole.Role, dataDir, identityID s
 		role = noderole.DefaultRole()
 	}
 	switch role {
-	case noderole.RoleAttestor:
+	case noderole.RoleSentry:
 		return LoadVerifiedAttestationWithStored(dataDir, identityID, serverCfg, masterKey)
 	case noderole.RoleSigner:
 		return LoadVerifiedWithStored(dataDir, identityID, serverCfg, masterKey)

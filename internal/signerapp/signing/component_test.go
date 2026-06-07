@@ -104,7 +104,7 @@ func TestPrepareComponentSigningUsesAttestorRoleDomain(t *testing.T) {
 	txn := paymentTransaction(t, sender, receiver, 7)
 
 	req := signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -114,7 +114,7 @@ func TestPrepareComponentSigningUsesAttestorRoleDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareComponentSigning() error = %v", err)
 	}
-	if plan.MessageRole != message.RoleAttestor {
+	if plan.MessageRole != message.RoleSentry {
 		t.Fatalf("MessageRole = %v, want attestor", plan.MessageRole)
 	}
 	userMsg := message.ComponentMessage(message.RoleUser, plan.Group.Entries[0].TxID)
@@ -125,7 +125,7 @@ func TestPrepareComponentSigningUsesAttestorRoleDomain(t *testing.T) {
 
 func TestPrepareComponentSigningRejectsMalformedGroupBytes(t *testing.T) {
 	_, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},
 	})
@@ -144,7 +144,7 @@ func TestPrepareComponentSigningRejectsDivergentGroup(t *testing.T) {
 	txns[1].Group = types.Digest{9}
 
 	_, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])},
 		TargetIndices: []int{0},
 	})
@@ -176,7 +176,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 	txn := paymentTransaction(t, sender, receiver, 10)
 
 	_, err := (&Service{}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -205,7 +205,7 @@ func TestSignComponentAttestorRequiresPolicyBeforeKeyLoad(t *testing.T) {
 
 	_, err := (&Service{}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-no-policy",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -229,7 +229,7 @@ func TestSignComponentAttestorRequiresTransferPolicyBeforeKeyLoad(t *testing.T) 
 
 	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-no-routing",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -262,7 +262,7 @@ func TestSignComponentAttestorRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 
 	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-appl",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -288,7 +288,7 @@ func TestSignComponentAttestorRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 
 	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-route-miss",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -335,7 +335,7 @@ key_overrides:
 	txn := testnetPaymentTransaction(t, source, overrideDest, 1)
 	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-key-override",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -367,7 +367,7 @@ transfer_policy:
 
 	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-review-route-miss",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -405,7 +405,7 @@ transfer_policy:
 
 	_, err := (&Service{AttestationPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-review-above",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -434,7 +434,7 @@ func TestSignComponentAttestorRejectsRekeyBeforeKeyLoad(t *testing.T) {
 		AuditLog:          audit,
 	}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-rekey",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -485,7 +485,7 @@ func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
 		AuditLog:          audit,
 	}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-policy-pass",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -505,7 +505,7 @@ func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
 	}
 	plan, prepErr := PrepareComponentSigning(signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor-policy-pass",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
@@ -665,7 +665,7 @@ func TestAssembleDecodedAttestedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
-	attestorMsg := message.ComponentMessage(message.RoleAttestor, group.Entries[0].TxID)
+	attestorMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
 	attestorSignature := stded25519.Sign(attestorPrivateKey, attestorMsg[:])
 	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txns[1]})
 
@@ -786,7 +786,7 @@ func TestAssembleDecodedAttestedVerifiesFalconAttestorAndBuildsSignedGroup(t *te
 	if err != nil {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
-	attestorMsg := message.ComponentMessage(message.RoleAttestor, group.Entries[0].TxID)
+	attestorMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
 	attestorSignature, err := signerops.New(nil).Sign(attestorPrivateKey, attestorMsg[:])
 	if err != nil {
 		t.Fatalf("Sign(attestor) error = %v", err)
@@ -865,7 +865,7 @@ func TestAssembleDecodedAttestedRejectsWrongAttestorSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
-	attestorMsg := message.ComponentMessage(message.RoleAttestor, group.Entries[0].TxID)
+	attestorMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
 	wrongSignature := stded25519.Sign(wrongPrivateKey, attestorMsg[:])
 
 	keyMaterial := &coresigning.KeyMaterial{
@@ -927,7 +927,7 @@ func TestAssembleDecodedAttestedRejectsWrongUserSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign(wrong user) error = %v", err)
 	}
-	attestorMsg := message.ComponentMessage(message.RoleAttestor, group.Entries[0].TxID)
+	attestorMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
 	attestorSignature := stded25519.Sign(attestorPrivateKey, attestorMsg[:])
 
 	keyMaterial := &coresigning.KeyMaterial{
@@ -1236,7 +1236,7 @@ func preparedAttestorComponentPlan(t *testing.T, componentKey string) *Component
 	txn := paymentTransaction(t, sender, receiver, 12)
 	plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
 		RequestID:     "cmp-attestor",
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  componentKey,
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},

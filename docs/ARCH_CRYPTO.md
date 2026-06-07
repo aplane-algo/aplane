@@ -131,8 +131,8 @@ Built-in LogicSig DSA providers live under `lsig/`. The compiled providers are:
 | Key type | Key-type family | Availability |
 |---|---|---|
 | `aplane.falcon1024.v1` | `falcon1024` | default-enabled |
-| `aplane.falcon1024-sen-ed25519.v1` | `falcon1024-sen-ed25519` | library-visible |
-| `aplane.falcon1024-sen-falcon1024.v1` | `falcon1024-sen-falcon1024` | library-visible |
+| `aplane.falcon1024-sentry-ed25519.v1` | `falcon1024-sentry-ed25519` | library-visible |
+| `aplane.falcon1024-sentry-falcon1024.v1` | `falcon1024-sentry-falcon1024` | library-visible |
 | `aplane.falcon1024_ed25519.v1` | `falcon1024_ed25519` | library-visible |
 | `aplane.ecdsak1.v1` | `ecdsak1` | library-visible |
 
@@ -219,8 +219,8 @@ Identity-scoped key type enable/disable metadata is owned by
 `internal/keytypestate`. State records live under
 `identities/<identity>/keytypes/<key_type>.json` via
 `internal/storepaths.Paths.KeyTypeRecord()`. They make compiled
-library-visible providers such as `aplane.falcon1024-sen-ed25519.v1`,
-`aplane.falcon1024-sen-falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, and
+library-visible providers such as `aplane.falcon1024-sentry-ed25519.v1`,
+`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, and
 `aplane.ecdsak1.v1` available to that identity for key type discovery and
 generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
 gated separately by the provider's explicit mnemonic-import capability.

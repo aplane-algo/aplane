@@ -153,7 +153,7 @@ func selectRebuildNodeRole(sourceRoot string, explicitRole noderole.Role, explic
 		return explicitRole, nil
 	}
 	role := noderole.DefaultRole()
-	logWarnf("backup manifest has no source node role metadata; defaulting rebuild destination role to %q (use --role attestor for attestor backups)", role)
+	logWarnf("backup manifest has no source node role metadata; defaulting rebuild destination role to %q (use --role sentry for attestor backups)", role)
 	return role, nil
 }
 

@@ -2,13 +2,13 @@
 # install.sh - Install aplane binaries and configure the system
 #
 # Local mode (default, rootless, no systemd):
-#   ./install.sh [--role signer|attestor] [path]
+#   ./install.sh [--role signer|sentry] [path]
 #
 # Client-only mode (apshell only, no signer):
 #   ./install.sh --client [path]
 #
 # Systemd mode (systemd service):
-#   sudo ./install.sh --systemd [--role signer|attestor] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
+#   sudo ./install.sh --systemd [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
 #
 # Arguments (local mode):
 #   path      Parent directory for apsigner/ and apclient/ (default: ~/aplane)
@@ -28,10 +28,10 @@
 # BASH_SOURCE[0] is empty when the supported `curl ... | bash` form is used.
 if (return 0 2>/dev/null); then
     echo "Error: this script must be executed, not sourced." >&2
-    echo "Usage: $0 [--role signer|attestor] [path]" >&2
+    echo "Usage: $0 [--role signer|sentry] [path]" >&2
     echo "       $0 --client [path]" >&2
     if [ "$(uname -s)" = "Linux" ]; then
-        echo "       sudo $0 --systemd [--role signer|attestor] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
+        echo "       sudo $0 --systemd [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
     fi
     return 1
 fi
@@ -88,12 +88,12 @@ is_linux() {
 print_usage() {
     cat <<'EOF'
 Usage:
-  ./install.sh [--role signer|attestor] [path]
+  ./install.sh [--role signer|sentry] [path]
   ./install.sh --client [path]
 EOF
     if is_linux; then
         cat <<'EOF'
-  sudo ./install.sh --systemd [--role signer|attestor] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
+  sudo ./install.sh --systemd [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
 EOF
     fi
 
@@ -108,7 +108,7 @@ EOF
                     Optional operator-root defaults to the installing user's ~/aplane.
 
 Options:
-  --role <role>     Initialize the signer data root as signer or attestor (default: signer).
+  --role <role>     Initialize the signer data root as signer or sentry (default: signer).
   --bindir <path>   Binary directory for --systemd (default: /usr/local/bin).
   --no-enable       Do not run systemctl enable in --systemd mode.
   --no-start        Do not run systemctl start in --systemd mode.
@@ -117,7 +117,7 @@ EOF
         cat <<'EOF'
 
 Options:
-  --role <role>     Initialize the signer data root as signer or attestor (default: signer).
+  --role <role>     Initialize the signer data root as signer or sentry (default: signer).
 EOF
     fi
 
@@ -162,16 +162,16 @@ while [ $# -gt 0 ]; do
             ;;
         --role)
             if [ $# -lt 2 ]; then
-                echo "Error: --role requires signer or attestor." >&2
+                echo "Error: --role requires signer or sentry." >&2
                 exit 2
             fi
             case "$2" in
-                signer|attestor)
+                signer|sentry)
                     NODE_ROLE="$2"
                     NODE_ROLE_FLAG=1
                     ;;
                 *)
-                    echo "Error: invalid --role '$2' (expected signer or attestor)." >&2
+                    echo "Error: invalid --role '$2' (expected signer or sentry)." >&2
                     exit 2
                     ;;
             esac
@@ -927,7 +927,7 @@ write_apshell_attestor_endpoint_registry() {
 schema_version: 1
 endpoints:
   local-attestor:
-    role: attestor
+    role: sentry
     url: ssh://$host:$ssh_port
     signer_port: $signer_port
     identity_file: .ssh/id_ed25519
@@ -946,7 +946,7 @@ write_apshell_endpoint_registry_for_role() {
         signer)
             write_apshell_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
             ;;
-        attestor)
+        sentry)
             write_apshell_attestor_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
             ;;
         *)
@@ -1750,7 +1750,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     fi
     if [ ${#POSITIONAL[@]} -gt 1 ]; then
         echo "Error: local mode accepts at most one optional path argument." >&2
-        echo "Usage: $0 [--role signer|attestor] [path]" >&2
+        echo "Usage: $0 [--role signer|sentry] [path]" >&2
         exit 2
     fi
 
@@ -2010,7 +2010,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if [ ${#POSITIONAL[@]} -gt 1 ]; then
-    echo "Usage: sudo $0 --systemd [--role signer|attestor] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
+    echo "Usage: sudo $0 --systemd [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
     exit 2
 fi
 PROD_OPERATOR_ROOT_INPUT="${POSITIONAL[0]:-${INSTALL_ROOT_ENV:-}}"

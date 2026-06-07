@@ -118,7 +118,7 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 			return nil, internal("key session is nil")
 		}
 		return signPreparedUserComponents(ctx, plan, session)
-	case signerapi.ComponentSignRoleAttestor:
+	case signerapi.ComponentSignRoleSentry:
 		if err := s.evaluateAttestorComponentPolicy(identityID, plan); err != nil {
 			return nil, err
 		}

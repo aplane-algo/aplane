@@ -620,7 +620,7 @@ endpoints delete <alias>
 `endpoints import-public` reads a public `aplane.endpoint.v1` envelope produced by
 `apstore endpoint export`. Import writes local endpoint routing only:
 `endpoints.yaml`. Use `role: signer` for the one primary client signer endpoint
-and `role: attestor` for attestor endpoints. Import does not copy tokens or SSH
+and `role: sentry` for attestor endpoints. Import does not copy tokens or SSH
 host trust. Re-importing with the same alias replaces that alias's endpoint
 data.
 
@@ -637,7 +637,7 @@ endpoint alias, component ID, and key type without calling remote endpoints.
 **Examples:**
 ```
 endpoints import-public --alias main --role signer signer.endpoint.json
-endpoints import-public --alias local-attestor --role attestor attestor.endpoint.json
+endpoints import-public --alias local-attestor --role sentry attestor.endpoint.json
 endpoints import-public --alias main --role signer --dry-run signer.endpoint.json
 request-token --endpoint main
 request-token --endpoint local-attestor
@@ -1085,7 +1085,7 @@ endpoints:
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
   local-attestor:
-    role: attestor
+    role: sentry
     url: ssh://192.168.1.101:1127
     signer_port: 11270
     identity_file: .ssh/id_ed25519

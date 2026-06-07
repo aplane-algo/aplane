@@ -137,7 +137,7 @@ func TestCmdRebuildRoleOverrideRestoresAttestorBackupWithoutManifest(t *testing.
 	}
 
 	if err := withTestStdin("export-passphrase\nnew-store-passphrase\nnew-store-passphrase\n", func() error {
-		return cmdRebuild([]string{archivePath, "--role", "attestor", "--address", componentKey})
+		return cmdRebuild([]string{archivePath, "--role", "sentry", "--address", componentKey})
 	}); err != nil {
 		t.Fatalf("cmdRebuild() error = %v", err)
 	}
@@ -155,7 +155,7 @@ func TestCmdRebuildRoleOverrideRestoresAttestorBackupWithoutManifest(t *testing.
 	if err != nil {
 		t.Fatalf("LoadAndVerifyWithMasterKey() error = %v", err)
 	}
-	if role.Role != noderole.RoleAttestor {
+	if role.Role != noderole.RoleSentry {
 		t.Fatalf("rebuilt node role = %q, want attestor", role.Role)
 	}
 	if _, err := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), componentKey)); err != nil {
@@ -179,11 +179,11 @@ func TestSelectRebuildNodeRoleExplicitOverridesManifest(t *testing.T) {
 		t.Fatalf("WriteManifest() error = %v", err)
 	}
 
-	role, err := selectRebuildNodeRole(root, noderole.RoleAttestor, true)
+	role, err := selectRebuildNodeRole(root, noderole.RoleSentry, true)
 	if err != nil {
 		t.Fatalf("selectRebuildNodeRole() error = %v", err)
 	}
-	if role != noderole.RoleAttestor {
+	if role != noderole.RoleSentry {
 		t.Fatalf("selectRebuildNodeRole() role = %q, want attestor", role)
 	}
 }

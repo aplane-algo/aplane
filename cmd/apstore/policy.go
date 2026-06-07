@@ -132,7 +132,7 @@ func policyCommandDocuments() ([]policyCommandDocument, error) {
 		sidecar: policy.PolicyIntegritySidecarPath(policyPath),
 	}
 	switch nodeDoc.Role {
-	case noderole.RoleAttestor:
+	case noderole.RoleSentry:
 		doc.loadCheck = func() (*policy.StoredConfig, error) {
 			return loadPolicyDocumentForCheck("policy.yaml", policyPath, policy.ParseStoredAttestationConfig, func(stored *policy.StoredConfig) (*policy.Config, error) {
 				return policyruntime.ApplyAttestationStoredConfig(dataDirectory, &config, stored)

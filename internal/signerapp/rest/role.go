@@ -17,7 +17,7 @@ func requireAccountSigningRole(ir *identity.Runtime, operation string) *signersi
 	switch role {
 	case noderole.RoleSigner:
 		return nil
-	case noderole.RoleAttestor:
+	case noderole.RoleSentry:
 		return &signersigning.ServiceError{
 			Kind:    signersigning.ErrorForbidden,
 			Message: fmt.Sprintf("node role %q does not allow %s", role, operation),
@@ -33,9 +33,9 @@ func requireAccountSigningRole(ir *identity.Runtime, operation string) *signersi
 func requireComponentNodeRole(ir *identity.Runtime, role signerapi.ComponentSignRole) *signersigning.ServiceError {
 	nodeRole := ir.NodeRole()
 	switch role {
-	case signerapi.ComponentSignRoleAttestor:
+	case signerapi.ComponentSignRoleSentry:
 		switch nodeRole {
-		case noderole.RoleAttestor:
+		case noderole.RoleSentry:
 			return nil
 		case noderole.RoleSigner:
 			return &signersigning.ServiceError{
@@ -52,7 +52,7 @@ func requireComponentNodeRole(ir *identity.Runtime, role signerapi.ComponentSign
 		switch nodeRole {
 		case noderole.RoleSigner:
 			return nil
-		case noderole.RoleAttestor:
+		case noderole.RoleSentry:
 			return &signersigning.ServiceError{
 				Kind:    signersigning.ErrorForbidden,
 				Message: fmt.Sprintf("node role %q does not allow user component signing", nodeRole),

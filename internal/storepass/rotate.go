@@ -322,7 +322,7 @@ func policyDocumentsForRotation(paths storepaths.Paths, identityID string) ([]po
 		path: policy.PolicyPath(dataRoot, identityID),
 	}
 	switch nodeDoc.Role {
-	case noderole.RoleAttestor:
+	case noderole.RoleSentry:
 		doc.verifyFunc = func(masterKey []byte) error {
 			_, err := policy.LoadVerifiedAttestationConfigWithMasterKey(dataRoot, identityID, masterKey)
 			return err

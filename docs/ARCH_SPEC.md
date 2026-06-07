@@ -1054,8 +1054,8 @@ on-disk integrity checks live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 Attestor component key types are raw component-signing keys, not spending
 accounts and not LogicSig providers:
 
-- `aplane.sen-ed25519.v1`
-- `aplane.sen-falcon1024.v1`
+- `aplane.sentry-ed25519.v1`
+- `aplane.sentry-falcon1024.v1`
 
 They are selected by 52-character uppercase, no-padding base32 component
 selectors derived as:
@@ -1074,8 +1074,8 @@ account LogicSig bytecode.
 
 Attested account key types name both the account DSA and the attestor DSA:
 
-- `aplane.falcon1024-sen-ed25519.v1`
-- `aplane.falcon1024-sen-falcon1024.v1`
+- `aplane.falcon1024-sentry-ed25519.v1`
+- `aplane.falcon1024-sentry-falcon1024.v1`
 
 An attested account key file stores the resolved `attestor_public_key` and the
 LogicSig bytecode embeds that same public key. `/sign` rejects attested-account

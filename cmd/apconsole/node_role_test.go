@@ -14,7 +14,7 @@ func TestShellPaneEnabledForNodeRole(t *testing.T) {
 	if !shellPaneEnabledForNodeRole(noderole.RoleSigner) {
 		t.Fatal("signer node shell pane enabled = false, want true")
 	}
-	if shellPaneEnabledForNodeRole(noderole.RoleAttestor) {
+	if shellPaneEnabledForNodeRole(noderole.RoleSentry) {
 		t.Fatal("attestor node shell pane enabled = true, want false")
 	}
 }

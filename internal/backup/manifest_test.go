@@ -24,14 +24,14 @@ func TestManifestSourceNodeRoleOrDefault(t *testing.T) {
 		t.Fatalf("missing manifest role = %q, want signer", role)
 	}
 
-	if err := WriteManifest(dir, noderole.RoleAttestor, time.Unix(1700000000, 0)); err != nil {
+	if err := WriteManifest(dir, noderole.RoleSentry, time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("WriteManifest() error = %v", err)
 	}
 	role, err = SourceNodeRoleOrDefault(dir)
 	if err != nil {
 		t.Fatalf("SourceNodeRoleOrDefault(attestor) error = %v", err)
 	}
-	if role != noderole.RoleAttestor {
+	if role != noderole.RoleSentry {
 		t.Fatalf("manifest role = %q, want attestor", role)
 	}
 }

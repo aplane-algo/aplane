@@ -150,7 +150,7 @@ func TestVerifyAttestorComponentSignaturesUsesSharedMessage(t *testing.T) {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
 	}
 
-	msg := message.ComponentMessage(message.RoleAttestor, group.Entries[0].TxID)
+	msg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
 	signatures := map[int]string{0: hex.EncodeToString(ed25519.Sign(privateKey, msg[:]))}
 	if err := verifyAttestorComponentSignatures(keytypes.AttestorComponentEd25519V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err != nil {
 		t.Fatalf("verifyAttestorComponentSignatures() error = %v", err)
@@ -174,7 +174,7 @@ func TestVerifyAttestorComponentSignaturesUsesFalcon1024Scheme(t *testing.T) {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
 	}
 
-	msg := message.ComponentMessage(message.RoleAttestor, group.Entries[0].TxID)
+	msg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
 	signature, err := signerops.New(nil).Sign(privateKey, msg[:])
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
@@ -541,7 +541,7 @@ func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.Role != signerapi.ComponentSignRoleAttestor || req.ComponentKey != componentSelector {
+		if req.Role != signerapi.ComponentSignRoleSentry || req.ComponentKey != componentSelector {
 			http.Error(w, "wrong attestor component key", http.StatusBadRequest)
 			return
 		}
@@ -556,7 +556,7 @@ func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 			Signatures:   make([]signerapi.ComponentSignature, 0, len(req.TargetIndices)),
 		}
 		for _, index := range req.TargetIndices {
-			msg := message.ComponentMessage(message.RoleAttestor, group.Entries[index].TxID)
+			msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
 			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
 				TargetIndex:     index,
 				SignatureScheme: keytypes.AttestorComponentEd25519V1,

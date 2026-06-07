@@ -90,7 +90,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to create node role integrity sidecar: %w", err)
 	}
 	var policyErr error
-	if role == noderole.RoleAttestor {
+	if role == noderole.RoleSentry {
 		policyErr = policy.SaveStoredAttestationConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now())
 	} else {
 		policyErr = policy.SaveStoredConfigWithMasterKey(opts.DataDir, opts.IdentityID, &policy.StoredConfig{}, masterKey, time.Now())

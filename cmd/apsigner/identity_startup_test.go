@@ -459,7 +459,7 @@ func TestBuildIdentityRuntimeRejectsTamperedNodeRoleOnUnlock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(server.keyPaths.NodeRolePath(), []byte("schema_version: 1\nrole: attestor\n"), 0o660); err != nil {
+	if err := os.WriteFile(server.keyPaths.NodeRolePath(), []byte("schema_version: 1\nrole: sentry\n"), 0o660); err != nil {
 		t.Fatal(err)
 	}
 	_, err = ir.ReloadWithPassphrase(passphrase)

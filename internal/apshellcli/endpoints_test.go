@@ -35,7 +35,7 @@ func TestEndpointSyncAttestorsProgressListsComponentsBeforePrompt(t *testing.T) 
 	}})
 
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "attestor-local", config.ClientEndpointConfig{
-		Role: config.ClientEndpointRoleAttestor,
+		Role: config.ClientEndpointRoleSentry,
 		URL:  server.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint() error = %v", err)
@@ -128,7 +128,7 @@ func TestRenderEndpointShowIncludesAttestorLastSeen(t *testing.T) {
 	state.renderEndpointShow(&apshellapp.EndpointShowResult{
 		Endpoint: apshellapp.EndpointEntry{
 			Alias: "attestor-local",
-			Role:  config.ClientEndpointRoleAttestor,
+			Role:  config.ClientEndpointRoleSentry,
 			URL:   "ssh://127.0.0.1:2223",
 			PublishedAttestorComponents: []string{
 				componentKey,

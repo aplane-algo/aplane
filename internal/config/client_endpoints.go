@@ -23,8 +23,8 @@ const (
 	ClientEndpointsFile       = "endpoints.yaml"
 	DefaultClientEndpointName = "primary"
 
-	ClientEndpointRoleSigner   = "signer"
-	ClientEndpointRoleAttestor = "attestor"
+	ClientEndpointRoleSigner = "signer"
+	ClientEndpointRoleSentry = "sentry"
 )
 
 // ClientEndpointRegistry stores client-local signer endpoint profiles loaded
@@ -136,12 +136,12 @@ func ValidateClientEndpointAlias(alias string) error {
 
 func ValidateClientEndpointRole(role string) error {
 	switch strings.TrimSpace(role) {
-	case ClientEndpointRoleSigner, ClientEndpointRoleAttestor:
+	case ClientEndpointRoleSigner, ClientEndpointRoleSentry:
 		return nil
 	case "":
-		return fmt.Errorf("role is required (expected %q or %q)", ClientEndpointRoleSigner, ClientEndpointRoleAttestor)
+		return fmt.Errorf("role is required (expected %q or %q)", ClientEndpointRoleSigner, ClientEndpointRoleSentry)
 	default:
-		return fmt.Errorf("unsupported role %q (expected %q or %q)", role, ClientEndpointRoleSigner, ClientEndpointRoleAttestor)
+		return fmt.Errorf("unsupported role %q (expected %q or %q)", role, ClientEndpointRoleSigner, ClientEndpointRoleSentry)
 	}
 }
 
@@ -192,8 +192,8 @@ func normalizeClientEndpointConfig(dataDir string, cfg Config, alias string, end
 		return endpoint, err
 	}
 	endpoint.PublishedAttestors = published
-	if endpoint.Role != ClientEndpointRoleAttestor && len(endpoint.PublishedAttestors) > 0 {
-		return endpoint, fmt.Errorf("published_attestors are only valid on %q endpoints", ClientEndpointRoleAttestor)
+	if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedAttestors) > 0 {
+		return endpoint, fmt.Errorf("published_attestors are only valid on %q endpoints", ClientEndpointRoleSentry)
 	}
 	return endpoint, nil
 }
@@ -334,8 +334,8 @@ func normalizeClientEndpointRegistryRoleState(registry *ClientEndpointRegistry) 
 		if err := ValidateClientEndpointRole(endpoint.Role); err != nil {
 			return fmt.Errorf("endpoint %q: %w", alias, err)
 		}
-		if endpoint.Role != ClientEndpointRoleAttestor && len(endpoint.PublishedAttestors) > 0 {
-			return fmt.Errorf("endpoint %q: published_attestors are only valid on %q endpoints", alias, ClientEndpointRoleAttestor)
+		if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedAttestors) > 0 {
+			return fmt.Errorf("endpoint %q: published_attestors are only valid on %q endpoints", alias, ClientEndpointRoleSentry)
 		}
 		if endpoint.Role != ClientEndpointRoleSigner {
 			continue
@@ -369,7 +369,7 @@ func (r ClientEndpointRegistry) PublishedAttestorEndpointConfigs() (AttestorEndp
 	sort.Strings(aliases)
 	for _, alias := range aliases {
 		endpoint := r.Endpoints[alias]
-		if endpoint.Role != ClientEndpointRoleAttestor {
+		if endpoint.Role != ClientEndpointRoleSentry {
 			continue
 		}
 		publicKeys := make([]string, 0, len(endpoint.PublishedAttestors))
@@ -403,7 +403,7 @@ func (r ClientEndpointRegistry) PublishedAttestorEndpointConfigs() (AttestorEndp
 func (r ClientEndpointRegistry) PublishedAttestorPublicKeysByAlias() map[string][]string {
 	out := map[string][]string{}
 	for alias, endpoint := range r.Endpoints {
-		if endpoint.Role != ClientEndpointRoleAttestor {
+		if endpoint.Role != ClientEndpointRoleSentry {
 			continue
 		}
 		for publicKey := range endpoint.PublishedAttestors {

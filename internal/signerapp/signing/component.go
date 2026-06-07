@@ -71,9 +71,9 @@ func componentMessageRole(role signerapi.ComponentSignRole) (message.Role, error
 	switch role {
 	case signerapi.ComponentSignRoleUser:
 		return message.RoleUser, nil
-	case signerapi.ComponentSignRoleAttestor:
-		return message.RoleAttestor, nil
+	case signerapi.ComponentSignRoleSentry:
+		return message.RoleSentry, nil
 	default:
-		return 0, fmt.Errorf("role must be %q or %q", signerapi.ComponentSignRoleUser, signerapi.ComponentSignRoleAttestor)
+		return 0, fmt.Errorf("role must be %q or %q", signerapi.ComponentSignRoleUser, signerapi.ComponentSignRoleSentry)
 	}
 }

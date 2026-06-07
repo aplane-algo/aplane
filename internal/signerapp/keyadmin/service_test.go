@@ -197,7 +197,7 @@ func TestServiceGenerateKeyAttestorComponent(t *testing.T) {
 		keytypes.AttestorComponentFalcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
-			ir := setupIdentityRuntimeWithRole(t, noderole.RoleAttestor)
+			ir := setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
 			audit := &auditRecorder{}
 			svc := Service{AuditLog: audit}
 
@@ -275,12 +275,12 @@ func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 		t.Fatalf("GenerateKey(component in signer node) error = %#v, want node role invalid input", err)
 	}
 
-	ir = setupIdentityRuntimeWithRole(t, noderole.RoleAttestor)
+	ir = setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
 	result, err = svc.GenerateKey(context.Background(), ir, "ed25519", nil, nil)
 	if result != nil {
 		t.Fatalf("GenerateKey(ed25519 in attestor node) result = %#v, want nil", result)
 	}
-	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `node role "attestor"`) {
+	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `node role "sentry"`) {
 		t.Fatalf("GenerateKey(ed25519 in attestor node) error = %#v, want node role invalid input", err)
 	}
 }
@@ -501,7 +501,7 @@ func TestServiceDeleteKeyRemovesKeyAndAudits(t *testing.T) {
 }
 
 func TestServiceDeleteKeyRemovesAttestorComponentKey(t *testing.T) {
-	ir := setupIdentityRuntimeWithRole(t, noderole.RoleAttestor)
+	ir := setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
 	svc := Service{}
 
 	genResult, genErr := svc.GenerateKey(context.Background(), ir, keytypes.AttestorComponentEd25519V1, nil, nil)
@@ -687,7 +687,7 @@ func TestServiceImportKeyFalcon1024V1PersistsKey(t *testing.T) {
 func TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	configureFalconCompileMock(t)
 
-	ir := setupIdentityRuntimeWithRole(t, noderole.RoleAttestor)
+	ir := setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
 	svc := Service{}
 	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 
@@ -695,7 +695,7 @@ func TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	if result != nil {
 		t.Fatalf("ImportKey(disallowed node role) result = %#v, want nil", result)
 	}
-	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `node role "attestor"`) {
+	if err == nil || err.Kind != ErrorInvalidInput || !strings.Contains(err.Message, `node role "sentry"`) {
 		t.Fatalf("ImportKey(disallowed node role) error = %#v, want node role invalid input", err)
 	}
 }

@@ -427,7 +427,7 @@ cp examples/config/apsigner/config.yaml.example "$APSIGNER_DATA/config.yaml"
 # Initialize the local keystore before starting apsigner
 ./apstore initialize
 # Or, for a dedicated attestor node:
-./apstore initialize --role attestor
+./apstore initialize --role sentry
 ./apsigner
 ```
 

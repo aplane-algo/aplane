@@ -96,7 +96,7 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 				Signatures: []signerapi.ComponentSignature{{
 					TargetIndex:     0,
 					Signature:       "aabb",
-					SignatureScheme: "aplane.sen-ed25519.v1",
+					SignatureScheme: "aplane.sentry-ed25519.v1",
 				}},
 			}, req), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/sign/assemble":
@@ -133,7 +133,7 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 		t.Fatalf("AdminDeleteKey() = (%+v, %v), want success nil", del, err)
 	}
 	component, err := state.RequestComponentSign(signerapi.ComponentSignRequest{
-		Role:          signerapi.ComponentSignRoleAttestor,
+		Role:          signerapi.ComponentSignRoleSentry,
 		ComponentKey:  "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
 		GroupBytesHex: []string{"5458aa"},
 		TargetIndices: []int{0},

@@ -216,7 +216,7 @@ func PlanStoredClientEndpointPublishedAttestorRebuild(dataDir string, publicatio
 	}
 	previousCount := 0
 	for alias, endpoint := range registry.Endpoints {
-		if endpoint.Role != ClientEndpointRoleAttestor {
+		if endpoint.Role != ClientEndpointRoleSentry {
 			continue
 		}
 		previousCount += len(endpoint.PublishedAttestors)
@@ -248,8 +248,8 @@ func PlanStoredClientEndpointPublishedAttestorRebuild(dataDir string, publicatio
 			}
 			return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q is not defined", alias)
 		}
-		if endpoint.Role != ClientEndpointRoleAttestor {
-			return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q has role %q; published_attestors require role %q", alias, endpoint.Role, ClientEndpointRoleAttestor)
+		if endpoint.Role != ClientEndpointRoleSentry {
+			return ClientEndpointPublishedAttestorRebuildPlan{}, fmt.Errorf("endpoint alias %q has role %q; published_attestors require role %q", alias, endpoint.Role, ClientEndpointRoleSentry)
 		}
 
 		for publicKey := range normalizedPublished {
@@ -341,8 +341,8 @@ func normalizeStoredClientEndpoint(alias string, endpoint ClientEndpointConfig) 
 		return ClientEndpointConfig{}, err
 	}
 	endpoint.PublishedAttestors = published
-	if endpoint.Role != ClientEndpointRoleAttestor && len(endpoint.PublishedAttestors) > 0 {
-		return ClientEndpointConfig{}, fmt.Errorf("published_attestors are only valid on %q endpoints", ClientEndpointRoleAttestor)
+	if endpoint.Role != ClientEndpointRoleSentry && len(endpoint.PublishedAttestors) > 0 {
+		return ClientEndpointConfig{}, fmt.Errorf("published_attestors are only valid on %q endpoints", ClientEndpointRoleSentry)
 	}
 	if endpoint.TokenFile == "" && endpoint.URL != "self" {
 		if alias == DefaultClientEndpointName {

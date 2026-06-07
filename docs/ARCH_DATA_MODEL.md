@@ -454,7 +454,7 @@ namespace and must not be treated as chain identity.
 Signer and attestor endpoint routing lives in `endpoints.yaml`, not in
 `config.yaml`. The endpoint registry contains a `schema_version`, one default
 signer endpoint alias, and endpoint records with `role: signer` or
-`role: attestor`. Endpoint records own connection details such as URL,
+`role: sentry`. Endpoint records own connection details such as URL,
 signer/local ports, token file, SSH identity file, and known-hosts path.
 
 Attestor endpoint records may also contain `published_attestors`, keyed by the

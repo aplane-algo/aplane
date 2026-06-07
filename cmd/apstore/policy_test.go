@@ -123,7 +123,7 @@ transfer_policy:
 }
 
 func TestCmdPolicyCheckRejectsInvalidAttestationReviewPolicy(t *testing.T) {
-	withPolicyCommandStoreWithRole(t, noderole.RoleAttestor, func(root string, _ []byte) {
+	withPolicyCommandStoreWithRole(t, noderole.RoleSentry, func(root string, _ []byte) {
 		raw := []byte("always_review_warnings: true\n")
 		if err := os.WriteFile(policy.PolicyPath(root, productIdentityID()), raw, 0o600); err != nil {
 			t.Fatalf("WriteFile(policy) error = %v", err)

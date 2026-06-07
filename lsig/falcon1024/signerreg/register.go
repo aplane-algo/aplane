@@ -31,7 +31,7 @@ func RegisterSigner() {
 		internalkeygen.RegisterAttestorFalcon1024Generator()
 		keytypecatalog.Register(keytypecatalog.Entry{
 			KeyType:      keytypes.AttestorComponentFalcon1024V1,
-			Family:       "sen-falcon1024",
+			Family:       "sentry-falcon1024",
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 		})
 		mnemonic.Register(bip39impl.NewHandler(family.Name, family.MnemonicWordCount))

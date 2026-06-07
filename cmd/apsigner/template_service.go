@@ -49,7 +49,7 @@ func (fs *Signer) newReloadServiceForIdentity(ir *identity.Runtime, session *key
 				return fmt.Errorf("policy verification failed for identity %q: %w", ir.ID(), err)
 			}
 			switch ir.NodeRole() {
-			case noderole.RoleAttestor:
+			case noderole.RoleSentry:
 				ir.SetPolicyState(nil, nil)
 				ir.SetAttestationPolicyState(storedPolicy, effectivePolicy)
 			default:

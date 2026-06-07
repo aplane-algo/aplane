@@ -15,19 +15,19 @@ const DomainTagV1 = "APLANE_ATTESTOR_V1"
 type Role byte
 
 const (
-	RoleUser     Role = 0x01
-	RoleAttestor Role = 0x02
+	RoleUser   Role = 0x01
+	RoleSentry Role = 0x02
 )
 
 func (r Role) Valid() bool {
-	return r == RoleUser || r == RoleAttestor
+	return r == RoleUser || r == RoleSentry
 }
 
 func (r Role) String() string {
 	switch r {
 	case RoleUser:
 		return "user"
-	case RoleAttestor:
+	case RoleSentry:
 		return "attestor"
 	default:
 		return fmt.Sprintf("unknown(%d)", byte(r))

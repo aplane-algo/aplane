@@ -327,9 +327,9 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 func attestorComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
 	switch keyType {
 	case keytypes.AttestorComponentEd25519V1:
-		return "sen-ed25519", "Attestor Ed25519 component key", "Raw Ed25519 attestor component signing key"
+		return "sentry-ed25519", "Attestor Ed25519 component key", "Raw Ed25519 attestor component signing key"
 	case keytypes.AttestorComponentFalcon1024V1:
-		return "sen-falcon1024", "Attestor Falcon-1024 component key", "Raw Falcon-1024 attestor component signing key"
+		return "sentry-falcon1024", "Attestor Falcon-1024 component key", "Raw Falcon-1024 attestor component signing key"
 	default:
 		return keyType, keyType, "Raw attestor component signing key"
 	}

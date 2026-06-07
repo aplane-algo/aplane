@@ -35,7 +35,7 @@ func TestGetGeneratorRequiresExactAttestorKeyTypeRegistration(t *testing.T) {
 	registry = &GeneratorRegistry{generators: make(map[string]Generator)}
 	defer func() { registry = original }()
 
-	Register(&registryTestGenerator{family: "sen-ed25519"})
+	Register(&registryTestGenerator{family: "sentry-ed25519"})
 	Register(&registryTestGenerator{family: "falcon1024"})
 
 	tests := []string{

@@ -25,16 +25,16 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.AttestorComponentFalcon1024V1) {
 		t.Fatal("signer node allowed Falcon attestor component key")
 	}
-	if !NodeRoleAllowsKeyType(noderole.RoleAttestor, keytypes.AttestorComponentEd25519V1) {
+	if !NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.AttestorComponentEd25519V1) {
 		t.Fatal("attestor node rejected Ed25519 attestor component key")
 	}
-	if !NodeRoleAllowsKeyType(noderole.RoleAttestor, keytypes.AttestorComponentFalcon1024V1) {
+	if !NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.AttestorComponentFalcon1024V1) {
 		t.Fatal("attestor node rejected Falcon attestor component key")
 	}
-	if NodeRoleAllowsKeyType(noderole.RoleAttestor, "ed25519") {
+	if NodeRoleAllowsKeyType(noderole.RoleSentry, "ed25519") {
 		t.Fatal("attestor node allowed Ed25519 account key")
 	}
-	if NodeRoleAllowsKeyType(noderole.RoleAttestor, keytypes.AttestedFalcon1024AttFalcon1024V1) {
+	if NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.AttestedFalcon1024AttFalcon1024V1) {
 		t.Fatal("attestor node allowed attested account key")
 	}
 	if NodeRoleAllowsKeyType(noderole.Role("unknown"), "ed25519") {
@@ -46,7 +46,7 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 }
 
 func TestValidateKeyTypesAllowedForNodeRoleReportsConflicts(t *testing.T) {
-	err := ValidateKeyTypesAllowedForNodeRole(noderole.RoleAttestor, map[string]string{
+	err := ValidateKeyTypesAllowedForNodeRole(noderole.RoleSentry, map[string]string{
 		"ADDR": "ed25519",
 		"ATT":  keytypes.AttestorComponentEd25519V1,
 	})
@@ -56,7 +56,7 @@ func TestValidateKeyTypesAllowedForNodeRoleReportsConflicts(t *testing.T) {
 	if !errors.Is(err, ErrNodeRoleConflict) {
 		t.Fatalf("error = %v, want ErrNodeRoleConflict", err)
 	}
-	if !strings.Contains(err.Error(), `node role "attestor"`) || !strings.Contains(err.Error(), "ADDR:ed25519") {
+	if !strings.Contains(err.Error(), `node role "sentry"`) || !strings.Contains(err.Error(), "ADDR:ed25519") {
 		t.Fatalf("error = %v, want attestor role conflict for ADDR", err)
 	}
 }

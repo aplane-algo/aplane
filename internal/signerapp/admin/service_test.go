@@ -424,7 +424,7 @@ func TestBuildPolicySnapshotReportsUnavailableSnapshot(t *testing.T) {
 }
 
 func TestBuildAttestationPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
-	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleAttestor)
+	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
 	stored := storedAttestationPolicyForAdminTest(t, "allow_initial")
 	effective, err := policyruntime.ApplyAttestationStoredConfig(svc.Deps.DataDir(), svc.Deps.Config(), stored)
 	if err != nil {
@@ -465,7 +465,7 @@ func TestValidatePolicyUsesTargetParserAndRoleGate(t *testing.T) {
 		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)
 	}
 
-	attestorSvc, attestorIR, _ := setupAdminServiceWithRole(t, noderole.RoleAttestor)
+	attestorSvc, attestorIR, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
 	result = attestorSvc.ValidatePolicy(attestorIR, adminproto.ValidatePolicyRequest{
 		Target:     adminproto.PolicyTargetAttestation,
 		PolicyYAML: attestationYAML,
@@ -479,7 +479,7 @@ func TestValidatePolicyUsesTargetParserAndRoleGate(t *testing.T) {
 }
 
 func TestReplaceAttestationPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
-	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleAttestor)
+	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
 	initial := storedAttestationPolicyForAdminTest(t, "allow_initial")
 	unlockAdminServicePolicyTest(t, svc, ir, adminproto.PolicyTargetAttestation, initial)
 	initialSnapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetAttestation)
@@ -527,7 +527,7 @@ func TestReplaceAttestationPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
 }
 
 func TestReplacePolicyRejectsOppositeNodeRoleTarget(t *testing.T) {
-	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleAttestor)
+	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleSentry)
 	result := svc.ReplacePolicy(ir, adminproto.ReplacePolicyRequest{
 		Target:     adminproto.PolicyTargetSigner,
 		PolicyYAML: "reject_foreign_rekey: true\n",

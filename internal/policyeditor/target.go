@@ -36,7 +36,7 @@ func TargetForNodeRole(role noderole.Role) (Target, error) {
 	switch role {
 	case noderole.RoleSigner:
 		return TargetSigner, nil
-	case noderole.RoleAttestor:
+	case noderole.RoleSentry:
 		return TargetAttestation, nil
 	default:
 		return "", fmt.Errorf("unsupported node role %q", role)

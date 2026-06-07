@@ -39,7 +39,7 @@ func signPreparedAttestorComponents(ctx context.Context, plan *ComponentSignPlan
 	if plan == nil {
 		return nil, internal("component sign plan is nil")
 	}
-	if plan.MessageRole != message.RoleAttestor {
+	if plan.MessageRole != message.RoleSentry {
 		return nil, badRequest("attestor component signing requires attestor role")
 	}
 	if plan.ComponentKey == "" {

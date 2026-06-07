@@ -15,7 +15,7 @@ func TestComponentMessageSeparatesRoles(t *testing.T) {
 	}
 
 	user := ComponentMessage(RoleUser, txid)
-	attestor := ComponentMessage(RoleAttestor, txid)
+	attestor := ComponentMessage(RoleSentry, txid)
 	if user == attestor {
 		t.Fatal("user and attestor component messages are identical")
 	}
@@ -42,7 +42,7 @@ func TestComponentMessageKnownVectors(t *testing.T) {
 		want string
 	}{
 		{name: "user", role: RoleUser, want: "eeb719b688a256347512dfb24927716eed2946662df69cfe12f9b269d3afe3aa"},
-		{name: "attestor", role: RoleAttestor, want: "85b33fc0777d98012d0b2b6a23f3fd797ccf3674b3c01dcda139e564298ac7db"},
+		{name: "attestor", role: RoleSentry, want: "85b33fc0777d98012d0b2b6a23f3fd797ccf3674b3c01dcda139e564298ac7db"},
 	}
 
 	for _, tt := range tests {

@@ -77,8 +77,8 @@ parameters. Later endpoint routing does not move that trust anchor.
 `AttestorComponentKey` is a non-spending key with:
 
 - key category `component`,
-- key type `aplane.sen-ed25519.v1` or
-  `aplane.sen-falcon1024.v1`,
+- key type `aplane.sentry-ed25519.v1` or
+  `aplane.sentry-falcon1024.v1`,
 - public/private component key material,
 - selector derived as uppercase base32 SHA-512/256 of the domain-separated key
   type and canonical public key bytes.

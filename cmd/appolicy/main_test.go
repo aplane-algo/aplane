@@ -78,7 +78,7 @@ func TestRunSaveReadsPolicyFromStdin(t *testing.T) {
 }
 
 func TestRunTargetAttestationSaveReadsAttestationFromStdin(t *testing.T) {
-	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleAttestor)
+	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleSentry)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
 	attestationBytes := []byte(`# saved through appolicy
 reject_rekey: true
@@ -223,7 +223,7 @@ func TestRunSavePolicyAliasReadsPolicyFromStdin(t *testing.T) {
 }
 
 func TestRunSaveAutoTargetsAttestationOnAttestorNode(t *testing.T) {
-	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleAttestor)
+	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleSentry)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
 	attestationBytes := []byte("reject_rekey: true\n")
 	var stdout, stderr bytes.Buffer
@@ -245,7 +245,7 @@ func TestRunSaveAutoTargetsAttestationOnAttestorNode(t *testing.T) {
 }
 
 func TestRunYAMLAutoTargetsAttestationOnAttestorNode(t *testing.T) {
-	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleAttestor)
+	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleSentry)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
 	attestationBytes := []byte("reject_rekey: true\n")
 	var saveOut, saveErr bytes.Buffer
@@ -267,7 +267,7 @@ func TestRunYAMLAutoTargetsAttestationOnAttestorNode(t *testing.T) {
 }
 
 func TestRunTargetOverrideRejectsSignerPolicyOnAttestorNode(t *testing.T) {
-	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleAttestor)
+	dataDir, passphrase := initializedAppolicyStoreWithRole(t, noderole.RoleSentry)
 	t.Setenv("APPOLICY_PASSPHRASE", passphrase)
 	var stdout, stderr bytes.Buffer
 
@@ -275,7 +275,7 @@ func TestRunTargetOverrideRejectsSignerPolicyOnAttestorNode(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("run(--target signer --yaml) code = 0, stdout = %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), `policy target "signer" is not allowed on attestor nodes`) {
+	if !strings.Contains(stderr.String(), `policy target "signer" is not allowed on sentry nodes`) {
 		t.Fatalf("run(--target signer --yaml) stderr = %q, want role-target rejection", stderr.String())
 	}
 }

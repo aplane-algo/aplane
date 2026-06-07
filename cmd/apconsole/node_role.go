@@ -19,7 +19,7 @@ func consoleNodeRole(paths storepaths.Paths) (noderole.Role, string) {
 }
 
 func shellPaneEnabledForNodeRole(role noderole.Role) bool {
-	return role != noderole.RoleAttestor
+	return role != noderole.RoleSentry
 }
 
 func attestorShellDisabledLines(notices []string) []string {

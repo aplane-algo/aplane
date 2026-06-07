@@ -243,7 +243,7 @@ func wireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ident
 					return fmt.Errorf("policy verification failed for identity %q: %w", identityID, err)
 				}
 				switch ir.NodeRole() {
-				case noderole.RoleAttestor:
+				case noderole.RoleSentry:
 					ir.SetPolicyState(nil, nil)
 					ir.SetAttestationPolicyState(storedPolicy, effectivePolicy)
 				default:

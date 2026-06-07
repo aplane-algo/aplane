@@ -27,8 +27,8 @@ import (
 )
 
 const (
-	FamilyName           = "falcon1024-sen-ed25519"
-	FamilyNameFalcon1024 = "falcon1024-sen-falcon1024"
+	FamilyName           = "falcon1024-sentry-ed25519"
+	FamilyNameFalcon1024 = "falcon1024-sentry-falcon1024"
 	KeyTypeV1            = keytypes.AttestedFalcon1024AttEd25519V1
 	KeyTypeFalcon1024V1  = keytypes.AttestedFalcon1024AttFalcon1024V1
 	BaseKeyType          = "aplane.falcon1024.v1"
@@ -249,7 +249,7 @@ arg 1
 pushbytes 0x%s
 ed25519verify_bare
 `, hex.EncodeToString([]byte(message.DomainTagV1)),
-			byte(message.RoleAttestor),
+			byte(message.RoleSentry),
 			hex.EncodeToString(attestorPublicKey)), nil
 	case keytypes.AttestorComponentFalcon1024V1:
 		return fmt.Sprintf(`// === Attestor Falcon-1024 component signature ===
@@ -263,7 +263,7 @@ arg 1
 pushbytes 0x%s
 falcon_verify
 `, hex.EncodeToString([]byte(message.DomainTagV1)),
-			byte(message.RoleAttestor),
+			byte(message.RoleSentry),
 			hex.EncodeToString(attestorPublicKey)), nil
 	default:
 		return "", fmt.Errorf("unsupported attestor component key type %s", p.attestorComponentKeyType)

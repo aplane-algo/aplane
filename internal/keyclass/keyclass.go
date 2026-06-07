@@ -23,7 +23,7 @@ func NodeRoleAllowsKeyType(role noderole.Role, keyType string) bool {
 	switch role {
 	case noderole.RoleSigner:
 		return !isAttestorComponent
-	case noderole.RoleAttestor:
+	case noderole.RoleSentry:
 		return isAttestorComponent
 	default:
 		return false

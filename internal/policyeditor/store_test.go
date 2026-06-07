@@ -34,7 +34,7 @@ func TestOfflineStoreLoadVerifiesPolicy(t *testing.T) {
 }
 
 func TestOfflineStoreLoadVerifiesAttestationTarget(t *testing.T) {
-	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleAttestor)
+	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
 	store := OfflineStore{
 		DataDir:    dataDir,
 		IdentityID: DefaultIdentityID,
@@ -57,7 +57,7 @@ func TestOfflineStoreLoadVerifiesAttestationTarget(t *testing.T) {
 
 func TestResolveTargetUsesNodeRole(t *testing.T) {
 	signerDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleSigner)
-	attestorDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleAttestor)
+	attestorDir, _ := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
 
 	if got, err := ResolveTarget(signerDir, TargetAuto); err != nil || got != TargetSigner {
 		t.Fatalf("ResolveTarget(signer) = %q, %v; want %q", got, err, TargetSigner)
@@ -179,7 +179,7 @@ func TestOfflineStoreSaveYAMLPreservesPolicyBytes(t *testing.T) {
 }
 
 func TestOfflineStoreSaveAttestationYAMLPreservesPolicyBytes(t *testing.T) {
-	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleAttestor)
+	dataDir, passphrase := initializedPolicyStoreWithRole(t, noderole.RoleSentry)
 	attestationBytes := []byte(`# replacement attestation
 reject_rekey: true
 transfer_policy:

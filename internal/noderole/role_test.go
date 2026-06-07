@@ -17,8 +17,8 @@ func TestParseRole(t *testing.T) {
 		want Role
 	}{
 		{name: "signer", raw: "signer", want: RoleSigner},
-		{name: "attestor", raw: "attestor", want: RoleAttestor},
-		{name: "trim lower", raw: " Attestor ", want: RoleAttestor},
+		{name: "attestor", raw: "sentry", want: RoleSentry},
+		{name: "trim lower", raw: " Sentry ", want: RoleSentry},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,7 +69,7 @@ func TestMarshalDocument(t *testing.T) {
 }
 
 func TestNewDocumentUsesRFC3339UTC(t *testing.T) {
-	doc, err := NewDocument(RoleAttestor, time.Date(2026, 6, 7, 12, 30, 0, 0, time.FixedZone("T", 3600)))
+	doc, err := NewDocument(RoleSentry, time.Date(2026, 6, 7, 12, 30, 0, 0, time.FixedZone("T", 3600)))
 	if err != nil {
 		t.Fatalf("NewDocument() error = %v", err)
 	}

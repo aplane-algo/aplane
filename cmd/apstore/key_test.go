@@ -120,10 +120,10 @@ func generateTestAttestorComponentKey(t *testing.T, passphrase []byte) (*keygen.
 	g := &keygen.AttestorEd25519Generator{}
 	result, err := g.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), masterKey, keytypes.AttestorComponentEd25519V1, nil)
 	if err != nil {
-		t.Fatalf("GenerateRandom(sen-ed25519) error = %v", err)
+		t.Fatalf("GenerateRandom(sentry-ed25519) error = %v", err)
 	}
 	if result.PublicKeyHex == "" {
-		t.Fatal("GenerateRandom(sen-ed25519) public key is empty")
+		t.Fatal("GenerateRandom(sentry-ed25519) public key is empty")
 	}
 	return result, result.PublicKeyHex
 }

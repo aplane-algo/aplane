@@ -60,7 +60,7 @@ func RegisterSigner() {
 		keygen.RegisterAttestorEd25519Generator()
 		keytypecatalog.Register(keytypecatalog.Entry{
 			KeyType:      keytypes.AttestorComponentEd25519V1,
-			Family:       "sen-ed25519",
+			Family:       "sentry-ed25519",
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 		})
 

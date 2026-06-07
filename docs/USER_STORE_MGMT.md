@@ -207,7 +207,7 @@ Before using apsigner for the first time, you must initialize the keystore:
 ```bash
 ./apstore initialize
 # Dedicated attestor node:
-./apstore initialize --role attestor
+./apstore initialize --role sentry
 ```
 
 This creates the identity-scoped `.keystore` metadata file containing:
@@ -224,7 +224,7 @@ flow to receive a client-side copy of that token.
 `identities/<identity>/policy.yaml.hmac`.
 
 It also creates the signer data root role file `node.yaml`. Standard
-initialization creates a signer node. `--role attestor` creates a dedicated
+initialization creates a signer node. `--role sentry` creates a dedicated
 attestor node. Node roles are immutable in supported tools, so signer and
 attestor nodes use separate top-level signer data directories.
 
@@ -463,7 +463,7 @@ not already exist.
 
 ```bash
 ./apstore rebuild /mnt/usb/aplane-backup.tar.gz
-./apstore rebuild /mnt/usb/aplane-attestor-backup.tar.gz --role attestor
+./apstore rebuild /mnt/usb/aplane-attestor-backup.tar.gz --role sentry
 ./apstore rebuild /mnt/usb/aplane-backup.tar.gz --address ABC123...XYZ789
 ```
 
@@ -473,7 +473,7 @@ restores keys from the backup archive, and writes a new store encrypted under
 the new store passphrase you enter. Rebuild uses `manifest.json`
 `source_node_role` metadata as the default destination role when present.
 Archives without role metadata default to signer. Pass `--role signer` or
-`--role attestor` to set the replacement store role explicitly; if that differs
+`--role sentry` to set the replacement store role explicitly; if that differs
 from the manifest, rebuild warns and uses the explicit role. Restored key
 classes are still validated against the destination role.
 

@@ -128,7 +128,7 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
 	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
 
-	tamperedDoc, err := noderole.NewDocument(noderole.RoleAttestor, time.Unix(1700000001, 0))
+	tamperedDoc, err := noderole.NewDocument(noderole.RoleSentry, time.Unix(1700000001, 0))
 	if err != nil {
 		t.Fatalf("NewDocument() error = %v", err)
 	}

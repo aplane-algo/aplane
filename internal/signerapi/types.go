@@ -58,11 +58,11 @@ type SyncedAttestorReferenceInfo = pub.SyncedAttestorReferenceInfo
 type AdminSyncAttestorReferencesResponse = pub.AdminSyncAttestorReferencesResponse
 
 const (
-	RequestModeSign           = pub.RequestModeSign
-	RequestModePassthrough    = pub.RequestModePassthrough
-	RequestModeForeign        = pub.RequestModeForeign
-	SignCancelStateCanceled   = pub.SignCancelStateCanceled
-	SignCancelStateNotFound   = pub.SignCancelStateNotFound
-	ComponentSignRoleUser     = pub.ComponentSignRoleUser
-	ComponentSignRoleAttestor = pub.ComponentSignRoleAttestor
+	RequestModeSign         = pub.RequestModeSign
+	RequestModePassthrough  = pub.RequestModePassthrough
+	RequestModeForeign      = pub.RequestModeForeign
+	SignCancelStateCanceled = pub.SignCancelStateCanceled
+	SignCancelStateNotFound = pub.SignCancelStateNotFound
+	ComponentSignRoleUser   = pub.ComponentSignRoleUser
+	ComponentSignRoleSentry = pub.ComponentSignRoleSentry
 )
