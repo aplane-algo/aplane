@@ -207,7 +207,7 @@ exit \$rc
 EXPECT"
 }
 
-verify_install() {
+verify_install_layout() {
     docker_exec_bash "test -x /usr/local/bin/apsigner"
     docker_exec_bash "test -x /usr/local/bin/appass"
     docker_exec_bash "test -x /usr/local/bin/approbe"
@@ -232,6 +232,10 @@ verify_install() {
         command -v apshell >/dev/null"
     docker_exec_as_tester "grep -q '^signer_data: /var/lib/apsigner$' $OPERATOR_ROOT/apconsole.yaml"
     docker_exec_bash "systemctl is-enabled apsigner >/dev/null"
+}
+
+verify_install() {
+    verify_install_layout
     docker_exec_bash "systemctl is-active apsigner >/dev/null"
 }
 
@@ -276,11 +280,12 @@ EXPECT"
 verify_uninstaller_does_not_guess_operator_root() {
     local fallback_root="/home/$TEST_USER/aplane"
     docker_exec_as_tester "mkdir -p '$fallback_root/apclient' && touch '$fallback_root/apclient/separate-local-client'"
+    docker_exec_as_tester "mkdir -p '$OPERATOR_ROOT/apclient' && touch '$OPERATOR_ROOT/apclient/no-operator-root-client'"
     docker_exec_bash "rm -f /var/lib/apsigner/install/operator-root"
 
-    docker_exec_bash "expect <<'EXPECT'
+    docker_exec_bash "cd /tmp/aplane && expect <<'EXPECT'
 set timeout 120
-spawn env SUDO_USER=$TEST_USER /var/lib/apsigner/install/uninstall.sh --systemd
+spawn env SUDO_USER=$TEST_USER ./uninstall.sh --systemd
 expect {
   \"Remove aplane env lines from *\" { send \"\r\"; exp_continue }
   eof
@@ -290,7 +295,7 @@ exit [lindex \$result 3]
 EXPECT"
 
     docker_exec_as_tester "test -f '$fallback_root/apclient/separate-local-client'"
-    docker_exec_as_tester "test -d '$OPERATOR_ROOT/apclient'"
+    docker_exec_as_tester "test -f '$OPERATOR_ROOT/apclient/no-operator-root-client'"
 }
 
 run_repo_uninstaller_with_operator_root() {
@@ -684,7 +689,7 @@ main() {
     run_stopped_systemd_reinstaller
 
     log "Verifying systemd layout after rejected stopped reinstall"
-    verify_install
+    verify_install_layout
 
     log "Verifying systemd state survived rejected stopped reinstall"
     verify_systemd_in_place_state_fingerprint
