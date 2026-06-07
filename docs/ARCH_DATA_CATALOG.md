@@ -286,68 +286,23 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Request ID | runtime correlation ID | optional request field or generated server ID | audit/cancel/prompt correlation | `pkg/signerapi`, `internal/signerapp/approval` | Syntax-limited; only live `/sign` IDs are cancelable in MVP. |
 | Keyset revision | runtime freshness marker | in-memory identity key snapshot counter | `/status` and client refresh logic | `internal/signerapp/identity`, `internal/engine` | Process-local; must not be compared across restarts. |
 
-## Initial Audit Findings
+## Current Design Decisions
 
-This catalog pass identified these documentation mismatches:
-
-| Finding | Status |
-|---|---|
-| `ARCH_DATA_MODEL.md` described client config as owning signer REST/SSH routing. Current routing authority is `endpoints.yaml`. | Fixed by catalog and data-model doc update in this slice. |
-| `ARCH_DATA_MODEL.md` modeled only `policy.yaml`, not `attestation.yaml`. | Fixed by catalog and data-model doc update in this slice. |
-| `ARCH_DATA_MODEL.md` lacked endpoint-published attestors, public attestor references, component sidecars, and attested signing runtime models. | Fixed by this catalog. |
-| `ARCH_AUTHORIZATION.md` action table omitted `sign.component` and `sign.assemble` even though code defines them. | Fixed by authorization doc update in this slice. |
-| `ARCH_POLICY.md` previously used pre-implementation wording for attestation policy. | Fixed by policy doc update in this slice. |
-
-## Decision Log
-
-These decisions are intentionally retained by the catalog and should not be
-re-litigated as compatibility migration work in later audit slices unless a
-maintainer explicitly reopens them:
+These decisions are part of the current data model and contract surface:
 
 | Decision | Rationale |
 |---|---|
-| This attestation release is new-install-only. | Old client routing and migration utilities are not compatibility commitments for this branch. |
+| This release is new-install-only. | Existing install directories are not supported in-place upgrade targets. |
 | `endpoints.yaml` is the client routing authority. | Client `config.yaml` owns network/theme/polling, not signer or attestor endpoint routes. |
 | Endpoint import and `/keys` discovery are routing metadata. | The trust anchor is the attestor public key embedded in the attested account key, then `/sign/assemble` verification and on-chain LogicSig verification. |
 | `Config.AttestorEndpoints` is derived runtime state. | Durable attestor endpoint inventory lives under endpoint records in `endpoints.yaml`. |
 | `attestors/<name>.json` records are public generation references. | They help the TUI select an attestor public key but do not prove endpoint ownership or signer custody. |
 | Attested account key files store the resolved embedded public key. | Endpoint alias, reference name, and route selection are client/runtime concerns, not sign-time authority for the key. |
-| `signerapi.SignResponse` remains source-compatibility residue. | Live `/sign` uses `GroupSignResponse`; the old type is not a separate wire authority. |
-| Admin export mnemonic messages remain compatibility residue. | Current servers deny `export_key`, `GenerateResultMessage.Mnemonic` is omitted, and recovery material is handled through encrypted backups instead of admin result payloads. |
-| `internal/signerapp/signing` still uses SDK DTOs at the service boundary. | This is deferred boundary cleanup, not a duplicate durable authority; new request DTO changes still belong in `pkg/signerapi` with fixtures. |
-| Plugin manifest `manifest_format` is the only manifest schema field. | The old `protocol_version` alias is rejected before execution; plugin JSON-RPC protocol and manifest schema are separate models. |
+| `signerapi.SignResponse` is not the live `/sign` wire shape. | Live `/sign` uses `GroupSignResponse`; `SignResponse` is not a separate wire authority. |
+| Admin mnemonic export messages do not release recovery material. | Servers deny `export_key`, `GenerateResultMessage.Mnemonic` is omitted, and recovery material is handled through encrypted backups instead of admin result payloads. |
+| `internal/signerapp/signing` uses SDK DTOs at the service boundary. | It is not a duplicate durable authority; new request DTO changes still belong in `pkg/signerapi` with fixtures. |
+| Plugin manifest `manifest_format` is the only manifest schema field. | `protocol_version` is rejected before execution; plugin JSON-RPC protocol and manifest schema are separate models. |
 | Template `ReloadReport` is a reload projection. | It verifies identity-local activation results but does not persist template authority; encrypted template files and key type state records remain the durable sources. |
-
-## Slice 8 Audit Closure
-
-The final general-debt pass checked the old refactor backlog against the live
-codebase after attestation landed:
-
-| Item | Outcome |
-|---|---|
-| `cache.LSigConfig` / `cache/lsig.go` | No live code remains; the old cleanup item is obsolete. |
-| `pkg/signerapi.SignResponse` | Retained and documented as source-compatibility residue only; live `/sign` uses `GroupSignResponse`. |
-| `internal/signerapi.KeysResult.Locked` | Already documented as an internal wrapper around `/keys`, not an HTTP DTO field. |
-| Admin mnemonic export shapes | Protocol messages remain only for deny/decode compatibility; current generate/export projections do not return recovery material. |
-| Policy view/editor duplicate shapes | Resolved by shared `internal/policytui`: `appolicy` owns the offline store path and apadmin owns the online admin-protocol store path. |
-| Template reload reports | Current report is a request/reload projection used for activation verification, not a separate persistence model. |
-| Plugin manifest schema | `manifest_format` is canonical and `protocol_version` is rejected by parser tests. |
-
-## Audit Slice Record
-
-The attestation-aware audit slices are complete. Future work should treat this
-table as the completed pass record, not as open backlog:
-
-| Slice | Focus |
-|---|---|
-| 1 | Endpoint connection model, token file paths, SSH trust paths, unsupported client config rejection, and endpoint command projections. |
-| 2 | Three attestor public metadata stores: component sidecars, signer reference catalog, and endpoint-published inventory. |
-| 3 | Key class gates, node role gates, component selector rejection at address ingestion points, and UI key detail/list projections. |
-| 4 | Attested send orchestration, per-target component verification, assembly authority, request IDs, cancellation, and simulate behavior. |
-| 5 | Split policy storage, attestation authorization semantics, `appolicy --to-attestation`, sidecars, and audit events. |
-| 6 | HTTP/admin/SDK authorization contracts and signerapi fixtures. |
-| 7 | New-install-only config/install guarantees and generated config docs. |
-| 8 | Completed: remaining general data-model debt triaged as fixed, obsolete, compatibility residue, or deferred boundary cleanup. |
 
 ## Representative Test And Fixture Index
 

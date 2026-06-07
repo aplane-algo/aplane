@@ -60,6 +60,18 @@ type resolvedAttestorEndpoint struct {
 	cleanup func()
 }
 
+type attestorEndpointLockedError struct {
+	source string
+}
+
+func (e attestorEndpointLockedError) Error() string {
+	return e.source + " is locked"
+}
+
+func (e attestorEndpointLockedError) Unwrap() error {
+	return ErrAttestorDiscoveryLocked
+}
+
 // DiscoveredAttestorComponentKey is public attestor component-key metadata
 // advertised by a signer endpoint through /keys.
 type DiscoveredAttestorComponentKey struct {
@@ -310,6 +322,9 @@ func verifyAttestorEndpointAdvertises(ctx context.Context, client attestorCompon
 	keys, err := client.GetKeysWithContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to inspect %s component keys for attestation: %w", source, err)
+	}
+	if keys.Locked {
+		return attestorEndpointLockedError{source: source}
 	}
 	for _, key := range keys.Keys {
 		if key.KeyType != attestorKey.ComponentKeyType || !key.IsComponentKey {

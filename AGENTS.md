@@ -32,7 +32,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `cmd/apconsole/`: Secure-machine console wrapper for apshell/apadmin/apsigner panes
 - `cmd/apapprover/`: Approval-only admin client over IPC
 - `cmd/apstore/`: Keystore management (initialize, backup, restore, rebuild, verify, changepass, template, key type)
-- `cmd/appolicy/`: Offline policy checker/editor TUI for identity `policy.yaml`
+- `cmd/appolicy/`: Offline policy checker/editor TUI for the node-role policy document (`policy.yaml` for signer nodes, `attestation.yaml` for attestor nodes)
 - `cmd/appass/`: Passphrase auto-unlock setup TUI
 - `cmd/appass-file/`: Dev-only plaintext passphrase helper (insecure)
 - `cmd/appass-systemd-creds/`: Production passphrase helper using systemd-creds (TPM2/host key)

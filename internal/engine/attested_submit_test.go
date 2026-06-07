@@ -9,6 +9,7 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -352,6 +353,52 @@ func TestRequestAttestorComponentSignaturesExplicitMismatchDoesNotFallback(t *te
 	}
 	if got := wrongSignCalls.Load(); got != 0 {
 		t.Fatalf("wrong endpoint /sign/component calls = %d, want 0", got)
+	}
+}
+
+func TestRequestAttestorComponentSignaturesReportsLockedEndpoint(t *testing.T) {
+	publicKey, _, err := ed25519.GenerateKey(cryptorand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	attestorHex := hex.EncodeToString(publicKey)
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "attested", nil).Transaction
+	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
+	group, err := attestorverify.DecodeCanonicalGroupHex(groupBytesHex)
+	if err != nil {
+		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"signer is locked"}`, http.StatusForbidden)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	tokenFile := writeAttestorTokenFile(t, "attestor-token")
+
+	eng := newAttestedSubmitTestEngine(t, txn.Sender.String(), 1500, attestorHex)
+	eng.AttestorEndpoints = config.AttestorEndpointConfigs{
+		attestorHex: {URL: server.URL, TokenFile: tokenFile},
+	}
+
+	_, _, err = eng.requestAttestorComponentSignatures(
+		context.Background(),
+		groupBytesHex,
+		group,
+		[]attestedOriginalTarget{ed25519AttestedTarget(txn.Sender.String(), attestorHex)},
+	)
+	if err == nil {
+		t.Fatal("requestAttestorComponentSignatures() error = nil, want locked endpoint")
+	}
+	if !errors.Is(err, ErrAttestorDiscoveryLocked) {
+		t.Fatalf("requestAttestorComponentSignatures() error = %q, want ErrAttestorDiscoveryLocked", err)
+	}
+	if err.Error() != server.URL+" is locked" {
+		t.Fatalf("requestAttestorComponentSignatures() error = %q, want locked endpoint", err)
+	}
+	if strings.Contains(err.Error(), "did not advertise attestor") {
+		t.Fatalf("requestAttestorComponentSignatures() error = %q, should not report missing attestor", err)
 	}
 }
 

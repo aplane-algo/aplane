@@ -179,11 +179,10 @@ MVP supports single-purpose apsigner nodes:
    not hold ordinary account-signing keys or attested account keys.
 
 There is no `dual` node role and no supported same-process mixed-role hosting.
-The previous same-process co-location model is removed deliberately. Nothing is
-lost in capability: co-located development or same-host deployments can still
-run one signer data directory/process and one attestor data directory/process.
-What goes away is a single apsigner process that contains both role families,
-and that removal is what provides the structural single-purpose guarantee.
+Co-located development or same-host deployments use one signer data
+directory/process and one attestor data directory/process. A single apsigner
+process must not contain both role families; that single-purpose boundary is
+the structural guarantee.
 
 Independence is evaluated per attested account. For a given account, the user
 component private key and the attestor component private key must be held by
