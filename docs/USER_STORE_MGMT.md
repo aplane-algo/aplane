@@ -203,6 +203,8 @@ Before using apsigner for the first time, you must initialize the keystore:
 
 ```bash
 ./apstore initialize
+# Dedicated attestor node:
+./apstore initialize --role attestor
 ```
 
 This creates the identity-scoped `.keystore` metadata file containing:
@@ -221,8 +223,9 @@ flow to receive a client-side copy of that token.
 `identities/<identity>/attestation.yaml.hmac`.
 
 It also creates the signer data root role file `node.yaml`. Standard
-initialization creates a signer node. Attestor nodes are initialized explicitly
-and use a separate top-level signer data directory.
+initialization creates a signer node. `--role attestor` creates a dedicated
+attestor node. Node roles are immutable in supported tools, so signer and
+attestor nodes use separate top-level signer data directories.
 
 `apstore initialize` is a local bootstrap command and does not require
 `apsigner` to be running. It is accepted only before the identity has a

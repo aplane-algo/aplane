@@ -4,9 +4,9 @@ APlane supports three install modes:
 
 | Mode | Command | Use Case |
 |------|---------|----------|
-| **Local** (default) | `./install.sh [path]` | Development, demos, multi-instance. Rootless by default, no systemd. |
+| **Local** (default) | `./install.sh [--role signer\|attestor] [path]` | Development, demos, multi-instance. Rootless by default, no systemd. |
 | **Client-only** | `./install.sh --client` | apshell only, connects to a remote signer. |
-| **Systemd** | `sudo ./install.sh --systemd [operator-root] [--bindir <path>] [--no-enable] [--no-start]` | systemd service for production servers. |
+| **Systemd** | `sudo ./install.sh --systemd [--role signer\|attestor] [operator-root] [--bindir <path>] [--no-enable] [--no-start]` | systemd service for production servers. |
 
 **Requirements:** Linux with systemd for `--systemd` mode. Auto-unlock requires systemd 250+ (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+, Fedora 36+). Local and `--client` modes work on both Linux and macOS.
 
@@ -17,6 +17,10 @@ APlane supports three install modes:
 | `--bindir <path>` | Install binaries into `<path>` instead of `/usr/local/bin`. |
 | `--no-enable` | Skip `systemctl enable apsigner` so the service does not start on boot. |
 | `--no-start` | Skip `systemctl start apsigner` so the service is installed but not started. |
+
+**Node role:** local and systemd installs default to `--role signer`. Use
+`--role attestor` only for a dedicated attestor data root. Node roles are
+immutable; create separate top-level roots for signer and attestor nodes.
 
 **Environment defaults:** `APLANE_INSTALL_ROOT` supplies the optional
 `[path]` / `[operator-root]` argument when it is omitted. `APLANE_BINDIR`
@@ -69,6 +73,9 @@ Local mode installs both the signer and client into a single directory under the
 # Install to a custom path
 ./install.sh /path/to/my/aplane
 
+# Install a dedicated local attestor node
+./install.sh --role attestor ~/aplane-attestor
+
 # Equivalent custom path via environment
 APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 ```
@@ -103,6 +110,10 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 
 Each local install selects **random available ports** in the dynamic range (49152–65535) for both the signer REST API and the SSH tunnel. This allows multiple independent APlane instances on the same machine without port conflicts. The selected ports are written into `apsigner/config.yaml` and the primary signer record in `apclient/endpoints.yaml`.
 
+For `--role attestor`, the selected ports are written into `apsigner/config.yaml`
+and an `apclient/endpoints.yaml` `local-attestor` endpoint. The generated
+endpoint registry intentionally has no default signer endpoint.
+
 ### Confirmation prompt
 
 Before creating any files, the installer displays a summary and asks for confirmation:
@@ -110,6 +121,8 @@ Before creating any files, the installer displays a summary and asks for confirm
 ```
 === apsigner installer (local mode) ===
 
+  Mode:        fresh install
+  Node role:   signer
   Install to:  /home/user/aplane
   Signer:      /home/user/aplane/apsigner
   Client:      /home/user/aplane/apclient
@@ -127,7 +140,9 @@ available. macOS does not use Linux capabilities, so this prompt is skipped.
 
 ### Keystore initialization
 
-The installer runs `apstore initialize` locally before first signer startup to create the keystore. You'll be prompted to set a passphrase. This passphrase is needed each time you unlock the signer via `apadmin`.
+The installer runs `apstore initialize --role <role>` locally before first node
+startup to create the keystore. You'll be prompted to set a passphrase. This
+passphrase is needed each time you unlock the signer or attestor via `apadmin`.
 
 ### Environment setup
 
@@ -188,6 +203,7 @@ Simply install to different paths:
 ```bash
 ./install.sh ~/demo-buyer
 ./install.sh ~/demo-seller
+./install.sh --role attestor ~/demo-attestor
 ```
 
 Each instance gets its own random ports, keystore, and `start.sh` launcher. They can run simultaneously without interference.
@@ -410,6 +426,7 @@ for a custom binary directory (default: `/usr/local/bin`):
 ```bash
 sudo ./install.sh --systemd --bindir /opt/aplane/bin
 sudo ./install.sh --systemd /srv/operator/aplane --bindir /opt/aplane/bin
+sudo ./install.sh --systemd --role attestor /srv/operator/aplane-attestor
 sudo APLANE_INSTALL_ROOT=/srv/operator/aplane APLANE_BINDIR=/opt/aplane/bin ./install.sh --systemd
 ```
 
@@ -744,6 +761,8 @@ Then initialize the keystore and start the service:
 
 ```bash
 sudo apstore -d /var/lib/apsigner initialize
+# For a dedicated attestor node:
+sudo apstore -d /var/lib/apsigner initialize --role attestor
 sudo systemctl start apsigner
 sudo -u aplane apadmin -d /var/lib/apsigner
 ```
@@ -768,6 +787,8 @@ If you skipped Step 5, initialize the keystore before unlocking:
 
 ```bash
 sudo apstore -d /var/lib/apsigner initialize
+# For a dedicated attestor node:
+sudo apstore -d /var/lib/apsigner initialize --role attestor
 sudo -u aplane apadmin -d /var/lib/apsigner
 ```
 

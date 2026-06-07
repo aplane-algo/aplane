@@ -2,13 +2,13 @@
 # install.sh - Install aplane binaries and configure the system
 #
 # Local mode (default, rootless, no systemd):
-#   ./install.sh [path]
+#   ./install.sh [--role signer|attestor] [path]
 #
 # Client-only mode (apshell only, no signer):
 #   ./install.sh --client [path]
 #
 # Systemd mode (systemd service):
-#   sudo ./install.sh --systemd [operator-root] [--bindir <path>] [--no-enable] [--no-start]
+#   sudo ./install.sh --systemd [--role signer|attestor] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
 #
 # Arguments (local mode):
 #   path      Parent directory for apsigner/ and apclient/ (default: ~/aplane)
@@ -28,10 +28,10 @@
 # BASH_SOURCE[0] is empty when the supported `curl ... | bash` form is used.
 if (return 0 2>/dev/null); then
     echo "Error: this script must be executed, not sourced." >&2
-    echo "Usage: $0 [path]" >&2
+    echo "Usage: $0 [--role signer|attestor] [path]" >&2
     echo "       $0 --client [path]" >&2
     if [ "$(uname -s)" = "Linux" ]; then
-        echo "       sudo $0 --systemd [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
+        echo "       sudo $0 --systemd [--role signer|attestor] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
     fi
     return 1
 fi
@@ -88,12 +88,12 @@ is_linux() {
 print_usage() {
     cat <<'EOF'
 Usage:
-  ./install.sh [path]
+  ./install.sh [--role signer|attestor] [path]
   ./install.sh --client [path]
 EOF
     if is_linux; then
         cat <<'EOF'
-  sudo ./install.sh --systemd [operator-root] [--bindir <path>] [--no-enable] [--no-start]
+  sudo ./install.sh --systemd [--role signer|attestor] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
 EOF
     fi
 
@@ -108,6 +108,7 @@ EOF
                     Optional operator-root defaults to the installing user's ~/aplane.
 
 Options:
+  --role <role>     Initialize the signer data root as signer or attestor (default: signer).
   --bindir <path>   Binary directory for --systemd (default: /usr/local/bin).
   --no-enable       Do not run systemctl enable in --systemd mode.
   --no-start        Do not run systemctl start in --systemd mode.
@@ -116,6 +117,7 @@ EOF
         cat <<'EOF'
 
 Options:
+  --role <role>     Initialize the signer data root as signer or attestor (default: signer).
 EOF
     fi
 
@@ -141,6 +143,8 @@ ENABLE_SERVICE=1
 START_SERVICE=1
 GROUP_MEMBERSHIP_CHANGED=0
 INSTALL_ROOT_ENV="${APLANE_INSTALL_ROOT:-}"
+NODE_ROLE="signer"
+NODE_ROLE_FLAG=0
 POSITIONAL=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -155,6 +159,23 @@ while [ $# -gt 0 ]; do
         --client)
             CLIENT_MODE=1
             shift
+            ;;
+        --role)
+            if [ $# -lt 2 ]; then
+                echo "Error: --role requires signer or attestor." >&2
+                exit 2
+            fi
+            case "$2" in
+                signer|attestor)
+                    NODE_ROLE="$2"
+                    NODE_ROLE_FLAG=1
+                    ;;
+                *)
+                    echo "Error: invalid --role '$2' (expected signer or attestor)." >&2
+                    exit 2
+                    ;;
+            esac
+            shift 2
             ;;
         --bindir)
             if [ $# -lt 2 ]; then
@@ -201,6 +222,10 @@ if [ "$PROD_MODE" = "1" ] && [ "$CLIENT_MODE" = "1" ]; then
 fi
 if [ "$CLIENT_MODE" = "1" ] && [ "$BINDIR_FLAG" = "1" ]; then
     echo "Error: --client cannot be combined with --bindir." >&2
+    exit 2
+fi
+if [ "$CLIENT_MODE" = "1" ] && [ "$NODE_ROLE_FLAG" = "1" ]; then
+    echo "Error: --client cannot be combined with --role; client-only installs do not initialize a node." >&2
     exit 2
 fi
 if [ "$PROD_MODE" = "1" ] && ! is_linux; then
@@ -383,6 +408,9 @@ prompt_install_mode() {
             echo ""
             echo "Systemd mode selected."
             local -a reexec_args=(--systemd)
+            if [ "$NODE_ROLE" != "signer" ]; then
+                reexec_args+=(--role "$NODE_ROLE")
+            fi
             if [ "$BINDIR" != "/usr/local/bin" ]; then
                 reexec_args+=(--bindir "$BINDIR")
             fi
@@ -578,11 +606,13 @@ print_local_install_plan() {
     local client_dir="$4"
     local signer_port="$5"
     local ssh_port="$6"
+    local node_role="$7"
     local keystore_file="$signer_dir/identities/default/.keystore"
 
     echo "=== apsigner installer (local mode) ==="
     echo ""
     echo "  Mode:        $mode"
+    echo "  Node role:   $node_role"
     echo "  Install to:  $local_path"
     echo "  Signer:      $signer_dir"
     echo "  Client:      $client_dir"
@@ -883,6 +913,47 @@ endpoints:
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
 EOF
+}
+
+write_apshell_attestor_endpoint_registry() {
+    local target="$1"
+    local host="${2:-localhost}"
+    local signer_port="${3:-11270}"
+    local ssh_port="${4:-1127}"
+    cat > "$target" <<EOF
+# apshell endpoint registry
+# See docs/USER_CONFIG.md for full documentation.
+
+schema_version: 1
+endpoints:
+  local-attestor:
+    role: attestor
+    url: ssh://$host:$ssh_port
+    signer_port: $signer_port
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: tokens/local-attestor.token
+EOF
+}
+
+write_apshell_endpoint_registry_for_role() {
+    local target="$1"
+    local role="$2"
+    local host="${3:-localhost}"
+    local signer_port="${4:-11270}"
+    local ssh_port="${5:-1127}"
+    case "$role" in
+        signer)
+            write_apshell_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
+            ;;
+        attestor)
+            write_apshell_attestor_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
+            ;;
+        *)
+            echo "Error: unsupported endpoint registry role: $role" >&2
+            exit 2
+            ;;
+    esac
 }
 
 write_mcp_config() {
@@ -1679,7 +1750,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     fi
     if [ ${#POSITIONAL[@]} -gt 1 ]; then
         echo "Error: local mode accepts at most one optional path argument." >&2
-        echo "Usage: $0 [path]" >&2
+        echo "Usage: $0 [--role signer|attestor] [path]" >&2
         exit 2
     fi
 
@@ -1718,7 +1789,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     SSH_PORT="$(find_available_port)"
     MEMORY_LOCK_REQUESTED=0
 
-    print_local_install_plan "$INSTALL_MODE" "$LOCAL_PATH" "$INSTALL_ROOT" "$APCLIENT_DIR" "$SIGNER_PORT" "$SSH_PORT"
+    print_local_install_plan "$INSTALL_MODE" "$LOCAL_PATH" "$INSTALL_ROOT" "$APCLIENT_DIR" "$SIGNER_PORT" "$SSH_PORT" "$NODE_ROLE"
     read -rp "Proceed with installation? [Y/n] " answer </dev/tty
     if [ -n "$answer" ] && [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
         echo "Cancelled."
@@ -1851,7 +1922,7 @@ STARTEOF
     echo ""
     echo "=== Keystore initialization ==="
     echo ""
-    "$SIGNER_BINDIR/apstore" -d "$DATA_DIR" initialize </dev/tty
+    "$SIGNER_BINDIR/apstore" -d "$DATA_DIR" initialize --role "$NODE_ROLE" </dev/tty
     ensure_policy_integrity_sidecar "$DATA_DIR" "$SIGNER_BINDIR/apstore"
 
     # Configure apshell
@@ -1875,13 +1946,19 @@ STARTEOF
         echo "Endpoint registry already exists at $APCLIENT_ENDPOINTS; leaving it unchanged."
     elif [ "$WROTE_APCLIENT_CONFIG" = "1" ]; then
         echo "Writing $APCLIENT_ENDPOINTS..."
-        write_apshell_endpoint_registry "$APCLIENT_ENDPOINTS" localhost "$SIGNER_PORT" "$SSH_PORT"
+        write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" localhost "$SIGNER_PORT" "$SSH_PORT"
     fi
 
-    check_local_config_consistency "$CONFIG_PATH" "$APCLIENT_CONFIG"
+    if [ "$NODE_ROLE" = "signer" ]; then
+        check_local_config_consistency "$CONFIG_PATH" "$APCLIENT_CONFIG"
+    fi
     write_mcp_config "$APCLIENT_DIR" "$CLIENT_BINDIR/apshell"
 
-    echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
+    if [ "$NODE_ROLE" = "signer" ]; then
+        echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
+    else
+        echo "Token setup uses SSH provisioning; run 'request-token --endpoint local-attestor' from apshell after install."
+    fi
 
     # Offer to add apenv.sh to shell rc
     SHELL_RC="$(detect_shell_rc "$HOME")"
@@ -1908,8 +1985,14 @@ STARTEOF
     echo "Launch the unified console:"
     echo "  $(shell_quote "$START_SH")"
     echo ""
-    echo "On first launch, unlock the signer pane, run 'request-token' in the shell pane,"
-    echo "and approve the request in the signer pane."
+    if [ "$NODE_ROLE" = "signer" ]; then
+        echo "On first launch, unlock the signer pane, run 'request-token' in the shell pane,"
+        echo "and approve the request in the signer pane."
+    else
+        echo "On first launch, unlock the attestor pane, run"
+        echo "  request-token --endpoint local-attestor"
+        echo "in the shell pane, and approve the request in the attestor pane."
+    fi
     echo ""
     echo "To uninstall: $(shell_quote "$LOCAL_PATH/uninstall.sh")"
     exit 0
@@ -1927,7 +2010,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if [ ${#POSITIONAL[@]} -gt 1 ]; then
-    echo "Usage: sudo $0 --systemd [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
+    echo "Usage: sudo $0 --systemd [--role signer|attestor] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
     exit 2
 fi
 PROD_OPERATOR_ROOT_INPUT="${POSITIONAL[0]:-${INSTALL_ROOT_ENV:-}}"
@@ -2121,7 +2204,7 @@ fi
 echo ""
 echo "=== Keystore initialization ==="
 echo ""
-"$BINDIR/apstore" -d "$DATA_DIR" initialize </dev/tty
+"$BINDIR/apstore" -d "$DATA_DIR" initialize --role "$NODE_ROLE" </dev/tty
 repair_prod_store_lock_permissions "$DATA_DIR"
 ensure_policy_integrity_sidecar "$DATA_DIR" "$BINDIR/apstore"
 
@@ -2148,11 +2231,15 @@ if [ -n "$SUDO_USER" ]; then
         echo "Endpoint registry already exists at $APCLIENT_ENDPOINTS; leaving it unchanged."
     elif [ "$WROTE_APCLIENT_CONFIG" = "1" ]; then
         echo "Writing $APCLIENT_ENDPOINTS..."
-        write_apshell_endpoint_registry "$APCLIENT_ENDPOINTS" localhost 11270 1127
+        write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" localhost 11270 1127
     fi
     write_mcp_config "$APCLIENT_DIR" "$BINDIR/apshell"
 
-    echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
+    if [ "$NODE_ROLE" = "signer" ]; then
+        echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
+    else
+        echo "Token setup uses SSH provisioning; run 'request-token --endpoint local-attestor' from apshell after install."
+    fi
 
     APCONSOLE_CONFIG="$OPERATOR_ROOT/apconsole.yaml"
     echo "Writing $APCONSOLE_CONFIG..."
@@ -2231,7 +2318,11 @@ if [ "$GROUP_MEMBERSHIP_CHANGED" = "1" ]; then
     echo "  newgrp $SVC_GROUP"
     echo ""
 fi
-echo "The signer is running but locked. To unlock and manage keys:"
+if [ "$NODE_ROLE" = "signer" ]; then
+    echo "The signer is running but locked. To unlock and manage keys:"
+else
+    echo "The attestor is running but locked. To unlock and manage component keys:"
+fi
 echo "  apadmin"
 echo ""
 echo "Start a new shell, or run:"
@@ -2242,5 +2333,9 @@ echo "The systemd uninstaller is available at:"
 echo "  $DATA_DIR/install/uninstall.sh"
 echo ""
 echo "apshell is configured at ${APCLIENT_DIR:-\$HOME/aplane/apclient}."
-echo "Use 'request-token' in apshell to obtain an API token via SSH provisioning."
+if [ "$NODE_ROLE" = "signer" ]; then
+    echo "Use 'request-token' in apshell to obtain an API token via SSH provisioning."
+else
+    echo "Use 'request-token --endpoint local-attestor' in apshell to obtain an attestor API token via SSH provisioning."
+fi
 echo "After token enrollment has written aplane.token and known_hosts, use apconsole for the unified secure-machine console."

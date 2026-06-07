@@ -311,6 +311,19 @@ func TestClientEndpointExamplesUseKnownFields(t *testing.T) {
 				`cat > "$target" <<EOF`,
 			))),
 		},
+		{
+			name: "install.sh write_apshell_attestor_endpoint_registry",
+			data: []byte(strings.NewReplacer(
+				"$host", "localhost",
+				"$signer_port", "11270",
+				"$ssh_port", "1127",
+			).Replace(extractInstallHereDocAfter(
+				t,
+				string(installer),
+				"write_apshell_attestor_endpoint_registry() {",
+				`cat > "$target" <<EOF`,
+			))),
+		},
 	}
 
 	for _, tt := range tests {
