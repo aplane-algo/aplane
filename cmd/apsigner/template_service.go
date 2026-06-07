@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -55,7 +56,7 @@ func (fs *Signer) newReloadServiceForIdentity(ir *identity.Runtime, session *key
 			return nil
 		},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
-			return identity.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes)
+			return keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes)
 		},
 		PublishSnapshot:   ir.PublishSnapshot,
 		AuditLog:          auditLog,

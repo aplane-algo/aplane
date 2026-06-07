@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package identity
+// Package keyclass classifies key types for node-role inventory gates.
+package keyclass
 
 import (
 	"fmt"

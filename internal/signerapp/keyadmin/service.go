@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
+	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -113,7 +114,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 	if keyType == "" {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: "key_type is required"}
 	}
-	if roleErr := identity.ValidateKeyTypeAllowedForNodeRole(ir.NodeRole(), keyType); roleErr != nil {
+	if roleErr := keyclass.ValidateKeyTypeAllowedForNodeRole(ir.NodeRole(), keyType); roleErr != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
 	}
 	if keytypes.IsAttestedAccountKeyType(keyType) {

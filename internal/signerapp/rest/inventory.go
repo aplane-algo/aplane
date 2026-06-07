@@ -11,6 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/attestor/attrefs"
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
+	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -151,7 +152,7 @@ func (s Service) BuildKeyTypesForIdentity(ir *identity.Runtime) ([]signerapi.Key
 func filterKeyTypesForNodeRole(validTypes []string, role noderole.Role) []string {
 	filtered := make([]string, 0, len(validTypes))
 	for _, keyType := range validTypes {
-		if identity.NodeRoleAllowsKeyType(role, keyType) {
+		if keyclass.NodeRoleAllowsKeyType(role, keyType) {
 			filtered = append(filtered, keyType)
 		}
 	}

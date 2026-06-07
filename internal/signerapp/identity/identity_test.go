@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -757,6 +758,22 @@ func TestStoredConfigApply(t *testing.T) {
 	}
 	if effective.ApprovalWait != 10*time.Minute {
 		t.Fatalf("approval wait = %s, want %s", effective.ApprovalWait, 10*time.Minute)
+	}
+}
+
+func TestStoredConfigApplyRejectsMode(t *testing.T) {
+	effective, err := (&StoredConfig{}).Apply(ConfigDefaults{})
+	if err != nil {
+		t.Fatalf("Apply(default) error = %v", err)
+	}
+	if effective.UserAutoApprove || effective.LockOnDisconnect || effective.SessionTimeout != 0 || effective.ApprovalWait != 0 {
+		t.Fatalf("default effective config = %#v, want zero-valued overlays", effective)
+	}
+
+	if _, err := (&StoredConfig{Mode: "attestation"}).Apply(ConfigDefaults{}); err == nil {
+		t.Fatal("Apply(mode) error = nil")
+	} else if !strings.Contains(err.Error(), "identity config mode is unsupported") {
+		t.Fatalf("Apply(mode) error = %q, want unsupported mode", err.Error())
 	}
 }
 

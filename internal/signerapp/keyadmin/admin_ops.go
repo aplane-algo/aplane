@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
+	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
@@ -128,7 +129,7 @@ func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, param
 	if ir == nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
 	}
-	if roleErr := identity.ValidateKeyTypeAllowedForNodeRole(ir.NodeRole(), keyType); roleErr != nil {
+	if roleErr := keyclass.ValidateKeyTypeAllowedForNodeRole(ir.NodeRole(), keyType); roleErr != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
 	}
 

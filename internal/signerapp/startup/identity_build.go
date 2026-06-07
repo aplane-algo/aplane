@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -248,7 +249,7 @@ func wireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ident
 				return nil
 			},
 			BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
-				return identity.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes)
+				return keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes)
 			},
 			PublishSnapshot: ir.PublishSnapshot,
 			AuditLog:        hooks.ReloadAuditLog,
