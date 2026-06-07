@@ -202,12 +202,13 @@ type ChangeStorePassphraseMessage struct {
 
 type ChangeStorePassphraseResultMessage struct {
 	BaseMessage
-	Success                bool   `json:"success"`
-	KeysMigrated           int    `json:"keys_migrated,omitempty"`
-	TemplatesMigrated      int    `json:"templates_migrated,omitempty"`
-	PolicySidecarsMigrated int    `json:"policy_sidecars_migrated,omitempty"`
-	Code                   string `json:"code,omitempty"`
-	Error                  string `json:"error,omitempty"`
+	Success                  bool   `json:"success"`
+	KeysMigrated             int    `json:"keys_migrated,omitempty"`
+	TemplatesMigrated        int    `json:"templates_migrated,omitempty"`
+	PolicySidecarsMigrated   int    `json:"policy_sidecars_migrated,omitempty"`
+	NodeRoleSidecarsMigrated int    `json:"node_role_sidecars_migrated,omitempty"`
+	Code                     string `json:"code,omitempty"`
+	Error                    string `json:"error,omitempty"`
 }
 
 // BackupMessage requests signer-managed creation of a portable key backup for

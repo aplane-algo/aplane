@@ -194,12 +194,13 @@ func ProtocolChangeStorePassphraseResultMessage(id string, result ChangeStorePas
 			Type: protocol.MsgTypeChangeStorePassResult,
 			ID:   id,
 		},
-		Success:                result.Success,
-		KeysMigrated:           result.KeysMigrated,
-		TemplatesMigrated:      result.TemplatesMigrated,
-		PolicySidecarsMigrated: result.PolicySidecarsMigrated,
-		Code:                   result.Code,
-		Error:                  result.Error,
+		Success:                  result.Success,
+		KeysMigrated:             result.KeysMigrated,
+		TemplatesMigrated:        result.TemplatesMigrated,
+		PolicySidecarsMigrated:   result.PolicySidecarsMigrated,
+		NodeRoleSidecarsMigrated: result.NodeRoleSidecarsMigrated,
+		Code:                     result.Code,
+		Error:                    result.Error,
 	}
 }
 

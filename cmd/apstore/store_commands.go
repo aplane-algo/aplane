@@ -74,6 +74,9 @@ func cmdChangepass() error {
 	if result.PolicySidecarsMigrated > 0 {
 		logInfof("  - %d policy sidecar(s) re-signed", result.PolicySidecarsMigrated)
 	}
+	if result.NodeRoleSidecarsMigrated > 0 {
+		logInfof("  - %d node role sidecar(s) re-signed", result.NodeRoleSidecarsMigrated)
+	}
 	logInfof("  - keystore metadata updated")
 	return nil
 }

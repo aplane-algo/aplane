@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -27,9 +28,10 @@ type RotateOptions struct {
 }
 
 type RotateResult struct {
-	KeysMigrated           int
-	TemplatesMigrated      int
-	PolicySidecarsMigrated int
+	KeysMigrated             int
+	TemplatesMigrated        int
+	PolicySidecarsMigrated   int
+	NodeRoleSidecarsMigrated int
 }
 
 type pendingFile struct {
@@ -116,6 +118,16 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 			pendingFiles = append(pendingFiles, *policySidecar)
 			result.PolicySidecarsMigrated++
 		}
+	}
+
+	nodeRoleSidecar, ok, err := createPendingNodeRoleSidecar(paths, identityID, oldMasterKey, newMasterKey, opts.Logf)
+	if err != nil {
+		cleanupPendingNewFiles(pendingFiles)
+		return result, err
+	}
+	if ok {
+		pendingFiles = append(pendingFiles, *nodeRoleSidecar)
+		result.NodeRoleSidecarsMigrated++
 	}
 
 	if err := writeVerifiedNewKeystore(keystorePath, newKeystorePath, newMeta, newPassphrase); err != nil {
@@ -361,6 +373,54 @@ func createPendingPolicySidecar(doc policyRotationDocument, oldMasterKey, newMas
 		return nil, false, fmt.Errorf("verification failed for %s.hmac.new: %w", doc.name, err)
 	}
 	logf(log, "created: %s.hmac.new (verified)", doc.name)
+	return &pendingFile{original: sidecarPath, newPath: newPath, oldPath: sidecarPath + ".old"}, true, nil
+}
+
+func createPendingNodeRoleSidecar(paths storepaths.Paths, identityID string, oldMasterKey, newMasterKey []byte, log Logger) (*pendingFile, bool, error) {
+	if _, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, oldMasterKey); err != nil {
+		return nil, false, fmt.Errorf("failed to verify node role integrity before passphrase rotation: %w", err)
+	}
+
+	_, roleBytes, err := noderole.Load(paths)
+	if err != nil {
+		return nil, false, err
+	}
+	info, err := os.Stat(paths.NodeRolePath())
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to stat node.yaml: %w", err)
+	}
+
+	newNodeRoleKey, err := crypto.DeriveNodeRoleIntegrityKey(newMasterKey)
+	if err != nil {
+		return nil, false, err
+	}
+	defer crypto.ZeroBytes(newNodeRoleKey)
+
+	sidecar, err := noderole.Sign(roleBytes, newNodeRoleKey, time.Now(), info.ModTime().UnixNano())
+	if err != nil {
+		return nil, false, err
+	}
+	sidecarBytes, err := noderole.MarshalSidecar(sidecar)
+	if err != nil {
+		return nil, false, err
+	}
+
+	sidecarPath := paths.NodeRoleIntegritySidecar(identityID)
+	newPath := sidecarPath + ".new"
+	if err := fsutil.WriteFile(newPath, sidecarBytes); err != nil {
+		return nil, false, fmt.Errorf("failed to write node.yaml.hmac.new: %w", err)
+	}
+	if err := ApplyFileMetadataFrom(sidecarPath, newPath); err != nil {
+		return nil, false, fmt.Errorf("failed to set metadata on node.yaml.hmac.new: %w", err)
+	}
+	verifySidecar, err := noderole.LoadSidecar(newPath)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to verify node.yaml.hmac.new: %w", err)
+	}
+	if err := noderole.Verify(roleBytes, verifySidecar, newNodeRoleKey); err != nil {
+		return nil, false, fmt.Errorf("verification failed for node.yaml.hmac.new: %w", err)
+	}
+	logf(log, "created: node.yaml.hmac.new (verified)")
 	return &pendingFile{original: sidecarPath, newPath: newPath, oldPath: sidecarPath + ".old"}, true, nil
 }
 

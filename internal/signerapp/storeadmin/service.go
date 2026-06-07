@@ -171,10 +171,11 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 	}
 	s.logPassphraseChanged(ir.ID(), rotation.KeysMigrated, rotation.TemplatesMigrated)
 	return adminproto.ChangeStorePassphraseResult{
-		Success:                true,
-		KeysMigrated:           rotation.KeysMigrated,
-		TemplatesMigrated:      rotation.TemplatesMigrated,
-		PolicySidecarsMigrated: rotation.PolicySidecarsMigrated,
+		Success:                  true,
+		KeysMigrated:             rotation.KeysMigrated,
+		TemplatesMigrated:        rotation.TemplatesMigrated,
+		PolicySidecarsMigrated:   rotation.PolicySidecarsMigrated,
+		NodeRoleSidecarsMigrated: rotation.NodeRoleSidecarsMigrated,
 	}
 }
 

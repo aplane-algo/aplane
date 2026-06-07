@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -33,13 +34,15 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKey)
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
 
 	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{})
 	if err != nil {
 		t.Fatalf("Rotate() error = %v", err)
 	}
-	if result.KeysMigrated != 1 || result.TemplatesMigrated != 1 || result.PolicySidecarsMigrated != 2 {
-		t.Fatalf("Rotate() result = %+v, want 1 key, 1 template, and 2 policy sidecars", result)
+	if result.KeysMigrated != 1 || result.TemplatesMigrated != 1 ||
+		result.PolicySidecarsMigrated != 2 || result.NodeRoleSidecarsMigrated != 1 {
+		t.Fatalf("Rotate() result = %+v, want 1 key, 1 template, 2 policy sidecars, and 1 node role sidecar", result)
 	}
 
 	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
@@ -58,11 +61,15 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	assertDecryptsWithMasterKey(t, keyPath, newMasterKey)
 	assertDecryptsWithMasterKey(t, templatePath, newMasterKey)
 	assertPolicyVerifiesWithMasterKey(t, paths, identityID, newMasterKey)
+	assertNodeRoleVerifiesWithMasterKey(t, paths, identityID, newMasterKey, noderole.RoleSigner)
 	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(paths.Root(), identityID, oldMasterKey); err == nil {
 		t.Fatal("policy sidecar still verifies with old master key after rotation")
 	}
 	if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(paths.Root(), identityID, oldMasterKey); err == nil {
 		t.Fatal("attestation sidecar still verifies with old master key after rotation")
+	}
+	if _, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, oldMasterKey); err == nil {
+		t.Fatal("node role sidecar still verifies with old master key after rotation")
 	}
 }
 
@@ -83,6 +90,7 @@ func TestRotateRejectsWrongCurrentPassphraseBeforeMutation(t *testing.T) {
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKey)
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
 
 	result, err := Rotate(paths, identityID, []byte("wrong-passphrase"), newPassphrase, RotateOptions{})
 	if err == nil {
@@ -100,7 +108,8 @@ func TestRotateRejectsWrongCurrentPassphraseBeforeMutation(t *testing.T) {
 	assertDecryptsWithMasterKey(t, keyPath, oldMasterKey)
 	assertDecryptsWithMasterKey(t, templatePath, oldMasterKey)
 	assertPolicyVerifiesWithMasterKey(t, paths, identityID, oldMasterKey)
-	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(identityID), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), policy.PolicyIntegritySidecarPath(policy.AttestationPath(paths.Root(), identityID)))
+	assertNodeRoleVerifiesWithMasterKey(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(identityID), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), policy.PolicyIntegritySidecarPath(policy.AttestationPath(paths.Root(), identityID)), paths.NodeRoleIntegritySidecar(identityID))
 }
 
 func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
@@ -120,6 +129,7 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKey)
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
 
 	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{
 		AfterSwap: func() error {
@@ -132,8 +142,9 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 	if !strings.Contains(err.Error(), "helper write failed") {
 		t.Fatalf("Rotate() error = %v, want helper failure context", err)
 	}
-	if result.KeysMigrated != 1 || result.TemplatesMigrated != 1 || result.PolicySidecarsMigrated != 2 {
-		t.Fatalf("Rotate() result = %+v, want attempted key, template, and policy migration", result)
+	if result.KeysMigrated != 1 || result.TemplatesMigrated != 1 ||
+		result.PolicySidecarsMigrated != 2 || result.NodeRoleSidecarsMigrated != 1 {
+		t.Fatalf("Rotate() result = %+v, want attempted key, template, policy, and node role migration", result)
 	}
 
 	assertMetadataAcceptsPassphrase(t, paths, identityID, oldPassphrase)
@@ -141,7 +152,8 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 	assertDecryptsWithMasterKey(t, keyPath, oldMasterKey)
 	assertDecryptsWithMasterKey(t, templatePath, oldMasterKey)
 	assertPolicyVerifiesWithMasterKey(t, paths, identityID, oldMasterKey)
-	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(identityID), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), policy.PolicyIntegritySidecarPath(policy.AttestationPath(paths.Root(), identityID)))
+	assertNodeRoleVerifiesWithMasterKey(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+	assertNoRotationArtifacts(t, keyPath, templatePath, filepath.Join(paths.KeystoreMetadataDir(identityID), ".keystore"), policy.PolicyIntegritySidecarPath(policy.PolicyPath(paths.Root(), identityID)), policy.PolicyIntegritySidecarPath(policy.AttestationPath(paths.Root(), identityID)), paths.NodeRoleIntegritySidecar(identityID))
 }
 
 func TestRotateFailsWhenPolicyBaselineMissing(t *testing.T) {
@@ -194,6 +206,17 @@ func writePolicyBaselineForRotateTest(t *testing.T, paths storepaths.Paths, iden
 	}
 }
 
+func writeNodeRoleBaselineForRotateTest(t *testing.T, paths storepaths.Paths, identityID string, masterKey []byte, role noderole.Role) {
+	t.Helper()
+	roleBytes, _, err := noderole.SaveInitial(paths, role, time.Unix(1700000000, 0))
+	if err != nil {
+		t.Fatalf("SaveInitial() error = %v", err)
+	}
+	if err := noderole.SaveIdentitySidecarWithMasterKey(paths, identityID, roleBytes, masterKey, time.Unix(1700000000, 0)); err != nil {
+		t.Fatalf("SaveIdentitySidecarWithMasterKey() error = %v", err)
+	}
+}
+
 func assertPolicyVerifiesWithMasterKey(t *testing.T, paths storepaths.Paths, identityID string, masterKey []byte) {
 	t.Helper()
 	if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(paths.Root(), identityID, masterKey); err != nil {
@@ -201,6 +224,17 @@ func assertPolicyVerifiesWithMasterKey(t *testing.T, paths storepaths.Paths, ide
 	}
 	if _, err := policy.LoadVerifiedAttestationConfigWithMasterKey(paths.Root(), identityID, masterKey); err != nil {
 		t.Fatalf("attestation sidecar did not verify: %v", err)
+	}
+}
+
+func assertNodeRoleVerifiesWithMasterKey(t *testing.T, paths storepaths.Paths, identityID string, masterKey []byte, want noderole.Role) {
+	t.Helper()
+	doc, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, masterKey)
+	if err != nil {
+		t.Fatalf("node role sidecar did not verify: %v", err)
+	}
+	if doc.Role != want {
+		t.Fatalf("node role = %q, want %q", doc.Role, want)
 	}
 }
 
