@@ -30,7 +30,7 @@ func RegisterSigner() {
 		keygen.RegisterGenerator()
 		internalkeygen.RegisterAttestorFalcon1024Generator()
 		keytypecatalog.Register(keytypecatalog.Entry{
-			KeyType:      keytypes.AttestorComponentFalcon1024V1,
+			KeyType:      keytypes.SentryComponentFalcon1024V1,
 			Family:       "sentry-falcon1024",
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 		})

@@ -429,7 +429,7 @@ func normalizeClientEndpointPublishedSentries(in map[string]ClientEndpointPublis
 		if _, exists := out[publicKey]; exists {
 			return nil, fmt.Errorf("duplicate published sentry public key %s", publicKey)
 		}
-		if !keytypes.IsAttestorComponentKeyType(published.KeyType) {
+		if !keytypes.IsSentryComponentKeyType(published.KeyType) {
 			return nil, fmt.Errorf("published sentry %s has invalid key_type %q", publicKey, published.KeyType)
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(published.ComponentKey)

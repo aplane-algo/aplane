@@ -52,8 +52,8 @@ func TestAttestedOriginalTargetsNormalizeAttestorPublicKey(t *testing.T) {
 	if targets[0].Index != 0 || targets[0].Account != sender {
 		t.Fatalf("target = %+v, want index 0 account %s", targets[0], sender)
 	}
-	if targets[0].AttestorComponentKeyType != keytypes.AttestorComponentEd25519V1 {
-		t.Fatalf("sentry component key type = %q, want %q", targets[0].AttestorComponentKeyType, keytypes.AttestorComponentEd25519V1)
+	if targets[0].AttestorComponentKeyType != keytypes.SentryComponentEd25519V1 {
+		t.Fatalf("sentry component key type = %q, want %q", targets[0].AttestorComponentKeyType, keytypes.SentryComponentEd25519V1)
 	}
 	if targets[0].AttestorPublicKey != attestorHex {
 		t.Fatalf("sentry public key = %q, want %q", targets[0].AttestorPublicKey, attestorHex)
@@ -77,8 +77,8 @@ func TestAttestedOriginalTargetsNormalizeFalconAttestorPublicKey(t *testing.T) {
 	if len(targets) != 1 {
 		t.Fatalf("len(targets) = %d, want 1", len(targets))
 	}
-	if targets[0].AttestorComponentKeyType != keytypes.AttestorComponentFalcon1024V1 {
-		t.Fatalf("sentry component key type = %q, want %q", targets[0].AttestorComponentKeyType, keytypes.AttestorComponentFalcon1024V1)
+	if targets[0].AttestorComponentKeyType != keytypes.SentryComponentFalcon1024V1 {
+		t.Fatalf("sentry component key type = %q, want %q", targets[0].AttestorComponentKeyType, keytypes.SentryComponentFalcon1024V1)
 	}
 	if targets[0].AttestorPublicKey != attestorHex {
 		t.Fatalf("sentry public key = %q, want %q", targets[0].AttestorPublicKey, attestorHex)
@@ -104,7 +104,7 @@ func TestPlanAttestedGroupReturnsGroupedDummies(t *testing.T) {
 	targets := []attestedOriginalTarget{{
 		Index:                    0,
 		Account:                  sender,
-		AttestorComponentKeyType: keytypes.AttestorComponentEd25519V1,
+		AttestorComponentKeyType: keytypes.SentryComponentEd25519V1,
 		AttestorPublicKey:        attestorHex,
 	}}
 
@@ -152,13 +152,13 @@ func TestVerifyAttestorComponentSignaturesUsesSharedMessage(t *testing.T) {
 
 	msg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
 	signatures := map[int]string{0: hex.EncodeToString(ed25519.Sign(privateKey, msg[:]))}
-	if err := verifyAttestorComponentSignatures(keytypes.AttestorComponentEd25519V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err != nil {
+	if err := verifyAttestorComponentSignatures(keytypes.SentryComponentEd25519V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err != nil {
 		t.Fatalf("verifyAttestorComponentSignatures() error = %v", err)
 	}
 
 	wrongRoleMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
 	signatures[0] = hex.EncodeToString(ed25519.Sign(privateKey, wrongRoleMsg[:]))
-	if err := verifyAttestorComponentSignatures(keytypes.AttestorComponentEd25519V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err == nil {
+	if err := verifyAttestorComponentSignatures(keytypes.SentryComponentEd25519V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err == nil {
 		t.Fatal("verifyAttestorComponentSignatures() accepted user-role signature for attestor role")
 	}
 }
@@ -180,7 +180,7 @@ func TestVerifyAttestorComponentSignaturesUsesFalcon1024Scheme(t *testing.T) {
 		t.Fatalf("Sign() error = %v", err)
 	}
 	signatures := map[int]string{0: hex.EncodeToString(signature)}
-	if err := verifyAttestorComponentSignatures(keytypes.AttestorComponentFalcon1024V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err != nil {
+	if err := verifyAttestorComponentSignatures(keytypes.SentryComponentFalcon1024V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err != nil {
 		t.Fatalf("verifyAttestorComponentSignatures() error = %v", err)
 	}
 
@@ -190,7 +190,7 @@ func TestVerifyAttestorComponentSignaturesUsesFalcon1024Scheme(t *testing.T) {
 		t.Fatalf("Sign(wrong role) error = %v", err)
 	}
 	signatures[0] = hex.EncodeToString(signature)
-	if err := verifyAttestorComponentSignatures(keytypes.AttestorComponentFalcon1024V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err == nil {
+	if err := verifyAttestorComponentSignatures(keytypes.SentryComponentFalcon1024V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err == nil {
 		t.Fatal("verifyAttestorComponentSignatures() accepted user-role signature for attestor role")
 	}
 }
@@ -210,7 +210,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "unexpected target index",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     9,
-				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentEd25519V1,
 				Signature:       "aa",
 			}}},
 			wantMessage: "unexpected signature for target index 9",
@@ -219,11 +219,11 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "duplicate target index",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
-				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentEd25519V1,
 				Signature:       "aa",
 			}, {
 				TargetIndex:     0,
-				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentEd25519V1,
 				Signature:       "bb",
 			}}},
 			wantMessage: "duplicate signature for target index 0",
@@ -232,11 +232,11 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "wrong scheme",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
-				SignatureScheme: keytypes.AttestorComponentFalcon1024V1,
+				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
 				Signature:       "aa",
 			}, {
 				TargetIndex:     1,
-				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentEd25519V1,
 				Signature:       "bb",
 			}}},
 			wantMessage: "signature for target index 0 used scheme",
@@ -245,7 +245,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "missing target index",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
-				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentEd25519V1,
 				Signature:       "aa",
 			}}},
 			wantMessage: "missing signature for target index 1",
@@ -258,7 +258,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			err := collectComponentSignatures(
 				tt.resp,
 				[]int{0, 1},
-				keytypes.AttestorComponentEd25519V1,
+				keytypes.SentryComponentEd25519V1,
 				dst,
 			)
 			if err == nil {
@@ -490,14 +490,14 @@ func ed25519AttestedTarget(account, attestorHex string) attestedOriginalTarget {
 	return attestedOriginalTarget{
 		Index:                    0,
 		Account:                  account,
-		AttestorComponentKeyType: keytypes.AttestorComponentEd25519V1,
+		AttestorComponentKeyType: keytypes.SentryComponentEd25519V1,
 		AttestorPublicKey:        attestorHex,
 	}
 }
 
 func ed25519AttestorRequestKey(attestorHex string) attestorRequestKey {
 	return attestorRequestKey{
-		ComponentKeyType: keytypes.AttestorComponentEd25519V1,
+		ComponentKeyType: keytypes.SentryComponentEd25519V1,
 		PublicKey:        attestorHex,
 	}
 }
@@ -508,7 +508,7 @@ func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 	if err != nil {
 		t.Fatalf("decode sentry public key: %v", err)
 	}
-	componentSelector, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("component selector: %v", err)
 	}
@@ -523,7 +523,7 @@ func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 			Keys: []signerapi.KeyInfo{{
 				Address:        componentSelector,
 				PublicKeyHex:   publicKeyHex,
-				KeyType:        keytypes.AttestorComponentEd25519V1,
+				KeyType:        keytypes.SentryComponentEd25519V1,
 				IsComponentKey: true,
 			}},
 		})
@@ -559,7 +559,7 @@ func newAttestorEndpointTestServer(t *testing.T, publicKeyHex string, privateKey
 			msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
 			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
 				TargetIndex:     index,
-				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentEd25519V1,
 				Signature:       hex.EncodeToString(ed25519.Sign(privateKey, msg[:])),
 			})
 		}

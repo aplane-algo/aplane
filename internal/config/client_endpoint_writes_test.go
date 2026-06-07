@@ -189,7 +189,7 @@ func TestRebuildStoredClientEndpointPublishedSentriesReplacesInventory(t *testin
 	if _, ok := published[staleKey]; ok {
 		t.Fatalf("stale published sentry %s remained in %#v", staleKey, published)
 	}
-	if got := published[newKey]; got.ComponentKey == "" || got.KeyType != keytypes.AttestorComponentEd25519V1 {
+	if got := published[newKey]; got.ComponentKey == "" || got.KeyType != keytypes.SentryComponentEd25519V1 {
 		t.Fatalf("new published sentry = %#v, want Ed25519 component metadata", got)
 	}
 	if route := cfg.AttestorEndpoints[newKey]; route.Endpoint != "sentry-local" {
@@ -295,8 +295,8 @@ ssh: {}
 func endpointPublishedTestAttestor(t *testing.T, publicKeyHex string) ClientEndpointPublishedSentry {
 	t.Helper()
 	return ClientEndpointPublishedSentry{
-		ComponentKey: attestorEndpointTestComponentKey(t, keytypes.AttestorComponentEd25519V1, publicKeyHex),
-		KeyType:      keytypes.AttestorComponentEd25519V1,
+		ComponentKey: attestorEndpointTestComponentKey(t, keytypes.SentryComponentEd25519V1, publicKeyHex),
+		KeyType:      keytypes.SentryComponentEd25519V1,
 		LastSeenAt:   endpointPublishedTestSeenAt,
 	}
 }

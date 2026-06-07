@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package keytypes defines the attestor MVP key-type vocabulary and pure
+// Package keytypes defines the sentry key-type vocabulary and pure
 // component-key handle construction.
 package keytypes
 
@@ -16,29 +16,29 @@ import (
 )
 
 const (
-	// AttestorComponentEd25519V1 is a raw Ed25519 component-signing key. It is
+	// SentryComponentEd25519V1 is a raw Ed25519 component-signing key. It is
 	// not an Algorand spending account and must not be accepted by /sign.
-	AttestorComponentEd25519V1 = "aplane.sentry-ed25519.v1"
+	SentryComponentEd25519V1 = "aplane.sentry-ed25519.v1"
 
-	// AttestorComponentFalcon1024V1 is a raw Falcon-1024 component-signing key.
+	// SentryComponentFalcon1024V1 is a raw Falcon-1024 component-signing key.
 	// It is not an Algorand spending account and must not be accepted by /sign.
-	AttestorComponentFalcon1024V1 = "aplane.sentry-falcon1024.v1"
+	SentryComponentFalcon1024V1 = "aplane.sentry-falcon1024.v1"
 
 	// GuardedFalcon1024SentryEd25519V1 is the user-account key type whose LogicSig
-	// verifies a Falcon-1024 user signature plus an Ed25519 attestor component
+	// verifies a Falcon-1024 user signature plus an Ed25519 sentry component
 	// signature.
 	GuardedFalcon1024SentryEd25519V1 = "aplane.falcon1024-sentry-ed25519.v1"
 
 	// GuardedFalcon1024SentryFalcon1024V1 is the user-account key type whose
 	// LogicSig verifies a Falcon-1024 user signature plus a Falcon-1024
-	// attestor component signature.
+	// sentry component signature.
 	GuardedFalcon1024SentryFalcon1024V1 = "aplane.falcon1024-sentry-falcon1024.v1"
 
 	// ParameterSentryPublicKey is the durable creation parameter that records
 	// the sentry public key embedded in a guarded account LogicSig.
 	ParameterSentryPublicKey = "sentry_public_key"
 
-	// ComponentKeySelectorLength is the length of a canonical attestor
+	// ComponentKeySelectorLength is the length of a canonical sentry
 	// component-key selector. It matches the visual shape of Algorand
 	// transaction IDs, but it is shorter than an Algorand address and must not
 	// be treated as one.
@@ -49,18 +49,18 @@ const (
 
 var componentKeySelectorEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// IsAttestorComponentKeyType reports whether keyType names a component key
+// IsSentryComponentKeyType reports whether keyType names a component key
 // that may only be used through /sign/component.
-func IsAttestorComponentKeyType(keyType string) bool {
+func IsSentryComponentKeyType(keyType string) bool {
 	switch keyType {
-	case AttestorComponentEd25519V1, AttestorComponentFalcon1024V1:
+	case SentryComponentEd25519V1, SentryComponentFalcon1024V1:
 		return true
 	default:
 		return false
 	}
 }
 
-// IsGuardedAccountKeyType reports whether keyType names an attested spending
+// IsGuardedAccountKeyType reports whether keyType names a guarded spending
 // account that requires the component signing and assembly flow.
 func IsGuardedAccountKeyType(keyType string) bool {
 	switch keyType {
@@ -71,20 +71,20 @@ func IsGuardedAccountKeyType(keyType string) bool {
 	}
 }
 
-// IsAttestorMVPKeyType reports whether keyType is any key type reserved by the
-// attestor MVP.
-func IsAttestorMVPKeyType(keyType string) bool {
-	return IsAttestorComponentKeyType(keyType) || IsGuardedAccountKeyType(keyType)
+// IsSentryKeyType reports whether keyType is any key type reserved by the
+// sentry guarded-signing feature.
+func IsSentryKeyType(keyType string) bool {
+	return IsSentryComponentKeyType(keyType) || IsGuardedAccountKeyType(keyType)
 }
 
-// AttestorComponentKeyTypeForGuardedAccount returns the attestor component
+// SentryComponentKeyTypeForGuardedAccount returns the sentry component
 // key type embedded by a guarded account key type.
-func AttestorComponentKeyTypeForGuardedAccount(keyType string) (string, bool) {
+func SentryComponentKeyTypeForGuardedAccount(keyType string) (string, bool) {
 	switch keyType {
 	case GuardedFalcon1024SentryEd25519V1:
-		return AttestorComponentEd25519V1, true
+		return SentryComponentEd25519V1, true
 	case GuardedFalcon1024SentryFalcon1024V1:
-		return AttestorComponentFalcon1024V1, true
+		return SentryComponentFalcon1024V1, true
 	default:
 		return "", false
 	}
@@ -95,7 +95,7 @@ func AttestorComponentKeyTypeForGuardedAccount(keyType string) (string, bool) {
 // domain-separated key-type/public-key tuple, independent of the component key
 // family.
 func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
-	if !IsAttestorComponentKeyType(keyType) {
+	if !IsSentryComponentKeyType(keyType) {
 		return "", fmt.Errorf("key type %q is not a sentry component key type", keyType)
 	}
 	wantSize, ok := ComponentPublicKeySize(keyType)
@@ -140,7 +140,7 @@ func NormalizeComponentKeySelector(selector string) (string, error) {
 }
 
 // IsComponentKeySelector reports whether selector is a syntactically valid
-// attestor component-key selector.
+// sentry component-key selector.
 func IsComponentKeySelector(selector string) bool {
 	_, err := NormalizeComponentKeySelector(selector)
 	return err == nil
@@ -150,9 +150,9 @@ func IsComponentKeySelector(selector string) bool {
 // type.
 func ComponentPublicKeySize(keyType string) (int, bool) {
 	switch keyType {
-	case AttestorComponentEd25519V1:
+	case SentryComponentEd25519V1:
 		return ed25519.PublicKeySize, true
-	case AttestorComponentFalcon1024V1:
+	case SentryComponentFalcon1024V1:
 		return falconfamily.PublicKeySize, true
 	default:
 		return 0, false
@@ -163,9 +163,9 @@ func ComponentPublicKeySize(keyType string) (int, bool) {
 // type.
 func ComponentPrivateKeySize(keyType string) (int, bool) {
 	switch keyType {
-	case AttestorComponentEd25519V1:
+	case SentryComponentEd25519V1:
 		return ed25519.PrivateKeySize, true
-	case AttestorComponentFalcon1024V1:
+	case SentryComponentFalcon1024V1:
 		return falconfamily.PrivateKeySize, true
 	default:
 		return 0, false

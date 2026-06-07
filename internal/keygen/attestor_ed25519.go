@@ -21,14 +21,14 @@ import (
 type AttestorEd25519Generator struct{}
 
 func (g *AttestorEd25519Generator) Family() string {
-	return keytypes.AttestorComponentEd25519V1
+	return keytypes.SentryComponentEd25519V1
 }
 
 func (g *AttestorEd25519Generator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
 	_ = params
-	if keyType != keytypes.AttestorComponentEd25519V1 {
-		return nil, fmt.Errorf("attestor Ed25519 generator only supports keyType %q, got %q", keytypes.AttestorComponentEd25519V1, keyType)
+	if keyType != keytypes.SentryComponentEd25519V1 {
+		return nil, fmt.Errorf("attestor Ed25519 generator only supports keyType %q, got %q", keytypes.SentryComponentEd25519V1, keyType)
 	}
 	if len(seed) != ed25519.SeedSize {
 		return nil, fmt.Errorf("invalid seed size for attestor Ed25519: expected %d bytes, got %d", ed25519.SeedSize, len(seed))
@@ -54,8 +54,8 @@ func (g *AttestorEd25519Generator) GenerateFromMnemonic(ctx context.Context, pat
 func (g *AttestorEd25519Generator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
 	_ = params
-	if keyType != keytypes.AttestorComponentEd25519V1 {
-		return nil, fmt.Errorf("attestor Ed25519 generator only supports keyType %q, got %q", keytypes.AttestorComponentEd25519V1, keyType)
+	if keyType != keytypes.SentryComponentEd25519V1 {
+		return nil, fmt.Errorf("attestor Ed25519 generator only supports keyType %q, got %q", keytypes.SentryComponentEd25519V1, keyType)
 	}
 
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)

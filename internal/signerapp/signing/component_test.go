@@ -460,7 +460,7 @@ func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x61}, stded25519.SeedSize)
 	privateKey := stded25519.NewKeyFromSeed(seed)
 	publicKey := append([]byte(nil), privateKey.Public().(stded25519.PublicKey)...)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
@@ -469,7 +469,7 @@ func TestSignComponentAttestorPolicyAllowsSigning(t *testing.T) {
 	dest := types.Address{32}.String()
 	txn := testnetPaymentTransaction(t, source, dest, 1)
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.AttestorComponentEd25519V1,
+		Type:     keytypes.SentryComponentEd25519V1,
 		Category: keys.CategoryComponent,
 		Value: &coresigning.ComponentKeyMaterial{
 			ComponentKey: componentKey,
@@ -997,13 +997,13 @@ func TestSignPreparedAttestorComponentsSignsEd25519Messages(t *testing.T) {
 	seed := bytes.Repeat([]byte{0x42}, stded25519.SeedSize)
 	privateKey := stded25519.NewKeyFromSeed(seed)
 	publicKey := append([]byte(nil), privateKey.Public().(stded25519.PublicKey)...)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.AttestorComponentEd25519V1,
+		Type:     keytypes.SentryComponentEd25519V1,
 		Category: keys.CategoryComponent,
 		Value: &coresigning.ComponentKeyMaterial{
 			ComponentKey: componentKey,
@@ -1031,8 +1031,8 @@ func TestSignPreparedAttestorComponentsSignsEd25519Messages(t *testing.T) {
 		if sig.TargetIndex != plan.Targets[i].TargetIndex {
 			t.Fatalf("signature %d target index = %d, want %d", i, sig.TargetIndex, plan.Targets[i].TargetIndex)
 		}
-		if sig.SignatureScheme != keytypes.AttestorComponentEd25519V1 {
-			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, keytypes.AttestorComponentEd25519V1)
+		if sig.SignatureScheme != keytypes.SentryComponentEd25519V1 {
+			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, keytypes.SentryComponentEd25519V1)
 		}
 		sigBytes, err := hex.DecodeString(sig.Signature)
 		if err != nil {
@@ -1055,13 +1055,13 @@ func TestSignPreparedAttestorComponentsSignsFalcon1024Messages(t *testing.T) {
 	if len(publicKey) != falconfamily.PublicKeySize {
 		t.Fatalf("public key length = %d, want %d", len(publicKey), falconfamily.PublicKeySize)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentFalcon1024V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.AttestorComponentFalcon1024V1,
+		Type:     keytypes.SentryComponentFalcon1024V1,
 		Category: keys.CategoryComponent,
 		Value: &coresigning.ComponentKeyMaterial{
 			ComponentKey: componentKey,
@@ -1089,8 +1089,8 @@ func TestSignPreparedAttestorComponentsSignsFalcon1024Messages(t *testing.T) {
 		if sig.TargetIndex != plan.Targets[i].TargetIndex {
 			t.Fatalf("signature %d target index = %d, want %d", i, sig.TargetIndex, plan.Targets[i].TargetIndex)
 		}
-		if sig.SignatureScheme != keytypes.AttestorComponentFalcon1024V1 {
-			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, keytypes.AttestorComponentFalcon1024V1)
+		if sig.SignatureScheme != keytypes.SentryComponentFalcon1024V1 {
+			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, keytypes.SentryComponentFalcon1024V1)
 		}
 		sigBytes, err := hex.DecodeString(sig.Signature)
 		if err != nil {
@@ -1250,7 +1250,7 @@ func preparedAttestorComponentPlan(t *testing.T, componentKey string) *Component
 func testEd25519ComponentSelector(t *testing.T, fill byte) string {
 	t.Helper()
 	publicKey := bytes.Repeat([]byte{fill}, stded25519.PublicKeySize)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
@@ -1362,13 +1362,13 @@ func TestLoadAttestorComponentKeyMapsMissingKey(t *testing.T) {
 func TestLoadAttestorComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T) {
 	privateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x44}, stded25519.SeedSize))
 	wrongPublicKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x45}, stded25519.SeedSize)).Public().(stded25519.PublicKey)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, wrongPublicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, wrongPublicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.AttestorComponentEd25519V1,
+		Type:     keytypes.SentryComponentEd25519V1,
 		Category: keys.CategoryComponent,
 		Value: &coresigning.ComponentKeyMaterial{
 			ComponentKey: componentKey,

@@ -70,7 +70,7 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 		info, err := keymgmt.DetectKeyInfoFromFileWithMasterKey(keyFile, mk)
 		if err == nil {
 			result.KeyType = info.Type
-			if keytypes.IsAttestorComponentKeyType(info.Type) {
+			if keytypes.IsSentryComponentKeyType(info.Type) {
 				result.PublicKeyHex = info.PublicKeyHex
 			}
 			result.Parameters = keyDetailsParameters(info.Type, info.Parameters)
@@ -111,7 +111,7 @@ func keyDetailsParameters(keyType string, parameters map[string]string) map[stri
 }
 
 func attestorComponentSelectorForDetails(keyType, publicKeyHex string) (string, error) {
-	componentKeyType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(keyType)
+	componentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 	if !ok {
 		return "", fmt.Errorf("unknown guarded account key type %q", keyType)
 	}

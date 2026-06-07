@@ -198,7 +198,7 @@ func captureStdout(t *testing.T, fn func()) string {
 func TestLoadConfigEndpointRegistryDerivesAttestorRoutesFromPublishedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKey := attestorEndpointTestHex("d6")
-	componentKey := attestorEndpointConfigTestComponentKey(t, keytypes.AttestorComponentEd25519V1, publicKey)
+	componentKey := attestorEndpointConfigTestComponentKey(t, keytypes.SentryComponentEd25519V1, publicKey)
 	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
 network: testnet
 signer_port: 12270
@@ -220,7 +220,7 @@ endpoints:
         component_key: %s
         key_type: %s
         last_seen_at: "2026-06-04T00:00:00Z"
-`, publicKey, componentKey, keytypes.AttestorComponentEd25519V1)), 0o600); err != nil {
+`, publicKey, componentKey, keytypes.SentryComponentEd25519V1)), 0o600); err != nil {
 		t.Fatalf("write endpoints: %v", err)
 	}
 
@@ -236,7 +236,7 @@ endpoints:
 		t.Fatalf("derived route = %#v, want sentry-local ssh endpoint", route)
 	}
 	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries[publicKey]
-	if published.ComponentKey != componentKey || published.KeyType != keytypes.AttestorComponentEd25519V1 {
+	if published.ComponentKey != componentKey || published.KeyType != keytypes.SentryComponentEd25519V1 {
 		t.Fatalf("published sentry = %#v, want component/key type", published)
 	}
 }

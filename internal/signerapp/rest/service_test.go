@@ -244,7 +244,7 @@ func TestServiceSignComponentDelegates(t *testing.T) {
 			Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
 				Signature:       "aa",
-				SignatureScheme: keytypes.AttestorComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentEd25519V1,
 			}},
 		},
 	}
@@ -532,7 +532,7 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
 	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{}}}
 
-	status, genResp := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: keytypes.AttestorComponentEd25519V1})
+	status, genResp := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: keytypes.SentryComponentEd25519V1})
 	if status != 200 {
 		t.Fatalf("AdminGenerate(component) status = %d, want 200: %#v", status, genResp)
 	}
@@ -614,13 +614,13 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 		if keyType.KeyType == "ed25519" {
 			foundEd25519 = true
 		}
-		if keyType.KeyType == keytypes.AttestorComponentEd25519V1 {
+		if keyType.KeyType == keytypes.SentryComponentEd25519V1 {
 			foundEd25519Component = true
 			if keyType.Family != "sentry-ed25519" || keyType.MnemonicImport {
 				t.Fatalf("Ed25519 component key type info = %#v, want sentry component metadata", keyType)
 			}
 		}
-		if keyType.KeyType == keytypes.AttestorComponentFalcon1024V1 {
+		if keyType.KeyType == keytypes.SentryComponentFalcon1024V1 {
 			foundFalconComponent = true
 			if keyType.Family != "sentry-falcon1024" || keyType.MnemonicImport {
 				t.Fatalf("Falcon component key type info = %#v, want sentry component metadata", keyType)
@@ -631,10 +631,10 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 		t.Fatal("KeyTypes() did not include ed25519")
 	}
 	if !foundEd25519Component {
-		t.Fatalf("KeyTypes() did not include %s", keytypes.AttestorComponentEd25519V1)
+		t.Fatalf("KeyTypes() did not include %s", keytypes.SentryComponentEd25519V1)
 	}
 	if !foundFalconComponent {
-		t.Fatalf("KeyTypes() did not include %s", keytypes.AttestorComponentFalcon1024V1)
+		t.Fatalf("KeyTypes() did not include %s", keytypes.SentryComponentFalcon1024V1)
 	}
 }
 
@@ -657,11 +657,11 @@ func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 	if !keyTypesResponseContains(resp.KeyTypes, "ed25519") {
 		t.Fatal("signer node key types missing ed25519")
 	}
-	if keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentEd25519V1) {
-		t.Fatalf("signer node key types included %s", keytypes.AttestorComponentEd25519V1)
+	if keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentEd25519V1) {
+		t.Fatalf("signer node key types included %s", keytypes.SentryComponentEd25519V1)
 	}
-	if keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentFalcon1024V1) {
-		t.Fatalf("signer node key types included %s", keytypes.AttestorComponentFalcon1024V1)
+	if keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentFalcon1024V1) {
+		t.Fatalf("signer node key types included %s", keytypes.SentryComponentFalcon1024V1)
 	}
 
 	ir = setupIdentityRuntimeWithRole(t, false, noderole.RoleSentry)
@@ -672,11 +672,11 @@ func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 	if keyTypesResponseContains(resp.KeyTypes, "ed25519") {
 		t.Fatal("sentry node key types included ed25519")
 	}
-	if !keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentEd25519V1) {
-		t.Fatalf("sentry node key types missing %s", keytypes.AttestorComponentEd25519V1)
+	if !keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentEd25519V1) {
+		t.Fatalf("sentry node key types missing %s", keytypes.SentryComponentEd25519V1)
 	}
-	if !keyTypesResponseContains(resp.KeyTypes, keytypes.AttestorComponentFalcon1024V1) {
-		t.Fatalf("sentry node key types missing %s", keytypes.AttestorComponentFalcon1024V1)
+	if !keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentFalcon1024V1) {
+		t.Fatalf("sentry node key types missing %s", keytypes.SentryComponentFalcon1024V1)
 	}
 }
 
@@ -687,11 +687,11 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeString() error = %v", err)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKeyBytes)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKeyBytes)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	env, err := attrefs.NewExportEnvelope(componentKey, keytypes.AttestorComponentEd25519V1, publicKey)
+	env, err := attrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("NewExportEnvelope() error = %v", err)
 	}

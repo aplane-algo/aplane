@@ -354,7 +354,7 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 	if signingMeta.Category != keys.CategoryComponent {
 		return nil, fmt.Errorf("component key has invalid category %q", signingMeta.Category)
 	}
-	if !keytypes.IsAttestorComponentKeyType(keyType) {
+	if !keytypes.IsSentryComponentKeyType(keyType) {
 		return nil, fmt.Errorf("unsupported component key type: %s", keyType)
 	}
 
@@ -440,13 +440,13 @@ func zeroLoadedKeyMaterialForKeystore(key *signing.KeyMaterial) {
 
 func validateComponentPublicPrivatePair(keyType string, publicKey, privateKey []byte) error {
 	switch keyType {
-	case keytypes.AttestorComponentEd25519V1:
+	case keytypes.SentryComponentEd25519V1:
 		derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
 		if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
 			return fmt.Errorf("component public key does not match private key")
 		}
 		return nil
-	case keytypes.AttestorComponentFalcon1024V1:
+	case keytypes.SentryComponentFalcon1024V1:
 		const probe = "APLANE_COMPONENT_KEY_LOAD_V1"
 		signature, err := signerops.New(nil).Sign(privateKey, []byte(probe))
 		if err != nil {

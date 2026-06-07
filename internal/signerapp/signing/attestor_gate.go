@@ -12,7 +12,7 @@ const (
 
 func attestorSignRejectMessage(keyType string) (string, bool) {
 	switch {
-	case keytypes.IsAttestorComponentKeyType(keyType):
+	case keytypes.IsSentryComponentKeyType(keyType):
 		return attestorComponentSignRejectMessage, true
 	case keytypes.IsGuardedAccountKeyType(keyType):
 		return guardedAccountSignRejectMessage, true

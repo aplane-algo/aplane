@@ -67,8 +67,8 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		{keyType: "aplane.falcon1024.v1", want: true},
 		{keyType: falcon1024attested.KeyTypeV1, want: false},
 		{keyType: falcon1024attested.KeyTypeFalcon1024V1, want: false},
-		{keyType: keytypes.AttestorComponentEd25519V1, want: false},
-		{keyType: keytypes.AttestorComponentFalcon1024V1, want: false},
+		{keyType: keytypes.SentryComponentEd25519V1, want: false},
+		{keyType: keytypes.SentryComponentFalcon1024V1, want: false},
 		{keyType: "aplane.ecdsak1.v1", want: false},
 		{keyType: "aplane.falcon1024_ed25519.v1", want: false},
 		{keyType: "aplane.falcon1024-whitelist.v1", want: false},
@@ -157,17 +157,17 @@ func TestValidKeyTypesIncludeIdentityActivatedYAMLComposedProvider(t *testing.T)
 }
 
 func TestValidKeyTypesIncludeAttestorComponentKey(t *testing.T) {
-	if !containsKeyType(GetValidKeyTypes(), keytypes.AttestorComponentEd25519V1) {
-		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.AttestorComponentEd25519V1)
+	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentEd25519V1) {
+		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentEd25519V1)
 	}
-	if !IsValidKeyType(keytypes.AttestorComponentEd25519V1) {
-		t.Fatalf("IsValidKeyType() rejected %s", keytypes.AttestorComponentEd25519V1)
+	if !IsValidKeyType(keytypes.SentryComponentEd25519V1) {
+		t.Fatalf("IsValidKeyType() rejected %s", keytypes.SentryComponentEd25519V1)
 	}
-	if !containsKeyType(GetValidKeyTypes(), keytypes.AttestorComponentFalcon1024V1) {
-		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.AttestorComponentFalcon1024V1)
+	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentFalcon1024V1) {
+		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentFalcon1024V1)
 	}
-	if !IsValidKeyType(keytypes.AttestorComponentFalcon1024V1) {
-		t.Fatalf("IsValidKeyType() rejected %s", keytypes.AttestorComponentFalcon1024V1)
+	if !IsValidKeyType(keytypes.SentryComponentFalcon1024V1) {
+		t.Fatalf("IsValidKeyType() rejected %s", keytypes.SentryComponentFalcon1024V1)
 	}
 }
 
@@ -296,8 +296,8 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 
 func TestGenerateKeyAttestorComponent(t *testing.T) {
 	for _, keyType := range []string{
-		keytypes.AttestorComponentEd25519V1,
-		keytypes.AttestorComponentFalcon1024V1,
+		keytypes.SentryComponentEd25519V1,
+		keytypes.SentryComponentFalcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())

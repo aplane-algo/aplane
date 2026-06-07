@@ -85,7 +85,7 @@ func GetGenerator(keyType string) (Generator, error) {
 		return generator, nil
 	}
 
-	if keytypes.IsAttestorMVPKeyType(keyType) {
+	if keytypes.IsSentryKeyType(keyType) {
 		return nil, fmt.Errorf("no exact key generator registered for key type: %s", keyType)
 	}
 

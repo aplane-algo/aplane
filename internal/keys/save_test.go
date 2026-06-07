@@ -78,14 +78,14 @@ func TestSaveKeyFileWritesComponentPublicMetadata(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	publicKey := bytes.Repeat([]byte{0x29}, 32)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
 	result, err := SaveKeyFile(paths, &KeyPair{
 		Category:      CategoryComponent,
-		KeyType:       keytypes.AttestorComponentEd25519V1,
+		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  hex.EncodeToString(publicKey),
 		PrivateKeyHex: strings.Repeat("11", 64),
 	}, "default", componentKey, masterKey)
@@ -109,8 +109,8 @@ func TestSaveKeyFileWritesComponentPublicMetadata(t *testing.T) {
 	if env.ComponentKey != componentKey {
 		t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, componentKey)
 	}
-	if env.KeyType != keytypes.AttestorComponentEd25519V1 {
-		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.AttestorComponentEd25519V1)
+	if env.KeyType != keytypes.SentryComponentEd25519V1 {
+		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentEd25519V1)
 	}
 	if env.PublicKeyHex != hex.EncodeToString(publicKey) {
 		t.Fatalf("PublicKeyHex = %q, want public key", env.PublicKeyHex)

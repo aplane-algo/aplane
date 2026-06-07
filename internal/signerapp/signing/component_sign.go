@@ -199,7 +199,7 @@ func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, c
 	if keyMaterial == nil {
 		return nil, nil, internal("loaded component key material is nil")
 	}
-	if !keytypes.IsAttestorComponentKeyType(keyMaterial.Type) {
+	if !keytypes.IsSentryComponentKeyType(keyMaterial.Type) {
 		gotType := keyMaterial.Type
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, badRequest(fmt.Sprintf("key %q is %s, not a sentry component key", componentKeySelector, gotType))
@@ -236,12 +236,12 @@ func loadAttestorComponentKey(ctx context.Context, session componentKeyGetter, c
 
 func signAttestorComponentMessage(keyType string, privateKey, msg []byte) ([]byte, *ServiceError) {
 	switch keyType {
-	case keytypes.AttestorComponentEd25519V1:
+	case keytypes.SentryComponentEd25519V1:
 		if len(privateKey) != ed25519.PrivateKeySize {
 			return nil, internal(fmt.Sprintf("loaded sentry component key has private key length %d", len(privateKey)))
 		}
 		return ed25519.Sign(ed25519.PrivateKey(privateKey), msg), nil
-	case keytypes.AttestorComponentFalcon1024V1:
+	case keytypes.SentryComponentFalcon1024V1:
 		signature, err := signerops.New(nil).Sign(privateKey, msg)
 		if err != nil {
 			return nil, internal(fmt.Sprintf("failed to sign Falcon sentry component message: %v", err))
@@ -254,13 +254,13 @@ func signAttestorComponentMessage(keyType string, privateKey, msg []byte) ([]byt
 
 func validateLoadedAttestorComponentPair(keyType string, publicKey, privateKey []byte) error {
 	switch keyType {
-	case keytypes.AttestorComponentEd25519V1:
+	case keytypes.SentryComponentEd25519V1:
 		derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
 		if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
 			return fmt.Errorf("loaded sentry component key public key does not match private key")
 		}
 		return nil
-	case keytypes.AttestorComponentFalcon1024V1:
+	case keytypes.SentryComponentFalcon1024V1:
 		const probe = "APLANE_COMPONENT_KEY_LOAD_V1"
 		signature, err := signerops.New(nil).Sign(privateKey, []byte(probe))
 		if err != nil {

@@ -139,12 +139,12 @@ func TestVerifySignableKeysRejectsAttestorKeyTypes(t *testing.T) {
 	}{
 		{
 			name:    "ed25519 component key",
-			keyType: keytypes.AttestorComponentEd25519V1,
+			keyType: keytypes.SentryComponentEd25519V1,
 			want:    attestorComponentSignRejectMessage,
 		},
 		{
 			name:    "falcon component key",
-			keyType: keytypes.AttestorComponentFalcon1024V1,
+			keyType: keytypes.SentryComponentFalcon1024V1,
 			want:    attestorComponentSignRejectMessage,
 		},
 		{

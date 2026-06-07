@@ -205,7 +205,7 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		Mnemonic:     genResult.Mnemonic,
 		KeyFile:      genResult.KeyFiles.PrivateFile,
 	}
-	if keytypes.IsAttestorComponentKeyType(genResult.KeyType) {
+	if keytypes.IsSentryComponentKeyType(genResult.KeyType) {
 		spending := false
 		result.IsComponentKey = true
 		result.IsSpendingAccount = &spending

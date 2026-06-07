@@ -107,7 +107,7 @@ func NewExportEnvelope(componentKey, keyType, publicKeyHex string) (*ExportEnvel
 	if err != nil {
 		return nil, fmt.Errorf("invalid component key selector: %w", err)
 	}
-	if !keytypes.IsAttestorComponentKeyType(keyType) {
+	if !keytypes.IsSentryComponentKeyType(keyType) {
 		return nil, fmt.Errorf("key type %q is not a sentry component key type", keyType)
 	}
 	publicKeyHex = strings.ToLower(strings.TrimSpace(publicKeyHex))
@@ -345,7 +345,7 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 	if !ok {
 		return nil, fmt.Errorf("sentry reference %q not found", strings.TrimSpace(name))
 	}
-	wantKeyType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(keyType)
+	wantKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 	if !ok {
 		return nil, fmt.Errorf("key type %q is not a guarded account key type", keyType)
 	}

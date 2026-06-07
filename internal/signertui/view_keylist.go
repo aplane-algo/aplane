@@ -175,7 +175,7 @@ func filterKeysForTab(keys []KeyInfo, tab keyListTab) []KeyInfo {
 }
 
 func keyBelongsToTab(key KeyInfo, tab keyListTab) bool {
-	isAttestor := keytypes.IsAttestorComponentKeyType(key.KeyType)
+	isAttestor := keytypes.IsSentryComponentKeyType(key.KeyType)
 	if tab == keyListTabAttestor {
 		return isAttestor
 	}
@@ -183,7 +183,7 @@ func keyBelongsToTab(key KeyInfo, tab keyListTab) bool {
 }
 
 func keyListTabForKey(key KeyInfo) keyListTab {
-	if keytypes.IsAttestorComponentKeyType(key.KeyType) {
+	if keytypes.IsSentryComponentKeyType(key.KeyType) {
 		return keyListTabAttestor
 	}
 	return keyListTabSigning
@@ -235,7 +235,7 @@ func (m *Model) syncKeyListTabWithMode() {
 
 func (m Model) keyListTabCounts() (signing, attestor int) {
 	for _, key := range m.keys {
-		if keytypes.IsAttestorComponentKeyType(key.KeyType) {
+		if keytypes.IsSentryComponentKeyType(key.KeyType) {
 			attestor++
 		} else {
 			signing++
@@ -423,7 +423,7 @@ func (m Model) renderKeyDetails() string {
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", styledKeyTypeWithTemplateProvenanceStatus(m.detailsKeyType, m.detailsTemplateProvenanceStatus)))
 	if m.detailsPublicKeyHex != "" {
 		label := "Public key"
-		if keytypes.IsAttestorComponentKeyType(m.detailsKeyType) {
+		if keytypes.IsSentryComponentKeyType(m.detailsKeyType) {
 			label = "Sentry public key"
 		}
 		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, m.detailsPublicKeyHex), m.popupBodyWidth(62)))

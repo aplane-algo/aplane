@@ -13,42 +13,42 @@ import (
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
-func TestAttestorKeyTypeClassifiers(t *testing.T) {
-	if !IsAttestorComponentKeyType(AttestorComponentEd25519V1) {
+func TestSentryKeyTypeClassifiers(t *testing.T) {
+	if !IsSentryComponentKeyType(SentryComponentEd25519V1) {
 		t.Fatal("Ed25519 component key type was not classified as component")
 	}
-	if !IsAttestorComponentKeyType(AttestorComponentFalcon1024V1) {
+	if !IsSentryComponentKeyType(SentryComponentFalcon1024V1) {
 		t.Fatal("Falcon component key type was not classified as component")
 	}
 	if !IsGuardedAccountKeyType(GuardedFalcon1024SentryEd25519V1) {
-		t.Fatal("attested Falcon account key type was not classified as attested")
+		t.Fatal("guarded Falcon account key type was not classified as guarded")
 	}
 	if !IsGuardedAccountKeyType(GuardedFalcon1024SentryFalcon1024V1) {
-		t.Fatal("Falcon-attested Falcon account key type was not classified as attested")
+		t.Fatal("Falcon-guarded Falcon account key type was not classified as guarded")
 	}
-	if IsAttestorMVPKeyType("aplane.falcon1024.v1") {
-		t.Fatal("ordinary Falcon key type classified as attestor MVP key type")
+	if IsSentryKeyType("aplane.falcon1024.v1") {
+		t.Fatal("ordinary Falcon key type classified as sentry key type")
 	}
-	if IsAttestorMVPKeyType("aplane.future-att-future.v1") {
-		t.Fatal("deferred future attested key type classified as MVP key type")
+	if IsSentryKeyType("aplane.future-att-future.v1") {
+		t.Fatal("deferred future guarded key type classified as sentry key type")
 	}
 }
 
-func TestAttestorComponentKeyTypeForGuardedAccount(t *testing.T) {
+func TestSentryComponentKeyTypeForGuardedAccount(t *testing.T) {
 	tests := []struct {
 		keyType string
 		want    string
 		ok      bool
 	}{
-		{GuardedFalcon1024SentryEd25519V1, AttestorComponentEd25519V1, true},
-		{GuardedFalcon1024SentryFalcon1024V1, AttestorComponentFalcon1024V1, true},
-		{AttestorComponentEd25519V1, "", false},
+		{GuardedFalcon1024SentryEd25519V1, SentryComponentEd25519V1, true},
+		{GuardedFalcon1024SentryFalcon1024V1, SentryComponentFalcon1024V1, true},
+		{SentryComponentEd25519V1, "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.keyType, func(t *testing.T) {
-			got, ok := AttestorComponentKeyTypeForGuardedAccount(tt.keyType)
+			got, ok := SentryComponentKeyTypeForGuardedAccount(tt.keyType)
 			if ok != tt.ok || got != tt.want {
-				t.Fatalf("AttestorComponentKeyTypeForGuardedAccount() = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.ok)
+				t.Fatalf("SentryComponentKeyTypeForGuardedAccount() = (%q, %v), want (%q, %v)", got, ok, tt.want, tt.ok)
 			}
 		})
 	}
@@ -60,11 +60,11 @@ func TestComponentKeySelectorKnownVector(t *testing.T) {
 		pub[i] = byte(i)
 	}
 
-	got, err := ComponentKeySelector(AttestorComponentEd25519V1, pub)
+	got, err := ComponentKeySelector(SentryComponentEd25519V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	want := expectedComponentSelector(AttestorComponentEd25519V1, pub)
+	want := expectedComponentSelector(SentryComponentEd25519V1, pub)
 	if got != want {
 		t.Fatalf("ComponentKeySelector() = %q, want %q", got, want)
 	}
@@ -85,11 +85,11 @@ func TestFalconComponentKeySelectorKnownVector(t *testing.T) {
 		pub[i] = byte(i)
 	}
 
-	got, err := ComponentKeySelector(AttestorComponentFalcon1024V1, pub)
+	got, err := ComponentKeySelector(SentryComponentFalcon1024V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	want := expectedComponentSelector(AttestorComponentFalcon1024V1, pub)
+	want := expectedComponentSelector(SentryComponentFalcon1024V1, pub)
 	if got != want {
 		t.Fatalf("ComponentKeySelector() = %q, want %q", got, want)
 	}

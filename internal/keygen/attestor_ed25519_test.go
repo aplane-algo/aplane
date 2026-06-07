@@ -33,7 +33,7 @@ func TestAttestorEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	defer securecrypto.ZeroBytes(masterKey)
 
 	g := &AttestorEd25519Generator{}
-	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, keytypes.AttestorComponentEd25519V1, nil)
+	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, keytypes.SentryComponentEd25519V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom() error = %v", err)
 	}
@@ -64,8 +64,8 @@ func TestAttestorEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	if info.Category != keys.CategoryComponent {
 		t.Fatalf("scan category = %q, want %q", info.Category, keys.CategoryComponent)
 	}
-	if info.KeyType != keytypes.AttestorComponentEd25519V1 {
-		t.Fatalf("scan key type = %q, want %q", info.KeyType, keytypes.AttestorComponentEd25519V1)
+	if info.KeyType != keytypes.SentryComponentEd25519V1 {
+		t.Fatalf("scan key type = %q, want %q", info.KeyType, keytypes.SentryComponentEd25519V1)
 	}
 	if info.PublicKeyHex != result.PublicKeyHex {
 		t.Fatalf("scan public key = %q, want %q", info.PublicKeyHex, result.PublicKeyHex)
@@ -102,7 +102,7 @@ func TestAttestorFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	defer securecrypto.ZeroBytes(masterKey)
 
 	g := &AttestorFalcon1024Generator{}
-	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, keytypes.AttestorComponentFalcon1024V1, nil)
+	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, keytypes.SentryComponentFalcon1024V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom() error = %v", err)
 	}
@@ -133,8 +133,8 @@ func TestAttestorFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	if info.Category != keys.CategoryComponent {
 		t.Fatalf("scan category = %q, want %q", info.Category, keys.CategoryComponent)
 	}
-	if info.KeyType != keytypes.AttestorComponentFalcon1024V1 {
-		t.Fatalf("scan key type = %q, want %q", info.KeyType, keytypes.AttestorComponentFalcon1024V1)
+	if info.KeyType != keytypes.SentryComponentFalcon1024V1 {
+		t.Fatalf("scan key type = %q, want %q", info.KeyType, keytypes.SentryComponentFalcon1024V1)
 	}
 	if info.PublicKeyHex != result.PublicKeyHex {
 		t.Fatalf("scan public key = %q, want %q", info.PublicKeyHex, result.PublicKeyHex)

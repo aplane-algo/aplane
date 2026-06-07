@@ -31,7 +31,7 @@ func TestCmdSentryImportPublicListShowRemove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cmdSentry(list) error = %v", err)
 		}
-		if !strings.Contains(listOut, "lab-sentry") || !strings.Contains(listOut, keytypes.AttestorComponentEd25519V1) {
+		if !strings.Contains(listOut, "lab-sentry") || !strings.Contains(listOut, keytypes.SentryComponentEd25519V1) {
 			t.Fatalf("list output = %q, want imported sentry reference", listOut)
 		}
 
@@ -68,11 +68,11 @@ func testSentryExportJSON(t *testing.T) []byte {
 	for i := range pub {
 		pub[i] = 0xab
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, pub)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	env, err := attrefs.NewExportEnvelope(componentKey, keytypes.AttestorComponentEd25519V1, strings.Repeat("ab", 32))
+	env, err := attrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentEd25519V1, strings.Repeat("ab", 32))
 	if err != nil {
 		t.Fatalf("NewExportEnvelope() error = %v", err)
 	}

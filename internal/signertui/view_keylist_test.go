@@ -143,7 +143,7 @@ func TestRenderKeyListViewUsesSignerNodeWithoutTabs(t *testing.T) {
 		adminSettings: &AdminSettings{NodeRole: "signer"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
+			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
@@ -167,7 +167,7 @@ func TestRenderKeyListViewDefaultsToSignerNodeWithoutTabs(t *testing.T) {
 		adminSettings: &AdminSettings{},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
+			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
@@ -194,7 +194,7 @@ func TestRenderKeyListViewUsesAttestorNodeWithoutTabs(t *testing.T) {
 		adminSettings: &AdminSettings{NodeRole: "sentry"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
+			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
@@ -219,7 +219,7 @@ func TestHandleKeyListKeysIgnoresTabOnAttestorNode(t *testing.T) {
 		adminSettings: &AdminSettings{NodeRole: "sentry"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
+			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
@@ -240,7 +240,7 @@ func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 		adminSettings: &AdminSettings{NodeRole: "signer"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
+			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
@@ -260,7 +260,7 @@ func TestSelectKeyByAddressSwitchesToAttestorTab(t *testing.T) {
 		adminSettings: &AdminSettings{NodeRole: "sentry"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
+			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
@@ -293,7 +293,7 @@ func TestRenderKeyDetailsShowsPreciseTemplateProvenanceNote(t *testing.T) {
 func TestRenderKeyDetailsShowsSentryPublicKey(t *testing.T) {
 	rendered := stripANSI(Model{
 		detailsAddress:      "aabbccdd",
-		detailsKeyType:      keytypes.AttestorComponentEd25519V1,
+		detailsKeyType:      keytypes.SentryComponentEd25519V1,
 		detailsPublicKeyHex: "aabbccdd",
 		height:              30,
 	}.renderKeyDetails())

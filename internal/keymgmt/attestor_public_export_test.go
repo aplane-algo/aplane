@@ -15,12 +15,12 @@ import (
 
 func TestNewAttestorPublicKeyExportEd25519(t *testing.T) {
 	pub := bytesOfLen(32, 0xab)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, pub)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
-	env, err := NewAttestorPublicKeyExport(componentKey, keytypes.AttestorComponentEd25519V1, strings.ToUpper(hex.EncodeToString(pub)))
+	env, err := NewAttestorPublicKeyExport(componentKey, keytypes.SentryComponentEd25519V1, strings.ToUpper(hex.EncodeToString(pub)))
 	if err != nil {
 		t.Fatalf("NewAttestorPublicKeyExport() error = %v", err)
 	}
@@ -31,8 +31,8 @@ func TestNewAttestorPublicKeyExportEd25519(t *testing.T) {
 	if env.ComponentKey != componentKey {
 		t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, componentKey)
 	}
-	if env.KeyType != keytypes.AttestorComponentEd25519V1 {
-		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.AttestorComponentEd25519V1)
+	if env.KeyType != keytypes.SentryComponentEd25519V1 {
+		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentEd25519V1)
 	}
 	if env.PublicKeyEncoding != "hex" {
 		t.Fatalf("PublicKeyEncoding = %q, want hex", env.PublicKeyEncoding)
@@ -50,12 +50,12 @@ func TestNewAttestorPublicKeyExportEd25519(t *testing.T) {
 
 func TestNewAttestorPublicKeyExportFalcon1024(t *testing.T) {
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentFalcon1024V1, pub)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
-	env, err := NewAttestorPublicKeyExport(componentKey, keytypes.AttestorComponentFalcon1024V1, hex.EncodeToString(pub))
+	env, err := NewAttestorPublicKeyExport(componentKey, keytypes.SentryComponentFalcon1024V1, hex.EncodeToString(pub))
 	if err != nil {
 		t.Fatalf("NewAttestorPublicKeyExport() error = %v", err)
 	}
@@ -70,12 +70,12 @@ func TestNewAttestorPublicKeyExportFalcon1024(t *testing.T) {
 func TestNewAttestorPublicKeyExportRejectsMismatchedSelector(t *testing.T) {
 	pub := bytesOfLen(32, 0xab)
 	otherPub := bytesOfLen(32, 0xbc)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, otherPub)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, otherPub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
-	_, err = NewAttestorPublicKeyExport(componentKey, keytypes.AttestorComponentEd25519V1, hex.EncodeToString(pub))
+	_, err = NewAttestorPublicKeyExport(componentKey, keytypes.SentryComponentEd25519V1, hex.EncodeToString(pub))
 	if err == nil {
 		t.Fatal("NewAttestorPublicKeyExport() error = nil, want selector mismatch")
 	}
@@ -86,7 +86,7 @@ func TestNewAttestorPublicKeyExportRejectsMismatchedSelector(t *testing.T) {
 
 func TestNewAttestorPublicKeyExportRejectsSpendingKeyType(t *testing.T) {
 	pub := bytesOfLen(32, 0xab)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, pub)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}

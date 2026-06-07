@@ -190,7 +190,7 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	if got := entry.PublishedSentryPublicKeys; len(got) != 1 || got[0] != publicKeyHex {
 		t.Fatalf("PublishedSentryPublicKeys = %#v, want %s", got, publicKeyHex)
 	}
-	componentID := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	componentID := testComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
 	if got := entry.PublishedSentryComponents; len(got) != 1 || got[0] != componentID {
 		t.Fatalf("PublishedSentryComponents = %#v, want %s", got, componentID)
 	}
@@ -219,7 +219,7 @@ func TestEndpointSentriesRenderComponentSelectorsOnly(t *testing.T) {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
 	publicKeyHex := testAttestorPublicKeyHex()
-	componentID := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	componentID := testComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
 	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
 
 	sentries, err := app.EndpointSentries(context.Background())
@@ -234,11 +234,11 @@ func TestEndpointDiscoverSentriesRebuildsMappingsFromAllEndpoints(t *testing.T) 
 	app := newEndpointTestApp(t, dataDir)
 
 	publicKeyHex := testAttestorPublicKeyHex()
-	componentSelector := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	componentSelector := testComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
 	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
 		Address:        componentSelector,
 		PublicKeyHex:   strings.ToUpper(publicKeyHex),
-		KeyType:        keytypes.AttestorComponentEd25519V1,
+		KeyType:        keytypes.SentryComponentEd25519V1,
 		IsComponentKey: true,
 	}})
 	signerServer := newEndpointKeysServer(t, "sign-token", []signerapi.KeyInfo{{
@@ -302,9 +302,9 @@ func TestEndpointDiscoverSentriesPreservesUnreachableEndpointInventory(t *testin
 	oldOnlineKey := strings.Repeat("cd", 32)
 	offlineKey := strings.Repeat("ef", 32)
 	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
-		Address:        testComponentSelector(t, keytypes.AttestorComponentEd25519V1, newOnlineKey),
+		Address:        testComponentSelector(t, keytypes.SentryComponentEd25519V1, newOnlineKey),
 		PublicKeyHex:   newOnlineKey,
-		KeyType:        keytypes.AttestorComponentEd25519V1,
+		KeyType:        keytypes.SentryComponentEd25519V1,
 		IsComponentKey: true,
 	}})
 
@@ -465,7 +465,7 @@ func TestEndpointDiscoverSentriesRejectsInvalidEndpointMetadata(t *testing.T) {
 	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
 		Address:        "bad-component-selector",
 		PublicKeyHex:   publicKeyHex,
-		KeyType:        keytypes.AttestorComponentEd25519V1,
+		KeyType:        keytypes.SentryComponentEd25519V1,
 		IsComponentKey: true,
 	}})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
@@ -503,9 +503,9 @@ func TestEndpointDiscoverSentriesDryRunDoesNotWriteMappings(t *testing.T) {
 	app := newEndpointTestApp(t, dataDir)
 	publicKeyHex := testAttestorPublicKeyHex()
 	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
-		Address:        testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex),
+		Address:        testComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex),
 		PublicKeyHex:   publicKeyHex,
-		KeyType:        keytypes.AttestorComponentEd25519V1,
+		KeyType:        keytypes.SentryComponentEd25519V1,
 		IsComponentKey: true,
 	}})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
@@ -559,7 +559,7 @@ func TestEndpointSyncSentriesDryRunUsesPublishedInventory(t *testing.T) {
 	if rec.EndpointAlias != "sentry-local" || rec.PublicKey != publicKeyHex {
 		t.Fatalf("record = %#v, want sentry-local %s", rec, publicKeyHex)
 	}
-	componentID := testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	componentID := testComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
 	wantName := "endpoint-sentry-local-" + strings.ToLower(componentID)
 	if rec.Name != wantName {
 		t.Fatalf("record name = %q, want %q", rec.Name, wantName)
@@ -708,8 +708,8 @@ func writePublishedSentries(t *testing.T, dir string, publications map[string]ma
 func endpointPublishedSentryForTest(t *testing.T, publicKeyHex string) config.ClientEndpointPublishedSentry {
 	t.Helper()
 	return config.ClientEndpointPublishedSentry{
-		ComponentKey: testComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex),
-		KeyType:      keytypes.AttestorComponentEd25519V1,
+		ComponentKey: testComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex),
+		KeyType:      keytypes.SentryComponentEd25519V1,
 		LastSeenAt:   "2026-06-04T00:00:00Z",
 	}
 }

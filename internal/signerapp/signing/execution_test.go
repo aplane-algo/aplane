@@ -238,8 +238,8 @@ func TestExecutorSignCryptoKeyRejectsAttestorKeyTypesBeforeProviderLookup(t *tes
 		keyType string
 		want    string
 	}{
-		{name: "ed25519 component", keyType: keytypes.AttestorComponentEd25519V1, want: attestorComponentSignRejectMessage},
-		{name: "falcon component", keyType: keytypes.AttestorComponentFalcon1024V1, want: attestorComponentSignRejectMessage},
+		{name: "ed25519 component", keyType: keytypes.SentryComponentEd25519V1, want: attestorComponentSignRejectMessage},
+		{name: "falcon component", keyType: keytypes.SentryComponentFalcon1024V1, want: attestorComponentSignRejectMessage},
 		{name: "attested ed25519 attestor", keyType: keytypes.GuardedFalcon1024SentryEd25519V1, want: guardedAccountSignRejectMessage},
 		{name: "attested falcon attestor", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1, want: guardedAccountSignRejectMessage},
 	}

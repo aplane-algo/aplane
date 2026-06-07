@@ -155,7 +155,7 @@ func (e *Engine) attestedOriginalTargets(txns []types.Transaction) ([]attestedOr
 		if !keytypes.IsGuardedAccountKeyType(keyType) {
 			continue
 		}
-		attestorComponentKeyType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(keyType)
+		attestorComponentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 		if !ok {
 			return nil, fmt.Errorf("guarded account %s uses unsupported attested key type %s", sender, keyType)
 		}
@@ -444,9 +444,9 @@ func verifyAttestorComponentSignatures(componentKeyType string, attestorPublicKe
 
 func verifyAttestorComponentSignature(componentKeyType string, publicKey, msg, signature []byte) error {
 	switch componentKeyType {
-	case keytypes.AttestorComponentEd25519V1:
+	case keytypes.SentryComponentEd25519V1:
 		return attestorverify.VerifyEd25519(publicKey, msg, signature)
-	case keytypes.AttestorComponentFalcon1024V1:
+	case keytypes.SentryComponentFalcon1024V1:
 		return attestorverify.VerifyFalcon1024(publicKey, msg, signature)
 	default:
 		return fmt.Errorf("key type %q is not a sentry component key type", componentKeyType)

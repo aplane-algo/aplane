@@ -397,7 +397,7 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	if err == nil {
 		t.Fatal("RestoreKey() error = nil, want role-forbidden rejection")
 	}
-	if !strings.Contains(err.Error(), "role-forbidden") || !strings.Contains(err.Error(), keytypes.AttestorComponentEd25519V1) {
+	if !strings.Contains(err.Error(), "role-forbidden") || !strings.Contains(err.Error(), keytypes.SentryComponentEd25519V1) {
 		t.Fatalf("RestoreKey() error = %v, want component role-forbidden rejection", err)
 	}
 	if _, err := os.Stat(paths.KeyFilePath(identityID, componentKey)); !os.IsNotExist(err) {
@@ -426,8 +426,8 @@ func TestRestoreKeyWritesComponentPublicMetadataOnAttestorNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
-	if keyType != keytypes.AttestorComponentEd25519V1 {
-		t.Fatalf("RestoreKey() key type = %q, want %q", keyType, keytypes.AttestorComponentEd25519V1)
+	if keyType != keytypes.SentryComponentEd25519V1 {
+		t.Fatalf("RestoreKey() key type = %q, want %q", keyType, keytypes.SentryComponentEd25519V1)
 	}
 
 	env, ok, err := apkeys.ReadComponentPublicMetadata(paths, identityID, componentKey)
@@ -440,8 +440,8 @@ func TestRestoreKeyWritesComponentPublicMetadataOnAttestorNode(t *testing.T) {
 	if env.ComponentKey != componentKey {
 		t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, componentKey)
 	}
-	if env.KeyType != keytypes.AttestorComponentEd25519V1 {
-		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.AttestorComponentEd25519V1)
+	if env.KeyType != keytypes.SentryComponentEd25519V1 {
+		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentEd25519V1)
 	}
 	if env.PublicKeyHex != keyPair.PublicKeyHex {
 		t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, keyPair.PublicKeyHex)
@@ -738,14 +738,14 @@ func testAttestorComponentBackupKeyJSON(t *testing.T) (string, []byte) {
 
 	publicKey := bytesOfLen(32, 0xab)
 	privateKey := bytesOfLen(64, 0xcd)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 	keyJSON, err := json.Marshal(apkeys.KeyPair{
 		FormatVersion: apkeys.CurrentKeyFormatVersion,
 		Category:      apkeys.CategoryComponent,
-		KeyType:       keytypes.AttestorComponentEd25519V1,
+		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  hex.EncodeToString(publicKey),
 		PrivateKeyHex: hex.EncodeToString(privateKey),
 	})

@@ -26,14 +26,14 @@ type AttestorFalcon1024Generator struct {
 }
 
 func (g *AttestorFalcon1024Generator) Family() string {
-	return keytypes.AttestorComponentFalcon1024V1
+	return keytypes.SentryComponentFalcon1024V1
 }
 
 func (g *AttestorFalcon1024Generator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
 	_ = params
-	if keyType != keytypes.AttestorComponentFalcon1024V1 {
-		return nil, fmt.Errorf("attestor Falcon-1024 generator only supports keyType %q, got %q", keytypes.AttestorComponentFalcon1024V1, keyType)
+	if keyType != keytypes.SentryComponentFalcon1024V1 {
+		return nil, fmt.Errorf("attestor Falcon-1024 generator only supports keyType %q, got %q", keytypes.SentryComponentFalcon1024V1, keyType)
 	}
 	if len(seed) != attestorFalcon1024SeedSize {
 		return nil, fmt.Errorf("invalid seed size for attestor Falcon-1024: expected %d bytes, got %d", attestorFalcon1024SeedSize, len(seed))
@@ -68,8 +68,8 @@ func (g *AttestorFalcon1024Generator) GenerateFromMnemonic(ctx context.Context, 
 func (g *AttestorFalcon1024Generator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
 	_ = params
-	if keyType != keytypes.AttestorComponentFalcon1024V1 {
-		return nil, fmt.Errorf("attestor Falcon-1024 generator only supports keyType %q, got %q", keytypes.AttestorComponentFalcon1024V1, keyType)
+	if keyType != keytypes.SentryComponentFalcon1024V1 {
+		return nil, fmt.Errorf("attestor Falcon-1024 generator only supports keyType %q, got %q", keytypes.SentryComponentFalcon1024V1, keyType)
 	}
 
 	seed := make([]byte, attestorFalcon1024SeedSize)

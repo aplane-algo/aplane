@@ -117,7 +117,7 @@ func validateCurrentKeyPayloadMetadata(meta KeyPayloadMetadata) (KeyPayloadHeade
 	if strings.TrimSpace(meta.KeyType) == "" {
 		return KeyPayloadHeader{}, incompatibleKeyFormat("missing key_type")
 	}
-	if meta.Category == CategoryComponent && !keytypes.IsAttestorComponentKeyType(meta.KeyType) {
+	if meta.Category == CategoryComponent && !keytypes.IsSentryComponentKeyType(meta.KeyType) {
 		return KeyPayloadHeader{}, incompatibleKeyFormat("component category requires a sentry component key type, got %q", meta.KeyType)
 	}
 	if meta.HasRuntimeArgs {

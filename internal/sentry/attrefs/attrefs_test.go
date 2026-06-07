@@ -17,7 +17,7 @@ import (
 
 func TestImportGetListDelete(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	export := testExportJSON(t, keytypes.AttestorComponentEd25519V1, bytesOfLen(32, 0xab))
+	export := testExportJSON(t, keytypes.SentryComponentEd25519V1, bytesOfLen(32, 0xab))
 
 	rec, err := Import(paths, "default", "Lab-Sentry", export)
 	if err != nil {
@@ -80,7 +80,7 @@ func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(32, 0xab)
-	if _, err := Import(paths, "default", "lab-sentry", testExportJSON(t, keytypes.AttestorComponentEd25519V1, pub)); err != nil {
+	if _, err := Import(paths, "default", "lab-sentry", testExportJSON(t, keytypes.SentryComponentEd25519V1, pub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 func TestResolveCreationParamsRejectsMismatchedComponentKeyType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
-	if _, err := Import(paths, "default", "falcon-att", testExportJSON(t, keytypes.AttestorComponentFalcon1024V1, pub)); err != nil {
+	if _, err := Import(paths, "default", "falcon-att", testExportJSON(t, keytypes.SentryComponentFalcon1024V1, pub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 
@@ -124,7 +124,7 @@ func TestResolveCreationParamsRejectsMismatchedComponentKeyType(t *testing.T) {
 	if err == nil {
 		t.Fatal("ResolveCreationParams() error = nil, want key type mismatch")
 	}
-	if !strings.Contains(err.Error(), "requires "+keytypes.AttestorComponentEd25519V1) {
+	if !strings.Contains(err.Error(), "requires "+keytypes.SentryComponentEd25519V1) {
 		t.Fatalf("ResolveCreationParams() error = %v, want required Ed25519 sentry", err)
 	}
 }
@@ -132,7 +132,7 @@ func TestResolveCreationParamsRejectsMismatchedComponentKeyType(t *testing.T) {
 func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(32, 0xab)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, pub)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
@@ -140,7 +140,7 @@ func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
 	result, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
 		EndpointAlias: "Attestor.Local",
 		ComponentKey:  componentKey,
-		KeyType:       keytypes.AttestorComponentEd25519V1,
+		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  strings.ToUpper(hex.EncodeToString(pub)),
 		LastSeenAt:    "2026-06-04T00:00:00Z",
 	}})
@@ -173,7 +173,7 @@ func TestSyncDiscoveredRejectsMismatchedComponentSelector(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(32, 0xab)
 	otherPub := bytesOfLen(32, 0xcd)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, otherPub)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, otherPub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
@@ -181,7 +181,7 @@ func TestSyncDiscoveredRejectsMismatchedComponentSelector(t *testing.T) {
 	_, err = SyncDiscovered(paths, "default", []DiscoveredRecord{{
 		EndpointAlias: "attestor-local",
 		ComponentKey:  componentKey,
-		KeyType:       keytypes.AttestorComponentEd25519V1,
+		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  hex.EncodeToString(pub),
 	}})
 	if err == nil {
@@ -195,7 +195,7 @@ func TestSyncDiscoveredRejectsMismatchedComponentSelector(t *testing.T) {
 func TestSyncDiscoveredRejectsSamePublicKeyFromMultipleEndpoints(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(32, 0xab)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, pub)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
@@ -204,13 +204,13 @@ func TestSyncDiscoveredRejectsSamePublicKeyFromMultipleEndpoints(t *testing.T) {
 		{
 			EndpointAlias: "attestor-a",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.AttestorComponentEd25519V1,
+			KeyType:       keytypes.SentryComponentEd25519V1,
 			PublicKeyHex:  hex.EncodeToString(pub),
 		},
 		{
 			EndpointAlias: "attestor-b",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.AttestorComponentEd25519V1,
+			KeyType:       keytypes.SentryComponentEd25519V1,
 			PublicKeyHex:  strings.ToUpper(hex.EncodeToString(pub)),
 		},
 	})
@@ -225,32 +225,32 @@ func TestSyncDiscoveredRejectsSamePublicKeyFromMultipleEndpoints(t *testing.T) {
 func TestSyncDiscoveredReplacesOnlyClientDiscoveryReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	manualPub := bytesOfLen(32, 0xab)
-	if _, err := Import(paths, "default", "manual-att", testExportJSON(t, keytypes.AttestorComponentEd25519V1, manualPub)); err != nil {
+	if _, err := Import(paths, "default", "manual-att", testExportJSON(t, keytypes.SentryComponentEd25519V1, manualPub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 	stalePub := bytesOfLen(32, 0xcd)
-	staleComponent, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, stalePub)
+	staleComponent, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, stalePub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector(stale) error = %v", err)
 	}
 	if _, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
 		EndpointAlias: "stale",
 		ComponentKey:  staleComponent,
-		KeyType:       keytypes.AttestorComponentEd25519V1,
+		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  hex.EncodeToString(stalePub),
 	}}); err != nil {
 		t.Fatalf("SyncDiscovered(stale) error = %v", err)
 	}
 
 	freshPub := bytesOfLen(32, 0xef)
-	freshComponent, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, freshPub)
+	freshComponent, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, freshPub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector(fresh) error = %v", err)
 	}
 	result, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
 		EndpointAlias: "fresh",
 		ComponentKey:  freshComponent,
-		KeyType:       keytypes.AttestorComponentEd25519V1,
+		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  hex.EncodeToString(freshPub),
 	}})
 	if err != nil {

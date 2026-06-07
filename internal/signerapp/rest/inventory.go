@@ -169,7 +169,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			RuntimeArgs:    []signerapi.RuntimeArgInfo{},
 		}
 
-		if keytypes.IsAttestorComponentKeyType(keyType) {
+		if keytypes.IsSentryComponentKeyType(keyType) {
 			info.Family, info.DisplayName, info.Description = attestorComponentKeyTypeMetadata(keyType)
 			keyTypes = append(keyTypes, info)
 			continue
@@ -304,7 +304,7 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 	}
 
 	for i := range infos {
-		componentType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(infos[i].KeyType)
+		componentType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(infos[i].KeyType)
 		if !ok {
 			continue
 		}
@@ -326,9 +326,9 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 
 func attestorComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
 	switch keyType {
-	case keytypes.AttestorComponentEd25519V1:
+	case keytypes.SentryComponentEd25519V1:
 		return "sentry-ed25519", "Sentry Ed25519 component key", "Raw Ed25519 sentry component signing key"
-	case keytypes.AttestorComponentFalcon1024V1:
+	case keytypes.SentryComponentFalcon1024V1:
 		return "sentry-falcon1024", "Sentry Falcon-1024 component key", "Raw Falcon-1024 sentry component signing key"
 	default:
 		return keyType, keyType, "Raw sentry component signing key"

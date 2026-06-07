@@ -121,14 +121,14 @@ func TestDeepVerifyBackupValidComponentKeyFile(t *testing.T) {
 	keysDir := filepath.Join(backupRoot, "apb")
 	privateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0xcd}, stded25519.SeedSize))
 	publicKey := privateKey.Public().(stded25519.PublicKey)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 	keyJSON, err := json.Marshal(utilkeys.KeyPair{
 		FormatVersion: utilkeys.CurrentKeyFormatVersion,
 		Category:      utilkeys.CategoryComponent,
-		KeyType:       keytypes.AttestorComponentEd25519V1,
+		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  hex.EncodeToString(publicKey),
 		PrivateKeyHex: hex.EncodeToString(privateKey),
 	})
@@ -149,8 +149,8 @@ func TestDeepVerifyBackupValidComponentKeyFile(t *testing.T) {
 	if report.TotalFiles != 1 || report.ValidFiles != 1 || report.FailedFiles != 0 {
 		t.Fatalf("report counts = %+v, want 1 valid component file", *report)
 	}
-	if report.Results[0].KeyType != keytypes.AttestorComponentEd25519V1 {
-		t.Fatalf("KeyType = %q, want %s", report.Results[0].KeyType, keytypes.AttestorComponentEd25519V1)
+	if report.Results[0].KeyType != keytypes.SentryComponentEd25519V1 {
+		t.Fatalf("KeyType = %q, want %s", report.Results[0].KeyType, keytypes.SentryComponentEd25519V1)
 	}
 }
 

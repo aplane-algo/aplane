@@ -19,16 +19,16 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.GuardedFalcon1024SentryFalcon1024V1) {
 		t.Fatal("signer node rejected Falcon-guarded account key")
 	}
-	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.AttestorComponentEd25519V1) {
+	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.SentryComponentEd25519V1) {
 		t.Fatal("signer node allowed Ed25519 attestor component key")
 	}
-	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.AttestorComponentFalcon1024V1) {
+	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.SentryComponentFalcon1024V1) {
 		t.Fatal("signer node allowed Falcon attestor component key")
 	}
-	if !NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.AttestorComponentEd25519V1) {
+	if !NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.SentryComponentEd25519V1) {
 		t.Fatal("attestor node rejected Ed25519 attestor component key")
 	}
-	if !NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.AttestorComponentFalcon1024V1) {
+	if !NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.SentryComponentFalcon1024V1) {
 		t.Fatal("attestor node rejected Falcon attestor component key")
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleSentry, "ed25519") {
@@ -40,7 +40,7 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if NodeRoleAllowsKeyType(noderole.Role("unknown"), "ed25519") {
 		t.Fatal("unknown node role allowed Ed25519 account key")
 	}
-	if NodeRoleAllowsKeyType(noderole.Role("unknown"), keytypes.AttestorComponentEd25519V1) {
+	if NodeRoleAllowsKeyType(noderole.Role("unknown"), keytypes.SentryComponentEd25519V1) {
 		t.Fatal("unknown node role allowed attestor component key")
 	}
 }
@@ -48,7 +48,7 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 func TestValidateKeyTypesAllowedForNodeRoleReportsConflicts(t *testing.T) {
 	err := ValidateKeyTypesAllowedForNodeRole(noderole.RoleSentry, map[string]string{
 		"ADDR": "ed25519",
-		"ATT":  keytypes.AttestorComponentEd25519V1,
+		"ATT":  keytypes.SentryComponentEd25519V1,
 	})
 	if err == nil {
 		t.Fatal("ValidateKeyTypesAllowedForNodeRole() error = nil")

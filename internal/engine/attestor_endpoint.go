@@ -264,7 +264,7 @@ func discoverAttestorComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredAttest
 	discovered := make([]DiscoveredAttestorComponentKey, 0)
 	seen := map[string]struct{}{}
 	for _, key := range keys {
-		if !key.IsComponentKey || !keytypes.IsAttestorComponentKeyType(key.KeyType) {
+		if !key.IsComponentKey || !keytypes.IsSentryComponentKeyType(key.KeyType) {
 			continue
 		}
 		publicKey, err := normalizeAttestorPublicKeyHex(key.PublicKeyHex, key.KeyType)

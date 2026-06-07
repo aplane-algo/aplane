@@ -597,13 +597,13 @@ func TestFileKeyStore_GetRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey(private) error = %v", err)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 	keyPair := &keys.KeyPair{
 		Category:      keys.CategoryComponent,
-		KeyType:       keytypes.AttestorComponentEd25519V1,
+		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  hex.EncodeToString(publicKey),
 		PrivateKeyHex: hex.EncodeToString(privateKey),
 	}

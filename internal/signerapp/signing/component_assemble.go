@@ -92,7 +92,7 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 	if len(keyMaterial.PublicKey) != family.PublicKeySize {
 		return "", internal(fmt.Sprintf("loaded guarded account key has public key length %d", len(keyMaterial.PublicKey)))
 	}
-	attestorComponentKeyType, ok := keytypes.AttestorComponentKeyTypeForGuardedAccount(keyMaterial.Type)
+	attestorComponentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyMaterial.Type)
 	if !ok {
 		return "", internal(fmt.Sprintf("loaded guarded account key type %s has no sentry component key type", keyMaterial.Type))
 	}
@@ -183,9 +183,9 @@ func validateGuardedPassthrough(passthrough signerapi.GuardedPassthroughItem, en
 
 func verifyAttestorAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {
 	switch componentKeyType {
-	case keytypes.AttestorComponentEd25519V1:
+	case keytypes.SentryComponentEd25519V1:
 		return attestorverify.VerifyEd25519(publicKey, msg, signature)
-	case keytypes.AttestorComponentFalcon1024V1:
+	case keytypes.SentryComponentFalcon1024V1:
 		return attestorverify.VerifyFalcon1024(publicKey, msg, signature)
 	default:
 		return fmt.Errorf("key type %q is not a sentry component key type", componentKeyType)

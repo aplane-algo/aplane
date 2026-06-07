@@ -26,11 +26,11 @@ import (
 func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKeyHex := strings.Repeat("ab", 32)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
 	server := newEndpointCLIKeysServer(t, "att-token", []signerapi.KeyInfo{{
 		Address:        componentKey,
 		PublicKeyHex:   publicKeyHex,
-		KeyType:        keytypes.AttestorComponentEd25519V1,
+		KeyType:        keytypes.SentryComponentEd25519V1,
 		IsComponentKey: true,
 	}})
 
@@ -97,12 +97,12 @@ func TestRenderEndpointSentriesOmitsLastSeen(t *testing.T) {
 	state := &REPLState{Out: &out}
 
 	publicKeyHex := strings.Repeat("ab", 32)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
 	state.renderEndpointSentries(&apshellapp.EndpointSentriesResult{
 		Sentries: []apshellapp.EndpointSentryEntry{{
 			EndpointAlias: "sentry-local",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.AttestorComponentEd25519V1,
+			KeyType:       keytypes.SentryComponentEd25519V1,
 			LastSeenAt:    "2026-06-04T00:00:00Z",
 		}},
 	})
@@ -124,7 +124,7 @@ func TestRenderEndpointShowIncludesAttestorLastSeen(t *testing.T) {
 	state := &REPLState{Out: &out}
 
 	publicKeyHex := strings.Repeat("cd", 32)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.AttestorComponentEd25519V1, publicKeyHex)
+	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
 	state.renderEndpointShow(&apshellapp.EndpointShowResult{
 		Endpoint: apshellapp.EndpointEntry{
 			Alias: "sentry-local",
@@ -136,7 +136,7 @@ func TestRenderEndpointShowIncludesAttestorLastSeen(t *testing.T) {
 			PublishedSentries: []apshellapp.EndpointSentryEntry{{
 				EndpointAlias: "sentry-local",
 				ComponentKey:  componentKey,
-				KeyType:       keytypes.AttestorComponentEd25519V1,
+				KeyType:       keytypes.SentryComponentEd25519V1,
 				LastSeenAt:    "2026-06-04T00:00:00Z",
 			}},
 		},

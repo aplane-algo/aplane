@@ -62,7 +62,7 @@ func WriteComponentPublicMetadataFromKeyJSON(paths storepaths.Paths, identityID,
 	if err := json.Unmarshal(keyJSON, &keyPair); err != nil {
 		return "", false, fmt.Errorf("failed to parse key payload for component public metadata: %w", err)
 	}
-	if keyPair.Category != CategoryComponent || !keytypes.IsAttestorComponentKeyType(keyPair.KeyType) {
+	if keyPair.Category != CategoryComponent || !keytypes.IsSentryComponentKeyType(keyPair.KeyType) {
 		return "", false, nil
 	}
 	if err := writeComponentPublicMetadataIfNeeded(paths, identityID, address, &keyPair); err != nil {
@@ -76,7 +76,7 @@ func WriteComponentPublicMetadataFromKeyJSON(paths storepaths.Paths, identityID,
 }
 
 func writeComponentPublicMetadataIfNeeded(paths storepaths.Paths, identityID, address string, keyPair *KeyPair) error {
-	if keyPair == nil || keyPair.Category != CategoryComponent || !keytypes.IsAttestorComponentKeyType(keyPair.KeyType) {
+	if keyPair == nil || keyPair.Category != CategoryComponent || !keytypes.IsSentryComponentKeyType(keyPair.KeyType) {
 		return nil
 	}
 	componentKey, err := keytypes.NormalizeComponentKeySelector(address)

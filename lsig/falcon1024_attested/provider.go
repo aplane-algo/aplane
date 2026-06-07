@@ -60,7 +60,7 @@ func NewProviderV1() *Provider {
 		familyName:               FamilyName,
 		displayName:              "Falcon-1024 / Ed25519 Sentry",
 		description:              "Falcon-1024 account requiring an Ed25519 sentry signature",
-		attestorComponentKeyType: keytypes.AttestorComponentEd25519V1,
+		attestorComponentKeyType: keytypes.SentryComponentEd25519V1,
 		attestorPublicKeySize:    ed25519.PublicKeySize,
 		signatureSize:            SignatureSize,
 		attestorSignatureArg:     "sentry_ed25519_component_signature",
@@ -73,7 +73,7 @@ func NewFalconAttestorProviderV1() *Provider {
 		familyName:               FamilyNameFalcon1024,
 		displayName:              "Falcon-1024 / Falcon-1024 Sentry",
 		description:              "Falcon-1024 account requiring a Falcon-1024 sentry signature",
-		attestorComponentKeyType: keytypes.AttestorComponentFalcon1024V1,
+		attestorComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 		attestorPublicKeySize:    family.PublicKeySize,
 		signatureSize:            SignatureSizeFalcon1024,
 		attestorSignatureArg:     "sentry_falcon1024_component_signature",
@@ -104,9 +104,9 @@ func (p *Provider) CreationParams() []lsigprovider.ParameterDef {
 	attestorLabel := "Sentry public key"
 	attestorDescription := "Hex-encoded sentry public key embedded in the guarded account"
 	switch p.attestorComponentKeyType {
-	case keytypes.AttestorComponentEd25519V1:
+	case keytypes.SentryComponentEd25519V1:
 		attestorDescription = "Hex-encoded Ed25519 sentry public key embedded in the guarded account"
-	case keytypes.AttestorComponentFalcon1024V1:
+	case keytypes.SentryComponentFalcon1024V1:
 		attestorDescription = "Hex-encoded Falcon-1024 sentry public key embedded in the guarded account"
 	}
 	return []lsigprovider.ParameterDef{{
@@ -237,7 +237,7 @@ assert
 
 func (p *Provider) attestorVerifyTEAL(attestorPublicKey []byte) (string, error) {
 	switch p.attestorComponentKeyType {
-	case keytypes.AttestorComponentEd25519V1:
+	case keytypes.SentryComponentEd25519V1:
 		return fmt.Sprintf(`// === Attestor Ed25519 component signature ===
 pushbytes 0x%s
 pushbytes 0x%02x
@@ -251,7 +251,7 @@ ed25519verify_bare
 `, hex.EncodeToString([]byte(message.DomainTagV1)),
 			byte(message.RoleSentry),
 			hex.EncodeToString(attestorPublicKey)), nil
-	case keytypes.AttestorComponentFalcon1024V1:
+	case keytypes.SentryComponentFalcon1024V1:
 		return fmt.Sprintf(`// === Attestor Falcon-1024 component signature ===
 pushbytes 0x%s
 pushbytes 0x%02x

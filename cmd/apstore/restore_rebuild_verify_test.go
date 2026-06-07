@@ -839,14 +839,14 @@ func testAttestorComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
 
 	privateKey := ed25519.NewKeyFromSeed(bytes32(0xcd))
 	publicKey := privateKey.Public().(ed25519.PublicKey)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 	return componentKey, mustMarshalJSON(t, apkeys.KeyPair{
 		FormatVersion: apkeys.CurrentKeyFormatVersion,
 		Category:      apkeys.CategoryComponent,
-		KeyType:       keytypes.AttestorComponentEd25519V1,
+		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  hex.EncodeToString(publicKey),
 		PrivateKeyHex: hex.EncodeToString(privateKey),
 	})

@@ -41,8 +41,8 @@ func TestCmdSentryExportPublicWritesEnvelopeFile(t *testing.T) {
 		if env.ComponentKey != result.Address {
 			t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, result.Address)
 		}
-		if env.KeyType != keytypes.AttestorComponentEd25519V1 {
-			t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.AttestorComponentEd25519V1)
+		if env.KeyType != keytypes.SentryComponentEd25519V1 {
+			t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentEd25519V1)
 		}
 		if env.PublicKeyHex != publicKeyHex {
 			t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, publicKeyHex)
@@ -118,7 +118,7 @@ func generateTestAttestorComponentKey(t *testing.T, passphrase []byte) (*keygen.
 	defer crypto.ZeroBytes(masterKey)
 
 	g := &keygen.AttestorEd25519Generator{}
-	result, err := g.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), masterKey, keytypes.AttestorComponentEd25519V1, nil)
+	result, err := g.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), masterKey, keytypes.SentryComponentEd25519V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom(sentry-ed25519) error = %v", err)
 	}
