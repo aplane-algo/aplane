@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/asa"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/asametadata"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -218,19 +219,26 @@ func (s Service) BuildPolicySettings(ir *identity.Runtime) adminproto.PolicySett
 	}
 }
 
+type policyTargetOps struct {
+	snapshotUnavailableCode string
+	snapshotUnavailableErr  string
+	marshal                 func(*policy.StoredConfig) ([]byte, error)
+	parse                   func([]byte) (*policy.StoredConfig, error)
+	loadVerified            func(dataDir, identityID string, masterKey []byte) (*policy.StoredConfig, error)
+	saveBytes               func(dataDir, identityID string, data []byte, masterKey []byte, signedAt time.Time) error
+	apply                   func(dataDir string, cfg *apconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error)
+	activeSnapshot          func(*identity.Runtime) (*policy.StoredConfig, *policy.Config)
+	setState                func(*identity.Runtime, *policy.StoredConfig, *policy.Config)
+}
+
 func (s Service) BuildPolicySnapshot(ir *identity.Runtime, target adminproto.PolicyTarget) adminproto.PolicySnapshot {
 	target = normalizeAdminPolicyTarget(target)
-	if target != adminproto.PolicyTargetSigner {
-		return adminproto.PolicySnapshot{
-			Success:    false,
-			Target:     target,
-			IdentityID: ir.ID(),
-			Code:       "policy_target_not_supported",
-			Error:      fmt.Sprintf("policy target %q is not supported by this signer service yet", target),
-		}
+	ops, err := s.policyTargetOps(ir, target)
+	if err != nil {
+		return policySnapshotError(ir.ID(), target, err)
 	}
-	stored, _ := ir.PolicySnapshot()
-	return canonicalPolicySnapshot(ir.ID(), target, stored)
+	stored, _ := ops.activeSnapshot(ir)
+	return canonicalPolicySnapshot(ir.ID(), target, ops, stored)
 }
 
 func normalizeAdminPolicyTarget(target adminproto.PolicyTarget) adminproto.PolicyTarget {
@@ -240,17 +248,17 @@ func normalizeAdminPolicyTarget(target adminproto.PolicyTarget) adminproto.Polic
 	return target
 }
 
-func canonicalPolicySnapshot(identityID string, target adminproto.PolicyTarget, stored *policy.StoredConfig) adminproto.PolicySnapshot {
+func canonicalPolicySnapshot(identityID string, target adminproto.PolicyTarget, ops policyTargetOps, stored *policy.StoredConfig) adminproto.PolicySnapshot {
 	if stored == nil {
 		return adminproto.PolicySnapshot{
 			Success:    false,
 			Target:     target,
 			IdentityID: identityID,
-			Code:       "policy_snapshot_unavailable",
-			Error:      "active stored policy snapshot is unavailable; reload or unlock the identity",
+			Code:       ops.snapshotUnavailableCode,
+			Error:      ops.snapshotUnavailableErr,
 		}
 	}
-	data, err := policy.MarshalStoredConfig(stored)
+	data, err := ops.marshal(stored)
 	if err != nil {
 		return adminproto.PolicySnapshot{
 			Success:    false,
@@ -268,6 +276,92 @@ func canonicalPolicySnapshot(identityID string, target adminproto.PolicyTarget, 
 		PolicyYAML:   string(data),
 		PolicySHA256: fmt.Sprintf("%x", sum),
 		Canonical:    true,
+	}
+}
+
+func (s Service) policyTargetOps(ir *identity.Runtime, target adminproto.PolicyTarget) (policyTargetOps, error) {
+	if err := validatePolicyTargetForNodeRole(ir.NodeRole(), target); err != nil {
+		return policyTargetOps{}, err
+	}
+	switch target {
+	case adminproto.PolicyTargetSigner:
+		return policyTargetOps{
+			snapshotUnavailableCode: "policy_snapshot_unavailable",
+			snapshotUnavailableErr:  "active stored policy snapshot is unavailable; reload or unlock the identity",
+			marshal:                 policy.MarshalStoredConfig,
+			parse:                   policy.ParseStoredConfig,
+			loadVerified:            policy.LoadVerifiedStoredConfigWithMasterKey,
+			saveBytes:               policy.SavePolicyBytesWithMasterKey,
+			apply:                   policyruntime.ApplyStoredConfig,
+			activeSnapshot:          (*identity.Runtime).PolicySnapshot,
+			setState: func(ir *identity.Runtime, stored *policy.StoredConfig, effective *policy.Config) {
+				ir.SetPolicyState(stored, effective)
+			},
+		}, nil
+	case adminproto.PolicyTargetAttestation:
+		return policyTargetOps{
+			snapshotUnavailableCode: "attestation_policy_snapshot_unavailable",
+			snapshotUnavailableErr:  "active stored attestation policy snapshot is unavailable; reload or unlock the identity",
+			marshal:                 policy.MarshalStoredAttestationConfig,
+			parse:                   policy.ParseStoredAttestationConfig,
+			loadVerified:            policy.LoadVerifiedAttestationConfigWithMasterKey,
+			saveBytes:               policy.SaveAttestationBytesWithMasterKey,
+			apply:                   policyruntime.ApplyAttestationStoredConfig,
+			activeSnapshot:          (*identity.Runtime).AttestationPolicySnapshot,
+			setState: func(ir *identity.Runtime, stored *policy.StoredConfig, effective *policy.Config) {
+				ir.SetAttestationPolicyState(stored, effective)
+			},
+		}, nil
+	default:
+		return policyTargetOps{}, policyReplaceError{
+			code: "invalid_policy_target",
+			msg:  fmt.Sprintf("invalid policy target %q", target),
+		}
+	}
+}
+
+func validatePolicyTargetForNodeRole(role noderole.Role, target adminproto.PolicyTarget) error {
+	switch target {
+	case adminproto.PolicyTargetSigner:
+		if role == "" || role == noderole.RoleSigner {
+			return nil
+		}
+	case adminproto.PolicyTargetAttestation:
+		if role == noderole.RoleAttestor {
+			return nil
+		}
+	default:
+		return policyReplaceError{
+			code: "invalid_policy_target",
+			msg:  fmt.Sprintf("invalid policy target %q", target),
+		}
+	}
+	if role == "" {
+		role = noderole.DefaultRole()
+	}
+	return policyReplaceError{
+		code: "policy_target_not_allowed_for_node_role",
+		msg:  fmt.Sprintf("policy target %q is not allowed on %s nodes", target, role),
+	}
+}
+
+func policySnapshotError(identityID string, target adminproto.PolicyTarget, err error) adminproto.PolicySnapshot {
+	var replaceErr policyReplaceError
+	if errors.As(err, &replaceErr) {
+		return adminproto.PolicySnapshot{
+			Success:    false,
+			Target:     target,
+			IdentityID: identityID,
+			Code:       replaceErr.code,
+			Error:      replaceErr.msg,
+		}
+	}
+	return adminproto.PolicySnapshot{
+		Success:    false,
+		Target:     target,
+		IdentityID: identityID,
+		Code:       "policy_snapshot_failed",
+		Error:      err.Error(),
 	}
 }
 
@@ -295,15 +389,20 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 			Error:      msg,
 		}
 	}
-	if target != adminproto.PolicyTargetSigner {
-		return fail("policy_target_not_supported", fmt.Sprintf("policy target %q is not supported by this signer service yet", target))
+	ops, err := s.policyTargetOps(ir, target)
+	if err != nil {
+		var replaceErr policyReplaceError
+		if errors.As(err, &replaceErr) {
+			return fail(replaceErr.code, replaceErr.msg)
+		}
+		return fail("policy_replace_failed", err.Error())
 	}
 
 	data := []byte(req.PolicyYAML)
 	if strings.TrimSpace(req.PolicyYAML) == "" {
 		return fail("empty_policy_yaml", "policy YAML is empty")
 	}
-	stored, err := policy.ParseStoredConfig(data)
+	stored, err := ops.parse(data)
 	if err != nil {
 		return fail("policy_parse_failed", err.Error())
 	}
@@ -326,24 +425,24 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 		}
 
 		if err := ir.WithMasterKey(func(masterKey []byte) error {
-			if _, err := policy.LoadVerifiedStoredConfigWithMasterKey(s.Deps.DataDir(), ir.ID(), masterKey); err != nil {
+			if _, err := ops.loadVerified(s.Deps.DataDir(), ir.ID(), masterKey); err != nil {
 				return newPolicyReplaceError(
 					"policy_verify_failed",
-					fmt.Errorf("failed to verify existing policy.yaml: %w", err),
+					fmt.Errorf("failed to verify existing %s: %w", policyTargetFileName(target), err),
 				)
 			}
-			if _, err := policyruntime.ApplyStoredConfig(s.Deps.DataDir(), s.Deps.Config(), stored); err != nil {
+			if _, err := ops.apply(s.Deps.DataDir(), s.Deps.Config(), stored); err != nil {
 				return newPolicyReplaceError("policy_validation_failed", fmt.Errorf("invalid policy: %w", err))
 			}
-			if err := policy.SavePolicyBytesWithMasterKey(s.Deps.DataDir(), ir.ID(), data, masterKey, time.Now()); err != nil {
-				return newPolicyReplaceError("policy_save_failed", fmt.Errorf("failed to save policy.yaml: %w", err))
+			if err := ops.saveBytes(s.Deps.DataDir(), ir.ID(), data, masterKey, time.Now()); err != nil {
+				return newPolicyReplaceError("policy_save_failed", fmt.Errorf("failed to save %s: %w", policyTargetFileName(target), err))
 			}
 
-			verified, err := policy.LoadVerifiedStoredConfigWithMasterKey(s.Deps.DataDir(), ir.ID(), masterKey)
+			verified, err := ops.loadVerified(s.Deps.DataDir(), ir.ID(), masterKey)
 			if err != nil {
 				return newPolicyReplaceError("policy_verify_failed", fmt.Errorf("saved policy failed verification: %w", err))
 			}
-			effective, err = policyruntime.ApplyStoredConfig(s.Deps.DataDir(), s.Deps.Config(), verified)
+			effective, err = ops.apply(s.Deps.DataDir(), s.Deps.Config(), verified)
 			if err != nil {
 				return newPolicyReplaceError("policy_validation_failed", fmt.Errorf("saved policy is invalid: %w", err))
 			}
@@ -352,7 +451,7 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 		}); err != nil {
 			return err
 		}
-		ir.SetPolicyState(storedSnapshot, effective)
+		ops.setState(ir, storedSnapshot, effective)
 		return nil
 	})
 	if err != nil {
@@ -366,7 +465,7 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 		return fail("policy_replace_failed", err.Error())
 	}
 
-	return canonicalPolicySnapshot(ir.ID(), target, storedSnapshot)
+	return canonicalPolicySnapshot(ir.ID(), target, ops, storedSnapshot)
 }
 
 func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePolicyRequest) adminproto.ValidatePolicyResult {
@@ -380,23 +479,37 @@ func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePol
 			Error:      msg,
 		}
 	}
-	if target != adminproto.PolicyTargetSigner {
-		return fail("policy_target_not_supported", fmt.Sprintf("policy target %q is not supported by this signer service yet", target))
+	ops, err := s.policyTargetOps(ir, target)
+	if err != nil {
+		var replaceErr policyReplaceError
+		if errors.As(err, &replaceErr) {
+			return fail(replaceErr.code, replaceErr.msg)
+		}
+		return fail("policy_validation_failed", err.Error())
 	}
 	if strings.TrimSpace(req.PolicyYAML) == "" {
 		return fail("empty_policy_yaml", "policy YAML is empty")
 	}
-	stored, err := policy.ParseStoredConfig([]byte(req.PolicyYAML))
+	stored, err := ops.parse([]byte(req.PolicyYAML))
 	if err != nil {
 		return fail("policy_parse_failed", err.Error())
 	}
-	if _, err := policyruntime.ApplyStoredConfig(s.Deps.DataDir(), s.Deps.Config(), stored); err != nil {
+	if _, err := ops.apply(s.Deps.DataDir(), s.Deps.Config(), stored); err != nil {
 		return fail("policy_validation_failed", fmt.Sprintf("invalid policy: %v", err))
 	}
 	return adminproto.ValidatePolicyResult{
 		Success:    true,
 		Target:     target,
 		IdentityID: ir.ID(),
+	}
+}
+
+func policyTargetFileName(target adminproto.PolicyTarget) string {
+	switch normalizeAdminPolicyTarget(target) {
+	case adminproto.PolicyTargetAttestation:
+		return "attestation.yaml"
+	default:
+		return "policy.yaml"
 	}
 }
 

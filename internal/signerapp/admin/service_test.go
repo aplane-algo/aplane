@@ -11,14 +11,19 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/asametadata"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -73,6 +78,10 @@ func (d *fakeDeps) WithIdentityMutation(identityID string, fn func() error) erro
 }
 
 func setupAdminService(t *testing.T) (Service, *identity.Runtime, *fakeDeps) {
+	return setupAdminServiceWithRole(t, noderole.RoleSigner)
+}
+
+func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *identity.Runtime, *fakeDeps) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
@@ -89,12 +98,61 @@ func setupAdminService(t *testing.T) (Service, *identity.Runtime, *fakeDeps) {
 		keyPaths: keyPaths,
 		theme:    cfg.Theme,
 	}
+	keyStore := keystore.NewFileKeyStoreForPaths(keyPaths, auth.DefaultIdentityID)
 	ir := identity.New(identity.Config{
 		ID:            auth.DefaultIdentityID,
+		KeyStore:      keyStore,
 		KeyPaths:      keyPaths,
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
+		NodeRole:      role,
 	})
 	return Service{Deps: deps}, ir, deps
+}
+
+func unlockAdminServicePolicyTest(t *testing.T, svc Service, ir *identity.Runtime, target adminproto.PolicyTarget, stored *policy.StoredConfig) {
+	t.Helper()
+
+	passphrase := []byte("admin-policy-test-passphrase")
+	_, masterKey, err := securecrypto.CreateKeystoreMetadata(ir.KeyPaths().KeystoreMetadataDir(ir.ID()), passphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadata(): %v", err)
+	}
+	securecrypto.ZeroBytes(masterKey)
+	if _, err := ir.KeyStore().InitializeMasterKey(passphrase); err != nil {
+		t.Fatalf("InitializeMasterKey(): %v", err)
+	}
+	ir.SetUnlocked()
+
+	err = ir.WithMasterKey(func(masterKey []byte) error {
+		switch target {
+		case adminproto.PolicyTargetAttestation:
+			if err := policy.SaveStoredAttestationConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
+				return err
+			}
+			verified, effective, err := policyruntime.LoadVerifiedAttestationWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
+			if err != nil {
+				return err
+			}
+			ir.SetAttestationPolicyState(verified, effective)
+		default:
+			if err := policy.SaveStoredConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), stored, masterKey, testPolicyTime()); err != nil {
+				return err
+			}
+			verified, effective, err := policyruntime.LoadVerifiedWithStored(svc.Deps.DataDir(), ir.ID(), svc.Deps.Config(), masterKey)
+			if err != nil {
+				return err
+			}
+			ir.SetPolicyState(verified, effective)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("install initial %s policy: %v", target, err)
+	}
+}
+
+func testPolicyTime() time.Time {
+	return time.Unix(1700000000, 0)
 }
 
 func TestDetectPassphraseMethod(t *testing.T) {
@@ -363,4 +421,147 @@ func TestBuildPolicySnapshotReportsUnavailableSnapshot(t *testing.T) {
 	if snapshot.IdentityID != auth.DefaultIdentityID {
 		t.Fatalf("IdentityID = %q, want %q", snapshot.IdentityID, auth.DefaultIdentityID)
 	}
+}
+
+func TestBuildAttestationPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
+	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleAttestor)
+	stored := storedAttestationPolicyForAdminTest(t, "allow_initial")
+	effective, err := policyruntime.ApplyAttestationStoredConfig(svc.Deps.DataDir(), svc.Deps.Config(), stored)
+	if err != nil {
+		t.Fatalf("ApplyAttestationStoredConfig(): %v", err)
+	}
+	ir.SetAttestationPolicyState(stored, effective)
+
+	snapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetAttestation)
+	if !snapshot.Success {
+		t.Fatalf("BuildPolicySnapshot(attestation) success = false, code %q error %q", snapshot.Code, snapshot.Error)
+	}
+	if snapshot.Target != adminproto.PolicyTargetAttestation {
+		t.Fatalf("Target = %q, want attestation", snapshot.Target)
+	}
+	if !snapshot.Canonical {
+		t.Fatal("Canonical = false, want true")
+	}
+	if strings.Contains(snapshot.PolicyYAML, "attestation:") {
+		t.Fatalf("attestation snapshot contains wrapper:\n%s", snapshot.PolicyYAML)
+	}
+	if !strings.Contains(snapshot.PolicyYAML, "allow_initial") ||
+		!strings.Contains(snapshot.PolicyYAML, "transfer_policy:") {
+		t.Fatalf("PolicyYAML missing expected attestation policy fields:\n%s", snapshot.PolicyYAML)
+	}
+}
+
+func TestValidatePolicyUsesTargetParserAndRoleGate(t *testing.T) {
+	svc, signerIR, _ := setupAdminServiceWithRole(t, noderole.RoleSigner)
+	attestationYAML := attestationPolicyYAMLForAdminTest("allow_validate")
+	result := svc.ValidatePolicy(signerIR, adminproto.ValidatePolicyRequest{
+		Target:     adminproto.PolicyTargetAttestation,
+		PolicyYAML: attestationYAML,
+	})
+	if result.Success {
+		t.Fatalf("ValidatePolicy(attestation on signer) success = true, want false")
+	}
+	if result.Code != "policy_target_not_allowed_for_node_role" {
+		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)
+	}
+
+	attestorSvc, attestorIR, _ := setupAdminServiceWithRole(t, noderole.RoleAttestor)
+	result = attestorSvc.ValidatePolicy(attestorIR, adminproto.ValidatePolicyRequest{
+		Target:     adminproto.PolicyTargetAttestation,
+		PolicyYAML: attestationYAML,
+	})
+	if !result.Success {
+		t.Fatalf("ValidatePolicy(attestation) success = false, code %q error %q", result.Code, result.Error)
+	}
+	if result.Target != adminproto.PolicyTargetAttestation {
+		t.Fatalf("Target = %q, want attestation", result.Target)
+	}
+}
+
+func TestReplaceAttestationPolicyUpdatesRuntimeAndSidecar(t *testing.T) {
+	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleAttestor)
+	initial := storedAttestationPolicyForAdminTest(t, "allow_initial")
+	unlockAdminServicePolicyTest(t, svc, ir, adminproto.PolicyTargetAttestation, initial)
+	initialSnapshot := svc.BuildPolicySnapshot(ir, adminproto.PolicyTargetAttestation)
+	if !initialSnapshot.Success {
+		t.Fatalf("initial snapshot success = false, code %q error %q", initialSnapshot.Code, initialSnapshot.Error)
+	}
+
+	updatedYAML := attestationPolicyYAMLForAdminTest("allow_updated")
+	result := svc.ReplacePolicy(ir, adminproto.ReplacePolicyRequest{
+		Target:                adminproto.PolicyTargetAttestation,
+		PolicyYAML:            updatedYAML,
+		ExpectedCurrentSHA256: initialSnapshot.PolicySHA256,
+	})
+	if !result.Success {
+		t.Fatalf("ReplacePolicy(attestation) success = false, code %q error %q", result.Code, result.Error)
+	}
+	if result.Target != adminproto.PolicyTargetAttestation {
+		t.Fatalf("Target = %q, want attestation", result.Target)
+	}
+	if !strings.Contains(result.PolicyYAML, "allow_updated") {
+		t.Fatalf("result PolicyYAML missing updated route:\n%s", result.PolicyYAML)
+	}
+
+	var verified *policy.StoredConfig
+	err := ir.WithMasterKey(func(masterKey []byte) error {
+		var err error
+		verified, err = policy.LoadVerifiedAttestationConfigWithMasterKey(svc.Deps.DataDir(), ir.ID(), masterKey)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("LoadVerifiedAttestationConfigWithMasterKey(): %v", err)
+	}
+	verifiedData, err := policy.MarshalStoredAttestationConfig(verified)
+	if err != nil {
+		t.Fatalf("MarshalStoredAttestationConfig(): %v", err)
+	}
+	if !strings.Contains(string(verifiedData), "allow_updated") {
+		t.Fatalf("verified attestation policy missing updated route:\n%s", verifiedData)
+	}
+	stored, _ := ir.AttestationPolicySnapshot()
+	if stored == nil || stored.TransferPolicy == nil || len(stored.TransferPolicy.Routes) != 1 ||
+		stored.TransferPolicy.Routes[0].ID != "allow_updated" {
+		t.Fatalf("runtime stored attestation policy = %+v, want allow_updated route", stored)
+	}
+}
+
+func TestReplacePolicyRejectsOppositeNodeRoleTarget(t *testing.T) {
+	svc, ir, _ := setupAdminServiceWithRole(t, noderole.RoleAttestor)
+	result := svc.ReplacePolicy(ir, adminproto.ReplacePolicyRequest{
+		Target:     adminproto.PolicyTargetSigner,
+		PolicyYAML: "reject_foreign_rekey: true\n",
+	})
+	if result.Success {
+		t.Fatal("ReplacePolicy(signer target on attestor) success = true, want false")
+	}
+	if result.Code != "policy_target_not_allowed_for_node_role" {
+		t.Fatalf("Code = %q, want policy_target_not_allowed_for_node_role", result.Code)
+	}
+}
+
+func storedAttestationPolicyForAdminTest(t *testing.T, routeID string) *policy.StoredConfig {
+	t.Helper()
+	stored, err := policy.ParseStoredAttestationConfig([]byte(attestationPolicyYAMLForAdminTest(routeID)))
+	if err != nil {
+		t.Fatalf("ParseStoredAttestationConfig(): %v", err)
+	}
+	return stored
+}
+
+func attestationPolicyYAMLForAdminTest(routeID string) string {
+	return fmt.Sprintf(`transfer_policy:
+  schema_version: 1
+  enabled: true
+  routes:
+    - id: %s
+      networks:
+        - '*'
+      sources:
+        - '*'
+      assets:
+        - algo
+      destinations:
+        - '*'
+`, routeID)
 }
