@@ -143,19 +143,19 @@ func TestRenderKeyListViewUsesSignerNodeWithoutTabs(t *testing.T) {
 		adminSettings: &AdminSettings{NodeRole: "signer"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
+			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
-	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Attestor (1)") {
+	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Sentry (1)") {
 		t.Fatalf("signer node rendered tab controls:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "SIGNINGADDR") {
 		t.Fatalf("signer node missing signing key:\n%s", rendered)
 	}
-	if strings.Contains(rendered, "ATTESTORKEY") {
-		t.Fatalf("signer node showed attestor key:\n%s", rendered)
+	if strings.Contains(rendered, "SENTRYKEY") {
+		t.Fatalf("signer node showed sentry key:\n%s", rendered)
 	}
 }
 
@@ -167,26 +167,26 @@ func TestRenderKeyListViewDefaultsToSignerNodeWithoutTabs(t *testing.T) {
 		adminSettings: &AdminSettings{},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
+			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
-	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Attestor (1)") {
+	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Sentry (1)") {
 		t.Fatalf("signing mode rendered tab controls:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "SIGNINGADDR") {
 		t.Fatalf("signing mode missing signing key:\n%s", rendered)
 	}
-	if strings.Contains(rendered, "ATTESTORKEY") {
-		t.Fatalf("signing mode showed attestor key:\n%s", rendered)
+	if strings.Contains(rendered, "SENTRYKEY") {
+		t.Fatalf("signing mode showed sentry key:\n%s", rendered)
 	}
 	if strings.Contains(m.viewFooterText(), "Switch tab") {
 		t.Fatalf("signing mode footer advertised tab switching: %q", m.viewFooterText())
 	}
 }
 
-func TestRenderKeyListViewUsesAttestorNodeWithoutTabs(t *testing.T) {
+func TestRenderKeyListViewUsesSentryNodeWithoutTabs(t *testing.T) {
 	m := Model{
 		viewState:     ViewKeyList,
 		width:         120,
@@ -194,43 +194,43 @@ func TestRenderKeyListViewUsesAttestorNodeWithoutTabs(t *testing.T) {
 		adminSettings: &AdminSettings{NodeRole: "sentry"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
+			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
-	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Attestor (1)") {
-		t.Fatalf("attestor node rendered tab controls:\n%s", rendered)
+	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Sentry (1)") {
+		t.Fatalf("sentry node rendered tab controls:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "ATTESTORKEY") {
-		t.Fatalf("attestor node missing attestor key:\n%s", rendered)
+	if !strings.Contains(rendered, "SENTRYKEY") {
+		t.Fatalf("sentry node missing sentry key:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "SIGNINGADDR") {
-		t.Fatalf("attestor node showed signing key:\n%s", rendered)
+		t.Fatalf("sentry node showed signing key:\n%s", rendered)
 	}
 	if strings.Contains(m.viewFooterText(), "Switch tab") {
-		t.Fatalf("attestor node footer advertised tab switching: %q", m.viewFooterText())
+		t.Fatalf("sentry node footer advertised tab switching: %q", m.viewFooterText())
 	}
 }
 
-func TestHandleKeyListKeysIgnoresTabOnAttestorNode(t *testing.T) {
+func TestHandleKeyListKeysIgnoresTabOnSentryNode(t *testing.T) {
 	m := Model{
 		viewState:     ViewKeyList,
 		adminSettings: &AdminSettings{NodeRole: "sentry"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
+			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
 	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyTab})
 	next := nextModel.(Model)
-	if next.effectiveKeyListTab() != keyListTabAttestor {
-		t.Fatalf("effectiveKeyListTab after tab = %v, want attestor", next.effectiveKeyListTab())
+	if next.effectiveKeyListTab() != keyListTabSentry {
+		t.Fatalf("effectiveKeyListTab after tab = %v, want sentry", next.effectiveKeyListTab())
 	}
 	keys := next.filteredKeys()
-	if len(keys) != 1 || keys[0].Address != "ATTESTORKEY" {
-		t.Fatalf("attestor filtered keys = %#v, want attestor key", keys)
+	if len(keys) != 1 || keys[0].Address != "SENTRYKEY" {
+		t.Fatalf("sentry filtered keys = %#v, want sentry key", keys)
 	}
 }
 
@@ -240,7 +240,7 @@ func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 		adminSettings: &AdminSettings{NodeRole: "signer"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
+			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
@@ -255,21 +255,21 @@ func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 	}
 }
 
-func TestSelectKeyByAddressSwitchesToAttestorTab(t *testing.T) {
+func TestSelectKeyByAddressSwitchesToSentryTab(t *testing.T) {
 	m := Model{
 		adminSettings: &AdminSettings{NodeRole: "sentry"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "ATTESTORKEY", KeyType: keytypes.SentryComponentEd25519V1},
+			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
 		},
 	}
 
-	m.selectKeyByAddress("ATTESTORKEY")
-	if m.keyListTab != keyListTabAttestor {
-		t.Fatalf("keyListTab = %v, want attestor", m.keyListTab)
+	m.selectKeyByAddress("SENTRYKEY")
+	if m.keyListTab != keyListTabSentry {
+		t.Fatalf("keyListTab = %v, want sentry", m.keyListTab)
 	}
 	if m.selectedKey != 0 {
-		t.Fatalf("selectedKey = %d, want first attestor tab row", m.selectedKey)
+		t.Fatalf("selectedKey = %d, want first sentry tab row", m.selectedKey)
 	}
 }
 

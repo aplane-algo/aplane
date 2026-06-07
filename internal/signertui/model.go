@@ -110,7 +110,7 @@ type keyListTab int
 
 const (
 	keyListTabSigning keyListTab = iota
-	keyListTabAttestor
+	keyListTabSentry
 )
 
 // PendingSignRequest holds a signing request waiting for approval

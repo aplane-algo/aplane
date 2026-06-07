@@ -42,7 +42,7 @@ func truncateLongHex(line string, maxLen int) string {
 
 func buildDetailsParameterLines(keyType string, parameters map[string]string) []string {
 	if keytypes.IsGuardedAccountKeyType(keyType) {
-		return buildAttestedDetailsParameterLines(parameters)
+		return buildGuardedDetailsParameterLines(parameters)
 	}
 
 	var lines []string
@@ -62,7 +62,7 @@ func buildDetailsParameterLines(keyType string, parameters map[string]string) []
 	return trimTrailingBlankLines(lines)
 }
 
-func buildAttestedDetailsParameterLines(parameters map[string]string) []string {
+func buildGuardedDetailsParameterLines(parameters map[string]string) []string {
 	var lines []string
 	if value, ok := parameters["Sentry"]; ok {
 		lines = append(lines, formatParameterDisplayLines("Sentry", "", value)...)
@@ -175,16 +175,16 @@ func filterKeysForTab(keys []KeyInfo, tab keyListTab) []KeyInfo {
 }
 
 func keyBelongsToTab(key KeyInfo, tab keyListTab) bool {
-	isAttestor := keytypes.IsSentryComponentKeyType(key.KeyType)
-	if tab == keyListTabAttestor {
-		return isAttestor
+	isSentry := keytypes.IsSentryComponentKeyType(key.KeyType)
+	if tab == keyListTabSentry {
+		return isSentry
 	}
-	return !isAttestor
+	return !isSentry
 }
 
 func keyListTabForKey(key KeyInfo) keyListTab {
 	if keytypes.IsSentryComponentKeyType(key.KeyType) {
-		return keyListTabAttestor
+		return keyListTabSentry
 	}
 	return keyListTabSigning
 }
@@ -208,7 +208,7 @@ func (m Model) keyListUsesTabs() bool {
 func (m Model) effectiveKeyListTab() keyListTab {
 	switch m.keyListMode() {
 	case "sentry":
-		return keyListTabAttestor
+		return keyListTabSentry
 	default:
 		return keyListTabSigning
 	}
@@ -233,26 +233,26 @@ func (m *Model) syncKeyListTabWithMode() {
 	m.resetKeyListSelection()
 }
 
-func (m Model) keyListTabCounts() (signing, attestor int) {
+func (m Model) keyListTabCounts() (signing, sentry int) {
 	for _, key := range m.keys {
 		if keytypes.IsSentryComponentKeyType(key.KeyType) {
-			attestor++
+			sentry++
 		} else {
 			signing++
 		}
 	}
-	return signing, attestor
+	return signing, sentry
 }
 
 func (m Model) renderKeyListTabs() string {
-	signing, attestor := m.keyListTabCounts()
+	signing, sentry := m.keyListTabCounts()
 	labels := []struct {
 		tab   keyListTab
 		label string
 		count int
 	}{
 		{tab: keyListTabSigning, label: "Signing", count: signing},
-		{tab: keyListTabAttestor, label: "Sentry", count: attestor},
+		{tab: keyListTabSentry, label: "Sentry", count: sentry},
 	}
 
 	parts := make([]string, 0, len(labels))
@@ -268,7 +268,7 @@ func (m Model) renderKeyListTabs() string {
 }
 
 func (m Model) activeKeyListTabLabel() string {
-	if m.effectiveKeyListTab() == keyListTabAttestor {
+	if m.effectiveKeyListTab() == keyListTabSentry {
 		return "Sentry"
 	}
 	return "Signing"

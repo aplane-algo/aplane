@@ -154,7 +154,7 @@ func TestAdminPanelPolicyRowOpensPolicyEditor(t *testing.T) {
 	}
 }
 
-func TestPolicyEditorTargetsSentryOnAttestorNode(t *testing.T) {
+func TestPolicyEditorTargetsSentryOnSentryNode(t *testing.T) {
 	m := Model{
 		viewState: ViewAdminPanel,
 		adminSettings: &AdminSettings{

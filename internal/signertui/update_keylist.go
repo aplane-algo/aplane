@@ -85,7 +85,7 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "right":
 		if m.keyListUsesTabs() {
-			m.setKeyListTab(keyListTabAttestor)
+			m.setKeyListTab(keyListTabSentry)
 		}
 		return m, nil
 
@@ -185,11 +185,11 @@ func (m *Model) toggleKeyListTab() {
 	if !m.keyListUsesTabs() {
 		return
 	}
-	if m.keyListTab == keyListTabAttestor {
+	if m.keyListTab == keyListTabSentry {
 		m.setKeyListTab(keyListTabSigning)
 		return
 	}
-	m.setKeyListTab(keyListTabAttestor)
+	m.setKeyListTab(keyListTabSentry)
 }
 
 func (m Model) openBackupConfirm() (tea.Model, tea.Cmd) {
