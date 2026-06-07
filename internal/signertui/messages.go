@@ -77,6 +77,8 @@ const (
 	MsgTypePolicySnapshot            = protocol.MsgTypePolicySnapshot
 	MsgTypeReplacePolicy             = protocol.MsgTypeReplacePolicy
 	MsgTypeReplacePolicyResult       = protocol.MsgTypeReplacePolicyResult
+	MsgTypeValidatePolicy            = protocol.MsgTypeValidatePolicy
+	MsgTypeValidatePolicyResult      = protocol.MsgTypeValidatePolicyResult
 	MsgTypeUpdatePolicySetting       = protocol.MsgTypeUpdatePolicySetting
 	MsgTypeUpdatePolicySettingResult = protocol.MsgTypeUpdatePolicySettingResult
 	MsgTypeUpdatePolicyASAAmounts    = protocol.MsgTypeUpdatePolicyASAAmounts
@@ -163,6 +165,8 @@ type (
 	PolicySnapshotMessage               = protocol.PolicySnapshotMessage
 	ReplacePolicyMessage                = protocol.ReplacePolicyMessage
 	ReplacePolicyResultMessage          = protocol.ReplacePolicyResultMessage
+	ValidatePolicyMessage               = protocol.ValidatePolicyMessage
+	ValidatePolicyResultMessage         = protocol.ValidatePolicyResultMessage
 	UpdatePolicySettingMessage          = protocol.UpdatePolicySettingMessage
 	UpdatePolicySettingResultMessage    = protocol.UpdatePolicySettingResultMessage
 	UpdatePolicyASAAmountsMessage       = protocol.UpdatePolicyASAAmountsMessage

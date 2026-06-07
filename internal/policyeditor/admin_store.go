@@ -130,6 +130,11 @@ func (s *AdminStore) Save(ctx context.Context, stored *policy.StoredConfig) erro
 	return nil
 }
 
+// ModeLabel identifies this backend in policytui headers.
+func (s *AdminStore) ModeLabel() string {
+	return "online"
+}
+
 // IdentityID returns the identity reported by the last successful admin policy
 // operation, if any.
 func (s *AdminStore) IdentityID() string {

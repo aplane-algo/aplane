@@ -47,6 +47,7 @@ const (
 	ViewLockConfirm        // Manual signer lock confirmation dialog
 	ViewDisplaceConfirm    // Confirmation modal for displacing existing client
 	ViewAdminPanel         // Admin control panel
+	ViewPolicyEditor       // Guided online policy editor
 	ViewPolicyViewer       // Read-only active policy snapshot viewer
 	ViewPolicyPanel        // Legacy policy editor state; not exposed from apadmin
 	ViewPolicyASAModal     // Legacy per-network transfer guard editor; not exposed from apadmin
@@ -268,6 +269,13 @@ type Model struct {
 	adminSelectedRow int            // Currently selected row in admin panel
 	adminEditingRow  int            // Row being edited (-1 = none)
 	adminEditValue   string         // Value being edited
+
+	// Shared policy editor state
+	policyEditor           tea.Model
+	policyEditorLoading    bool
+	policyEditorError      string
+	policyEditorTarget     string
+	policyEditorReturnView ViewState
 
 	// Legacy policy panel state retained for compatibility handlers; apadmin
 	// no longer exposes a policy editing entry point.
@@ -610,6 +618,7 @@ type PolicySettingsMsg struct {
 // from the server.
 type PolicySnapshot struct {
 	Success      bool
+	Target       string
 	IdentityID   string
 	PolicyYAML   string
 	PolicySHA256 string

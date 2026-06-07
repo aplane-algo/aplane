@@ -95,7 +95,7 @@ func TestAdminPanelKShortcutOpensKeyTypes(t *testing.T) {
 	}
 }
 
-func TestAdminPanelPolicyShortcutOpensReadOnlyViewer(t *testing.T) {
+func TestAdminPanelPolicyShortcutOpensPolicyEditor(t *testing.T) {
 	m := Model{
 		viewState:       ViewAdminPanel,
 		adminEditingRow: -1,
@@ -107,14 +107,14 @@ func TestAdminPanelPolicyShortcutOpensReadOnlyViewer(t *testing.T) {
 
 	next, cmd := m.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
 	got := next.(Model)
-	if got.viewState != ViewPolicyViewer {
-		t.Fatalf("viewState = %v, want ViewPolicyViewer", got.viewState)
+	if got.viewState != ViewPolicyEditor {
+		t.Fatalf("viewState = %v, want ViewPolicyEditor", got.viewState)
 	}
-	if !got.policyViewLoading {
-		t.Fatal("policyViewLoading = false, want true")
+	if !got.policyEditorLoading {
+		t.Fatal("policyEditorLoading = false, want true")
 	}
 	if cmd == nil {
-		t.Fatal("cmd = nil, want policy snapshot request command")
+		t.Fatal("cmd = nil, want policy editor load command")
 	}
 
 	rendered := stripANSI(m.View())
@@ -123,7 +123,7 @@ func TestAdminPanelPolicyShortcutOpensReadOnlyViewer(t *testing.T) {
 	}
 }
 
-func TestAdminPanelPolicyRowOpensReadOnlyViewer(t *testing.T) {
+func TestAdminPanelPolicyRowOpensPolicyEditor(t *testing.T) {
 	m := Model{
 		viewState:       ViewAdminPanel,
 		adminEditingRow: -1,
@@ -146,11 +146,53 @@ func TestAdminPanelPolicyRowOpensReadOnlyViewer(t *testing.T) {
 
 	next, cmd := m.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
-	if got.viewState != ViewPolicyViewer {
-		t.Fatalf("viewState = %v, want ViewPolicyViewer", got.viewState)
+	if got.viewState != ViewPolicyEditor {
+		t.Fatalf("viewState = %v, want ViewPolicyEditor", got.viewState)
 	}
 	if cmd == nil {
-		t.Fatal("cmd = nil, want policy snapshot request command")
+		t.Fatal("cmd = nil, want policy editor load command")
+	}
+}
+
+func TestPolicyEditorTargetsAttestationOnAttestorNode(t *testing.T) {
+	m := Model{
+		viewState: ViewAdminPanel,
+		adminSettings: &AdminSettings{
+			NodeRole: "attestor",
+		},
+	}
+
+	next, cmd := m.openPolicyEditor()
+	got := next.(Model)
+	if got.viewState != ViewPolicyEditor {
+		t.Fatalf("viewState = %v, want ViewPolicyEditor", got.viewState)
+	}
+	if got.policyEditorTarget != "attestation" {
+		t.Fatalf("policyEditorTarget = %q, want attestation", got.policyEditorTarget)
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want policy editor load command")
+	}
+}
+
+func TestPolicyEditorCloseReturnsToCallerView(t *testing.T) {
+	m := Model{
+		viewState:              ViewPolicyEditor,
+		policyEditorReturnView: ViewKeyList,
+		policyEditorLoading:    true,
+		policyEditorTarget:     "signer",
+	}
+
+	next, cmd := m.closePolicyEditor()
+	got := next.(Model)
+	if got.viewState != ViewKeyList {
+		t.Fatalf("viewState = %v, want ViewKeyList", got.viewState)
+	}
+	if got.policyEditorLoading || got.policyEditorTarget != "" {
+		t.Fatalf("policy editor state not cleared: loading=%v target=%q", got.policyEditorLoading, got.policyEditorTarget)
+	}
+	if cmd != nil {
+		t.Fatal("cmd != nil, want nil")
 	}
 }
 

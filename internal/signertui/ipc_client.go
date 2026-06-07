@@ -204,6 +204,17 @@ func (c *IPCClient) sendMessage(msg interface{}) error {
 	return c.stream.WriteJSON(msg)
 }
 
+func (c *IPCClient) SendAndReceive(msg interface{}, timeout time.Duration) ([]byte, error) {
+	c.mu.Lock()
+	stream := c.stream
+	connected := c.connected
+	c.mu.Unlock()
+	if !connected || stream == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+	return stream.SendAndReceive(msg, timeout)
+}
+
 func (c *IPCClient) emit(sessionID uint64, msg tea.Msg) bool {
 	c.mu.Lock()
 	currentSession := c.sessionID
@@ -647,6 +658,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				c.emit(sessionID, PolicySnapshotMsg{
 					Snapshot: PolicySnapshot{
 						Success:      snapshot.Success,
+						Target:       snapshot.Target,
 						IdentityID:   snapshot.IdentityID,
 						PolicyYAML:   snapshot.PolicyYAML,
 						PolicySHA256: snapshot.PolicySHA256,
@@ -664,6 +676,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				c.emit(sessionID, PolicyReplaceResultMsg{
 					Snapshot: PolicySnapshot{
 						Success:      result.Success,
+						Target:       result.Target,
 						IdentityID:   result.IdentityID,
 						PolicyYAML:   result.PolicyYAML,
 						PolicySHA256: result.PolicySHA256,

@@ -127,29 +127,6 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) openPolicyViewer() (tea.Model, tea.Cmd) {
-	m.policyViewReturnView = m.viewState
-	m.viewState = ViewPolicyViewer
-	m.policyViewLoading = true
-	m.policyViewError = ""
-	m.policyViewMode = policyViewerModeOverview
-	m.policyViewSelectedGuard = 0
-	m.policyViewSelectedGuardField = 0
-	m.policyViewGuardScrollOffset = 0
-	m.policyViewYAMLScrollOffset = 0
-	m.policyViewSelectedOverride = 0
-	m.policyViewOverrideScrollOffset = 0
-	m.policyViewListPopupField = ""
-	m.policyViewListPopupScroll = 0
-	m.policyLoadState = policyLoadIdle
-	m.policyLoadPath = ""
-	m.policyLoadYAML = ""
-	m.policyLoadBytes = 0
-	m.policyLoadError = ""
-	m.policyLoadStatus = ""
-	return m, tea.Batch(m.sendGetPolicySnapshotCmd(), m.waitForMessageCmd())
-}
-
 func validateAdminSettingValue(key, value string) error {
 	switch key {
 	case adminproto.AdminSettingPassphraseTimeout:

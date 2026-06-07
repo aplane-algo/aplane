@@ -64,6 +64,8 @@ func (m Model) viewFooterText() string {
 		return "left/right/tab: Focus | enter/space: Select | y: Proceed | n/esc: Cancel"
 	case ViewAdminPanel:
 		return "p: Policy | k: KeyTypes | t: Revoke Token | l: Lock | esc: Back"
+	case ViewPolicyEditor:
+		return m.policyEditorFooterText()
 	case ViewPolicyViewer:
 		if m.policyLoadState != policyLoadIdle {
 			return m.policyLoadFooterText()

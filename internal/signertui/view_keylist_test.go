@@ -328,7 +328,7 @@ func TestHandleKeyListKeysDoesNotExportOrDeleteFromMainScreen(t *testing.T) {
 	}
 }
 
-func TestKeyListPolicyShortcutOpensReadOnlyViewer(t *testing.T) {
+func TestKeyListPolicyShortcutOpensPolicyEditor(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyList,
 		keys: []KeyInfo{{
@@ -339,17 +339,17 @@ func TestKeyListPolicyShortcutOpensReadOnlyViewer(t *testing.T) {
 
 	nextModel, cmd := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
 	next := nextModel.(Model)
-	if next.viewState != ViewPolicyViewer {
-		t.Fatalf("viewState = %v, want %v", next.viewState, ViewPolicyViewer)
+	if next.viewState != ViewPolicyEditor {
+		t.Fatalf("viewState = %v, want %v", next.viewState, ViewPolicyEditor)
 	}
-	if next.policyViewReturnView != ViewKeyList {
-		t.Fatalf("policyViewReturnView = %v, want %v", next.policyViewReturnView, ViewKeyList)
+	if next.policyEditorReturnView != ViewKeyList {
+		t.Fatalf("policyEditorReturnView = %v, want %v", next.policyEditorReturnView, ViewKeyList)
 	}
-	if !next.policyViewLoading {
-		t.Fatal("policyViewLoading = false, want true")
+	if !next.policyEditorLoading {
+		t.Fatal("policyEditorLoading = false, want true")
 	}
 	if cmd == nil {
-		t.Fatal("cmd = nil, want policy snapshot request command")
+		t.Fatal("cmd = nil, want policy editor load command")
 	}
 
 	rendered := stripANSI(m.View())

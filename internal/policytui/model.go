@@ -158,6 +158,10 @@ type productionPassphraseClearer interface {
 	ClearPassphrase()
 }
 
+type storeModeLabeler interface {
+	ModeLabel() string
+}
+
 type routeEditField struct {
 	key   string
 	label string
@@ -1362,7 +1366,13 @@ func (m Model) bodyView() string {
 	}
 	b.WriteString(titleStyle.Render("APlane " + m.target.Label()))
 	b.WriteString("\n")
-	b.WriteString(subtitleStyle.Render("offline " + m.target.StatusNoun() + " editor"))
+	mode := "offline"
+	if labeler, ok := m.store.(storeModeLabeler); ok {
+		if label := strings.TrimSpace(labeler.ModeLabel()); label != "" {
+			mode = label
+		}
+	}
+	b.WriteString(subtitleStyle.Render(mode + " " + m.target.StatusNoun() + " editor"))
 	b.WriteString("\n\n")
 	b.WriteString(metadataStyle.Render(fmt.Sprintf("store: %s", m.dataDir)))
 	b.WriteString("\n")

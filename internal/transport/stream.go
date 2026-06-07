@@ -57,6 +57,11 @@ func (c *StreamClient) ReadMessage() ([]byte, error) {
 	return protocol.ReadJSONLine(c.reader)
 }
 
+// SendAndReceive sends a message and waits for the correlated response.
+func (c *StreamClient) SendAndReceive(msg interface{}, timeout time.Duration) ([]byte, error) {
+	return c.dispatcher.request(msg, timeout)
+}
+
 func (c *StreamClient) SetReadDeadline(_ time.Duration) {}
 
 func (c *StreamClient) ClearReadDeadline() {}
