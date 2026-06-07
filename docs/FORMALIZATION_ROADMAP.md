@@ -27,9 +27,9 @@ Primary sources for the first tranche:
   alignment, status behavior, and `/sign/cancel`.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing policy,
   lifecycle, reload, key-file, SDK, and backup/restore contracts.
-- [ARCH_ATTESTOR_SPEC.md](ARCH_ATTESTOR_SPEC.md): attested-account component
-  signing, attestor endpoint routing, assembly verification, and node role
-  separation.
+- [ARCH_SPEC.md#attested-signing-and-attestor-nodes](ARCH_SPEC.md#attested-signing-and-attestor-nodes):
+  attested-account component signing, attestor endpoint routing, assembly
+  verification, and node role separation.
 - [ARCH_POLICY.md](ARCH_POLICY.md): current signer policy verdict model,
   precedence, attestor component policy, snapshot semantics, and rule
   inventory.

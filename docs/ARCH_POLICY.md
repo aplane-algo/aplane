@@ -875,12 +875,14 @@ policy decision:
 - `[USER AUTO-APPROVE] ...` when Operator Default approves without prompting.
 
 Attestor component signing uses the same policy rule identifiers for decoded
-transaction facts. In the current MVP, attestor component approvals and policy
-rejections are recorded through existing `SIGN_APPROVED`/`SIGN_REJECTED` audit
-events with the component selector in `txn_auth`, the decoded sender in
-`txn_sender`, and the policy rule in `policy_rule_id` when applicable. Richer
-component-specific audit events are deferred in
-[ARCH_ATTESTOR_SPEC.md §17](ARCH_ATTESTOR_SPEC.md#17-audit).
+transaction facts. Attestor component approvals and policy rejections are
+recorded through existing `SIGN_APPROVED`/`SIGN_REJECTED` audit events with the
+component selector in `txn_auth`, the decoded sender in `txn_sender`, and the
+policy rule in `policy_rule_id` when applicable. The
+architecture overview is in
+[ARCH_SPEC.md#attested-signing-and-attestor-nodes](ARCH_SPEC.md#attested-signing-and-attestor-nodes);
+compatibility-bearing audit details live in
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 ## Source Files
 

@@ -11,9 +11,10 @@
 
 Normative inputs:
 
-- [ARCH_ATTESTOR_SPEC.md](ARCH_ATTESTOR_SPEC.md): attestor component key
-  types, attested account key types, endpoint workflow, role-separated
-  messages, assembly semantics, and endpoint routing trust model.
+- [ARCH_SPEC.md#attested-signing-and-attestor-nodes](ARCH_SPEC.md#attested-signing-and-attestor-nodes):
+  attestor component key types, attested account key types, endpoint workflow,
+  role-separated messages, assembly semantics, and endpoint routing trust
+  model.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): `/keys`, `/sign/component`,
   `/sign/assemble`, endpoint registry, node role, split policy files,
   and on-disk selector contracts.
@@ -26,9 +27,10 @@ Normative inputs:
 - [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md):
   stored key-file authority for existing keys.
 
-This model does not replace [ARCH_ATTESTOR_SPEC.md](ARCH_ATTESTOR_SPEC.md). It
-extracts the state, transition, and invariant surface that should remain stable
-as the implementation evolves.
+This model does not replace
+[ARCH_SPEC.md#attested-signing-and-attestor-nodes](ARCH_SPEC.md#attested-signing-and-attestor-nodes).
+It extracts the state, transition, and invariant surface that should remain
+stable as the implementation evolves.
 
 ## Scope
 

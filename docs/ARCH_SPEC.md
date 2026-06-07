@@ -22,6 +22,7 @@
 - [Server Ownership Model](#server-ownership-model)
 - [Client Ownership Model](#client-ownership-model)
 - [Transaction Processing](#transaction-processing)
+- [Attested Signing And Attestor Nodes](#attested-signing-and-attestor-nodes)
 - [Provider and Algorithm Model](#provider-and-algorithm-model)
 - [Keystore and Key Lifecycle](#keystore-and-key-lifecycle)
 - [Plugin System](#plugin-system)
@@ -1009,6 +1010,207 @@ Canonicalization rules live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). HTTP requ
 ### Signing Authority And Template Authority
 
 See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Key Files / Signing Authority) for the signing authority contract.
+
+## Attested Signing And Attestor Nodes
+
+Attested signing is APlane's two-party LogicSig authorization path for
+accounts whose LogicSig bytecode requires both:
+
+- a user component signature produced by the user signer that owns the
+  attested-account key file, and
+- an attestor component signature produced by a separate attestor signer that
+  owns an attestor component key and evaluates `attestation.yaml`.
+
+The client never holds private key material. It orchestrates component signing
+and assembly through authenticated signer endpoints, then submits or simulates
+the final signed group with algod.
+
+### Node Roles
+
+Each initialized signer data root has one immutable root `node.yaml` role:
+`signer` or `attestor`.
+
+| Node role | May hold | Must not hold |
+|---|---|---|
+| `signer` | ordinary account-signing keys and attested account keys | attestor component private keys |
+| `attestor` | attestor component private keys and attestor policy | ordinary account-signing keys or attested account keys |
+
+There is no `dual` role and no supported same-process mixed-role hosting.
+Same-host development or production co-location uses separate signer and
+attestor data roots and separate `apsigner` processes. Independence is a
+deployment-domain property: a signer node and attestor node operated by the
+same party are still one trust domain, even when their key classes are
+structurally separated.
+
+The root role gates key generation, mnemonic import, restore, key scan, and
+HTTP signing dispatch. A role-conflicting key in the inventory fails closed for
+the node rather than being silently skipped. The exact node-role contract and
+on-disk integrity checks live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+
+### Key Types
+
+Attestor component key types are raw component-signing keys, not spending
+accounts and not LogicSig providers:
+
+- `aplane.attestor-ed25519.v1`
+- `aplane.attestor-falcon1024.v1`
+
+They are selected by component selectors of the form
+`a_<sha256(canonical-public-key-bytes)>`. The full attestor public key remains
+the verifier key embedded in attested account LogicSig bytecode.
+
+Attested account key types name both the account DSA and the attestor DSA:
+
+- `aplane.falcon1024-att-ed25519.v1`
+- `aplane.falcon1024-att-falcon1024.v1`
+
+An attested account key file stores the resolved `attestor_public_key` and the
+LogicSig bytecode embeds that same public key. `/sign` rejects attested-account
+key types and attestor component key types. Attested accounts are signed only
+through the component-signing and assembly flow below.
+
+### Component Message Contract
+
+Component signatures are role-separated. Message construction is owned by
+`internal/attestor/message`, and signature verification is owned by
+`internal/attestor/verify`. Callers must use those shared primitives rather
+than reconstructing the component message locally.
+
+The message commits to:
+
+- the APlane attestor domain string and version,
+- the component role (`user` or `attestor`), and
+- the target transaction ID derived from the canonical group entry.
+
+User-role and attestor-role signatures are not interchangeable. The LogicSig
+program and the user signer's assembly step verify the attestor signature
+against the attestor public key embedded in the local attested-account key.
+
+### Runtime Flow
+
+`apshell send` detects attested senders from signer key metadata. For each
+attested original sender, the client builds the canonical group and performs
+three signer endpoint calls before final algod submit:
+
+1. user signer `/sign/component` with role `user`,
+2. attestor signer `/sign/component` with role `attestor`,
+3. user signer `/sign/assemble`.
+
+The user-role component request proves the user signer controls the
+attested-account component key. The attestor-role component request evaluates
+decoded target transaction facts against `attestation.yaml` and returns
+attestor component signatures when allowed. The assembly request verifies both
+component signatures against the local attested account key's stored metadata,
+packs LogicSig arguments, and returns signed group bytes.
+
+Current attested signing is limited to original senders:
+
+```text
+txn.Sender == attested_account
+```
+
+An attested LogicSig used as `AuthAddr` for another sender is rejected by
+component signing and assembly. Attestor-role component signing is transfer
+policy based: target transactions must produce direct transfer movements
+covered by `transfer_policy`. App calls, key registration, asset
+configuration, and other unsupported target shapes are rejected for attestor
+role because routing cannot authorize them.
+
+### Trust Model
+
+The trust decision is made at attested-account generation, when the operator
+selects the attestor public key that is baked into the LogicSig bytecode and
+stored in the key file. Later endpoint routing is mechanical:
+
+- endpoint import is not an ownership proof,
+- `/keys` is self-reported inventory and is not an ownership proof,
+- a wrong endpoint can only produce a signature that fails assembly or
+  on-chain LogicSig verification unless it holds the real attestor key.
+
+The enforcement layers are:
+
+1. optional client-side component signature verification using
+   `internal/attestor/verify`,
+2. required `/sign/assemble` verification against the attestor public key
+   embedded in the local user signer's attested-account key, and
+3. final on-chain LogicSig verification.
+
+### Endpoint Routing
+
+Client routing lives in `$APCLIENT_DATA/endpoints.yaml`. The registry contains
+at most one `signer` endpoint and zero or more `attestor` endpoints. Endpoint
+records contain connection profile data, endpoint role, token-file path,
+known-hosts path, SSH identity path, and endpoint-local
+`published_attestors`.
+
+Operator handoff uses public endpoint envelopes:
+
+- `apstore endpoint export` emits `aplane.endpoint.v1` with portable endpoint
+  URL and port data only.
+- `apshell endpoints import-public --alias <name> --role signer|attestor`
+  writes client-local endpoint routing.
+- bearer tokens are obtained separately with `request-token --endpoint`.
+- SSH host trust remains owned by the existing known-hosts flow.
+
+Attestor inventory is discovered explicitly with
+`apshell endpoints sync-attestors`. It queries authenticated `/keys` on
+configured attestor endpoints, validates component-key metadata, and rebuilds
+reachable endpoints' `published_attestors` inventory. Temporarily unavailable
+or locked endpoints preserve their prior local inventory; authentication
+failures, malformed responses, duplicate public keys across endpoints, and
+component-key validation errors are hard failures that leave files unchanged.
+After discovery, the command prints component IDs and asks before syncing the
+public inventory into the connected signer identity's attestor reference
+library for generation-time selection.
+
+Runtime attested-send routing maps the embedded attestor public key to the
+endpoint whose `published_attestors` contains that key. If no explicit mapping
+exists, local self-discovery may resolve to the currently connected signer only
+when that endpoint advertises the matching attestor component key; this is
+development ergonomics, not a production independence claim.
+
+### Policy And Audit
+
+Signer nodes use `policy.yaml` for account signing. Attestor nodes use
+`attestation.yaml` for attestor component signing. Both documents use the
+shared policy grammar and HMAC sidecar model, but attestation policy has no
+manual-review or operator-default verdict. It is deterministic authorization:
+all selected target movements must be positively authorized by the effective
+attestation policy, and deny guards fail closed.
+
+Attestation policy overrides are keyed by attestor component selector
+(`a_...`). Client-signing policy overrides are keyed by signing auth address.
+
+Attestor component approvals and rejections are recorded through existing sign
+audit events. Current records put the component selector in `txn_auth`, the
+decoded target sender in `txn_sender`, and the matching deterministic policy
+rule in `policy_rule_id` when one applies.
+
+### Implementation Ownership
+
+Primary implementation ownership:
+
+- `pkg/signerapi`: component-signing and assembly DTOs plus fixtures.
+- `internal/attestor/message`: role-separated component message construction.
+- `internal/attestor/verify`: component signature verification primitives.
+- `internal/attestor/keytypes`: attestor and attested key-type identifiers,
+  component selector validation, and DSA mapping.
+- `internal/signerapp/signing`: signer-side component signing, attestor policy
+  evaluation, and assembly.
+- `internal/signerapp/rest`: HTTP handlers for `/sign/component` and
+  `/sign/assemble`.
+- `internal/engine`: client attested-send orchestration and endpoint
+  resolution.
+- `internal/config` and `internal/endpointrefs`: endpoint registry and public
+  endpoint envelope handling.
+- `internal/attestor/attrefs`: public attestor reference catalog used by
+  generation UIs.
+- `internal/policy`: shared signer/attestation policy grammar, validation, and
+  evaluation domains.
+
+Compatibility-bearing wire, file, endpoint, policy, backup/restore, and SDK
+contracts remain in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and
+[ARCH_HTTP_API.md](ARCH_HTTP_API.md).
 
 ## Provider and Algorithm Model
 

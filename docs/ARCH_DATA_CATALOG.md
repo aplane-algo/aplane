@@ -347,5 +347,5 @@ name a test inline:
   catalog.
 - [ARCH_POLICY.md](ARCH_POLICY.md): policy verdict and routing semantics.
 - [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): stable action/resource model.
-- [ARCH_ATTESTOR_SPEC.md](ARCH_ATTESTOR_SPEC.md): attestor implementation
-  rationale and remaining promotion checklist.
+- [ARCH_SPEC.md#attested-signing-and-attestor-nodes](ARCH_SPEC.md#attested-signing-and-attestor-nodes):
+  attested signing and attestor node architecture.
