@@ -9,6 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -36,6 +37,11 @@ func (fs *Signer) newReloadServiceForIdentity(ir *identity.Runtime, session *key
 		Session:         session,
 		TemplateManager: signertemplates.NewManager(ir.KeyPaths()),
 		BeforeKeyScan: func(masterKey []byte) error {
+			if verifiedRole, err := noderole.LoadAndVerifyWithMasterKey(ir.KeyPaths(), ir.ID(), masterKey); err != nil {
+				return fmt.Errorf("node role verification failed for identity %q: %w", ir.ID(), err)
+			} else if verifiedRole.Role != ir.NodeRole() {
+				return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", ir.ID(), ir.NodeRole(), verifiedRole.Role)
+			}
 			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedWithStored(fs.dataDir, ir.ID(), fs.config, masterKey)
 			if err != nil {
 				return fmt.Errorf("policy verification failed for identity %q: %w", ir.ID(), err)

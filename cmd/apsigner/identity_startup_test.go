@@ -431,6 +431,46 @@ func TestBuildIdentityRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 	}
 }
 
+func TestBuildIdentityRuntimeRejectsTamperedNodeRoleOnUnlock(t *testing.T) {
+	root := t.TempDir()
+	server := &Signer{
+		registry: identity.NewRegistry(),
+		keyPaths: utilkeys.NewPaths(root),
+	}
+	cfg := config.DefaultServerConfig()
+	passphrase := []byte("role-passphrase")
+	defer crypto.ZeroBytes(passphrase)
+	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
+		DataDir:    root,
+		Paths:      server.keyPaths,
+		IdentityID: "alice",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ir, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
+		DataDir:               root,
+		KeyPaths:              server.keyPaths,
+		Config:                &cfg,
+		DefaultSessionTimeout: 15 * time.Minute,
+		ProductIdentityID:     auth.CurrentProductIdentityID(),
+	}, signerstartup.IdentityBuildHooks{}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(server.keyPaths.NodeRolePath(), []byte("schema_version: 1\nrole: attestor\n"), 0o660); err != nil {
+		t.Fatal(err)
+	}
+	_, err = ir.ReloadWithPassphrase(passphrase)
+	if err == nil {
+		t.Fatal("ReloadWithPassphrase() error = nil, want node role integrity failure")
+	}
+	if !strings.Contains(err.Error(), "node role verification failed") {
+		t.Fatalf("ReloadWithPassphrase() error = %v, want node role verification failure", err)
+	}
+}
+
 func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 	root := t.TempDir()
 	server := &Signer{

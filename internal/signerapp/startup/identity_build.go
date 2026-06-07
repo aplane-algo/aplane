@@ -230,6 +230,11 @@ func wireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks Ident
 			Session:         session,
 			TemplateManager: newTemplateManager(ir.KeyPaths()),
 			BeforeKeyScan: func(masterKey []byte) error {
+				if verifiedRole, err := noderole.LoadAndVerifyWithMasterKey(opts.KeyPaths, identityID, masterKey); err != nil {
+					return fmt.Errorf("node role verification failed for identity %q: %w", identityID, err)
+				} else if verifiedRole.Role != ir.NodeRole() {
+					return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", identityID, ir.NodeRole(), verifiedRole.Role)
+				}
 				storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedWithStored(opts.DataDir, identityID, opts.Config, masterKey)
 				if err != nil {
 					return fmt.Errorf("policy verification failed for identity %q: %w", identityID, err)

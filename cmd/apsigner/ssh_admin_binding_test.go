@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -127,6 +128,15 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("SaveStoredAttestationConfigWithMasterKey(%q): %v", identityID, err)
 	}
+	roleDoc, roleBytes, err := noderole.Load(server.keyPaths)
+	if err != nil {
+		crypto.ZeroBytes(masterKey)
+		t.Fatalf("Load node role: %v", err)
+	}
+	if err := noderole.SaveIdentitySidecarWithMasterKey(server.keyPaths, identityID, roleBytes, masterKey, time.Now()); err != nil {
+		crypto.ZeroBytes(masterKey)
+		t.Fatalf("SaveIdentitySidecarWithMasterKey(%q): %v", identityID, err)
+	}
 	initialPolicy, err := policyruntime.LoadVerified(server.dataDir, identityID, server.config, masterKey)
 	if err != nil {
 		crypto.ZeroBytes(masterKey)
@@ -143,6 +153,7 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 		ID:            identityID,
 		KeyStore:      ks,
 		KeyPaths:      server.keyPaths,
+		NodeRole:      roleDoc.Role,
 	})
 	if err := server.registry.Register(ir); err != nil {
 		t.Fatalf("registry.Register(%q): %v", identityID, err)
