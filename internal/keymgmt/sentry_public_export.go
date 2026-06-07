@@ -6,14 +6,14 @@ package keymgmt
 import (
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 )
 
-const SentryPublicKeyExportSchema = attrefs.ExportSchema
+const SentryPublicKeyExportSchema = sentryrefs.ExportSchema
 
 // SentryPublicKeyExport is the public-only JSON envelope emitted when an
 // operator exports the verifier input for an sentry component key.
-type SentryPublicKeyExport = attrefs.ExportEnvelope
+type SentryPublicKeyExport = sentryrefs.ExportEnvelope
 
 // BuildSentryPublicKeyExport validates decrypted key metadata and returns a
 // deterministic public-only envelope. The selector is recomputed from the
@@ -28,5 +28,5 @@ func BuildSentryPublicKeyExport(componentKey string, info *KeyFileInfo) (*Sentry
 // NewSentryPublicKeyExport builds a sentry public-key envelope from raw
 // metadata values.
 func NewSentryPublicKeyExport(componentKey, keyType, publicKeyHex string) (*SentryPublicKeyExport, error) {
-	return attrefs.NewExportEnvelope(componentKey, keyType, publicKeyHex)
+	return sentryrefs.NewExportEnvelope(componentKey, keyType, publicKeyHex)
 }

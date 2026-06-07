@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -25,32 +25,32 @@ func ComponentPublicMetadataPath(paths storepaths.Paths, identityID, componentKe
 
 // ReadComponentPublicMetadata reads and validates a component public metadata
 // sidecar. The boolean is false when the sidecar is absent.
-func ReadComponentPublicMetadata(paths storepaths.Paths, identityID, componentKey string) (attrefs.ExportEnvelope, bool, error) {
+func ReadComponentPublicMetadata(paths storepaths.Paths, identityID, componentKey string) (sentryrefs.ExportEnvelope, bool, error) {
 	componentKey, err := keytypes.NormalizeComponentKeySelector(componentKey)
 	if err != nil {
-		return attrefs.ExportEnvelope{}, false, fmt.Errorf("invalid component key selector: %w", err)
+		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("invalid component key selector: %w", err)
 	}
 	path := ComponentPublicMetadataPath(paths, identityID, componentKey)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return attrefs.ExportEnvelope{}, false, nil
+			return sentryrefs.ExportEnvelope{}, false, nil
 		}
-		return attrefs.ExportEnvelope{}, false, fmt.Errorf("failed to read component public metadata %s: %w", path, err)
+		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("failed to read component public metadata %s: %w", path, err)
 	}
-	var env attrefs.ExportEnvelope
+	var env sentryrefs.ExportEnvelope
 	if err := json.Unmarshal(data, &env); err != nil {
-		return attrefs.ExportEnvelope{}, false, fmt.Errorf("failed to parse component public metadata %s: %w", path, err)
+		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("failed to parse component public metadata %s: %w", path, err)
 	}
-	if env.Schema != attrefs.ExportSchema {
-		return attrefs.ExportEnvelope{}, false, fmt.Errorf("component public metadata %s has unsupported schema %q", path, env.Schema)
+	if env.Schema != sentryrefs.ExportSchema {
+		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("component public metadata %s has unsupported schema %q", path, env.Schema)
 	}
-	normalized, err := attrefs.NewExportEnvelope(env.ComponentKey, env.KeyType, env.PublicKeyHex)
+	normalized, err := sentryrefs.NewExportEnvelope(env.ComponentKey, env.KeyType, env.PublicKeyHex)
 	if err != nil {
-		return attrefs.ExportEnvelope{}, false, fmt.Errorf("invalid component public metadata %s: %w", path, err)
+		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("invalid component public metadata %s: %w", path, err)
 	}
 	if normalized.ComponentKey != componentKey {
-		return attrefs.ExportEnvelope{}, false, fmt.Errorf("component public metadata %s selector %q does not match %q", path, normalized.ComponentKey, componentKey)
+		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("component public metadata %s selector %q does not match %q", path, normalized.ComponentKey, componentKey)
 	}
 	return *normalized, true, nil
 }
@@ -83,7 +83,7 @@ func writeComponentPublicMetadataIfNeeded(paths storepaths.Paths, identityID, ad
 	if err != nil {
 		return fmt.Errorf("invalid component key selector: %w", err)
 	}
-	env, err := attrefs.NewExportEnvelope(componentKey, keyPair.KeyType, keyPair.PublicKeyHex)
+	env, err := sentryrefs.NewExportEnvelope(componentKey, keyPair.KeyType, keyPair.PublicKeyHex)
 	if err != nil {
 		return fmt.Errorf("failed to build component public metadata: %w", err)
 	}

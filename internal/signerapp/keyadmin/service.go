@@ -17,8 +17,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storemut"
 
@@ -65,7 +65,7 @@ type SyncSentryReferencesResult struct {
 	Added   int
 	Updated int
 	Removed int
-	Records []attrefs.Record
+	Records []sentryrefs.Record
 }
 
 type ListKeyInfo struct {
@@ -118,7 +118,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		return nil, &Error{Kind: ErrorInvalidInput, Message: roleErr.Error()}
 	}
 	if keytypes.IsGuardedAccountKeyType(keyType) {
-		resolved, err := attrefs.ResolveCreationParams(ir.KeyPaths(), ir.ID(), keyType, params)
+		resolved, err := sentryrefs.ResolveCreationParams(ir.KeyPaths(), ir.ID(), keyType, params)
 		if err != nil {
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
@@ -231,7 +231,7 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	return &DeleteResult{DeletedPath: delResult.DeletedPath}, nil
 }
 
-func (s Service) SyncSentryReferences(ir *identity.Runtime, discovered []attrefs.DiscoveredRecord) (*SyncSentryReferencesResult, *Error) {
+func (s Service) SyncSentryReferences(ir *identity.Runtime, discovered []sentryrefs.DiscoveredRecord) (*SyncSentryReferencesResult, *Error) {
 	if ir == nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
 	}
@@ -239,7 +239,7 @@ func (s Service) SyncSentryReferences(ir *identity.Runtime, discovered []attrefs
 	unlockMutation := s.lockMutation(ir.ID())
 	defer unlockMutation()
 
-	result, err := attrefs.SyncDiscovered(ir.KeyPaths(), ir.ID(), discovered)
+	result, err := sentryrefs.SyncDiscovered(ir.KeyPaths(), ir.ID(), discovered)
 	if err != nil {
 		return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 	}

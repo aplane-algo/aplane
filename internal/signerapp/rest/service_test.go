@@ -24,8 +24,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
@@ -691,7 +691,7 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	env, err := attrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentEd25519V1, publicKey)
+	env, err := sentryrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("NewExportEnvelope() error = %v", err)
 	}
@@ -699,7 +699,7 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
-	if _, err := attrefs.Import(ir.KeyPaths(), ir.ID(), "lab-sentry", data); err != nil {
+	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "lab-sentry", data); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
@@ -724,7 +724,7 @@ func TestServiceKeyTypesForIdentityUsesAttestorReferenceOptions(t *testing.T) {
 	if len(params) != 1 {
 		t.Fatalf("CreationParams = %#v, want one sentry selector", params)
 	}
-	if params[0].Name != attrefs.ParamSentryName || params[0].Type != "select" {
+	if params[0].Name != sentryrefs.ParamSentryName || params[0].Type != "select" {
 		t.Fatalf("sentry param = %#v, want select sentry", params[0])
 	}
 	if !reflect.DeepEqual(params[0].Options, []string{"lab-sentry"}) || params[0].Default != "lab-sentry" {

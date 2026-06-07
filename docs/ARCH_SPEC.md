@@ -1216,7 +1216,7 @@ Primary implementation ownership:
   resolution.
 - `internal/config` and `internal/endpointrefs`: endpoint registry and public
   endpoint envelope handling.
-- `internal/sentry/attrefs`: public sentry reference catalog used by
+- `internal/sentry/sentryrefs`: public sentry reference catalog used by
   generation UIs.
 - `internal/policy`: shared signer/sentry policy grammar, validation, and
   evaluation domains.

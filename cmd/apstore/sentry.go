@@ -9,8 +9,8 @@ import (
 	"os"
 
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 )
 
 func cmdSentry(args []string) error {
@@ -87,7 +87,7 @@ func cmdSentryImport(path, name string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read sentry public key export: %w", err)
 	}
-	rec, err := attrefs.Import(keystorePaths(), productIdentityID(), name, data)
+	rec, err := sentryrefs.Import(keystorePaths(), productIdentityID(), name, data)
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func cmdSentryImport(path, name string) error {
 }
 
 func cmdSentryList() error {
-	records, err := attrefs.List(keystorePaths(), productIdentityID())
+	records, err := sentryrefs.List(keystorePaths(), productIdentityID())
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func cmdSentryList() error {
 }
 
 func cmdSentryShow(name string) error {
-	rec, ok, err := attrefs.Get(keystorePaths(), productIdentityID(), name)
+	rec, ok, err := sentryrefs.Get(keystorePaths(), productIdentityID(), name)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func cmdSentryShow(name string) error {
 }
 
 func cmdSentryRemove(name string) error {
-	removed, err := attrefs.Delete(keystorePaths(), productIdentityID(), name)
+	removed, err := sentryrefs.Delete(keystorePaths(), productIdentityID(), name)
 	if err != nil {
 		return err
 	}

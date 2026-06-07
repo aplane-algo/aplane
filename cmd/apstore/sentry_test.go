@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 )
 
 func TestCmdSentryImportPublicListShowRemove(t *testing.T) {
@@ -41,7 +41,7 @@ func TestCmdSentryImportPublicListShowRemove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cmdSentry(show) error = %v", err)
 		}
-		var rec attrefs.Record
+		var rec sentryrefs.Record
 		if err := json.Unmarshal([]byte(showOut), &rec); err != nil {
 			t.Fatalf("show output is not JSON: %v\n%s", err, showOut)
 		}
@@ -52,9 +52,9 @@ func TestCmdSentryImportPublicListShowRemove(t *testing.T) {
 		if err := cmdSentry([]string{"remove", "lab-sentry"}); err != nil {
 			t.Fatalf("cmdSentry(remove) error = %v", err)
 		}
-		records, err := attrefs.List(keystorePaths(), productIdentityID())
+		records, err := sentryrefs.List(keystorePaths(), productIdentityID())
 		if err != nil {
-			t.Fatalf("attrefs.List() error = %v", err)
+			t.Fatalf("sentryrefs.List() error = %v", err)
 		}
 		if len(records) != 0 {
 			t.Fatalf("records after remove = %#v, want empty", records)
@@ -72,7 +72,7 @@ func testSentryExportJSON(t *testing.T) []byte {
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	env, err := attrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentEd25519V1, strings.Repeat("ab", 32))
+	env, err := sentryrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentEd25519V1, strings.Repeat("ab", 32))
 	if err != nil {
 		t.Fatalf("NewExportEnvelope() error = %v", err)
 	}

@@ -95,7 +95,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Policy sidecar | authoritative integrity metadata | `<policy>.hmac` JSON | HMAC verification result | `internal/policy`, `cmd/appolicy`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
 | Key type state record | authoritative generation state | `keytypes/<key_type>.json` | enabled/disabled identity key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | encrypted `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Encrypted with identity master key; disabled state skips registration. |
-| Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/attrefs`, `internal/signerapp/rest`, `cmd/apstore` | Public metadata only; source is `manual` or `client_discovery`; not endpoint ownership proof. |
+| Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` | Public metadata only; source is `manual` or `client_discovery`; not endpoint ownership proof. |
 
 ## Key Material And Key Metadata
 
@@ -108,7 +108,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Guarded account key | signing/assembly authority | `.key` category `dsa_lsig`, key type `aplane.falcon1024-att-*` | local user component key plus embedded sentry public key | `lsig/falcon1024_guarded`, `internal/signerapp/signing` | `/sign` rejects; user-role `/sign/component` and `/sign/assemble` use stored bytecode/params. |
 | Sentry component key | component-sign authority | `.key` category `component`, key type `aplane.sentry-*` | raw component signing key | `internal/keygen`, `internal/signing`, `internal/signerapp/signing` | `/sign` rejects; sentry-role `/sign/component` only; not a spending account. |
 | Component selector | public selector | 52-character uppercase base32 SHA-512/256 of domain-separated key type and public key bytes | component key row `address` and `component_key` fields | `internal/sentry/keytypes` | Uniform for Ed25519/Falcon; txid-shaped but not a valid Algorand address; rejected as sender/auth/rekey/destination where address is expected. |
-| Component public metadata sidecar | public metadata | `keys/<component_selector>.public.json` | `apstore sentry export-public` source | `internal/keys`, `internal/sentry/attrefs` | Selector/key type/public key consistency verified; no private material. |
+| Component public metadata sidecar | public metadata | `keys/<component_selector>.public.json` | `apstore sentry export-public` source | `internal/keys`, `internal/sentry/sentryrefs` | Selector/key type/public key consistency verified; no private material. |
 | Key creation parameters | provenance/generation input | key payload `parameters`/`params` | `/keys` `parameters`, key details | `internal/keys`, `internal/keymgmt` | Aliases normalize at `ParseKeyPayloadMetadata`; conflicting aliases reject. |
 | LogicSig bytecode | signing authority | key payload `lsig_bytecode`/`bytecode_hex` | LogicSig address and signing assembly | `internal/keys`, `internal/signerapp/signing` | Aliases normalize; bytecode must derive off-curve address. |
 | Signing args | signing authority | key payload `signing_args` | `internal/signingargs.Info`, `/keys` `signing_args` | `internal/signingargs`, `internal/keys` | Per-key snapshot; distinct from `/keytypes` runtime args. |
@@ -217,7 +217,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Component sign response | wire projection | per-target component signatures | `signerapi.ComponentSignResponse` | `internal/signerapp/signing` | Signature scheme is user key type or sentry component key type. |
 | Attested assembly request | wire request | group bytes plus user/sentry signatures | `signerapi.GuardedAssemblyRequest` | `internal/signerapp/signing` | Verifies sentry signature against embedded key in local account key. |
 | Attested assembly response | wire projection | assembled signed group bytes | `signerapi.GuardedAssemblyResponse` | `internal/signerapp/signing` | Assembly does not trust endpoint-advertised public keys. |
-| Admin sentry sync DTOs | wire request/projection | public candidate list | `signerapi.AdminSyncAttestorReferences*` | `internal/signerapp/rest`, `internal/sentry/attrefs` | Writes public signer-side reference catalog only; HTTP authorizes as `sentries.sync`; no tokens or private keys. |
+| Admin sentry sync DTOs | wire request/projection | public candidate list | `signerapi.AdminSyncAttestorReferences*` | `internal/signerapp/rest`, `internal/sentry/sentryrefs` | Writes public signer-side reference catalog only; HTTP authorizes as `sentries.sync`; no tokens or private keys. |
 
 ## Admin IPC Wire Models
 
@@ -273,8 +273,8 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
 | Endpoint export envelope | public handoff | JSON `schema:"aplane.endpoint.v1"` | `apshell endpoints import-public` input | `cmd/apstore`, `internal/config`, `internal/apshellapp` | No alias, role, token, known hosts, private key, or sentry inventory. |
-| Sentry public key envelope | public handoff | JSON `schema:"aplane.sentry-public-key.v1"` | manual sentry reference import | `cmd/apstore`, `internal/sentry/attrefs` | Contains `component_key` and full `public_key_hex`; no endpoint/trust claim. |
-| Public sentry reference record | public signer catalog | JSON `schema:"aplane.sentry-public-key-ref.v1"` | generation select option | `internal/sentry/attrefs` | Stored under `sentries/`; manual and client-discovery sources share schema. |
+| Sentry public key envelope | public handoff | JSON `schema:"aplane.sentry-public-key.v1"` | manual sentry reference import | `cmd/apstore`, `internal/sentry/sentryrefs` | Contains `component_key` and full `public_key_hex`; no endpoint/trust claim. |
+| Public sentry reference record | public signer catalog | JSON `schema:"aplane.sentry-public-key-ref.v1"` | generation select option | `internal/sentry/sentryrefs` | Stored under `sentries/`; manual and client-discovery sources share schema. |
 
 ## Audit And Observability
 
@@ -323,7 +323,7 @@ name a test inline:
   `internal/signerapp/signing/component_test.go`,
   `internal/signerapp/rest/service_test.go`.
 - Sentry references and public metadata:
-  `internal/sentry/attrefs`, `cmd/apstore/sentry*.go`,
+  `internal/sentry/sentryrefs`, `cmd/apstore/sentry*.go`,
   related package tests.
 - Node role and key-class gates: signer startup, `internal/signerapp/identity`,
   `internal/signerapp/rest/service_test.go`,

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package attrefs stores identity-scoped public sentry references used when
+// Package sentryrefs stores identity-scoped public sentry references used when
 // generating guarded account keys.
-package attrefs
+package sentryrefs
 
 import (
 	"crypto/sha256"
@@ -248,7 +248,7 @@ func Put(paths storepaths.Paths, identityID string, rec Record) error {
 	if err != nil {
 		return err
 	}
-	path := paths.AttestorRefPath(identityID, normalized.Name)
+	path := paths.SentryRefPath(identityID, normalized.Name)
 	if err := fsutil.MkdirAll(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("failed to create sentry reference directory: %w", err)
 	}
@@ -268,7 +268,7 @@ func Get(paths storepaths.Paths, identityID, name string) (Record, bool, error) 
 	if err != nil {
 		return Record{}, false, err
 	}
-	path := paths.AttestorRefPath(identityID, name)
+	path := paths.SentryRefPath(identityID, name)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -284,7 +284,7 @@ func Get(paths storepaths.Paths, identityID, name string) (Record, bool, error) 
 }
 
 func List(paths storepaths.Paths, identityID string) ([]Record, error) {
-	dir := paths.AttestorRefsDir(identityID)
+	dir := paths.SentryRefsDir(identityID)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -318,7 +318,7 @@ func Delete(paths storepaths.Paths, identityID, name string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := os.Remove(paths.AttestorRefPath(identityID, name)); err != nil {
+	if err := os.Remove(paths.SentryRefPath(identityID, name)); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}

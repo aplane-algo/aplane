@@ -15,8 +15,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
@@ -288,7 +288,7 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 	if ir == nil {
 		return
 	}
-	refs, err := attrefs.List(ir.KeyPaths(), ir.ID())
+	refs, err := sentryrefs.List(ir.KeyPaths(), ir.ID())
 	if err != nil || len(refs) == 0 {
 		return
 	}
@@ -313,7 +313,7 @@ func applyAttestorReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTyp
 			continue
 		}
 		infos[i].CreationParams = []signerapi.CreationParamInfo{{
-			Name:        attrefs.ParamSentryName,
+			Name:        sentryrefs.ParamSentryName,
 			Label:       "Sentry",
 			Description: "Imported sentry public-key reference to embed in the guarded account",
 			Type:        "select",

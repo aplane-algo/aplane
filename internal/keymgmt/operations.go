@@ -21,8 +21,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -183,7 +183,7 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		return nil, fmt.Errorf("invalid key type: %s (must be one of: %s)", keyType, strings.Join(validTypes, ", "))
 	}
 	var resolveErr error
-	params, resolveErr = attrefs.ResolveCreationParams(paths, identityID, keyType, params)
+	params, resolveErr = sentryrefs.ResolveCreationParams(paths, identityID, keyType, params)
 	if resolveErr != nil {
 		return nil, fmt.Errorf("%w: sentry reference resolution failed: %v", keygen.ErrInvalidParams, resolveErr)
 	}

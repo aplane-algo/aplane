@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package attrefs
+package sentryrefs
 
 import (
 	"encoding/hex"
@@ -61,10 +61,10 @@ func TestImportGetListDelete(t *testing.T) {
 
 func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	if err := os.MkdirAll(paths.AttestorRefsDir("default"), 0o700); err != nil {
+	if err := os.MkdirAll(paths.SentryRefsDir("default"), 0o700); err != nil {
 		t.Fatalf("MkdirAll(sentries) error = %v", err)
 	}
-	if err := os.WriteFile(paths.AttestorRefPath("default", "bad"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
+	if err := os.WriteFile(paths.SentryRefPath("default", "bad"), []byte(`{"schema":"wrong"}`), 0o600); err != nil {
 		t.Fatalf("WriteFile(bad reference) error = %v", err)
 	}
 
@@ -114,12 +114,12 @@ func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 func TestResolveCreationParamsRejectsMismatchedComponentKeyType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
-	if _, err := Import(paths, "default", "falcon-att", testExportJSON(t, keytypes.SentryComponentFalcon1024V1, pub)); err != nil {
+	if _, err := Import(paths, "default", "falcon-sentry", testExportJSON(t, keytypes.SentryComponentFalcon1024V1, pub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 
 	_, err := ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
-		ParamSentryName: "falcon-att",
+		ParamSentryName: "falcon-sentry",
 	})
 	if err == nil {
 		t.Fatal("ResolveCreationParams() error = nil, want key type mismatch")
@@ -138,7 +138,7 @@ func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
 	}
 
 	result, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
-		EndpointAlias: "Attestor.Local",
+		EndpointAlias: "Sentry.Local",
 		ComponentKey:  componentKey,
 		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  strings.ToUpper(hex.EncodeToString(pub)),
@@ -150,7 +150,7 @@ func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
 	if result.Added != 1 || result.Updated != 0 || result.Removed != 0 {
 		t.Fatalf("sync counts = %#v, want one added", result)
 	}
-	wantName, err := SyncedReferenceName("Attestor.Local", componentKey)
+	wantName, err := SyncedReferenceName("Sentry.Local", componentKey)
 	if err != nil {
 		t.Fatalf("SyncedReferenceName() error = %v", err)
 	}
@@ -158,8 +158,8 @@ func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("Get(%s) = (%#v, %v, %v), want synced record", wantName, rec, ok, err)
 	}
-	if rec.Source != SourceClientDiscovery || rec.EndpointAlias != "Attestor.Local" {
-		t.Fatalf("record source/endpoint = %q/%q, want client discovery Attestor.Local", rec.Source, rec.EndpointAlias)
+	if rec.Source != SourceClientDiscovery || rec.EndpointAlias != "Sentry.Local" {
+		t.Fatalf("record source/endpoint = %q/%q, want client discovery Sentry.Local", rec.Source, rec.EndpointAlias)
 	}
 	if rec.PublicKeyHex != strings.Repeat("ab", 32) {
 		t.Fatalf("PublicKeyHex = %q, want lower-case ab", rec.PublicKeyHex)
@@ -179,7 +179,7 @@ func TestSyncDiscoveredRejectsMismatchedComponentSelector(t *testing.T) {
 	}
 
 	_, err = SyncDiscovered(paths, "default", []DiscoveredRecord{{
-		EndpointAlias: "attestor-local",
+		EndpointAlias: "sentry-local",
 		ComponentKey:  componentKey,
 		KeyType:       keytypes.SentryComponentEd25519V1,
 		PublicKeyHex:  hex.EncodeToString(pub),
@@ -202,13 +202,13 @@ func TestSyncDiscoveredRejectsSamePublicKeyFromMultipleEndpoints(t *testing.T) {
 
 	_, err = SyncDiscovered(paths, "default", []DiscoveredRecord{
 		{
-			EndpointAlias: "attestor-a",
+			EndpointAlias: "sentry-a",
 			ComponentKey:  componentKey,
 			KeyType:       keytypes.SentryComponentEd25519V1,
 			PublicKeyHex:  hex.EncodeToString(pub),
 		},
 		{
-			EndpointAlias: "attestor-b",
+			EndpointAlias: "sentry-b",
 			ComponentKey:  componentKey,
 			KeyType:       keytypes.SentryComponentEd25519V1,
 			PublicKeyHex:  strings.ToUpper(hex.EncodeToString(pub)),
@@ -225,7 +225,7 @@ func TestSyncDiscoveredRejectsSamePublicKeyFromMultipleEndpoints(t *testing.T) {
 func TestSyncDiscoveredReplacesOnlyClientDiscoveryReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	manualPub := bytesOfLen(32, 0xab)
-	if _, err := Import(paths, "default", "manual-att", testExportJSON(t, keytypes.SentryComponentEd25519V1, manualPub)); err != nil {
+	if _, err := Import(paths, "default", "manual-sentry", testExportJSON(t, keytypes.SentryComponentEd25519V1, manualPub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 	stalePub := bytesOfLen(32, 0xcd)
@@ -259,7 +259,7 @@ func TestSyncDiscoveredReplacesOnlyClientDiscoveryReferences(t *testing.T) {
 	if result.Added != 1 || result.Removed != 1 {
 		t.Fatalf("sync counts = %#v, want one added and one stale removed", result)
 	}
-	if _, ok, err := Get(paths, "default", "manual-att"); err != nil || !ok {
+	if _, ok, err := Get(paths, "default", "manual-sentry"); err != nil || !ok {
 		t.Fatalf("manual reference removed or unreadable: ok=%v err=%v", ok, err)
 	}
 	staleName, err := SyncedReferenceName("stale", staleComponent)

@@ -103,13 +103,13 @@ func (p Paths) KeyTypeRecordsDir(identityID string) string {
 	return filepath.Join(p.IdentityDir(identityID), "keytypes")
 }
 
-func (p Paths) AttestorRefsDir(identityID string) string {
-	return filepath.Join(p.IdentityDir(identityID), "attestors")
+func (p Paths) SentryRefsDir(identityID string) string {
+	return filepath.Join(p.IdentityDir(identityID), "sentries")
 }
 
-func (p Paths) AttestorRefPath(identityID, name string) string {
+func (p Paths) SentryRefPath(identityID, name string) string {
 	validatePathComponent("sentry reference name", name)
-	return filepath.Join(p.AttestorRefsDir(identityID), name+".json")
+	return filepath.Join(p.SentryRefsDir(identityID), name+".json")
 }
 
 func (p Paths) KeyTypeRecord(identityID, keyType string) string {

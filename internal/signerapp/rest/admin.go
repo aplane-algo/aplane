@@ -6,7 +6,7 @@ package rest
 import (
 	"context"
 
-	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
@@ -57,9 +57,9 @@ func (s Service) AdminSyncSentryReferences(ir *identity.Runtime, req signerapi.A
 	if ir == nil {
 		return 500, signerapi.AdminSyncSentryReferencesResponse{Error: "identity runtime is nil"}
 	}
-	discovered := make([]attrefs.DiscoveredRecord, 0, len(req.Candidates))
+	discovered := make([]sentryrefs.DiscoveredRecord, 0, len(req.Candidates))
 	for _, candidate := range req.Candidates {
-		discovered = append(discovered, attrefs.DiscoveredRecord{
+		discovered = append(discovered, sentryrefs.DiscoveredRecord{
 			EndpointAlias: candidate.EndpointAlias,
 			ComponentKey:  candidate.ComponentKey,
 			KeyType:       candidate.KeyType,

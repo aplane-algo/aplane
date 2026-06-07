@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/sentry/attrefs"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
@@ -244,7 +244,7 @@ func (a *App) EndpointSyncSentries(ctx context.Context, req EndpointSyncSentries
 		CandidateCount: len(candidates),
 	}
 	for _, candidate := range candidates {
-		name, err := attrefs.SyncedReferenceName(candidate.EndpointAlias, candidate.ComponentKey)
+		name, err := sentryrefs.SyncedReferenceName(candidate.EndpointAlias, candidate.ComponentKey)
 		if err != nil {
 			return nil, err
 		}
