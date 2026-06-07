@@ -1701,8 +1701,16 @@ if [ "$LOCAL_MODE" = "1" ]; then
 
     APCLIENT_DIR="$LOCAL_PATH/apclient"
     CLIENT_BINDIR="$APCLIENT_DIR/bin"
+    LOCAL_SIGNER_STOP_CHECKED=0
+    if [ -x "$BIN_SRC/approbe" ] &&
+       { [ -d "$INSTALL_ROOT" ] || [ -d "$APCLIENT_DIR" ]; }; then
+        require_local_signer_stopped "$DATA_DIR" "repair"
+        LOCAL_SIGNER_STOP_CHECKED=1
+    fi
     INSTALL_MODE="$(classify_local_install "$LOCAL_PATH" "$INSTALL_ROOT" "$APCLIENT_DIR")"
-    require_local_signer_stopped "$DATA_DIR" "$INSTALL_MODE"
+    if [ "$LOCAL_SIGNER_STOP_CHECKED" != "1" ]; then
+        require_local_signer_stopped "$DATA_DIR" "$INSTALL_MODE"
+    fi
     abort_if_macos_install_processes_running "$LOCAL_PATH"
 
     # Pick random available ports for this install
