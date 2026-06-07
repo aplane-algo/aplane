@@ -209,8 +209,6 @@ func (m Model) effectiveKeyListTab() keyListTab {
 	switch m.keyListMode() {
 	case "attestation":
 		return keyListTabAttestor
-	case "dual":
-		return m.keyListTab
 	default:
 		return keyListTabSigning
 	}

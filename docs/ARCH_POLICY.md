@@ -224,8 +224,8 @@ Attestation semantics:
 
 Both documents are validated by schema and domain, not by the identity's
 current key inventory. An identity can carry `attestation.yaml` before an
-attestor key is installed, and it can carry `policy.yaml` even when the current
-mode is attestation-only.
+attestor key is installed, and it can carry `policy.yaml` even when it is
+hosted on an attestor node.
 
 Legacy compatibility: a `policy.yaml` written before role domains existed
 places all client-signing-only fields at the top level. The loader treats

@@ -64,7 +64,7 @@ func TestEndpointImportWritesEndpointOnly(t *testing.T) {
 		t.Fatal("Created = false, want true")
 	}
 	if result.DefaultChanged {
-		t.Fatal("DefaultChanged = true, want false for attestation-only endpoint")
+		t.Fatal("DefaultChanged = true, want false for attestor endpoint")
 	}
 
 	cfg, err := config.LoadConfig(dataDir)
