@@ -1629,12 +1629,13 @@ Managed archive packaging:
   managed path, or checksum, copies it into a caller-selected destination
   directory using the managed archive filename, creates the destination directory
   when needed, and verifies the copy
-- the archive contains `README.md`, `apb/*.apb`, and policy snapshots at
+- the archive contains `README.md`, `manifest.json`, `apb/*.apb`, and policy snapshots at
   `policy/policy.yaml`, `policy/policy.yaml.hmac`,
   `policy/attestation.yaml`, and `policy/attestation.yaml.hmac`
-- managed archives include source node role metadata in the archive manifest
-  going forward. Restore validates payload key classes against the destination
-  node role; it does not change the destination role.
+- `manifest.json` has schema `aplane.backup.manifest.v1`, `schema_version:1`,
+  `source_node_role:"signer"|"attestor"`, and `created_at_unix`. Restore
+  validates payload key classes against the destination node role; it does not
+  change the destination role.
 - the tarball is packaging only; `.apb` remains the cryptographic backup unit
 - the archived policy sidecar is source-store provenance material only; restore
   does not install it as the destination sidecar
@@ -1646,7 +1647,8 @@ Live signer-managed backup:
 - the signer uses the unlocked runtime master key; it does not re-prompt for the store passphrase
 - output path is signer-managed, not operator-chosen
 - archives are written under `backups/<identity>/aplane-backup-YYYYMMDD-HHMMSS.tar.gz` beneath the signer data root
-- archive layout matches managed backups: `README.md`, `apb/*.apb`, and
+- archive layout matches managed backups: `README.md`, `manifest.json`,
+  `apb/*.apb`, and
   `policy/`
 - signer-managed backup covers active key files for the bound identity plus a
   verified policy snapshot; it does not export deleted archives, other
@@ -1711,8 +1713,9 @@ Restore:
   surfaced in restore `warnings[]`
 - library-visible compiled providers are activated for the identity when a key of that type is restored; this writes the normal
   `identities/<identity>/keytypes/<key_type>.json` state record and is idempotent
-- `apstore rebuild` restores an absent store using source node role metadata
-  when present. Archives without source role metadata are treated as
+- `apstore rebuild` restores an absent store using `manifest.json`
+  `source_node_role` metadata when present. Archives without source role
+  metadata are treated as
   `signer`, and rebuild has no `--role` override.
 - a LogicSig key restore is rejected when the key payload has bytecode but is not a v1 signing-metadata key; templates are not
   consulted to reconstruct missing signing metadata

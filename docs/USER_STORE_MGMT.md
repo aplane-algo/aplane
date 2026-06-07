@@ -265,8 +265,9 @@ When run against systemd data, `apstore` returns managed store files to the
 signer data directory owner/group after successful mutations, while
 `appass-systemd-creds` files remain root-owned.
 
-This safely re-encrypts all keys and templates, and re-signs the policy sidecar
-with the new master key, using a two-phase atomic operation:
+This safely re-encrypts all keys and templates, and re-signs the policy and
+node-role integrity sidecars with the new master key, using a two-phase atomic
+operation:
 1. **Phase 1**: Creates new encrypted files (`.new`) and verifies each one
 2. **Phase 2**: Atomically swaps old files for new files
 
@@ -463,9 +464,10 @@ not already exist.
 If an existing keystore or identity directory is present, move it aside
 explicitly before rebuilding. `rebuild` creates fresh `.keystore` metadata,
 restores keys from the backup archive, and writes a new store encrypted under
-the new store passphrase you enter. Rebuild uses source node role metadata
-from the backup archive when present. Archives without role metadata are treated
-as signer backups; rebuild does not accept a role override.
+the new store passphrase you enter. Rebuild uses `manifest.json`
+`source_node_role` metadata from the backup archive when present. Archives
+without role metadata are treated as signer backups; rebuild does not accept a
+role override.
 
 ### Verifying Restoration
 

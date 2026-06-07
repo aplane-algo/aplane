@@ -156,7 +156,8 @@ DTOs and contract fixtures.
 | Client alias/set/auth/signer caches | Client data dir | `APCLIENT_DATA/cache/*.json` | client state snapshots | shell/MCP structured output | `internal/clientstate`, `internal/cache`, `internal/refname` for alias/set names |
 | Plugin | Client data dir | `plugins.available/<name>`, `plugins.yaml`, checksums | plugin manager process state | plugin JSON-RPC result | `internal/plugin`, `internal/apshellcli` |
 | JavaScript script | Client data dir | `scripts/*.js` | Goja execution context | shell/MCP `js`, `jssave`, `jslist` | `internal/scripting`, `internal/jsapi` |
-| Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files | restore preview/apply plan | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
+| Backup archive | Signer identity | `backups/<identity>/*.tar.gz` containing `.apb` files, `manifest.json`, and policy snapshots | restore preview/apply plan | admin backup/restore messages | `internal/backup`, `internal/signerapp/backupadmin` |
+| Backup manifest | Backup archive | `manifest.json` schema `aplane.backup.manifest.v1` | source node role for rebuild and diagnostics | none | `internal/backup` |
 | Audit record | Signer process | `audit.log` JSONL | append-only logger state | not a request API | `internal/signerapp/audit` |
 
 ## Relationship Map
@@ -756,8 +757,9 @@ can only return a signature that assembly or the on-chain LogicSig rejects.
 ### Backup And Restore Lifecycle
 
 Managed backup archives live under `backups/<identity>/`. Each archive contains
-encrypted `.apb` payloads and a policy snapshot. `.apb` is the cryptographic
-backup unit; the tarball is packaging.
+encrypted `.apb` payloads, `manifest.json` with source node role metadata, and a
+policy snapshot. `.apb` is the cryptographic backup unit; the tarball is
+packaging.
 
 Restore is per-key:
 

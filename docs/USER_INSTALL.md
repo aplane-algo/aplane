@@ -980,8 +980,8 @@ sudo apstore -d /var/lib/apsigner changepass
 ```
 
 This asks you to manually enter the current passphrase, atomically re-encrypts
-all keys with a new passphrase, re-signs the policy sidecar, and updates
-`passphrase.cred`. Restart the service afterward:
+all keys with a new passphrase, re-signs the policy and node-role integrity
+sidecars, and updates `passphrase.cred`. Restart the service afterward:
 
 Systemd data directories contain a `.prod` marker. For those directories,
 all `apstore` commands require root and exit before prompting if they are not

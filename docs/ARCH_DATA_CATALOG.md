@@ -74,6 +74,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Signer ASA cache key | cache secret | `cache/.cache_key` | HMAC verifier for signer ASA cache | `internal/cache`, `internal/signerapp/asametadata` | Tampered cache files reject and rebuild from seed where applicable. |
 | Signer ASA cache | cache/display | `cache/<network>_asa_cache.json` | per-operation ASA metadata lookup | `internal/signerapp/asametadata`, `internal/asa` | Signed cache; built-in registry seeds; not authority for policy enforcement. |
 | Managed backup locker | authoritative backup inventory | `backups/<identity>/*.tar.gz` | backup list/restore preview/apply plans | `internal/backup`, `internal/signerapp/backupadmin` | Imported archives are validated before publication; archive payloads are encrypted `.apb`. |
+| Managed backup manifest | backup metadata | `manifest.json` inside managed archives | source node role for rebuild and diagnostics | `internal/backup` | Schema `aplane.backup.manifest.v1`; missing manifests default to signer for rebuild. |
 | Deleted archive root | inactive durable storage | `identities/<identity>/deleted/` | outside active key/template scans | `internal/keys`, `internal/templatestore` | Deleted keys/templates are not active authority. |
 
 ## Signer Identity Storage
