@@ -26,7 +26,7 @@ import (
 	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	falcon1024attested "github.com/aplane-algo/aplane/lsig/falcon1024_attested"
+	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -65,8 +65,8 @@ func TestSupportsMnemonicImport(t *testing.T) {
 	}{
 		{keyType: "ed25519", want: true},
 		{keyType: "aplane.falcon1024.v1", want: true},
-		{keyType: falcon1024attested.KeyTypeV1, want: false},
-		{keyType: falcon1024attested.KeyTypeFalcon1024V1, want: false},
+		{keyType: falcon1024guarded.KeyTypeV1, want: false},
+		{keyType: falcon1024guarded.KeyTypeFalcon1024V1, want: false},
 		{keyType: keytypes.SentryComponentEd25519V1, want: false},
 		{keyType: keytypes.SentryComponentFalcon1024V1, want: false},
 		{keyType: "aplane.ecdsak1.v1", want: false},
@@ -173,8 +173,8 @@ func TestValidKeyTypesIncludeAttestorComponentKey(t *testing.T) {
 
 func TestValidKeyTypesIncludeActivatedFalcon1024AttestedKey(t *testing.T) {
 	for _, keyType := range []string{
-		falcon1024attested.KeyTypeV1,
-		falcon1024attested.KeyTypeFalcon1024V1,
+		falcon1024guarded.KeyTypeV1,
+		falcon1024guarded.KeyTypeFalcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			if containsKeyType(GetValidKeyTypes(), keyType) {
@@ -198,8 +198,8 @@ func TestGenerateKeyFalcon1024AttestedRequiresAttestorPublicKey(t *testing.T) {
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 
 	for _, keyType := range []string{
-		falcon1024attested.KeyTypeV1,
-		falcon1024attested.KeyTypeFalcon1024V1,
+		falcon1024guarded.KeyTypeV1,
+		falcon1024guarded.KeyTypeFalcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, masterKey, nil, []string{keyType})
@@ -218,11 +218,11 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 		attestorPublicKey string
 	}{
 		{
-			keyType:           falcon1024attested.KeyTypeV1,
+			keyType:           falcon1024guarded.KeyTypeV1,
 			attestorPublicKey: strings.Repeat("ab", stded25519.PublicKeySize),
 		},
 		{
-			keyType:           falcon1024attested.KeyTypeFalcon1024V1,
+			keyType:           falcon1024guarded.KeyTypeFalcon1024V1,
 			attestorPublicKey: strings.Repeat("cd", falconfamily.PublicKeySize),
 		},
 	}
@@ -239,7 +239,7 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 				tt.keyType,
 				masterKey,
 				map[string]string{
-					falcon1024attested.ParamSentryPublicKey: tt.attestorPublicKey,
+					falcon1024guarded.ParamSentryPublicKey: tt.attestorPublicKey,
 				},
 				[]string{tt.keyType},
 			)
@@ -272,11 +272,11 @@ func TestGenerateKeyFalcon1024AttestedPersistsSigningMetadata(t *testing.T) {
 			if keyPair.KeyType != tt.keyType {
 				t.Fatalf("stored KeyType = %q, want %s", keyPair.KeyType, tt.keyType)
 			}
-			if keyPair.BaseKeyType != falcon1024attested.BaseKeyType {
-				t.Fatalf("BaseKeyType = %q, want %s", keyPair.BaseKeyType, falcon1024attested.BaseKeyType)
+			if keyPair.BaseKeyType != falcon1024guarded.BaseKeyType {
+				t.Fatalf("BaseKeyType = %q, want %s", keyPair.BaseKeyType, falcon1024guarded.BaseKeyType)
 			}
-			if keyPair.Params[falcon1024attested.ParamSentryPublicKey] != tt.attestorPublicKey {
-				t.Fatalf("sentry public key param = %q, want %q", keyPair.Params[falcon1024attested.ParamSentryPublicKey], tt.attestorPublicKey)
+			if keyPair.Params[falcon1024guarded.ParamSentryPublicKey] != tt.attestorPublicKey {
+				t.Fatalf("sentry public key param = %q, want %q", keyPair.Params[falcon1024guarded.ParamSentryPublicKey], tt.attestorPublicKey)
 			}
 			if keyPair.LsigBytecodeHex == "" {
 				t.Fatal("LsigBytecodeHex is empty")

@@ -17,7 +17,7 @@ import (
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	falcon1024attested "github.com/aplane-algo/aplane/lsig/falcon1024_attested"
+	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
@@ -121,7 +121,7 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 		return "", badRequest(fmt.Sprintf("target index %d sentry_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
 
-	packedSignature, packErr := falcon1024attested.PackComponentSignaturesForKeyType(keyMaterial.Type, userSignature, sentrySignature)
+	packedSignature, packErr := falcon1024guarded.PackComponentSignaturesForKeyType(keyMaterial.Type, userSignature, sentrySignature)
 	if packErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d signatures invalid: %v", target.TargetIndex, packErr))
 	}

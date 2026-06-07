@@ -117,8 +117,8 @@ Go-defined key types:
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | default-enabled | `lsig/falcon1024/v1/standard.go` |
 | `aplane.sentry-ed25519.v1` | Sentry component key | Go-defined | default-enabled | `internal/keygen/attestor_ed25519.go` |
 | `aplane.sentry-falcon1024.v1` | Sentry component key | Go-defined | default-enabled | `internal/keygen/attestor_falcon1024.go` |
-| `aplane.falcon1024-sentry-ed25519.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_attested` |
-| `aplane.falcon1024-sentry-falcon1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_attested` |
+| `aplane.falcon1024-sentry-ed25519.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
+| `aplane.falcon1024-sentry-falcon1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
 | `aplane.falcon1024_ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_ed25519` |
 | `aplane.ecdsak1.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ecdsak1` |
 

@@ -14,10 +14,10 @@ import (
 	ecdsak1signerreg "github.com/aplane-algo/aplane/lsig/ecdsak1/signerreg"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024/signerreg"
-	falcon1024attested "github.com/aplane-algo/aplane/lsig/falcon1024_attested"
-	attestedsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024_attested/signerreg"
 	falcon1024ed25519 "github.com/aplane-algo/aplane/lsig/falcon1024_ed25519"
 	hybridsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024_ed25519/signerreg"
+	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
+	guardedsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024_guarded/signerreg"
 )
 
 var registerSignerOnce sync.Once
@@ -33,15 +33,15 @@ func RegisterSigner() {
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 		}, falconsignerreg.RegisterSigner)
 		registerCompiledSigner(keytypecatalog.Entry{
-			KeyType:      falcon1024attested.KeyTypeV1,
-			Family:       falcon1024attested.FamilyName,
+			KeyType:      falcon1024guarded.KeyTypeV1,
+			Family:       falcon1024guarded.FamilyName,
 			Availability: keytypecatalog.AvailabilityLibrary,
-		}, attestedsignerreg.RegisterSigner)
+		}, guardedsignerreg.RegisterSigner)
 		registerCompiledSigner(keytypecatalog.Entry{
-			KeyType:      falcon1024attested.KeyTypeFalcon1024V1,
-			Family:       falcon1024attested.FamilyNameFalcon1024,
+			KeyType:      falcon1024guarded.KeyTypeFalcon1024V1,
+			Family:       falcon1024guarded.FamilyNameFalcon1024,
 			Availability: keytypecatalog.AvailabilityLibrary,
-		}, attestedsignerreg.RegisterSigner)
+		}, guardedsignerreg.RegisterSigner)
 		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType:      falcon1024ed25519.KeyTypeV1,
 			Family:       falcon1024ed25519.FamilyName,

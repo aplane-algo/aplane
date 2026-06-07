@@ -24,7 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
-	falcon1024attested "github.com/aplane-algo/aplane/lsig/falcon1024_attested"
+	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
@@ -33,7 +33,7 @@ import (
 )
 
 func init() {
-	falcon1024attested.RegisterClient()
+	falcon1024guarded.RegisterClient()
 }
 
 func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
@@ -672,7 +672,7 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	keyMaterial := &coresigning.KeyMaterial{
 		Type:                   keytypes.GuardedFalcon1024SentryEd25519V1,
 		Category:               keys.CategoryDSALsig,
-		BaseKeyType:            falcon1024attested.BaseKeyType,
+		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
 		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
@@ -795,7 +795,7 @@ func TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup(t *testi
 	keyMaterial := &coresigning.KeyMaterial{
 		Type:                   keytypes.GuardedFalcon1024SentryFalcon1024V1,
 		Category:               keys.CategoryDSALsig,
-		BaseKeyType:            falcon1024attested.BaseKeyType,
+		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
 		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
@@ -871,7 +871,7 @@ func TestAssembleDecodedGuardedRejectsWrongSentrySignature(t *testing.T) {
 	keyMaterial := &coresigning.KeyMaterial{
 		Type:                   keytypes.GuardedFalcon1024SentryEd25519V1,
 		Category:               keys.CategoryDSALsig,
-		BaseKeyType:            falcon1024attested.BaseKeyType,
+		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
 		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},
@@ -933,7 +933,7 @@ func TestAssembleDecodedGuardedRejectsWrongUserSignature(t *testing.T) {
 	keyMaterial := &coresigning.KeyMaterial{
 		Type:                   keytypes.GuardedFalcon1024SentryEd25519V1,
 		Category:               keys.CategoryDSALsig,
-		BaseKeyType:            falcon1024attested.BaseKeyType,
+		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
 		Bytecode:               append([]byte(nil), bytecode...),
 		Parameters:             map[string]string{keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey)},

@@ -11,20 +11,20 @@ import (
 	"github.com/aplane-algo/aplane/internal/keygen"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
-	falcon1024attested "github.com/aplane-algo/aplane/lsig/falcon1024_attested"
+	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 )
 
 var registerSignerOnce sync.Once
 
 func RegisterSigner() {
 	registerSignerOnce.Do(func() {
-		falcon1024attested.RegisterClient()
+		falcon1024guarded.RegisterClient()
 		ops := signerops.New(nil)
-		keygen.Register(falconkeygen.NewFalconGenerator(falcon1024attested.KeyTypeV1, map[string]falconkeygen.LogicSigKeygenOps{
-			falcon1024attested.KeyTypeV1: ops,
+		keygen.Register(falconkeygen.NewFalconGenerator(falcon1024guarded.KeyTypeV1, map[string]falconkeygen.LogicSigKeygenOps{
+			falcon1024guarded.KeyTypeV1: ops,
 		}))
-		keygen.Register(falconkeygen.NewFalconGenerator(falcon1024attested.KeyTypeFalcon1024V1, map[string]falconkeygen.LogicSigKeygenOps{
-			falcon1024attested.KeyTypeFalcon1024V1: ops,
+		keygen.Register(falconkeygen.NewFalconGenerator(falcon1024guarded.KeyTypeFalcon1024V1, map[string]falconkeygen.LogicSigKeygenOps{
+			falcon1024guarded.KeyTypeFalcon1024V1: ops,
 		}))
 	})
 }

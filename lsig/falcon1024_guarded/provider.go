@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package falcon1024attested provides the Falcon-1024 guarded-account
+// Package falcon1024guarded provides the Falcon-1024 guarded-account
 // LogicSig provider.
-package falcon1024attested
+package falcon1024guarded
 
 import (
 	"context"
@@ -42,41 +42,41 @@ const (
 // Provider implements the guarded-account LogicSig shape for a Falcon user
 // component signature plus a sentry component signature.
 type Provider struct {
-	keyType                  string
-	familyName               string
-	displayName              string
-	description              string
-	attestorComponentKeyType string
-	attestorPublicKeySize    int
-	signatureSize            int
-	attestorSignatureArg     string
-	algodClient              *algod.Client
-	algodMu                  sync.RWMutex
+	keyType                string
+	familyName             string
+	displayName            string
+	description            string
+	sentryComponentKeyType string
+	sentryPublicKeySize    int
+	signatureSize          int
+	sentrySignatureArg     string
+	algodClient            *algod.Client
+	algodMu                sync.RWMutex
 }
 
 func NewProviderV1() *Provider {
 	return &Provider{
-		keyType:                  KeyTypeV1,
-		familyName:               FamilyName,
-		displayName:              "Falcon-1024 / Ed25519 Sentry",
-		description:              "Falcon-1024 account requiring an Ed25519 sentry signature",
-		attestorComponentKeyType: keytypes.SentryComponentEd25519V1,
-		attestorPublicKeySize:    ed25519.PublicKeySize,
-		signatureSize:            SignatureSize,
-		attestorSignatureArg:     "sentry_ed25519_component_signature",
+		keyType:                KeyTypeV1,
+		familyName:             FamilyName,
+		displayName:            "Falcon-1024 / Ed25519 Sentry",
+		description:            "Falcon-1024 account requiring an Ed25519 sentry signature",
+		sentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+		sentryPublicKeySize:    ed25519.PublicKeySize,
+		signatureSize:          SignatureSize,
+		sentrySignatureArg:     "sentry_ed25519_component_signature",
 	}
 }
 
-func NewFalconAttestorProviderV1() *Provider {
+func NewFalconSentryProviderV1() *Provider {
 	return &Provider{
-		keyType:                  KeyTypeFalcon1024V1,
-		familyName:               FamilyNameFalcon1024,
-		displayName:              "Falcon-1024 / Falcon-1024 Sentry",
-		description:              "Falcon-1024 account requiring a Falcon-1024 sentry signature",
-		attestorComponentKeyType: keytypes.SentryComponentFalcon1024V1,
-		attestorPublicKeySize:    family.PublicKeySize,
-		signatureSize:            SignatureSizeFalcon1024,
-		attestorSignatureArg:     "sentry_falcon1024_component_signature",
+		keyType:                KeyTypeFalcon1024V1,
+		familyName:             FamilyNameFalcon1024,
+		displayName:            "Falcon-1024 / Falcon-1024 Sentry",
+		description:            "Falcon-1024 account requiring a Falcon-1024 sentry signature",
+		sentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+		sentryPublicKeySize:    family.PublicKeySize,
+		signatureSize:          SignatureSizeFalcon1024,
+		sentrySignatureArg:     "sentry_falcon1024_component_signature",
 	}
 }
 
@@ -101,22 +101,22 @@ func (p *Provider) MnemonicScheme() string       { return family.MnemonicScheme 
 func (p *Provider) MnemonicWordCount() int       { return family.MnemonicWordCount }
 func (p *Provider) SupportsMnemonicImport() bool { return false }
 func (p *Provider) CreationParams() []lsigprovider.ParameterDef {
-	attestorLabel := "Sentry public key"
-	attestorDescription := "Hex-encoded sentry public key embedded in the guarded account"
-	switch p.attestorComponentKeyType {
+	sentryLabel := "Sentry public key"
+	sentryDescription := "Hex-encoded sentry public key embedded in the guarded account"
+	switch p.sentryComponentKeyType {
 	case keytypes.SentryComponentEd25519V1:
-		attestorDescription = "Hex-encoded Ed25519 sentry public key embedded in the guarded account"
+		sentryDescription = "Hex-encoded Ed25519 sentry public key embedded in the guarded account"
 	case keytypes.SentryComponentFalcon1024V1:
-		attestorDescription = "Hex-encoded Falcon-1024 sentry public key embedded in the guarded account"
+		sentryDescription = "Hex-encoded Falcon-1024 sentry public key embedded in the guarded account"
 	}
 	return []lsigprovider.ParameterDef{{
 		Name:        ParamSentryPublicKey,
-		Label:       attestorLabel,
-		Description: attestorDescription,
+		Label:       sentryLabel,
+		Description: sentryDescription,
 		Type:        "bytes",
 		Required:    true,
-		MaxLength:   p.attestorPublicKeySize * 2,
-		Example:     strings.Repeat("00", p.attestorPublicKeySize),
+		MaxLength:   p.sentryPublicKeySize * 2,
+		Example:     strings.Repeat("00", p.sentryPublicKeySize),
 	}}
 }
 
@@ -128,7 +128,7 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 	if err := generictemplate.ValidateParameterValues(normalized, p.CreationParams()); err != nil {
 		return err
 	}
-	_, err = decodeAttestorPublicKeyForSize(normalized[ParamSentryPublicKey], p.attestorPublicKeySize)
+	_, err = decodeSentryPublicKeyForSize(normalized[ParamSentryPublicKey], p.sentryPublicKeySize)
 	return err
 }
 
@@ -139,16 +139,16 @@ func (p *Provider) RuntimeArgs() []lsigprovider.RuntimeArgDef {
 // BuildArgs assembles LogicSig args as:
 //
 //	arg 0: Falcon user component signature
-//	arg 1: attestor component signature
+//	arg 1: sentry component signature
 func (p *Provider) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
 	if err := rejectRuntimeArgs(runtimeArgs); err != nil {
 		return nil, err
 	}
-	userSig, attestorSig, err := UnpackComponentSignaturesForKeyType(p.keyType, signature)
+	userSig, sentrySig, err := UnpackComponentSignaturesForKeyType(p.keyType, signature)
 	if err != nil {
 		return nil, err
 	}
-	return [][]byte{userSig, attestorSig}, nil
+	return [][]byte{userSig, sentrySig}, nil
 }
 
 func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) ([]byte, string, error) {
@@ -200,11 +200,11 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 	if err := p.ValidateCreationParams(normalized); err != nil {
 		return "", err
 	}
-	attestorPublicKey, err := decodeAttestorPublicKeyForSize(normalized[ParamSentryPublicKey], p.attestorPublicKeySize)
+	sentryPublicKey, err := decodeSentryPublicKeyForSize(normalized[ParamSentryPublicKey], p.sentryPublicKeySize)
 	if err != nil {
 		return "", err
 	}
-	attestorVerifier, err := p.attestorVerifyTEAL(attestorPublicKey)
+	sentryVerifier, err := p.sentryVerifyTEAL(sentryPublicKey)
 	if err != nil {
 		return "", err
 	}
@@ -232,13 +232,13 @@ assert
 		hex.EncodeToString([]byte(message.DomainTagV1)),
 		byte(message.RoleUser),
 		hex.EncodeToString(publicKey),
-		attestorVerifier), nil
+		sentryVerifier), nil
 }
 
-func (p *Provider) attestorVerifyTEAL(attestorPublicKey []byte) (string, error) {
-	switch p.attestorComponentKeyType {
+func (p *Provider) sentryVerifyTEAL(sentryPublicKey []byte) (string, error) {
+	switch p.sentryComponentKeyType {
 	case keytypes.SentryComponentEd25519V1:
-		return fmt.Sprintf(`// === Attestor Ed25519 component signature ===
+		return fmt.Sprintf(`// === Sentry Ed25519 component signature ===
 pushbytes 0x%s
 pushbytes 0x%02x
 concat
@@ -250,9 +250,9 @@ pushbytes 0x%s
 ed25519verify_bare
 `, hex.EncodeToString([]byte(message.DomainTagV1)),
 			byte(message.RoleSentry),
-			hex.EncodeToString(attestorPublicKey)), nil
+			hex.EncodeToString(sentryPublicKey)), nil
 	case keytypes.SentryComponentFalcon1024V1:
-		return fmt.Sprintf(`// === Attestor Falcon-1024 component signature ===
+		return fmt.Sprintf(`// === Sentry Falcon-1024 component signature ===
 pushbytes 0x%s
 pushbytes 0x%02x
 concat
@@ -264,9 +264,9 @@ pushbytes 0x%s
 falcon_verify
 `, hex.EncodeToString([]byte(message.DomainTagV1)),
 			byte(message.RoleSentry),
-			hex.EncodeToString(attestorPublicKey)), nil
+			hex.EncodeToString(sentryPublicKey)), nil
 	default:
-		return "", fmt.Errorf("unsupported sentry component key type %s", p.attestorComponentKeyType)
+		return "", fmt.Errorf("unsupported sentry component key type %s", p.sentryComponentKeyType)
 	}
 }
 
@@ -287,44 +287,44 @@ func (p *Provider) CompatibilityFingerprint() string {
 		Version:     p.Version(),
 		SaltStyle:   string(lsigsalt.StylePushbytes),
 		Arg0:        "user_falcon1024_component_signature",
-		Arg1:        p.attestorSignatureArg,
+		Arg1:        p.sentrySignatureArg,
 	})
 }
 
 // PackComponentSignatures prepares the opaque signature blob accepted by
 // BuildArgs. It is intended for /sign/assemble after both component signatures
 // have been verified.
-func PackComponentSignatures(userSignature, attestorSignature []byte) ([]byte, error) {
-	return PackComponentSignaturesForKeyType(KeyTypeV1, userSignature, attestorSignature)
+func PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error) {
+	return PackComponentSignaturesForKeyType(KeyTypeV1, userSignature, sentrySignature)
 }
 
-func PackComponentSignaturesForKeyType(keyType string, userSignature, attestorSignature []byte) ([]byte, error) {
+func PackComponentSignaturesForKeyType(keyType string, userSignature, sentrySignature []byte) ([]byte, error) {
 	if len(userSignature) == 0 || len(userSignature) > family.MaxSignatureSize {
 		return nil, fmt.Errorf("user Falcon signature length %d invalid (expected 1..%d bytes)", len(userSignature), family.MaxSignatureSize)
 	}
 	switch keyType {
 	case KeyTypeV1:
-		if len(attestorSignature) != ed25519.SignatureSize {
-			return nil, fmt.Errorf("attestor Ed25519 signature length %d invalid (expected %d bytes)", len(attestorSignature), ed25519.SignatureSize)
+		if len(sentrySignature) != ed25519.SignatureSize {
+			return nil, fmt.Errorf("sentry Ed25519 signature length %d invalid (expected %d bytes)", len(sentrySignature), ed25519.SignatureSize)
 		}
-		out := make([]byte, 2+len(userSignature)+len(attestorSignature))
+		out := make([]byte, 2+len(userSignature)+len(sentrySignature))
 		binary.BigEndian.PutUint16(out[:2], uint16(len(userSignature)))
 		copy(out[2:], userSignature)
-		copy(out[2+len(userSignature):], attestorSignature)
+		copy(out[2+len(userSignature):], sentrySignature)
 		return out, nil
 	case KeyTypeFalcon1024V1:
-		if len(attestorSignature) == 0 || len(attestorSignature) > family.MaxSignatureSize {
-			return nil, fmt.Errorf("attestor Falcon signature length %d invalid (expected 1..%d bytes)", len(attestorSignature), family.MaxSignatureSize)
+		if len(sentrySignature) == 0 || len(sentrySignature) > family.MaxSignatureSize {
+			return nil, fmt.Errorf("sentry Falcon signature length %d invalid (expected 1..%d bytes)", len(sentrySignature), family.MaxSignatureSize)
 		}
-		out := make([]byte, 4+len(userSignature)+len(attestorSignature))
+		out := make([]byte, 4+len(userSignature)+len(sentrySignature))
 		binary.BigEndian.PutUint16(out[:2], uint16(len(userSignature)))
 		copy(out[2:], userSignature)
 		offset := 2 + len(userSignature)
-		binary.BigEndian.PutUint16(out[offset:offset+2], uint16(len(attestorSignature)))
-		copy(out[offset+2:], attestorSignature)
+		binary.BigEndian.PutUint16(out[offset:offset+2], uint16(len(sentrySignature)))
+		copy(out[offset+2:], sentrySignature)
 		return out, nil
 	default:
-		return nil, fmt.Errorf("key type %q is not an attested Falcon account key type", keyType)
+		return nil, fmt.Errorf("key type %q is not a guarded Falcon account key type", keyType)
 	}
 }
 
@@ -339,47 +339,47 @@ func UnpackComponentSignaturesForKeyType(keyType string, signature []byte) ([]by
 	case KeyTypeFalcon1024V1:
 		return unpackFalconSentrySignature(signature)
 	default:
-		return nil, nil, fmt.Errorf("key type %q is not an attested Falcon account key type", keyType)
+		return nil, nil, fmt.Errorf("key type %q is not a guarded Falcon account key type", keyType)
 	}
 }
 
 func unpackEd25519SentrySignature(signature []byte) ([]byte, []byte, error) {
 	if len(signature) < 2+ed25519.SignatureSize {
-		return nil, nil, fmt.Errorf("attested signature blob is too short")
+		return nil, nil, fmt.Errorf("guarded signature blob is too short")
 	}
 	userLen := int(binary.BigEndian.Uint16(signature[:2]))
 	if userLen <= 0 || userLen > family.MaxSignatureSize {
 		return nil, nil, fmt.Errorf("user Falcon signature length %d invalid (expected 1..%d bytes)", userLen, family.MaxSignatureSize)
 	}
 	if len(signature) != 2+userLen+ed25519.SignatureSize {
-		return nil, nil, fmt.Errorf("invalid attested signature blob length")
+		return nil, nil, fmt.Errorf("invalid guarded signature blob length")
 	}
 	return signature[2 : 2+userLen], signature[2+userLen:], nil
 }
 
 func unpackFalconSentrySignature(signature []byte) ([]byte, []byte, error) {
 	if len(signature) < 4 {
-		return nil, nil, fmt.Errorf("attested signature blob is too short")
+		return nil, nil, fmt.Errorf("guarded signature blob is too short")
 	}
 	userLen := int(binary.BigEndian.Uint16(signature[:2]))
 	if userLen <= 0 || userLen > family.MaxSignatureSize {
 		return nil, nil, fmt.Errorf("user Falcon signature length %d invalid (expected 1..%d bytes)", userLen, family.MaxSignatureSize)
 	}
 	if len(signature) < 2+userLen+2 {
-		return nil, nil, fmt.Errorf("attested signature blob is too short")
+		return nil, nil, fmt.Errorf("guarded signature blob is too short")
 	}
-	attestorOffset := 2 + userLen
-	attestorLen := int(binary.BigEndian.Uint16(signature[attestorOffset : attestorOffset+2]))
-	if attestorLen <= 0 || attestorLen > family.MaxSignatureSize {
-		return nil, nil, fmt.Errorf("attestor Falcon signature length %d invalid (expected 1..%d bytes)", attestorLen, family.MaxSignatureSize)
+	sentryOffset := 2 + userLen
+	sentryLen := int(binary.BigEndian.Uint16(signature[sentryOffset : sentryOffset+2]))
+	if sentryLen <= 0 || sentryLen > family.MaxSignatureSize {
+		return nil, nil, fmt.Errorf("sentry Falcon signature length %d invalid (expected 1..%d bytes)", sentryLen, family.MaxSignatureSize)
 	}
-	if len(signature) != attestorOffset+2+attestorLen {
-		return nil, nil, fmt.Errorf("invalid attested signature blob length")
+	if len(signature) != sentryOffset+2+sentryLen {
+		return nil, nil, fmt.Errorf("invalid guarded signature blob length")
 	}
-	return signature[2:attestorOffset], signature[attestorOffset+2:], nil
+	return signature[2:sentryOffset], signature[sentryOffset+2:], nil
 }
 
-func decodeAttestorPublicKeyForSize(value string, wantSize int) ([]byte, error) {
+func decodeSentryPublicKeyForSize(value string, wantSize int) ([]byte, error) {
 	value = strings.TrimSpace(value)
 	value = strings.TrimPrefix(strings.TrimPrefix(value, "0x"), "0X")
 	decoded, err := hex.DecodeString(value)

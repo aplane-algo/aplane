@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package falcon1024attested
+package falcon1024guarded
 
 import (
 	"sync"
@@ -34,7 +34,7 @@ var registerClientOnce sync.Once
 func RegisterClient() {
 	registerClientOnce.Do(func() {
 		logicsigdsa.Register(NewProviderV1())
-		logicsigdsa.Register(NewFalconAttestorProviderV1())
+		logicsigdsa.Register(NewFalconSentryProviderV1())
 		algorithm.RegisterMetadata(metadata{family: FamilyName, signatureSize: SignatureSize})
 		algorithm.RegisterMetadata(metadata{family: FamilyNameFalcon1024, signatureSize: SignatureSizeFalcon1024})
 		addressderive.Register(KeyTypeV1, falconkeys.GetFalconAddressDeriverForType(KeyTypeV1))
