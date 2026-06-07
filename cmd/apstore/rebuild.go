@@ -16,26 +16,39 @@ import (
 
 func cmdRebuild(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore rebuild <archive-path> [--address ADDRESS ...]")
+		return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|attestor] [--address ADDRESS ...]")
 	}
 	source := args[0]
 	var addresses []string
+	var role noderole.Role
+	var roleSet bool
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "--address":
 			if i+1 >= len(args) {
-				return fmt.Errorf("usage: apstore rebuild <archive-path> [--address ADDRESS ...]")
+				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|attestor] [--address ADDRESS ...]")
 			}
 			addresses = append(addresses, args[i+1])
+			i++
+		case "--role":
+			if i+1 >= len(args) {
+				return fmt.Errorf("usage: apstore rebuild <archive-path> [--role signer|attestor] [--address ADDRESS ...]")
+			}
+			parsed, err := noderole.ParseRole(args[i+1])
+			if err != nil {
+				return fmt.Errorf("invalid rebuild role: %w", err)
+			}
+			role = parsed
+			roleSet = true
 			i++
 		default:
 			return fmt.Errorf("unknown rebuild option: %s", args[i])
 		}
 	}
-	return cmdRebuildFromBackup(source, addresses)
+	return cmdRebuildFromBackup(source, addresses, role, roleSet)
 }
 
-func cmdRebuildFromBackup(source string, addresses []string) error {
+func cmdRebuildFromBackup(source string, addresses []string, explicitRole noderole.Role, explicitRoleSet bool) error {
 	identityDir := keystorePaths().IdentityDir(productIdentityID())
 	if _, err := os.Stat(identityDir); err == nil {
 		return fmt.Errorf("rebuild requires a missing identity directory; move or archive the existing directory first: %s", identityDir)
@@ -61,6 +74,11 @@ func cmdRebuildFromBackup(source string, addresses []string) error {
 	logWarnf("authorization, audit logging, rate limiting, runtime reload, and admin IPC policy are not used")
 	logWarnf("rebuild has no durable audit log; capture terminal output externally if needed")
 
+	nodeRole, err := selectRebuildNodeRole(sourceRoot, explicitRole, explicitRoleSet)
+	if err != nil {
+		return err
+	}
+
 	fmt.Print("Enter export passphrase (to decrypt backup files): ")
 	exportPassphrase, err := readPassword()
 	if err != nil {
@@ -70,10 +88,6 @@ func cmdRebuildFromBackup(source string, addresses []string) error {
 	fmt.Println()
 
 	if err := verifyRebuildSource(sourceRoot, exportPassphrase); err != nil {
-		return err
-	}
-	nodeRole, err := backup.SourceNodeRoleOrDefault(sourceRoot)
-	if err != nil {
 		return err
 	}
 
@@ -111,6 +125,36 @@ func cmdRebuildFromBackup(source string, addresses []string) error {
 	}
 	logInfof("rebuild complete: %s", identityDir)
 	return nil
+}
+
+func selectRebuildNodeRole(sourceRoot string, explicitRole noderole.Role, explicitRoleSet bool) (noderole.Role, error) {
+	manifest, ok, err := backup.ReadManifest(sourceRoot)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		manifestRole, err := noderole.ParseRole(manifest.SourceNodeRole)
+		if err != nil {
+			return "", err
+		}
+		if explicitRoleSet {
+			if explicitRole != manifestRole {
+				logWarnf("backup manifest source node role is %q; rebuilding destination as %q from --role", manifestRole, explicitRole)
+			} else {
+				logInfof("rebuild node role: %s (--role matches backup manifest)", explicitRole)
+			}
+			return explicitRole, nil
+		}
+		logInfof("rebuild node role: %s (from backup manifest; pass --role to override)", manifestRole)
+		return manifestRole, nil
+	}
+	if explicitRoleSet {
+		logInfof("rebuild node role: %s (from --role; backup manifest has no source role metadata)", explicitRole)
+		return explicitRole, nil
+	}
+	role := noderole.DefaultRole()
+	logWarnf("backup manifest has no source node role metadata; defaulting rebuild destination role to %q (use --role attestor for attestor backups)", role)
+	return role, nil
 }
 
 func verifyRebuildSource(sourceRoot string, exportPassphrase []byte) error {

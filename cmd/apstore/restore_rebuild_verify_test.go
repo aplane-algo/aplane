@@ -4,12 +4,15 @@
 package main
 
 import (
+	"crypto/ed25519"
 	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -104,6 +107,104 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	}
 	if role.Role != noderole.RoleSigner {
 		t.Fatalf("rebuilt node role = %q, want signer", role.Role)
+	}
+}
+
+func TestCmdRebuildRoleOverrideRestoresAttestorBackupWithoutManifest(t *testing.T) {
+	RegisterProviders()
+
+	oldDataDirectory := dataDirectory
+	oldReader := stdinReader
+	dataDirectory = t.TempDir()
+	stdinReader = nil
+	t.Setenv("APSIGNER_PASSPHRASE", "")
+	defer func() {
+		dataDirectory = oldDataDirectory
+		stdinReader = oldReader
+	}()
+
+	backupRoot := t.TempDir()
+	componentKey, keyJSON := testAttestorComponentKeyJSONForApstore(t)
+	if err := writeStandaloneBackup(filepath.Join(backupRoot, "apb"), componentKey, keyJSON, []byte("export-passphrase")); err != nil {
+		t.Fatalf("writeStandaloneBackup() error = %v", err)
+	}
+	if err := backup.WriteReadme(backupRoot); err != nil {
+		t.Fatalf("WriteReadme() error = %v", err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "attestor-rebuild.tar.gz")
+	if err := backup.CreateTarGzArchive(backupRoot, archivePath); err != nil {
+		t.Fatalf("CreateTarGzArchive() error = %v", err)
+	}
+
+	if err := withTestStdin("export-passphrase\nnew-store-passphrase\nnew-store-passphrase\n", func() error {
+		return cmdRebuild([]string{archivePath, "--role", "attestor", "--address", componentKey})
+	}); err != nil {
+		t.Fatalf("cmdRebuild() error = %v", err)
+	}
+
+	meta, err := apcrypto.LoadKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()))
+	if err != nil {
+		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+	}
+	masterKey, err := meta.VerifyAndDeriveMasterKey([]byte("new-store-passphrase"))
+	if err != nil {
+		t.Fatalf("VerifyAndDeriveMasterKey() error = %v", err)
+	}
+	defer apcrypto.ZeroBytes(masterKey)
+	role, err := noderole.LoadAndVerifyWithMasterKey(keystorePaths(), productIdentityID(), masterKey)
+	if err != nil {
+		t.Fatalf("LoadAndVerifyWithMasterKey() error = %v", err)
+	}
+	if role.Role != noderole.RoleAttestor {
+		t.Fatalf("rebuilt node role = %q, want attestor", role.Role)
+	}
+	if _, err := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), componentKey)); err != nil {
+		t.Fatalf("rebuilt component key file missing: %v", err)
+	}
+	env, ok, err := apkeys.ReadComponentPublicMetadata(keystorePaths(), productIdentityID(), componentKey)
+	if err != nil {
+		t.Fatalf("ReadComponentPublicMetadata() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("ReadComponentPublicMetadata() ok = false, want restored sidecar")
+	}
+	if env.ComponentKey != componentKey {
+		t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, componentKey)
+	}
+}
+
+func TestSelectRebuildNodeRoleExplicitOverridesManifest(t *testing.T) {
+	root := t.TempDir()
+	if err := backup.WriteManifest(root, noderole.RoleSigner, time.Unix(100, 0)); err != nil {
+		t.Fatalf("WriteManifest() error = %v", err)
+	}
+
+	role, err := selectRebuildNodeRole(root, noderole.RoleAttestor, true)
+	if err != nil {
+		t.Fatalf("selectRebuildNodeRole() error = %v", err)
+	}
+	if role != noderole.RoleAttestor {
+		t.Fatalf("selectRebuildNodeRole() role = %q, want attestor", role)
+	}
+}
+
+func TestSelectRebuildNodeRoleDefaultsMissingManifestToSigner(t *testing.T) {
+	role, err := selectRebuildNodeRole(t.TempDir(), "", false)
+	if err != nil {
+		t.Fatalf("selectRebuildNodeRole() error = %v", err)
+	}
+	if role != noderole.RoleSigner {
+		t.Fatalf("selectRebuildNodeRole() role = %q, want signer", role)
+	}
+}
+
+func TestCmdRebuildRejectsInvalidRoleBeforePrompt(t *testing.T) {
+	err := cmdRebuild([]string{"backup.tar.gz", "--role", "dual"})
+	if err == nil {
+		t.Fatal("cmdRebuild() error = nil, want invalid role")
+	}
+	if !strings.Contains(err.Error(), "invalid rebuild role") {
+		t.Fatalf("cmdRebuild() error = %v, want invalid rebuild role", err)
 	}
 }
 
@@ -731,4 +832,22 @@ func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 	if !hasLogicSigBytecode {
 		t.Fatal("restoreKeyMetadata() hasLogicSigBytecode = false, want true")
 	}
+}
+
+func testAttestorComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
+	t.Helper()
+
+	privateKey := ed25519.NewKeyFromSeed(bytes32(0xcd))
+	publicKey := privateKey.Public().(ed25519.PublicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+	return componentKey, mustMarshalJSON(t, apkeys.KeyPair{
+		FormatVersion: apkeys.CurrentKeyFormatVersion,
+		Category:      apkeys.CategoryComponent,
+		KeyType:       keytypes.AttestorComponentEd25519V1,
+		PublicKeyHex:  hex.EncodeToString(publicKey),
+		PrivateKeyHex: hex.EncodeToString(privateKey),
+	})
 }

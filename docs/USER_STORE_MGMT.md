@@ -458,6 +458,7 @@ not already exist.
 
 ```bash
 ./apstore rebuild /mnt/usb/aplane-backup.tar.gz
+./apstore rebuild /mnt/usb/aplane-attestor-backup.tar.gz --role attestor
 ./apstore rebuild /mnt/usb/aplane-backup.tar.gz --address ABC123...XYZ789
 ```
 
@@ -465,9 +466,11 @@ If an existing keystore or identity directory is present, move it aside
 explicitly before rebuilding. `rebuild` creates fresh `.keystore` metadata,
 restores keys from the backup archive, and writes a new store encrypted under
 the new store passphrase you enter. Rebuild uses `manifest.json`
-`source_node_role` metadata from the backup archive when present. Archives
-without role metadata are treated as signer backups; rebuild does not accept a
-role override.
+`source_node_role` metadata as the default destination role when present.
+Archives without role metadata default to signer. Pass `--role signer` or
+`--role attestor` to set the replacement store role explicitly; if that differs
+from the manifest, rebuild warns and uses the explicit role. Restored key
+classes are still validated against the destination role.
 
 ### Verifying Restoration
 
@@ -565,7 +568,7 @@ From the key details view:
 ./apstore restore apply <backup-id|name> [--address ADDRESS ...] [--overwrite]
 
 # Rescue rebuild when no identity keystore exists
-./apstore rebuild <archive-path> [--address ADDRESS ...]
+./apstore rebuild <archive-path> [--role signer|attestor] [--address ADDRESS ...]
 
 # Verify backup
 ./apstore verify <backup-dir|archive-path>

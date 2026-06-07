@@ -17,6 +17,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
@@ -307,6 +308,29 @@ func verifyFileDeep(backupDir, address string, passphrase []byte, opts DeepVerif
 	if keyMeta.PublicKeyHex == "" || keyMeta.PrivateKeyHex == "" {
 		result.Valid = false
 		result.Error = "missing key data"
+		return result
+	}
+
+	if keyMeta.Category == keys.CategoryComponent {
+		publicKey, err := hex.DecodeString(keyMeta.PublicKeyHex)
+		if err != nil {
+			result.Valid = false
+			result.Error = fmt.Sprintf("failed to decode component public key: %v", err)
+			return result
+		}
+		componentKey, err := keytypes.ComponentKeySelector(keyMeta.KeyType, publicKey)
+		if err != nil {
+			result.Valid = false
+			result.Error = fmt.Sprintf("failed to derive component key selector: %v", err)
+			return result
+		}
+		if componentKey != address {
+			result.Valid = false
+			result.Error = fmt.Sprintf("component selector mismatch: filename=%s, derived=%s", address, componentKey)
+			return result
+		}
+		result.Valid = true
+		result.KeyType = keyMeta.KeyType
 		return result
 	}
 

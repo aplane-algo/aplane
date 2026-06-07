@@ -75,7 +75,9 @@ apstore restore apply this-backup.tar.gz --address <ADDRESS>
 You will be prompted for the export passphrase used to encrypt the backup.
 The running signer daemon encrypts restored keys into the target keystore. For
 replacement-keystore rescue when no identity directory exists, use
-` + "`apstore rebuild /path/to/this/backup.tar.gz`" + `.
+` + "`apstore rebuild /path/to/this/backup.tar.gz`" + `, adding
+` + "`--role attestor`" + ` when rebuilding an attestor node from a backup that
+does not carry source role metadata.
 
 ### Manual Decryption
 

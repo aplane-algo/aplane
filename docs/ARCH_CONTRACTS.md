@@ -1713,10 +1713,13 @@ Restore:
   surfaced in restore `warnings[]`
 - library-visible compiled providers are activated for the identity when a key of that type is restored; this writes the normal
   `identities/<identity>/keytypes/<key_type>.json` state record and is idempotent
-- `apstore rebuild` restores an absent store using `manifest.json`
-  `source_node_role` metadata when present. Archives without source role
-  metadata are treated as
-  `signer`, and rebuild has no `--role` override.
+- `apstore rebuild <archive-path> [--role signer|attestor]` restores an absent
+  store. `manifest.json` `source_node_role` metadata is diagnostic and supplies
+  the default destination role when `--role` is omitted. Archives without source
+  role metadata default to `signer`; use `--role attestor` when rebuilding an
+  attestor store from such an archive. If `--role` disagrees with the manifest,
+  rebuild warns and uses the explicit destination role. Restored key classes are
+  still validated against the destination role before being written.
 - a LogicSig key restore is rejected when the key payload has bytecode but is not a v1 signing-metadata key; templates are not
   consulted to reconstruct missing signing metadata
 - a generic LogicSig key restores from its key payload alone; a DSA LogicSig key restores when its stored `base_key_type` is

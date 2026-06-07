@@ -5,6 +5,7 @@ package backup
 
 import (
 	"bytes"
+	stded25519 "crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	utilkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -111,6 +113,44 @@ func TestDeepVerifyBackupValidStandaloneFile(t *testing.T) {
 	}
 	if report.Results[0].KeyType != "ed25519" {
 		t.Fatalf("KeyType = %q, want ed25519", report.Results[0].KeyType)
+	}
+}
+
+func TestDeepVerifyBackupValidComponentKeyFile(t *testing.T) {
+	backupRoot := t.TempDir()
+	keysDir := filepath.Join(backupRoot, "apb")
+	privateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0xcd}, stded25519.SeedSize))
+	publicKey := privateKey.Public().(stded25519.PublicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.AttestorComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+	keyJSON, err := json.Marshal(utilkeys.KeyPair{
+		FormatVersion: utilkeys.CurrentKeyFormatVersion,
+		Category:      utilkeys.CategoryComponent,
+		KeyType:       keytypes.AttestorComponentEd25519V1,
+		PublicKeyHex:  hex.EncodeToString(publicKey),
+		PrivateKeyHex: hex.EncodeToString(privateKey),
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal(KeyPair) error = %v", err)
+	}
+	if err := os.MkdirAll(keysDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, componentKey+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+	}
+
+	report, err := DeepVerifyBackup(backupRoot, "export-passphrase")
+	if err != nil {
+		t.Fatalf("DeepVerifyBackup() error = %v", err)
+	}
+	if report.TotalFiles != 1 || report.ValidFiles != 1 || report.FailedFiles != 0 {
+		t.Fatalf("report counts = %+v, want 1 valid component file", *report)
+	}
+	if report.Results[0].KeyType != keytypes.AttestorComponentEd25519V1 {
+		t.Fatalf("KeyType = %q, want %s", report.Results[0].KeyType, keytypes.AttestorComponentEd25519V1)
 	}
 }
 

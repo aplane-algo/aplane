@@ -238,9 +238,10 @@ restore path.
 
 Backup manifests carry the source node role going forward. Restore validates
 payload key classes against the destination node's role; it does not change the
-destination role. Rebuild uses source role metadata when present and defaults
-missing role metadata to `signer`, matching the new-install-only stance. There
-is no rebuild `--role` override.
+destination role. Rebuild treats source role metadata as a default and
+diagnostic, not authority: `apstore rebuild --role signer|attestor` sets the
+destination role explicitly, while omitted `--role` uses manifest metadata when
+present and otherwise defaults to `signer`.
 
 | Destination key type state | Key restore | Template/provider restore | Generation after restore |
 |---|---|---|---|
@@ -307,7 +308,7 @@ is not published as valid runtime inventory.
 | Backup import | None in active identity. | None in active identity. | Validates archive before publishing to managed backup locker. |
 | Restore preview | None. | None. | Decrypts and reports only, including node-role mismatch diagnostics. |
 | Restore apply | May install/enable required template or activate compiled provider when node role allows it. | Writes selected keys. | Per-key rollback on final write failure. |
-| Rebuild absent store | Writes root `node.yaml` from source role metadata when present, otherwise `signer`. | Restores selected keys into a new identity store. | No `--role` override; destination starts from backup metadata. |
+| Rebuild absent store | Writes root `node.yaml` from explicit `--role`, manifest source role metadata, or `signer` fallback. | Restores selected keys into a new identity store. | Manifest role is diagnostic/default only; destination key-class gates remain authoritative. |
 | Store passphrase change | Re-encrypts installed templates and keys and rewrites role HMAC sidecars. | Re-encrypts keys. | Authority and state are unchanged. |
 | Binary upgrade | May change compiled provider availability/fingerprints. | Existing keys unchanged. | Bad activations require explicit refresh. |
 | Sign request | None. | Reads already-loaded key metadata. | Key type discovery state is not a sign-time authorization gate. |

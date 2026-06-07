@@ -45,7 +45,7 @@ func dispatchApstoreCommand(args []string) {
 			return
 		}
 		logErrorf("usage: apstore restore <preview|apply>")
-		logErrorf("use apstore rebuild <archive-path> [--address ADDRESS ...] only for replacement-keystore recovery")
+		logErrorf("use apstore rebuild <archive-path> [--role signer|attestor] [--address ADDRESS ...] only for replacement-keystore recovery")
 		os.Exit(apstoreExitUsage)
 
 	case "rebuild":
