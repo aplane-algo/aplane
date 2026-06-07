@@ -41,8 +41,8 @@ func TestComponentMessageKnownVectors(t *testing.T) {
 		role Role
 		want string
 	}{
-		{name: "user", role: RoleUser, want: "eeb719b688a256347512dfb24927716eed2946662df69cfe12f9b269d3afe3aa"},
-		{name: "sentry", role: RoleSentry, want: "85b33fc0777d98012d0b2b6a23f3fd797ccf3674b3c01dcda139e564298ac7db"},
+		{name: "user", role: RoleUser, want: "e8ce9c0b8b69f3c13b1a0966e9e316c82fa267d0ed2ca084335a15eb305a542c"},
+		{name: "sentry", role: RoleSentry, want: "05f256f9d6e07d0f8b6740c26c752714d8a4c7efb7bccc600499b64ceffa2bf6"},
 	}
 
 	for _, tt := range tests {

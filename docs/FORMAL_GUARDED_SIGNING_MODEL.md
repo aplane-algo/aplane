@@ -91,7 +91,7 @@ auth address, close target, rekey target, or account address.
 For a canonical target transaction with `txid`, the component-signing message is:
 
 ```text
-m = SHA512_256("APLANE_ATTESTOR_V1" || role_byte || txid)
+m = SHA512_256("APLANE_SENTRY_V1" || role_byte || txid)
 ```
 
 `role_byte = 0x01` for the user role and `role_byte = 0x02` for the sentry

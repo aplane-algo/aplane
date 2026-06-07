@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-const DomainTagV1 = "APLANE_ATTESTOR_V1"
+const DomainTagV1 = "APLANE_SENTRY_V1"
 
 type Role byte
 
@@ -34,7 +34,7 @@ func (r Role) String() string {
 	}
 }
 
-// ComponentMessage returns SHA512/256("APLANE_ATTESTOR_V1" || role || txid).
+// ComponentMessage returns SHA512/256("APLANE_SENTRY_V1" || role || txid).
 func ComponentMessage(role Role, txid [32]byte) [32]byte {
 	input := make([]byte, 0, len(DomainTagV1)+1+len(txid))
 	input = append(input, DomainTagV1...)
