@@ -558,6 +558,7 @@ type AdminSettings struct {
 	LockOnDisconnect  bool
 	PassphraseTimeout string
 	PassphraseMethod  string
+	NodeRole          string
 	Mode              string
 	SSHEnabled        bool
 	SSHPort           int

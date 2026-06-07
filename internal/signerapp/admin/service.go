@@ -68,6 +68,7 @@ func (s Service) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettin
 		LockOnDisconnect:  lockOnDisconnect,
 		PassphraseTimeout: timeoutStr,
 		PassphraseMethod:  passphraseMethod,
+		NodeRole:          string(ir.NodeRole()),
 		SSHEnabled:        sshInfo.Enabled,
 		SSHPort:           sshInfo.Port,
 		SSHFingerprint:    sshInfo.Fingerprint,

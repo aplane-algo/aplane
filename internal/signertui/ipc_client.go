@@ -590,6 +590,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 						LockOnDisconnect:  settings.LockOnDisconnect,
 						PassphraseTimeout: settings.PassphraseTimeout,
 						PassphraseMethod:  settings.PassphraseMethod,
+						NodeRole:          settings.NodeRole,
 						SSHEnabled:        settings.SSHEnabled,
 						SSHPort:           settings.SSHPort,
 						SSHFingerprint:    settings.SSHFingerprint,

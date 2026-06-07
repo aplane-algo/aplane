@@ -55,6 +55,9 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 	if rows[4].section != "Runtime" || rows[4].label != "Admin transport" {
 		t.Fatalf("row 4 = %q/%q, want Runtime/Admin transport", rows[4].section, rows[4].label)
 	}
+	if rows[5].section != "Runtime" || rows[5].label != "Node role" || rows[5].value != "signer" {
+		t.Fatalf("row 5 = %q/%q/%q, want Runtime/Node role/signer", rows[5].section, rows[5].label, rows[5].value)
+	}
 	if rows[0].key != adminproto.AdminSettingUserAutoApprove || rows[0].value != "false" {
 		t.Fatalf("user auto-approve row = key %q value %q, want user_auto_approve/false", rows[0].key, rows[0].value)
 	}

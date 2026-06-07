@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -77,6 +78,15 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		crypto.ZeroBytes(masterKey)
 		t.Fatalf("Failed to create attestation policy baseline: %v", err)
 	}
+	roleBytes, _, err := noderole.SaveInitial(keyPaths, noderole.RoleSigner, time.Now())
+	if err != nil {
+		crypto.ZeroBytes(masterKey)
+		t.Fatalf("Failed to create node role: %v", err)
+	}
+	if err := noderole.SaveIdentitySidecarWithMasterKey(keyPaths, auth.DefaultIdentityID, roleBytes, masterKey, time.Now()); err != nil {
+		crypto.ZeroBytes(masterKey)
+		t.Fatalf("Failed to create node role sidecar: %v", err)
+	}
 	initialPolicy, err := policyruntime.LoadVerified(tmpDir, auth.DefaultIdentityID, serverConfigForTest(), masterKey)
 	if err != nil {
 		crypto.ZeroBytes(masterKey)
@@ -103,6 +113,7 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		ID:            auth.DefaultIdentityID,
 		KeyStore:      ks,
 		KeyPaths:      keyPaths,
+		NodeRole:      noderole.RoleSigner,
 	})
 	_ = server.registry.Register(ir)
 	server.wireReloadFunc(ir)

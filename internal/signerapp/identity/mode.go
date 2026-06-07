@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/attestor/keytypes"
+	"github.com/aplane-algo/aplane/internal/noderole"
 )
 
 // Mode controls which key classes an identity is allowed to hold and use.
@@ -25,6 +26,17 @@ func NormalizeMode(mode Mode) Mode {
 	switch mode {
 	case ModeSigning, ModeAttestation, ModeDual:
 		return mode
+	default:
+		return ModeSigning
+	}
+}
+
+// ModeForNodeRole bridges the durable single-purpose node role into the
+// remaining internal mode-based key gates while those call sites are converted.
+func ModeForNodeRole(role noderole.Role) Mode {
+	switch role {
+	case noderole.RoleAttestor:
+		return ModeAttestation
 	default:
 		return ModeSigning
 	}

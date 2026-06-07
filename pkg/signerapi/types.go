@@ -250,6 +250,7 @@ type HealthResponse struct {
 // StatusResponse is the response from the /status endpoint.
 type StatusResponse struct {
 	IdentityID          string `json:"identity_id"`
+	NodeRole            string `json:"node_role,omitempty"`
 	State               string `json:"state"`
 	SignerLocked        bool   `json:"signer_locked"`
 	ReadyForSigning     bool   `json:"ready_for_signing"`

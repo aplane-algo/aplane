@@ -136,44 +136,35 @@ func TestRenderKeyListViewShowsTemplateConflictStatus(t *testing.T) {
 	}
 }
 
-func TestRenderKeyListViewSeparatesSigningAndAttestorTabs(t *testing.T) {
+func TestRenderKeyListViewUsesSignerNodeWithoutTabs(t *testing.T) {
 	m := Model{
 		width:         120,
 		height:        24,
-		adminSettings: &AdminSettings{Mode: "dual"},
+		adminSettings: &AdminSettings{NodeRole: "signer"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
 		},
 	}
 
-	signing := stripANSI(m.renderKeyListView())
-	if !strings.Contains(signing, "Signing (1)") || !strings.Contains(signing, "Attestor (1)") {
-		t.Fatalf("signing tab missing tab counts:\n%s", signing)
+	rendered := stripANSI(m.renderKeyListView())
+	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Attestor (1)") {
+		t.Fatalf("signer node rendered tab controls:\n%s", rendered)
 	}
-	if !strings.Contains(signing, "SIGNINGADDR") {
-		t.Fatalf("signing tab missing signing key:\n%s", signing)
+	if !strings.Contains(rendered, "SIGNINGADDR") {
+		t.Fatalf("signer node missing signing key:\n%s", rendered)
 	}
-	if strings.Contains(signing, "ATTESTORKEY") {
-		t.Fatalf("signing tab showed attestor key:\n%s", signing)
-	}
-
-	m.keyListTab = keyListTabAttestor
-	attestor := stripANSI(m.renderKeyListView())
-	if !strings.Contains(attestor, "ATTESTORKEY") {
-		t.Fatalf("attestor tab missing attestor key:\n%s", attestor)
-	}
-	if strings.Contains(attestor, "SIGNINGADDR") {
-		t.Fatalf("attestor tab showed signing key:\n%s", attestor)
+	if strings.Contains(rendered, "ATTESTORKEY") {
+		t.Fatalf("signer node showed attestor key:\n%s", rendered)
 	}
 }
 
-func TestRenderKeyListViewUsesSigningModeWithoutTabs(t *testing.T) {
+func TestRenderKeyListViewDefaultsToSignerNodeWithoutTabs(t *testing.T) {
 	m := Model{
 		viewState:     ViewKeyList,
 		width:         120,
 		height:        24,
-		adminSettings: &AdminSettings{Mode: "signing"},
+		adminSettings: &AdminSettings{},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
@@ -195,12 +186,12 @@ func TestRenderKeyListViewUsesSigningModeWithoutTabs(t *testing.T) {
 	}
 }
 
-func TestRenderKeyListViewUsesAttestationModeWithoutTabs(t *testing.T) {
+func TestRenderKeyListViewUsesAttestorNodeWithoutTabs(t *testing.T) {
 	m := Model{
 		viewState:     ViewKeyList,
 		width:         120,
 		height:        24,
-		adminSettings: &AdminSettings{Mode: "attestation"},
+		adminSettings: &AdminSettings{NodeRole: "attestor"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
@@ -209,23 +200,23 @@ func TestRenderKeyListViewUsesAttestationModeWithoutTabs(t *testing.T) {
 
 	rendered := stripANSI(m.renderKeyListView())
 	if strings.Contains(rendered, "Signing (1)") || strings.Contains(rendered, "Attestor (1)") {
-		t.Fatalf("attestation mode rendered tab controls:\n%s", rendered)
+		t.Fatalf("attestor node rendered tab controls:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "ATTESTORKEY") {
-		t.Fatalf("attestation mode missing attestor key:\n%s", rendered)
+		t.Fatalf("attestor node missing attestor key:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "SIGNINGADDR") {
-		t.Fatalf("attestation mode showed signing key:\n%s", rendered)
+		t.Fatalf("attestor node showed signing key:\n%s", rendered)
 	}
 	if strings.Contains(m.viewFooterText(), "Switch tab") {
-		t.Fatalf("attestation mode footer advertised tab switching: %q", m.viewFooterText())
+		t.Fatalf("attestor node footer advertised tab switching: %q", m.viewFooterText())
 	}
 }
 
-func TestHandleKeyListKeysSwitchesTabs(t *testing.T) {
+func TestHandleKeyListKeysIgnoresTabOnAttestorNode(t *testing.T) {
 	m := Model{
 		viewState:     ViewKeyList,
-		adminSettings: &AdminSettings{Mode: "dual"},
+		adminSettings: &AdminSettings{NodeRole: "attestor"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
@@ -234,29 +225,19 @@ func TestHandleKeyListKeysSwitchesTabs(t *testing.T) {
 
 	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyTab})
 	next := nextModel.(Model)
-	if next.keyListTab != keyListTabAttestor {
-		t.Fatalf("keyListTab after tab = %v, want attestor", next.keyListTab)
+	if next.effectiveKeyListTab() != keyListTabAttestor {
+		t.Fatalf("effectiveKeyListTab after tab = %v, want attestor", next.effectiveKeyListTab())
 	}
 	keys := next.filteredKeys()
 	if len(keys) != 1 || keys[0].Address != "ATTESTORKEY" {
 		t.Fatalf("attestor filtered keys = %#v, want attestor key", keys)
 	}
-
-	nextModel, _ = next.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyLeft})
-	next = nextModel.(Model)
-	if next.keyListTab != keyListTabSigning {
-		t.Fatalf("keyListTab after left = %v, want signing", next.keyListTab)
-	}
-	keys = next.filteredKeys()
-	if len(keys) != 1 || keys[0].Address != "SIGNINGADDR" {
-		t.Fatalf("signing filtered keys = %#v, want signing key", keys)
-	}
 }
 
-func TestHandleKeyListKeysIgnoresTabsOutsideDualMode(t *testing.T) {
+func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 	m := Model{
 		viewState:     ViewKeyList,
-		adminSettings: &AdminSettings{Mode: "signing"},
+		adminSettings: &AdminSettings{NodeRole: "signer"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},
@@ -276,7 +257,7 @@ func TestHandleKeyListKeysIgnoresTabsOutsideDualMode(t *testing.T) {
 
 func TestSelectKeyByAddressSwitchesToAttestorTab(t *testing.T) {
 	m := Model{
-		adminSettings: &AdminSettings{Mode: "dual"},
+		adminSettings: &AdminSettings{NodeRole: "attestor"},
 		keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "ATTESTORKEY", KeyType: keytypes.AttestorComponentEd25519V1},

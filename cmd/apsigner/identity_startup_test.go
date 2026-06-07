@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -22,6 +23,13 @@ import (
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	util "github.com/aplane-algo/aplane/internal/tokenfile"
 )
+
+func writeTestNodeRole(t *testing.T, root string, role noderole.Role) {
+	t.Helper()
+	if _, _, err := noderole.SaveInitial(utilkeys.NewPaths(root), role, time.Unix(1700000000, 0)); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestStartupIdentityIDsIncludesProductIdentity(t *testing.T) {
 	root := t.TempDir()
@@ -56,6 +64,7 @@ func TestBuildIdentityRuntimeAppliesStoredConfig(t *testing.T) {
 		keyPaths: utilkeys.NewPaths(root),
 	}
 	cfg := config.DefaultServerConfig()
+	writeTestNodeRole(t, root, noderole.RoleSigner)
 
 	if err := identity.SaveStoredSetting(root, "alice", "user_auto_approve", true); err != nil {
 		t.Fatal(err)
@@ -108,6 +117,7 @@ func TestBuildIdentityRuntimeRejectsStoredMode(t *testing.T) {
 		keyPaths: utilkeys.NewPaths(root),
 	}
 	cfg := config.DefaultServerConfig()
+	writeTestNodeRole(t, root, noderole.RoleSigner)
 
 	if err := identity.SaveStoredSetting(root, "alice", "mode", "attestation"); err != nil {
 		t.Fatal(err)
@@ -168,6 +178,7 @@ func TestBuildIdentityRuntimeForcesHeadlessOverrides_IdentityScopedPassfile(t *t
 		dataDir:  root,
 	}
 	cfg := config.DefaultServerConfig()
+	writeTestNodeRole(t, root, noderole.RoleSigner)
 	// Process-global config has NO passphrase_command_argv, so
 	// cfg.ShouldLockOnDisconnect() returns true (the default).
 
@@ -218,6 +229,7 @@ func TestBuildIdentityRuntimeForcesHeadlessOverrides_GlobalPassfile(t *testing.T
 		dataDir:  root,
 	}
 	cfg := config.DefaultServerConfig()
+	writeTestNodeRole(t, root, noderole.RoleSigner)
 	// Process-global passphrase command — ShouldLockOnDisconnect() returns false.
 	// But also write a stored override to prove the headless path catches it.
 	cfg.PassphraseCommandArgv = []string{"/usr/local/bin/appass-file", "/tmp/secret"}
@@ -260,6 +272,7 @@ func TestBuildIdentityRuntimeRoutesLockedNotificationByIdentity(t *testing.T) {
 	}
 	cfg := config.DefaultServerConfig()
 	hub := &recordingAdminHub{}
+	writeTestNodeRole(t, root, noderole.RoleSigner)
 
 	if _, err := util.LoadAPlaneToken(root, "alice"); err != nil {
 		t.Fatal(err)
@@ -295,6 +308,7 @@ func TestBuildIdentityRuntimeRejectsSecondaryIdentityWithoutToken(t *testing.T) 
 		keyPaths: utilkeys.NewPaths(root),
 	}
 	cfg := config.DefaultServerConfig()
+	writeTestNodeRole(t, root, noderole.RoleSigner)
 
 	_, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
 		DataDir:               root,

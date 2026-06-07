@@ -317,6 +317,7 @@ func ProtocolAdminSettingsMessage(requestID string, settings AdminSettings) prot
 		LockOnDisconnect:  settings.LockOnDisconnect,
 		PassphraseTimeout: settings.PassphraseTimeout,
 		PassphraseMethod:  settings.PassphraseMethod,
+		NodeRole:          settings.NodeRole,
 		SSHEnabled:        settings.SSHEnabled,
 		SSHPort:           settings.SSHPort,
 		SSHFingerprint:    settings.SSHFingerprint,

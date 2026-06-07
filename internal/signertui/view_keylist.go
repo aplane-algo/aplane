@@ -193,18 +193,16 @@ func (m Model) keyListMode() string {
 	if m.adminSettings == nil {
 		return "signing"
 	}
-	switch strings.ToLower(strings.TrimSpace(m.adminSettings.Mode)) {
-	case "attestation":
+	switch strings.ToLower(strings.TrimSpace(m.adminSettings.NodeRole)) {
+	case "attestor":
 		return "attestation"
-	case "dual":
-		return "dual"
 	default:
 		return "signing"
 	}
 }
 
 func (m Model) keyListUsesTabs() bool {
-	return m.keyListMode() == "dual"
+	return false
 }
 
 func (m Model) effectiveKeyListTab() keyListTab {

@@ -757,6 +757,7 @@ type AdminSettingsMessage struct {
 	LockOnDisconnect  bool   `json:"lock_on_disconnect"`
 	PassphraseTimeout string `json:"passphrase_timeout"`
 	PassphraseMethod  string `json:"passphrase_method"`
+	NodeRole          string `json:"node_role,omitempty"`
 	SSHEnabled        bool   `json:"ssh_enabled"`
 	SSHPort           int    `json:"ssh_port,omitempty"`
 	SSHFingerprint    string `json:"ssh_fingerprint,omitempty"`

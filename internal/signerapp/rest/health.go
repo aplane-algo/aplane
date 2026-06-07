@@ -39,9 +39,11 @@ func (s Service) Status(ir *identity.Runtime) *signerapi.StatusResponse {
 	keysetRevision := uint64(0)
 	approvalWaitSeconds := int64(0)
 	identityID := ""
+	nodeRole := ""
 
 	if ir != nil {
 		identityID = ir.ID()
+		nodeRole = string(ir.NodeRole())
 		state = ir.GetState().String()
 		locked = !ir.IsUnlocked()
 		readyForSigning = ir.IsUnlocked()
@@ -52,6 +54,7 @@ func (s Service) Status(ir *identity.Runtime) *signerapi.StatusResponse {
 
 	return &signerapi.StatusResponse{
 		IdentityID:          identityID,
+		NodeRole:            nodeRole,
 		State:               state,
 		SignerLocked:        locked,
 		ReadyForSigning:     readyForSigning,

@@ -37,6 +37,7 @@ func (m Model) adminRows() []adminRow {
 		{section: "User-Editable", label: "Passphrase timeout", key: adminproto.AdminSettingPassphraseTimeout, value: s.PassphraseTimeout, editable: isPromptMode, isBool: false},
 		{section: "User-Editable", label: "Color theme", key: adminproto.AdminSettingTheme, value: themeDisplay(s.Theme), editable: true, choices: []string{"auto", "dark", "light"}},
 		{section: "Runtime", label: "Admin transport", key: "", value: m.transportLabel, editable: false},
+		{section: "Runtime", label: "Node role", key: "", value: nodeRoleDisplay(s.NodeRole), editable: false},
 		{section: "Runtime", label: "Passphrase unlock", key: "", value: passphraseMethodDisplay(s.PassphraseMethod), editable: false},
 		{section: "Runtime", label: "Signer port", key: "", value: fmt.Sprintf("%d", s.SignerPort), editable: false},
 		{section: "Runtime", label: "TEAL compile network", key: "", value: s.TEALCompileNet, editable: false},
@@ -98,6 +99,14 @@ func passphraseMethodDisplay(m string) string {
 	default:
 		return m
 	}
+}
+
+func nodeRoleDisplay(role string) string {
+	role = strings.ToLower(strings.TrimSpace(role))
+	if role == "" {
+		return "signer"
+	}
+	return role
 }
 
 func themeDisplay(t string) string {

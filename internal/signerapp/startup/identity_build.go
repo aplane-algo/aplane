@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
@@ -106,6 +107,11 @@ func StartupIdentityIDs(dataDir string, productID string) ([]string, error) {
 
 // BuildIdentityRuntime constructs and registers one identity runtime.
 func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hooks IdentityBuildHooks, identityID string) (*identity.Runtime, error) {
+	nodeDoc, _, err := noderole.Load(opts.KeyPaths)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load node role for identity %q: %w", identityID, err)
+	}
+
 	storedCfg, err := identity.LoadStoredConfig(opts.DataDir, identityID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config for identity %q: %w", identityID, err)
@@ -147,7 +153,7 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 	lockOnDisconnect := effectiveCfg.LockOnDisconnect
 	sessionTimeout := effectiveCfg.SessionTimeout
 	approvalWait := effectiveCfg.ApprovalWait
-	mode := effectiveCfg.Mode
+	mode := identity.ModeForNodeRole(nodeDoc.Role)
 
 	unlockCfg, unlockErr := ResolveUnlockConfig(opts.DataDir, identityID, opts.Config)
 	if unlockErr != nil {
@@ -167,6 +173,7 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 		ApprovalWait:     approvalWait,
 		UserAutoApprove:  &userAutoApprove,
 		LockOnDisconnect: lockOnDisconnect,
+		NodeRole:         nodeDoc.Role,
 		Mode:             mode,
 		PersistDecommission: func(id string) error {
 			return identity.SaveStoredSetting(opts.DataDir, id, "decommissioned", true)

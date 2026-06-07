@@ -20,6 +20,7 @@ type AdminSettings struct {
 	LockOnDisconnect  bool
 	PassphraseTimeout string
 	PassphraseMethod  string
+	NodeRole          string
 	SSHEnabled        bool
 	SSHPort           int
 	SSHFingerprint    string

@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
@@ -99,6 +100,7 @@ type Runtime struct {
 	approval                   atomic.Pointer[signerapproval.Coordinator]
 	authenticator              auth.Authenticator
 	identityCfg                *IdentityConfig
+	nodeRole                   noderole.Role
 	policyMu                   sync.RWMutex
 	policyCfg                  *policy.Config
 	storedPolicyCfg            *policy.StoredConfig
@@ -146,6 +148,7 @@ type Config struct {
 	ApprovalWait        time.Duration
 	UserAutoApprove     *bool
 	LockOnDisconnect    bool
+	NodeRole            noderole.Role
 	Mode                Mode
 	OnLocked            func() // Called after lock transition completes.
 	PersistDecommission func(identityID string) error
@@ -164,6 +167,14 @@ func New(cfg Config) *Runtime {
 	if cfg.UserAutoApprove != nil {
 		userAutoApprove = *cfg.UserAutoApprove
 	}
+	nodeRole := cfg.NodeRole
+	if nodeRole == "" {
+		nodeRole = noderole.DefaultRole()
+	}
+	mode := NormalizeMode(cfg.Mode)
+	if cfg.Mode == "" {
+		mode = ModeForNodeRole(nodeRole)
+	}
 
 	ir := &Runtime{
 		id:                  cfg.ID,
@@ -172,7 +183,8 @@ func New(cfg Config) *Runtime {
 		lockRuntime:         rt,
 		keySession:          session,
 		authenticator:       cfg.Authenticator,
-		identityCfg:         NewIdentityConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait, cfg.Mode),
+		identityCfg:         NewIdentityConfig(userAutoApprove, cfg.LockOnDisconnect, cfg.SessionTimeout, cfg.ApprovalWait, mode),
+		nodeRole:            nodeRole,
 		keys:                make(map[string]string),
 		keyTypes:            make(map[string]string),
 		keyLsigSizes:        make(map[string]int),
@@ -209,6 +221,11 @@ func (ir *Runtime) SetReloadMutationLock(fn func() sync.Locker) {
 // ID returns the identity ID this runtime belongs to.
 func (ir *Runtime) ID() string {
 	return ir.id
+}
+
+// NodeRole returns the immutable role declared by the signer data root.
+func (ir *Runtime) NodeRole() noderole.Role {
+	return ir.nodeRole
 }
 
 // Policy returns a copy of the effective policy for this identity.
