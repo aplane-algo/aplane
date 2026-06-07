@@ -16,7 +16,7 @@ import (
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
-func TestAttestorEd25519GenerateRandomScansAndLoads(t *testing.T) {
+func TestSentryEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	passphrase := []byte("component-generator-test-passphrase")
 	if _, _, err := securecrypto.CreateKeystoreMetadata(paths.IdentityDir("default"), passphrase); err != nil {
@@ -32,7 +32,7 @@ func TestAttestorEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	}
 	defer securecrypto.ZeroBytes(masterKey)
 
-	g := &AttestorEd25519Generator{}
+	g := &SentryEd25519Generator{}
 	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, keytypes.SentryComponentEd25519V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom() error = %v", err)
@@ -85,7 +85,7 @@ func TestAttestorEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	assertComponentMaterial(t, km, result.Address)
 }
 
-func TestAttestorFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
+func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	passphrase := []byte("component-generator-test-passphrase")
 	if _, _, err := securecrypto.CreateKeystoreMetadata(paths.IdentityDir("default"), passphrase); err != nil {
@@ -101,7 +101,7 @@ func TestAttestorFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	}
 	defer securecrypto.ZeroBytes(masterKey)
 
-	g := &AttestorFalcon1024Generator{}
+	g := &SentryFalcon1024Generator{}
 	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, keytypes.SentryComponentFalcon1024V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom() error = %v", err)
@@ -154,16 +154,16 @@ func TestAttestorFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	assertComponentMaterial(t, km, result.Address)
 }
 
-func TestAttestorEd25519GeneratorRejectsWrongKeyType(t *testing.T) {
-	g := &AttestorEd25519Generator{}
+func TestSentryEd25519GeneratorRejectsWrongKeyType(t *testing.T) {
+	g := &SentryEd25519Generator{}
 	_, err := g.GenerateRandom(context.Background(), storepaths.NewPaths(t.TempDir()), "default", nil, "ed25519", nil)
 	if err == nil {
 		t.Fatal("GenerateRandom() error = nil, want wrong key type rejection")
 	}
 }
 
-func TestAttestorFalcon1024GeneratorRejectsWrongKeyType(t *testing.T) {
-	g := &AttestorFalcon1024Generator{}
+func TestSentryFalcon1024GeneratorRejectsWrongKeyType(t *testing.T) {
+	g := &SentryFalcon1024Generator{}
 	_, err := g.GenerateRandom(context.Background(), storepaths.NewPaths(t.TempDir()), "default", nil, "ed25519", nil)
 	if err == nil {
 		t.Fatal("GenerateRandom() error = nil, want wrong key type rejection")

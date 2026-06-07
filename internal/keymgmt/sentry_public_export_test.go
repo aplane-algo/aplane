@@ -13,20 +13,20 @@ import (
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
-func TestNewAttestorPublicKeyExportEd25519(t *testing.T) {
+func TestNewSentryPublicKeyExportEd25519(t *testing.T) {
 	pub := bytesOfLen(32, 0xab)
 	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
-	env, err := NewAttestorPublicKeyExport(componentKey, keytypes.SentryComponentEd25519V1, strings.ToUpper(hex.EncodeToString(pub)))
+	env, err := NewSentryPublicKeyExport(componentKey, keytypes.SentryComponentEd25519V1, strings.ToUpper(hex.EncodeToString(pub)))
 	if err != nil {
-		t.Fatalf("NewAttestorPublicKeyExport() error = %v", err)
+		t.Fatalf("NewSentryPublicKeyExport() error = %v", err)
 	}
 	sum := sha256.Sum256(pub)
-	if env.Schema != AttestorPublicKeyExportSchema {
-		t.Fatalf("Schema = %q, want %q", env.Schema, AttestorPublicKeyExportSchema)
+	if env.Schema != SentryPublicKeyExportSchema {
+		t.Fatalf("Schema = %q, want %q", env.Schema, SentryPublicKeyExportSchema)
 	}
 	if env.ComponentKey != componentKey {
 		t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, componentKey)
@@ -48,16 +48,16 @@ func TestNewAttestorPublicKeyExportEd25519(t *testing.T) {
 	}
 }
 
-func TestNewAttestorPublicKeyExportFalcon1024(t *testing.T) {
+func TestNewSentryPublicKeyExportFalcon1024(t *testing.T) {
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
 	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
-	env, err := NewAttestorPublicKeyExport(componentKey, keytypes.SentryComponentFalcon1024V1, hex.EncodeToString(pub))
+	env, err := NewSentryPublicKeyExport(componentKey, keytypes.SentryComponentFalcon1024V1, hex.EncodeToString(pub))
 	if err != nil {
-		t.Fatalf("NewAttestorPublicKeyExport() error = %v", err)
+		t.Fatalf("NewSentryPublicKeyExport() error = %v", err)
 	}
 	if env.PublicKeySize != falconfamily.PublicKeySize {
 		t.Fatalf("PublicKeySize = %d, want %d", env.PublicKeySize, falconfamily.PublicKeySize)
@@ -67,7 +67,7 @@ func TestNewAttestorPublicKeyExportFalcon1024(t *testing.T) {
 	}
 }
 
-func TestNewAttestorPublicKeyExportRejectsMismatchedSelector(t *testing.T) {
+func TestNewSentryPublicKeyExportRejectsMismatchedSelector(t *testing.T) {
 	pub := bytesOfLen(32, 0xab)
 	otherPub := bytesOfLen(32, 0xbc)
 	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, otherPub)
@@ -75,28 +75,28 @@ func TestNewAttestorPublicKeyExportRejectsMismatchedSelector(t *testing.T) {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
-	_, err = NewAttestorPublicKeyExport(componentKey, keytypes.SentryComponentEd25519V1, hex.EncodeToString(pub))
+	_, err = NewSentryPublicKeyExport(componentKey, keytypes.SentryComponentEd25519V1, hex.EncodeToString(pub))
 	if err == nil {
-		t.Fatal("NewAttestorPublicKeyExport() error = nil, want selector mismatch")
+		t.Fatal("NewSentryPublicKeyExport() error = nil, want selector mismatch")
 	}
 	if !strings.Contains(err.Error(), "does not match public key-derived selector") {
-		t.Fatalf("NewAttestorPublicKeyExport() error = %v, want selector mismatch", err)
+		t.Fatalf("NewSentryPublicKeyExport() error = %v, want selector mismatch", err)
 	}
 }
 
-func TestNewAttestorPublicKeyExportRejectsSpendingKeyType(t *testing.T) {
+func TestNewSentryPublicKeyExportRejectsSpendingKeyType(t *testing.T) {
 	pub := bytesOfLen(32, 0xab)
 	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
-	_, err = NewAttestorPublicKeyExport(componentKey, "ed25519", hex.EncodeToString(pub))
+	_, err = NewSentryPublicKeyExport(componentKey, "ed25519", hex.EncodeToString(pub))
 	if err == nil {
-		t.Fatal("NewAttestorPublicKeyExport() error = nil, want non-component key type rejection")
+		t.Fatal("NewSentryPublicKeyExport() error = nil, want non-component key type rejection")
 	}
 	if !strings.Contains(err.Error(), "is not a sentry component key type") {
-		t.Fatalf("NewAttestorPublicKeyExport() error = %v, want non-component key type rejection", err)
+		t.Fatalf("NewSentryPublicKeyExport() error = %v, want non-component key type rejection", err)
 	}
 }
 

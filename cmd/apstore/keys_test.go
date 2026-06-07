@@ -19,7 +19,7 @@ func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GenerateKey(ed25519) error = %v", err)
 		}
-		attResult, attPublicHex := generateTestAttestorComponentKey(t, passphrase)
+		attResult, attPublicHex := generateTestSentryComponentKey(t, passphrase)
 
 		out, err := withCapturedStdout(func() error {
 			return withTestStdin(string(passphrase)+"\n", func() error {

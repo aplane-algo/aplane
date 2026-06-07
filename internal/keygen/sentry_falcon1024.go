@@ -16,27 +16,27 @@ import (
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
-const attestorFalcon1024SeedSize = 64
+const sentryFalcon1024SeedSize = 64
 
-// AttestorFalcon1024Generator creates raw Falcon-1024 attestor component keys.
+// SentryFalcon1024Generator creates raw Falcon-1024 sentry component keys.
 // These keys are not Algorand spending accounts and are intentionally
 // registered only under their exact component key type.
-type AttestorFalcon1024Generator struct {
+type SentryFalcon1024Generator struct {
 	ops *signerops.Ops
 }
 
-func (g *AttestorFalcon1024Generator) Family() string {
+func (g *SentryFalcon1024Generator) Family() string {
 	return keytypes.SentryComponentFalcon1024V1
 }
 
-func (g *AttestorFalcon1024Generator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
+func (g *SentryFalcon1024Generator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
 	_ = params
 	if keyType != keytypes.SentryComponentFalcon1024V1 {
-		return nil, fmt.Errorf("attestor Falcon-1024 generator only supports keyType %q, got %q", keytypes.SentryComponentFalcon1024V1, keyType)
+		return nil, fmt.Errorf("sentry Falcon-1024 generator only supports keyType %q, got %q", keytypes.SentryComponentFalcon1024V1, keyType)
 	}
-	if len(seed) != attestorFalcon1024SeedSize {
-		return nil, fmt.Errorf("invalid seed size for attestor Falcon-1024: expected %d bytes, got %d", attestorFalcon1024SeedSize, len(seed))
+	if len(seed) != sentryFalcon1024SeedSize {
+		return nil, fmt.Errorf("invalid seed size for sentry Falcon-1024: expected %d bytes, got %d", sentryFalcon1024SeedSize, len(seed))
 	}
 
 	seedCopy := append([]byte(nil), seed...)
@@ -52,10 +52,10 @@ func (g *AttestorFalcon1024Generator) GenerateFromSeed(ctx context.Context, path
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
-	return saveAttestorComponentKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
+	return saveSentryComponentKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
 }
 
-func (g *AttestorFalcon1024Generator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
+func (g *SentryFalcon1024Generator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
 	_ = paths
 	_ = identityID
@@ -65,14 +65,14 @@ func (g *AttestorFalcon1024Generator) GenerateFromMnemonic(ctx context.Context, 
 	return nil, fmt.Errorf("mnemonic import not supported for key type: %s", keyType)
 }
 
-func (g *AttestorFalcon1024Generator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
+func (g *SentryFalcon1024Generator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
 	_ = ctx
 	_ = params
 	if keyType != keytypes.SentryComponentFalcon1024V1 {
-		return nil, fmt.Errorf("attestor Falcon-1024 generator only supports keyType %q, got %q", keytypes.SentryComponentFalcon1024V1, keyType)
+		return nil, fmt.Errorf("sentry Falcon-1024 generator only supports keyType %q, got %q", keytypes.SentryComponentFalcon1024V1, keyType)
 	}
 
-	seed := make([]byte, attestorFalcon1024SeedSize)
+	seed := make([]byte, sentryFalcon1024SeedSize)
 	if _, err := rand.Read(seed); err != nil {
 		return nil, fmt.Errorf("failed to generate component seed: %w", err)
 	}
@@ -88,10 +88,10 @@ func (g *AttestorFalcon1024Generator) GenerateRandom(ctx context.Context, paths 
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
-	return saveAttestorComponentKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
+	return saveSentryComponentKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
 }
 
-func saveAttestorComponentKey(paths storepaths.Paths, identityID, keyType string, publicKey, privateKey []byte, masterKey []byte) (*GenerationResult, error) {
+func saveSentryComponentKey(paths storepaths.Paths, identityID, keyType string, publicKey, privateKey []byte, masterKey []byte) (*GenerationResult, error) {
 	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
 	if err != nil {
 		return nil, err
@@ -116,13 +116,13 @@ func saveAttestorComponentKey(paths storepaths.Paths, identityID, keyType string
 	}, nil
 }
 
-var registerAttestorFalcon1024GeneratorOnce sync.Once
+var registerSentryFalcon1024GeneratorOnce sync.Once
 
-// RegisterAttestorFalcon1024Generator registers the component-key generator.
+// RegisterSentryFalcon1024Generator registers the component-key generator.
 // This is intentionally separate from the transaction-signing provider
 // registry.
-func RegisterAttestorFalcon1024Generator() {
-	registerAttestorFalcon1024GeneratorOnce.Do(func() {
-		Register(&AttestorFalcon1024Generator{})
+func RegisterSentryFalcon1024Generator() {
+	registerSentryFalcon1024GeneratorOnce.Do(func() {
+		Register(&SentryFalcon1024Generator{})
 	})
 }

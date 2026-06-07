@@ -20,7 +20,7 @@ import (
 
 func TestCmdSentryExportPublicWritesEnvelopeFile(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
-		result, publicKeyHex := generateTestAttestorComponentKey(t, passphrase)
+		result, publicKeyHex := generateTestSentryComponentKey(t, passphrase)
 		outputPath := filepath.Join(t.TempDir(), "sentry-public.json")
 
 		if err := cmdSentry([]string{"export-public", result.Address, outputPath}); err != nil {
@@ -31,12 +31,12 @@ func TestCmdSentryExportPublicWritesEnvelopeFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ReadFile(export) error = %v", err)
 		}
-		var env keymgmt.AttestorPublicKeyExport
+		var env keymgmt.SentryPublicKeyExport
 		if err := json.Unmarshal(data, &env); err != nil {
 			t.Fatalf("Unmarshal(export) error = %v", err)
 		}
-		if env.Schema != keymgmt.AttestorPublicKeyExportSchema {
-			t.Fatalf("Schema = %q, want %q", env.Schema, keymgmt.AttestorPublicKeyExportSchema)
+		if env.Schema != keymgmt.SentryPublicKeyExportSchema {
+			t.Fatalf("Schema = %q, want %q", env.Schema, keymgmt.SentryPublicKeyExportSchema)
 		}
 		if env.ComponentKey != result.Address {
 			t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, result.Address)
@@ -52,7 +52,7 @@ func TestCmdSentryExportPublicWritesEnvelopeFile(t *testing.T) {
 
 func TestCmdSentryExportPublicStdoutIsJSONOnly(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
-		result, _ := generateTestAttestorComponentKey(t, passphrase)
+		result, _ := generateTestSentryComponentKey(t, passphrase)
 
 		out, err := withCapturedStdout(func() error {
 			return cmdSentry([]string{"export-public", result.Address})
@@ -63,7 +63,7 @@ func TestCmdSentryExportPublicStdoutIsJSONOnly(t *testing.T) {
 		if strings.Contains(out, "Enter store passphrase") {
 			t.Fatalf("stdout contains passphrase prompt: %q", out)
 		}
-		var env keymgmt.AttestorPublicKeyExport
+		var env keymgmt.SentryPublicKeyExport
 		if err := json.Unmarshal([]byte(out), &env); err != nil {
 			t.Fatalf("stdout is not a JSON envelope: %v\n%s", err, out)
 		}
@@ -75,7 +75,7 @@ func TestCmdSentryExportPublicStdoutIsJSONOnly(t *testing.T) {
 
 func TestCmdSentryExportPublicRequiresPublicSidecar(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
-		result, _ := generateTestAttestorComponentKey(t, passphrase)
+		result, _ := generateTestSentryComponentKey(t, passphrase)
 		path := apkeys.ComponentPublicMetadataPath(keystorePaths(), productIdentityID(), result.Address)
 		if err := os.Remove(path); err != nil {
 			t.Fatalf("Remove(component public metadata) error = %v", err)
@@ -112,12 +112,12 @@ func TestCmdSentryExportPublicRejectsSpendingKey(t *testing.T) {
 	})
 }
 
-func generateTestAttestorComponentKey(t *testing.T, passphrase []byte) (*keygen.GenerationResult, string) {
+func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.GenerationResult, string) {
 	t.Helper()
 	masterKey := deriveTestMasterKey(t, passphrase)
 	defer crypto.ZeroBytes(masterKey)
 
-	g := &keygen.AttestorEd25519Generator{}
+	g := &keygen.SentryEd25519Generator{}
 	result, err := g.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), masterKey, keytypes.SentryComponentEd25519V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom(sentry-ed25519) error = %v", err)

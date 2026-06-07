@@ -30,7 +30,7 @@ func (g *registryTestGenerator) GenerateRandom(context.Context, storepaths.Paths
 	return nil, nil
 }
 
-func TestGetGeneratorRequiresExactAttestorKeyTypeRegistration(t *testing.T) {
+func TestGetGeneratorRequiresExactSentryKeyTypeRegistration(t *testing.T) {
 	original := registry
 	registry = &GeneratorRegistry{generators: make(map[string]Generator)}
 	defer func() { registry = original }()
@@ -57,7 +57,7 @@ func TestGetGeneratorRequiresExactAttestorKeyTypeRegistration(t *testing.T) {
 	}
 }
 
-func TestGetGeneratorAllowsExactAttestorKeyTypeRegistration(t *testing.T) {
+func TestGetGeneratorAllowsExactSentryKeyTypeRegistration(t *testing.T) {
 	original := registry
 	registry = &GeneratorRegistry{generators: make(map[string]Generator)}
 	defer func() { registry = original }()

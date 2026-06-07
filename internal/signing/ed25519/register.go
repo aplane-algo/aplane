@@ -57,7 +57,7 @@ func RegisterSigner() {
 
 		// Key generator for creating new keys
 		keygen.RegisterEd25519Generator()
-		keygen.RegisterAttestorEd25519Generator()
+		keygen.RegisterSentryEd25519Generator()
 		keytypecatalog.Register(keytypecatalog.Entry{
 			KeyType:      keytypes.SentryComponentEd25519V1,
 			Family:       "sentry-ed25519",

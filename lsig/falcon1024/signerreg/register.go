@@ -28,7 +28,7 @@ func RegisterSigner() {
 		falcon.RegisterClient()
 		falconsigning.RegisterProvider()
 		keygen.RegisterGenerator()
-		internalkeygen.RegisterAttestorFalcon1024Generator()
+		internalkeygen.RegisterSentryFalcon1024Generator()
 		keytypecatalog.Register(keytypecatalog.Entry{
 			KeyType:      keytypes.SentryComponentFalcon1024V1,
 			Family:       "sentry-falcon1024",
