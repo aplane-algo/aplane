@@ -55,6 +55,26 @@ func ReadComponentPublicMetadata(paths storepaths.Paths, identityID, componentKe
 	return *normalized, true, nil
 }
 
+// WriteComponentPublicMetadataFromKeyJSON writes the public-only sidecar for a
+// restored attestor component key payload. Non-component payloads are ignored.
+func WriteComponentPublicMetadataFromKeyJSON(paths storepaths.Paths, identityID, address string, keyJSON []byte) (string, bool, error) {
+	var keyPair KeyPair
+	if err := json.Unmarshal(keyJSON, &keyPair); err != nil {
+		return "", false, fmt.Errorf("failed to parse key payload for component public metadata: %w", err)
+	}
+	if keyPair.Category != CategoryComponent || !keytypes.IsAttestorComponentKeyType(keyPair.KeyType) {
+		return "", false, nil
+	}
+	if err := writeComponentPublicMetadataIfNeeded(paths, identityID, address, &keyPair); err != nil {
+		return "", false, err
+	}
+	componentKey, err := keytypes.NormalizeComponentKeySelector(address)
+	if err != nil {
+		return "", false, fmt.Errorf("invalid component key selector: %w", err)
+	}
+	return ComponentPublicMetadataPath(paths, identityID, componentKey), true, nil
+}
+
 func writeComponentPublicMetadataIfNeeded(paths storepaths.Paths, identityID, address string, keyPair *KeyPair) error {
 	if keyPair == nil || keyPair.Category != CategoryComponent || !keytypes.IsAttestorComponentKeyType(keyPair.KeyType) {
 		return nil

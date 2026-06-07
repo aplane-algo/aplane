@@ -405,6 +405,50 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	}
 }
 
+func TestRestoreKeyWritesComponentPublicMetadataOnAttestorNode(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	componentKey, keyJSON := testAttestorComponentBackupKeyJSON(t)
+	keysDir := filepath.Join(t.TempDir(), "apb")
+	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll(apb) error = %v", err)
+	}
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, componentKey+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+	}
+	var keyPair apkeys.KeyPair
+	if err := json.Unmarshal(keyJSON, &keyPair); err != nil {
+		t.Fatalf("json.Unmarshal(component key) error = %v", err)
+	}
+
+	restorer := NewRestorer(paths, identityID).WithNodeRole(noderole.RoleAttestor)
+	keyType, err := restorer.RestoreKey(keysDir, componentKey, testExportMasterKey, []byte("export-passphrase"))
+	if err != nil {
+		t.Fatalf("RestoreKey() error = %v", err)
+	}
+	if keyType != keytypes.AttestorComponentEd25519V1 {
+		t.Fatalf("RestoreKey() key type = %q, want %q", keyType, keytypes.AttestorComponentEd25519V1)
+	}
+
+	env, ok, err := apkeys.ReadComponentPublicMetadata(paths, identityID, componentKey)
+	if err != nil {
+		t.Fatalf("ReadComponentPublicMetadata() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("ReadComponentPublicMetadata() ok = false, want restored sidecar")
+	}
+	if env.ComponentKey != componentKey {
+		t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, componentKey)
+	}
+	if env.KeyType != keytypes.AttestorComponentEd25519V1 {
+		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.AttestorComponentEd25519V1)
+	}
+	if env.PublicKeyHex != keyPair.PublicKeyHex {
+		t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, keyPair.PublicKeyHex)
+	}
+	assertFileMode(t, apkeys.ComponentPublicMetadataPath(paths, identityID, componentKey), fsutil.StoreFilePerm)
+}
+
 func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T) {
 	ed25519.RegisterSigner()
 
