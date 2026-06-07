@@ -237,7 +237,7 @@ func (a *App) EndpointSyncSentries(ctx context.Context, req EndpointSyncSentries
 		return nil, err
 	}
 
-	candidates := endpointAttestorCandidates(registry)
+	candidates := endpointSentryCandidates(registry)
 	result := &EndpointSyncSentriesResult{
 		DryRun:         req.DryRun,
 		Discovery:      discovery,
@@ -281,7 +281,7 @@ func (a *App) syncEndpointSentriesToSigner(ctx context.Context, result *Endpoint
 		return err
 	}
 	a.Config = cfg
-	candidates := endpointAttestorCandidates(cfg.Endpoints)
+	candidates := endpointSentryCandidates(cfg.Endpoints)
 	resp, err := a.eng.AdminSyncSentryReferencesWithContext(ctx, candidates)
 	if err != nil {
 		return err
@@ -322,7 +322,7 @@ func (a *App) EndpointSentries(_ context.Context) (*EndpointSentriesResult, erro
 		return nil, err
 	}
 	a.Config = cfg
-	candidates := endpointAttestorCandidates(cfg.Endpoints)
+	candidates := endpointSentryCandidates(cfg.Endpoints)
 	result := &EndpointSentriesResult{
 		Sentries: make([]EndpointSentryEntry, 0, len(candidates)),
 	}
@@ -422,7 +422,7 @@ func clonePublishedSentries(in map[string]config.ClientEndpointPublishedSentry) 
 	return out
 }
 
-func endpointAttestorCandidates(registry config.ClientEndpointRegistry) []signerapi.SentryReferenceCandidate {
+func endpointSentryCandidates(registry config.ClientEndpointRegistry) []signerapi.SentryReferenceCandidate {
 	aliases := make([]string, 0, len(registry.Endpoints))
 	for alias := range registry.Endpoints {
 		aliases = append(aliases, alias)
@@ -565,7 +565,7 @@ func endpointSyncSentriesRenderLines(result *EndpointSyncSentriesResult) []strin
 			fmt.Sprintf("  removed stale: %d", result.Removed),
 		)
 	}
-	lines = append(lines, endpointSyncAttestorSummaryLines(result.Records)...)
+	lines = append(lines, endpointSyncSentrySummaryLines(result.Records)...)
 	return lines
 }
 
@@ -594,7 +594,7 @@ func endpointDiscoverSentriesRenderLines(result *EndpointDiscoverSentriesResult)
 	return lines
 }
 
-func endpointSyncAttestorSummaryLines(records []SyncedEndpointSentryReference) []string {
+func endpointSyncSentrySummaryLines(records []SyncedEndpointSentryReference) []string {
 	if len(records) == 0 {
 		return nil
 	}

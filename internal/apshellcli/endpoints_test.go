@@ -27,7 +27,7 @@ func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKeyHex := strings.Repeat("ab", 32)
 	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
-	server := newEndpointCLIKeysServer(t, "att-token", []signerapi.KeyInfo{{
+	server := newEndpointCLIKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
 		Address:        componentKey,
 		PublicKeyHex:   publicKeyHex,
 		KeyType:        keytypes.SentryComponentEd25519V1,
@@ -44,7 +44,7 @@ func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
 		t.Fatalf("MkdirAll(tokens) error = %v", err)
 	}
-	if err := tokenfile.WriteToken(tokenPath, "att-token"); err != nil {
+	if err := tokenfile.WriteToken(tokenPath, "sentry-token"); err != nil {
 		t.Fatalf("WriteToken() error = %v", err)
 	}
 
@@ -119,7 +119,7 @@ func TestRenderEndpointSentriesOmitsLastSeen(t *testing.T) {
 	}
 }
 
-func TestRenderEndpointShowIncludesAttestorLastSeen(t *testing.T) {
+func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 

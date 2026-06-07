@@ -165,7 +165,7 @@ func main() {
 	}
 	daemon := newDaemonModel(daemonStartup, daemonProcessEventChan(daemonProcess))
 	if !shellEnabled {
-		daemon.lines = append(daemon.lines, attestorShellDisabledLines(startupCfg.Notices)...)
+		daemon.lines = append(daemon.lines, sentryShellDisabledLines(startupCfg.Notices)...)
 	}
 
 	startConsole(tui.LocalIPCConnector{Path: startup.Config.IPCPath}, startup.DataDir, shellSession, shellStartup, shellEnabled, daemonProcess, daemon)

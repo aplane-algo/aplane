@@ -22,7 +22,7 @@ func shellPaneEnabledForNodeRole(role noderole.Role) bool {
 	return role != noderole.RoleSentry
 }
 
-func attestorShellDisabledLines(notices []string) []string {
+func sentryShellDisabledLines(notices []string) []string {
 	lines := consoleStartupNoticeLines(notices)
 	lines = append(lines,
 		"[config] shell pane disabled on sentry nodes",

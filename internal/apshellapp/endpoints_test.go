@@ -166,7 +166,7 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
-	publicKeyHex := testAttestorPublicKeyHex()
+	publicKeyHex := testSentryPublicKeyHex()
 	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
 	tokenPath := filepath.Join(dataDir, "tokens", "sentry-local.token")
 	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
@@ -218,7 +218,7 @@ func TestEndpointSentriesRenderComponentSelectorsOnly(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
-	publicKeyHex := testAttestorPublicKeyHex()
+	publicKeyHex := testSentryPublicKeyHex()
 	componentID := testComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
 	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
 
@@ -233,9 +233,9 @@ func TestEndpointDiscoverSentriesRebuildsMappingsFromAllEndpoints(t *testing.T) 
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
-	publicKeyHex := testAttestorPublicKeyHex()
+	publicKeyHex := testSentryPublicKeyHex()
 	componentSelector := testComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
-	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
+	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
 		Address:        componentSelector,
 		PublicKeyHex:   strings.ToUpper(publicKeyHex),
 		KeyType:        keytypes.SentryComponentEd25519V1,
@@ -254,12 +254,12 @@ func TestEndpointDiscoverSentriesRebuildsMappingsFromAllEndpoints(t *testing.T) 
 	}
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
-		URL:  attestorServer.URL,
+		URL:  sentryServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
 	writeEndpointToken(t, dataDir, "signer-local", "sign-token")
-	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
+	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
 	staleKeyHex := strings.Repeat("cd", 32)
 	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
 
@@ -301,7 +301,7 @@ func TestEndpointDiscoverSentriesPreservesUnreachableEndpointInventory(t *testin
 	newOnlineKey := strings.Repeat("ab", 32)
 	oldOnlineKey := strings.Repeat("cd", 32)
 	offlineKey := strings.Repeat("ef", 32)
-	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
+	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
 		Address:        testComponentSelector(t, keytypes.SentryComponentEd25519V1, newOnlineKey),
 		PublicKeyHex:   newOnlineKey,
 		KeyType:        keytypes.SentryComponentEd25519V1,
@@ -310,7 +310,7 @@ func TestEndpointDiscoverSentriesPreservesUnreachableEndpointInventory(t *testin
 
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-online", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
-		URL:  attestorServer.URL,
+		URL:  sentryServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(sentry-online) error = %v", err)
 	}
@@ -320,8 +320,8 @@ func TestEndpointDiscoverSentriesPreservesUnreachableEndpointInventory(t *testin
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(sentry-offline) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "sentry-online", "att-token")
-	writeEndpointToken(t, dataDir, "sentry-offline", "att-token")
+	writeEndpointToken(t, dataDir, "sentry-online", "sentry-token")
+	writeEndpointToken(t, dataDir, "sentry-offline", "sentry-token")
 	writePublishedSentries(t, dataDir, map[string]map[string]config.ClientEndpointPublishedSentry{
 		"sentry-online": {
 			oldOnlineKey: endpointPublishedSentryForTest(t, oldOnlineKey),
@@ -377,14 +377,14 @@ func TestEndpointDiscoverSentriesPreservesLockedEndpointInventory(t *testing.T) 
 	app := newEndpointTestApp(t, dataDir)
 
 	staleKeyHex := strings.Repeat("cd", 32)
-	attestorServer := newEndpointKeysStatusServer(t, "att-token", http.StatusForbidden, `{"error":"signer is locked"}`)
+	sentryServer := newEndpointKeysStatusServer(t, "sentry-token", http.StatusForbidden, `{"error":"signer is locked"}`)
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
-		URL:  attestorServer.URL,
+		URL:  sentryServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
+	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
 	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
 
 	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
@@ -404,14 +404,14 @@ func TestEndpointDiscoverSentriesPreservesServerErrorEndpointInventory(t *testin
 	app := newEndpointTestApp(t, dataDir)
 
 	staleKeyHex := strings.Repeat("cd", 32)
-	attestorServer := newEndpointKeysStatusServer(t, "att-token", http.StatusServiceUnavailable, `service unavailable`)
+	sentryServer := newEndpointKeysStatusServer(t, "sentry-token", http.StatusServiceUnavailable, `service unavailable`)
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
-		URL:  attestorServer.URL,
+		URL:  sentryServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
+	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
 	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
 
 	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
@@ -428,10 +428,10 @@ func TestEndpointDiscoverSentriesRejectsAuthFailure(t *testing.T) {
 	app := newEndpointTestApp(t, dataDir)
 
 	staleKeyHex := strings.Repeat("cd", 32)
-	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{})
+	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
-		URL:  attestorServer.URL,
+		URL:  sentryServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
@@ -460,9 +460,9 @@ func TestEndpointDiscoverSentriesRejectsInvalidEndpointMetadata(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
-	publicKeyHex := testAttestorPublicKeyHex()
+	publicKeyHex := testSentryPublicKeyHex()
 	staleKeyHex := strings.Repeat("cd", 32)
-	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
+	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
 		Address:        "bad-component-selector",
 		PublicKeyHex:   publicKeyHex,
 		KeyType:        keytypes.SentryComponentEd25519V1,
@@ -470,11 +470,11 @@ func TestEndpointDiscoverSentriesRejectsInvalidEndpointMetadata(t *testing.T) {
 	}})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
-		URL:  attestorServer.URL,
+		URL:  sentryServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
+	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
 	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
 
 	_, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
@@ -501,8 +501,8 @@ func TestEndpointDiscoverSentriesRejectsInvalidEndpointMetadata(t *testing.T) {
 func TestEndpointDiscoverSentriesDryRunDoesNotWriteMappings(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	publicKeyHex := testAttestorPublicKeyHex()
-	attestorServer := newEndpointKeysServer(t, "att-token", []signerapi.KeyInfo{{
+	publicKeyHex := testSentryPublicKeyHex()
+	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
 		Address:        testComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex),
 		PublicKeyHex:   publicKeyHex,
 		KeyType:        keytypes.SentryComponentEd25519V1,
@@ -510,11 +510,11 @@ func TestEndpointDiscoverSentriesDryRunDoesNotWriteMappings(t *testing.T) {
 	}})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
-		URL:  attestorServer.URL,
+		URL:  sentryServer.URL,
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint(sentry-local) error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
+	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
 
 	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{DryRun: true})
 	if err != nil {
@@ -535,14 +535,14 @@ func TestEndpointDiscoverSentriesDryRunDoesNotWriteMappings(t *testing.T) {
 func TestEndpointSyncSentriesDryRunUsesPublishedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
-	publicKeyHex := testAttestorPublicKeyHex()
+	publicKeyHex := testSentryPublicKeyHex()
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
 		URL:  "http://127.0.0.1:12345",
 	}, true); err != nil {
 		t.Fatalf("UpsertStoredClientEndpoint() error = %v", err)
 	}
-	writeEndpointToken(t, dataDir, "sentry-local", "att-token")
+	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
 	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
 
 	result, err := app.EndpointSyncSentries(context.Background(), EndpointSyncSentriesRequest{DryRun: true})
@@ -607,7 +607,7 @@ func TestEndpointDeleteRejectsMappedSentryEndpoint(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
-	publicKeyHex := testAttestorPublicKeyHex()
+	publicKeyHex := testSentryPublicKeyHex()
 	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
 
 	_, err := app.EndpointDelete(context.Background(), "sentry-local")
@@ -714,7 +714,7 @@ func endpointPublishedSentryForTest(t *testing.T, publicKeyHex string) config.Cl
 	}
 }
 
-func testAttestorPublicKeyHex() string {
+func testSentryPublicKeyHex() string {
 	return strings.Repeat("ab", 32)
 }
 

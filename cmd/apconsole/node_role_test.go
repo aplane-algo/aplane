@@ -19,8 +19,8 @@ func TestShellPaneEnabledForNodeRole(t *testing.T) {
 	}
 }
 
-func TestAttestorShellDisabledLines(t *testing.T) {
-	lines := attestorShellDisabledLines([]string{"profile notice"})
+func TestSentryShellDisabledLines(t *testing.T) {
+	lines := sentryShellDisabledLines([]string{"profile notice"})
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "profile notice") {
 		t.Fatalf("startup lines missing profile notice:\n%s", joined)
