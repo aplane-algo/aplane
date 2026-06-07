@@ -37,10 +37,11 @@ const (
 )
 
 type model struct {
-	focus       pane
-	zoomed      bool
-	help        bool
-	quitConfirm bool
+	focus         pane
+	zoomed        bool
+	help          bool
+	quitConfirm   bool
+	shellDisabled bool
 
 	shell  shellModel
 	signer tea.Model
@@ -65,21 +66,33 @@ type layout struct {
 }
 
 func newModel(connector tui.AdminConnector, dataDir string, shell shellExecutor, shellStartup []string, daemon daemonModel) model {
+	return newModelWithShell(connector, dataDir, shell, shellStartup, daemon, true)
+}
+
+func newModelWithShell(connector tui.AdminConnector, dataDir string, shell shellExecutor, shellStartup []string, daemon daemonModel, shellEnabled bool) model {
 	return model{
-		focus:  paneSigner,
-		shell:  newShellModel(shell, shellStartup),
-		signer: tui.NewModel(connector, dataDir),
-		daemon: daemon,
+		focus:         paneSigner,
+		shellDisabled: !shellEnabled,
+		shell:         newShellModel(shell, shellStartup),
+		signer:        tui.NewModel(connector, dataDir),
+		daemon:        daemon,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		tea.EnterAltScreen,
 		m.signer.Init(),
 		m.daemon.Init(),
-		m.shell.Init(),
-	)
+	}
+	if m.shellEnabled() {
+		cmds = append(cmds, m.shell.Init())
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m model) shellEnabled() bool {
+	return !m.shellDisabled
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -102,7 +115,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.quitConfirm {
 			return m.handleQuitConfirmKey(msg)
 		}
-		if m.shell.pendingHostKey != nil || m.shell.pendingLinePrompt != nil {
+		if m.shellEnabled() && (m.shell.pendingHostKey != nil || m.shell.pendingLinePrompt != nil) {
 			shell, cmd := m.shell.Update(msg)
 			m.shell = shell
 			return m, cmd
@@ -118,7 +131,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		if msg.Type == tea.KeyCtrlC && m.focus == paneShell && m.shell.running {
+		if m.shellEnabled() && msg.Type == tea.KeyCtrlC && m.focus == paneShell && m.shell.running {
 			shell, cmd := m.shell.Update(msg)
 			m.shell = shell
 			return m, cmd
@@ -131,19 +144,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help = true
 			return m, nil
 		case "shift+left":
-			m.focus = prevPane(m.focus, m.daemon.hasLogNavigation())
+			m.focus = m.prevPane()
 			return m.resyncSignerSize()
 		case "shift+right", "shift+tab":
-			m.focus = nextPane(m.focus, m.daemon.hasLogNavigation())
+			m.focus = m.nextPane()
+			return m.resyncSignerSize()
+		case "shift+up":
+			m.focus = m.paneAbove()
+			return m.resyncSignerSize()
+		case "shift+down":
+			m.focus = m.paneBelow()
 			return m.resyncSignerSize()
 		case "f1":
 			m.focus = paneSigner
 			return m, nil
 		case "f2":
-			m.focus = paneShell
+			if m.shellEnabled() {
+				m.focus = paneShell
+			} else if m.daemon.hasLogNavigation() {
+				m.focus = paneDaemon
+			}
 			return m, nil
 		case "f3":
-			if !m.daemon.hasLogNavigation() {
+			if !m.shellEnabled() || !m.daemon.hasLogNavigation() {
 				return m, nil
 			}
 			m.focus = paneDaemon
@@ -152,7 +175,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.zoomed = !m.zoomed
 			return m.resyncSignerSize()
 		}
-		if m.focus == paneShell && isScrollKey(msg) {
+		if m.shellEnabled() && m.focus == paneShell && isScrollKey(msg) {
 			m.shell.scrollPage(scrollDirection(msg), m.shellVisibleRows())
 			return m, nil
 		}
@@ -160,32 +183,50 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.daemon.scrollPage(scrollDirection(msg), m.daemonVisibleRows())
 			return m, nil
 		}
-		if m.focus == paneShell {
+		if m.shellEnabled() && m.focus == paneShell {
 			shell, cmd := m.shell.Update(msg)
 			m.shell = shell
 			return m, cmd
 		}
 	case shellExecMsg:
+		if !m.shellEnabled() {
+			return m, nil
+		}
 		shell, cmd := m.shell.Update(msg)
 		m.shell = shell
 		return m, cmd
 	case shellHostKeyApprovalMsg:
+		if !m.shellEnabled() {
+			return m, nil
+		}
 		shell, cmd := m.shell.Update(msg)
 		m.shell = shell
 		return m, cmd
 	case shellLinePromptMsg:
+		if !m.shellEnabled() {
+			return m, nil
+		}
 		shell, cmd := m.shell.Update(msg)
 		m.shell = shell
 		return m, cmd
 	case shellStartupConnectMsg:
+		if !m.shellEnabled() {
+			return m, nil
+		}
 		shell, cmd := m.shell.Update(msg)
 		m.shell = shell
 		return m, cmd
 	case shellProgressLineMsg:
+		if !m.shellEnabled() {
+			return m, nil
+		}
 		shell, cmd := m.shell.Update(msg)
 		m.shell = shell
 		return m, cmd
 	case shellSpinnerTickMsg:
+		if !m.shellEnabled() {
+			return m, nil
+		}
 		shell, cmd := m.shell.Update(msg)
 		m.shell = shell
 		return m, cmd
@@ -277,7 +318,7 @@ func (m model) View() string {
 
 	var body string
 	switch {
-	case m.shell.pendingHostKey != nil:
+	case m.shellEnabled() && m.shell.pendingHostKey != nil:
 		body = lipgloss.Place(
 			l.contentWidth, l.contentHeight,
 			lipgloss.Center, lipgloss.Center,
@@ -349,6 +390,16 @@ func (m model) layout() layout {
 		daemonHeight = max(5, contentHeight-8)
 	}
 	topHeight = contentHeight - daemonHeight
+	if !m.shellEnabled() {
+		return layout{
+			split:         true,
+			contentWidth:  contentWidth,
+			contentHeight: contentHeight,
+			shell:         rect{},
+			signer:        rect{width: contentWidth, height: topHeight},
+			daemon:        rect{width: contentWidth, height: daemonHeight},
+		}
+	}
 
 	topWidth := contentWidth - topPaneGap
 	signerWidth := (topWidth*signerPaneCols + (signerPaneCols+shellPaneCols)/2) / (signerPaneCols + shellPaneCols)
@@ -377,25 +428,45 @@ func (m model) renderBody(l layout) string {
 		return render(innerW, bodyH)
 	}
 
-	shellBody := paneBody(l.shell, m.shell.View)
 	daemonBody := paneBody(l.daemon, m.daemon.View)
 
 	if !l.split {
 		switch m.focus {
 		case paneSigner:
-			return renderPane("Signer Admin", true, m.signer.View(), l.signer.width, l.signer.height)
+			return renderPane(m.signerPaneTitle(), true, m.signer.View(), l.signer.width, l.signer.height)
 		case paneDaemon:
 			return renderPane("Daemon", true, daemonBody, l.daemon.width, l.daemon.height)
 		default:
+			if !m.shellEnabled() {
+				return renderPane(m.signerPaneTitle(), true, m.signer.View(), l.signer.width, l.signer.height)
+			}
+			shellBody := paneBody(l.shell, m.shell.View)
 			return renderPane("Shell", true, shellBody, l.shell.width, l.shell.height)
 		}
 	}
 
-	shellBox := renderPane("Shell", m.focus == paneShell, shellBody, l.shell.width, l.shell.height)
-	signerBox := renderPane("Signer Admin", m.focus == paneSigner, m.signer.View(), l.signer.width, l.signer.height)
-	top := lipgloss.JoinHorizontal(lipgloss.Top, signerBox, strings.Repeat(" ", topPaneGap), shellBox)
+	signerBox := renderPane(m.signerPaneTitle(), m.focus == paneSigner, m.signer.View(), l.signer.width, l.signer.height)
 	daemonBox := renderPane("Daemon", m.focus == paneDaemon, daemonBody, l.daemon.width, l.daemon.height)
+	if !m.shellEnabled() {
+		return lipgloss.JoinVertical(lipgloss.Left, signerBox, daemonBox)
+	}
+	shellBody := paneBody(l.shell, m.shell.View)
+	shellBox := renderPane("Shell", m.focus == paneShell, shellBody, l.shell.width, l.shell.height)
+	top := lipgloss.JoinHorizontal(lipgloss.Top, signerBox, strings.Repeat(" ", topPaneGap), shellBox)
 	return lipgloss.JoinVertical(lipgloss.Left, top, daemonBox)
+}
+
+func (m model) signerPaneTitle() string {
+	type adminTitleProvider interface {
+		AdminTitle() string
+	}
+	if titled, ok := m.signer.(adminTitleProvider); ok {
+		return titled.AdminTitle()
+	}
+	if !m.shellEnabled() {
+		return "Attestor Admin"
+	}
+	return "Signer Admin"
 }
 
 func renderPane(title string, focused bool, body string, width, height int) string {
@@ -488,15 +559,29 @@ func (m model) renderTitle(width int) string {
 		mode = "focus"
 	}
 
-	status := lipgloss.JoinHorizontal(
-		lipgloss.Top,
+	statusItems := []string{
 		statusPill("daemon", string(m.daemon.status), daemonStatusColor(m.daemon.status)),
-		"  ",
-		statusPill("shell", m.shellState(), shellStatusColor(m.shell)),
-		"  ",
-		statusPill("mode", mode, p.Subtitle),
-	)
+	}
+	if m.shellEnabled() {
+		statusItems = append(statusItems, statusPill("shell", m.shellState(), shellStatusColor(m.shell)))
+	}
+	statusItems = append(statusItems, statusPill("mode", mode, p.Subtitle))
+	status := lipgloss.JoinHorizontal(lipgloss.Top, joinStatusItems(statusItems)...)
 	return padBetween(title, status, width)
+}
+
+func joinStatusItems(items []string) []string {
+	if len(items) <= 1 {
+		return items
+	}
+	out := make([]string, 0, len(items)*2-1)
+	for i, item := range items {
+		if i > 0 {
+			out = append(out, "  ")
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func (m model) shellState() string {
@@ -554,14 +639,20 @@ func (m model) renderTabs(width int) string {
 		return lipgloss.NewStyle().Padding(0, 1).Render(keyStyle.Render(key) + " " + nameStyle.Render(name))
 	}
 	tabItems := []string{
-		tab("F1", "Signer Admin", paneSigner),
-		tab("F2", "Shell", paneShell),
+		tab("F1", m.signerPaneTitle(), paneSigner),
+	}
+	if m.shellEnabled() {
+		tabItems = append(tabItems, tab("F2", "Shell", paneShell))
 	}
 	if m.daemon.hasLogNavigation() {
-		tabItems = append(tabItems, tab("F3", "Daemon", paneDaemon))
+		if !m.shellEnabled() {
+			tabItems = append(tabItems, tab("F2", "Daemon", paneDaemon))
+		} else {
+			tabItems = append(tabItems, tab("F3", "Daemon", paneDaemon))
+		}
 	}
 	tabs := lipgloss.JoinHorizontal(lipgloss.Top, tabItems...)
-	hint := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Help)).Render("F4 zoom · Shift ← → navigate")
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Help)).Render("F4 zoom · " + m.navigationHint() + " navigate")
 	return padBetween(tabs, hint, width)
 }
 
@@ -574,10 +665,10 @@ func (m model) renderFooter(width int) string {
 }
 
 func (m model) footerText() string {
-	if m.shell.pendingHostKey != nil {
+	if m.shellEnabled() && m.shell.pendingHostKey != nil {
 		return "Trust SSH host: press y to accept · any other key to deny"
 	}
-	if m.shell.pendingLinePrompt != nil {
+	if m.shellEnabled() && m.shell.pendingLinePrompt != nil {
 		return "Enter response · Ctrl+C cancel prompt"
 	}
 	if m.quitConfirm {
@@ -586,25 +677,38 @@ func (m model) footerText() string {
 	if m.help {
 		return "?/Esc/F5/q close help · Ctrl+C quit"
 	}
-	if m.focus == paneShell && m.shell.startupRunning {
+	if m.shellEnabled() && m.focus == paneShell && m.shell.startupRunning {
 		return "Shell startup in progress · PgUp/PgDn scroll · " + m.focusHint() + " · F4 zoom"
 	}
-	if m.focus == paneShell && m.shell.running {
+	if m.shellEnabled() && m.focus == paneShell && m.shell.running {
 		return "Ctrl+C cancel shell command · PgUp/PgDn scroll · " + m.focusHint() + " · F4 zoom"
 	}
-	if m.focus == paneShell && m.shell.exited {
+	if m.shellEnabled() && m.focus == paneShell && m.shell.exited {
 		return "Shell closed · r restart · PgUp/PgDn scroll · " + m.focusHint() + " · F4 zoom · Ctrl+C quit"
 	}
-	if m.focus == paneShell {
+	if m.shellEnabled() && m.focus == paneShell {
 		return "←/→ edit · Up/Down history · PgUp/PgDn scroll · " + m.focusHint() + " · F4 zoom · ? help"
 	}
 	if m.focus == paneDaemon {
-		return "PgUp/PgDn scroll · F1 signer · F2 shell · F3 daemon · F4 zoom · Shift ← → navigate · ? help"
+		return "PgUp/PgDn scroll · " + m.focusHint() + " · F4 zoom · " + m.navigationHint() + " navigate · ? help"
 	}
-	return m.focusHint() + " · F4 zoom · Shift ← → navigate · ? help · Ctrl+C confirm quit"
+	return m.focusHint() + " · F4 zoom · " + m.navigationHint() + " navigate · ? help · Ctrl+C confirm quit"
+}
+
+func (m model) navigationHint() string {
+	if !m.shellEnabled() {
+		return "Shift ↑ ↓"
+	}
+	return "Shift ← →"
 }
 
 func (m model) focusHint() string {
+	if !m.shellEnabled() {
+		if m.daemon.hasLogNavigation() {
+			return "F1 signer · F2 daemon"
+		}
+		return "F1 signer"
+	}
 	if m.daemon.hasLogNavigation() {
 		return "F1 signer · F2 shell · F3 daemon"
 	}
@@ -676,23 +780,35 @@ func (m model) renderHelpOverlay() string {
 		title,
 		"",
 		kv(m.helpFocusKeys(), m.helpFocusText()),
-		kv("Shift+← →", m.helpCycleText()),
+		kv(m.helpCycleKeys(), m.helpCycleText()),
 		kv("F4", "toggle split/focused layout"),
 		kv("? F5", "toggle this help"),
 		kv("Esc / q", "close this help"),
 		kv("PgUp/PgDn", m.helpScrollText()),
-		kv("Up/Down", "browse shell command history when shell pane is focused"),
-		kv("Ctrl+P/Ctrl+N", "previous or next shell history entry"),
-		kv("Tab", "complete apshell command (when shell pane is focused)"),
-		kv("Ctrl+C", "quit (or cancel running shell command when shell is focused)"),
+	}
+	if m.shellEnabled() {
+		lines = append(lines,
+			kv("Up/Down", "browse shell command history when shell pane is focused"),
+			kv("Ctrl+P/Ctrl+N", "previous or next shell history entry"),
+			kv("Tab", "complete apshell command (when shell pane is focused)"),
+			kv("Ctrl+C", "quit (or cancel running shell command when shell is focused)"),
+		)
+	} else {
+		lines = append(lines, kv("Ctrl+C", "quit"))
+	}
+	lines = append(lines,
 		"",
-		kv("Shell pane", "embedded apshell command session"),
 		kv("Signer pane", "apadmin Bubble Tea UI over local IPC or SSH admin"),
 		kv("Daemon pane", "local apsigner status and owned-daemon logs"),
 		"",
 		kv("focus", m.focus.String()),
 		kv("daemon", string(m.daemon.status)),
-		kv("shell", m.shellState()),
+	)
+	if m.shellEnabled() {
+		lines = append(lines,
+			kv("Shell pane", "embedded apshell command session"),
+			kv("shell", m.shellState()),
+		)
 	}
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return lipgloss.NewStyle().
@@ -703,6 +819,12 @@ func (m model) renderHelpOverlay() string {
 }
 
 func (m model) helpFocusText() string {
+	if !m.shellEnabled() {
+		if m.daemon.hasLogNavigation() {
+			return "focus signer or daemon"
+		}
+		return "focus signer"
+	}
 	if m.daemon.hasLogNavigation() {
 		return "focus shell, signer, or daemon"
 	}
@@ -710,13 +832,32 @@ func (m model) helpFocusText() string {
 }
 
 func (m model) helpFocusKeys() string {
+	if !m.shellEnabled() {
+		if m.daemon.hasLogNavigation() {
+			return "F1 F2"
+		}
+		return "F1"
+	}
 	if m.daemon.hasLogNavigation() {
 		return "F1 F2 F3"
 	}
 	return "F1 F2"
 }
 
+func (m model) helpCycleKeys() string {
+	if !m.shellEnabled() {
+		return "Shift+↑ ↓"
+	}
+	return "Shift+← →"
+}
+
 func (m model) helpCycleText() string {
+	if !m.shellEnabled() {
+		if m.daemon.hasLogNavigation() {
+			return "cycle signer and daemon panes"
+		}
+		return "signer pane only"
+	}
 	if m.daemon.hasLogNavigation() {
 		return "cycle shell, signer, and daemon panes"
 	}
@@ -724,6 +865,12 @@ func (m model) helpCycleText() string {
 }
 
 func (m model) helpScrollText() string {
+	if !m.shellEnabled() {
+		if m.daemon.hasLogNavigation() {
+			return "scroll daemon log when focused"
+		}
+		return "no scrollable pane"
+	}
 	if m.daemon.hasLogNavigation() {
 		return "scroll shell transcript or daemon log when focused"
 	}
@@ -795,6 +942,65 @@ func scrollDirection(msg tea.KeyMsg) int {
 		return 1
 	}
 	return -1
+}
+
+func (m model) nextPane() pane {
+	return nextPaneAvailable(m.focus, m.shellEnabled(), m.daemon.hasLogNavigation())
+}
+
+func (m model) prevPane() pane {
+	return prevPaneAvailable(m.focus, m.shellEnabled(), m.daemon.hasLogNavigation())
+}
+
+func (m model) paneAbove() pane {
+	if !m.shellEnabled() {
+		return paneSigner
+	}
+	if m.focus == paneDaemon {
+		return paneSigner
+	}
+	return m.focus
+}
+
+func (m model) paneBelow() pane {
+	if !m.daemon.hasLogNavigation() {
+		return m.focus
+	}
+	if !m.shellEnabled() {
+		return paneDaemon
+	}
+	switch m.focus {
+	case paneSigner, paneShell:
+		return paneDaemon
+	default:
+		return m.focus
+	}
+}
+
+func nextPaneAvailable(p pane, includeShell, includeDaemon bool) pane {
+	if !includeShell {
+		if includeDaemon {
+			if p == paneSigner {
+				return paneDaemon
+			}
+			return paneSigner
+		}
+		return paneSigner
+	}
+	return nextPane(p, includeDaemon)
+}
+
+func prevPaneAvailable(p pane, includeShell, includeDaemon bool) pane {
+	if !includeShell {
+		if includeDaemon {
+			if p == paneSigner {
+				return paneDaemon
+			}
+			return paneSigner
+		}
+		return paneSigner
+	}
+	return prevPane(p, includeDaemon)
 }
 
 func nextPane(p pane, includeDaemon bool) pane {

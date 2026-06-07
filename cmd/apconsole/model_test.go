@@ -97,6 +97,42 @@ func TestSplitLayoutUsesSignerShellFortyFiveFiftyFiveRatio(t *testing.T) {
 	}
 }
 
+func TestShellDisabledSplitLayoutUsesFullWidthSignerAboveDaemon(t *testing.T) {
+	m := model{
+		focus:         paneSigner,
+		shellDisabled: true,
+		shell:         newShellModel(nil, []string{"shell ready"}),
+		signer:        stubTeaModel{},
+		daemon:        newDaemonModel(daemonInfo{Status: daemonStatusAttached, Detail: "attached"}, nil),
+		width:         splitMinWidth,
+		height:        splitMinHeight,
+	}
+
+	l := m.layout()
+	if !l.split {
+		t.Fatal("layout().split = false, want split layout")
+	}
+	if l.signer.width != l.contentWidth {
+		t.Fatalf("signer width = %d, want full content width %d", l.signer.width, l.contentWidth)
+	}
+	if l.shell.width != 0 || l.shell.height != 0 {
+		t.Fatalf("shell rect = %+v, want zero rect", l.shell)
+	}
+
+	got := m.renderBody(l)
+	if strings.Contains(got, "Shell") {
+		t.Fatalf("shell pane rendered while disabled:\n%s", got)
+	}
+	signerPos := strings.Index(got, "Attestor Admin")
+	daemonPos := strings.Index(got, "Daemon")
+	if signerPos < 0 || daemonPos < 0 {
+		t.Fatalf("rendered view missing pane headers: signer=%d daemon=%d\n%s", signerPos, daemonPos, got)
+	}
+	if signerPos > daemonPos {
+		t.Fatalf("signer pane rendered after daemon pane: signer=%d daemon=%d", signerPos, daemonPos)
+	}
+}
+
 func TestNewModelStartsWithSignerFocused(t *testing.T) {
 	m := newModel(testConnector{}, "/tmp/apsigner", nil, nil, newDaemonModel(daemonInfo{Status: daemonStatusAttached}, nil))
 	if m.focus != paneSigner {
@@ -280,6 +316,84 @@ func TestShiftTabCyclesPaneLikeShiftRight(t *testing.T) {
 	}
 	if signer := got.signer.(recordingTeaModel); signer.updates != 1 {
 		t.Fatalf("signer updates = %d, want 1 size resync", signer.updates)
+	}
+}
+
+func TestShellDisabledNavigationUsesF2ForDaemon(t *testing.T) {
+	m := model{
+		focus:         paneSigner,
+		shellDisabled: true,
+		signer:        recordingTeaModel{},
+		daemon:        newDaemonModel(daemonInfo{Status: daemonStatusStarting, Owned: true}, make(chan daemonEvent)),
+		width:         splitMinWidth,
+		height:        splitMinHeight,
+	}
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	if cmd != nil {
+		t.Fatalf("F2 cmd = %v, want nil", cmd)
+	}
+	got := next.(model)
+	if got.focus != paneDaemon {
+		t.Fatalf("F2 focus = %v, want daemon", got.focus)
+	}
+
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if cmd != nil {
+		t.Fatalf("shift+tab cmd = %v, want nil", cmd)
+	}
+	got = next.(model)
+	if got.focus != paneDaemon {
+		t.Fatalf("shift+tab focus = %v, want daemon", got.focus)
+	}
+
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyShiftDown})
+	if cmd != nil {
+		t.Fatalf("shift+down cmd = %v, want nil", cmd)
+	}
+	got = next.(model)
+	if got.focus != paneDaemon {
+		t.Fatalf("shift+down focus = %v, want daemon", got.focus)
+	}
+
+	next, cmd = got.Update(tea.KeyMsg{Type: tea.KeyShiftUp})
+	if cmd != nil {
+		t.Fatalf("shift+up cmd = %v, want nil", cmd)
+	}
+	got = next.(model)
+	if got.focus != paneSigner {
+		t.Fatalf("shift+up focus = %v, want signer", got.focus)
+	}
+}
+
+func TestShellDisabledTabsAndTitleOmitShell(t *testing.T) {
+	m := model{
+		focus:         paneSigner,
+		shellDisabled: true,
+		daemon:        newDaemonModel(daemonInfo{Status: daemonStatusStarting, Owned: true}, make(chan daemonEvent)),
+		width:         splitMinWidth,
+		height:        splitMinHeight,
+	}
+
+	tabs := ansi.Strip(m.renderTabs(120))
+	if strings.Contains(tabs, "Shell") {
+		t.Fatalf("tabs include shell while disabled: %q", tabs)
+	}
+	if !strings.Contains(tabs, "F1 Attestor Admin") || !strings.Contains(tabs, "F2 Daemon") {
+		t.Fatalf("tabs missing signer/daemon controls: %q", tabs)
+	}
+	if !strings.Contains(tabs, "Shift ↑ ↓ navigate") {
+		t.Fatalf("tabs missing vertical navigation hint: %q", tabs)
+	}
+
+	title := ansi.Strip(m.renderTitle(120))
+	if strings.Contains(title, "shell:") {
+		t.Fatalf("title includes shell status while disabled: %q", title)
+	}
+
+	help := ansi.Strip(m.renderHelpOverlay())
+	if !strings.Contains(help, "Shift+↑ ↓") || strings.Contains(help, "Shift+← →") {
+		t.Fatalf("help overlay has wrong navigation keys:\n%s", help)
 	}
 }
 

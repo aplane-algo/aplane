@@ -229,10 +229,18 @@ func (m Model) View() string {
 	header := ""
 	if m.standalone {
 		p := theme.Current()
-		header = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Button)).Render("Signer Admin")
+		header = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Button)).Render(m.AdminTitle())
 	}
 
 	return m.renderWindowLayout(header, content, footer, statusBar)
+}
+
+// AdminTitle returns the role-specific operator-facing title for this admin UI.
+func (m Model) AdminTitle() string {
+	if m.adminSettings != nil && strings.EqualFold(strings.TrimSpace(m.adminSettings.NodeRole), "attestor") {
+		return "Attestor Admin"
+	}
+	return "Signer Admin"
 }
 
 func (m Model) renderViewContent() string {

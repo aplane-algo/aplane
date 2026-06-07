@@ -369,8 +369,8 @@ type Model struct {
 	height int
 
 	// standalone is true when apadmin is running directly in a terminal
-	// rather than embedded inside apconsole. It enables the "Signer Admin"
-	// header label and reserves a line of height for it.
+	// rather than embedded inside apconsole. It enables the role-specific
+	// admin header label and reserves a line of height for it.
 	standalone bool
 
 	// Quit flag
@@ -392,7 +392,7 @@ func NewModel(connector AdminConnector, dataDir string) Model {
 }
 
 // WithStandalone marks the model as running in a standalone terminal rather
-// than embedded in apconsole. Enables the "Signer Admin" header label.
+// than embedded in apconsole. Enables the role-specific admin header label.
 func (m Model) WithStandalone() Model {
 	m.standalone = true
 	return m

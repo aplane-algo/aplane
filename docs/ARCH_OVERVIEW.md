@@ -52,7 +52,7 @@ a key.
 |-------------|---------|-----------------|
 | **apshell** | Interactive shell, scripting runtime, plugin host, and MCP surface | UI + Shell App + Engine + Providers |
 | **apadmin** | Signer admin TUI over IPC or SSH admin transport | UI (TUI) + admin protocol + Providers |
-| **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes while preserving existing app interfaces | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
+| **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes; local attestor nodes show admin plus daemon/status only | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
 | **apapprover** | Lightweight interactive approval CLI over IPC | UI (CLI) + IPC |
 | **apstore** | Keystore management client for signer-owned backup, restore, template, key type, passphrase, endpoint export, public attestor references, and init operations over IPC, plus local backup import admission, verification, and rebuild rescue flows | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
