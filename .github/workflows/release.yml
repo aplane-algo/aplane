@@ -159,13 +159,13 @@ jobs:
           write_release_metadata() {
             local root="$1"
             cat > "${root}/release.json" <<EOF
-{
-  "schema_version": 1,
-  "version": "${RELEASE_VERSION}",
-  "commit": "${GIT_COMMIT}",
-  "built_at": "${BUILT_AT}"
-}
-EOF
+          {
+            "schema_version": 1,
+            "version": "${RELEASE_VERSION}",
+            "commit": "${GIT_COMMIT}",
+            "built_at": "${BUILT_AT}"
+          }
+          EOF
           }
 
           write_client_readme() {
