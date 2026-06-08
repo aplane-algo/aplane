@@ -95,17 +95,6 @@ func signPreparedUserComponents(ctx context.Context, plan *ComponentSignPlan, se
 	if session == nil {
 		return nil, internal("key session is nil")
 	}
-	for _, target := range plan.Targets {
-		if target.Sender != plan.ComponentKey {
-			return nil, badRequest(fmt.Sprintf(
-				"target index %d sender %q does not match guarded account %q",
-				target.TargetIndex,
-				target.Sender,
-				plan.ComponentKey,
-			))
-		}
-	}
-
 	keyMaterial, provider, signatureScheme, err := loadGuardedAccountSigningKey(ctx, session, plan.ComponentKey)
 	if err != nil {
 		return nil, err

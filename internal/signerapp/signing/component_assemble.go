@@ -68,15 +68,6 @@ func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRe
 }
 
 func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssemblyTarget, entry sentryverify.CanonicalTxn, session componentKeyGetter) (string, *ServiceError) {
-	if entry.Txn.Sender.String() != target.GuardedAccount {
-		return "", badRequest(fmt.Sprintf(
-			"target index %d sender %q does not match guarded_account %q",
-			target.TargetIndex,
-			entry.Txn.Sender.String(),
-			target.GuardedAccount,
-		))
-	}
-
 	keyMaterial, err := loadGuardedAccountKeyMaterial(ctx, session, target.GuardedAccount)
 	if err != nil {
 		return "", err
@@ -161,7 +152,30 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 	if signErr != nil {
 		return "", internal(fmt.Sprintf("failed to assemble guarded LogicSig transaction: %v", signErr))
 	}
+	if err := validateAssembledGuardedTarget(target, entry, signedTxnBytes); err != nil {
+		return "", err
+	}
 	return hex.EncodeToString(signedTxnBytes), nil
+}
+
+func validateAssembledGuardedTarget(target signerapi.GuardedAssemblyTarget, entry sentryverify.CanonicalTxn, signedTxnBytes []byte) *ServiceError {
+	var stxn types.SignedTxn
+	if err := msgpack.Decode(signedTxnBytes, &stxn); err != nil {
+		return internal(fmt.Sprintf("failed to decode assembled guarded transaction: %v", err))
+	}
+	txID := algocrypto.TransactionID(stxn.Txn)
+	if !bytes.Equal(txID, entry.TxID[:]) {
+		return internal(fmt.Sprintf("assembled guarded transaction at index %d does not match canonical transaction", target.TargetIndex))
+	}
+	if entry.Txn.Sender.String() != target.GuardedAccount && stxn.AuthAddr.String() != target.GuardedAccount {
+		return internal(fmt.Sprintf(
+			"assembled guarded transaction at index %d auth address %q does not match guarded_account %q",
+			target.TargetIndex,
+			stxn.AuthAddr.String(),
+			target.GuardedAccount,
+		))
+	}
+	return nil
 }
 
 func validateGuardedPassthrough(passthrough signerapi.GuardedPassthroughItem, entry sentryverify.CanonicalTxn) (string, *ServiceError) {

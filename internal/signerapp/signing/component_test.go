@@ -588,7 +588,11 @@ func TestSignPreparedUserComponentsSignsGuardedAccountMessages(t *testing.T) {
 	}
 }
 
-func TestSignPreparedUserComponentsRejectsSenderMismatchBeforeKeyLoad(t *testing.T) {
+func TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages(t *testing.T) {
+	baseKeyType := "test.user-component-authorizer-signing.v1"
+	provider := &componentUserTestProvider{family: baseKeyType}
+	coresigning.Register(provider)
+
 	sender := types.Address{15}.String()
 	receiver := types.Address{16}.String()
 	componentKey := types.Address{17}.String()
@@ -603,17 +607,43 @@ func TestSignPreparedUserComponentsRejectsSenderMismatchBeforeKeyLoad(t *testing
 	if err != nil {
 		t.Fatalf("PrepareComponentSigning() error = %v", err)
 	}
-	session := &componentKeyTestSession{}
+	if plan.Targets[0].Sender != sender {
+		t.Fatalf("prepared target sender = %q, want %q", plan.Targets[0].Sender, sender)
+	}
+
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:        keytypes.GuardedFalcon1024SentryEd25519V1,
+		Category:    keys.CategoryDSALsig,
+		BaseKeyType: baseKeyType,
+		Bytecode:    []byte{0x01, 0x02, 0x04},
+		Value:       []byte{0xdd, 0xee, 0xff},
+	}
+	session := &componentKeyTestSession{key: keyMaterial}
 
 	result, signErr := signPreparedUserComponents(context.Background(), plan, session)
-	if result != nil {
-		t.Fatalf("result = %#v, want nil", result)
+	if signErr != nil {
+		t.Fatalf("signPreparedUserComponents() error = %v", signErr)
 	}
-	if signErr == nil || signErr.Kind != ErrorBadRequest {
-		t.Fatalf("signPreparedUserComponents() error = %#v, want bad request", signErr)
+	if session.calls != 1 || session.gotAddress != componentKey {
+		t.Fatalf("session calls = %d address %q, want one call for %q", session.calls, session.gotAddress, componentKey)
 	}
-	if session.calls != 0 {
-		t.Fatalf("session calls = %d, want 0 before sender mismatch rejection", session.calls)
+	if result.RequestID != plan.RequestID || result.ComponentKey != componentKey {
+		t.Fatalf("result metadata = %#v, want request_id %q component_key %q", result, plan.RequestID, componentKey)
+	}
+	if len(result.Signatures) != 1 || len(provider.messages) != 1 {
+		t.Fatalf("signatures = %d provider messages = %d, want one each", len(result.Signatures), len(provider.messages))
+	}
+	if result.Signatures[0].TargetIndex != 0 {
+		t.Fatalf("signature target index = %d, want 0", result.Signatures[0].TargetIndex)
+	}
+	if result.Signatures[0].SignatureScheme != baseKeyType {
+		t.Fatalf("signature scheme = %q, want %s", result.Signatures[0].SignatureScheme, baseKeyType)
+	}
+	if !bytes.Equal(provider.messages[0], plan.Targets[0].Message[:]) {
+		t.Fatalf("provider message = %x, want %x", provider.messages[0], plan.Targets[0].Message)
+	}
+	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil {
+		t.Fatalf("key material was not zeroed after signing: %#v", keyMaterial)
 	}
 }
 
@@ -652,8 +682,9 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	}
 	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0x12, 0x34}
 	guardedAccount := logicSigAddressForTest(t, bytecode)
-	receiver := types.Address{18}.String()
-	txns := groupedPaymentTransactions(t, guardedAccount, receiver)
+	sender := types.Address{18}.String()
+	receiver := types.Address{19}.String()
+	txns := groupedPaymentTransactions(t, sender, receiver)
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])}
 	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
 	if decodeErr != nil {
@@ -721,6 +752,12 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	wantTxID := algocrypto.TransactionID(txns[0])
 	if !bytes.Equal(gotTxID, wantTxID) {
 		t.Fatalf("signed target txid = %x, want %x", gotTxID, wantTxID)
+	}
+	if signedTarget.Txn.Sender.String() != sender {
+		t.Fatalf("signed target sender = %q, want %q", signedTarget.Txn.Sender.String(), sender)
+	}
+	if signedTarget.AuthAddr.String() != guardedAccount {
+		t.Fatalf("signed target auth address = %q, want guarded account %q", signedTarget.AuthAddr.String(), guardedAccount)
 	}
 	if !bytes.Equal(signedTarget.Lsig.Logic, bytecode) {
 		t.Fatalf("LogicSig bytecode = %x, want %x", signedTarget.Lsig.Logic, bytecode)
