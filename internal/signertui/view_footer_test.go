@@ -112,6 +112,8 @@ func TestStandaloneAdminHeaderShowsEndpointAndRolePort(t *testing.T) {
 		width: 120,
 		adminSettings: &AdminSettings{
 			NodeRole:             "sentry",
+			SSHEnabled:           true,
+			SSHPort:              1127,
 			SignerPort:           11270,
 			EndpointAdvertiseURL: "ssh://sentry.example.test:1127",
 		},
@@ -122,6 +124,29 @@ func TestStandaloneAdminHeaderShowsEndpointAndRolePort(t *testing.T) {
 		"Sentry Admin",
 		"Sentry Port: 11270",
 		"Endpoint: ssh://sentry.example.test:1127",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("renderAdminHeader() missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestStandaloneAdminHeaderBuildsEndpointWhenAdvertiseURLEmpty(t *testing.T) {
+	m := Model{
+		width: 120,
+		adminSettings: &AdminSettings{
+			NodeRole:   "signer",
+			SSHEnabled: true,
+			SSHPort:    1127,
+			SignerPort: 11270,
+		},
+	}
+
+	got := stripANSI(m.renderAdminHeader())
+	for _, want := range []string{
+		"Signer Admin",
+		"Signer Port: 11270",
+		"Endpoint: ssh://127.0.0.1:1127",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("renderAdminHeader() missing %q:\n%s", want, got)

@@ -8,6 +8,8 @@ package tui
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -287,10 +289,23 @@ func (m Model) adminHeaderMeta() string {
 	if m.adminSettings.SignerPort != 0 {
 		parts = append(parts, fmt.Sprintf("%s: %d", m.rolePortLabel(), m.adminSettings.SignerPort))
 	}
-	if endpoint := strings.TrimSpace(m.adminSettings.EndpointAdvertiseURL); endpoint != "" {
+	if endpoint := m.adminEndpointDisplayURL(); endpoint != "" {
 		parts = append(parts, "Endpoint: "+endpoint)
 	}
 	return strings.Join(parts, "  ")
+}
+
+func (m Model) adminEndpointDisplayURL() string {
+	if m.adminSettings == nil {
+		return ""
+	}
+	if endpoint := strings.TrimSpace(m.adminSettings.EndpointAdvertiseURL); endpoint != "" {
+		return endpoint
+	}
+	if !m.adminSettings.SSHEnabled || m.adminSettings.SSHPort <= 0 {
+		return ""
+	}
+	return "ssh://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(m.adminSettings.SSHPort))
 }
 
 func (m Model) renderViewContent() string {
