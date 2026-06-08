@@ -94,6 +94,21 @@ Terminology:
 
 See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the HTTP request/response wire shapes, status codes, identity routing, and cancellation semantics.
 
+### Sentry Component Message Contract
+
+Component signatures for guarded signing sign:
+
+```text
+SHA512_256("APLANE_SENTRY_V1" || role_byte || txid)
+```
+
+where `role_byte` is `0x01` for the user component role and `0x02` for the
+sentry component role, and `txid` is the canonical 32-byte transaction ID for
+the target group entry. Message construction is owned by
+`internal/sentry/message`; clients and signers must use that shared primitive,
+or an SDK equivalent with matching vectors, rather than reconstructing the
+message independently.
+
 ## Admin Protocol
 
 See [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md) for the apsigner admin RPC message catalog, payload shapes, and writable-settings rules.
