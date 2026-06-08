@@ -11,6 +11,23 @@ Ed25519 participants, the signer planner decides whether to add dummy
 transactions, how to distribute dummy fees, and whether the group ID can be
 preserved.
 
+## Mixed Guarded/Non-Guarded Groups
+
+`apshell` also supports atomic groups that mix guarded-account senders with
+ordinary signer-managed senders. If any original sender is guarded, the client
+uses the guarded orchestration path for the whole group, builds one canonical
+group, and signs every participant over those same frozen bytes.
+
+Guarded positions are signed through `/sign/component` plus `/sign/assemble`.
+Ordinary signer-managed originals are signed by an intermediate primary-signer
+`/sign` request over the full canonical group: ordinary originals are sign-mode
+entries, guarded originals are `foreign` entries with accurate `lsig_size`
+hints, and client-signed dummies are `foreign` context entries. The resulting
+signed ordinary originals and dummies are then passed through to assembly.
+
+The remaining guarded limitation is narrower: a guarded LogicSig used as
+`AuthAddr` for another sender is still unsupported.
+
 ## The Three Cases
 
 ### Case 1: Pre-grouped with Sufficient Capacity
@@ -141,10 +158,12 @@ See [TXN_FEE_SPLITTING.md](TXN_FEE_SPLITTING.md) for the fee distribution algori
 ### Server-Side Handling
 
 The shared planning/signing pipeline handles all three cases automatically.
-`/plan` and `/sign` both accept foreign entries for canonicalization and
-full-group policy/approval context. `/sign` signs only signer-owned entries,
-preserves passthrough entries, and returns empty-string placeholders for
-foreign positions.
+`/plan` and `/sign` both accept foreign entries for planning and full-group
+policy/approval context. Ungrouped foreign requests may be canonicalized by the
+signer; pre-grouped foreign requests are preserved when they already have
+sufficient LogicSig budget. `/sign` signs only signer-owned entries, preserves
+passthrough entries, and returns empty-string placeholders for foreign
+positions.
 
 ```go
 // Planner analyzes the group
@@ -308,9 +327,13 @@ For scenarios where one party already has signed transactions, use passthrough m
   warning analysis, and audit visibility, but transaction-level hard policy is
   applied only to signer-controlled slots
 
-### Foreign Mode (Server-Built Groups)
+### Foreign Mode (Server-Planned Groups)
 
-For scenarios where the server should build the group (dummies, fees, group ID) but not sign certain transactions, use foreign mode. This is the preferred approach for multi-party groups with LogicSig keys, because the server correctly computes dummy requirements using `lsig_size` hints.
+For scenarios where unsigned non-local transactions should participate in
+planner budget math and approval context, use foreign mode. The common workflow
+starts ungrouped and lets the server build dummies, fees, and group ID. An
+already pre-grouped foreign request can also be accepted when it already has
+sufficient LogicSig budget and no additional dummies are needed.
 
 ```
 1. Construct the intended group shape.
@@ -342,7 +365,7 @@ For scenarios where the server should build the group (dummies, fees, group ID) 
   use `/plan` first, then resubmit finalized foreign slots as passthrough when
   a complete signed group is required
 - `lsig_size` is advisory; incorrect hints may cause insufficient budget at submission
-- Foreign transactions are included in canonicalization, approval context,
+- Foreign transactions are included in planning, approval context,
   warning analysis, and audit visibility, but transaction-level hard policy is
   applied only to signer-controlled slots
 
@@ -350,11 +373,11 @@ For scenarios where the server should build the group (dummies, fees, group ID) 
 
 | Aspect | Passthrough | Foreign |
 |--------|-------------|---------|
-| Group building | Client pre-forms | Server builds |
-| Dummy calculation | Client responsibility | Server handles (with `lsig_size` hints) |
+| Group building | Client pre-forms signed immutable group | Server usually builds; pre-grouped foreign requests can be preserved when budget is sufficient |
+| Dummy calculation | Client responsibility | Server computes for ungrouped requests and validates pre-grouped requests with `lsig_size` hints |
 | Output for other party's txns | Pre-signed bytes | Canonical unsigned bytes from `/plan`, or `""` placeholders in `/sign` |
-| Requires group ID? | Yes | No |
-| Best for | Pre-signed finalized groups | LogicSig swaps needing dummies |
+| Requires group ID? | Yes | No for server-built groups; allowed for already sufficient pre-grouped groups |
+| Best for | Pre-signed finalized groups | LogicSig swaps needing dummies or unsigned full-group context |
 
 See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) for full protocol documentation.
 

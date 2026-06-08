@@ -245,7 +245,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Sentry component message | request-scoped signing input | role byte plus target TxID | 32-byte message digest | `internal/sentry/message` | Shared by client optional verify, signer assembly, and TEAL vectors. |
 | Component signature set | request-scoped wire data | `/sign/component` response | per-target signatures by target index | `internal/signerapp/signing`, `pkg/signerapi` | Each signature is bound to one target TxID and role. |
 | Guarded assembly target | request-scoped wire data | `/sign/assemble` request targets | LogicSig args packing plan | `internal/signerapp/signing` | User and sentry signatures are verified before packed bytes are returned. |
-| Guarded send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | user component call, sentry call, assembly, algod submit/simulate | `internal/engine`, `internal/apshellapp` | Client holds no key material; endpoint routing is not trust; MVP requires every original sender to be a guarded account. |
+| Guarded send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | user component call, sentry call, optional non-guarded `/sign`, assembly, algod submit/simulate | `internal/engine`, `internal/apshellapp` | Client holds no key material; endpoint routing is not trust; mixed groups sign non-guarded originals over the same canonical bytes; guarded-as-AuthAddr remains out of scope. |
 
 ## Plugin, JavaScript, And MCP Models
 

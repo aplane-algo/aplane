@@ -121,17 +121,20 @@ only; it is not proof that the endpoint owns any private key.
 
 ### Detect Guarded Send
 
-`apshell send` consults the primary signer's key cache. If any sender is an
-guarded account key type, the client uses the guarded orchestration path.
-The current MVP rejects mixed ordinary and guarded original senders in one
-group.
+`apshell send` consults the primary signer's key cache. If any sender is a
+guarded account key type, the client uses the guarded orchestration path. Mixed
+ordinary and guarded original senders are supported: guarded positions become
+component-signing targets, and ordinary signer-managed positions are signed
+later over the same canonical group.
 
 ### Build Canonical Group
 
-The client plans the transaction group, adds required dummy transactions for
-LogicSig budget, fixes fees and group ID, and encodes the canonical unsigned
-group bytes. Component signatures are always over target transaction IDs from
-this canonical group.
+The client classifies original positions into guarded targets and non-guarded
+originals, plans the transaction group, adds required dummy transactions for
+LogicSig budget across every LogicSig position, fixes fees and group ID, and
+encodes the canonical unsigned group bytes. Non-guarded positions are budgeted
+by effective signer/AuthAddr, not by transaction sender alone. Component
+signatures are always over target transaction IDs from this canonical group.
 
 ### User Component Sign
 
@@ -159,6 +162,15 @@ target transaction before loading the component private key. The request is
 accepted only when the effective sentry policy authorizes all target
 transactions.
 
+### Sign Non-Guarded Originals
+
+If the canonical group contains non-guarded original positions, the client
+calls the primary signer `/sign` over the full canonical group. Non-guarded
+originals are sign-mode entries, guarded target positions are `foreign` entries
+with accurate `lsig_size` hints, and client-signed dummies are `foreign`
+context entries. The signer returns signed bytes only for the non-guarded
+positions and `""` for the foreign slots.
+
 ### Assemble
 
 The client returns to the primary signer:
@@ -176,8 +188,9 @@ For each target, the primary signer loads its local guarded account key and:
 3. packs both signatures according to the guarded account key type,
 4. builds LogicSig args from stored signing metadata,
 5. verifies the resulting LogicSig address equals the guarded account,
-6. returns signed group bytes, preserving passthrough bytes only if their
-   decoded transaction ID matches the canonical group entry.
+6. returns signed group bytes, preserving passthrough bytes for signed
+   non-guarded originals and client-signed dummies only if their decoded
+   transaction ID matches the canonical group entry.
 
 The assembling signer trusts values it stored at generation time. It does not
 trust endpoint metadata supplied during the transaction flow.

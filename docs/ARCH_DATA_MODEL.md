@@ -731,15 +731,22 @@ durable sign request table.
 
 1. Client detects a guarded account key from `/keys` metadata and local signer
    inventory.
-2. Client prepares the canonical group and target indices.
+2. Client prepares the canonical group, classifies guarded target indices and
+   non-guarded original indices, budgets every LogicSig by effective signer,
+   and signs required dummy transactions locally.
 3. Client calls the user signer `/sign/component` for user-role signatures.
 4. Client routes by embedded sentry public key to a sentry endpoint from
    `endpoints.yaml` and calls sentry `/sign/component`.
-5. Client calls user signer `/sign/assemble`.
-6. User signer verifies sentry signatures against the sentry public key
+5. If non-guarded originals exist, client calls the primary signer `/sign` over
+   the full canonical group: non-guarded originals are sign-mode entries,
+   guarded targets are `foreign` entries with accurate `lsig_size` hints, and
+   dummies are `foreign` context entries.
+6. Client calls user signer `/sign/assemble` with guarded targets plus
+   passthrough signed bytes for non-guarded originals and dummies.
+7. User signer verifies sentry signatures against the sentry public key
    embedded in the local guarded account key, packs LogicSig args, and returns
    signed group bytes.
-7. Client submits the signed bytes to algod.
+8. Client submits the signed bytes to algod.
 
 Endpoint routing and `/keys` discovery are not trust proofs. A wrong endpoint
 can only return a signature that assembly or the on-chain LogicSig rejects.

@@ -1101,22 +1101,41 @@ against the sentry public key embedded in the local guarded-account key.
 
 ### Runtime Flow
 
-`apshell send` detects guarded senders from signer key metadata. For each
-guarded original sender, the client builds the canonical group and performs
-three signer endpoint calls before final algod submit:
+`apshell send` detects guarded senders from signer key metadata. If any
+original sender is a guarded account key type, the client uses guarded
+orchestration for the whole atomic group. The group may mix guarded original
+senders with ordinary signer-managed senders.
+
+The client first builds one canonical group. It sizes LogicSig-budget dummies
+across every LogicSig position, including non-guarded positions budgeted by
+effective signer/AuthAddr, then fixes fees and group ID. All downstream
+component and non-guarded signatures are over those frozen bytes.
+
+For guarded targets, the client obtains component signatures:
 
 1. user signer `/sign/component` with role `user`,
-2. sentry signer `/sign/component` with role `sentry`,
-3. user signer `/sign/assemble`.
+2. sentry signer `/sign/component` with role `sentry`.
 
 The user-role component request proves the user signer controls the
 guarded-account component key. The sentry-role component request evaluates
 decoded target transaction facts against sentry-domain `policy.yaml` and returns
-sentry component signatures when allowed. The assembly request verifies both
-component signatures against the local guarded account key's stored metadata,
-packs LogicSig arguments, and returns signed group bytes.
+sentry component signatures when allowed.
 
-Current guarded signing is limited to original senders:
+If the original group also has non-guarded positions, the client then calls the
+primary signer `/sign` over the full canonical group: non-guarded originals are
+sign-mode entries, guarded originals are `foreign` entries with accurate
+`lsig_size` hints, and client-signed dummies are `foreign` context entries. This
+keeps the complete group in approval context and lets the signer's existing
+budget check reject client mis-sizing before algod evaluation.
+
+Finally, the client calls the user signer `/sign/assemble`. The assembly
+request verifies both component signatures against the local guarded account
+key's stored metadata, packs LogicSig arguments, verifies any passthrough
+signed bytes against the canonical transaction IDs, and returns signed group
+bytes. Signed non-guarded originals and signed dummies are supplied to assembly
+as passthrough entries.
+
+Guarded component signing remains limited to guarded original senders:
 
 ```text
 txn.Sender == guarded_account

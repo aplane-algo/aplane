@@ -48,14 +48,19 @@ The canonical `SignRequest` and `AppCallInfo` definitions live in
 
 Foreign-mode semantics:
 
-- on `/plan`, the transaction is used for canonicalization and returned in the planned unsigned group
-- on `/sign`, the transaction is still used for canonicalization and approval context, but it is not signed and its position in `signed[]` is returned as `""`
+- on `/plan`, the transaction participates in planning and is returned in the planned unsigned group
+- on `/sign`, the transaction still participates in planning and approval context, but it is not signed and its position in `signed[]` is returned as `""`
 - foreign mode is for unsigned non-local transactions
 - optional `lsig_size` reserves LogicSig budget for a foreign party's key type
 - already-signed non-local transactions must use passthrough mode (`signed_txn_hex`) instead
 - passthrough and foreign entries cannot appear in the same request because
-  passthrough requires a pre-grouped immutable group, while foreign mode lets
-  the server canonicalize the group
+  passthrough supplies already-signed bytes whose group shape is accepted as
+  immutable, while foreign entries remain unsigned context that participates in
+  planner budget math
+
+Foreign requests may be ungrouped, in which case the server canonicalizes the
+group, or already pre-grouped, in which case the server preserves the shape
+when no additional dummies are required.
 
 Plan response semantics:
 

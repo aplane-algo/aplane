@@ -188,7 +188,13 @@ type AppCallInfo struct {
 - **Passthrough** — `signed_txn_hex`. The entry is already signed elsewhere and is preserved byte-for-byte. Requires a pre-formed group ID.
 - **Foreign** — `txn_bytes_hex` without `auth_address`. The entry is part of the group for canonicalization, policy context, and approval rendering, but is never signed by this signer. The optional `lsig_size` hint reserves LogicSig budget for the foreign party's key type.
 
-Both or neither → error. Passthrough and foreign are mutually exclusive within one request because passthrough requires pre-grouped signed bytes while foreign assumes the server canonicalizes the group.
+Both or neither → error. Passthrough and foreign are mutually exclusive within
+one request. Passthrough supplies already-signed bytes and preserves them
+byte-for-byte; foreign entries are unsigned context and still participate in
+decoding, group consistency, approval rendering, and LogicSig-budget math
+through `lsig_size` hints. Foreign mode can be used with ungrouped requests the
+server canonicalizes, or with already pre-grouped requests that have sufficient
+budget.
 
 Aligning the grammar across `/plan` and `/sign` lets clients send one canonical full-group shape to the signer, have the signer evaluate the entire group for approval and policy context, and still receive signatures only for signer-owned entries. `/plan` returns canonical unsigned transactions; `/sign` signs only signer-owned entries, preserves passthrough entries, and returns `""` for foreign slots.
 
@@ -290,8 +296,10 @@ The `/plan` endpoint provides group building without signing. It performs all th
 
 **Request:** `GroupSignRequest`, using the same sign, passthrough, and foreign
 modes as `/sign`. Passthrough and foreign remain mutually exclusive because
-passthrough requires a pre-grouped request while foreign requires server-side
-canonicalization.
+passthrough short-circuits dummy calculation while foreign participates in
+planner budget math. Foreign requests may be ungrouped, in which case the
+server canonicalizes them, or pre-grouped, in which case the server preserves
+the shape if no extra dummies are needed.
 
 **Response:** `GroupPlanResponse` — a dedicated type with a `transactions` field containing the finalized unsigned transaction bytes (with dummies, fees, and group ID applied):
 
@@ -436,17 +444,32 @@ The second entry has `txn_bytes_hex` but no `auth_address` — this is a foreign
 
 ### Constraints
 
-1. **Cannot mix with passthrough**: Passthrough requires pre-grouped transactions; foreign implies the server computes the group ID. These are mutually exclusive.
+1. **Cannot mix with passthrough**: Passthrough is already-signed byte
+   preservation; foreign is unsigned context that participates in budget math.
+   The combined shape is rejected.
 
 2. **All-foreign is rejected by apsigner**: If every entry is foreign (nothing to sign), both `/sign` and `/plan` return 400 because apsigner has no managed signing work to perform.
 
 3. **Policy applies to signer-controlled slots**: Hard policy linting runs only on signer-controlled transactions. Foreign slots are part of planning and approval context, but are not hard-rejected by the signer's policy engine.
 
-4. **`lsig_size` is advisory**: An estimated final LogicSig serialized size in bytes, used only for dummy-budget planning. The server trusts the hint; an incorrect value may result in insufficient LogicSig budget at submission time.
+4. **`lsig_size` is advisory for generic foreign entries**: An estimated final
+   LogicSig serialized size in bytes, used only for dummy-budget planning. The
+   server trusts the hint. Guarded mixed-group clients provide accurate hints
+   for guarded foreign entries so client and server budget calculations stay in
+   parity; incorrect hints can cause early pre-grouped rejection or later algod
+   failure.
 
-5. **Dummies are returned by this signer**: Dummy transactions created during foreign-mode group construction are assembled with APlane's embedded dummy LogicSig and returned in the signer's own output, not as foreign placeholders.
+5. **Dummies are returned by this signer unless already supplied**: Dummy
+   transactions created during foreign-mode group construction are assembled
+   with APlane's embedded dummy LogicSig and returned in the signer's own
+   output, not as foreign placeholders. In guarded mixed groups, dummies may be
+   client-created and signed locally, then sent as foreign context to the
+   intermediate `/sign` and passthrough to `/sign/assemble`.
 
-See [Mode Selection](#mode-selection) for the full trichotomy. The key operational difference: passthrough requires a pre-formed group and is preserved byte-for-byte, while foreign lets the server compute the group ID (dummies, fees) without signing the foreign entry.
+See [Mode Selection](#mode-selection) for the full trichotomy. The key
+operational difference: passthrough requires a pre-formed group and is
+preserved byte-for-byte, while foreign leaves an entry unsigned but visible and
+budgeted.
 
 ---
 

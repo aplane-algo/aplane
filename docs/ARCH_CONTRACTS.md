@@ -1853,9 +1853,11 @@ Go SDK specifics:
 
 TypeScript and Python SDKs preserve the same broad behaviors:
 
-- normal signing returns base64 payloads
-- list-returning APIs preserve per-slot outputs
-- foreign `/sign` requests are rejected client-side
+- high-level convenience signing APIs return base64 payloads and may reject
+  unresolved foreign placeholders when they cannot project empty foreign slots
+  into single-payload returns
+- list-returning and raw request APIs preserve per-slot outputs, including
+  native `/sign` foreign slots returned as empty strings
 - signer status helpers expose `/status` and are used to size signing
   request deadlines when callers do not provide an earlier explicit timeout
 - raw `signRequests` / `sign_requests` APIs accept one or more `/sign` request
