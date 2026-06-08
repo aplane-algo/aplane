@@ -105,6 +105,7 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 
 	staleSignerCache := cache.NewSignerCache()
 	staleSignerCache.AddAddress(sender, "ed25519")
+	staleSignerCache.AddAddress(guarded, "ed25519")
 	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, staleSignerCache, func(req *http.Request) (*http.Response, error) {
 		if req.Method != http.MethodGet || req.URL.Path != "/keys" {
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
@@ -129,6 +130,9 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	eng.AuthCache.AuthAddresses[sender] = ""
 
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded-authorizer", nil).Transaction
+	if got := eng.signerCacheKeyType(guarded); got != "ed25519" {
+		t.Fatalf("precondition signer cache key type for guarded authorizer = %q, want stale ed25519", got)
+	}
 	if eng.hasGuardedEffectiveSigner([]types.Transaction{txn}) {
 		t.Fatal("hasGuardedEffectiveSigner() before refresh = true, want false with stale caches")
 	}

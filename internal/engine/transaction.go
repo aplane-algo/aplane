@@ -133,11 +133,15 @@ func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Tra
 func (e *Engine) submitEffectiveSignersNeedKeyRefresh(txns []types.Transaction) bool {
 	seenSigners := make(map[string]struct{}, len(txns))
 	for _, txn := range txns {
-		effectiveSigner := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
+		sender := txn.Sender.String()
+		effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
 		if _, ok := seenSigners[effectiveSigner]; ok {
 			continue
 		}
 		seenSigners[effectiveSigner] = struct{}{}
+		if effectiveSigner != sender {
+			return true
+		}
 		if e.signerCacheKeyType(effectiveSigner) == "" {
 			return true
 		}
