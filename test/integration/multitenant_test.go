@@ -17,6 +17,7 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -124,6 +125,14 @@ func createIntegrationIdentityWithTemplate(t *testing.T, env *harness.TestEnvClo
 		t.Fatalf("failed to create %s keystore metadata: %v", identityID, err)
 	}
 	t.Cleanup(func() { apcrypto.ZeroBytes(masterKey) })
+
+	_, roleBytes, err := noderole.Load(paths)
+	if err != nil {
+		t.Fatalf("failed to load node role for %s: %v", identityID, err)
+	}
+	if err := noderole.SaveIdentitySidecarWithMasterKey(paths, identityID, roleBytes, masterKey, time.Now()); err != nil {
+		t.Fatalf("failed to create %s node role sidecar: %v", identityID, err)
+	}
 
 	if err := policy.SaveStoredConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, masterKey, time.Now()); err != nil {
 		t.Fatalf("failed to create signed %s policy: %v", identityID, err)

@@ -5,7 +5,6 @@ package integration_test
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -18,9 +17,13 @@ import (
 
 func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 	env := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{})
-	identityDir := filepath.Join(env.SignerDataDir, "identities", auth.DefaultIdentityID)
+	paths := storepaths.NewPaths(env.SignerDataDir)
+	identityDir := paths.IdentityDir(auth.DefaultIdentityID)
 	if err := os.RemoveAll(identityDir); err != nil {
 		t.Fatalf("failed to remove cloned identity dir: %v", err)
+	}
+	if err := os.Remove(paths.NodeRolePath()); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("failed to remove cloned node role: %v", err)
 	}
 
 	const passphrase = "initialize-passphrase-for-integration"
@@ -33,7 +36,6 @@ func TestApstoreInitializeBootstrapsUninitializedStore(t *testing.T) {
 		t.Fatalf("initialize output did not report offline bootstrap completion:\n%s", output)
 	}
 
-	paths := storepaths.NewPaths(env.SignerDataDir)
 	if !crypto.KeystoreMetadataExistsIn(paths.KeystoreMetadataDir(auth.DefaultIdentityID)) {
 		t.Fatal("keystore metadata missing after apstore initialize")
 	}
