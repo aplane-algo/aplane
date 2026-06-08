@@ -109,16 +109,8 @@ func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Tra
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	seenSenders := make(map[string]struct{}, len(txns))
-	for _, txn := range txns {
-		sender := txn.Sender.String()
-		if _, ok := seenSenders[sender]; ok {
-			continue
-		}
-		seenSenders[sender] = struct{}{}
-		if _, err := e.RefreshAuthAddressWithContext(ctx, sender); err != nil {
-			return fmt.Errorf("failed to refresh auth address for %s: %w", sender, err)
-		}
+	if err := e.refreshMissingSubmitAuthAddresses(ctx, txns); err != nil {
+		return err
 	}
 
 	if !e.submitEffectiveSignersNeedKeyRefresh(txns) {
@@ -126,6 +118,24 @@ func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Tra
 	}
 	if _, err := e.RefreshKeysWithContext(ctx); err != nil {
 		return fmt.Errorf("failed to refresh signer keys: %w", err)
+	}
+	return nil
+}
+
+func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, txns []types.Transaction) error {
+	seenSenders := make(map[string]struct{}, len(txns))
+	for _, txn := range txns {
+		sender := txn.Sender.String()
+		if _, ok := seenSenders[sender]; ok {
+			continue
+		}
+		seenSenders[sender] = struct{}{}
+		if _, cached := e.AuthCache.GetAuthAddress(sender); cached {
+			continue
+		}
+		if _, err := e.RefreshAuthAddressWithContext(ctx, sender); err != nil {
+			return fmt.Errorf("failed to refresh auth address for %s: %w", sender, err)
+		}
 	}
 	return nil
 }

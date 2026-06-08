@@ -127,7 +127,6 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	})
 	eng.AlgodClient = newAccountMockAlgodClient(t, transport)
 	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
-	eng.AuthCache.AuthAddresses[sender] = ""
 
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded-authorizer", nil).Transaction
 	if got := eng.signerCacheKeyType(guarded); got != "ed25519" {
@@ -159,6 +158,48 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	}
 	if len(targets) != 1 || targets[0].Sender != sender || targets[0].Account != guarded {
 		t.Fatalf("guardedTargets() = %+v, want sender %s account %s", targets, sender, guarded)
+	}
+}
+
+func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) {
+	sender := testAddress(1).String()
+	guarded := testAddress(3).String()
+	sentryHex := testSentryPublicKeyHex(0xd6)
+
+	transport := newAccountMockTransport(t)
+	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, cache.NewSignerCache(), func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodGet || req.URL.Path != "/keys" {
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
+			Count: 2,
+			Keys: []signerapi.KeyInfo{{
+				Address: sender,
+				KeyType: "ed25519",
+			}, {
+				Address:  guarded,
+				KeyType:  keytypes.GuardedFalcon1024SentryEd25519V1,
+				LsigSize: 1500,
+				Parameters: map[string]string{
+					keytypes.ParameterSentryPublicKey: sentryHex,
+				},
+			}},
+		}, req), nil
+	})
+	eng.AlgodClient = newAccountMockAlgodClient(t, transport)
+	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
+	eng.AuthCache.AuthAddresses[sender] = guarded
+
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded-authorizer", nil).Transaction
+	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
+		t.Fatalf("refreshSubmitSigningState() error = %v", err)
+	}
+
+	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != guarded {
+		t.Fatalf("auth cache for sender = %q/%v, want cached %s/true", auth, ok, guarded)
+	}
+	if !eng.hasGuardedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
 	}
 }
 
