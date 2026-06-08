@@ -808,11 +808,31 @@ check_local_config_consistency() {
 # Resolve script directory (works from repo checkout and extracted tarball)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_SRC="$SCRIPT_DIR/bin"
+RELEASE_METADATA_SRC="$SCRIPT_DIR/release.json"
 
 if [ ! -d "$BIN_SRC" ]; then
     echo "Error: bin/ directory not found at $BIN_SRC" >&2
     exit 1
 fi
+
+install_release_metadata() {
+    local install_dir="$1"
+    local owner="${2:-}"
+    local group="${3:-}"
+    local dir_mode="${4:-755}"
+    local file_mode="${5:-644}"
+    local dest="$install_dir/release.json"
+
+    [ -f "$RELEASE_METADATA_SRC" ] || return 0
+
+    mkdir -p "$install_dir"
+    cp "$RELEASE_METADATA_SRC" "$dest"
+    chmod "$dir_mode" "$install_dir"
+    chmod "$file_mode" "$dest"
+    if [ -n "$owner" ] && [ -n "$group" ]; then
+        chown "$owner:$group" "$install_dir" "$dest"
+    fi
+}
 
 # --- Shared config templates ---
 
@@ -1622,6 +1642,7 @@ if [ "$CLIENT_MODE" = "1" ]; then
 
     # Install client binaries
     mkdir -p "$BINDIR" "$APCLIENT_DIR/.ssh" "$APCLIENT_DIR/plugins.available" "$APCLIENT_DIR/scripts"
+    install_release_metadata "$CLIENT_PATH/install"
     echo "Installing client binaries to $BINDIR..."
     cp "$BIN_SRC/apshell" "$BINDIR/apshell"
     chmod 755 "$BINDIR/apshell"
@@ -1922,6 +1943,7 @@ STARTEOF
         cp "$SCRIPT_DIR/uninstall.sh" "$LOCAL_PATH/uninstall.sh"
         chmod +x "$LOCAL_PATH/uninstall.sh"
     fi
+    install_release_metadata "$LOCAL_PATH/install"
 
     # Initialize keystore
     echo ""
@@ -2140,6 +2162,7 @@ chmod 640 "$PROD_MARKER_PATH"
 echo ""
 echo "Installing systemd management scripts..."
 install_prod_uninstaller "$DATA_DIR"
+install_release_metadata "$DATA_DIR/install" root "$SVC_GROUP" 2750 640
 if [ -n "$OPERATOR_ROOT" ]; then
     mkdir -p -- "$OPERATOR_ROOT"
     OPERATOR_ROOT="$(cd "$OPERATOR_ROOT" && pwd)"

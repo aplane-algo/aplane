@@ -147,7 +147,26 @@ jobs:
         run: |
           VERSION="${RELEASE_TAG}"
           VERSION="${VERSION#v}"
+          RELEASE_VERSION="${RELEASE_TAG}"
+          case "${RELEASE_VERSION}" in
+            v*) ;;
+            *) RELEASE_VERSION="v${RELEASE_VERSION}" ;;
+          esac
+          GIT_COMMIT="$(git rev-parse --short HEAD)"
+          BUILT_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           mkdir -p dist
+
+          write_release_metadata() {
+            local root="$1"
+            cat > "${root}/release.json" <<EOF
+{
+  "schema_version": 1,
+  "version": "${RELEASE_VERSION}",
+  "commit": "${GIT_COMMIT}",
+  "built_at": "${BUILT_AT}"
+}
+EOF
+          }
 
           write_client_readme() {
             printf '%s\n' \
@@ -191,6 +210,7 @@ jobs:
             cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/
             scripts/stage-bundled-plugins.sh --os linux --arch "${arch}" dist/staging/aplane/plugins.available
             cp install.sh uninstall.sh dist/staging/aplane/
+            write_release_metadata dist/staging/aplane
             tar -czf "dist/${archive}" -C dist/staging aplane
             echo "Created dist/${archive}"
           done
@@ -205,6 +225,7 @@ jobs:
             cp examples/config/apclient/config.yaml.example dist/staging/aplane-client/config.yaml
             cp installer/scripts/config-mcp.sh dist/staging/aplane-client/installer/scripts/
             write_client_readme
+            write_release_metadata dist/staging/aplane-client
             tar -czf "dist/${archive}" -C dist/staging aplane-client
             echo "Created dist/${archive}"
           done
@@ -226,6 +247,7 @@ jobs:
             cp installer/scripts/aplane-env-audit.sh installer/scripts/config-mcp.sh dist/staging/aplane/installer/scripts/
             scripts/stage-bundled-plugins.sh --os darwin --arch "${arch}" dist/staging/aplane/plugins.available
             cp install.sh uninstall.sh dist/staging/aplane/
+            write_release_metadata dist/staging/aplane
             tar -czf "dist/${archive}" -C dist/staging aplane
             echo "Created dist/${archive}"
           done
@@ -239,6 +261,7 @@ jobs:
             cp examples/config/apclient/config.yaml.example dist/staging/aplane-client/config.yaml
             cp installer/scripts/config-mcp.sh dist/staging/aplane-client/installer/scripts/
             write_client_readme
+            write_release_metadata dist/staging/aplane-client
             tar -czf "dist/${archive}" -C dist/staging aplane-client
             echo "Created dist/${archive}"
           done

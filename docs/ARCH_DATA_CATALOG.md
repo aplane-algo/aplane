@@ -90,9 +90,9 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Master key session | runtime-only secret | derived from passphrase, not persisted | `keystore.KeySession`, `FileKeyStore` | `internal/keystore`, `internal/signerapp/runtime` | Zero on lock; not exposed on wire. |
 | API token | bearer secret | `identities/<identity>/aplane.token` | HTTP authenticator and SSH username matcher | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` | Mode `0600`; token revocation rotates identity credential and closes stale SSH sessions. |
 | SSH authorized keys | authoritative enrollment | `identities/<identity>/.ssh/authorized_keys` | SSH identity key set | `internal/sshtunnel`, `internal/signerapp/sshprovision` | Token plus SSH key required; token provisioning writes after admin approval. |
-| Client-signing policy | authoritative safety policy | `policy.yaml` plus `policy.yaml.hmac` | `policy.Config` runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime` | HMAC over exact YAML; missing/mismatched sidecar fails closed. |
-| Sentry component policy | authoritative co-sign policy | sentry-domain `policy.yaml` plus `policy.yaml.hmac` | sentry policy runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/signing` | No review/operator-default outcomes; missing/mismatched sidecar fails closed. |
-| Policy sidecar | authoritative integrity metadata | `<policy>.hmac` JSON | HMAC verification result | `internal/policy`, `cmd/appolicy`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
+| Client-signing policy domain | authoritative safety policy | role-selected `policy.yaml` plus `policy.yaml.hmac` on signer nodes | client-signing `policy.Config` runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime` | HMAC over exact YAML; missing/mismatched sidecar fails closed. |
+| Sentry component policy domain | authoritative co-sign policy | role-selected `policy.yaml` plus `policy.yaml.hmac` on sentry nodes | sentry policy runtime snapshot | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/signing` | Same durable file contract as signer policy; no review/operator-default outcomes; missing/mismatched sidecar fails closed. |
+| Policy sidecar | authoritative integrity metadata | `policy.yaml.hmac` JSON | HMAC verification result | `internal/policy`, `cmd/appolicy`, `cmd/apstore` | Security fields are `version`, `algorithm`, `key_id`, `hmac`; diagnostics are not trust inputs. |
 | Key type state record | authoritative generation state | `keytypes/<key_type>.json` | enabled/disabled identity key type state | `internal/keytypestate`, `internal/signerapp/templateadmin` | Plaintext, not key material; affects discovery/generation, not existing-key signing. |
 | Installed template | authoritative generation source | encrypted `keytypes/<key_type>.template` | registered template provider after unlock/reload | `internal/templatestore`, `internal/signerapp/templates` | Encrypted with identity master key; disabled state skips registration. |
 | Public sentry reference | public generation catalog | `sentries/<name>.json` | `/keytypes` `sentry` select options | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` | Public metadata only; source is `manual` or `client_discovery`; not endpoint ownership proof. |
@@ -175,14 +175,14 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Client-signing policy config | authoritative policy | `policy.yaml` | effective client-signing policy | `internal/policy`, `internal/signerapp/policyruntime` | Four-tier verdict model with operator default fallback. |
-| Sentry policy config | authoritative policy | sentry-domain `policy.yaml` | effective sentry component policy | `internal/policy`, `internal/signerapp/signing` | Deterministic reject/sign only; no review or operator default. |
+| Client-signing policy config | authoritative policy domain | `policy.yaml` interpreted on signer nodes | effective client-signing policy | `internal/policy`, `internal/signerapp/policyruntime` | Four-tier verdict model with operator default fallback. |
+| Sentry policy config | authoritative policy domain | `policy.yaml` interpreted on sentry nodes | effective sentry component policy | `internal/policy`, `internal/signerapp/signing` | Deterministic reject/sign only; no review or operator default. |
 | Transfer policy | authoritative policy section | `transfer_policy` YAML | route table and movement authorization | `internal/policy`, `internal/policyview`, `cmd/appolicy` | `schema_version:1`; route IDs are audit identifiers. |
 | Transfer route | authoritative policy row | `transfer_policy.routes[]` | route match and rule ID source | `internal/policy` | Dynamic rule IDs use `transfer_policy:<route_id>:<outcome>`. |
 | Policy key override | authoritative sparse override | `key_overrides` map | effective per-key policy | `internal/policy` | Signing overrides keyed by auth address; sentry overrides keyed by component selector. |
 | Policy verdict | runtime decision | effective policy plus decoded txn facts | approve/review/reject outcome | `internal/policy`, `internal/signerapp/signing` | Sentry rejects if a review verdict would be required. |
 | Policy editor draft | long-lived UI/runtime state | loaded YAML plus in-memory edits | appolicy TUI draft | `cmd/appolicy`, `internal/policyeditor` | Applies only on explicit save/apply; save writes exact bytes and sidecar. |
-| Sentry policy conversion output | derived YAML | `appolicy --to-sentry` input policy | deterministic "could allow" sentry-domain `policy.yaml` | `cmd/appolicy`, `internal/policy` | Drops review-only behavior; fails closed for non-deterministic route misses. |
+| Sentry policy conversion output | derived YAML | `appolicy --to-sentry` input policy | deterministic "could allow" sentry-role `policy.yaml` content | `cmd/appolicy`, `internal/policy` | Drops review-only behavior; fails closed for non-deterministic route misses. |
 
 ## Authorization And Authentication
 
@@ -276,6 +276,12 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Sentry public key envelope | public handoff | JSON `schema:"aplane.sentry-public-key.v1"` | manual sentry reference import | `cmd/apstore`, `internal/sentry/sentryrefs` | Contains `component_key` and full `public_key_hex`; no endpoint/trust claim. |
 | Public sentry reference record | public signer catalog | JSON `schema:"aplane.sentry-public-key-ref.v1"` | generation select option | `internal/sentry/sentryrefs` | Stored under `sentries/`; manual and client-discovery sources share schema. |
 
+## Installer And Release Metadata
+
+| Element | Kind | Authority | Projection | Owner | Checks |
+|---|---|---|---|---|---|
+| Release metadata | public provenance | release archive `release.json`, copied to `<install-root>/install/release.json` or systemd `<APSIGNER_DATA>/install/release.json` when present | version, commit, and build timestamp for diagnostics and future upgrade checks | `.github/workflows/release.yml`, `Makefile release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` | Schema `schema_version:1`; public metadata only, not signing, policy, endpoint trust, or upgrade authority by itself. |
+
 ## Audit And Observability
 
 | Element | Kind | Authority | Projection | Owner | Checks |
@@ -293,6 +299,7 @@ These decisions are part of the current data model and contract surface:
 | Decision | Rationale |
 |---|---|
 | This release is new-install-only. | Existing install directories are not supported in-place upgrade targets. |
+| `release.json` is release provenance metadata. | It helps identify the installed distribution but does not authenticate code or authorize upgrades by itself. |
 | `endpoints.yaml` is the client routing authority. | Client `config.yaml` owns network/theme/polling, not signer or sentry endpoint routes. |
 | Endpoint import and `/keys` discovery are routing metadata. | The trust anchor is the sentry public key embedded in the guarded account key, then `/sign/assemble` verification and on-chain LogicSig verification. |
 | `Config.SentryEndpoints` is derived runtime state. | Durable sentry endpoint inventory lives under endpoint records in `endpoints.yaml`. |

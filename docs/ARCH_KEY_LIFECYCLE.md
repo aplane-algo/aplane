@@ -79,6 +79,11 @@ keys must regenerate the sidecar from the restored component key payload.
 Missing sidecars do not make a component key unable to sign, but they do block
 offline public export until regenerated or backfilled.
 
+The durable and wire contracts use `component_key`, `component_selector`, and
+component signing terminology. Human-facing UI may label the same selector as a
+Sentry Key or Sentry Key ID; that label does not change the storage or HTTP
+field names.
+
 `node.yaml` is plaintext so the process can report its role during early
 startup. That plaintext is only a hint until each initialized identity verifies
 its HMAC sidecar after unlock. The sidecar key is derived from that identity's
@@ -270,7 +275,8 @@ The relevant order is:
 
 1. derive or reuse the identity master key,
 2. load root `node.yaml` and verify the identity's `node.yaml.hmac`,
-3. load and validate identity config, policy, and sentry policy,
+3. load and validate identity config and the node-role policy domain from
+   `policy.yaml`,
 4. apply node role to key type discovery and service dispatch,
 5. register enabled compiled/YAML key type state,
 6. register enabled installed templates,
@@ -297,7 +303,7 @@ is not published as valid runtime inventory.
 | Operation | Key type state effect | Key file effect | Notes |
 |---|---|---|---|
 | Initialize node role | Writes root `node.yaml`; each initialized identity writes a matching HMAC sidecar when its master key is available. | None. | Default role is `signer`; sentry role is explicit at initialization. |
-| Verify node role integrity | None. | None. | Required before unlock-dependent key scan, signing, generation, import, restore, or sentry component signing. |
+| Verify node role integrity | None. | None. | Required before unlock-dependent key scan, signing, generation, key/store/template/mnemonic import, restore, or sentry component signing. Client endpoint import is routing state and is outside this key lifecycle. |
 | `apstore keytype enable` | Writes/refreshes compiled enabled state, or enables an installed YAML template. | None. | Does not rewrite existing keys. |
 | `apstore keytype disable` | Deletes compiled state or disables an installed YAML template after the unused-key guard. | None. | Provider code and installed template files remain available to the store. |
 | `apstore template import` | Installs encrypted template and enabled state. | None. | Active after reload. |

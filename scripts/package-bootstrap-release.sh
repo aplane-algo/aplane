@@ -117,6 +117,22 @@ copy_required_binaries() {
     done
 }
 
+write_release_metadata() {
+    local root="$1"
+    local release_version="$2"
+    local commit="$3"
+    local built_at="$4"
+
+    cat > "$root/release.json" <<EOF
+{
+  "schema_version": 1,
+  "version": "$release_version",
+  "commit": "$commit",
+  "built_at": "$built_at"
+}
+EOF
+}
+
 main() {
     parse_args "$@"
 
@@ -137,6 +153,14 @@ main() {
     else
         VERSION="${VERSION#v}"
     fi
+    local release_version="$VERSION"
+    case "$release_version" in
+        [0-9]*) release_version="v$release_version" ;;
+    esac
+    local git_commit
+    git_commit="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    local built_at
+    built_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
     if [ "$BUILD_BINARIES" = "1" ]; then
         make -C "$ROOT_DIR" "bin-$ARCH"
@@ -176,6 +200,7 @@ main() {
     cp "$ROOT_DIR/install.sh" \
         "$ROOT_DIR/uninstall.sh" \
         "$staging/aplane/"
+    write_release_metadata "$staging/aplane" "$release_version" "$git_commit" "$built_at"
 
     chmod 755 "$staging/aplane/install.sh" \
         "$staging/aplane/uninstall.sh" \

@@ -259,7 +259,14 @@ clean:
 # Linux tarballs include installer/, installer/scripts/, install.sh, and uninstall.sh.
 release-local: bin-amd64 bin-arm64 bundled-plugins-linux
 	@mkdir -p dist
-	@VERSION=$$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//'); \
+	@RAW_VERSION=$$(git describe --tags --always --dirty 2>/dev/null || echo dev); \
+	VERSION=$$(printf '%s' "$$RAW_VERSION" | sed 's/^v//'); \
+	GIT_COMMIT=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown); \
+	BUILT_AT=$$(date -u '+%Y-%m-%dT%H:%M:%SZ'); \
+	write_release_metadata() { \
+		root="$$1"; \
+		printf '{\n  "schema_version": 1,\n  "version": "%s",\n  "commit": "%s",\n  "built_at": "%s"\n}\n' "$$RAW_VERSION" "$$GIT_COMMIT" "$$BUILT_AT" > "$$root/release.json"; \
+	}; \
 	for arch in amd64 arm64; do \
 		archive="aplane_$${VERSION}_linux_$${arch}.tar.gz"; \
 		rm -rf dist/staging; \
@@ -279,6 +286,7 @@ release-local: bin-amd64 bin-arm64 bundled-plugins-linux
 		cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/; \
 		scripts/stage-bundled-plugins.sh --os linux --arch $${arch} dist/staging/aplane/plugins.available; \
 		cp install.sh uninstall.sh dist/staging/aplane/; \
+		write_release_metadata dist/staging/aplane; \
 		tar -czf "dist/$${archive}" -C dist/staging aplane; \
 		echo "✓ Created dist/$${archive}"; \
 	done; \
@@ -300,6 +308,7 @@ release-local: bin-amd64 bin-arm64 bundled-plugins-linux
 		cp library/templates/README.md library/templates/*.yaml dist/staging/aplane/library/templates/; \
 		scripts/stage-bundled-plugins.sh --os darwin --arch $${darwinarch} dist/staging/aplane/plugins.available; \
 		cp install.sh uninstall.sh dist/staging/aplane/; \
+		write_release_metadata dist/staging/aplane; \
 		tar -czf "dist/$${archive}" -C dist/staging aplane; \
 		echo "✓ Created dist/$${archive}"; \
 	done; \

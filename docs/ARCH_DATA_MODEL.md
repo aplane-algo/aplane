@@ -85,8 +85,8 @@ Important vocabulary:
 `apsigner` owns signer data under `APSIGNER_DATA`:
 
 - identity keystores and key files,
-- identity config, signing policy, sentry component policy, tokens, SSH
-  enrollments, and key type state,
+- identity config, node-role policy in `policy.yaml`, tokens, SSH enrollments,
+  and key type state,
 - encrypted installed templates,
 - public sentry references and component public metadata sidecars,
 - signer-wide ASA metadata cache,
@@ -125,6 +125,7 @@ DTOs and contract fixtures.
 | Entity | Scope | Durable authority | Runtime projection | Wire projection | Owner |
 |--------|-------|-------------------|--------------------|-----------------|-------|
 | Client config | Client data dir | `APCLIENT_DATA/config.yaml` | `internal/config.Config` network/theme/polling state | SDK config loaders, shell runtime | `internal/config`, `internal/bootstrap/shell` |
+| Release metadata | Release archive and install root | `release.json`, copied to install metadata directory when present | installer/version provenance for diagnostics and future upgrade checks | installer output, support tooling | release workflow, `make release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` |
 | Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and sentry connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
 | Endpoint-published sentries | Client data dir | `endpoints.yaml` `published_sentries` | derived `Config.SentryEndpoints` map keyed by embedded public key hex | guarded send orchestration | `internal/config`, `internal/apshellapp`, `internal/engine` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/config.ServerConfig` snapshot | Admin settings subset | `internal/config`, `cmd/apsigner` |
@@ -141,8 +142,7 @@ DTOs and contract fixtures.
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |
 | Library template source | Signer data dir or repo | `library/templates/*.yaml` | parsed install candidate | admin KeyType Library | `internal/templatelibrary`, `internal/signerapp/templateadmin` |
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
-| Signing policy | Signer identity | `policy.yaml` plus `policy.yaml.hmac` | client-signing `policy.Config` on identity runtime | admin policy settings subset | `internal/policy`, `internal/signerapp/admin` |
-| Sentry policy | Signer identity | sentry-domain `policy.yaml` plus `policy.yaml.hmac` | sentry component `policy.Config` on identity runtime | appolicy save/check flows | `internal/policy`, `internal/signerapp/policyruntime`, `cmd/appolicy` |
+| Node-role policy | Signer identity | `policy.yaml` plus `policy.yaml.hmac` | client-signing or sentry component `policy.Config`, selected by node role | admin/appolicy policy editor flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/admin`, `cmd/appolicy` |
 | Authorization principal/group/grant | Product bootstrap model | source-defined bootstrap records | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | API token | Signer identity and client | signer `identities/<identity>/aplane.token`, client `aplane.token` | token authenticator | HTTP auth, SSH username | `internal/tokenfile`, `internal/auth` |
 | SSH enrollment | Signer identity | `identities/<identity>/.ssh/authorized_keys` | identity SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
@@ -182,8 +182,7 @@ Signer data dir
           -> key files -> runtime key indexes -> /keys and signing
           -> sentries public references -> /keytypes generation options
           -> key type state + installed templates -> /keytypes and generation
-          -> policy + HMAC -> approval verdicts
-          -> sentry policy + HMAC -> component-sign authorization
+          -> policy.yaml + HMAC -> signer approval verdicts or sentry component-sign authorization by node role
           -> API token + SSH keys -> authn
           -> approval coordinator -> sign/token prompts
           -> admin sessions -> admin mutations and approvals
@@ -194,7 +193,7 @@ The strongest authority chain is:
 ```text
 identity master key
   -> decrypts key files and installed templates
-  -> derives policy integrity key used to verify policy and sentry sidecars
+  -> derives policy integrity key used to verify policy.yaml sidecar
   -> enables runtime signing session
 ```
 
@@ -219,6 +218,7 @@ The signer data root contains process-scoped state:
 
 ```text
 config.yaml
+node.yaml
 audit.log
 .apstore.lock
 cache/
@@ -261,7 +261,8 @@ identities/<identity>/
 - token authority,
 - SSH enrollment,
 - effective identity config,
-- effective client-signing and sentry component policies,
+- effective node-role policy: client-signing policy on signer nodes or sentry
+  component policy on sentry nodes,
 - watcher and decommission lifecycle.
 
 Product mode exposes only `default`, but the runtime model is internally
@@ -333,9 +334,12 @@ Key type discovery is assembled from three sources:
 2. library-visible compiled providers enabled by identity state records,
 3. installed YAML templates that are enabled for the identity.
 
-Only `ed25519` and `aplane.falcon1024.v1` are available by default. Optional
-compiled providers and YAML templates become available only after identity-local
-enablement or installation.
+Default-enabled compiled providers include signer account providers
+(`ed25519`, `aplane.falcon1024.v1`) and sentry component providers
+(`aplane.sentry-ed25519.v1`, `aplane.sentry-falcon1024.v1`). Node role gates
+determine which default-enabled key classes may be generated or served by a
+store. Optional compiled providers and YAML templates become available only
+after identity-local enablement or installation.
 
 Identity key type records are plaintext because they are not key material:
 
@@ -363,12 +367,13 @@ policy.yaml
 policy.yaml.hmac
 ```
 
-Each HMAC authenticates exact YAML bytes with a key derived from the identity
-master key. Signer policy load verifies sidecars before applying policy; a
-missing or mismatched sidecar fails closed according to the policy contract.
+The HMAC authenticates exact YAML bytes with a key derived from the identity
+master key. Policy load verifies the sidecar before applying policy; a missing
+or mismatched sidecar fails closed according to the policy contract.
 
-`policy.yaml` is the client-signing policy. Runtime client-signing policy is an
-effective `policy.Config` layered from defaults and stored YAML. It controls:
+`policy.yaml` is parsed according to node role. On signer nodes, it is the
+client-signing policy. Runtime client-signing policy is an effective
+`policy.Config` layered from defaults and stored YAML. It controls:
 
 - Always Deny rules,
 - Always Review rules,
@@ -376,8 +381,8 @@ effective `policy.Config` layered from defaults and stored YAML. It controls:
 - network-scoped ALGO and ASA transfer thresholds,
 - YAML-only `key_overrides`.
 
-On sentry nodes, `policy.yaml` is the sentry component policy. It uses the
-same transfer routing model as deterministic authorization for
+On sentry nodes, the same `policy.yaml` file is parsed as the sentry component
+policy. It uses the same transfer routing model as deterministic authorization for
 `/sign/component`; it has no operator default and no review verdict. Sentry
 `key_overrides` are keyed by component selector, while client-signing overrides
 are keyed by Algorand auth address.
@@ -683,14 +688,13 @@ projections of shell application results, not a separate backend model.
 1. Verify passphrase against `.keystore`.
 2. Derive master key.
 3. Verify root `node.yaml` against the identity's role HMAC sidecar.
-4. Verify and load policy.
-5. Verify and load sentry policy.
-6. Apply node role gates.
-7. Register installed templates.
-8. Scan key files.
-9. Replace key indexes.
-10. Activate key session.
-11. Publish status/keyset notifications.
+4. Verify and load the node-role policy domain from `policy.yaml`.
+5. Apply node role gates.
+6. Register installed templates.
+7. Scan key files.
+8. Replace key indexes.
+9. Activate key session.
+10. Publish status/keyset notifications.
 
 Template registration precedes key scan so generation/discovery state is
 current. Existing key signing still depends on key files.
@@ -775,8 +779,8 @@ Restore is per-key:
 | Master key | secret | derived at unlock; cached only while unlocked; zero on lock |
 | `.key` private material | secret | encrypted at rest; decrypted on demand |
 | Installed `.template` files | sensitive policy material | encrypted in identity store |
-| `policy.yaml` | safety-critical | authenticated by HMAC sidecar |
-| sentry-domain `policy.yaml` | safety-critical | same file contract as `policy.yaml`; authorizes sentry component signatures on sentry nodes |
+| `policy.yaml` | safety-critical | authenticated by HMAC sidecar; parsed as signer or sentry policy according to node role |
+| `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |
 | API token | bearer secret | mode `0600`; endpoint-scoped client copies are used for HTTP and SSH token identity |
 | SSH private key | client secret | client-side file, used for tunnel auth |
 | Backup export passphrase | secret | protects `.apb` payloads |
