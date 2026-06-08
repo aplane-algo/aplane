@@ -121,9 +121,11 @@ only; it is not proof that the endpoint owns any private key.
 
 ### Detect Guarded Send
 
-`apshell send` consults the primary signer's key cache. If any sender is a
-guarded account key type, the client uses the guarded orchestration path. Mixed
-ordinary and guarded original senders are supported: guarded positions become
+`apshell send` resolves each original sender through the auth-address cache and
+consults the primary signer's key cache for the effective signer. If any
+effective signer is a guarded account key type, the client uses the guarded
+orchestration path. Mixed ordinary positions, direct guarded senders, and
+senders rekeyed to guarded authorizers are supported: guarded positions become
 component-signing targets, and ordinary signer-managed positions are signed
 later over the same canonical group.
 
@@ -144,9 +146,10 @@ The client calls the primary signer:
 POST /sign/component role=user component_key=<guarded_account>
 ```
 
-The signer loads the local guarded account key only if every requested target
-sender equals `component_key`. It signs the user-role component message with
-the user component private key stored in that guarded account key.
+The signer loads `component_key` as a local guarded account key. The decoded
+target sender may differ from `component_key`; authorizer binding is verified
+during assembly. The signer signs the user-role component message with the user
+component private key stored in that guarded account key.
 
 ### Sentry Component Sign
 
@@ -188,7 +191,10 @@ For each target, the primary signer loads its local guarded account key and:
 3. packs both signatures according to the guarded account key type,
 4. builds LogicSig args from stored signing metadata,
 5. verifies the resulting LogicSig address equals the guarded account,
-6. returns signed group bytes, preserving passthrough bytes for signed
+6. signs the canonical transaction with that LogicSig and verifies the decoded
+   signed transaction is still the same txid and carries `AuthAddr` equal to the
+   guarded account when the decoded sender differs,
+7. returns signed group bytes, preserving passthrough bytes for signed
    non-guarded originals and client-signed dummies only if their decoded
    transaction ID matches the canonical group entry.
 
@@ -225,13 +231,13 @@ KeyType in SentryComponentTypes union GuardedAccountTypes =>
   Reject(/sign, key_type)
 ```
 
-### A3: User Component Sender Binding
+### A3: User Component Key Binding
 
-User-role component signing for a guarded account signs only target
-transactions whose sender equals the requested guarded account.
+User-role component signing loads the requested `component_key` as a local
+guarded account key before signing any user-role component message.
 
 ```text
-Exists target: target.sender != component_key =>
+not LoadGuardedAccount(component_key) =>
   Reject(UserComponentSign)
 ```
 
@@ -345,6 +351,21 @@ role = sentry => reject spending/user signing keys and guarded account keys
 
 There is no `dual` role and no supported role-change transition. Conflicting
 active key inventory fails closed for the whole node.
+
+### A14: Assembly Binds Guarded Account As Sender Or AuthAddr
+
+Assembly returns a guarded target only when the decoded signed transaction still
+matches the canonical target transaction ID, and when a non-guarded sender is
+authorized by the guarded account through `AuthAddr`.
+
+```text
+TxID(AssembledSignedTxn.txn) != CanonicalGroup[target].txid =>
+  Reject(Assemble)
+
+CanonicalGroup[target].sender != guarded_account and
+AssembledSignedTxn.AuthAddr != guarded_account =>
+  Reject(Assemble)
+```
 
 ## Assumptions
 

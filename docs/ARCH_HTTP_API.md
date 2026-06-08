@@ -153,10 +153,13 @@ compatibility; it is not the `/sign` wire response.
 - `target_indices[]`: zero-based indices to sign
 
 For `role:"user"`, `component_key` identifies the local guarded account key to
-use for user-role component signing. For `role:"sentry"`, `component_key`
-identifies the local sentry component-key selector. Each target index is
-signed independently using the role-separated sentry message derived from
-that target's TxID.
+use for user-role component signing. The target transaction sender may be the
+guarded account itself or another sender whose effective signer/AuthAddr is
+that guarded account; no separate sender field is supplied because the sender
+is decoded from `group_bytes_hex[]`. For `role:"sentry"`, `component_key`
+identifies the local sentry component-key selector. Each target index is signed
+independently using the role-separated sentry message derived from that
+target's TxID.
 
 `/sign/component` response (`signerapi.ComponentSignResponse`):
 
@@ -187,8 +190,12 @@ Each passthrough item has `target_index` and `signed_txn_hex`.
 - `signed_group[]`
 
 Assembly verifies the sentry signature against the sentry public key
-embedded in the local guarded account key. It does not trust endpoint-provided
-metadata or `/keys` self-reporting as ownership proof.
+embedded in the local guarded account key. It also verifies the user signature
+against the local guarded account key, verifies the resulting LogicSig address
+equals `guarded_account`, and, when the decoded target sender differs from
+`guarded_account`, verifies the assembled signed transaction carries
+`AuthAddr == guarded_account`. It does not trust endpoint-provided metadata or
+`/keys` self-reporting as ownership proof.
 
 If the request omits `request_id`, apsigner returns a generated opaque ID.
 Assembly request IDs are response/audit correlation fields only and are not

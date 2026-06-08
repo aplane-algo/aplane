@@ -107,7 +107,11 @@ sentry component role, and `txid` is the canonical 32-byte transaction ID for
 the target group entry. Message construction is owned by
 `internal/sentry/message`; clients and signers must use that shared primitive,
 or an SDK equivalent with matching vectors, rather than reconstructing the
-message independently.
+message independently. The message does not carry a separate sender or
+authorizer field; guarded-authorizer binding is derived from the canonical
+transaction bytes and verified during assembly by requiring the guarded
+LogicSig address, and `AuthAddr` when needed, to equal the requested guarded
+account.
 
 ## Admin Protocol
 

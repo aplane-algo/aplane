@@ -13,20 +13,31 @@ preserved.
 
 ## Mixed Guarded/Non-Guarded Groups
 
-`apshell` also supports atomic groups that mix guarded-account senders with
-ordinary signer-managed senders. If any original sender is guarded, the client
-uses the guarded orchestration path for the whole group, builds one canonical
-group, and signs every participant over those same frozen bytes.
+`apshell` also supports atomic groups that mix guarded targets with ordinary
+signer-managed senders. A guarded target may be a transaction whose sender is a
+guarded account, or a transaction whose sender resolves through the auth cache
+to a guarded effective signer/AuthAddr. If any original position has a guarded
+effective signer, the client uses the guarded orchestration path for the whole
+group, builds one canonical group, and signs every participant over those same
+frozen bytes.
 
 Guarded positions are signed through `/sign/component` plus `/sign/assemble`.
 Ordinary signer-managed originals are signed by an intermediate primary-signer
 `/sign` request over the full canonical group: ordinary originals are sign-mode
-entries, guarded originals are `foreign` entries with accurate `lsig_size`
-hints, and client-signed dummies are `foreign` context entries. The resulting
-signed ordinary originals and dummies are then passed through to assembly.
+entries, guarded targets are `foreign` entries with accurate guarded-authorizer
+`lsig_size` hints, and client-signed dummies are `foreign` context entries. The
+resulting signed ordinary originals and dummies are then passed through to
+assembly.
 
-The remaining guarded limitation is narrower: a guarded LogicSig used as
-`AuthAddr` for another sender is still unsupported.
+Ordinary `/sign` still rejects guarded account key types. A guarded authorizer
+therefore never becomes a one-party `AuthAddress` request: it goes through
+component signing and assembly, and assembly verifies `AuthAddr` is the guarded
+account when the decoded sender differs.
+
+The remaining limitation is policy scope. Component messages bind role and
+target transaction ID; sentry policy is transaction-fact based and does not
+receive a separate authorizer field. Per-authorizer allowlists would require a
+versioned component message and LogicSig change.
 
 ## The Three Cases
 

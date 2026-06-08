@@ -1101,10 +1101,11 @@ against the sentry public key embedded in the local guarded-account key.
 
 ### Runtime Flow
 
-`apshell send` detects guarded senders from signer key metadata. If any
-original sender is a guarded account key type, the client uses guarded
-orchestration for the whole atomic group. The group may mix guarded original
-senders with ordinary signer-managed senders.
+`apshell send` resolves each original sender through the auth-address cache and
+detects guarded targets by effective signer. If any effective signer is a
+guarded account key type, the client uses guarded orchestration for the whole
+atomic group. The group may mix direct guarded senders, senders rekeyed to a
+guarded authorizer, and ordinary signer-managed senders.
 
 The client first builds one canonical group. It sizes LogicSig-budget dummies
 across every LogicSig position, including non-guarded positions budgeted by
@@ -1117,34 +1118,35 @@ For guarded targets, the client obtains component signatures:
 2. sentry signer `/sign/component` with role `sentry`.
 
 The user-role component request proves the user signer controls the
-guarded-account component key. The sentry-role component request evaluates
+guarded effective signer. The sentry-role component request evaluates
 decoded target transaction facts against sentry-domain `policy.yaml` and returns
 sentry component signatures when allowed.
 
 If the original group also has non-guarded positions, the client then calls the
 primary signer `/sign` over the full canonical group: non-guarded originals are
-sign-mode entries, guarded originals are `foreign` entries with accurate
-`lsig_size` hints, and client-signed dummies are `foreign` context entries. This
+sign-mode entries, guarded targets are `foreign` entries with accurate
+authorizer `lsig_size` hints, and client-signed dummies are `foreign` context entries. This
 keeps the complete group in approval context and lets the signer's existing
 budget check reject client mis-sizing before algod evaluation.
 
 Finally, the client calls the user signer `/sign/assemble`. The assembly
 request verifies both component signatures against the local guarded account
-key's stored metadata, packs LogicSig arguments, verifies any passthrough
-signed bytes against the canonical transaction IDs, and returns signed group
-bytes. Signed non-guarded originals and signed dummies are supplied to assembly
-as passthrough entries.
+key's stored metadata, packs LogicSig arguments, verifies the resulting LogicSig
+address equals the guarded account, verifies any passthrough signed bytes
+against the canonical transaction IDs, and returns signed group bytes. If the
+target sender differs from the guarded account, assembly verifies the decoded
+signed transaction carries `AuthAddr == guarded_account` before returning it.
+Signed non-guarded originals and signed dummies are supplied to assembly as
+passthrough entries.
 
-Guarded component signing remains limited to guarded original senders:
-
-```text
-txn.Sender == guarded_account
-```
-
-A guarded LogicSig used as `AuthAddr` for another sender is rejected by
-component signing and assembly. Sentry-role component signing is transfer
-policy based: target transactions must produce direct transfer movements
-covered by `transfer_policy`. App calls, key registration, asset
+Guarded component signing supports a guarded account either as `txn.Sender` or
+as the effective signer/AuthAddr for another sender. Component messages still
+commit only to role and target transaction ID; sentry policy is based on
+decoded transaction facts and does not receive a separate authorizer field.
+Per-authorizer delegation controls would require a versioned component message
+and LogicSig change and are not part of this flow. Sentry-role component signing
+is transfer policy based: target transactions must produce direct transfer
+movements covered by `transfer_policy`. App calls, key registration, asset
 configuration, and other unsupported target shapes are rejected for sentry
 role because routing cannot authorize them.
 
