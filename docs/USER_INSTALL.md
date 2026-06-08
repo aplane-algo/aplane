@@ -165,14 +165,21 @@ cd /path/to/aplane
 ./start.sh
 ```
 
-This opens shell, signer, and daemon panes in one Bubble Tea console while
-preserving the same apshell, apadmin, and apsigner transport interfaces.
+For local signer nodes, this opens shell, signer admin, and daemon panes in one
+Bubble Tea console while preserving the same apshell, apadmin, and apsigner
+transport interfaces. Unlock the signer pane, then run `request-token` in the
+shell pane. Local `apconsole` probes the live loopback SSH endpoint before
+pinning the local signer's SSH host key into the client `known_hosts` file.
+Approve the request in the signer pane; that first enrollment writes
+`aplane.token` into the client data directory and the shell immediately attempts
+to connect.
 
-On first launch, unlock the signer pane, then run `request-token` in the shell
-pane. Local `apconsole` probes the live loopback SSH endpoint before pinning
-the local signer's SSH host key into the client `known_hosts` file. Approve the
-request in the signer pane; that first enrollment writes `aplane.token` into
-the client data directory and the shell immediately attempts to connect.
+For local sentry nodes, `apconsole` shows the sentry admin pane and daemon pane
+only. Unlock the sentry in that console, then open another terminal, source the
+install's `apenv.sh`, start `apshell`, and run
+`request-token --endpoint local-sentry`. Approve the request in the sentry admin
+pane; enrollment writes `tokens/local-sentry.token` under the client data
+directory.
 
 Or start components individually:
 
@@ -185,16 +192,26 @@ apshell                # Transaction shell (in another terminal)
 
 ### After installing
 
+For a signer node:
+
 1. Run `./start.sh` from the install root
 2. Unlock the signer pane with the keystore passphrase
 3. Generate a signing key in the signer pane (press `g`)
 4. In the shell pane, run `request-token` to obtain an API token via SSH provisioning
 5. Approve the request in the signer pane
 
+For a sentry node:
+
+1. Run `./start.sh` from the install root
+2. Unlock the sentry admin pane with the keystore passphrase
+3. In another terminal, source the install's `apenv.sh`
+4. Run `apshell`, then `request-token --endpoint local-sentry`
+5. Approve the request in the sentry admin pane
+
 `request-token` creates the client SSH key if it is missing, then waits for an
 operator to approve enrollment in `apadmin` or `apapprover`.
-After approval, the shell saves the token and immediately attempts to connect
-to the signer.
+After approval, the shell saves the token for the selected endpoint and
+immediately attempts to connect.
 
 ### Multiple local instances
 
