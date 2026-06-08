@@ -312,7 +312,7 @@ func TestClientEndpointExamplesUseKnownFields(t *testing.T) {
 			))),
 		},
 		{
-			name: "install.sh write_apshell_attestor_endpoint_registry",
+			name: "install.sh write_apshell_sentry_endpoint_registry",
 			data: []byte(strings.NewReplacer(
 				"$host", "localhost",
 				"$signer_port", "11270",
@@ -320,7 +320,7 @@ func TestClientEndpointExamplesUseKnownFields(t *testing.T) {
 			).Replace(extractInstallHereDocAfter(
 				t,
 				string(installer),
-				"write_apshell_attestor_endpoint_registry() {",
+				"write_apshell_sentry_endpoint_registry() {",
 				`cat > "$target" <<EOF`,
 			))),
 		},

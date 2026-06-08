@@ -915,7 +915,7 @@ endpoints:
 EOF
 }
 
-write_apshell_attestor_endpoint_registry() {
+write_apshell_sentry_endpoint_registry() {
     local target="$1"
     local host="${2:-localhost}"
     local signer_port="${3:-11270}"
@@ -947,7 +947,7 @@ write_apshell_endpoint_registry_for_role() {
             write_apshell_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
             ;;
         sentry)
-            write_apshell_attestor_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
+            write_apshell_sentry_endpoint_registry "$target" "$host" "$signer_port" "$ssh_port"
             ;;
         *)
             echo "Error: unsupported endpoint registry role: $role" >&2
@@ -1957,7 +1957,8 @@ STARTEOF
     if [ "$NODE_ROLE" = "signer" ]; then
         echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
     else
-        echo "Token setup uses SSH provisioning; run 'request-token --endpoint local-sentry' from apshell after install."
+        echo "Token setup uses SSH provisioning; after unlocking the sentry, run"
+        echo "'request-token --endpoint local-sentry' from apshell in another terminal."
     fi
 
     # Offer to add apenv.sh to shell rc
@@ -1989,9 +1990,10 @@ STARTEOF
         echo "On first launch, unlock the signer pane, run 'request-token' in the shell pane,"
         echo "and approve the request in the signer pane."
     else
-        echo "On first launch, unlock the sentry pane, run"
+        echo "On first launch, unlock the sentry admin pane. Then open another terminal,"
+        echo "source $(shell_quote "$ENV_SH"), start apshell, and run"
         echo "  request-token --endpoint local-sentry"
-        echo "in the shell pane, and approve the request in the sentry pane."
+        echo "Approve the request in the sentry admin pane."
     fi
     echo ""
     echo "To uninstall: $(shell_quote "$LOCAL_PATH/uninstall.sh")"
@@ -2238,7 +2240,8 @@ if [ -n "$SUDO_USER" ]; then
     if [ "$NODE_ROLE" = "signer" ]; then
         echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
     else
-        echo "Token setup uses SSH provisioning; run 'request-token --endpoint local-sentry' from apshell after install."
+        echo "Token setup uses SSH provisioning; after unlocking the sentry, run"
+        echo "'request-token --endpoint local-sentry' from apshell."
     fi
 
     APCONSOLE_CONFIG="$OPERATOR_ROOT/apconsole.yaml"
@@ -2338,4 +2341,8 @@ if [ "$NODE_ROLE" = "signer" ]; then
 else
     echo "Use 'request-token --endpoint local-sentry' in apshell to obtain a sentry API token via SSH provisioning."
 fi
-echo "After token enrollment has written aplane.token and known_hosts, use apconsole for the unified secure-machine console."
+if [ "$NODE_ROLE" = "signer" ]; then
+    echo "After token enrollment has written aplane.token and known_hosts, use apconsole for the unified secure-machine console."
+else
+    echo "After token enrollment has written tokens/local-sentry.token and known_hosts, use apconsole for the unified secure-machine console."
+fi
