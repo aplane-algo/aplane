@@ -27,6 +27,15 @@ type EndpointImportRequest struct {
 	DryRun bool
 }
 
+// EndpointCreateSentryRequest creates or replaces one client-local sentry
+// endpoint profile without requiring an exported endpoint envelope.
+type EndpointCreateSentryRequest struct {
+	Alias      string
+	URL        string
+	SentryPort int
+	DryRun     bool
+}
+
 // EndpointDiscoverSentriesRequest rebuilds endpoint-published sentry
 // inventory by querying configured endpoint inventories.
 type EndpointDiscoverSentriesRequest struct {
@@ -134,6 +143,51 @@ func (a *App) EndpointImport(_ context.Context, req EndpointImportRequest) (*End
 		}
 	}
 	result.RenderLines = endpointImportRenderLines(result)
+	return result, nil
+}
+
+// EndpointCreateSentry creates or replaces a client-local sentry endpoint
+// profile. It does not copy tokens, host-key trust, or sentry key inventory.
+func (a *App) EndpointCreateSentry(_ context.Context, req EndpointCreateSentryRequest) (*EndpointCreateSentryResult, error) {
+	if err := config.ValidateClientEndpointAlias(req.Alias); err != nil {
+		return nil, fmt.Errorf("endpoint alias is required: %w", err)
+	}
+	if req.URL == "" {
+		return nil, fmt.Errorf("endpoint URL is required")
+	}
+	if req.SentryPort <= 0 || req.SentryPort > 65535 {
+		return nil, fmt.Errorf("sentry port must be 1-65535")
+	}
+
+	endpointPlan, err := config.PlanStoredClientEndpointUpsert(a.DataDir, req.Alias, config.ClientEndpointConfig{
+		Role:       config.ClientEndpointRoleSentry,
+		URL:        req.URL,
+		SignerPort: req.SentryPort,
+	}, true)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &EndpointCreateSentryResult{
+		Alias:      req.Alias,
+		Role:       endpointPlan.Endpoint.Role,
+		URL:        endpointPlan.Endpoint.URL,
+		SentryPort: endpointPlan.Endpoint.SignerPort,
+		TokenFile:  endpointPlan.Endpoint.TokenFile,
+		DryRun:     req.DryRun,
+		Created:    endpointPlan.Created,
+		Updated:    endpointPlan.Updated,
+	}
+
+	if !req.DryRun {
+		if err := config.ApplyStoredClientEndpointUpsert(a.DataDir, endpointPlan); err != nil {
+			return nil, err
+		}
+		if cfg, err := config.LoadConfig(a.DataDir); err == nil {
+			a.Config = cfg
+		}
+	}
+	result.RenderLines = endpointCreateSentryRenderLines(result)
 	return result, nil
 }
 
@@ -542,6 +596,27 @@ func endpointImportRenderLines(result *EndpointImportResult) []string {
 		lines = append(lines, "  default: yes")
 	}
 	return lines
+}
+
+func endpointCreateSentryRenderLines(result *EndpointCreateSentryResult) []string {
+	action := "Configured"
+	if result.DryRun {
+		action = "Would configure"
+	}
+	state := "unchanged"
+	switch {
+	case result.Created:
+		state = "created"
+	case result.Updated:
+		state = "updated"
+	}
+
+	return []string{
+		fmt.Sprintf("%s %s endpoint %s (%s)", action, result.Role, result.Alias, state),
+		fmt.Sprintf("  url: %s", result.URL),
+		fmt.Sprintf("  sentry port: %d", result.SentryPort),
+		fmt.Sprintf("  token file: %s", result.TokenFile),
+	}
 }
 
 func endpointSyncSentriesRenderLines(result *EndpointSyncSentriesResult) []string {

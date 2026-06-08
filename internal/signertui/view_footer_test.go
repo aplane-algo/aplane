@@ -97,9 +97,55 @@ func TestAdminTitleUsesSentryNodeRole(t *testing.T) {
 	if got := (Model{}).AdminTitle(); got != "Signer Admin" {
 		t.Fatalf("default AdminTitle() = %q, want Signer Admin", got)
 	}
-	m := Model{adminSettings: &AdminSettings{NodeRole: "sentry"}}
+	m := Model{initialNodeRole: "sentry"}
+	if got := m.AdminTitle(); got != "Sentry Admin" {
+		t.Fatalf("initial sentry AdminTitle() = %q, want Sentry Admin", got)
+	}
+	m = Model{adminSettings: &AdminSettings{NodeRole: "sentry"}}
 	if got := m.AdminTitle(); got != "Sentry Admin" {
 		t.Fatalf("sentry AdminTitle() = %q, want Sentry Admin", got)
+	}
+}
+
+func TestStandaloneAdminHeaderShowsEndpointAndRolePort(t *testing.T) {
+	m := Model{
+		width: 120,
+		adminSettings: &AdminSettings{
+			NodeRole:             "sentry",
+			SignerPort:           11270,
+			EndpointAdvertiseURL: "ssh://sentry.example.test:1127",
+		},
+	}
+
+	got := stripANSI(m.renderAdminHeader())
+	for _, want := range []string{
+		"Sentry Admin",
+		"Sentry Port: 11270",
+		"Endpoint: ssh://sentry.example.test:1127",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("renderAdminHeader() missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestStandaloneAdminHeaderStaysWithinWidth(t *testing.T) {
+	m := Model{
+		width: 58,
+		adminSettings: &AdminSettings{
+			NodeRole:             "signer",
+			SignerPort:           11270,
+			EndpointAdvertiseURL: "ssh://very-long-signer-hostname.example.test:1127",
+		},
+	}
+
+	got := m.renderAdminHeader()
+	if width := visibleWidth(got); width > m.width {
+		t.Fatalf("renderAdminHeader() width = %d, want <= %d\n%s", width, m.width, stripANSI(got))
+	}
+	clean := stripANSI(got)
+	if !strings.Contains(clean, "Signer Admin") || !strings.Contains(clean, "Signer Port") {
+		t.Fatalf("renderAdminHeader() missing role or port:\n%s", clean)
 	}
 }
 

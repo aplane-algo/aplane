@@ -83,6 +83,65 @@ func TestEndpointImportWritesEndpointOnly(t *testing.T) {
 	}
 }
 
+func TestEndpointCreateSentryWritesEndpointOnly(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+
+	result, err := app.EndpointCreateSentry(context.Background(), EndpointCreateSentryRequest{
+		Alias:      "sentry-local",
+		URL:        "ssh://127.0.0.1:2223",
+		SentryPort: 12270,
+	})
+	if err != nil {
+		t.Fatalf("EndpointCreateSentry() error = %v", err)
+	}
+	if !result.Created || result.Updated {
+		t.Fatalf("Created/Updated = %v/%v, want true/false", result.Created, result.Updated)
+	}
+	if result.SentryPort != 12270 {
+		t.Fatalf("SentryPort = %d, want 12270", result.SentryPort)
+	}
+
+	cfg, err := config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	endpoint, ok := cfg.Endpoints.Endpoint("sentry-local")
+	if !ok {
+		t.Fatal("sentry-local endpoint missing")
+	}
+	if endpoint.Role != config.ClientEndpointRoleSentry || endpoint.URL != "ssh://127.0.0.1:2223" || endpoint.SignerPort != 12270 {
+		t.Fatalf("endpoint = %#v, want sentry ssh endpoint with signer_port 12270", endpoint)
+	}
+	if endpoint.TokenFile != filepath.Join(dataDir, "tokens", "sentry-local.token") {
+		t.Fatalf("TokenFile = %q, want resolved endpoint token path", endpoint.TokenFile)
+	}
+	if len(cfg.SentryEndpoints) != 0 {
+		t.Fatalf("SentryEndpoints = %#v, want none from manual endpoint create", cfg.SentryEndpoints)
+	}
+}
+
+func TestEndpointCreateSentryDryRunDoesNotWriteFiles(t *testing.T) {
+	dataDir := t.TempDir()
+	app := newEndpointTestApp(t, dataDir)
+
+	result, err := app.EndpointCreateSentry(context.Background(), EndpointCreateSentryRequest{
+		Alias:      "sentry-local",
+		URL:        "ssh://127.0.0.1:2223",
+		SentryPort: 12270,
+		DryRun:     true,
+	})
+	if err != nil {
+		t.Fatalf("EndpointCreateSentry(dry-run) error = %v", err)
+	}
+	if !result.DryRun {
+		t.Fatal("DryRun = false, want true")
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, config.ClientEndpointsFile)); !os.IsNotExist(err) {
+		t.Fatalf("endpoints.yaml stat error = %v, want not exist", err)
+	}
+}
+
 func TestEndpointImportReplacesSameAlias(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)

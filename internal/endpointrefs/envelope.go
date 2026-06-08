@@ -67,7 +67,7 @@ func Normalize(env Envelope) (Envelope, error) {
 	}
 
 	env.URL = strings.TrimRight(strings.TrimSpace(env.URL), "/")
-	if err := validatePortableURL(env.URL); err != nil {
+	if err := ValidatePortableURL(env.URL); err != nil {
 		return Envelope{}, err
 	}
 	if env.SignerPort < 0 || env.SignerPort > 65535 {
@@ -79,7 +79,9 @@ func Normalize(env Envelope) (Envelope, error) {
 	return env, nil
 }
 
-func validatePortableURL(raw string) error {
+// ValidatePortableURL validates a URL that is safe to put in a public endpoint
+// handoff envelope.
+func ValidatePortableURL(raw string) error {
 	if raw == "" {
 		return fmt.Errorf("url is required")
 	}

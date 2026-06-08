@@ -209,6 +209,31 @@ request-token --endpoint main
 connect main
 ```
 
+For a sentry endpoint, the client can also create the endpoint profile manually
+when the operator already knows the client-reachable URL and sentry REST port:
+
+```bash
+endpoints create --alias local-sentry \
+  --endpoint ssh://sentry.example.com:1127 \
+  --sentryport 11270
+request-token --endpoint local-sentry
+endpoints sync-sentries
+```
+
+If the signer operator sets a client-reachable advertised URL in
+`$APSIGNER_DATA/config.yaml`, `apstore endpoint export` can omit `--host`:
+
+```yaml
+endpoint:
+  advertise_url: ssh://signer.example.com:1127
+```
+
+Without `--host`, `--url`, or `endpoint.advertise_url`, endpoint export fails
+instead of guessing from local network interfaces.
+
+The advertised URL can also be set from `apadmin` on the Settings page as
+`Endpoint advertise URL`.
+
 Importing an endpoint creates routing/configuration only. It does not copy API
 tokens, SSH host trust, private keys, or passphrases. Tokens are still obtained
 with `request-token --endpoint <alias>`. Re-import with the same alias replaces
@@ -241,6 +266,7 @@ Useful local commands:
 endpoints list
 endpoints show main
 endpoints import-public --alias main --role signer --dry-run signer.endpoint.json
+endpoints create --alias local-sentry --endpoint ssh://127.0.0.1:2223 --sentryport 12270
 endpoints default main
 endpoints delete old-signer
 ```
@@ -443,6 +469,8 @@ ssh:
   port: 1127
   host_key_path: .ssh/ssh_host_key
   authorized_keys_path: .ssh/authorized_keys
+endpoint:
+  advertise_url: ssh://signer.example.com:1127
 passphrase_timeout: "15m"
 lock_on_disconnect: true
 ```

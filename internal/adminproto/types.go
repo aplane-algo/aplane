@@ -20,25 +20,27 @@ type KeyInfo struct {
 
 // AdminSettings is the admin-domain view of current admin settings.
 type AdminSettings struct {
-	UserAutoApprove   bool
-	LockOnDisconnect  bool
-	PassphraseTimeout string
-	PassphraseMethod  string
-	NodeRole          string
-	SSHEnabled        bool
-	SSHPort           int
-	SSHFingerprint    string
-	SSHClients        int
-	SignerPort        int
-	TEALCompileNet    string
-	Theme             string
+	UserAutoApprove      bool
+	LockOnDisconnect     bool
+	PassphraseTimeout    string
+	PassphraseMethod     string
+	NodeRole             string
+	SSHEnabled           bool
+	SSHPort              int
+	SSHFingerprint       string
+	SSHClients           int
+	SignerPort           int
+	TEALCompileNet       string
+	EndpointAdvertiseURL string
+	Theme                string
 }
 
 const (
-	AdminSettingUserAutoApprove   = "user_auto_approve"
-	AdminSettingLockOnDisconnect  = "lock_on_disconnect"
-	AdminSettingPassphraseTimeout = "passphrase_timeout"
-	AdminSettingTheme             = "theme"
+	AdminSettingUserAutoApprove      = "user_auto_approve"
+	AdminSettingLockOnDisconnect     = "lock_on_disconnect"
+	AdminSettingPassphraseTimeout    = "passphrase_timeout"
+	AdminSettingTheme                = "theme"
+	AdminSettingEndpointAdvertiseURL = "endpoint.advertise_url"
 )
 
 // SignerLockedNotification is the admin-domain notification emitted when the signer locks.

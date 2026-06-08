@@ -737,6 +737,20 @@ type EndpointImportResult struct {
 	RenderLines    []string
 }
 
+// EndpointCreateSentryResult describes manual creation of a sentry endpoint
+// profile.
+type EndpointCreateSentryResult struct {
+	Alias       string
+	Role        string
+	URL         string
+	SentryPort  int
+	TokenFile   string
+	DryRun      bool
+	Created     bool
+	Updated     bool
+	RenderLines []string
+}
+
 // EndpointDefaultResult describes a default endpoint change.
 type EndpointDefaultResult struct {
 	Alias         string

@@ -19,8 +19,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/manifest"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
+	"github.com/aplane-algo/aplane/internal/noderole"
 	tui "github.com/aplane-algo/aplane/internal/signertui"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
+	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
 
@@ -175,13 +177,24 @@ func startTUI(connector tui.AdminConnector, dataDir string) {
 	defer sshtunnel.SetStatusWriter(nil)
 
 	// Create and run the TUI
-	model := tui.NewModel(connector, dataDir).WithStandalone()
+	model := tui.NewModel(connector, dataDir).WithInitialNodeRole(initialNodeRole(dataDir)).WithStandalone()
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
 		logErrorf("error running TUI: %v", err)
 		os.Exit(1)
 	}
+}
+
+func initialNodeRole(dataDir string) string {
+	if dataDir == "" {
+		return ""
+	}
+	doc, _, err := noderole.Load(storepaths.NewPaths(dataDir))
+	if err != nil {
+		return ""
+	}
+	return string(doc.Role)
 }
 
 func runRemoteMode(clientDataDirFlag string) {

@@ -303,6 +303,39 @@ func TestRenderKeyDetailsShowsSentryPublicKey(t *testing.T) {
 	}
 }
 
+func TestRenderKeyDetailsTruncatesLongPublicKey(t *testing.T) {
+	const publicKey = "0123456789abcdef0123456789abcdef0123456789abcdef"
+	rendered := stripANSI(Model{
+		detailsAddress:      "SENTRYKEY",
+		detailsKeyType:      keytypes.SentryComponentFalcon1024V1,
+		detailsPublicKeyHex: publicKey,
+		height:              30,
+	}.renderKeyDetails())
+
+	if !strings.Contains(rendered, "Sentry public key: 0123456789abcdef0123...") {
+		t.Fatalf("renderKeyDetails() missing truncated sentry public key:\n%s", rendered)
+	}
+	if strings.Contains(rendered, publicKey) {
+		t.Fatalf("renderKeyDetails() rendered full sentry public key:\n%s", rendered)
+	}
+}
+
+func TestRenderKeyDetailsLabelsSentryKey(t *testing.T) {
+	rendered := stripANSI(Model{
+		initialNodeRole: "sentry",
+		detailsAddress:  "SENTRYKEY",
+		detailsKeyType:  keytypes.SentryComponentEd25519V1,
+		height:          30,
+	}.renderKeyDetails())
+
+	if !strings.Contains(rendered, "Sentry Key: SENTRYKEY") {
+		t.Fatalf("renderKeyDetails() missing sentry key label:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "Address: SENTRYKEY") {
+		t.Fatalf("renderKeyDetails() used address label in sentry mode:\n%s", rendered)
+	}
+}
+
 func TestHandleKeyListKeysDoesNotExportOrDeleteFromMainScreen(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyList,

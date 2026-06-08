@@ -66,15 +66,16 @@ type layout struct {
 }
 
 func newModel(connector tui.AdminConnector, dataDir string, shell shellExecutor, shellStartup []string, daemon daemonModel) model {
-	return newModelWithShell(connector, dataDir, shell, shellStartup, daemon, true)
+	return newModelWithShell(connector, dataDir, shell, shellStartup, daemon, true, "")
 }
 
-func newModelWithShell(connector tui.AdminConnector, dataDir string, shell shellExecutor, shellStartup []string, daemon daemonModel, shellEnabled bool) model {
+func newModelWithShell(connector tui.AdminConnector, dataDir string, shell shellExecutor, shellStartup []string, daemon daemonModel, shellEnabled bool, initialNodeRole string) model {
+	signer := tui.NewModel(connector, dataDir).WithInitialNodeRole(initialNodeRole)
 	return model{
 		focus:         paneSigner,
 		shellDisabled: !shellEnabled,
 		shell:         newShellModel(shell, shellStartup),
-		signer:        tui.NewModel(connector, dataDir),
+		signer:        signer,
 		daemon:        daemon,
 	}
 }
@@ -433,19 +434,19 @@ func (m model) renderBody(l layout) string {
 	if !l.split {
 		switch m.focus {
 		case paneSigner:
-			return renderPane(m.signerPaneTitle(), true, m.signer.View(), l.signer.width, l.signer.height)
+			return renderPaneWithMeta(m.signerPaneTitle(), m.signerPaneMeta(), true, m.signer.View(), l.signer.width, l.signer.height)
 		case paneDaemon:
 			return renderPane("Daemon", true, daemonBody, l.daemon.width, l.daemon.height)
 		default:
 			if !m.shellEnabled() {
-				return renderPane(m.signerPaneTitle(), true, m.signer.View(), l.signer.width, l.signer.height)
+				return renderPaneWithMeta(m.signerPaneTitle(), m.signerPaneMeta(), true, m.signer.View(), l.signer.width, l.signer.height)
 			}
 			shellBody := paneBody(l.shell, m.shell.View)
 			return renderPane("Shell", true, shellBody, l.shell.width, l.shell.height)
 		}
 	}
 
-	signerBox := renderPane(m.signerPaneTitle(), m.focus == paneSigner, m.signer.View(), l.signer.width, l.signer.height)
+	signerBox := renderPaneWithMeta(m.signerPaneTitle(), m.signerPaneMeta(), m.focus == paneSigner, m.signer.View(), l.signer.width, l.signer.height)
 	daemonBox := renderPane("Daemon", m.focus == paneDaemon, daemonBody, l.daemon.width, l.daemon.height)
 	if !m.shellEnabled() {
 		return lipgloss.JoinVertical(lipgloss.Left, signerBox, daemonBox)
@@ -469,7 +470,21 @@ func (m model) signerPaneTitle() string {
 	return "Signer Admin"
 }
 
+func (m model) signerPaneMeta() string {
+	type adminHeaderMetaProvider interface {
+		AdminHeaderMeta() string
+	}
+	if provider, ok := m.signer.(adminHeaderMetaProvider); ok {
+		return provider.AdminHeaderMeta()
+	}
+	return ""
+}
+
 func renderPane(title string, focused bool, body string, width, height int) string {
+	return renderPaneWithMeta(title, "", focused, body, width, height)
+}
+
+func renderPaneWithMeta(title, meta string, focused bool, body string, width, height int) string {
 	innerW := width - paneBorderSize
 	innerH := height - paneBorderSize
 	if innerW < 4 {
@@ -491,11 +506,25 @@ func renderPane(title string, focused bool, body string, width, height int) stri
 	if focused {
 		marker = "▸ "
 	}
+	headerText := marker + title
+	if meta != "" {
+		const minGap = 2
+		headerWidth := lipgloss.Width(headerText)
+		available := innerW - headerWidth - minGap
+		if available > 0 {
+			meta = ellipsizeMiddlePlain(meta, available)
+			spaces := innerW - headerWidth - lipgloss.Width(meta)
+			if spaces < minGap {
+				spaces = minGap
+			}
+			headerText += strings.Repeat(" ", spaces) + meta
+		}
+	}
 	header := lipgloss.NewStyle().
 		Bold(focused).
 		Foreground(lipgloss.Color(headerColor)).
 		Width(innerW).
-		Render(marker + title)
+		Render(headerText)
 
 	bodyH := innerH - 1
 	if bodyH < 1 {
@@ -516,6 +545,22 @@ func renderPane(title string, focused bool, body string, width, height int) stri
 	// which would make JoinHorizontal/JoinVertical inflate the layout and
 	// overrun the footer. Force the final shape to exactly width x height.
 	return clampBlock(rendered, width, height)
+}
+
+func ellipsizeMiddlePlain(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= width {
+		return s
+	}
+	if width <= 3 {
+		return string(runes[:width])
+	}
+	prefixLen := (width - 3) / 2
+	suffixLen := width - 3 - prefixLen
+	return string(runes[:prefixLen]) + "..." + string(runes[len(runes)-suffixLen:])
 }
 
 // clampBlock ANSI-safely truncates each line to width and clips the block to

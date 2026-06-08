@@ -115,7 +115,7 @@ func main() {
 			DataDir: remoteCfg.dataDir,
 			Detail:  "remote admin mode; daemon lifecycle is not managed by apconsole",
 		}, nil)
-		startConsole(remoteCfg.connector, remoteCfg.dataDir, shellSession, shellStartup, true, nil, daemon)
+		startConsole(remoteCfg.connector, remoteCfg.dataDir, "", shellSession, shellStartup, true, nil, daemon)
 		return
 	}
 
@@ -168,7 +168,7 @@ func main() {
 		daemon.lines = append(daemon.lines, sentryShellDisabledLines(startupCfg.Notices)...)
 	}
 
-	startConsole(tui.LocalIPCConnector{Path: startup.Config.IPCPath}, startup.DataDir, shellSession, shellStartup, shellEnabled, daemonProcess, daemon)
+	startConsole(tui.LocalIPCConnector{Path: startup.Config.IPCPath}, startup.DataDir, string(nodeRole), shellSession, shellStartup, shellEnabled, daemonProcess, daemon)
 }
 
 func consoleStartupNoticeLines(notices []string) []string {
@@ -193,7 +193,7 @@ func flagWasSet(name string) bool {
 	return wasSet
 }
 
-func startConsole(connector tui.AdminConnector, dataDir string, shellSession *apshellcli.Session, shellStartup []string, shellEnabled bool, daemonProcess *daemonProcess, daemon daemonModel) {
+func startConsole(connector tui.AdminConnector, dataDir string, initialNodeRole string, shellSession *apshellcli.Session, shellStartup []string, shellEnabled bool, daemonProcess *daemonProcess, daemon daemonModel) {
 	if shellSession != nil {
 		defer shellSession.Shutdown()
 	}
@@ -231,7 +231,7 @@ func startConsole(connector tui.AdminConnector, dataDir string, shellSession *ap
 	// the terminal, write the stack trace to a log file (alt-screen mode would
 	// otherwise erase it on exit), and then re-panic so the trace also reaches
 	// stderr if anything is reading it.
-	model := newModelWithShell(connector, dataDir, shellSession, shellStartup, daemon, shellEnabled)
+	model := newModelWithShell(connector, dataDir, shellSession, shellStartup, daemon, shellEnabled, initialNodeRole)
 	if width, height, ok := terminalSize(realStdout); ok {
 		model.width = width
 		model.height = height

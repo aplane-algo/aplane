@@ -228,8 +228,7 @@ func (m Model) View() string {
 	statusBar := m.renderStatusBar()
 	header := ""
 	if m.standalone {
-		p := theme.Current()
-		header = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(p.Button)).Render(m.AdminTitle())
+		header = m.renderAdminHeader()
 	}
 
 	return m.renderWindowLayout(header, content, footer, statusBar)
@@ -237,10 +236,61 @@ func (m Model) View() string {
 
 // AdminTitle returns the role-specific operator-facing title for this admin UI.
 func (m Model) AdminTitle() string {
-	if m.adminSettings != nil && strings.EqualFold(strings.TrimSpace(m.adminSettings.NodeRole), "sentry") {
+	if m.isSentryNode() {
 		return "Sentry Admin"
 	}
 	return "Signer Admin"
+}
+
+// AdminHeaderMeta returns the unstyled role-specific endpoint summary for pane
+// chrome owned by apconsole.
+func (m Model) AdminHeaderMeta() string {
+	return m.adminHeaderMeta()
+}
+
+func (m Model) renderAdminHeader() string {
+	p := theme.Current()
+	title := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(p.Button)).
+		Render(m.AdminTitle())
+
+	meta := m.adminHeaderMeta()
+	if meta == "" {
+		return title
+	}
+	metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Subtitle))
+	if m.width <= 0 {
+		return title + "  " + metaStyle.Render(meta)
+	}
+
+	const minGap = 2
+	titleWidth := lipgloss.Width(title)
+	available := m.width - titleWidth - minGap
+	if available <= 0 {
+		return title
+	}
+	meta = ellipsizeMiddle(meta, available)
+	renderedMeta := metaStyle.Render(meta)
+	spaces := m.width - titleWidth - lipgloss.Width(renderedMeta)
+	if spaces < minGap {
+		spaces = minGap
+	}
+	return title + strings.Repeat(" ", spaces) + renderedMeta
+}
+
+func (m Model) adminHeaderMeta() string {
+	if m.adminSettings == nil {
+		return ""
+	}
+	var parts []string
+	if m.adminSettings.SignerPort != 0 {
+		parts = append(parts, fmt.Sprintf("%s: %d", m.rolePortLabel(), m.adminSettings.SignerPort))
+	}
+	if endpoint := strings.TrimSpace(m.adminSettings.EndpointAdvertiseURL); endpoint != "" {
+		parts = append(parts, "Endpoint: "+endpoint)
+	}
+	return strings.Join(parts, "  ")
 }
 
 func (m Model) renderViewContent() string {

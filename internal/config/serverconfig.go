@@ -8,8 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
 
 	"gopkg.in/yaml.v3"
 )
@@ -21,6 +24,11 @@ type SSHServerConfig struct {
 	AuthorizedKeysPath string `yaml:"authorized_keys_path" description:"Legacy/global authorized client public keys file" default:".ssh/authorized_keys"`
 }
 
+// EndpointAdvertiseConfig holds public endpoint handoff settings.
+type EndpointAdvertiseConfig struct {
+	AdvertiseURL string `yaml:"advertise_url,omitempty" description:"Client-reachable public endpoint URL used by apstore endpoint export when --host/--url are omitted"`
+}
+
 const (
 	DefaultApprovalWaitString = "60s"
 	DefaultApprovalWait       = 60 * time.Second
@@ -30,14 +38,15 @@ const (
 
 // ServerConfig represents the Signer configuration file
 type ServerConfig struct {
-	SignerPort            int               `yaml:"signer_port" description:"REST API port" default:"11270"`
-	SSH                   SSHServerConfig   `yaml:"ssh" description:"SSH tunnel settings for apsigner" default:"default SSH settings"`
-	PassphraseTimeout     string            `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
-	ApprovalWait          string            `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"60s"`
-	IPCPath               string            `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"$APSIGNER_DATA/aplane.sock"`
-	LockOnDisconnect      *bool             `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
-	PassphraseCommandArgv []string          `yaml:"passphrase_command_argv" description:"Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1])" default:"[]"`
-	PassphraseCommandEnv  map[string]string `yaml:"passphrase_command_env" description:"Environment variables to pass to the passphrase command; the process env is not inherited except for the systemd CREDENTIALS_DIRECTORY passthrough" default:"{}"`
+	SignerPort            int                     `yaml:"signer_port" description:"REST API port" default:"11270"`
+	SSH                   SSHServerConfig         `yaml:"ssh" description:"SSH tunnel settings for apsigner" default:"default SSH settings"`
+	Endpoint              EndpointAdvertiseConfig `yaml:"endpoint,omitempty" description:"Public endpoint handoff settings"`
+	PassphraseTimeout     string                  `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
+	ApprovalWait          string                  `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"60s"`
+	IPCPath               string                  `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"$APSIGNER_DATA/aplane.sock"`
+	LockOnDisconnect      *bool                   `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
+	PassphraseCommandArgv []string                `yaml:"passphrase_command_argv" description:"Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1])" default:"[]"`
+	PassphraseCommandEnv  map[string]string       `yaml:"passphrase_command_env" description:"Environment variables to pass to the passphrase command; the process env is not inherited except for the systemd CREDENTIALS_DIRECTORY passthrough" default:"{}"`
 	// Network settings per context token (used for TEAL compilation, policy enforcement, etc.).
 	// This is the canonical on-disk network config.
 	Networks           ServerNetworkConfigs `yaml:"networks" description:"Grouped settings per network context token"`
@@ -234,6 +243,12 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	if config.SSH.AuthorizedKeysPath == "" {
 		config.SSH.AuthorizedKeysPath = sshDefaults.AuthorizedKeysPath
 	}
+	config.Endpoint.AdvertiseURL = strings.TrimRight(strings.TrimSpace(config.Endpoint.AdvertiseURL), "/")
+	if config.Endpoint.AdvertiseURL != "" {
+		if err := endpointrefs.ValidatePortableURL(config.Endpoint.AdvertiseURL); err != nil {
+			return ServerConfig{}, fmt.Errorf("invalid endpoint.advertise_url in config: %w", err)
+		}
+	}
 	// Resolve relative SSH paths to absolute paths.
 	config.SSH.HostKeyPath = ResolvePath(config.SSH.HostKeyPath, dataDir)
 	config.SSH.AuthorizedKeysPath = ResolvePath(config.SSH.AuthorizedKeysPath, dataDir)
@@ -385,6 +400,9 @@ func ConfigFileChanged(dataDir string, startup ServerConfig) (bool, error) {
 		return true, nil
 	}
 	if disk.SSH.Port != startup.SSH.Port {
+		return true, nil
+	}
+	if disk.Endpoint.AdvertiseURL != startup.Endpoint.AdvertiseURL {
 		return true, nil
 	}
 	if disk.ShouldLockOnDisconnect() != startup.ShouldLockOnDisconnect() {

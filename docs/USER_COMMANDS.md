@@ -611,6 +611,7 @@ Manage client-local signer and sentry endpoint profiles.
 endpoints list
 endpoints show <alias>
 endpoints sentries
+endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]
 endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>
 endpoints sync-sentries [--dry-run] [--yes]
 endpoints default <alias>
@@ -621,24 +622,35 @@ endpoints delete <alias>
 `apstore endpoint export`. Import writes local endpoint routing only:
 `endpoints.yaml`. Use `role: signer` for the one primary client signer endpoint
 and `role: sentry` for sentry endpoints. Import does not copy tokens or SSH
-host trust. Re-importing with the same alias replaces that alias's endpoint
-data.
+host trust. On the signer side, `apstore endpoint export` can derive the URL
+from `--host`, use explicit `--url`, or use signer `config.yaml`
+`endpoint.advertise_url`; without one of those inputs, export fails instead of
+guessing a client-reachable address. Re-importing with the same alias replaces
+that alias's endpoint data.
+
+`endpoints create` manually writes a `role: sentry` endpoint profile without an
+exported endpoint envelope. `--endpoint` is the client-reachable endpoint URL,
+usually `ssh://host[:ssh-port]`; `--sentryport` is the sentry node REST port
+behind that endpoint. It writes routing only. Tokens are still obtained with
+`request-token --endpoint <alias>`, and SSH host trust still uses the known-hosts
+flow.
 
 `endpoints sync-sentries` queries configured sentry endpoints using their
 endpoint token files, refreshes local endpoint-published sentry inventory,
-prints component IDs for confirmation, and then syncs the public
+prints Sentry Key IDs for confirmation, and then syncs the public
 sentry references into the connected signer identity. Temporarily unavailable
 sentry endpoints are skipped and keep their previous local inventory;
 authentication failures and malformed endpoint metadata fail closed.
 
 `endpoints sentries` lists the local endpoint-discovered sentry inventory by
-endpoint alias, component ID, and key type without calling remote endpoints.
+endpoint alias, Sentry Key ID, and key type without calling remote endpoints.
 
 **Examples:**
 ```
 endpoints import-public --alias main --role signer signer.endpoint.json
 endpoints import-public --alias local-sentry --role sentry sentry.endpoint.json
 endpoints import-public --alias main --role signer --dry-run signer.endpoint.json
+endpoints create --alias local-sentry --endpoint ssh://127.0.0.1:2223 --sentryport 12270
 request-token --endpoint main
 request-token --endpoint local-sentry
 connect main

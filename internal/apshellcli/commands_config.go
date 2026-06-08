@@ -8,6 +8,7 @@ package apshellcli
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -67,7 +68,7 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints sentries | endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json> | endpoints sync-sentries [--dry-run] [--yes] | endpoints default <alias> | endpoints delete <alias>")
+		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints sentries | endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run] | endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json> | endpoints sync-sentries [--dry-run] [--yes] | endpoints default <alias> | endpoints delete <alias>")
 	}
 	switch args[0] {
 	case "list":
@@ -99,6 +100,28 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 			return err
 		}
 		r.renderEndpointSentries(result)
+		return nil
+	case "create", "create-sentry":
+		req, err := parseEndpointCreateSentryArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		result, err := r.app().EndpointCreateSentry(r.commandContext(), req)
+		if err != nil {
+			return err
+		}
+		if !result.DryRun {
+			if cfg, err := config.LoadConfig(r.DataDir); err == nil {
+				r.Config = cfg
+				r.app().Config = cfg
+			}
+		}
+		for _, line := range result.RenderLines {
+			r.println(line)
+		}
+		if !result.DryRun {
+			r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
+		}
 		return nil
 	case "import", "import-public":
 		req, err := parseEndpointImportArgs(args[1:])
@@ -273,6 +296,58 @@ func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, e
 	return req, nil
 }
 
+func parseEndpointCreateSentryArgs(args []string) (apshellapp.EndpointCreateSentryRequest, error) {
+	var req apshellapp.EndpointCreateSentryRequest
+	const usage = "usage: endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]"
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--dry-run":
+			if req.DryRun {
+				return req, errors.New(usage)
+			}
+			req.DryRun = true
+		case "--alias", "-a":
+			if req.Alias != "" {
+				return req, errors.New(usage)
+			}
+			i++
+			if i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-") {
+				return req, errors.New(usage)
+			}
+			req.Alias = args[i]
+		case "--endpoint", "--url":
+			if req.URL != "" {
+				return req, errors.New(usage)
+			}
+			i++
+			if i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-") {
+				return req, errors.New(usage)
+			}
+			req.URL = args[i]
+		case "--sentryport", "--sentry-port":
+			if req.SentryPort != 0 {
+				return req, errors.New(usage)
+			}
+			i++
+			if i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-") {
+				return req, errors.New(usage)
+			}
+			port, err := strconv.Atoi(args[i])
+			if err != nil || port <= 0 || port > 65535 {
+				return req, errors.New(usage)
+			}
+			req.SentryPort = port
+		default:
+			return req, errors.New(usage)
+		}
+	}
+	if req.Alias == "" || req.URL == "" || req.SentryPort == 0 {
+		return req, errors.New(usage)
+	}
+	return req, nil
+}
+
 func parseEndpointDiscoverSentriesArgs(args []string) (apshellapp.EndpointDiscoverSentriesRequest, error) {
 	var req apshellapp.EndpointDiscoverSentriesRequest
 	const usage = "usage: endpoints discover-sentries [--dry-run]"
@@ -321,7 +396,7 @@ func (r *REPLState) renderEndpointsList(result *apshellapp.EndpointsListResult) 
 		return
 	}
 	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ALIAS\tROLE\tDEFAULT\tURL\tTOKEN\tATTESTORS")
+	_, _ = fmt.Fprintln(w, "ALIAS\tROLE\tDEFAULT\tURL\tTOKEN\tSENTRY KEYS")
 	for _, endpoint := range result.Endpoints {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\n",
 			endpoint.Alias,
@@ -353,7 +428,7 @@ func (r *REPLState) renderEndpointShow(result *apshellapp.EndpointShowResult) {
 	}
 	r.println("Published sentries:")
 	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "  COMPONENT\tKEY TYPE\tLAST SEEN")
+	_, _ = fmt.Fprintln(w, "  SENTRY KEY\tKEY TYPE\tLAST SEEN")
 	for _, sentry := range endpoint.PublishedSentries {
 		_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\n",
 			sentry.ComponentKey,
@@ -370,7 +445,7 @@ func (r *REPLState) renderEndpointSentries(result *apshellapp.EndpointSentriesRe
 		return
 	}
 	w := tabwriter.NewWriter(r.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ENDPOINT\tCOMPONENT\tKEY TYPE")
+	_, _ = fmt.Fprintln(w, "ENDPOINT\tSENTRY KEY\tKEY TYPE")
 	for _, sentry := range result.Sentries {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n",
 			sentry.EndpointAlias,

@@ -756,18 +756,19 @@ type GetAdminSettingsMessage struct {
 // AdminSettingsMessage contains the current admin settings.
 type AdminSettingsMessage struct {
 	BaseMessage
-	UserAutoApprove   bool   `json:"user_auto_approve"`
-	LockOnDisconnect  bool   `json:"lock_on_disconnect"`
-	PassphraseTimeout string `json:"passphrase_timeout"`
-	PassphraseMethod  string `json:"passphrase_method"`
-	NodeRole          string `json:"node_role,omitempty"`
-	SSHEnabled        bool   `json:"ssh_enabled"`
-	SSHPort           int    `json:"ssh_port,omitempty"`
-	SSHFingerprint    string `json:"ssh_fingerprint,omitempty"`
-	SSHClients        int    `json:"ssh_clients"`
-	SignerPort        int    `json:"signer_port"`
-	TEALCompileNet    string `json:"teal_compile_network"`
-	Theme             string `json:"theme"`
+	UserAutoApprove      bool   `json:"user_auto_approve"`
+	LockOnDisconnect     bool   `json:"lock_on_disconnect"`
+	PassphraseTimeout    string `json:"passphrase_timeout"`
+	PassphraseMethod     string `json:"passphrase_method"`
+	NodeRole             string `json:"node_role,omitempty"`
+	SSHEnabled           bool   `json:"ssh_enabled"`
+	SSHPort              int    `json:"ssh_port,omitempty"`
+	SSHFingerprint       string `json:"ssh_fingerprint,omitempty"`
+	SSHClients           int    `json:"ssh_clients"`
+	SignerPort           int    `json:"signer_port"`
+	TEALCompileNet       string `json:"teal_compile_network"`
+	EndpointAdvertiseURL string `json:"endpoint_advertise_url,omitempty"`
+	Theme                string `json:"theme"`
 }
 
 // UpdateAdminSettingMessage requests a change to a single admin setting.

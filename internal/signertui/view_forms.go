@@ -167,7 +167,7 @@ func (m Model) renderImportDisplay() string {
 	sb.WriteString(titleStyle.Render("Key Imported Successfully"))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(fmt.Sprintf("Address: %s\n", m.importedAddress))
+	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.importedKeyType), m.importedAddress))
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.importedKeyType)))
 	sb.WriteString("\n")
 
@@ -526,7 +526,7 @@ func (m Model) renderGenerateDisplay() string {
 	sb.WriteString(titleStyle.Render("Key Generated Successfully"))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(fmt.Sprintf("Address: %s\n", m.generatedAddress))
+	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.generatedKeyType), m.generatedAddress))
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.generatedKeyType)))
 	sb.WriteString("\n")
 
@@ -551,7 +551,7 @@ func (m Model) renderDeleting() string {
 	sb.WriteString(titleStyle.Render("Deleting Key"))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(fmt.Sprintf("Address: %s\n\n", m.deleteAddress))
+	sb.WriteString(fmt.Sprintf("%s: %s\n\n", m.keyIdentifierLabel(m.deleteKeyType), m.deleteAddress))
 
 	sb.WriteString(subtitleStyle.Render("Please wait..."))
 	sb.WriteString("\n")
@@ -594,7 +594,7 @@ func (m Model) renderDeleteConfirm() string {
 
 	sb.WriteString("Are you sure you want to delete this key?\n\n")
 
-	sb.WriteString(fmt.Sprintf("Address: %s\n", m.deleteAddress))
+	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.deleteKeyType), m.deleteAddress))
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.deleteKeyType)))
 	sb.WriteString("\n")
 

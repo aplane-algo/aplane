@@ -195,6 +195,67 @@ ssh:
 	}
 }
 
+func TestLoadServerConfigAcceptsEndpointAdvertiseURL(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(`
+endpoint:
+  advertise_url: ssh://signer.example:2223
+`), 0o640); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := LoadServerConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadServerConfig error = %v", err)
+	}
+	if cfg.Endpoint.AdvertiseURL != "ssh://signer.example:2223" {
+		t.Fatalf("AdvertiseURL = %q, want configured URL", cfg.Endpoint.AdvertiseURL)
+	}
+}
+
+func TestLoadServerConfigRejectsInvalidEndpointAdvertiseURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "self",
+			data: `
+endpoint:
+  advertise_url: self
+`,
+		},
+		{
+			name: "remote http",
+			data: `
+endpoint:
+  advertise_url: http://signer.example:11270
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(tt.data), 0o640); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			_, err := LoadServerConfig(dir)
+			if err == nil {
+				t.Fatal("LoadServerConfig error = nil, want invalid endpoint.advertise_url error")
+			}
+			if !strings.Contains(err.Error(), "invalid endpoint.advertise_url") {
+				t.Fatalf("LoadServerConfig error = %q, want endpoint.advertise_url", err)
+			}
+		})
+	}
+}
+
 func TestParseApprovalWait(t *testing.T) {
 	t.Parallel()
 
@@ -276,6 +337,15 @@ theme: auto
 passphrase_timeout: "15m"
 ssh:
   port: 2222
+`,
+		},
+		{
+			name: "endpoint advertise url changed",
+			modified: `user_auto_approve: false
+theme: auto
+passphrase_timeout: "15m"
+endpoint:
+  advertise_url: ssh://signer.example:1127
 `,
 		},
 		{

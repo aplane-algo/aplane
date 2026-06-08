@@ -75,6 +75,7 @@ func TestCmdEndpointExportURLOverridesHost(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
 		config.SSH.Port = 2223
 		config.SignerPort = 12345
+		config.Endpoint.AdvertiseURL = "ssh://configured.example:2223"
 
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoint([]string{
@@ -95,6 +96,49 @@ func TestCmdEndpointExportURLOverridesHost(t *testing.T) {
 		}
 		if env.SignerPort != 12345 {
 			t.Fatalf("SignerPort = %d, want config signer port for ssh URL", env.SignerPort)
+		}
+	})
+}
+
+func TestCmdEndpointExportUsesConfiguredAdvertiseURL(t *testing.T) {
+	withPolicyCommandStore(t, func(_ string, _ []byte) {
+		config.SSH.Port = 2223
+		config.SignerPort = 12345
+		config.Endpoint.AdvertiseURL = "ssh://configured.example:2223"
+
+		out, err := withCapturedStdout(func() error {
+			return cmdEndpoint([]string{
+				"export",
+			})
+		})
+		if err != nil {
+			t.Fatalf("cmdEndpoint(export) error = %v", err)
+		}
+		env, err := endpointrefs.Parse([]byte(out))
+		if err != nil {
+			t.Fatalf("endpoint envelope parse error = %v\n%s", err, out)
+		}
+		if env.URL != "ssh://configured.example:2223" {
+			t.Fatalf("URL = %q, want configured advertise URL", env.URL)
+		}
+		if env.SignerPort != 12345 {
+			t.Fatalf("SignerPort = %d, want config signer port for configured ssh URL", env.SignerPort)
+		}
+	})
+}
+
+func TestCmdEndpointExportRequiresHostURLOrConfiguredAdvertiseURL(t *testing.T) {
+	withPolicyCommandStore(t, func(_ string, _ []byte) {
+		config.Endpoint.AdvertiseURL = ""
+
+		err := cmdEndpoint([]string{
+			"export",
+		})
+		if err == nil {
+			t.Fatal("cmdEndpoint(export) error = nil, want missing advertise URL error")
+		}
+		if !strings.Contains(err.Error(), "endpoint.advertise_url") {
+			t.Fatalf("cmdEndpoint(export) error = %v, want advertise_url guidance", err)
 		}
 	})
 }

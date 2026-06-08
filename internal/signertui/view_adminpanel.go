@@ -36,10 +36,11 @@ func (m Model) adminRows() []adminRow {
 		{section: "User-Editable", label: "Lock-on-disconnect", key: adminproto.AdminSettingLockOnDisconnect, value: boolStr(s.LockOnDisconnect), editable: isPromptMode, isBool: true},
 		{section: "User-Editable", label: "Passphrase timeout", key: adminproto.AdminSettingPassphraseTimeout, value: s.PassphraseTimeout, editable: isPromptMode, isBool: false},
 		{section: "User-Editable", label: "Color theme", key: adminproto.AdminSettingTheme, value: themeDisplay(s.Theme), editable: true, choices: []string{"auto", "dark", "light"}},
+		{section: "User-Editable", label: "Endpoint advertise URL", key: adminproto.AdminSettingEndpointAdvertiseURL, value: s.EndpointAdvertiseURL, editable: true},
 		{section: "Runtime", label: "Admin transport", key: "", value: m.transportLabel, editable: false},
 		{section: "Runtime", label: "Node role", key: "", value: nodeRoleDisplay(s.NodeRole), editable: false},
 		{section: "Runtime", label: "Passphrase unlock", key: "", value: passphraseMethodDisplay(s.PassphraseMethod), editable: false},
-		{section: "Runtime", label: "Signer port", key: "", value: fmt.Sprintf("%d", s.SignerPort), editable: false},
+		{section: "Runtime", label: m.rolePortLabel(), key: "", value: fmt.Sprintf("%d", s.SignerPort), editable: false},
 		{section: "Runtime", label: "TEAL compile network", key: "", value: s.TEALCompileNet, editable: false},
 		{section: "Runtime", label: "Policy", key: "", value: "view active policy", editable: false, action: "open_policy"},
 	}

@@ -597,18 +597,19 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				}
 				c.emit(sessionID, AdminSettingsMsg{
 					Settings: AdminSettings{
-						UserAutoApprove:   settings.UserAutoApprove,
-						LockOnDisconnect:  settings.LockOnDisconnect,
-						PassphraseTimeout: settings.PassphraseTimeout,
-						PassphraseMethod:  settings.PassphraseMethod,
-						NodeRole:          settings.NodeRole,
-						SSHEnabled:        settings.SSHEnabled,
-						SSHPort:           settings.SSHPort,
-						SSHFingerprint:    settings.SSHFingerprint,
-						SSHClients:        settings.SSHClients,
-						SignerPort:        settings.SignerPort,
-						TEALCompileNet:    settings.TEALCompileNet,
-						Theme:             settings.Theme,
+						UserAutoApprove:      settings.UserAutoApprove,
+						LockOnDisconnect:     settings.LockOnDisconnect,
+						PassphraseTimeout:    settings.PassphraseTimeout,
+						PassphraseMethod:     settings.PassphraseMethod,
+						NodeRole:             settings.NodeRole,
+						SSHEnabled:           settings.SSHEnabled,
+						SSHPort:              settings.SSHPort,
+						SSHFingerprint:       settings.SSHFingerprint,
+						SSHClients:           settings.SSHClients,
+						SignerPort:           settings.SignerPort,
+						TEALCompileNet:       settings.TEALCompileNet,
+						EndpointAdvertiseURL: settings.EndpointAdvertiseURL,
+						Theme:                settings.Theme,
 					},
 				})
 

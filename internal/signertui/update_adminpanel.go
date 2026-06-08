@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -132,6 +133,12 @@ func validateAdminSettingValue(key, value string) error {
 	case adminproto.AdminSettingPassphraseTimeout:
 		_, err := apconfig.ParsePassphraseTimeout(value)
 		return err
+	case adminproto.AdminSettingEndpointAdvertiseURL:
+		value = strings.TrimRight(strings.TrimSpace(value), "/")
+		if value == "" {
+			return nil
+		}
+		return endpointrefs.ValidatePortableURL(value)
 	default:
 		return nil
 	}

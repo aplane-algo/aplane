@@ -33,7 +33,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype enable <key-type>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype disable <key-type>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keys list\n")
-	fmt.Fprintf(os.Stderr, "  apstore [-d path] endpoint export (--host <host> | --url <url>) [--out endpoint.json]\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] endpoint export [--host <host> | --url <url>] [--out endpoint.json]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] sentry export-public <component-key> [output-json]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] sentry import-public <export-json> <name>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] sentry list\n")
@@ -64,6 +64,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore keytype disable falcon1024_ed25519.v1\n")
 	fmt.Fprintf(os.Stderr, "  apstore keys list\n")
 	fmt.Fprintf(os.Stderr, "  apstore endpoint export --host 127.0.0.1 --out endpoint.json\n")
+	fmt.Fprintf(os.Stderr, "  apstore endpoint export --out endpoint.json  # uses config.yaml endpoint.advertise_url\n")
 	fmt.Fprintf(os.Stderr, "  apstore sentry export-public <component-selector> sentry-public.json\n")
 	fmt.Fprintf(os.Stderr, "  apstore sentry import-public sentry-public.json lab-sentry\n")
 }

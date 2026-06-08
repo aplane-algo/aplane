@@ -834,6 +834,11 @@ ssh:
   host_key_path: .ssh/ssh_host_key
   authorized_keys_path: .ssh/authorized_keys
 
+# Optional client-reachable URL used by "apstore endpoint export" when --host/--url are omitted.
+# Set this to a real DNS name or IP clients can reach, for example:
+# endpoint:
+#   advertise_url: ssh://signer.example.com:$ssh_port
+
 # Inactivity timeout before auto-lock: "0" = never, "15m" = 15 minutes
 passphrase_timeout: "15m"
 

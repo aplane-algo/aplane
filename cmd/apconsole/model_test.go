@@ -133,6 +133,30 @@ func TestShellDisabledSplitLayoutUsesFullWidthSignerAboveDaemon(t *testing.T) {
 	}
 }
 
+func TestRenderPaneWithMetaKeepsHeaderWithinPanelWidth(t *testing.T) {
+	got := renderPaneWithMeta(
+		"Sentry Admin",
+		"Sentry Port: 11270  Endpoint: ssh://very-long-sentry-hostname.example.test:1127",
+		true,
+		"body",
+		54,
+		6,
+	)
+	rows := visibleRows(got)
+	if len(rows) != 6 {
+		t.Fatalf("pane rows = %d, want 6:\n%s", len(rows), got)
+	}
+	for _, row := range rows {
+		if width := len([]rune(row)); width > 54 {
+			t.Fatalf("pane row width = %d, want <= 54: %q\n%s", width, row, got)
+		}
+	}
+	clean := strings.Join(rows, "\n")
+	if !strings.Contains(clean, "Sentry Admin") || !strings.Contains(clean, "Sentry Port") {
+		t.Fatalf("pane header missing title or metadata:\n%s", clean)
+	}
+}
+
 func TestNewModelStartsWithSignerFocused(t *testing.T) {
 	m := newModel(testConnector{}, "/tmp/apsigner", nil, nil, newDaemonModel(daemonInfo{Status: daemonStatusAttached}, nil))
 	if m.focus != paneSigner {

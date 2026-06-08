@@ -313,19 +313,20 @@ func protocolRestoreWarnings(items []RestoreWarning) []protocol.RestoreWarning {
 
 func ProtocolAdminSettingsMessage(requestID string, settings AdminSettings) protocol.AdminSettingsMessage {
 	return protocol.AdminSettingsMessage{
-		BaseMessage:       protocol.BaseMessage{Type: protocol.MsgTypeAdminSettings, ID: requestID},
-		UserAutoApprove:   settings.UserAutoApprove,
-		LockOnDisconnect:  settings.LockOnDisconnect,
-		PassphraseTimeout: settings.PassphraseTimeout,
-		PassphraseMethod:  settings.PassphraseMethod,
-		NodeRole:          settings.NodeRole,
-		SSHEnabled:        settings.SSHEnabled,
-		SSHPort:           settings.SSHPort,
-		SSHFingerprint:    settings.SSHFingerprint,
-		SSHClients:        settings.SSHClients,
-		SignerPort:        settings.SignerPort,
-		TEALCompileNet:    settings.TEALCompileNet,
-		Theme:             settings.Theme,
+		BaseMessage:          protocol.BaseMessage{Type: protocol.MsgTypeAdminSettings, ID: requestID},
+		UserAutoApprove:      settings.UserAutoApprove,
+		LockOnDisconnect:     settings.LockOnDisconnect,
+		PassphraseTimeout:    settings.PassphraseTimeout,
+		PassphraseMethod:     settings.PassphraseMethod,
+		NodeRole:             settings.NodeRole,
+		SSHEnabled:           settings.SSHEnabled,
+		SSHPort:              settings.SSHPort,
+		SSHFingerprint:       settings.SSHFingerprint,
+		SSHClients:           settings.SSHClients,
+		SignerPort:           settings.SignerPort,
+		TEALCompileNet:       settings.TEALCompileNet,
+		EndpointAdvertiseURL: settings.EndpointAdvertiseURL,
+		Theme:                settings.Theme,
 	}
 }
 

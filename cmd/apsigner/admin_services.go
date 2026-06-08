@@ -350,6 +350,10 @@ func (d signerAdminAppDeps) SetTheme(v string) {
 	d.signer.SetTheme(v)
 }
 
+func (d signerAdminAppDeps) SetEndpointAdvertiseURL(v string) {
+	d.signer.SetEndpointAdvertiseURL(v)
+}
+
 func (d signerAdminAppDeps) SSHInfo() signeradmin.SSHInfo {
 	cfg := d.signer.ConfigSnapshot()
 	info := signeradmin.SSHInfo{

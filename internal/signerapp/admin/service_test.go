@@ -59,6 +59,10 @@ func (d *fakeDeps) SetTheme(v string) {
 	d.theme = v
 }
 
+func (d *fakeDeps) SetEndpointAdvertiseURL(v string) {
+	d.config.Endpoint.AdvertiseURL = v
+}
+
 func (d *fakeDeps) SSHInfo() SSHInfo {
 	return d.sshInfo
 }
@@ -262,6 +266,60 @@ func TestUpdateAdminSettingUsesExpectedMutationLock(t *testing.T) {
 			t.Fatalf("identityMutationCalls = %d, want 1", deps.identityMutationCalls)
 		}
 	})
+}
+
+func TestUpdateAdminSettingEndpointAdvertiseURLPersistsServerConfig(t *testing.T) {
+	svc, ir, deps := setupAdminService(t)
+	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
+		Key:   adminproto.AdminSettingEndpointAdvertiseURL,
+		Value: "ssh://signer.example:1127/",
+	}); err != nil {
+		t.Fatalf("UpdateAdminSetting(endpoint.advertise_url) error = %v", err)
+	}
+	if deps.processMutationCalls != 1 {
+		t.Fatalf("processMutationCalls = %d, want 1", deps.processMutationCalls)
+	}
+	if deps.identityMutationCalls != 0 {
+		t.Fatalf("identityMutationCalls = %d, want 0", deps.identityMutationCalls)
+	}
+
+	disk, err := apconfig.LoadServerConfig(deps.dataDir)
+	if err != nil {
+		t.Fatalf("LoadServerConfig error = %v", err)
+	}
+	if disk.Endpoint.AdvertiseURL != "ssh://signer.example:1127" {
+		t.Fatalf("disk Endpoint.AdvertiseURL = %q", disk.Endpoint.AdvertiseURL)
+	}
+
+	settings := svc.BuildAdminSettings(ir)
+	if settings.EndpointAdvertiseURL != "ssh://signer.example:1127" {
+		t.Fatalf("settings EndpointAdvertiseURL = %q", settings.EndpointAdvertiseURL)
+	}
+}
+
+func TestUpdateAdminSettingEndpointAdvertiseURLRejectsInvalidValue(t *testing.T) {
+	svc, ir, deps := setupAdminService(t)
+	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
+		Key:   adminproto.AdminSettingEndpointAdvertiseURL,
+		Value: "self",
+	})
+	if err == nil {
+		t.Fatal("UpdateAdminSetting(endpoint.advertise_url self) error = nil, want rejection")
+	}
+	if !strings.Contains(err.Error(), "invalid endpoint.advertise_url") {
+		t.Fatalf("UpdateAdminSetting error = %v, want endpoint.advertise_url", err)
+	}
+	if deps.config.Endpoint.AdvertiseURL != "" {
+		t.Fatalf("Endpoint.AdvertiseURL = %q, want unchanged empty", deps.config.Endpoint.AdvertiseURL)
+	}
 }
 
 func TestSearchASAMetadataUsesSignerCacheOnly(t *testing.T) {

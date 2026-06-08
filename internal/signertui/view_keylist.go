@@ -190,10 +190,7 @@ func keyListTabForKey(key KeyInfo) keyListTab {
 }
 
 func (m Model) keyListMode() string {
-	if m.adminSettings == nil {
-		return "signing"
-	}
-	switch strings.ToLower(strings.TrimSpace(m.adminSettings.NodeRole)) {
+	switch m.nodeRole() {
 	case "sentry":
 		return "sentry"
 	default:
@@ -418,7 +415,7 @@ func (m Model) renderKeyDetails() string {
 	sb.WriteString(titleStyle.Render("Key Details"))
 	sb.WriteString("\n")
 
-	sb.WriteString(m.detailsAddress)
+	sb.WriteString(fmt.Sprintf("%s: %s", m.keyIdentifierLabel(m.detailsKeyType), m.detailsAddress))
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", styledKeyTypeWithTemplateProvenanceStatus(m.detailsKeyType, m.detailsTemplateProvenanceStatus)))
 	if m.detailsPublicKeyHex != "" {
@@ -426,7 +423,7 @@ func (m Model) renderKeyDetails() string {
 		if keytypes.IsSentryComponentKeyType(m.detailsKeyType) {
 			label = "Sentry public key"
 		}
-		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, m.detailsPublicKeyHex), m.popupBodyWidth(62)))
+		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, displayPublicKeyHex(m.detailsPublicKeyHex)), m.popupBodyWidth(62)))
 		sb.WriteString("\n")
 	}
 	if m.detailsTemplateProvenanceNote != "" {
@@ -476,6 +473,14 @@ func (m Model) renderKeyDetails() string {
 	}
 
 	return m.renderPopup(62, sb.String())
+}
+
+func displayPublicKeyHex(publicKeyHex string) string {
+	const maxPublicKeyPrefix = 20
+	if len(publicKeyHex) <= maxPublicKeyPrefix {
+		return publicKeyHex
+	}
+	return publicKeyHex[:maxPublicKeyPrefix] + "..."
 }
 
 func (m Model) renderTEALFullDisplay() string {

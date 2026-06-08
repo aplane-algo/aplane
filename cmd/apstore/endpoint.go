@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
 )
 
-const endpointExportUsage = "usage: apstore endpoint export (--host <host> | --url <url>) [--signer-port <port>] [--local-port <port>] [--out endpoint.json]"
+const endpointExportUsage = "usage: apstore endpoint export [--host <host> | --url <url>] [--signer-port <port>] [--local-port <port>] [--out endpoint.json]"
 
 func cmdEndpoint(args []string) error {
 	if len(args) == 0 {
@@ -46,7 +46,7 @@ func cmdEndpointExport(args []string) error {
 		return errors.New(endpointExportUsage)
 	}
 
-	urlValue, err := endpointExportURL(*host, *endpointURL)
+	urlValue, err := endpointExportURL(*host, *endpointURL, config.Endpoint.AdvertiseURL)
 	if err != nil {
 		return err
 	}
@@ -80,25 +80,29 @@ func cmdEndpointExport(args []string) error {
 	return nil
 }
 
-func endpointExportURL(host, explicitURL string) (string, error) {
+func endpointExportURL(host, explicitURL, advertisedURL string) (string, error) {
 	explicitURL = strings.TrimSpace(explicitURL)
 	if explicitURL != "" {
 		return explicitURL, nil
 	}
 	host = strings.TrimSpace(host)
-	if host == "" {
-		return "", errors.New(endpointExportUsage)
+	if host != "" {
+		if strings.Contains(host, "://") {
+			return "", fmt.Errorf("--host must be a host or IP without a URL scheme; use --url for explicit endpoint URLs")
+		}
+		if _, _, err := net.SplitHostPort(host); err == nil {
+			return "", fmt.Errorf("--host must not include a port; use --url for custom SSH ports")
+		}
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+			host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+		}
+		return "ssh://" + net.JoinHostPort(host, strconv.Itoa(endpointExportSSHPort())), nil
 	}
-	if strings.Contains(host, "://") {
-		return "", fmt.Errorf("--host must be a host or IP without a URL scheme; use --url for explicit endpoint URLs")
+	advertisedURL = strings.TrimSpace(advertisedURL)
+	if advertisedURL != "" {
+		return advertisedURL, nil
 	}
-	if _, _, err := net.SplitHostPort(host); err == nil {
-		return "", fmt.Errorf("--host must not include a port; use --url for custom SSH ports")
-	}
-	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
-		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
-	}
-	return "ssh://" + net.JoinHostPort(host, strconv.Itoa(endpointExportSSHPort())), nil
+	return "", fmt.Errorf("endpoint advertise_url is not configured; pass --host/--url or set endpoint.advertise_url in config.yaml")
 }
 
 func endpointExportUsesSSH(rawURL string) bool {

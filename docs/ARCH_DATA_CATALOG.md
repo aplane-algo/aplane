@@ -272,7 +272,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Endpoint export envelope | public handoff | JSON `schema:"aplane.endpoint.v1"` | `apshell endpoints import-public` input | `cmd/apstore`, `internal/config`, `internal/apshellapp` | No alias, role, token, known hosts, private key, or sentry inventory. |
+| Endpoint export envelope | public handoff | JSON `schema:"aplane.endpoint.v1"` | `apshell endpoints import-public` input | `cmd/apstore`, `internal/config`, `internal/apshellapp` | No alias, role, token, known hosts, private key, or sentry inventory; URL comes from `--url`, `--host`, or signer `endpoint.advertise_url`. |
 | Sentry public key envelope | public handoff | JSON `schema:"aplane.sentry-public-key.v1"` | manual sentry reference import | `cmd/apstore`, `internal/sentry/sentryrefs` | Contains `component_key` and full `public_key_hex`; no endpoint/trust claim. |
 | Public sentry reference record | public signer catalog | JSON `schema:"aplane.sentry-public-key-ref.v1"` | generation select option | `internal/sentry/sentryrefs` | Stored under `sentries/`; manual and client-discovery sources share schema. |
 

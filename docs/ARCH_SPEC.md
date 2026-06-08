@@ -689,7 +689,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 
 | Lock | Protects |
 |------|----------|
-| `Signer.configMu` | Mutable process-global `ServerConfig` (theme) |
+| `Signer.configMu` | Mutable process-global `ServerConfig` fields exposed through admin settings, currently theme and endpoint advertise URL |
 | `Signer.configMutationMu` | Process-owned `config.yaml` write serialization |
 | `Signer.storeMutationMu` | Map of per-identity mutation locks |
 | `Signer.storeMutationLocks[identityID]` | Identity-owned key/template/config/policy mutation serialization |
@@ -1156,12 +1156,18 @@ records contain connection profile data, endpoint role, token-file path,
 known-hosts path, SSH identity path, and endpoint-local
 `published_sentries`.
 
-Operator handoff uses public endpoint envelopes:
+Operator handoff and manual endpoint setup use two paths:
 
 - `apstore endpoint export` emits `aplane.endpoint.v1` with portable endpoint
-  URL and port data only.
+  URL and port data only. The endpoint URL is either explicit CLI input
+  (`--url` or `--host`) or the operator-declared signer
+  `config.yaml` value `endpoint.advertise_url`; it is not inferred from the
+  SSH listener bind address.
 - `apshell endpoints import-public --alias <name> --role signer|sentry`
   writes client-local endpoint routing.
+- `apshell endpoints create --alias <name> --endpoint <url> --sentryport
+  <port>` writes a manual sentry endpoint profile when no exported endpoint
+  envelope is used.
 - bearer tokens are obtained separately with `request-token --endpoint`.
 - SSH host trust remains owned by the existing known-hosts flow.
 
@@ -1172,7 +1178,7 @@ reachable endpoints' `published_sentries` inventory. Temporarily unavailable
 or locked endpoints preserve their prior local inventory; authentication
 failures, malformed responses, duplicate public keys across endpoints, and
 component-key validation errors are hard failures that leave files unchanged.
-After discovery, the command prints component IDs and asks before syncing the
+After discovery, the command prints Sentry Key IDs and asks before syncing the
 public inventory into the connected signer identity's sentry reference
 library for generation-time selection.
 

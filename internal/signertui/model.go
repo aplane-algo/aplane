@@ -373,6 +373,10 @@ type Model struct {
 	// admin header label and reserves a line of height for it.
 	standalone bool
 
+	// initialNodeRole is an early title/display hint loaded before the first
+	// admin settings response arrives.
+	initialNodeRole string
+
 	// Quit flag
 	quitting bool
 }
@@ -395,6 +399,12 @@ func NewModel(connector AdminConnector, dataDir string) Model {
 // than embedded in apconsole. Enables the role-specific admin header label.
 func (m Model) WithStandalone() Model {
 	m.standalone = true
+	return m
+}
+
+// WithInitialNodeRole sets the role hint used before admin settings arrive.
+func (m Model) WithInitialNodeRole(role string) Model {
+	m.initialNodeRole = role
 	return m
 }
 
@@ -562,18 +572,19 @@ type DisplacedMsg struct {
 
 // AdminSettings holds the admin panel settings received from the server
 type AdminSettings struct {
-	UserAutoApprove   bool
-	LockOnDisconnect  bool
-	PassphraseTimeout string
-	PassphraseMethod  string
-	NodeRole          string
-	SSHEnabled        bool
-	SSHPort           int
-	SSHFingerprint    string
-	SSHClients        int
-	SignerPort        int
-	TEALCompileNet    string
-	Theme             string
+	UserAutoApprove      bool
+	LockOnDisconnect     bool
+	PassphraseTimeout    string
+	PassphraseMethod     string
+	NodeRole             string
+	SSHEnabled           bool
+	SSHPort              int
+	SSHFingerprint       string
+	SSHClients           int
+	SignerPort           int
+	TEALCompileNet       string
+	EndpointAdvertiseURL string
+	Theme                string
 }
 
 // AdminSettingsMsg is sent when admin settings are received

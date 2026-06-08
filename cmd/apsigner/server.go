@@ -113,7 +113,7 @@ type Signer struct {
 	hub                adminproto.AdminHub                // Process-root admin facade for non-transport code
 	sshServer          *sshtunnel.Server                  // SSH tunnel server (nil if SSH disabled)
 	config             *apconfig.ServerConfig             // Server configuration (includes policy settings)
-	configMu           sync.RWMutex                       // Protects mutable ServerConfig fields (currently: Theme)
+	configMu           sync.RWMutex                       // Protects live-mutable ServerConfig fields.
 	configMutationMu   sync.Mutex                         // Serializes process-owned config.yaml mutations
 	storeMutationMu    sync.Mutex                         // Protects storeMutationLocks map
 	storeMutationLocks map[string]*sync.Mutex             // Per-identity key/template mutation serialization
@@ -149,6 +149,14 @@ func (fs *Signer) Theme() string {
 func (fs *Signer) SetTheme(v string) {
 	fs.configMu.Lock()
 	fs.config.Theme = v
+	fs.configMu.Unlock()
+}
+
+// SetEndpointAdvertiseURL updates the in-memory endpoint handoff URL. Safe for
+// concurrent use.
+func (fs *Signer) SetEndpointAdvertiseURL(v string) {
+	fs.configMu.Lock()
+	fs.config.Endpoint.AdvertiseURL = v
 	fs.configMu.Unlock()
 }
 

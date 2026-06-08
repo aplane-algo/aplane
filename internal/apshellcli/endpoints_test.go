@@ -23,6 +23,66 @@ import (
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
 
+func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
+	dataDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	eng, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	var out bytes.Buffer
+	state := &REPLState{
+		Out:               &out,
+		App:               apshellapp.New(eng, cfg, dataDir),
+		DataDir:           dataDir,
+		Config:            cfg,
+		currentCommandCtx: context.Background(),
+	}
+
+	err = state.cmdEndpoints([]string{
+		"create",
+		"--alias", "sentry-local",
+		"--endpoint", "ssh://127.0.0.1:2223",
+		"--sentryport", "12270",
+	}, nil)
+	if err != nil {
+		t.Fatalf("cmdEndpoints(create) error = %v", err)
+	}
+	rendered := out.String()
+	if !strings.Contains(rendered, "Configured sentry endpoint sentry-local") ||
+		!strings.Contains(rendered, "sentry port: 12270") ||
+		!strings.Contains(rendered, "request-token --endpoint sentry-local") {
+		t.Fatalf("output missing create details:\n%s", rendered)
+	}
+
+	cfg, err = config.LoadConfig(dataDir)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	endpoint, ok := cfg.Endpoints.Endpoint("sentry-local")
+	if !ok {
+		t.Fatal("sentry-local endpoint missing")
+	}
+	if endpoint.Role != config.ClientEndpointRoleSentry || endpoint.URL != "ssh://127.0.0.1:2223" || endpoint.SignerPort != 12270 {
+		t.Fatalf("endpoint = %#v, want sentry ssh endpoint with signer_port 12270", endpoint)
+	}
+}
+
+func TestParseEndpointCreateSentryArgsAcceptsHyphenatedPortFlag(t *testing.T) {
+	req, err := parseEndpointCreateSentryArgs([]string{
+		"--alias", "sentry-local",
+		"--endpoint", "ssh://127.0.0.1:2223",
+		"--sentry-port", "12270",
+		"--dry-run",
+	})
+	if err != nil {
+		t.Fatalf("parseEndpointCreateSentryArgs() error = %v", err)
+	}
+	if req.Alias != "sentry-local" || req.URL != "ssh://127.0.0.1:2223" || req.SentryPort != 12270 || !req.DryRun {
+		t.Fatalf("request = %#v, want parsed manual sentry endpoint", req)
+	}
+}
+
 func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKeyHex := strings.Repeat("ab", 32)
@@ -111,6 +171,9 @@ func TestRenderEndpointSentriesOmitsLastSeen(t *testing.T) {
 	if strings.Contains(rendered, "LAST SEEN") || strings.Contains(rendered, "2026-06-04T00:00:00Z") {
 		t.Fatalf("rendered sentries = %q, want no last-seen column or timestamp", rendered)
 	}
+	if !strings.Contains(rendered, "SENTRY KEY") || strings.Contains(rendered, "COMPONENT") || strings.Contains(rendered, "ATTESTORS") {
+		t.Fatalf("rendered sentries header = %q, want SENTRY KEY without legacy labels", rendered)
+	}
 	if !strings.Contains(rendered, componentKey) {
 		t.Fatalf("rendered sentries = %q, want component key", rendered)
 	}
@@ -146,11 +209,33 @@ func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
 	if !strings.Contains(rendered, "LAST SEEN") || !strings.Contains(rendered, "2026-06-04T00:00:00Z") {
 		t.Fatalf("rendered endpoint show = %q, want last-seen detail", rendered)
 	}
+	if !strings.Contains(rendered, "SENTRY KEY") || strings.Contains(rendered, "COMPONENT") || strings.Contains(rendered, "ATTESTORS") {
+		t.Fatalf("rendered endpoint show header = %q, want SENTRY KEY without legacy labels", rendered)
+	}
 	if !strings.Contains(rendered, componentKey) {
 		t.Fatalf("rendered endpoint show = %q, want component key", rendered)
 	}
 	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
 		t.Fatalf("rendered endpoint show leaked raw sentry public key: %q", rendered)
+	}
+}
+
+func TestRenderEndpointsListUsesSentryKeyHeader(t *testing.T) {
+	var out bytes.Buffer
+	state := &REPLState{Out: &out}
+
+	state.renderEndpointsList(&apshellapp.EndpointsListResult{
+		Endpoints: []apshellapp.EndpointEntry{{
+			Alias:                     "sentry-local",
+			Role:                      config.ClientEndpointRoleSentry,
+			URL:                       "ssh://127.0.0.1:2223",
+			PublishedSentryComponents: []string{"SENTRYKEY"},
+		}},
+	})
+
+	rendered := out.String()
+	if !strings.Contains(rendered, "SENTRY KEYS") || strings.Contains(rendered, "ATTESTORS") || strings.Contains(rendered, "COMPONENT") {
+		t.Fatalf("rendered endpoint list header = %q, want SENTRY KEYS without legacy labels", rendered)
 	}
 }
 

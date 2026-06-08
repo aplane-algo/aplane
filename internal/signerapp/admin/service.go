@@ -16,6 +16,7 @@ import (
 	algoutil "github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/asa"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/endpointrefs"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -39,6 +40,7 @@ type Deps interface {
 	KeyPaths() storepaths.Paths
 	Theme() string
 	SetTheme(v string)
+	SetEndpointAdvertiseURL(v string)
 	WithProcessConfigMutation(fn func() error) error
 	WithIdentityMutation(identityID string, fn func() error) error
 	SSHInfo() SSHInfo
@@ -65,23 +67,24 @@ func (s Service) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettin
 	}
 
 	return adminproto.AdminSettings{
-		UserAutoApprove:   icfg.UserAutoApprove(),
-		LockOnDisconnect:  lockOnDisconnect,
-		PassphraseTimeout: timeoutStr,
-		PassphraseMethod:  passphraseMethod,
-		NodeRole:          string(ir.NodeRole()),
-		SSHEnabled:        sshInfo.Enabled,
-		SSHPort:           sshInfo.Port,
-		SSHFingerprint:    sshInfo.Fingerprint,
-		SSHClients:        sshInfo.Clients,
-		SignerPort:        cfg.SignerPort,
-		TEALCompileNet:    cfg.TEALCompileNetwork,
-		Theme:             s.Deps.Theme(),
+		UserAutoApprove:      icfg.UserAutoApprove(),
+		LockOnDisconnect:     lockOnDisconnect,
+		PassphraseTimeout:    timeoutStr,
+		PassphraseMethod:     passphraseMethod,
+		NodeRole:             string(ir.NodeRole()),
+		SSHEnabled:           sshInfo.Enabled,
+		SSHPort:              sshInfo.Port,
+		SSHFingerprint:       sshInfo.Fingerprint,
+		SSHClients:           sshInfo.Clients,
+		SignerPort:           cfg.SignerPort,
+		TEALCompileNet:       cfg.TEALCompileNetwork,
+		EndpointAdvertiseURL: cfg.Endpoint.AdvertiseURL,
+		Theme:                s.Deps.Theme(),
 	}
 }
 
 func (s Service) UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateAdminSettingRequest) error {
-	if req.Key == adminproto.AdminSettingTheme {
+	if req.Key == adminproto.AdminSettingTheme || req.Key == adminproto.AdminSettingEndpointAdvertiseURL {
 		return s.Deps.WithProcessConfigMutation(func() error {
 			return s.updateAdminSettingLocked(ir, req)
 		})
@@ -108,6 +111,7 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 	icfg := ir.Config()
 
 	oldTheme := s.Deps.Theme()
+	oldEndpointAdvertiseURL := cfg.Endpoint.AdvertiseURL
 	oldIdentityUserAutoApprove := icfg.UserAutoApprove()
 	oldIdentityLockOnDisconnect := icfg.LockOnDisconnect()
 	oldIdentitySessionTimeout := icfg.SessionTimeout()
@@ -147,6 +151,18 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 			s.Deps.SetTheme(v)
 			saveKey, saveValue = adminproto.AdminSettingTheme, v
 		}
+	case adminproto.AdminSettingEndpointAdvertiseURL:
+		v := strings.TrimRight(strings.TrimSpace(req.Value), "/")
+		if v != "" {
+			if validateErr := endpointrefs.ValidatePortableURL(v); validateErr != nil {
+				err = fmt.Errorf("invalid endpoint.advertise_url: %w", validateErr)
+				break
+			}
+		}
+		cfg.Endpoint.AdvertiseURL = v
+		s.Deps.SetEndpointAdvertiseURL(v)
+		saveKey = "endpoint"
+		saveValue = map[string]string{"advertise_url": v}
 	default:
 		err = fmt.Errorf("unknown or read-only setting: %s", req.Key)
 	}
@@ -154,13 +170,15 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 	if err == nil && saveKey != "" {
 		mut := storemut.New(ir.ID(), s.Deps.KeyPaths(), nil, nil)
 		var saveErr error
-		if saveKey == adminproto.AdminSettingTheme {
+		if saveKey == adminproto.AdminSettingTheme || saveKey == "endpoint" {
 			saveErr = mut.SaveServerSetting(s.Deps.DataDir(), saveKey, saveValue)
 		} else {
 			saveErr = mut.SaveIdentitySetting(s.Deps.DataDir(), saveKey, saveValue)
 		}
 		if saveErr != nil {
 			s.Deps.SetTheme(oldTheme)
+			cfg.Endpoint.AdvertiseURL = oldEndpointAdvertiseURL
+			s.Deps.SetEndpointAdvertiseURL(oldEndpointAdvertiseURL)
 			icfg.SetUserAutoApprove(oldIdentityUserAutoApprove)
 			icfg.SetLockOnDisconnect(oldIdentityLockOnDisconnect)
 			icfg.SetSessionTimeout(oldIdentitySessionTimeout)
