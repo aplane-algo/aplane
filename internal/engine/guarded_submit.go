@@ -23,8 +23,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
-type guardedOriginalTarget struct {
+type guardedTarget struct {
 	Index                  int
+	Sender                 string
 	Account                string
 	SentryComponentKeyType string
 	SentryPublicKey        string
@@ -35,9 +36,11 @@ type sentryRequestKey struct {
 	PublicKey        string
 }
 
-func (e *Engine) hasGuardedSender(txns []types.Transaction) bool {
+func (e *Engine) hasGuardedEffectiveSigner(txns []types.Transaction) bool {
 	for _, txn := range txns {
-		if keytypes.IsGuardedAccountKeyType(e.signerCacheKeyType(txn.Sender.String())) {
+		sender := txn.Sender.String()
+		effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
+		if keytypes.IsGuardedAccountKeyType(e.signerCacheKeyType(effectiveSigner)) {
 			return true
 		}
 	}
@@ -56,16 +59,16 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts signin
 		w = os.Stdout
 	}
 
-	targets, err := e.guardedOriginalTargets(txns)
+	targets, err := e.guardedTargets(txns)
 	if err != nil {
 		return nil, nil, err
 	}
 	if len(targets) == 0 {
-		return nil, nil, fmt.Errorf("guarded signing selected with no guarded senders")
+		return nil, nil, fmt.Errorf("guarded signing selected with no guarded effective signers")
 	}
-	guardedIdx := make(map[int]bool, len(targets))
+	guardedTargetsByIndex := make(map[int]guardedTarget, len(targets))
 	for _, target := range targets {
-		guardedIdx[target.Index] = true
+		guardedTargetsByIndex[target.Index] = target
 	}
 
 	plannedTxns, dummyTxns, err := e.planGuardedGroup(txns, targets, w)
@@ -95,7 +98,7 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts signin
 	if nonGuardedCount := len(txns) - len(targets); nonGuardedCount > 0 {
 		_, _ = fmt.Fprintf(w, "[GUARDED] Mixed group: signing %d non-guarded position(s) over canonical bytes\n", nonGuardedCount)
 	}
-	nonGuardedSignedHex, err := e.requestNonGuardedSignatures(opts.Ctx, plannedTxns, groupBytesHex, len(txns), guardedIdx, opts)
+	nonGuardedSignedHex, err := e.requestNonGuardedSignatures(opts.Ctx, plannedTxns, groupBytesHex, len(txns), guardedTargetsByIndex, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -161,13 +164,14 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts signin
 
 // requestNonGuardedSignatures signs the non-guarded original positions of a
 // mixed guarded group over the frozen canonical bytes, so every signature in
-// the group commits to the same final transaction IDs. Guarded originals and
-// dummies are sent as foreign — guarded with an lsig_size hint so the signer's
-// budget accounting stays exact and honest — and only the non-guarded originals
-// are signed; the guarded positions are assembled later via /sign/assemble.
-// Returns signed-transaction hex keyed by group index. When there are no
-// non-guarded originals (the all-guarded case) it makes no signer call.
-func (e *Engine) requestNonGuardedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedIdx map[int]bool, opts signing.SubmitOptions) (map[int]string, error) {
+// the group commits to the same final transaction IDs. Guarded targets and
+// dummies are sent as foreign — guarded with an lsig_size hint for the guarded
+// authorizer so the signer's budget accounting stays exact and honest — and
+// only the non-guarded originals are signed; the guarded positions are
+// assembled later via /sign/assemble. Returns signed-transaction hex keyed by
+// group index. When there are no non-guarded originals (the all-guarded case)
+// it makes no signer call.
+func (e *Engine) requestNonGuardedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]guardedTarget, opts signing.SubmitOptions) (map[int]string, error) {
 	signRequests := make([]signerapi.SignRequest, len(plannedTxns))
 	nonGuarded := make([]int, 0, originalCount)
 	for i := range plannedTxns {
@@ -176,12 +180,16 @@ func (e *Engine) requestNonGuardedSignatures(ctx context.Context, plannedTxns []
 		case i >= originalCount:
 			// Dummy: foreign. Already signed locally and passed through at assembly.
 			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
-		case guardedIdx[i]:
-			// Guarded original: foreign with an lsig_size hint. Kept in the group
+		case guardedTargets[i].Account != "":
+			// Guarded target: foreign with an lsig_size hint. Kept in the group
 			// for context and budget accounting but not signed here.
+			target := guardedTargets[i]
+			if target.Sender != sender {
+				return nil, fmt.Errorf("guarded target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
+			}
 			signRequests[i] = signerapi.SignRequest{
 				TxnBytesHex: groupBytesHex[i],
-				LsigSize:    e.signerCacheLsigSize(sender),
+				LsigSize:    e.signerCacheLsigSize(target.Account),
 			}
 		default:
 			// Non-guarded original: sign mode over the canonical bytes. Resolve
@@ -229,32 +237,31 @@ func (e *Engine) requestNonGuardedSignatures(ctx context.Context, plannedTxns []
 	return signed, nil
 }
 
-func (e *Engine) guardedOriginalTargets(txns []types.Transaction) ([]guardedOriginalTarget, error) {
-	targets := make([]guardedOriginalTarget, 0, len(txns))
+func (e *Engine) guardedTargets(txns []types.Transaction) ([]guardedTarget, error) {
+	targets := make([]guardedTarget, 0, len(txns))
 	for i, txn := range txns {
 		sender := txn.Sender.String()
-		keyType := e.signerCacheKeyType(sender)
-		if keyType == "" {
-			return nil, fmt.Errorf("transaction %d sender %s is not in signer cache", i, sender)
-		}
+		account := e.AuthCache.ResolveEffectiveSigner(sender)
+		keyType := e.signerCacheKeyType(account)
 		if !keytypes.IsGuardedAccountKeyType(keyType) {
 			continue
 		}
 		sentryComponentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 		if !ok {
-			return nil, fmt.Errorf("guarded account %s uses unsupported guarded key type %s", sender, keyType)
+			return nil, fmt.Errorf("guarded account %s uses unsupported guarded key type %s", account, keyType)
 		}
-		sentryPublicKey, ok := e.signerCacheSentryPublicKey(sender)
+		sentryPublicKey, ok := e.signerCacheSentryPublicKey(account)
 		if !ok || sentryPublicKey == "" {
-			return nil, fmt.Errorf("guarded account %s is missing sentry_public_key metadata; run keys refresh", sender)
+			return nil, fmt.Errorf("guarded account %s is missing sentry_public_key metadata; run keys refresh", account)
 		}
 		canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey, sentryComponentKeyType)
 		if err != nil {
-			return nil, fmt.Errorf("guarded account %s has invalid sentry_public_key metadata: %w", sender, err)
+			return nil, fmt.Errorf("guarded account %s has invalid sentry_public_key metadata: %w", account, err)
 		}
-		targets = append(targets, guardedOriginalTarget{
+		targets = append(targets, guardedTarget{
 			Index:                  i,
-			Account:                sender,
+			Sender:                 sender,
+			Account:                account,
 			SentryComponentKeyType: sentryComponentKeyType,
 			SentryPublicKey:        canonicalPublicKey,
 		})
@@ -262,7 +269,7 @@ func (e *Engine) guardedOriginalTargets(txns []types.Transaction) ([]guardedOrig
 	return targets, nil
 }
 
-func (t guardedOriginalTarget) sentryRequestKey() sentryRequestKey {
+func (t guardedTarget) sentryRequestKey() sentryRequestKey {
 	return sentryRequestKey{
 		ComponentKeyType: t.SentryComponentKeyType,
 		PublicKey:        t.SentryPublicKey,
@@ -301,12 +308,12 @@ func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (s
 	return keytypes.ComponentKeySelector(componentKeyType, publicKey)
 }
 
-func (e *Engine) planGuardedGroup(txns []types.Transaction, targets []guardedOriginalTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
+func (e *Engine) planGuardedGroup(txns []types.Transaction, targets []guardedTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
 	originalCount := len(txns)
 	planned := append([]types.Transaction(nil), txns...)
-	guardedIdx := make(map[int]bool, len(targets))
+	guardedTargets := make(map[int]guardedTarget, len(targets))
 	for _, target := range targets {
-		guardedIdx[target.Index] = true
+		guardedTargets[target.Index] = target
 	}
 	// Size LogicSig budget across every LogicSig position, not just guarded
 	// ones: a mixed group can include non-guarded LogicSig senders (e.g. a
@@ -316,20 +323,24 @@ func (e *Engine) planGuardedGroup(txns []types.Transaction, targets []guardedOri
 	// Non-guarded positions are budgeted against the effective signer (the auth
 	// address for rekeyed accounts), because that is the LogicSig that goes
 	// on-chain and the address the signer sizes budget against — keeping the
-	// client and server dummy counts in agreement. Guarded positions stay
-	// sender-based: guarded accounts are only supported as original senders,
-	// never as an AuthAddr.
+	// client and server dummy counts in agreement. Guarded positions are
+	// budgeted against the guarded effective signer, because that is the
+	// LogicSig that goes on-chain as sender or AuthAddr.
 	lsigIndices := make([]int, 0, len(planned))
 	totalLsigBytes := 0
 	for i, txn := range planned {
 		sender := txn.Sender.String()
-		budgetAddr := sender
-		if !guardedIdx[i] {
-			budgetAddr = e.AuthCache.ResolveEffectiveSigner(sender)
+		budgetAddr := e.AuthCache.ResolveEffectiveSigner(sender)
+		target, guarded := guardedTargets[i]
+		if guarded {
+			if target.Sender != sender {
+				return nil, nil, fmt.Errorf("guarded target %d sender %s does not match transaction sender %s", i, target.Sender, sender)
+			}
+			budgetAddr = target.Account
 		}
 		size := e.signerCacheLsigSize(budgetAddr)
-		if guardedIdx[i] && size <= 0 {
-			return nil, nil, fmt.Errorf("guarded account %s is missing LogicSig size metadata; run keys refresh", sender)
+		if guarded && size <= 0 {
+			return nil, nil, missingGuardedLsigSizeMessage(target)
 		}
 		if size > 0 {
 			totalLsigBytes += size
@@ -392,6 +403,13 @@ func (e *Engine) planGuardedGroup(txns []types.Transaction, targets []guardedOri
 	return planned, dummyTxns, nil
 }
 
+func missingGuardedLsigSizeMessage(target guardedTarget) error {
+	if target.Sender == target.Account {
+		return fmt.Errorf("guarded account %s is missing LogicSig size metadata; run keys refresh", target.Account)
+	}
+	return fmt.Errorf("guarded authorizer %s for sender %s is missing LogicSig size metadata; run keys refresh", target.Account, target.Sender)
+}
+
 func suggestedParamsFromTxn(txn types.Transaction) types.SuggestedParams {
 	return types.SuggestedParams{
 		Fee:             txn.Fee,
@@ -423,7 +441,7 @@ func signGuardedDummies(dummyTxns []types.Transaction) ([]string, error) {
 	return signedHex, nil
 }
 
-func (e *Engine) requestUserComponentSignatures(ctx context.Context, groupBytesHex []string, targets []guardedOriginalTarget) (map[int]string, map[string]string, error) {
+func (e *Engine) requestUserComponentSignatures(ctx context.Context, groupBytesHex []string, targets []guardedTarget) (map[int]string, map[string]string, error) {
 	byAccount := make(map[string][]int)
 	for _, target := range targets {
 		byAccount[target.Account] = append(byAccount[target.Account], target.Index)
@@ -448,7 +466,7 @@ func (e *Engine) requestUserComponentSignatures(ctx context.Context, groupBytesH
 	return signatures, requestIDs, nil
 }
 
-func (e *Engine) requestSentryComponentSignatures(ctx context.Context, groupBytesHex []string, group *sentryverify.CanonicalGroup, targets []guardedOriginalTarget) (map[int]string, map[sentryRequestKey]string, error) {
+func (e *Engine) requestSentryComponentSignatures(ctx context.Context, groupBytesHex []string, group *sentryverify.CanonicalGroup, targets []guardedTarget) (map[int]string, map[sentryRequestKey]string, error) {
 	bySentry := make(map[sentryRequestKey][]int)
 	for _, target := range targets {
 		key := target.sentryRequestKey()
