@@ -135,6 +135,30 @@ func TestStandaloneAdminHeaderBuildsEndpointWhenAdvertiseURLEmpty(t *testing.T) 
 	m := Model{
 		width: 120,
 		adminSettings: &AdminSettings{
+			NodeRole:         "signer",
+			SSHEnabled:       true,
+			SSHListenAddress: "192.0.2.10",
+			SSHPort:          1127,
+			SignerPort:       11270,
+		},
+	}
+
+	got := stripANSI(m.renderAdminHeader())
+	for _, want := range []string{
+		"Signer Admin",
+		"Signer Port: 11270",
+		"Endpoint: ssh://192.0.2.10:1127",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("renderAdminHeader() missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestStandaloneAdminHeaderDefaultsEndpointHostForOlderSettings(t *testing.T) {
+	m := Model{
+		width: 120,
+		adminSettings: &AdminSettings{
 			NodeRole:   "signer",
 			SSHEnabled: true,
 			SSHPort:    1127,
@@ -143,14 +167,29 @@ func TestStandaloneAdminHeaderBuildsEndpointWhenAdvertiseURLEmpty(t *testing.T) 
 	}
 
 	got := stripANSI(m.renderAdminHeader())
-	for _, want := range []string{
-		"Signer Admin",
-		"Signer Port: 11270",
-		"Endpoint: ssh://127.0.0.1:1127",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("renderAdminHeader() missing %q:\n%s", want, got)
-		}
+	if !strings.Contains(got, "Endpoint: ssh://127.0.0.1:1127") {
+		t.Fatalf("renderAdminHeader() missing default endpoint:\n%s", got)
+	}
+}
+
+func TestStandaloneAdminHeaderUsesLoopbackEndpointForWildcardBind(t *testing.T) {
+	m := Model{
+		width: 120,
+		adminSettings: &AdminSettings{
+			NodeRole:         "signer",
+			SSHEnabled:       true,
+			SSHListenAddress: "0.0.0.0",
+			SSHPort:          64804,
+			SignerPort:       11270,
+		},
+	}
+
+	got := stripANSI(m.renderAdminHeader())
+	if !strings.Contains(got, "Endpoint: ssh://127.0.0.1:64804") {
+		t.Fatalf("renderAdminHeader() missing loopback endpoint for wildcard bind:\n%s", got)
+	}
+	if strings.Contains(got, "ssh://0.0.0.0:64804") {
+		t.Fatalf("renderAdminHeader() advertised wildcard bind address:\n%s", got)
 	}
 }
 

@@ -63,6 +63,9 @@ func TestLoadServerConfigDefaultsUserAutoApprove(t *testing.T) {
 	if cfg.ApprovalWait != DefaultApprovalWaitString {
 		t.Fatalf("approval_wait default = %q, want %q", cfg.ApprovalWait, DefaultApprovalWaitString)
 	}
+	if cfg.SSH.ListenAddress != DefaultSSHListenAddress {
+		t.Fatalf("ssh.listen_address default = %q, want %q", cfg.SSH.ListenAddress, DefaultSSHListenAddress)
+	}
 }
 
 func TestLoadServerConfigUserAutoApprove(t *testing.T) {
@@ -256,6 +259,112 @@ endpoint:
 	}
 }
 
+func TestLoadServerConfigSSHListenAddress(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		data         string
+		want         string
+		wantErrPiece string
+	}{
+		{
+			name: "explicit IPv4",
+			data: `
+ssh:
+  listen_address: 0.0.0.0
+`,
+			want: "0.0.0.0",
+		},
+		{
+			name: "explicit hostname",
+			data: `
+ssh:
+  listen_address: signer.local
+`,
+			want: "signer.local",
+		},
+		{
+			name: "reject URL",
+			data: `
+ssh:
+  listen_address: ssh://127.0.0.1
+`,
+			wantErrPiece: "invalid ssh.listen_address",
+		},
+		{
+			name: "reject host port",
+			data: `
+ssh:
+  listen_address: 127.0.0.1:1127
+`,
+			wantErrPiece: "invalid ssh.listen_address",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(tt.data), 0o640); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			cfg, err := LoadServerConfig(dir)
+			if tt.wantErrPiece != "" {
+				if err == nil {
+					t.Fatal("LoadServerConfig error = nil, want rejection")
+				}
+				if !strings.Contains(err.Error(), tt.wantErrPiece) {
+					t.Fatalf("LoadServerConfig error = %q, want %q", err, tt.wantErrPiece)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadServerConfig error = %v", err)
+			}
+			if cfg.SSH.ListenAddress != tt.want {
+				t.Fatalf("SSH.ListenAddress = %q, want %q", cfg.SSH.ListenAddress, tt.want)
+			}
+		})
+	}
+}
+
+func TestSaveNestedSettingPreservesSiblingFields(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	initial := `theme: auto
+ssh:
+  port: 2222
+  host_key_path: .ssh/custom_host_key
+  authorized_keys_path: .ssh/custom_authorized_keys
+`
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(initial), 0o640); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := SaveNestedSetting(dir, "ssh", "listen_address", "0.0.0.0"); err != nil {
+		t.Fatalf("SaveNestedSetting: %v", err)
+	}
+
+	cfg, err := LoadServerConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadServerConfig: %v", err)
+	}
+	if cfg.SSH.ListenAddress != "0.0.0.0" {
+		t.Fatalf("SSH.ListenAddress = %q, want 0.0.0.0", cfg.SSH.ListenAddress)
+	}
+	if cfg.SSH.Port != 2222 {
+		t.Fatalf("SSH.Port = %d, want 2222", cfg.SSH.Port)
+	}
+	if !strings.HasSuffix(cfg.SSH.HostKeyPath, ".ssh/custom_host_key") {
+		t.Fatalf("SSH.HostKeyPath = %q, want preserved custom path", cfg.SSH.HostKeyPath)
+	}
+	if !strings.HasSuffix(cfg.SSH.AuthorizedKeysPath, ".ssh/custom_authorized_keys") {
+		t.Fatalf("SSH.AuthorizedKeysPath = %q, want preserved custom path", cfg.SSH.AuthorizedKeysPath)
+	}
+}
+
 func TestParseApprovalWait(t *testing.T) {
 	t.Parallel()
 
@@ -337,6 +446,15 @@ theme: auto
 passphrase_timeout: "15m"
 ssh:
   port: 2222
+`,
+		},
+		{
+			name: "ssh listen address changed",
+			modified: `user_auto_approve: false
+theme: auto
+passphrase_timeout: "15m"
+ssh:
+  listen_address: 0.0.0.0
 `,
 		},
 		{

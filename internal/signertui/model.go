@@ -578,6 +578,7 @@ type AdminSettings struct {
 	PassphraseMethod     string
 	NodeRole             string
 	SSHEnabled           bool
+	SSHListenAddress     string
 	SSHPort              int
 	SSHFingerprint       string
 	SSHClients           int

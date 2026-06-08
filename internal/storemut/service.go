@@ -120,6 +120,11 @@ func (s *Service) SaveServerSetting(dataDir, key string, value interface{}) erro
 	return apconfig.SaveSetting(dataDir, key, value)
 }
 
+// SaveServerNestedSetting persists one nested signer-owned config setting.
+func (s *Service) SaveServerNestedSetting(dataDir, section, key string, value interface{}) error {
+	return apconfig.SaveNestedSetting(dataDir, section, key, value)
+}
+
 // SaveIdentitySetting persists a single identity-scoped setting.
 func (s *Service) SaveIdentitySetting(dataDir, key string, value interface{}) error {
 	return identity.SaveStoredSetting(dataDir, s.identityID, key, value)

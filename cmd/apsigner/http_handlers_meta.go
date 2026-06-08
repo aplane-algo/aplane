@@ -6,7 +6,7 @@ package main
 import "net/http"
 
 func (fs *Signer) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, fs.restService().Health(fs.productIdentityRuntime(), fs.sshServer != nil, fs.ipcServer != nil))
+	writeJSON(w, http.StatusOK, fs.restService().Health(fs.productIdentityRuntime(), fs.currentSSHServer() != nil, fs.ipcServer != nil))
 }
 
 func (fs *Signer) handleStatus(w http.ResponseWriter, r *http.Request) {

@@ -320,6 +320,7 @@ func ProtocolAdminSettingsMessage(requestID string, settings AdminSettings) prot
 		PassphraseMethod:     settings.PassphraseMethod,
 		NodeRole:             settings.NodeRole,
 		SSHEnabled:           settings.SSHEnabled,
+		SSHListenAddress:     settings.SSHListenAddress,
 		SSHPort:              settings.SSHPort,
 		SSHFingerprint:       settings.SSHFingerprint,
 		SSHClients:           settings.SSHClients,

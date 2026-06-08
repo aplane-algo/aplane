@@ -40,7 +40,9 @@ type Deps interface {
 	KeyPaths() storepaths.Paths
 	Theme() string
 	SetTheme(v string)
+	SetSSHListenAddress(v string)
 	SetEndpointAdvertiseURL(v string)
+	RestartSSHListener(listenAddress string) error
 	WithProcessConfigMutation(fn func() error) error
 	WithIdentityMutation(identityID string, fn func() error) error
 	SSHInfo() SSHInfo
@@ -73,6 +75,7 @@ func (s Service) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettin
 		PassphraseMethod:     passphraseMethod,
 		NodeRole:             string(ir.NodeRole()),
 		SSHEnabled:           sshInfo.Enabled,
+		SSHListenAddress:     cfg.SSH.ListenAddress,
 		SSHPort:              sshInfo.Port,
 		SSHFingerprint:       sshInfo.Fingerprint,
 		SSHClients:           sshInfo.Clients,
@@ -84,7 +87,9 @@ func (s Service) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettin
 }
 
 func (s Service) UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateAdminSettingRequest) error {
-	if req.Key == adminproto.AdminSettingTheme || req.Key == adminproto.AdminSettingEndpointAdvertiseURL {
+	if req.Key == adminproto.AdminSettingTheme ||
+		req.Key == adminproto.AdminSettingSSHListenAddress ||
+		req.Key == adminproto.AdminSettingEndpointAdvertiseURL {
 		return s.Deps.WithProcessConfigMutation(func() error {
 			return s.updateAdminSettingLocked(ir, req)
 		})
@@ -108,13 +113,17 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 	var err error
 	var saveKey string
 	var saveValue interface{}
+	var saveNestedSection string
+	var saveNestedKey string
 	icfg := ir.Config()
 
 	oldTheme := s.Deps.Theme()
+	oldSSHListenAddress := cfg.SSH.ListenAddress
 	oldEndpointAdvertiseURL := cfg.Endpoint.AdvertiseURL
 	oldIdentityUserAutoApprove := icfg.UserAutoApprove()
 	oldIdentityLockOnDisconnect := icfg.LockOnDisconnect()
 	oldIdentitySessionTimeout := icfg.SessionTimeout()
+	sshListenerRestarted := false
 
 	switch req.Key {
 	case adminproto.AdminSettingUserAutoApprove:
@@ -151,6 +160,22 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 			s.Deps.SetTheme(v)
 			saveKey, saveValue = adminproto.AdminSettingTheme, v
 		}
+	case adminproto.AdminSettingSSHListenAddress:
+		v := strings.TrimSpace(req.Value)
+		if validateErr := apconfig.ValidateSSHListenAddress(v); validateErr != nil {
+			err = fmt.Errorf("invalid ssh.listen_address: %w", validateErr)
+			break
+		}
+		if v != oldSSHListenAddress {
+			if restartErr := s.Deps.RestartSSHListener(v); restartErr != nil {
+				err = fmt.Errorf("failed to update SSH listener: %w", restartErr)
+				break
+			}
+			sshListenerRestarted = true
+		}
+		cfg.SSH.ListenAddress = v
+		s.Deps.SetSSHListenAddress(v)
+		saveNestedSection, saveNestedKey, saveValue = "ssh", "listen_address", v
 	case adminproto.AdminSettingEndpointAdvertiseURL:
 		v := strings.TrimRight(strings.TrimSpace(req.Value), "/")
 		if v != "" {
@@ -167,22 +192,33 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 		err = fmt.Errorf("unknown or read-only setting: %s", req.Key)
 	}
 
-	if err == nil && saveKey != "" {
+	if err == nil && (saveKey != "" || saveNestedSection != "") {
 		mut := storemut.New(ir.ID(), s.Deps.KeyPaths(), nil, nil)
 		var saveErr error
-		if saveKey == adminproto.AdminSettingTheme || saveKey == "endpoint" {
+		if saveNestedSection != "" {
+			saveErr = mut.SaveServerNestedSetting(s.Deps.DataDir(), saveNestedSection, saveNestedKey, saveValue)
+		} else if saveKey == adminproto.AdminSettingTheme || saveKey == "endpoint" {
 			saveErr = mut.SaveServerSetting(s.Deps.DataDir(), saveKey, saveValue)
 		} else {
 			saveErr = mut.SaveIdentitySetting(s.Deps.DataDir(), saveKey, saveValue)
 		}
 		if saveErr != nil {
+			var restoreErr error
+			if sshListenerRestarted {
+				restoreErr = s.Deps.RestartSSHListener(oldSSHListenAddress)
+			}
 			s.Deps.SetTheme(oldTheme)
+			cfg.SSH.ListenAddress = oldSSHListenAddress
+			s.Deps.SetSSHListenAddress(oldSSHListenAddress)
 			cfg.Endpoint.AdvertiseURL = oldEndpointAdvertiseURL
 			s.Deps.SetEndpointAdvertiseURL(oldEndpointAdvertiseURL)
 			icfg.SetUserAutoApprove(oldIdentityUserAutoApprove)
 			icfg.SetLockOnDisconnect(oldIdentityLockOnDisconnect)
 			icfg.SetSessionTimeout(oldIdentitySessionTimeout)
 			err = fmt.Errorf("failed to save config.yaml: %w", saveErr)
+			if restoreErr != nil {
+				err = fmt.Errorf("%w; failed to restore SSH listener: %v", err, restoreErr)
+			}
 		}
 	}
 

@@ -305,7 +305,14 @@ func (m Model) adminEndpointDisplayURL() string {
 	if !m.adminSettings.SSHEnabled || m.adminSettings.SSHPort <= 0 {
 		return ""
 	}
-	return "ssh://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(m.adminSettings.SSHPort))
+	host := strings.TrimSpace(m.adminSettings.SSHListenAddress)
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	if host == "0.0.0.0" {
+		host = "127.0.0.1"
+	}
+	return "ssh://" + net.JoinHostPort(host, strconv.Itoa(m.adminSettings.SSHPort))
 }
 
 func (m Model) renderViewContent() string {

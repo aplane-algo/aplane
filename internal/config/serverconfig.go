@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,6 +20,7 @@ import (
 
 // SSHServerConfig holds SSH server configuration for apsigner.
 type SSHServerConfig struct {
+	ListenAddress      string `yaml:"listen_address" description:"SSH listen address to bind" default:"127.0.0.1"`
 	Port               int    `yaml:"port" description:"SSH port to listen on" default:"1127"`
 	HostKeyPath        string `yaml:"host_key_path" description:"Server's private host key path" default:".ssh/ssh_host_key"`
 	AuthorizedKeysPath string `yaml:"authorized_keys_path" description:"Legacy/global authorized client public keys file" default:".ssh/authorized_keys"`
@@ -126,10 +128,62 @@ func ResolvePath(path, baseDir string) string {
 // (used when ssh block exists but fields are missing)
 func DefaultSSHServerConfig() SSHServerConfig {
 	return SSHServerConfig{
+		ListenAddress:      DefaultSSHListenAddress,
 		Port:               DefaultSSHPort,
 		HostKeyPath:        ".ssh/ssh_host_key",    // Relative to data directory
 		AuthorizedKeysPath: ".ssh/authorized_keys", // Relative to data directory
 	}
+}
+
+// ValidateSSHListenAddress validates the host/address part used for the SSH
+// listener. It accepts IP literals and DNS-style hostnames; ports and URLs are
+// configured separately.
+func ValidateSSHListenAddress(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("ssh.listen_address is required")
+	}
+	if strings.Contains(value, "://") {
+		return fmt.Errorf("must be a host or IP address, not a URL")
+	}
+	if strings.ContainsAny(value, "/\\\x00") {
+		return fmt.Errorf("must not contain path separators")
+	}
+	if strings.HasPrefix(value, "[") || strings.HasSuffix(value, "]") {
+		return fmt.Errorf("omit IPv6 brackets; configure the address without a port")
+	}
+	if strings.Contains(value, ":") {
+		if strings.Count(value, ":") == 1 {
+			return fmt.Errorf("must not include a port")
+		}
+		if _, err := netip.ParseAddr(value); err != nil {
+			return fmt.Errorf("invalid IPv6 address: %w", err)
+		}
+		return nil
+	}
+
+	if len(value) > 253 {
+		return fmt.Errorf("host name is too long")
+	}
+	for _, label := range strings.Split(value, ".") {
+		if label == "" {
+			return fmt.Errorf("host name contains an empty label")
+		}
+		if len(label) > 63 {
+			return fmt.Errorf("host label %q is too long", label)
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return fmt.Errorf("host label %q must not start or end with '-'", label)
+		}
+		for i := 0; i < len(label); i++ {
+			ch := label[i]
+			if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' {
+				continue
+			}
+			return fmt.Errorf("host label %q contains invalid character %q", label, ch)
+		}
+	}
+	return nil
 }
 
 // DefaultServerConfig returns the default server configuration.
@@ -234,6 +288,13 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	}
 
 	sshDefaults := DefaultSSHServerConfig()
+	config.SSH.ListenAddress = strings.TrimSpace(config.SSH.ListenAddress)
+	if config.SSH.ListenAddress == "" {
+		config.SSH.ListenAddress = sshDefaults.ListenAddress
+	}
+	if err := ValidateSSHListenAddress(config.SSH.ListenAddress); err != nil {
+		return ServerConfig{}, fmt.Errorf("invalid ssh.listen_address in config: %w", err)
+	}
 	if config.SSH.Port == 0 {
 		config.SSH.Port = sshDefaults.Port
 	}
@@ -375,6 +436,54 @@ func SaveSetting(dataDir, key string, value interface{}) error {
 	return nil
 }
 
+// SaveNestedSetting writes one key inside a top-level mapping to config.yaml,
+// preserving sibling keys in that mapping and other top-level fields.
+func SaveNestedSetting(dataDir, section, key string, value interface{}) error {
+	if dataDir == "" {
+		return fmt.Errorf("data directory not set")
+	}
+	if section == "" || key == "" {
+		return fmt.Errorf("section and key are required")
+	}
+
+	path := filepath.Join(dataDir, "config.yaml")
+
+	existing := make(map[string]interface{})
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+	if len(data) > 0 {
+		if err := yaml.Unmarshal(data, &existing); err != nil {
+			return fmt.Errorf("failed to parse config file: %w", err)
+		}
+	}
+
+	nested := make(map[string]interface{})
+	if raw, ok := existing[section]; ok && raw != nil {
+		rawMap, ok := raw.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("config section %q is not a mapping", section)
+		}
+		for k, v := range rawMap {
+			nested[k] = v
+		}
+	}
+	nested[key] = value
+	existing[section] = nested
+
+	out, err := yaml.Marshal(existing)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := writeConfigAtomic(path, out, 0o640); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
 // ConfigFileChanged checks whether the on-disk config.yaml has been modified
 // externally (e.g., by appass) since apsigner loaded it. Compares the mutable
 // fields that could conflict if stale.
@@ -400,6 +509,9 @@ func ConfigFileChanged(dataDir string, startup ServerConfig) (bool, error) {
 		return true, nil
 	}
 	if disk.SSH.Port != startup.SSH.Port {
+		return true, nil
+	}
+	if disk.SSH.ListenAddress != startup.SSH.ListenAddress {
 		return true, nil
 	}
 	if disk.Endpoint.AdvertiseURL != startup.Endpoint.AdvertiseURL {

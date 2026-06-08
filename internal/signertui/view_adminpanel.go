@@ -36,6 +36,7 @@ func (m Model) adminRows() []adminRow {
 		{section: "User-Editable", label: "Lock-on-disconnect", key: adminproto.AdminSettingLockOnDisconnect, value: boolStr(s.LockOnDisconnect), editable: isPromptMode, isBool: true},
 		{section: "User-Editable", label: "Passphrase timeout", key: adminproto.AdminSettingPassphraseTimeout, value: s.PassphraseTimeout, editable: isPromptMode, isBool: false},
 		{section: "User-Editable", label: "Color theme", key: adminproto.AdminSettingTheme, value: themeDisplay(s.Theme), editable: true, choices: []string{"auto", "dark", "light"}},
+		{section: "User-Editable", label: "Endpoint hostname", key: adminproto.AdminSettingSSHListenAddress, value: s.SSHListenAddress, editable: true},
 		{section: "User-Editable", label: "Endpoint advertise URL", key: adminproto.AdminSettingEndpointAdvertiseURL, value: s.EndpointAdvertiseURL, editable: true},
 		{section: "Runtime", label: "Admin transport", key: "", value: m.transportLabel, editable: false},
 		{section: "Runtime", label: "Node role", key: "", value: nodeRoleDisplay(s.NodeRole), editable: false},

@@ -312,6 +312,8 @@ Validation:
 - every `passphrase_command_argv` element resolves relative to the signer data dir before execution
 - `theme` is the signer-admin UI preference persisted by the admin setting
   update path; it is process-global signer config, not client config
+- `ssh.listen_address` is the SSH listener bind host/address persisted by the
+  admin setting update path; changing it restarts the SSH listener
 - `endpoint.advertise_url` is optional operator-declared endpoint handoff
   routing metadata persisted by the admin setting update path; it is not
   inferred from the SSH bind address
@@ -351,7 +353,7 @@ Operational rules:
   transactions require an admin approver
 - process-owned `config.yaml` mutations are serialized by the signer process config mutation lock
 - admin setting writes fail if the loaded process config is stale relative to
-  mutable on-disk process settings such as `signer_port`, `ssh.port`,
+  mutable on-disk process settings such as `signer_port`, `ssh.listen_address`, `ssh.port`,
   `passphrase_command_argv`, `passphrase_command_env`, `networks`,
   `approval_wait`, `endpoint.advertise_url`, and `theme`
 - runtime reads that need configuration should use snapshots or narrow accessors rather than holding mutable `ServerConfig` pointers
@@ -431,7 +433,11 @@ config/plugin/env files).
 
 - SSH is always enabled at startup using configured or default SSH settings
 - REST binds `127.0.0.1:<signer_port>`
-- SSH binds `0.0.0.0:<ssh.port>` and forwards to loopback REST
+- SSH binds `<ssh.listen_address>:<ssh.port>` and forwards to loopback REST.
+  The default `ssh.listen_address` is `127.0.0.1`.
+- `ssh.listen_address` is process-owned and can be changed through admin
+  settings; apsigner restarts the SSH listener before persisting the new value.
+  Existing SSH admin sessions may be disconnected by the listener restart.
 
 ## On-Disk Formats
 

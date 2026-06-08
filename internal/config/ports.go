@@ -10,4 +10,7 @@ const (
 
 	// DefaultSSHPort is the default SSH tunnel port for Signer
 	DefaultSSHPort = 1127
+
+	// DefaultSSHListenAddress is the default SSH listener bind address.
+	DefaultSSHListenAddress = "127.0.0.1"
 )

@@ -26,6 +26,7 @@ type AdminSettings struct {
 	PassphraseMethod     string
 	NodeRole             string
 	SSHEnabled           bool
+	SSHListenAddress     string
 	SSHPort              int
 	SSHFingerprint       string
 	SSHClients           int
@@ -40,6 +41,7 @@ const (
 	AdminSettingLockOnDisconnect     = "lock_on_disconnect"
 	AdminSettingPassphraseTimeout    = "passphrase_timeout"
 	AdminSettingTheme                = "theme"
+	AdminSettingSSHListenAddress     = "ssh.listen_address"
 	AdminSettingEndpointAdvertiseURL = "endpoint.advertise_url"
 )
 

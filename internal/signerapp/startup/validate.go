@@ -71,6 +71,9 @@ func Validate(config *apconfig.ServerConfig, runtime *RuntimeState, keyPaths sto
 	if config.SSH.Port <= 0 {
 		return nil, fmt.Errorf("invalid ssh configuration: ssh.port must be greater than zero")
 	}
+	if err := apconfig.ValidateSSHListenAddress(config.SSH.ListenAddress); err != nil {
+		return nil, fmt.Errorf("invalid ssh configuration: %w", err)
+	}
 	if config.SSH.HostKeyPath == "" {
 		return nil, fmt.Errorf("invalid ssh configuration: ssh.host_key_path is required")
 	}

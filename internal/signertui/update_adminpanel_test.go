@@ -32,6 +32,18 @@ func TestValidateAdminSettingValueEndpointAdvertiseURL(t *testing.T) {
 	}
 }
 
+func TestValidateAdminSettingValueSSHListenAddress(t *testing.T) {
+	if err := validateAdminSettingValue(adminproto.AdminSettingSSHListenAddress, "127.0.0.1"); err != nil {
+		t.Fatalf("validateAdminSettingValue(valid IPv4) error = %v", err)
+	}
+	if err := validateAdminSettingValue(adminproto.AdminSettingSSHListenAddress, "signer.local"); err != nil {
+		t.Fatalf("validateAdminSettingValue(valid hostname) error = %v", err)
+	}
+	if err := validateAdminSettingValue(adminproto.AdminSettingSSHListenAddress, "127.0.0.1:1127"); err == nil {
+		t.Fatal("validateAdminSettingValue(host:port) error = nil, want rejection")
+	}
+}
+
 func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 	m := Model{
 		transportLabel: "IPC",
@@ -41,6 +53,7 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 			PassphraseTimeout:    "15m0s",
 			PassphraseMethod:     "none",
 			Theme:                "dark",
+			SSHListenAddress:     "127.0.0.1",
 			SignerPort:           4010,
 			TEALCompileNet:       "testnet",
 			EndpointAdvertiseURL: "ssh://signer.example:1127",
@@ -53,6 +66,7 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 		"Lock-on-disconnect",
 		"Passphrase timeout",
 		"Color theme",
+		"Endpoint hostname",
 		"Endpoint advertise URL",
 	}
 	for i, want := range wantLabels {
@@ -66,17 +80,20 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 			t.Fatalf("row %d editable = false, want true", i)
 		}
 	}
-	if rows[5].section != "Runtime" || rows[5].label != "Admin transport" {
-		t.Fatalf("row 5 = %q/%q, want Runtime/Admin transport", rows[5].section, rows[5].label)
+	if rows[6].section != "Runtime" || rows[6].label != "Admin transport" {
+		t.Fatalf("row 6 = %q/%q, want Runtime/Admin transport", rows[6].section, rows[6].label)
 	}
-	if rows[6].section != "Runtime" || rows[6].label != "Node role" || rows[6].value != "signer" {
-		t.Fatalf("row 6 = %q/%q/%q, want Runtime/Node role/signer", rows[6].section, rows[6].label, rows[6].value)
+	if rows[7].section != "Runtime" || rows[7].label != "Node role" || rows[7].value != "signer" {
+		t.Fatalf("row 7 = %q/%q/%q, want Runtime/Node role/signer", rows[7].section, rows[7].label, rows[7].value)
 	}
-	if rows[8].section != "Runtime" || rows[8].label != "Signer Port" || rows[8].value != "4010" {
-		t.Fatalf("row 8 = %q/%q/%q, want Runtime/Signer Port/4010", rows[8].section, rows[8].label, rows[8].value)
+	if rows[9].section != "Runtime" || rows[9].label != "Signer Port" || rows[9].value != "4010" {
+		t.Fatalf("row 9 = %q/%q/%q, want Runtime/Signer Port/4010", rows[9].section, rows[9].label, rows[9].value)
 	}
 	if rows[0].key != adminproto.AdminSettingUserAutoApprove || rows[0].value != "false" {
 		t.Fatalf("user auto-approve row = key %q value %q, want user_auto_approve/false", rows[0].key, rows[0].value)
+	}
+	if rows[4].key != adminproto.AdminSettingSSHListenAddress || rows[4].choices != nil {
+		t.Fatalf("endpoint hostname row = key %q choices %v, want ssh.listen_address text edit", rows[4].key, rows[4].choices)
 	}
 
 	rendered := stripANSI(m.renderAdminPanel())
@@ -102,8 +119,8 @@ func TestAdminRowsUseSentryPortLabelForSentryNodes(t *testing.T) {
 	}
 
 	rows := m.adminRows()
-	if rows[8].label != "Sentry Port" || rows[8].value != "11270" {
-		t.Fatalf("port row = %q/%q, want Sentry Port/11270", rows[8].label, rows[8].value)
+	if rows[9].label != "Sentry Port" || rows[9].value != "11270" {
+		t.Fatalf("port row = %q/%q, want Sentry Port/11270", rows[9].label, rows[9].value)
 	}
 }
 

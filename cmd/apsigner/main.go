@@ -314,11 +314,12 @@ func main() {
 	httpServer := buildHTTPServer(server, port)
 	logHTTPStartup(keyCount, keysSnapshot, port)
 
-	sshRuntime, err := startSSHRuntime(server, config.SSH.Port, config.SSH.HostKeyPath, config.SSH.AuthorizedKeysPath, startupOpts.Paths.Root(), identityID, auditLog)
+	sshRuntime, err := startSSHRuntime(server, config.SSH.ListenAddress, config.SSH.Port, config.SSH.HostKeyPath, config.SSH.AuthorizedKeysPath, startupOpts.Paths.Root(), identityID, auditLog)
 	if err != nil {
 		logErrorf("failed to start SSH server: %v", err)
 		os.Exit(1)
 	}
+	server.setSSHRuntime(sshRuntime)
 	runCtx, stopSignals := signalContext()
 	defer stopSignals()
 
@@ -349,13 +350,7 @@ func main() {
 					return nil
 				},
 				Stop: func(ctx context.Context) error {
-					if sshRuntime.cancel != nil {
-						sshRuntime.cancel()
-					}
-					if sshRuntime.server != nil {
-						return sshRuntime.server.Stop()
-					}
-					return nil
+					return server.stopSSHRuntime()
 				},
 			},
 			{

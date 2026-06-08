@@ -6,9 +6,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 
@@ -22,12 +26,17 @@ type sshRuntime struct {
 	listenAddr string
 }
 
-func startSSHRuntime(server *Signer, port int, hostKeyPath, authorizedKeysPath, tokenRoot, identityID string, auditLog *AuditLogger) (*sshRuntime, error) {
+func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath, authorizedKeysPath, tokenRoot, identityID string, auditLog *AuditLogger) (*sshRuntime, error) {
 	sshCtx, sshCancel := context.WithCancel(context.Background())
 	provisioning := server.sshProvisioningService()
 
-	listenAddr := fmt.Sprintf("0.0.0.0:%d", port)
-	targetAddr := httpBindAddr(server.config.SignerPort)
+	listenAddress = strings.TrimSpace(listenAddress)
+	if listenAddress == "" {
+		listenAddress = apconfig.DefaultSSHListenAddress
+	}
+	listenAddr := net.JoinHostPort(listenAddress, strconv.Itoa(port))
+	cfg := server.ConfigSnapshot()
+	targetAddr := httpBindAddr(cfg.SignerPort)
 	productToken, err := tokenfile.LoadAPlaneToken(tokenRoot, identityID)
 	if err != nil {
 		sshCancel()
@@ -134,7 +143,6 @@ func startSSHRuntime(server *Signer, port int, hostKeyPath, authorizedKeysPath, 
 		return nil, err
 	}
 
-	server.sshServer = sshServer
 	logInfof("SSH server started on %s (public key authentication)", listenAddr)
 	logInfof("host key fingerprint: %s", sshServer.GetHostKeyFingerprint())
 
@@ -144,4 +152,100 @@ func startSSHRuntime(server *Signer, port int, hostKeyPath, authorizedKeysPath, 
 		cancel:     sshCancel,
 		listenAddr: listenAddr,
 	}, nil
+}
+
+func (fs *Signer) setSSHRuntime(rt *sshRuntime) {
+	fs.sshRuntimeMu.Lock()
+	defer fs.sshRuntimeMu.Unlock()
+	fs.sshRuntime = rt
+	if rt == nil {
+		fs.sshServer = nil
+		return
+	}
+	fs.sshServer = rt.server
+}
+
+func (fs *Signer) currentSSHServer() *sshtunnel.Server {
+	fs.sshRuntimeMu.RLock()
+	defer fs.sshRuntimeMu.RUnlock()
+	return fs.sshServer
+}
+
+func (fs *Signer) stopSSHRuntime() error {
+	fs.sshRuntimeMu.Lock()
+	defer fs.sshRuntimeMu.Unlock()
+	rt := fs.sshRuntime
+	fs.sshRuntime = nil
+	fs.sshServer = nil
+	return stopSSHRuntimeInstance(rt)
+}
+
+func stopSSHRuntimeInstance(rt *sshRuntime) error {
+	if rt == nil {
+		return nil
+	}
+	if rt.cancel != nil {
+		rt.cancel()
+	}
+	if rt.server != nil {
+		return rt.server.Stop()
+	}
+	return nil
+}
+
+// RestartSSHListener restarts the SSH listener with a new bind address. The
+// old listener is restored if the new bind fails and restoration is possible.
+func (fs *Signer) RestartSSHListener(listenAddress string) error {
+	listenAddress = strings.TrimSpace(listenAddress)
+	if err := apconfig.ValidateSSHListenAddress(listenAddress); err != nil {
+		return err
+	}
+
+	fs.sshRuntimeMu.Lock()
+	defer fs.sshRuntimeMu.Unlock()
+
+	oldRuntime := fs.sshRuntime
+	oldCfg := fs.ConfigSnapshot()
+	if oldRuntime != nil && oldCfg.SSH.ListenAddress == listenAddress {
+		return nil
+	}
+
+	if err := stopSSHRuntimeInstance(oldRuntime); err != nil {
+		return fmt.Errorf("failed to stop current SSH listener: %w", err)
+	}
+	fs.sshRuntime = nil
+	fs.sshServer = nil
+
+	newRuntime, err := fs.startSSHRuntimeForListenAddress(listenAddress)
+	if err != nil {
+		if oldRuntime != nil {
+			restoreRuntime, restoreErr := fs.startSSHRuntimeForListenAddress(oldCfg.SSH.ListenAddress)
+			if restoreErr == nil {
+				fs.sshRuntime = restoreRuntime
+				fs.sshServer = restoreRuntime.server
+			} else {
+				return fmt.Errorf("failed to start SSH listener on %s: %w; failed to restore previous listener on %s: %v", listenAddress, err, oldCfg.SSH.ListenAddress, restoreErr)
+			}
+		}
+		return fmt.Errorf("failed to start SSH listener on %s: %w", listenAddress, err)
+	}
+
+	fs.sshRuntime = newRuntime
+	fs.sshServer = newRuntime.server
+	return nil
+}
+
+func (fs *Signer) startSSHRuntimeForListenAddress(listenAddress string) (*sshRuntime, error) {
+	cfg := fs.ConfigSnapshot()
+	cfg.SSH.ListenAddress = listenAddress
+	return startSSHRuntime(
+		fs,
+		cfg.SSH.ListenAddress,
+		cfg.SSH.Port,
+		cfg.SSH.HostKeyPath,
+		cfg.SSH.AuthorizedKeysPath,
+		fs.keyPaths.Root(),
+		auth.CurrentProductIdentityID(),
+		fs.auditLog,
+	)
 }

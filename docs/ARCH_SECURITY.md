@@ -310,6 +310,7 @@ apsigner fills in defaults and still starts the SSH server.
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `ssh.listen_address` | `127.0.0.1` | SSH listener bind address |
 | `ssh.port` | `1127` | SSH listener port |
 | `ssh.host_key_path` | `.ssh/ssh_host_key` | Server host key (auto-generated if missing) |
 | `ssh.authorized_keys_path` | `.ssh/authorized_keys` | Validated/resolved server setting for underlying SSH wiring; product-mode client authorization and enrollment use `identities/<identity>/.ssh/authorized_keys` |
@@ -318,6 +319,7 @@ apsigner fills in defaults and still starts the SSH server.
 ```yaml
 signer_port: 11270
 ssh:
+  listen_address: 127.0.0.1
   port: 1127
 ```
 

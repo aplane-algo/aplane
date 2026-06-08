@@ -46,6 +46,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 |-------|------|---------|-------------|
 | `signer_port` | int | `11270` | REST API port |
 | `ssh` | object | default SSH settings | SSH tunnel settings for apsigner |
+| `ssh.listen_address` | string | `127.0.0.1` | SSH listen address to bind |
 | `ssh.port` | int | `1127` | SSH port to listen on |
 | `ssh.host_key_path` | string | `.ssh/ssh_host_key` | Server's private host key path |
 | `ssh.authorized_keys_path` | string | `.ssh/authorized_keys` | Legacy/global authorized client public keys file |

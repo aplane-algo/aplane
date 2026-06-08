@@ -689,7 +689,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 
 | Lock | Protects |
 |------|----------|
-| `Signer.configMu` | Mutable process-global `ServerConfig` fields exposed through admin settings, currently theme and endpoint advertise URL |
+| `Signer.configMu` | Mutable process-global `ServerConfig` fields exposed through admin settings, including theme, SSH listen address, and endpoint advertise URL |
 | `Signer.configMutationMu` | Process-owned `config.yaml` write serialization |
 | `Signer.storeMutationMu` | Map of per-identity mutation locks |
 | `Signer.storeMutationLocks[identityID]` | Identity-owned key/template/config/policy mutation serialization |

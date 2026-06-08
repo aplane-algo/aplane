@@ -850,6 +850,7 @@ signer_port: $signer_port
 
 # SSH tunnel settings
 ssh:
+  listen_address: 127.0.0.1
   port: $ssh_port
   host_key_path: .ssh/ssh_host_key
   authorized_keys_path: .ssh/authorized_keys

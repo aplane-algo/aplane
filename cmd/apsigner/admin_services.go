@@ -256,7 +256,7 @@ func (s signerAdminServices) KeyPaths() storepaths.Paths {
 }
 
 func (s signerAdminServices) SSHEnabled() bool {
-	return s.signer.sshServer != nil
+	return s.signer.currentSSHServer() != nil
 }
 
 func (s signerAdminServices) SSHPort() int {
@@ -264,17 +264,19 @@ func (s signerAdminServices) SSHPort() int {
 }
 
 func (s signerAdminServices) SSHClients() int {
-	if s.signer.sshServer == nil {
+	sshServer := s.signer.currentSSHServer()
+	if sshServer == nil {
 		return 0
 	}
-	return s.signer.sshServer.ActiveConnectionCount()
+	return sshServer.ActiveConnectionCount()
 }
 
 func (s signerAdminServices) SSHFingerprint() string {
-	if s.signer.sshServer == nil {
+	sshServer := s.signer.currentSSHServer()
+	if sshServer == nil {
 		return ""
 	}
-	return s.signer.sshServer.GetHostKeyFingerprint()
+	return sshServer.GetHostKeyFingerprint()
 }
 
 func (s signerAdminServices) LogSessionConnected(identityID, remoteAddr, transport string) {
@@ -350,19 +352,28 @@ func (d signerAdminAppDeps) SetTheme(v string) {
 	d.signer.SetTheme(v)
 }
 
+func (d signerAdminAppDeps) SetSSHListenAddress(v string) {
+	d.signer.SetSSHListenAddress(v)
+}
+
 func (d signerAdminAppDeps) SetEndpointAdvertiseURL(v string) {
 	d.signer.SetEndpointAdvertiseURL(v)
 }
 
+func (d signerAdminAppDeps) RestartSSHListener(listenAddress string) error {
+	return d.signer.RestartSSHListener(listenAddress)
+}
+
 func (d signerAdminAppDeps) SSHInfo() signeradmin.SSHInfo {
 	cfg := d.signer.ConfigSnapshot()
+	sshServer := d.signer.currentSSHServer()
 	info := signeradmin.SSHInfo{
-		Enabled: d.signer.sshServer != nil,
+		Enabled: sshServer != nil,
 		Port:    cfg.SSH.Port,
 	}
-	if d.signer.sshServer != nil {
-		info.Clients = d.signer.sshServer.ActiveConnectionCount()
-		info.Fingerprint = d.signer.sshServer.GetHostKeyFingerprint()
+	if sshServer != nil {
+		info.Clients = sshServer.ActiveConnectionCount()
+		info.Fingerprint = sshServer.GetHostKeyFingerprint()
 	}
 	return info
 }

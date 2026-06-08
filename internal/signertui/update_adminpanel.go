@@ -133,6 +133,8 @@ func validateAdminSettingValue(key, value string) error {
 	case adminproto.AdminSettingPassphraseTimeout:
 		_, err := apconfig.ParsePassphraseTimeout(value)
 		return err
+	case adminproto.AdminSettingSSHListenAddress:
+		return apconfig.ValidateSSHListenAddress(value)
 	case adminproto.AdminSettingEndpointAdvertiseURL:
 		value = strings.TrimRight(strings.TrimSpace(value), "/")
 		if value == "" {

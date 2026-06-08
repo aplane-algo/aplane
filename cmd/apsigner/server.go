@@ -112,6 +112,8 @@ type Signer struct {
 	ipcServer          *IPCServer                         // IPC server for local Unix socket connections
 	hub                adminproto.AdminHub                // Process-root admin facade for non-transport code
 	sshServer          *sshtunnel.Server                  // SSH tunnel server (nil if SSH disabled)
+	sshRuntime         *sshRuntime                        // SSH runtime holder for live listener restarts
+	sshRuntimeMu       sync.RWMutex                       // Protects sshRuntime and sshServer swaps
 	config             *apconfig.ServerConfig             // Server configuration (includes policy settings)
 	configMu           sync.RWMutex                       // Protects live-mutable ServerConfig fields.
 	configMutationMu   sync.Mutex                         // Serializes process-owned config.yaml mutations
@@ -149,6 +151,14 @@ func (fs *Signer) Theme() string {
 func (fs *Signer) SetTheme(v string) {
 	fs.configMu.Lock()
 	fs.config.Theme = v
+	fs.configMu.Unlock()
+}
+
+// SetSSHListenAddress updates the in-memory SSH listen address. Safe for
+// concurrent use.
+func (fs *Signer) SetSSHListenAddress(v string) {
+	fs.configMu.Lock()
+	fs.config.SSH.ListenAddress = v
 	fs.configMu.Unlock()
 }
 
@@ -208,8 +218,8 @@ func (fs *Signer) RevokeTokenForIdentity(ir *identity.Runtime) error {
 	if ta, ok := ir.Authenticator().(*auth.TokenAuthenticator); ok {
 		tokenGeneration = ta.Generation()
 	}
-	if fs.sshServer != nil {
-		fs.sshServer.CloseIdentityConnections(ir.ID(), tokenGeneration, "token revoked")
+	if sshServer := fs.currentSSHServer(); sshServer != nil {
+		sshServer.CloseIdentityConnections(ir.ID(), tokenGeneration, "token revoked")
 	}
 	logInfof("api token revoked and regenerated: %s", tokenPath)
 	return nil
