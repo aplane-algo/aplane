@@ -78,6 +78,55 @@ func TestPlanGuardedGroupSizesBudgetAcrossAllLogicSigs(t *testing.T) {
 	}
 }
 
+// TestPlanGuardedGroupBudgetsNonGuardedByEffectiveSigner verifies that a
+// non-guarded position is budgeted against its effective signer (the auth
+// address for rekeyed accounts), not its sender — matching how the signer sizes
+// budget. Here the non-guarded sender is a rekeyed ed25519 account whose auth
+// address is a 1500-byte falcon LogicSig; the dummy count must reflect the auth
+// address. Budgeting by the sender instead would count 0 and under-dummy,
+// which the signer would then reject as a pre-grouped budget shortfall.
+func TestPlanGuardedGroupBudgetsNonGuardedByEffectiveSigner(t *testing.T) {
+	guarded := testAddress(1).String()
+	rekeyedSender := testAddress(2).String()
+	authFalcon := testAddress(4).String()
+	sentryHex := testSentryPublicKeyHex(0xd6)
+
+	eng := newMixedGuardedTestEngine(t, func(c *cache.SignerCache) {
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
+		c.SetLsigSize(guarded, 800)
+		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
+		// The rekeyed sender itself contributes no LogicSig budget; its auth
+		// address (a falcon LogicSig) is what goes on-chain.
+		c.AddAddress(authFalcon, nonGuardedFalconKeyType)
+		c.SetLsigSize(authFalcon, 1500)
+	})
+	eng.AuthCache.AuthAddresses = map[string]string{rekeyedSender: authFalcon}
+
+	txns := []types.Transaction{
+		testPreparedTxn(t, testAddress(1), testAddress(5), "guarded", nil).Transaction,
+		testPreparedTxn(t, testAddress(2), testAddress(5), "rekeyed", nil).Transaction,
+	}
+	targets := []guardedOriginalTarget{{
+		Index:                  0,
+		Account:                guarded,
+		SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+		SentryPublicKey:        sentryHex,
+	}}
+
+	planned, dummies, err := eng.planGuardedGroup(txns, targets, nil)
+	if err != nil {
+		t.Fatalf("planGuardedGroup() error = %v", err)
+	}
+	// 800 (guarded) + 1500 (auth address of the rekeyed sender) = 2300 over 2
+	// original txns (2000 budget) → 1 dummy.
+	if len(dummies) != 1 {
+		t.Fatalf("len(dummies) = %d, want 1 (non-guarded position must be budgeted by its auth address)", len(dummies))
+	}
+	if len(planned) != 3 {
+		t.Fatalf("len(planned) = %d, want 3", len(planned))
+	}
+}
+
 // TestRequestNonGuardedSignaturesShapesModesAndExtracts verifies the Strategy A
 // intermediate /sign call: non-guarded originals are sign mode, guarded
 // originals are foreign with an lsig_size hint, dummies are foreign, the request

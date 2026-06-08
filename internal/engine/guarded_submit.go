@@ -184,11 +184,10 @@ func (e *Engine) requestNonGuardedSignatures(ctx context.Context, plannedTxns []
 				LsigSize:    e.signerCacheLsigSize(sender),
 			}
 		default:
-			// Non-guarded original: sign mode over the canonical bytes.
-			effectiveSigner := sender
-			if authAddr, ok := e.AuthCache.GetAuthAddress(sender); ok && authAddr != "" {
-				effectiveSigner = authAddr
-			}
+			// Non-guarded original: sign mode over the canonical bytes. Resolve
+			// the effective signer so a rekeyed account is signed by — and
+			// budgeted against — its auth address, matching planGuardedGroup.
+			effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
 			req := signerapi.SignRequest{
 				AuthAddress: effectiveSigner,
 				TxnSender:   sender,
@@ -313,12 +312,24 @@ func (e *Engine) planGuardedGroup(txns []types.Transaction, targets []guardedOri
 	// ones: a mixed group can include non-guarded LogicSig senders (e.g. a
 	// plain falcon1024 account) that also consume program-size budget. The
 	// same indices later absorb the dummy fees in ApplyDummyFees.
+	//
+	// Non-guarded positions are budgeted against the effective signer (the auth
+	// address for rekeyed accounts), because that is the LogicSig that goes
+	// on-chain and the address the signer sizes budget against — keeping the
+	// client and server dummy counts in agreement. Guarded positions stay
+	// sender-based: guarded accounts are only supported as original senders,
+	// never as an AuthAddr.
 	lsigIndices := make([]int, 0, len(planned))
 	totalLsigBytes := 0
 	for i, txn := range planned {
-		size := e.signerCacheLsigSize(txn.Sender.String())
+		sender := txn.Sender.String()
+		budgetAddr := sender
+		if !guardedIdx[i] {
+			budgetAddr = e.AuthCache.ResolveEffectiveSigner(sender)
+		}
+		size := e.signerCacheLsigSize(budgetAddr)
 		if guardedIdx[i] && size <= 0 {
-			return nil, nil, fmt.Errorf("guarded account %s is missing LogicSig size metadata; run keys refresh", txn.Sender.String())
+			return nil, nil, fmt.Errorf("guarded account %s is missing LogicSig size metadata; run keys refresh", sender)
 		}
 		if size > 0 {
 			totalLsigBytes += size
