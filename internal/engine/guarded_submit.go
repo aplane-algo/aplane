@@ -63,8 +63,9 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts signin
 	if len(targets) == 0 {
 		return nil, nil, fmt.Errorf("guarded signing selected with no guarded senders")
 	}
-	if len(targets) != len(txns) {
-		return nil, nil, fmt.Errorf("guarded signing currently requires every original transaction sender to use a guarded account key type")
+	guardedIdx := make(map[int]bool, len(targets))
+	for _, target := range targets {
+		guardedIdx[target.Index] = true
 	}
 
 	plannedTxns, dummyTxns, err := e.planGuardedGroup(txns, targets, w)
@@ -91,10 +92,18 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts signin
 		return nil, nil, err
 	}
 
+	if nonGuardedCount := len(txns) - len(targets); nonGuardedCount > 0 {
+		_, _ = fmt.Fprintf(w, "[GUARDED] Mixed group: signing %d non-guarded position(s) over canonical bytes\n", nonGuardedCount)
+	}
+	nonGuardedSignedHex, err := e.requestNonGuardedSignatures(opts.Ctx, plannedTxns, groupBytesHex, len(txns), guardedIdx, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	assemblyReq := signerapi.GuardedAssemblyRequest{
 		GroupBytesHex: groupBytesHex,
 		Targets:       make([]signerapi.GuardedAssemblyTarget, 0, len(targets)),
-		Passthrough:   make([]signerapi.GuardedPassthroughItem, 0, len(signedDummyHex)),
+		Passthrough:   make([]signerapi.GuardedPassthroughItem, 0, len(signedDummyHex)+len(nonGuardedSignedHex)),
 	}
 	for _, target := range targets {
 		userSig, ok := userSignatures[target.Index]
@@ -112,6 +121,12 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts signin
 			UserSourceRequestID:   userRequestIDs[target.Account],
 			SentrySignature:       sentrySig,
 			SentrySourceRequestID: sentryRequestIDs[target.sentryRequestKey()],
+		})
+	}
+	for index, signedHex := range nonGuardedSignedHex {
+		assemblyReq.Passthrough = append(assemblyReq.Passthrough, signerapi.GuardedPassthroughItem{
+			TargetIndex:  index,
+			SignedTxnHex: signedHex,
 		})
 	}
 	for i, signedHex := range signedDummyHex {
@@ -142,6 +157,77 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts signin
 	}
 	writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
 	return txIDs, submittedTxns, nil
+}
+
+// requestNonGuardedSignatures signs the non-guarded original positions of a
+// mixed guarded group over the frozen canonical bytes, so every signature in
+// the group commits to the same final transaction IDs. Guarded originals and
+// dummies are sent as foreign — guarded with an lsig_size hint so the signer's
+// budget accounting stays exact and honest — and only the non-guarded originals
+// are signed; the guarded positions are assembled later via /sign/assemble.
+// Returns signed-transaction hex keyed by group index. When there are no
+// non-guarded originals (the all-guarded case) it makes no signer call.
+func (e *Engine) requestNonGuardedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedIdx map[int]bool, opts signing.SubmitOptions) (map[int]string, error) {
+	signRequests := make([]signerapi.SignRequest, len(plannedTxns))
+	nonGuarded := make([]int, 0, originalCount)
+	for i := range plannedTxns {
+		sender := plannedTxns[i].Sender.String()
+		switch {
+		case i >= originalCount:
+			// Dummy: foreign. Already signed locally and passed through at assembly.
+			signRequests[i] = signerapi.SignRequest{TxnBytesHex: groupBytesHex[i]}
+		case guardedIdx[i]:
+			// Guarded original: foreign with an lsig_size hint. Kept in the group
+			// for context and budget accounting but not signed here.
+			signRequests[i] = signerapi.SignRequest{
+				TxnBytesHex: groupBytesHex[i],
+				LsigSize:    e.signerCacheLsigSize(sender),
+			}
+		default:
+			// Non-guarded original: sign mode over the canonical bytes.
+			effectiveSigner := sender
+			if authAddr, ok := e.AuthCache.GetAuthAddress(sender); ok && authAddr != "" {
+				effectiveSigner = authAddr
+			}
+			req := signerapi.SignRequest{
+				AuthAddress: effectiveSigner,
+				TxnSender:   sender,
+				TxnBytesHex: groupBytesHex[i],
+			}
+			if i < len(opts.LsigArgsMap) && opts.LsigArgsMap[i] != nil {
+				req.LsigArgs = make(map[string]string, len(opts.LsigArgsMap[i]))
+				for name, value := range opts.LsigArgsMap[i] {
+					req.LsigArgs[name] = hex.EncodeToString(value)
+				}
+			}
+			if i < len(opts.AppCallInfo) {
+				req.AppCallInfo = opts.AppCallInfo[i]
+			}
+			signRequests[i] = req
+			nonGuarded = append(nonGuarded, i)
+		}
+	}
+
+	if len(nonGuarded) == 0 {
+		return map[int]string{}, nil
+	}
+
+	signResp, err := e.RequestGroupSignWithContext(ctx, signRequests)
+	if err != nil {
+		return nil, fmt.Errorf("signing non-guarded group positions failed: %w", err)
+	}
+	if len(signResp.Signed) != len(signRequests) {
+		return nil, fmt.Errorf("signer returned %d signed position(s), want %d", len(signResp.Signed), len(signRequests))
+	}
+
+	signed := make(map[int]string, len(nonGuarded))
+	for _, i := range nonGuarded {
+		if signResp.Signed[i] == "" {
+			return nil, fmt.Errorf("signer returned no signature for non-guarded position %d", i+1)
+		}
+		signed[i] = signResp.Signed[i]
+	}
+	return signed, nil
 }
 
 func (e *Engine) guardedOriginalTargets(txns []types.Transaction) ([]guardedOriginalTarget, error) {
@@ -219,15 +305,25 @@ func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (s
 func (e *Engine) planGuardedGroup(txns []types.Transaction, targets []guardedOriginalTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
 	originalCount := len(txns)
 	planned := append([]types.Transaction(nil), txns...)
-	lsigIndices := make([]int, 0, len(targets))
-	totalLsigBytes := 0
+	guardedIdx := make(map[int]bool, len(targets))
 	for _, target := range targets {
-		size := e.signerCacheLsigSize(target.Account)
-		if size <= 0 {
-			return nil, nil, fmt.Errorf("guarded account %s is missing LogicSig size metadata; run keys refresh", target.Account)
+		guardedIdx[target.Index] = true
+	}
+	// Size LogicSig budget across every LogicSig position, not just guarded
+	// ones: a mixed group can include non-guarded LogicSig senders (e.g. a
+	// plain falcon1024 account) that also consume program-size budget. The
+	// same indices later absorb the dummy fees in ApplyDummyFees.
+	lsigIndices := make([]int, 0, len(planned))
+	totalLsigBytes := 0
+	for i, txn := range planned {
+		size := e.signerCacheLsigSize(txn.Sender.String())
+		if guardedIdx[i] && size <= 0 {
+			return nil, nil, fmt.Errorf("guarded account %s is missing LogicSig size metadata; run keys refresh", txn.Sender.String())
 		}
-		totalLsigBytes += size
-		lsigIndices = append(lsigIndices, target.Index)
+		if size > 0 {
+			totalLsigBytes += size
+			lsigIndices = append(lsigIndices, i)
+		}
 	}
 
 	currentBudget := len(planned) * lsig.TxLsigBudget

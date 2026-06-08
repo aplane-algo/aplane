@@ -174,6 +174,37 @@ func (v *ApAdminHarness) GenerateKeyWithType(keyType string) (string, error) {
 	return "", fmt.Errorf("could not find generated address in output: %s", output)
 }
 
+// GenerateKeyWithTypeAndParams generates a key of the specified type with
+// creation parameters over the admin IPC protocol. This is required for key
+// types that need generation inputs, such as a guarded account that embeds a
+// sentry_public_key. Returns the generated address and tracks it for cleanup.
+func (v *ApAdminHarness) GenerateKeyWithTypeAndParams(keyType string, params map[string]string) (string, error) {
+	response, err := v.ipcRequest(protocol.GenerateKeyMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeGenerateKey,
+			ID:   fmt.Sprintf("generate-%d", time.Now().UnixNano()),
+		},
+		KeyType:    keyType,
+		Parameters: params,
+	}, 30*time.Second)
+	if err != nil {
+		return "", err
+	}
+
+	var result protocol.GenerateResultMessage
+	if err := json.Unmarshal(response, &result); err != nil {
+		return "", fmt.Errorf("failed to parse generate result: %w", err)
+	}
+	if !result.Success {
+		return "", fmt.Errorf("generate %s failed: %s", keyType, result.Error)
+	}
+	if result.Address == "" {
+		return "", fmt.Errorf("generate %s succeeded but returned an empty address", keyType)
+	}
+	v.createdKeys = append(v.createdKeys, result.Address)
+	return result.Address, nil
+}
+
 // ImportKey imports a key from mnemonic using apadmin test mode
 func (v *ApAdminHarness) ImportKey(mnemonic string) (string, error) {
 	return v.ImportKeyWithType("ed25519", mnemonic)

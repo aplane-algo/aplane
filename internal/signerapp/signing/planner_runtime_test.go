@@ -392,6 +392,63 @@ func TestCalculateDummies_PreGroupedImmutability(t *testing.T) {
 	}
 }
 
+// TestCalculateDummies_PreGroupedMixedForeignAndSign pins the server-side
+// assumption behind mixed guarded groups (Strategy A): a pre-grouped group whose
+// non-signed positions are foreign with accurate lsig_size hints is accepted
+// without adding dummies when the client already supplied enough budget, and is
+// rejected early when it did not. This is the path apshell exercises for a group
+// that mixes a guarded sender with an ordinary signer-managed sender.
+func TestCalculateDummies_PreGroupedMixedForeignAndSign(t *testing.T) {
+	const falconAddr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	preGroupID := types.Digest{1, 2, 3}
+
+	// Index 0: non-guarded falcon signed by this signer (1500 bytes).
+	// Index 1: guarded account, foreign with an honest 1500-byte hint.
+	deps := stubPlannerDeps{
+		keyTypes:  map[string]string{falconAddr: "aplane.falcon1024.v1"},
+		lsigSizes: map[string]int{falconAddr: 1500},
+	}
+
+	t.Run("honest hints with enough dummies add no further dummies", func(t *testing.T) {
+		// 1500 (sign) + 1500 (foreign hint) = 3000 demand; 3 txns * 1000 = 3000
+		// budget after the client added one dummy. Exact parity → 0 dummies.
+		requests := []signerapi.SignRequest{
+			{AuthAddress: falconAddr, TxnBytesHex: "deadbeef"},
+			{TxnBytesHex: "deadbeef", LsigSize: 1500},
+			{TxnBytesHex: "deadbeef"},
+		}
+		txns := []types.Transaction{makePlannerTxn(preGroupID), makePlannerTxn(preGroupID), makePlannerTxn(preGroupID)}
+		foreign := map[int]bool{1: true, 2: true}
+
+		dummies, _, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, map[int]bool{}, foreign, false, true)
+		if err != nil {
+			t.Fatalf("calculateDummies() error = %v, want accepted", err)
+		}
+		if dummies != 0 {
+			t.Fatalf("dummies = %d, want 0 (pre-grouped budget already satisfied)", dummies)
+		}
+	})
+
+	t.Run("honest hints without enough dummies are rejected early", func(t *testing.T) {
+		// 3000 demand but only 2 txns * 1000 = 2000 budget (client under-sized) →
+		// the signer rejects at sign time rather than mis-signing.
+		requests := []signerapi.SignRequest{
+			{AuthAddress: falconAddr, TxnBytesHex: "deadbeef"},
+			{TxnBytesHex: "deadbeef", LsigSize: 1500},
+		}
+		txns := []types.Transaction{makePlannerTxn(preGroupID), makePlannerTxn(preGroupID)}
+		foreign := map[int]bool{1: true}
+
+		_, _, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, map[int]bool{}, foreign, false, true)
+		if err == nil {
+			t.Fatal("calculateDummies() error = nil, want pre-grouped budget rejection")
+		}
+		if !strings.Contains(err.Error(), "pre-grouped") {
+			t.Fatalf("calculateDummies() error = %q, want pre-grouped rejection", err.Error())
+		}
+	})
+}
+
 func TestCalculateDummiesRejectsNegativeForeignLSigSize(t *testing.T) {
 	const authAddr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
