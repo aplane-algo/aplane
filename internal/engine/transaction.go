@@ -96,10 +96,53 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts signing.Submi
 	if e.AlgodClient == nil {
 		return nil, nil, ErrNoAlgodClient
 	}
+	if err := e.refreshSubmitSigningState(opts.Ctx, txns); err != nil {
+		return nil, nil, err
+	}
 	if e.hasGuardedEffectiveSigner(txns) {
 		return e.signAndSubmitGuardedGroup(txns, opts)
 	}
 	return e.Connection.SignAndSubmitGroup(txns, &e.AuthCache, e.AlgodClient, opts)
+}
+
+func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Transaction) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	seenSenders := make(map[string]struct{}, len(txns))
+	for _, txn := range txns {
+		sender := txn.Sender.String()
+		if _, ok := seenSenders[sender]; ok {
+			continue
+		}
+		seenSenders[sender] = struct{}{}
+		if _, err := e.RefreshAuthAddressWithContext(ctx, sender); err != nil {
+			return fmt.Errorf("failed to refresh auth address for %s: %w", sender, err)
+		}
+	}
+
+	if !e.submitEffectiveSignersNeedKeyRefresh(txns) {
+		return nil
+	}
+	if _, err := e.RefreshKeysWithContext(ctx); err != nil {
+		return fmt.Errorf("failed to refresh signer keys: %w", err)
+	}
+	return nil
+}
+
+func (e *Engine) submitEffectiveSignersNeedKeyRefresh(txns []types.Transaction) bool {
+	seenSigners := make(map[string]struct{}, len(txns))
+	for _, txn := range txns {
+		effectiveSigner := e.AuthCache.ResolveEffectiveSigner(txn.Sender.String())
+		if _, ok := seenSigners[effectiveSigner]; ok {
+			continue
+		}
+		seenSigners[effectiveSigner] = struct{}{}
+		if e.signerCacheKeyType(effectiveSigner) == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // SignAndSubmitWithContext signs and submits a prepared transaction using the

@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
@@ -84,6 +85,76 @@ func TestGuardedTargetsUseEffectiveSigner(t *testing.T) {
 	}
 	if targets[0].SentryPublicKey != sentryHex {
 		t.Fatalf("sentry public key = %q, want %q", targets[0].SentryPublicKey, sentryHex)
+	}
+}
+
+func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
+	sender := testAddress(1).String()
+	guarded := testAddress(3).String()
+	sentryHex := testSentryPublicKeyHex(0xd6)
+
+	transport := newAccountMockTransport(t)
+	transport.addAccountFull(models.Account{
+		Address:    sender,
+		Amount:     1_000_000,
+		MinBalance: 100_000,
+		AuthAddr:   guarded,
+		Status:     "Offline",
+	})
+	transport.addAccount(guarded, 1_000_000)
+
+	staleSignerCache := cache.NewSignerCache()
+	staleSignerCache.AddAddress(sender, "ed25519")
+	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, staleSignerCache, func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodGet || req.URL.Path != "/keys" {
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
+			Count: 2,
+			Keys: []signerapi.KeyInfo{{
+				Address: sender,
+				KeyType: "ed25519",
+			}, {
+				Address:  guarded,
+				KeyType:  keytypes.GuardedFalcon1024SentryEd25519V1,
+				LsigSize: 1500,
+				Parameters: map[string]string{
+					keytypes.ParameterSentryPublicKey: sentryHex,
+				},
+			}},
+		}, req), nil
+	})
+	eng.AlgodClient = newAccountMockAlgodClient(t, transport)
+	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
+	eng.AuthCache.AuthAddresses[sender] = ""
+
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded-authorizer", nil).Transaction
+	if eng.hasGuardedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasGuardedEffectiveSigner() before refresh = true, want false with stale caches")
+	}
+
+	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
+		t.Fatalf("refreshSubmitSigningState() error = %v", err)
+	}
+
+	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != guarded {
+		t.Fatalf("auth cache for sender = %q/%v, want %s/true", auth, ok, guarded)
+	}
+	if got := eng.signerCacheKeyType(guarded); got != keytypes.GuardedFalcon1024SentryEd25519V1 {
+		t.Fatalf("signer cache key type for guarded authorizer = %q, want guarded", got)
+	}
+	if got, ok := eng.signerCacheSentryPublicKey(guarded); !ok || got != sentryHex {
+		t.Fatalf("sentry public key for guarded authorizer = %q/%v, want %s/true", got, ok, sentryHex)
+	}
+	if !eng.hasGuardedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
+	}
+	targets, err := eng.guardedTargets([]types.Transaction{txn})
+	if err != nil {
+		t.Fatalf("guardedTargets() error = %v", err)
+	}
+	if len(targets) != 1 || targets[0].Sender != sender || targets[0].Account != guarded {
+		t.Fatalf("guardedTargets() = %+v, want sender %s account %s", targets, sender, guarded)
 	}
 }
 
