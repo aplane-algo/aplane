@@ -136,7 +136,7 @@ DTOs and contract fixtures.
 | Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
 | Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Signing key | Signer identity | `identities/<identity>/keys/*.key` | address/selector -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
-| Sentry public sidecar | Signer identity | `identities/<identity>/keys/<component_selector>.public.json` | public component-key export metadata | `apstore sentry export-public` | `internal/keys`, `internal/sentry/sentryrefs` |
+| Sentry public sidecar | Signer identity | `identities/<identity>/keys/<component_selector>.public.json` | public component-key export metadata | `apstore sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
 | Public sentry reference | Signer identity | `identities/<identity>/sentries/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` |
 | Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |

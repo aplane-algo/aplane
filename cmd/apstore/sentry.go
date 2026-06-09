@@ -15,14 +15,14 @@ import (
 
 func cmdSentry(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: apstore sentry <export-public|import-public|list|show|remove>")
+		return fmt.Errorf("usage: apstore sentry <export|import|list|show|remove>")
 	}
 	switch args[0] {
-	case "export-public":
-		return cmdSentryExportPublic(args[1:])
-	case "import-public":
+	case "export":
+		return cmdSentryExport(args[1:])
+	case "import":
 		if len(args) != 3 {
-			return fmt.Errorf("usage: apstore sentry import-public <export-json> <name>")
+			return fmt.Errorf("usage: apstore sentry import <export-json> <name>")
 		}
 		return cmdSentryImport(args[1], args[2])
 	case "list":
@@ -41,13 +41,13 @@ func cmdSentry(args []string) error {
 		}
 		return cmdSentryRemove(args[1])
 	default:
-		return fmt.Errorf("usage: apstore sentry <export-public|import-public|list|show|remove>")
+		return fmt.Errorf("usage: apstore sentry <export|import|list|show|remove>")
 	}
 }
 
-func cmdSentryExportPublic(args []string) error {
+func cmdSentryExport(args []string) error {
 	if len(args) < 1 || len(args) > 2 {
-		return fmt.Errorf("usage: apstore sentry export-public <component-key> [output-json]")
+		return fmt.Errorf("usage: apstore sentry export <component-key> [output-json]")
 	}
 	componentKey, err := keytypes.NormalizeComponentKeySelector(args[0])
 	if err != nil {

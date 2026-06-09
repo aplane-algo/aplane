@@ -548,7 +548,7 @@ Additional client-state notes:
 - `published_sentries` is keyed by canonical embedded sentry public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime guarded-send routing derives the endpoint for an embedded sentry public key from this endpoint-local inventory.
 - signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apstore endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`.
 - `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<configured-ssh-port>`, then signer `config.yaml` `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes the configured signer REST port unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
-- `apshell endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
+- `apshell endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]` manually creates or replaces a `role: sentry` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--sentryport` is stored as the endpoint `signer_port` REST port used behind SSH sentry endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover sentry keys, copy tokens, or establish SSH host trust.
 - `apshell endpoints sync-sentries [--dry-run] [--yes]` scans configured `sentry` endpoints with authenticated `/keys`, extracts sentry component-key `public_key_hex` values, validates each `component_key`, and atomically rebuilds endpoint-local `published_sentries` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_sentries` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and component-key validation failures are hard errors and leave files unchanged. After discovery, the command prints Sentry Key IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public sentry reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered sentries selectable from signer-side key generation clients such as `apadmin`.
 - `apshell endpoints sentries` lists the local endpoint-discovered sentry inventory by endpoint alias, Sentry Key ID, and key type without calling remote endpoints.
@@ -902,7 +902,7 @@ be reported while still listing keys that scanned successfully.
 
 #### Sentry Public Key Export Envelope
 
-`apstore sentry export-public <component-key> [output-json]` emits a public-only
+`apstore sentry export <component-key> [output-json]` emits a public-only
 JSON envelope for a sentry component key. The command reads the
 `keys/<component-key>.public.json` sidecar, verifies that `<component-key>`
 equals the canonical selector derived from the public key, and never reads or
@@ -936,7 +936,7 @@ trust claim.
 
 #### Sentry Public Key Reference Library
 
-`apstore sentry import-public <export-json> <name>` imports an
+`apstore sentry import <export-json> <name>` imports an
 `aplane.sentry-public-key.v1` envelope into the target identity's public
 sentry reference library:
 
@@ -971,15 +971,16 @@ Endpoint discovery may also populate this catalog through
 
 The library is a generation convenience and trust-input inventory for the user
 signer. When generating a guarded account, callers may provide
-`sentry=<name>` instead of `sentry_public_key=<hex>`. The signer resolves
-the name to `public_key_hex`, verifies that the reference key type matches the
-guarded-account key type's required sentry component key type, rejects
-requests that provide both forms, and persists only the resolved
+`sentry=<component_key>` instead of `sentry_public_key=<hex>`. For compatibility
+with older scripts, `sentry=<name>` is also accepted. The signer resolves the
+component key or name to `public_key_hex`, verifies that the reference key type
+matches the guarded-account key type's required sentry component key type,
+rejects requests that provide both forms, and persists only the resolved
 `sentry_public_key` in the key file.
 
 Identity-scoped `/keytypes` metadata may expose imported references as a
 creation parameter named `sentry` with `type:"select"` and `options[]`
-containing reference names whose component key type matches the guarded
+containing component-key selectors whose component key type matches the guarded
 account key type. This is UI metadata for generation clients such as `apadmin`;
 the durable key file still stores the resolved `sentry_public_key`.
 

@@ -293,14 +293,21 @@ func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeI
 		return
 	}
 
-	namesByComponentType := make(map[string][]string)
+	componentIDsByComponentType := make(map[string]map[string]struct{})
 	for _, ref := range refs {
-		namesByComponentType[ref.KeyType] = append(namesByComponentType[ref.KeyType], ref.Name)
+		if componentIDsByComponentType[ref.KeyType] == nil {
+			componentIDsByComponentType[ref.KeyType] = make(map[string]struct{})
+		}
+		componentIDsByComponentType[ref.KeyType][ref.ComponentKey] = struct{}{}
 	}
-	for componentType := range namesByComponentType {
-		names := namesByComponentType[componentType]
-		sort.Strings(names)
-		namesByComponentType[componentType] = names
+	componentIDsByType := make(map[string][]string, len(componentIDsByComponentType))
+	for componentType, componentIDs := range componentIDsByComponentType {
+		ids := make([]string, 0, len(componentIDs))
+		for id := range componentIDs {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		componentIDsByType[componentType] = ids
 	}
 
 	for i := range infos {
@@ -308,18 +315,18 @@ func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeI
 		if !ok {
 			continue
 		}
-		names := namesByComponentType[componentType]
-		if len(names) == 0 {
+		componentIDs := componentIDsByType[componentType]
+		if len(componentIDs) == 0 {
 			continue
 		}
 		infos[i].CreationParams = []signerapi.CreationParamInfo{{
 			Name:        sentryrefs.ParamSentryName,
-			Label:       "Sentry",
-			Description: "Imported sentry public-key reference to embed in the guarded account",
+			Label:       "Sentry component ID",
+			Description: "Imported sentry component ID to embed in the guarded account",
 			Type:        "select",
 			Required:    true,
-			Options:     append([]string(nil), names...),
-			Default:     names[0],
+			Options:     append([]string(nil), componentIDs...),
+			Default:     componentIDs[0],
 		}}
 	}
 }

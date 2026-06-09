@@ -68,7 +68,7 @@ func (r *REPLState) cmdRequestToken(args []string, _ interface{}) error {
 
 func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints sentries | endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run] | endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json> | endpoints sync-sentries [--dry-run] [--yes] | endpoints default <alias> | endpoints delete <alias>")
+		return fmt.Errorf("usage: endpoints list | endpoints show <alias> | endpoints sentries | endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run] | endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json> | endpoints sync-sentries [--dry-run] [--yes] | endpoints default <alias> | endpoints delete <alias>")
 	}
 	switch args[0] {
 	case "list":
@@ -123,7 +123,7 @@ func (r *REPLState) cmdEndpoints(args []string, _ interface{}) error {
 			r.printf("Run 'request-token --endpoint %s' before using this endpoint.\n", result.Alias)
 		}
 		return nil
-	case "import", "import-public":
+	case "import":
 		req, err := parseEndpointImportArgs(args[1:])
 		if err != nil {
 			return err
@@ -256,7 +256,7 @@ func (r *REPLState) cmdConfig(_ []string, _ interface{}) error {
 
 func parseEndpointImportArgs(args []string) (apshellapp.EndpointImportRequest, error) {
 	var req apshellapp.EndpointImportRequest
-	const usage = "usage: endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>"
+	const usage = "usage: endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>"
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {

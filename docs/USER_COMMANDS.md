@@ -612,13 +612,13 @@ endpoints list
 endpoints show <alias>
 endpoints sentries
 endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]
-endpoints import-public --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>
+endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>
 endpoints sync-sentries [--dry-run] [--yes]
 endpoints default <alias>
 endpoints delete <alias>
 ```
 
-`endpoints import-public` reads a public `aplane.endpoint.v1` envelope produced by
+`endpoints import` reads a public `aplane.endpoint.v1` envelope produced by
 `apstore endpoint export`. Import writes local endpoint routing only:
 `endpoints.yaml`. Use `role: signer` for the one primary client signer endpoint
 and `role: sentry` for sentry endpoints. Import does not copy tokens or SSH
@@ -647,9 +647,9 @@ endpoint alias, Sentry Key ID, and key type without calling remote endpoints.
 
 **Examples:**
 ```
-endpoints import-public --alias main --role signer signer.endpoint.json
-endpoints import-public --alias local-sentry --role sentry sentry.endpoint.json
-endpoints import-public --alias main --role signer --dry-run signer.endpoint.json
+endpoints import --alias main --role signer signer.endpoint.json
+endpoints import --alias local-sentry --role sentry sentry.endpoint.json
+endpoints import --alias main --role signer --dry-run signer.endpoint.json
 endpoints create --alias local-sentry --endpoint ssh://127.0.0.1:2223 --sentryport 12270
 request-token --endpoint main
 request-token --endpoint local-sentry

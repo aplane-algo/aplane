@@ -409,7 +409,7 @@ or more `sentry` endpoints. Endpoint records carry URL, SSH tunnel ports,
 identity file, `known_hosts`, token file, and endpoint-published sentry
 inventory. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
 handoff envelope used by `apstore endpoint export` and
-`apshell endpoints import-public`.
+`apshell endpoints import`.
 
 `internal/config.Config` still has compatibility fields named
 `LegacySignerPort` and `LegacySSH` with YAML tags `signer_port` and `ssh`, but
@@ -1184,7 +1184,7 @@ Operator handoff and manual endpoint setup use two paths:
   (`--url` or `--host`) or the operator-declared signer
   `config.yaml` value `endpoint.advertise_url`; it is not inferred from the
   SSH listener bind address.
-- `apshell endpoints import-public --alias <name> --role signer|sentry`
+- `apshell endpoints import --alias <name> --role signer|sentry`
   writes client-local endpoint routing.
 - `apshell endpoints create --alias <name> --endpoint <url> --sentryport
   <port>` writes a manual sentry endpoint profile when no exported endpoint

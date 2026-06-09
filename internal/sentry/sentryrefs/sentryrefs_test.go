@@ -80,6 +80,10 @@ func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(32, 0xab)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
 	if _, err := Import(paths, "default", "lab-sentry", testExportJSON(t, keytypes.SentryComponentEd25519V1, pub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
@@ -95,6 +99,16 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 	}
 	if _, ok := resolved[ParamSentryName]; ok {
 		t.Fatalf("resolved params still contain %s: %#v", ParamSentryName, resolved)
+	}
+
+	resolved, err = ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
+		ParamSentryName: componentKey,
+	})
+	if err != nil {
+		t.Fatalf("ResolveCreationParams(component key) error = %v", err)
+	}
+	if got := resolved[keytypes.ParameterSentryPublicKey]; got != strings.Repeat("ab", 32) {
+		t.Fatalf("component-key sentry_public_key = %q, want imported public key", got)
 	}
 }
 

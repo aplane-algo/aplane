@@ -14,15 +14,15 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 )
 
-func TestCmdSentryImportPublicListShowRemove(t *testing.T) {
+func TestCmdSentryImportListShowRemove(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
 		exportPath := filepath.Join(t.TempDir(), "sentry-public.json")
 		if err := os.WriteFile(exportPath, testSentryExportJSON(t), 0o600); err != nil {
 			t.Fatalf("WriteFile(export) error = %v", err)
 		}
 
-		if err := cmdSentry([]string{"import-public", exportPath, "Lab-Sentry"}); err != nil {
-			t.Fatalf("cmdSentry(import-public) error = %v", err)
+		if err := cmdSentry([]string{"import", exportPath, "Lab-Sentry"}); err != nil {
+			t.Fatalf("cmdSentry(import) error = %v", err)
 		}
 
 		listOut, err := withCapturedStdout(func() error {

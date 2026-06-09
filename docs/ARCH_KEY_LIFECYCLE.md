@@ -72,7 +72,7 @@ This separation is deliberate:
 | Backup payload | `.apb` inside managed backup archive | Encrypted backup unit containing a key and optional bundled template provenance. |
 
 Component public sidecars are derived public metadata, not independent signing
-authority. They exist so `apstore sentry export-public` can work without
+authority. They exist so `apstore sentry export` can work without
 decrypting private key material. Backup payloads do not need to carry the
 sidecar as a separate authority; restore flows that write sentry component
 keys must regenerate the sidecar from the restored component key payload.

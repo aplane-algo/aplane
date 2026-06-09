@@ -331,19 +331,19 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 	if !keytypes.IsGuardedAccountKeyType(keyType) {
 		return params, nil
 	}
-	name, hasName := params[ParamSentryName]
-	if !hasName || strings.TrimSpace(name) == "" {
+	selector, hasSelector := params[ParamSentryName]
+	if !hasSelector || strings.TrimSpace(selector) == "" {
 		return params, nil
 	}
 	if _, hasPublicKey := params[keytypes.ParameterSentryPublicKey]; hasPublicKey {
 		return nil, fmt.Errorf("specify either %s or %s, not both", ParamSentryName, keytypes.ParameterSentryPublicKey)
 	}
-	rec, ok, err := Get(paths, identityID, name)
+	rec, ok, err := resolveByNameOrComponentKey(paths, identityID, selector)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("sentry reference %q not found", strings.TrimSpace(name))
+		return nil, fmt.Errorf("sentry reference or component ID %q not found", strings.TrimSpace(selector))
 	}
 	wantKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 	if !ok {
@@ -362,6 +362,23 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 	}
 	resolved[keytypes.ParameterSentryPublicKey] = rec.PublicKeyHex
 	return resolved, nil
+}
+
+func resolveByNameOrComponentKey(paths storepaths.Paths, identityID, value string) (Record, bool, error) {
+	value = strings.TrimSpace(value)
+	if componentKey, err := keytypes.NormalizeComponentKeySelector(value); err == nil {
+		records, err := List(paths, identityID)
+		if err != nil {
+			return Record{}, false, err
+		}
+		for _, rec := range records {
+			if rec.ComponentKey == componentKey {
+				return rec, true, nil
+			}
+		}
+		return Record{}, false, nil
+	}
+	return Get(paths, identityID, value)
 }
 
 func normalizeExportEnvelope(env ExportEnvelope) (ExportEnvelope, error) {

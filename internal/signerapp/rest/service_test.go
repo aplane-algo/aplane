@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -727,8 +726,11 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	if params[0].Name != sentryrefs.ParamSentryName || params[0].Type != "select" {
 		t.Fatalf("sentry param = %#v, want select sentry", params[0])
 	}
-	if !reflect.DeepEqual(params[0].Options, []string{"lab-sentry"}) || params[0].Default != "lab-sentry" {
-		t.Fatalf("sentry options/default = %#v/%q, want lab-sentry", params[0].Options, params[0].Default)
+	if params[0].Label != "Sentry component ID" {
+		t.Fatalf("sentry label = %q, want component ID label", params[0].Label)
+	}
+	if len(params[0].Options) != 1 || params[0].Options[0] != componentKey || params[0].Default != componentKey {
+		t.Fatalf("sentry options/default = %#v/%q, want component ID %s", params[0].Options, params[0].Default, componentKey)
 	}
 }
 

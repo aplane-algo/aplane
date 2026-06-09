@@ -177,7 +177,7 @@ export APCLIENT_DATA=/custom/path
   signer settings in `config.yaml` are not supported by `apshell` or the
   apconsole shell pane; create a fresh apclient data directory or write signer
   routing in `endpoints.yaml`.
-- Edit `endpoints.yaml` or use `endpoints import-public` to change signer
+- Edit `endpoints.yaml` or use `endpoints import` to change signer
   endpoint routing
 
 ### Connect Command Behavior
@@ -203,7 +203,7 @@ apstore -d "$APSIGNER_DATA" endpoint export \
   --out signer.endpoint.json
 
 # client side, inside apshell
-endpoints import-public --alias main --role signer signer.endpoint.json
+endpoints import --alias main --role signer signer.endpoint.json
 endpoints show main
 request-token --endpoint main
 connect main
@@ -269,7 +269,7 @@ Useful local commands:
 ```bash
 endpoints list
 endpoints show main
-endpoints import-public --alias main --role signer --dry-run signer.endpoint.json
+endpoints import --alias main --role signer --dry-run signer.endpoint.json
 endpoints create --alias local-sentry --endpoint ssh://127.0.0.1:2223 --sentryport 12270
 endpoints default main
 endpoints delete old-signer
