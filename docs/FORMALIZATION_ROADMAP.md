@@ -27,7 +27,7 @@ Primary sources for the first tranche:
   alignment, status behavior, and `/sign/cancel`.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): compatibility-bearing policy,
   lifecycle, reload, key-file, SDK, and backup/restore contracts.
-- [ARCH_SPEC.md#guarded-signing-and-sentry-nodes](ARCH_SPEC.md#guarded-signing-and-sentry-nodes):
+- [ARCH_SENTRY.md](ARCH_SENTRY.md):
   guarded-account component signing, sentry endpoint routing, assembly
   verification, and node role separation.
 - [ARCH_POLICY.md](ARCH_POLICY.md): current signer policy verdict model,

@@ -354,5 +354,5 @@ name a test inline:
   catalog.
 - [ARCH_POLICY.md](ARCH_POLICY.md): policy verdict and routing semantics.
 - [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md): stable action/resource model.
-- [ARCH_SPEC.md#guarded-signing-and-sentry-nodes](ARCH_SPEC.md#guarded-signing-and-sentry-nodes):
-  guarded signing and sentry node architecture.
+- [ARCH_SENTRY.md](ARCH_SENTRY.md): guarded signing and sentry node
+  architecture.

@@ -11,6 +11,7 @@ Before making architectural, protocol, storage, or refactor-sensitive changes, r
 - `docs/ARCH_AUTHORIZATION.md`: principal/group/grant authorization model, stable actions, bootstrap product authorization, and enforcement points
 - `docs/ARCH_POLICY.md`: current signer policy verdict model, phase ordering, and rule inventory
 - `docs/ARCH_NETWORKS.md`: network context tokens, genesis-hash mapping, and network-scoped policy behavior
+- `docs/ARCH_SENTRY.md`: guarded signing and sentry node architecture, component keys, endpoint routing, and assembly invariants
 
 Before generating or modifying key types or LogicSig templates, also read:
 
@@ -304,6 +305,7 @@ See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility detai
 - `ARCH_AUTHORIZATION.md`: Principal/group/grant authorization architecture
 - `ARCH_POLICY.md`: Current signer policy verdict model and rule inventory
 - `ARCH_NETWORKS.md`: Network context token and genesis-hash mapping architecture
+- `ARCH_SENTRY.md`: Guarded signing and sentry node architecture
 - `ARCH_APP_INTERACTION.md`: App interaction, app-local vs signer-managed action boundaries, and token/caller model
 - `ARCH_COOPERATIVE_SIGNING.md`: Cooperative signing and split-authorization architecture
 - `ARCH_LSIG_PROVIDER.md`: LogicSig provider, template, salting, and registration architecture

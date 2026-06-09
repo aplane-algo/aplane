@@ -11,7 +11,7 @@
 
 Normative inputs:
 
-- [ARCH_SPEC.md#guarded-signing-and-sentry-nodes](ARCH_SPEC.md#guarded-signing-and-sentry-nodes):
+- [ARCH_SENTRY.md](ARCH_SENTRY.md):
   sentry component key types, guarded account key types, endpoint workflow,
   role-separated messages, assembly semantics, and endpoint routing trust
   model.
@@ -27,8 +27,7 @@ Normative inputs:
 - [FORMAL_SIGNING_AUTHORITY_MODEL.md](FORMAL_SIGNING_AUTHORITY_MODEL.md):
   stored key-file authority for existing keys.
 
-This model does not replace
-[ARCH_SPEC.md#guarded-signing-and-sentry-nodes](ARCH_SPEC.md#guarded-signing-and-sentry-nodes).
+This model does not replace [ARCH_SENTRY.md](ARCH_SENTRY.md).
 It extracts the state, transition, and invariant surface that should remain
 stable as the implementation evolves.
 

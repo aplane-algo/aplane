@@ -386,6 +386,7 @@ See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for headless configurati
 - [ARCH_MCP.md](ARCH_MCP.md) - apshell MCP server and tool surface
 - [ARCH_TUI.md](ARCH_TUI.md) - signer admin TUI (apadmin)
 - [ARCH_ENGINE.md](ARCH_ENGINE.md) - Engine layer details
+- [ARCH_SENTRY.md](ARCH_SENTRY.md) - Guarded signing and sentry node architecture
 - [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) - Transaction signing flow details
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md) - Provider layer details (DSA algorithms)
 - [DEV_KEYTYPES.md](DEV_KEYTYPES.md) - key type and LogicSig template development guide

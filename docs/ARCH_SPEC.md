@@ -7,6 +7,7 @@
 > For the principal/group/grant authorization model, see [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md).
 > For the current signer policy verdict model, see [ARCH_POLICY.md](ARCH_POLICY.md).
 > For network context tokens and transaction genesis-hash mapping, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
+> For guarded signing and sentry node architecture, see [ARCH_SENTRY.md](ARCH_SENTRY.md).
 
 ## Table of Contents
 
@@ -103,6 +104,11 @@ Read [ARCH_NETWORKS.md](ARCH_NETWORKS.md) before changing network handling:
 Read [ARCH_APP_INTERACTION.md](ARCH_APP_INTERACTION.md) before changing app
 read/call/deploy behavior, ABI handling, `PreparedGroup`, or signer approval
 metadata for app calls.
+
+Read [ARCH_SENTRY.md](ARCH_SENTRY.md) before changing sentry node behavior,
+guarded account generation, sentry component keys, guarded transaction
+orchestration, endpoint-discovered sentries, or `/sign/component` /
+`/sign/assemble` behavior.
 
 Read [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md) and the applicable
 `FORMAL_*_MODEL.md` document before changing behavior that has formalized
@@ -1017,6 +1023,10 @@ Canonicalization rules live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). HTTP requ
 See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Key Files / Signing Authority) for the signing authority contract.
 
 ## Guarded Signing And Sentry Nodes
+
+This section is the system-map summary. The detailed subsystem architecture,
+trust boundaries, guarded authorizer semantics, endpoint routing model, and
+implementation map live in [ARCH_SENTRY.md](ARCH_SENTRY.md).
 
 Guarded signing is APlane's two-party LogicSig authorization path for
 accounts whose LogicSig bytecode requires both:

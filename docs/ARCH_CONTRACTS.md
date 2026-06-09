@@ -5,6 +5,7 @@
 > For key and key type lifecycle state machines, see [ARCH_KEY_LIFECYCLE.md](ARCH_KEY_LIFECYCLE.md).
 > For the explanatory network context model, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
 > For the current signer policy verdict model, see [ARCH_POLICY.md](ARCH_POLICY.md).
+> For guarded signing and sentry node architecture, see [ARCH_SENTRY.md](ARCH_SENTRY.md).
 > Load this document when working on a specific subsystem, not as general pre-reading.
 
 ## Contents

@@ -170,6 +170,7 @@ All documentation is in the [`docs/`](docs/) directory.
 - [ARCH_TUI.md](docs/ARCH_TUI.md) - signer admin TUI (apadmin)
 - [ARCH_PLUGINS.md](docs/ARCH_PLUGINS.md) - External plugin system
 - [ARCH_APP_INTERACTION.md](docs/ARCH_APP_INTERACTION.md) - Application interaction (read state, call contracts, deploy)
+- [ARCH_SENTRY.md](docs/ARCH_SENTRY.md) - Guarded signing and sentry node architecture
 - [ARCH_TXNFLOW.md](docs/ARCH_TXNFLOW.md) - Transaction signing flow details
 
 ### Specification

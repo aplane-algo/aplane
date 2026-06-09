@@ -849,7 +849,7 @@ generation availability, provenance, and policy editing behavior.
 | Client endpoint registry | `internal/config/client_endpoints.go`, `internal/config/client_endpoint_writes.go` |
 | Identity runtime/config | `internal/signerapp/identity` |
 | Keystore and key files | `internal/crypto`, `internal/keystore`, `internal/keys` |
-| Sentry key types/messages/references | `internal/sentry`, `pkg/signerapi/sentry.go`, [ARCH_SPEC.md#guarded-signing-and-sentry-nodes](ARCH_SPEC.md#guarded-signing-and-sentry-nodes) |
+| Sentry key types/messages/references | `internal/sentry`, `pkg/signerapi/sentry.go`, [ARCH_SENTRY.md](ARCH_SENTRY.md) |
 | Key type state/catalog | `internal/keytypestate`, `internal/keytypecatalog` |
 | Template library/store | `internal/templatelibrary`, `internal/templatestore`, `internal/signerapp/templates` |
 | Signing flow | `internal/signerapp/signing`, [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) |
