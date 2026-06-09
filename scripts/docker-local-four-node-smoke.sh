@@ -823,6 +823,57 @@ validate_guarded_self_send() {
         || die "guarded validation output did not include success marker"
 }
 
+delete_sentry_component_key() {
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "sentry component key is not set"
+
+    local sentry_ssh_port sentry_port
+    sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
+    sentry_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" signer_port)"
+    [ -n "$sentry_ssh_port" ] && [ -n "$sentry_port" ] || die "could not read sentry endpoint ports"
+
+    local out
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -e
+        token=\$(cat /home/$TEST_USER/aplane/apclient/tokens/local-sentry.token)
+        control=/tmp/delete-sentry-key-ssh.ctl
+        local_port=48321
+        rm -f \"\$control\"
+        ssh -M -S \"\$control\" -f -N \
+            -o ExitOnForwardFailure=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=/home/$TEST_USER/aplane/apclient/.ssh/known_hosts \
+            -i /home/$TEST_USER/aplane/apclient/.ssh/id_ed25519 \
+            -p '$sentry_ssh_port' \
+            -L 127.0.0.1:\$local_port:127.0.0.1:$sentry_port \
+            -l \"\$token\" sentry
+        trap 'ssh -S /tmp/delete-sentry-key-ssh.ctl -O exit -p $sentry_ssh_port -l \"\$token\" sentry >/dev/null 2>&1 || true; rm -f /tmp/delete-sentry-key-ssh.ctl' EXIT
+        curl -fsS -X DELETE \
+            -H \"Authorization: aplane \$token\" \
+            \"http://127.0.0.1:\$local_port/admin/keys?address=$SENTRY_COMPONENT_KEY\" 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to delete sentry component key through sentry admin API"
+    fi
+    printf '%s\n' "$out"
+    printf '%s\n' "$out" | grep -q '"success":true' \
+        || die "sentry component key deletion output did not include success marker"
+}
+
+validate_guarded_self_send_after_sentry_delete_fails() {
+    [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nvalidate %s\n' '$GUARDED_ADDRESS' > /tmp/validate-guarded-missing-sentry.script"
+    local out
+    out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/validate-guarded-missing-sentry.script 2>&1" || true)"
+    printf '%s\n' "$out"
+    if printf '%s\n' "$out" | grep -q 'Validated successfully'; then
+        die "guarded validation unexpectedly included success marker after sentry key deletion"
+    fi
+    printf '%s\n' "$out" | grep -q 'Failed:' \
+        || die "guarded validation did not report a failed transaction after sentry key deletion"
+    printf '%s\n' "$out" | grep -q 'did not advertise sentry component public key' \
+        || die "guarded validation failure did not report missing sentry component key"
+}
+
 verify_signer_reachable() {
     docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'status' > /tmp/status.script"
     local out
@@ -957,6 +1008,12 @@ main() {
 
     log "Verifying apadmin is present on client/admin node"
     verify_client_admin_node
+
+    log "Deleting sentry component key from sentry node"
+    delete_sentry_component_key
+
+    log "Verifying guarded validation fails after sentry key deletion"
+    validate_guarded_self_send_after_sentry_delete_fails
 
     log "Shutting down nodes"
     shutdown_nodes
