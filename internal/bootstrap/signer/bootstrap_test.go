@@ -13,7 +13,7 @@ import (
 func TestLoadConfiguresKeystorePathAndTimeout(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	configYAML := []byte("passphrase_timeout: 30m\nsigner_port: 12345\n")
+	configYAML := []byte("passphrase_timeout: 30m\nendpoint:\n  signer_port: 12345\n")
 	if err := os.WriteFile(configPath, configYAML, 0600); err != nil {
 		t.Fatalf("failed to write config: %v", err)
 	}

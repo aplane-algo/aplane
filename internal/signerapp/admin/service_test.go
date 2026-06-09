@@ -228,6 +228,65 @@ func TestServiceDetectPassphraseMethodForIdentityIdentityScopedOverridesGlobal(t
 	}
 }
 
+func TestBuildAdminSettingsEndpointDisplayURL(t *testing.T) {
+	oldDetect := detectPrimaryOutboundIPv4
+	t.Cleanup(func() {
+		detectPrimaryOutboundIPv4 = oldDetect
+	})
+
+	tests := []struct {
+		name          string
+		listenAddress string
+		advertiseURL  string
+		detectedIP    string
+		want          string
+	}{
+		{
+			name:          "configured advertise url wins",
+			listenAddress: "0.0.0.0",
+			advertiseURL:  "ssh://signer.example:1127",
+			detectedIP:    "192.168.1.42",
+			want:          "ssh://signer.example:1127",
+		},
+		{
+			name:          "concrete listen address",
+			listenAddress: "192.0.2.10",
+			want:          "ssh://192.0.2.10:64804",
+		},
+		{
+			name:          "wildcard bind uses detected primary IPv4",
+			listenAddress: "0.0.0.0",
+			detectedIP:    "192.168.1.42",
+			want:          "ssh://192.168.1.42:64804",
+		},
+		{
+			name:          "wildcard bind falls back to loopback",
+			listenAddress: "0.0.0.0",
+			want:          "ssh://127.0.0.1:64804",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			detectPrimaryOutboundIPv4 = func() string {
+				return tt.detectedIP
+			}
+			svc, ir, deps := setupAdminService(t)
+			deps.config.Endpoint.SSH.ListenAddress = tt.listenAddress
+			deps.config.Endpoint.AdvertiseURL = tt.advertiseURL
+			deps.sshInfo = SSHInfo{Enabled: true, Port: 64804}
+
+			settings := svc.BuildAdminSettings(ir)
+			if settings.EndpointAdvertiseURL != tt.advertiseURL {
+				t.Fatalf("EndpointAdvertiseURL = %q, want %q", settings.EndpointAdvertiseURL, tt.advertiseURL)
+			}
+			if settings.EndpointDisplayURL != tt.want {
+				t.Fatalf("EndpointDisplayURL = %q, want %q", settings.EndpointDisplayURL, tt.want)
+			}
+		})
+	}
+}
+
 func TestUpdateAdminSettingUsesExpectedMutationLock(t *testing.T) {
 	t.Run("theme uses process config mutation lock", func(t *testing.T) {
 		svc, ir, deps := setupAdminService(t)
@@ -296,8 +355,8 @@ func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
 			if deps.identityMutationCalls != 0 {
 				t.Fatalf("identityMutationCalls = %d, want 0", deps.identityMutationCalls)
 			}
-			if deps.config.SSH.ListenAddress != apconfig.DefaultSSHListenAddress {
-				t.Fatalf("SSH.ListenAddress = %q, want unchanged default", deps.config.SSH.ListenAddress)
+			if deps.config.Endpoint.SSH.ListenAddress != apconfig.DefaultSSHListenAddress {
+				t.Fatalf("Endpoint.SSH.ListenAddress = %q, want unchanged default", deps.config.Endpoint.SSH.ListenAddress)
 			}
 			if deps.config.Endpoint.AdvertiseURL != "" {
 				t.Fatalf("Endpoint.AdvertiseURL = %q, want unchanged empty", deps.config.Endpoint.AdvertiseURL)

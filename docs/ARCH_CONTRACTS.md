@@ -312,12 +312,20 @@ Validation:
 - every `passphrase_command_argv` element resolves relative to the signer data dir before execution
 - `theme` is the signer-admin UI preference persisted by the admin setting
   update path; it is process-global signer config, not client config
-- `ssh.listen_address` is the SSH listener bind host/address. It defaults to
-  `127.0.0.1` and is deployment-owned `config.yaml` state, not a writable
-  admin setting.
+- `endpoint.signer_port` is the loopback REST API port behind the signer
+  endpoint. It defaults to `11270`.
+- `endpoint.ssh.listen_address` is the SSH listener bind host/address. It
+  defaults to `127.0.0.1` and is deployment-owned `config.yaml` state, not a
+  writable admin setting.
+- `endpoint.ssh.port` is the SSH listener port. It defaults to `1127`.
 - `endpoint.advertise_url` is optional operator-declared endpoint handoff
   routing metadata. It is deployment-owned `config.yaml` state, not a writable
   admin setting, and is not inferred from the SSH bind address.
+- Admin IPC `endpoint_display_url` is display-only metadata derived by
+  apsigner. It equals `endpoint.advertise_url` when configured; otherwise it is
+  derived from the SSH listener. For a wildcard IPv4 bind (`0.0.0.0`), apsigner
+  may use the kernel-selected primary outbound IPv4 address; if no usable
+  address is detected, it falls back to `127.0.0.1`.
 - at startup validation, headless mode rejects `lock_on_disconnect:true`
 - at startup validation, headless mode requires `passphrase_timeout:"0"`
 - `approval_wait` must parse as a positive Go duration between 30 seconds and
@@ -354,9 +362,9 @@ Operational rules:
   transactions require an admin approver
 - process-owned `config.yaml` mutations are serialized by the signer process config mutation lock
 - admin setting writes fail if the loaded process config is stale relative to
-  mutable on-disk process settings such as `signer_port`, `ssh.port`,
-  `passphrase_command_argv`, `passphrase_command_env`, `networks`,
-  `approval_wait`, and `theme`
+  mutable on-disk process settings such as `endpoint.signer_port`,
+  `endpoint.ssh.port`, `passphrase_command_argv`, `passphrase_command_env`,
+  `networks`, `approval_wait`, and `theme`
 - runtime reads that need configuration should use snapshots or narrow accessors rather than holding mutable `ServerConfig` pointers
 - identity-owned settings and policy writes are serialized by the target identity's mutation lock
 - node role is immutable in supported tools; create a separate signer data root
@@ -433,13 +441,16 @@ config/plugin/env files).
 ### Server Listen Contract
 
 - SSH is always enabled at startup using configured or default SSH settings
-- REST binds `127.0.0.1:<signer_port>`
-- SSH binds `<ssh.listen_address>:<ssh.port>` and forwards to loopback REST.
-  The default `ssh.listen_address` is `127.0.0.1`.
-- `ssh.listen_address` and `endpoint.advertise_url` are configured in signer
-  `config.yaml`. Admin settings may report those values, but do not mutate
-  listener bind or handoff URL state. Changing `ssh.listen_address` requires
-  restarting apsigner.
+- REST binds `127.0.0.1:<endpoint.signer_port>`
+- SSH binds `<endpoint.ssh.listen_address>:<endpoint.ssh.port>` and forwards to
+  loopback REST. The default `endpoint.ssh.listen_address` is `127.0.0.1`.
+- `endpoint.signer_port`, `endpoint.ssh.*`, and `endpoint.advertise_url` are
+  configured in signer `config.yaml`. Admin settings may report those values,
+  but do not mutate listener bind or handoff URL state. Changing
+  `endpoint.signer_port` or `endpoint.ssh.*` requires restarting apsigner.
+- Admin settings may also report `endpoint_display_url` for UI chrome. This is
+  not exported endpoint handoff metadata and must not be persisted by admin
+  clients as `endpoint.advertise_url`.
 
 ## On-Disk Formats
 
@@ -549,7 +560,7 @@ Additional client-state notes:
 - endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
 - `published_sentries` is keyed by canonical embedded sentry public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime guarded-send routing derives the endpoint for an embedded sentry public key from this endpoint-local inventory.
 - signer `config.yaml` may set `endpoint.advertise_url` to the client-reachable endpoint URL used by `apstore endpoint export` when the operator omits both `--host` and `--url`. This is operator-declared routing metadata, not a value inferred from the SSH bind address. It follows the same portable URL rules as endpoint envelopes and rejects `self`.
-- `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<configured-ssh-port>`, then signer `config.yaml` `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes the configured signer REST port unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
+- `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then signer `config.yaml` `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
 - `apshell endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]` manually creates or replaces a `role: sentry` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--sentryport` is stored as the endpoint `signer_port` REST port used behind SSH sentry endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover sentry keys, copy tokens, or establish SSH host trust.
 - `apshell endpoints sync-sentries [--dry-run] [--yes]` scans configured `sentry` endpoints with authenticated `/keys`, extracts sentry component-key `public_key_hex` values, validates each `component_key`, and atomically rebuilds endpoint-local `published_sentries` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_sentries` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and component-key validation failures are hard errors and leave files unchanged. After discovery, the command prints Sentry Key IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public sentry reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered sentries selectable from signer-side key generation clients such as `apadmin`.

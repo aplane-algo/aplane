@@ -95,7 +95,7 @@ func main() {
 	}
 	resolvedDataDir = startup.DataDir
 	config := startup.Config
-	defaultAddr := fmt.Sprintf("localhost:%d", config.SignerPort)
+	defaultAddr := fmt.Sprintf("localhost:%d", config.Endpoint.SignerPort)
 	serverAddr = &defaultAddr
 
 	// Initialize color theme based on config

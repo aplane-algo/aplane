@@ -36,7 +36,7 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 	}
 	listenAddr := net.JoinHostPort(listenAddress, strconv.Itoa(port))
 	cfg := server.ConfigSnapshot()
-	targetAddr := httpBindAddr(cfg.SignerPort)
+	targetAddr := httpBindAddr(cfg.Endpoint.SignerPort)
 	productToken, err := tokenfile.LoadAPlaneToken(tokenRoot, identityID)
 	if err != nil {
 		sshCancel()

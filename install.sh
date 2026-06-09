@@ -669,6 +669,76 @@ read_ssh_port() {
     ' "$path"
 }
 
+read_signer_endpoint_signer_port() {
+    local path="$1"
+    [ -f "$path" ] || return 0
+    awk -F: '
+        function indent_width(line) {
+            match(line, /^[[:space:]]*/)
+            return RLENGTH
+        }
+        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
+            next
+        }
+        {
+            indent = indent_width($0)
+            if (indent == 0 && $0 ~ /^endpoint[[:space:]]*:/) {
+                in_endpoint = 1
+                next
+            }
+            if (in_endpoint && indent == 0 && $0 !~ /^endpoint[[:space:]]*:/) {
+                in_endpoint = 0
+            }
+            if (in_endpoint && indent == 2 && $0 ~ /^[[:space:]]*signer_port[[:space:]]*:/) {
+                value = $2
+                sub(/[[:space:]]*#.*/, "", value)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+                print value
+                exit
+            }
+        }
+    ' "$path"
+}
+
+read_signer_endpoint_ssh_port() {
+    local path="$1"
+    [ -f "$path" ] || return 0
+    awk -F: '
+        function indent_width(line) {
+            match(line, /^[[:space:]]*/)
+            return RLENGTH
+        }
+        /^[[:space:]]*#/ || /^[[:space:]]*$/ {
+            next
+        }
+        {
+            indent = indent_width($0)
+            if (indent == 0 && $0 ~ /^endpoint[[:space:]]*:/) {
+                in_endpoint = 1
+                next
+            }
+            if (in_endpoint && indent == 2 && $0 ~ /^[[:space:]]*ssh[[:space:]]*:/) {
+                in_endpoint_ssh = 1
+                next
+            }
+            if (in_endpoint_ssh && indent <= 2 && $0 !~ /^[[:space:]]*ssh[[:space:]]*:/) {
+                in_endpoint_ssh = 0
+            }
+            if (in_endpoint && indent == 0 && $0 !~ /^endpoint[[:space:]]*:/) {
+                in_endpoint = 0
+                in_endpoint_ssh = 0
+            }
+            if (in_endpoint_ssh && indent == 4 && $0 ~ /^[[:space:]]*port[[:space:]]*:/) {
+                value = $2
+                sub(/[[:space:]]*#.*/, "", value)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+                print value
+                exit
+            }
+        }
+    ' "$path"
+}
+
 read_primary_endpoint_signer_port() {
     local path="$1"
     [ -f "$path" ] || return 0
@@ -762,8 +832,8 @@ check_local_config_consistency() {
 
     local signer_signer_port signer_ssh_port client_signer_port client_ssh_port client_ports_source
     client_ports_source="config"
-    signer_signer_port="$(read_top_level_int "$signer_config" "signer_port")"
-    signer_ssh_port="$(read_ssh_port "$signer_config")"
+    signer_signer_port="$(read_signer_endpoint_signer_port "$signer_config")"
+    signer_ssh_port="$(read_signer_endpoint_ssh_port "$signer_config")"
     client_signer_port="$(read_top_level_int "$client_config" "signer_port")"
     client_ssh_port="$(read_ssh_port "$client_config")"
     if [ -z "$client_signer_port" ] || [ -z "$client_ssh_port" ]; then
@@ -788,8 +858,8 @@ check_local_config_consistency() {
     echo ""
     echo "WARNING: local signer/client config ports do not match."
     echo "  Signer config: $signer_config"
-    echo "    signer_port: $signer_signer_port"
-    echo "    ssh.port:    $signer_ssh_port"
+    echo "    endpoint.signer_port: $signer_signer_port"
+    echo "    endpoint.ssh.port:    $signer_ssh_port"
     echo "  Client config: $client_config"
     echo "    signer_port: $client_signer_port"
     echo "    ssh.port:    $client_ssh_port"
@@ -845,20 +915,17 @@ write_signer_config() {
 # apsigner configuration
 # See docs/USER_CONFIG.md for full documentation.
 
-# REST API port (bound to localhost when SSH is enabled)
-signer_port: $signer_port
-
-# SSH tunnel settings
-ssh:
-  listen_address: 127.0.0.1
-  port: $ssh_port
-  host_key_path: .ssh/ssh_host_key
-  authorized_keys_path: .ssh/authorized_keys
-
-# Optional client-reachable URL used by "apstore endpoint export" when --host/--url are omitted.
-# Set this to a real DNS name or IP clients can reach, for example:
-# endpoint:
-#   advertise_url: ssh://signer.example.com:$ssh_port
+# Signer endpoint exposure settings.
+endpoint:
+  # Optional client-reachable URL used by "apstore endpoint export" when --host/--url are omitted.
+  # Set this to a real DNS name or IP clients can reach.
+  # advertise_url: ssh://signer.example.com:$ssh_port
+  signer_port: $signer_port
+  ssh:
+    listen_address: 127.0.0.1
+    port: $ssh_port
+    host_key_path: .ssh/ssh_host_key
+    authorized_keys_path: .ssh/authorized_keys
 
 # Inactivity timeout before auto-lock: "0" = never, "15m" = 15 minutes
 passphrase_timeout: "15m"

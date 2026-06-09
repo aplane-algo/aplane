@@ -138,7 +138,7 @@ func resolveOptions(opts options) (resolvedOptions, error) {
 
 	baseURL := strings.TrimRight(strings.TrimSpace(opts.baseURL), "/")
 	if baseURL == "" {
-		baseURL = fmt.Sprintf("http://localhost:%d", cfg.SignerPort)
+		baseURL = fmt.Sprintf("http://localhost:%d", cfg.Endpoint.SignerPort)
 	}
 
 	tokenFile := strings.TrimSpace(opts.tokenFile)

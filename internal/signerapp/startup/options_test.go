@@ -124,7 +124,7 @@ func TestLoadOptionsResolvesBootstrapState(t *testing.T) {
 
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte("signer_port: 22334\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("endpoint:\n  signer_port: 22334\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
@@ -138,7 +138,7 @@ func TestLoadOptionsResolvesBootstrapState(t *testing.T) {
 	if opts.IdentityID != "default" {
 		t.Fatalf("LoadOptions() identity = %q, want %q", opts.IdentityID, "default")
 	}
-	if opts.Config.SignerPort != 22334 {
-		t.Fatalf("LoadOptions() signer_port = %d, want %d", opts.Config.SignerPort, 22334)
+	if opts.Config.Endpoint.SignerPort != 22334 {
+		t.Fatalf("LoadOptions() endpoint.signer_port = %d, want %d", opts.Config.Endpoint.SignerPort, 22334)
 	}
 }

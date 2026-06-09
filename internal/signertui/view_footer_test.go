@@ -172,7 +172,29 @@ func TestStandaloneAdminHeaderDefaultsEndpointHostForOlderSettings(t *testing.T)
 	}
 }
 
-func TestStandaloneAdminHeaderUsesLoopbackEndpointForWildcardBind(t *testing.T) {
+func TestStandaloneAdminHeaderUsesServerDerivedEndpointForWildcardBind(t *testing.T) {
+	m := Model{
+		width: 120,
+		adminSettings: &AdminSettings{
+			NodeRole:           "signer",
+			SSHEnabled:         true,
+			SSHListenAddress:   "0.0.0.0",
+			SSHPort:            64804,
+			SignerPort:         11270,
+			EndpointDisplayURL: "ssh://192.168.1.42:64804",
+		},
+	}
+
+	got := stripANSI(m.renderAdminHeader())
+	if !strings.Contains(got, "Endpoint: ssh://192.168.1.42:64804") {
+		t.Fatalf("renderAdminHeader() missing server-derived endpoint for wildcard bind:\n%s", got)
+	}
+	if strings.Contains(got, "ssh://0.0.0.0:64804") {
+		t.Fatalf("renderAdminHeader() advertised wildcard bind address:\n%s", got)
+	}
+}
+
+func TestStandaloneAdminHeaderUsesLoopbackEndpointForOlderWildcardSettings(t *testing.T) {
 	m := Model{
 		width: 120,
 		adminSettings: &AdminSettings{

@@ -43,7 +43,9 @@ func (s *SignerHarness) OmitTestPassphraseEnv() {
 
 // signerConfig represents the relevant parts of apsigner's config.yaml
 type signerConfig struct {
-	SignerPort int `yaml:"signer_port"`
+	Endpoint struct {
+		SignerPort int `yaml:"signer_port"`
+	} `yaml:"endpoint"`
 }
 
 // NewSignerHarness creates a new Signer test harness.
@@ -88,10 +90,10 @@ func NewSignerHarness(t *testing.T) *SignerHarness {
 	if err := yaml.Unmarshal(configData, &cfg); err != nil {
 		t.Fatalf("Failed to parse config.yaml: %v", err)
 	}
-	if cfg.SignerPort == 0 {
-		t.Fatal("signer_port not set in config.yaml")
+	if cfg.Endpoint.SignerPort == 0 {
+		t.Fatal("endpoint.signer_port not set in config.yaml")
 	}
-	port := fmt.Sprintf("%d", cfg.SignerPort)
+	port := fmt.Sprintf("%d", cfg.Endpoint.SignerPort)
 
 	// Create temp build directory for binary
 	buildDir := filepath.Join(t.TempDir(), "aplane-build")

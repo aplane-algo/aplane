@@ -28,7 +28,7 @@ func TestValidateRejectsInvalidSSHConfig(t *testing.T) {
 	t.Parallel()
 
 	cfg := apconfig.DefaultServerConfig()
-	cfg.SSH.HostKeyPath = ""
+	cfg.Endpoint.SSH.HostKeyPath = ""
 	runtime := &RuntimeState{}
 
 	if _, err := Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir()), "default"); err == nil {

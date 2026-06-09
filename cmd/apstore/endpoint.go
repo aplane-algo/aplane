@@ -110,15 +110,15 @@ func endpointExportUsesSSH(rawURL string) bool {
 }
 
 func endpointExportSSHPort() int {
-	if config.SSH.Port != 0 {
-		return config.SSH.Port
+	if config.Endpoint.SSH.Port != 0 {
+		return config.Endpoint.SSH.Port
 	}
 	return apconfig.DefaultSSHPort
 }
 
 func endpointExportSignerPort() int {
-	if config.SignerPort != 0 {
-		return config.SignerPort
+	if config.Endpoint.SignerPort != 0 {
+		return config.Endpoint.SignerPort
 	}
 	return apconfig.DefaultRESTPort
 }

@@ -44,14 +44,14 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `signer_port` | int | `11270` | REST API port |
-| `ssh` | object | default SSH settings | SSH tunnel settings for apsigner |
-| `ssh.listen_address` | string | `127.0.0.1` | SSH listen address to bind |
-| `ssh.port` | int | `1127` | SSH port to listen on |
-| `ssh.host_key_path` | string | `.ssh/ssh_host_key` | Server's private host key path |
-| `ssh.authorized_keys_path` | string | `.ssh/authorized_keys` | Legacy/global authorized client public keys file |
-| `endpoint` | object | (none) | Public endpoint handoff settings |
+| `endpoint` | object | default endpoint settings | Signer endpoint exposure settings |
 | `endpoint.advertise_url` | string | `(none)` | Client-reachable public endpoint URL used by apstore endpoint export when --host/--url are omitted |
+| `endpoint.signer_port` | int | `11270` | Loopback REST API port behind the endpoint |
+| `endpoint.ssh` | object | default SSH settings | SSH tunnel settings for apsigner endpoint access |
+| `endpoint.ssh.listen_address` | string | `127.0.0.1` | SSH listen address to bind |
+| `endpoint.ssh.port` | int | `1127` | SSH port to listen on |
+| `endpoint.ssh.host_key_path` | string | `.ssh/ssh_host_key` | Server's private host key path |
+| `endpoint.ssh.authorized_keys_path` | string | `.ssh/authorized_keys` | Legacy/global authorized client public keys file |
 | `passphrase_timeout` | string | `15m` | Admin idle disconnect timeout (0=never) |
 | `approval_wait` | string | `60s` | Maximum time to wait for operator approval of a signing request |
 | `ipc_path` | string | `$APSIGNER_DATA/aplane.sock` | Unix socket path for admin IPC |

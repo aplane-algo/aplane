@@ -40,9 +40,7 @@ endpoints:
     token_file: aplane.token
 `)
 
-	notice, err := trustLocalSignerHostKey(clientDir, config.ServerConfig{
-		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
-	})
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath))
 	if err != nil {
 		t.Fatalf("trustLocalSignerHostKey failed: %v", err)
 	}
@@ -89,9 +87,7 @@ endpoints:
     token_file: aplane.token
 `)
 
-	notice, err := trustLocalSignerHostKey(clientDir, config.ServerConfig{
-		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
-	})
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath))
 	if err != nil {
 		t.Fatalf("trustLocalSignerHostKey failed: %v", err)
 	}
@@ -137,9 +133,7 @@ endpoints:
     token_file: aplane.token
 `)
 
-	notice, err := trustLocalSignerHostKey(clientDir, config.ServerConfig{
-		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
-	})
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath))
 	if err != nil {
 		t.Fatalf("trustLocalSignerHostKey failed: %v", err)
 	}
@@ -182,9 +176,7 @@ endpoints:
     token_file: aplane.token
 `)
 
-	notice, err := trustLocalSignerHostKey(clientDir, config.ServerConfig{
-		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
-	})
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath))
 	if err == nil {
 		t.Fatal("trustLocalSignerHostKey error = nil, want mismatch")
 	}
@@ -211,9 +203,7 @@ ssh:
 		t.Fatalf("write client config: %v", err)
 	}
 
-	notice, err := trustLocalSignerHostKey(clientDir, config.ServerConfig{
-		SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
-	})
+	notice, err := trustLocalSignerHostKey(clientDir, testSignerConfigWithHostKey(hostKeyPath))
 	if err == nil {
 		t.Fatal("trustLocalSignerHostKey error = nil, want unsupported endpoint config error")
 	}
@@ -243,6 +233,14 @@ func writeTestSSHHostKey(t *testing.T, dir string) string {
 		t.Fatalf("write private key: %v", err)
 	}
 	return path
+}
+
+func testSignerConfigWithHostKey(hostKeyPath string) config.ServerConfig {
+	return config.ServerConfig{
+		Endpoint: config.ServerEndpointConfig{
+			SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
+		},
+	}
 }
 
 func loadTestSSHPublicKey(t *testing.T, path string) ssh.PublicKey {

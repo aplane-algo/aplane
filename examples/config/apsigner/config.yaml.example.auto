@@ -7,20 +7,17 @@
 # See docs/USER_CONFIG.md for secure examples.
 passphrase_command_argv: ["/usr/local/bin/appass-file", "passphrase"]
 
-# REST API port (bound to localhost when SSH is enabled)
-signer_port: 11270
-
-# SSH tunnel settings (for remote clients)
-ssh:
-  listen_address: 127.0.0.1
-  port: 1127
-  host_key_path: .ssh/ssh_host_key
-  authorized_keys_path: .ssh/authorized_keys
-
-# Optional client-reachable URL used by "apstore endpoint export" when --host/--url are omitted.
-# Set this to a real DNS name or IP clients can reach, for example:
-# endpoint:
-#   advertise_url: ssh://signer.example.com:1127
+# Signer endpoint exposure settings.
+endpoint:
+  # Optional client-reachable URL used by "apstore endpoint export" when --host/--url are omitted.
+  # Set this to a real DNS name or IP clients can reach.
+  # advertise_url: ssh://signer.example.com:1127
+  signer_port: 11270
+  ssh:
+    listen_address: 127.0.0.1
+    port: 1127
+    host_key_path: .ssh/ssh_host_key
+    authorized_keys_path: .ssh/authorized_keys
 
 # IPC socket for admin interface (apadmin, apapprover)
 # Uses default: $APSIGNER_DATA/aplane.sock

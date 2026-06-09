@@ -305,22 +305,24 @@ to the audit log.
 
 ### SSH Configuration Reference
 
-Server SSH settings live in a nested `ssh:` block. If the block or individual fields are omitted,
-apsigner fills in defaults and still starts the SSH server.
+Server SSH settings live under `endpoint.ssh:`. If the block or individual
+fields are omitted, apsigner fills in defaults and still starts the SSH server.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `ssh.listen_address` | `127.0.0.1` | SSH listener bind address |
-| `ssh.port` | `1127` | SSH listener port |
-| `ssh.host_key_path` | `.ssh/ssh_host_key` | Server host key (auto-generated if missing) |
-| `ssh.authorized_keys_path` | `.ssh/authorized_keys` | Validated/resolved server setting for underlying SSH wiring; product-mode client authorization and enrollment use `identities/<identity>/.ssh/authorized_keys` |
+| `endpoint.signer_port` | `11270` | Loopback REST API port behind the endpoint |
+| `endpoint.ssh.listen_address` | `127.0.0.1` | SSH listener bind address |
+| `endpoint.ssh.port` | `1127` | SSH listener port |
+| `endpoint.ssh.host_key_path` | `.ssh/ssh_host_key` | Server host key (auto-generated if missing) |
+| `endpoint.ssh.authorized_keys_path` | `.ssh/authorized_keys` | Validated/resolved server setting for underlying SSH wiring; product-mode client authorization and enrollment use `identities/<identity>/.ssh/authorized_keys` |
 
 **Example config.yaml with SSH:**
 ```yaml
-signer_port: 11270
-ssh:
-  listen_address: 127.0.0.1
-  port: 1127
+endpoint:
+  signer_port: 11270
+  ssh:
+    listen_address: 127.0.0.1
+    port: 1127
 ```
 
 **Important distinction:**

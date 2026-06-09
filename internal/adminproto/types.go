@@ -33,6 +33,7 @@ type AdminSettings struct {
 	SignerPort           int
 	TEALCompileNet       string
 	EndpointAdvertiseURL string
+	EndpointDisplayURL   string
 	Theme                string
 }
 

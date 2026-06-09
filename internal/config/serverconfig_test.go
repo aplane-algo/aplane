@@ -63,8 +63,8 @@ func TestLoadServerConfigDefaultsUserAutoApprove(t *testing.T) {
 	if cfg.ApprovalWait != DefaultApprovalWaitString {
 		t.Fatalf("approval_wait default = %q, want %q", cfg.ApprovalWait, DefaultApprovalWaitString)
 	}
-	if cfg.SSH.ListenAddress != DefaultSSHListenAddress {
-		t.Fatalf("ssh.listen_address default = %q, want %q", cfg.SSH.ListenAddress, DefaultSSHListenAddress)
+	if cfg.Endpoint.SSH.ListenAddress != DefaultSSHListenAddress {
+		t.Fatalf("endpoint.ssh.listen_address default = %q, want %q", cfg.Endpoint.SSH.ListenAddress, DefaultSSHListenAddress)
 	}
 }
 
@@ -177,14 +177,63 @@ func TestLoadServerConfigRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestLoadServerConfigRejectsLegacyTopLevelEndpointFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		data         string
+		wantErrPiece string
+	}{
+		{
+			name:         "signer_port",
+			data:         "signer_port: 11270\n",
+			wantErrPiece: "field signer_port not found",
+		},
+		{
+			name: "ssh",
+			data: `ssh:
+  listen_address: 127.0.0.1
+  port: 1127
+`,
+			wantErrPiece: "field ssh not found",
+		},
+		{
+			name:         "advertise_url",
+			data:         "advertise_url: ssh://signer.example.com:1127\n",
+			wantErrPiece: "field advertise_url not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(tt.data), 0o640); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			_, err := LoadServerConfig(dir)
+			if err == nil {
+				t.Fatal("LoadServerConfig error = nil, want legacy endpoint field rejection")
+			}
+			if !strings.Contains(err.Error(), tt.wantErrPiece) {
+				t.Fatalf("LoadServerConfig error = %q, want %q", err, tt.wantErrPiece)
+			}
+		})
+	}
+}
+
 func TestLoadServerConfigRejectsUnknownNestedFields(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(`
-ssh:
-  port: 1127
-  surprise: true
+endpoint:
+  ssh:
+    port: 1127
+    surprise: true
 `), 0o640); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -271,34 +320,38 @@ func TestLoadServerConfigSSHListenAddress(t *testing.T) {
 		{
 			name: "explicit IPv4",
 			data: `
-ssh:
-  listen_address: 0.0.0.0
+endpoint:
+  ssh:
+    listen_address: 0.0.0.0
 `,
 			want: "0.0.0.0",
 		},
 		{
 			name: "explicit hostname",
 			data: `
-ssh:
-  listen_address: signer.local
+endpoint:
+  ssh:
+    listen_address: signer.local
 `,
 			want: "signer.local",
 		},
 		{
 			name: "reject URL",
 			data: `
-ssh:
-  listen_address: ssh://127.0.0.1
+endpoint:
+  ssh:
+    listen_address: ssh://127.0.0.1
 `,
-			wantErrPiece: "invalid ssh.listen_address",
+			wantErrPiece: "invalid endpoint.ssh.listen_address",
 		},
 		{
 			name: "reject host port",
 			data: `
-ssh:
-  listen_address: 127.0.0.1:1127
+endpoint:
+  ssh:
+    listen_address: 127.0.0.1:1127
 `,
-			wantErrPiece: "invalid ssh.listen_address",
+			wantErrPiece: "invalid endpoint.ssh.listen_address",
 		},
 	}
 
@@ -322,8 +375,8 @@ ssh:
 			if err != nil {
 				t.Fatalf("LoadServerConfig error = %v", err)
 			}
-			if cfg.SSH.ListenAddress != tt.want {
-				t.Fatalf("SSH.ListenAddress = %q, want %q", cfg.SSH.ListenAddress, tt.want)
+			if cfg.Endpoint.SSH.ListenAddress != tt.want {
+				t.Fatalf("Endpoint.SSH.ListenAddress = %q, want %q", cfg.Endpoint.SSH.ListenAddress, tt.want)
 			}
 		})
 	}
@@ -334,16 +387,22 @@ func TestSaveNestedSettingPreservesSiblingFields(t *testing.T) {
 
 	dir := t.TempDir()
 	initial := `theme: auto
-ssh:
-  port: 2222
-  host_key_path: .ssh/custom_host_key
-  authorized_keys_path: .ssh/custom_authorized_keys
+endpoint:
+  ssh:
+    port: 2222
+    host_key_path: .ssh/custom_host_key
+    authorized_keys_path: .ssh/custom_authorized_keys
 `
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(initial), 0o640); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if err := SaveNestedSetting(dir, "ssh", "listen_address", "0.0.0.0"); err != nil {
+	if err := SaveNestedSetting(dir, "endpoint", "ssh", map[string]interface{}{
+		"listen_address":       "0.0.0.0",
+		"port":                 2222,
+		"host_key_path":        ".ssh/custom_host_key",
+		"authorized_keys_path": ".ssh/custom_authorized_keys",
+	}); err != nil {
 		t.Fatalf("SaveNestedSetting: %v", err)
 	}
 
@@ -351,17 +410,17 @@ ssh:
 	if err != nil {
 		t.Fatalf("LoadServerConfig: %v", err)
 	}
-	if cfg.SSH.ListenAddress != "0.0.0.0" {
-		t.Fatalf("SSH.ListenAddress = %q, want 0.0.0.0", cfg.SSH.ListenAddress)
+	if cfg.Endpoint.SSH.ListenAddress != "0.0.0.0" {
+		t.Fatalf("Endpoint.SSH.ListenAddress = %q, want 0.0.0.0", cfg.Endpoint.SSH.ListenAddress)
 	}
-	if cfg.SSH.Port != 2222 {
-		t.Fatalf("SSH.Port = %d, want 2222", cfg.SSH.Port)
+	if cfg.Endpoint.SSH.Port != 2222 {
+		t.Fatalf("Endpoint.SSH.Port = %d, want 2222", cfg.Endpoint.SSH.Port)
 	}
-	if !strings.HasSuffix(cfg.SSH.HostKeyPath, ".ssh/custom_host_key") {
-		t.Fatalf("SSH.HostKeyPath = %q, want preserved custom path", cfg.SSH.HostKeyPath)
+	if !strings.HasSuffix(cfg.Endpoint.SSH.HostKeyPath, ".ssh/custom_host_key") {
+		t.Fatalf("Endpoint.SSH.HostKeyPath = %q, want preserved custom path", cfg.Endpoint.SSH.HostKeyPath)
 	}
-	if !strings.HasSuffix(cfg.SSH.AuthorizedKeysPath, ".ssh/custom_authorized_keys") {
-		t.Fatalf("SSH.AuthorizedKeysPath = %q, want preserved custom path", cfg.SSH.AuthorizedKeysPath)
+	if !strings.HasSuffix(cfg.Endpoint.SSH.AuthorizedKeysPath, ".ssh/custom_authorized_keys") {
+		t.Fatalf("Endpoint.SSH.AuthorizedKeysPath = %q, want preserved custom path", cfg.Endpoint.SSH.AuthorizedKeysPath)
 	}
 }
 
@@ -432,29 +491,32 @@ approval_wait: "10m"
 `,
 		},
 		{
-			name: "signer_port changed",
+			name: "endpoint signer_port changed",
 			modified: `user_auto_approve: false
 theme: auto
 passphrase_timeout: "15m"
-signer_port: 22222
+endpoint:
+  signer_port: 22222
 `,
 		},
 		{
-			name: "ssh port changed",
+			name: "endpoint ssh port changed",
 			modified: `user_auto_approve: false
 theme: auto
 passphrase_timeout: "15m"
-ssh:
-  port: 2222
+endpoint:
+  ssh:
+    port: 2222
 `,
 		},
 		{
-			name: "ssh listen address changed",
+			name: "endpoint ssh listen address changed",
 			modified: `user_auto_approve: false
 theme: auto
 passphrase_timeout: "15m"
-ssh:
-  listen_address: 0.0.0.0
+endpoint:
+  ssh:
+    listen_address: 0.0.0.0
 `,
 		},
 		{

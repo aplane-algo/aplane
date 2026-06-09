@@ -769,6 +769,7 @@ type AdminSettingsMessage struct {
 	SignerPort           int    `json:"signer_port"`
 	TEALCompileNet       string `json:"teal_compile_network"`
 	EndpointAdvertiseURL string `json:"endpoint_advertise_url,omitempty"`
+	EndpointDisplayURL   string `json:"endpoint_display_url,omitempty"`
 	Theme                string `json:"theme"`
 }
 

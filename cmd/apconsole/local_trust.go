@@ -40,7 +40,7 @@ func trustLocalSignerHostKey(clientDataDir string, signerCfg config.ServerConfig
 		return "", nil
 	}
 
-	hostKey, err := loadSSHPublicKeyFromPrivateKey(signerCfg.SSH.HostKeyPath)
+	hostKey, err := loadSSHPublicKeyFromPrivateKey(signerCfg.Endpoint.SSH.HostKeyPath)
 	if err != nil {
 		return "", fmt.Errorf("load local signer SSH host key: %w", err)
 	}

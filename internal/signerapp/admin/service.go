@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -48,6 +49,8 @@ type Service struct {
 	Deps Deps
 }
 
+var detectPrimaryOutboundIPv4 = primaryOutboundIPv4
+
 func (s Service) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettings {
 	cfg := s.Deps.Config()
 	sshInfo := s.Deps.SSHInfo()
@@ -71,15 +74,72 @@ func (s Service) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettin
 		PassphraseMethod:     passphraseMethod,
 		NodeRole:             string(ir.NodeRole()),
 		SSHEnabled:           sshInfo.Enabled,
-		SSHListenAddress:     cfg.SSH.ListenAddress,
+		SSHListenAddress:     cfg.Endpoint.SSH.ListenAddress,
 		SSHPort:              sshInfo.Port,
 		SSHFingerprint:       sshInfo.Fingerprint,
 		SSHClients:           sshInfo.Clients,
-		SignerPort:           cfg.SignerPort,
+		SignerPort:           cfg.Endpoint.SignerPort,
 		TEALCompileNet:       cfg.TEALCompileNetwork,
 		EndpointAdvertiseURL: cfg.Endpoint.AdvertiseURL,
+		EndpointDisplayURL:   endpointDisplayURL(cfg, sshInfo),
 		Theme:                s.Deps.Theme(),
 	}
+}
+
+func endpointDisplayURL(cfg *apconfig.ServerConfig, sshInfo SSHInfo) string {
+	if cfg == nil {
+		return ""
+	}
+	if endpoint := strings.TrimSpace(cfg.Endpoint.AdvertiseURL); endpoint != "" {
+		return endpoint
+	}
+	if !sshInfo.Enabled || sshInfo.Port <= 0 {
+		return ""
+	}
+	host := endpointDisplayHost(cfg.Endpoint.SSH.ListenAddress)
+	if host == "" {
+		host = apconfig.DefaultSSHListenAddress
+	}
+	return "ssh://" + net.JoinHostPort(host, strconv.Itoa(sshInfo.Port))
+}
+
+func endpointDisplayHost(listenAddress string) string {
+	host := strings.TrimSpace(listenAddress)
+	switch host {
+	case "":
+		return apconfig.DefaultSSHListenAddress
+	case "0.0.0.0":
+		if detected := detectPrimaryOutboundIPv4(); detected != "" {
+			return detected
+		}
+		return apconfig.DefaultSSHListenAddress
+	case "::":
+		return "::1"
+	default:
+		return host
+	}
+}
+
+func primaryOutboundIPv4() string {
+	// Connected UDP asks the kernel to choose the source address for that
+	// route. No application payload is sent.
+	conn, err := net.DialTimeout("udp4", "8.8.8.8:80", 100*time.Millisecond)
+	if err != nil {
+		return ""
+	}
+	defer func() {
+		_ = conn.Close()
+	}()
+
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok || addr.IP == nil {
+		return ""
+	}
+	ip := addr.IP.To4()
+	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() {
+		return ""
+	}
+	return ip.String()
 }
 
 func (s Service) UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateAdminSettingRequest) error {

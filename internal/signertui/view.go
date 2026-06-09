@@ -299,6 +299,9 @@ func (m Model) adminEndpointDisplayURL() string {
 	if m.adminSettings == nil {
 		return ""
 	}
+	if endpoint := strings.TrimSpace(m.adminSettings.EndpointDisplayURL); endpoint != "" {
+		return endpoint
+	}
 	if endpoint := strings.TrimSpace(m.adminSettings.EndpointAdvertiseURL); endpoint != "" {
 		return endpoint
 	}

@@ -26,9 +26,11 @@ type SSHServerConfig struct {
 	AuthorizedKeysPath string `yaml:"authorized_keys_path" description:"Legacy/global authorized client public keys file" default:".ssh/authorized_keys"`
 }
 
-// EndpointAdvertiseConfig holds public endpoint handoff settings.
-type EndpointAdvertiseConfig struct {
-	AdvertiseURL string `yaml:"advertise_url,omitempty" description:"Client-reachable public endpoint URL used by apstore endpoint export when --host/--url are omitted"`
+// ServerEndpointConfig holds the signer endpoint surface exposed to clients.
+type ServerEndpointConfig struct {
+	AdvertiseURL string          `yaml:"advertise_url,omitempty" description:"Client-reachable public endpoint URL used by apstore endpoint export when --host/--url are omitted"`
+	SignerPort   int             `yaml:"signer_port" description:"Loopback REST API port behind the endpoint" default:"11270"`
+	SSH          SSHServerConfig `yaml:"ssh" description:"SSH tunnel settings for apsigner endpoint access" default:"default SSH settings"`
 }
 
 const (
@@ -40,15 +42,13 @@ const (
 
 // ServerConfig represents the Signer configuration file
 type ServerConfig struct {
-	SignerPort            int                     `yaml:"signer_port" description:"REST API port" default:"11270"`
-	SSH                   SSHServerConfig         `yaml:"ssh" description:"SSH tunnel settings for apsigner" default:"default SSH settings"`
-	Endpoint              EndpointAdvertiseConfig `yaml:"endpoint,omitempty" description:"Public endpoint handoff settings"`
-	PassphraseTimeout     string                  `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
-	ApprovalWait          string                  `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"60s"`
-	IPCPath               string                  `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"$APSIGNER_DATA/aplane.sock"`
-	LockOnDisconnect      *bool                   `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
-	PassphraseCommandArgv []string                `yaml:"passphrase_command_argv" description:"Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1])" default:"[]"`
-	PassphraseCommandEnv  map[string]string       `yaml:"passphrase_command_env" description:"Environment variables to pass to the passphrase command; the process env is not inherited except for the systemd CREDENTIALS_DIRECTORY passthrough" default:"{}"`
+	Endpoint              ServerEndpointConfig `yaml:"endpoint" description:"Signer endpoint exposure settings" default:"default endpoint settings"`
+	PassphraseTimeout     string               `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
+	ApprovalWait          string               `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"60s"`
+	IPCPath               string               `yaml:"ipc_path" description:"Unix socket path for admin IPC" default:"$APSIGNER_DATA/aplane.sock"`
+	LockOnDisconnect      *bool                `yaml:"lock_on_disconnect" description:"Lock signer when admin disconnects" default:"true"`
+	PassphraseCommandArgv []string             `yaml:"passphrase_command_argv" description:"Command to run to obtain/store the passphrase (all paths resolved relative to data directory; verb 'read' or 'write' is injected as argv[1])" default:"[]"`
+	PassphraseCommandEnv  map[string]string    `yaml:"passphrase_command_env" description:"Environment variables to pass to the passphrase command; the process env is not inherited except for the systemd CREDENTIALS_DIRECTORY passthrough" default:"{}"`
 	// Network settings per context token (used for TEAL compilation, policy enforcement, etc.).
 	// This is the canonical on-disk network config.
 	Networks           ServerNetworkConfigs `yaml:"networks" description:"Grouped settings per network context token"`
@@ -135,13 +135,21 @@ func DefaultSSHServerConfig() SSHServerConfig {
 	}
 }
 
+// DefaultServerEndpointConfig returns default signer endpoint settings.
+func DefaultServerEndpointConfig() ServerEndpointConfig {
+	return ServerEndpointConfig{
+		SignerPort: DefaultRESTPort,
+		SSH:        DefaultSSHServerConfig(),
+	}
+}
+
 // ValidateSSHListenAddress validates the host/address part used for the SSH
 // listener. It accepts IP literals and DNS-style hostnames; ports and URLs are
 // configured separately.
 func ValidateSSHListenAddress(value string) error {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return fmt.Errorf("ssh.listen_address is required")
+		return fmt.Errorf("listen_address is required")
 	}
 	if strings.Contains(value, "://") {
 		return fmt.Errorf("must be a host or IP address, not a URL")
@@ -190,8 +198,7 @@ func ValidateSSHListenAddress(value string) error {
 // Relative paths in config are resolved relative to the data directory ($APSIGNER_DATA).
 func DefaultServerConfig() ServerConfig {
 	return ServerConfig{
-		SignerPort:         DefaultRESTPort,
-		SSH:                DefaultSSHServerConfig(),
+		Endpoint:           DefaultServerEndpointConfig(),
 		PassphraseTimeout:  "15m", // 15 minute admin idle timeout (use "0" to disable)
 		ApprovalWait:       DefaultApprovalWaitString,
 		IPCPath:            "",
@@ -253,8 +260,8 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	}
 
 	// Fill in missing fields with defaults
-	if config.SignerPort == 0 {
-		config.SignerPort = defaults.SignerPort
+	if config.Endpoint.SignerPort == 0 {
+		config.Endpoint.SignerPort = defaults.Endpoint.SignerPort
 	}
 	if config.PassphraseTimeout == "" {
 		config.PassphraseTimeout = defaults.PassphraseTimeout
@@ -287,22 +294,22 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 		return ServerConfig{}, fmt.Errorf("invalid network genesis_hash: %w", err)
 	}
 
-	sshDefaults := DefaultSSHServerConfig()
-	config.SSH.ListenAddress = strings.TrimSpace(config.SSH.ListenAddress)
-	if config.SSH.ListenAddress == "" {
-		config.SSH.ListenAddress = sshDefaults.ListenAddress
+	sshDefaults := defaults.Endpoint.SSH
+	config.Endpoint.SSH.ListenAddress = strings.TrimSpace(config.Endpoint.SSH.ListenAddress)
+	if config.Endpoint.SSH.ListenAddress == "" {
+		config.Endpoint.SSH.ListenAddress = sshDefaults.ListenAddress
 	}
-	if err := ValidateSSHListenAddress(config.SSH.ListenAddress); err != nil {
-		return ServerConfig{}, fmt.Errorf("invalid ssh.listen_address in config: %w", err)
+	if err := ValidateSSHListenAddress(config.Endpoint.SSH.ListenAddress); err != nil {
+		return ServerConfig{}, fmt.Errorf("invalid endpoint.ssh.listen_address in config: %w", err)
 	}
-	if config.SSH.Port == 0 {
-		config.SSH.Port = sshDefaults.Port
+	if config.Endpoint.SSH.Port == 0 {
+		config.Endpoint.SSH.Port = sshDefaults.Port
 	}
-	if config.SSH.HostKeyPath == "" {
-		config.SSH.HostKeyPath = sshDefaults.HostKeyPath
+	if config.Endpoint.SSH.HostKeyPath == "" {
+		config.Endpoint.SSH.HostKeyPath = sshDefaults.HostKeyPath
 	}
-	if config.SSH.AuthorizedKeysPath == "" {
-		config.SSH.AuthorizedKeysPath = sshDefaults.AuthorizedKeysPath
+	if config.Endpoint.SSH.AuthorizedKeysPath == "" {
+		config.Endpoint.SSH.AuthorizedKeysPath = sshDefaults.AuthorizedKeysPath
 	}
 	config.Endpoint.AdvertiseURL = strings.TrimRight(strings.TrimSpace(config.Endpoint.AdvertiseURL), "/")
 	if config.Endpoint.AdvertiseURL != "" {
@@ -311,8 +318,8 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 		}
 	}
 	// Resolve relative SSH paths to absolute paths.
-	config.SSH.HostKeyPath = ResolvePath(config.SSH.HostKeyPath, dataDir)
-	config.SSH.AuthorizedKeysPath = ResolvePath(config.SSH.AuthorizedKeysPath, dataDir)
+	config.Endpoint.SSH.HostKeyPath = ResolvePath(config.Endpoint.SSH.HostKeyPath, dataDir)
+	config.Endpoint.SSH.AuthorizedKeysPath = ResolvePath(config.Endpoint.SSH.AuthorizedKeysPath, dataDir)
 
 	// Resolve relative paths in passphrase_command_argv against the data directory.
 	// All elements (binary and arguments) use the same resolution logic.
@@ -505,13 +512,13 @@ func ConfigFileChanged(dataDir string, startup ServerConfig) (bool, error) {
 	if disk.Theme != startup.Theme {
 		return true, nil
 	}
-	if disk.SignerPort != startup.SignerPort {
+	if disk.Endpoint.SignerPort != startup.Endpoint.SignerPort {
 		return true, nil
 	}
-	if disk.SSH.Port != startup.SSH.Port {
+	if disk.Endpoint.SSH.Port != startup.Endpoint.SSH.Port {
 		return true, nil
 	}
-	if disk.SSH.ListenAddress != startup.SSH.ListenAddress {
+	if disk.Endpoint.SSH.ListenAddress != startup.Endpoint.SSH.ListenAddress {
 		return true, nil
 	}
 	if disk.Endpoint.AdvertiseURL != startup.Endpoint.AdvertiseURL {

@@ -95,21 +95,25 @@ When `apsigner` receives a signing request:
 Local mode reads the signer data directory configured by `-d` or
 `APSIGNER_DATA`.
 
-Remote mode reads the client `config.yaml` and token from `--client-data` or
-`APCLIENT_DATA`. The client must already be enrolled: `aplane.token` must exist
-and the signer host must already be trusted in `known_hosts`. Use standalone
-`apshell request-token` or `apshell connect` before remote `apadmin` when setting
-up a client.
+Remote mode reads the client endpoint registry and token from `--client-data`
+or `APCLIENT_DATA`. The client must already be enrolled: the endpoint token file
+must exist and the signer host must already be trusted in `known_hosts`. Use
+standalone `apshell request-token` or `apshell connect` before remote `apadmin`
+when setting up a client.
 
-Example remote client config:
+Example remote client endpoint registry:
 
 ```yaml
-signer_port: 11270
-ssh:
-  host: signer.example.com
-  port: 1127
-  identity_file: .ssh/id_ed25519
-  known_hosts_path: .ssh/known_hosts
+schema_version: 1
+default: primary
+endpoints:
+  primary:
+    role: signer
+    url: ssh://signer.example.com:1127
+    signer_port: 11270
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+    token_file: aplane.token
 ```
 
 ## Backup and Restore

@@ -610,6 +610,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 						SignerPort:           settings.SignerPort,
 						TEALCompileNet:       settings.TEALCompileNet,
 						EndpointAdvertiseURL: settings.EndpointAdvertiseURL,
+						EndpointDisplayURL:   settings.EndpointDisplayURL,
 						Theme:                settings.Theme,
 					},
 				})

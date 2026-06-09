@@ -327,6 +327,7 @@ func ProtocolAdminSettingsMessage(requestID string, settings AdminSettings) prot
 		SignerPort:           settings.SignerPort,
 		TEALCompileNet:       settings.TEALCompileNet,
 		EndpointAdvertiseURL: settings.EndpointAdvertiseURL,
+		EndpointDisplayURL:   settings.EndpointDisplayURL,
 		Theme:                settings.Theme,
 	}
 }

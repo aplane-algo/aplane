@@ -68,17 +68,17 @@ func Validate(config *apconfig.ServerConfig, runtime *RuntimeState, keyPaths sto
 	var warnings []string
 	info := &ValidationInfo{}
 
-	if config.SSH.Port <= 0 {
-		return nil, fmt.Errorf("invalid ssh configuration: ssh.port must be greater than zero")
+	if config.Endpoint.SSH.Port <= 0 {
+		return nil, fmt.Errorf("invalid endpoint.ssh configuration: endpoint.ssh.port must be greater than zero")
 	}
-	if err := apconfig.ValidateSSHListenAddress(config.SSH.ListenAddress); err != nil {
-		return nil, fmt.Errorf("invalid ssh configuration: %w", err)
+	if err := apconfig.ValidateSSHListenAddress(config.Endpoint.SSH.ListenAddress); err != nil {
+		return nil, fmt.Errorf("invalid endpoint.ssh configuration: %w", err)
 	}
-	if config.SSH.HostKeyPath == "" {
-		return nil, fmt.Errorf("invalid ssh configuration: ssh.host_key_path is required")
+	if config.Endpoint.SSH.HostKeyPath == "" {
+		return nil, fmt.Errorf("invalid endpoint.ssh configuration: endpoint.ssh.host_key_path is required")
 	}
-	if config.SSH.AuthorizedKeysPath == "" {
-		return nil, fmt.Errorf("invalid ssh configuration: ssh.authorized_keys_path is required")
+	if config.Endpoint.SSH.AuthorizedKeysPath == "" {
+		return nil, fmt.Errorf("invalid endpoint.ssh configuration: endpoint.ssh.authorized_keys_path is required")
 	}
 
 	if !crypto.KeystoreMetadataExistsIn(keyPaths.KeystoreMetadataDir(identityID)) {

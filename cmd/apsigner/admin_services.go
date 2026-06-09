@@ -260,7 +260,7 @@ func (s signerAdminServices) SSHEnabled() bool {
 }
 
 func (s signerAdminServices) SSHPort() int {
-	return s.signer.ConfigSnapshot().SSH.Port
+	return s.signer.ConfigSnapshot().Endpoint.SSH.Port
 }
 
 func (s signerAdminServices) SSHClients() int {
@@ -357,7 +357,7 @@ func (d signerAdminAppDeps) SSHInfo() signeradmin.SSHInfo {
 	sshServer := d.signer.currentSSHServer()
 	info := signeradmin.SSHInfo{
 		Enabled: sshServer != nil,
-		Port:    cfg.SSH.Port,
+		Port:    cfg.Endpoint.SSH.Port,
 	}
 	if sshServer != nil {
 		info.Clients = sshServer.ActiveConnectionCount()

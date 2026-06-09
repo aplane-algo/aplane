@@ -46,8 +46,8 @@ func TestCmdEndpointExportStdout(t *testing.T) {
 
 func TestCmdEndpointExportHostDerivesSSHURLFromConfig(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		config.SSH.Port = 2223
-		config.SignerPort = 12345
+		config.Endpoint.SSH.Port = 2223
+		config.Endpoint.SignerPort = 12345
 
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoint([]string{
@@ -73,8 +73,8 @@ func TestCmdEndpointExportHostDerivesSSHURLFromConfig(t *testing.T) {
 
 func TestCmdEndpointExportURLOverridesHost(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		config.SSH.Port = 2223
-		config.SignerPort = 12345
+		config.Endpoint.SSH.Port = 2223
+		config.Endpoint.SignerPort = 12345
 		config.Endpoint.AdvertiseURL = "ssh://configured.example:2223"
 
 		out, err := withCapturedStdout(func() error {
@@ -102,8 +102,8 @@ func TestCmdEndpointExportURLOverridesHost(t *testing.T) {
 
 func TestCmdEndpointExportUsesConfiguredAdvertiseURL(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		config.SSH.Port = 2223
-		config.SignerPort = 12345
+		config.Endpoint.SSH.Port = 2223
+		config.Endpoint.SignerPort = 12345
 		config.Endpoint.AdvertiseURL = "ssh://configured.example:2223"
 
 		out, err := withCapturedStdout(func() error {
@@ -145,8 +145,8 @@ func TestCmdEndpointExportRequiresHostURLOrConfiguredAdvertiseURL(t *testing.T) 
 
 func TestCmdEndpointExportHostUsesDefaultPortsWhenConfigUnset(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		config.SSH.Port = 0
-		config.SignerPort = 0
+		config.Endpoint.SSH.Port = 0
+		config.Endpoint.SignerPort = 0
 
 		out, err := withCapturedStdout(func() error {
 			return cmdEndpoint([]string{

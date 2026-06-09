@@ -198,6 +198,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				SignerPort:           11270,
 				TEALCompileNet:       "testnet",
 				EndpointAdvertiseURL: "ssh://signer.example:1127",
+				EndpointDisplayURL:   "ssh://192.168.1.42:1127",
 				Theme:                "dark",
 			},
 			wantMap: map[string]any{
@@ -216,6 +217,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"signer_port":            float64(11270),
 				"teal_compile_network":   "testnet",
 				"endpoint_advertise_url": "ssh://signer.example:1127",
+				"endpoint_display_url":   "ssh://192.168.1.42:1127",
 				"theme":                  "dark",
 			},
 		},
