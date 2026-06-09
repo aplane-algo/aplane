@@ -427,6 +427,10 @@ config/plugin/env files).
 
 ### Passphrase Helper Contract
 
+Sources: `internal/signerapp/unlockconfig/unlock.go` owns identity-scoped
+`unlock.yaml` persistence; `internal/config/passphrasecmd.go` owns helper
+execution, output decoding, environment filtering, and validation.
+
 - each `passphrase_command_argv` element resolves relative to signer data dir
 - `argv[0]` must resolve to absolute path
 - helper timeout is 5 seconds

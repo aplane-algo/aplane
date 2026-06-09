@@ -151,7 +151,7 @@ Documentation notes:
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/engine`, `internal/clientstate`, `internal/engine/connect`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/bootstrap/signer`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/approvalpolicy` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/approvalpolicy` |
 | Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealsubst`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/storemut`, `internal/storeinit`, `internal/storepass`, `internal/clientdata`, `internal/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
@@ -343,6 +343,8 @@ bundled plugin targets), `.github/workflows/release.yml`,
 `scripts/package-bootstrap-release.sh`,
 `scripts/build-algokit-localnet-plugin-target.sh`,
 `scripts/stage-bundled-plugins.sh`,
+`scripts/docker-systemd-smoke.sh`,
+`scripts/docker-local-four-node-smoke.sh`,
 `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`,
 `uninstall.sh`, `installer/`, and `library/templates/`. Full release archives
 include installer helpers, template libraries, and staged plugin runtime
@@ -462,7 +464,10 @@ integrity-bound per identity with an HMAC sidecar over the exact root
 service dispatch. Identity config `mode` is an unsupported pre-release shape
 and must be rejected rather than interpreted.
 
-Passphrase helper configuration is identity-scoped via `internal/signerapp/identity.UnlockConfig`, stored at `identities/<identity>/unlock.yaml`:
+Passphrase helper configuration is identity-scoped via
+`internal/signerapp/unlockconfig.UnlockConfig`, stored at
+`identities/<identity>/unlock.yaml`. `internal/signerapp/identity` re-exports
+that type and its path/load/save helpers for existing callsites:
 
 - `passphrase_command_argv`
 - `passphrase_command_env`
@@ -1404,6 +1409,17 @@ The repo uses:
 vet, module-tidy, lint/dead-code/security checks, race tests, cross-builds,
 smoke tests, contract tests, integration tests, and a clean-tree check.
 
+Docker-backed install and topology smoke targets are separate release workflow
+guards:
+
+- `make docker-systemd-test` runs `scripts/docker-systemd-smoke.sh` against a
+  fresh Ubuntu systemd container and verifies systemd install/uninstall state.
+- `make docker-local-test` runs `scripts/docker-local-four-node-smoke.sh`
+  against signer, sentry, client/admin, and LocalNet algod containers on one
+  Docker network. It verifies local install layout, shared LocalNet
+  reachability, SSH token provisioning, and client signer reachability across
+  the Docker network.
+
 The integration harness behavior is part of the effective repository contract:
 
 - `make integration-test` regenerates the shared test fixture and `.env.test` before running the suite,
@@ -1559,10 +1575,10 @@ Product-level boundaries:
 | Policy | `internal/policy/config.go`, `internal/policy/store.go`, `internal/policy/integrity.go`, `internal/crypto/policy_integrity.go`, `internal/signerapp/policyruntime/policy.go`, `internal/policy/lint.go`, `internal/policy/review.go`, `internal/signerapp/signing/always_review.go`, `internal/signerapp/signing/service.go`, `internal/signerapp/admin/service.go`, `cmd/apstore/policy.go`, `internal/templatepolicy/outcome.go` |
 | Keystore | `internal/keystore/file.go`, `internal/keystore/session.go` |
 | Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/keyclass/keyclass.go`, `internal/sentry/keytypes/keytypes.go` |
-| Store Init/Passphrase | `internal/storeinit/initialize.go`, `internal/storepass/rotate.go`, `cmd/apstore/main.go`, `cmd/apsigner/admin_services.go` |
+| Store Init/Passphrase | `internal/storeinit/initialize.go`, `internal/storepass/rotate.go`, `internal/signerapp/unlockconfig/unlock.go`, `cmd/apstore/main.go`, `cmd/apsigner/admin_services.go` |
 | Client Data | `internal/clientdata/lock.go`, `internal/clientstate/state.go`, `internal/refname/refname.go` |
 | Identity | `internal/signerapp/identity/runtime.go`, `internal/signerapp/identity/config.go` |
-| Release/Distribution | `Makefile`, `.github/workflows/release.yml`, `scripts/package-bootstrap-release.sh`, `scripts/build-algokit-localnet-plugin-target.sh`, `scripts/stage-bundled-plugins.sh`, `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`, `uninstall.sh`, `installer/`, `library/templates/` |
+| Release/Distribution | `Makefile`, `.github/workflows/release.yml`, `scripts/package-bootstrap-release.sh`, `scripts/build-algokit-localnet-plugin-target.sh`, `scripts/stage-bundled-plugins.sh`, `scripts/docker-systemd-smoke.sh`, `scripts/docker-local-four-node-smoke.sh`, `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`, `uninstall.sh`, `installer/`, `library/templates/` |
 
 ## Backup and Restore Ownership
 

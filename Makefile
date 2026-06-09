@@ -409,14 +409,13 @@ deadcode-check: compile-docassets
 docker-systemd-test:
 	@./scripts/docker-systemd-smoke.sh $(ARGS)
 
-# End-to-end local install test. Builds a release tarball, boots a stock
-# (non-systemd) Ubuntu 24.04 container, creates a non-root user, runs
-# install.sh in local mode, verifies the user-directory layout, running-install
-# gating, stopped-reinstall rejection, uninstall state preservation, and appass
-# local-mode detection.
+# End-to-end local install test. Builds a release tarball, boots signer, sentry,
+# client/admin, and LocalNet algod containers on one Docker network, then
+# verifies SSH token provisioning, shared LocalNet reachability, and client
+# signer reachability across the Docker network.
 # Requires docker. Pass extra flags via ARGS.
 docker-local-test:
-	@./scripts/docker-local-smoke.sh $(ARGS)
+	@./scripts/docker-local-four-node-smoke.sh $(ARGS)
 
 # Smoke test: exercise init paths of each built binary. Binaries that support
 # --version get it; the rest get invoked in a way that prints a usage error
@@ -830,7 +829,7 @@ help:
 	@echo "  make soak-test-localnet - Run opt-in LocalNet transaction soak test"
 	@echo "  make apshell-command-coverage-localnet - Run broad LocalNet apshell command coverage"
 	@echo "  make docker-systemd-test - End-to-end systemd install+uninstall in a fresh Ubuntu systemd container (requires docker)"
-	@echo "  make docker-local-test - End-to-end local install+uninstall as a non-root user in a fresh Ubuntu container (requires docker)"
+	@echo "  make docker-local-test - End-to-end local Docker install smoke test with shared LocalNet (requires docker)"
 	@echo ""
 	@echo "External Plugins:"
 	@echo "  make install-example-plugins - Install npm dependencies for all example plugins"
