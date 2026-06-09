@@ -106,9 +106,25 @@ func cmdSentryList() error {
 	}
 	logInfof("found %d sentry reference(s)", len(records))
 	for _, rec := range records {
-		fmt.Printf("  %s  (%s, %s)\n", rec.Name, rec.KeyType, rec.ComponentKey)
+		fmt.Printf("  %s  (%s, %s)\n", rec.ComponentKey, rec.KeyType, sentryReferenceListLabel(rec))
 	}
 	return nil
+}
+
+func sentryReferenceListLabel(rec sentryrefs.Record) string {
+	if rec.Source == sentryrefs.SourceClientDiscovery {
+		if rec.EndpointAlias != "" {
+			return "endpoint: " + rec.EndpointAlias
+		}
+		return "source: " + rec.Source
+	}
+	if rec.Name != "" {
+		return "name: " + rec.Name
+	}
+	if rec.Source != "" {
+		return "source: " + rec.Source
+	}
+	return "source: unknown"
 }
 
 func cmdSentryShow(name string) error {

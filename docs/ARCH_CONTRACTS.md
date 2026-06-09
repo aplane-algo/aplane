@@ -968,6 +968,8 @@ Endpoint discovery may also populate this catalog through
 `endpoint-<alias>-<component_key>`, `endpoint_alias`, `last_seen_at`, and
 `synced_at`. They are public candidates derived from the client's
 `endpoints.yaml`; they are not a sentry ownership proof.
+Human list output treats the component-key selector as the primary identifier
+and shows generated endpoint-synced names only in detailed JSON views.
 
 The library is a generation convenience and trust-input inventory for the user
 signer. When generating a guarded account, callers may provide

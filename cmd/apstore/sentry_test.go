@@ -17,7 +17,12 @@ import (
 func TestCmdSentryImportListShowRemove(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
 		exportPath := filepath.Join(t.TempDir(), "sentry-public.json")
-		if err := os.WriteFile(exportPath, testSentryExportJSON(t), 0o600); err != nil {
+		exportJSON := testSentryExportJSON(t)
+		var env sentryrefs.ExportEnvelope
+		if err := json.Unmarshal(exportJSON, &env); err != nil {
+			t.Fatalf("Unmarshal(export) error = %v", err)
+		}
+		if err := os.WriteFile(exportPath, exportJSON, 0o600); err != nil {
 			t.Fatalf("WriteFile(export) error = %v", err)
 		}
 
@@ -31,7 +36,9 @@ func TestCmdSentryImportListShowRemove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cmdSentry(list) error = %v", err)
 		}
-		if !strings.Contains(listOut, "lab-sentry") || !strings.Contains(listOut, keytypes.SentryComponentEd25519V1) {
+		if !strings.Contains(listOut, env.ComponentKey) ||
+			!strings.Contains(listOut, keytypes.SentryComponentEd25519V1) ||
+			!strings.Contains(listOut, "name: lab-sentry") {
 			t.Fatalf("list output = %q, want imported sentry reference", listOut)
 		}
 
@@ -58,6 +65,46 @@ func TestCmdSentryImportListShowRemove(t *testing.T) {
 		}
 		if len(records) != 0 {
 			t.Fatalf("records after remove = %#v, want empty", records)
+		}
+	})
+}
+
+func TestCmdSentryListHidesEndpointSyncedRecordName(t *testing.T) {
+	withPolicyCommandStore(t, func(_ string, _ []byte) {
+		pub := make([]byte, 32)
+		for i := range pub {
+			pub[i] = 0xab
+		}
+		componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
+		if err != nil {
+			t.Fatalf("ComponentKeySelector() error = %v", err)
+		}
+		if _, err := sentryrefs.SyncDiscovered(keystorePaths(), productIdentityID(), []sentryrefs.DiscoveredRecord{{
+			EndpointAlias: "foo",
+			ComponentKey:  componentKey,
+			KeyType:       keytypes.SentryComponentEd25519V1,
+			PublicKeyHex:  strings.Repeat("ab", 32),
+		}}); err != nil {
+			t.Fatalf("SyncDiscovered() error = %v", err)
+		}
+		generatedName, err := sentryrefs.SyncedReferenceName("foo", componentKey)
+		if err != nil {
+			t.Fatalf("SyncedReferenceName() error = %v", err)
+		}
+
+		listOut, err := withCapturedStdout(func() error {
+			return cmdSentry([]string{"list"})
+		})
+		if err != nil {
+			t.Fatalf("cmdSentry(list) error = %v", err)
+		}
+		if strings.Contains(listOut, generatedName) {
+			t.Fatalf("list output exposed generated record name %q:\n%s", generatedName, listOut)
+		}
+		if !strings.Contains(listOut, componentKey) ||
+			!strings.Contains(listOut, keytypes.SentryComponentEd25519V1) ||
+			!strings.Contains(listOut, "endpoint: foo") {
+			t.Fatalf("list output = %q, want component ID, key type, and endpoint alias", listOut)
 		}
 	})
 }
