@@ -154,22 +154,6 @@ func (fs *Signer) SetTheme(v string) {
 	fs.configMu.Unlock()
 }
 
-// SetSSHListenAddress updates the in-memory SSH listen address. Safe for
-// concurrent use.
-func (fs *Signer) SetSSHListenAddress(v string) {
-	fs.configMu.Lock()
-	fs.config.SSH.ListenAddress = v
-	fs.configMu.Unlock()
-}
-
-// SetEndpointAdvertiseURL updates the in-memory endpoint handoff URL. Safe for
-// concurrent use.
-func (fs *Signer) SetEndpointAdvertiseURL(v string) {
-	fs.configMu.Lock()
-	fs.config.Endpoint.AdvertiseURL = v
-	fs.configMu.Unlock()
-}
-
 // ConfigSnapshot returns an independent copy of the process config.
 func (fs *Signer) ConfigSnapshot() apconfig.ServerConfig {
 	fs.configMu.RLock()

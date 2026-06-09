@@ -37,8 +37,6 @@ type fakeDeps struct {
 
 	processMutationCalls  int
 	identityMutationCalls int
-	restartSSHCalls       []string
-	restartSSHErr         error
 }
 
 func (d *fakeDeps) DataDir() string {
@@ -59,19 +57,6 @@ func (d *fakeDeps) Theme() string {
 
 func (d *fakeDeps) SetTheme(v string) {
 	d.theme = v
-}
-
-func (d *fakeDeps) SetSSHListenAddress(v string) {
-	d.config.SSH.ListenAddress = v
-}
-
-func (d *fakeDeps) SetEndpointAdvertiseURL(v string) {
-	d.config.Endpoint.AdvertiseURL = v
-}
-
-func (d *fakeDeps) RestartSSHListener(listenAddress string) error {
-	d.restartSSHCalls = append(d.restartSSHCalls, listenAddress)
-	return d.restartSSHErr
 }
 
 func (d *fakeDeps) SSHInfo() SSHInfo {
@@ -279,171 +264,45 @@ func TestUpdateAdminSettingUsesExpectedMutationLock(t *testing.T) {
 	})
 }
 
-func TestUpdateAdminSettingEndpointAdvertiseURLPersistsServerConfig(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
-	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
+func TestUpdateAdminSettingRejectsInfrastructureNetworkSettings(t *testing.T) {
+	tests := []struct {
+		key   string
+		value string
+	}{
+		{key: adminproto.AdminSettingSSHListenAddress, value: "0.0.0.0"},
+		{key: adminproto.AdminSettingEndpointAdvertiseURL, value: "ssh://signer.example:1127"},
 	}
 
-	if err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
-		Key:   adminproto.AdminSettingEndpointAdvertiseURL,
-		Value: "ssh://signer.example:1127/",
-	}); err != nil {
-		t.Fatalf("UpdateAdminSetting(endpoint.advertise_url) error = %v", err)
-	}
-	if deps.processMutationCalls != 1 {
-		t.Fatalf("processMutationCalls = %d, want 1", deps.processMutationCalls)
-	}
-	if deps.identityMutationCalls != 0 {
-		t.Fatalf("identityMutationCalls = %d, want 0", deps.identityMutationCalls)
-	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			svc, ir, deps := setupAdminService(t)
+			if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
+				t.Fatal(err)
+			}
 
-	disk, err := apconfig.LoadServerConfig(deps.dataDir)
-	if err != nil {
-		t.Fatalf("LoadServerConfig error = %v", err)
-	}
-	if disk.Endpoint.AdvertiseURL != "ssh://signer.example:1127" {
-		t.Fatalf("disk Endpoint.AdvertiseURL = %q", disk.Endpoint.AdvertiseURL)
-	}
-
-	settings := svc.BuildAdminSettings(ir)
-	if settings.EndpointAdvertiseURL != "ssh://signer.example:1127" {
-		t.Fatalf("settings EndpointAdvertiseURL = %q", settings.EndpointAdvertiseURL)
-	}
-}
-
-func TestUpdateAdminSettingEndpointAdvertiseURLRejectsInvalidValue(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
-	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
-	err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
-		Key:   adminproto.AdminSettingEndpointAdvertiseURL,
-		Value: "self",
-	})
-	if err == nil {
-		t.Fatal("UpdateAdminSetting(endpoint.advertise_url self) error = nil, want rejection")
-	}
-	if !strings.Contains(err.Error(), "invalid endpoint.advertise_url") {
-		t.Fatalf("UpdateAdminSetting error = %v, want endpoint.advertise_url", err)
-	}
-	if deps.config.Endpoint.AdvertiseURL != "" {
-		t.Fatalf("Endpoint.AdvertiseURL = %q, want unchanged empty", deps.config.Endpoint.AdvertiseURL)
-	}
-}
-
-func TestUpdateAdminSettingSSHListenAddressPersistsServerConfigAndRestarts(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
-	initial := `theme: auto
-ssh:
-  listen_address: 127.0.0.1
-  port: 2222
-  host_key_path: .ssh/custom_host_key
-  authorized_keys_path: .ssh/custom_authorized_keys
-`
-	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte(initial), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := apconfig.LoadServerConfig(deps.dataDir)
-	if err != nil {
-		t.Fatalf("LoadServerConfig initial error = %v", err)
-	}
-	deps.config = &loaded
-
-	if err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
-		Key:   adminproto.AdminSettingSSHListenAddress,
-		Value: "0.0.0.0",
-	}); err != nil {
-		t.Fatalf("UpdateAdminSetting(ssh.listen_address) error = %v", err)
-	}
-	if deps.processMutationCalls != 1 {
-		t.Fatalf("processMutationCalls = %d, want 1", deps.processMutationCalls)
-	}
-	if deps.identityMutationCalls != 0 {
-		t.Fatalf("identityMutationCalls = %d, want 0", deps.identityMutationCalls)
-	}
-	if got := strings.Join(deps.restartSSHCalls, ","); got != "0.0.0.0" {
-		t.Fatalf("restartSSHCalls = %q, want 0.0.0.0", got)
-	}
-
-	disk, err := apconfig.LoadServerConfig(deps.dataDir)
-	if err != nil {
-		t.Fatalf("LoadServerConfig error = %v", err)
-	}
-	if disk.SSH.ListenAddress != "0.0.0.0" {
-		t.Fatalf("disk SSH.ListenAddress = %q, want 0.0.0.0", disk.SSH.ListenAddress)
-	}
-	if disk.SSH.Port != 2222 {
-		t.Fatalf("disk SSH.Port = %d, want 2222", disk.SSH.Port)
-	}
-	if !strings.HasSuffix(disk.SSH.HostKeyPath, ".ssh/custom_host_key") {
-		t.Fatalf("disk SSH.HostKeyPath = %q, want preserved custom path", disk.SSH.HostKeyPath)
-	}
-	if !strings.HasSuffix(disk.SSH.AuthorizedKeysPath, ".ssh/custom_authorized_keys") {
-		t.Fatalf("disk SSH.AuthorizedKeysPath = %q, want preserved custom path", disk.SSH.AuthorizedKeysPath)
-	}
-
-	settings := svc.BuildAdminSettings(ir)
-	if settings.SSHListenAddress != "0.0.0.0" {
-		t.Fatalf("settings SSHListenAddress = %q, want 0.0.0.0", settings.SSHListenAddress)
-	}
-}
-
-func TestUpdateAdminSettingSSHListenAddressRejectsInvalidValue(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
-	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
-	err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
-		Key:   adminproto.AdminSettingSSHListenAddress,
-		Value: "127.0.0.1:1127",
-	})
-	if err == nil {
-		t.Fatal("UpdateAdminSetting(ssh.listen_address with port) error = nil, want rejection")
-	}
-	if !strings.Contains(err.Error(), "invalid ssh.listen_address") {
-		t.Fatalf("UpdateAdminSetting error = %v, want ssh.listen_address", err)
-	}
-	if deps.config.SSH.ListenAddress != apconfig.DefaultSSHListenAddress {
-		t.Fatalf("SSH.ListenAddress = %q, want unchanged default", deps.config.SSH.ListenAddress)
-	}
-	if len(deps.restartSSHCalls) != 0 {
-		t.Fatalf("restartSSHCalls = %v, want none", deps.restartSSHCalls)
-	}
-}
-
-func TestUpdateAdminSettingSSHListenAddressDoesNotPersistWhenRestartFails(t *testing.T) {
-	svc, ir, deps := setupAdminService(t)
-	if err := os.WriteFile(filepath.Join(deps.dataDir, "config.yaml"), []byte("theme: auto\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	deps.restartSSHErr = fmt.Errorf("bind failed")
-
-	err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
-		Key:   adminproto.AdminSettingSSHListenAddress,
-		Value: "0.0.0.0",
-	})
-	if err == nil {
-		t.Fatal("UpdateAdminSetting(ssh.listen_address) error = nil, want restart failure")
-	}
-	if !strings.Contains(err.Error(), "failed to update SSH listener") {
-		t.Fatalf("UpdateAdminSetting error = %v, want listener failure", err)
-	}
-	if got := strings.Join(deps.restartSSHCalls, ","); got != "0.0.0.0" {
-		t.Fatalf("restartSSHCalls = %q, want 0.0.0.0", got)
-	}
-	if deps.config.SSH.ListenAddress != apconfig.DefaultSSHListenAddress {
-		t.Fatalf("SSH.ListenAddress = %q, want unchanged default", deps.config.SSH.ListenAddress)
-	}
-
-	disk, loadErr := apconfig.LoadServerConfig(deps.dataDir)
-	if loadErr != nil {
-		t.Fatalf("LoadServerConfig error = %v", loadErr)
-	}
-	if disk.SSH.ListenAddress != apconfig.DefaultSSHListenAddress {
-		t.Fatalf("disk SSH.ListenAddress = %q, want unchanged default", disk.SSH.ListenAddress)
+			err := svc.UpdateAdminSetting(ir, adminproto.UpdateAdminSettingRequest{
+				Key:   tt.key,
+				Value: tt.value,
+			})
+			if err == nil {
+				t.Fatalf("UpdateAdminSetting(%s) error = nil, want read-only rejection", tt.key)
+			}
+			if !strings.Contains(err.Error(), "unknown or read-only setting") {
+				t.Fatalf("UpdateAdminSetting(%s) error = %v, want read-only rejection", tt.key, err)
+			}
+			if deps.processMutationCalls != 0 {
+				t.Fatalf("processMutationCalls = %d, want 0", deps.processMutationCalls)
+			}
+			if deps.identityMutationCalls != 0 {
+				t.Fatalf("identityMutationCalls = %d, want 0", deps.identityMutationCalls)
+			}
+			if deps.config.SSH.ListenAddress != apconfig.DefaultSSHListenAddress {
+				t.Fatalf("SSH.ListenAddress = %q, want unchanged default", deps.config.SSH.ListenAddress)
+			}
+			if deps.config.Endpoint.AdvertiseURL != "" {
+				t.Fatalf("Endpoint.AdvertiseURL = %q, want unchanged empty", deps.config.Endpoint.AdvertiseURL)
+			}
+		})
 	}
 }
 

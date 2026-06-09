@@ -312,11 +312,12 @@ Validation:
 - every `passphrase_command_argv` element resolves relative to the signer data dir before execution
 - `theme` is the signer-admin UI preference persisted by the admin setting
   update path; it is process-global signer config, not client config
-- `ssh.listen_address` is the SSH listener bind host/address persisted by the
-  admin setting update path; changing it restarts the SSH listener
+- `ssh.listen_address` is the SSH listener bind host/address. It defaults to
+  `127.0.0.1` and is deployment-owned `config.yaml` state, not a writable
+  admin setting.
 - `endpoint.advertise_url` is optional operator-declared endpoint handoff
-  routing metadata persisted by the admin setting update path; it is not
-  inferred from the SSH bind address
+  routing metadata. It is deployment-owned `config.yaml` state, not a writable
+  admin setting, and is not inferred from the SSH bind address.
 - at startup validation, headless mode rejects `lock_on_disconnect:true`
 - at startup validation, headless mode requires `passphrase_timeout:"0"`
 - `approval_wait` must parse as a positive Go duration between 30 seconds and
@@ -353,9 +354,9 @@ Operational rules:
   transactions require an admin approver
 - process-owned `config.yaml` mutations are serialized by the signer process config mutation lock
 - admin setting writes fail if the loaded process config is stale relative to
-  mutable on-disk process settings such as `signer_port`, `ssh.listen_address`, `ssh.port`,
+  mutable on-disk process settings such as `signer_port`, `ssh.port`,
   `passphrase_command_argv`, `passphrase_command_env`, `networks`,
-  `approval_wait`, `endpoint.advertise_url`, and `theme`
+  `approval_wait`, and `theme`
 - runtime reads that need configuration should use snapshots or narrow accessors rather than holding mutable `ServerConfig` pointers
 - identity-owned settings and policy writes are serialized by the target identity's mutation lock
 - node role is immutable in supported tools; create a separate signer data root
@@ -435,9 +436,10 @@ config/plugin/env files).
 - REST binds `127.0.0.1:<signer_port>`
 - SSH binds `<ssh.listen_address>:<ssh.port>` and forwards to loopback REST.
   The default `ssh.listen_address` is `127.0.0.1`.
-- `ssh.listen_address` is process-owned and can be changed through admin
-  settings; apsigner restarts the SSH listener before persisting the new value.
-  Existing SSH admin sessions may be disconnected by the listener restart.
+- `ssh.listen_address` and `endpoint.advertise_url` are configured in signer
+  `config.yaml`. Admin settings may report those values, but do not mutate
+  listener bind or handoff URL state. Changing `ssh.listen_address` requires
+  restarting apsigner.
 
 ## On-Disk Formats
 

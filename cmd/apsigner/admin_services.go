@@ -352,18 +352,6 @@ func (d signerAdminAppDeps) SetTheme(v string) {
 	d.signer.SetTheme(v)
 }
 
-func (d signerAdminAppDeps) SetSSHListenAddress(v string) {
-	d.signer.SetSSHListenAddress(v)
-}
-
-func (d signerAdminAppDeps) SetEndpointAdvertiseURL(v string) {
-	d.signer.SetEndpointAdvertiseURL(v)
-}
-
-func (d signerAdminAppDeps) RestartSSHListener(listenAddress string) error {
-	return d.signer.RestartSSHListener(listenAddress)
-}
-
 func (d signerAdminAppDeps) SSHInfo() signeradmin.SSHInfo {
 	cfg := d.signer.ConfigSnapshot()
 	sshServer := d.signer.currentSSHServer()

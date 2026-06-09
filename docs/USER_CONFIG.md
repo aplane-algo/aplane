@@ -231,12 +231,12 @@ endpoint:
 Without `--host`, `--url`, or `endpoint.advertise_url`, endpoint export fails
 instead of guessing from local network interfaces.
 
-The SSH bind host can be edited from `apadmin` on the Settings page as
-`Endpoint hostname`; apsigner restarts its SSH listener before saving the new
-`ssh.listen_address`. The advertised handoff URL can also be set there as
-`Endpoint advertise URL`. If `endpoint.advertise_url` is empty, the admin
-header derives a local URL from `ssh.listen_address` and `ssh.port`; a
-wildcard bind such as `0.0.0.0` displays as `127.0.0.1` for the local URL.
+The SSH bind host and advertised handoff URL are deployment settings managed in
+`$APSIGNER_DATA/config.yaml`. `ssh.listen_address` defaults to `127.0.0.1`;
+change it in config and restart apsigner when the SSH listener should bind
+somewhere else. If `endpoint.advertise_url` is empty, the admin header derives
+a local URL from `ssh.listen_address` and `ssh.port`; a wildcard bind such as
+`0.0.0.0` displays as `127.0.0.1` for the local URL.
 
 Importing an endpoint creates routing/configuration only. It does not copy API
 tokens, SSH host trust, private keys, or passphrases. Tokens are still obtained

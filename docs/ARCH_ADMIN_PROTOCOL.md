@@ -287,8 +287,6 @@ Writable admin settings:
 - `lock_on_disconnect`
 - `passphrase_timeout`
 - `theme`
-- `ssh.listen_address`
-- `endpoint.advertise_url`
 
 Node role is not a writable admin setting. It is initialized once in root
 `node.yaml`, integrity-bound to the store, and changed only by creating a
@@ -296,6 +294,11 @@ separate signer data root.
 
 YAML-only runtime settings:
 
+- `ssh.listen_address`: SSH listener bind host/address. It defaults to
+  `127.0.0.1`; admin settings may report it but do not mutate it.
+- `endpoint.advertise_url`: optional operator-declared endpoint handoff URL
+  used by endpoint export when `--host`/`--url` are omitted. Admin settings may
+  report it but do not mutate it.
 - `approval_wait`: identity-effective manual signing approval timeout. It is
   not projected through admin IPC.
 
