@@ -54,7 +54,7 @@ func TestGuardedTargetsNormalizeSentryPublicKey(t *testing.T) {
 		t.Fatalf("target = %+v, want index 0 sender/account %s", targets[0], sender)
 	}
 	if targets[0].SentryComponentKeyType != keytypes.SentryComponentEd25519V1 {
-		t.Fatalf("sentry component key type = %q, want %q", targets[0].SentryComponentKeyType, keytypes.SentryComponentEd25519V1)
+		t.Fatalf("sentry key type = %q, want %q", targets[0].SentryComponentKeyType, keytypes.SentryComponentEd25519V1)
 	}
 	if targets[0].SentryPublicKey != sentryHex {
 		t.Fatalf("sentry public key = %q, want %q", targets[0].SentryPublicKey, sentryHex)
@@ -221,7 +221,7 @@ func TestGuardedTargetsNormalizeFalconSentryPublicKey(t *testing.T) {
 		t.Fatalf("len(targets) = %d, want 1", len(targets))
 	}
 	if targets[0].SentryComponentKeyType != keytypes.SentryComponentFalcon1024V1 {
-		t.Fatalf("sentry component key type = %q, want %q", targets[0].SentryComponentKeyType, keytypes.SentryComponentFalcon1024V1)
+		t.Fatalf("sentry key type = %q, want %q", targets[0].SentryComponentKeyType, keytypes.SentryComponentFalcon1024V1)
 	}
 	if targets[0].SentryPublicKey != sentryHex {
 		t.Fatalf("sentry public key = %q, want %q", targets[0].SentryPublicKey, sentryHex)
@@ -492,7 +492,7 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want explicit endpoint mismatch")
 	}
-	if !strings.Contains(err.Error(), "did not advertise sentry component public key") {
+	if !strings.Contains(err.Error(), "did not advertise sentry public key") {
 		t.Fatalf("requestSentryComponentSignatures() error = %q, want endpoint mismatch", err)
 	}
 	if got := wrongSignCalls.Load(); got != 0 {
@@ -655,7 +655,7 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey e
 	}
 	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
-		t.Fatalf("component selector: %v", err)
+		t.Fatalf("Sentry Key ID: %v", err)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
@@ -687,7 +687,7 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey e
 			return
 		}
 		if req.Role != signerapi.ComponentSignRoleSentry || req.ComponentKey != componentSelector {
-			http.Error(w, "wrong sentry component key", http.StatusBadRequest)
+			http.Error(w, "wrong Sentry Key ID", http.StatusBadRequest)
 			return
 		}
 		group, err := sentryverify.DecodeCanonicalGroupHex(req.GroupBytesHex)

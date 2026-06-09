@@ -288,7 +288,7 @@ func normalizeSentryPublicKeyHex(raw string, componentKeyType string) (string, e
 	}
 	wantSize, ok := keytypes.ComponentPublicKeySize(componentKeyType)
 	if !ok {
-		return "", fmt.Errorf("key type %q is not a sentry component key type", componentKeyType)
+		return "", fmt.Errorf("key type %q is not a sentry key type", componentKeyType)
 	}
 	if len(publicKey) != wantSize {
 		return "", fmt.Errorf("sentry public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
@@ -493,7 +493,7 @@ func (e *Engine) requestOneSentryComponentSignatureSet(ctx context.Context, grou
 
 	componentSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, sentryKey.PublicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to derive sentry component selector for public key %s: %w", sentryKey.PublicKey, err)
+		return "", fmt.Errorf("failed to derive Sentry Key ID for public key %s: %w", sentryKey.PublicKey, err)
 	}
 
 	resp, err := endpoint.client.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
@@ -574,7 +574,7 @@ func verifySentryComponentSignature(componentKeyType string, publicKey, msg, sig
 	case keytypes.SentryComponentFalcon1024V1:
 		return sentryverify.VerifyFalcon1024(publicKey, msg, signature)
 	default:
-		return fmt.Errorf("key type %q is not a sentry component key type", componentKeyType)
+		return fmt.Errorf("key type %q is not a sentry key type", componentKeyType)
 	}
 }
 

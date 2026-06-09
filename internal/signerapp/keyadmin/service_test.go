@@ -209,7 +209,7 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 				t.Fatal("GenerateKey(component) public key is empty")
 			}
 			if !keytypes.IsComponentKeySelector(result.Address) {
-				t.Fatalf("GenerateKey(component) address = %q, want component key selector", result.Address)
+				t.Fatalf("GenerateKey(component) address = %q, want Sentry Key ID", result.Address)
 			}
 			if result.Address == result.PublicKeyHex {
 				t.Fatal("GenerateKey(component) address unexpectedly equals public key hex")
@@ -521,10 +521,10 @@ func TestServiceDeleteKeyRemovesSentryComponentKey(t *testing.T) {
 		t.Fatal("DeleteKey(component) returned empty deleted path")
 	}
 	if _, err := os.Stat(keyFile); !os.IsNotExist(err) {
-		t.Fatalf("component key file still present after delete: stat err = %v", err)
+		t.Fatalf("sentry key file still present after delete: stat err = %v", err)
 	}
 	if _, err := os.Stat(delResult.DeletedPath); err != nil {
-		t.Fatalf("deleted component key path %q stat error = %v", delResult.DeletedPath, err)
+		t.Fatalf("deleted sentry key path %q stat error = %v", delResult.DeletedPath, err)
 	}
 	if _, err := ir.FindKeyFile(genResult.Address); err == nil {
 		t.Fatalf("FindKeyFile(%q) after delete succeeded, want stale snapshot cleared", genResult.Address)

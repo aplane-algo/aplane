@@ -147,8 +147,8 @@ compatibility; it is not the `/sign` wire response.
 
 - optional `request_id`
 - `role`: `user` or `sentry`
-- `component_key`: guarded account address for `user`, sentry component
-  selector for `sentry`
+- `component_key`: guarded account address for `user`, Sentry Key ID for
+  `sentry`
 - `group_bytes_hex[]`: final TX-prefixed transaction bytes for the whole group
 - `target_indices[]`: zero-based indices to sign
 
@@ -157,7 +157,7 @@ use for user-role component signing. The target transaction sender may be the
 guarded account itself or another sender whose effective signer/AuthAddr is
 that guarded account; no separate sender field is supplied because the sender
 is decoded from `group_bytes_hex[]`. For `role:"sentry"`, `component_key`
-identifies the local sentry component-key selector. Each target index is signed
+identifies the local Sentry Key ID. Each target index is signed
 independently using the role-separated sentry message derived from that
 target's TxID.
 
@@ -277,9 +277,9 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - `keys[]` with `address`, `public_key_hex`, `key_type`
 - optional `lsig_size`
 - optional `is_generic_lsig`
-- optional `is_component_key` and `is_spending_account`: component-key rows use
-  `address` as the component-key selector, not as an Algorand spending address.
-  Sentry component selectors are always 52-character uppercase base32
+- optional `is_component_key` and `is_spending_account`: sentry-key rows use
+  `address` as the Sentry Key ID, not as an Algorand spending address.
+  Sentry Key IDs are always 52-character uppercase base32
   SHA-512/256 digests over the domain-separated key-type/public-key tuple;
   `public_key_hex` carries the full component public key.
 - optional `signing_args`: the key file's stored signing schema captured at

@@ -349,44 +349,44 @@ func loadGenericLsigKeys(decryptedData []byte, keyType string, signingMeta keys.
 func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta keys.SigningMetadata) (*signing.KeyMaterial, error) {
 	payloadMeta, err := keys.ParseKeyPayloadMetadata(decryptedData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse component key data: %w", err)
+		return nil, fmt.Errorf("failed to parse sentry key data: %w", err)
 	}
 	if signingMeta.Category != keys.CategoryComponent {
-		return nil, fmt.Errorf("component key has invalid category %q", signingMeta.Category)
+		return nil, fmt.Errorf("sentry key has invalid category %q", signingMeta.Category)
 	}
 	if !keytypes.IsSentryComponentKeyType(keyType) {
-		return nil, fmt.Errorf("unsupported component key type: %s", keyType)
+		return nil, fmt.Errorf("unsupported sentry key type: %s", keyType)
 	}
 
 	publicKey, err := hex.DecodeString(payloadMeta.PublicKeyHex)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode component public key: %w", err)
+		return nil, fmt.Errorf("failed to decode sentry public key: %w", err)
 	}
 	publicKeySize, ok := keytypes.ComponentPublicKeySize(keyType)
 	if !ok {
 		crypto.ZeroBytes(publicKey)
-		return nil, fmt.Errorf("unsupported component key type: %s", keyType)
+		return nil, fmt.Errorf("unsupported sentry key type: %s", keyType)
 	}
 	if len(publicKey) != publicKeySize {
 		crypto.ZeroBytes(publicKey)
-		return nil, fmt.Errorf("invalid component public key length: expected %d bytes, got %d", publicKeySize, len(publicKey))
+		return nil, fmt.Errorf("invalid sentry public key length: expected %d bytes, got %d", publicKeySize, len(publicKey))
 	}
 
 	privateKey, err := hex.DecodeString(payloadMeta.PrivateKeyHex)
 	if err != nil {
 		crypto.ZeroBytes(publicKey)
-		return nil, fmt.Errorf("failed to decode component private key: %w", err)
+		return nil, fmt.Errorf("failed to decode sentry private key: %w", err)
 	}
 	privateKeySize, ok := keytypes.ComponentPrivateKeySize(keyType)
 	if !ok {
 		crypto.ZeroBytes(publicKey)
 		crypto.ZeroBytes(privateKey)
-		return nil, fmt.Errorf("unsupported component key type: %s", keyType)
+		return nil, fmt.Errorf("unsupported sentry key type: %s", keyType)
 	}
 	if len(privateKey) != privateKeySize {
 		crypto.ZeroBytes(publicKey)
 		crypto.ZeroBytes(privateKey)
-		return nil, fmt.Errorf("invalid component private key length: expected %d bytes, got %d", privateKeySize, len(privateKey))
+		return nil, fmt.Errorf("invalid sentry private key length: expected %d bytes, got %d", privateKeySize, len(privateKey))
 	}
 
 	if err := validateComponentPublicPrivatePair(keyType, publicKey, privateKey); err != nil {
@@ -443,22 +443,22 @@ func validateComponentPublicPrivatePair(keyType string, publicKey, privateKey []
 	case keytypes.SentryComponentEd25519V1:
 		derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
 		if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
-			return fmt.Errorf("component public key does not match private key")
+			return fmt.Errorf("sentry public key does not match private key")
 		}
 		return nil
 	case keytypes.SentryComponentFalcon1024V1:
 		const probe = "APLANE_COMPONENT_KEY_LOAD_V1"
 		signature, err := signerops.New(nil).Sign(privateKey, []byte(probe))
 		if err != nil {
-			return fmt.Errorf("component public/private key validation failed: %w", err)
+			return fmt.Errorf("sentry public/private key validation failed: %w", err)
 		}
 		defer crypto.ZeroBytes(signature)
 		if err := verify.VerifyFalcon1024(publicKey, []byte(probe), signature); err != nil {
-			return fmt.Errorf("component public key does not match private key")
+			return fmt.Errorf("sentry public key does not match private key")
 		}
 		return nil
 	default:
-		return fmt.Errorf("unsupported component key type: %s", keyType)
+		return fmt.Errorf("unsupported sentry key type: %s", keyType)
 	}
 }
 

@@ -805,7 +805,7 @@ func assertHumanEndpointOutputUsesComponentOnly(t *testing.T, lines []string, pu
 	t.Helper()
 	output := strings.Join(lines, "\n")
 	if !strings.Contains(output, componentID) {
-		t.Fatalf("endpoint output = %q, want component selector %s", output, componentID)
+		t.Fatalf("endpoint output = %q, want Sentry Key ID %s", output, componentID)
 	}
 	if strings.Contains(output, publicKeyHex) || strings.Contains(output, strings.ToUpper(publicKeyHex)) {
 		t.Fatalf("endpoint output leaked raw sentry public key: %q", output)

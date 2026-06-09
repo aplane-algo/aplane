@@ -395,7 +395,7 @@ func (c *Config) ForKey(key string) *Config {
 
 // NormalizeKeyOverrideKey validates and canonicalizes a policy key_overrides
 // selector. Signing-account selectors are Algorand addresses. Sentry
-// component-key selectors are txid-shaped component selectors.
+// Key IDs are txid-shaped selectors.
 func NormalizeKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
@@ -405,18 +405,18 @@ func NormalizeKeyOverrideKey(key string) (string, error) {
 		return selector, nil
 	}
 	if len(raw) == keytypes.ComponentKeySelectorLength {
-		return "", fmt.Errorf("invalid component key selector %q", raw)
+		return "", fmt.Errorf("invalid Sentry Key ID %q", raw)
 	}
 	addr, err := types.DecodeAddress(strings.ToUpper(raw))
 	if err != nil {
-		return "", fmt.Errorf("key override selector must be an Algorand address or component key selector")
+		return "", fmt.Errorf("key override selector must be an Algorand address or Sentry Key ID")
 	}
 	return addr.String(), nil
 }
 
 // NormalizeSentryKeyOverrideKey validates and canonicalizes a sentry
 // policy key_overrides selector. Sentry overrides are always keyed by
-// sentry component-key selector, not spending-account address.
+// Sentry Key ID, not spending-account address.
 func NormalizeSentryKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
@@ -424,7 +424,7 @@ func NormalizeSentryKeyOverrideKey(key string) (string, error) {
 	}
 	selector, err := keytypes.NormalizeComponentKeySelector(raw)
 	if err != nil {
-		return "", fmt.Errorf("sentry key override selector must be a component key selector: %w", err)
+		return "", fmt.Errorf("sentry key override selector must be a Sentry Key ID: %w", err)
 	}
 	return selector, nil
 }

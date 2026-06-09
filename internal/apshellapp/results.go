@@ -779,8 +779,8 @@ type EndpointSentriesResult struct {
 	RenderLines []string
 }
 
-// DiscoveredEndpointSentryKey describes one sentry component key advertised
-// by an endpoint during discovery.
+// DiscoveredEndpointSentryKey describes one sentry key advertised by an
+// endpoint during discovery.
 type DiscoveredEndpointSentryKey struct {
 	PublicKey    string
 	ComponentKey string

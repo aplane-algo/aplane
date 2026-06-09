@@ -15,9 +15,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
-// SentryEd25519Generator creates raw Ed25519 sentry component keys. These
-// keys are not Algorand spending accounts and are intentionally registered only
-// under their exact component key type.
+// SentryEd25519Generator creates raw Ed25519 sentry keys. These keys are not
+// Algorand spending accounts and are intentionally registered only under their
+// exact sentry key type.
 type SentryEd25519Generator struct{}
 
 func (g *SentryEd25519Generator) Family() string {
@@ -60,7 +60,7 @@ func (g *SentryEd25519Generator) GenerateRandom(ctx context.Context, paths store
 
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate component key: %w", err)
+		return nil, fmt.Errorf("failed to generate sentry key: %w", err)
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
@@ -69,7 +69,7 @@ func (g *SentryEd25519Generator) GenerateRandom(ctx context.Context, paths store
 
 var registerSentryEd25519GeneratorOnce sync.Once
 
-// RegisterSentryEd25519Generator registers the component-key generator. This
+// RegisterSentryEd25519Generator registers the sentry-key generator. This
 // is intentionally separate from the transaction-signing provider registry.
 func RegisterSentryEd25519Generator() {
 	registerSentryEd25519GeneratorOnce.Do(func() {

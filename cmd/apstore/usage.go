@@ -34,7 +34,7 @@ func apstoreUsage() {
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keytype disable <key-type>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] keys list\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] endpoint export [--host <host> | --url <url>] [--out endpoint.json]\n")
-	fmt.Fprintf(os.Stderr, "  apstore [-d path] sentry export <component-key> [output-json]\n")
+	fmt.Fprintf(os.Stderr, "  apstore [-d path] sentry export <sentry-key-id> [output-json]\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] sentry import <export-json> <name>\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] sentry list\n")
 	fmt.Fprintf(os.Stderr, "  apstore [-d path] sentry show <name>\n")

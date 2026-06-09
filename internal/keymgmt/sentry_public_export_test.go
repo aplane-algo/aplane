@@ -77,10 +77,10 @@ func TestNewSentryPublicKeyExportRejectsMismatchedSelector(t *testing.T) {
 
 	_, err = NewSentryPublicKeyExport(componentKey, keytypes.SentryComponentEd25519V1, hex.EncodeToString(pub))
 	if err == nil {
-		t.Fatal("NewSentryPublicKeyExport() error = nil, want selector mismatch")
+		t.Fatal("NewSentryPublicKeyExport() error = nil, want Sentry Key ID mismatch")
 	}
-	if !strings.Contains(err.Error(), "does not match public key-derived selector") {
-		t.Fatalf("NewSentryPublicKeyExport() error = %v, want selector mismatch", err)
+	if !strings.Contains(err.Error(), "does not match public key-derived Sentry Key ID") {
+		t.Fatalf("NewSentryPublicKeyExport() error = %v, want Sentry Key ID mismatch", err)
 	}
 }
 
@@ -93,10 +93,10 @@ func TestNewSentryPublicKeyExportRejectsSpendingKeyType(t *testing.T) {
 
 	_, err = NewSentryPublicKeyExport(componentKey, "ed25519", hex.EncodeToString(pub))
 	if err == nil {
-		t.Fatal("NewSentryPublicKeyExport() error = nil, want non-component key type rejection")
+		t.Fatal("NewSentryPublicKeyExport() error = nil, want non-sentry key type rejection")
 	}
-	if !strings.Contains(err.Error(), "is not a sentry component key type") {
-		t.Fatalf("NewSentryPublicKeyExport() error = %v, want non-component key type rejection", err)
+	if !strings.Contains(err.Error(), "is not a sentry key type") {
+		t.Fatalf("NewSentryPublicKeyExport() error = %v, want non-sentry key type rejection", err)
 	}
 }
 

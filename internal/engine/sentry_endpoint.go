@@ -30,7 +30,7 @@ type sentryComponentClient interface {
 }
 
 var (
-	// ErrSentryDiscoveryInvalidMetadata marks malformed sentry component-key
+	// ErrSentryDiscoveryInvalidMetadata marks malformed sentry-key
 	// metadata returned by an endpoint's /keys response.
 	ErrSentryDiscoveryInvalidMetadata = errors.New("invalid sentry discovery metadata")
 
@@ -72,7 +72,7 @@ func (e sentryEndpointLockedError) Unwrap() error {
 	return ErrSentryDiscoveryLocked
 }
 
-// DiscoveredSentryComponentKey is public sentry component-key metadata
+// DiscoveredSentryComponentKey is public sentry-key metadata
 // advertised by a signer endpoint through /keys.
 type DiscoveredSentryComponentKey struct {
 	PublicKey    string
@@ -107,7 +107,7 @@ func (e *Engine) resolveSentryEndpoint(ctx context.Context, sentryKey sentryRequ
 	}
 
 	if err := verifySentryEndpointAdvertises(ctx, e.Connection, sentryKey, "current signer"); err != nil {
-		return nil, fmt.Errorf("no sentry endpoint configured for public key %s and current signer does not advertise a matching component key: %w", sentryKey.PublicKey, err)
+		return nil, fmt.Errorf("no sentry endpoint configured for public key %s and current signer does not advertise a matching Sentry Key ID: %w", sentryKey.PublicKey, err)
 	}
 	return &resolvedSentryEndpoint{client: e.Connection, source: "current signer"}, nil
 }
@@ -269,15 +269,15 @@ func discoverSentryComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredSentryCo
 		}
 		publicKey, err := normalizeSentryPublicKeyHex(key.PublicKeyHex, key.KeyType)
 		if err != nil {
-			return nil, fmt.Errorf("%w: sentry component key %q has invalid public_key_hex: %v", ErrSentryDiscoveryInvalidMetadata, key.Address, err)
+			return nil, fmt.Errorf("%w: Sentry Key ID %q has invalid public_key_hex: %v", ErrSentryDiscoveryInvalidMetadata, key.Address, err)
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
 		if err != nil {
-			return nil, fmt.Errorf("%w: sentry component public key %s has invalid component selector %q: %v", ErrSentryDiscoveryInvalidMetadata, publicKey, key.Address, err)
+			return nil, fmt.Errorf("%w: sentry public key %s has invalid Sentry Key ID %q: %v", ErrSentryDiscoveryInvalidMetadata, publicKey, key.Address, err)
 		}
 		expectedSelector, err := sentryComponentSelector(key.KeyType, publicKey)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to derive component selector for sentry public key %s: %v", ErrSentryDiscoveryInvalidMetadata, publicKey, err)
+			return nil, fmt.Errorf("%w: failed to derive Sentry Key ID for sentry public key %s: %v", ErrSentryDiscoveryInvalidMetadata, publicKey, err)
 		}
 		if selector != expectedSelector {
 			return nil, fmt.Errorf("%w: sentry component public key %s advertised selector %s, want %s", ErrSentryDiscoveryInvalidMetadata, publicKey, selector, expectedSelector)
@@ -317,11 +317,11 @@ func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentC
 	}
 	expectedSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, expectedPublicKey)
 	if err != nil {
-		return fmt.Errorf("failed to derive expected sentry component selector: %w", err)
+		return fmt.Errorf("failed to derive expected Sentry Key ID: %w", err)
 	}
 	keys, err := client.GetKeysWithContext(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to inspect %s component keys for sentry: %w", source, err)
+		return fmt.Errorf("failed to inspect %s sentry keys: %w", source, err)
 	}
 	if keys.Locked {
 		return sentryEndpointLockedError{source: source}
@@ -339,12 +339,12 @@ func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentC
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
 		if err != nil {
-			return fmt.Errorf("%s advertised sentry public key %s with invalid component selector %q: %w", source, expectedPublicKey, key.Address, err)
+			return fmt.Errorf("%s advertised sentry public key %s with invalid Sentry Key ID %q: %w", source, expectedPublicKey, key.Address, err)
 		}
 		if selector != expectedSelector {
-			return fmt.Errorf("%s advertised sentry public key %s with component selector %s, want %s", source, expectedPublicKey, selector, expectedSelector)
+			return fmt.Errorf("%s advertised sentry public key %s with Sentry Key ID %s, want %s", source, expectedPublicKey, selector, expectedSelector)
 		}
 		return nil
 	}
-	return fmt.Errorf("%s did not advertise sentry component public key %s", source, expectedPublicKey)
+	return fmt.Errorf("%s did not advertise sentry public key %s", source, expectedPublicKey)
 }

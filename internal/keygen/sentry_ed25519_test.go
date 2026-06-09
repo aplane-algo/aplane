@@ -41,7 +41,7 @@ func TestSentryEd25519GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatal("PublicKeyHex is empty")
 	}
 	if !keytypes.IsComponentKeySelector(result.Address) {
-		t.Fatalf("Address = %q, want component key selector", result.Address)
+		t.Fatalf("Address = %q, want Sentry Key ID", result.Address)
 	}
 	if result.Address == result.PublicKeyHex {
 		t.Fatal("Address unexpectedly equals public key hex")
@@ -59,7 +59,7 @@ func TestSentryEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	}
 	info, ok := scan[result.Address]
 	if !ok {
-		t.Fatalf("scan missing component key %q", result.Address)
+		t.Fatalf("scan missing sentry key %q", result.Address)
 	}
 	if info.Category != keys.CategoryComponent {
 		t.Fatalf("scan category = %q, want %q", info.Category, keys.CategoryComponent)
@@ -110,7 +110,7 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("PublicKeyHex length = %d, want %d", len(result.PublicKeyHex), falconfamily.PublicKeySize*2)
 	}
 	if !keytypes.IsComponentKeySelector(result.Address) {
-		t.Fatalf("Address = %q, want component key selector", result.Address)
+		t.Fatalf("Address = %q, want Sentry Key ID", result.Address)
 	}
 	if result.Address == result.PublicKeyHex {
 		t.Fatalf("Address unexpectedly equals full Falcon public key hex")
@@ -128,7 +128,7 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	}
 	info, ok := scan[result.Address]
 	if !ok {
-		t.Fatalf("scan missing component key %q", result.Address)
+		t.Fatalf("scan missing sentry key %q", result.Address)
 	}
 	if info.Category != keys.CategoryComponent {
 		t.Fatalf("scan category = %q, want %q", info.Category, keys.CategoryComponent)

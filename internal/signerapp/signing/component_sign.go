@@ -180,41 +180,41 @@ func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, com
 		case errors.Is(err, keystore.ErrStoreLocked):
 			return nil, nil, forbidden("signer is locked")
 		case errors.Is(err, keystore.ErrKeyNotFound):
-			return nil, nil, badRequest(fmt.Sprintf("component key %q not found", componentKeySelector))
+			return nil, nil, badRequest(fmt.Sprintf("Sentry Key ID %q not found", componentKeySelector))
 		default:
-			return nil, nil, internal(fmt.Sprintf("failed to load component key: %v", err))
+			return nil, nil, internal(fmt.Sprintf("failed to load sentry key: %v", err))
 		}
 	}
 	if keyMaterial == nil {
-		return nil, nil, internal("loaded component key material is nil")
+		return nil, nil, internal("loaded sentry key material is nil")
 	}
 	if !keytypes.IsSentryComponentKeyType(keyMaterial.Type) {
 		gotType := keyMaterial.Type
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, badRequest(fmt.Sprintf("key %q is %s, not a sentry component key", componentKeySelector, gotType))
+		return nil, nil, badRequest(fmt.Sprintf("key %q is %s, not a sentry key", componentKeySelector, gotType))
 	}
 	if keyMaterial.Category != "" && keyMaterial.Category != keys.CategoryComponent {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, badRequest(fmt.Sprintf("key %q is not a component key", componentKeySelector))
+		return nil, nil, badRequest(fmt.Sprintf("key %q is not a sentry key", componentKeySelector))
 	}
 	componentKey, ok := keyMaterial.Value.(*coresigning.ComponentKeyMaterial)
 	if !ok || componentKey == nil {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, internal("loaded sentry component key has invalid material")
+		return nil, nil, internal("loaded sentry key has invalid material")
 	}
 	if componentKey.ComponentKey != componentKeySelector {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, internal("loaded component key selector does not match requested component key")
+		return nil, nil, internal("loaded Sentry Key ID does not match requested Sentry Key ID")
 	}
 	publicKeySize, _ := keytypes.ComponentPublicKeySize(keyMaterial.Type)
 	privateKeySize, _ := keytypes.ComponentPrivateKeySize(keyMaterial.Type)
 	if len(componentKey.PrivateKey) != privateKeySize {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, internal(fmt.Sprintf("loaded sentry component key has private key length %d", len(componentKey.PrivateKey)))
+		return nil, nil, internal(fmt.Sprintf("loaded sentry key has private key length %d", len(componentKey.PrivateKey)))
 	}
 	if len(componentKey.PublicKey) != publicKeySize {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, internal(fmt.Sprintf("loaded sentry component key has public key length %d", len(componentKey.PublicKey)))
+		return nil, nil, internal(fmt.Sprintf("loaded sentry key has public key length %d", len(componentKey.PublicKey)))
 	}
 	if err := validateLoadedSentryComponentPair(keyMaterial.Type, componentKey.PublicKey, componentKey.PrivateKey); err != nil {
 		zeroLoadedKeyMaterial(keyMaterial)
@@ -227,7 +227,7 @@ func signSentryComponentMessage(keyType string, privateKey, msg []byte) ([]byte,
 	switch keyType {
 	case keytypes.SentryComponentEd25519V1:
 		if len(privateKey) != ed25519.PrivateKeySize {
-			return nil, internal(fmt.Sprintf("loaded sentry component key has private key length %d", len(privateKey)))
+			return nil, internal(fmt.Sprintf("loaded sentry key has private key length %d", len(privateKey)))
 		}
 		return ed25519.Sign(ed25519.PrivateKey(privateKey), msg), nil
 	case keytypes.SentryComponentFalcon1024V1:
@@ -237,7 +237,7 @@ func signSentryComponentMessage(keyType string, privateKey, msg []byte) ([]byte,
 		}
 		return signature, nil
 	default:
-		return nil, badRequest(fmt.Sprintf("key type %q is not a sentry component key", keyType))
+		return nil, badRequest(fmt.Sprintf("key type %q is not a sentry key", keyType))
 	}
 }
 
@@ -246,21 +246,21 @@ func validateLoadedSentryComponentPair(keyType string, publicKey, privateKey []b
 	case keytypes.SentryComponentEd25519V1:
 		derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
 		if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
-			return fmt.Errorf("loaded sentry component key public key does not match private key")
+			return fmt.Errorf("loaded sentry key public key does not match private key")
 		}
 		return nil
 	case keytypes.SentryComponentFalcon1024V1:
 		const probe = "APLANE_COMPONENT_KEY_LOAD_V1"
 		signature, err := signerops.New(nil).Sign(privateKey, []byte(probe))
 		if err != nil {
-			return fmt.Errorf("loaded Falcon sentry component key validation failed: %w", err)
+			return fmt.Errorf("loaded Falcon sentry key validation failed: %w", err)
 		}
 		defer crypto.ZeroBytes(signature)
 		if err := verify.VerifyFalcon1024(publicKey, []byte(probe), signature); err != nil {
-			return fmt.Errorf("loaded sentry component key public key does not match private key")
+			return fmt.Errorf("loaded sentry key public key does not match private key")
 		}
 		return nil
 	default:
-		return fmt.Errorf("loaded key type %q is not a sentry component key", keyType)
+		return fmt.Errorf("loaded key type %q is not a sentry key", keyType)
 	}
 }

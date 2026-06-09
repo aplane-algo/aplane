@@ -249,8 +249,8 @@ Client-signing rules:
 5. Override fields are sparse overlays over the identity-wide policy; nested
    overrides are rejected.
 
-Sentry component overrides are keyed by the component selector and are
-consumed only by the sentry-role component-signing flow modeled in
+Sentry overrides are keyed by Sentry Key ID and are consumed only by the
+sentry-role component-signing flow modeled in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
 ## Network Selection

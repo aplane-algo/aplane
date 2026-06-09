@@ -60,10 +60,12 @@ Canonical forms:
   `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
   decimal version, for example `aplane.falcon1024.v1`,
   `aplane.htlc.v1`, and `aplane.falcon1024-whitelist.v1`
-- sentry component keys use the same canonical key-type identifier contract,
+- sentry keys use the same canonical key-type identifier contract,
   for example `aplane.sentry-ed25519.v1` and
   `aplane.sentry-falcon1024.v1`; they are component-signing keys selected by
-  52-character txid-shaped component selectors, not spending accounts
+  52-character txid-shaped Sentry Key IDs, not spending accounts. The
+  compatibility wire/storage field name for that selector remains
+  `component_key`.
 - guarded account key types name both the account DSA and the sentry DSA,
   for example `aplane.falcon1024-sentry-ed25519.v1` and
   `aplane.falcon1024-sentry-falcon1024.v1`; the older Go-level
@@ -298,7 +300,7 @@ targets fail closed. Direct YAML edits are checked, signed, and verified
 through `appolicy` or `apstore policy`.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
-sentry overrides are keyed by component selector. These overrides apply to
+sentry overrides are keyed by Sentry Key ID. These overrides apply to
 policy phases, are not exposed through admin IPC, and direct YAML edits require
 offline `apstore policy sign` before the signer will trust them.
 
@@ -568,7 +570,7 @@ Additional client-state notes:
 - `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then signer `config.yaml` `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
 - `apshell endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]` manually creates or replaces a `role: sentry` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--sentryport` is stored as the endpoint `signer_port` REST port used behind SSH sentry endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover sentry keys, copy tokens, or establish SSH host trust.
-- `apshell endpoints sync-sentries [--dry-run] [--yes]` scans configured `sentry` endpoints with authenticated `/keys`, extracts sentry component-key `public_key_hex` values, validates each `component_key`, and atomically rebuilds endpoint-local `published_sentries` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_sentries` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and component-key validation failures are hard errors and leave files unchanged. After discovery, the command prints Sentry Key IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public sentry reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered sentries selectable from signer-side key generation clients such as `apadmin`.
+- `apshell endpoints sync-sentries [--dry-run] [--yes]` scans configured `sentry` endpoints with authenticated `/keys`, extracts sentry-key `public_key_hex` values, validates each `component_key` Sentry Key ID, and atomically rebuilds endpoint-local `published_sentries` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_sentries` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and Sentry Key ID validation failures are hard errors and leave files unchanged. After discovery, the command prints Sentry Key IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public sentry reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered sentries selectable from signer-side key generation clients such as `apadmin`.
 - `apshell endpoints sentries` lists the local endpoint-discovered sentry inventory by endpoint alias, Sentry Key ID, and key type without calling remote endpoints.
 - `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. Human endpoint output identifies sentries by Sentry Key ID and must not print raw sentry public keys. `show` is local-only, does not call `/keys`, and includes `last_seen_at` for that endpoint's published sentries; `delete` refuses to remove the signer endpoint or an endpoint with published sentries still referenced by derived runtime routing.
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
@@ -910,22 +912,22 @@ or alter signing behavior.
 `apstore keys list` is a local, passphrase-gated inventory surface for the
 current product identity's encrypted key files. It decrypts key metadata using
 the identity store passphrase and lists successfully scanned key addresses or
-component selectors with their key type, durable category, creation timestamp,
-and key-file name.
+Sentry Key IDs with their key type, durable category, creation timestamp, and
+key-file name.
 
 The default human output must not emit private key material, mnemonic material,
-or raw public-key hex. Component keys are identified by their component
-selector, not by the raw sentry public key. Recoverable key-scan warnings may
-be reported while still listing keys that scanned successfully.
+or raw public-key hex. Sentry keys are identified by their Sentry Key ID, not
+by the raw sentry public key. Recoverable key-scan warnings may be reported
+while still listing keys that scanned successfully.
 
 #### Sentry Public Key Export Envelope
 
-`apstore sentry export <component-key> [output-json]` emits a public-only
-JSON envelope for a sentry component key. The command reads the
-`keys/<component-key>.public.json` sidecar, verifies that `<component-key>`
-equals the canonical selector derived from the public key, and never reads or
-decrypts private key material. If the sidecar is missing or malformed, export
-fails closed; the operator must regenerate the sentry component key or run an
+`apstore sentry export <sentry-key-id> [output-json]` emits a public-only JSON
+envelope for a sentry key. The command reads the
+`keys/<sentry-key-id>.public.json` sidecar, verifies that `<sentry-key-id>`
+equals the canonical Sentry Key ID derived from the public key, and never reads
+or decrypts private key material. If the sidecar is missing or malformed,
+export fails closed; the operator must regenerate the sentry key or run an
 explicit metadata backfill before exporting.
 
 The envelope schema is:
@@ -942,8 +944,9 @@ The envelope schema is:
 }
 ```
 
-`component_key` is always the 52-character uppercase base32 selector used to
-select a local sentry component key. It is derived as
+`component_key` is the compatibility wire/storage field name for the Sentry Key
+ID: the 52-character uppercase base32 selector used to select a local sentry
+key. It is derived as
 `base32_no_padding(SHA512_256("APLANE_COMPONENT_KEY_V1" || 0x00 || key_type ||
 0x00 || canonical_public_key_bytes))`; it resembles an Algorand transaction ID
 and is not a valid Algorand address. `public_key_hex` is the raw component
@@ -986,21 +989,21 @@ Endpoint discovery may also populate this catalog through
 `endpoint-<alias>-<component_key>`, `endpoint_alias`, `last_seen_at`, and
 `synced_at`. They are public candidates derived from the client's
 `endpoints.yaml`; they are not a sentry ownership proof.
-Human list output treats the component-key selector as the primary identifier
+Human list output treats the Sentry Key ID as the primary identifier
 and shows generated endpoint-synced names only in detailed JSON views.
 
 The library is a generation convenience and trust-input inventory for the user
 signer. When generating a guarded account, callers may provide
-`sentry=<component_key>` instead of `sentry_public_key=<hex>`. For compatibility
+`sentry=<sentry-key-id>` instead of `sentry_public_key=<hex>`. For compatibility
 with older scripts, `sentry=<name>` is also accepted. The signer resolves the
-component key or name to `public_key_hex`, verifies that the reference key type
-matches the guarded-account key type's required sentry component key type,
+Sentry Key ID or name to `public_key_hex`, verifies that the reference key type
+matches the guarded-account key type's required sentry key type,
 rejects requests that provide both forms, and persists only the resolved
 `sentry_public_key` in the key file.
 
 Identity-scoped `/keytypes` metadata may expose imported references as a
 creation parameter named `sentry` with `type:"select"` and `options[]`
-containing component-key selectors whose component key type matches the guarded
+containing Sentry Key IDs whose sentry key type matches the guarded
 account key type. This is UI metadata for generation clients such as `apadmin`;
 the durable key file still stores the resolved `sentry_public_key`.
 
@@ -1116,7 +1119,7 @@ Signing-audit semantics:
 - signing audit over HTTP records `transport:"http"` and the token-authenticated identity as requester
 - sentry-role component signing currently records approvals and policy
   rejections through `SIGN_APPROVED`/`SIGN_REJECTED`; `txn_auth` is the
-  sentry component selector, `txn_sender` is the decoded target sender, and
+  Sentry Key ID, `txn_sender` is the decoded target sender, and
   `policy_rule_id` carries the deterministic sentry rule when present
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
@@ -1242,7 +1245,7 @@ Auto-rejection policy includes:
 - `transfer_policy` blocked destinations, route misses,
   close/clawback denials, and `reject_above` thresholds for direct `pay` and
   `axfer` movements
-- YAML-only `key_overrides` keyed by signing auth address or sentry component selector
+- YAML-only `key_overrides` keyed by signing auth address or Sentry Key ID
 
 Policy enforcement stores and compares `review_algo_payments` and
 `max_algo_payments` in raw microAlgos; admin-facing input, display, and

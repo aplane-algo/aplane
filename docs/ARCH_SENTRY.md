@@ -1,6 +1,6 @@
 # Sentry Architecture
 
-This document describes APlane's sentry subsystem: node roles, component keys,
+This document describes APlane's sentry subsystem: node roles, sentry keys,
 guarded accounts, endpoint discovery, guarded transaction orchestration, and
 the trust boundaries between a user signer and a sentry signer.
 
@@ -51,20 +51,21 @@ Primary ownership:
 
 Sentry uses two related but distinct key classes.
 
-### Sentry Component Keys
+### Sentry Keys And Sentry Key IDs
 
-Sentry component keys are raw component-signing keys. They are not Algorand
-accounts and cannot spend funds directly.
+Sentry keys are raw component-signing keys held by sentry nodes. They are not
+Algorand accounts and cannot spend funds directly.
 
-Current sentry component key types:
+Current sentry key types:
 
 - `aplane.sentry-ed25519.v1`
 - `aplane.sentry-falcon1024.v1`
 
-They are selected by a 52-character uppercase component selector derived from
-the key type and public key. The selector is txid-shaped but is not an Algorand
-address. Human-facing surfaces should call it a Sentry Key ID or component key,
-not an account address.
+They are selected by a 52-character uppercase **Sentry Key ID** derived from
+the key type and sentry public key. The Sentry Key ID is txid-shaped but is not
+an Algorand address. Internal APIs and storage may call this value a
+`component_key` or component selector; human-facing surfaces should call it a
+Sentry Key ID.
 
 The raw sentry public key is still important: it is the verifier embedded in a
 guarded account's LogicSig bytecode. The selector is a stable lookup handle;
@@ -82,17 +83,16 @@ Current guarded account key types:
 
 A guarded account key file stores the resolved sentry public key and embeds
 that same public key in its LogicSig bytecode. Generation may accept a public
-sentry reference by component selector, but the durable guarded key stores the
+Sentry reference by Sentry Key ID, but the durable guarded key stores the
 resolved public key.
 
-Guarded accounts and sentry component keys are never signed through raw
+Guarded accounts and sentry keys are never signed through raw
 `/sign`:
 
 - guarded account keys use `/sign/component` with role `user`, then
   `/sign/assemble`,
-- sentry component keys use `/sign/component` with role `sentry`,
-- ordinary `/sign` rejects both guarded account key types and sentry component
-  key types.
+- sentry keys use `/sign/component` with role `sentry`,
+- ordinary `/sign` rejects both guarded account key types and sentry key types.
 
 This preserves the two-party invariant: a guarded account requires both a user
 component signature and a sentry component signature.
@@ -144,7 +144,7 @@ Public reference records are stored under:
 identities/<identity>/sentries/
 ```
 
-They contain public metadata only: component selector, key type, public key
+They contain public metadata only: Sentry Key ID, key type, sentry public key
 hex, source, and timestamps. They are not endpoint ownership proofs and do not
 authorize a future transaction. The guarded account's embedded public key is
 the trust input that matters after generation.
@@ -168,14 +168,13 @@ Runtime guarded-send routing works like this:
 2. The client builds an in-memory map from endpoint `published_sentries`.
 3. The client selects the sentry endpoint that advertises that public key.
 4. Before requesting a sentry component signature, the client verifies the
-   endpoint still advertises the expected component key.
+   endpoint still advertises the expected Sentry Key ID.
 
 Endpoint import and `/keys` discovery are routing metadata. They do not prove
 ownership. If an endpoint is wrong or stale, assembly or on-chain LogicSig
 verification fails unless that endpoint controls the embedded sentry private
-key. If a previously discovered sentry component key is deleted from the sentry
-node, guarded signing fails before submission with a missing-advertised-key
-error.
+key. If a previously discovered sentry key is deleted from the sentry node,
+guarded signing fails before submission with a missing-advertised-key error.
 
 ## Guarded Transaction Flow
 
@@ -300,7 +299,7 @@ Sentry failures are fail-closed:
 - locked or unreachable sentry endpoints cannot produce component signatures,
 - endpoint authentication or host-trust failures block routing,
 - malformed or duplicate sentry inventory leaves endpoint files unchanged,
-- deleted component keys stop being advertised by `/keys` and guarded signing
+- deleted sentry keys stop being advertised by `/keys` and guarded signing
   fails before sentry signing,
 - missing sentry signatures fail assembly,
 - mismatched user or sentry signatures fail assembly,
@@ -310,15 +309,15 @@ Sentry failures are fail-closed:
 
 `apshell endpoints sync-sentries` preserves existing local
 `published_sentries` only for temporarily unreachable or locked endpoints.
-Authentication failures, malformed records, duplicate public keys, and
-component selector validation failures are hard errors.
+Authentication failures, malformed records, duplicate public keys, and Sentry
+Key ID validation failures are hard errors.
 
 ## Audit
 
 Sentry component approvals and rejections use existing sign audit events. In
 the current projection:
 
-- `txn_auth` carries the sentry component selector,
+- `txn_auth` carries the Sentry Key ID,
 - `txn_sender` carries the decoded target sender,
 - `policy_rule_id` carries the deterministic sentry rule when one matched.
 
@@ -332,7 +331,7 @@ Primary packages and files:
 - `pkg/signerapi`: HTTP DTOs for component signing, assembly, sentry sync, and
   key inventory.
 - `internal/sentry/keytypes`: sentry key-type identifiers, guarded key-type
-  mapping, component selector derivation and validation.
+  mapping, Sentry Key ID derivation and validation.
 - `internal/sentry/message`: role-separated component messages.
 - `internal/sentry/verify`: component signature verification.
 - `internal/sentry/sentryrefs`: public sentry reference catalog.

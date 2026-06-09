@@ -54,7 +54,7 @@ func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
 		t.Fatalf("PrepareComponentSigning() error = %v", err)
 	}
 	if plan.RequestID != req.RequestID || plan.ComponentKey != sender {
-		t.Fatalf("plan request metadata = %#v, want request_id %q component key %q", plan, req.RequestID, sender)
+		t.Fatalf("plan request metadata = %#v, want request_id %q component_key %q", plan, req.RequestID, sender)
 	}
 	if plan.MessageRole != message.RoleUser {
 		t.Fatalf("MessageRole = %v, want user", plan.MessageRole)

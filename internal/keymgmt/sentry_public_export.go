@@ -12,7 +12,7 @@ import (
 const SentryPublicKeyExportSchema = sentryrefs.ExportSchema
 
 // SentryPublicKeyExport is the public-only JSON envelope emitted when an
-// operator exports the verifier input for an sentry component key.
+// operator exports the verifier input for a sentry key.
 type SentryPublicKeyExport = sentryrefs.ExportEnvelope
 
 // BuildSentryPublicKeyExport validates decrypted key metadata and returns a

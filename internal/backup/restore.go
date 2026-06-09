@@ -579,11 +579,11 @@ func RestoreKeyMetadata(keyJSON []byte) (keyType string, address string, hasLogi
 	if keytypes.IsSentryComponentKeyType(meta.KeyType) {
 		publicKey, err := hex.DecodeString(meta.PublicKeyHex)
 		if err != nil {
-			return "", "", false, fmt.Errorf("failed to decode component public key: %w", err)
+			return "", "", false, fmt.Errorf("failed to decode sentry public key: %w", err)
 		}
 		componentKey, err := keytypes.ComponentKeySelector(meta.KeyType, publicKey)
 		if err != nil {
-			return "", "", false, fmt.Errorf("failed to derive component key selector: %w", err)
+			return "", "", false, fmt.Errorf("failed to derive Sentry Key ID: %w", err)
 		}
 		return meta.KeyType, componentKey, false, nil
 	}

@@ -398,10 +398,10 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 		t.Fatal("RestoreKey() error = nil, want role-forbidden rejection")
 	}
 	if !strings.Contains(err.Error(), "role-forbidden") || !strings.Contains(err.Error(), keytypes.SentryComponentEd25519V1) {
-		t.Fatalf("RestoreKey() error = %v, want component role-forbidden rejection", err)
+		t.Fatalf("RestoreKey() error = %v, want sentry-key role-forbidden rejection", err)
 	}
 	if _, err := os.Stat(paths.KeyFilePath(identityID, componentKey)); !os.IsNotExist(err) {
-		t.Fatalf("restored component key stat error = %v, want not exist", err)
+		t.Fatalf("restored sentry key stat error = %v, want not exist", err)
 	}
 }
 
@@ -418,7 +418,7 @@ func TestRestoreKeyWritesComponentPublicMetadataOnSentryNode(t *testing.T) {
 	}
 	var keyPair apkeys.KeyPair
 	if err := json.Unmarshal(keyJSON, &keyPair); err != nil {
-		t.Fatalf("json.Unmarshal(component key) error = %v", err)
+		t.Fatalf("json.Unmarshal(sentry key) error = %v", err)
 	}
 
 	restorer := NewRestorer(paths, identityID).WithNodeRole(noderole.RoleSentry)

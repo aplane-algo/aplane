@@ -47,11 +47,11 @@ func cmdSentry(args []string) error {
 
 func cmdSentryExport(args []string) error {
 	if len(args) < 1 || len(args) > 2 {
-		return fmt.Errorf("usage: apstore sentry export <component-key> [output-json]")
+		return fmt.Errorf("usage: apstore sentry export <sentry-key-id> [output-json]")
 	}
 	componentKey, err := keytypes.NormalizeComponentKeySelector(args[0])
 	if err != nil {
-		return fmt.Errorf("invalid component key selector: %w", err)
+		return fmt.Errorf("invalid Sentry Key ID: %w", err)
 	}
 
 	envelope, ok, err := apkeys.ReadComponentPublicMetadata(keystorePaths(), productIdentityID(), componentKey)
@@ -59,7 +59,7 @@ func cmdSentryExport(args []string) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("component public metadata for %s not found; regenerate the sentry component key or run a metadata backfill before exporting", componentKey)
+		return fmt.Errorf("sentry public metadata for %s not found; regenerate the sentry key or run a metadata backfill before exporting", componentKey)
 	}
 	data, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {

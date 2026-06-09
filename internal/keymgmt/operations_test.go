@@ -320,7 +320,7 @@ func TestGenerateKeySentryComponent(t *testing.T) {
 				t.Fatal("PublicKeyHex is empty")
 			}
 			if !keytypes.IsComponentKeySelector(result.Address) {
-				t.Fatalf("Address = %q, want component key selector", result.Address)
+				t.Fatalf("Address = %q, want Sentry Key ID", result.Address)
 			}
 			if result.Address == result.PublicKeyHex {
 				t.Fatal("component address unexpectedly equals public key hex")

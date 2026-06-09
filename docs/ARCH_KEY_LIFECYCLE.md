@@ -58,8 +58,8 @@ This separation is deliberate:
 |---|---|---|
 | Native key file | `identities/<identity>/keys/<address>.key` | Native signing authority. |
 | LogicSig key file | `identities/<identity>/keys/<address>.key` | LogicSig bytecode, salt, signing metadata, and any private DSA key material. |
-| Sentry component key file | `identities/<identity>/keys/<component_selector>.key` | Component-signing authority for sentry-role `/sign/component`; not an Algorand spending account. |
-| Sentry public sidecar | `identities/<identity>/keys/<component_selector>.public.json` | Public export metadata for local component keys. |
+| Sentry key file | `identities/<identity>/keys/<sentry_key_id>.key` | Component-signing authority for sentry-role `/sign/component`; not an Algorand spending account. |
+| Sentry public sidecar | `identities/<identity>/keys/<sentry_key_id>.public.json` | Public export metadata for local sentry keys. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | `identities/<identity>/node.yaml.hmac` | Per-identity HMAC over the exact root `node.yaml` bytes. |
 | Identity config | `identities/<identity>/config.yaml` | Identity-local runtime settings such as approval/lock timeouts and decommission state; it does not carry key-class role. |
@@ -74,9 +74,9 @@ This separation is deliberate:
 Component public sidecars are derived public metadata, not independent signing
 authority. They exist so `apstore sentry export` can work without
 decrypting private key material. Backup payloads do not need to carry the
-sidecar as a separate authority; restore flows that write sentry component
-keys must regenerate the sidecar from the restored component key payload.
-Missing sidecars do not make a component key unable to sign, but they do block
+sidecar as a separate authority; restore flows that write sentry keys must
+regenerate the sidecar from the restored sentry key payload.
+Missing sidecars do not make a sentry key unable to sign, but they do block
 offline public export until regenerated or backfilled.
 
 The durable and wire contracts use `component_key`, `component_selector`, and
@@ -160,7 +160,7 @@ subject to the node role gate above.
 | Unsupported by binary | No provider is registered in the current process. | No. | No, if signing needs that provider; native/DSA key types need registered support. | Install/run a binary that supports the key type. |
 | Role-forbidden key type | The node role does not allow this key class. | No, even if the provider is default-enabled or enabled. | No for active inventory; reload rejects role-conflicting active keys. | Use a data root initialized for the correct node role. |
 | Default-enabled account-signing provider | Provider/generator is registered and cataloged as default-enabled; no identity record required. Examples include `ed25519` and `aplane.falcon1024.v1`. | Yes on signer nodes. | Yes on signer nodes, if the key file is valid. | None. |
-| Default-enabled sentry component key type | Raw component key generator/signing support is registered and cataloged as default-enabled. Examples are `aplane.sentry-ed25519.v1` and `aplane.sentry-falcon1024.v1`. | Yes on sentry nodes. | Component-signing only on sentry nodes; never normal spending `/sign`. | None. |
+| Default-enabled sentry key type | Raw sentry-key generator/signing support is registered and cataloged as default-enabled. Examples are `aplane.sentry-ed25519.v1` and `aplane.sentry-falcon1024.v1`. | Yes on sentry nodes. | Component-signing only on sentry nodes; never normal spending `/sign`. | None. |
 | Library-visible compiled provider, inactive | Provider is registered and cataloged as library-visible; no identity `keytypes/<key_type>.json` record exists. | No. | Existing key may sign if the provider is registered, the key file is valid, and the node role allows it. | Enable from KeyType Library or `apstore keytype enable`. |
 | Library-visible compiled provider, enabled and fingerprint consistent | `keytypes/<key_type>.json` has `source:"compiled"`, `state:"enabled"`, and matching fingerprint. | Yes when allowed by node role. | Yes, if the key file is valid and allowed by node role. | Disable, if no stored key uses it. |
 | Library-visible compiled provider, enabled but fingerprint inconsistent | State record exists, but the stored fingerprint does not match the provider fingerprint in the current binary. | No; reload ignores the conflicting activation record. | Existing key may sign if the provider is registered, the key file is valid, and node role allows it. | Refresh with `apstore keytype enable <key_type>`. |
@@ -206,14 +206,14 @@ key is rejected during reload rather than published as a signable key.
 | Absent | No active key file under `keys/`. | No. | May be restored from a backup payload. |
 | Archived/deleted | Key file moved to `deleted/keys/`. | No; outside active scans. | Restore can write a new active canonical key file if selected. |
 | Present but signer locked | Encrypted `.key` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted key files; restore requires authenticated/unlocked flow. |
-| Present, decrypts, canonical filename matches derived address/selector | Active `.key` basename matches derived address or component selector. | Candidate for signing after category-specific validation. | Backup and restore use canonical filenames. |
+| Present, decrypts, canonical filename matches derived address/selector | Active `.key` basename matches derived address or Sentry Key ID. | Candidate for signing after category-specific validation. | Backup and restore use canonical filenames. |
 | Misnamed key file | `.key` basename does not match the derived address/selector. | No; scanner rejects/skips it. | Restore writes the canonical filename when it elects to restore. |
 | Role-forbidden key file | Key type is valid, but the node role does not allow that key class. | No; reload rejects the inventory conflict. | Restore/generation should refuse unless the destination node role allows that key class. |
 | Unknown key type | Payload names a key type unsupported by the current binary. | No. | Restore fails for that key unless support exists. |
 | Native key valid | Native key payload has valid key material and canonical key type. | Yes on signer nodes. | Restores directly onto signer nodes. |
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
-| Sentry component key valid | Payload category/type is a sentry component key and selector is canonical. | Only through sentry-role component signing on sentry nodes; normal `/sign` and spending paths reject it. | Restores as a component key on sentry nodes, regenerating the public sidecar; never as a spending account. |
+| Sentry key valid | Payload category/type is a sentry key and Sentry Key ID is canonical. | Only through sentry-role component signing on sentry nodes; normal `/sign` and spending paths reject it. | Restores as a sentry key on sentry nodes, regenerating the public sidecar; never as a spending account. |
 | Guarded account key valid | DSA LogicSig key whose bytecode embeds the sentry public key. | Only on signer nodes through guarded orchestration: user component signature, sentry component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig missing `salt_counter` | Payload has LogicSig bytecode but no salt counter. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |
@@ -338,8 +338,8 @@ is not published as valid runtime inventory.
 9. LogicSig key bytecode must derive an off-curve LogicSig address.
 10. DSA LogicSig keys require their stored `base_key_type` provider to be
     supported at sign time.
-11. Sentry component keys are component-signing keys, not spending accounts.
-12. Sentry component public sidecars are derived public metadata and must not
+11. Sentry keys are component-signing keys, not spending accounts.
+12. Sentry public sidecars are derived public metadata and must not
     be treated as independent signing authority.
 13. Guarded account keys use the guarded orchestration flow; normal `/sign`
     rejects them.

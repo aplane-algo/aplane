@@ -138,12 +138,12 @@ func TestVerifySignableKeysRejectsSentryKeyTypes(t *testing.T) {
 		want    string
 	}{
 		{
-			name:    "ed25519 component key",
+			name:    "ed25519 sentry key",
 			keyType: keytypes.SentryComponentEd25519V1,
 			want:    sentryComponentSignRejectMessage,
 		},
 		{
-			name:    "falcon component key",
+			name:    "falcon sentry key",
 			keyType: keytypes.SentryComponentFalcon1024V1,
 			want:    sentryComponentSignRejectMessage,
 		},

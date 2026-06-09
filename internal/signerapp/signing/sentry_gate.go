@@ -6,7 +6,7 @@ package signing
 import "github.com/aplane-algo/aplane/internal/sentry/keytypes"
 
 const (
-	sentryComponentSignRejectMessage = "sentry component keys require /sign/component"
+	sentryComponentSignRejectMessage = "sentry keys require /sign/component"
 	guardedAccountSignRejectMessage  = "this key type requires the guarded signing flow: use POST /sign/component then POST /sign/assemble"
 )
 

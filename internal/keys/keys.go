@@ -118,7 +118,7 @@ func validateCurrentKeyPayloadMetadata(meta KeyPayloadMetadata) (KeyPayloadHeade
 		return KeyPayloadHeader{}, incompatibleKeyFormat("missing key_type")
 	}
 	if meta.Category == CategoryComponent && !keytypes.IsSentryComponentKeyType(meta.KeyType) {
-		return KeyPayloadHeader{}, incompatibleKeyFormat("component category requires a sentry component key type, got %q", meta.KeyType)
+		return KeyPayloadHeader{}, incompatibleKeyFormat("component category requires a sentry key type, got %q", meta.KeyType)
 	}
 	if meta.HasRuntimeArgs {
 		return KeyPayloadHeader{}, incompatibleKeyFormat("legacy runtime_args field; use signing_args")
@@ -477,7 +477,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 	return &KeyScanReport{Keys: keysMap, Warnings: warnings}, nil
 }
 
-// IsComponentKey classifies a key payload as a sentry component key.
+// IsComponentKey classifies a key payload as a sentry key.
 func IsComponentKey(category, keyType string) bool {
 	return category == CategoryComponent
 }
@@ -508,14 +508,14 @@ func cryptoSignatureSizeForKey(keyType, baseKeyType string) int {
 func componentAddressAndPublicKey(meta KeyPayloadMetadata) (string, string, error) {
 	publicKey, err := hex.DecodeString(meta.PublicKeyHex)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to decode component public key: %w", err)
+		return "", "", fmt.Errorf("failed to decode sentry public key: %w", err)
 	}
 	wantSize, ok := keytypes.ComponentPublicKeySize(meta.KeyType)
 	if !ok {
-		return "", "", fmt.Errorf("unsupported component key type: %s", meta.KeyType)
+		return "", "", fmt.Errorf("unsupported sentry key type: %s", meta.KeyType)
 	}
 	if len(publicKey) != wantSize {
-		return "", "", fmt.Errorf("invalid component public key length: expected %d bytes, got %d", wantSize, len(publicKey))
+		return "", "", fmt.Errorf("invalid sentry public key length: expected %d bytes, got %d", wantSize, len(publicKey))
 	}
 	componentKey, err := keytypes.ComponentKeySelector(meta.KeyType, publicKey)
 	if err != nil {

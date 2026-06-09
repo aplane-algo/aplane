@@ -321,8 +321,8 @@ func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeI
 		}
 		infos[i].CreationParams = []signerapi.CreationParamInfo{{
 			Name:        sentryrefs.ParamSentryName,
-			Label:       "Sentry component ID",
-			Description: "Imported sentry component ID to embed in the guarded account",
+			Label:       "Sentry Key ID",
+			Description: "Imported Sentry Key ID to embed in the guarded account",
 			Type:        "select",
 			Required:    true,
 			Options:     append([]string(nil), componentIDs...),
@@ -334,11 +334,11 @@ func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeI
 func sentryComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
 	switch keyType {
 	case keytypes.SentryComponentEd25519V1:
-		return "sentry-ed25519", "Sentry Ed25519 component key", "Raw Ed25519 sentry component signing key"
+		return "sentry-ed25519", "Sentry Ed25519 key", "Raw Ed25519 sentry signing key for sentry-role component signatures"
 	case keytypes.SentryComponentFalcon1024V1:
-		return "sentry-falcon1024", "Sentry Falcon-1024 component key", "Raw Falcon-1024 sentry component signing key"
+		return "sentry-falcon1024", "Sentry Falcon-1024 key", "Raw Falcon-1024 sentry signing key for sentry-role component signatures"
 	default:
-		return keyType, keyType, "Raw sentry component signing key"
+		return keyType, keyType, "Raw sentry signing key for sentry-role component signatures"
 	}
 }
 

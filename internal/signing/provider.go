@@ -37,9 +37,9 @@ type KeyMaterial struct {
 	SigningMetadataVersion int                          // Version of durable key-file signing metadata
 }
 
-// ComponentKeyMaterial holds raw sentry component key material. Component
-// keys are not transaction-signing provider keys and must only be used by the
-// sentry component-signing flow.
+// ComponentKeyMaterial holds raw sentry key material. Sentry keys are not
+// transaction-signing provider keys and must only be used by the sentry
+// component-signing flow.
 type ComponentKeyMaterial struct {
 	ComponentKey string
 	PublicKey    []byte

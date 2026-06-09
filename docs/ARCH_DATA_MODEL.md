@@ -73,10 +73,11 @@ Important vocabulary:
   signer policy and group validation.
 - **key type** is the canonical identifier stored and sent on the wire, such as
   `ed25519` or `aplane.falcon1024.v1`.
-- **component selector** means a sentry component key selector: a
-  52-character uppercase base32 SHA-512/256 digest over the domain-separated
-  key-type/public-key tuple. It selects a local component key; it is not an
-  Algorand account address and is not the embedded verifier public key.
+- **Sentry Key ID** means the 52-character uppercase base32 SHA-512/256 digest
+  over the domain-separated sentry-key type/public-key tuple. It selects a
+  local sentry key; it is not an Algorand account address and is not the
+  embedded verifier public key. Compatibility wire/storage fields may call this
+  value `component_key` or a component selector.
 
 ## System Boundaries
 
@@ -136,7 +137,7 @@ DTOs and contract fixtures.
 | Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
 | Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Signing key | Signer identity | `identities/<identity>/keys/*.key` | address/selector -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
-| Sentry public sidecar | Signer identity | `identities/<identity>/keys/<component_selector>.public.json` | public component-key export metadata | `apstore sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
+| Sentry public sidecar | Signer identity | `identities/<identity>/keys/<sentry_key_id>.public.json` | public sentry-key export metadata | `apstore sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
 | Public sentry reference | Signer identity | `identities/<identity>/sentries/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` |
 | Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |
@@ -278,7 +279,7 @@ payload families are:
 | `ed25519` | Native Algorand signing key. |
 | `dsa_lsig` | DSA-backed LogicSig key with private signing key plus stored LogicSig metadata. |
 | `generic_lsig` | TEAL-only LogicSig instance with bytecode and signing args. |
-| `component` | Sentry component key used only through `/sign/component`. |
+| `component` | Sentry key used only through sentry-role `/sign/component`. |
 
 Durable signing metadata includes:
 
@@ -297,9 +298,8 @@ Durable signing metadata includes:
 Guarded account keys are DSA LogicSig keys whose stored bytecode embeds an
 sentry public key. They are not accepted by `/sign`; the client must use the
 guarded flow: user `/sign/component`, sentry `/sign/component`, user
-`/sign/assemble`, then algod submit. Sentry component keys are selected by an
-uppercase, 52-character txid-shaped component selector and are not Algorand
-spending accounts.
+`/sign/assemble`, then algod submit. Sentry keys are selected by an uppercase,
+52-character txid-shaped Sentry Key ID and are not Algorand spending accounts.
 
 Decrypted key payload metadata is parsed through
 `internal/keys.ParseKeyPayloadMetadata`. That parser owns compatibility aliases:
@@ -384,7 +384,7 @@ client-signing policy. Runtime client-signing policy is an effective
 On sentry nodes, the same `policy.yaml` file is parsed as the sentry component
 policy. It uses the same transfer routing model as deterministic authorization for
 `/sign/component`; it has no operator default and no review verdict. Sentry
-`key_overrides` are keyed by component selector, while client-signing overrides
+`key_overrides` are keyed by Sentry Key ID, while client-signing overrides
 are keyed by Algorand auth address.
 
 `user_auto_approve` is not policy. It is the user/operator-default fallback in
@@ -817,7 +817,7 @@ generation availability, provenance, and policy editing behavior.
   policy on sentry nodes. Neither domain may wrap the other.
 - Client signer and sentry routing authority is `endpoints.yaml`, not
   `config.yaml`.
-- Sentry component selectors are uppercase 52-character base32-no-padding
+- Sentry Key IDs are uppercase 52-character base32-no-padding
   SHA-512/256 digests over the domain-separated key-type/public-key tuple;
   embedded sentry verifier keys are full public-key hex values.
 - Endpoint import and `/keys` discovery are routing/configuration inputs, not

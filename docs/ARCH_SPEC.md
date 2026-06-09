@@ -106,7 +106,7 @@ read/call/deploy behavior, ABI handling, `PreparedGroup`, or signer approval
 metadata for app calls.
 
 Read [ARCH_SENTRY.md](ARCH_SENTRY.md) before changing sentry node behavior,
-guarded account generation, sentry component keys, guarded transaction
+guarded account generation, sentry keys, guarded transaction
 orchestration, endpoint-discovered sentries, or `/sign/component` /
 `/sign/assemble` behavior.
 
@@ -508,7 +508,7 @@ The policy document may contain YAML-only `key_overrides`; during normal
 signing, the effective policy is selected by signing auth address, not by
 transaction sender, so rekeyed accounts use the policy override for the auth
 address. On sentry nodes, component signing selects overrides by the
-txid-shaped component selector from the sentry-domain `policy.yaml`.
+txid-shaped Sentry Key ID from the sentry-domain `policy.yaml`.
 Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
@@ -1034,7 +1034,7 @@ accounts whose LogicSig bytecode requires both:
 - a user component signature produced by the user signer that owns the
   guarded-account key file, and
 - a sentry component signature produced by a separate sentry signer that
-  owns a sentry component key and evaluates sentry-domain `policy.yaml`.
+  owns a sentry key and evaluates sentry-domain `policy.yaml`.
 
 The client never holds private key material. It orchestrates component signing
 and assembly through authenticated signer endpoints, then submits or simulates
@@ -1047,8 +1047,8 @@ Each initialized signer data root has one immutable root `node.yaml` role:
 
 | Node role | May hold | Must not hold |
 |---|---|---|
-| `signer` | ordinary account-signing keys and guarded account keys | sentry component private keys |
-| `sentry` | sentry component private keys and sentry policy | ordinary account-signing keys or guarded account keys |
+| `signer` | ordinary account-signing keys and guarded account keys | sentry private keys |
+| `sentry` | sentry private keys and sentry policy | ordinary account-signing keys or guarded account keys |
 
 There is no `dual` role and no supported same-process mixed-role hosting.
 Same-host development or production co-location uses separate signer and
@@ -1066,14 +1066,14 @@ on-disk integrity checks live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 ### Key Types
 
-Sentry component key types are raw component-signing keys, not spending
+Sentry key types are raw component-signing keys, not spending
 accounts and not LogicSig providers:
 
 - `aplane.sentry-ed25519.v1`
 - `aplane.sentry-falcon1024.v1`
 
-They are selected by 52-character uppercase, no-padding base32 component
-selectors derived as:
+They are selected by 52-character uppercase, no-padding base32 Sentry Key IDs
+derived as:
 
 ```text
 base32_no_padding(SHA512_256(
@@ -1082,7 +1082,7 @@ base32_no_padding(SHA512_256(
 ))
 ```
 
-The selector intentionally has the visual shape of an Algorand transaction ID,
+The Sentry Key ID intentionally has the visual shape of an Algorand transaction ID,
 but it is not a valid Algorand address because addresses are 58 characters.
 The full sentry public key remains the verifier key embedded in guarded
 account LogicSig bytecode.
@@ -1094,7 +1094,7 @@ Guarded account key types name both the account DSA and the sentry DSA:
 
 A guarded account key file stores the resolved `sentry_public_key` and the
 LogicSig bytecode embeds that same public key. `/sign` rejects guarded-account
-key types and sentry component key types. Guarded accounts are signed only
+key types and sentry key types. Guarded accounts are signed only
 through the component-signing and assembly flow below.
 
 ### Component Message Contract
@@ -1209,11 +1209,11 @@ Operator handoff and manual endpoint setup use two paths:
 
 Sentry inventory is discovered explicitly with
 `apshell endpoints sync-sentries`. It queries authenticated `/keys` on
-configured sentry endpoints, validates component-key metadata, and rebuilds
+configured sentry endpoints, validates Sentry Key ID metadata, and rebuilds
 reachable endpoints' `published_sentries` inventory. Temporarily unavailable
 or locked endpoints preserve their prior local inventory; authentication
 failures, malformed responses, duplicate public keys across endpoints, and
-component-key validation errors are hard failures that leave files unchanged.
+Sentry Key ID validation errors are hard failures that leave files unchanged.
 After discovery, the command prints Sentry Key IDs and asks before syncing the
 public inventory into the connected signer identity's sentry reference
 library for generation-time selection.
@@ -1221,7 +1221,7 @@ library for generation-time selection.
 Runtime guarded-send routing maps the embedded sentry public key to the
 endpoint whose `published_sentries` contains that key. If no explicit mapping
 exists, local self-discovery may resolve to the currently connected signer only
-when that endpoint advertises the matching sentry component key; this is
+when that endpoint advertises the matching Sentry Key ID; this is
 development ergonomics, not a production independence claim.
 
 ### Policy And Audit
@@ -1233,11 +1233,11 @@ sentry policy has no manual-review or operator-default verdict. It is
 deterministic authorization: all selected target movements must be positively
 authorized by the effective sentry policy, and deny guards fail closed.
 
-Sentry policy overrides are keyed by sentry component selector.
+Sentry policy overrides are keyed by Sentry Key ID.
 Client-signing policy overrides are keyed by signing auth address.
 
 Sentry component approvals and rejections are recorded through existing sign
-audit events. Current records put the component selector in `txn_auth`, the
+audit events. Current records put the Sentry Key ID in `txn_auth`, the
 decoded target sender in `txn_sender`, and the matching deterministic policy
 rule in `policy_rule_id` when one applies.
 
@@ -1249,7 +1249,7 @@ Primary implementation ownership:
 - `internal/sentry/message`: role-separated component message construction.
 - `internal/sentry/verify`: component signature verification primitives.
 - `internal/sentry/keytypes`: sentry and guarded key-type identifiers,
-  component selector validation, and DSA mapping.
+  Sentry Key ID validation, and DSA mapping.
 - `internal/signerapp/signing`: signer-side component signing, sentry policy
   evaluation, and assembly.
 - `internal/signerapp/rest`: HTTP handlers for `/sign/component` and

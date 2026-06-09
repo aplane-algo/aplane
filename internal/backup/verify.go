@@ -315,18 +315,18 @@ func verifyFileDeep(backupDir, address string, passphrase []byte, opts DeepVerif
 		publicKey, err := hex.DecodeString(keyMeta.PublicKeyHex)
 		if err != nil {
 			result.Valid = false
-			result.Error = fmt.Sprintf("failed to decode component public key: %v", err)
+			result.Error = fmt.Sprintf("failed to decode sentry public key: %v", err)
 			return result
 		}
 		componentKey, err := keytypes.ComponentKeySelector(keyMeta.KeyType, publicKey)
 		if err != nil {
 			result.Valid = false
-			result.Error = fmt.Sprintf("failed to derive component key selector: %v", err)
+			result.Error = fmt.Sprintf("failed to derive Sentry Key ID: %v", err)
 			return result
 		}
 		if componentKey != address {
 			result.Valid = false
-			result.Error = fmt.Sprintf("component selector mismatch: filename=%s, derived=%s", address, componentKey)
+			result.Error = fmt.Sprintf("Sentry Key ID mismatch: filename=%s, derived=%s", address, componentKey)
 			return result
 		}
 		result.Valid = true

@@ -36,7 +36,7 @@ func TestCmdKeysListShowsIdentityKeyInventory(t *testing.T) {
 			}
 		}
 		if !strings.Contains(out, attResult.Address) {
-			t.Fatalf("list output = %q, want component key selector %q", out, attResult.Address)
+			t.Fatalf("list output = %q, want Sentry Key ID %q", out, attResult.Address)
 		}
 		if !strings.Contains(out, "ed25519") {
 			t.Fatalf("list output = %q, want ed25519 key type", out)

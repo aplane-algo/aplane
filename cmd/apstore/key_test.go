@@ -85,7 +85,7 @@ func TestCmdSentryExportRequiresPublicSidecar(t *testing.T) {
 		if err == nil {
 			t.Fatal("cmdSentry(export missing sidecar) error = nil, want missing metadata rejection")
 		}
-		if !strings.Contains(err.Error(), "component public metadata") {
+		if !strings.Contains(err.Error(), "sentry public metadata") {
 			t.Fatalf("cmdSentry(export missing sidecar) error = %v, want metadata context", err)
 		}
 	})
@@ -106,8 +106,8 @@ func TestCmdSentryExportRejectsSpendingKey(t *testing.T) {
 		if err == nil {
 			t.Fatal("cmdSentry(export spending key) error = nil, want rejection")
 		}
-		if !strings.Contains(err.Error(), "invalid component key selector") {
-			t.Fatalf("cmdSentry(export spending key) error = %v, want component selector rejection", err)
+		if !strings.Contains(err.Error(), "invalid Sentry Key ID") {
+			t.Fatalf("cmdSentry(export spending key) error = %v, want Sentry Key ID rejection", err)
 		}
 	})
 }

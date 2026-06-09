@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package keytypes defines the sentry key-type vocabulary and pure
-// component-key handle construction.
+// Package keytypes defines the sentry key-type vocabulary and pure Sentry Key
+// ID construction.
 package keytypes
 
 import (
@@ -38,8 +38,8 @@ const (
 	// the sentry public key embedded in a guarded account LogicSig.
 	ParameterSentryPublicKey = "sentry_public_key"
 
-	// ComponentKeySelectorLength is the length of a canonical sentry
-	// component-key selector. It matches the visual shape of Algorand
+	// ComponentKeySelectorLength is the length of a canonical Sentry Key ID. It
+	// matches the visual shape of Algorand
 	// transaction IDs, but it is shorter than an Algorand address and must not
 	// be treated as one.
 	ComponentKeySelectorLength = 52
@@ -49,7 +49,7 @@ const (
 
 var componentKeySelectorEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// IsSentryComponentKeyType reports whether keyType names a component key
+// IsSentryComponentKeyType reports whether keyType names a sentry key
 // that may only be used through /sign/component.
 func IsSentryComponentKeyType(keyType string) bool {
 	switch keyType {
@@ -90,17 +90,17 @@ func SentryComponentKeyTypeForGuardedAccount(keyType string) (string, bool) {
 	}
 }
 
-// ComponentKeySelector returns the canonical selector for a sentry component key.
-// Selectors are uppercase base32-no-padding SHA-512/256 digests over a
-// domain-separated key-type/public-key tuple, independent of the component key
+// ComponentKeySelector returns the canonical Sentry Key ID for a sentry key.
+// Sentry Key IDs are uppercase base32-no-padding SHA-512/256 digests over a
+// domain-separated key-type/public-key tuple, independent of the sentry key
 // family.
 func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 	if !IsSentryComponentKeyType(keyType) {
-		return "", fmt.Errorf("key type %q is not a sentry component key type", keyType)
+		return "", fmt.Errorf("key type %q is not a sentry key type", keyType)
 	}
 	wantSize, ok := ComponentPublicKeySize(keyType)
 	if !ok {
-		return "", fmt.Errorf("key type %q is not a sentry component key type", keyType)
+		return "", fmt.Errorf("key type %q is not a sentry key type", keyType)
 	}
 	if len(publicKey) != wantSize {
 		return "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
@@ -115,38 +115,38 @@ func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 	return componentKeySelectorEncoding.EncodeToString(h.Sum(nil)), nil
 }
 
-// NormalizeComponentKeySelector validates and canonicalizes a component-key
-// selector. Selectors must already be canonical 52-character uppercase base32
+// NormalizeComponentKeySelector validates and canonicalizes a Sentry Key ID.
+// IDs must already be canonical 52-character uppercase base32
 // values with no padding.
 func NormalizeComponentKeySelector(selector string) (string, error) {
 	raw := strings.TrimSpace(selector)
 	if raw == "" {
-		return "", fmt.Errorf("component key selector is required")
+		return "", fmt.Errorf("sentry key ID is required")
 	}
 	if len(raw) != ComponentKeySelectorLength {
-		return "", fmt.Errorf("component key selector length %d invalid (expected %d characters)", len(raw), ComponentKeySelectorLength)
+		return "", fmt.Errorf("sentry key ID length %d invalid (expected %d characters)", len(raw), ComponentKeySelectorLength)
 	}
 	decoded, err := componentKeySelectorEncoding.DecodeString(raw)
 	if err != nil {
-		return "", fmt.Errorf("component key selector must be uppercase base32 without padding: %w", err)
+		return "", fmt.Errorf("sentry key ID must be uppercase base32 without padding: %w", err)
 	}
 	if len(decoded) != sha512.Size256 {
-		return "", fmt.Errorf("component key selector digest length %d invalid (expected %d bytes)", len(decoded), sha512.Size256)
+		return "", fmt.Errorf("sentry key ID digest length %d invalid (expected %d bytes)", len(decoded), sha512.Size256)
 	}
 	if componentKeySelectorEncoding.EncodeToString(decoded) != raw {
-		return "", fmt.Errorf("component key selector must be canonical uppercase base32 without padding")
+		return "", fmt.Errorf("sentry key ID must be canonical uppercase base32 without padding")
 	}
 	return raw, nil
 }
 
 // IsComponentKeySelector reports whether selector is a syntactically valid
-// sentry component-key selector.
+// Sentry Key ID.
 func IsComponentKeySelector(selector string) bool {
 	_, err := NormalizeComponentKeySelector(selector)
 	return err == nil
 }
 
-// ComponentPublicKeySize returns the public key byte size for a component key
+// ComponentPublicKeySize returns the public key byte size for a sentry key
 // type.
 func ComponentPublicKeySize(keyType string) (int, bool) {
 	switch keyType {
@@ -159,7 +159,7 @@ func ComponentPublicKeySize(keyType string) (int, bool) {
 	}
 }
 
-// ComponentPrivateKeySize returns the private key byte size for a component key
+// ComponentPrivateKeySize returns the private key byte size for a sentry key
 // type.
 func ComponentPrivateKeySize(keyType string) (int, bool) {
 	switch keyType {

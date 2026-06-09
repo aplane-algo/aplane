@@ -105,10 +105,10 @@ func SyncedReferenceName(endpointAlias, componentKey string) (string, error) {
 func NewExportEnvelope(componentKey, keyType, publicKeyHex string) (*ExportEnvelope, error) {
 	componentKey, err := keytypes.NormalizeComponentKeySelector(componentKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid component key selector: %w", err)
+		return nil, fmt.Errorf("invalid Sentry Key ID: %w", err)
 	}
 	if !keytypes.IsSentryComponentKeyType(keyType) {
-		return nil, fmt.Errorf("key type %q is not a sentry component key type", keyType)
+		return nil, fmt.Errorf("key type %q is not a sentry key type", keyType)
 	}
 	publicKeyHex = strings.ToLower(strings.TrimSpace(publicKeyHex))
 	publicKeyBytes, publicKeySHA256, err := validatePublicKey(keyType, componentKey, publicKeyHex)
@@ -343,7 +343,7 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("sentry reference or component ID %q not found", strings.TrimSpace(selector))
+		return nil, fmt.Errorf("sentry reference or Sentry Key ID %q not found", strings.TrimSpace(selector))
 	}
 	wantKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 	if !ok {
@@ -473,7 +473,7 @@ func recordFromDiscovered(item DiscoveredRecord, syncedAt string) (Record, error
 	}
 	componentKey, err := keytypes.NormalizeComponentKeySelector(item.ComponentKey)
 	if err != nil {
-		return Record{}, fmt.Errorf("invalid discovered sentry component key: %w", err)
+		return Record{}, fmt.Errorf("invalid discovered Sentry Key ID: %w", err)
 	}
 	name, err := SyncedReferenceName(endpointAlias, componentKey)
 	if err != nil {
@@ -544,7 +544,7 @@ func validatePublicKey(keyType, componentKey, publicKeyHex string) ([]byte, stri
 	}
 	wantSize, ok := keytypes.ComponentPublicKeySize(keyType)
 	if !ok {
-		return nil, "", fmt.Errorf("key type %q is not a sentry component key type", keyType)
+		return nil, "", fmt.Errorf("key type %q is not a sentry key type", keyType)
 	}
 	if len(publicKeyBytes) != wantSize {
 		return nil, "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKeyBytes), wantSize)
@@ -554,7 +554,7 @@ func validatePublicKey(keyType, componentKey, publicKeyHex string) ([]byte, stri
 		return nil, "", err
 	}
 	if derivedSelector != componentKey {
-		return nil, "", fmt.Errorf("component key selector %q does not match public key-derived selector %q", componentKey, derivedSelector)
+		return nil, "", fmt.Errorf("sentry key ID %q does not match public key-derived Sentry Key ID %q", componentKey, derivedSelector)
 	}
 	sum := sha256.Sum256(publicKeyBytes)
 	return publicKeyBytes, hex.EncodeToString(sum[:]), nil

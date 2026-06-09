@@ -12,15 +12,15 @@
 Normative inputs:
 
 - [ARCH_SENTRY.md](ARCH_SENTRY.md):
-  sentry component key types, guarded account key types, endpoint workflow,
+  sentry key types, guarded account key types, endpoint workflow,
   role-separated messages, assembly semantics, and endpoint routing trust
   model.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): `/keys`, `/sign/component`,
   `/sign/assemble`, endpoint registry, node role, `policy.yaml`,
   and on-disk selector contracts.
-- [ARCH_POLICY.md](ARCH_POLICY.md): sentry-domain `policy.yaml`, sentry component
+- [ARCH_POLICY.md](ARCH_POLICY.md): sentry-domain `policy.yaml`, sentry
   transfer policy, deterministic reject-only route-miss behavior, and
-  component-key overrides.
+  Sentry Key ID overrides.
 - [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md): client-signing policy
   precedence. This model imports only the snapshot and overlay concepts; the
   sentry role has no manual-review or operator-default verdict.
@@ -37,7 +37,7 @@ This model covers the current MVP:
 
 - guarded Falcon account keys whose LogicSig bytecode embeds one sentry
   public key,
-- sentry component keys selected by txid-shaped component selectors,
+- sentry keys selected by txid-shaped Sentry Key IDs,
 - `/sign/component` for user-role and sentry-role component signatures,
 - `/sign/assemble` verification and LogicSig argument packing,
 - `apshell send` orchestration for guarded account senders,
@@ -61,26 +61,25 @@ It does not model:
 program requires two component signatures. The model observes:
 
 - account address derived from stored LogicSig bytecode,
-- stored user public/private component key material,
+- stored user-role public/private key material,
 - stored sentry public key parameter,
-- stored guarded account key type, which determines the sentry component
-  key family,
+- stored guarded account key type, which determines the sentry key family,
 - stored signing metadata, bytecode, and runtime argument contract.
 
 The sentry trust decision is made at key generation time by embedding the
 chosen sentry public key into this key's LogicSig program and stored
 parameters. Later endpoint routing does not move that trust anchor.
 
-### Sentry Component Key
+### Sentry Key
 
 `SentryComponentKey` is a non-spending key with:
 
 - key category `component`,
 - key type `aplane.sentry-ed25519.v1` or
   `aplane.sentry-falcon1024.v1`,
-- public/private component key material,
-- selector derived as uppercase base32 SHA-512/256 of the domain-separated key
-  type and canonical public key bytes.
+- public/private sentry key material,
+- Sentry Key ID derived as uppercase base32 SHA-512/256 of the
+  domain-separated key type and canonical public key bytes.
 
 The selector is a routing and policy handle. It is not an Algorand sender,
 auth address, close target, rekey target, or account address.
@@ -101,7 +100,7 @@ services and optional client-side verification.
 
 `SentryPolicySnapshot` is the verified effective sentry-domain `policy.yaml` snapshot
 for one sentry identity. It contains transfer routing and sparse
-`key_overrides` keyed by component selector.
+`key_overrides` keyed by Sentry Key ID.
 
 Unlike client-signing policy, sentry policy has no manual-review verdict and
 no operator default. If no positive transfer route authorizes every target
@@ -222,7 +221,7 @@ ComponentMessage(user, txid) != ComponentMessage(sentry, txid)
 
 ### A2: Direct Signing Rejects Guarded Key Classes
 
-`/sign` must reject sentry component key types and guarded account key types.
+`/sign` must reject sentry key types and guarded account key types.
 They can sign only through `/sign/component` plus `/sign/assemble`.
 
 ```text
@@ -252,7 +251,7 @@ not SentryPolicyAllowsAllTargets(snapshot, request) =>
 
 ### A5: Component Selector Validates Key Class
 
-A sentry component selector may load only a component key whose stored key
+A Sentry Key ID may load only a sentry key whose stored key
 type, category, selector, and public/private key pair agree.
 
 ```text
@@ -400,11 +399,11 @@ Implementation areas that should remain aligned with this model:
 High-value test anchors:
 
 - role-separated message generation,
-- direct `/sign` rejection for every sentry component and guarded account
+- direct `/sign` rejection for every sentry and guarded account
   key type,
-- sender binding before user component key load,
+- sender binding before user-role key load,
 - deterministic sentry-domain `policy.yaml` policy rejection before sentry key load,
-- component selector/type/category/public-private validation,
+- Sentry Key ID/type/category/public-private validation,
 - assembly rejection for wrong user signatures,
 - assembly rejection for wrong sentry signatures,
 - passthrough transaction-ID mismatch rejection,

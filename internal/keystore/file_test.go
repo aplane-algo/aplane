@@ -621,8 +621,8 @@ func TestFileKeyStore_GetRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("Get() error = nil, want public/private mismatch")
 	}
-	if !strings.Contains(err.Error(), "component public key does not match private key") {
-		t.Fatalf("Get() error = %v, want component mismatch", err)
+	if !strings.Contains(err.Error(), "sentry public key does not match private key") {
+		t.Fatalf("Get() error = %v, want sentry key mismatch", err)
 	}
 }
 

@@ -20,16 +20,16 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 		t.Fatal("signer node rejected Falcon-guarded account key")
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.SentryComponentEd25519V1) {
-		t.Fatal("signer node allowed Ed25519 sentry component key")
+		t.Fatal("signer node allowed Ed25519 sentry key")
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.SentryComponentFalcon1024V1) {
-		t.Fatal("signer node allowed Falcon sentry component key")
+		t.Fatal("signer node allowed Falcon sentry key")
 	}
 	if !NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.SentryComponentEd25519V1) {
-		t.Fatal("sentry node rejected Ed25519 sentry component key")
+		t.Fatal("sentry node rejected Ed25519 sentry key")
 	}
 	if !NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.SentryComponentFalcon1024V1) {
-		t.Fatal("sentry node rejected Falcon sentry component key")
+		t.Fatal("sentry node rejected Falcon sentry key")
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleSentry, "ed25519") {
 		t.Fatal("sentry node allowed Ed25519 account key")
@@ -41,7 +41,7 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 		t.Fatal("unknown node role allowed Ed25519 account key")
 	}
 	if NodeRoleAllowsKeyType(noderole.Role("unknown"), keytypes.SentryComponentEd25519V1) {
-		t.Fatal("unknown node role allowed sentry component key")
+		t.Fatal("unknown node role allowed sentry key")
 	}
 }
 

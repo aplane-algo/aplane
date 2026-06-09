@@ -18,7 +18,7 @@ import (
 const ComponentPublicMetadataSuffix = ".public.json"
 
 // ComponentPublicMetadataPath returns the public-only metadata sidecar path for
-// a sentry component key.
+// a sentry key.
 func ComponentPublicMetadataPath(paths storepaths.Paths, identityID, componentKey string) string {
 	return filepath.Join(paths.KeysDir(identityID), componentKey+ComponentPublicMetadataSuffix)
 }
@@ -28,7 +28,7 @@ func ComponentPublicMetadataPath(paths storepaths.Paths, identityID, componentKe
 func ReadComponentPublicMetadata(paths storepaths.Paths, identityID, componentKey string) (sentryrefs.ExportEnvelope, bool, error) {
 	componentKey, err := keytypes.NormalizeComponentKeySelector(componentKey)
 	if err != nil {
-		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("invalid component key selector: %w", err)
+		return sentryrefs.ExportEnvelope{}, false, fmt.Errorf("invalid Sentry Key ID: %w", err)
 	}
 	path := ComponentPublicMetadataPath(paths, identityID, componentKey)
 	data, err := os.ReadFile(path)
@@ -56,7 +56,7 @@ func ReadComponentPublicMetadata(paths storepaths.Paths, identityID, componentKe
 }
 
 // WriteComponentPublicMetadataFromKeyJSON writes the public-only sidecar for a
-// restored sentry component key payload. Non-component payloads are ignored.
+// restored sentry key payload. Non-component payloads are ignored.
 func WriteComponentPublicMetadataFromKeyJSON(paths storepaths.Paths, identityID, address string, keyJSON []byte) (string, bool, error) {
 	var keyPair KeyPair
 	if err := json.Unmarshal(keyJSON, &keyPair); err != nil {
@@ -70,7 +70,7 @@ func WriteComponentPublicMetadataFromKeyJSON(paths storepaths.Paths, identityID,
 	}
 	componentKey, err := keytypes.NormalizeComponentKeySelector(address)
 	if err != nil {
-		return "", false, fmt.Errorf("invalid component key selector: %w", err)
+		return "", false, fmt.Errorf("invalid Sentry Key ID: %w", err)
 	}
 	return ComponentPublicMetadataPath(paths, identityID, componentKey), true, nil
 }
@@ -81,7 +81,7 @@ func writeComponentPublicMetadataIfNeeded(paths storepaths.Paths, identityID, ad
 	}
 	componentKey, err := keytypes.NormalizeComponentKeySelector(address)
 	if err != nil {
-		return fmt.Errorf("invalid component key selector: %w", err)
+		return fmt.Errorf("invalid Sentry Key ID: %w", err)
 	}
 	env, err := sentryrefs.NewExportEnvelope(componentKey, keyPair.KeyType, keyPair.PublicKeyHex)
 	if err != nil {

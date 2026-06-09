@@ -15,10 +15,10 @@ import (
 
 func TestSentryKeyTypeClassifiers(t *testing.T) {
 	if !IsSentryComponentKeyType(SentryComponentEd25519V1) {
-		t.Fatal("Ed25519 component key type was not classified as component")
+		t.Fatal("Ed25519 sentry key type was not classified as component")
 	}
 	if !IsSentryComponentKeyType(SentryComponentFalcon1024V1) {
-		t.Fatal("Falcon component key type was not classified as component")
+		t.Fatal("Falcon sentry key type was not classified as component")
 	}
 	if !IsGuardedAccountKeyType(GuardedFalcon1024SentryEd25519V1) {
 		t.Fatal("guarded Falcon account key type was not classified as guarded")

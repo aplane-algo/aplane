@@ -7,7 +7,7 @@
 #
 # The test keeps the existing docker-local behavior surface focused on install,
 # SSH token provisioning, client reachability, shared LocalNet wiring, sentry
-# endpoint enrollment, sentry component-key discovery, and one guarded
+# endpoint enrollment, sentry-key discovery, and one guarded
 # transaction-signing flow.
 
 set -euo pipefail
@@ -57,7 +57,7 @@ node. The signer and sentry run local apsigner installs bound to 0.0.0.0 inside
 the Docker network. All APlane nodes use the shared LocalNet algod endpoint.
 The client runs a client-only install plus apadmin, points endpoints.yaml at the
 signer container DNS name, adds the sentry endpoint through apshell, requests
-API tokens for both nodes, generates a sentry component key through the sentry
+API tokens for both nodes, generates a sentry key through the sentry
 endpoint, syncs the sentry key to the signer, enables a guarded Falcon/Ed25519
 sentry account key type, and verifies apshell can create, fund, and validate
 both guarded and plain Falcon accounts against the shared LocalNet.
@@ -674,15 +674,15 @@ generate_sentry_component_key() {
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-sentry.script 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to generate sentry component key through client/sentry flow"
+        die "failed to generate sentry key through client/sentry flow"
     fi
     printf '%s\n' "$out"
     SENTRY_COMPONENT_KEY="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "could not parse generated sentry component key"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "could not parse generated Sentry Key ID"
 }
 
 sync_sentry_key_to_signer() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "sentry component key is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints sync-sentries --yes\nendpoints sentries\n' > /tmp/sync-sentry.script"
     local out
@@ -695,7 +695,7 @@ sync_sentry_key_to_signer() {
     printf '%s\n' "$out" | grep -q 'Synced 1 endpoint-discovered sentry reference(s) to signer' \
         || die "sentry sync output did not include signer sync success marker"
     printf '%s\n' "$out" | grep -q "$SENTRY_COMPONENT_KEY" \
-        || die "sentry sync output did not include generated sentry component key"
+        || die "sentry sync output did not include generated Sentry Key ID"
 }
 
 enable_guarded_keytype() {
@@ -709,7 +709,7 @@ enable_guarded_keytype() {
 }
 
 generate_guarded_key() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "sentry component key is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-sentry-ed25519.v1 sentry=%s\n' '$SENTRY_COMPONENT_KEY' > /tmp/generate-guarded.script"
     local out
@@ -824,7 +824,7 @@ validate_guarded_self_send() {
 }
 
 delete_sentry_component_key() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "sentry component key is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
 
     local sentry_ssh_port sentry_port
     sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
@@ -850,11 +850,11 @@ delete_sentry_component_key() {
             -H \"Authorization: aplane \$token\" \
             \"http://127.0.0.1:\$local_port/admin/keys?address=$SENTRY_COMPONENT_KEY\" 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to delete sentry component key through sentry admin API"
+        die "failed to delete sentry key through sentry admin API"
     fi
     printf '%s\n' "$out"
     printf '%s\n' "$out" | grep -q '"success":true' \
-        || die "sentry component key deletion output did not include success marker"
+        || die "sentry key deletion output did not include success marker"
 }
 
 validate_guarded_self_send_after_sentry_delete_fails() {
@@ -870,8 +870,8 @@ validate_guarded_self_send_after_sentry_delete_fails() {
     fi
     printf '%s\n' "$out" | grep -q 'Failed:' \
         || die "guarded validation did not report a failed transaction after sentry key deletion"
-    printf '%s\n' "$out" | grep -q 'did not advertise sentry component public key' \
-        || die "guarded validation failure did not report missing sentry component key"
+    printf '%s\n' "$out" | grep -q 'did not advertise sentry public key' \
+        || die "guarded validation failure did not report missing sentry key"
 }
 
 verify_signer_reachable() {
@@ -977,10 +977,10 @@ main() {
     log "Requesting sentry API token from client container"
     request_sentry_token
 
-    log "Generating sentry component key through client/sentry flow"
+    log "Generating sentry key through client/sentry flow"
     generate_sentry_component_key
 
-    log "Syncing sentry component key to signer"
+    log "Syncing sentry key to signer"
     sync_sentry_key_to_signer
 
     log "Generating guarded Falcon/Ed25519 sentry account through client/signer flow"
@@ -1009,7 +1009,7 @@ main() {
     log "Verifying apadmin is present on client/admin node"
     verify_client_admin_node
 
-    log "Deleting sentry component key from sentry node"
+    log "Deleting sentry key from sentry node"
     delete_sentry_component_key
 
     log "Verifying guarded validation fails after sentry key deletion"

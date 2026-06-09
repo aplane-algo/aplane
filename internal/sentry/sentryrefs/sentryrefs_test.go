@@ -105,10 +105,10 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		ParamSentryName: componentKey,
 	})
 	if err != nil {
-		t.Fatalf("ResolveCreationParams(component key) error = %v", err)
+		t.Fatalf("ResolveCreationParams(Sentry Key ID) error = %v", err)
 	}
 	if got := resolved[keytypes.ParameterSentryPublicKey]; got != strings.Repeat("ab", 32) {
-		t.Fatalf("component-key sentry_public_key = %q, want imported public key", got)
+		t.Fatalf("Sentry Key ID sentry_public_key = %q, want imported public key", got)
 	}
 }
 
@@ -202,7 +202,7 @@ func TestSyncDiscoveredRejectsMismatchedComponentSelector(t *testing.T) {
 		t.Fatal("SyncDiscovered() error = nil, want selector/public-key mismatch rejection")
 	}
 	if !strings.Contains(err.Error(), "does not match public key") {
-		t.Fatalf("SyncDiscovered() error = %v, want component selector mismatch", err)
+		t.Fatalf("SyncDiscovered() error = %v, want Sentry Key ID mismatch", err)
 	}
 }
 

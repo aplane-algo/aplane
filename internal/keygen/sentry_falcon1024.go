@@ -18,9 +18,9 @@ import (
 
 const sentryFalcon1024SeedSize = 64
 
-// SentryFalcon1024Generator creates raw Falcon-1024 sentry component keys.
+// SentryFalcon1024Generator creates raw Falcon-1024 sentry keys.
 // These keys are not Algorand spending accounts and are intentionally
-// registered only under their exact component key type.
+// registered only under their exact sentry key type.
 type SentryFalcon1024Generator struct {
 	ops *signerops.Ops
 }
@@ -48,7 +48,7 @@ func (g *SentryFalcon1024Generator) GenerateFromSeed(ctx context.Context, paths 
 	}
 	publicKey, privateKey, err := ops.GenerateKeypair(seedCopy)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate component key: %w", err)
+		return nil, fmt.Errorf("failed to generate sentry key: %w", err)
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
@@ -74,7 +74,7 @@ func (g *SentryFalcon1024Generator) GenerateRandom(ctx context.Context, paths st
 
 	seed := make([]byte, sentryFalcon1024SeedSize)
 	if _, err := rand.Read(seed); err != nil {
-		return nil, fmt.Errorf("failed to generate component seed: %w", err)
+		return nil, fmt.Errorf("failed to generate sentry key seed: %w", err)
 	}
 	defer securecrypto.ZeroBytes(seed)
 
@@ -84,7 +84,7 @@ func (g *SentryFalcon1024Generator) GenerateRandom(ctx context.Context, paths st
 	}
 	publicKey, privateKey, err := ops.GenerateKeypair(seed)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate component key: %w", err)
+		return nil, fmt.Errorf("failed to generate sentry key: %w", err)
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
@@ -105,7 +105,7 @@ func saveSentryComponentKey(paths storepaths.Paths, identityID, keyType string, 
 	}
 	keyFiles, err := keys.SaveKeyFile(paths, keyPair, identityID, componentKey, masterKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to save component key: %w", err)
+		return nil, fmt.Errorf("failed to save sentry key: %w", err)
 	}
 
 	return &GenerationResult{
@@ -118,7 +118,7 @@ func saveSentryComponentKey(paths storepaths.Paths, identityID, keyType string, 
 
 var registerSentryFalcon1024GeneratorOnce sync.Once
 
-// RegisterSentryFalcon1024Generator registers the component-key generator.
+// RegisterSentryFalcon1024Generator registers the sentry-key generator.
 // This is intentionally separate from the transaction-signing provider
 // registry.
 func RegisterSentryFalcon1024Generator() {

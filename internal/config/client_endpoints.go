@@ -53,8 +53,8 @@ type ClientEndpointConfig struct {
 	PublishedSentries map[string]ClientEndpointPublishedSentry `yaml:"published_sentries,omitempty"`
 }
 
-// ClientEndpointPublishedSentry records one sentry component key
-// advertised by an endpoint.
+// ClientEndpointPublishedSentry records one sentry key advertised by an
+// endpoint.
 type ClientEndpointPublishedSentry struct {
 	ComponentKey string `yaml:"component_key"`
 	KeyType      string `yaml:"key_type"`
@@ -468,7 +468,7 @@ func normalizePublishedSentryPublicKey(raw, keyType string) (string, error) {
 	}
 	wantSize, ok := keytypes.ComponentPublicKeySize(keyType)
 	if !ok {
-		return "", fmt.Errorf("published sentry key_type %q is not a sentry component key type", keyType)
+		return "", fmt.Errorf("published sentry key_type %q is not a sentry key type", keyType)
 	}
 	if len(publicKey) != wantSize {
 		return "", fmt.Errorf("published sentry public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
