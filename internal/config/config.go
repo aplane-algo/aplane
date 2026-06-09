@@ -325,9 +325,9 @@ type ParsedConnection struct {
 //
 //	<host> [--ssh-port <port>] [--signer-port <port>]
 //
-// For localhost connections (SSH tunnel to localhost):
+// For local loopback connections:
 //
-//	localhost [--signer-port <port>]
+//	127.0.0.1 [--signer-port <port>]
 //
 // Defaults are taken from config.yaml if available, otherwise: ssh-port=1127, signer-port=11270
 // Returns the parsed connection or an error if invalid

@@ -7,7 +7,7 @@ default: primary
 endpoints:
   primary:
     role: signer
-    url: ssh://localhost:1127
+    url: ssh://127.0.0.1:1127
     signer_port: 11270
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts

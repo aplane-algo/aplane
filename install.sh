@@ -988,7 +988,7 @@ EOF
 
 write_apshell_endpoint_registry() {
     local target="$1"
-    local host="${2:-localhost}"
+    local host="${2:-127.0.0.1}"
     local signer_port="${3:-11270}"
     local ssh_port="${4:-1127}"
     cat > "$target" <<EOF
@@ -1010,7 +1010,7 @@ EOF
 
 write_apshell_sentry_endpoint_registry() {
     local target="$1"
-    local host="${2:-localhost}"
+    local host="${2:-127.0.0.1}"
     local signer_port="${3:-11270}"
     local ssh_port="${4:-1127}"
     cat > "$target" <<EOF
@@ -1032,7 +1032,7 @@ EOF
 write_apshell_endpoint_registry_for_role() {
     local target="$1"
     local role="$2"
-    local host="${3:-localhost}"
+    local host="${3:-127.0.0.1}"
     local signer_port="${4:-11270}"
     local ssh_port="${5:-1127}"
     case "$role" in
@@ -2041,7 +2041,7 @@ STARTEOF
         echo "Endpoint registry already exists at $APCLIENT_ENDPOINTS; leaving it unchanged."
     elif [ "$WROTE_APCLIENT_CONFIG" = "1" ]; then
         echo "Writing $APCLIENT_ENDPOINTS..."
-        write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" localhost "$SIGNER_PORT" "$SSH_PORT"
+        write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" 127.0.0.1 "$SIGNER_PORT" "$SSH_PORT"
     fi
 
     if [ "$NODE_ROLE" = "signer" ]; then
@@ -2329,7 +2329,7 @@ if [ -n "$SUDO_USER" ]; then
         echo "Endpoint registry already exists at $APCLIENT_ENDPOINTS; leaving it unchanged."
     elif [ "$WROTE_APCLIENT_CONFIG" = "1" ]; then
         echo "Writing $APCLIENT_ENDPOINTS..."
-        write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" localhost 11270 1127
+        write_apshell_endpoint_registry_for_role "$APCLIENT_ENDPOINTS" "$NODE_ROLE" 127.0.0.1 11270 1127
     fi
     write_mcp_config "$APCLIENT_DIR" "$BINDIR/apshell"
 

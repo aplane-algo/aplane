@@ -301,7 +301,7 @@ func TestClientEndpointExamplesUseKnownFields(t *testing.T) {
 		{
 			name: "install.sh write_apshell_endpoint_registry",
 			data: []byte(strings.NewReplacer(
-				"$host", "localhost",
+				"$host", "127.0.0.1",
 				"$signer_port", "11270",
 				"$ssh_port", "1127",
 			).Replace(extractInstallHereDocAfter(
@@ -314,7 +314,7 @@ func TestClientEndpointExamplesUseKnownFields(t *testing.T) {
 		{
 			name: "install.sh write_apshell_sentry_endpoint_registry",
 			data: []byte(strings.NewReplacer(
-				"$host", "localhost",
+				"$host", "127.0.0.1",
 				"$signer_port", "11270",
 				"$ssh_port", "1127",
 			).Replace(extractInstallHereDocAfter(
