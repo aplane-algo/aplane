@@ -85,6 +85,13 @@ func connectEndpointAlias(r *REPLState, alias string) error {
 	return r.renderConnectResult(result)
 }
 
+func (r *REPLState) cmdDisconnect(args []string, _ interface{}) error {
+	if len(args) != 0 {
+		return fmt.Errorf("usage: disconnect")
+	}
+	return disconnectTunnel(r)
+}
+
 // disconnectTunnel closes the SSH tunnel connection and reports the shell-visible result.
 func disconnectTunnel(r *REPLState) error {
 	if r.app().IsTunnelConnected() {

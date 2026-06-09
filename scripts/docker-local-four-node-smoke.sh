@@ -6,9 +6,9 @@
 #   4. AlgoKit-style LocalNet algod/KMD node
 #
 # The test keeps the existing docker-local behavior surface focused on install,
-# SSH token provisioning, client reachability, and shared LocalNet wiring. It
-# starts a sentry node and wires the client endpoint registry to it, but does
-# not yet exercise sentry signing flows.
+# SSH token provisioning, client reachability, shared LocalNet wiring, sentry
+# endpoint enrollment, sentry component-key discovery, and one guarded
+# transaction-signing flow.
 
 set -euo pipefail
 
@@ -36,6 +36,8 @@ FALCON_FUND_AMOUNT=100000000
 ALGOD_CONFIG_DIR=""
 LOCALNET_GENESIS_HASH=""
 FALCON_ADDRESS=""
+SENTRY_COMPONENT_KEY=""
+GUARDED_ADDRESS=""
 
 usage() {
     cat <<'EOF'
@@ -54,9 +56,11 @@ network: signer, sentry, client/admin, and an AlgoKit-style LocalNet algod/KMD
 node. The signer and sentry run local apsigner installs bound to 0.0.0.0 inside
 the Docker network. All APlane nodes use the shared LocalNet algod endpoint.
 The client runs a client-only install plus apadmin, points endpoints.yaml at the
-signer and sentry container DNS names, requests a signer API token, and verifies
-apshell can connect to the signer with that token. Sentry signing is not tested
-yet.
+signer container DNS name, adds the sentry endpoint through apshell, requests
+API tokens for both nodes, generates a sentry component key through the sentry
+endpoint, syncs the sentry key to the signer, enables a guarded Falcon/Ed25519
+sentry account key type, and verifies apshell can create, fund, and validate
+both guarded and plain Falcon accounts against the shared LocalNet.
 EOF
 }
 
@@ -481,6 +485,25 @@ YAML
                 '$ALGOD_URL' '$KMD_URL' '$ALGOD_TOKEN' >> '$env_path'"
 }
 
+configure_sentry_policy() {
+    local policy_path="/home/$TEST_USER/aplane/apsigner/identities/default/policy.yaml"
+    docker_exec_as_tester "$SENTRY_CONTAINER" "cat > '$policy_path' <<'YAML'
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  on_no_route: reject
+  routes:
+    - id: docker_smoke_allow_all
+      networks: [\"*\"]
+      sources: [\"*\"]
+      assets: [\"*\"]
+      destinations: [\"*\"]
+YAML
+        chmod 600 '$policy_path' && \
+        . /home/$TEST_USER/aplane/apenv.sh && \
+        APSIGNER_PASSPHRASE='$TEST_PASSPHRASE' apstore policy sign"
+}
+
 verify_localnet_reachable_from_nodes() {
     local container
     for container in "$SIGNER_CONTAINER" "$SENTRY_CONTAINER" "$CLIENT_CONTAINER"; do
@@ -489,13 +512,10 @@ verify_localnet_reachable_from_nodes() {
 }
 
 configure_client_endpoints() {
-    local signer_ssh_port signer_port sentry_ssh_port sentry_port
+    local signer_ssh_port signer_port
     signer_ssh_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" ssh_port)"
     signer_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" signer_port)"
-    sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
-    sentry_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" signer_port)"
     [ -n "$signer_ssh_port" ] && [ -n "$signer_port" ] || die "could not read signer endpoint ports"
-    [ -n "$sentry_ssh_port" ] && [ -n "$sentry_port" ] || die "could not read sentry endpoint ports"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "mkdir -p /home/$TEST_USER/aplane/apclient/tokens && cat > /home/$TEST_USER/aplane/apclient/endpoints.yaml <<YAML
 schema_version: 1
@@ -508,14 +528,24 @@ endpoints:
     identity_file: .ssh/id_ed25519
     known_hosts_path: .ssh/known_hosts
     token_file: aplane.token
-  local-sentry:
-    role: sentry
-    url: ssh://sentry:$sentry_ssh_port
-    signer_port: $sentry_port
-    identity_file: .ssh/id_ed25519
-    known_hosts_path: .ssh/known_hosts
-    token_file: tokens/local-sentry.token
 YAML"
+}
+
+create_client_sentry_endpoint() {
+    local sentry_ssh_port sentry_port out
+    sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
+    sentry_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" signer_port)"
+    [ -n "$sentry_ssh_port" ] && [ -n "$sentry_port" ] || die "could not read sentry endpoint ports"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints create --alias local-sentry --endpoint ssh://sentry:%s --sentryport %s\nendpoints show local-sentry\n' '$sentry_ssh_port' '$sentry_port' > /tmp/create-sentry-endpoint.script"
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/create-sentry-endpoint.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to add sentry endpoint through apshell"
+    fi
+    printf '%s\n' "$out"
+    printf '%s\n' "$out" | grep -q 'Configured sentry endpoint local-sentry' \
+        || die "sentry endpoint creation output did not include success marker"
 }
 
 verify_layout() {
@@ -569,7 +599,10 @@ populate_known_hosts() {
     populate_known_hosts_for "$SENTRY_CONTAINER" sentry "$sentry_ssh_port"
 }
 
-start_signer_apapprover() {
+start_apapprover() {
+    local container="$1"
+    local log_path="$2"
+    local label="$3"
     local exp_file
     exp_file="$(mktemp)"
     cat > "$exp_file" <<EXPECT_SCRIPT
@@ -592,23 +625,31 @@ while {1} {
     }
 }
 EXPECT_SCRIPT
-    docker cp "$exp_file" "$SIGNER_CONTAINER:/tmp/apapprover.exp"
+    docker cp "$exp_file" "$container:/tmp/apapprover.exp"
     rm -f "$exp_file"
-    docker_exec "$SIGNER_CONTAINER" chmod 755 /tmp/apapprover.exp
-    docker_exec "$SIGNER_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/apapprover.exp
+    docker_exec "$container" chmod 755 /tmp/apapprover.exp
+    docker_exec "$container" chown "$TEST_USER:$TEST_USER" /tmp/apapprover.exp
 
-    docker exec -d --user "$TEST_USER" "$SIGNER_CONTAINER" bash -lc \
-        ". /home/$TEST_USER/aplane/apenv.sh && exec expect /tmp/apapprover.exp > /tmp/apapprover.log 2>&1"
+    docker exec -d --user "$TEST_USER" "$container" bash -lc \
+        ". /home/$TEST_USER/aplane/apenv.sh && exec expect /tmp/apapprover.exp > $log_path 2>&1"
 
     local i
     for i in $(seq 1 20); do
-        if docker_exec_as_tester "$SIGNER_CONTAINER" "grep -q 'authenticated and signer unlocked' /tmp/apapprover.log 2>/dev/null"; then
+        if docker_exec_as_tester "$container" "grep -q 'authenticated and signer unlocked' '$log_path' 2>/dev/null"; then
             return 0
         fi
         sleep 1
     done
-    docker_exec_as_tester "$SIGNER_CONTAINER" "cat /tmp/apapprover.log" >&2 || true
-    die "signer apapprover did not authenticate within 20s"
+    docker_exec_as_tester "$container" "cat '$log_path'" >&2 || true
+    die "$label apapprover did not authenticate within 20s"
+}
+
+start_signer_apapprover() {
+    start_apapprover "$SIGNER_CONTAINER" /tmp/apapprover.log signer
+}
+
+start_sentry_apapprover() {
+    start_apapprover "$SENTRY_CONTAINER" /tmp/apapprover.log sentry
 }
 
 run_request_token() {
@@ -617,6 +658,69 @@ run_request_token() {
         apshell -script /tmp/req-token.script 2>&1 | tee /tmp/req-token.log"
     docker_exec_as_tester "$CLIENT_CONTAINER" "test -s /home/$TEST_USER/aplane/apclient/aplane.token" \
         || die "request-token did not produce a client token file"
+}
+
+request_sentry_token() {
+    docker_exec_as_tester "$CLIENT_CONTAINER" "echo 'request-token --endpoint local-sentry' > /tmp/req-sentry-token.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/req-sentry-token.script 2>&1 | tee /tmp/req-sentry-token.log"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "test -s /home/$TEST_USER/aplane/apclient/tokens/local-sentry.token" \
+        || die "request-token did not produce a local-sentry token file"
+}
+
+generate_sentry_component_key() {
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-sentry\ngenerate aplane.sentry-ed25519.v1\n' > /tmp/generate-sentry.script"
+    local out
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/generate-sentry.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to generate sentry component key through client/sentry flow"
+    fi
+    printf '%s\n' "$out"
+    SENTRY_COMPONENT_KEY="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "could not parse generated sentry component key"
+}
+
+sync_sentry_key_to_signer() {
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "sentry component key is not set"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints sync-sentries --yes\nendpoints sentries\n' > /tmp/sync-sentry.script"
+    local out
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/sync-sentry.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to sync sentry key to signer"
+    fi
+    printf '%s\n' "$out"
+    printf '%s\n' "$out" | grep -q 'Synced 1 endpoint-discovered sentry reference(s) to signer' \
+        || die "sentry sync output did not include signer sync success marker"
+    printf '%s\n' "$out" | grep -q "$SENTRY_COMPONENT_KEY" \
+        || die "sentry sync output did not include generated sentry component key"
+}
+
+enable_guarded_keytype() {
+    local out
+    if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore keytype enable aplane.falcon1024-sentry-ed25519.v1 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to enable guarded Falcon/Ed25519 sentry key type on signer"
+    fi
+    printf '%s\n' "$out"
+}
+
+generate_guarded_key() {
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "sentry component key is not set"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-sentry-ed25519.v1 sentry=%s\n' '$SENTRY_COMPONENT_KEY' > /tmp/generate-guarded.script"
+    local out
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/generate-guarded.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to generate guarded Falcon/Ed25519 sentry account through client/signer flow"
+    fi
+    printf '%s\n' "$out"
+    GUARDED_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    [ -n "$GUARDED_ADDRESS" ] || die "could not parse generated guarded address"
 }
 
 generate_falcon_key() {
@@ -632,8 +736,10 @@ generate_falcon_key() {
     [ -n "$FALCON_ADDRESS" ] || die "could not parse generated Falcon address"
 }
 
-fund_falcon_key_from_localnet() {
-    [ -n "$FALCON_ADDRESS" ] || die "Falcon address is not set"
+fund_account_from_localnet() {
+    local address="$1"
+    local label="$2"
+    [ -n "$address" ] || die "$label address is not set"
 
     local funding_address
     funding_address="$(docker_exec "$ALGOD_CONTAINER" sh -lc "/node/bin/goal account list -d /algod/data | awk 'NR == 1 { print \$2; exit }'")"
@@ -644,29 +750,77 @@ fund_falcon_key_from_localnet() {
         -d /algod/data \
         -w unencrypted-default-wallet \
         -f '$funding_address' \
-        -t '$FALCON_ADDRESS' \
+        -t '$address' \
         -a '$FALCON_FUND_AMOUNT' \
-        --note 'aplane docker smoke falcon funding' 2>&1")"; then
+        --note 'aplane docker smoke funding' 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to fund generated Falcon account from LocalNet wallet"
+        die "failed to fund generated $label account from LocalNet wallet"
     fi
     printf '%s\n' "$out"
 }
 
-verify_falcon_funded() {
-    [ -n "$FALCON_ADDRESS" ] || die "Falcon address is not set"
+verify_account_funded() {
+    local address="$1"
+    local label="$2"
+    [ -n "$address" ] || die "$label address is not set"
 
     local balance i
     for i in $(seq 1 20); do
-        balance="$(docker_exec "$ALGOD_CONTAINER" sh -lc "/node/bin/goal account balance -a '$FALCON_ADDRESS' -d /algod/data 2>/dev/null | awk '{ print \$1; exit }'")"
+        balance="$(docker_exec "$ALGOD_CONTAINER" sh -lc "/node/bin/goal account balance -a '$address' -d /algod/data 2>/dev/null | awk '{ print \$1; exit }'")"
         if [ -n "$balance" ] && [ "$balance" -ge "$FALCON_FUND_AMOUNT" ]; then
-            printf 'Falcon account %s balance: %s microAlgos\n' "$FALCON_ADDRESS" "$balance"
+            printf '%s account %s balance: %s microAlgos\n' "$label" "$address" "$balance"
             return 0
         fi
         sleep 1
     done
 
-    die "generated Falcon account was not funded; last balance: ${balance:-unavailable}"
+    die "generated $label account was not funded; last balance: ${balance:-unavailable}"
+}
+
+fund_falcon_key_from_localnet() {
+    fund_account_from_localnet "$FALCON_ADDRESS" "Falcon"
+}
+
+verify_falcon_funded() {
+    verify_account_funded "$FALCON_ADDRESS" "Falcon"
+}
+
+fund_guarded_key_from_localnet() {
+    fund_account_from_localnet "$GUARDED_ADDRESS" "guarded"
+}
+
+verify_guarded_funded() {
+    verify_account_funded "$GUARDED_ADDRESS" "guarded"
+}
+
+validate_falcon_self_send() {
+    [ -n "$FALCON_ADDRESS" ] || die "Falcon address is not set"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nvalidate %s\n' '$FALCON_ADDRESS' > /tmp/validate-falcon.script"
+    local out
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/validate-falcon.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "Falcon validation self-send failed"
+    fi
+    printf '%s\n' "$out"
+    printf '%s\n' "$out" | grep -q 'Validated successfully' \
+        || die "Falcon validation output did not include success marker"
+}
+
+validate_guarded_self_send() {
+    [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nvalidate %s\n' '$GUARDED_ADDRESS' > /tmp/validate-guarded.script"
+    local out
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/validate-guarded.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "guarded validation self-send failed"
+    fi
+    printf '%s\n' "$out"
+    printf '%s\n' "$out" | grep -q 'Validated successfully' \
+        || die "guarded validation output did not include success marker"
 }
 
 verify_signer_reachable() {
@@ -685,7 +839,7 @@ verify_client_admin_node() {
 
 shutdown_nodes() {
     docker_exec_as_tester "$SIGNER_CONTAINER" "pkill expect || true; pkill apapprover || true; pkill apsigner || true"
-    docker_exec_as_tester "$SENTRY_CONTAINER" "pkill apsigner || true"
+    docker_exec_as_tester "$SENTRY_CONTAINER" "pkill expect || true; pkill apapprover || true; pkill apsigner || true"
     sleep 1
 }
 
@@ -732,6 +886,9 @@ main() {
     configure_node_localnet "$SENTRY_CONTAINER"
     configure_client_localnet
 
+    log "Configuring sentry policy for guarded smoke transactions"
+    configure_sentry_policy
+
     log "Verifying shared LocalNet reachability from APlane nodes"
     verify_localnet_reachable_from_nodes
 
@@ -751,11 +908,39 @@ main() {
     log "Seeding client known_hosts for signer and sentry"
     populate_known_hosts
 
+    log "Adding sentry endpoint from client container"
+    create_client_sentry_endpoint
+
+    log "Enabling guarded Falcon/Ed25519 sentry key type on signer"
+    enable_guarded_keytype
+
     log "Starting signer-side approver for token bootstrap"
     start_signer_apapprover
 
+    log "Starting sentry-side approver for token bootstrap"
+    start_sentry_apapprover
+
     log "Requesting signer API token from client container"
     run_request_token
+
+    log "Requesting sentry API token from client container"
+    request_sentry_token
+
+    log "Generating sentry component key through client/sentry flow"
+    generate_sentry_component_key
+
+    log "Syncing sentry component key to signer"
+    sync_sentry_key_to_signer
+
+    log "Generating guarded Falcon/Ed25519 sentry account through client/signer flow"
+    generate_guarded_key
+
+    log "Funding generated guarded account from shared LocalNet"
+    fund_guarded_key_from_localnet
+    verify_guarded_funded
+
+    log "Validating generated guarded account with 0 ALGO self-send"
+    validate_guarded_self_send
 
     log "Generating Falcon key through client/signer flow"
     generate_falcon_key
@@ -763,6 +948,9 @@ main() {
     log "Funding generated Falcon key from shared LocalNet"
     fund_falcon_key_from_localnet
     verify_falcon_funded
+
+    log "Validating generated Falcon key with 0 ALGO self-send"
+    validate_falcon_self_send
 
     log "Verifying client can reach signer with issued token"
     verify_signer_reachable

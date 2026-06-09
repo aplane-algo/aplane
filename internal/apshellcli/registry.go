@@ -331,6 +331,14 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 	})
 
 	mustRegister(registry, &command.Command{
+		Name:        "disconnect",
+		Usage:       "disconnect",
+		Description: "Close the active Signer SSH tunnel",
+		Category:    command.CategoryRemote,
+		Handler:     command.NewInternalHandler(r.cmdDisconnect),
+	})
+
+	mustRegister(registry, &command.Command{
 		Name:        "request-token",
 		Usage:       "request-token [--endpoint <alias>] [<host> [--ssh-port <port>]]",
 		Description: "Request API token from Signer (requires operator approval)",

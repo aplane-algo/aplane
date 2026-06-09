@@ -68,6 +68,7 @@ func TestCommandRegistration(t *testing.T) {
 
 		// Remote commands
 		{"connect", command.CategoryRemote},
+		{"disconnect", command.CategoryRemote},
 		{"request-token", command.CategoryRemote},
 	}
 

@@ -14,7 +14,7 @@ Complete command reference for the APlane shell (`apshell`).
 | **Aliases & Sets** | `alias`, `sets` |
 | **Rekeying** | `rekey list`, `rekey`, `unrekey` |
 | **ASA Management** | `asa list`, `asa add`, `asa remove`, `asa clear` |
-| **Configuration** | `network`, `connect`, `request-token`, `endpoints`, `write`, `verbose`, `simulate`, `config` |
+| **Configuration** | `network`, `connect`, `disconnect`, `request-token`, `endpoints`, `write`, `verbose`, `simulate`, `config` |
 | **Automation** | `js`, `jssave`, `jslist`, `script` |
 | **Plugins** | `plugins` |
 | **Session** | `help`, `clear`, `quit` |
@@ -566,6 +566,18 @@ connect primary
 `known_hosts_path` is optional; if omitted, apshell uses the default client-data known-hosts path.
 
 **Setup:** Obtain a token with `request-token` or place `aplane.token` in your `$APCLIENT_DATA` directory.
+
+---
+
+### disconnect
+
+Close the active signer SSH tunnel.
+
+```
+disconnect
+```
+
+This is useful before connecting to a different endpoint in scripts.
 
 ---
 
