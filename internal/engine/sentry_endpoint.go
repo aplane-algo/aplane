@@ -96,7 +96,7 @@ func (e *Engine) resolveSentryEndpoint(ctx context.Context, sentryKey sentryRequ
 		}
 		client, cleanup, source, err := e.connectConfiguredSentryEndpoint(ctx, endpoint)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect sentry endpoint for public key %s: %w", sentryKey.PublicKey, err)
+			return nil, fmt.Errorf("failed to connect sentry endpoint for %s: %w", sentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
 		}
 		resolved := &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
 		if err := verifySentryEndpointAdvertises(ctx, client, sentryKey, source); err != nil {
@@ -107,7 +107,7 @@ func (e *Engine) resolveSentryEndpoint(ctx context.Context, sentryKey sentryRequ
 	}
 
 	if err := verifySentryEndpointAdvertises(ctx, e.Connection, sentryKey, "current signer"); err != nil {
-		return nil, fmt.Errorf("no sentry endpoint configured for public key %s and current signer does not advertise a matching Sentry Key ID: %w", sentryKey.PublicKey, err)
+		return nil, fmt.Errorf("no sentry endpoint configured for %s and current signer does not advertise a matching sentry component: %w", sentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
 	}
 	return &resolvedSentryEndpoint{client: e.Connection, source: "current signer"}, nil
 }
@@ -273,14 +273,14 @@ func discoverSentryComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredSentryCo
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
 		if err != nil {
-			return nil, fmt.Errorf("%w: sentry public key %s has invalid Sentry Key ID %q: %v", ErrSentryDiscoveryInvalidMetadata, publicKey, key.Address, err)
+			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Sentry Key ID %q: %v", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), key.Address, err)
 		}
 		expectedSelector, err := sentryComponentSelector(key.KeyType, publicKey)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to derive Sentry Key ID for sentry public key %s: %v", ErrSentryDiscoveryInvalidMetadata, publicKey, err)
+			return nil, fmt.Errorf("%w: failed to derive Sentry Key ID for sentry public key %s: %v", ErrSentryDiscoveryInvalidMetadata, shortSentryPublicKeyHex(publicKey), err)
 		}
 		if selector != expectedSelector {
-			return nil, fmt.Errorf("%w: sentry component public key %s advertised selector %s, want %s", ErrSentryDiscoveryInvalidMetadata, publicKey, selector, expectedSelector)
+			return nil, fmt.Errorf("%w: sentry component %s advertised selector %s, want %s", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), selector, expectedSelector)
 		}
 		if _, ok := seen[publicKey]; ok {
 			continue
@@ -319,6 +319,7 @@ func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentC
 	if err != nil {
 		return fmt.Errorf("failed to derive expected Sentry Key ID: %w", err)
 	}
+	expectedLabel := fmt.Sprintf("Sentry Key ID %s (%s)", expectedSelector, sentryKey.ComponentKeyType)
 	keys, err := client.GetKeysWithContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to inspect %s sentry keys: %w", source, err)
@@ -339,12 +340,12 @@ func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentC
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
 		if err != nil {
-			return fmt.Errorf("%s advertised sentry public key %s with invalid Sentry Key ID %q: %w", source, expectedPublicKey, key.Address, err)
+			return fmt.Errorf("%s advertised %s with invalid Sentry Key ID %q: %w", source, expectedLabel, key.Address, err)
 		}
 		if selector != expectedSelector {
-			return fmt.Errorf("%s advertised sentry public key %s with Sentry Key ID %s, want %s", source, expectedPublicKey, selector, expectedSelector)
+			return fmt.Errorf("%s advertised %s with Sentry Key ID %s, want %s", source, expectedLabel, selector, expectedSelector)
 		}
 		return nil
 	}
-	return fmt.Errorf("%s did not advertise sentry public key %s", source, expectedPublicKey)
+	return fmt.Errorf("%s did not advertise %s", source, expectedLabel)
 }

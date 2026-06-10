@@ -1068,7 +1068,7 @@ validate_guarded_self_send_after_sentry_delete_fails() {
     fi
     printf '%s\n' "$out" | grep -q 'Failed:' \
         || die "guarded validation did not report a failed transaction after sentry key deletion"
-    printf '%s\n' "$out" | grep -q 'did not advertise sentry public key' \
+    printf '%s\n' "$out" | grep -q 'did not advertise Sentry Key ID' \
         || die "guarded validation failure did not report missing sentry key"
 }
 

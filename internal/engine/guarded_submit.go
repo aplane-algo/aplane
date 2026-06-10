@@ -308,6 +308,23 @@ func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (s
 	return keytypes.ComponentKeySelector(componentKeyType, publicKey)
 }
 
+func sentryComponentLabel(componentKeyType, sentryPublicKey string) string {
+	selector, err := sentryComponentSelector(componentKeyType, sentryPublicKey)
+	if err == nil {
+		return fmt.Sprintf("Sentry Key ID %s (%s)", selector, componentKeyType)
+	}
+	return fmt.Sprintf("sentry public key %s (%s)", shortSentryPublicKeyHex(sentryPublicKey), componentKeyType)
+}
+
+func shortSentryPublicKeyHex(publicKeyHex string) string {
+	trimmed := strings.TrimSpace(publicKeyHex)
+	trimmed = strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
+	if len(trimmed) <= 24 {
+		return trimmed
+	}
+	return trimmed[:12] + "..." + trimmed[len(trimmed)-12:]
+}
+
 func (e *Engine) planGuardedGroup(txns []types.Transaction, targets []guardedTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
 	originalCount := len(txns)
 	planned := append([]types.Transaction(nil), txns...)
@@ -493,8 +510,9 @@ func (e *Engine) requestOneSentryComponentSignatureSet(ctx context.Context, grou
 
 	componentSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, sentryKey.PublicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to derive Sentry Key ID for public key %s: %w", sentryKey.PublicKey, err)
+		return "", fmt.Errorf("failed to derive Sentry Key ID for sentry public key %s: %w", shortSentryPublicKeyHex(sentryKey.PublicKey), err)
 	}
+	componentLabel := fmt.Sprintf("Sentry Key ID %s (%s)", componentSelector, sentryKey.ComponentKeyType)
 
 	resp, err := endpoint.client.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleSentry,
@@ -503,10 +521,10 @@ func (e *Engine) requestOneSentryComponentSignatureSet(ctx context.Context, grou
 		TargetIndices: indices,
 	})
 	if err != nil {
-		return "", fmt.Errorf("sentry component signing failed for public key %s via %s: %w", sentryKey.PublicKey, endpoint.source, err)
+		return "", fmt.Errorf("sentry component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
 	}
 	if err := collectComponentSignatures(resp, indices, sentryKey.ComponentKeyType, signatures); err != nil {
-		return "", fmt.Errorf("sentry component signing failed for public key %s via %s: %w", sentryKey.PublicKey, endpoint.source, err)
+		return "", fmt.Errorf("sentry component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
 	}
 	if err := verifySentryComponentSignatures(sentryKey.ComponentKeyType, sentryKey.PublicKey, group, indices, signatures); err != nil {
 		return "", err

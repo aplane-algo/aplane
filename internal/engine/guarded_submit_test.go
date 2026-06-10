@@ -492,8 +492,16 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want explicit endpoint mismatch")
 	}
-	if !strings.Contains(err.Error(), "did not advertise sentry public key") {
-		t.Fatalf("requestSentryComponentSignatures() error = %q, want endpoint mismatch", err)
+	componentSelector, selectorErr := sentryComponentSelector(keytypes.SentryComponentEd25519V1, sentryHex)
+	if selectorErr != nil {
+		t.Fatalf("sentryComponentSelector() error = %v", selectorErr)
+	}
+	errText := err.Error()
+	if !strings.Contains(errText, "did not advertise Sentry Key ID") || !strings.Contains(errText, componentSelector) {
+		t.Fatalf("requestSentryComponentSignatures() error = %q, want endpoint mismatch with Sentry Key ID %s", err, componentSelector)
+	}
+	if strings.Contains(errText, sentryHex) {
+		t.Fatalf("requestSentryComponentSignatures() error exposed raw sentry public key: %q", err)
 	}
 	if got := wrongSignCalls.Load(); got != 0 {
 		t.Fatalf("wrong endpoint /sign/component calls = %d, want 0", got)
@@ -644,6 +652,22 @@ func ed25519SentryRequestKey(sentryHex string) sentryRequestKey {
 	return sentryRequestKey{
 		ComponentKeyType: keytypes.SentryComponentEd25519V1,
 		PublicKey:        sentryHex,
+	}
+}
+
+func TestSentryComponentLabelUsesFalconSentryKeyID(t *testing.T) {
+	sentryHex := testFalconSentryPublicKeyHex(0x0a)
+	componentSelector, err := sentryComponentSelector(keytypes.SentryComponentFalcon1024V1, sentryHex)
+	if err != nil {
+		t.Fatalf("sentryComponentSelector() error = %v", err)
+	}
+
+	label := sentryComponentLabel(keytypes.SentryComponentFalcon1024V1, sentryHex)
+	if !strings.Contains(label, componentSelector) || !strings.Contains(label, keytypes.SentryComponentFalcon1024V1) {
+		t.Fatalf("sentryComponentLabel() = %q, want Sentry Key ID %s and key type", label, componentSelector)
+	}
+	if strings.Contains(label, sentryHex) {
+		t.Fatalf("sentryComponentLabel() exposed raw Falcon sentry public key: %q", label)
 	}
 }
 
