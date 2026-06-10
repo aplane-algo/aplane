@@ -201,8 +201,28 @@ func (c *testModeClient) DeleteKey(address string) error {
 	return nil
 }
 
-// runTestMode runs apadmin in test mode
-func runTestMode(config config.ServerConfig, serverAddr string, args []string) {
+// runTestMode runs apadmin in test mode against the local IPC socket.
+func runTestMode(config config.ServerConfig, args []string) {
+	runTestSession(transport.NewIPC(config.IPCPath), false, args)
+}
+
+// runRemoteTestMode runs apadmin test mode over the legacy SSH admin transport.
+func runRemoteTestMode(remoteCfg *remoteAdminConfig, args []string) {
+	conn := transport.NewSSHAdmin(
+		remoteCfg.config.LegacySSH.Host,
+		remoteCfg.config.LegacySSH.Port,
+		remoteCfg.token,
+		remoteCfg.config.LegacySSH.IdentityFile,
+		remoteCfg.config.LegacySSH.KnownHostsPath,
+	)
+	runTestSession(conn, true, args)
+}
+
+// runTestSession is the shared test-mode flow: connect, authenticate, wait
+// for status, unlock if needed, then execute the command. remote selects the
+// SSH-specific connect error formatting and the requirement that an unlock
+// passphrase be provided explicitly.
+func runTestSession(conn transport.Transport, remote bool, args []string) {
 	if len(args) == 0 {
 		printTestUsage()
 		os.Exit(1)
@@ -214,60 +234,13 @@ func runTestMode(config config.ServerConfig, serverAddr string, args []string) {
 		logWarnf("using TEST_PASSPHRASE from environment for test authentication/unlock")
 	}
 
-	// Connect to server via IPC
 	client := newTestModeClient()
-	if err := client.Connect(transport.NewIPC(config.IPCPath)); err != nil {
-		logErrorf("%v", err)
-		os.Exit(1)
-	}
-	defer client.Close()
-
-	// Authenticate the IPC session
-	if err := client.Authenticate(passphrase); err != nil {
-		logErrorf("%v", err)
-		os.Exit(1)
-	}
-
-	// Wait for initial status
-	status, err := client.WaitForStatus(10 * time.Second)
-	if err != nil {
-		logErrorf("%v", err)
-		os.Exit(1)
-	}
-
-	// If signer is locked, try to unlock with TEST_PASSPHRASE or empty passphrase
-	if status.State == "locked" {
-		if err := client.Unlock(passphrase); err != nil {
-			logErrorf("signer is locked and could not unlock: %v", err)
-			os.Exit(1)
-		}
-	}
-
-	// Parse and execute command
-	executeTestCommand(client, args)
-}
-
-func runRemoteTestMode(remoteCfg *remoteAdminConfig, args []string) {
-	if len(args) == 0 {
-		printTestUsage()
-		os.Exit(1)
-	}
-
-	passphrase := os.Getenv("TEST_PASSPHRASE")
-	if passphrase != "" {
-		logWarnf("using TEST_PASSPHRASE from environment for test authentication/unlock")
-	}
-
-	client := newTestModeClient()
-	conn := transport.NewSSHAdmin(
-		remoteCfg.config.LegacySSH.Host,
-		remoteCfg.config.LegacySSH.Port,
-		remoteCfg.token,
-		remoteCfg.config.LegacySSH.IdentityFile,
-		remoteCfg.config.LegacySSH.KnownHostsPath,
-	)
 	if err := client.Connect(conn); err != nil {
-		logErrorf("%v", formatRemoteConnectError(err, false))
+		if remote {
+			logErrorf("%v", formatRemoteConnectError(err, false))
+		} else {
+			logErrorf("%v", err)
+		}
 		os.Exit(1)
 	}
 	defer client.Close()
@@ -283,13 +256,14 @@ func runRemoteTestMode(remoteCfg *remoteAdminConfig, args []string) {
 		os.Exit(1)
 	}
 
+	// If signer is locked, try to unlock with TEST_PASSPHRASE
 	if status.State == "locked" {
-		if passphrase == "" {
+		if remote && passphrase == "" {
 			logErrorf("signer is locked; set TEST_PASSPHRASE for test remote mode")
 			os.Exit(1)
 		}
 		if err := client.Unlock(passphrase); err != nil {
-			logErrorf("%v", err)
+			logErrorf("signer is locked and could not unlock: %v", err)
 			os.Exit(1)
 		}
 	}

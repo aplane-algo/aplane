@@ -32,7 +32,6 @@ import (
 
 // Command line flags (defined after config load in main)
 var (
-	serverAddr *string
 	remoteMode *bool
 )
 
@@ -95,9 +94,6 @@ func main() {
 	}
 	resolvedDataDir = startup.DataDir
 	config := startup.Config
-	defaultAddr := fmt.Sprintf("localhost:%d", config.Endpoint.SignerPort)
-	serverAddr = &defaultAddr
-
 	// Initialize color theme based on config
 	theme.Init(config.Theme)
 
@@ -137,7 +133,7 @@ func main() {
 
 	// Check for test mode (only available in test builds with -tags testmode)
 	if isTestMode() {
-		runTestMode(config, *serverAddr, flag.Args())
+		runTestMode(config, flag.Args())
 		return
 	}
 

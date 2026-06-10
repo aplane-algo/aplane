@@ -24,7 +24,7 @@ func initTestFlag() {
 	testFlag = flag.Bool("test", false, "Run in test mode (testing builds only)")
 }
 
-func runTestMode(_ config.ServerConfig, _ string, _ []string) {
+func runTestMode(_ config.ServerConfig, _ []string) {
 	logErrorf(testBuildTagHint)
 	os.Exit(2)
 }
