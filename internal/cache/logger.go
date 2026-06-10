@@ -9,10 +9,14 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 )
 
 var (
-	Logger     *slog.Logger
+	// logger is read from arbitrary goroutines (cache mutators, TUI hosts)
+	// while SetLoggerOutput/InitLogger may rebuild it concurrently, so it is
+	// published via an atomic pointer rather than a bare global.
+	logger     atomic.Pointer[slog.Logger]
 	loggerMu   sync.Mutex
 	loggerSink io.Writer = os.Stdout
 )
@@ -34,9 +38,7 @@ func SetLoggerOutput(w io.Writer) {
 	loggerMu.Lock()
 	loggerSink = w
 	loggerMu.Unlock()
-	if Logger != nil {
-		InitLogger()
-	}
+	InitLogger()
 }
 
 // InitLogger initializes the global logger with appropriate log level
@@ -69,15 +71,14 @@ func InitLogger() {
 		},
 	})
 
-	Logger = slog.New(handler)
+	logger.Store(slog.New(handler))
 }
 
 // Debug logs a debug message (only shown when APSHELL_DEBUG is set)
 func Debug(msg string, args ...any) {
-	if Logger == nil {
-		return
+	if l := logger.Load(); l != nil {
+		l.Debug(msg, args...)
 	}
-	Logger.Debug(msg, args...)
 }
 
 // infof and warnf are package-internal helpers that route formatted text
@@ -85,15 +86,13 @@ func Debug(msg string, args ...any) {
 // inside cache mutators so TUI hosts (apconsole) can suppress these messages
 // via SetLoggerOutput(io.Discard).
 func infof(format string, args ...any) {
-	if Logger == nil {
-		return
+	if l := logger.Load(); l != nil {
+		l.Info(fmt.Sprintf(format, args...))
 	}
-	Logger.Info(fmt.Sprintf(format, args...))
 }
 
 func warnf(format string, args ...any) {
-	if Logger == nil {
-		return
+	if l := logger.Load(); l != nil {
+		l.Warn(fmt.Sprintf(format, args...))
 	}
-	Logger.Warn(fmt.Sprintf(format, args...))
 }

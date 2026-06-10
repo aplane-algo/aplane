@@ -19,6 +19,14 @@ import (
 )
 
 // State owns client-side caches and other APCLIENT_DATA-scoped runtime state.
+//
+// Concurrency contract: the caches are NOT internally synchronized. All five
+// are confined to the host's single command goroutine (REPL loop, bubbletea
+// Update, serialized MCP dispatch, JS runtime). The one exception is
+// SignerCache, which the SSH-tunnel disconnect callback resets from its
+// monitor goroutine — every cross-goroutine SignerCache access must therefore
+// go through engine.Engine's signerCacheMu wrappers. Cross-process consistency
+// is provided by the signed cache files together with WithExclusiveLock.
 type State struct {
 	DataDir string
 	Network string

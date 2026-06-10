@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -509,38 +508,6 @@ func TestLoadAuthCacheInvalidJSON(t *testing.T) {
 
 	// May be empty or may have partial data - just verify no crash
 	_ = len(cache.AuthAddresses)
-}
-
-func TestAuthAddressCacheConcurrentEnsureMutexUsesSingleLock(t *testing.T) {
-	cache := AuthAddressCache{AuthAddresses: map[string]string{}}
-	const workers = 64
-	muPtrs := make(chan *sync.RWMutex, workers)
-
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			cache.ensureMutex()
-			muPtrs <- cache.mu
-		}()
-	}
-	wg.Wait()
-	close(muPtrs)
-
-	var first *sync.RWMutex
-	for ptr := range muPtrs {
-		if ptr == nil {
-			t.Fatal("ensureMutex left nil mutex")
-		}
-		if first == nil {
-			first = ptr
-			continue
-		}
-		if ptr != first {
-			t.Fatal("ensureMutex installed multiple mutex pointers")
-		}
-	}
 }
 
 // TestBuildAuthCacheNilClient verifies handling of nil algod client

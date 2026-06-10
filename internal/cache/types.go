@@ -4,8 +4,6 @@
 package cache
 
 import (
-	"sync"
-
 	"github.com/aplane-algo/aplane/internal/signingargs"
 )
 
@@ -45,11 +43,17 @@ type SignerCache struct {
 
 // AuthAddressCache stores cached auth addresses to avoid repeated blockchain queries
 // Maps: account address -> auth address (empty string if not rekeyed)
+//
+// Like the other caches in this package, AuthAddressCache is not internally
+// synchronized: instances are confined to their host's single command
+// goroutine (see clientstate.State), and cross-process consistency comes from
+// the signed cache files plus the clientdata exclusive lock. It previously
+// embedded a mutex, but the cache is copied and wholesale-reassigned on every
+// reload, so a per-instance lock never provided real protection.
 type AuthAddressCache struct {
 	SchemaVersion int               `json:"schema_version,omitempty"`
 	AuthAddresses map[string]string `json:"auth_addresses"` // address -> auth address (or "" if not rekeyed)
 	store         *Store
-	mu            *sync.RWMutex `json:"-"`
 }
 
 func (c *ASACache) cachePayloadSchemaVersion() int {

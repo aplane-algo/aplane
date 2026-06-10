@@ -35,6 +35,11 @@ type Engine struct {
 	Connection *connect.ConnectionState
 	watcher    *clientstate.CacheWatcher
 
+	// signerCacheMu guards State.SignerCache, the only cache mutated off the
+	// command goroutine: the SSH-tunnel disconnect callback resets it from the
+	// tunnel's monitor goroutine (handleConnectionClosed -> resetSignerCache).
+	// All other State caches are command-goroutine-confined; see the
+	// concurrency contract on clientstate.State.
 	signerCacheMu             sync.RWMutex
 	signerStatusMu            sync.Mutex
 	signerStatusRevisionSeen  bool
@@ -181,6 +186,9 @@ func (e *Engine) SetNetwork(network string, algodClient *algod.Client) error {
 	e.Network = network
 	e.AlgodClient = algodClient
 	e.AsaCache = cache.LoadASACacheFromStore(e.CacheStore, network)
+	// RLock covers the SignerCache read inside BuildAuthCache against a
+	// concurrent disconnect reset; the cache assignments themselves are
+	// command-goroutine-confined (see clientstate.State).
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
 	e.AuthCache = cache.BuildAuthCacheFromStore(e.CacheStore, algodClient, &e.AliasCache, &e.SignerCache, network)
