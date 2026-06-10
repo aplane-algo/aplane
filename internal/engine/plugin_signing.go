@@ -228,13 +228,26 @@ func (e *Engine) SignAndSubmitWithLocalSignersWithContext(ctx context.Context, t
 	if err != nil {
 		return nil, fmt.Errorf("server signing failed: %w", err)
 	}
-	if len(signResp.Signed) != len(signRequests) {
-		return nil, fmt.Errorf("signer returned %d signed transaction(s), want %d", len(signResp.Signed), len(signRequests))
+	finalSignedTxns, err := decodeGroupSignResponse(signResp.Signed, len(signRequests))
+	if err != nil {
+		return nil, err
 	}
 
-	// Decode signed transactions
-	finalSignedTxns := make([][]byte, len(signResp.Signed))
-	for i, hexStr := range signResp.Signed {
+	var output bytes.Buffer
+	txIDs, err := signing.SubmitTransactionsWithContext(ctx, finalSignedTxns, e.AlgodClient, true, &output)
+	return &PluginSubmitResult{TxIDs: txIDs, Output: output.String()}, errorWithSubmissionOutput(err, output.String())
+}
+
+// decodeGroupSignResponse validates a group-sign response against the request
+// count and decodes each signed transaction. A truncated, padded, or partially
+// empty response is rejected so a malformed signer reply can never submit an
+// incomplete group.
+func decodeGroupSignResponse(signed []string, want int) ([][]byte, error) {
+	if len(signed) != want {
+		return nil, fmt.Errorf("signer returned %d signed transaction(s), want %d", len(signed), want)
+	}
+	decoded := make([][]byte, len(signed))
+	for i, hexStr := range signed {
 		if hexStr == "" {
 			return nil, fmt.Errorf("signer returned no signature for position %d", i+1)
 		}
@@ -242,12 +255,9 @@ func (e *Engine) SignAndSubmitWithLocalSignersWithContext(ctx context.Context, t
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode signed transaction %d: %w", i+1, err)
 		}
-		finalSignedTxns[i] = signedBytes
+		decoded[i] = signedBytes
 	}
-
-	var output bytes.Buffer
-	txIDs, err := signing.SubmitTransactionsWithContext(ctx, finalSignedTxns, e.AlgodClient, true, &output)
-	return &PluginSubmitResult{TxIDs: txIDs, Output: output.String()}, errorWithSubmissionOutput(err, output.String())
+	return decoded, nil
 }
 
 func (e *Engine) SignAndSubmitAllLocalWithContext(ctx context.Context, txns []types.Transaction, localSignerKeys map[string][]byte) (*PluginSubmitResult, error) {

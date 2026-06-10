@@ -4,6 +4,9 @@
 package engine
 
 import (
+	"bytes"
+	"encoding/hex"
+	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -58,5 +61,73 @@ func TestBuildPluginAssetContextStructuredAssets(t *testing.T) {
 	}
 	if assets[0].Name != "USDC" || assets[0].UnitName != "USDC" || assets[0].Decimals != 6 {
 		t.Fatalf("assets[0] = %+v, want structured USDC metadata", assets[0])
+	}
+}
+
+func TestDecodeGroupSignResponse(t *testing.T) {
+	tests := []struct {
+		name    string
+		signed  []string
+		want    int
+		wantErr string
+	}{
+		{
+			name:   "valid response",
+			signed: []string{"0102", "ff"},
+			want:   2,
+		},
+		{
+			name:    "truncated response",
+			signed:  []string{"0102"},
+			want:    2,
+			wantErr: "signer returned 1 signed transaction(s), want 2",
+		},
+		{
+			name:    "padded response",
+			signed:  []string{"0102", "ff", "aa"},
+			want:    2,
+			wantErr: "signer returned 3 signed transaction(s), want 2",
+		},
+		{
+			name:    "empty position",
+			signed:  []string{"0102", ""},
+			want:    2,
+			wantErr: "signer returned no signature for position 2",
+		},
+		{
+			name:    "invalid hex",
+			signed:  []string{"zz"},
+			want:    1,
+			wantErr: "failed to decode signed transaction 1",
+		},
+		{
+			name:   "empty response for empty request",
+			signed: nil,
+			want:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decoded, err := decodeGroupSignResponse(tt.signed, tt.want)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(decoded) != tt.want {
+				t.Fatalf("decoded %d transactions, want %d", len(decoded), tt.want)
+			}
+			for i, txn := range decoded {
+				expected, _ := hex.DecodeString(tt.signed[i])
+				if !bytes.Equal(txn, expected) {
+					t.Fatalf("decoded[%d] = %x, want %x", i, txn, expected)
+				}
+			}
+		})
 	}
 }
