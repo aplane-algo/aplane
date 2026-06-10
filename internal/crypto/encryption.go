@@ -98,8 +98,14 @@ const (
 	argon2Threads = 4         // parallelism
 	argon2KeyLen  = 32        // AES-256
 
-	// Legacy Argon2id time parameter used by version 1 keystores.
-	argon2TimeLegacy = 1
+	// Legacy Argon2id parameters used by version 1 keystores. These are frozen:
+	// v1 metadata does not store KDF parameters, so changing any of these (or
+	// letting them alias the current constants above) would silently change the
+	// derived master key and lock existing v1 keystores out as "incorrect
+	// passphrase".
+	argon2TimeLegacy    = 1
+	argon2MemoryLegacy  = 64 * 1024
+	argon2ThreadsLegacy = 4
 
 	// CurrentKeystoreMetadataVersion is the latest supported .keystore schema version.
 	CurrentKeystoreMetadataVersion = 2
@@ -352,7 +358,7 @@ func (m *KeystoreMetadata) kdfParams() (time, memory uint32, threads uint8) {
 	if m.Version >= 2 {
 		return m.KDFTime, m.KDFMemory, m.KDFThreads
 	}
-	return argon2TimeLegacy, argon2Memory, argon2Threads
+	return argon2TimeLegacy, argon2MemoryLegacy, argon2ThreadsLegacy
 }
 
 // KeystoreMetadataExistsIn checks if the .keystore metadata file exists in the specified directory.

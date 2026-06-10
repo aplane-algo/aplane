@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestUnlockViewShowsAdminInactivityTimeout(t *testing.T) {
@@ -60,5 +62,34 @@ func TestStatusBarLabelsSignerLockState(t *testing.T) {
 	}.renderStatusBar())
 	if !strings.Contains(unlocked, "Signer Unlocked (3 keys)") {
 		t.Fatalf("unlocked status missing signer label: %q", unlocked)
+	}
+}
+
+func TestPassphraseEntryAcceptsLetterQ(t *testing.T) {
+	m := Model{
+		viewState:       ViewUnlock,
+		connectionState: ConnectionConnected,
+	}
+
+	model, _ := m.handlePassphraseKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}, func(string) tea.Cmd { return nil })
+	updated := model.(Model)
+
+	if updated.quitting {
+		t.Fatal("typing 'q' on a passphrase screen must not quit")
+	}
+	if updated.passphraseInput != "q" {
+		t.Fatalf("passphrase input = %q, want %q", updated.passphraseInput, "q")
+	}
+}
+
+func TestPassphraseEntryEscQuits(t *testing.T) {
+	m := Model{
+		viewState:       ViewUnlock,
+		connectionState: ConnectionConnected,
+	}
+
+	model, _ := m.handlePassphraseKeys(tea.KeyMsg{Type: tea.KeyEsc}, func(string) tea.Cmd { return nil })
+	if !model.(Model).quitting {
+		t.Fatal("esc on a passphrase screen should quit")
 	}
 }

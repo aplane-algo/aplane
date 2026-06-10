@@ -22,7 +22,9 @@ func (m Model) handleUnlockKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handlePassphraseKeys handles common keyboard input for passphrase entry screens
 func (m Model) handlePassphraseKeys(msg tea.KeyMsg, onSubmit func(string) tea.Cmd) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "esc":
+	// "q" is deliberately not a quit key here: passphrases may contain it.
+	// Quitting is available via esc (below) and the global ctrl+c handler.
+	case "esc":
 		m.quitting = true
 		return m, tea.Quit
 

@@ -241,7 +241,10 @@ func TestVersion1Keystore_BackwardCompat(t *testing.T) {
 		t.Fatalf("rand.Read: %v", err)
 	}
 
-	legacyKey := deriveMasterKeyParams(passphrase, salt, argon2TimeLegacy, argon2Memory, argon2Threads)
+	// Literal v1 parameters (time=1, memory=64MB, threads=4), deliberately not
+	// the argon2*Legacy constants: if those constants ever drift, this test must
+	// fail rather than drift with them.
+	legacyKey := deriveMasterKeyParams(passphrase, salt, 1, 64*1024, 4)
 	defer ZeroBytes(legacyKey)
 
 	checkCiphertext, err := encryptCheckValue(legacyKey)
