@@ -115,7 +115,11 @@ func main() {
 	fmt.Printf("Generated %s\n", checksumPath)
 	fmt.Printf("Files included (%d):\n", len(files))
 	for _, file := range files {
-		hash, _ := checksum.ComputeSHA256(filepath.Join(pluginDir, file))
+		hash, err := checksum.ComputeSHA256(filepath.Join(pluginDir, file))
+		if err != nil || len(hash) < 16 {
+			fmt.Printf("  %-19s %s (unreadable: %v)\n", "?", file, err)
+			continue
+		}
 		fmt.Printf("  %s  %s\n", hash[:16]+"...", file)
 	}
 }

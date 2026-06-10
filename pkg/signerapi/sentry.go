@@ -215,7 +215,7 @@ func validateTargetIndices(indices []int, groupLen int) error {
 		return fmt.Errorf("target_indices is empty")
 	}
 	seen := make(map[int]struct{}, len(indices))
-	for i, index := range indices {
+	for _, index := range indices {
 		if index < 0 || index >= groupLen {
 			return fmt.Errorf("target_indices %d out of range", index)
 		}
@@ -223,9 +223,6 @@ func validateTargetIndices(indices []int, groupLen int) error {
 			return fmt.Errorf("target_indices contains duplicate %d", index)
 		}
 		seen[index] = struct{}{}
-		if i > 0 && index < indices[i-1] {
-			continue
-		}
 	}
 	return nil
 }

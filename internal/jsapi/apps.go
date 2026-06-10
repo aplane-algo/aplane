@@ -449,7 +449,7 @@ func (a *API) parseAppDeployOptions(call goja.FunctionCall, argIndex int, funcNa
 		if err != nil {
 			panic(a.runtime.ToValue(fmt.Sprintf("%s invalid extraPages: %v", funcName, err)))
 		}
-		if raw > ^uint64(uint32(0)) {
+		if raw > uint64(^uint32(0)) {
 			panic(a.runtime.ToValue(fmt.Sprintf("%s extraPages exceeds uint32", funcName)))
 		}
 		opts.ExtraPages = uint32(raw)

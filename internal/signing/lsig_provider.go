@@ -54,7 +54,9 @@ func (p *LogicSigProvider) Family() string {
 }
 
 // LoadKeysFromData loads key material from decrypted key file JSON.
-// SECURITY: This function zeroes intermediate key material after use.
+// SECURITY: the decoded private key is handed to the returned KeyMaterial,
+// whose owner is responsible for zeroing it. The intermediate hex string is
+// immutable and cannot be zeroed; only its reference is dropped.
 func (p *LogicSigProvider) LoadKeysFromData(data []byte) (*KeyMaterial, error) {
 	if bytecode := keys.ExtractBytecode(data); len(bytecode) > 0 {
 		if _, err := keys.ValidateLogicSigSaltedBytecode(data, bytecode); err != nil {

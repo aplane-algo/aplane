@@ -159,17 +159,7 @@ func (t *YAMLTemplate) CreationParams() []lsigprovider.ParameterDef {
 func ParameterSpecToParameterDefs(specs []ParameterSpec) []lsigprovider.ParameterDef {
 	defs := make([]lsigprovider.ParameterDef, len(specs))
 	for i, p := range specs {
-		maxLen := p.MaxLength
-		if maxLen == 0 {
-			switch p.Type {
-			case "address":
-				maxLen = 58
-			case "uint64":
-				maxLen = 20
-			case "bytes":
-				maxLen = 64 // 32 bytes default
-			}
-		}
+		maxLen := effectiveMaxLength(p)
 		defs[i] = lsigprovider.ParameterDef{
 			Name:        p.Name,
 			Label:       p.Label,
@@ -617,13 +607,31 @@ func validateTemplateVariablesAgainstParameters(variables []tealtemplate.Templat
 	return nil
 }
 
+// effectiveMaxLength resolves a parameter's MaxLength with the same
+// per-type defaults the runtime defs use, so spec-time validation and
+// runtime validation cannot disagree about a value's allowed length.
+func effectiveMaxLength(p ParameterSpec) int {
+	if p.MaxLength != 0 {
+		return p.MaxLength
+	}
+	switch p.Type {
+	case "address":
+		return 58
+	case "uint64":
+		return 20
+	case "bytes":
+		return 64 // 32 bytes default
+	}
+	return 0
+}
+
 // validateDefaultValue validates that a default value is valid for its parameter type.
 func validateDefaultValue(p ParameterSpec) error {
-	// Use the same validation as runtime, but without min/max check here
-	// (min/max will be checked separately for defaults)
+	// Derive the byte length exactly as the runtime defs do; a default that
+	// passes spec validation must not fail at use time.
 	byteLength := 0
-	if p.Type == "bytes" && p.MaxLength > 0 {
-		byteLength = p.MaxLength / 2
+	if p.Type == "bytes" {
+		byteLength = effectiveMaxLength(p) / 2
 	}
 
 	if err := ValidateParameterValue(p.Default, p.Type, byteLength); err != nil {

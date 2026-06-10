@@ -671,7 +671,10 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := tmp.Chmod(targetMode); err != nil {
 		return err
 	}
-	if hasOwnership && (os.Getuid() != targetUID || os.Getgid() != targetGID) {
+	// Only root can chown to another user; a non-root process rewriting a
+	// group-writable file owned by someone else should not abort the write
+	// over an EPERM it can never avoid.
+	if hasOwnership && os.Getuid() == 0 && (os.Getuid() != targetUID || os.Getgid() != targetGID) {
 		if err := tmp.Chown(targetUID, targetGID); err != nil {
 			return err
 		}

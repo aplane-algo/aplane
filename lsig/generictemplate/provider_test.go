@@ -1815,3 +1815,23 @@ func TestRuntimeArgsValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateDefaultValueMatchesRuntimeByteLength(t *testing.T) {
+	// A bytes param with unset MaxLength gets a 64-hex-char (32-byte) default
+	// at runtime; spec-time default validation must enforce the same length
+	// instead of silently accepting a default that fails at use time.
+	short := ParameterSpec{Name: "k", Type: "bytes", Default: "00"}
+	if err := validateDefaultValue(short); err == nil {
+		t.Fatal("1-byte default with unset MaxLength must fail spec validation (runtime enforces 32 bytes)")
+	}
+
+	ok := ParameterSpec{Name: "k", Type: "bytes", Default: strings.Repeat("ab", 32)}
+	if err := validateDefaultValue(ok); err != nil {
+		t.Fatalf("32-byte default should pass: %v", err)
+	}
+
+	explicit := ParameterSpec{Name: "k", Type: "bytes", MaxLength: 8, Default: "00112233"}
+	if err := validateDefaultValue(explicit); err != nil {
+		t.Fatalf("explicit MaxLength default should pass: %v", err)
+	}
+}

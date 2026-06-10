@@ -151,12 +151,19 @@ func verifyFileBasic(backupDir, address string) VerifyResult {
 // backupDir is the backup root (containing keys/ subdirectory).
 // Requires the export passphrase used to create the standalone backup.
 func DeepVerifyBackup(backupDir, passphrase string) (*VerifyReport, error) {
-	return DeepVerifyBackupWithOptions(backupDir, passphrase, DeepVerifyOptions{})
+	return DeepVerifyBackupBytes(backupDir, []byte(passphrase), DeepVerifyOptions{})
 }
 
 // DeepVerifyBackupWithOptions performs deep validation by decrypting and validating
 // all key files, with optional template-to-key bytecode validation.
 func DeepVerifyBackupWithOptions(backupDir, passphrase string, opts DeepVerifyOptions) (*VerifyReport, error) {
+	return DeepVerifyBackupBytes(backupDir, []byte(passphrase), opts)
+}
+
+// DeepVerifyBackupBytes is the []byte passphrase entry point. Callers that
+// hold the passphrase as zeroable bytes should use this so no immutable
+// string copy of the secret is ever created.
+func DeepVerifyBackupBytes(backupDir string, passphrase []byte, opts DeepVerifyOptions) (*VerifyReport, error) {
 	// Scan for .apb files in apb/ subdirectory
 	keysDir := filepath.Join(backupDir, "apb")
 	addresses, err := ScanBackupFiles(keysDir)
@@ -174,7 +181,7 @@ func DeepVerifyBackupWithOptions(backupDir, passphrase string, opts DeepVerifyOp
 	}
 
 	for _, address := range addresses {
-		result := verifyFileDeep(keysDir, address, []byte(passphrase), opts)
+		result := verifyFileDeep(keysDir, address, passphrase, opts)
 		report.Results = append(report.Results, result)
 
 		if result.Valid {

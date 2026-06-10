@@ -100,7 +100,7 @@ func CreateKeysArchive(paths storepaths.Paths, identityID, archivePath string, a
 	if err := os.Chmod(archivePath, fsutil.StoreFilePerm); err != nil {
 		return nil, fmt.Errorf("failed to set backup archive permissions: %w", err)
 	}
-	verifyReport, err := DeepVerifyBackup(stageDir, string(exportPassphrase))
+	verifyReport, err := DeepVerifyBackupBytes(stageDir, exportPassphrase, DeepVerifyOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify backup archive: %w", err)
 	}
