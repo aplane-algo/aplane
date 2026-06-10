@@ -66,7 +66,7 @@ the Docker network. All APlane nodes use the shared LocalNet algod endpoint.
 The client runs a client-only install plus apadmin, points endpoints.yaml at the
 signer container DNS name, adds the sentry endpoint through apshell, requests
 API tokens for both nodes, generates a sentry key through the sentry
-endpoint, syncs the sentry key to the signer, enables a guarded Falcon/Ed25519
+endpoint, syncs the sentry key to the signer, enables a guarded Falcon/Falcon
 sentry account key type, and verifies apshell can create, fund, and validate
 both guarded and plain Falcon accounts against the shared LocalNet. It then
 installs the Python SDK from the local aplanesdk repo and submits the same
@@ -867,7 +867,7 @@ PY
 }
 
 generate_sentry_component_key() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-sentry\ngenerate aplane.sentry-ed25519.v1\n' > /tmp/generate-sentry.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-sentry\ngenerate aplane.sentry-falcon1024.v1\n' > /tmp/generate-sentry.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-sentry.script 2>&1")"; then
@@ -899,9 +899,9 @@ sync_sentry_key_to_signer() {
 enable_guarded_keytype() {
     local out
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore keytype enable aplane.falcon1024-sentry-ed25519.v1 2>&1")"; then
+        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore keytype enable aplane.falcon1024-sentry-falcon1024.v1 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to enable guarded Falcon/Ed25519 sentry key type on signer"
+        die "failed to enable guarded Falcon/Falcon sentry key type on signer"
     fi
     printf '%s\n' "$out"
 }
@@ -909,12 +909,12 @@ enable_guarded_keytype() {
 generate_guarded_key() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-sentry-ed25519.v1 sentry=%s\n' '$SENTRY_COMPONENT_KEY' > /tmp/generate-guarded.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-sentry-falcon1024.v1 sentry=%s\n' '$SENTRY_COMPONENT_KEY' > /tmp/generate-guarded.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-guarded.script 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "failed to generate guarded Falcon/Ed25519 sentry account through client/signer flow"
+        die "failed to generate guarded Falcon/Falcon sentry account through client/signer flow"
     fi
     printf '%s\n' "$out"
     GUARDED_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
@@ -1161,7 +1161,7 @@ main() {
     log "Adding sentry endpoint from client container"
     create_client_sentry_endpoint
 
-    log "Enabling guarded Falcon/Ed25519 sentry key type on signer"
+    log "Enabling guarded Falcon/Falcon sentry key type on signer"
     enable_guarded_keytype
 
     log "Starting signer-side approver for token bootstrap"
@@ -1188,7 +1188,7 @@ main() {
     log "Syncing sentry key to signer"
     sync_sentry_key_to_signer
 
-    log "Generating guarded Falcon/Ed25519 sentry account through client/signer flow"
+    log "Generating guarded Falcon/Falcon sentry account through client/signer flow"
     generate_guarded_key
 
     log "Funding generated guarded account from shared LocalNet"
