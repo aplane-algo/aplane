@@ -9,6 +9,72 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
+// dispatchFunc decodes and handles one already-validated request message.
+type dispatchFunc func(s *Session, raw []byte, id string)
+
+// typed builds a dispatchFunc that unmarshals the raw message into T and
+// invokes handle, reporting "invalid <label> message" on decode failure.
+func typed[T any](label string, handle func(*Session, *T)) dispatchFunc {
+	return func(s *Session, raw []byte, id string) {
+		var msg T
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			_ = s.SendError(id, protocol.ErrCodeInvalidRequest, "invalid "+label+" message")
+			return
+		}
+		handle(s, &msg)
+	}
+}
+
+// dispatchTable routes request messages handled entirely within the
+// transport-neutral admin protocol/session layer.
+var dispatchTable = map[string]dispatchFunc{
+	protocol.MsgTypeUnlock:       typed("unlock", (*Session).HandleUnlock),
+	protocol.MsgTypeLockIdentity: typed("lock identity", (*Session).HandleLockIdentity),
+
+	protocol.MsgTypeBackup:          typed("backup", (*Session).HandleBackup),
+	protocol.MsgTypeListBackups:     typed("list backups", func(s *Session, m *protocol.ListBackupsMessage) { s.HandleListBackups(m.ID) }),
+	protocol.MsgTypeDeleteBackup:    typed("delete backup", (*Session).HandleDeleteBackup),
+	protocol.MsgTypeChangeStorePass: typed("change store passphrase", (*Session).HandleChangeStorePassphrase),
+	protocol.MsgTypePreviewRestore:  typed("preview restore", (*Session).HandlePreviewRestore),
+	protocol.MsgTypeRestoreBackup:   typed("restore backup", (*Session).HandleRestoreBackup),
+
+	protocol.MsgTypeRevokeToken:        typed("revoke token", (*Session).HandleRevokeToken),
+	protocol.MsgTypeGetAdminSettings:   typed("get admin settings", func(s *Session, m *protocol.GetAdminSettingsMessage) { s.HandleGetAdminSettings(m.ID) }),
+	protocol.MsgTypeUpdateAdminSetting: typed("update admin setting", (*Session).HandleUpdateAdminSetting),
+
+	protocol.MsgTypeGetPolicySettings:      typed("get policy settings", func(s *Session, m *protocol.GetPolicySettingsMessage) { s.HandleGetPolicySettings(m.ID) }),
+	protocol.MsgTypeGetPolicySnapshot:      typed("get policy snapshot", (*Session).HandleGetPolicySnapshot),
+	protocol.MsgTypeReplacePolicy:          typed("replace policy", (*Session).HandleReplacePolicy),
+	protocol.MsgTypeValidatePolicy:         typed("validate policy", (*Session).HandleValidatePolicy),
+	protocol.MsgTypeUpdatePolicySetting:    typed("update policy setting", (*Session).HandleUpdatePolicySetting),
+	protocol.MsgTypeUpdatePolicyASAAmounts: typed("update policy asa amounts", (*Session).HandleUpdatePolicyASAAmounts),
+
+	protocol.MsgTypeSearchASAMetadata:  typed("search asa metadata", (*Session).HandleSearchASAMetadata),
+	protocol.MsgTypeResolveASAMetadata: typed("resolve asa metadata", (*Session).HandleResolveASAMetadata),
+
+	protocol.MsgTypeListKeys:      typed("list keys", func(s *Session, m *protocol.ListKeysMessage) { s.HandleListKeys(m.ID) }),
+	protocol.MsgTypeGetKeyDetails: typed("get key details", (*Session).HandleGetKeyDetails),
+	protocol.MsgTypeGenerateKey:   typed("generate key", (*Session).HandleGenerateKey),
+	protocol.MsgTypeDeleteKey:     typed("delete key", (*Session).HandleDeleteKey),
+	protocol.MsgTypeExportKey:     typed("export key", (*Session).HandleExportKey),
+	protocol.MsgTypeImportKey:     typed("import key", (*Session).HandleImportKey),
+
+	protocol.MsgTypeListLibraryTemplates:    typed("list library templates", func(s *Session, m *protocol.ListLibraryTemplatesMessage) { s.HandleListLibraryTemplates(m.ID) }),
+	protocol.MsgTypeInstallLibraryTemplate:  typed("install library template", (*Session).HandleInstallLibraryTemplate),
+	protocol.MsgTypeListInstalledTemplates:  typed("list installed templates", func(s *Session, m *protocol.ListInstalledTemplatesMessage) { s.HandleListInstalledTemplates(m.ID) }),
+	protocol.MsgTypeShowInstalledTemplate:   typed("show installed template", (*Session).HandleShowInstalledTemplate),
+	protocol.MsgTypeShowLibraryTemplate:     typed("show library template", (*Session).HandleShowLibraryTemplate),
+	protocol.MsgTypeImportInstalledTemplate: typed("import installed template", (*Session).HandleImportInstalledTemplate),
+	protocol.MsgTypeRemoveInstalledTemplate: typed("remove installed template", (*Session).HandleRemoveInstalledTemplate),
+
+	protocol.MsgTypeActivateKeyType:   typed("activate key type", (*Session).HandleActivateKeyType),
+	protocol.MsgTypeDeactivateKeyType: typed("deactivate key type", (*Session).HandleDeactivateKeyType),
+	protocol.MsgTypeListKeyTypes:      typed("list key types", func(s *Session, m *protocol.ListKeyTypesMessage) { s.HandleListKeyTypes(m.ID) }),
+
+	protocol.MsgTypeSignResponse:              typed("sign response", (*Session).HandleSignResponse),
+	protocol.MsgTypeTokenProvisioningResponse: typed("token provisioning response", (*Session).HandleTokenProvisioningResponse),
+}
+
 // Dispatch handles the subset of protocol messages that already live entirely
 // within the transport-neutral admin protocol/session layer.
 func (s *Session) Dispatch(raw []byte) bool {
@@ -17,312 +83,15 @@ func (s *Session) Dispatch(raw []byte) bool {
 		_ = s.SendError("", protocol.ErrCodeInvalidMessageFormat, "invalid message format")
 		return true
 	}
-	sendInvalidRequest := func(message string) {
-		_ = s.SendError(base.ID, protocol.ErrCodeInvalidRequest, message)
-	}
 	if base.Kind != protocol.MessageKindRequest {
-		sendInvalidRequest("expected request message")
+		_ = s.SendError(base.ID, protocol.ErrCodeInvalidRequest, "expected request message")
 		return true
 	}
 
-	switch base.Type {
-	case protocol.MsgTypeUnlock:
-		var msg protocol.UnlockMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid unlock message")
-			return true
-		}
-		s.HandleUnlock(&msg)
-		return true
-	case protocol.MsgTypeLockIdentity:
-		var msg protocol.LockIdentityMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid lock identity message")
-			return true
-		}
-		s.HandleLockIdentity(&msg)
-		return true
-	case protocol.MsgTypeBackup:
-		var msg protocol.BackupMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid backup message")
-			return true
-		}
-		s.HandleBackup(&msg)
-		return true
-	case protocol.MsgTypeListBackups:
-		var msg protocol.ListBackupsMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid list backups message")
-			return true
-		}
-		s.HandleListBackups(msg.ID)
-		return true
-	case protocol.MsgTypeDeleteBackup:
-		var msg protocol.DeleteBackupMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid delete backup message")
-			return true
-		}
-		s.HandleDeleteBackup(&msg)
-		return true
-	case protocol.MsgTypeChangeStorePass:
-		var msg protocol.ChangeStorePassphraseMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid change store passphrase message")
-			return true
-		}
-		s.HandleChangeStorePassphrase(&msg)
-		return true
-	case protocol.MsgTypePreviewRestore:
-		var msg protocol.PreviewRestoreMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid preview restore message")
-			return true
-		}
-		s.HandlePreviewRestore(&msg)
-		return true
-	case protocol.MsgTypeRestoreBackup:
-		var msg protocol.RestoreBackupMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid restore backup message")
-			return true
-		}
-		s.HandleRestoreBackup(&msg)
-		return true
-	case protocol.MsgTypeRevokeToken:
-		var msg protocol.RevokeTokenMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid revoke token message")
-			return true
-		}
-		s.HandleRevokeToken(&msg)
-		return true
-	case protocol.MsgTypeGetAdminSettings:
-		var msg protocol.GetAdminSettingsMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid get admin settings message")
-			return true
-		}
-		s.HandleGetAdminSettings(msg.ID)
-		return true
-	case protocol.MsgTypeUpdateAdminSetting:
-		var msg protocol.UpdateAdminSettingMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid update admin setting message")
-			return true
-		}
-		s.HandleUpdateAdminSetting(&msg)
-		return true
-	case protocol.MsgTypeGetPolicySettings:
-		var msg protocol.GetPolicySettingsMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid get policy settings message")
-			return true
-		}
-		s.HandleGetPolicySettings(msg.ID)
-		return true
-	case protocol.MsgTypeGetPolicySnapshot:
-		var msg protocol.GetPolicySnapshotMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid get policy snapshot message")
-			return true
-		}
-		s.HandleGetPolicySnapshot(&msg)
-		return true
-	case protocol.MsgTypeReplacePolicy:
-		var msg protocol.ReplacePolicyMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid replace policy message")
-			return true
-		}
-		s.HandleReplacePolicy(&msg)
-		return true
-	case protocol.MsgTypeValidatePolicy:
-		var msg protocol.ValidatePolicyMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid validate policy message")
-			return true
-		}
-		s.HandleValidatePolicy(&msg)
-		return true
-	case protocol.MsgTypeUpdatePolicySetting:
-		var msg protocol.UpdatePolicySettingMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid update policy setting message")
-			return true
-		}
-		s.HandleUpdatePolicySetting(&msg)
-		return true
-	case protocol.MsgTypeUpdatePolicyASAAmounts:
-		var msg protocol.UpdatePolicyASAAmountsMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid update policy asa amounts message")
-			return true
-		}
-		s.HandleUpdatePolicyASAAmounts(&msg)
-		return true
-	case protocol.MsgTypeSearchASAMetadata:
-		var msg protocol.SearchASAMetadataMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid search asa metadata message")
-			return true
-		}
-		s.HandleSearchASAMetadata(&msg)
-		return true
-	case protocol.MsgTypeResolveASAMetadata:
-		var msg protocol.ResolveASAMetadataMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid resolve asa metadata message")
-			return true
-		}
-		s.HandleResolveASAMetadata(&msg)
-		return true
-	case protocol.MsgTypeListKeys:
-		var msg protocol.ListKeysMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid list keys message")
-			return true
-		}
-		s.HandleListKeys(msg.ID)
-		return true
-	case protocol.MsgTypeGetKeyDetails:
-		var msg protocol.GetKeyDetailsMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid get key details message")
-			return true
-		}
-		s.HandleGetKeyDetails(&msg)
-		return true
-	case protocol.MsgTypeListLibraryTemplates:
-		var msg protocol.ListLibraryTemplatesMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid list library templates message")
-			return true
-		}
-		s.HandleListLibraryTemplates(msg.ID)
-		return true
-	case protocol.MsgTypeInstallLibraryTemplate:
-		var msg protocol.InstallLibraryTemplateMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid install library template message")
-			return true
-		}
-		s.HandleInstallLibraryTemplate(&msg)
-		return true
-	case protocol.MsgTypeListInstalledTemplates:
-		var msg protocol.ListInstalledTemplatesMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid list installed templates message")
-			return true
-		}
-		s.HandleListInstalledTemplates(msg.ID)
-		return true
-	case protocol.MsgTypeShowInstalledTemplate:
-		var msg protocol.ShowInstalledTemplateMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid show installed template message")
-			return true
-		}
-		s.HandleShowInstalledTemplate(&msg)
-		return true
-	case protocol.MsgTypeShowLibraryTemplate:
-		var msg protocol.ShowLibraryTemplateMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid show library template message")
-			return true
-		}
-		s.HandleShowLibraryTemplate(&msg)
-		return true
-	case protocol.MsgTypeImportInstalledTemplate:
-		var msg protocol.ImportInstalledTemplateMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid import installed template message")
-			return true
-		}
-		s.HandleImportInstalledTemplate(&msg)
-		return true
-	case protocol.MsgTypeRemoveInstalledTemplate:
-		var msg protocol.RemoveInstalledTemplateMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid remove installed template message")
-			return true
-		}
-		s.HandleRemoveInstalledTemplate(&msg)
-		return true
-	case protocol.MsgTypeActivateKeyType:
-		var msg protocol.ActivateKeyTypeMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid activate key type message")
-			return true
-		}
-		s.HandleActivateKeyType(&msg)
-		return true
-	case protocol.MsgTypeDeactivateKeyType:
-		var msg protocol.DeactivateKeyTypeMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid deactivate key type message")
-			return true
-		}
-		s.HandleDeactivateKeyType(&msg)
-		return true
-	case protocol.MsgTypeListKeyTypes:
-		var msg protocol.ListKeyTypesMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid list key types message")
-			return true
-		}
-		s.HandleListKeyTypes(msg.ID)
-		return true
-	case protocol.MsgTypeGenerateKey:
-		var msg protocol.GenerateKeyMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid generate key message")
-			return true
-		}
-		s.HandleGenerateKey(&msg)
-		return true
-	case protocol.MsgTypeDeleteKey:
-		var msg protocol.DeleteKeyMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid delete key message")
-			return true
-		}
-		s.HandleDeleteKey(&msg)
-		return true
-	case protocol.MsgTypeExportKey:
-		var msg protocol.ExportKeyMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid export key message")
-			return true
-		}
-		s.HandleExportKey(&msg)
-		return true
-	case protocol.MsgTypeImportKey:
-		var msg protocol.ImportKeyMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid import key message")
-			return true
-		}
-		s.HandleImportKey(&msg)
-		return true
-	case protocol.MsgTypeSignResponse:
-		var msg protocol.SignResponseMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid sign response message")
-			return true
-		}
-		s.HandleSignResponse(&msg)
-		return true
-	case protocol.MsgTypeTokenProvisioningResponse:
-		var msg protocol.TokenProvisioningResponseMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			sendInvalidRequest("invalid token provisioning response message")
-			return true
-		}
-		s.HandleTokenProvisioningResponse(&msg)
-		return true
-	default:
+	handle, ok := dispatchTable[base.Type]
+	if !ok {
 		return false
 	}
+	handle(s, raw, base.ID)
+	return true
 }
