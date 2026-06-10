@@ -11,12 +11,10 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
@@ -494,58 +492,6 @@ func (f *FileKeyStore) GetMetadata(ctx context.Context, address string) (*KeyMet
 	return meta, nil
 }
 
-// Store saves a new key to the store.
-// Note: This method is not part of the KeyStore interface - it's FileKeyStore-specific.
-// Keys are typically generated via keymgmt which writes files directly and calls Scan().
-// The keystore must be unlocked (master key available) before calling Store.
-func (f *FileKeyStore) Store(ctx context.Context, address string, keyData []byte) error {
-	// Check if key already exists
-	f.cacheLock.RLock()
-	_, exists := f.cache[address]
-	masterKey := f.masterKey
-	if exists {
-		f.cacheLock.RUnlock()
-		return ErrKeyExists
-	}
-	if masterKey == nil {
-		f.cacheLock.RUnlock()
-		return fmt.Errorf("master key required for encryption")
-	}
-
-	// Determine filename from address (first 8 chars)
-	filename := address
-	if len(filename) > 8 {
-		filename = filename[:8]
-	}
-	filePath := filepath.Join(f.keysDir, filename+".priv")
-
-	// Check if file already exists on disk
-	if _, err := os.Stat(filePath); err == nil {
-		f.cacheLock.RUnlock()
-		return ErrKeyExists
-	}
-
-	// Encrypt with master key (under RLock to prevent concurrent zeroing)
-	encrypted, err := crypto.EncryptWithMasterKey(keyData, masterKey)
-	f.cacheLock.RUnlock()
-	if err != nil {
-		return fmt.Errorf("failed to encrypt key: %w", err)
-	}
-	dataToWrite := encrypted
-
-	// Write with group-accessible permissions
-	if err := fsutil.WriteFile(filePath, dataToWrite); err != nil {
-		return fmt.Errorf("failed to write key file: %w", err)
-	}
-
-	// Update cache - key type unknown until Scan() is called
-	f.cacheLock.Lock()
-	f.cache[address] = keys.KeyScanInfo{KeyFile: filePath, KeyType: "unknown"}
-	f.cacheLock.Unlock()
-
-	return nil
-}
-
 // Delete removes a key from the store
 func (f *FileKeyStore) Delete(ctx context.Context, address string) error {
 	f.cacheLock.RLock()
@@ -567,29 +513,6 @@ func (f *FileKeyStore) Delete(ctx context.Context, address string) error {
 	f.cacheLock.Unlock()
 
 	return nil
-}
-
-// Export returns the encrypted key data
-func (f *FileKeyStore) Export(ctx context.Context, address string) ([]byte, error) {
-	f.cacheLock.RLock()
-	info, exists := f.cache[address]
-	f.cacheLock.RUnlock()
-
-	if !exists {
-		return nil, ErrKeyNotFound
-	}
-
-	data, err := os.ReadFile(info.KeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read key file: %w", err)
-	}
-
-	return data, nil
-}
-
-// SupportsExport returns true for file-based storage
-func (f *FileKeyStore) SupportsExport() bool {
-	return true
 }
 
 // Type returns the storage backend type
@@ -689,99 +612,6 @@ func (f *FileKeyStore) GetPublicKeyHexMap() map[string]string {
 		result[k] = v.PublicKeyHex
 	}
 	return result
-}
-
-// GetPublicKeyInfo returns public key information for a single key.
-// Used for the /keys endpoint. Keystore must be unlocked.
-// Holds the cache read lock through decryption to prevent ClearMasterKey() from
-// zeroing the master key bytes mid-operation.
-func (f *FileKeyStore) GetPublicKeyInfo(ctx context.Context, address string) (*PublicKeyInfo, error) {
-	f.cacheLock.RLock()
-	info, exists := f.cache[address]
-	masterKey := f.masterKey
-	if !exists {
-		f.cacheLock.RUnlock()
-		return nil, ErrKeyNotFound
-	}
-	if masterKey == nil {
-		f.cacheLock.RUnlock()
-		return nil, fmt.Errorf("keystore not unlocked (master key not available): %w", ErrStoreLocked)
-	}
-	// Read and decrypt the key file using master key (under RLock)
-	decryptedData, err := keys.ReadDecryptedKeyJSONWithMasterKey(info.KeyFile, masterKey)
-	f.cacheLock.RUnlock()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read key file: %w", err)
-	}
-	defer crypto.ZeroBytes(decryptedData)
-
-	if _, err := keys.ValidateCurrentKeyPayload(decryptedData); err != nil {
-		return nil, err
-	}
-
-	keyData, err := keys.ParseKeyPayloadMetadata(decryptedData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse key data: %w", err)
-	}
-
-	// Use cached key type
-	keyType := info.KeyType
-
-	return &PublicKeyInfo{
-		Address:         address,
-		KeyType:         keyType,
-		PublicKeyHex:    keyData.PublicKeyHex,
-		LsigBytecodeHex: keyData.BytecodeHex,
-	}, nil
-}
-
-// GetAllPublicKeyInfo returns public key information for all keys in the store.
-// This is more efficient than calling GetPublicKeyInfo for each key individually.
-// Keys that fail to load (corrupted, I/O errors) are logged and skipped.
-// Keystore must be unlocked.
-func (f *FileKeyStore) GetAllPublicKeyInfo() ([]PublicKeyInfo, error) {
-	return f.GetAllPublicKeyInfoWithContext(context.Background())
-}
-
-// GetAllPublicKeyInfoWithContext returns public key information for all keys in
-// the store using the caller's context for key metadata reads.
-func (f *FileKeyStore) GetAllPublicKeyInfoWithContext(ctx context.Context) ([]PublicKeyInfo, error) {
-	// Create a snapshot of the cache
-	f.cacheLock.RLock()
-	addresses := make([]string, 0, len(f.cache))
-	for addr := range f.cache {
-		addresses = append(addresses, addr)
-	}
-	f.cacheLock.RUnlock()
-
-	result := make([]PublicKeyInfo, 0, len(addresses))
-
-	for _, address := range addresses {
-		// Safe truncation for logging (addresses should be 58 chars, but be defensive)
-		addrPrefix := address
-		if len(addrPrefix) > 8 {
-			addrPrefix = addrPrefix[:8]
-		}
-
-		info, err := f.GetPublicKeyInfo(ctx, address)
-		if err != nil {
-			// Log and skip keys that fail to load (I/O error, parse error, etc.)
-			// Common cause: key file deleted after scan but before read
-			fmt.Printf("Warning: skipping key %s: %v\n", addrPrefix, err)
-			continue
-		}
-		result = append(result, *info)
-	}
-
-	return result, nil
-}
-
-// PublicKeyInfo contains public (non-sensitive) key information
-type PublicKeyInfo struct {
-	Address         string
-	KeyType         string
-	PublicKeyHex    string
-	LsigBytecodeHex string
 }
 
 // Compile-time interface check

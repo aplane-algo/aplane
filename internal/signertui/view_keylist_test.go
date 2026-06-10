@@ -391,24 +391,6 @@ func TestKeyListPolicyShortcutOpensPolicyEditor(t *testing.T) {
 	}
 }
 
-func TestPolicyViewerReturnsToKeyListWhenOpenedFromKeyList(t *testing.T) {
-	m := Model{
-		viewState:               ViewPolicyViewer,
-		policyViewReturnView:    ViewKeyList,
-		policyViewLoaded:        true,
-		policyViewSelectedGuard: 0,
-	}
-
-	nextModel, cmd := m.handlePolicyViewerKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	next := nextModel.(Model)
-	if next.viewState != ViewKeyList {
-		t.Fatalf("viewState = %v, want %v", next.viewState, ViewKeyList)
-	}
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-}
-
 func TestHandleKeyDetailsKeysDoesNotExportFromDetailsScreen(t *testing.T) {
 	m := Model{
 		viewState:         ViewKeyDetails,

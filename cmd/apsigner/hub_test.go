@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 )
 
@@ -49,7 +50,7 @@ func TestRegistryInitializesSignerRuntime(t *testing.T) {
 		ID:            auth.DefaultIdentityID,
 	})
 	_ = signer.registry.Register(ir)
-	signer.wireApprovalCoordinator(ir)
+	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 
 	if signer.registry.Get(auth.DefaultIdentityID) == nil {
 		t.Fatal("registry did not store identity runtime")
@@ -116,7 +117,7 @@ func TestFailAllPendingRequests(t *testing.T) {
 		ID:            auth.DefaultIdentityID,
 	})
 	_ = signer.registry.Register(ir)
-	signer.wireApprovalCoordinator(ir)
+	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 
 	// Verify that failing with no pending requests doesn't panic
 	signer.failAllPendingApprovals("test disconnect")
@@ -138,7 +139,7 @@ func TestRequestSigningApprovalTimeoutCleansPendingRequest(t *testing.T) {
 		ID:            auth.DefaultIdentityID,
 	})
 	_ = signer.registry.Register(ir)
-	signer.wireApprovalCoordinator(ir)
+	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
 
 	approved, err := signer.requestSigningApproval(auth.DefaultIdentityID, "req-timeout", "ADDR", "SENDER", "desc", 1, 2, nil, 10*time.Millisecond)
@@ -167,7 +168,7 @@ func TestApprovalCoordinatorRoutesHubCallsByIdentity(t *testing.T) {
 		ID:            "alice",
 	})
 	_ = signer.registry.Register(ir)
-	signer.wireApprovalCoordinator(ir)
+	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 
 	approved, err := signer.requestSigningApproval("alice", "req-sign", "ADDR", "SENDER", "desc", 1, 2, nil, time.Second)
 	if err == nil {
@@ -207,7 +208,7 @@ func TestReloadServiceRoutesKeysChangedByIdentity(t *testing.T) {
 		ID:            "alice",
 	})
 
-	svc := signer.newReloadServiceForIdentity(ir, nil)
+	svc := signerstartup.NewReloadService(ir, testIdentityBuildOptions(signer), signer.identityBuildHooks(), nil)
 	if svc.NotifyKeysChanged == nil {
 		t.Fatal("NotifyKeysChanged = nil, want configured callback")
 	}
@@ -227,7 +228,7 @@ func TestReloadServiceClosesRegistryOnNodeRoleConflict(t *testing.T) {
 		NodeRole:      noderole.RoleSigner,
 	})
 
-	svc := signer.newReloadServiceForIdentity(ir, nil)
+	svc := signerstartup.NewReloadService(ir, testIdentityBuildOptions(signer), signer.identityBuildHooks(), nil)
 	err := svc.BeforePublish(nil, map[string]string{
 		"75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA": keytypes.SentryComponentEd25519V1,
 	}, nil)
@@ -273,7 +274,7 @@ func TestRequestSigningApprovalDisconnectCleansPendingRequest(t *testing.T) {
 		ID:            auth.DefaultIdentityID,
 	})
 	_ = signer.registry.Register(ir)
-	signer.wireApprovalCoordinator(ir)
+	signerstartup.WireApprovalCoordinator(ir, signer.identityBuildHooks())
 	signer.ipcServer = newIPCServerWithActiveConn(&hubStubConn{})
 
 	done := make(chan struct{})

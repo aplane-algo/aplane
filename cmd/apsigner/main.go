@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
@@ -22,7 +21,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/manifest"
-	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	"github.com/aplane-algo/aplane/internal/signing"
@@ -210,56 +208,7 @@ func main() {
 		Config:                &config,
 		DefaultSessionTimeout: passphraseTimeout,
 		ProductIdentityID:     identityID,
-	}, signerstartup.IdentityBuildHooks{
-		HasAdminClient: func(targetIdentityID string) bool {
-			hub := server.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.HasClient(targetIdentityID)
-		},
-		SendSignRequest: func(targetIdentityID string, msg *signerapproval.SignRequest) bool {
-			hub := server.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.SendSignRequest(targetIdentityID, msg)
-		},
-		SendSignRequestCanceled: func(targetIdentityID string, msg *signerapproval.SignRequestCanceled) bool {
-			hub := server.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.SendSignRequestCanceled(targetIdentityID, msg)
-		},
-		SendTokenProvisioningRequest: func(targetIdentityID string, msg *signerapproval.TokenProvisioningRequest) bool {
-			hub := server.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.SendTokenProvisioningRequest(targetIdentityID, msg)
-		},
-		NotifyLocked: func(lockedIdentityID string) {
-			if hub := server.adminHub(); hub != nil {
-				hub.NotifyLocked(lockedIdentityID, adminproto.SignerLockedNotification{Reason: "locked"})
-			}
-		},
-		NotifyKeysChanged: func(changedIdentityID string, keyCount int) {
-			if hub := server.adminHub(); hub != nil {
-				hub.NotifyKeysChanged(changedIdentityID, adminproto.KeysChangedNotification{KeyCount: keyCount})
-			}
-		},
-		ReloadAuditLog: auditLog,
-		NodeFailClosed: func(err error) {
-			server.registry.CloseFailClosed(err)
-		},
-		Info: func(msg string) {
-			logInfof("%s", msg)
-		},
-		Warn: func(msg string) {
-			logWarnf("%s", msg)
-		},
-	})
+	}, server.identityBuildHooks())
 	if err != nil {
 		logErrorf("%v", err)
 		os.Exit(1)

@@ -43,7 +43,7 @@ func LoadEnrolledClient(dataDir string, opts Options) (*Prereqs, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid client configuration for %s: %w", opts.Product, err)
 	}
-	registry := cfg.ClientEndpointsOrDefault(dataDir)
+	registry := cfg.ClientEndpointsOrDefault()
 	_, endpoint, ok := registry.DefaultEndpoint()
 	if !ok {
 		return nil, fmt.Errorf("%s requires a default signer endpoint in %s/endpoints.yaml; %s", opts.Product, dataDir, opts.MissingSSHHint)

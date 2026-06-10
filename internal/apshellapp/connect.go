@@ -106,7 +106,7 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 
 // ConnectConfigured establishes an SSH tunnel using the configured default endpoint.
 func (a *App) ConnectConfigured(ctx context.Context, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectResult, error) {
-	registry := a.Config.ClientEndpointsOrDefault(a.DataDir)
+	registry := a.Config.ClientEndpointsOrDefault()
 	alias, endpoint, ok := registry.DefaultEndpoint()
 	if !ok {
 		return nil, fmt.Errorf("no default signer endpoint in endpoints.yaml")
@@ -181,7 +181,7 @@ func (a *App) RequestToken(ctx context.Context, req RequestTokenRequest) (*Reque
 
 // RequestTokenConfigured requests and persists a fresh apshell token using the configured default endpoint.
 func (a *App) RequestTokenConfigured(ctx context.Context, hostKeyApproval sshtunnel.HostKeyApprovalHandler) (*RequestTokenResult, error) {
-	registry := a.Config.ClientEndpointsOrDefault(a.DataDir)
+	registry := a.Config.ClientEndpointsOrDefault()
 	alias, endpoint, ok := registry.DefaultEndpoint()
 	if !ok {
 		return nil, fmt.Errorf("usage: request-token [<host> [--ssh-port <port>]]\n\n" +

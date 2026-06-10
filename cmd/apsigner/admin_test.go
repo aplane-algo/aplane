@@ -32,6 +32,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -112,8 +113,8 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 		NodeRole:      noderole.RoleSigner,
 	})
 	_ = server.registry.Register(ir)
-	server.wireReloadFunc(ir)
-	server.wireApprovalCoordinator(ir)
+	signerstartup.WireReloadFunc(ir, testIdentityBuildOptions(server), server.identityBuildHooks())
+	signerstartup.WireApprovalCoordinator(ir, server.identityBuildHooks())
 	ir.SetPolicy(initialPolicy)
 	ir.SetUnlocked()
 

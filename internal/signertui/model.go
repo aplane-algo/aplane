@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/aplane-algo/aplane/internal/policyview"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -48,44 +47,11 @@ const (
 	ViewDisplaceConfirm    // Confirmation modal for displacing existing client
 	ViewAdminPanel         // Admin control panel
 	ViewPolicyEditor       // Guided online policy editor
-	ViewPolicyViewer       // Legacy active policy snapshot viewer
-	ViewPolicyPanel        // Legacy policy editor state; not exposed from apadmin
-	ViewPolicyASAModal     // Legacy per-network transfer guard editor; not exposed from apadmin
 	ViewTemplateLibrary    // Browse optional KeyType Library entries
 	ViewTemplateInstallConfirm
 	ViewTemplateInstalling
 	ViewLibraryTemplateDetails // Full-screen view of a library entry's source (YAML or synthesized parameters)
 	ViewError
-)
-
-type policyASAMode int
-
-const (
-	policyASAModeNetworks policyASAMode = iota
-	policyASAModeLimits
-	policyASAModeAddRef
-	policyASAModeChoose
-	policyASAModeAddAmount
-	policyASAModeAlgoAmount
-)
-
-type policyViewerMode int
-
-const (
-	policyViewerModeOverview policyViewerMode = iota
-	policyViewerModeGuardDetail
-	policyViewerModeYAML
-	policyViewerModeOverrides
-)
-
-type policyLoadState int
-
-const (
-	policyLoadIdle policyLoadState = iota
-	policyLoadPath
-	policyLoadReading
-	policyLoadConfirm
-	policyLoadReplacing
 )
 
 // ConnectionState represents IPC connection status
@@ -276,55 +242,6 @@ type Model struct {
 	policyEditorError      string
 	policyEditorTarget     string
 	policyEditorReturnView ViewState
-
-	// Legacy policy panel state retained for compatibility handlers; apadmin
-	// no longer exposes a policy editing entry point.
-	policySettings                 *PolicySettings
-	policySnapshot                 *PolicySnapshot
-	policyView                     policyview.Model
-	policyViewLoaded               bool
-	policyViewLoading              bool
-	policyViewError                string
-	policyViewMode                 policyViewerMode
-	policyViewReturnView           ViewState
-	policyViewSelectedGuard        int
-	policyViewSelectedGuardField   int
-	policyViewGuardScrollOffset    int
-	policyViewYAMLScrollOffset     int
-	policyViewSelectedOverride     int
-	policyViewOverrideScrollOffset int
-	policyViewListPopupField       string
-	policyViewListPopupScroll      int
-	policyLoadState                policyLoadState
-	policyLoadPath                 string
-	policyLoadYAML                 string
-	policyLoadBytes                int
-	policyLoadError                string
-	policyLoadStatus               string
-	policySelectedRow              int
-	policyEditingRow               int
-	policyEditValue                string
-	policyASAFocus                 int
-	policyASANetworks              []string
-	policyASAValues                map[string]string
-	policyASAReviewValues          map[string]string
-	policyASAMetadata              map[string]map[uint64]ASAMetadataInfo
-	policyAlgoValues               map[string]string
-	policyAlgoReviewValues         map[string]string
-	policyASAPending               bool
-	policyASAPendingValues         map[string]string
-	policyASAReviewPendingValues   map[string]string
-	policyAlgoPendingValues        map[string]string
-	policyAlgoReviewPendingValues  map[string]string
-	policyASAMode                  policyASAMode
-	policyASASelectedNet           string
-	policyASAEntries               []policyASAEntry
-	policyASAInput                 string
-	policyASAReviewInput           string
-	policyASADenyInput             string
-	policyASAAmountField           int
-	policyASAMatches               []ASAMetadataInfo
-	policyASASelectedAsset         *ASAMetadataInfo
 
 	// KeyType Library state
 	libraryTemplates      []protocol.LibraryTemplateInfo
@@ -599,81 +516,6 @@ type AdminSettingUpdatedMsg struct {
 	Success bool
 	Key     string
 	Value   string
-	Error   string
-}
-
-// PolicySettings holds the policy panel settings received from the server.
-type PolicySettings struct {
-	RejectForeignRekey          bool
-	RejectCloseRemainder        bool
-	RejectAssetClose            bool
-	RejectClawback              bool
-	AlwaysReviewWarnings        bool
-	AutoApproveSelfNoOpTransfer bool
-	MaxFeeMicroAlgos            string
-	ReviewAlgoPayments          map[string]string
-	MaxAlgoPayments             map[string]string
-	PolicyNetworks              []string
-	ReviewASAAmounts            map[string]string
-	MaxASAAmounts               map[string]string
-	PolicyASAMetadata           map[string][]ASAMetadataInfo
-	MaxASAAmountsMainnet        string
-	MaxASAAmountsTestnet        string
-	MaxASAAmountsBetanet        string
-}
-
-// PolicySettingsMsg is sent when policy settings are received.
-type PolicySettingsMsg struct {
-	Settings PolicySettings
-}
-
-// PolicySnapshot holds the active read-only signer policy snapshot received
-// from the server.
-type PolicySnapshot struct {
-	Success      bool
-	Target       string
-	IdentityID   string
-	PolicyYAML   string
-	PolicySHA256 string
-	Canonical    bool
-	Code         string
-	Error        string
-}
-
-// PolicySnapshotMsg is sent when a policy snapshot is received.
-type PolicySnapshotMsg struct {
-	Snapshot PolicySnapshot
-}
-
-type PolicyReplaceResultMsg struct {
-	Snapshot PolicySnapshot
-}
-
-type PolicyLoadFileMsg struct {
-	Path       string
-	PolicyYAML string
-	Bytes      int
-	Error      error
-}
-
-// PolicySettingUpdatedMsg is sent when a policy setting update completes.
-type PolicySettingUpdatedMsg struct {
-	Success bool
-	Key     string
-	Value   string
-	Error   string
-}
-
-type ASAMetadataResultsMsg struct {
-	Network string
-	Query   string
-	Results []ASAMetadataInfo
-	Error   string
-}
-
-type ASAMetadataResultMsg struct {
-	Network string
-	Asset   ASAMetadataInfo
 	Error   string
 }
 

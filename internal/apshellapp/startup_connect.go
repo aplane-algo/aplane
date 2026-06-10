@@ -7,7 +7,7 @@ import "github.com/aplane-algo/aplane/internal/tokenfile"
 
 // StartupConnectDecision reports the app-layer startup decision for signer connectivity.
 func (a *App) StartupConnectDecision() *StartupConnectDecision {
-	registry := a.Config.ClientEndpointsOrDefault(a.DataDir)
+	registry := a.Config.ClientEndpointsOrDefault()
 	alias, endpoint, ok := registry.DefaultEndpoint()
 	tokenPath := endpoint.TokenFile
 	if tokenPath == "" {

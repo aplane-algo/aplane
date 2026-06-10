@@ -9,45 +9,7 @@ import (
 	"time"
 
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
-	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
-
-// wireApprovalCoordinator creates and installs an approval coordinator on the
-// identity runtime. Must be called after the IPC server is available.
-func (fs *Signer) wireApprovalCoordinator(ir *identity.Runtime) {
-	identityID := ir.ID()
-	coordinator := signerapproval.New(
-		func() bool {
-			hub := fs.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.HasClient(identityID)
-		},
-		func(msg *signerapproval.SignRequest) bool {
-			hub := fs.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.SendSignRequest(identityID, msg)
-		},
-		func(msg *signerapproval.SignRequestCanceled) bool {
-			hub := fs.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.SendSignRequestCanceled(identityID, msg)
-		},
-		func(msg *signerapproval.TokenProvisioningRequest) bool {
-			hub := fs.adminHub()
-			if hub == nil {
-				return false
-			}
-			return hub.SendTokenProvisioningRequest(identityID, msg)
-		},
-	)
-	ir.SetApprovalCoordinator(coordinator)
-}
 
 // Signer-level wrappers that route through the product identity runtime.
 // These exist for call sites (IPC handlers, SSH callbacks) that don't yet

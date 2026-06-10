@@ -35,9 +35,8 @@ type Plugin struct {
 
 // Discoverer finds and validates external plugins
 type Discoverer struct {
-	searchPaths   []string
-	enabledByPath map[string][]string
-	dataDir       string
+	searchPaths []string
+	dataDir     string
 }
 
 type activationConfig struct {
@@ -108,7 +107,7 @@ func validateEnabledPluginName(name string) error {
 
 // Discover finds all valid plugins in the search paths
 func (d *Discoverer) Discover() ([]*Plugin, error) {
-	enabledByPath := d.enabledByPath
+	var enabledByPath map[string][]string
 	if d.dataDir != "" {
 		enabled, err := loadEnabledPluginNames(d.dataDir)
 		if err != nil {

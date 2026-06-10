@@ -103,28 +103,6 @@ func (s OfflineStore) Validate(ctx context.Context, stored *policy.StoredConfig)
 	return nil
 }
 
-// ValidateSentry compiles a stored sentry policy using the same runtime
-// defaults as apsigner. It does not read or write policy files.
-func (s OfflineStore) ValidateSentry(ctx context.Context, stored *policy.StoredConfig) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if s.identityID() == "" {
-		return fmt.Errorf("identity ID is required")
-	}
-	if stored == nil {
-		stored = &policy.StoredConfig{}
-	}
-	serverCfg, err := s.serverConfig()
-	if err != nil {
-		return err
-	}
-	if _, err := policyruntime.ApplySentryStoredConfig(s.DataDir, &serverCfg, stored); err != nil {
-		return fmt.Errorf("invalid sentry policy: %w", err)
-	}
-	return nil
-}
-
 // Save verifies the current on-disk policy document first, validates the
 // requested replacement, then writes the selected document plus a fresh
 // integrity sidecar.

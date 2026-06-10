@@ -77,23 +77,6 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		return m, nil
 
-	case "tab":
-		if m.keyListUsesTabs() {
-			m.toggleKeyListTab()
-		}
-		return m, nil
-
-	case "right":
-		if m.keyListUsesTabs() {
-			m.setKeyListTab(keyListTabSentry)
-		}
-		return m, nil
-
-	case "shift+tab", "left":
-		if m.keyListUsesTabs() {
-			m.setKeyListTab(keyListTabSigning)
-		}
-		return m, nil
 	}
 
 	// Get filtered keys for navigation and operations
@@ -170,26 +153,6 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) resetKeyListSelection() {
 	m.selectedKey = 0
 	m.scrollOffset = 0
-}
-
-func (m *Model) setKeyListTab(tab keyListTab) {
-	tab = m.keyListTabForMode(tab)
-	if m.keyListTab == tab {
-		return
-	}
-	m.keyListTab = tab
-	m.resetKeyListSelection()
-}
-
-func (m *Model) toggleKeyListTab() {
-	if !m.keyListUsesTabs() {
-		return
-	}
-	if m.keyListTab == keyListTabSentry {
-		m.setKeyListTab(keyListTabSigning)
-		return
-	}
-	m.setKeyListTab(keyListTabSentry)
 }
 
 func (m Model) openBackupConfirm() (tea.Model, tea.Cmd) {

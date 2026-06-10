@@ -65,7 +65,7 @@ func connectConfigured(r *REPLState) error {
 }
 
 func connectEndpointAlias(r *REPLState, alias string) error {
-	registry := r.Config.ClientEndpointsOrDefault(r.DataDir)
+	registry := r.Config.ClientEndpointsOrDefault()
 	endpoint, ok := registry.Endpoint(alias)
 	if !ok {
 		return fmt.Errorf("unknown endpoint alias %q", alias)
@@ -146,7 +146,7 @@ func requestToken(r *REPLState, host string, sshPort int) error {
 }
 
 func requestTokenConfigured(r *REPLState) error {
-	registry := r.Config.ClientEndpointsOrDefault(r.DataDir)
+	registry := r.Config.ClientEndpointsOrDefault()
 	alias, endpoint, ok := registry.DefaultEndpoint()
 	if !ok {
 		return fmt.Errorf("usage: request-token [<host> [--ssh-port <port>]]\n\n" +
@@ -173,7 +173,7 @@ func requestTokenConfigured(r *REPLState) error {
 }
 
 func requestTokenEndpointAlias(r *REPLState, alias string) error {
-	registry := r.Config.ClientEndpointsOrDefault(r.DataDir)
+	registry := r.Config.ClientEndpointsOrDefault()
 	endpoint, ok := registry.Endpoint(alias)
 	if !ok {
 		return fmt.Errorf("unknown endpoint alias %q", alias)

@@ -11,6 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 )
 
 func TestTokenProvisioningRequiresAdminForTargetIdentity(t *testing.T) {
@@ -21,7 +22,7 @@ func TestTokenProvisioningRequiresAdminForTargetIdentity(t *testing.T) {
 	_ = registerAdditionalAdminTestIdentity(t, server, "bob")
 	ipcServer := &IPCServer{manager: adminproto.NewSessionManager()}
 	server.ipcServer = ipcServer
-	server.wireApprovalCoordinator(alice)
+	signerstartup.WireApprovalCoordinator(alice, server.identityBuildHooks())
 
 	bob := addActiveIdentitySession(t, ipcServer, "bob")
 
@@ -48,7 +49,7 @@ func TestTokenProvisioningRoutesToTargetIdentityAdmin(t *testing.T) {
 	_ = registerAdditionalAdminTestIdentity(t, server, "bob")
 	ipcServer := &IPCServer{manager: adminproto.NewSessionManager()}
 	server.ipcServer = ipcServer
-	server.wireApprovalCoordinator(alice)
+	signerstartup.WireApprovalCoordinator(alice, server.identityBuildHooks())
 
 	aliceConn := addActiveIdentitySession(t, ipcServer, "alice")
 	bobConn := addActiveIdentitySession(t, ipcServer, "bob")

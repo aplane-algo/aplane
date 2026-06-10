@@ -24,12 +24,6 @@ var (
 	// ErrKeyNotFound indicates the requested key does not exist
 	ErrKeyNotFound = errors.New("key not found")
 
-	// ErrKeyExists indicates a key already exists at the address
-	ErrKeyExists = errors.New("key already exists")
-
-	// ErrNotExportable indicates the key cannot be exported (e.g., HSM keys)
-	ErrNotExportable = errors.New("key is not exportable")
-
 	// ErrInvalidPassphrase indicates the passphrase is incorrect
 	ErrInvalidPassphrase = errors.New("invalid passphrase")
 

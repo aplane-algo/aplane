@@ -314,7 +314,7 @@ func cloneClientEndpointPublishedSentries(in map[string]ClientEndpointPublishedS
 	return out
 }
 
-func (c Config) ClientEndpointsOrDefault(_ string) ClientEndpointRegistry {
+func (c Config) ClientEndpointsOrDefault() ClientEndpointRegistry {
 	if len(c.Endpoints.Endpoints) > 0 || c.Endpoints.Default != "" {
 		return c.Endpoints.Clone()
 	}

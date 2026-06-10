@@ -292,71 +292,6 @@ func TestFileKeyStore_GetMetadata_NotFound(t *testing.T) {
 }
 
 // TestFileKeyStore_Store_Success tests storing a new key
-func TestFileKeyStore_Store_Success(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
-	ctx := context.Background()
-
-	// Initialize master key (required for encryption)
-	store.masterKey = testMasterKey
-
-	addr := "NEWKEY123456789"
-
-	// Create key data
-	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
-	keyPair := testKeyPair{
-		KeyType:       "ed25519",
-		PublicKeyHex:  hex.EncodeToString(pubKey),
-		PrivateKeyHex: hex.EncodeToString(privKey),
-	}
-	keyData, _ := json.Marshal(keyPair)
-
-	err := store.Store(ctx, addr, keyData)
-	if err != nil {
-		t.Fatalf("Store failed: %v", err)
-	}
-
-	// Verify key is in cache
-	if _, exists := store.cache[addr]; !exists {
-		t.Error("Key should be in cache after Store")
-	}
-
-	// Verify file was created
-	expectedPath := filepath.Join(keysDir, addr[:8]+".priv")
-	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
-		t.Error("Key file should exist after Store")
-	}
-}
-
-// TestFileKeyStore_Store_KeyExists tests storing duplicate key
-func TestFileKeyStore_Store_KeyExists(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
-	ctx := context.Background()
-
-	addr := "DUPLICATE1234567"
-
-	// Add to cache to simulate existing key
-	store.cache[addr] = keys.KeyScanInfo{KeyFile: filepath.Join(keysDir, addr+".key"), KeyType: "ed25519"}
-
-	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
-	keyPair := testKeyPair{
-		KeyType:       "ed25519",
-		PublicKeyHex:  hex.EncodeToString(pubKey),
-		PrivateKeyHex: hex.EncodeToString(privKey),
-	}
-	keyData, _ := json.Marshal(keyPair)
-
-	err := store.Store(ctx, addr, keyData)
-	if err != ErrKeyExists {
-		t.Errorf("Expected ErrKeyExists, got %v", err)
-	}
-}
-
 // TestFileKeyStore_Delete_Success tests deleting a key
 func TestFileKeyStore_Delete_Success(t *testing.T) {
 	keysDir, paths, cleanup := setupTestKeysDir(t)
@@ -423,56 +358,6 @@ func TestFileKeyStoreDeleteKeepsCacheWhenRemoveFails(t *testing.T) {
 	}
 	if _, exists := store.cache[addr]; !exists {
 		t.Fatal("cache entry was evicted despite remove failure")
-	}
-}
-
-// TestFileKeyStore_Export_Success tests exporting a key
-func TestFileKeyStore_Export_Success(t *testing.T) {
-	keysDir, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
-	ctx := context.Background()
-
-	// Create test key
-	addr := "EXPORTTEST12345"
-	filePath := createTestKeyFile(t, keysDir, addr, testMasterKey)
-	store.cache[addr] = keys.KeyScanInfo{KeyFile: filePath, KeyType: "ed25519"}
-
-	data, err := store.Export(ctx, addr)
-	if err != nil {
-		t.Fatalf("Export failed: %v", err)
-	}
-
-	if len(data) == 0 {
-		t.Error("Exported data should not be empty")
-	}
-
-	// Should be encrypted JSON
-	if !crypto.IsEncrypted(data) {
-		t.Error("Exported data should be encrypted")
-	}
-}
-
-// TestFileKeyStore_Export_NotFound tests exporting non-existent key
-func TestFileKeyStore_Export_NotFound(t *testing.T) {
-	_, paths, cleanup := setupTestKeysDir(t)
-	defer cleanup()
-
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
-	ctx := context.Background()
-
-	_, err := store.Export(ctx, "NONEXISTENT")
-	if err != ErrKeyNotFound {
-		t.Errorf("Expected ErrKeyNotFound, got %v", err)
-	}
-}
-
-// TestFileKeyStore_SupportsExport tests SupportsExport returns true
-func TestFileKeyStore_SupportsExport(t *testing.T) {
-	store := NewFileKeyStoreForPaths(utilkeys.NewPaths(t.TempDir()), "dummy-identity")
-	if !store.SupportsExport() {
-		t.Error("FileKeyStore should support export")
 	}
 }
 

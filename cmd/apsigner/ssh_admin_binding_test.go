@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
+	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 )
 
 func TestSSHPreboundAdminSessionDefaultsToSSHIdentityInDaemon(t *testing.T) {
@@ -152,8 +153,8 @@ func registerAdditionalAdminTestIdentity(t *testing.T, server *Signer, identityI
 	if err := server.registry.Register(ir); err != nil {
 		t.Fatalf("registry.Register(%q): %v", identityID, err)
 	}
-	server.wireReloadFunc(ir)
-	server.wireApprovalCoordinator(ir)
+	signerstartup.WireReloadFunc(ir, testIdentityBuildOptions(server), server.identityBuildHooks())
+	signerstartup.WireApprovalCoordinator(ir, server.identityBuildHooks())
 	ir.SetPolicy(initialPolicy)
 	return ir
 }

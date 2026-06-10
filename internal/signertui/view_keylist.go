@@ -21,8 +21,7 @@ import (
 var hexPattern = regexp.MustCompile(`0x[0-9a-fA-F]+`)
 
 const (
-	keyListHelpText     = "g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
-	keyListDualHelpText = "tab/left/right: Switch tab | " + keyListHelpText
+	keyListHelpText = "g: Generate | i: Import | b: Backup | r: Restore | p: Policy | l: Lock | /: Filter | s: Settings | q: Quit"
 )
 
 // truncateLongHex shortens hex values longer than maxLen characters
@@ -182,13 +181,6 @@ func keyBelongsToTab(key KeyInfo, tab keyListTab) bool {
 	return !isSentry
 }
 
-func keyListTabForKey(key KeyInfo) keyListTab {
-	if keytypes.IsSentryComponentKeyType(key.KeyType) {
-		return keyListTabSentry
-	}
-	return keyListTabSigning
-}
-
 func (m Model) keyListMode() string {
 	switch m.nodeRole() {
 	case "sentry":
@@ -196,10 +188,6 @@ func (m Model) keyListMode() string {
 	default:
 		return "signing"
 	}
-}
-
-func (m Model) keyListUsesTabs() bool {
-	return false
 }
 
 func (m Model) effectiveKeyListTab() keyListTab {
@@ -211,57 +199,15 @@ func (m Model) effectiveKeyListTab() keyListTab {
 	}
 }
 
-func (m Model) keyListTabForMode(tab keyListTab) keyListTab {
-	if m.keyListUsesTabs() {
-		return tab
-	}
-	return m.effectiveKeyListTab()
-}
-
+// syncKeyListTabWithMode resets the key-list selection when the node-role
+// driven key view changes (e.g. admin settings arrive after startup).
 func (m *Model) syncKeyListTabWithMode() {
-	if m.keyListUsesTabs() {
-		return
-	}
 	tab := m.effectiveKeyListTab()
 	if m.keyListTab == tab {
 		return
 	}
 	m.keyListTab = tab
 	m.resetKeyListSelection()
-}
-
-func (m Model) keyListTabCounts() (signing, sentry int) {
-	for _, key := range m.keys {
-		if keytypes.IsSentryComponentKeyType(key.KeyType) {
-			sentry++
-		} else {
-			signing++
-		}
-	}
-	return signing, sentry
-}
-
-func (m Model) renderKeyListTabs() string {
-	signing, sentry := m.keyListTabCounts()
-	labels := []struct {
-		tab   keyListTab
-		label string
-		count int
-	}{
-		{tab: keyListTabSigning, label: "Signing", count: signing},
-		{tab: keyListTabSentry, label: "Sentry", count: sentry},
-	}
-
-	parts := make([]string, 0, len(labels))
-	for _, item := range labels {
-		text := fmt.Sprintf("%s (%d)", item.label, item.count)
-		if m.effectiveKeyListTab() == item.tab {
-			parts = append(parts, selectedStyle.Render("[ "+text+" ]"))
-		} else {
-			parts = append(parts, normalStyle.Render("  "+text+"  "))
-		}
-	}
-	return strings.Join(parts, "  ")
 }
 
 func (m Model) activeKeyListTabLabel() string {
@@ -272,20 +218,12 @@ func (m Model) activeKeyListTabLabel() string {
 }
 
 func (m Model) keyListFooterText() string {
-	if m.keyListUsesTabs() {
-		return keyListDualHelpText
-	}
 	return keyListHelpText
 }
 
 // renderKeyListView renders the main key list screen
 func (m Model) renderKeyListView() string {
 	var sb strings.Builder
-
-	if m.keyListUsesTabs() {
-		sb.WriteString(m.renderKeyListTabs())
-		sb.WriteString("\n")
-	}
 
 	// Filter input
 	if m.filterActive {

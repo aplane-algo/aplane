@@ -40,7 +40,6 @@ const (
 	screenRouteTextEdit
 	screenRouteChoiceEdit
 	screenTransferSettings
-	screenTransferSettingsListEdit
 	screenTransferSettingsChoiceEdit
 	screenApplyPassphrase
 	screenWriteFile
@@ -242,8 +241,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleRouteChoiceEditKey(msg)
 		case screenTransferSettings:
 			return m.handleTransferSettingsKey(msg)
-		case screenTransferSettingsListEdit:
-			return m.handleTransferSettingsListEditKey(msg)
 		case screenTransferSettingsChoiceEdit:
 			return m.handleTransferSettingsChoiceEditKey(msg)
 		case screenApplyPassphrase:
@@ -796,61 +793,6 @@ func (m Model) handleTransferSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openTransferSettingsFieldEditor(), nil
 	case tea.KeyRunes:
 		m.status = "press enter to edit this field"
-	}
-	return m, nil
-}
-
-func (m Model) handleTransferSettingsListEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
-		return m.requestQuit()
-	case "esc", "b":
-		m.screen = screenTransferSettings
-		m.editListOffset = 0
-		m.status = "transfer policy settings"
-		m.err = ""
-		return m, nil
-	case "up", "k":
-		if m.editListOffset > 0 {
-			m.editListOffset--
-		}
-		return m, nil
-	case "down", "j":
-		maxOffset := m.routeListMaxOffset()
-		if m.editListOffset < maxOffset {
-			m.editListOffset++
-		}
-		return m, nil
-	case "pgup":
-		m.editListOffset -= m.routeListVisibleLines()
-		if m.editListOffset < 0 {
-			m.editListOffset = 0
-		}
-		return m, nil
-	case "pgdown":
-		maxOffset := m.routeListMaxOffset()
-		m.editListOffset += m.routeListVisibleLines()
-		if m.editListOffset > maxOffset {
-			m.editListOffset = maxOffset
-		}
-		return m, nil
-	case "home":
-		m.editListOffset = 0
-		return m, nil
-	case "end":
-		m.editListOffset = m.routeListMaxOffset()
-		return m, nil
-	}
-
-	switch msg.Type {
-	case tea.KeyBackspace, tea.KeyDelete:
-		m.backspaceRouteListInput()
-	case tea.KeyCtrlU:
-		m.clearRouteListInput()
-	case tea.KeyEnter:
-		m.appendRouteListInput("\n")
-	case tea.KeyRunes:
-		m.appendRouteListInput(string(msg.Runes))
 	}
 	return m, nil
 }
@@ -1442,10 +1384,6 @@ func (m Model) bodyView() string {
 		b.WriteString(m.transferSettingsView())
 		return b.String()
 	}
-	if m.screen == screenTransferSettingsListEdit {
-		b.WriteString(m.transferSettingsListEditView())
-		return b.String()
-	}
 	if m.screen == screenTransferSettingsChoiceEdit {
 		b.WriteString(m.transferSettingsChoiceEditView())
 		return b.String()
@@ -1800,33 +1738,6 @@ func (m Model) transferSettingsView() string {
 	return m.renderHelp(b.String())
 }
 
-func (m Model) transferSettingsListEditView() string {
-	field := m.currentTransferSettingsListField()
-	title := "Edit List"
-	if field != nil {
-		title = "Edit " + field.label
-	}
-
-	var b strings.Builder
-	b.WriteString(sectionStyle.Render(title))
-	b.WriteString("\n\n")
-	if field == nil {
-		b.WriteString(statusErrorStyle.Render("No list field is selected."))
-		b.WriteString("\n\nkeys: esc back\n")
-		return m.renderHelp(m.renderPopup(80, b.String()))
-	}
-
-	terms := parseCSV(field.value)
-	b.WriteString(metadataStyle.Render(fmt.Sprintf("entries: %d", len(terms))))
-	b.WriteString("\n")
-	b.WriteString(descriptionStyle.Render(transferSettingsListHint(field.key)))
-	b.WriteString("\n\n")
-	b.WriteString(m.routeListInputBox(field.value))
-	b.WriteString("\n\n")
-	b.WriteString("keys: type edit  comma/space/enter new entry  backspace delete  ctrl+u clear  up/down/pgup/pgdown scroll  esc done\n")
-	return m.renderHelp(m.renderPopup(80, b.String()))
-}
-
 func (m Model) blockedDestinationsEditView() string {
 	field := m.currentBlockedDestinationsListField()
 	var b strings.Builder
@@ -1994,7 +1905,7 @@ func (m Model) routeListInputBox(value string) string {
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
-	if m.screen == screenRouteListEdit || m.screen == screenTransferSettingsListEdit || m.screen == screenBlockedDestinationsEdit {
+	if m.screen == screenRouteListEdit || m.screen == screenBlockedDestinationsEdit {
 		lines = append([]string(nil), lines...)
 		lines[len(lines)-1] += "_"
 	}
@@ -2862,31 +2773,12 @@ func (m Model) openTransferSettingsFieldEditor() Model {
 		return m
 	}
 	switch transferSettingsEditorKind(key) {
-	case "list":
-		return m.openTransferSettingsListEditor()
 	case "choice":
 		return m.openTransferSettingsChoiceEditor()
 	default:
 		m.status = "selected field is read-only"
 		return m
 	}
-}
-
-func (m Model) openTransferSettingsListEditor() Model {
-	field := m.currentTransferSettingsListField()
-	if field == nil {
-		m.status = "select a list field to edit"
-		return m
-	}
-	m.screen = screenTransferSettingsListEdit
-	m.editListOffset = 0
-	field.value = routeListStorageValue(parseCSV(field.value))
-	if field.value != "" {
-		field.value += "\n"
-	}
-	m.status = "editing " + strings.ToLower(field.label)
-	m.err = ""
-	return m
 }
 
 func (m Model) openTransferSettingsChoiceEditor() Model {
@@ -2929,10 +2821,6 @@ func transferSettingsChoiceOptionsForKey(key string) []string {
 	default:
 		return nil
 	}
-}
-
-func transferSettingsListHint(key string) string {
-	return "One entry per line."
 }
 
 func blockedDestinationsListHint() string {
@@ -3489,14 +3377,6 @@ func (m Model) currentRouteListField() *routeEditField {
 	return field
 }
 
-func (m Model) currentTransferSettingsListField() *routeEditField {
-	field := m.currentSettingsField()
-	if field == nil || transferSettingsEditorKind(field.key) != "list" {
-		return nil
-	}
-	return field
-}
-
 func (m Model) currentBlockedDestinationsListField() *routeEditField {
 	if m.screen != screenBlockedDestinationsEdit || len(m.blockedDestinationsFields) == 0 {
 		return nil
@@ -3508,8 +3388,6 @@ func (m Model) currentListEditField() *routeEditField {
 	switch m.screen {
 	case screenBlockedDestinationsEdit:
 		return m.currentBlockedDestinationsListField()
-	case screenTransferSettingsListEdit:
-		return m.currentTransferSettingsListField()
 	default:
 		return m.currentRouteListField()
 	}

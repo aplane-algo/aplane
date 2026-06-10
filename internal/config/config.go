@@ -296,24 +296,6 @@ func (c *Config) GetAlgodConfig(network string) (*AlgodNetworkConfig, error) {
 	return c.Algod.GetNetwork(network)
 }
 
-// GetParsedConnection returns a ParsedConnection from the config.
-// Returns nil if no SSH is configured.
-func (c *Config) GetParsedConnection() *ParsedConnection {
-	if c.LegacySSH == nil {
-		return nil // SSH not configured
-	}
-	return &ParsedConnection{
-		Host:       c.LegacySSH.Host,
-		SSHPort:    c.LegacySSH.Port,
-		SignerPort: c.LegacySignerPort,
-	}
-}
-
-// UseSSH returns true if SSH tunnel is configured
-func (c *Config) UseSSH() bool {
-	return c.LegacySSH != nil
-}
-
 // ParsedConnection represents a parsed connection string
 type ParsedConnection struct {
 	Host       string // The remote host

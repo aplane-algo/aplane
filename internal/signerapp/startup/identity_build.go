@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/keyclass"
@@ -44,8 +45,11 @@ type IdentityBuildHooks struct {
 	NotifyKeysChanged            func(identityID string, keyCount int)
 	ReloadAuditLog               signertemplates.AuditLogger
 	NodeFailClosed               func(error)
-	Info                         func(string)
-	Warn                         func(string)
+	// ReloadMutationLock returns the identity-scoped store mutation lock that
+	// watcher-triggered reloads must hold while scanning disk.
+	ReloadMutationLock func(identityID string) sync.Locker
+	Info               func(string)
+	Warn               func(string)
 }
 
 // BuildRegistry discovers and constructs all startup identity runtimes,
@@ -190,12 +194,14 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 		return nil, err
 	}
 
-	wireReloadFunc(ir, opts, hooks)
-	wireApprovalCoordinator(ir, hooks)
+	WireReloadFunc(ir, opts, hooks)
+	WireApprovalCoordinator(ir, hooks)
 	return ir, nil
 }
 
-func wireApprovalCoordinator(ir *identity.Runtime, hooks IdentityBuildHooks) {
+// WireApprovalCoordinator creates and installs an approval coordinator on the
+// identity runtime using the process hooks.
+func WireApprovalCoordinator(ir *identity.Runtime, hooks IdentityBuildHooks) {
 	identityID := ir.ID()
 	coordinator := approval.New(
 		func() bool {
@@ -226,53 +232,70 @@ func wireApprovalCoordinator(ir *identity.Runtime, hooks IdentityBuildHooks) {
 	ir.SetApprovalCoordinator(coordinator)
 }
 
-func wireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks IdentityBuildHooks) {
-	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
-		svc := &signertemplates.ReloadService{
-			KeyStore:        ir.KeyStore(),
-			Session:         session,
-			TemplateManager: newTemplateManager(ir.KeyPaths()),
-			BeforeKeyScan: func(masterKey []byte) error {
-				if verifiedRole, err := noderole.LoadAndVerifyWithMasterKey(opts.KeyPaths, identityID, masterKey); err != nil {
-					return fmt.Errorf("node role verification failed for identity %q: %w", identityID, err)
-				} else if verifiedRole.Role != ir.NodeRole() {
-					return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", identityID, ir.NodeRole(), verifiedRole.Role)
-				}
-				storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStored(ir.NodeRole(), opts.DataDir, identityID, opts.Config, masterKey)
-				if err != nil {
-					return fmt.Errorf("policy verification failed for identity %q: %w", identityID, err)
-				}
-				switch ir.NodeRole() {
-				case noderole.RoleSentry:
-					ir.SetPolicyState(nil, nil)
-					ir.SetSentryPolicyState(storedPolicy, effectivePolicy)
-				default:
-					ir.SetPolicyState(storedPolicy, effectivePolicy)
-					ir.SetSentryPolicyState(nil, nil)
-				}
-				return nil
-			},
-			BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
-				if err := keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes); err != nil {
-					if errors.Is(err, keyclass.ErrNodeRoleConflict) && hooks.NodeFailClosed != nil {
-						hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict for identity %q: %w", identityID, err))
-					}
-					return err
-				}
-				return nil
-			},
-			PublishSnapshot: ir.PublishSnapshot,
-			AuditLog:        hooks.ReloadAuditLog,
-			Info:            hooks.Info,
-			Warn:            hooks.Warn,
-		}
-		if hooks.NotifyKeysChanged != nil {
-			svc.NotifyKeysChanged = func(notification signertemplates.KeysChangedNotification) {
-				hooks.NotifyKeysChanged(identityID, notification.KeyCount)
+// NewReloadService builds the template reload service for an identity runtime
+// using the process options and hooks. The session parameter is passed
+// directly because reload callers already hold passphraseLock; this function
+// must not call ir.SnapshotKeySession().
+func NewReloadService(ir *identity.Runtime, opts IdentityBuildOptions, hooks IdentityBuildHooks, session *keystore.KeySession) *signertemplates.ReloadService {
+	identityID := ir.ID()
+	svc := &signertemplates.ReloadService{
+		KeyStore:        ir.KeyStore(),
+		Session:         session,
+		TemplateManager: newTemplateManager(ir.KeyPaths()),
+		BeforeKeyScan: func(masterKey []byte) error {
+			if verifiedRole, err := noderole.LoadAndVerifyWithMasterKey(opts.KeyPaths, identityID, masterKey); err != nil {
+				return fmt.Errorf("node role verification failed for identity %q: %w", identityID, err)
+			} else if verifiedRole.Role != ir.NodeRole() {
+				return fmt.Errorf("node role verification failed for identity %q: runtime role %q does not match verified role %q", identityID, ir.NodeRole(), verifiedRole.Role)
 			}
+			storedPolicy, effectivePolicy, err := policyruntime.LoadVerifiedForNodeRoleWithStored(ir.NodeRole(), opts.DataDir, identityID, opts.Config, masterKey)
+			if err != nil {
+				return fmt.Errorf("policy verification failed for identity %q: %w", identityID, err)
+			}
+			switch ir.NodeRole() {
+			case noderole.RoleSentry:
+				ir.SetPolicyState(nil, nil)
+				ir.SetSentryPolicyState(storedPolicy, effectivePolicy)
+			default:
+				ir.SetPolicyState(storedPolicy, effectivePolicy)
+				ir.SetSentryPolicyState(nil, nil)
+			}
+			return nil
+		},
+		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
+			if err := keyclass.ValidateKeyTypesAllowedForNodeRole(ir.NodeRole(), keyTypes); err != nil {
+				if errors.Is(err, keyclass.ErrNodeRoleConflict) && hooks.NodeFailClosed != nil {
+					hooks.NodeFailClosed(fmt.Errorf("node role inventory conflict for identity %q: %w", identityID, err))
+				}
+				return err
+			}
+			return nil
+		},
+		PublishSnapshot: ir.PublishSnapshot,
+		AuditLog:        hooks.ReloadAuditLog,
+		Info:            hooks.Info,
+		Warn:            hooks.Warn,
+	}
+	if hooks.NotifyKeysChanged != nil {
+		svc.NotifyKeysChanged = func(notification signertemplates.KeysChangedNotification) {
+			hooks.NotifyKeysChanged(identityID, notification.KeyCount)
 		}
+	}
+	return svc
+}
+
+// WireReloadFunc configures the reload function and the watcher reload
+// mutation lock on an identity runtime.
+func WireReloadFunc(ir *identity.Runtime, opts IdentityBuildOptions, hooks IdentityBuildHooks) {
+	ir.SetReloadFunc(func(identityID string, passphrase []byte, session *keystore.KeySession) (*signertemplates.ReloadReport, error) {
+		svc := NewReloadService(ir, opts, hooks, session)
 		return svc.Reload(identityID, passphrase)
 	})
+	if hooks.ReloadMutationLock != nil {
+		ir.SetReloadMutationLock(func() sync.Locker {
+			return hooks.ReloadMutationLock(ir.ID())
+		})
+	}
 }
 
 func newTemplateManager(keyPaths storepaths.Paths) *signertemplates.Manager {

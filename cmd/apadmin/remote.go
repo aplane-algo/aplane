@@ -50,7 +50,7 @@ func loadRemoteAdminConfig(clientDataDirFlag string, _ bool) (*remoteAdminConfig
 	if err != nil {
 		return nil, fmt.Errorf("invalid remote client configuration: %w", err)
 	}
-	registry := cfg.ClientEndpointsOrDefault(clientDataDir)
+	registry := cfg.ClientEndpointsOrDefault()
 	_, endpoint, ok := registry.DefaultEndpoint()
 	if !ok {
 		return nil, fmt.Errorf("remote mode requires a default signer endpoint in %s/endpoints.yaml", clientDataDir)

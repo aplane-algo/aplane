@@ -437,115 +437,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.waitForMessageCmd()
 
-	case PolicySettingsMsg:
-		m.policySettings = &msg.Settings
-		return m, m.waitForMessageCmd()
-
-	case PolicySnapshotMsg:
-		m = m.applyPolicySnapshot(msg.Snapshot, "Policy snapshot")
-		return m, m.waitForMessageCmd()
-
-	case PolicyLoadFileMsg:
-		if msg.Error != nil {
-			m.policyLoadState = policyLoadPath
-			m.policyLoadError = "read failed: " + msg.Error.Error()
-			return m, nil
-		}
-		m.policyLoadState = policyLoadConfirm
-		m.policyLoadPath = msg.Path
-		m.policyLoadYAML = msg.PolicyYAML
-		m.policyLoadBytes = msg.Bytes
-		m.policyLoadError = ""
-		return m, nil
-
-	case PolicyReplaceResultMsg:
-		if !msg.Snapshot.Success {
-			errText := msg.Snapshot.Error
-			if errText == "" {
-				errText = "request failed"
-			}
-			m.policyLoadState = policyLoadConfirm
-			m.policyLoadError = "replace failed: " + errText
-			m.lastError = "Policy replacement failed: " + errText
-			return m, m.waitForMessageCmd()
-		}
-		replacedPath := m.policyLoadPath
-		m = m.applyPolicySnapshot(msg.Snapshot, "Policy replacement")
-		m.policyLoadState = policyLoadIdle
-		m.policyLoadPath = ""
-		m.policyLoadYAML = ""
-		m.policyLoadBytes = 0
-		m.policyLoadError = ""
-		if replacedPath != "" && m.policyViewError == "" {
-			m.policyLoadStatus = "Replaced policy from " + replacedPath
-		}
-		return m, m.waitForMessageCmd()
-
-	case ASAMetadataResultsMsg:
-		if msg.Error != "" {
-			m.lastError = "ASA search failed: " + msg.Error
-			return m, m.waitForMessageCmd()
-		}
-		switch len(msg.Results) {
-		case 0:
-			m.lastError = fmt.Sprintf("No cached ASA symbol match for %q on %s", msg.Query, msg.Network)
-		case 1:
-			selected := msg.Results[0]
-			m.policyASASelectedAsset = &selected
-			m.policyASAInput = fmt.Sprintf("%d", selected.AssetID)
-			m.policyASAReviewInput = ""
-			m.policyASADenyInput = ""
-			m.policyASAAmountField = 0
-			m.policyASAMode = policyASAModeAddAmount
-		default:
-			m.policyASAMatches = msg.Results
-			m.policyASAFocus = 0
-			m.policyASAMode = policyASAModeChoose
-		}
-		return m, m.waitForMessageCmd()
-
-	case ASAMetadataResultMsg:
-		if msg.Error != "" {
-			m.lastError = "ASA resolve failed: " + msg.Error
-			return m, m.waitForMessageCmd()
-		}
-		selected := msg.Asset
-		m.policyASASelectedAsset = &selected
-		m.policyASAInput = fmt.Sprintf("%d", selected.AssetID)
-		m.policyASAReviewInput = ""
-		m.policyASADenyInput = ""
-		m.policyASAAmountField = 0
-		m.policyASAMode = policyASAModeAddAmount
-		return m, m.waitForMessageCmd()
-
-	case PolicySettingUpdatedMsg:
-		if msg.Key == policyPanelActionTransferGuards || msg.Key == policyPanelActionMaxASAAmounts {
-			m.policyASAPending = false
-			if msg.Success {
-				m.applyPolicyASAAmountsSnapshot(m.policyASAPendingValues)
-				m.applyPolicyASAReviewAmountsSnapshot(m.policyASAReviewPendingValues)
-				m.applyPolicyAlgoPaymentsSnapshot(m.policyAlgoPendingValues)
-				m.applyPolicyAlgoReviewPaymentsSnapshot(m.policyAlgoReviewPendingValues)
-				m.policyASAPendingValues = nil
-				m.policyASAReviewPendingValues = nil
-				m.policyAlgoPendingValues = nil
-				m.policyAlgoReviewPendingValues = nil
-				m.viewState = ViewPolicyPanel
-				return m, tea.Batch(m.waitForMessageCmd(), m.sendGetPolicySettingsCmd())
-			}
-			m.policyASAPendingValues = nil
-			m.policyASAReviewPendingValues = nil
-			m.policyAlgoPendingValues = nil
-			m.policyAlgoReviewPendingValues = nil
-			m.lastError = "Policy update failed: " + msg.Error
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendGetPolicySettingsCmd())
-		}
-		if msg.Success {
-			return m, tea.Batch(m.waitForMessageCmd(), m.sendGetPolicySettingsCmd())
-		}
-		m.lastError = "Policy update failed: " + msg.Error
-		return m, tea.Batch(m.waitForMessageCmd(), m.sendGetPolicySettingsCmd())
-
 	case policyEditorLoadedMsg:
 		return m.handlePolicyEditorLoaded(msg)
 
@@ -556,9 +447,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Periodic admin panel refresh — only poll while admin panel is active
 		if m.viewState == ViewAdminPanel {
 			return m, tea.Batch(m.sendGetAdminSettingsCmd(), adminRefreshTickCmd())
-		}
-		if m.viewState == ViewPolicyPanel {
-			return m, tea.Batch(m.sendGetPolicySettingsCmd(), adminRefreshTickCmd())
 		}
 		// Not on admin panel — let the tick expire silently
 		return m, nil
@@ -815,12 +703,6 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAdminPanelKeys(msg)
 	case ViewPolicyEditor:
 		return m.handlePolicyEditorKeys(msg)
-	case ViewPolicyViewer:
-		return m.handlePolicyViewerKeys(msg)
-	case ViewPolicyPanel:
-		return m.handlePolicyPanelKeys(msg)
-	case ViewPolicyASAModal:
-		return m.handlePolicyASAModalKeys(msg)
 	case ViewTemplateLibrary:
 		return m.handleTemplateLibraryKeys(msg)
 	case ViewTemplateInstallConfirm:

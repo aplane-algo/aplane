@@ -114,7 +114,6 @@ recoverable view.
 | `internal/signertui/ipc_client.go` | IPC connection to the signer |
 | `internal/signertui/connector.go` | SSH `aplane-admin` connector for remote mode |
 | `internal/signertui/policy_editor.go` | Shared policy editor embedding and admin-protocol store adapter |
-| `internal/signertui/update_policyviewer.go`, `view_policyviewer.go` | Legacy policy snapshot viewer handlers retained for compatibility paths |
 | `internal/signertui/update_*.go`, `view_*.go` | Per-view handlers and renderers |
 
 ## Related Documentation

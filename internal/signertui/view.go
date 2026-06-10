@@ -382,12 +382,6 @@ func (m Model) renderViewContent() string {
 		content = m.renderAdminPanel()
 	case ViewPolicyEditor:
 		content = m.renderPolicyEditor()
-	case ViewPolicyViewer:
-		content = m.renderPolicyViewer()
-	case ViewPolicyPanel:
-		content = m.renderPolicyPanel()
-	case ViewPolicyASAModal:
-		content = m.renderPolicyASAModal()
 	case ViewTemplateLibrary:
 		content = m.renderTemplateLibrary()
 	case ViewTemplateInstallConfirm:

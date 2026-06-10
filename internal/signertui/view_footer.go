@@ -66,15 +66,6 @@ func (m Model) viewFooterText() string {
 		return "p: Policy | k: KeyTypes | t: Revoke Token | l: Lock | esc: Back"
 	case ViewPolicyEditor:
 		return m.policyEditorFooterText()
-	case ViewPolicyViewer:
-		if m.policyLoadState != policyLoadIdle {
-			return m.policyLoadFooterText()
-		}
-		return m.policyViewerHelp()
-	case ViewPolicyPanel:
-		return "enter: Toggle/Edit | esc: Back | empty numeric field = no limit"
-	case ViewPolicyASAModal:
-		return m.policyASAFooterText()
 	case ViewTemplateLibrary:
 		return "up/down: Select | enter: Toggle availability | t: Template | r: Refresh | esc: Back"
 	case ViewTemplateInstallConfirm:
@@ -110,38 +101,6 @@ func (m Model) parameterModalFooterText(keyType, verb string) string {
 		}
 	}
 	return "Tab: Next | </> Switch mode | Enter: " + verb + " | Esc: Back"
-}
-
-func (m Model) policyASAFooterText() string {
-	switch m.policyASAMode {
-	case policyASAModeLimits:
-		return "enter/e: edit ALGO | a: add ASA | d: delete ASA | s: save | esc: networks"
-	case policyASAModeAddRef:
-		return "enter: Search | esc: Back"
-	case policyASAModeChoose:
-		return "up/down: Select | enter: Continue | esc: Back"
-	case policyASAModeAddAmount:
-		return "tab: Switch field | enter: Save | esc: Back"
-	case policyASAModeAlgoAmount:
-		return "tab: Switch field | enter: Save | esc: Back"
-	default:
-		return "enter: Open network | esc: Back"
-	}
-}
-
-func (m Model) policyLoadFooterText() string {
-	switch m.policyLoadState {
-	case policyLoadPath:
-		return "Enter: Read file | Esc: Cancel"
-	case policyLoadConfirm:
-		return "y/Enter: Replace | n/Esc: Cancel"
-	case policyLoadReading:
-		return "Reading policy file..."
-	case policyLoadReplacing:
-		return "Replacing policy..."
-	default:
-		return m.policyViewerHelp()
-	}
 }
 
 func (m Model) libraryTemplateDetailsFooterText() string {

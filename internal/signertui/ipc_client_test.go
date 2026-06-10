@@ -242,54 +242,6 @@ func TestIPCClientSendLockIdentityMessage(t *testing.T) {
 	}
 }
 
-func TestIPCClientSendReplacePolicyMessage(t *testing.T) {
-	clientConn, serverConn := net.Pipe()
-	defer func() { _ = serverConn.Close() }()
-
-	client := NewAdminClient(&queueConnector{
-		conns: []io.ReadWriteCloser{clientConn},
-	})
-	if err := client.Connect(); err != nil {
-		t.Fatalf("Connect() error = %v", err)
-	}
-	defer client.Disconnect()
-
-	reader := bufio.NewReader(serverConn)
-	lineCh := make(chan []byte, 1)
-	errCh := make(chan error, 1)
-	go func() {
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			errCh <- err
-			return
-		}
-		lineCh <- line
-	}()
-
-	if err := client.SendReplacePolicy("max_fee_microalgos: 4321\n", "abc123"); err != nil {
-		t.Fatalf("SendReplacePolicy() error = %v", err)
-	}
-
-	var line []byte
-	select {
-	case err := <-errCh:
-		t.Fatalf("ReadBytes(replace policy) error = %v", err)
-	case line = <-lineCh:
-	case <-time.After(time.Second):
-		t.Fatal("timed out reading replace policy message")
-	}
-	var msg protocol.ReplacePolicyMessage
-	if err := json.Unmarshal(line, &msg); err != nil {
-		t.Fatalf("Unmarshal(replace policy) error = %v", err)
-	}
-	if msg.Type != protocol.MsgTypeReplacePolicy || msg.ID == "" {
-		t.Fatalf("replace policy = %+v, want replace_policy with ID", msg)
-	}
-	if msg.PolicyYAML != "max_fee_microalgos: 4321\n" || msg.ExpectedCurrentSHA256 != "abc123" {
-		t.Fatalf("replace policy payload = %+v, want YAML and expected SHA", msg)
-	}
-}
-
 type queueConnector struct {
 	mu    sync.Mutex
 	conns []io.ReadWriteCloser
