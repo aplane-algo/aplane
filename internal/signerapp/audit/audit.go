@@ -127,6 +127,16 @@ func (a *AuditLogger) Log(entry AuditEntry) {
 		}
 	}
 
+	// A failed rotation may have left no usable handle; recover instead of
+	// erroring on every subsequent entry.
+	if a.file == nil {
+		a.reopenCurrent()
+		if a.file == nil {
+			fmt.Fprintf(os.Stderr, "Warning: audit log unavailable, dropping entry\n")
+			return
+		}
+	}
+
 	// Write with newline
 	if _, err := a.file.Write(line); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to write audit entry: %v\n", err)
@@ -152,17 +162,35 @@ func (a *AuditLogger) rotate() error {
 	}
 	if err := os.Rename(a.path, a.path+".1"); err != nil {
 		// Reopen the original path so logging can continue
-		a.file, _ = os.OpenFile(a.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-		a.written = 0
+		a.reopenCurrent()
 		return fmt.Errorf("rename log: %w", err)
 	}
 	file, err := os.OpenFile(a.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
+		// The old log was already renamed away; restore it so the logger
+		// keeps a valid handle instead of writing to a closed file forever.
+		_ = os.Rename(a.path+".1", a.path)
+		a.reopenCurrent()
 		return fmt.Errorf("open new log: %w", err)
 	}
 	a.file = file
 	a.written = 0
 	return nil
+}
+
+// reopenCurrent opens a.path for append and refreshes the byte counter from
+// the file's actual size, so rotation re-attempts at the right threshold.
+// Used to recover a usable handle after a rotation step fails; leaves a.file
+// nil if the open itself fails (Log drops entries until recovery succeeds).
+// Must be called with a.mu held.
+func (a *AuditLogger) reopenCurrent() {
+	a.file, _ = os.OpenFile(a.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	a.written = 0
+	if a.file != nil {
+		if info, err := a.file.Stat(); err == nil {
+			a.written = uint64(info.Size())
+		}
+	}
 }
 
 // Close closes the audit log file
