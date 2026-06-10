@@ -26,8 +26,7 @@ func TestSSHPreboundAdminSessionDefaultsToSSHIdentityInDaemon(t *testing.T) {
 	alice := registerAdditionalAdminTestIdentity(t, server, "alice")
 	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `"}` + "\n"
 	conn := newIPCMockConn(authLine, "ssh:remote")
-	ipcServer := &IPCServer{signer: server}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil, &ipcServer.writeMu), server.adminSessionDeps())
+	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ssh-passphrase")
 	session.SetTransportInfo(adminproto.TransportSSH, "ssh:remote")
 	session.SetPreboundIdentityID("alice")
@@ -76,8 +75,7 @@ func TestSSHPreboundAdminSessionRejectsPayloadIdentitySwitchInDaemon(t *testing.
 	bob := registerAdditionalAdminTestIdentity(t, server, "bob")
 	authLine := `{"kind":"request","type":"auth","identity_id":"bob","passphrase":"` + string(testPassphrase) + `"}` + "\n"
 	conn := newIPCMockConn(authLine, "ssh:remote")
-	ipcServer := &IPCServer{signer: server}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil, &ipcServer.writeMu), server.adminSessionDeps())
+	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ssh-passphrase")
 	session.SetTransportInfo(adminproto.TransportSSH, "ssh:remote")
 	session.SetPreboundIdentityID("alice")

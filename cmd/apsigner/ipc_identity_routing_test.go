@@ -15,7 +15,7 @@ import (
 func addActiveIdentitySession(t *testing.T, server *IPCServer, identityID string) *ipcJSONRecorderConn {
 	t.Helper()
 	recorder := &ipcJSONRecorderConn{}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(recorder, nil, &server.writeMu), adminproto.SessionDeps{})
+	session := adminproto.NewSession(adminproto.NewUnixAdminConn(recorder, nil), adminproto.SessionDeps{})
 	if !server.sessionManager().RegisterPending(identityID, session) {
 		t.Fatalf("RegisterPending(%q) = false, want true", identityID)
 	}

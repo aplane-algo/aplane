@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -24,8 +23,6 @@ type IPCServer struct {
 	signer   *Signer
 	path     string
 	manager  *adminproto.SessionManager
-
-	writeMu sync.Mutex
 }
 
 // NewIPCServer creates a new IPC server.
@@ -86,7 +83,7 @@ func (s *IPCServer) acceptLoop() {
 		}
 
 		logInfof("apadmin client connected via IPC")
-		go s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil, &s.writeMu), "ipc", "ipc-passphrase", "")
+		go s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase", "")
 	}
 }
 
@@ -100,7 +97,7 @@ const displacementTimeout = 30 * time.Second
 // call offerDisplacementSession with an explicit identity.
 func (s *IPCServer) offerDisplacement(newConn net.Conn) bool {
 	identityID := auth.CurrentProductIdentityID()
-	return s.offerDisplacementSession(identityID, s.activeIdentitySession(identityID), adminproto.NewUnixAdminConn(newConn, nil, &s.writeMu))
+	return s.offerDisplacementSession(identityID, s.activeIdentitySession(identityID), adminproto.NewUnixAdminConn(newConn, nil))
 }
 
 func (s *IPCServer) offerDisplacementSession(identityID string, active *adminproto.Session, newConn adminproto.AdminConn) bool {
@@ -113,7 +110,7 @@ func (s *IPCServer) offerDisplacementSession(identityID string, active *adminpro
 
 // handleClient handles a single IPC client connection.
 func (s *IPCServer) handleClient(conn net.Conn) {
-	s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil, &s.writeMu), "ipc", "ipc-passphrase", "")
+	s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase", "")
 }
 
 func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport, authMethod, preboundIdentityID string) {

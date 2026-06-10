@@ -54,7 +54,7 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 			go func() {
 				defer close(done)
 				ipcServer.acceptAdminSession(
-					adminproto.NewUnixAdminConn(serverConn, nil, &ipcServer.writeMu),
+					adminproto.NewUnixAdminConn(serverConn, nil),
 					adminproto.TransportIPC,
 					"ipc-passphrase",
 					"",

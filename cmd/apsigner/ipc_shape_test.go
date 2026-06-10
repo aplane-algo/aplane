@@ -29,9 +29,8 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 
 	authLine := `{"type":"auth","passphrase":"` + string(testPassphrase) + `"}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
-	ipcServer := &IPCServer{signer: server}
 	session := adminproto.NewSession(
-		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine)), &ipcServer.writeMu),
+		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine))),
 		server.adminSessionDeps(),
 	)
 	if ok := session.Authenticate(); ok {
@@ -65,9 +64,8 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 
 	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `"}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
-	ipcServer := &IPCServer{signer: server}
 	session := adminproto.NewSession(
-		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine)), &ipcServer.writeMu),
+		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine))),
 		server.adminSessionDeps(),
 	)
 	if ok := session.Authenticate(); !ok {
@@ -165,8 +163,7 @@ func TestHandleListKeysRejectsUnboundSession(t *testing.T) {
 	defer cleanup()
 
 	recorder := &ipcJSONRecorderConn{}
-	ipcServer := &IPCServer{signer: server}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(recorder, bufio.NewReader(bytes.NewReader(nil)), &ipcServer.writeMu), server.adminSessionDeps())
+	session := adminproto.NewSession(adminproto.NewUnixAdminConn(recorder, bufio.NewReader(bytes.NewReader(nil))), server.adminSessionDeps())
 	session.Bind(&auth.Identity{ID: "other-identity", Type: "service", Method: "test"}, nil)
 	session.HandleListKeys("req-1")
 
@@ -317,7 +314,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 	conn := newIPCMockConn(authLine+unknownLine, "unix:/tmp/test-ipc.sock")
 
 	ipcServer := &IPCServer{signer: server}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil, &ipcServer.writeMu), server.adminSessionDeps())
+	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ipc-passphrase")
 	if !ipcServer.sessionManager().RegisterPreAuthPending(session) {
 		t.Fatal("RegisterPreAuthPending() = false, want true")
@@ -345,8 +342,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 
 func TestIPCConnWriteJSONSerializesConcurrentWriters(t *testing.T) {
 	conn := &interleavingRecorderConn{}
-	var writeMu sync.Mutex
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, bufio.NewReader(bytes.NewReader(nil)), &writeMu), adminproto.SessionDeps{})
+	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, bufio.NewReader(bytes.NewReader(nil))), adminproto.SessionDeps{})
 
 	msgA := protocol.ErrorMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeError, ID: "a"},

@@ -90,7 +90,7 @@ func TestPreboundAdminSessionDoesNotDisplaceDifferentIdentity(t *testing.T) {
 		signer:  signer,
 		manager: adminproto.NewSessionManager(),
 	}
-	bobSession := adminproto.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil, &ipcServer.writeMu), signer.adminSessionDeps())
+	bobSession := adminproto.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
 	_ = ipcServer.manager.RegisterPending("bob", bobSession)
 	_, _ = ipcServer.manager.PromoteToActive("bob", bobSession)
 
@@ -100,7 +100,7 @@ func TestPreboundAdminSessionDoesNotDisplaceDifferentIdentity(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ipcServer.acceptAdminSession(adminproto.NewUnixAdminConn(newServer, nil, &ipcServer.writeMu), "ssh", "ssh-passphrase", "alice")
+		ipcServer.acceptAdminSession(adminproto.NewUnixAdminConn(newServer, nil), "ssh", "ssh-passphrase", "alice")
 	}()
 
 	reader := bufio.NewReader(newClient)

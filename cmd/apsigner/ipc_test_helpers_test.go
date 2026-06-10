@@ -15,14 +15,14 @@ func newIPCServerWithActiveConn(conn net.Conn) *IPCServer {
 	server := &IPCServer{
 		manager: adminproto.NewSessionManager(),
 	}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil, &server.writeMu), adminproto.SessionDeps{})
+	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil), adminproto.SessionDeps{})
 	_ = server.manager.RegisterPending(auth.CurrentProductIdentityID(), session)
 	server.manager.PromoteToActive(auth.CurrentProductIdentityID(), session)
 	return server
 }
 
 func newBoundTestSession(server *IPCServer, conn net.Conn, ir *identity.Runtime) *adminproto.Session {
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil, &server.writeMu), server.signer.adminSessionDeps())
+	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.signer.adminSessionDeps())
 	remoteAddr := "test-ipc"
 	if addr := conn.RemoteAddr(); addr != nil {
 		remoteAddr = addr.String()

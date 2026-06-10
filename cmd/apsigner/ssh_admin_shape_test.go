@@ -246,7 +246,7 @@ func setupSSHAdminTestPair(t *testing.T, server *Signer) (*sshtunnel.Server, *ss
 	}
 	sshServer.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr, identityID string) {
 		serverIPC := &IPCServer{signer: server}
-		serverIPC.acceptAdminSession(adminproto.NewStreamAdminConn(channel, remoteAddr, &serverIPC.writeMu), "ssh", "ssh-passphrase", identityID)
+		serverIPC.acceptAdminSession(adminproto.NewStreamAdminConn(channel, remoteAddr), "ssh", "ssh-passphrase", identityID)
 	})
 
 	client := sshtunnel.NewClient("127.0.0.1", port, 0, 0, identityPath, filepath.Join(tmpDir, "known_hosts"))

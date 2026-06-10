@@ -117,7 +117,7 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 		} else {
 			logInfof("apadmin client connected via SSH from %s for identity %q", remoteAddr, identityID)
 		}
-		server.ipcServer.acceptAdminSession(adminproto.NewStreamAdminConn(channel, remoteAddr, &server.ipcServer.writeMu), "ssh", "ssh-passphrase", identityID)
+		server.ipcServer.acceptAdminSession(adminproto.NewStreamAdminConn(channel, remoteAddr), "ssh", "ssh-passphrase", identityID)
 	})
 	sshServer.SetTokenProvisioningHooks(sshtunnel.TokenProvisioningHooks{
 		ApproveContext: func(ctx context.Context, identityID, sshFingerprint, remoteAddr string) (bool, error) {
