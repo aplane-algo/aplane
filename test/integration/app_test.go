@@ -34,6 +34,10 @@ func requireOutputContainsAll(t *testing.T, output string, expected ...string) {
 	}
 }
 
+func signableAddressText(address string) string {
+	return address + " @"
+}
+
 // TestAppDeployAndExercise is a smoke test that validates the entire test app
 // harness: deploy, call methods, read state, exercise boxes and grouped
 // transactions, then clean up. This proves the TEAL contract and Go harness
@@ -598,7 +602,7 @@ func TestAppUpdateAndDeleteCommands(t *testing.T) {
 	updateOutput := runApshellScript(t, apshell, updateCommand)
 	requireOutputContainsAll(t, updateOutput,
 		"✓ Confirmed in round ",
-		fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, creatorAddr),
+		fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
 	)
 
 	appInfo, err := testnet.Client.GetApplicationByID(app.AppID).Do(context.Background())
@@ -635,7 +639,7 @@ func TestAppUpdateAndDeleteCommands(t *testing.T) {
 	deleteOutput := runApshellScript(t, apshell, deleteCommand)
 	requireOutputContainsAll(t, deleteOutput,
 		"✓ Confirmed in round ",
-		fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, creatorAddr),
+		fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
 	)
 
 	if _, err := testnet.Client.GetApplicationByID(app.AppID).Do(context.Background()); err == nil {
@@ -703,7 +707,7 @@ func TestAppCallRawCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, creatorAddr),
+			fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		state, err := app.ReadGlobalState()
@@ -740,7 +744,7 @@ func TestAppCallRawCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, creatorAddr),
+			fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		// Verify box via algod direct read
@@ -764,7 +768,7 @@ func TestAppCallRawCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, creatorAddr),
+			fmt.Sprintf("Calling app %d from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		// Verify local state exists via harness direct read
@@ -872,7 +876,7 @@ func TestAppCallRawPayCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d raw from %s with companion payment of %d microAlgos using Ed25519 key...", app.AppID, creatorAddr, depositAmount),
+			fmt.Sprintf("Calling app %d raw from %s with companion payment of %d microAlgos using Ed25519 key...", app.AppID, signableAddressText(creatorAddr), depositAmount),
 		)
 
 		localState, err := app.ReadLocalState(creatorAddr)
@@ -943,7 +947,7 @@ func TestAppCallMethodCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d method increment(uint64)void from %s using Ed25519 key...", app.AppID, creatorAddr),
+			fmt.Sprintf("Calling app %d method increment(uint64)void from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		state, err := app.ReadGlobalState()
@@ -970,7 +974,7 @@ func TestAppCallMethodCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d method set_box(byte[],byte[])void from %s using Ed25519 key...", app.AppID, creatorAddr),
+			fmt.Sprintf("Calling app %d method set_box(byte[],byte[])void from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		box, err := testnet.Client.GetApplicationBoxByName(app.AppID, []byte("cfg")).Do(context.Background())
@@ -992,7 +996,7 @@ func TestAppCallMethodCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d method optin()void from %s using Ed25519 key...", app.AppID, creatorAddr),
+			fmt.Sprintf("Calling app %d method optin()void from %s using Ed25519 key...", app.AppID, signableAddressText(creatorAddr)),
 		)
 
 		localState, err := app.ReadLocalState(creatorAddr)
@@ -1096,7 +1100,7 @@ func TestAppCallMethodPayCommand(t *testing.T) {
 		output := runApshellScript(t, apshell, command)
 		requireOutputContainsAll(t, output,
 			"✓ Confirmed in round ",
-			fmt.Sprintf("Calling app %d method deposit()void from %s with companion payment of %d microAlgos...", app.AppID, creatorAddr, depositAmount),
+			fmt.Sprintf("Calling app %d method deposit()void from %s with companion payment of %d microAlgos...", app.AppID, signableAddressText(creatorAddr), depositAmount),
 		)
 
 		localState, err := app.ReadLocalState(creatorAddr)
