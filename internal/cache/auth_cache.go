@@ -334,6 +334,9 @@ func (cache *AuthAddressCache) ensureMutex() {
 	if cache.mu == nil {
 		cache.mu = &sync.RWMutex{}
 	}
+	if cache.AuthAddresses == nil {
+		cache.AuthAddresses = make(map[string]string)
+	}
 }
 
 func (cache *AuthAddressCache) saveCacheUnlocked(network string) error {

@@ -310,6 +310,53 @@ func TestUpdateAuthAddressOverwrite(t *testing.T) {
 	}
 }
 
+func TestUpdateAuthAddressInitializesZeroValueCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(oldDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	cache := AuthAddressCache{}
+	if err := cache.UpdateAuthAddress("ADDR1", "AUTH1", "testnet"); err != nil {
+		t.Fatalf("UpdateAuthAddress failed: %v", err)
+	}
+
+	if cache.AuthAddresses == nil {
+		t.Fatal("AuthAddresses map was not initialized")
+	}
+	if got := cache.AuthAddresses["ADDR1"]; got != "AUTH1" {
+		t.Fatalf("auth cache entry = %q, want AUTH1", got)
+	}
+}
+
+func TestRefreshAuthAddressLockedInitializesZeroValueCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(oldDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+
+	cache := AuthAddressCache{}
+	client := newBuildAuthCacheTestAlgodClient(t, map[string]string{"ADDR1": "AUTH1"})
+	got, err := cache.RefreshAuthAddressLocked(client, "ADDR1", "testnet")
+	if err != nil {
+		t.Fatalf("RefreshAuthAddressLocked failed: %v", err)
+	}
+
+	if got != "AUTH1" {
+		t.Fatalf("refreshed auth address = %q, want AUTH1", got)
+	}
+	if cache.AuthAddresses == nil {
+		t.Fatal("AuthAddresses map was not initialized")
+	}
+	if cached := cache.AuthAddresses["ADDR1"]; cached != "AUTH1" {
+		t.Fatalf("auth cache entry = %q, want AUTH1", cached)
+	}
+}
+
 // TestAuthCacheConcurrentReads verifies concurrent read operations
 func TestAuthCacheConcurrentReads(t *testing.T) {
 	tmpDir := t.TempDir()
