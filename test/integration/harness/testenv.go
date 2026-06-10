@@ -346,10 +346,10 @@ func assignClonedPorts(signerDataDir, clientDataDir string) error {
 	}
 	signerPort := ports[0]
 	sshPort := ports[1]
-	if err := setYAMLPath(filepath.Join(signerDataDir, "config.yaml"), signerPort, "signer_port"); err != nil {
+	if err := setYAMLPath(filepath.Join(signerDataDir, "config.yaml"), signerPort, "endpoint", "signer_port"); err != nil {
 		return err
 	}
-	if err := setYAMLPath(filepath.Join(signerDataDir, "config.yaml"), sshPort, "ssh", "port"); err != nil {
+	if err := setYAMLPath(filepath.Join(signerDataDir, "config.yaml"), sshPort, "endpoint", "ssh", "port"); err != nil {
 		return err
 	}
 	endpointsPath := filepath.Join(clientDataDir, config.ClientEndpointsFile)

@@ -187,14 +187,26 @@ binary_abs="$project_root/$binary"
 
 port="$(python3 - <<'PY'
 import os
-import re
 from pathlib import Path
 
 config = Path(os.environ["APSIGNER_DATA"]) / "config.yaml"
-match = re.search(r"(?m)^signer_port:\s*(\d+)\s*$", config.read_text())
-if not match:
-    raise SystemExit("signer_port not found in APSIGNER_DATA/config.yaml")
-print(match.group(1))
+in_endpoint = False
+for raw in config.read_text().splitlines():
+    stripped = raw.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    indent = len(raw) - len(raw.lstrip(" "))
+    if indent == 0:
+        in_endpoint = stripped == "endpoint:"
+        continue
+    if in_endpoint and indent == 2 and stripped.startswith("signer_port:"):
+        value = stripped.split(":", 1)[1].split("#", 1)[0].strip()
+        if not value.isdigit():
+            raise SystemExit(f"endpoint.signer_port is not numeric in {config}")
+        print(value)
+        break
+else:
+    raise SystemExit("endpoint.signer_port not found in APSIGNER_DATA/config.yaml")
 PY
 )"
 
