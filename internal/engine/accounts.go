@@ -55,7 +55,7 @@ func (e *Engine) GetStatus() *StatusResult {
 	}
 }
 
-func (e *Engine) GetBalanceWithContext(ctx context.Context, addressOrAlias string) (*BalanceResult, error) {
+func (e *Engine) GetBalance(ctx context.Context, addressOrAlias string) (*BalanceResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -102,7 +102,7 @@ func (e *Engine) GetBalanceWithContext(ctx context.Context, addressOrAlias strin
 	return result, nil
 }
 
-func (e *Engine) GetAccountBalanceRawWithContext(ctx context.Context, address string) (*BalanceResult, error) {
+func (e *Engine) GetAccountBalanceRaw(ctx context.Context, address string) (*BalanceResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -142,7 +142,7 @@ func (e *Engine) GetAccountBalanceRawWithContext(ctx context.Context, address st
 	return result, nil
 }
 
-func (e *Engine) ListKeysWithContext(ctx context.Context) ([]KeyInfo, error) {
+func (e *Engine) ListKeys(ctx context.Context) ([]KeyInfo, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected
 	}
@@ -166,7 +166,7 @@ func (e *Engine) ListKeysWithContext(ctx context.Context) ([]KeyInfo, error) {
 	return result, nil
 }
 
-func (e *Engine) RefreshKeysWithContext(ctx context.Context) ([]KeyInfo, error) {
+func (e *Engine) RefreshKeys(ctx context.Context) ([]KeyInfo, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected
 	}
@@ -221,7 +221,7 @@ func (e *Engine) listSignersCached() map[string]string {
 
 // ListSigners returns addresses we can actually sign for.
 func (e *Engine) ListSigners() (map[string]string, error) {
-	if err := e.EnsureSignerCacheWithContext(context.Background()); err != nil {
+	if err := e.EnsureSignerCache(context.Background()); err != nil {
 		return nil, err
 	}
 	return e.listSignersCached(), nil
@@ -287,9 +287,9 @@ type HoldersResult struct {
 	QueryErrors int
 }
 
-// GetHoldersWithContext returns addresses with non-zero balance of the specified asset.
+// GetHolders returns addresses with non-zero balance of the specified asset.
 // assetRef can be "algo", an ASA ID, or an ASA unit name.
-func (e *Engine) GetHoldersWithContext(ctx context.Context, assetRef string) (*HoldersResult, error) {
+func (e *Engine) GetHolders(ctx context.Context, assetRef string) (*HoldersResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -319,7 +319,7 @@ func (e *Engine) GetHoldersWithContext(ctx context.Context, assetRef string) (*H
 	var holders []string
 	var queryErrors int
 	for _, addr := range addresses {
-		result, err := e.GetAccountBalanceRawWithContext(ctx, addr)
+		result, err := e.GetAccountBalanceRaw(ctx, addr)
 		if err != nil {
 			queryErrors++
 			continue
@@ -343,7 +343,7 @@ func (e *Engine) GetHoldersWithContext(ctx context.Context, assetRef string) (*H
 }
 
 // GetParticipationStatus returns the consensus participation status for an address
-func (e *Engine) GetParticipationStatusWithContext(ctx context.Context, addressOrAlias string) (*ParticipationResult, error) {
+func (e *Engine) GetParticipationStatus(ctx context.Context, addressOrAlias string) (*ParticipationResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}

@@ -44,9 +44,9 @@ type AppDeployResult struct {
 	AppAddress string `json:"app_address,omitempty"`
 }
 
-// PrepareAppDeployWithContext prepares an application creation transaction
+// PrepareAppDeploy prepares an application creation transaction
 // using the caller's context for algod lookups and compilation.
-func (e *Engine) PrepareAppDeployWithContext(ctx context.Context, params AppDeployParams) (*TransactionPrepResult, error) {
+func (e *Engine) PrepareAppDeploy(ctx context.Context, params AppDeployParams) (*TransactionPrepResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -60,16 +60,16 @@ func (e *Engine) PrepareAppDeployWithContext(ctx context.Context, params AppDepl
 		return nil, fmt.Errorf("missing clear program")
 	}
 
-	signingCtx, err := e.BuildSigningContextWithContext(ctx, params.From)
+	signingCtx, err := e.BuildSigningContext(ctx, params.From)
 	if err != nil {
 		return nil, err
 	}
 
-	approvalProgram, err := e.loadAppProgramWithContext(ctx, params.Approval)
+	approvalProgram, err := e.loadAppProgram(ctx, params.Approval)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load approval program: %w", err)
 	}
-	clearProgram, err := e.loadAppProgramWithContext(ctx, params.Clear)
+	clearProgram, err := e.loadAppProgram(ctx, params.Clear)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load clear program: %w", err)
 	}
@@ -118,7 +118,7 @@ func (e *Engine) PrepareAppDeployWithContext(ctx context.Context, params AppDepl
 	}, nil
 }
 
-func (e *Engine) LookupCreatedApplicationWithContext(ctx context.Context, txID string) (*AppDeployResult, error) {
+func (e *Engine) LookupCreatedApplication(ctx context.Context, txID string) (*AppDeployResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -142,7 +142,7 @@ func (e *Engine) LookupCreatedApplicationWithContext(ctx context.Context, txID s
 	}, nil
 }
 
-func (e *Engine) loadAppProgramWithContext(ctx context.Context, src AppProgramSource) ([]byte, error) {
+func (e *Engine) loadAppProgram(ctx context.Context, src AppProgramSource) ([]byte, error) {
 	programBytes, err := os.ReadFile(src.Path)
 	if err != nil {
 		return nil, err

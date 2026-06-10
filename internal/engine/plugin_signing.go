@@ -56,7 +56,7 @@ func pluginAppCallInfo(txn types.Transaction) *signerapi.AppCallInfo {
 //
 // Edge case: if ALL transactions are plugin-owned (no server-managed), skip /plan and /sign
 // entirely — do group building locally, sign everything locally, submit directly.
-func (e *Engine) SignAndSubmitWithLocalSignersWithContext(ctx context.Context, txns []types.Transaction, localSigners []LocalSigner, lsigArgs []map[string][]byte) (*PluginSubmitResult, error) {
+func (e *Engine) SignAndSubmitWithLocalSigners(ctx context.Context, txns []types.Transaction, localSigners []LocalSigner, lsigArgs []map[string][]byte) (*PluginSubmitResult, error) {
 	// Build lookup map for local signers
 	localSignerKeys := make(map[string][]byte, len(localSigners))
 	for _, signer := range localSigners {
@@ -75,7 +75,7 @@ func (e *Engine) SignAndSubmitWithLocalSignersWithContext(ctx context.Context, t
 
 	// Edge case: all-plugin group — no server-managed transactions
 	if allPlugin {
-		return e.SignAndSubmitAllLocalWithContext(ctx, txns, localSignerKeys)
+		return e.SignAndSubmitAllLocal(ctx, txns, localSignerKeys)
 	}
 
 	// --- Phase 1: /plan — server computes canonical group ---
@@ -252,7 +252,7 @@ func decodeGroupSignResponse(signed []string, want int) ([][]byte, error) {
 	return decoded, nil
 }
 
-func (e *Engine) SignAndSubmitAllLocalWithContext(ctx context.Context, txns []types.Transaction, localSignerKeys map[string][]byte) (*PluginSubmitResult, error) {
+func (e *Engine) SignAndSubmitAllLocal(ctx context.Context, txns []types.Transaction, localSignerKeys map[string][]byte) (*PluginSubmitResult, error) {
 	defer zeroLocalSignerKeys(localSignerKeys)
 
 	// All plugin transactions are Ed25519 — no LSig budget needed, no dummies
@@ -308,7 +308,7 @@ func (e *Engine) BuildPluginContext() (jsonrpc.Context, error) {
 		addressMap[alias] = address
 	}
 
-	if err := e.EnsureSignerCacheWithContext(context.Background()); err != nil {
+	if err := e.EnsureSignerCache(context.Background()); err != nil {
 		return jsonrpc.Context{}, err
 	}
 	accounts := e.signerCacheAddresses()

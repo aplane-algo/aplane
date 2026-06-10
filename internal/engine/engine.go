@@ -269,7 +269,7 @@ func (e *Engine) NewAddressResolver() *addressbook.Resolver {
 	}).WithHoldersProvider(func(assetRef string) ([]string, error) {
 		// The resolver interface carries no context; resolution happens on the
 		// interactive command path where cancellation is not yet plumbed.
-		result, err := e.GetHoldersWithContext(context.Background(), assetRef)
+		result, err := e.GetHolders(context.Background(), assetRef)
 		if result == nil {
 			return nil, err
 		}
@@ -303,15 +303,15 @@ func (e *Engine) listAllAddressesCached() []string {
 
 // ListAllAddresses returns all known addresses (aliases + signer keys).
 func (e *Engine) ListAllAddresses() ([]string, error) {
-	if err := e.EnsureSignerCacheWithContext(context.Background()); err != nil {
+	if err := e.EnsureSignerCache(context.Background()); err != nil {
 		return nil, err
 	}
 	return e.listAllAddressesCached(), nil
 }
 
-// EnsureSignerCacheWithContext refreshes the signer cache from the connected
+// EnsureSignerCache refreshes the signer cache from the connected
 // signer if the cache is empty, using ctx for the inventory request.
-func (e *Engine) EnsureSignerCacheWithContext(ctx context.Context) error {
+func (e *Engine) EnsureSignerCache(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -343,7 +343,7 @@ func (e *Engine) EnsureSignerCacheWithContext(ctx context.Context) error {
 	return nil
 }
 
-func (e *Engine) getSuggestedParamsWithFeeWithContext(ctx context.Context, fee uint64, useFlatFee bool) (types.SuggestedParams, error) {
+func (e *Engine) getSuggestedParamsWithFee(ctx context.Context, fee uint64, useFlatFee bool) (types.SuggestedParams, error) {
 	sp, err := e.AlgodClient.SuggestedParams().Do(ctx)
 	if err != nil {
 		return types.SuggestedParams{}, fmt.Errorf("failed to get suggested params: %w", err)

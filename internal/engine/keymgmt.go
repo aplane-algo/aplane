@@ -10,7 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
-func (e *Engine) ListKeyTypesWithContext(ctx context.Context) ([]signerapi.KeyTypeInfo, error) {
+func (e *Engine) ListKeyTypes(ctx context.Context) ([]signerapi.KeyTypeInfo, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected
 	}
@@ -21,7 +21,7 @@ func (e *Engine) ListKeyTypesWithContext(ctx context.Context) ([]signerapi.KeyTy
 	return resp.KeyTypes, nil
 }
 
-func (e *Engine) GenerateKeyWithContext(ctx context.Context, keyType string, params map[string]string) (*GenerateKeyResult, error) {
+func (e *Engine) GenerateKey(ctx context.Context, keyType string, params map[string]string) (*GenerateKeyResult, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected
 	}
@@ -30,11 +30,11 @@ func (e *Engine) GenerateKeyWithContext(ctx context.Context, keyType string, par
 		return nil, fmt.Errorf("failed to generate key: %w", err)
 	}
 	// Refresh signer cache to include the new key
-	_, _ = e.RefreshKeysWithContext(ctx)
+	_, _ = e.RefreshKeys(ctx)
 	return &GenerateKeyResult{Address: resp.Address, KeyType: resp.KeyType}, nil
 }
 
-func (e *Engine) DeleteKeyWithContext(ctx context.Context, address string) error {
+func (e *Engine) DeleteKey(ctx context.Context, address string) error {
 	if !e.IsConnected() {
 		return ErrNotConnected
 	}
@@ -42,6 +42,6 @@ func (e *Engine) DeleteKeyWithContext(ctx context.Context, address string) error
 		return fmt.Errorf("failed to delete key: %w", err)
 	}
 	// Refresh signer cache to reflect the deletion
-	_, _ = e.RefreshKeysWithContext(ctx)
+	_, _ = e.RefreshKeys(ctx)
 	return nil
 }

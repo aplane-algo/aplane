@@ -37,7 +37,7 @@ func testFixturePath(t *testing.T, elems ...string) string {
 func TestPrepareAppCallRaw_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
 
-	_, err := eng.PrepareAppCallRawWithContext(context.Background(), RawAppCallParams{
+	_, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
 		AppID: 123,
 		From:  testAddress(1).String(),
 	})
@@ -60,7 +60,7 @@ func TestPrepareAppCallRaw_UpdateIncludesPrograms(t *testing.T) {
 	from := testAddress(1).String()
 	eng := newAppCallTestEngine(t, client, from)
 
-	prep, err := eng.PrepareAppCallRawWithContext(context.Background(), RawAppCallParams{
+	prep, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
 		AppID:        123,
 		From:         from,
 		OnCompletion: types.UpdateApplicationOC,
@@ -98,7 +98,7 @@ func TestPrepareAppCallRaw_RejectsProgramsWithoutUpdate(t *testing.T) {
 	from := testAddress(1).String()
 	eng := newAppCallTestEngine(t, client, from)
 
-	_, err := eng.PrepareAppCallRawWithContext(context.Background(), RawAppCallParams{
+	_, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
 		AppID:        123,
 		From:         from,
 		OnCompletion: types.NoOpOC,
@@ -121,7 +121,7 @@ func TestPrepareAppCallRaw_UpdateRequiresPrograms(t *testing.T) {
 	from := testAddress(1).String()
 	eng := newAppCallTestEngine(t, client, from)
 
-	_, err := eng.PrepareAppCallRawWithContext(context.Background(), RawAppCallParams{
+	_, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
 		AppID:        123,
 		From:         from,
 		OnCompletion: types.UpdateApplicationOC,
@@ -152,7 +152,7 @@ func TestEnsureAppReferences(t *testing.T) {
 func TestPrepareAppCallMethod_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
 
-	_, err := eng.PrepareAppCallMethodWithContext(context.Background(), MethodAppCallParams{
+	_, err := eng.PrepareAppCallMethod(context.Background(), MethodAppCallParams{
 		ABIPath: testFixturePath(t, "testapp", "aplane_test.json"),
 		Method:  "increment",
 		Args:    []string{"5"},
@@ -171,7 +171,7 @@ func TestPrepareAppCallMethod_EmptyABIPath(t *testing.T) {
 	from := testAddress(1).String()
 	eng := newAppCallTestEngine(t, client, from)
 
-	_, err := eng.PrepareAppCallMethodWithContext(context.Background(), MethodAppCallParams{
+	_, err := eng.PrepareAppCallMethod(context.Background(), MethodAppCallParams{
 		Method: "increment",
 		Args:   []string{"5"},
 		RawAppCallParams: RawAppCallParams{
@@ -191,7 +191,7 @@ func TestPrepareAppCallRaw_SuccessIncludesReferencesAndLsigArgs(t *testing.T) {
 	eng := newAppCallTestEngine(t, client, from)
 
 	lsigArgs := map[string][]byte{"preimage": []byte("secret")}
-	prep, err := eng.PrepareAppCallRawWithContext(context.Background(), RawAppCallParams{
+	prep, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
 		AppID:         123,
 		From:          from,
 		AppArgs:       [][]byte{[]byte("arg1"), []byte("arg2")},
@@ -249,7 +249,7 @@ func TestPrepareAppCallRaw_RejectsInvalidAccount(t *testing.T) {
 	from := testAddress(1).String()
 	eng := newAppCallTestEngine(t, client, from)
 
-	_, err := eng.PrepareAppCallRawWithContext(context.Background(), RawAppCallParams{
+	_, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
 		AppID:    123,
 		From:     from,
 		Accounts: []string{"not-an-address"},
@@ -264,7 +264,7 @@ func TestPrepareAppCallRaw_RejectsZeroForeignAsset(t *testing.T) {
 	from := testAddress(1).String()
 	eng := newAppCallTestEngine(t, client, from)
 
-	_, err := eng.PrepareAppCallRawWithContext(context.Background(), RawAppCallParams{
+	_, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
 		AppID:         123,
 		From:          from,
 		ForeignAssets: []uint64{0},
@@ -279,7 +279,7 @@ func TestPrepareAppCallRaw_RejectsEmptyBoxName(t *testing.T) {
 	from := testAddress(1).String()
 	eng := newAppCallTestEngine(t, client, from)
 
-	_, err := eng.PrepareAppCallRawWithContext(context.Background(), RawAppCallParams{
+	_, err := eng.PrepareAppCallRaw(context.Background(), RawAppCallParams{
 		AppID: 123,
 		From:  from,
 		Boxes: []types.AppBoxReference{{AppID: 123, Name: nil}},
@@ -308,7 +308,7 @@ func TestPrepareAppCallMethod_SuccessEncodesMethodAndPropagatesLsigArgs(t *testi
 		t.Fatalf("EncodeArgs() error = %v", err)
 	}
 
-	prepared, err := eng.PrepareAppCallMethodWithContext(context.Background(), MethodAppCallParams{
+	prepared, err := eng.PrepareAppCallMethod(context.Background(), MethodAppCallParams{
 		ABIPath: abiPath,
 		Method:  "increment",
 		Args:    []string{"5"},

@@ -20,7 +20,7 @@ type SignerStatusSyncResult struct {
 	CacheCleared    bool
 }
 
-func (e *Engine) SyncSignerStatusWithContext(ctx context.Context) (*SignerStatusSyncResult, error) {
+func (e *Engine) SyncSignerStatus(ctx context.Context) (*SignerStatusSyncResult, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected
 	}
@@ -53,7 +53,7 @@ func (e *Engine) SyncSignerStatusWithContext(ctx context.Context) (*SignerStatus
 
 	needsRefresh := revisionChanged || e.signerCacheIsLocked() || e.signerCacheCount() != status.KeyCount
 	if needsRefresh {
-		if _, err := e.RefreshKeysWithContext(ctx); err != nil {
+		if _, err := e.RefreshKeys(ctx); err != nil {
 			return result, err
 		}
 		result.CacheRefreshed = true

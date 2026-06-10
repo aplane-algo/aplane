@@ -175,8 +175,8 @@ func TestEnsureSignerCacheWithContextPropagatesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = eng.EnsureSignerCacheWithContext(ctx)
+	err = eng.EnsureSignerCache(ctx)
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("EnsureSignerCacheWithContext() error = %v, want context.Canceled", err)
+		t.Fatalf("EnsureSignerCache() error = %v, want context.Canceled", err)
 	}
 }

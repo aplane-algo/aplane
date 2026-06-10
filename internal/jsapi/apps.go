@@ -55,7 +55,7 @@ func (a *API) jsAppDeploy(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(err.Error()))
 	}
 
-	prep, err := a.engine.PrepareAppDeployWithContext(a.Context(), engine.AppDeployParams{
+	prep, err := a.engine.PrepareAppDeploy(a.Context(), engine.AppDeployParams{
 		From: fromAddr,
 		Approval: engine.AppProgramSource{
 			Path:     approvalPath,
@@ -79,7 +79,7 @@ func (a *API) jsAppDeploy(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("appDeploy() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appDeploy() error submitting transaction: %v", err)))
 	}
@@ -89,7 +89,7 @@ func (a *API) jsAppDeploy(call goja.FunctionCall) goja.Value {
 		"confirmed": result.Confirmed,
 	}
 	if opts.Wait && result.Confirmed {
-		created, err := a.engine.LookupCreatedApplicationWithContext(a.Context(), result.TxID)
+		created, err := a.engine.LookupCreatedApplication(a.Context(), result.TxID)
 		if err != nil {
 			panic(a.runtime.ToValue(fmt.Sprintf("appDeploy() error resolving created app: %v", err)))
 		}
@@ -104,7 +104,7 @@ func (a *API) jsAppGlobal(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "appGlobal() requires an appId argument")
 	appID := toUint64(a.runtime, call.Arguments[0])
 
-	result, err := a.engine.ReadAppGlobalStateWithContext(a.Context(), appID)
+	result, err := a.engine.ReadAppGlobalState(a.Context(), appID)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appGlobal() error: %v", err)))
 	}
@@ -116,7 +116,7 @@ func (a *API) jsAppInfo(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "appInfo() requires an appId argument")
 	appID := toUint64(a.runtime, call.Arguments[0])
 
-	result, err := a.engine.ReadAppInfoWithContext(a.Context(), appID)
+	result, err := a.engine.ReadAppInfo(a.Context(), appID)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appInfo() error: %v", err)))
 	}
@@ -134,7 +134,7 @@ func (a *API) jsAppLocal(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("appLocal() error resolving account: %v", err)))
 	}
 
-	result, err := a.engine.ReadAppLocalStateWithContext(a.Context(), address, appID)
+	result, err := a.engine.ReadAppLocalState(a.Context(), address, appID)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appLocal() error: %v", err)))
 	}
@@ -151,7 +151,7 @@ func (a *API) jsAppBox(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("appBox() invalid box name: %v", err)))
 	}
 
-	result, err := a.engine.ReadAppBoxWithContext(a.Context(), appID, name)
+	result, err := a.engine.ReadAppBox(a.Context(), appID, name)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appBox() error: %v", err)))
 	}
@@ -163,7 +163,7 @@ func (a *API) jsAppBoxes(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "appBoxes() requires an appId argument")
 	appID := toUint64(a.runtime, call.Arguments[0])
 
-	result, err := a.engine.ListAppBoxesWithContext(a.Context(), appID)
+	result, err := a.engine.ListAppBoxes(a.Context(), appID)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appBoxes() error: %v", err)))
 	}
@@ -222,19 +222,19 @@ func (a *API) jsAppCallRaw(call goja.FunctionCall) goja.Value {
 			panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error preparing grouped call: %v", err)))
 		}
 
-		result, err := a.engine.ExecutePreparedGroupWithContext(a.Context(), group, opts.Wait)
+		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, opts.Wait)
 		if err != nil {
 			panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error submitting grouped call: %v", err)))
 		}
 		return a.preparedGroupResultValue(result, "")
 	}
 
-	prep, err := a.engine.PrepareAppCallRawWithContext(a.Context(), rawParams)
+	prep, err := a.engine.PrepareAppCallRaw(a.Context(), rawParams)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCallRaw() error submitting transaction: %v", err)))
 	}
@@ -319,19 +319,19 @@ func (a *API) jsAppCall(call goja.FunctionCall) goja.Value {
 			panic(a.runtime.ToValue(fmt.Sprintf("appCall() error preparing grouped call: %v", err)))
 		}
 
-		result, err := a.engine.ExecutePreparedGroupWithContext(a.Context(), group, opts.Wait)
+		result, err := a.engine.ExecutePreparedGroup(a.Context(), group, opts.Wait)
 		if err != nil {
 			panic(a.runtime.ToValue(fmt.Sprintf("appCall() error submitting grouped call: %v", err)))
 		}
 		return a.preparedGroupResultValue(result, methodSignature)
 	}
 
-	prepared, err := a.engine.PrepareAppCallMethodWithContext(a.Context(), methodParams)
+	prepared, err := a.engine.PrepareAppCallMethod(a.Context(), methodParams)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCall() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prepared.Prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prepared.Prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("appCall() error submitting transaction: %v", err)))
 	}

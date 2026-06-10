@@ -158,9 +158,9 @@ func (e *Engine) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 	}
 }
 
-// DiscoverSentryComponentKeysWithContext queries one endpoint and returns
+// DiscoverSentryComponentKeys queries one endpoint and returns
 // sentry component public keys that can be mapped for guarded signing.
-func (e *Engine) DiscoverSentryComponentKeysWithContext(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredSentryComponentKey, error) {
+func (e *Engine) DiscoverSentryComponentKeys(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredSentryComponentKey, error) {
 	var client sentryComponentClient
 	var cleanup func()
 	if endpoint.URL == "self" {

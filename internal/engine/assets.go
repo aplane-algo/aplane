@@ -79,7 +79,7 @@ func (e *Engine) SaveASACache() error {
 	})
 }
 
-func (e *Engine) AddASAToCacheWithContext(ctx context.Context, assetID uint64) (*ASAInfo, error) {
+func (e *Engine) AddASAToCache(ctx context.Context, assetID uint64) (*ASAInfo, error) {
 	info, err := e.GetASAInfoWithContext(ctx, assetID)
 	if err != nil {
 		return nil, err

@@ -54,7 +54,7 @@ type BalanceCheckResult struct {
 	RemainingBalance uint64
 }
 
-func (e *Engine) defaultSubmitOptionsWithContext(ctx context.Context, wait bool, writeNotices *[]TransactionWriteNotice, out *bytes.Buffer) clientsign.SubmitOptions {
+func (e *Engine) defaultSubmitOptions(ctx context.Context, wait bool, writeNotices *[]TransactionWriteNotice, out *bytes.Buffer) clientsign.SubmitOptions {
 	if out == nil {
 		out = &bytes.Buffer{}
 	}
@@ -116,7 +116,7 @@ func (e *Engine) refreshSubmitSigningState(ctx context.Context, txns []types.Tra
 	if !e.submitEffectiveSignersNeedKeyRefresh(txns) {
 		return nil
 	}
-	if _, err := e.RefreshKeysWithContext(ctx); err != nil {
+	if _, err := e.RefreshKeys(ctx); err != nil {
 		return fmt.Errorf("failed to refresh signer keys: %w", err)
 	}
 	return nil
@@ -159,9 +159,9 @@ func (e *Engine) submitEffectiveSignersNeedKeyRefresh(txns []types.Transaction) 
 	return false
 }
 
-// SignAndSubmitWithContext signs and submits a prepared transaction using the
+// SignAndSubmit signs and submits a prepared transaction using the
 // caller's context for signer and algod operations.
-func (e *Engine) SignAndSubmitWithContext(ctx context.Context, prep *TransactionPrepResult, wait bool) (*SubmitResult, error) {
+func (e *Engine) SignAndSubmit(ctx context.Context, prep *TransactionPrepResult, wait bool) (*SubmitResult, error) {
 	// Build lsigArgsMap if LsigArgs are provided
 	var lsigArgsMap []map[string][]byte
 	if len(prep.LsigArgs) > 0 {
@@ -170,7 +170,7 @@ func (e *Engine) SignAndSubmitWithContext(ctx context.Context, prep *Transaction
 
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
-	opts := e.defaultSubmitOptionsWithContext(ctx, wait, &writeNotices, &output)
+	opts := e.defaultSubmitOptions(ctx, wait, &writeNotices, &output)
 	opts.LsigArgsMap = lsigArgsMap
 	if prep.AppCallInfo != nil {
 		opts.AppCallInfo = []*signerapi.AppCallInfo{prep.AppCallInfo}
@@ -198,19 +198,19 @@ func (e *Engine) SignAndSubmitWithContext(ctx context.Context, prep *Transaction
 }
 
 // WaitForConfirmation waits for a transaction to be confirmed
-func (e *Engine) WaitForConfirmationWithContext(ctx context.Context, txid string, rounds uint64) error {
-	_, err := e.WaitForConfirmationResultWithContext(ctx, txid, rounds)
+func (e *Engine) WaitForConfirmation(ctx context.Context, txid string, rounds uint64) error {
+	_, err := e.WaitForConfirmationResult(ctx, txid, rounds)
 	return err
 }
 
-// WaitForConfirmationResultWithContext waits for a transaction to be confirmed
+// WaitForConfirmationResult waits for a transaction to be confirmed
 // and returns progress output for callers to render.
-func (e *Engine) WaitForConfirmationResultWithContext(ctx context.Context, txid string, rounds uint64) (*ConfirmationResult, error) {
+func (e *Engine) WaitForConfirmationResult(ctx context.Context, txid string, rounds uint64) (*ConfirmationResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
 	var output bytes.Buffer
-	if err := algo.WaitForConfirmationWithContext(ctx, e.AlgodClient, txid, rounds, &output); err != nil {
+	if err := algo.WaitForConfirmation(ctx, e.AlgodClient, txid, rounds, &output); err != nil {
 		return &ConfirmationResult{Output: output.String()}, err
 	}
 	return &ConfirmationResult{Output: output.String()}, nil
@@ -232,10 +232,10 @@ func (e *Engine) CanSignForAddress(address string) (bool, bool) {
 	return true, isLsig
 }
 
-func (e *Engine) SignAndSubmitGroupWithContext(ctx context.Context, txns []types.Transaction, lsigArgs []map[string][]byte) (*SignTransactionsResult, error) {
+func (e *Engine) SignAndSubmitGroup(ctx context.Context, txns []types.Transaction, lsigArgs []map[string][]byte) (*SignTransactionsResult, error) {
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
-	opts := e.defaultSubmitOptionsWithContext(ctx, true, &writeNotices, &output)
+	opts := e.defaultSubmitOptions(ctx, true, &writeNotices, &output)
 	opts.LsigArgsMap = lsigArgs
 	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, opts)
 	result := &SignTransactionsResult{
@@ -260,16 +260,16 @@ type SignTransactionsResult struct {
 	WriteNotices []TransactionWriteNotice // Transaction JSON write outcomes
 }
 
-// SignAndSubmitTransactionsWithContext signs and submits pre-built transactions.
+// SignAndSubmitTransactions signs and submits pre-built transactions.
 // The transactions are already constructed; this only handles signing/submission.
-func (e *Engine) SignAndSubmitTransactionsWithContext(ctx context.Context, txns []types.Transaction, wait bool) (*SignTransactionsResult, error) {
+func (e *Engine) SignAndSubmitTransactions(ctx context.Context, txns []types.Transaction, wait bool) (*SignTransactionsResult, error) {
 	if len(txns) == 0 {
 		return nil, fmt.Errorf("no transactions provided")
 	}
 
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
-	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, e.defaultSubmitOptionsWithContext(ctx, wait, &writeNotices, &output))
+	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, e.defaultSubmitOptions(ctx, wait, &writeNotices, &output))
 	result := &SignTransactionsResult{
 		TxIDs:        txIDs,
 		Transactions: originalSubmittedTransactions(txns, submittedTxns),

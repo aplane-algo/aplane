@@ -44,7 +44,7 @@ func (a *App) SignFile(ctx context.Context, req SignFileRequest) (*SignFileComma
 
 // signTransactions signs and submits pre-built transactions.
 func (a *App) signTransactions(ctx context.Context, txns []types.Transaction, wait bool) (*GroupSubmitSummary, error) {
-	result, err := a.eng.SignAndSubmitTransactionsWithContext(ctx, txns, wait)
+	result, err := a.eng.SignAndSubmitTransactions(ctx, txns, wait)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, result *jsonrpc.Exec
 
 	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
 	if localSignerSet != nil {
-		submit, err := a.eng.SignAndSubmitWithLocalSignersWithContext(ctx, txns, localSignerSet.engineSigners, lsigArgsSlice)
+		submit, err := a.eng.SignAndSubmitWithLocalSigners(ctx, txns, localSignerSet.engineSigners, lsigArgsSlice)
 		if err != nil {
 			if submit != nil {
 				return newGroupSubmitSummary(submit.TxIDs, !a.eng.GetSimulate(), submit.Output, nil), err
@@ -84,7 +84,7 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, result *jsonrpc.Exec
 		}
 		return newGroupSubmitSummary(submit.TxIDs, !a.eng.GetSimulate(), submit.Output, nil), nil
 	}
-	submit, err := a.eng.SignAndSubmitGroupWithContext(ctx, txns, lsigArgsSlice)
+	submit, err := a.eng.SignAndSubmitGroup(ctx, txns, lsigArgsSlice)
 	if err != nil {
 		if submit != nil {
 			return newGroupSubmitSummary(

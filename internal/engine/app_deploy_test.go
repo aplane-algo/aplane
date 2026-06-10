@@ -11,7 +11,7 @@ import (
 func TestPrepareAppDeploy_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
 
-	_, err := eng.PrepareAppDeployWithContext(context.Background(), AppDeployParams{
+	_, err := eng.PrepareAppDeploy(context.Background(), AppDeployParams{
 		From: "alice",
 		Approval: AppProgramSource{
 			Path: "approval.teal",

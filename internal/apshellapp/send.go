@@ -150,7 +150,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 
 		var err error
 		if assetID == 0 {
-			prep, check, prepErr := a.eng.PreparePaymentWithContext(ctx, engine.SendPaymentParams{
+			prep, check, prepErr := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 				From:       fromAddr,
 				To:         toAddr,
 				Amount:     amountUnits,
@@ -163,7 +163,7 @@ func (a *App) prepareNonAtomicSend(ctx context.Context, plan *SendPlan) (*NonAto
 			item.BalanceCheck = balanceCheckDetailsFromEngine(check)
 			err = prepErr
 		} else {
-			prep, check, prepErr := a.eng.PrepareASATransferWithContext(ctx, engine.SendASAParams{
+			prep, check, prepErr := a.eng.PrepareASATransfer(ctx, engine.SendASAParams{
 				From:       fromAddr,
 				To:         toAddr,
 				AssetID:    assetID,
@@ -223,11 +223,11 @@ func (a *App) prepareAtomicSend(ctx context.Context, plan *SendPlan) (*AtomicSen
 			for i, to := range plan.ToAddresses {
 				payments[i] = engine.AtomicPaymentParams{From: plan.FromAddresses[0], To: to, Amount: amountUnits, Note: plan.Note}
 			}
-			checks, err := a.eng.ValidateAtomicPaymentsWithContext(ctx, payments, plan.Fee)
+			checks, err := a.eng.ValidateAtomicPayments(ctx, payments, plan.Fee)
 			if err != nil {
 				return nil, err
 			}
-			prep, err := a.eng.PrepareAtomicPaymentsWithContext(ctx, payments, groupParams)
+			prep, err := a.eng.PrepareAtomicPayments(ctx, payments, groupParams)
 			if err != nil {
 				return nil, err
 			}
@@ -240,11 +240,11 @@ func (a *App) prepareAtomicSend(ctx context.Context, plan *SendPlan) (*AtomicSen
 		for i, to := range plan.ToAddresses {
 			transfers[i] = engine.AtomicASAParams{From: plan.FromAddresses[0], To: to, AssetID: assetID, Amount: amountUnits, Note: plan.Note}
 		}
-		checks, err := a.eng.ValidateAtomicASATransfersWithContext(ctx, transfers)
+		checks, err := a.eng.ValidateAtomicASATransfers(ctx, transfers)
 		if err != nil {
 			return nil, err
 		}
-		prep, err := a.eng.PrepareAtomicASATransfersWithContext(ctx, transfers, groupParams)
+		prep, err := a.eng.PrepareAtomicASATransfers(ctx, transfers, groupParams)
 		if err != nil {
 			return nil, err
 		}
@@ -258,11 +258,11 @@ func (a *App) prepareAtomicSend(ctx context.Context, plan *SendPlan) (*AtomicSen
 			for i, from := range plan.FromAddresses {
 				payments[i] = engine.AtomicPaymentParams{From: from, To: plan.ToAddresses[0], Amount: amountUnits, Note: plan.Note}
 			}
-			checks, err := a.eng.ValidateAtomicPaymentsWithContext(ctx, payments, plan.Fee)
+			checks, err := a.eng.ValidateAtomicPayments(ctx, payments, plan.Fee)
 			if err != nil {
 				return nil, err
 			}
-			prep, err := a.eng.PrepareAtomicPaymentsWithContext(ctx, payments, groupParams)
+			prep, err := a.eng.PrepareAtomicPayments(ctx, payments, groupParams)
 			if err != nil {
 				return nil, err
 			}
@@ -275,11 +275,11 @@ func (a *App) prepareAtomicSend(ctx context.Context, plan *SendPlan) (*AtomicSen
 		for i, from := range plan.FromAddresses {
 			transfers[i] = engine.AtomicASAParams{From: from, To: plan.ToAddresses[0], AssetID: assetID, Amount: amountUnits, Note: plan.Note}
 		}
-		checks, err := a.eng.ValidateAtomicASATransfersWithContext(ctx, transfers)
+		checks, err := a.eng.ValidateAtomicASATransfers(ctx, transfers)
 		if err != nil {
 			return nil, err
 		}
-		prep, err := a.eng.PrepareAtomicASATransfersWithContext(ctx, transfers, groupParams)
+		prep, err := a.eng.PrepareAtomicASATransfers(ctx, transfers, groupParams)
 		if err != nil {
 			return nil, err
 		}
@@ -314,7 +314,7 @@ func (a *App) executeNonAtomicSend(ctx context.Context, plan *NonAtomicSendPlan,
 		}
 
 		itemResult.Warnings = sendWarnings(item, plan.Amount)
-		submit, err := a.eng.SignAndSubmitWithContext(ctx, item.Prep.enginePrep, wait)
+		submit, err := a.eng.SignAndSubmit(ctx, item.Prep.enginePrep, wait)
 		if err != nil {
 			if submit != nil {
 				itemResult.TxID = submit.TxID
@@ -349,7 +349,7 @@ func (a *App) executeAtomicSend(ctx context.Context, plan *AtomicSendPlan) (*Ato
 		return nil, err
 	}
 
-	submit, err := a.eng.SignAndSubmitAtomicWithContext(ctx, plan.Prep.enginePrep, plan.Wait)
+	submit, err := a.eng.SignAndSubmitAtomic(ctx, plan.Prep.enginePrep, plan.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("atomic transaction group failed: %w", err)
 	}

@@ -1406,7 +1406,7 @@ func TestPreparedGroupDepositFlow(t *testing.T) {
 			t.Fatalf("PreparePaymentAndAppCall() error = %v", err)
 		}
 
-		result, err := eng.ExecutePreparedGroupWithContext(context.Background(), group, true)
+		result, err := eng.ExecutePreparedGroup(context.Background(), group, true)
 		if err != nil {
 			t.Fatalf("ExecutePreparedGroup(simulate) error = %v", err)
 		}
@@ -1450,7 +1450,7 @@ func TestPreparedGroupDepositFlow(t *testing.T) {
 			t.Fatalf("PreparePaymentAndAppCall() error = %v", err)
 		}
 
-		result, err := eng.ExecutePreparedGroupWithContext(context.Background(), group, true)
+		result, err := eng.ExecutePreparedGroup(context.Background(), group, true)
 		if err != nil {
 			t.Fatalf("ExecutePreparedGroup() error = %v", err)
 		}
@@ -1549,7 +1549,7 @@ func TestPreparedGroupDepositMethodFlow(t *testing.T) {
 			t.Fatalf("PreparePaymentAndMethodCall() error = %v", err)
 		}
 
-		result, err := eng.ExecutePreparedGroupWithContext(context.Background(), group, true)
+		result, err := eng.ExecutePreparedGroup(context.Background(), group, true)
 		if err != nil {
 			t.Fatalf("ExecutePreparedGroup(simulate) error = %v", err)
 		}
@@ -1602,7 +1602,7 @@ func TestPreparedGroupDepositMethodFlow(t *testing.T) {
 			t.Fatalf("PreparePaymentAndMethodCall() error = %v", err)
 		}
 
-		result, err := eng.ExecutePreparedGroupWithContext(context.Background(), group, true)
+		result, err := eng.ExecutePreparedGroup(context.Background(), group, true)
 		if err != nil {
 			t.Fatalf("ExecutePreparedGroup() error = %v", err)
 		}
@@ -1652,7 +1652,7 @@ func newIntegrationEngine(t *testing.T, algodClient *algod.Client, signerURL, to
 	}
 
 	eng.Connection.SignerClient = util.NewSignerClientWithToken(signerURL, strings.TrimSpace(string(tokenBytes)))
-	if err := eng.EnsureSignerCacheWithContext(context.Background()); err != nil {
+	if err := eng.EnsureSignerCache(context.Background()); err != nil {
 		return nil, err
 	}
 	return eng, nil

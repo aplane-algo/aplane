@@ -132,7 +132,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	eng.SentryEndpoints = config.SentryEndpointConfigs{
 		sentryPubHex: {URL: sentry.URL, TokenFile: sentryTokenFile},
 	}
-	if err := eng.EnsureSignerCacheWithContext(context.Background()); err != nil {
+	if err := eng.EnsureSignerCache(context.Background()); err != nil {
 		t.Fatalf("Failed to populate signer cache from signer /keys: %v", err)
 	}
 
@@ -169,7 +169,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	// → user/sentry component signatures for the guarded position → non-guarded
 	// /sign for the falcon position → /sign/assemble → submit.
 	t.Log("Submitting mixed guarded+falcon atomic group...")
-	result, err := eng.SignAndSubmitTransactionsWithContext(
+	result, err := eng.SignAndSubmitTransactions(
 		context.Background(),
 		[]types.Transaction{guardedTxn, falconTxn},
 		true,
@@ -211,7 +211,7 @@ func bestEffortCloseAccount(t *testing.T, eng *engine.Engine, testnet *harness.T
 		t.Logf("cleanup: building close txn for %s failed: %v", from, err)
 		return
 	}
-	if _, err := eng.SignAndSubmitTransactionsWithContext(context.Background(), []types.Transaction{closeTxn}, true); err != nil {
+	if _, err := eng.SignAndSubmitTransactions(context.Background(), []types.Transaction{closeTxn}, true); err != nil {
 		t.Logf("cleanup: closing %s to %s failed (funds left in place): %v", from, to, err)
 		return
 	}

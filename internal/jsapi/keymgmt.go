@@ -17,7 +17,7 @@ import (
 // jsKeyTypes returns available key types from the signer.
 // keyTypes() - Returns array of key type objects
 func (a *API) jsKeyTypes(call goja.FunctionCall) goja.Value {
-	keyTypes, err := a.engine.ListKeyTypesWithContext(a.Context())
+	keyTypes, err := a.engine.ListKeyTypes(a.Context())
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("keyTypes() error: %v", err)))
 	}
@@ -92,7 +92,7 @@ func (a *API) jsGenerateKey(call goja.FunctionCall) goja.Value {
 		}
 	}
 
-	result, err := a.engine.GenerateKeyWithContext(a.Context(), keyType, params)
+	result, err := a.engine.GenerateKey(a.Context(), keyType, params)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("generateKey() error: %v", err)))
 	}
@@ -114,7 +114,7 @@ func (a *API) jsDeleteKey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("deleteKey() error resolving address: %v", err)))
 	}
 
-	if err := a.engine.DeleteKeyWithContext(a.Context(), address); err != nil {
+	if err := a.engine.DeleteKey(a.Context(), address); err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("deleteKey() error: %v", err)))
 	}
 

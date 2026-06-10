@@ -13,7 +13,7 @@ import (
 
 func TestPreparePayment_NoAlgodClientError(t *testing.T) {
 	eng, _ := NewEngine("testnet")
-	_, _, err := eng.PreparePaymentWithContext(context.Background(), SendPaymentParams{From: testAddr(1), To: testAddr(2), Amount: 1000})
+	_, _, err := eng.PreparePayment(context.Background(), SendPaymentParams{From: testAddr(1), To: testAddr(2), Amount: 1000})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -28,7 +28,7 @@ func TestPreparePayment_Success(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000) // 1 ALGO
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, balCheck, err := eng.PreparePaymentWithContext(context.Background(), SendPaymentParams{
+	result, balCheck, err := eng.PreparePayment(context.Background(), SendPaymentParams{
 		From:   sender,
 		To:     receiver,
 		Amount: 1_000_000, // 1 ALGO
@@ -56,7 +56,7 @@ func TestPreparePayment_InsufficientFunds(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, balCheck, err := eng.PreparePaymentWithContext(context.Background(), SendPaymentParams{
+	_, balCheck, err := eng.PreparePayment(context.Background(), SendPaymentParams{
 		From:   sender,
 		To:     receiver,
 		Amount: 5_000_000, // 5 ALGO
@@ -78,7 +78,7 @@ func TestPreparePayment_NewReceiver(t *testing.T) {
 	transport.addAccount(receiver, 0) // new account
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, balCheck, err := eng.PreparePaymentWithContext(context.Background(), SendPaymentParams{
+	_, balCheck, err := eng.PreparePayment(context.Background(), SendPaymentParams{
 		From:   sender,
 		To:     receiver,
 		Amount: 1_000_000,
@@ -100,7 +100,7 @@ func TestPreparePayment_BelowMinBalance(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, balCheck, err := eng.PreparePaymentWithContext(context.Background(), SendPaymentParams{
+	_, balCheck, err := eng.PreparePayment(context.Background(), SendPaymentParams{
 		From:   sender,
 		To:     receiver,
 		Amount: 150_000, // 0.15 ALGO, leaves < min balance
@@ -122,7 +122,7 @@ func TestPreparePayment_WithClose(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, _, err := eng.PreparePaymentWithContext(context.Background(), SendPaymentParams{
+	result, _, err := eng.PreparePayment(context.Background(), SendPaymentParams{
 		From:   sender,
 		To:     receiver,
 		Amount: 0,
@@ -138,7 +138,7 @@ func TestPreparePayment_WithClose(t *testing.T) {
 
 func TestPrepareClose_NoAlgodClientError(t *testing.T) {
 	eng, _ := NewEngine("testnet")
-	_, _, err := eng.PrepareCloseWithContext(context.Background(), CloseAccountParams{From: testAddr(1), CloseTo: testAddr(2)})
+	_, _, err := eng.PrepareClose(context.Background(), CloseAccountParams{From: testAddr(1), CloseTo: testAddr(2)})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -158,7 +158,7 @@ func TestPrepareClose_AccountOnline(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, checkResult, err := eng.PrepareCloseWithContext(context.Background(), CloseAccountParams{From: sender, CloseTo: receiver})
+	_, checkResult, err := eng.PrepareClose(context.Background(), CloseAccountParams{From: sender, CloseTo: receiver})
 	if err == nil {
 		t.Fatal("expected error for online account")
 	}
@@ -182,7 +182,7 @@ func TestPrepareClose_AccountHasASAs(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, checkResult, err := eng.PrepareCloseWithContext(context.Background(), CloseAccountParams{From: sender, CloseTo: receiver})
+	_, checkResult, err := eng.PrepareClose(context.Background(), CloseAccountParams{From: sender, CloseTo: receiver})
 	if err == nil {
 		t.Fatal("expected error for account with ASAs")
 	}
@@ -200,7 +200,7 @@ func TestPrepareClose_ZeroBalance(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, _, err := eng.PrepareCloseWithContext(context.Background(), CloseAccountParams{From: sender, CloseTo: receiver})
+	_, _, err := eng.PrepareClose(context.Background(), CloseAccountParams{From: sender, CloseTo: receiver})
 	if err == nil {
 		t.Fatal("expected error for zero balance")
 	}
@@ -215,7 +215,7 @@ func TestPreparePayment_VerifyTxnFields(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, _, err := eng.PreparePaymentWithContext(context.Background(), SendPaymentParams{
+	result, _, err := eng.PreparePayment(context.Background(), SendPaymentParams{
 		From:   sender,
 		To:     receiver,
 		Amount: 2_000_000,
@@ -255,7 +255,7 @@ func TestPreparePayment_FlatFee(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, _, err := eng.PreparePaymentWithContext(context.Background(), SendPaymentParams{
+	result, _, err := eng.PreparePayment(context.Background(), SendPaymentParams{
 		From:       sender,
 		To:         receiver,
 		Amount:     1_000_000,
@@ -280,7 +280,7 @@ func TestPrepareClose_Success(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, checkResult, err := eng.PrepareCloseWithContext(context.Background(), CloseAccountParams{From: sender, CloseTo: receiver})
+	result, checkResult, err := eng.PrepareClose(context.Background(), CloseAccountParams{From: sender, CloseTo: receiver})
 	if err != nil || result == nil {
 		t.Fatalf("PrepareClose() error = %v, result = %v", err, result)
 	}

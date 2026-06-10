@@ -27,7 +27,7 @@ type KeyRegParams struct {
 	IncentiveEligible bool   // Request incentive eligibility (costs 2 ALGO)
 }
 
-func (e *Engine) PrepareKeyRegWithContext(ctx context.Context, params KeyRegParams) (*TransactionPrepResult, error) {
+func (e *Engine) PrepareKeyReg(ctx context.Context, params KeyRegParams) (*TransactionPrepResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -46,13 +46,13 @@ func (e *Engine) PrepareKeyRegWithContext(ctx context.Context, params KeyRegPara
 	}
 
 	// Build signing context (handles auth address lookup for rekeyed accounts)
-	signingCtx, err := e.BuildSigningContextWithContext(ctx, params.Account)
+	signingCtx, err := e.BuildSigningContext(ctx, params.Account)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get suggested params
-	sp, err := e.getSuggestedParamsWithFeeWithContext(ctx, 0, false)
+	sp, err := e.getSuggestedParamsWithFee(ctx, 0, false)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (e *Engine) PrepareKeyRegWithContext(ctx context.Context, params KeyRegPara
 	}, nil
 }
 
-func (e *Engine) GetIncentiveEligibilityWithContext(ctx context.Context, address string) (bool, error) {
+func (e *Engine) GetIncentiveEligibility(ctx context.Context, address string) (bool, error) {
 	if e.AlgodClient == nil {
 		return false, ErrNoAlgodClient
 	}

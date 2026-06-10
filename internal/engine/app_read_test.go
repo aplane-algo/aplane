@@ -14,7 +14,7 @@ import (
 func TestReadAppGlobalState_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
 
-	_, err := eng.ReadAppGlobalStateWithContext(context.Background(), 123)
+	_, err := eng.ReadAppGlobalState(context.Background(), 123)
 	if err != ErrNoAlgodClient {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -23,7 +23,7 @@ func TestReadAppGlobalState_NoAlgodClient(t *testing.T) {
 func TestReadAppInfo_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
 
-	_, err := eng.ReadAppInfoWithContext(context.Background(), 123)
+	_, err := eng.ReadAppInfo(context.Background(), 123)
 	if err != ErrNoAlgodClient {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -32,7 +32,7 @@ func TestReadAppInfo_NoAlgodClient(t *testing.T) {
 func TestReadAppLocalState_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
 
-	_, err := eng.ReadAppLocalStateWithContext(context.Background(), testAddress(1).String(), 123)
+	_, err := eng.ReadAppLocalState(context.Background(), testAddress(1).String(), 123)
 	if err != ErrNoAlgodClient {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -41,7 +41,7 @@ func TestReadAppLocalState_NoAlgodClient(t *testing.T) {
 func TestReadAppBox_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
 
-	_, err := eng.ReadAppBoxWithContext(context.Background(), 123, []byte("box"))
+	_, err := eng.ReadAppBox(context.Background(), 123, []byte("box"))
 	if err != ErrNoAlgodClient {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -50,7 +50,7 @@ func TestReadAppBox_NoAlgodClient(t *testing.T) {
 func TestListAppBoxes_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
 
-	_, err := eng.ListAppBoxesWithContext(context.Background(), 123)
+	_, err := eng.ListAppBoxes(context.Background(), 123)
 	if err != ErrNoAlgodClient {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}

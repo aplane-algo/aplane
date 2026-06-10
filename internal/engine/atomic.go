@@ -55,7 +55,7 @@ type AtomicSubmitResult struct {
 	WriteNotices []TransactionWriteNotice
 }
 
-func (e *Engine) PrepareAtomicPaymentsWithContext(ctx context.Context, payments []AtomicPaymentParams, groupParams AtomicGroupParams) (*AtomicPrepResult, error) {
+func (e *Engine) PrepareAtomicPayments(ctx context.Context, payments []AtomicPaymentParams, groupParams AtomicGroupParams) (*AtomicPrepResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -64,7 +64,7 @@ func (e *Engine) PrepareAtomicPaymentsWithContext(ctx context.Context, payments 
 	}
 
 	// Get suggested params with fee settings
-	sp, err := e.getSuggestedParamsWithFeeWithContext(ctx, groupParams.Fee, groupParams.UseFlatFee)
+	sp, err := e.getSuggestedParamsWithFee(ctx, groupParams.Fee, groupParams.UseFlatFee)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (e *Engine) PrepareAtomicPaymentsWithContext(ctx context.Context, payments 
 
 	for i, p := range payments {
 		// Build signing context for sender
-		signingCtx, err := e.BuildSigningContextWithContext(ctx, p.From)
+		signingCtx, err := e.BuildSigningContext(ctx, p.From)
 		if err != nil {
 			return nil, fmt.Errorf("payment %d: failed to build signing context: %w", i+1, err)
 		}
@@ -102,7 +102,7 @@ func (e *Engine) PrepareAtomicPaymentsWithContext(ctx context.Context, payments 
 	}, nil
 }
 
-func (e *Engine) PrepareAtomicASATransfersWithContext(ctx context.Context, transfers []AtomicASAParams, groupParams AtomicGroupParams) (*AtomicPrepResult, error) {
+func (e *Engine) PrepareAtomicASATransfers(ctx context.Context, transfers []AtomicASAParams, groupParams AtomicGroupParams) (*AtomicPrepResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -125,7 +125,7 @@ func (e *Engine) PrepareAtomicASATransfersWithContext(ctx context.Context, trans
 	}
 
 	// Get suggested params with fee settings
-	sp, err := e.getSuggestedParamsWithFeeWithContext(ctx, groupParams.Fee, groupParams.UseFlatFee)
+	sp, err := e.getSuggestedParamsWithFee(ctx, groupParams.Fee, groupParams.UseFlatFee)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (e *Engine) PrepareAtomicASATransfersWithContext(ctx context.Context, trans
 
 	for i, t := range transfers {
 		// Build signing context for sender
-		signingCtx, err := e.BuildSigningContextWithContext(ctx, t.From)
+		signingCtx, err := e.BuildSigningContext(ctx, t.From)
 		if err != nil {
 			return nil, fmt.Errorf("transfer %d: failed to build signing context: %w", i+1, err)
 		}
@@ -165,14 +165,14 @@ func (e *Engine) PrepareAtomicASATransfersWithContext(ctx context.Context, trans
 	}, nil
 }
 
-func (e *Engine) SignAndSubmitAtomicWithContext(ctx context.Context, prep *AtomicPrepResult, wait bool) (*AtomicSubmitResult, error) {
+func (e *Engine) SignAndSubmitAtomic(ctx context.Context, prep *AtomicPrepResult, wait bool) (*AtomicSubmitResult, error) {
 	if len(prep.Transactions) == 0 {
 		return nil, fmt.Errorf("no transactions to submit")
 	}
 
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
-	txids, submittedTxns, err := e.signAndSubmitGroup(prep.Transactions, e.defaultSubmitOptionsWithContext(ctx, wait, &writeNotices, &output))
+	txids, submittedTxns, err := e.signAndSubmitGroup(prep.Transactions, e.defaultSubmitOptions(ctx, wait, &writeNotices, &output))
 	result := &AtomicSubmitResult{
 		TxIDs:        txids,
 		Transactions: originalSubmittedTransactions(prep.Transactions, submittedTxns),
@@ -187,7 +187,7 @@ func (e *Engine) SignAndSubmitAtomicWithContext(ctx context.Context, prep *Atomi
 	return result, nil
 }
 
-func (e *Engine) ValidateAtomicPaymentsWithContext(ctx context.Context, payments []AtomicPaymentParams, fee uint64) ([]BalanceCheckResult, error) {
+func (e *Engine) ValidateAtomicPayments(ctx context.Context, payments []AtomicPaymentParams, fee uint64) ([]BalanceCheckResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -199,7 +199,7 @@ func (e *Engine) ValidateAtomicPaymentsWithContext(ctx context.Context, payments
 	}
 
 	for i, p := range payments {
-		check, err := e.checkPaymentBalancesWithContext(ctx, p.From, p.To, p.Amount, txnFee, true)
+		check, err := e.checkPaymentBalances(ctx, p.From, p.To, p.Amount, txnFee, true)
 		if err != nil {
 			return nil, fmt.Errorf("payment %d: %w", i+1, err)
 		}
@@ -209,7 +209,7 @@ func (e *Engine) ValidateAtomicPaymentsWithContext(ctx context.Context, payments
 	return results, nil
 }
 
-func (e *Engine) ValidateAtomicASATransfersWithContext(ctx context.Context, transfers []AtomicASAParams) ([]BalanceCheckResult, error) {
+func (e *Engine) ValidateAtomicASATransfers(ctx context.Context, transfers []AtomicASAParams) ([]BalanceCheckResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -220,7 +220,7 @@ func (e *Engine) ValidateAtomicASATransfersWithContext(ctx context.Context, tran
 	results := make([]BalanceCheckResult, len(transfers))
 
 	for i, t := range transfers {
-		check, err := e.checkASABalancesWithContext(ctx, t.From, t.To, t.AssetID, t.Amount)
+		check, err := e.checkASABalances(ctx, t.From, t.To, t.AssetID, t.Amount)
 		if err != nil {
 			return nil, fmt.Errorf("transfer %d: %w", i+1, err)
 		}

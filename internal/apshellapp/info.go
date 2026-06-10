@@ -100,7 +100,7 @@ func (a *App) Holders(ctx context.Context, args []string) (*HoldersCommandResult
 		return nil, fmt.Errorf("no accounts found (add aliases or connect to signer)")
 	}
 
-	holders, err := a.eng.GetHoldersWithContext(ctx, assetRef)
+	holders, err := a.eng.GetHolders(ctx, assetRef)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (a *App) Participation(ctx context.Context, args []string) (*ParticipationC
 		return nil, fmt.Errorf("usage: participation <address|alias>")
 	}
 
-	participationResult, err := a.eng.GetParticipationStatusWithContext(ctx, args[0])
+	participationResult, err := a.eng.GetParticipationStatus(ctx, args[0])
 	if err != nil {
 		return nil, err
 	}

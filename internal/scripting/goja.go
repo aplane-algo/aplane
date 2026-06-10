@@ -36,7 +36,7 @@ func NewGojaRunner(eng *engine.Engine) *GojaRunner {
 	vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
 
 	// Best-effort cache warmup for accounts(); surface failures once on output instead of silently dropping them.
-	if err := eng.EnsureSignerCacheWithContext(context.Background()); err != nil {
+	if err := eng.EnsureSignerCache(context.Background()); err != nil {
 		r.startupWarning = fmt.Sprintf("Warning: failed to warm signer cache: %v", err)
 	}
 

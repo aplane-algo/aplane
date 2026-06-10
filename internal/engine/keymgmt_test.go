@@ -33,13 +33,13 @@ func TestEngineKeyMgmtRequiresConnection(t *testing.T) {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 
-	if _, err := eng.ListKeyTypesWithContext(context.Background()); err != ErrNotConnected {
+	if _, err := eng.ListKeyTypes(context.Background()); err != ErrNotConnected {
 		t.Fatalf("ListKeyTypes() error = %v, want ErrNotConnected", err)
 	}
-	if _, err := eng.GenerateKeyWithContext(context.Background(), "ed25519", nil); err != ErrNotConnected {
+	if _, err := eng.GenerateKey(context.Background(), "ed25519", nil); err != ErrNotConnected {
 		t.Fatalf("GenerateKey() error = %v, want ErrNotConnected", err)
 	}
-	if err := eng.DeleteKeyWithContext(context.Background(), "ADDR"); err != ErrNotConnected {
+	if err := eng.DeleteKey(context.Background(), "ADDR"); err != ErrNotConnected {
 		t.Fatalf("DeleteKey() error = %v, want ErrNotConnected", err)
 	}
 }
@@ -54,7 +54,7 @@ func TestEngineListKeyTypesWrapsSignerResponse(t *testing.T) {
 		}, req), nil
 	})
 
-	got, err := eng.ListKeyTypesWithContext(context.Background())
+	got, err := eng.ListKeyTypes(context.Background())
 	if err != nil {
 		t.Fatalf("ListKeyTypes() error = %v", err)
 	}
@@ -95,7 +95,7 @@ func TestEngineGenerateKeyRefreshesSignerCache(t *testing.T) {
 		}
 	})
 
-	got, err := eng.GenerateKeyWithContext(context.Background(), "ed25519", map[string]string{"label": "alice"})
+	got, err := eng.GenerateKey(context.Background(), "ed25519", map[string]string{"label": "alice"})
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
@@ -130,7 +130,7 @@ func TestEngineDeleteKeyRefreshesSignerCache(t *testing.T) {
 		}
 	})
 
-	if err := eng.DeleteKeyWithContext(context.Background(), addr); err != nil {
+	if err := eng.DeleteKey(context.Background(), addr); err != nil {
 		t.Fatalf("DeleteKey() error = %v", err)
 	}
 	if eng.SignerCache.Count() != 0 {
@@ -147,7 +147,7 @@ func TestEngineGenerateKeyWrapsSignerErrors(t *testing.T) {
 		return nil, nil
 	})
 
-	_, err := eng.GenerateKeyWithContext(context.Background(), "ed25519", nil)
+	_, err := eng.GenerateKey(context.Background(), "ed25519", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -173,7 +173,7 @@ func TestEngineGenerateKeyIgnoresRefreshFailure(t *testing.T) {
 		}
 	})
 
-	got, err := eng.GenerateKeyWithContext(context.Background(), "ed25519", nil)
+	got, err := eng.GenerateKey(context.Background(), "ed25519", nil)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v, want nil despite refresh failure", err)
 	}
@@ -202,7 +202,7 @@ func TestEngineDeleteKeyIgnoresRefreshFailure(t *testing.T) {
 		}
 	})
 
-	if err := eng.DeleteKeyWithContext(context.Background(), addr); err != nil {
+	if err := eng.DeleteKey(context.Background(), addr); err != nil {
 		t.Fatalf("DeleteKey() error = %v, want nil despite refresh failure", err)
 	}
 	if eng.SignerCache.GetKeyType(addr) != "ed25519" {

@@ -284,7 +284,7 @@ func (a *API) jsWaitForTx(call goja.FunctionCall) goja.Value {
 		rounds = toUint64(a.runtime, call.Arguments[1])
 	}
 
-	result, err := a.engine.WaitForConfirmationResultWithContext(a.Context(), txid, rounds)
+	result, err := a.engine.WaitForConfirmationResult(a.Context(), txid, rounds)
 	if result != nil && result.Output != "" {
 		a.outputMsg(result.Output)
 	}

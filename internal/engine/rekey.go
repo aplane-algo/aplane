@@ -29,7 +29,7 @@ type RekeyCheckResult struct {
 	IsUnrekey       bool   // True if rekeying back to self
 }
 
-func (e *Engine) PrepareRekeyWithContext(ctx context.Context, params RekeyParams) (*TransactionPrepResult, *RekeyCheckResult, error) {
+func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*TransactionPrepResult, *RekeyCheckResult, error) {
 	if e.AlgodClient == nil {
 		return nil, nil, ErrNoAlgodClient
 	}
@@ -54,13 +54,13 @@ func (e *Engine) PrepareRekeyWithContext(ctx context.Context, params RekeyParams
 	}
 
 	// Build signing context for sender
-	signingCtx, err := e.BuildSigningContextWithContext(ctx, params.From)
+	signingCtx, err := e.BuildSigningContext(ctx, params.From)
 	if err != nil {
 		return nil, checkResult, err
 	}
 
 	// Get suggested params with fee settings
-	sp, err := e.getSuggestedParamsWithFeeWithContext(ctx, params.Fee, params.UseFlatFee)
+	sp, err := e.getSuggestedParamsWithFee(ctx, params.Fee, params.UseFlatFee)
 	if err != nil {
 		return nil, checkResult, err
 	}

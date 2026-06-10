@@ -66,7 +66,7 @@ func (a *API) jsCacheAsset(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "cacheAsset() requires an assetId argument")
 	assetID := toUint64(a.runtime, call.Arguments[0])
 
-	info, err := a.engine.AddASAToCacheWithContext(a.Context(), assetID)
+	info, err := a.engine.AddASAToCache(a.Context(), assetID)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("cacheAsset() error: %v", err)))
 	}

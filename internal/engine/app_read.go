@@ -97,7 +97,7 @@ type AppBoxesResult struct {
 	Boxes []AppBoxName `json:"boxes"`
 }
 
-func (e *Engine) ReadAppGlobalStateWithContext(ctx context.Context, appID uint64) (*AppGlobalStateResult, error) {
+func (e *Engine) ReadAppGlobalState(ctx context.Context, appID uint64) (*AppGlobalStateResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -116,7 +116,7 @@ func (e *Engine) ReadAppGlobalStateWithContext(ctx context.Context, appID uint64
 	}, nil
 }
 
-func (e *Engine) ReadAppInfoWithContext(ctx context.Context, appID uint64) (*AppInfoResult, error) {
+func (e *Engine) ReadAppInfo(ctx context.Context, appID uint64) (*AppInfoResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -146,7 +146,7 @@ func (e *Engine) ReadAppInfoWithContext(ctx context.Context, appID uint64) (*App
 	}, nil
 }
 
-func (e *Engine) ReadAppLocalStateWithContext(ctx context.Context, address string, appID uint64) (*AppLocalStateResult, error) {
+func (e *Engine) ReadAppLocalState(ctx context.Context, address string, appID uint64) (*AppLocalStateResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -168,7 +168,7 @@ func (e *Engine) ReadAppLocalStateWithContext(ctx context.Context, address strin
 	}, nil
 }
 
-func (e *Engine) ReadAppBoxWithContext(ctx context.Context, appID uint64, name []byte) (*AppBoxResult, error) {
+func (e *Engine) ReadAppBox(ctx context.Context, appID uint64, name []byte) (*AppBoxResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -188,7 +188,7 @@ func (e *Engine) ReadAppBoxWithContext(ctx context.Context, appID uint64, name [
 	}, nil
 }
 
-func (e *Engine) ListAppBoxesWithContext(ctx context.Context, appID uint64) (*AppBoxesResult, error) {
+func (e *Engine) ListAppBoxes(ctx context.Context, appID uint64) (*AppBoxesResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}

@@ -82,7 +82,7 @@ func (a *App) Balance(ctx context.Context, req BalanceRequest) (*BalanceCommandR
 		}, nil
 	}
 
-	balanceResult, err := a.eng.GetBalanceWithContext(ctx, account)
+	balanceResult, err := a.eng.GetBalance(ctx, account)
 	if err != nil {
 		return nil, err
 	}

@@ -76,7 +76,7 @@ func (a *API) jsAtomicSend(call goja.FunctionCall) goja.Value {
 		}
 	}
 
-	prep, err := a.engine.PrepareAtomicPaymentsWithContext(a.Context(), payments, engine.AtomicGroupParams{
+	prep, err := a.engine.PrepareAtomicPayments(a.Context(), payments, engine.AtomicGroupParams{
 		Fee:        opts.Fee,
 		UseFlatFee: opts.UseFlatFee,
 	})
@@ -84,7 +84,7 @@ func (a *API) jsAtomicSend(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("atomicSend() error preparing transactions: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitAtomicWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmitAtomic(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("atomicSend() error submitting transactions: %v", err)))
 	}
@@ -170,7 +170,7 @@ func (a *API) jsAtomicSendAsset(call goja.FunctionCall) goja.Value {
 		}
 	}
 
-	prep, err := a.engine.PrepareAtomicASATransfersWithContext(a.Context(), transfers, engine.AtomicGroupParams{
+	prep, err := a.engine.PrepareAtomicASATransfers(a.Context(), transfers, engine.AtomicGroupParams{
 		Fee:        opts.Fee,
 		UseFlatFee: opts.UseFlatFee,
 	})
@@ -178,7 +178,7 @@ func (a *API) jsAtomicSendAsset(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("atomicSendAsset() error preparing transactions: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitAtomicWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmitAtomic(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("atomicSendAsset() error submitting transactions: %v", err)))
 	}

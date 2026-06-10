@@ -14,7 +14,7 @@ import (
 
 func TestPrepareKeyReg_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
-	_, err := eng.PrepareKeyRegWithContext(context.Background(), KeyRegParams{Account: testAddr(1), Mode: "online"})
+	_, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{Account: testAddr(1), Mode: "online"})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -26,7 +26,7 @@ func TestPrepareKeyReg_OnlineMissingParams(t *testing.T) {
 	transport.addAccount(addr, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, err := eng.PrepareKeyRegWithContext(context.Background(), KeyRegParams{
+	_, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{
 		Account: addr,
 		Mode:    "online",
 		// Missing VoteKey, SelectionKey, StateProofKey
@@ -45,7 +45,7 @@ func TestPrepareKeyReg_OnlineInvalidVoteRange(t *testing.T) {
 	transport.addAccount(addr, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, err := eng.PrepareKeyRegWithContext(context.Background(), KeyRegParams{
+	_, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{
 		Account:       addr,
 		Mode:          "online",
 		VoteKey:       "dGVzdA==",
@@ -68,7 +68,7 @@ func TestPrepareKeyReg_OnlineZeroVoteFirst(t *testing.T) {
 	transport.addAccount(addr, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, err := eng.PrepareKeyRegWithContext(context.Background(), KeyRegParams{
+	_, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{
 		Account:       addr,
 		Mode:          "online",
 		VoteKey:       "dGVzdA==",
@@ -91,7 +91,7 @@ func TestPrepareKeyReg_OfflineSuccess(t *testing.T) {
 	transport.addAccount(addr, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, err := eng.PrepareKeyRegWithContext(context.Background(), KeyRegParams{
+	result, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{
 		Account: addr,
 		Mode:    "offline",
 	})
@@ -113,7 +113,7 @@ func TestPrepareKeyReg_IncentiveFee(t *testing.T) {
 	transport.addAccount(addr, 10_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, err := eng.PrepareKeyRegWithContext(context.Background(), KeyRegParams{
+	result, err := eng.PrepareKeyReg(context.Background(), KeyRegParams{
 		Account:           addr,
 		Mode:              "offline",
 		IncentiveEligible: true,
@@ -138,7 +138,7 @@ func TestGetIncentiveEligibility(t *testing.T) {
 	})
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	eligible, err := eng.GetIncentiveEligibilityWithContext(context.Background(), addr)
+	eligible, err := eng.GetIncentiveEligibility(context.Background(), addr)
 	if err != nil {
 		t.Fatalf("GetIncentiveEligibility() error = %v", err)
 	}

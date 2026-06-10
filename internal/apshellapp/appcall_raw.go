@@ -44,7 +44,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 		return nil, err
 	}
 
-	prepResult, err := a.eng.PrepareAppCallRawWithContext(ctx, engine.RawAppCallParams{
+	prepResult, err := a.eng.PrepareAppCallRaw(ctx, engine.RawAppCallParams{
 		AppID:         req.AppID,
 		From:          fromAddr,
 		AppArgs:       req.AppArgs,
@@ -89,7 +89,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 	decorateAppCallRawResult(result)
 
 	if req.PayAmount > 0 {
-		paymentPrepResult, _, err := a.eng.PreparePaymentWithContext(ctx, engine.SendPaymentParams{
+		paymentPrepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 			From:       fromAddr,
 			To:         crypto.GetApplicationAddress(req.AppID).String(),
 			Amount:     req.PayAmount,
@@ -106,7 +106,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 			return nil, err
 		}
 
-		submit, err := a.eng.ExecutePreparedGroupWithContext(ctx, group.engineGroup, req.Wait)
+		submit, err := a.eng.ExecutePreparedGroup(ctx, group.engineGroup, req.Wait)
 		if err != nil {
 			return nil, fmt.Errorf("grouped raw app call failed: %w", err)
 		}
@@ -120,7 +120,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 		return result, nil
 	}
 
-	submit, err := a.eng.SignAndSubmitWithContext(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("raw app call failed: %w", err)
 	}

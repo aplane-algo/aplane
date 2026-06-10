@@ -31,7 +31,7 @@ func (a *App) AppRead(ctx context.Context, req AppReadRequest) (*AppReadResult, 
 		if err != nil {
 			return nil, err
 		}
-		info, err := a.eng.ReadAppInfoWithContext(ctx, appID)
+		info, err := a.eng.ReadAppInfo(ctx, appID)
 		if err != nil {
 			return nil, err
 		}
@@ -44,7 +44,7 @@ func (a *App) AppRead(ctx context.Context, req AppReadRequest) (*AppReadResult, 
 		if err != nil {
 			return nil, err
 		}
-		state, err := a.eng.ReadAppGlobalStateWithContext(ctx, appID)
+		state, err := a.eng.ReadAppGlobalState(ctx, appID)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +61,7 @@ func (a *App) AppRead(ctx context.Context, req AppReadRequest) (*AppReadResult, 
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve account: %w", err)
 		}
-		state, err := a.eng.ReadAppLocalStateWithContext(ctx, address, appID)
+		state, err := a.eng.ReadAppLocalState(ctx, address, appID)
 		if err != nil {
 			return nil, err
 		}
@@ -78,7 +78,7 @@ func (a *App) AppRead(ctx context.Context, req AppReadRequest) (*AppReadResult, 
 		if err != nil {
 			return nil, err
 		}
-		box, err := a.eng.ReadAppBoxWithContext(ctx, appID, boxName)
+		box, err := a.eng.ReadAppBox(ctx, appID, boxName)
 		if err != nil {
 			return nil, err
 		}
@@ -91,7 +91,7 @@ func (a *App) AppRead(ctx context.Context, req AppReadRequest) (*AppReadResult, 
 		if err != nil {
 			return nil, err
 		}
-		boxes, err := a.eng.ListAppBoxesWithContext(ctx, appID)
+		boxes, err := a.eng.ListAppBoxes(ctx, appID)
 		if err != nil {
 			return nil, err
 		}

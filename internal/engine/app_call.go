@@ -45,9 +45,9 @@ type PreparedMethodAppCall struct {
 	Method appspec.Method
 }
 
-// PrepareAppCallRawWithContext validates and prepares a raw application call
+// PrepareAppCallRaw validates and prepares a raw application call
 // transaction using the caller's context for algod lookups and compilation.
-func (e *Engine) PrepareAppCallRawWithContext(ctx context.Context, params RawAppCallParams) (*TransactionPrepResult, error) {
+func (e *Engine) PrepareAppCallRaw(ctx context.Context, params RawAppCallParams) (*TransactionPrepResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -70,12 +70,12 @@ func (e *Engine) PrepareAppCallRawWithContext(ctx context.Context, params RawApp
 		}
 	}
 
-	signingCtx, err := e.BuildSigningContextWithContext(ctx, params.From)
+	signingCtx, err := e.BuildSigningContext(ctx, params.From)
 	if err != nil {
 		return nil, err
 	}
 
-	sp, err := e.getSuggestedParamsWithFeeWithContext(ctx, params.Fee, params.UseFlatFee)
+	sp, err := e.getSuggestedParamsWithFee(ctx, params.Fee, params.UseFlatFee)
 	if err != nil {
 		return nil, err
 	}
@@ -97,11 +97,11 @@ func (e *Engine) PrepareAppCallRawWithContext(ctx context.Context, params RawApp
 		if params.Clear.Path == "" {
 			return nil, fmt.Errorf("missing clear program for app update")
 		}
-		approvalProgram, err = e.loadAppProgramWithContext(ctx, params.Approval)
+		approvalProgram, err = e.loadAppProgram(ctx, params.Approval)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load approval program: %w", err)
 		}
-		clearProgram, err = e.loadAppProgramWithContext(ctx, params.Clear)
+		clearProgram, err = e.loadAppProgram(ctx, params.Clear)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load clear program: %w", err)
 		}
@@ -143,7 +143,7 @@ func (e *Engine) PrepareAppCallRawWithContext(ctx context.Context, params RawApp
 	}, nil
 }
 
-func (e *Engine) PrepareAppCallMethodWithContext(ctx context.Context, params MethodAppCallParams) (*PreparedMethodAppCall, error) {
+func (e *Engine) PrepareAppCallMethod(ctx context.Context, params MethodAppCallParams) (*PreparedMethodAppCall, error) {
 	if params.ABIPath == "" {
 		return nil, fmt.Errorf("ABI path is required")
 	}
@@ -166,7 +166,7 @@ func (e *Engine) PrepareAppCallMethodWithContext(ctx context.Context, params Met
 	rawParams := params.RawAppCallParams
 	rawParams.AppArgs = encodedArgs
 
-	prep, err := e.PrepareAppCallRawWithContext(ctx, rawParams)
+	prep, err := e.PrepareAppCallRaw(ctx, rawParams)
 	if err != nil {
 		return nil, err
 	}

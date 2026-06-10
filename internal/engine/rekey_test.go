@@ -14,7 +14,7 @@ import (
 
 func TestPrepareRekey_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
-	_, _, err := eng.PrepareRekeyWithContext(context.Background(), RekeyParams{From: testAddr(1), To: testAddr(2)})
+	_, _, err := eng.PrepareRekey(context.Background(), RekeyParams{From: testAddr(1), To: testAddr(2)})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -26,7 +26,7 @@ func TestPrepareRekey_Unrekey(t *testing.T) {
 	transport.addAccount(addr, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, checkResult, err := eng.PrepareRekeyWithContext(context.Background(), RekeyParams{From: addr, To: addr})
+	result, checkResult, err := eng.PrepareRekey(context.Background(), RekeyParams{From: addr, To: addr})
 	if err != nil {
 		t.Fatalf("PrepareRekey() error = %v", err)
 	}
@@ -54,7 +54,7 @@ func TestPrepareRekey_TargetAlreadyRekeyed(t *testing.T) {
 	})
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, checkResult, err := eng.PrepareRekeyWithContext(context.Background(), RekeyParams{From: sender, To: target})
+	_, checkResult, err := eng.PrepareRekey(context.Background(), RekeyParams{From: sender, To: target})
 	if err == nil {
 		t.Fatal("expected error for target already rekeyed")
 	}
@@ -75,7 +75,7 @@ func TestPrepareRekey_Success(t *testing.T) {
 	transport.addAccount(target, 1_000_000) // not rekeyed (AuthAddr empty)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, checkResult, err := eng.PrepareRekeyWithContext(context.Background(), RekeyParams{From: sender, To: target})
+	result, checkResult, err := eng.PrepareRekey(context.Background(), RekeyParams{From: sender, To: target})
 	if err != nil || result == nil {
 		t.Fatalf("PrepareRekey() error = %v, result = %v", err, result)
 	}

@@ -19,7 +19,7 @@ import (
 func (a *API) jsBalance(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "balance() requires an address or alias argument")
 	addressOrAlias := call.Arguments[0].String()
-	result, err := a.engine.GetBalanceWithContext(a.Context(), addressOrAlias)
+	result, err := a.engine.GetBalance(a.Context(), addressOrAlias)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("balance() error: %v", err)))
 	}
@@ -275,7 +275,7 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 				assetRef = call.Arguments[1].String()
 			}
 
-			holdersResult, err := a.engine.GetHoldersWithContext(a.Context(), assetRef)
+			holdersResult, err := a.engine.GetHolders(a.Context(), assetRef)
 			if err != nil {
 				panic(a.runtime.ToValue(fmt.Sprintf("holders() error: %v", err)))
 			}
@@ -304,7 +304,7 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 		assetRef = call.Arguments[0].String()
 	}
 
-	holdersResult, err := a.engine.GetHoldersWithContext(a.Context(), assetRef)
+	holdersResult, err := a.engine.GetHolders(a.Context(), assetRef)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("holders() error: %v", err)))
 	}
@@ -320,7 +320,7 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 // jsKeys returns list of signing keys from Signer.
 // keys() - Returns array of key info objects
 func (a *API) jsKeys(call goja.FunctionCall) goja.Value {
-	keys, err := a.engine.ListKeysWithContext(a.Context())
+	keys, err := a.engine.ListKeys(a.Context())
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("keys() error: %v", err)))
 	}

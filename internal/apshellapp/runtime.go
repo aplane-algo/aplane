@@ -51,7 +51,7 @@ func (a *App) IsConnected() bool {
 // SyncSignerStatus checks signer status and refreshes local signer
 // cache state when the signer's keyset revision has changed.
 func (a *App) SyncSignerStatus(ctx context.Context) (*engine.SignerStatusSyncResult, error) {
-	return a.eng.SyncSignerStatusWithContext(ctx)
+	return a.eng.SyncSignerStatus(ctx)
 }
 
 // HasAlias reports whether the given name exists in the alias cache.
@@ -215,7 +215,7 @@ func (a *App) CompleterDeps() CompleterDeps {
 		EnsureSignerCache: func() error {
 			// Completion warmup runs on the interactive prompt path; no
 			// caller-scoped context exists there.
-			return a.eng.EnsureSignerCacheWithContext(context.Background())
+			return a.eng.EnsureSignerCache(context.Background())
 		},
 	}
 }
@@ -239,7 +239,7 @@ func (a *App) ConfigurePlugins() error {
 
 // Balance returns balance information for one resolved address or alias.
 func (a *App) BalanceForAddress(ctx context.Context, addressOrAlias string) (*BalanceDetails, error) {
-	result, err := a.eng.GetBalanceWithContext(ctx, addressOrAlias)
+	result, err := a.eng.GetBalance(ctx, addressOrAlias)
 	if err != nil {
 		return nil, err
 	}

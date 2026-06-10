@@ -66,7 +66,7 @@ type OptOutCheckResult struct {
 	UsingImplicitSelf bool   // True if using sender as close-to (balance = 0)
 }
 
-func (e *Engine) PrepareASATransferWithContext(ctx context.Context, params SendASAParams) (*TransactionPrepResult, *BalanceCheckResult, error) {
+func (e *Engine) PrepareASATransfer(ctx context.Context, params SendASAParams) (*TransactionPrepResult, *BalanceCheckResult, error) {
 	if e.AlgodClient == nil {
 		return nil, nil, ErrNoAlgodClient
 	}
@@ -78,19 +78,19 @@ func (e *Engine) PrepareASATransferWithContext(ctx context.Context, params SendA
 	}
 
 	// Build signing context (handles auth address lookup for rekeyed accounts)
-	signingCtx, err := e.BuildSigningContextWithContext(ctx, params.From)
+	signingCtx, err := e.BuildSigningContext(ctx, params.From)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Check balances
-	balanceCheck, err := e.checkASABalancesWithContext(ctx, params.From, params.To, params.AssetID, params.Amount)
+	balanceCheck, err := e.checkASABalances(ctx, params.From, params.To, params.AssetID, params.Amount)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Get suggested params with fee settings
-	sp, err := e.getSuggestedParamsWithFeeWithContext(ctx, params.Fee, params.UseFlatFee)
+	sp, err := e.getSuggestedParamsWithFee(ctx, params.Fee, params.UseFlatFee)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -118,7 +118,7 @@ func (e *Engine) PrepareASATransferWithContext(ctx context.Context, params SendA
 	}, balanceCheck, nil
 }
 
-func (e *Engine) checkASABalancesWithContext(ctx context.Context, fromAddr, toAddr string, asaID uint64, amountUnits uint64) (*BalanceCheckResult, error) {
+func (e *Engine) checkASABalances(ctx context.Context, fromAddr, toAddr string, asaID uint64, amountUnits uint64) (*BalanceCheckResult, error) {
 	result := &BalanceCheckResult{}
 
 	// Get sender account info
@@ -149,7 +149,7 @@ func (e *Engine) checkASABalancesWithContext(ctx context.Context, fromAddr, toAd
 	return result, nil
 }
 
-func (e *Engine) PrepareOptInWithContext(ctx context.Context, params OptInParams) (*TransactionPrepResult, error) {
+func (e *Engine) PrepareOptIn(ctx context.Context, params OptInParams) (*TransactionPrepResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -161,13 +161,13 @@ func (e *Engine) PrepareOptInWithContext(ctx context.Context, params OptInParams
 	}
 
 	// Build signing context (handles auth address lookup for rekeyed accounts)
-	signingCtx, err := e.BuildSigningContextWithContext(ctx, params.Account)
+	signingCtx, err := e.BuildSigningContext(ctx, params.Account)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get suggested params with fee settings
-	sp, err := e.getSuggestedParamsWithFeeWithContext(ctx, params.Fee, params.UseFlatFee)
+	sp, err := e.getSuggestedParamsWithFee(ctx, params.Fee, params.UseFlatFee)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +193,7 @@ func (e *Engine) PrepareOptInWithContext(ctx context.Context, params OptInParams
 	}, nil
 }
 
-func (e *Engine) PrepareOptOutWithContext(ctx context.Context, params OptOutParams) (*TransactionPrepResult, *OptOutCheckResult, error) {
+func (e *Engine) PrepareOptOut(ctx context.Context, params OptOutParams) (*TransactionPrepResult, *OptOutCheckResult, error) {
 	if e.AlgodClient == nil {
 		return nil, nil, ErrNoAlgodClient
 	}
@@ -245,13 +245,13 @@ func (e *Engine) PrepareOptOutWithContext(ctx context.Context, params OptOutPara
 	}
 
 	// Build signing context
-	signingCtx, err := e.BuildSigningContextWithContext(ctx, params.Account)
+	signingCtx, err := e.BuildSigningContext(ctx, params.Account)
 	if err != nil {
 		return nil, checkResult, err
 	}
 
 	// Get suggested params with fee settings
-	sp, err := e.getSuggestedParamsWithFeeWithContext(ctx, params.Fee, params.UseFlatFee)
+	sp, err := e.getSuggestedParamsWithFee(ctx, params.Fee, params.UseFlatFee)
 	if err != nil {
 		return nil, checkResult, err
 	}

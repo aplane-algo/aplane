@@ -29,7 +29,7 @@ func TestPreparePayment_NoAlgodClient(t *testing.T) {
 		Amount: 1000000,
 	}
 
-	_, _, err := eng.PreparePaymentWithContext(context.Background(), params)
+	_, _, err := eng.PreparePayment(context.Background(), params)
 	if err != ErrNoAlgodClient {
 		t.Errorf("Expected ErrNoAlgodClient, got %v", err)
 	}
@@ -45,7 +45,7 @@ func TestPrepareClose_NoAlgodClient(t *testing.T) {
 		CloseTo: testAddress(2).String(),
 	}
 
-	_, _, err := eng.PrepareCloseWithContext(context.Background(), params)
+	_, _, err := eng.PrepareClose(context.Background(), params)
 	if err != ErrNoAlgodClient {
 		t.Errorf("Expected ErrNoAlgodClient, got %v", err)
 	}

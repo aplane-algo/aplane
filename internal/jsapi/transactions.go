@@ -31,7 +31,7 @@ func (a *API) jsValidate(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("validate() error resolving address: %v", err)))
 	}
 
-	prep, _, err := a.engine.PreparePaymentWithContext(a.Context(), engine.SendPaymentParams{
+	prep, _, err := a.engine.PreparePayment(a.Context(), engine.SendPaymentParams{
 		From:   addr,
 		To:     addr,
 		Amount: 0,
@@ -41,7 +41,7 @@ func (a *API) jsValidate(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("validate() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, true)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, true)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("validate() error: %v", err)))
 	}
@@ -71,7 +71,7 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("send() error resolving to address: %v", err)))
 	}
 
-	prep, _, err := a.engine.PreparePaymentWithContext(a.Context(), engine.SendPaymentParams{
+	prep, _, err := a.engine.PreparePayment(a.Context(), engine.SendPaymentParams{
 		From:       fromAddr,
 		To:         toAddr,
 		Amount:     amount,
@@ -83,7 +83,7 @@ func (a *API) jsSend(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("send() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("send() error submitting transaction: %v", err)))
 	}
@@ -111,7 +111,7 @@ func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("sweep() error resolving to address: %v", err)))
 	}
 
-	prep, _, err := a.engine.PrepareCloseWithContext(a.Context(), engine.CloseAccountParams{
+	prep, _, err := a.engine.PrepareClose(a.Context(), engine.CloseAccountParams{
 		From:       fromAddr,
 		CloseTo:    toAddr,
 		Fee:        opts.Fee,
@@ -121,7 +121,7 @@ func (a *API) jsSweep(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("sweep() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("sweep() error submitting transaction: %v", err)))
 	}
@@ -151,7 +151,7 @@ func (a *API) jsSendAsset(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("sendAsset() error resolving to address: %v", err)))
 	}
 
-	prep, _, err := a.engine.PrepareASATransferWithContext(a.Context(), engine.SendASAParams{
+	prep, _, err := a.engine.PrepareASATransfer(a.Context(), engine.SendASAParams{
 		From:       fromAddr,
 		To:         toAddr,
 		AssetID:    assetID,
@@ -164,7 +164,7 @@ func (a *API) jsSendAsset(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("sendAsset() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("sendAsset() error submitting transaction: %v", err)))
 	}
@@ -188,7 +188,7 @@ func (a *API) jsOptIn(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("optIn() error resolving account: %v", err)))
 	}
 
-	prep, err := a.engine.PrepareOptInWithContext(a.Context(), engine.OptInParams{
+	prep, err := a.engine.PrepareOptIn(a.Context(), engine.OptInParams{
 		Account:    accountAddr,
 		AssetID:    assetID,
 		Fee:        opts.Fee,
@@ -198,7 +198,7 @@ func (a *API) jsOptIn(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("optIn() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("optIn() error submitting transaction: %v", err)))
 	}
@@ -230,7 +230,7 @@ func (a *API) jsOptOut(call goja.FunctionCall) goja.Value {
 		}
 	}
 
-	prep, _, err := a.engine.PrepareOptOutWithContext(a.Context(), engine.OptOutParams{
+	prep, _, err := a.engine.PrepareOptOut(a.Context(), engine.OptOutParams{
 		Account:    accountAddr,
 		AssetID:    assetID,
 		CloseTo:    closeToAddr,
@@ -241,7 +241,7 @@ func (a *API) jsOptOut(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("optOut() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("optOut() error submitting transaction: %v", err)))
 	}
@@ -319,12 +319,12 @@ func (a *API) jsKeyreg(call goja.FunctionCall) goja.Value {
 		}
 	}
 
-	prep, err := a.engine.PrepareKeyRegWithContext(a.Context(), params)
+	prep, err := a.engine.PrepareKeyReg(a.Context(), params)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("keyreg() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, true)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, true)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("keyreg() error submitting transaction: %v", err)))
 	}
@@ -341,7 +341,7 @@ func (a *API) jsParticipation(call goja.FunctionCall) goja.Value {
 	a.requireArgs(call, 1, "participation() requires an address argument")
 	addressOrAlias := call.Arguments[0].String()
 
-	result, err := a.engine.GetParticipationStatusWithContext(a.Context(), addressOrAlias)
+	result, err := a.engine.GetParticipationStatus(a.Context(), addressOrAlias)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("participation() error: %v", err)))
 	}
@@ -375,7 +375,7 @@ func (a *API) jsIncentiveEligible(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("incentiveEligible() error resolving address: %v", err)))
 	}
 
-	eligible, err := a.engine.GetIncentiveEligibilityWithContext(a.Context(), address)
+	eligible, err := a.engine.GetIncentiveEligibility(a.Context(), address)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("incentiveEligible() error: %v", err)))
 	}
@@ -401,7 +401,7 @@ func (a *API) jsRekey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("rekey() error resolving to address: %v", err)))
 	}
 
-	prep, _, err := a.engine.PrepareRekeyWithContext(a.Context(), engine.RekeyParams{
+	prep, _, err := a.engine.PrepareRekey(a.Context(), engine.RekeyParams{
 		From:       fromAddr,
 		To:         toAddr,
 		Fee:        opts.Fee,
@@ -411,7 +411,7 @@ func (a *API) jsRekey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("rekey() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("rekey() error submitting transaction: %v", err)))
 	}
@@ -435,7 +435,7 @@ func (a *API) jsUnrekey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("unrekey() error resolving account: %v", err)))
 	}
 
-	prep, _, err := a.engine.PrepareRekeyWithContext(a.Context(), engine.RekeyParams{
+	prep, _, err := a.engine.PrepareRekey(a.Context(), engine.RekeyParams{
 		From:       accountAddr,
 		To:         accountAddr, // Rekey to self
 		Fee:        opts.Fee,
@@ -445,7 +445,7 @@ func (a *API) jsUnrekey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("unrekey() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("unrekey() error submitting transaction: %v", err)))
 	}
@@ -492,7 +492,7 @@ func (a *API) jsClose(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("close() error resolving to address: %v", err)))
 	}
 
-	prep, _, err := a.engine.PrepareCloseWithContext(a.Context(), engine.CloseAccountParams{
+	prep, _, err := a.engine.PrepareClose(a.Context(), engine.CloseAccountParams{
 		From:       fromAddr,
 		CloseTo:    toAddr,
 		Fee:        opts.Fee,
@@ -503,7 +503,7 @@ func (a *API) jsClose(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("close() error preparing transaction: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitWithContext(a.Context(), prep, opts.Wait)
+	result, err := a.engine.SignAndSubmit(a.Context(), prep, opts.Wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("close() error submitting transaction: %v", err)))
 	}
@@ -537,7 +537,7 @@ func (a *API) jsSign(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("sign() error parsing file: %v", err)))
 	}
 
-	result, err := a.engine.SignAndSubmitTransactionsWithContext(a.Context(), txns, wait)
+	result, err := a.engine.SignAndSubmitTransactions(a.Context(), txns, wait)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("sign() error: %v", err)))
 	}

@@ -125,7 +125,7 @@ func isDecimalDigits(s string) bool {
 	return true
 }
 
-func WaitForConfirmationWithContext(ctx context.Context, algodClient *algod.Client, txid string, maxRounds uint64, w io.Writer) error {
+func WaitForConfirmation(ctx context.Context, algodClient *algod.Client, txid string, maxRounds uint64, w io.Writer) error {
 	if w == nil {
 		w = os.Stdout
 	}

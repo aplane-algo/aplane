@@ -16,7 +16,7 @@ import (
 
 func TestBuildSigningContext_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
-	_, err := eng.BuildSigningContextWithContext(context.Background(), testAddr(1))
+	_, err := eng.BuildSigningContext(context.Background(), testAddr(1))
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -28,7 +28,7 @@ func TestBuildSigningContext_SignerLocked(t *testing.T) {
 	eng := setupEngineWithMockAlgod(t, transport)
 	eng.SignerCache.Locked = true
 
-	_, err := eng.BuildSigningContextWithContext(context.Background(), testAddr(1))
+	_, err := eng.BuildSigningContext(context.Background(), testAddr(1))
 	if !errors.Is(err, ErrSignerLocked) {
 		t.Fatalf("expected ErrSignerLocked, got %v", err)
 	}
@@ -40,7 +40,7 @@ func TestBuildSigningContext_SimpleEd25519(t *testing.T) {
 	transport.addAccount(addr, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	ctx, err := eng.BuildSigningContextWithContext(context.Background(), addr)
+	ctx, err := eng.BuildSigningContext(context.Background(), addr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestBuildSigningContext_RekeyedAccount_CacheHit(t *testing.T) {
 	// Ensure auth addr is in signer cache
 	eng.SignerCache.AddAddress(authAddr, "ed25519")
 
-	ctx, err := eng.BuildSigningContextWithContext(context.Background(), sender)
+	ctx, err := eng.BuildSigningContext(context.Background(), sender)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestBuildSigningContext_NotSignable(t *testing.T) {
 	// Remove address from signer cache
 	eng.SignerCache = cache.NewSignerCache()
 
-	_, err := eng.BuildSigningContextWithContext(context.Background(), addr)
+	_, err := eng.BuildSigningContext(context.Background(), addr)
 	if err == nil {
 		t.Fatal("expected error for non-signable address")
 	}
@@ -126,7 +126,7 @@ func TestBuildSigningContext_RekeyedNotSignable(t *testing.T) {
 	// so remove authAddr to simulate not-signable)
 	eng.SignerCache.RemoveAddress(authAddr)
 
-	_, err := eng.BuildSigningContextWithContext(context.Background(), sender)
+	_, err := eng.BuildSigningContext(context.Background(), sender)
 	if err == nil {
 		t.Fatal("expected error for rekeyed-not-signable")
 	}
@@ -143,7 +143,7 @@ func TestBuildSigningContext_DefaultKeyType(t *testing.T) {
 	// Set key type to empty string
 	eng.SignerCache.AddAddress(addr, "")
 
-	ctx, err := eng.BuildSigningContextWithContext(context.Background(), addr)
+	ctx, err := eng.BuildSigningContext(context.Background(), addr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestBuildSigningContext_FalconKeyType(t *testing.T) {
 	eng := setupEngineWithMockAlgod(t, transport)
 	eng.SignerCache.AddAddress(addr, "aplane.falcon1024.v1")
 
-	ctx, err := eng.BuildSigningContextWithContext(context.Background(), addr)
+	ctx, err := eng.BuildSigningContext(context.Background(), addr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestBuildSigningContext_ViaAlias(t *testing.T) {
 	eng := setupEngineWithMockAlgod(t, transport)
 	eng.AliasCache.Aliases = map[string]string{"alice": addr}
 
-	ctx, err := eng.BuildSigningContextWithContext(context.Background(), "alice")
+	ctx, err := eng.BuildSigningContext(context.Background(), "alice")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

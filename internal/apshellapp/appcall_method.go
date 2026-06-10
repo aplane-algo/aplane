@@ -46,7 +46,7 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 		return nil, err
 	}
 
-	preparedResult, err := a.eng.PrepareAppCallMethodWithContext(ctx, engine.MethodAppCallParams{
+	preparedResult, err := a.eng.PrepareAppCallMethod(ctx, engine.MethodAppCallParams{
 		ABIPath: req.ABIPath,
 		Method:  req.Method,
 		Args:    req.ArgValues,
@@ -97,7 +97,7 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 	decorateAppCallMethodResult(result)
 
 	if req.PayAmount > 0 {
-		paymentPrepResult, _, err := a.eng.PreparePaymentWithContext(ctx, engine.SendPaymentParams{
+		paymentPrepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 			From:       fromAddr,
 			To:         crypto.GetApplicationAddress(req.AppID).String(),
 			Amount:     req.PayAmount,
@@ -114,7 +114,7 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 			return nil, err
 		}
 
-		submit, err := a.eng.ExecutePreparedGroupWithContext(ctx, group.engineGroup, req.Wait)
+		submit, err := a.eng.ExecutePreparedGroup(ctx, group.engineGroup, req.Wait)
 		if err != nil {
 			return nil, fmt.Errorf("grouped app call failed: %w", err)
 		}
@@ -128,7 +128,7 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 		return result, nil
 	}
 
-	submit, err := a.eng.SignAndSubmitWithContext(ctx, prepared.Prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prepared.Prep.enginePrep, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("app call failed: %w", err)
 	}

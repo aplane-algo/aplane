@@ -62,13 +62,13 @@ func (a *App) AppDeploy(ctx context.Context, req AppDeployRequest) (*AppDeployRe
 	}
 	req.From = fromAddr
 
-	prepResult, err := a.eng.PrepareAppDeployWithContext(ctx, req.toEngineParams())
+	prepResult, err := a.eng.PrepareAppDeploy(ctx, req.toEngineParams())
 	if err != nil {
 		return nil, err
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmitWithContext(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("app deploy failed: %w", err)
 	}
@@ -87,7 +87,7 @@ func (a *App) AppDeploy(ctx context.Context, req AppDeployRequest) (*AppDeployRe
 	}
 
 	if req.Wait && submit.Confirmed {
-		createdResult, err := a.eng.LookupCreatedApplicationWithContext(ctx, submit.TxID)
+		createdResult, err := a.eng.LookupCreatedApplication(ctx, submit.TxID)
 		if err != nil {
 			return nil, err
 		}

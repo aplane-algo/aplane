@@ -52,7 +52,7 @@ func TestFindAssetHolding(t *testing.T) {
 
 func TestPrepareOptIn_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
-	_, err := eng.PrepareOptInWithContext(context.Background(), OptInParams{Account: testAddr(1), AssetID: 10})
+	_, err := eng.PrepareOptIn(context.Background(), OptInParams{Account: testAddr(1), AssetID: 10})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -60,7 +60,7 @@ func TestPrepareOptIn_NoAlgodClient(t *testing.T) {
 
 func TestPrepareOptOut_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
-	_, _, err := eng.PrepareOptOutWithContext(context.Background(), OptOutParams{Account: testAddr(1), AssetID: 10})
+	_, _, err := eng.PrepareOptOut(context.Background(), OptOutParams{Account: testAddr(1), AssetID: 10})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -68,7 +68,7 @@ func TestPrepareOptOut_NoAlgodClient(t *testing.T) {
 
 func TestPrepareASATransfer_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
-	_, _, err := eng.PrepareASATransferWithContext(context.Background(), SendASAParams{From: testAddr(1), To: testAddr(2), AssetID: 10, Amount: 1})
+	_, _, err := eng.PrepareASATransfer(context.Background(), SendASAParams{From: testAddr(1), To: testAddr(2), AssetID: 10, Amount: 1})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -81,7 +81,7 @@ func TestPrepareOptOut_NotOptedIn(t *testing.T) {
 	transport.addAccount(addr, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, checkResult, err := eng.PrepareOptOutWithContext(context.Background(), OptOutParams{Account: addr, AssetID: 42})
+	_, checkResult, err := eng.PrepareOptOut(context.Background(), OptOutParams{Account: addr, AssetID: 42})
 	if err == nil {
 		t.Fatal("expected error for not opted in")
 	}
@@ -102,7 +102,7 @@ func TestPrepareOptOut_BalanceRequiresCloseTo(t *testing.T) {
 	})
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, checkResult, err := eng.PrepareOptOutWithContext(context.Background(), OptOutParams{Account: addr, AssetID: 42})
+	_, checkResult, err := eng.PrepareOptOut(context.Background(), OptOutParams{Account: addr, AssetID: 42})
 	if err == nil {
 		t.Fatal("expected error when balance > 0 and no CloseTo")
 	}
@@ -126,7 +126,7 @@ func TestPrepareOptOut_ZeroBalance_ImplicitSelf(t *testing.T) {
 	})
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, checkResult, err := eng.PrepareOptOutWithContext(context.Background(), OptOutParams{Account: addr, AssetID: 42})
+	result, checkResult, err := eng.PrepareOptOut(context.Background(), OptOutParams{Account: addr, AssetID: 42})
 	if err != nil || result == nil {
 		t.Fatalf("PrepareOptOut() error = %v, result = %v", err, result)
 	}
@@ -153,7 +153,7 @@ func TestPrepareOptOut_CloseToNotOptedIn(t *testing.T) {
 	transport.addAccount(closeTo, 1_000_000) // closeTo has no assets
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, _, err := eng.PrepareOptOutWithContext(context.Background(), OptOutParams{Account: addr, AssetID: 42, CloseTo: closeTo})
+	_, _, err := eng.PrepareOptOut(context.Background(), OptOutParams{Account: addr, AssetID: 42, CloseTo: closeTo})
 	if err == nil {
 		t.Fatal("expected error when close-to is not opted in")
 	}
@@ -168,7 +168,7 @@ func TestCheckASABalances_SenderNotOptedIn(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, err := eng.checkASABalancesWithContext(context.Background(), sender, receiver, 42, 100)
+	_, err := eng.checkASABalances(context.Background(), sender, receiver, 42, 100)
 	if err == nil {
 		t.Fatal("expected error for sender not opted in")
 	}
@@ -195,7 +195,7 @@ func TestCheckASABalances_Success(t *testing.T) {
 	})
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, err := eng.checkASABalancesWithContext(context.Background(), sender, receiver, 42, 500)
+	result, err := eng.checkASABalances(context.Background(), sender, receiver, 42, 500)
 	if err != nil {
 		t.Fatalf("checkASABalances() error = %v", err)
 	}
@@ -228,7 +228,7 @@ func TestCheckASABalances_InsufficientFunds(t *testing.T) {
 	})
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, err := eng.checkASABalancesWithContext(context.Background(), sender, receiver, 42, 500)
+	result, err := eng.checkASABalances(context.Background(), sender, receiver, 42, 500)
 	if err != nil {
 		t.Fatalf("checkASABalances() error = %v", err)
 	}
@@ -252,7 +252,7 @@ func TestCheckASABalances_ReceiverNotOptedIn(t *testing.T) {
 	transport.addAccount(receiver, 1_000_000) // no assets
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, err := eng.checkASABalancesWithContext(context.Background(), sender, receiver, 42, 100)
+	result, err := eng.checkASABalances(context.Background(), sender, receiver, 42, 100)
 	if err != nil {
 		t.Fatalf("checkASABalances() error = %v", err)
 	}

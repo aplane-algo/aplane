@@ -32,7 +32,7 @@ func (a *App) ResolveSigningContext(ctx context.Context, addressOrAlias string) 
 		result.IsRekeyed, result.AuthAddress = a.eng.IsRekeyed(address)
 	}
 
-	signingCtx, err := a.eng.BuildSigningContextWithContext(ctx, addressOrAlias)
+	signingCtx, err := a.eng.BuildSigningContext(ctx, addressOrAlias)
 	if err != nil {
 		return nil, err
 	}

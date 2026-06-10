@@ -57,7 +57,7 @@ func (a *App) ASACacheList(_ context.Context) (*ASACommandResult, error) {
 
 // ASACacheAdd resolves and stores one ASA in the current network cache.
 func (a *App) ASACacheAdd(ctx context.Context, assetID uint64) (*ASACommandResult, error) {
-	info, err := a.eng.AddASAToCacheWithContext(ctx, assetID)
+	info, err := a.eng.AddASAToCache(ctx, assetID)
 	if err != nil {
 		return nil, err
 	}

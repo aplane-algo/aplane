@@ -89,7 +89,7 @@ type SweepRequest struct {
 // ResolveIncentiveEligibility queries current status and resolves whether to charge the fee.
 func (a *App) ResolveIncentiveEligibility(ctx context.Context, address string, requested bool) (*IncentiveEligibilityResult, error) {
 	cache.Debug("checking incentive eligibility", "address", address)
-	alreadyEligible, err := a.eng.GetIncentiveEligibilityWithContext(ctx, address)
+	alreadyEligible, err := a.eng.GetIncentiveEligibility(ctx, address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query incentive eligibility: %w", err)
 	}
@@ -117,7 +117,7 @@ func (a *App) Validate(ctx context.Context, account string) (*ValidateCommandRes
 	}
 	for _, addr := range addresses {
 		item := ValidateItemResult{Address: addr}
-		prepResult, _, err := a.eng.PreparePaymentWithContext(ctx, engine.SendPaymentParams{
+		prepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 			From:   addr,
 			To:     addr,
 			Amount: 0,
@@ -129,7 +129,7 @@ func (a *App) Validate(ctx context.Context, account string) (*ValidateCommandRes
 			continue
 		}
 
-		submit, err := a.eng.SignAndSubmitWithContext(ctx, prepResult, true)
+		submit, err := a.eng.SignAndSubmit(ctx, prepResult, true)
 		if err != nil {
 			if submit != nil {
 				item.TxID = submit.TxID
@@ -190,7 +190,7 @@ func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult,
 		return nil, fmt.Errorf("failed to resolve asset %q: %w", req.AssetRef, err)
 	}
 
-	prepResult, err := a.eng.PrepareOptInWithContext(ctx, engine.OptInParams{
+	prepResult, err := a.eng.PrepareOptIn(ctx, engine.OptInParams{
 		Account:    address,
 		AssetID:    meta.AssetID,
 		Fee:        req.Fee,
@@ -201,7 +201,7 @@ func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult,
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmitWithContext(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("opt-in failed: %w", err)
 	}
@@ -238,7 +238,7 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 		}
 	}
 
-	prepResult, checkResult, err := a.eng.PrepareOptOutWithContext(ctx, engine.OptOutParams{
+	prepResult, checkResult, err := a.eng.PrepareOptOut(ctx, engine.OptOutParams{
 		Account:    accountAddr,
 		AssetID:    meta.AssetID,
 		CloseTo:    closeToAddr,
@@ -251,7 +251,7 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 	prep := preparedTxnFromEngine(prepResult)
 	check := optOutCheckDetailsFromEngine(checkResult)
 
-	submit, err := a.eng.SignAndSubmitWithContext(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("opt-out failed: %w", err)
 	}
@@ -293,7 +293,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		return nil, fmt.Errorf("failed to resolve address: %w", err)
 	}
 
-	prepResult, err := a.eng.PrepareKeyRegWithContext(ctx, engine.KeyRegParams{
+	prepResult, err := a.eng.PrepareKeyReg(ctx, engine.KeyRegParams{
 		Account:           address,
 		Mode:              mode,
 		VoteKey:           voteKey,
@@ -309,7 +309,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmitWithContext(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("key registration failed: %w", err)
 	}
@@ -329,7 +329,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 
 // KeyRegFromPartKey prepares and submits online keyreg from parsed goal output.
 func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.ParsedInfo, incentiveEligible bool) (*KeyRegCommandResult, error) {
-	prepResult, err := a.eng.PrepareKeyRegWithContext(ctx, engine.KeyRegParams{
+	prepResult, err := a.eng.PrepareKeyReg(ctx, engine.KeyRegParams{
 		Account:           parsed.ParentAddress,
 		Mode:              "online",
 		VoteKey:           parsed.VoteKey,
@@ -345,7 +345,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmitWithContext(ctx, prep.enginePrep, false)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, false)
 	if err != nil {
 		return nil, fmt.Errorf("key registration failed: %w", err)
 	}
@@ -353,7 +353,7 @@ func (a *App) KeyRegFromPartKey(ctx context.Context, parsed *partkeyparse.Parsed
 	confirmed := false
 	output := submit.Output
 	if !a.eng.GetSimulate() {
-		confirmation, err := a.eng.WaitForConfirmationResultWithContext(ctx, submit.TxID, 9)
+		confirmation, err := a.eng.WaitForConfirmationResult(ctx, submit.TxID, 9)
 		if confirmation != nil {
 			output += confirmation.Output
 		}
@@ -383,7 +383,7 @@ func (a *App) ListRekeys(_ context.Context) (*RekeyListCommandResult, error) {
 
 // RefreshAuthCache refreshes cached auth-address relationships.
 func (a *App) RefreshAuthCache(ctx context.Context) error {
-	return a.eng.RefreshAuthCacheWithContext(ctx)
+	return a.eng.RefreshAuthCache(ctx)
 }
 
 // RefreshAuthAddress refreshes the cached auth-address relationship for one account.
@@ -416,7 +416,7 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 		return nil, fmt.Errorf("failed to resolve to address: %w", err)
 	}
 
-	prepResult, checkResult, err := a.eng.PrepareRekeyWithContext(ctx, engine.RekeyParams{
+	prepResult, checkResult, err := a.eng.PrepareRekey(ctx, engine.RekeyParams{
 		From:       fromAddress,
 		To:         toAddress,
 		Fee:        req.Fee,
@@ -433,7 +433,7 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 	check := rekeyCheckDetailsFromEngine(checkResult)
 
 	canSignForTarget, isLsig := a.eng.CanSignForAddress(toAddress)
-	submit, err := a.eng.SignAndSubmitWithContext(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("rekey transaction failed: %w", err)
 	}
@@ -466,7 +466,7 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 		return nil, fmt.Errorf("failed to resolve address: %w", err)
 	}
 
-	balanceEngineResult, err := a.eng.GetAccountBalanceRawWithContext(ctx, address)
+	balanceEngineResult, err := a.eng.GetAccountBalanceRaw(ctx, address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query account info: %w", err)
 	}
@@ -475,7 +475,7 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 		return nil, fmt.Errorf("account is not rekeyed (it already signs for itself)")
 	}
 
-	prepResult, _, err := a.eng.PrepareRekeyWithContext(ctx, engine.RekeyParams{
+	prepResult, _, err := a.eng.PrepareRekey(ctx, engine.RekeyParams{
 		From:       address,
 		To:         address,
 		Fee:        req.Fee,
@@ -486,7 +486,7 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 	}
 	prep := preparedTxnFromEngine(prepResult)
 
-	submit, err := a.eng.SignAndSubmitWithContext(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("unrekey transaction failed: %w", err)
 	}
@@ -596,7 +596,7 @@ func (a *App) Close(ctx context.Context, req CloseRequest) (*CloseCommandResult,
 		return nil, fmt.Errorf("cannot close account to itself")
 	}
 
-	prepResult, checkResult, err := a.eng.PrepareCloseWithContext(ctx, engine.CloseAccountParams{
+	prepResult, checkResult, err := a.eng.PrepareClose(ctx, engine.CloseAccountParams{
 		From:       fromAddress,
 		CloseTo:    toAddress,
 		Fee:        req.Fee,
@@ -609,7 +609,7 @@ func (a *App) Close(ctx context.Context, req CloseRequest) (*CloseCommandResult,
 	prep := preparedTxnFromEngine(prepResult)
 	check := closeCheckDetailsFromEngine(checkResult)
 
-	submit, err := a.eng.SignAndSubmitWithContext(ctx, prep.enginePrep, req.Wait)
+	submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
 	if err != nil {
 		return nil, fmt.Errorf("close failed: %w", err)
 	}
@@ -673,7 +673,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 
 	receiverOptedIn := false
 	if assetMeta.AssetID != 0 {
-		receiverEngineBalance, err := a.eng.GetAccountBalanceRawWithContext(ctx, toAddress)
+		receiverEngineBalance, err := a.eng.GetAccountBalanceRaw(ctx, toAddress)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get receiver account info: %w", err)
 		}
@@ -711,7 +711,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			continue
 		}
 
-		balanceEngineResult, err := a.eng.GetAccountBalanceRawWithContext(ctx, fromAddress)
+		balanceEngineResult, err := a.eng.GetAccountBalanceRaw(ctx, fromAddress)
 		if err != nil {
 			item.Error = fmt.Sprintf("failed to get account info: %v", err)
 			result.FailureCount++
@@ -752,7 +752,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 		item.Amount = asa.AmountFromRaw(sendAmount, assetMeta)
 		var prep *PreparedTxn
 		if assetMeta.AssetID == 0 {
-			prepResult, _, prepErr := a.eng.PreparePaymentWithContext(ctx, engine.SendPaymentParams{
+			prepResult, _, prepErr := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
 				From:       fromAddress,
 				To:         toAddress,
 				Amount:     item.Amount.Raw,
@@ -762,7 +762,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr
 		} else {
-			prepResult, _, prepErr := a.eng.PrepareASATransferWithContext(ctx, engine.SendASAParams{
+			prepResult, _, prepErr := a.eng.PrepareASATransfer(ctx, engine.SendASAParams{
 				From:       fromAddress,
 				To:         toAddress,
 				AssetID:    assetMeta.AssetID,
@@ -780,7 +780,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			continue
 		}
 
-		submit, err := a.eng.SignAndSubmitWithContext(ctx, prep.enginePrep, req.Wait)
+		submit, err := a.eng.SignAndSubmit(ctx, prep.enginePrep, req.Wait)
 		if err != nil {
 			if submit != nil {
 				item.TxID = submit.TxID

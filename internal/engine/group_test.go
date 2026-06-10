@@ -140,7 +140,7 @@ func TestExecutePreparedGroupValidatesLsigArgsBeforeSubmit(t *testing.T) {
 		t.Fatalf("PrepareGroup() error = %v", err)
 	}
 
-	_, err = eng.ExecutePreparedGroupWithContext(context.Background(), group, false)
+	_, err = eng.ExecutePreparedGroup(context.Background(), group, false)
 	if err == nil {
 		t.Fatal("ExecutePreparedGroup() error = nil, want validation error")
 	}

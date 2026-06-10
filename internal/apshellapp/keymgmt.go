@@ -35,7 +35,7 @@ type DeleteKeyTarget struct {
 
 // Signers refreshes signer state and returns all signable accounts.
 func (a *App) Signers(ctx context.Context) (*SignersCommandResult, error) {
-	refreshedKeys, err := a.eng.RefreshKeysWithContext(ctx)
+	refreshedKeys, err := a.eng.RefreshKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (a *App) Signers(ctx context.Context) (*SignersCommandResult, error) {
 
 // KeyTypes returns the available signer key types.
 func (a *App) KeyTypes(ctx context.Context) (*KeyTypesCommandResult, error) {
-	keyTypes, err := a.eng.ListKeyTypesWithContext(ctx)
+	keyTypes, err := a.eng.ListKeyTypes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (a *App) GenerateKey(ctx context.Context, req GenerateKeyRequest) (*Generat
 	// to its canonical form before any lookup or storage.
 	req.KeyType = keytypefmt.Canonicalize(req.KeyType)
 
-	keyTypes, err := a.eng.ListKeyTypesWithContext(ctx)
+	keyTypes, err := a.eng.ListKeyTypes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (a *App) GenerateKey(ctx context.Context, req GenerateKeyRequest) (*Generat
 		return nil, err
 	}
 
-	result, err := a.eng.GenerateKeyWithContext(ctx, req.KeyType, params)
+	result, err := a.eng.GenerateKey(ctx, req.KeyType, params)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (a *App) DeleteKey(ctx context.Context, req DeleteKeyRequest) error {
 	if err != nil {
 		return err
 	}
-	return a.eng.DeleteKeyWithContext(ctx, address)
+	return a.eng.DeleteKey(ctx, address)
 }
 
 // ResolveDeleteKeyTarget resolves the provided address or alias for prompt/display use.

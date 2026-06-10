@@ -29,15 +29,15 @@ func (sc *SigningContext) DisplayKeyType() string {
 	return "Ed25519 key"
 }
 
-// BuildSigningContextWithContext builds a complete signing context using the
+// BuildSigningContext builds a complete signing context using the
 // caller's context for blockchain lookups.
-func (e *Engine) BuildSigningContextWithContext(ctx context.Context, addressOrAlias string) (*SigningContext, error) {
+func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string) (*SigningContext, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
 
 	// Auto-refresh SignerCache if connected but empty
-	if err := e.EnsureSignerCacheWithContext(ctx); err != nil {
+	if err := e.EnsureSignerCache(ctx); err != nil {
 		return nil, err
 	}
 
@@ -125,9 +125,9 @@ func (e *Engine) BuildSigningContextWithContext(ctx context.Context, addressOrAl
 	}, nil
 }
 
-// RefreshAuthCacheWithContext refreshes the auth address cache from blockchain
+// RefreshAuthCache refreshes the auth address cache from blockchain
 // using the caller's context for algod lookups.
-func (e *Engine) RefreshAuthCacheWithContext(ctx context.Context) error {
+func (e *Engine) RefreshAuthCache(ctx context.Context) error {
 	if e.AlgodClient == nil {
 		return ErrNoAlgodClient
 	}

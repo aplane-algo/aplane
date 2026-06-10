@@ -37,7 +37,7 @@ func TestSyncSignerStatusRefreshesCacheOnFirstReadyMismatch(t *testing.T) {
 		}
 	})
 
-	result, err := eng.SyncSignerStatusWithContext(context.Background())
+	result, err := eng.SyncSignerStatus(context.Background())
 	if err != nil {
 		t.Fatalf("SyncSignerStatus() error = %v", err)
 	}
@@ -78,7 +78,7 @@ func TestSyncSignerStatusSkipsRefreshWhenRevisionAndCountMatch(t *testing.T) {
 	eng.signerStatusRevisionSeen = true
 	eng.signerStatusKeysetRevSeen = 7
 
-	result, err := eng.SyncSignerStatusWithContext(context.Background())
+	result, err := eng.SyncSignerStatus(context.Background())
 	if err != nil {
 		t.Fatalf("SyncSignerStatus() error = %v", err)
 	}
@@ -108,7 +108,7 @@ func TestSyncSignerStatusClearsCacheWhenSignerLocks(t *testing.T) {
 	eng.signerStatusRevisionSeen = true
 	eng.signerStatusKeysetRevSeen = 7
 
-	result, err := eng.SyncSignerStatusWithContext(context.Background())
+	result, err := eng.SyncSignerStatus(context.Background())
 	if err != nil {
 		t.Fatalf("SyncSignerStatus() error = %v", err)
 	}

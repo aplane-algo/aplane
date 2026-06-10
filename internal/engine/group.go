@@ -38,13 +38,13 @@ type PreparedGroupSubmitResult struct {
 }
 
 type paymentAppGroupPreparer interface {
-	PreparePaymentWithContext(context.Context, SendPaymentParams) (*TransactionPrepResult, *BalanceCheckResult, error)
-	PrepareAppCallRawWithContext(context.Context, RawAppCallParams) (*TransactionPrepResult, error)
+	PreparePayment(context.Context, SendPaymentParams) (*TransactionPrepResult, *BalanceCheckResult, error)
+	PrepareAppCallRaw(context.Context, RawAppCallParams) (*TransactionPrepResult, error)
 }
 
 type paymentMethodGroupPreparer interface {
-	PreparePaymentWithContext(context.Context, SendPaymentParams) (*TransactionPrepResult, *BalanceCheckResult, error)
-	PrepareAppCallMethodWithContext(context.Context, MethodAppCallParams) (*PreparedMethodAppCall, error)
+	PreparePayment(context.Context, SendPaymentParams) (*TransactionPrepResult, *BalanceCheckResult, error)
+	PrepareAppCallMethod(context.Context, MethodAppCallParams) (*PreparedMethodAppCall, error)
 }
 
 // PrepareGroup assembles prepared transactions into a canonical grouped plan.
@@ -114,9 +114,9 @@ func (g *PreparedGroup) AppCallInfoMap() []*signerapi.AppCallInfo {
 	return info
 }
 
-// ExecutePreparedGroupWithContext signs and submits a prepared group using the
+// ExecutePreparedGroup signs and submits a prepared group using the
 // existing grouped signing/submission flow and the caller's context.
-func (e *Engine) ExecutePreparedGroupWithContext(ctx context.Context, group *PreparedGroup, wait bool) (*PreparedGroupSubmitResult, error) {
+func (e *Engine) ExecutePreparedGroup(ctx context.Context, group *PreparedGroup, wait bool) (*PreparedGroupSubmitResult, error) {
 	if group == nil {
 		return nil, fmt.Errorf("prepared group is nil")
 	}
@@ -127,7 +127,7 @@ func (e *Engine) ExecutePreparedGroupWithContext(ctx context.Context, group *Pre
 	txns := group.Transactions()
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer
-	opts := e.defaultSubmitOptionsWithContext(ctx, wait, &writeNotices, &output)
+	opts := e.defaultSubmitOptions(ctx, wait, &writeNotices, &output)
 	opts.LsigArgsMap = group.LsigArgsMap()
 	opts.AppCallInfo = group.AppCallInfoMap()
 	txIDs, submittedTxns, err := e.signAndSubmitGroup(txns, opts)
@@ -147,12 +147,12 @@ func (e *Engine) ExecutePreparedGroupWithContext(ctx context.Context, group *Pre
 
 // PreparePaymentAppGroupWithContext prepares a payment and raw app call as one grouped plan.
 func PreparePaymentAppGroupWithContext(ctx context.Context, prepper paymentAppGroupPreparer, payment SendPaymentParams, app RawAppCallParams) (*PreparedGroup, error) {
-	paymentPrep, _, err := prepper.PreparePaymentWithContext(ctx, payment)
+	paymentPrep, _, err := prepper.PreparePayment(ctx, payment)
 	if err != nil {
 		return nil, err
 	}
 
-	appPrep, err := prepper.PrepareAppCallRawWithContext(ctx, app)
+	appPrep, err := prepper.PrepareAppCallRaw(ctx, app)
 	if err != nil {
 		return nil, err
 	}
@@ -162,12 +162,12 @@ func PreparePaymentAppGroupWithContext(ctx context.Context, prepper paymentAppGr
 
 // PreparePaymentMethodGroupWithContext prepares a payment and ABI-backed app call as one grouped plan.
 func PreparePaymentMethodGroupWithContext(ctx context.Context, prepper paymentMethodGroupPreparer, payment SendPaymentParams, app MethodAppCallParams) (*PreparedGroup, error) {
-	paymentPrep, _, err := prepper.PreparePaymentWithContext(ctx, payment)
+	paymentPrep, _, err := prepper.PreparePayment(ctx, payment)
 	if err != nil {
 		return nil, err
 	}
 
-	appPrep, err := prepper.PrepareAppCallMethodWithContext(ctx, app)
+	appPrep, err := prepper.PrepareAppCallMethod(ctx, app)
 	if err != nil {
 		return nil, err
 	}

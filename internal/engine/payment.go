@@ -25,27 +25,27 @@ type SendPaymentParams struct {
 	LsigArgs   map[string][]byte // Optional LogicSig arguments for generic LogicSigs (e.g., HTLC preimage)
 }
 
-// PreparePaymentWithContext validates and prepares an ALGO payment transaction
+// PreparePayment validates and prepares an ALGO payment transaction
 // using the caller's context for algod lookups.
-func (e *Engine) PreparePaymentWithContext(ctx context.Context, params SendPaymentParams) (*TransactionPrepResult, *BalanceCheckResult, error) {
+func (e *Engine) PreparePayment(ctx context.Context, params SendPaymentParams) (*TransactionPrepResult, *BalanceCheckResult, error) {
 	if e.AlgodClient == nil {
 		return nil, nil, ErrNoAlgodClient
 	}
 
 	// Build signing context (handles auth address lookup for rekeyed accounts)
-	signingCtx, err := e.BuildSigningContextWithContext(ctx, params.From)
+	signingCtx, err := e.BuildSigningContext(ctx, params.From)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Check balances
-	balanceCheck, err := e.checkPaymentBalancesWithContext(ctx, params.From, params.To, params.Amount, params.Fee, params.UseFlatFee)
+	balanceCheck, err := e.checkPaymentBalances(ctx, params.From, params.To, params.Amount, params.Fee, params.UseFlatFee)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Get suggested params with fee settings
-	sp, err := e.getSuggestedParamsWithFeeWithContext(ctx, params.Fee, params.UseFlatFee)
+	sp, err := e.getSuggestedParamsWithFee(ctx, params.Fee, params.UseFlatFee)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -75,7 +75,7 @@ func (e *Engine) PreparePaymentWithContext(ctx context.Context, params SendPayme
 	}, balanceCheck, nil
 }
 
-func (e *Engine) checkPaymentBalancesWithContext(ctx context.Context, fromAddr, toAddr string, amountMicro, fee uint64, useFlatFee bool) (*BalanceCheckResult, error) {
+func (e *Engine) checkPaymentBalances(ctx context.Context, fromAddr, toAddr string, amountMicro, fee uint64, useFlatFee bool) (*BalanceCheckResult, error) {
 	result := &BalanceCheckResult{}
 
 	// Get sender account info
@@ -137,9 +137,9 @@ type CloseAccountCheckResult struct {
 	CloseToValid bool     // True if close-to address is valid
 }
 
-// PrepareCloseWithContext validates and prepares an account close transaction
+// PrepareClose validates and prepares an account close transaction
 // using the caller's context for algod lookups.
-func (e *Engine) PrepareCloseWithContext(ctx context.Context, params CloseAccountParams) (*TransactionPrepResult, *CloseAccountCheckResult, error) {
+func (e *Engine) PrepareClose(ctx context.Context, params CloseAccountParams) (*TransactionPrepResult, *CloseAccountCheckResult, error) {
 	if e.AlgodClient == nil {
 		return nil, nil, ErrNoAlgodClient
 	}
@@ -184,13 +184,13 @@ func (e *Engine) PrepareCloseWithContext(ctx context.Context, params CloseAccoun
 	checkResult.CloseToValid = closeToAcct.Amount > 0 || params.CloseTo == params.From
 
 	// Build signing context (handles auth address lookup for rekeyed accounts)
-	signingCtx, err := e.BuildSigningContextWithContext(ctx, params.From)
+	signingCtx, err := e.BuildSigningContext(ctx, params.From)
 	if err != nil {
 		return nil, checkResult, err
 	}
 
 	// Get suggested params with fee settings
-	sp, err := e.getSuggestedParamsWithFeeWithContext(ctx, params.Fee, params.UseFlatFee)
+	sp, err := e.getSuggestedParamsWithFee(ctx, params.Fee, params.UseFlatFee)
 	if err != nil {
 		return nil, checkResult, err
 	}
