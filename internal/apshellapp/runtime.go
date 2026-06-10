@@ -208,11 +208,15 @@ func (a *App) PluginsInfo(_ context.Context, args []string) (*PluginsCommandResu
 // CompleterDeps returns the interactive completion dependencies backed by current engine state.
 func (a *App) CompleterDeps() CompleterDeps {
 	return CompleterDeps{
-		AliasCache:        &a.eng.AliasCache,
-		ASACache:          &a.eng.AsaCache,
-		SetCache:          &a.eng.SetCache,
-		SignerCache:       &a.eng.SignerCache,
-		EnsureSignerCache: a.eng.EnsureSignerCache,
+		AliasCache:  &a.eng.AliasCache,
+		ASACache:    &a.eng.AsaCache,
+		SetCache:    &a.eng.SetCache,
+		SignerCache: &a.eng.SignerCache,
+		EnsureSignerCache: func() error {
+			// Completion warmup runs on the interactive prompt path; no
+			// caller-scoped context exists there.
+			return a.eng.EnsureSignerCacheWithContext(context.Background())
+		},
 	}
 }
 

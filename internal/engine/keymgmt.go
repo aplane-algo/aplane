@@ -10,11 +10,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
-// ListKeyTypes returns available key types from Signer.
-func (e *Engine) ListKeyTypes() ([]signerapi.KeyTypeInfo, error) {
-	return e.ListKeyTypesWithContext(context.Background())
-}
-
 func (e *Engine) ListKeyTypesWithContext(ctx context.Context) ([]signerapi.KeyTypeInfo, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected
@@ -24,11 +19,6 @@ func (e *Engine) ListKeyTypesWithContext(ctx context.Context) ([]signerapi.KeyTy
 		return nil, fmt.Errorf("failed to fetch key types: %w", err)
 	}
 	return resp.KeyTypes, nil
-}
-
-// GenerateKey generates a new key on the Signer and refreshes the key cache.
-func (e *Engine) GenerateKey(keyType string, params map[string]string) (*GenerateKeyResult, error) {
-	return e.GenerateKeyWithContext(context.Background(), keyType, params)
 }
 
 func (e *Engine) GenerateKeyWithContext(ctx context.Context, keyType string, params map[string]string) (*GenerateKeyResult, error) {
@@ -42,11 +32,6 @@ func (e *Engine) GenerateKeyWithContext(ctx context.Context, keyType string, par
 	// Refresh signer cache to include the new key
 	_, _ = e.RefreshKeysWithContext(ctx)
 	return &GenerateKeyResult{Address: resp.Address, KeyType: resp.KeyType}, nil
-}
-
-// DeleteKey deletes a key from the Signer and refreshes the key cache.
-func (e *Engine) DeleteKey(address string) error {
-	return e.DeleteKeyWithContext(context.Background(), address)
 }
 
 func (e *Engine) DeleteKeyWithContext(ctx context.Context, address string) error {

@@ -56,14 +56,6 @@ func pluginAppCallInfo(txn types.Transaction) *signerapi.AppCallInfo {
 //
 // Edge case: if ALL transactions are plugin-owned (no server-managed), skip /plan and /sign
 // entirely — do group building locally, sign everything locally, submit directly.
-func (e *Engine) SignAndSubmitWithLocalSigners(txns []types.Transaction, localSigners []LocalSigner, lsigArgs []map[string][]byte) ([]string, error) {
-	result, err := e.SignAndSubmitWithLocalSignersWithContext(context.Background(), txns, localSigners, lsigArgs)
-	if result == nil {
-		return nil, err
-	}
-	return result.TxIDs, err
-}
-
 func (e *Engine) SignAndSubmitWithLocalSignersWithContext(ctx context.Context, txns []types.Transaction, localSigners []LocalSigner, lsigArgs []map[string][]byte) (*PluginSubmitResult, error) {
 	// Build lookup map for local signers
 	localSignerKeys := make(map[string][]byte, len(localSigners))
@@ -316,7 +308,7 @@ func (e *Engine) BuildPluginContext() (jsonrpc.Context, error) {
 		addressMap[alias] = address
 	}
 
-	if err := e.EnsureSignerCache(); err != nil {
+	if err := e.EnsureSignerCacheWithContext(context.Background()); err != nil {
 		return jsonrpc.Context{}, err
 	}
 	accounts := e.signerCacheAddresses()

@@ -55,13 +55,6 @@ type AtomicSubmitResult struct {
 	WriteNotices []TransactionWriteNotice
 }
 
-// PrepareAtomicPayments prepares multiple ALGO payments for atomic submission.
-// All addresses must be pre-resolved 58-character Algorand addresses.
-// Amounts must be in microAlgos.
-func (e *Engine) PrepareAtomicPayments(payments []AtomicPaymentParams, groupParams AtomicGroupParams) (*AtomicPrepResult, error) {
-	return e.PrepareAtomicPaymentsWithContext(context.Background(), payments, groupParams)
-}
-
 func (e *Engine) PrepareAtomicPaymentsWithContext(ctx context.Context, payments []AtomicPaymentParams, groupParams AtomicGroupParams) (*AtomicPrepResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
@@ -107,13 +100,6 @@ func (e *Engine) PrepareAtomicPaymentsWithContext(ctx context.Context, payments 
 		Transactions:    txns,
 		SigningContexts: contexts,
 	}, nil
-}
-
-// PrepareAtomicASATransfers prepares multiple ASA transfers for atomic submission.
-// All addresses must be pre-resolved 58-character Algorand addresses.
-// Amounts must be in base units (accounting for asset decimals).
-func (e *Engine) PrepareAtomicASATransfers(transfers []AtomicASAParams, groupParams AtomicGroupParams) (*AtomicPrepResult, error) {
-	return e.PrepareAtomicASATransfersWithContext(context.Background(), transfers, groupParams)
 }
 
 func (e *Engine) PrepareAtomicASATransfersWithContext(ctx context.Context, transfers []AtomicASAParams, groupParams AtomicGroupParams) (*AtomicPrepResult, error) {
@@ -179,11 +165,6 @@ func (e *Engine) PrepareAtomicASATransfersWithContext(ctx context.Context, trans
 	}, nil
 }
 
-// SignAndSubmitAtomic signs and submits an atomic transaction group.
-func (e *Engine) SignAndSubmitAtomic(prep *AtomicPrepResult, wait bool) (*AtomicSubmitResult, error) {
-	return e.SignAndSubmitAtomicWithContext(context.Background(), prep, wait)
-}
-
 func (e *Engine) SignAndSubmitAtomicWithContext(ctx context.Context, prep *AtomicPrepResult, wait bool) (*AtomicSubmitResult, error) {
 	if len(prep.Transactions) == 0 {
 		return nil, fmt.Errorf("no transactions to submit")
@@ -206,12 +187,6 @@ func (e *Engine) SignAndSubmitAtomicWithContext(ctx context.Context, prep *Atomi
 	return result, nil
 }
 
-// ValidateAtomicPayments performs balance and validation checks for atomic ALGO payments.
-// Returns per-sender balance info for display purposes.
-func (e *Engine) ValidateAtomicPayments(payments []AtomicPaymentParams, fee uint64) ([]BalanceCheckResult, error) {
-	return e.ValidateAtomicPaymentsWithContext(context.Background(), payments, fee)
-}
-
 func (e *Engine) ValidateAtomicPaymentsWithContext(ctx context.Context, payments []AtomicPaymentParams, fee uint64) ([]BalanceCheckResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
@@ -232,12 +207,6 @@ func (e *Engine) ValidateAtomicPaymentsWithContext(ctx context.Context, payments
 	}
 
 	return results, nil
-}
-
-// ValidateAtomicASATransfers performs balance and opt-in checks for atomic ASA transfers.
-// Returns per-sender balance info for display purposes.
-func (e *Engine) ValidateAtomicASATransfers(transfers []AtomicASAParams) ([]BalanceCheckResult, error) {
-	return e.ValidateAtomicASATransfersWithContext(context.Background(), transfers)
 }
 
 func (e *Engine) ValidateAtomicASATransfersWithContext(ctx context.Context, transfers []AtomicASAParams) ([]BalanceCheckResult, error) {

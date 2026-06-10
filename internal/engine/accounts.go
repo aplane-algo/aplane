@@ -142,11 +142,6 @@ func (e *Engine) GetAccountBalanceRawWithContext(ctx context.Context, address st
 	return result, nil
 }
 
-// ListKeys returns all remote signing keys from Signer
-func (e *Engine) ListKeys() ([]KeyInfo, error) {
-	return e.ListKeysWithContext(context.Background())
-}
-
 func (e *Engine) ListKeysWithContext(ctx context.Context) ([]KeyInfo, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected
@@ -169,12 +164,6 @@ func (e *Engine) ListKeysWithContext(ctx context.Context) ([]KeyInfo, error) {
 		})
 	}
 	return result, nil
-}
-
-// RefreshKeys fetches keys from Signer, rebuilds the signer cache, and returns key info.
-// This replaces both the REPL's execKeys() cache-rebuild logic and refreshSignerCache().
-func (e *Engine) RefreshKeys() ([]KeyInfo, error) {
-	return e.RefreshKeysWithContext(context.Background())
 }
 
 func (e *Engine) RefreshKeysWithContext(ctx context.Context) ([]KeyInfo, error) {
@@ -232,7 +221,7 @@ func (e *Engine) listSignersCached() map[string]string {
 
 // ListSigners returns addresses we can actually sign for.
 func (e *Engine) ListSigners() (map[string]string, error) {
-	if err := e.EnsureSignerCache(); err != nil {
+	if err := e.EnsureSignerCacheWithContext(context.Background()); err != nil {
 		return nil, err
 	}
 	return e.listSignersCached(), nil
@@ -296,16 +285,6 @@ func (e *Engine) GetSignableAddresses() []string {
 type HoldersResult struct {
 	Addresses   []string
 	QueryErrors int
-}
-
-// GetHolders returns addresses with non-zero balance of the specified asset.
-// assetRef can be "algo", an ASA ID, or an ASA unit name.
-func (e *Engine) GetHolders(assetRef string) ([]string, error) {
-	result, err := e.GetHoldersWithContext(context.Background(), assetRef)
-	if result == nil {
-		return nil, err
-	}
-	return result.Addresses, err
 }
 
 // GetHoldersWithContext returns addresses with non-zero balance of the specified asset.

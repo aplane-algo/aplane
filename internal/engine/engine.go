@@ -267,7 +267,13 @@ func (e *Engine) NewAddressResolver() *addressbook.Resolver {
 	}).WithAllProvider(func() []string {
 		return e.listAllAddressesCached()
 	}).WithHoldersProvider(func(assetRef string) ([]string, error) {
-		return e.GetHolders(assetRef)
+		// The resolver interface carries no context; resolution happens on the
+		// interactive command path where cancellation is not yet plumbed.
+		result, err := e.GetHoldersWithContext(context.Background(), assetRef)
+		if result == nil {
+			return nil, err
+		}
+		return result.Addresses, err
 	})
 }
 
@@ -297,18 +303,10 @@ func (e *Engine) listAllAddressesCached() []string {
 
 // ListAllAddresses returns all known addresses (aliases + signer keys).
 func (e *Engine) ListAllAddresses() ([]string, error) {
-	if err := e.EnsureSignerCache(); err != nil {
+	if err := e.EnsureSignerCacheWithContext(context.Background()); err != nil {
 		return nil, err
 	}
 	return e.listAllAddressesCached(), nil
-}
-
-// EnsureSignerCache refreshes the signer cache from the connected signer if
-// the cache is empty. This handles the case where keys were loaded on signer
-// after the initial connection (e.g., signer was locked at connection time).
-// Sets SignerCache.Locked if the signer reports it is locked.
-func (e *Engine) EnsureSignerCache() error {
-	return e.EnsureSignerCacheWithContext(context.Background())
 }
 
 // EnsureSignerCacheWithContext refreshes the signer cache from the connected

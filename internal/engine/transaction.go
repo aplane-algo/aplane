@@ -232,16 +232,6 @@ func (e *Engine) CanSignForAddress(address string) (bool, bool) {
 	return true, isLsig
 }
 
-// SignAndSubmitGroup signs and submits a group of transactions with optional per-transaction
-// LogicSig arguments. This wraps clientsign.SignAndSubmitViaGroup with the engine's internal state.
-func (e *Engine) SignAndSubmitGroup(txns []types.Transaction, lsigArgs []map[string][]byte) ([]string, error) {
-	result, err := e.SignAndSubmitGroupWithContext(context.Background(), txns, lsigArgs)
-	if result == nil {
-		return nil, err
-	}
-	return result.TxIDs, err
-}
-
 func (e *Engine) SignAndSubmitGroupWithContext(ctx context.Context, txns []types.Transaction, lsigArgs []map[string][]byte) (*SignTransactionsResult, error) {
 	var writeNotices []TransactionWriteNotice
 	var output bytes.Buffer

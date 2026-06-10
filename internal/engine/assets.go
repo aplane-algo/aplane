@@ -79,11 +79,6 @@ func (e *Engine) SaveASACache() error {
 	})
 }
 
-// AddASAToCache adds an asset to the cache (fetches info if not cached) and persists it.
-func (e *Engine) AddASAToCache(assetID uint64) (*ASAInfo, error) {
-	return e.AddASAToCacheWithContext(context.Background(), assetID)
-}
-
 func (e *Engine) AddASAToCacheWithContext(ctx context.Context, assetID uint64) (*ASAInfo, error) {
 	info, err := e.GetASAInfoWithContext(ctx, assetID)
 	if err != nil {

@@ -20,12 +20,6 @@ type SignerStatusSyncResult struct {
 	CacheCleared    bool
 }
 
-// SyncSignerStatus checks the authenticated signer status endpoint and
-// refreshes the local signer cache when the signer's keyset revision changed.
-func (e *Engine) SyncSignerStatus() (*SignerStatusSyncResult, error) {
-	return e.SyncSignerStatusWithContext(context.Background())
-}
-
 func (e *Engine) SyncSignerStatusWithContext(ctx context.Context) (*SignerStatusSyncResult, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected

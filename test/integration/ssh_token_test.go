@@ -4,6 +4,7 @@
 package integration_test
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
@@ -55,7 +56,7 @@ func TestRequestTokenHappyPathEnrollsKeyAndConnectWorks(t *testing.T) {
 	reqDone.Add(1)
 	go func() {
 		defer reqDone.Done()
-		token, reqErr = eng.RequestToken(
+		token, reqErr = eng.RequestTokenWithContext(context.Background(),
 			sshCfg.Host,
 			sshCfg.Port,
 			sshCfg.IdentityFile,
@@ -143,7 +144,7 @@ func TestRequestTokenTOFURejectsUnknownHost(t *testing.T) {
 	}
 	sshCfg := mustLoadClientSSHConfig(t)
 
-	_, err = eng.RequestToken(
+	_, err = eng.RequestTokenWithContext(context.Background(),
 		sshCfg.Host,
 		sshCfg.Port,
 		sshCfg.IdentityFile,
@@ -638,7 +639,7 @@ func TestConnectUsesSSHAgentWhenIdentityFileMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create engine for no-agent check: %v", err)
 	}
-	_, err = engNoAgent.RequestToken(clientCfg.Host, clientCfg.Port, "", clientCfg.KnownHostsPath, nil, nil)
+	_, err = engNoAgent.RequestTokenWithContext(context.Background(), clientCfg.Host, clientCfg.Port, "", clientCfg.KnownHostsPath, nil, nil)
 	if err == nil {
 		t.Fatal("expected missing-agent request-token to fail")
 	}
@@ -916,7 +917,7 @@ func TestConnectFailsWhenKnownHostsPathMissingOrUnwritable(t *testing.T) {
 	sshCfg := mustLoadClientSSHConfig(t)
 	badKnownHostsPath := filepath.Join(nowriteDir, "subdir", "known_hosts")
 
-	_, err = eng.RequestToken(
+	_, err = eng.RequestTokenWithContext(context.Background(),
 		sshCfg.Host,
 		sshCfg.Port,
 		sshCfg.IdentityFile,
@@ -1199,7 +1200,7 @@ func requestTokenViaEngineWithIdentity(t *testing.T, eng *engine.Engine, sshCfg 
 	reqDone.Add(1)
 	go func() {
 		defer reqDone.Done()
-		token, reqErr = eng.RequestToken(
+		token, reqErr = eng.RequestTokenWithContext(context.Background(),
 			sshCfg.Host,
 			sshCfg.Port,
 			identityFile,

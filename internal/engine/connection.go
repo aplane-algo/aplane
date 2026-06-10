@@ -67,13 +67,6 @@ func (e *Engine) GetConnectionTarget() string {
 	return e.Connection.GetConnectionTarget()
 }
 
-// RequestToken connects to the SSH server and requests a token provisioning.
-// The token is returned to the caller (UI layer) for saving and display.
-// hostKeyApproval is called for TOFU when connecting to an unknown server (can be nil to reject unknown hosts).
-func (e *Engine) RequestToken(host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStart func()) (string, error) {
-	return e.RequestTokenWithContext(context.Background(), host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
-}
-
 // RequestTokenWithContext connects to the SSH server and requests a token provisioning.
 func (e *Engine) RequestTokenWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStart func()) (string, error) {
 	// Disconnect if currently connected (old token will be invalid after provisioning)
@@ -87,40 +80,20 @@ func (e *Engine) GetKeysWithContext(ctx context.Context) (*signerapi.KeysResult,
 	return e.Connection.GetKeysWithContext(ctx)
 }
 
-func (e *Engine) GetKeyTypes() (*signerapi.KeyTypesResponse, error) {
-	return e.GetKeyTypesWithContext(context.Background())
-}
-
 func (e *Engine) GetKeyTypesWithContext(ctx context.Context) (*signerapi.KeyTypesResponse, error) {
 	return e.Connection.GetKeyTypesWithContext(ctx)
-}
-
-func (e *Engine) GetSignerStatus() (*signerapi.StatusResponse, error) {
-	return e.GetSignerStatusWithContext(context.Background())
 }
 
 func (e *Engine) GetSignerStatusWithContext(ctx context.Context) (*signerapi.StatusResponse, error) {
 	return e.Connection.GetSignerStatusWithContext(ctx)
 }
 
-func (e *Engine) AdminGenerate(keyType string, params map[string]string) (*signerapi.AdminGenerateResponse, error) {
-	return e.AdminGenerateWithContext(context.Background(), keyType, params)
-}
-
 func (e *Engine) AdminGenerateWithContext(ctx context.Context, keyType string, params map[string]string) (*signerapi.AdminGenerateResponse, error) {
 	return e.Connection.AdminGenerateWithContext(ctx, keyType, params)
 }
 
-func (e *Engine) AdminDeleteKey(address string) (*signerapi.AdminDeleteResponse, error) {
-	return e.AdminDeleteKeyWithContext(context.Background(), address)
-}
-
 func (e *Engine) AdminDeleteKeyWithContext(ctx context.Context, address string) (*signerapi.AdminDeleteResponse, error) {
 	return e.Connection.AdminDeleteKeyWithContext(ctx, address)
-}
-
-func (e *Engine) AdminSyncSentryReferences(candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
-	return e.AdminSyncSentryReferencesWithContext(context.Background(), candidates)
 }
 
 func (e *Engine) AdminSyncSentryReferencesWithContext(ctx context.Context, candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {

@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -36,7 +37,7 @@ func TestSyncSignerStatusRefreshesCacheOnFirstReadyMismatch(t *testing.T) {
 		}
 	})
 
-	result, err := eng.SyncSignerStatus()
+	result, err := eng.SyncSignerStatusWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("SyncSignerStatus() error = %v", err)
 	}
@@ -77,7 +78,7 @@ func TestSyncSignerStatusSkipsRefreshWhenRevisionAndCountMatch(t *testing.T) {
 	eng.signerStatusRevisionSeen = true
 	eng.signerStatusKeysetRevSeen = 7
 
-	result, err := eng.SyncSignerStatus()
+	result, err := eng.SyncSignerStatusWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("SyncSignerStatus() error = %v", err)
 	}
@@ -107,7 +108,7 @@ func TestSyncSignerStatusClearsCacheWhenSignerLocks(t *testing.T) {
 	eng.signerStatusRevisionSeen = true
 	eng.signerStatusKeysetRevSeen = 7
 
-	result, err := eng.SyncSignerStatus()
+	result, err := eng.SyncSignerStatusWithContext(context.Background())
 	if err != nil {
 		t.Fatalf("SyncSignerStatus() error = %v", err)
 	}

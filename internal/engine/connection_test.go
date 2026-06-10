@@ -92,7 +92,7 @@ func TestEngineRequestTokenDisconnectsFirst(t *testing.T) {
 	eng.Connection.ConnectionTarget = "remote-a"
 	eng.SignerCache.AddAddress(testAddr(1), "ed25519")
 
-	_, err = eng.RequestToken("127.0.0.1", 1, "", "", nil, nil)
+	_, err = eng.RequestTokenWithContext(context.Background(), "127.0.0.1", 1, "", "", nil, nil)
 	if err == nil {
 		t.Fatal("expected token request error, got nil")
 	}

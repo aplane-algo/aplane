@@ -132,7 +132,7 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	eng.SentryEndpoints = config.SentryEndpointConfigs{
 		sentryPubHex: {URL: sentry.URL, TokenFile: sentryTokenFile},
 	}
-	if err := eng.EnsureSignerCache(); err != nil {
+	if err := eng.EnsureSignerCacheWithContext(context.Background()); err != nil {
 		t.Fatalf("Failed to populate signer cache from signer /keys: %v", err)
 	}
 

@@ -1652,7 +1652,7 @@ func newIntegrationEngine(t *testing.T, algodClient *algod.Client, signerURL, to
 	}
 
 	eng.Connection.SignerClient = util.NewSignerClientWithToken(signerURL, strings.TrimSpace(string(tokenBytes)))
-	if err := eng.EnsureSignerCache(); err != nil {
+	if err := eng.EnsureSignerCacheWithContext(context.Background()); err != nil {
 		return nil, err
 	}
 	return eng, nil

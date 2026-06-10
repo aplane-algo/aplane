@@ -4,13 +4,14 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
 
 func TestPrepareAtomicPayments_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
-	_, err := eng.PrepareAtomicPayments([]AtomicPaymentParams{{From: testAddr(1), To: testAddr(2), Amount: 1000}}, AtomicGroupParams{})
+	_, err := eng.PrepareAtomicPaymentsWithContext(context.Background(), []AtomicPaymentParams{{From: testAddr(1), To: testAddr(2), Amount: 1000}}, AtomicGroupParams{})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -21,7 +22,7 @@ func TestPrepareAtomicPayments_Empty(t *testing.T) {
 	transport.addAccount(testAddr(1), 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, err := eng.PrepareAtomicPayments(nil, AtomicGroupParams{})
+	_, err := eng.PrepareAtomicPaymentsWithContext(context.Background(), nil, AtomicGroupParams{})
 	if err == nil {
 		t.Fatal("expected error for empty payments")
 	}
@@ -29,7 +30,7 @@ func TestPrepareAtomicPayments_Empty(t *testing.T) {
 
 func TestPrepareAtomicASATransfers_NoAlgodClient(t *testing.T) {
 	eng, _ := NewEngine("testnet")
-	_, err := eng.PrepareAtomicASATransfers([]AtomicASAParams{{From: testAddr(1), To: testAddr(2), AssetID: 10, Amount: 1}}, AtomicGroupParams{})
+	_, err := eng.PrepareAtomicASATransfersWithContext(context.Background(), []AtomicASAParams{{From: testAddr(1), To: testAddr(2), AssetID: 10, Amount: 1}}, AtomicGroupParams{})
 	if !errors.Is(err, ErrNoAlgodClient) {
 		t.Fatalf("expected ErrNoAlgodClient, got %v", err)
 	}
@@ -40,7 +41,7 @@ func TestPrepareAtomicASATransfers_Empty(t *testing.T) {
 	transport.addAccount(testAddr(1), 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	_, err := eng.PrepareAtomicASATransfers(nil, AtomicGroupParams{})
+	_, err := eng.PrepareAtomicASATransfersWithContext(context.Background(), nil, AtomicGroupParams{})
 	if err == nil {
 		t.Fatal("expected error for empty transfers")
 	}
@@ -57,7 +58,7 @@ func TestPrepareAtomicPayments_Success(t *testing.T) {
 	transport.addAccount(addr3, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, err := eng.PrepareAtomicPayments([]AtomicPaymentParams{
+	result, err := eng.PrepareAtomicPaymentsWithContext(context.Background(), []AtomicPaymentParams{
 		{From: addr1, To: addr2, Amount: 1_000_000, Note: "payment 1"},
 		{From: addr1, To: addr3, Amount: 2_000_000, Note: "payment 2"},
 	}, AtomicGroupParams{})
@@ -98,7 +99,7 @@ func TestPrepareAtomicPayments_WithFlatFee(t *testing.T) {
 	transport.addAccount(addr2, 1_000_000)
 	eng := setupEngineWithMockAlgod(t, transport)
 
-	result, err := eng.PrepareAtomicPayments([]AtomicPaymentParams{
+	result, err := eng.PrepareAtomicPaymentsWithContext(context.Background(), []AtomicPaymentParams{
 		{From: addr1, To: addr2, Amount: 1_000_000},
 	}, AtomicGroupParams{Fee: 3000, UseFlatFee: true})
 	if err != nil {

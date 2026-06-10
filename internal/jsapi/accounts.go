@@ -275,14 +275,14 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 				assetRef = call.Arguments[1].String()
 			}
 
-			allHolders, err := a.engine.GetHolders(assetRef)
+			holdersResult, err := a.engine.GetHoldersWithContext(a.Context(), assetRef)
 			if err != nil {
 				panic(a.runtime.ToValue(fmt.Sprintf("holders() error: %v", err)))
 			}
 
 			// Build lookup set
-			holderSet := make(map[string]bool, len(allHolders))
-			for _, addr := range allHolders {
+			holderSet := make(map[string]bool, len(holdersResult.Addresses))
+			for _, addr := range holdersResult.Addresses {
 				holderSet[addr] = true
 			}
 
@@ -304,11 +304,12 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 		assetRef = call.Arguments[0].String()
 	}
 
-	holders, err := a.engine.GetHolders(assetRef)
+	holdersResult, err := a.engine.GetHoldersWithContext(a.Context(), assetRef)
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("holders() error: %v", err)))
 	}
 
+	holders := holdersResult.Addresses
 	result := make([]interface{}, len(holders))
 	for i, addr := range holders {
 		result[i] = addr
@@ -319,7 +320,7 @@ func (a *API) jsHolders(call goja.FunctionCall) goja.Value {
 // jsKeys returns list of signing keys from Signer.
 // keys() - Returns array of key info objects
 func (a *API) jsKeys(call goja.FunctionCall) goja.Value {
-	keys, err := a.engine.ListKeys()
+	keys, err := a.engine.ListKeysWithContext(a.Context())
 	if err != nil {
 		panic(a.runtime.ToValue(fmt.Sprintf("keys() error: %v", err)))
 	}
