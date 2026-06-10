@@ -206,6 +206,58 @@ func TestCoordinatorCancelSignRequestUnknownIsNotFound(t *testing.T) {
 	}
 }
 
+func TestTokenProvisioningCanceledWhileQueuedReleasesSlot(t *testing.T) {
+	signDelivered := make(chan struct{}, 1)
+	c := New(
+		func() bool { return true },
+		func(req *SignRequest) bool {
+			signDelivered <- struct{}{}
+			return true
+		},
+		nil,
+		func(req *TokenProvisioningRequest) bool {
+			t.Error("canceled token request must not be delivered")
+			return true
+		},
+	)
+
+	signDone := make(chan struct{})
+	go func() {
+		defer close(signDone)
+		_, _ = c.RequestSigningApproval("sign-hold", "A", "A", "first", 0, 0, nil, time.Second)
+	}()
+	<-signDelivered
+
+	// The sign approval holds the delivery turn; a token request queued
+	// behind it must return promptly when its context is canceled instead
+	// of blocking in the queue.
+	ctx, cancel := context.WithCancel(context.Background())
+	tokenErr := make(chan error, 1)
+	go func() {
+		_, err := c.RequestTokenProvisioningContext(ctx, "token-canceled", "id", "fp", "addr", time.Second)
+		tokenErr <- err
+	}()
+
+	time.Sleep(20 * time.Millisecond) // let the token request enter the queue
+	cancel()
+
+	select {
+	case err := <-tokenErr:
+		if err == nil {
+			t.Fatal("RequestTokenProvisioningContext() error = nil, want cancellation error")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("RequestTokenProvisioningContext() error = %v, want context.Canceled in chain", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled token request did not return; still holding queue slot")
+	}
+
+	// Unblock the held sign approval so the goroutine exits.
+	c.HandleSignResponse(&SignResponse{ID: "sign-hold", Approved: true})
+	<-signDone
+}
+
 func TestCoordinatorSerializesAcrossApprovalTypes(t *testing.T) {
 	sent := make(chan string, 2)
 	c := New(

@@ -5,7 +5,9 @@ package transport
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -50,6 +52,11 @@ type dispatcher struct {
 	pending       map[string]chan dispatchResult
 	notifications chan Notification
 	lifecycle     chan LifecycleEvent
+
+	// droppedNotifications counts notifications discarded because the
+	// notifications buffer was full. Approval-request notifications flow
+	// through this channel, so drops must be observable rather than silent.
+	droppedNotifications atomic.Uint64
 }
 
 type dispatchResult struct {
@@ -69,6 +76,12 @@ func newDispatcherWithMode(conn adminProtocolConn, strictUnknownResponses bool) 
 		notifications:          make(chan Notification, 64),
 		lifecycle:              make(chan LifecycleEvent, 16),
 	}
+}
+
+// DroppedNotifications reports how many notifications were discarded because
+// the notification buffer was full.
+func (d *dispatcher) DroppedNotifications() uint64 {
+	return d.droppedNotifications.Load()
 }
 
 func (d *dispatcher) request(msg interface{}, timeout time.Duration) ([]byte, error) {
@@ -178,6 +191,11 @@ func (d *dispatcher) readLoop() {
 			select {
 			case d.notifications <- notification:
 			default:
+				dropped := d.droppedNotifications.Add(1)
+				slog.Warn("admin notification dropped: buffer full",
+					"type", base.Type,
+					"id", base.ID,
+					"dropped_total", dropped)
 			}
 			continue
 		}

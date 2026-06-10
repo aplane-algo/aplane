@@ -210,10 +210,6 @@ func isCancellationResponse(response SignResponse) bool {
 		response.Reason == SignRequestCancelReasonTimeout
 }
 
-func (c *Coordinator) acquireDeliveryTurn() {
-	_ = c.acquireDeliveryTurnContext(context.Background())
-}
-
 func (c *Coordinator) acquireDeliveryTurnContext(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -438,7 +434,9 @@ func (c *Coordinator) RequestTokenProvisioningContext(ctx context.Context, reque
 		return false, fmt.Errorf("no apadmin client connected")
 	}
 
-	c.acquireDeliveryTurn()
+	if err := c.acquireDeliveryTurnContext(ctx); err != nil {
+		return false, fmt.Errorf("token provisioning request canceled: %w", err)
+	}
 	defer c.releaseDeliveryTurn()
 
 	if c.hasClient == nil || !c.hasClient() {

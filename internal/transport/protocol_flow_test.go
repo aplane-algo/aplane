@@ -5,6 +5,7 @@ package transport
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -77,6 +78,48 @@ func (s *stubAdminProtocolConn) firstWrite() (interface{}, bool) {
 		return nil, false
 	}
 	return s.writes[0], true
+}
+
+func TestDispatcherCountsDroppedNotificationsWhenBufferFull(t *testing.T) {
+	// 64 buffered slots + 2 overflow; no consumer drains the channel.
+	const total = 66
+	notifications := make([][]byte, 0, total)
+	for i := 0; i < total; i++ {
+		notifications = append(notifications, mustMarshalProtocolMessage(t, protocol.KeysChangedMessage{
+			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeKeysChanged},
+			KeyCount:    i,
+		}))
+	}
+
+	done := make(chan struct{})
+	conn := &stubAdminProtocolConn{
+		readFunc: func(s *stubAdminProtocolConn) ([]byte, error) {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if s.readIndex < len(notifications) {
+				msg := notifications[s.readIndex]
+				s.readIndex++
+				return msg, nil
+			}
+			close(done)
+			return nil, fmt.Errorf("connection closed")
+		},
+	}
+	dispatcher := newDispatcher(conn)
+	notificationsChan := dispatcher.notificationsChan() // starts the reader
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for reader to drain stub messages")
+	}
+
+	if got := dispatcher.DroppedNotifications(); got != 2 {
+		t.Fatalf("DroppedNotifications() = %d, want 2", got)
+	}
+	if got := len(notificationsChan); got != 64 {
+		t.Fatalf("buffered notifications = %d, want 64", got)
+	}
 }
 
 func TestDispatcherRequestKeepsNotificationsWhileWaiting(t *testing.T) {
