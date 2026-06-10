@@ -19,7 +19,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -420,7 +419,6 @@ func (c *Client) RequestGroupSignWithContext(ctx context.Context, requests []sig
 	reqCtx, cancel := c.requestContext(ctx, c.signRequestTimeout())
 	defer cancel()
 
-	var completed atomic.Bool
 	var cancelOnce sync.Once
 	sendCancel := func() {
 		cancelOnce.Do(func() {
@@ -431,22 +429,34 @@ func (c *Client) RequestGroupSignWithContext(ctx context.Context, requests []sig
 			}
 		})
 	}
+	// done is closed the instant doRequest returns. The watcher only cancels
+	// when the context ends while the request is still in flight; checking a
+	// flag stored after return left a window where a deadline racing a
+	// successful response cancelled a request the server had already
+	// processed.
+	done := make(chan struct{})
 	go func() {
-		<-reqCtx.Done()
-		if !completed.Load() {
+		select {
+		case <-done:
+			return
+		case <-reqCtx.Done():
+		}
+		select {
+		case <-done:
+			// Request finished in the same instant; nothing to cancel.
+		default:
 			sendCancel()
 		}
 	}()
 
 	resp, err := c.doRequest(reqCtx, req)
+	close(done)
 	if err != nil {
 		if reqCtx.Err() != nil {
 			sendCancel()
 		}
-		completed.Store(true)
 		return nil, fmt.Errorf("failed to make request to Signer: %w", err)
 	}
-	completed.Store(true)
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
 			slog.Debug("failed to close response body", "error", err)

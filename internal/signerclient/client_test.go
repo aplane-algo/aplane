@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -892,4 +893,29 @@ func TestAuthorizationHeader(t *testing.T) {
 	})
 
 	_, _ = c.GetKeys()
+}
+
+// --- sign cancel watcher ---
+
+func TestRequestGroupSignDoesNotCancelAfterSuccess(t *testing.T) {
+	var cancelCalls atomic.Int32
+	resp := signerapi.GroupSignResponse{Signed: []string{"aabb"}}
+	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/sign/cancel" {
+			cancelCalls.Add(1)
+			return mockResponse(200, "{}"), nil
+		}
+		return mockResponse(200, jsonBody(t, resp)), nil
+	})
+	c.cacheApprovalWaitSeconds(60)
+
+	if _, err := c.RequestGroupSign([]signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}}); err != nil {
+		t.Fatalf("RequestGroupSign() error = %v", err)
+	}
+
+	// Give the watcher goroutine a chance to misfire before asserting.
+	time.Sleep(50 * time.Millisecond)
+	if got := cancelCalls.Load(); got != 0 {
+		t.Fatalf("cancel requests = %d, want 0 after a successful sign", got)
+	}
 }
