@@ -13,10 +13,10 @@ It is designed for security-focused operations where private keys can be isolate
 
 APlane is currently in alpha.
 
-- Breaking changes may still occur, especially across CLI, SDK, config, and plugin surfaces.
 - The project is security-conscious, but it has not undergone a full external security audit.
-- Production use should be conservative and operator-driven, with explicit review of configuration and network exposure.
-- Release-to-release compatibility should be treated as best-effort until the project reaches a stable `v1.0` contract.
+- Production use should be conservative.
+- Release-to-release compatibility should be considered best-effort until the project reaches a stable `v1.0` contract.
+- Breaking changes may still occur, especially across CLI, SDK, config, and plugin surfaces.
 
 ## Key Features
 
