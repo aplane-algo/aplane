@@ -44,12 +44,14 @@ func FormatAddress(address string, aliases AliasLookup, signer SignerLookup, aut
 
 	if isAccountSignable(address, signer, auth) {
 		keyType := signer.GetKeyType(effectiveSigningAddress)
-		if colorFormatter != nil {
-			return FormatWithKeyColor(formatted, keyType, colorFormatter)
+		colored, applied := formatWithKeyColorApplied(formatted, keyType, colorFormatter)
+		if applied {
+			return colored
 		}
-		if !SupportsColor() {
-			return formatted + " @"
-		}
+		// Signability is normally conveyed by color; whenever color was not
+		// emitted (no formatter, non-color terminal, unregistered key type),
+		// fall back to the plain-text marker.
+		return formatted + " @"
 	}
 
 	return formatted

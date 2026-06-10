@@ -61,3 +61,39 @@ func TestFormatAddressMarksSignableWithoutColorFormatter(t *testing.T) {
 		t.Fatalf("FormatAddress() = %q, want signable marker", got)
 	}
 }
+
+func TestFormatAddressMarksSignableWhenColorUnsupported(t *testing.T) {
+	SetColorSupported(false)
+	defer ResetColorSupport()
+
+	// Formatter present (the normal production wiring) but terminal has no
+	// color support: the plain-text marker must still appear.
+	got := FormatAddress("ADDR1", nil, testSigner{"ADDR1": "ed25519"}, nil, "",
+		func(string) string { return "33" })
+	if got != "ADDR1 @" {
+		t.Fatalf("FormatAddress() = %q, want signable marker", got)
+	}
+}
+
+func TestFormatAddressMarksSignableForUnregisteredKeyType(t *testing.T) {
+	SetColorSupported(true)
+	defer ResetColorSupport()
+
+	// Color supported, but the key type has no registered color: fall back
+	// to the plain-text marker rather than rendering indistinguishably.
+	got := FormatAddress("ADDR1", nil, testSigner{"ADDR1": "mystery"}, nil, "",
+		func(string) string { return "" })
+	if got != "ADDR1 @" {
+		t.Fatalf("FormatAddress() = %q, want signable marker", got)
+	}
+}
+
+func TestFormatAddressNoMarkerForUnsignableAccount(t *testing.T) {
+	SetColorSupported(false)
+	defer ResetColorSupport()
+
+	got := FormatAddress("ADDR1", nil, testSigner{}, nil, "", nil)
+	if got != "ADDR1" {
+		t.Fatalf("FormatAddress() = %q, want plain address without marker", got)
+	}
+}

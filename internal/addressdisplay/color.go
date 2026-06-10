@@ -57,14 +57,22 @@ func SupportsColor() bool {
 
 // FormatWithKeyColor formats text with ANSI color based on key type.
 func FormatWithKeyColor(text string, keyType string, colorFormatter ColorFormatter) string {
+	colored, _ := formatWithKeyColorApplied(text, keyType, colorFormatter)
+	return colored
+}
+
+// formatWithKeyColorApplied additionally reports whether color was actually
+// emitted, so callers conveying meaning through color (e.g. signability) can
+// fall back to a plain-text marker when it was not.
+func formatWithKeyColorApplied(text string, keyType string, colorFormatter ColorFormatter) (string, bool) {
 	if !SupportsColor() || colorFormatter == nil {
-		return text
+		return text, false
 	}
 
 	colorCode := colorFormatter(keyType)
 	if colorCode == "" {
-		return text
+		return text, false
 	}
 
-	return fmt.Sprintf("\033[%sm%s\033[0m", colorCode, text)
+	return fmt.Sprintf("\033[%sm%s\033[0m", colorCode, text), true
 }
