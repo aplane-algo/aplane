@@ -110,7 +110,7 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 		return nil, err
 	}
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return nil, forbidden("signer is locked")
+		return nil, lockedError()
 	}
 	switch plan.Role {
 	case signerapi.ComponentSignRoleUser:
@@ -152,7 +152,7 @@ func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID str
 		return nil, badRequest(decodeErr.Error())
 	}
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return nil, forbidden("signer is locked")
+		return nil, lockedError()
 	}
 	if session == nil {
 		return nil, internal("key session is nil")
@@ -165,7 +165,7 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID strin
 	txns := allTxns[:len(req.Requests)]
 
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return nil, forbidden("signer is locked")
+		return nil, lockedError()
 	}
 
 	groupDesc, firstValid, lastValid := BuildApprovalDescription(req, plan, allTxns, s.GenerateTxnDescriptionFromTxn)
@@ -275,7 +275,7 @@ func authPolicyKeysFromRequest(req signerapi.GroupSignRequest, plan *PlanResult)
 
 func (s *Service) beforeExecute() (func(), *ServiceError) {
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return nil, forbidden("signer is locked")
+		return nil, lockedError()
 	}
 	if s.BeforeExecute == nil {
 		return func() {}, nil
@@ -289,7 +289,7 @@ func (s *Service) beforeExecute() (func(), *ServiceError) {
 	}
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
 		release()
-		return nil, forbidden("signer is locked")
+		return nil, lockedError()
 	}
 	return release, nil
 }

@@ -33,7 +33,7 @@ func (fs *Signer) newSigningServiceForIdentityWithAudit(ir *identity.Runtime, au
 			}
 			if !ir.IsUnlocked() {
 				release()
-				return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
+				return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
 			}
 			return release, nil
 		},

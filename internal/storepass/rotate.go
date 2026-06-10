@@ -235,10 +235,13 @@ func cleanupPendingOldFiles(pendingFiles []pendingFile) {
 	}
 }
 
-func rewriteEncryptedFile(path string, oldMasterKey []byte, newMasterKey []byte) error {
+// rewriteEncryptedFile re-encrypts path under the new master key, writing
+// path.new. display is the human-readable name used in error messages (the
+// path itself, or a caller-supplied label).
+func rewriteEncryptedFile(path, display string, oldMasterKey []byte, newMasterKey []byte) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", path, err)
+		return fmt.Errorf("failed to read %s: %w", display, err)
 	}
 	if !crypto.IsEncrypted(data) {
 		return nil
@@ -246,27 +249,27 @@ func rewriteEncryptedFile(path string, oldMasterKey []byte, newMasterKey []byte)
 
 	plaintext, err := crypto.DecryptWithMasterKey(data, oldMasterKey)
 	if err != nil {
-		return fmt.Errorf("failed to decrypt %s: %w", path, err)
+		return fmt.Errorf("failed to decrypt %s: %w", display, err)
 	}
 	newData, err := crypto.EncryptWithMasterKey(plaintext, newMasterKey)
 	crypto.ZeroBytes(plaintext)
 	if err != nil {
-		return fmt.Errorf("failed to re-encrypt %s: %w", path, err)
+		return fmt.Errorf("failed to re-encrypt %s: %w", display, err)
 	}
 	if err := fsutil.WriteFile(path+".new", newData); err != nil {
-		return fmt.Errorf("failed to write %s.new: %w", path, err)
+		return fmt.Errorf("failed to write %s.new: %w", display, err)
 	}
 	if err := ApplyFileMetadataFrom(path, path+".new"); err != nil {
-		return fmt.Errorf("failed to set metadata on %s.new: %w", path, err)
+		return fmt.Errorf("failed to set metadata on %s.new: %w", display, err)
 	}
 
 	verifyData, err := os.ReadFile(path + ".new")
 	if err != nil {
-		return fmt.Errorf("failed to verify %s.new: %w", path, err)
+		return fmt.Errorf("failed to verify %s.new: %w", display, err)
 	}
 	verifyPlaintext, err := crypto.DecryptWithMasterKey(verifyData, newMasterKey)
 	if err != nil {
-		return fmt.Errorf("verification failed for %s.new: %w", path, err)
+		return fmt.Errorf("verification failed for %s.new: %w", display, err)
 	}
 	crypto.ZeroBytes(verifyPlaintext)
 	return nil
@@ -281,23 +284,8 @@ func createPendingEncryptedFile(path string, oldMasterKey []byte, newMasterKey [
 		logf(log, "skipping %s (not encrypted)", label)
 		return nil, false, nil
 	}
-	if err := rewriteEncryptedFile(path, oldMasterKey, newMasterKey); err != nil {
-		switch {
-		case strings.Contains(err.Error(), "failed to read "):
-			return nil, false, fmt.Errorf("failed to read %s: %w", label, err)
-		case strings.Contains(err.Error(), "failed to decrypt "):
-			return nil, false, fmt.Errorf("failed to decrypt %s: %w", label, err)
-		case strings.Contains(err.Error(), "failed to re-encrypt "):
-			return nil, false, fmt.Errorf("failed to re-encrypt %s: %w", label, err)
-		case strings.Contains(err.Error(), "failed to write "):
-			return nil, false, fmt.Errorf("failed to write %s.new: %w", label, err)
-		case strings.Contains(err.Error(), "failed to set metadata "):
-			return nil, false, fmt.Errorf("failed to set metadata on %s.new: %w", label, err)
-		case strings.Contains(err.Error(), "failed to verify "):
-			return nil, false, fmt.Errorf("failed to verify %s.new: %w", label, err)
-		default:
-			return nil, false, fmt.Errorf("verification failed for %s.new: %w", label, err)
-		}
+	if err := rewriteEncryptedFile(path, label, oldMasterKey, newMasterKey); err != nil {
+		return nil, false, err
 	}
 
 	pf := &pendingFile{original: path, newPath: path + ".new", oldPath: path + ".old"}

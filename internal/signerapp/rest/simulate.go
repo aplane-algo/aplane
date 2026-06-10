@@ -27,7 +27,7 @@ func (s Service) Simulate(ctx context.Context, ir *identity.Runtime, req signera
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: identity.ErrDecommissioned.Error()}
 	}
 	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
+		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
 	}
 	if roleErr := requireAccountSigningRole(ir, "simulation signing"); roleErr != nil {
 		return nil, roleErr

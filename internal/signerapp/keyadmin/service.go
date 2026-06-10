@@ -20,32 +20,27 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
 	"github.com/aplane-algo/aplane/internal/storemut"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-type ErrorKind string
-
-const (
-	ErrorInvalidInput      ErrorKind = "invalid_input"
-	ErrorInvalidPassphrase ErrorKind = "invalid_passphrase"
-	ErrorLocked            ErrorKind = "locked"
-	ErrorNotFound          ErrorKind = "not_found"
-	ErrorInternal          ErrorKind = "internal"
+// Error aliases the unified signer service-error model so key-admin error
+// kinds share the wire-code and HTTP-status mapping with the signing service.
+type (
+	ErrorKind = svcerr.Kind
+	Error     = svcerr.Error
 )
 
-type Error struct {
-	Kind    ErrorKind
-	Message string
-}
-
-func (e *Error) Error() string {
-	if e == nil {
-		return ""
-	}
-	return e.Message
-}
+const (
+	ErrorInvalidInput      = svcerr.KindBadRequest
+	ErrorInvalidPassphrase = svcerr.KindInvalidPassphrase
+	ErrorLocked            = svcerr.KindLocked
+	ErrorNotFound          = svcerr.KindNotFound
+	ErrorCacheRefresh      = svcerr.KindCacheRefresh
+	ErrorInternal          = svcerr.KindInternal
+)
 
 type GenerateResult struct {
 	Address           string
@@ -284,8 +279,11 @@ func mapGenerateError(err error) *Error {
 	if errors.Is(err, keygen.ErrInvalidParams) {
 		return &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 	}
-	if strings.HasPrefix(err.Error(), "bad request: ") {
-		return &Error{Kind: ErrorInvalidInput, Message: strings.TrimPrefix(err.Error(), "bad request: ")}
+	if errors.Is(err, errBadRequest) {
+		return &Error{Kind: ErrorInvalidInput, Message: strings.TrimPrefix(err.Error(), errBadRequest.Error()+": ")}
+	}
+	if errors.Is(err, errCacheRefresh) {
+		return &Error{Kind: ErrorCacheRefresh, Message: errCacheRefresh.Error()}
 	}
 	return &Error{Kind: ErrorInternal, Message: "key generation failed"}
 }
@@ -295,7 +293,7 @@ func reloadIdentityKeys(ir *identity.Runtime) *Error {
 		if isLockedStateError(err) {
 			return &Error{Kind: ErrorLocked, Message: "signer is locked"}
 		}
-		return &Error{Kind: ErrorInternal, Message: "failed to refresh signer key cache"}
+		return &Error{Kind: ErrorCacheRefresh, Message: "failed to refresh signer key cache"}
 	}
 	return nil
 }

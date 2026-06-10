@@ -5,15 +5,30 @@ package apshellapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )
+
+// isAuthenticationFailure reports whether a connect error is an
+// authentication problem: an HTTP 401 from the signer (typed) or an SSH
+// public-key auth rejection (x/crypto/ssh exposes no typed error, so that
+// case still matches the standard "unable to authenticate" text).
+func isAuthenticationFailure(err error) bool {
+	var herr *signerclient.HTTPStatusError
+	if errors.As(err, &herr) {
+		return herr.StatusCode == http.StatusUnauthorized
+	}
+	return strings.Contains(err.Error(), "unable to authenticate")
+}
 
 // ConnectRequest establishes an SSH tunnel to the signer.
 type ConnectRequest struct {
@@ -70,9 +85,7 @@ func (a *App) Connect(_ context.Context, req ConnectRequest) (*ConnectResult, er
 		req.OnDisconnect,
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "401") ||
-			strings.Contains(err.Error(), "Invalid token") ||
-			strings.Contains(err.Error(), "unable to authenticate") {
+		if isAuthenticationFailure(err) {
 			return nil, fmt.Errorf("authentication failed — possible causes:\n  - Token at %s was revoked or is invalid\n  - SSH key is not in the signer's authorized_keys\n\nTry 'request-token' to re-enroll, or copy a valid aplane.token from the signer", tokenPath)
 		}
 		return nil, err

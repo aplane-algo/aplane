@@ -128,6 +128,7 @@ func TestErrorEnvelopeJSONShapes(t *testing.T) {
 			wantStatus: http.StatusMethodNotAllowed,
 			want: map[string]any{
 				"error": "Method not allowed",
+				"code":  "bad_request",
 			},
 		},
 		{
@@ -138,6 +139,7 @@ func TestErrorEnvelopeJSONShapes(t *testing.T) {
 			wantStatus: http.StatusMethodNotAllowed,
 			want: map[string]any{
 				"error": "Method not allowed",
+				"code":  "bad_request",
 			},
 		},
 		{
@@ -148,6 +150,7 @@ func TestErrorEnvelopeJSONShapes(t *testing.T) {
 			wantStatus: http.StatusMethodNotAllowed,
 			want: map[string]any{
 				"error": "Method not allowed",
+				"code":  "bad_request",
 			},
 		},
 		{
@@ -158,6 +161,7 @@ func TestErrorEnvelopeJSONShapes(t *testing.T) {
 			wantStatus: http.StatusMethodNotAllowed,
 			want: map[string]any{
 				"error": "Method not allowed",
+				"code":  "bad_request",
 			},
 		},
 		{
@@ -168,6 +172,7 @@ func TestErrorEnvelopeJSONShapes(t *testing.T) {
 			wantStatus: http.StatusMethodNotAllowed,
 			want: map[string]any{
 				"error": "Method not allowed",
+				"code":  "bad_request",
 			},
 		},
 		{
@@ -178,6 +183,7 @@ func TestErrorEnvelopeJSONShapes(t *testing.T) {
 			wantStatus: http.StatusMethodNotAllowed,
 			want: map[string]any{
 				"error": "Method not allowed",
+				"code":  "bad_request",
 			},
 		},
 	}

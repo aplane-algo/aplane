@@ -9,53 +9,56 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
-	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
+	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
 )
 
-func (s Service) AdminGenerate(ctx context.Context, ir *identity.Runtime, req signerapi.AdminGenerateRequest) (int, signerapi.AdminGenerateResponse) {
+func (s Service) AdminGenerate(ctx context.Context, ir *identity.Runtime, req signerapi.AdminGenerateRequest) (signerapi.AdminGenerateResponse, *svcerr.Error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if ir == nil {
-		return 500, signerapi.AdminGenerateResponse{Error: "identity runtime is nil"}
+		return signerapi.AdminGenerateResponse{}, &svcerr.Error{Kind: svcerr.KindInternal, Message: "identity runtime is nil"}
 	}
 	if !ir.IsUnlocked() {
-		return 403, signerapi.AdminGenerateResponse{Error: "signer is locked"}
+		return signerapi.AdminGenerateResponse{}, &svcerr.Error{Kind: svcerr.KindLocked, Message: "signer is locked"}
 	}
 
 	result, err := s.Deps.KeyAdmin.GenerateKey(ctx, ir, req.KeyType, req.Parameters, s.Deps.GenerateGenericLSig)
 	if err != nil {
-		return mapGenerateError(err)
+		return signerapi.AdminGenerateResponse{}, sanitizeKeyAdminError(err, "key generation failed")
 	}
 
-	return 200, signerapi.AdminGenerateResponse{
+	return signerapi.AdminGenerateResponse{
 		Address:           result.Address,
 		PublicKeyHex:      result.PublicKeyHex,
 		KeyType:           result.KeyType,
 		IsComponentKey:    result.IsComponentKey,
 		IsSpendingAccount: result.IsSpendingAccount,
 		Parameters:        result.Parameters,
-	}
+	}, nil
 }
 
-func (s Service) AdminDelete(ir *identity.Runtime, address string) (int, signerapi.AdminDeleteResponse) {
+func (s Service) AdminDelete(ir *identity.Runtime, address string) (signerapi.AdminDeleteResponse, *svcerr.Error) {
 	if ir == nil {
-		return 500, signerapi.AdminDeleteResponse{Error: "identity runtime is nil"}
+		return signerapi.AdminDeleteResponse{}, &svcerr.Error{Kind: svcerr.KindInternal, Message: "identity runtime is nil"}
 	}
 	if !ir.IsUnlocked() {
-		return 403, signerapi.AdminDeleteResponse{Error: "signer is locked"}
+		return signerapi.AdminDeleteResponse{}, &svcerr.Error{Kind: svcerr.KindLocked, Message: "signer is locked"}
 	}
 
 	if _, err := s.Deps.KeyAdmin.DeleteKey(ir, address); err != nil {
-		return mapDeleteError(err)
+		if err.Kind == svcerr.KindBadRequest && err.Message == "address is required" {
+			return signerapi.AdminDeleteResponse{}, &svcerr.Error{Kind: svcerr.KindBadRequest, Message: "address query parameter is required"}
+		}
+		return signerapi.AdminDeleteResponse{}, sanitizeKeyAdminError(err, "key deletion failed")
 	}
 
-	return 200, signerapi.AdminDeleteResponse{Success: true}
+	return signerapi.AdminDeleteResponse{Success: true}, nil
 }
 
-func (s Service) AdminSyncSentryReferences(ir *identity.Runtime, req signerapi.AdminSyncSentryReferencesRequest) (int, signerapi.AdminSyncSentryReferencesResponse) {
+func (s Service) AdminSyncSentryReferences(ir *identity.Runtime, req signerapi.AdminSyncSentryReferencesRequest) (signerapi.AdminSyncSentryReferencesResponse, *svcerr.Error) {
 	if ir == nil {
-		return 500, signerapi.AdminSyncSentryReferencesResponse{Error: "identity runtime is nil"}
+		return signerapi.AdminSyncSentryReferencesResponse{}, &svcerr.Error{Kind: svcerr.KindInternal, Message: "identity runtime is nil"}
 	}
 	discovered := make([]sentryrefs.DiscoveredRecord, 0, len(req.Candidates))
 	for _, candidate := range req.Candidates {
@@ -69,7 +72,7 @@ func (s Service) AdminSyncSentryReferences(ir *identity.Runtime, req signerapi.A
 	}
 	result, err := s.Deps.KeyAdmin.SyncSentryReferences(ir, discovered)
 	if err != nil {
-		return mapSyncSentryReferencesError(err)
+		return signerapi.AdminSyncSentryReferencesResponse{}, sanitizeKeyAdminError(err, "sentry reference sync failed")
 	}
 	records := make([]signerapi.SyncedSentryReferenceInfo, 0, len(result.Records))
 	for _, rec := range result.Records {
@@ -84,60 +87,23 @@ func (s Service) AdminSyncSentryReferences(ir *identity.Runtime, req signerapi.A
 			SyncedAt:      rec.SyncedAt,
 		})
 	}
-	return 200, signerapi.AdminSyncSentryReferencesResponse{
+	return signerapi.AdminSyncSentryReferencesResponse{
 		Added:   result.Added,
 		Updated: result.Updated,
 		Removed: result.Removed,
 		Count:   len(result.Records),
 		Records: records,
-	}
+	}, nil
 }
 
-func mapGenerateError(err *keyadmin.Error) (int, signerapi.AdminGenerateResponse) {
+// sanitizeKeyAdminError passes kinded errors through to the wire and hides
+// internal failure detail behind a stable per-operation message.
+func sanitizeKeyAdminError(err *svcerr.Error, internalMessage string) *svcerr.Error {
 	if err == nil {
-		return 200, signerapi.AdminGenerateResponse{}
+		return nil
 	}
-	switch err.Kind {
-	case keyadmin.ErrorInvalidInput:
-		return 400, signerapi.AdminGenerateResponse{Error: err.Message}
-	case keyadmin.ErrorLocked:
-		return 403, signerapi.AdminGenerateResponse{Error: err.Message}
-	default:
-		if err.Message != "failed to refresh signer key cache" {
-			return 500, signerapi.AdminGenerateResponse{Error: "key generation failed"}
-		}
-		return 500, signerapi.AdminGenerateResponse{Error: err.Message}
+	if err.Kind == svcerr.KindInternal {
+		return &svcerr.Error{Kind: svcerr.KindInternal, Message: internalMessage}
 	}
-}
-
-func mapSyncSentryReferencesError(err *keyadmin.Error) (int, signerapi.AdminSyncSentryReferencesResponse) {
-	if err == nil {
-		return 200, signerapi.AdminSyncSentryReferencesResponse{}
-	}
-	switch err.Kind {
-	case keyadmin.ErrorInvalidInput:
-		return 400, signerapi.AdminSyncSentryReferencesResponse{Error: err.Message}
-	default:
-		return 500, signerapi.AdminSyncSentryReferencesResponse{Error: "sentry reference sync failed"}
-	}
-}
-
-func mapDeleteError(err *keyadmin.Error) (int, signerapi.AdminDeleteResponse) {
-	if err == nil {
-		return 200, signerapi.AdminDeleteResponse{Success: true}
-	}
-	switch err.Kind {
-	case keyadmin.ErrorInvalidInput:
-		msg := err.Message
-		if err.Message == "address is required" {
-			msg = "address query parameter is required"
-		}
-		return 400, signerapi.AdminDeleteResponse{Error: msg}
-	case keyadmin.ErrorLocked:
-		return 403, signerapi.AdminDeleteResponse{Error: err.Message}
-	case keyadmin.ErrorNotFound:
-		return 404, signerapi.AdminDeleteResponse{Error: err.Message}
-	default:
-		return 500, signerapi.AdminDeleteResponse{Error: "key deletion failed"}
-	}
+	return err
 }

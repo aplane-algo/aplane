@@ -44,10 +44,12 @@ type KeysResult = signerapi.KeysResult
 // endpoint after the HTTP request itself succeeded.
 var ErrInvalidResponse = errors.New("invalid signer response")
 
-// HTTPStatusError preserves non-success signer HTTP status codes for callers
-// that need to distinguish auth/config/server failures.
+// HTTPStatusError preserves non-success signer HTTP status codes and the
+// machine-readable error code for callers that need to distinguish
+// auth/lock/config/server failures without matching message text.
 type HTTPStatusError struct {
 	StatusCode int
+	Code       string // stable wire code from ErrorResponse; empty on old servers
 	Message    string
 }
 
@@ -56,6 +58,26 @@ func (e *HTTPStatusError) Error() string {
 		return "signer error"
 	}
 	return fmt.Sprintf("signer error (%d): %s", e.StatusCode, e.Message)
+}
+
+// IsLocked reports whether the signer rejected the request because the
+// keystore is locked. The message fallback covers servers that predate
+// wire error codes.
+func (e *HTTPStatusError) IsLocked() bool {
+	if e == nil {
+		return false
+	}
+	if e.Code != "" {
+		return e.Code == signerapi.ErrCodeLocked
+	}
+	return e.StatusCode == http.StatusForbidden && strings.Contains(strings.ToLower(e.Message), "locked")
+}
+
+// httpStatusError reads a non-2xx response body into a typed error carrying
+// status, wire code, and human-readable message.
+func httpStatusError(resp *http.Response) *HTTPStatusError {
+	code, message := readErrorResponseParts(resp)
+	return &HTTPStatusError{StatusCode: resp.StatusCode, Code: code, Message: message}
 }
 
 const (
@@ -154,17 +176,22 @@ func newSignRequestID() (string, error) {
 }
 
 func readErrorResponse(resp *http.Response) string {
+	_, message := readErrorResponseParts(resp)
+	return message
+}
+
+func readErrorResponseParts(resp *http.Response) (code, message string) {
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	body := strings.TrimSpace(string(bodyBytes))
 	if body == "" {
-		return http.StatusText(resp.StatusCode)
+		return "", http.StatusText(resp.StatusCode)
 	}
 
 	var errorResp signerapi.ErrorResponse
 	if err := json.Unmarshal(bodyBytes, &errorResp); err == nil && errorResp.Error != "" {
-		return errorResp.Error
+		return errorResp.Code, errorResp.Error
 	}
-	return body
+	return "", body
 }
 
 func (c *Client) cacheApprovalWaitSeconds(seconds int64) {
@@ -265,7 +292,7 @@ func (c *Client) GetStatusWithContext(ctx context.Context) (*signerapi.StatusRes
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, httpStatusError(resp)
 	}
 
 	var statusResp signerapi.StatusResponse
@@ -315,7 +342,7 @@ func (c *Client) RequestGroupPlanWithContext(ctx context.Context, requests []sig
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, httpStatusError(resp)
 	}
 
 	var planResp signerapi.GroupPlanResponse
@@ -368,7 +395,7 @@ func (c *Client) RequestGroupSimulateWithContext(ctx context.Context, requests [
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, httpStatusError(resp)
 	}
 
 	var simulateResp signerapi.GroupSimulateResponse
@@ -464,7 +491,7 @@ func (c *Client) RequestGroupSignWithContext(ctx context.Context, requests []sig
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, httpStatusError(resp)
 	}
 
 	var groupResp signerapi.GroupSignResponse
@@ -523,7 +550,7 @@ func (c *Client) RequestComponentSignWithContext(ctx context.Context, reqBody si
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, httpStatusError(resp)
 	}
 
 	var componentResp signerapi.ComponentSignResponse
@@ -579,7 +606,7 @@ func (c *Client) RequestGuardedAssembleWithContext(ctx context.Context, reqBody 
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, httpStatusError(resp)
 	}
 
 	var assemblyResp signerapi.GuardedAssemblyResponse
@@ -669,16 +696,12 @@ func (c *Client) GetKeysWithContext(ctx context.Context) (*KeysResult, error) {
 		}
 	}()
 
-	if resp.StatusCode == http.StatusForbidden {
-		msg := readErrorResponse(resp)
-		if strings.Contains(strings.ToLower(msg), "locked") {
+	if resp.StatusCode != http.StatusOK {
+		herr := httpStatusError(resp)
+		if herr.IsLocked() {
 			return &KeysResult{Locked: true}, nil
 		}
-		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Message: msg}
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Message: readErrorResponse(resp)}
+		return nil, herr
 	}
 
 	var keysResp signerapi.KeysResponse
@@ -725,7 +748,7 @@ func (c *Client) AdminGenerateWithContext(ctx context.Context, keyType string, p
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, httpStatusError(resp)
 	}
 
 	var genResp signerapi.AdminGenerateResponse
@@ -765,7 +788,7 @@ func (c *Client) AdminDeleteKeyWithContext(ctx context.Context, address string) 
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, httpStatusError(resp)
 	}
 
 	var delResp signerapi.AdminDeleteResponse
@@ -813,7 +836,7 @@ func (c *Client) AdminSyncSentryReferencesWithContext(ctx context.Context, candi
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, httpStatusError(resp)
 	}
 
 	var syncResp signerapi.AdminSyncSentryReferencesResponse
@@ -851,7 +874,7 @@ func (c *Client) GetKeyTypesWithContext(ctx context.Context) (*signerapi.KeyType
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("signer error (%d): %s", resp.StatusCode, readErrorResponse(resp))
+		return nil, httpStatusError(resp)
 	}
 
 	var ktResp signerapi.KeyTypesResponse

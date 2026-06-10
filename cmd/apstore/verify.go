@@ -39,7 +39,7 @@ func verifyDeep(backupPath string) error {
 	report, err := backup.DeepVerifyBackup(backupPath, string(passphrase))
 	crypto.ZeroBytes(passphrase)
 	if err != nil {
-		return err
+		return codedError{code: "verification_failed", message: err.Error()}
 	}
 
 	logInfof("found %d key file(s)", report.TotalFiles)

@@ -16,14 +16,14 @@ import (
 // - Fee pooling across the group
 // - Two-checkpoint approval (group level + per-transaction)
 func (fs *Signer) handleSign(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GroupSignRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GroupSignRequest](fs, w, r, http.MethodPost)
 	if !ok {
 		return
 	}
 
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).SignGroup(r.Context(), ir, req)
 	if err != nil {
-		writeErrorJSON(w, err.HTTPStatus(), err.Error())
+		writeServiceErrorJSON(w, err)
 		return
 	}
 
@@ -33,14 +33,14 @@ func (fs *Signer) handleSign(w http.ResponseWriter, r *http.Request) {
 // handleSignComponent handles the /sign/component endpoint for sentry MVP
 // role-separated component signatures.
 func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.ComponentSignRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.ComponentSignRequest](fs, w, r, http.MethodPost)
 	if !ok {
 		return
 	}
 
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).SignComponent(r.Context(), ir, req)
 	if err != nil {
-		writeErrorJSON(w, err.HTTPStatus(), err.Error())
+		writeServiceErrorJSON(w, err)
 		return
 	}
 
@@ -50,14 +50,14 @@ func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {
 // handleSignAssemble handles the /sign/assemble endpoint for guarded-account
 // LogicSig assembly.
 func (fs *Signer) handleSignAssemble(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GuardedAssemblyRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GuardedAssemblyRequest](fs, w, r, http.MethodPost)
 	if !ok {
 		return
 	}
 
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).AssembleGuarded(r.Context(), ir, req)
 	if err != nil {
-		writeErrorJSON(w, err.HTTPStatus(), err.Error())
+		writeServiceErrorJSON(w, err)
 		return
 	}
 
@@ -68,7 +68,7 @@ func (fs *Signer) handleSignAssemble(w http.ResponseWriter, r *http.Request) {
 // approval request. It is idempotent: a missing request may already have
 // completed or been canceled through the original HTTP context.
 func (fs *Signer) handleSignCancel(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.CancelSignRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.CancelSignRequest](fs, w, r, http.MethodPost)
 	if !ok {
 		return
 	}
@@ -98,14 +98,14 @@ func signCancelState(state signerapproval.SignRequestCancelState) signerapi.Sign
 // validates, decodes, checks keys, calculates dummies, creates dummies,
 // pools fees, and computes group ID. No keys are touched, no approval flow.
 func (fs *Signer) handlePlan(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GroupSignRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GroupSignRequest](fs, w, r, http.MethodPost)
 	if !ok {
 		return
 	}
 
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).Plan(ir, req)
 	if err != nil {
-		writeErrorJSON(w, err.HTTPStatus(), err.Error())
+		writeServiceErrorJSON(w, err)
 		return
 	}
 
@@ -115,14 +115,14 @@ func (fs *Signer) handlePlan(w http.ResponseWriter, r *http.Request) {
 // handleSimulate handles the /simulate endpoint. Same input as /sign, but
 // signed bytes stay inside apsigner and are used only for algod simulation.
 func (fs *Signer) handleSimulate(w http.ResponseWriter, r *http.Request) {
-	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GroupSignRequest](fs, w, r, http.MethodPost, func(msg string) any { return errorResponse(msg) })
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GroupSignRequest](fs, w, r, http.MethodPost)
 	if !ok {
 		return
 	}
 
 	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).Simulate(r.Context(), ir, req)
 	if err != nil {
-		writeErrorJSON(w, err.HTTPStatus(), err.Error())
+		writeServiceErrorJSON(w, err)
 		return
 	}
 

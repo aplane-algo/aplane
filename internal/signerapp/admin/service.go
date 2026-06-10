@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/asametadata"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
@@ -149,7 +150,7 @@ func (s Service) UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateA
 		})
 	}
 	if req.Key == adminproto.AdminSettingSSHListenAddress || req.Key == adminproto.AdminSettingEndpointAdvertiseURL {
-		return fmt.Errorf("unknown or read-only setting: %s", req.Key)
+		return protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
 	}
 	return s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		return s.updateAdminSettingLocked(ir, req)
@@ -213,7 +214,7 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 			saveKey, saveValue = adminproto.AdminSettingTheme, v
 		}
 	default:
-		err = fmt.Errorf("unknown or read-only setting: %s", req.Key)
+		err = protocol.WithCode(protocol.ErrCodeInvalidRequest, fmt.Errorf("unknown or read-only setting: %s", req.Key))
 	}
 
 	if err == nil && saveKey != "" {

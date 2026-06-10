@@ -65,4 +65,14 @@ const (
 	SignCancelStateNotFound = pub.SignCancelStateNotFound
 	ComponentSignRoleUser   = pub.ComponentSignRoleUser
 	ComponentSignRoleSentry = pub.ComponentSignRoleSentry
+
+	ErrCodeBadRequest        = pub.ErrCodeBadRequest
+	ErrCodeUnauthorized      = pub.ErrCodeUnauthorized
+	ErrCodeForbidden         = pub.ErrCodeForbidden
+	ErrCodeLocked            = pub.ErrCodeLocked
+	ErrCodeNotFound          = pub.ErrCodeNotFound
+	ErrCodeInvalidPassphrase = pub.ErrCodeInvalidPassphrase
+	ErrCodeUnavailable       = pub.ErrCodeUnavailable
+	ErrCodeCacheRefresh      = pub.ErrCodeCacheRefresh
+	ErrCodeInternal          = pub.ErrCodeInternal
 )

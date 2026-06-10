@@ -8,6 +8,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -575,10 +576,11 @@ func (c *Client) handleConnection(localConn net.Conn) {
 }
 
 // isExpectedCloseError returns true for errors that are normal during shutdown
-// (e.g., EOF or "use of closed network connection" when the SSH client is torn down
-// before per-connection cleanup runs).
+// (e.g., EOF or a closed network connection when the SSH client is torn down
+// before per-connection cleanup runs). The text fallback covers SSH-library
+// errors that embed the net string without wrapping net.ErrClosed.
 func isExpectedCloseError(err error) bool {
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 		return true
 	}
 	return strings.Contains(err.Error(), "use of closed network connection")

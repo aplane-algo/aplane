@@ -10,5 +10,9 @@ func resolveBackupKeysDir(source string) string {
 }
 
 func prepareBackupSource(source string) (string, func(), error) {
-	return backup.PrepareRestoreSource(source)
+	root, cleanup, err := backup.PrepareRestoreSource(source)
+	if err != nil {
+		return root, cleanup, codedError{code: "corrupt_archive", message: err.Error()}
+	}
+	return root, cleanup, nil
 }

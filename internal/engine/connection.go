@@ -5,8 +5,8 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -23,7 +23,7 @@ func (e *Engine) ConnectWithTunnel(target string, host string, sshPort int, loca
 		e.handleConnectionClosed(onDisconnect),
 	)
 	if err != nil {
-		if strings.HasPrefix(err.Error(), "already connected to ") {
+		if errors.Is(err, connect.ErrAlreadyConnected) {
 			return nil, fmt.Errorf("%w: %s", ErrAlreadyConnected, e.GetConnectionTarget())
 		}
 		if result == nil {

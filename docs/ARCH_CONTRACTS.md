@@ -1868,7 +1868,10 @@ Cross-SDK compatibility-bearing behavior:
   `keyset_revision` and `approval_wait_seconds`, and include the matching
   signer API fixture in their contract suites.
 - SDKs decode non-2xx HTTP bodies as `signerapi.ErrorResponse` with top-level
-  `error`. Endpoint-specific success DTOs are not the error envelope.
+  `error` plus a stable machine-readable `code`
+  (`pkg/signerapi/error_codes.go`). Clients classify failures by `code`
+  (empty on pre-code servers), never by `error` message text.
+  Endpoint-specific success DTOs are not the error envelope.
 - SDK/client `/sign` deadlines must be long enough for the identity-effective
   signer approval wait. The repo-owned signer client discovers
   `/status.approval_wait_seconds` and uses that value plus slack; external SDKs

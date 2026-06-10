@@ -49,7 +49,7 @@ func ProtocolRevokeTokenResultMessage(id string, err error) protocol.RevokeToken
 		Success: err == nil,
 	}
 	if err != nil {
-		result.Code = protocol.IPCErrorCode(err.Error())
+		result.Code = protocol.CodeForError(err)
 		result.Error = err.Error()
 	}
 	return result
@@ -66,7 +66,7 @@ func ProtocolUpdateAdminSettingResultMessage(id string, request UpdateAdminSetti
 		Value:   request.Value,
 	}
 	if err != nil {
-		result.Code = protocol.IPCErrorCode(err.Error())
+		result.Code = protocol.CodeForError(err)
 		result.Error = err.Error()
 	}
 	return result
@@ -83,7 +83,7 @@ func ProtocolUpdatePolicySettingResultMessage(id string, request UpdatePolicySet
 		Value:   request.Value,
 	}
 	if err != nil {
-		result.Code = protocol.IPCErrorCode(err.Error())
+		result.Code = protocol.CodeForError(err)
 		result.Error = err.Error()
 	}
 	return result
@@ -98,7 +98,7 @@ func ProtocolUpdatePolicyASAAmountsResultMessage(id string, err error) protocol.
 		Success: err == nil,
 	}
 	if err != nil {
-		result.Code = protocol.IPCErrorCode(err.Error())
+		result.Code = protocol.CodeForError(err)
 		result.Error = err.Error()
 	}
 	return result
@@ -126,7 +126,7 @@ func ProtocolLockIdentityResultMessage(id string, err error) protocol.LockIdenti
 		Success: err == nil,
 	}
 	if err != nil {
-		result.Code = protocol.IPCErrorCode(err.Error())
+		result.Code = protocol.CodeForError(err)
 		result.Error = err.Error()
 	}
 	return result

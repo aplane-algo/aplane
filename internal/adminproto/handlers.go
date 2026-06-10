@@ -175,7 +175,7 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 	if s.State() != StateAuthenticated {
 		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
 			msg.ID,
-			fmt.Errorf("no identity bound to session"),
+			protocol.WithCode(protocol.ErrCodeNoIdentityBound, fmt.Errorf("no identity bound to session")),
 		))
 		return
 	}
@@ -183,7 +183,7 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 	if ir == nil {
 		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
 			msg.ID,
-			fmt.Errorf("no identity bound to session"),
+			protocol.WithCode(protocol.ErrCodeNoIdentityBound, fmt.Errorf("no identity bound to session")),
 		))
 		return
 	}
@@ -193,7 +193,7 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 	if s.authorizer != nil && identity == nil {
 		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
 			msg.ID,
-			fmt.Errorf("no identity bound to session"),
+			protocol.WithCode(protocol.ErrCodeNoIdentityBound, fmt.Errorf("no identity bound to session")),
 		))
 		return
 	}
@@ -201,7 +201,7 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 		s.logAuthorizationDenied(identity, auth.ActionIdentityLock, resource, err.Error())
 		_ = s.WriteJSON(ProtocolLockIdentityResultMessage(
 			msg.ID,
-			fmt.Errorf("authorization denied"),
+			protocol.WithCode(protocol.ErrCodeAuthorizationDenied, fmt.Errorf("authorization denied")),
 		))
 		return
 	}

@@ -3,44 +3,22 @@
 
 package signing
 
-import "net/http"
+import "github.com/aplane-algo/aplane/internal/signerapp/svcerr"
 
-type ErrorKind string
-
-const (
-	ErrorBadRequest  ErrorKind = "bad_request"
-	ErrorForbidden   ErrorKind = "forbidden"
-	ErrorUnavailable ErrorKind = "unavailable"
-	ErrorInternal    ErrorKind = "internal"
+// ServiceError aliases the unified signer service-error model so kinds map
+// onto stable wire codes and HTTP status in one place.
+type (
+	ErrorKind    = svcerr.Kind
+	ServiceError = svcerr.Error
 )
 
-type ServiceError struct {
-	Kind    ErrorKind
-	Message string
-}
-
-func (e *ServiceError) Error() string {
-	if e == nil {
-		return ""
-	}
-	return e.Message
-}
-
-func (e *ServiceError) HTTPStatus() int {
-	if e == nil {
-		return 0
-	}
-	switch e.Kind {
-	case ErrorBadRequest:
-		return http.StatusBadRequest
-	case ErrorForbidden:
-		return http.StatusForbidden
-	case ErrorUnavailable:
-		return http.StatusServiceUnavailable
-	default:
-		return http.StatusInternalServerError
-	}
-}
+const (
+	ErrorBadRequest  = svcerr.KindBadRequest
+	ErrorForbidden   = svcerr.KindForbidden
+	ErrorLocked      = svcerr.KindLocked
+	ErrorUnavailable = svcerr.KindUnavailable
+	ErrorInternal    = svcerr.KindInternal
+)
 
 func badRequest(msg string) *ServiceError { return &ServiceError{Kind: ErrorBadRequest, Message: msg} }
 func forbidden(msg string) *ServiceError  { return &ServiceError{Kind: ErrorForbidden, Message: msg} }
@@ -48,3 +26,9 @@ func unavailable(msg string) *ServiceError {
 	return &ServiceError{Kind: ErrorUnavailable, Message: msg}
 }
 func internal(msg string) *ServiceError { return &ServiceError{Kind: ErrorInternal, Message: msg} }
+
+// lockedError reports the signer keystore as locked with the dedicated
+// machine-readable kind.
+func lockedError() *ServiceError {
+	return &ServiceError{Kind: ErrorLocked, Message: "signer is locked"}
+}

@@ -92,7 +92,9 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 			req.Requests[i].LsigArgs, session, identityID, ctx,
 		)
 		if signErr != nil {
-			if signErr.Kind == ErrorForbidden {
+			// Forbidden and locked describe the whole request, not one slot,
+			// so they keep their message without a per-transaction prefix.
+			if signErr.Kind == ErrorForbidden || signErr.Kind == ErrorLocked {
 				return nil, signErr
 			}
 			return nil, &ServiceError{Kind: signErr.Kind, Message: fmt.Sprintf("transaction %d: %s", i+1, signErr.Message)}
@@ -131,7 +133,7 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 			e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("failed to load key: %v", loadErr))
 		}
 		if errors.Is(loadErr, keystore.ErrStoreLocked) {
-			return nil, "", forbidden("signer is locked")
+			return nil, "", lockedError()
 		}
 		return nil, "", internal(fmt.Sprintf("failed to load key: %v", loadErr))
 	}

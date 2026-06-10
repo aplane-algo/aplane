@@ -11,6 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -80,7 +81,7 @@ func cmdPolicyVerify() error {
 	for _, doc := range docs {
 		stored, err := doc.verify(masterKey)
 		if err != nil {
-			return fmt.Errorf("%s integrity verification failed: %w", doc.name, err)
+			return codedError{code: policyIntegrityFailedCode, message: fmt.Sprintf("%s integrity verification failed: %v", doc.name, err)}
 		}
 		if _, err := doc.apply(stored); err != nil {
 			return fmt.Errorf("%s config invalid: %w", doc.name, err)
@@ -112,7 +113,7 @@ func cmdPolicySign() error {
 			return fmt.Errorf("failed to sign %s integrity sidecar: %w", doc.name, err)
 		}
 		if _, err := doc.verify(masterKey); err != nil {
-			return fmt.Errorf("%s sidecar written but verification failed: %w", doc.name, err)
+			return codedError{code: policyIntegrityFailedCode, message: fmt.Sprintf("%s sidecar written but verification failed: %v", doc.name, err)}
 		}
 		logInfof("%s sidecar signed: %s", doc.name, doc.sidecar)
 	}
@@ -205,7 +206,7 @@ func readStoreMasterKey() ([]byte, error) {
 	}
 	masterKey, err := meta.VerifyAndDeriveMasterKey(passphrase)
 	if err != nil {
-		return nil, fmt.Errorf("passphrase verification failed: %w", err)
+		return nil, codedError{code: protocol.ErrCodeInvalidPassphrase, message: fmt.Sprintf("passphrase verification failed: %v", err)}
 	}
 	return masterKey, nil
 }

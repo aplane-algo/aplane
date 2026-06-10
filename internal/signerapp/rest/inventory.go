@@ -120,7 +120,7 @@ func (s Service) Keys(ir *identity.Runtime) (*signerapi.KeysResponse, *signersig
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "identity runtime is nil"}
 	}
 	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
+		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
 	}
 
 	keyList := s.BuildKeyInfoList(ir)

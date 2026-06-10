@@ -22,7 +22,7 @@ func (s Service) SignComponent(ctx context.Context, ir *identity.Runtime, req si
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: identity.ErrDecommissioned.Error()}
 	}
 	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
+		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
 	}
 	if roleErr := requireComponentNodeRole(ir, req.Role); roleErr != nil {
 		return nil, roleErr
@@ -55,7 +55,7 @@ func (s Service) AssembleGuarded(ctx context.Context, ir *identity.Runtime, req 
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: identity.ErrDecommissioned.Error()}
 	}
 	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
+		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
 	}
 	if roleErr := requireAccountSigningRole(ir, "guarded assembly"); roleErr != nil {
 		return nil, roleErr

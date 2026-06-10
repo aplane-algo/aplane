@@ -326,15 +326,15 @@ func cmdBackupImport(source string) error {
 		return fmt.Errorf("failed to set backup archive permissions: %w", err)
 	}
 	if _, err := backup.StatManagedBackupArchive(tmpPath); err != nil {
-		return fmt.Errorf("failed to validate imported backup archive: %w", err)
+		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
 	}
 	sourceRoot, cleanup, err := backup.PrepareRestoreSource(tmpPath)
 	if err != nil {
-		return fmt.Errorf("failed to validate imported backup archive: %w", err)
+		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup archive: %v", err)}
 	}
 	defer cleanup()
 	if err := validateImportedBackupContents(sourceRoot); err != nil {
-		return fmt.Errorf("failed to validate imported backup contents: %w", err)
+		return codedError{code: "invalid_backup", message: fmt.Sprintf("failed to validate imported backup contents: %v", err)}
 	}
 	if err := os.Rename(tmpPath, dest); err != nil {
 		return fmt.Errorf("failed to publish imported backup archive: %w", err)
@@ -453,10 +453,10 @@ func cmdBackupExport(name, destinationDir string) error {
 		return fmt.Errorf("failed to verify exported backup: %w", err)
 	}
 	if size != info.Size {
-		return fmt.Errorf("exported backup size mismatch: got %d, want %d", size, info.Size)
+		return codedError{code: "verification_failed", message: fmt.Sprintf("exported backup size mismatch: got %d, want %d", size, info.Size)}
 	}
 	if info.Checksum != "" && checksum != info.Checksum {
-		return fmt.Errorf("exported backup checksum mismatch: got %s, want %s", checksum, info.Checksum)
+		return codedError{code: "verification_failed", message: fmt.Sprintf("exported backup checksum mismatch: got %s, want %s", checksum, info.Checksum)}
 	}
 	logInfof("backup exported: %s", destination)
 	logInfof("checksum: %s", checksum)

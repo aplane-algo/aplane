@@ -456,8 +456,11 @@ func TestServiceSimulateRejectsLockedRuntime(t *testing.T) {
 	svc := Service{Deps: rejectAllSimulateDeps(t)}
 
 	_, err := svc.Simulate(context.Background(), ir, signerapi.GroupSignRequest{})
-	if err == nil || err.Kind != signersigning.ErrorForbidden {
-		t.Fatalf("Simulate() error = %#v, want forbidden", err)
+	if err == nil || err.Kind != signersigning.ErrorLocked {
+		t.Fatalf("Simulate() error = %#v, want locked", err)
+	}
+	if err.HTTPStatus() != 403 {
+		t.Fatalf("Simulate() locked status = %d, want 403", err.HTTPStatus())
 	}
 	if err.Message != "signer is locked" {
 		t.Fatalf("Simulate() error message = %q, want signer is locked", err.Message)
@@ -499,9 +502,9 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 	ir := setupIdentityRuntime(t, true)
 	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{}}}
 
-	status, genResp := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: "ed25519"})
-	if status != 200 {
-		t.Fatalf("AdminGenerate status = %d, want 200", status)
+	genResp, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: "ed25519"})
+	if genErr != nil {
+		t.Fatalf("AdminGenerate error = %v, want nil", genErr)
 	}
 	if genResp.Address == "" {
 		t.Fatal("AdminGenerate() returned empty address")
@@ -518,9 +521,9 @@ func TestServiceKeysAndAdminMutations(t *testing.T) {
 		t.Fatalf("Keys address = %q, want %q", keysResp.Keys[0].Address, genResp.Address)
 	}
 
-	status, delResp := svc.AdminDelete(ir, genResp.Address)
-	if status != 200 {
-		t.Fatalf("AdminDelete status = %d, want 200", status)
+	delResp, delErr := svc.AdminDelete(ir, genResp.Address)
+	if delErr != nil {
+		t.Fatalf("AdminDelete error = %v, want nil", delErr)
 	}
 	if !delResp.Success {
 		t.Fatalf("AdminDelete response = %#v, want success", delResp)
@@ -531,9 +534,9 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
 	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{}}}
 
-	status, genResp := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: keytypes.SentryComponentEd25519V1})
-	if status != 200 {
-		t.Fatalf("AdminGenerate(component) status = %d, want 200: %#v", status, genResp)
+	genResp, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: keytypes.SentryComponentEd25519V1})
+	if genErr != nil {
+		t.Fatalf("AdminGenerate(component) error = %v, want nil", genErr)
 	}
 	if genResp.PublicKeyHex == "" {
 		t.Fatal("AdminGenerate public key is empty")
@@ -1220,9 +1223,9 @@ func TestServiceLockedAndInternalErrors(t *testing.T) {
 		t.Fatalf("SaveTemplateForPaths(rest generic template) error = %v", err)
 	}
 	writeTemplateStateForRestTest(t, ir.KeyPaths(), ir.ID(), restGenericErrorKeyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
-	status, resp := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: restGenericErrorKeyType})
-	if status != 500 || resp.Error != "key generation failed" {
-		t.Fatalf("AdminGenerate(internal) = (%d, %#v), want 500 key generation failed", status, resp)
+	_, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: restGenericErrorKeyType})
+	if genErr == nil || genErr.HTTPStatus() != 500 || genErr.Message != "key generation failed" {
+		t.Fatalf("AdminGenerate(internal) = %#v, want 500 key generation failed", genErr)
 	}
 }
 

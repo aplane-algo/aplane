@@ -163,8 +163,11 @@ func TestSignRejectsForeignModeWithStableErrorShape(t *testing.T) {
 	if err := json.NewDecoder(signW.Body).Decode(&signResp); err != nil {
 		t.Fatalf("decode /sign response: %v", err)
 	}
-	if !reflect.DeepEqual(sortedTopLevelKeys(signResp), []string{"error"}) {
-		t.Fatalf("/sign top-level keys = %#v, want only error", sortedTopLevelKeys(signResp))
+	if !reflect.DeepEqual(sortedTopLevelKeys(signResp), []string{"code", "error"}) {
+		t.Fatalf("/sign top-level keys = %#v, want code and error", sortedTopLevelKeys(signResp))
+	}
+	if got, _ := signResp["code"].(string); got != signerapi.ErrCodeBadRequest {
+		t.Fatalf("/sign code = %q, want %q", got, signerapi.ErrCodeBadRequest)
 	}
 	if got, _ := signResp["error"].(string); got != "no signable transactions: all entries are foreign. Build and submit this group locally instead of using apsigner" {
 		t.Fatalf("/sign error = %q", got)
@@ -194,8 +197,11 @@ func TestPlanRejectsMalformedRequestShapeWithStableErrorShape(t *testing.T) {
 	if err := json.NewDecoder(planW.Body).Decode(&planResp); err != nil {
 		t.Fatalf("decode /plan response: %v", err)
 	}
-	if !reflect.DeepEqual(sortedTopLevelKeys(planResp), []string{"error"}) {
-		t.Fatalf("/plan top-level keys = %#v, want only error", sortedTopLevelKeys(planResp))
+	if !reflect.DeepEqual(sortedTopLevelKeys(planResp), []string{"code", "error"}) {
+		t.Fatalf("/plan top-level keys = %#v, want code and error", sortedTopLevelKeys(planResp))
+	}
+	if got, _ := planResp["code"].(string); got != signerapi.ErrCodeBadRequest {
+		t.Fatalf("/plan code = %q, want %q", got, signerapi.ErrCodeBadRequest)
 	}
 	if got, _ := planResp["error"].(string); got != "transaction 1: txn_bytes_hex is required for sign mode" {
 		t.Fatalf("/plan error = %q", got)
@@ -278,8 +284,11 @@ func TestPlanRejectsMixedPassthroughAndForeignWithStableErrorShape(t *testing.T)
 	if err := json.NewDecoder(planW.Body).Decode(&planResp); err != nil {
 		t.Fatalf("decode /plan response: %v", err)
 	}
-	if !reflect.DeepEqual(sortedTopLevelKeys(planResp), []string{"error"}) {
-		t.Fatalf("/plan top-level keys = %#v, want only error", sortedTopLevelKeys(planResp))
+	if !reflect.DeepEqual(sortedTopLevelKeys(planResp), []string{"code", "error"}) {
+		t.Fatalf("/plan top-level keys = %#v, want code and error", sortedTopLevelKeys(planResp))
+	}
+	if got, _ := planResp["code"].(string); got != signerapi.ErrCodeBadRequest {
+		t.Fatalf("/plan code = %q, want %q", got, signerapi.ErrCodeBadRequest)
 	}
 	if got, _ := planResp["error"].(string); got != "cannot mix passthrough and foreign transactions: passthrough requires pre-grouped, foreign requires server-computed group ID" {
 		t.Fatalf("/plan error = %q", got)

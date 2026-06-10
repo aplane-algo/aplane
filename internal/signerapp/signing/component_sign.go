@@ -146,7 +146,7 @@ func loadGuardedAccountKeyMaterial(ctx context.Context, session componentKeyGett
 	if err != nil {
 		switch {
 		case errors.Is(err, keystore.ErrStoreLocked):
-			return nil, forbidden("signer is locked")
+			return nil, lockedError()
 		case errors.Is(err, keystore.ErrKeyNotFound):
 			return nil, badRequest(fmt.Sprintf("guarded account key %q not found", guardedAccount))
 		default:
@@ -178,7 +178,7 @@ func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, com
 	if err != nil {
 		switch {
 		case errors.Is(err, keystore.ErrStoreLocked):
-			return nil, nil, forbidden("signer is locked")
+			return nil, nil, lockedError()
 		case errors.Is(err, keystore.ErrKeyNotFound):
 			return nil, nil, badRequest(fmt.Sprintf("Sentry Key ID %q not found", componentKeySelector))
 		default:

@@ -22,6 +22,11 @@ const (
 	apstoreExitArchive     = 6
 )
 
+// policyIntegrityFailedCode classifies policy document integrity failures.
+// It maps to the generic failure exit code rather than the archive code the
+// old substring fallback misrouted these errors to.
+const policyIntegrityFailedCode = "policy_integrity_failed"
+
 type codedError struct {
 	prefix  string
 	code    string
@@ -80,13 +85,16 @@ func exitCodeForError(err error) int {
 		strings.Contains(msg, "key_type_in_use"),
 		strings.Contains(msg, "key(s) still use it"):
 		return apstoreExitConflict
-	case strings.Contains(msg, "verification failed"),
-		strings.Contains(msg, "failed to validate"),
-		strings.Contains(msg, "failed to decrypt"),
-		strings.Contains(msg, "unsupported backup"),
+	case strings.Contains(msg, "unsupported backup"),
 		strings.Contains(msg, "corrupt archive"),
 		strings.Contains(msg, "checksum mismatch"),
 		strings.Contains(msg, "size mismatch"):
+		// Archive flows attach explicit codedError codes at their producing
+		// sites; these narrow markers remain only for backup-library errors
+		// that surface without a code. The broad "verification failed" /
+		// "failed to validate" / "failed to decrypt" patterns were removed
+		// because unrelated subsystems (policy integrity, known_hosts
+		// validation, signature verification) produce matching text.
 		return apstoreExitArchive
 	default:
 		return apstoreExitFailure

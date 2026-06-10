@@ -22,7 +22,7 @@ func (s Service) SignGroup(ctx context.Context, ir *identity.Runtime, req signer
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: identity.ErrDecommissioned.Error()}
 	}
 	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
+		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
 	}
 	if roleErr := requireAccountSigningRole(ir, "account signing"); roleErr != nil {
 		return nil, roleErr
@@ -54,7 +54,7 @@ func (s Service) Plan(ir *identity.Runtime, req signerapi.GroupSignRequest) (*si
 		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: identity.ErrDecommissioned.Error()}
 	}
 	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: "signer is locked"}
+		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
 	}
 	if roleErr := requireAccountSigningRole(ir, "planning account signing"); roleErr != nil {
 		return nil, roleErr

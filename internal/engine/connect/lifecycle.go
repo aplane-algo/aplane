@@ -5,6 +5,7 @@ package connect
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -14,6 +15,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
+
+// ErrAlreadyConnected indicates a connect attempt while a connection to a
+// different target is active. Wrapped errors carry the current target.
+var ErrAlreadyConnected = errors.New("already connected")
 
 // Result reports the outcome of a remote signer connection attempt.
 type Result struct {
@@ -50,7 +55,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 		return nil, fmt.Errorf("already connecting to %s", currentTarget)
 	}
 	if currentTarget != "" {
-		return nil, fmt.Errorf("already connected to %s", currentTarget)
+		return nil, fmt.Errorf("%w to %s", ErrAlreadyConnected, currentTarget)
 	}
 
 	result := &Result{Target: target}

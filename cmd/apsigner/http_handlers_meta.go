@@ -10,7 +10,7 @@ func (fs *Signer) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (fs *Signer) handleStatus(w http.ResponseWriter, r *http.Request) {
-	ir, ok := requireMethodAndIdentity(fs, w, r, http.MethodGet, func(msg string) any { return errorResponse(msg) })
+	ir, ok := requireMethodAndIdentity(fs, w, r, http.MethodGet)
 	if !ok {
 		return
 	}
@@ -26,7 +26,7 @@ func (fs *Signer) handleKeys(w http.ResponseWriter, r *http.Request) {
 
 	result, err := fs.restService().Keys(ir)
 	if err != nil {
-		writeErrorJSON(w, err.HTTPStatus(), err.Error())
+		writeServiceErrorJSON(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -41,7 +41,7 @@ func (fs *Signer) handleKeyTypes(w http.ResponseWriter, r *http.Request) {
 
 	result, err := fs.restService().KeyTypesForIdentity(ir)
 	if err != nil {
-		writeErrorJSON(w, err.HTTPStatus(), err.Error())
+		writeServiceErrorJSON(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)

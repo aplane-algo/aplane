@@ -40,7 +40,9 @@ Method enforcement:
 Transport behavior:
 
 - all responses are `Content-Type: application/json`,
-- non-2xx responses use `signerapi.ErrorResponse` with top-level `error`,
+- non-2xx responses use `signerapi.ErrorResponse` with top-level `error` plus
+  a stable machine-readable `code` (see `pkg/signerapi/error_codes.go`);
+  clients branch on `code`, never on `error` message text,
 - request `Content-Type` is not enforced,
 - malformed JSON returns `400`,
 - oversized bodies return `413`,

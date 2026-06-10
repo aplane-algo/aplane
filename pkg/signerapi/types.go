@@ -233,8 +233,12 @@ type GroupSimulateResponse struct {
 }
 
 // ErrorResponse is the standard HTTP error body for non-2xx signer responses.
+// Code carries a stable machine-readable classification (see error_codes.go);
+// clients should branch on Code, never on Error message text. Code may be
+// empty when the failure has no specific classification.
 type ErrorResponse struct {
 	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
 }
 
 // HealthResponse is the response from the /health endpoint.

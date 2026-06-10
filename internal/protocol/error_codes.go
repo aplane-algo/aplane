@@ -3,7 +3,53 @@
 
 package protocol
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
+
+// CodedError carries a stable IPC error code attached at the error origin.
+// Adapters should classify errors with CodeForError instead of matching
+// message text.
+type CodedError struct {
+	Code string
+	Err  error
+}
+
+func (e *CodedError) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *CodedError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// WithCode attaches a stable IPC error code to err at its origin.
+func WithCode(code string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &CodedError{Code: code, Err: err}
+}
+
+// CodeForError returns the code attached at the error origin when present,
+// falling back to deriving one from the message text for legacy paths.
+func CodeForError(err error) string {
+	if err == nil {
+		return ""
+	}
+	var coded *CodedError
+	if errors.As(err, &coded) && coded.Code != "" {
+		return coded.Code
+	}
+	return IPCErrorCode(err.Error())
+}
 
 // Stable machine-readable IPC/admin error codes.
 const (
