@@ -325,13 +325,26 @@ The Go, TypeScript, and Python SDKs live in the separate MIT-licensed
 `aplane-algo/aplanesdk` repository. This repo owns the signer HTTP API DTOs
 and golden fixtures that the SDK repo consumes for compatibility testing.
 The SDK shape is native-client first: `SignerClient` wrappers expose APlane's
-HTTP signing, planning, inventory, status, and cancellation APIs directly.
+HTTP signing, planning, simulation, inventory, status, and cancellation APIs
+directly, and the SDK-native prep layer mirrors apshell's core client-side
+transaction preparation once a caller has a normalized typed intent. That prep
+layer builds unsigned transaction candidates, resolves effective signer
+metadata, attaches LogicSig runtime args and app-call display metadata, and
+preserves apshell-equivalent group ordering without copying apshell's UI
+grammar.
 Language-specific integrations such as the TypeScript and Python AlgoKit Utils
 adapters compose that native client rather than becoming separate signer
 transports. Those adapters are intentionally thin transaction-signer projections:
 they sign already-shaped AlgoKit transaction indexes through raw `/sign` and do
-not hide APlane group planning, dummy insertion, or LogicSig runtime-argument
-requirements.
+not perform APlane typed prep themselves.
+For ordinary APlane-managed signing, final group IDs, fee pooling, dummy
+insertion, policy, approval, and signing remain apsigner authority. Guarded
+prepared signing is the deliberate exception at the client-prep boundary:
+because component signatures require frozen canonical bytes, SDKs follow the
+same guarded client flow as apshell by classifying guarded targets, preparing
+guarded dummy/passthrough context locally when required, then using
+`/sign/component` and `/sign/assemble` for signer-owned component signing and
+final assembly.
 SDK-facing HTTP behavior includes not only JSON payload shape, but also
 contractual client expectations such as `/status` discovery and
 approval-wait-aware `/sign` deadlines and explicit `/sign/cancel` request
@@ -1403,12 +1416,12 @@ The repo uses:
 - dedicated test harness packages,
 - analysis tools for security properties,
 - signer API and SDK contract tests backed by JSON fixtures in `test/contracts/signerapi/`.
-  These fixtures pin SDK-exposed HTTP DTOs; signer-managed `/simulate`
-  is covered by Go package tests rather than cross-SDK fixture tests.
-  SDK package tests are owned by the external `aplane-algo/aplanesdk`
-  repository. `/status` is SDK-facing because clients use
-  `keyset_revision` for refresh decisions and `approval_wait_seconds` for
-  sizing `/sign` deadlines.
+  These fixtures pin SDK-exposed HTTP DTOs, including signer-managed
+  `/simulate` response shape. SDK package tests are owned by the external
+  `aplane-algo/aplanesdk` repository; that repository also owns cross-language
+  prepared-request parity fixtures for the SDK prep layer. `/status` is
+  SDK-facing because clients use `keyset_revision` for refresh decisions and
+  `approval_wait_seconds` for sizing `/sign` deadlines.
 - machine-checkable TLA+ models under `docs/formal/`, run locally with
   `make formal-test` and in CI by the Formal Models job. The target checks the
   `sign_boundary`, `policy_precedence`, `composition`, and `lifecycle` TLC

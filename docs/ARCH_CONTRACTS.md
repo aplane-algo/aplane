@@ -1843,6 +1843,27 @@ Cross-SDK compatibility-bearing behavior:
 - passthrough semantics are first-class for final signing
 - high-level signing helpers return base64 payloads converted from server hex
 - `FromEnv` and connection helper path resolution are part of the product contract
+- SDK-native prepared transaction models carry unsigned transaction bytes plus
+  signer metadata such as effective auth address, optional LogicSig args,
+  optional LogicSig size hints, optional app-call display metadata, and
+  SDK-side preflight checks. Prepared groups preserve caller/apshell-equivalent
+  transaction ordering before handoff to `/plan`, `/simulate`, `/sign`, or the
+  guarded component flow.
+- For equivalent normalized typed transaction intents, SDK prep should converge
+  with apshell's core prep behavior for transaction fields, suggested params,
+  flat-fee handling, auth-address semantics, LogicSig runtime args, app-call
+  metadata, and group ordering. SDKs do not need to copy shell grammar,
+  aliases, prompts, or rendering.
+- For ordinary APlane-managed signing, SDK prep must not take ownership of
+  final group ID assignment, signer-managed dummy insertion, fee pooling,
+  policy, approval, or signing. Those remain apsigner-owned behavior behind
+  `/plan`, `/simulate`, and `/sign`.
+- Guarded prepared signing is a special client-prep path because component
+  signatures require canonical bytes before user and sentry signatures are
+  requested. SDKs may mirror apshell's guarded client flow by classifying
+  guarded targets, sizing LogicSig-budget dummies, fixing fees and group ID,
+  signing dummy/passthrough slots locally, and then using `/sign/component`
+  plus `/sign/assemble`. Final guarded assembly remains signer-owned.
 - SDKs expose the authenticated `/status` DTO, including
   `keyset_revision` and `approval_wait_seconds`, and include the matching
   signer API fixture in their contract suites.
@@ -1877,10 +1898,13 @@ Go SDK specifics:
 - `GetStatusWithContext(ctx)` returns the raw `/status` DTO for keyset
   revision and approval-wait discovery
 - `PlanRequestsWithContext(ctx, requests)` and `SignRequestsWithContext(ctx, requests)` expose server-shaped `/plan` and `/sign` request flows directly
+- `SimulateRequestsWithContext(ctx, requests)` exposes signer-managed
+  `/simulate`; the response contains txids, diagnostics, mutation metadata,
+  and finalized unsigned transaction bytes, but not reusable signed bytes.
 - raw request methods operate on SDK DTOs (`SignRequest`, `KeysResponse`,
-  `PlanGroupResponse`, `GroupSignResponse`) rather than the base64-returning
-  convenience layer. `SignResponse` is a legacy source-compatibility type; the
-  live `/sign` response is `GroupSignResponse`.
+  `PlanGroupResponse`, `GroupSignResponse`, `GroupSimulateResponse`) rather
+  than the base64-returning convenience layer. `SignResponse` is a legacy
+  source-compatibility type; the live `/sign` response is `GroupSignResponse`.
 - `Config.NewAlgodClient(network)` is part of the supported Go SDK config surface
 - `GroupPlanResponse`, `RuntimeArgInfo`, and `SigningArgInfo` are compatibility aliases for `PlanGroupResponse`, `RuntimeArg`, and `SigningArg`
 - input uses `go-algorand-sdk` `types.Transaction`
@@ -1897,12 +1921,12 @@ TypeScript and Python SDKs preserve the same broad behaviors:
 - raw `signRequests` / `sign_requests` APIs accept one or more `/sign` request
   entries and expose the native `/sign` response for adapters that already own
   transaction encoding
+- raw `simulateRequests` / `simulate_requests` APIs expose signer-managed
+  `/simulate` with the same no-signed-bytes response boundary as the Go SDK
 - AlgoKit Utils adapters are optional client-side projections over the native
   SDK client. They provide the AlgoKit `addr` plus transaction-signer shape and
   call raw `/sign` for the indexes AlgoKit asks them to sign. They do not
-  mutate or re-plan groups; Falcon and LogicSig flows that require dummy
-  insertion, fee pooling, or runtime-argument management remain native APlane
-  planning/signing concerns.
+  mutate or re-plan groups or run the SDK-native typed prep layer.
 
 Primary SDK sources live in the separate MIT-licensed
 `aplane-algo/aplanesdk` repository. When `APLANE_SDKS_REPO` points at a local
@@ -1915,6 +1939,10 @@ Committed JSON golden fixtures for signer API contract tests live under
 `test/contracts/signerapi/`. These fixtures are compatibility source material
 for this repository and the external SDK repository: update them intentionally
 with any wire-contract change, not as generated test runtime state.
+Cross-language SDK prep parity fixtures are owned in the external SDK
+repository because they exercise SDK transaction builders rather than signer
+HTTP DTOs; update them when SDK prep request-shape behavior intentionally
+changes.
 
 Known-answer key derivation fixtures live in
 `test/integration/key_derivation_regression_test.go`. They pin deterministic
