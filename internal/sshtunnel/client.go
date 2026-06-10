@@ -503,6 +503,7 @@ func (c *Client) StartPortForwarding(ctx context.Context) error {
 
 // acceptConnections handles incoming local connections and forwards them through SSH
 func (c *Client) acceptConnections(ctx context.Context) {
+	var backoff time.Duration
 	for {
 		select {
 		case <-ctx.Done():
@@ -518,9 +519,20 @@ func (c *Client) acceptConnections(ctx context.Context) {
 			case <-c.closeChan:
 				return
 			default:
-				continue
 			}
+			// Back off so a persistent Accept error (e.g. EMFILE) doesn't
+			// busy-spin a core; mirrors the server-side accept loop.
+			backoff = nextAcceptErrorBackoff(backoff)
+			select {
+			case <-ctx.Done():
+				return
+			case <-c.closeChan:
+				return
+			case <-time.After(backoff):
+			}
+			continue
 		}
+		backoff = 0
 
 		// Handle connection in goroutine
 		go c.handleConnection(localConn)
@@ -782,7 +794,16 @@ func (c *Client) RequestToken(ctx context.Context, identityID string) (string, e
 		onProvisioningStart()
 	}
 
-	// Read stdout (should contain the token on success)
+	// Drain stdout (the token on success) and stderr (error detail)
+	// concurrently: reading them sequentially can deadlock if the remote
+	// command fills the unread pipe's window before closing the other.
+	var errOutput []byte
+	stderrDone := make(chan struct{})
+	go func() {
+		defer close(stderrDone)
+		errOutput, _ = io.ReadAll(stderr)
+	}()
+
 	output, err := io.ReadAll(stdout)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -790,9 +811,7 @@ func (c *Client) RequestToken(ctx context.Context, identityID string) (string, e
 		}
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
-
-	// Read stderr for error message
-	errOutput, _ := io.ReadAll(stderr)
+	<-stderrDone
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
