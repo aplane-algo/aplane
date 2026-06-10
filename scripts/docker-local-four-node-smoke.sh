@@ -8,7 +8,9 @@
 # The test keeps the existing docker-local behavior surface focused on install,
 # SSH token provisioning, client reachability, shared LocalNet wiring, sentry
 # endpoint enrollment, sentry-key discovery, and one guarded
-# transaction-signing flow.
+# transaction-signing flow. It also installs the local Python SDK source into
+# the client container and validates the guarded account with SDK intent prep
+# plus SDK guarded component signing.
 
 set -euo pipefail
 
@@ -38,6 +40,10 @@ LOCALNET_GENESIS_HASH=""
 FALCON_ADDRESS=""
 SENTRY_COMPONENT_KEY=""
 GUARDED_ADDRESS=""
+SDK_REPO="${APLANE_SDKS_REPO:-${APLANE_SDK_REPO:-}}"
+SDK_SOURCE_DIR=""
+SDK_CONTAINER_DIR="/home/$TEST_USER/src/aplanesdk-python"
+SDK_VENV="/home/$TEST_USER/aplane/apclient/python-sdk-venv"
 
 usage() {
     cat <<'EOF'
@@ -48,6 +54,8 @@ Options:
   --version <version>   Version string for locally built tarball (default: docker-smoke)
   --arch <amd64|arm64>  Architecture to package/test (default: host arch)
   --skip-build          Reuse existing bin/<arch> binaries when building the tarball
+  --sdk-repo <path>     Path to aplanesdk repo or its python/ dir
+                        (default: APLANE_SDKS_REPO, APLANE_SDK_REPO, ../aplanesdk, ~/aplanesdk)
   --keep-container      Leave containers and network running for debugging
   -h, --help            Show this help
 
@@ -60,7 +68,9 @@ signer container DNS name, adds the sentry endpoint through apshell, requests
 API tokens for both nodes, generates a sentry key through the sentry
 endpoint, syncs the sentry key to the signer, enables a guarded Falcon/Ed25519
 sentry account key type, and verifies apshell can create, fund, and validate
-both guarded and plain Falcon accounts against the shared LocalNet.
+both guarded and plain Falcon accounts against the shared LocalNet. It then
+installs the Python SDK from the local aplanesdk repo and submits the same
+guarded 0 ALGO self-send with SDK preparation and guarded signing helpers.
 EOF
 }
 
@@ -102,6 +112,11 @@ parse_args() {
             --skip-build)
                 SKIP_BUILD=1
                 shift
+                ;;
+            --sdk-repo)
+                [ $# -ge 2 ] || die "--sdk-repo requires a value"
+                SDK_REPO="$2"
+                shift 2
                 ;;
             --keep-container)
                 KEEP_CONTAINER=1
@@ -162,12 +177,41 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      bash ca-certificates curl expect gzip openssh-client passwd procps sudo tar && \
+      bash ca-certificates curl expect gzip openssh-client passwd procps python3 python3-pip python3-venv sudo tar && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 CMD ["sleep", "infinity"]
 DOCKERFILE
     docker build -t "$IMAGE_NAME" -f "$dockerfile" "$ROOT_DIR"
     rm -f "$dockerfile"
+}
+
+resolve_sdk_repo() {
+    local candidate=""
+    if [ -n "$SDK_REPO" ]; then
+        candidate="$SDK_REPO"
+    elif [ -d "$ROOT_DIR/../aplanesdk/python" ]; then
+        candidate="$ROOT_DIR/../aplanesdk"
+    elif [ -d "$HOME/aplanesdk/python" ]; then
+        candidate="$HOME/aplanesdk"
+    fi
+
+    [ -n "$candidate" ] || die "could not find aplanesdk; set APLANE_SDKS_REPO or pass --sdk-repo"
+    candidate="${candidate/#\~/$HOME}"
+    [ -d "$candidate" ] || die "aplanesdk path not found: $candidate"
+    candidate="$(cd "$candidate" && pwd)"
+
+    if [ -f "$candidate/pyproject.toml" ] && [ -d "$candidate/aplanesdk" ]; then
+        SDK_SOURCE_DIR="$candidate"
+        SDK_REPO="$(cd "$candidate/.." && pwd)"
+        return
+    fi
+    if [ -f "$candidate/python/pyproject.toml" ] && [ -d "$candidate/python/aplanesdk" ]; then
+        SDK_REPO="$candidate"
+        SDK_SOURCE_DIR="$candidate/python"
+        return
+    fi
+
+    die "aplanesdk Python source not found at $candidate; expected python/pyproject.toml"
 }
 
 build_or_resolve_tarball() {
@@ -668,6 +712,160 @@ request_sentry_token() {
         || die "request-token did not produce a local-sentry token file"
 }
 
+install_python_sdk_client() {
+    [ -n "$SDK_SOURCE_DIR" ] || die "SDK source directory is not set"
+
+    docker_exec "$CLIENT_CONTAINER" rm -rf /tmp/aplanesdk-python "$SDK_CONTAINER_DIR" "$SDK_VENV"
+    docker_exec "$CLIENT_CONTAINER" mkdir -p /tmp/aplanesdk-python
+    docker cp "$SDK_SOURCE_DIR/." "$CLIENT_CONTAINER:/tmp/aplanesdk-python"
+    docker_exec "$CLIENT_CONTAINER" chown -R "$TEST_USER:$TEST_USER" /tmp/aplanesdk-python
+    docker_exec_as_tester "$CLIENT_CONTAINER" "mkdir -p /home/$TEST_USER/src && \
+        mv /tmp/aplanesdk-python '$SDK_CONTAINER_DIR' && \
+        python3 -m venv '$SDK_VENV' && \
+        . '$SDK_VENV/bin/activate' && \
+        python -m pip install --no-input -e '$SDK_CONTAINER_DIR'"
+}
+
+write_sdk_data_dir() {
+    local data_dir="$1"
+    local host="$2"
+    local ssh_port="$3"
+    local signer_port="$4"
+    local token_path="$5"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "rm -rf '$data_dir' && \
+        mkdir -p '$data_dir/.ssh' && \
+        cp /home/$TEST_USER/aplane/apclient/.ssh/id_ed25519 '$data_dir/.ssh/id_ed25519' && \
+        cp /home/$TEST_USER/aplane/apclient/.ssh/known_hosts '$data_dir/.ssh/known_hosts' && \
+        cp '$token_path' '$data_dir/aplane.token' && \
+        chmod 700 '$data_dir/.ssh' && \
+        chmod 600 '$data_dir/.ssh/id_ed25519' '$data_dir/.ssh/known_hosts' '$data_dir/aplane.token' && \
+        cat > '$data_dir/config.yaml' <<YAML
+endpoint:
+  signer_port: $signer_port
+  ssh:
+    host: $host
+    port: $ssh_port
+    identity_file: .ssh/id_ed25519
+    known_hosts_path: .ssh/known_hosts
+YAML"
+}
+
+configure_python_sdk_client_data() {
+    local signer_ssh_port signer_port sentry_ssh_port sentry_port
+    signer_ssh_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" ssh_port)"
+    signer_port="$(read_node_endpoint_field "$SIGNER_CONTAINER" signer_port)"
+    sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
+    sentry_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" signer_port)"
+    [ -n "$signer_ssh_port" ] && [ -n "$signer_port" ] || die "could not read signer endpoint ports"
+    [ -n "$sentry_ssh_port" ] && [ -n "$sentry_port" ] || die "could not read sentry endpoint ports"
+
+    write_sdk_data_dir \
+        "/home/$TEST_USER/aplane/apclient-sdk-primary" \
+        "signer" \
+        "$signer_ssh_port" \
+        "$signer_port" \
+        "/home/$TEST_USER/aplane/apclient/aplane.token"
+    write_sdk_data_dir \
+        "/home/$TEST_USER/aplane/apclient-sdk-sentry" \
+        "sentry" \
+        "$sentry_ssh_port" \
+        "$sentry_port" \
+        "/home/$TEST_USER/aplane/apclient/tokens/local-sentry.token"
+}
+
+run_python_sdk_guarded_validate() {
+    [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
+
+    local py_file
+    py_file="$(mktemp)"
+    cat > "$py_file" <<'PY'
+import base64
+import os
+import sys
+
+from algosdk import transaction
+from algosdk.v2client import algod
+
+from aplanesdk import (
+    PreparedGroup,
+    SignerClient,
+    send_raw_transaction,
+    sign_prepared_guarded_group,
+)
+
+MIN_TXN_FEE = 1000
+
+
+def require_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise RuntimeError(f"{name} is required")
+    return value
+
+
+def signed_group_b64(signed_hexes: list[str]) -> str:
+    return base64.b64encode(b"".join(bytes.fromhex(item) for item in signed_hexes)).decode()
+
+
+def main() -> int:
+    primary_data = require_env("APCLIENT_DATA")
+    sentry_data = require_env("APLANE_SENTRY_DATA")
+    guarded_address = require_env("APLANE_GUARDED_ADDRESS")
+    sentry_component_key = require_env("APLANE_SENTRY_COMPONENT_KEY")
+    algod_url = require_env("APLANE_ALGOD_URL")
+    algod_token = require_env("APLANE_ALGOD_TOKEN")
+
+    algod_client = algod.AlgodClient(algod_token, algod_url)
+
+    with SignerClient.from_env(data_dir=primary_data, timeout=180) as user_client, SignerClient.from_env(
+        data_dir=sentry_data,
+        timeout=180,
+    ) as sentry_client:
+        prepared = user_client.prepare_payment(
+            algod_client,
+            sender=guarded_address,
+            receiver=guarded_address,
+            amount=0,
+            note=b"aplane python sdk guarded validate",
+            fee=MIN_TXN_FEE,
+            use_flat_fee=True,
+        )
+        result = sign_prepared_guarded_group(
+            user_client=user_client,
+            sentry_client=sentry_client,
+            sentry_component_key=sentry_component_key,
+            prepared_group=PreparedGroup([prepared]),
+        )
+        if not result.signed_group:
+            raise RuntimeError("SDK guarded signing returned an empty signed group")
+        print(f"Python SDK guarded validation group size: {len(result.signed_group)}")
+
+        txid = send_raw_transaction(algod_client, signed_group_b64(result.signed_group))
+        transaction.wait_for_confirmation(algod_client, txid, 10)
+        print(f"Python SDK guarded validation submitted: {txid}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+PY
+    docker cp "$py_file" "$CLIENT_CONTAINER:/tmp/sdk-guarded-validate.py"
+    rm -f "$py_file"
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sdk-guarded-validate.py
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" ". '$SDK_VENV/bin/activate' && \
+        APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
+        APLANE_SENTRY_DATA=/home/$TEST_USER/aplane/apclient-sdk-sentry \
+        APLANE_GUARDED_ADDRESS='$GUARDED_ADDRESS' \
+        APLANE_SENTRY_COMPONENT_KEY='$SENTRY_COMPONENT_KEY' \
+        APLANE_ALGOD_URL='$ALGOD_URL' \
+        APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
+        PYTHONUNBUFFERED=1 \
+        python /tmp/sdk-guarded-validate.py"
+}
+
 generate_sentry_component_key() {
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-sentry\ngenerate aplane.sentry-ed25519.v1\n' > /tmp/generate-sentry.script"
     local out
@@ -897,6 +1095,7 @@ shutdown_nodes() {
 main() {
     parse_args "$@"
     command -v docker >/dev/null 2>&1 || die "docker not found"
+    resolve_sdk_repo
     trap cleanup EXIT
 
     log "Building local release tarball"
@@ -977,6 +1176,12 @@ main() {
     log "Requesting sentry API token from client container"
     request_sentry_token
 
+    log "Installing Python SDK from $SDK_SOURCE_DIR"
+    install_python_sdk_client
+
+    log "Configuring Python SDK client data directories"
+    configure_python_sdk_client_data
+
     log "Generating sentry key through client/sentry flow"
     generate_sentry_component_key
 
@@ -992,6 +1197,9 @@ main() {
 
     log "Validating generated guarded account with 0 ALGO self-send"
     validate_guarded_self_send
+
+    log "Validating generated guarded account through Python SDK"
+    run_python_sdk_guarded_validate
 
     log "Generating Falcon key through client/signer flow"
     generate_falcon_key

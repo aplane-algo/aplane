@@ -411,9 +411,9 @@ docker-systemd-test:
 
 # End-to-end local install test. Builds a release tarball, boots signer, sentry,
 # client/admin, and LocalNet algod containers on one Docker network, then
-# verifies SSH token provisioning, shared LocalNet reachability, and client
-# signer reachability across the Docker network.
-# Requires docker. Pass extra flags via ARGS.
+# verifies SSH token provisioning, shared LocalNet reachability, guarded signing,
+# and local Python SDK guarded signing across the Docker network.
+# Requires docker and a local aplanesdk checkout. Pass extra flags via ARGS.
 docker-local-test:
 	@./scripts/docker-local-four-node-smoke.sh $(ARGS)
 
@@ -829,7 +829,7 @@ help:
 	@echo "  make soak-test-localnet - Run opt-in LocalNet transaction soak test"
 	@echo "  make apshell-command-coverage-localnet - Run broad LocalNet apshell command coverage"
 	@echo "  make docker-systemd-test - End-to-end systemd install+uninstall in a fresh Ubuntu systemd container (requires docker)"
-	@echo "  make docker-local-test - End-to-end local Docker install smoke test with shared LocalNet (requires docker)"
+	@echo "  make docker-local-test - End-to-end local Docker install smoke test with shared LocalNet and local Python SDK checkout (requires docker)"
 	@echo ""
 	@echo "External Plugins:"
 	@echo "  make install-example-plugins - Install npm dependencies for all example plugins"
