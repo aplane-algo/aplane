@@ -3,9 +3,9 @@
 </p>
 
 <sub><a href="docs/USER_QUICKSTART.md">APlane QuickStart</a></sub>&nbsp;&nbsp;<sub><a href="https://github.com/aplane-algo/aplanesdk">SDK Repo</a></sub>
-# APlane - An Agile Signing System for Algorand 
+# APlane - A Signing System for Algorand 
 
-APlane is a command-line signing system for Algorand with an emphasis on crypto-agility. In addition to standard Ed25519 keys, it supports Falcon post-quantum signatures, generic LogicSig templates (e.g. whitelists, timelocks, hashlocks, and custom templates), and composed signature + LogicSig authorization schemes (e.g. whitelisted Falcon, Falcon+ed25519 hybrid, etc.)
+APlane is a flexible command-line signing system for Algorand. In addition to standard Ed25519 keys, it supports Falcon post-quantum signatures, generic LogicSig templates (e.g. whitelists, timelocks, hashlocks, and custom templates), and composed signature + LogicSig authorization schemes (e.g. whitelisted Falcon, Falcon+ed25519 hybrid, etc.)
 
 It is designed for security-focused operations where private keys can be isolated on dedicated signing machines with restricted network exposure and accessed via encrypted, identity-gated channels.
 
