@@ -167,6 +167,54 @@ func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Con
 	return context.WithTimeout(ctx, timeout)
 }
 
+// doJSON performs one JSON request/response round-trip against a signer
+// endpoint: build the request (with body when non-nil), apply the endpoint
+// timeout, send, map non-2xx to *HTTPStatusError, and decode the body into T.
+// failMsg labels transport-level failures for the endpoint.
+// Endpoints with bespoke status handling (locked /keys results, cancel
+// wording, the /sign approval watcher) intentionally do not use it.
+func doJSON[T any](c *Client, ctx context.Context, method, path string, body any, timeout time.Duration, failMsg string) (*T, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		jsonBody, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request: %w", err)
+		}
+		bodyReader = bytes.NewBuffer(jsonBody)
+	}
+
+	req, err := http.NewRequest(method, c.BaseURL+path, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	reqCtx, cancel := c.requestContext(ctx, timeout)
+	defer cancel()
+
+	resp, err := c.doRequest(reqCtx, req)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", failMsg, err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Debug("failed to close response body", "error", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, httpStatusError(resp)
+	}
+
+	var out T
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return &out, nil
+}
+
 func newSignRequestID() (string, error) {
 	var random [16]byte
 	if _, err := rand.Read(random[:]); err != nil {
@@ -273,35 +321,12 @@ func (c *Client) GetStatus() (*signerapi.StatusResponse, error) {
 }
 
 func (c *Client) GetStatusWithContext(ctx context.Context) (*signerapi.StatusResponse, error) {
-	req, err := http.NewRequest("GET", c.BaseURL+"/status", nil)
+	statusResp, err := doJSON[signerapi.StatusResponse](c, ctx, "GET", "/status", nil, statusTimeout, "failed to get signer status")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	reqCtx, cancel := c.requestContext(ctx, statusTimeout)
-	defer cancel()
-
-	resp, err := c.doRequest(reqCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get signer status: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, httpStatusError(resp)
-	}
-
-	var statusResp signerapi.StatusResponse
-	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, err
 	}
 	c.cacheApprovalWaitSeconds(statusResp.ApprovalWaitSeconds)
-
-	return &statusResp, nil
+	return statusResp, nil
 }
 
 // RequestGroupPlan sends transactions to the /plan endpoint for group planning.
@@ -317,44 +342,14 @@ func (c *Client) RequestGroupPlanWithContext(ctx context.Context, requests []sig
 		return nil, fmt.Errorf("invalid group plan request: %w", err)
 	}
 
-	jsonBody, err := json.Marshal(groupReq)
+	planResp, err := doJSON[signerapi.GroupPlanResponse](c, ctx, "POST", "/plan", groupReq, groupPlanTimeout, "failed to make request to Signer")
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
-
-	req, err := http.NewRequest("POST", c.BaseURL+"/plan", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	reqCtx, cancel := c.requestContext(ctx, groupPlanTimeout)
-	defer cancel()
-
-	resp, err := c.doRequest(reqCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request to Signer: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, httpStatusError(resp)
-	}
-
-	var planResp signerapi.GroupPlanResponse
-	if err := json.NewDecoder(resp.Body).Decode(&planResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
 	if planResp.Error != "" {
 		return nil, fmt.Errorf("group planning failed: %s", planResp.Error)
 	}
-
-	return &planResp, nil
+	return planResp, nil
 }
 
 // RequestGroupSimulate sends transactions to the /simulate endpoint.
@@ -370,44 +365,14 @@ func (c *Client) RequestGroupSimulateWithContext(ctx context.Context, requests [
 		return nil, fmt.Errorf("invalid group simulate request: %w", err)
 	}
 
-	jsonBody, err := json.Marshal(groupReq)
+	simulateResp, err := doJSON[signerapi.GroupSimulateResponse](c, ctx, "POST", "/simulate", groupReq, groupSimulateTimeout, "failed to make request to Signer")
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
-
-	req, err := http.NewRequest("POST", c.BaseURL+"/simulate", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	reqCtx, cancel := c.requestContext(ctx, groupSimulateTimeout)
-	defer cancel()
-
-	resp, err := c.doRequest(reqCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request to Signer: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, httpStatusError(resp)
-	}
-
-	var simulateResp signerapi.GroupSimulateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&simulateResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
 	if simulateResp.Error != "" {
 		return nil, fmt.Errorf("group simulation failed: %s", simulateResp.Error)
 	}
-
-	return &simulateResp, nil
+	return simulateResp, nil
 }
 
 // RequestGroupSign sends transactions to the /sign endpoint for group signing.
@@ -525,42 +490,14 @@ func (c *Client) RequestComponentSignWithContext(ctx context.Context, reqBody si
 		return nil, fmt.Errorf("invalid component sign request: %w", err)
 	}
 
-	jsonBody, err := json.Marshal(reqBody)
+	componentResp, err := doJSON[signerapi.ComponentSignResponse](c, ctx, "POST", "/sign/component", reqBody, componentSignTimeout, "failed to make request to Signer")
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", c.BaseURL+"/sign/component", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	reqCtx, cancel := c.requestContext(ctx, componentSignTimeout)
-	defer cancel()
-
-	resp, err := c.doRequest(reqCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request to Signer: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, httpStatusError(resp)
-	}
-
-	var componentResp signerapi.ComponentSignResponse
-	if err := json.NewDecoder(resp.Body).Decode(&componentResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, err
 	}
 	if err := componentResp.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid component sign response: %w", err)
 	}
-	return &componentResp, nil
+	return componentResp, nil
 }
 
 // RequestGuardedAssemble sends a verified guarded transaction assembly
@@ -581,42 +518,14 @@ func (c *Client) RequestGuardedAssembleWithContext(ctx context.Context, reqBody 
 		return nil, fmt.Errorf("invalid guarded assembly request: %w", err)
 	}
 
-	jsonBody, err := json.Marshal(reqBody)
+	assemblyResp, err := doJSON[signerapi.GuardedAssemblyResponse](c, ctx, "POST", "/sign/assemble", reqBody, guardedAssemblyTimeout, "failed to make request to Signer")
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", c.BaseURL+"/sign/assemble", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	reqCtx, cancel := c.requestContext(ctx, guardedAssemblyTimeout)
-	defer cancel()
-
-	resp, err := c.doRequest(reqCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request to Signer: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, httpStatusError(resp)
-	}
-
-	var assemblyResp signerapi.GuardedAssemblyResponse
-	if err := json.NewDecoder(resp.Body).Decode(&assemblyResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, err
 	}
 	if err := assemblyResp.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid guarded assembly response: %w", err)
 	}
-	return &assemblyResp, nil
+	return assemblyResp, nil
 }
 
 // CancelSignRequestWithContext asks apsigner to cancel a pending manual
@@ -723,44 +632,14 @@ func (c *Client) AdminGenerateWithContext(ctx context.Context, keyType string, p
 		Parameters: params,
 	}
 
-	jsonBody, err := json.Marshal(reqBody)
+	genResp, err := doJSON[signerapi.AdminGenerateResponse](c, ctx, "POST", "/admin/generate", reqBody, mutationTimeout, "failed to generate key")
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
-
-	req, err := http.NewRequest("POST", c.BaseURL+"/admin/generate", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	reqCtx, cancel := c.requestContext(ctx, mutationTimeout)
-	defer cancel()
-
-	resp, err := c.doRequest(reqCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate key: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, httpStatusError(resp)
-	}
-
-	var genResp signerapi.AdminGenerateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&genResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
 	if genResp.Error != "" {
 		return nil, fmt.Errorf("key generation failed: %s", genResp.Error)
 	}
-
-	return &genResp, nil
+	return genResp, nil
 }
 
 // AdminDeleteKey requests key deletion from Signer.
@@ -769,38 +648,15 @@ func (c *Client) AdminDeleteKey(address string) (*signerapi.AdminDeleteResponse,
 }
 
 func (c *Client) AdminDeleteKeyWithContext(ctx context.Context, address string) (*signerapi.AdminDeleteResponse, error) {
-	req, err := http.NewRequest("DELETE", c.BaseURL+"/admin/keys?"+url.Values{"address": []string{address}}.Encode(), nil)
+	path := "/admin/keys?" + url.Values{"address": []string{address}}.Encode()
+	delResp, err := doJSON[signerapi.AdminDeleteResponse](c, ctx, "DELETE", path, nil, mutationTimeout, "failed to delete key")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-
-	reqCtx, cancel := c.requestContext(ctx, mutationTimeout)
-	defer cancel()
-
-	resp, err := c.doRequest(reqCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to delete key: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, httpStatusError(resp)
-	}
-
-	var delResp signerapi.AdminDeleteResponse
-	if err := json.NewDecoder(resp.Body).Decode(&delResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
 	if delResp.Error != "" {
 		return nil, fmt.Errorf("key deletion failed: %s", delResp.Error)
 	}
-
-	return &delResp, nil
+	return delResp, nil
 }
 
 // AdminSyncSentryReferences syncs public sentry reference candidates into
@@ -811,42 +667,14 @@ func (c *Client) AdminSyncSentryReferences(candidates []signerapi.SentryReferenc
 
 func (c *Client) AdminSyncSentryReferencesWithContext(ctx context.Context, candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
 	reqBody := signerapi.AdminSyncSentryReferencesRequest{Candidates: candidates}
-	jsonBody, err := json.Marshal(reqBody)
+	syncResp, err := doJSON[signerapi.AdminSyncSentryReferencesResponse](c, ctx, "POST", "/admin/sentries/sync", reqBody, mutationTimeout, "failed to sync sentry references")
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", c.BaseURL+"/admin/sentries/sync", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	reqCtx, cancel := c.requestContext(ctx, mutationTimeout)
-	defer cancel()
-
-	resp, err := c.doRequest(reqCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sync sentry references: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, httpStatusError(resp)
-	}
-
-	var syncResp signerapi.AdminSyncSentryReferencesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&syncResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, err
 	}
 	if syncResp.Error != "" {
 		return nil, fmt.Errorf("sentry reference sync failed: %s", syncResp.Error)
 	}
-	return &syncResp, nil
+	return syncResp, nil
 }
 
 // GetKeyTypes fetches available key types from Signer.
@@ -855,32 +683,5 @@ func (c *Client) GetKeyTypes() (*signerapi.KeyTypesResponse, error) {
 }
 
 func (c *Client) GetKeyTypesWithContext(ctx context.Context) (*signerapi.KeyTypesResponse, error) {
-	req, err := http.NewRequest("GET", c.BaseURL+"/keytypes", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	reqCtx, cancel := c.requestContext(ctx, inventoryTimeout)
-	defer cancel()
-
-	resp, err := c.doRequest(reqCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get key types: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Debug("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, httpStatusError(resp)
-	}
-
-	var ktResp signerapi.KeyTypesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ktResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &ktResp, nil
+	return doJSON[signerapi.KeyTypesResponse](c, ctx, "GET", "/keytypes", nil, inventoryTimeout, "failed to get key types")
 }
