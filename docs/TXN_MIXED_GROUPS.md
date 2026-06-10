@@ -84,7 +84,7 @@ emptyGroup := types.Digest{}
 for i := range txns {
     txns[i].Group = emptyGroup
 }
-signing.SignAndSubmitViaGroup(txns, ...)
+clientsign.SignAndSubmitViaGroup(txns, ...)
 ```
 
 Only do this when the application logic can tolerate a newly computed group ID
@@ -201,7 +201,7 @@ if needsDummies {
 
 ```go
 // Send ungrouped transactions - server handles everything
-txIDs, submittedTxns, err := signing.SignAndSubmitViaGroup(txns, authCache, signerClient, algodClient, signing.SubmitOptions{
+txIDs, submittedTxns, err := clientsign.SignAndSubmitViaGroup(txns, authCache, signerClient, algodClient, clientsign.SubmitOptions{
     Verbose: true,
 })
 ```
@@ -235,7 +235,7 @@ gid, _ := crypto.ComputeGroupID(txns)
 for i := range txns {
     txns[i].Group = gid
 }
-signing.SignAndSubmitViaGroup(txns, ...)
+clientsign.SignAndSubmitViaGroup(txns, ...)
 // Group ID is preserved
 ```
 
@@ -245,7 +245,7 @@ signing.SignAndSubmitViaGroup(txns, ...)
 // Let apsigner handle grouping
 txns := []types.Transaction{lsigTxn, ed25519Txn}
 // No group ID assigned
-signing.SignAndSubmitViaGroup(txns, ...)
+clientsign.SignAndSubmitViaGroup(txns, ...)
 // Signer adds dummies and computes the group ID
 ```
 
@@ -261,7 +261,7 @@ for i := range txns {
     txns[i].Group = emptyGroup
 }
 
-signing.SignAndSubmitViaGroup(txns, ...)
+clientsign.SignAndSubmitViaGroup(txns, ...)
 // Works: signer adds dummies and computes a new group ID
 ```
 

@@ -14,8 +14,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/signerapi"
-	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 // TransactionPrepResult contains the prepared transaction and context
@@ -54,11 +54,11 @@ type BalanceCheckResult struct {
 	RemainingBalance uint64
 }
 
-func (e *Engine) defaultSubmitOptionsWithContext(ctx context.Context, wait bool, writeNotices *[]TransactionWriteNotice, out *bytes.Buffer) signing.SubmitOptions {
+func (e *Engine) defaultSubmitOptionsWithContext(ctx context.Context, wait bool, writeNotices *[]TransactionWriteNotice, out *bytes.Buffer) clientsign.SubmitOptions {
 	if out == nil {
 		out = &bytes.Buffer{}
 	}
-	return signing.SubmitOptions{
+	return clientsign.SubmitOptions{
 		Ctx:                 ctx,
 		WaitForConfirmation: wait,
 		Verbose:             e.Verbose,
@@ -86,7 +86,7 @@ func (e *Engine) validateSubmitLsigArgs(txns []types.Transaction, lsigArgsMap []
 }
 
 // signAndSubmitGroup validates preconditions and signs+submits a transaction group.
-func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts signing.SubmitOptions) ([]string, []types.Transaction, error) {
+func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts clientsign.SubmitOptions) ([]string, []types.Transaction, error) {
 	if err := e.validateSubmitLsigArgs(txns, opts.LsigArgsMap); err != nil {
 		return nil, nil, err
 	}
@@ -233,7 +233,7 @@ func (e *Engine) CanSignForAddress(address string) (bool, bool) {
 }
 
 // SignAndSubmitGroup signs and submits a group of transactions with optional per-transaction
-// LogicSig arguments. This wraps signing.SignAndSubmitViaGroup with the engine's internal state.
+// LogicSig arguments. This wraps clientsign.SignAndSubmitViaGroup with the engine's internal state.
 func (e *Engine) SignAndSubmitGroup(txns []types.Transaction, lsigArgs []map[string][]byte) ([]string, error) {
 	result, err := e.SignAndSubmitGroupWithContext(context.Background(), txns, lsigArgs)
 	if result == nil {

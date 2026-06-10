@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package signing
+package clientsign
 
 import (
 	"bytes"
@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
@@ -185,7 +186,7 @@ func TestSignAndSubmitViaGroupSimulateFailureReturnsSentinel(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected simulation failure, got nil")
 	}
-	if !errors.Is(err, ErrSimulationFailed) {
+	if !errors.Is(err, signing.ErrSimulationFailed) {
 		t.Fatalf("error = %q, want simulation failure sentinel", err)
 	}
 }

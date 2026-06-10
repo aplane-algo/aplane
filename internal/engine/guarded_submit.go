@@ -14,6 +14,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
@@ -47,7 +48,7 @@ func (e *Engine) hasGuardedEffectiveSigner(txns []types.Transaction) bool {
 	return false
 }
 
-func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts signing.SubmitOptions) ([]string, []types.Transaction, error) {
+func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts clientsign.SubmitOptions) ([]string, []types.Transaction, error) {
 	if len(txns) == 0 {
 		return nil, nil, fmt.Errorf("no transactions provided")
 	}
@@ -171,7 +172,7 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts signin
 // assembled later via /sign/assemble. Returns signed-transaction hex keyed by
 // group index. When there are no non-guarded originals (the all-guarded case)
 // it makes no signer call.
-func (e *Engine) requestNonGuardedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]guardedTarget, opts signing.SubmitOptions) (map[int]string, error) {
+func (e *Engine) requestNonGuardedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]guardedTarget, opts clientsign.SubmitOptions) (map[int]string, error) {
 	signRequests := make([]signerapi.SignRequest, len(plannedTxns))
 	nonGuarded := make([]int, 0, originalCount)
 	for i := range plannedTxns {

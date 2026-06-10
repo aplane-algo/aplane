@@ -18,10 +18,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
-	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
@@ -197,7 +197,7 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	signed, err := eng.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
 		map[int]guardedTarget{0: ed25519GuardedTarget(guarded, sentryHex)},
-		signing.SubmitOptions{},
+		clientsign.SubmitOptions{},
 	)
 	if err != nil {
 		t.Fatalf("requestNonGuardedSignatures() error = %v", err)
@@ -273,7 +273,7 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerLsigSize(t *testing.T) 
 			SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
 			SentryPublicKey:        sentryHex,
 		}},
-		signing.SubmitOptions{},
+		clientsign.SubmitOptions{},
 	)
 	if err != nil {
 		t.Fatalf("requestNonGuardedSignatures() error = %v", err)
@@ -321,7 +321,7 @@ func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 	signed, err := eng.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 1,
 		map[int]guardedTarget{0: ed25519GuardedTarget(guarded, sentryHex)},
-		signing.SubmitOptions{},
+		clientsign.SubmitOptions{},
 	)
 	if err != nil {
 		t.Fatalf("requestNonGuardedSignatures() error = %v", err)
@@ -363,7 +363,7 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 	_, err := eng.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
 		map[int]guardedTarget{0: ed25519GuardedTarget(guarded, sentryHex)},
-		signing.SubmitOptions{},
+		clientsign.SubmitOptions{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "no signature for non-guarded position 2") {
 		t.Fatalf("requestNonGuardedSignatures() error = %v, want missing signature for position 2", err)

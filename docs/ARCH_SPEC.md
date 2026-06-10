@@ -156,7 +156,7 @@ Documentation notes:
 | Layer | Packages |
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
-| Engine | `internal/apshellapp`, `internal/engine`, `internal/clientstate`, `internal/engine/connect`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
+| Engine | `internal/apshellapp`, `internal/engine`, `internal/clientstate`, `internal/engine/connect`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/approvalpolicy` |
 | Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealsubst`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/storemut`, `internal/storeinit`, `internal/storepass`, `internal/clientdata`, `internal/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
@@ -232,10 +232,14 @@ The provider layer supports multiple signing and LogicSig families:
 
 Registration is explicit and happens from binary entrypoints via `RegisterProviders()`, not via package-global magic hidden from `main`.
 
-`internal/signing` is a mixed package: it owns low-level signing provider
-interfaces/registries and also still contains client-side group submission
-helpers such as `SignAndSubmitViaGroup`. Treat those helpers as compatibility
-client workflow glue. New shell-facing command behavior should prefer
+`internal/signing` is the shared signing leaf: provider interfaces and
+registries, key material types, and group-shaping/simulation helpers used by
+both the client and the signer daemon. The client-side submit pathway
+(`SignAndSubmitViaGroup`, `SubmitOptions`, transaction summary formatting)
+lives in `internal/clientsign`, which imports the signer HTTP client and
+client caches; `internal/signing` must not import `internal/signerclient`,
+`internal/cache`, or `internal/addressbook`, so the daemon never links its
+own HTTP client. New shell-facing command behavior should prefer
 `internal/apshellapp` and `internal/engine`, and new signer HTTP transport
 behavior should prefer `internal/signerclient` or `internal/engine/connect`.
 
@@ -822,7 +826,7 @@ Storage primitives should not own:
 ### Simulate Signing Boundary
 
 Client simulate mode is a signed preflight for signer-managed transactions.
-`internal/signing.SignAndSubmitViaGroup` builds the normal server-shaped
+`internal/clientsign.SignAndSubmitViaGroup` builds the normal server-shaped
 requests and sends them to signer `/simulate`, so the signer performs the same
 group-shaping work used by real submission: dummy transaction insertion, fee
 pooling, group-ID assignment, network/genesis validation, hard-policy validation, and
@@ -1564,8 +1568,6 @@ Weaker or more coupled areas:
 
 - `cmd/apsigner` owns some operational glue, final transport adaptation, and startup/operator logging,
 - `internal/engine` contains some direct cache/result shaping concerns,
-- `internal/signing` mixes signing provider registry/primitive ownership with
-  client-side group submission helpers,
 - plugin manifests carry dual-surface complexity because typed function metadata exists alongside a command-first runtime contract,
 - shell command handling mixes structured results and stdout capture fallback,
 - the runtime core is identity-owned, but the operator/control-plane surface is single-identity/single-operator in product mode, even though that product admin workflow may arrive over IPC or the SSH `aplane-admin` subsystem.

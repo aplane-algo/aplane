@@ -784,12 +784,12 @@ txns := []types.Transaction{txn1, txn2, ...}
 
 // Sign and submit via /sign endpoint
 // Server handles dummies, fees, grouping, and signing
-txIDs, submittedTxns, err := signing.SignAndSubmitViaGroup(
+txIDs, submittedTxns, err := clientsign.SignAndSubmitViaGroup(
     txns,
     authCache,
     signerClient,
     algodClient,
-    signing.SubmitOptions{
+    clientsign.SubmitOptions{
         WaitForConfirmation: waitForConfirmation,
         Verbose:             verbose,
         LsigArgsMap:         lsigArgsMap, // nil if no generic lsigs

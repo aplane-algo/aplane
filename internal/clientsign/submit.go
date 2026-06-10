@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package signing
+package clientsign
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
@@ -121,7 +122,7 @@ func SignAndSubmitViaGroup(
 		}
 		writeSubmittedTransactions(opts.TxnWriter, submittedTxns, resp.TxIDs, len(txns))
 		if resp.Failed {
-			return resp.TxIDs, submittedTxns, ErrSimulationFailed
+			return resp.TxIDs, submittedTxns, signing.ErrSimulationFailed
 		}
 		return resp.TxIDs, submittedTxns, nil
 	}
@@ -172,7 +173,7 @@ func SignAndSubmitViaGroup(
 		return nil, nil, err
 	}
 
-	txIDs, err := SubmitTransactionsWithContext(opts.Ctx, signedTxns, algodClient, opts.WaitForConfirmation, w)
+	txIDs, err := signing.SubmitTransactionsWithContext(opts.Ctx, signedTxns, algodClient, opts.WaitForConfirmation, w)
 	if err != nil {
 		return txIDs, submittedTxns, err
 	}
