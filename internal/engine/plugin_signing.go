@@ -228,10 +228,16 @@ func (e *Engine) SignAndSubmitWithLocalSignersWithContext(ctx context.Context, t
 	if err != nil {
 		return nil, fmt.Errorf("server signing failed: %w", err)
 	}
+	if len(signResp.Signed) != len(signRequests) {
+		return nil, fmt.Errorf("signer returned %d signed transaction(s), want %d", len(signResp.Signed), len(signRequests))
+	}
 
 	// Decode signed transactions
 	finalSignedTxns := make([][]byte, len(signResp.Signed))
 	for i, hexStr := range signResp.Signed {
+		if hexStr == "" {
+			return nil, fmt.Errorf("signer returned no signature for position %d", i+1)
+		}
 		signedBytes, err := hex.DecodeString(hexStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode signed transaction %d: %w", i+1, err)
@@ -247,18 +253,11 @@ func (e *Engine) SignAndSubmitWithLocalSignersWithContext(ctx context.Context, t
 func (e *Engine) SignAndSubmitAllLocalWithContext(ctx context.Context, txns []types.Transaction, localSignerKeys map[string][]byte) (*PluginSubmitResult, error) {
 	defer zeroLocalSignerKeys(localSignerKeys)
 
-	// Get suggested params for dummies
-	sp, err := e.AlgodClient.SuggestedParams().Do(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get suggested params: %w", err)
-	}
-	sp.FlatFee = true
-
 	// All plugin transactions are Ed25519 — no LSig budget needed, no dummies
 	allTxns := txns
 
 	// Assign group ID
-	_, err = signing.AssignGroupID(allTxns)
+	_, err := signing.AssignGroupID(allTxns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to assign group ID: %w", err)
 	}

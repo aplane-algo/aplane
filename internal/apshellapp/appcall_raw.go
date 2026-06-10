@@ -116,6 +116,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 		result.Structured.Confirmed = submit.Confirmed
 		result.Output = submit.Output
 		result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+		appendAppCallRawConfirmedLines(result)
 		return result, nil
 	}
 
@@ -129,6 +130,7 @@ func (a *App) AppCallRaw(ctx context.Context, req AppCallRawRequest) (*AppCallRa
 	result.Structured.Confirmed = submit.Confirmed
 	result.Output = submit.Output
 	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+	appendAppCallRawConfirmedLines(result)
 	return result, nil
 }
 
@@ -156,12 +158,19 @@ func decorateAppCallRawResult(result *AppCallRawResult) {
 	if result.Note != "" {
 		result.PreSubmitLines = append(result.PreSubmitLines, fmt.Sprintf("Note: %s", result.Note))
 	}
-	if result.Structured.Confirmed {
-		if result.Structured.Grouped {
-			result.ConfirmedLines = append(result.ConfirmedLines, fmt.Sprintf("Confirmed grouped raw app call on app %d", result.Structured.AppID))
-		} else {
-			result.ConfirmedLines = append(result.ConfirmedLines, fmt.Sprintf("Confirmed raw app call to app %d", result.Structured.AppID))
-		}
+}
+
+// appendAppCallRawConfirmedLines must run after submission has set
+// Structured.Confirmed; decorateAppCallRawResult runs pre-submit, when
+// confirmation state is not yet known.
+func appendAppCallRawConfirmedLines(result *AppCallRawResult) {
+	if result == nil || !result.Structured.Confirmed {
+		return
+	}
+	if result.Structured.Grouped {
+		result.ConfirmedLines = append(result.ConfirmedLines, fmt.Sprintf("Confirmed grouped raw app call on app %d", result.Structured.AppID))
+	} else {
+		result.ConfirmedLines = append(result.ConfirmedLines, fmt.Sprintf("Confirmed raw app call to app %d", result.Structured.AppID))
 	}
 }
 

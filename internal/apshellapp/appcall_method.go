@@ -124,6 +124,7 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 		result.Structured.Confirmed = submit.Confirmed
 		result.Output = submit.Output
 		result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+		appendAppCallMethodConfirmedLines(result)
 		return result, nil
 	}
 
@@ -137,6 +138,7 @@ func (a *App) AppCallMethod(ctx context.Context, req AppCallMethodRequest) (*App
 	result.Structured.Confirmed = submit.Confirmed
 	result.Output = submit.Output
 	result.Warnings = warningsFromTransactionWriteNotices(submit.WriteNotices)
+	appendAppCallMethodConfirmedLines(result)
 	return result, nil
 }
 
@@ -164,11 +166,18 @@ func decorateAppCallMethodResult(result *AppCallMethodResult) {
 	if result.Note != "" {
 		result.PreSubmitLines = append(result.PreSubmitLines, fmt.Sprintf("Note: %s", result.Note))
 	}
-	if result.Structured.Confirmed {
-		if result.Structured.Grouped {
-			result.ConfirmedLines = append(result.ConfirmedLines, fmt.Sprintf("Confirmed grouped app call %s on app %d", result.Method, result.Structured.AppID))
-		} else {
-			result.ConfirmedLines = append(result.ConfirmedLines, fmt.Sprintf("Confirmed app call %s on app %d", result.Method, result.Structured.AppID))
-		}
+}
+
+// appendAppCallMethodConfirmedLines must run after submission has set
+// Structured.Confirmed; decorateAppCallMethodResult runs pre-submit, when
+// confirmation state is not yet known.
+func appendAppCallMethodConfirmedLines(result *AppCallMethodResult) {
+	if result == nil || !result.Structured.Confirmed {
+		return
+	}
+	if result.Structured.Grouped {
+		result.ConfirmedLines = append(result.ConfirmedLines, fmt.Sprintf("Confirmed grouped app call %s on app %d", result.Method, result.Structured.AppID))
+	} else {
+		result.ConfirmedLines = append(result.ConfirmedLines, fmt.Sprintf("Confirmed app call %s on app %d", result.Method, result.Structured.AppID))
 	}
 }

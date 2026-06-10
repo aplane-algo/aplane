@@ -45,12 +45,13 @@ func TestDecorateAppCallMethodResult(t *testing.T) {
 		BoxesCount:     4,
 		Note:           "memo",
 		Structured: appresult.AppCall{
-			AppID:     55,
-			Grouped:   false,
-			Confirmed: true,
+			AppID:   55,
+			Grouped: false,
 		},
 	}
 
+	// Mirror production order: decorate runs pre-submit (Confirmed unset),
+	// confirmed lines are appended only after submission sets Confirmed.
 	decorateAppCallMethodResult(result)
 
 	if len(result.PreSubmitLines) == 0 {
@@ -59,7 +60,30 @@ func TestDecorateAppCallMethodResult(t *testing.T) {
 	if got := result.PreSubmitLines[0]; got != "Calling app 55 method foo(uint64)void from {from} using ed25519..." {
 		t.Fatalf("first pre-submit line = %q", got)
 	}
+	if len(result.ConfirmedLines) != 0 {
+		t.Fatalf("decorate must not emit confirmed lines pre-submit, got %v", result.ConfirmedLines)
+	}
+
+	result.Structured.Confirmed = true
+	appendAppCallMethodConfirmedLines(result)
+
+	if len(result.ConfirmedLines) != 1 {
+		t.Fatalf("ConfirmedLines = %v, want exactly one entry", result.ConfirmedLines)
+	}
 	if got := result.ConfirmedLines[0]; got != "Confirmed app call foo(uint64)void on app 55" {
 		t.Fatalf("confirmed line = %q", got)
+	}
+}
+
+func TestAppendAppCallMethodConfirmedLinesSkipsUnconfirmed(t *testing.T) {
+	result := &AppCallMethodResult{
+		Method:     "foo(uint64)void",
+		Structured: appresult.AppCall{AppID: 55},
+	}
+
+	appendAppCallMethodConfirmedLines(result)
+
+	if len(result.ConfirmedLines) != 0 {
+		t.Fatalf("unconfirmed call must not produce confirmed lines, got %v", result.ConfirmedLines)
 	}
 }

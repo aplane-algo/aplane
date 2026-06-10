@@ -44,12 +44,13 @@ func TestDecorateAppCallRawResult(t *testing.T) {
 		Note:           "memo",
 		PayAmount:      1000,
 		Structured: appresult.AppCall{
-			AppID:     77,
-			Grouped:   true,
-			Confirmed: true,
+			AppID:   77,
+			Grouped: true,
 		},
 	}
 
+	// Mirror production order: decorate runs pre-submit (Confirmed unset),
+	// confirmed lines are appended only after submission sets Confirmed.
 	decorateAppCallRawResult(result)
 
 	if len(result.PreSubmitLines) == 0 {
@@ -57,6 +58,16 @@ func TestDecorateAppCallRawResult(t *testing.T) {
 	}
 	if got := result.PreSubmitLines[0]; got != "Calling app 77 raw from {from} with companion payment of 1000 microAlgos using ed25519..." {
 		t.Fatalf("first pre-submit line = %q", got)
+	}
+	if len(result.ConfirmedLines) != 0 {
+		t.Fatalf("decorate must not emit confirmed lines pre-submit, got %v", result.ConfirmedLines)
+	}
+
+	result.Structured.Confirmed = true
+	appendAppCallRawConfirmedLines(result)
+
+	if len(result.ConfirmedLines) != 1 {
+		t.Fatalf("ConfirmedLines = %v, want exactly one entry", result.ConfirmedLines)
 	}
 	if got := result.ConfirmedLines[0]; got != "Confirmed grouped raw app call on app 77" {
 		t.Fatalf("confirmed line = %q", got)
