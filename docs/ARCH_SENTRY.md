@@ -62,10 +62,8 @@ Current sentry key types:
 - `aplane.sentry-falcon1024.v1`
 
 They are selected by a 52-character uppercase **Sentry Key ID** derived from
-the key type and sentry public key. The Sentry Key ID is txid-shaped but is not
-an Algorand address. Internal APIs and storage may call this value a
-`component_key` or component selector; human-facing surfaces should call it a
-Sentry Key ID.
+the key type and sentry public key. The Sentry Key ID - sometimes referred to
+in the code as 'component key' - is txid-shaped but is not an Algorand address. 
 
 The raw sentry public key is still important: it is the verifier embedded in a
 guarded account's LogicSig bytecode. The selector is a stable lookup handle;
