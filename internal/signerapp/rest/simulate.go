@@ -17,29 +17,21 @@ import (
 )
 
 func (s Service) Simulate(ctx context.Context, ir *identity.Runtime, req signerapi.GroupSignRequest) (*signerapi.GroupSimulateResponse, *signersigning.ServiceError) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if ir == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "identity runtime is nil"}
-	}
-	if ir.IsDecommissioned() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: identity.ErrDecommissioned.Error()}
-	}
-	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
+	ctx, preErr := ensureSignable(ctx, ir)
+	if preErr != nil {
+		return nil, preErr
 	}
 	if roleErr := requireAccountSigningRole(ir, "simulation signing"); roleErr != nil {
 		return nil, roleErr
 	}
 	if s.Deps.NewSigningService == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "signing service not configured"}
+		return nil, notConfigured("signing service")
 	}
 	if s.Deps.EncodeTxnHex == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "transaction encoder not configured"}
+		return nil, notConfigured("transaction encoder")
 	}
 	if s.Deps.SimulateSignedGroup == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "simulation service not configured"}
+		return nil, notConfigured("simulation service")
 	}
 
 	session := ir.SnapshotKeySession()

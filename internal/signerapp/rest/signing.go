@@ -12,23 +12,15 @@ import (
 )
 
 func (s Service) SignGroup(ctx context.Context, ir *identity.Runtime, req signerapi.GroupSignRequest) (*signerapi.GroupSignResponse, *signersigning.ServiceError) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if ir == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "identity runtime is nil"}
-	}
-	if ir.IsDecommissioned() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: identity.ErrDecommissioned.Error()}
-	}
-	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
+	ctx, preErr := ensureSignable(ctx, ir)
+	if preErr != nil {
+		return nil, preErr
 	}
 	if roleErr := requireAccountSigningRole(ir, "account signing"); roleErr != nil {
 		return nil, roleErr
 	}
 	if s.Deps.NewSigningService == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "signing service not configured"}
+		return nil, notConfigured("signing service")
 	}
 
 	ctx, finishSignRequest := ir.BeginSigningRequest(ctx, req.RequestID)
@@ -47,23 +39,19 @@ func (s Service) SignGroup(ctx context.Context, ir *identity.Runtime, req signer
 }
 
 func (s Service) Plan(ir *identity.Runtime, req signerapi.GroupSignRequest) (*signerapi.GroupPlanResponse, *signersigning.ServiceError) {
-	if ir == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "identity runtime is nil"}
-	}
-	if ir.IsDecommissioned() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorForbidden, Message: identity.ErrDecommissioned.Error()}
-	}
-	if !ir.IsUnlocked() {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorLocked, Message: "signer is locked"}
+	// Plan takes no context: it never signs, so there is no request to
+	// register or cancel; only the runtime preconditions apply.
+	if _, preErr := ensureSignable(context.Background(), ir); preErr != nil {
+		return nil, preErr
 	}
 	if roleErr := requireAccountSigningRole(ir, "planning account signing"); roleErr != nil {
 		return nil, roleErr
 	}
 	if s.Deps.PlanGroup == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "planner service not configured"}
+		return nil, notConfigured("planner service")
 	}
 	if s.Deps.EncodeTxnHex == nil {
-		return nil, &signersigning.ServiceError{Kind: signersigning.ErrorInternal, Message: "transaction encoder not configured"}
+		return nil, notConfigured("transaction encoder")
 	}
 
 	plan, err := s.Deps.PlanGroup(ir.ID(), req)
