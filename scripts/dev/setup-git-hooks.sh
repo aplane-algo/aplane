@@ -22,13 +22,7 @@ make fmt-check
 make vet
 make testmode-check
 
-if ! command -v staticcheck >/dev/null 2>&1; then
-	echo "pre-commit: staticcheck not found in PATH"
-	echo "Install with: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1"
-	exit 1
-fi
-echo "Running staticcheck..."
-staticcheck ./...
+make staticcheck
 
 make analyze-seedphrase
 make lint

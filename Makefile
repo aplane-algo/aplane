@@ -1,4 +1,4 @@
-.PHONY: testmode-check all clean apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets test check formal-test race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets test check formal-test race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -514,6 +514,27 @@ lint: compile-docassets
 	fi
 	@echo "Running golangci-lint..."
 	golangci-lint run
+
+# Run staticcheck across the module (single definition shared by the
+# pre-commit hook and CI; installation is environment-specific).
+staticcheck:
+	@if ! command -v staticcheck >/dev/null 2>&1; then \
+		echo "Error: staticcheck not found. Install with: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1"; \
+		exit 1; \
+	fi
+	@echo "Running staticcheck..."
+	@staticcheck ./...
+	@echo "✓ staticcheck clean"
+
+# CI race + coverage run; excludes integration packages from the coverage set.
+race-cover-test: compile-docassets
+	CGO_ENABLED=1 go test -race -coverprofile=coverage.out -covermode=atomic $$(go list ./... | grep -v '/test/integration' | grep -v '/node_modules/' | grep -v '^github.com/aplane-algo/aplane/temp/')
+
+# Compile every package without producing artifacts.
+build-check:
+	@echo "Building all packages..."
+	@go build ./...
+	@echo "✓ build clean"
 
 # Run tests with race detector (slower but catches data races)
 race-test: compile-docassets
