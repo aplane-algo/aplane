@@ -20,6 +20,7 @@ echo "pre-commit: running format, lint, and test checks"
 
 make fmt-check
 make vet
+make testmode-check
 
 if ! command -v staticcheck >/dev/null 2>&1; then
 	echo "pre-commit: staticcheck not found in PATH"
