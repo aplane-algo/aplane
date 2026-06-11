@@ -20,8 +20,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
-	"github.com/aplane-algo/aplane/internal/storemut"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )

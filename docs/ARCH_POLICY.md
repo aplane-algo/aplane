@@ -743,7 +743,7 @@ messages: `get_policy_snapshot`, `validate_policy`, and `replace_policy`.
 Targets are `signer` and `sentry` policy domains; the filename is always
 `policy.yaml`. Omitted targets default from the node role. Signer nodes reject
 the sentry target, and sentry nodes reject the signer target. New policy
-UI work should reuse `internal/policytui` with an appropriate store rather than
+UI work should reuse `internal/signerapp/policytui` with an appropriate store rather than
 adding a second field-editing model.
 
 Client-signing and sentry component `transfer_policy` are both persisted in
@@ -890,9 +890,9 @@ Implementation source of truth:
 - `internal/policy/transfer_routing_eval.go`: direct transfer movement
   extraction and route evaluation.
 - `cmd/appolicy`: offline policy checker/editor binary.
-- `internal/policyeditor`: offline policy load, validate, save, and lock
+- `internal/signerapp/policyeditor`: offline policy load, validate, save, and lock
   handling for `appolicy`.
-- `internal/policytui`: terminal UI model for offline policy editing.
+- `internal/signerapp/policytui`: terminal UI model for offline policy editing.
 - `internal/signerapp/signing/always_review.go`: Always Review evaluation.
 - `internal/signerapp/signing/approval.go`: approval prompts and operator default behavior.
 - `internal/signerapp/signing/service.go`: phase ordering.

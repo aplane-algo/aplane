@@ -155,11 +155,11 @@ Documentation notes:
 
 | Layer | Packages |
 |-------|----------|
-| UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
+| UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/signerapp/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/engine`, `internal/clientstate`, `internal/engine/connect`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
-| Signer App | `internal/bootstrap/signer`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/approvalpolicy` |
+| Signer App | `internal/bootstrap/signer`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealsubst`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
-| Storage/Crypto | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/storemut`, `internal/storeinit`, `internal/storepass`, `internal/clientdata`, `internal/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
+| Storage/Crypto | `internal/crypto`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/integration`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
@@ -250,7 +250,7 @@ Persistent sensitive state is stored on disk and unlocked into memory only via a
 - encryption and secure memory: `internal/crypto`
 - key file IO and scanning: `internal/keys`
 - keystore abstraction and file-backed implementation: `internal/keystore`
-- signer-store path ownership, mutation coordination, and cooperative locking: `internal/storepaths`, `internal/storemut`, `internal/storelock`
+- signer-store path ownership, mutation coordination, and cooperative locking: `internal/storepaths`, `internal/signerapp/storemut`, `internal/storelock`
 - template storage: `internal/templatestore`
 - plaintext template library parsing and install preparation: `internal/templatelibrary`
 - template reload/registration outcome reporting: `internal/templatepolicy`
@@ -267,7 +267,7 @@ deciding where a change belongs:
 |---------|---------|------|
 | `store*` | `internal/storepaths` | Canonical signer/client path construction for data directories, identities, keys, templates, config, and library locations. |
 | `store*` | `internal/storelock` | Cooperative filesystem lock acquisition for signer-store mutation safety. |
-| `store*` | `internal/storemut` | Higher-level store mutation coordination around operations that rewrite identity/store files. |
+| `store*` | `internal/signerapp/storemut` | Higher-level store mutation coordination around operations that rewrite identity/store files. |
 | `store*` | `internal/storeinit` | Store initialization and bootstrap creation logic. |
 | `store*` | `internal/storepass` | Passphrase-helper and passphrase-change support around store state. |
 | `key*` | `internal/keys` | Encrypted key file payload/envelope IO, scanning, metadata, and key-file compatibility behavior. |
@@ -508,7 +508,7 @@ filename is direct sentry component policy. The default approval fallback is
 `User Auto-Approve`. Policy is verified with a key derived from the identity
 master key and loaded into the bound identity runtime on unlock/reload before
 the key scan. Guided policy editing is implemented once in
-`internal/policytui` and used through two stores: `appolicy` edits the selected
+`internal/signerapp/policytui` and used through two stores: `appolicy` edits the selected
 domain offline while holding the store mutation lock, and `apadmin` edits the
 active document online through the admin protocol while `apsigner` is running.
 Both surfaces select the policy domain from the node role; store-backed

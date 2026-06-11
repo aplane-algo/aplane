@@ -484,8 +484,8 @@ func TestExecutorSignGenericLSigOrdersStoredSigningArgsOnSuccess(t *testing.T) {
 	exec := &Executor{
 		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
 			return map[string][]byte{
-				"first":  []byte{0x01},
-				"second": []byte{0x02},
+				"first":  {0x01},
+				"second": {0x02},
 			}, nil
 		},
 	}
@@ -529,7 +529,7 @@ func TestExecutorSignGenericLSigIgnoresLiveTemplateMetadata(t *testing.T) {
 
 	exec := &Executor{
 		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{"stored": []byte{0x7a}}, nil
+			return map[string][]byte{"stored": {0x7a}}, nil
 		},
 	}
 
@@ -710,8 +710,8 @@ func TestExecutorAssembleDSALogicSigOrdersStoredSigningArgsOnSuccess(t *testing.
 	exec := &Executor{
 		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
 			return map[string][]byte{
-				"alpha": []byte{0x0a},
-				"beta":  []byte{0x0b},
+				"alpha": {0x0a},
+				"beta":  {0x0b},
 			}, nil
 		},
 	}
@@ -743,7 +743,7 @@ func TestExecutorAssembleDSALogicSigOrdersStoredSigningArgsOnSuccess(t *testing.
 	if gotKeyType != keyType {
 		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
 	}
-	assertLogicSigArgs(t, signedBytes, [][]byte{signature, []byte{0x0b}, []byte{0x0a}})
+	assertLogicSigArgs(t, signedBytes, [][]byte{signature, {0x0b}, {0x0a}})
 }
 
 func TestExecutorAssembleDSALogicSigIgnoresLiveComposedProviderMetadata(t *testing.T) {
@@ -764,7 +764,7 @@ func TestExecutorAssembleDSALogicSigIgnoresLiveComposedProviderMetadata(t *testi
 
 	exec := &Executor{
 		DecodeRuntimeArgs: func(lsigArgs map[string]string) (map[string][]byte, error) {
-			return map[string][]byte{"stored": []byte{0x55}}, nil
+			return map[string][]byte{"stored": {0x55}}, nil
 		},
 	}
 	signature := []byte{0x99, 0x88}
@@ -796,7 +796,7 @@ func TestExecutorAssembleDSALogicSigIgnoresLiveComposedProviderMetadata(t *testi
 	if gotKeyType != keyType {
 		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
 	}
-	assertLogicSigArgs(t, signedBytes, [][]byte{signature, []byte{0x55}})
+	assertLogicSigArgs(t, signedBytes, [][]byte{signature, {0x55}})
 }
 
 func TestExecutorAssembleDSALogicSigRejectsMissingStoredBaseProvider(t *testing.T) {

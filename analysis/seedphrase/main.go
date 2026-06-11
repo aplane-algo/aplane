@@ -47,7 +47,7 @@ var exemptFiles = map[string]string{
 	"lsig/falcon1024/keygen/generator_test.go":    "tests key generation from mnemonics",
 	"test/integration/":                           "integration tests may use test mnemonics",
 	"cmd/apsigner/ipc_import_cache_test.go":       "tests IPC import caching with test mnemonic",
-	"internal/storemut/service_test.go":           "tests store mutation with test mnemonic",
+	"internal/signerapp/storemut/service_test.go": "tests store mutation with test mnemonic",
 	"internal/signerapp/keyadmin/service_test.go": "tests admin service flows with test mnemonic",
 }
 

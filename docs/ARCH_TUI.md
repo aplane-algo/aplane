@@ -71,7 +71,7 @@ signer settings and status:
 - The shared guided policy editor, opened with `p` from the key list or
   through the secondary `Policy` row in Settings
 
-`apadmin` embeds `internal/policytui` for online policy editing. The TUI
+`apadmin` embeds `internal/signerapp/policytui` for online policy editing. The TUI
 requests the active signer-owned snapshot over the admin protocol, selects
 `policy.yaml` on signer nodes or sentry-domain `policy.yaml` on sentry nodes, and
 applies edits as whole-document replacements guarded by

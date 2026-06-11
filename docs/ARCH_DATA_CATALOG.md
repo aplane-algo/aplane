@@ -69,7 +69,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Network config | authoritative config section | `config.yaml` `networks.<token>` and `teal_compile_network` | algod map and genesis resolver | `internal/config`, `cmd/apsigner` | Token syntax and genesis hash collisions fail closed; see `docs/ARCH_NETWORKS.md`. |
 | SSH host key | secret server credential | `.ssh/ssh_host_key` | `sshtunnel.Server` host key | `internal/sshtunnel`, startup/install | Generated locally; clients pin through known-hosts flow. |
 | IPC socket path | runtime endpoint | default `<data_dir>/aplane.sock` or absolute `ipc_path` | local admin transport listener | `cmd/apsigner`, `internal/adminproto`, `internal/transport` | IPC path can live outside data root; local admin protocol requires passphrase auth. |
-| Store mutation lock | runtime/durable coordination | `.apstore.lock` | cooperative store lock | `internal/storelock`, `internal/storemut` | Serializes live signer and local `apstore` mutations. |
+| Store mutation lock | runtime/durable coordination | `.apstore.lock` | cooperative store lock | `internal/storelock`, `internal/signerapp/storemut` | Serializes live signer and local `apstore` mutations. |
 | Audit log | authoritative audit trail | `audit.log` JSONL | append-only audit logger | `internal/signerapp/audit`, `cmd/apsigner` | Mode `0600`, rotated by size; not authority for signing or recovery. |
 | Signer ASA cache key | cache secret | `cache/.cache_key` | HMAC verifier for signer ASA cache | `internal/cache`, `internal/signerapp/asametadata` | Tampered cache files reject and rebuild from seed where applicable. |
 | Signer ASA cache | cache/display | `cache/<network>_asa_cache.json` | per-operation ASA metadata lookup | `internal/signerapp/asametadata`, `internal/asa` | Signed cache; built-in registry seeds; not authority for policy enforcement. |
@@ -181,7 +181,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Transfer route | authoritative policy row | `transfer_policy.routes[]` | route match and rule ID source | `internal/policy` | Dynamic rule IDs use `transfer_policy:<route_id>:<outcome>`. |
 | Policy key override | authoritative sparse override | `key_overrides` map | effective per-key policy | `internal/policy` | Signing overrides keyed by auth address; sentry overrides keyed by Sentry Key ID. |
 | Policy verdict | runtime decision | effective policy plus decoded txn facts | approve/review/reject outcome | `internal/policy`, `internal/signerapp/signing` | Sentry rejects if a review verdict would be required. |
-| Policy editor draft | long-lived UI/runtime state | loaded YAML plus in-memory edits | appolicy TUI draft | `cmd/appolicy`, `internal/policyeditor` | Applies only on explicit save/apply; save writes exact bytes and sidecar. |
+| Policy editor draft | long-lived UI/runtime state | loaded YAML plus in-memory edits | appolicy TUI draft | `cmd/appolicy`, `internal/signerapp/policyeditor` | Applies only on explicit save/apply; save writes exact bytes and sidecar. |
 | Sentry policy conversion output | derived YAML | `appolicy --to-sentry` input policy | deterministic "could allow" sentry-role `policy.yaml` content | `cmd/appolicy`, `internal/policy` | Drops review-only behavior; fails closed for non-deterministic route misses. |
 
 ## Authorization And Authentication
@@ -231,7 +231,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Token provisioning prompt | runtime wire model | SSH enrollment request | admin token provisioning messages | `internal/signerapp/sshprovision`, `internal/adminproto` | Admin approval required before token delivery. |
 | Backup/restore messages | wire contract | admin backup/restore DTOs | backup admin service calls | `internal/protocol`, `internal/signerapp/backupadmin` | Export passphrases parsed as `SensitiveBytes`. |
 | Admin settings messages | wire contract | settings get/update messages | process/identity config mutation | `internal/adminproto`, `internal/signerapp/admin` | Update paths authorize and apply config-staleness guards. |
-| Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | shared policy editor online store | `internal/adminproto`, `internal/signerapp/admin`, `internal/policyeditor` | Target-aware signer/sentry writes replace whole documents and sidecars; apadmin and appolicy share the editor model. |
+| Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | shared policy editor online store | `internal/adminproto`, `internal/signerapp/admin`, `internal/signerapp/policyeditor` | Target-aware signer/sentry writes replace whole documents and sidecars; apadmin and appolicy share the editor model. |
 
 ## Transaction And Signing Runtime Models
 

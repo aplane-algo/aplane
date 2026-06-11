@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/policyeditor"
-	"github.com/aplane-algo/aplane/internal/policytui"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytui"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

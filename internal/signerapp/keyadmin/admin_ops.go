@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
-	"github.com/aplane-algo/aplane/internal/storemut"
+	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 )
 
 func (s Service) ListKeys(ir *identity.Runtime) ([]ListKeyInfo, *Error) {

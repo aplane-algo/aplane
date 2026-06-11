@@ -18,8 +18,8 @@ import (
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/policyeditor"
-	"github.com/aplane-algo/aplane/internal/policytui"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
+	"github.com/aplane-algo/aplane/internal/signerapp/policytui"
 	"github.com/aplane-algo/aplane/internal/version"
 	"golang.org/x/term"
 )

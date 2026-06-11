@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
-	"github.com/aplane-algo/aplane/internal/storemut"
+	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )

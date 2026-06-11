@@ -1568,7 +1568,7 @@ func TestSignGroupWithPlanReleasesBeforeExecuteLeaseAfterExecution(t *testing.T)
 			{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}},
 		},
 		PassthroughIndices:    map[int]bool{0: true},
-		PassthroughSignedTxns: map[int][]byte{0: []byte{0xca, 0xfe}},
+		PassthroughSignedTxns: map[int][]byte{0: {0xca, 0xfe}},
 		ForeignIndices:        map[int]bool{},
 		HasPassthrough:        true,
 	}
@@ -1629,7 +1629,7 @@ func TestSignGroupWithPlanUserAutoApproveDecommissionBeforeExecute(t *testing.T)
 			{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}},
 		},
 		PassthroughIndices:    map[int]bool{0: true},
-		PassthroughSignedTxns: map[int][]byte{0: []byte{0xca, 0xfe}},
+		PassthroughSignedTxns: map[int][]byte{0: {0xca, 0xfe}},
 		ForeignIndices:        map[int]bool{},
 		HasPassthrough:        true,
 	}

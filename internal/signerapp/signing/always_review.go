@@ -4,8 +4,8 @@
 package signing
 
 import (
-	"github.com/aplane-algo/aplane/internal/approvalpolicy"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )

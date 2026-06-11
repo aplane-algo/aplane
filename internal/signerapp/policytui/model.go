@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/policyeditor"
+	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 )
 
 type fieldKind int
