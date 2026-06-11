@@ -10,37 +10,23 @@ import (
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/tealsubst"
-	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
-	"gopkg.in/yaml.v3"
 )
 
 // CurrentTemplateSchemaVersion is the current composed YAML schema version.
 const CurrentTemplateSchemaVersion = 1
 
-// TemplateSpec represents the YAML schema for a composed DSA template.
-type TemplateSpec struct {
-	templatestore.BaseTemplateSpec `yaml:",inline"`
-	TemplateMode                   string                           `yaml:"template_mode"`
-	Parameters                     []generictemplate.ParameterSpec  `yaml:"parameters"`
-	TemplateVariables              []tealtemplate.TemplateVariable  `yaml:"template_variables"`
-	RuntimeArgs                    []generictemplate.RuntimeArgSpec `yaml:"runtime_args"`
-	TEAL                           string                           `yaml:"teal"`
-}
+// TemplateSpec represents the YAML schema for a composed DSA template. The
+// schema is identical to the generic template schema; composed-specific rules
+// (template_type, base_key_type, suffix-fragment TEAL) live in
+// ValidateTemplateSpec.
+type TemplateSpec = generictemplate.TemplateSpec
 
 // ParseTemplateSpec parses YAML data into a composed template spec.
 func ParseTemplateSpec(data []byte) (*TemplateSpec, error) {
-	if err := generictemplate.ValidateNoSaltStyleField(data); err != nil {
-		return nil, err
-	}
-	var spec TemplateSpec
-	if err := yaml.Unmarshal(data, &spec); err != nil {
-		return nil, fmt.Errorf("YAML parse error: %w", err)
-	}
-	return &spec, nil
+	return generictemplate.ParseTemplateSpec(data)
 }
 
 // ValidateTemplateSpec validates required fields and composed-base consistency.
@@ -69,7 +55,7 @@ func ValidateTemplateSpec(spec *TemplateSpec) error {
 	if err := generictemplate.ValidateRuntimeArgSpecs(spec.RuntimeArgs); err != nil {
 		return err
 	}
-	return validateTemplateSpecMode(spec)
+	return generictemplate.ValidateTemplateSpecMode(spec)
 }
 
 // NewProviderFromTemplateSpec creates a composed provider from a parsed spec.
@@ -91,7 +77,7 @@ func NewProviderFromTemplateSpec(spec *TemplateSpec) (*ComposedDSA, error) {
 		Ops:          base.Ops,
 		TEALSuffix:   strings.TrimSpace(spec.TEAL),
 		SaltStyle:    mustTemplateSaltStyle(spec.DerivationVersion),
-		TemplateMode: effectiveTemplateMode(spec),
+		TemplateMode: generictemplate.EffectiveTemplateMode(spec),
 		TemplateVars: spec.TemplateVariables,
 		Params:       generictemplate.ParameterSpecToParameterDefs(spec.Parameters),
 		RuntimeArgs:  generictemplate.RuntimeArgSpecToRuntimeArgDefs(spec.RuntimeArgs),
@@ -149,82 +135,4 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 			return logicsigdsa.RegisterIfAbsent(provider)
 		},
 	}, nil
-}
-
-func validateTemplateSpecMode(spec *TemplateSpec) error {
-	switch effectiveTemplateMode(spec) {
-	case generictemplate.TemplateModeLegacy:
-		if schemaVersion(spec) >= 2 {
-			return fmt.Errorf("schema_version %d templates must use template_mode strict or generated", schemaVersion(spec))
-		}
-		return validateLegacyVariablesAgainstParams(spec)
-	case generictemplate.TemplateModeStrict:
-		if err := validateTemplateVariablesAgainstParameters(spec.TemplateVariables, spec.Parameters); err != nil {
-			return err
-		}
-		return tealtemplate.ValidateStrictTemplate(spec.TEAL, spec.TemplateVariables)
-	case generictemplate.TemplateModeGenerated:
-		if len(spec.TemplateVariables) > 0 {
-			return fmt.Errorf("generated templates must not declare template_variables")
-		}
-		if err := validateGeneratedListTemplateSyntax(spec); err != nil {
-			return err
-		}
-		return validateLegacyVariablesAgainstParams(spec)
-	case "":
-		return fmt.Errorf("template_mode is required for schema_version 1 templates")
-	default:
-		return fmt.Errorf("unsupported template_mode %q", spec.TemplateMode)
-	}
-}
-
-func validateLegacyVariablesAgainstParams(spec *TemplateSpec) error {
-	paramNames := make([]string, len(spec.Parameters))
-	for i, p := range spec.Parameters {
-		paramNames[i] = p.Name
-	}
-	return tealsubst.ValidateVariablesAgainstParams(spec.TEAL, paramNames)
-}
-
-func validateGeneratedListTemplateSyntax(spec *TemplateSpec) error {
-	paramDefs := make([]tealsubst.ParamDef, len(spec.Parameters))
-	for i, p := range spec.Parameters {
-		paramDefs[i] = tealsubst.ParamDef{Name: p.Name, Type: p.Type}
-	}
-	return tealsubst.ValidateListTemplates(spec.TEAL, paramDefs)
-}
-
-func effectiveTemplateMode(spec *TemplateSpec) string {
-	if spec.TemplateMode != "" {
-		return spec.TemplateMode
-	}
-	if schemaVersion(spec) <= 1 {
-		return generictemplate.TemplateModeLegacy
-	}
-	return ""
-}
-
-func schemaVersion(spec *TemplateSpec) int {
-	if spec.SchemaVersion == 0 {
-		return 1
-	}
-	return spec.SchemaVersion
-}
-
-func validateTemplateVariablesAgainstParameters(variables []tealtemplate.TemplateVariable, params []generictemplate.ParameterSpec) error {
-	paramTypes := make(map[string]string, len(params))
-	for _, param := range params {
-		paramTypes[param.Name] = param.Type
-	}
-	for _, variable := range variables {
-		paramType, ok := paramTypes[variable.Parameter]
-		if !ok {
-			return fmt.Errorf("template variable %q references unknown parameter %q", variable.Name, variable.Parameter)
-		}
-		if variable.Type != paramType {
-			return fmt.Errorf("template variable %q type %q does not match parameter %q type %q",
-				variable.Name, variable.Type, variable.Parameter, paramType)
-		}
-	}
-	return nil
 }

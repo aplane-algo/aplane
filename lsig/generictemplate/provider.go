@@ -217,7 +217,7 @@ func (t *YAMLTemplate) GenerateTEAL(params map[string]string) (string, error) {
 		return "", err
 	}
 
-	switch effectiveTemplateMode(t.spec) {
+	switch EffectiveTemplateMode(t.spec) {
 	case TemplateModeStrict:
 		rendered, err := tealtemplate.RenderStrict(t.spec.TEAL, normalizedParams, t.spec.TemplateVariables)
 		if err != nil {
@@ -546,7 +546,7 @@ func stripTEALComment(line string) string {
 }
 
 func ValidateTemplateSpecMode(spec *TemplateSpec) error {
-	switch effectiveTemplateMode(spec) {
+	switch EffectiveTemplateMode(spec) {
 	case TemplateModeLegacy:
 		if schemaVersion(spec) >= 2 {
 			return fmt.Errorf("schema_version %d templates must use template_mode strict or generated", schemaVersion(spec))
@@ -572,7 +572,9 @@ func ValidateTemplateSpecMode(spec *TemplateSpec) error {
 	}
 }
 
-func effectiveTemplateMode(spec *TemplateSpec) string {
+// EffectiveTemplateMode resolves a spec's template mode, defaulting
+// schema_version 1 templates to legacy mode.
+func EffectiveTemplateMode(spec *TemplateSpec) string {
 	if spec.TemplateMode != "" {
 		return spec.TemplateMode
 	}
@@ -727,7 +729,7 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 		Family:            spec.Family,
 		Version:           spec.Version,
 		DerivationVersion: fingerprintDerivationVersion(spec),
-		TemplateMode:      effectiveTemplateMode(spec),
+		TemplateMode:      EffectiveTemplateMode(spec),
 		TemplateVariables: spec.TemplateVariables,
 		TEAL:              strings.TrimSpace(spec.TEAL),
 		Parameters:        params,
