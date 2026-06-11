@@ -11,7 +11,7 @@
 APlane Corridors is a constrained asset transfer architecture built on the
 Algorand blockchain. It provides provably enforced, auditable, and
 non-bypassable financial flow controls without requiring the use of stateful 
-smart contracts or mutable on-chain state.
+smart contracts or smart-contract app state.
 
 At the heart of a corridor account is a Logic Signature - a small, 
 fixed program that the ledger itself evaluates on every transaction, enforcing 
@@ -23,11 +23,13 @@ into the account's Logic Signature. Each account has exactly one corridor —
 one origin, one or more exits. LogicSigs are small fixed TEAL programs that the Algorand
 Virtual Machine uses for authorization. 
 
-An account's corridor destinations are the only routes value may travel. Transfers 
-outside them are impossible, even if the account's Falcon key is stolen.
+Except for protocol fees and issuer-controlled clawback behavior on
+clawback-enabled assets, an account's corridor destinations are the only routes
+account-controlled value may travel. Transfers outside them are impossible, even
+if the account's Falcon key is stolen.
 
-Second, an account's corridor may be gated by an independent sentry. A sentry is 
-a second, independent signer that maintains its own policy. For those
+Second, an account's corridor may be gated by a separate sentry. A sentry is 
+a second signer that maintains its own policy and key material. For those
 transfers, the program requires both the account holder's authorization and
 a per-transaction sentry approval issued under deterministic policy. The holder 
 initiates transfer; the sentry permits or denies. 
@@ -44,13 +46,13 @@ Policy is divided into two layers with different volatility profiles:
   only by construction — a Falcon-authorized governance rekey under dedicated 
   governance keys, separate from both spending and sentry authorities — with the 
   account address stable across all versions.
-- **Operational policy — when gates open.** Gate policy rules held on independent
+- **Operational policy — when gates open.** Gate policy rules held on separate
   sentry nodes, evaluated fail-closed per transaction and enforced on-chain
-  through a required sentry signature. Gate rules change by a signed policy
+  through a required sentry signature. Gate rules change by an authenticated policy
   edit, with no on-chain transaction.
 
 Optionally, a "sentry" signer may also be used to provide a second signature for
-independent transaction approval. This approval process runs off-chain, so while
+additional transaction approval. This approval process runs off-chain, so while
 it can be based on transaction / group details, it can also be based on off-chain
 state as well - eg., anything a process can look up via HTTP. 
 
@@ -61,7 +63,9 @@ is cryptographically enforced, similar to the concept of multisig.
 The network graph — the corridor map — is the emergent union of per-account
 corridors. There is no central router, registry, or privileged
 network-level component. Value moves only along cryptographically enforced
-paths, and every structural change is publicly auditable on-chain. 
+paths. Every structural signer change is publicly visible on-chain, and the
+corresponding corridor program is verifiable from the operator-published
+configuration and template version.
 
 This document describes the account primitive, the authorization model, the
 corridor and gate layers, topology governance, the security model, and the
@@ -72,22 +76,24 @@ terminology appears in the appendix.
 
 ## 1. Design Principles
 
-1. **All spend authority is Falcon-authorized.** Every transaction moving
-   value from an account carries a Falcon-1024 signature, bound to the
-   transaction ID, from the account's spend key. There is no anonymous
-   satisfaction of a predicate: knowing an account's program confers no
-   spending ability.
+1. **All account-controlled spend authority is Falcon-authorized.** Except for
+   protocol fees and issuer-controlled clawback behavior on clawback-enabled
+   assets, every transaction moving value from an account carries a
+   Falcon-1024 signature, bound to the transaction ID, from the account's spend
+   key. There is no anonymous satisfaction of a predicate: knowing an account's
+   program confers no spending ability.
 2. **All on-chain enforcement is stateless.** Corridors and gates are
    enforced exclusively by account programs evaluating transaction facts,
-   group context, and supplied signatures. No smart-contract applications,
-   no mutable on-chain state. Operational state — gate-rule documents, and
-   cumulative counters under the §5.4 extension — lives off-chain at the
-   guard, never on the ledger.
+   group context, and supplied signatures. No smart-contract app state.
+   Operational gate-rule documents live off-chain at the guard, never on the
+   ledger.
 3. **Corridors change only by construction; the address never changes.** An
    account's corridor changes only through its compiled governance rekey
    path, authorized by a separate administrative Falcon key. The account
-   address is stable across all versions; the on-chain rekey history is the
-   account's complete construction record.
+   address is stable across all versions; the on-chain rekey history records
+   effective signer changes, while the complete construction record pairs that
+   history with the operator-published program configuration and template
+   version.
 4. **Gates are attested, not state-resident.** Operational rules — movement
    authorization, per-sender constraints, compliance gating — are evaluated
    off-chain by the guard under deterministic, fail-closed gate rules, and
@@ -163,7 +169,7 @@ The configuration composes into the standard account profiles:
 |---|---|
 | Immutable leaf | literal corridor, ungated, no governance key |
 | Governed account | corridor + governance key |
-| Guarded account | corridor + gate + governance key |
+| Guarded governed account | corridor + gate + governance key |
 
 ## 3. Authorization Model
 
@@ -224,10 +230,13 @@ Transfer-path transactions are restricted to payments and asset transfers.
 Close-out fields must be zero or name a corridor destination — a close to a
 corridor destination is a sanctioned sweep through an existing corridor,
 which keeps a decommissioning path open without creating a drain (the sweep
-can travel no path a transfer couldn't). Clawback-style transfers are
-rejected, fees are bounded by the compiled fee cap, and a zero-amount
-self-transfer is permitted without corridor evaluation so an account can opt in
-to approved Algorand assets.
+can travel no path a transfer couldn't). Clawback-style transfers initiated by
+the account are rejected, fees are bounded by the compiled fee cap, and a
+zero-amount self-transfer is permitted without corridor evaluation so an account
+can opt in to approved Algorand assets. For clawback-enabled assets, the asset
+issuer's clawback authority remains outside the holder account's LogicSig and
+must be disabled or governed by an equivalent corridor/control model where the
+strongest corridor guarantees are required.
 
 ### 4.2 Corridor evaluation
 
@@ -261,43 +270,22 @@ through supported, audited tooling.
 Movement authorization by sender, receiver, asset, and amount; deny rules;
 network scoping; and per-guard-key overrides — approved classes, active
 assets, and compliance gating expressed as gate rules rather than as
-on-chain state anywhere. Updating gate rules is a signed edit on the sentry
-node; it takes effect on the next signing request with no on-chain
+on-chain state anywhere. Updating gate rules is an authenticated policy edit
+on the sentry node; it takes effect on the next signing request with no on-chain
 transaction and no effect on any account's program. Gate rules can narrow
 which traffic passes through a corridor; they can never authorize travel
 where no corridor exists.
 
-### 5.3 Circuit breaker — every gate shut
+### 5.3 V1 trust domain
 
-The circuit breaker is the guard's fail-closed behavior itself: locking
-the sentry, adding a deny rule, or sentry unreachability shuts every gate
-that guard controls, immediately and simultaneously. Recovery is unlocking
-or editing the gate rules. Scope note: the breaker shuts *gates*; ungated
-corridors are unaffected by design — they have no gate to shut, which is
-precisely why a profile is chosen as ungated only where structural bounds
-alone are the intended control.
+In v1, the signer and sentry are assumed to be operated by the same
+organization, using separate node roles, data roots, keys, and policy
+documents. The sentry is therefore an internal control and policy-enforcement
+point, not third-party attestation. It still provides key separation and
+fail-closed gate enforcement: the sentry key cannot spend, and the holder key
+alone cannot pass guarded traffic. It does not protect against a fully
+compromised or malicious operator that can command both roles.
 
-### 5.4 Required extension: cumulative limits at the gate
-
-Cumulative spend tracking has no stateless on-chain equivalent and is
-therefore assigned to the guard. Current sentry evaluation is deterministic
-over per-transaction facts; **APlane Corridors requires an identity-scoped
-stateful extension to the sentry policy domain**: per-sender accumulation
-counters with period windows defined by block timestamp (not round count —
-round duration is not a protocol constant). The metaphor is a guard keeping
-a tally at the gate. Until this extension ships, the v1 posture is:
-the structural per-transaction amount cap, plus operator-side accounting at
-the signer that owns the spend key. This is the single sentry-subsystem
-extension the system depends on, and it extends only the sentry's policy
-evaluator.
-
-### 5.5 Trust domains — who employs the guard
-
-A sentry operated by the same party as the account's signer is one trust
-domain regardless of host separation: a guard you employ yourself attests
-your compliance to no one but you. Deployments SHOULD place guards with the
-corridor operator, compliance function, or regulator-designated party — a
-deployment-domain decision, not a configuration flag.
 
 ## 6. Topology and Governance
 
@@ -313,11 +301,13 @@ operational signers, not passive infrastructure.
 ### 6.2 Constructing the corridor
 
 Adding or removing corridor destinations at an account = construction rekey
-to a program differing in its destination set. Properties:
+to a LogicSig differing in its destination set. Properties:
 
 - the account address is unchanged; no peer or counterparty updates anything;
-- the rekey transaction is on-chain, so the sequence of program changes is
-  the account's complete, publicly auditable construction record;
+- the rekey transaction is on-chain, so the sequence of effective signer
+  changes is publicly auditable; the program/configuration history is complete
+  when paired with the operator-published LogicSig configuration and template
+  version;
 - a transaction authorized under the previous program and not yet confirmed
   becomes invalid at the rekey — construction is atomic at a round boundary,
   with no shared-state race;
@@ -350,16 +340,18 @@ account's effective signer.
 
 ### 7.1 Non-bypass guarantee
 
-No value leaves an account except through a transaction that (a) carries a
-valid Falcon signature from the account's spend key bound to that exact
-transaction — the holder initiated it; (b) travels the corridor — the
-receiver, including any close target, is in the compiled destination set; and
-(c) for guarded accounts, passes an open gate — a valid sentry signature
-issued under fail-closed gate rules. The corridor program is the sole
-effective signer; there is no state to corrupt, no upgrade hook, and no
-administrative override of the transfer path. The construction path can
-change the account's future corridor but cannot move value (zero-amount self-payment
-only): construction authority constructs corridors; it does not travel them.
+Except for protocol fees and issuer-controlled clawback behavior on
+clawback-enabled assets, no account-controlled value leaves an account except
+through a transaction that (a) carries a valid Falcon signature from the
+account's spend key bound to that exact transaction — the holder initiated it;
+(b) travels the corridor — the receiver, including any close target, is in the
+compiled destination set; and (c) for guarded accounts, passes an open gate — a
+valid sentry signature issued under fail-closed gate rules. The corridor
+program is the sole effective signer for account-authorized movement; there is
+no state to corrupt, no upgrade hook, and no administrative override of the
+transfer path. The construction path can change the account's future corridor
+but cannot move value beyond protocol fees (zero-amount self-payment only):
+construction authority constructs corridors; it does not travel them.
 
 ### 7.2 Blast radius
 
@@ -389,16 +381,7 @@ rekey the account to push the activation round forward (a dead-man switch); a
 healthy governance process never lets the hatch unlock. Accounts for which
 frozen-on-guard-loss is the desired posture simply omit the hatch.
 
-### 7.4 Privacy
-
-All structural policy is on-chain-derivable and all flows are public; the
-corridor map is intentionally auditable. Gate rules are off-chain, so
-compliance semantics — KYC status, screening logic, limits — never appear on
-a public ledger: the chain records that the gate opened, not why. Audit
-evidence of gate decisions lives in the sentry's signed audit log,
-disclosable to authorized parties.
-
-### 7.5 Monitoring
+### 7.4 Monitoring
 
 Production deployments monitor: gate rejections and gate openings (from the
 sentry's signed audit log), construction rekeys on every account (an on-chain
@@ -408,67 +391,6 @@ program evaluation are rejected at submission and never appear on-chain;
 rejection monitoring is therefore signing-infrastructure logging, not chain
 scanning.
 
-## 8. Example Topologies
-
-### 8.1 Retail payment corridor (PSP)
-
-| Account | Profile |
-|---|---|
-| Consumer account | Immutable or governed leaf: literal corridor = {PSP settlement account}; EUR stablecoin ASA; amount cap per purchase; ungated (consumer UX) or gated per corridor-operator rules |
-| PSP settlement account | Guarded account, rekeyed formation: corridor over the merchant set; guard operated by PSP compliance (or its regulator); governance key = PSP cold M-of-N; gate tallies via §5.4 when available |
-| Merchant account | Governed leaf: corridor = {merchant treasury, PSP refunds}; close-to-corridor for settlement sweeps |
-
-Purchases are optionally grouped consumer→PSP + PSP→merchant for atomic
-delivery; merchant onboarding is a construction rekey updating the merchant
-destinations in the settlement account's corridor, batched as required.
-
-### 8.2 Corporate treasury corridors
-
-| Account | Profile |
-|---|---|
-| Treasury | Guarded governed account: literal corridor = {Subsidiary A, Subsidiary B, PSP gateway}; high amount cap; guard = internal-controls function; governance = board-level M-of-N |
-| Subsidiary | Governed account: corridor = approved vendor set; gate optional per control requirements |
-| Vendor | Receive-only ordinary account, or a minimal leaf for refund constraint |
-
-### 8.3 Regulated interbank settlement corridor
-
-| Account | Profile |
-|---|---|
-| Bank A / Bank B | Guarded governed accounts: corridor = {counterparty banks, central bank}; settlement asset = CBDC ASA; guard public key = **central bank sentry**, embedded in each bank account at generation |
-| Central bank sentry | Sentry-role node; deterministic settlement gate rules; shutting its gates is the systemic circuit breaker |
-| Governance | Bank governance keys held by each institution; the central bank gates traffic without holding any spend or construction authority — it can shut every gate in the settlement network, and it cannot move or reroute a single microAlgo |
-
-The fully post-quantum profile is recommended for this topology given
-multi-decade infrastructure horizons.
-
-## 9. V1 Scope
-
-**In scope:** the corridor-account primitive with both guard variants; literal
-corridor evaluation; zero-or-corridor close semantics; asset
-opt-in; the construction rekey path with separated Falcon governance keys;
-both account formations; the optional structural bounds and escape hatch;
-gate attestation under the existing fail-closed sentry policy; atomic
-multi-hop grouping via guarded orchestration; the three reference
-topologies; and the verification conventions of §6.4.
-
-**Dependent extension (tracked, not gating):** stateful cumulative limits in
-the sentry policy domain — the gate tally (§5.4).
-
-**Explicitly deferred:** compact representations for very large destination
-sets; per-authorizer binding of gate approvals; multi-guard (M-of-N gate
-attestation) on a single account; pathfinding or any route discovery; on-chain
-graph state of any kind; cross-chain bridging; governance tokens or
-decentralized administration; privacy-preserving corridor membership.
-
-## 10. Status and Further Reading
-
-APlane Corridors is specified on top of APlane, a production signing
-infrastructure for Algorand whose guarded-signing subsystem — independent
-sentry nodes, deterministic fail-closed policy, two-party transaction
-assembly — provides the gate layer described here. The full system
-specification — the account template, key-type identifiers, component
-message formats, configuration knobs, and deployment and update
-procedures — is in APLANE_CORRIDORS_DETAILED.md.
 
 ## Appendix: Glossary — The Corridor Model
 
@@ -479,11 +401,11 @@ one architectural element, and this document uses both consistently.
 
 | Term | Maps to | Definition |
 |---|---|---|
-| Corridor | The account's structural whitelist | The permitted transfer path compiled into an account's program: one origin (the account), one or more destinations. Each account has exactly one corridor; value can move only through it. |
+| Corridor | The account's structural whitelist | The permitted transfer path compiled into an account's program: one origin (the account), one or more destinations. Each account has exactly one corridor; account-controlled value can move only through it, except for protocol fees and issuer-controlled clawback behavior on clawback-enabled assets. |
 | Destination | A whitelist entry | A single address in an account's corridor. Each destination is one directed edge A→B of the corridor map. |
 | Wall | Absence of a destination | Any address not among the corridor's destinations. Impassable by every party, including all key holders. |
 | Construction | Governance rekey | Adding, removing, or reconfiguring corridor destinations by rekeying to a successor program. Deliberate, key-ceremonied, on-chain. |
-| Guard | Sentry | An independent sentry-role node holding a component key and deterministic gate policy. |
+| Guard | Sentry | A separate sentry-role node holding a component key and deterministic gate policy. In v1, this is an internal control point operated by the same organization as the sending accounts, not third-party attestation. |
 | Guarded account | Guarded account (production term) | An account whose program requires both the holder's signature and the guard's co-signature. Two-party: the holder initiates, the guard admits, neither acts alone. |
 | Gate | The sentry's per-transaction admission decision | Opened only by a sentry signature issued under matching allow policy. Shut by default: denied or unmatched transactions, unsupported shapes, and unreachable or locked sentries all leave the gate shut. |
 | Gated corridor | An attested corridor | The corridor of a guarded account: structurally constructed AND per-transaction gated. |
