@@ -19,17 +19,13 @@ const modulePrefix = "github.com/aplane-algo/aplane"
 // internal/signerapp. Do not add entries here to make a build pass; either the
 // new package belongs under internal/signerapp, or the type it needs belongs
 // in a neutral leaf package.
-var signerappExceptions = map[string]string{
-	// The signer's own TUI; signer-owned but not yet relocated, pending the
-	// god-model split.
-	modulePrefix + "/internal/signertui": "signer-owned TUI, relocation deferred",
-}
+var signerappExceptions = map[string]string{}
 
 // TestSharedPackagesDoNotImportSignerapp pins the server boundary: packages
 // under internal/signerapp are signer-daemon internals, and shared code in
 // the internal/ root, lsig/, and pkg/ must not import them. Signer-owned
 // packages live under internal/signerapp/ instead (storemut, approvalpolicy,
-// policyeditor, policytui moved there for exactly this reason).
+// policyeditor, policytui, and signertui moved there for exactly this reason).
 func TestSharedPackagesDoNotImportSignerapp(t *testing.T) {
 	cmd := exec.Command("go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...")
 	cmd.Dir = "../.."

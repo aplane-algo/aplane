@@ -5,7 +5,7 @@ package main
 
 import (
 	"github.com/aplane-algo/aplane/internal/config"
-	tui "github.com/aplane-algo/aplane/internal/signertui"
+	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
 	"github.com/aplane-algo/aplane/internal/theme"
 )
 

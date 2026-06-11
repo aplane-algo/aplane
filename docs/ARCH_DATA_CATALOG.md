@@ -127,7 +127,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | YAML template spec | generation contract | template YAML `schema_version`, `template_mode`, `template_type` | parsed `BaseTemplateSpec` | `internal/tealtemplate`, `internal/templatelibrary` | Unknown/missing required fields reject import/install. |
 | Template install result | wire/runtime projection | admin request response | install/rollback report | `internal/signerapp/templateadmin`, `internal/protocol` | Low-level template store owns encrypted bytes; admin path owns state record. |
 | `/keytypes` metadata | wire projection | enabled providers/templates plus references | `signerapi.KeyTypesResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Creation params are future-generation metadata; contract fixtures cover shape. |
-| Admin KeyType Library row | UI/wire projection | library source plus identity state | `protocol.LibraryTemplateInfo` | `internal/adminproto`, `internal/signertui` | `compiled_provider` is a wire/display projection, not a template store type. |
+| Admin KeyType Library row | UI/wire projection | library source plus identity state | `protocol.LibraryTemplateInfo` | `internal/adminproto`, `internal/signerapp/signertui` | `compiled_provider` is a wire/display projection, not a template store type. |
 
 ## Client Storage
 
@@ -226,7 +226,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Admin envelope | wire contract | line-delimited JSON `kind`, `type`, `id` | request/response/notification routing | `internal/protocol`, `internal/transport` | Missing/unsupported messages yield protocol error. |
 | Passphrase messages | secret wire fields | JSON string decoded as `protocol.SensitiveBytes` | auth/unlock/changepass/store messages | `internal/protocol`, `internal/adminproto` | Handlers clone/zero mutable buffers where possible. |
 | Key management messages | wire contract | `generate_key`, `delete_key`, `import_key`, details/list | admin key operations | `internal/protocol`, `internal/adminproto` | Import mnemonic accepted only over local IPC; generate responses omit mnemonic; export messages are retained only to deny/decode legacy requests. |
-| Template management messages | wire contract | library/install/show/import/remove/activate/deactivate messages | template/key type lifecycle | `internal/adminproto`, `internal/signertui` | Decrypted installed template source is local IPC only; user-facing CLI/TUI verbs are enable/disable. |
+| Template management messages | wire contract | library/install/show/import/remove/activate/deactivate messages | template/key type lifecycle | `internal/adminproto`, `internal/signerapp/signertui` | Decrypted installed template source is local IPC only; user-facing CLI/TUI verbs are enable/disable. |
 | Sign approval prompt | runtime wire model | signer approval coordinator request | admin `sign_request` | `internal/signerapp/approval`, `internal/adminproto` | Approval prompts carry descriptions; response attaches approver principal. |
 | Token provisioning prompt | runtime wire model | SSH enrollment request | admin token provisioning messages | `internal/signerapp/sshprovision`, `internal/adminproto` | Admin approval required before token delivery. |
 | Backup/restore messages | wire contract | admin backup/restore DTOs | backup admin service calls | `internal/protocol`, `internal/signerapp/backupadmin` | Export passphrases parsed as `SensitiveBytes`. |

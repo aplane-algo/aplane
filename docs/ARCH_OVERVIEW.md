@@ -247,7 +247,7 @@ aplane/
 | Package Type | Location | Rationale |
 |--------------|----------|-----------|
 | **Binary-local UI** | `cmd/<app>/internal/` when present | Only used by that application |
-| **Shared UI/adapters** | `internal/apshellcli`, `internal/shellrepl`, `internal/signertui` | Shared or separately testable shell/TUI surfaces |
+| **Shared UI/adapters** | `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui` | Shared or separately testable shell/TUI surfaces |
 | **Shell workflows** | `internal/apshellapp` | Shell-facing behavior shared by text, script, and MCP adapters |
 | **Shared library** | `internal/` | Used by multiple apps or plugins |
 | **Algorithm impl** | `lsig/` | DSA provider implementations |

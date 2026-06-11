@@ -15,7 +15,7 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/aplane-algo/aplane/internal/config"
-	tui "github.com/aplane-algo/aplane/internal/signertui"
+	tui "github.com/aplane-algo/aplane/internal/signerapp/signertui"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 )

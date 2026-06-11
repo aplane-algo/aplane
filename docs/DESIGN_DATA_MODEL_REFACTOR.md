@@ -102,7 +102,7 @@ Expected blast radius:
 - `internal/templatestore`
 - `internal/adminproto`
 - `internal/protocol`
-- `internal/signertui`
+- `internal/signerapp/signertui`
 - related `cmd/apsigner` and TUI tests
 
 Required behavior:

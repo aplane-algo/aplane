@@ -280,7 +280,7 @@ Primary files:
 - `internal/signerapp/asametadata` - signer-wide ASA metadata cache and display formatting,
 - `internal/signerapp/admin/service.go` - target-aware admin policy service, policy snapshots, validation/replacement, and ASA metadata resolution,
 - `internal/protocol/messages.go` - admin IPC wire fields,
-- `internal/signertui/policy_editor.go` - apadmin shared policy editor embedding,
+- `internal/signerapp/signertui/policy_editor.go` - apadmin shared policy editor embedding,
 - external `aplane-algo/aplanesdk/go/config.go` - Go SDK config token validation.
 
 Contract and user-facing docs:

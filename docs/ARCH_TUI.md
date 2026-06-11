@@ -8,7 +8,7 @@ admin-protocol client and does **not** route through `internal/engine` or the
 `apshell` REPL/MCP pipeline (see [ARCH_REPL.md](ARCH_REPL.md) and
 [ARCH_MCP.md](ARCH_MCP.md) for those).
 
-The implementation lives in `internal/signertui/`.
+The implementation lives in `internal/signerapp/signertui/`.
 
 ## Model / View / Update
 
@@ -38,7 +38,7 @@ backup restore. The `view.go` dispatcher selects the renderer by current
 
 ## View States
 
-`ViewState` (defined in `internal/signertui/model.go`) is an enum that
+`ViewState` (defined in `internal/signerapp/signertui/model.go`) is an enum that
 identifies the current screen. The enum has families for:
 
 - Authentication and unlock (`ViewAuth`, `ViewUnlock`)
@@ -52,7 +52,7 @@ identifies the current screen. The enum has families for:
 - KeyType Library (`ViewTemplateLibrary`, install confirm/loading, `ViewLibraryTemplateDetails`)
 - `ViewError`
 
-See `internal/signertui/model.go` for the authoritative enum values and the
+See `internal/signerapp/signertui/model.go` for the authoritative enum values and the
 one-line comments that document each screen's purpose. Legacy policy view
 states may still appear in the enum for compatibility handlers, but they are
 not active apadmin entry points.
@@ -107,14 +107,14 @@ recoverable view.
 
 | File | Purpose |
 |------|---------|
-| `internal/signertui/model.go` | `Model`, `ViewState`, initialization |
-| `internal/signertui/update.go` | Top-level Update dispatch |
-| `internal/signertui/view.go` | Top-level View dispatch |
-| `internal/signertui/activity.go` | Local keystroke activity reporting and idle lock timers |
-| `internal/signertui/ipc_client.go` | IPC connection to the signer |
-| `internal/signertui/connector.go` | SSH `aplane-admin` connector for remote mode |
-| `internal/signertui/policy_editor.go` | Shared policy editor embedding and admin-protocol store adapter |
-| `internal/signertui/update_*.go`, `view_*.go` | Per-view handlers and renderers |
+| `internal/signerapp/signertui/model.go` | `Model`, `ViewState`, initialization |
+| `internal/signerapp/signertui/update.go` | Top-level Update dispatch |
+| `internal/signerapp/signertui/view.go` | Top-level View dispatch |
+| `internal/signerapp/signertui/activity.go` | Local keystroke activity reporting and idle lock timers |
+| `internal/signerapp/signertui/ipc_client.go` | IPC connection to the signer |
+| `internal/signerapp/signertui/connector.go` | SSH `aplane-admin` connector for remote mode |
+| `internal/signerapp/signertui/policy_editor.go` | Shared policy editor embedding and admin-protocol store adapter |
+| `internal/signerapp/signertui/update_*.go`, `view_*.go` | Per-view handlers and renderers |
 
 ## Related Documentation
 
