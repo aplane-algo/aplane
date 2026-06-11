@@ -16,13 +16,21 @@ import (
 // Session expiration is handled externally by explicit signer lock paths, which
 // zero the master key and destroy the active key session.
 type KeySession struct {
-	keyStore KeyStore     // Key storage backend
-	active   bool         // Whether the session is active (master key available)
-	lock     sync.RWMutex // protects concurrent access
+	keyStore sessionKeyStore // Key storage backend
+	active   bool            // Whether the session is active (master key available)
+	lock     sync.RWMutex    // protects concurrent access
+}
+
+// sessionKeyStore is the slice of the key store KeySession actually uses.
+// Production passes *FileKeyStore; tests substitute a mock.
+type sessionKeyStore interface {
+	// Get retrieves the key material for signing. The keystore must be
+	// unlocked; the caller zeroes the returned KeyMaterial after use.
+	Get(ctx context.Context, address string) (*signing.KeyMaterial, error)
 }
 
 // NewKeySession creates a new key session backed by the given key store.
-func NewKeySession(keyStore KeyStore) *KeySession {
+func NewKeySession(keyStore sessionKeyStore) *KeySession {
 	return &KeySession{
 		keyStore: keyStore,
 	}

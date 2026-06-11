@@ -621,9 +621,3 @@ func TestClearMasterKeyBlocksDuringWithMasterKey(t *testing.T) {
 		t.Error("master key should be nil after ClearMasterKey")
 	}
 }
-
-// TestFileKeyStore_InterfaceCompliance verifies interface implementation
-func TestFileKeyStore_InterfaceCompliance(t *testing.T) {
-	// This is a compile-time check that FileKeyStore implements KeyStore
-	var _ KeyStore = (*FileKeyStore)(nil)
-}

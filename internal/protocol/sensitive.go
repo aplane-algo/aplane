@@ -13,6 +13,12 @@ import (
 
 // SensitiveBytes carries a JSON string as mutable bytes after unmarshal so
 // handlers can zero passphrase material after use.
+//
+// Contract: SensitiveBytes carries UTF-8 text only (passphrases, template
+// YAML). MarshalJSON emits the bytes as a JSON string, so non-UTF-8 input
+// would be corrupted to U+FFFD replacement runes on the peer. Binary key
+// material must not use this type; give it a distinct base64-encoded type
+// instead.
 type SensitiveBytes []byte
 
 func NewSensitiveBytes(s string) SensitiveBytes {

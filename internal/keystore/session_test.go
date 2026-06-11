@@ -27,7 +27,7 @@ func init() {
 	ed25519signing.RegisterProvider()
 }
 
-// mockKeyStore implements KeyStore for testing KeySession
+// mockKeyStore implements sessionKeyStore for testing KeySession
 type mockKeyStore struct {
 	keys     map[string]*signing.KeyMaterial
 	getError error
@@ -39,16 +39,6 @@ func newMockKeyStore() *mockKeyStore {
 	return &mockKeyStore{
 		keys: make(map[string]*signing.KeyMaterial),
 	}
-}
-
-func (m *mockKeyStore) List(ctx context.Context) ([]KeyMetadata, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var result []KeyMetadata
-	for addr := range m.keys {
-		result = append(result, KeyMetadata{Address: addr})
-	}
-	return result, nil
 }
 
 func (m *mockKeyStore) Get(ctx context.Context, address string) (*signing.KeyMaterial, error) {
@@ -65,27 +55,6 @@ func (m *mockKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 		return nil, ErrKeyNotFound
 	}
 	return key, nil
-}
-
-func (m *mockKeyStore) GetMetadata(ctx context.Context, address string) (*KeyMetadata, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, ok := m.keys[address]; !ok {
-		return nil, ErrKeyNotFound
-	}
-	return &KeyMetadata{Address: address}, nil
-}
-
-func (m *mockKeyStore) Delete(ctx context.Context, address string) error {
-	return nil
-}
-
-func (m *mockKeyStore) WithMasterKey(fn func([]byte) error) error {
-	return fn(nil) // mock: no real master key
-}
-
-func (m *mockKeyStore) Type() string {
-	return "mock"
 }
 
 // TestKeySession_NewKeySession tests session creation

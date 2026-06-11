@@ -1158,6 +1158,25 @@ func TestSensitiveBytesMarshalUnmarshalAndZero(t *testing.T) {
 	}
 }
 
+// TestSensitiveBytesUTF8RoundTrip pins the documented contract: SensitiveBytes
+// carries UTF-8 text and survives marshal/unmarshal byte-for-byte, including
+// multi-byte runes. (Non-UTF-8 binary must not use this type — a JSON string
+// would corrupt it to U+FFFD on the peer.)
+func TestSensitiveBytesUTF8RoundTrip(t *testing.T) {
+	original := NewSensitiveBytes("p\u00e4ss\u00fcw\u00f6rd \u26a0 \U0001f510 \u3053\u3093\u306b\u3061\u306f")
+	encoded, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded SensitiveBytes
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if string(decoded) != string(original) {
+		t.Fatalf("round-trip = %q, want %q", decoded, original)
+	}
+}
+
 func TestAdminPassphraseMessagesKeepStringJSONShape(t *testing.T) {
 	tests := []struct {
 		name       string

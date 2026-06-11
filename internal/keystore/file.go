@@ -592,6 +592,6 @@ func (f *FileKeyStore) GetPublicKeyHexMap() map[string]string {
 
 // Compile-time interface check
 var (
-	_ KeyStore                    = (*FileKeyStore)(nil)
+	_ sessionKeyStore             = (*FileKeyStore)(nil)
 	_ keys.KeyScanWarningProvider = (*FileKeyStore)(nil)
 )
