@@ -13,9 +13,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
-func TestSentryEd25519GenerateRandomScansAndLoads(t *testing.T) {
+func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
+	RegisterSentryComponents()
 	paths := storepaths.NewPaths(t.TempDir())
 	passphrase := []byte("component-generator-test-passphrase")
 	if _, _, err := securecrypto.CreateKeystoreMetadata(paths.IdentityDir("default"), passphrase); err != nil {
@@ -31,19 +33,19 @@ func TestSentryEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	}
 	defer securecrypto.ZeroBytes(masterKey)
 
-	g := &SentryEd25519Generator{}
-	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, keytypes.SentryComponentEd25519V1, nil)
+	g := &SentryFalcon1024Generator{}
+	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, keytypes.SentryComponentFalcon1024V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom() error = %v", err)
 	}
-	if result.PublicKeyHex == "" {
-		t.Fatal("PublicKeyHex is empty")
+	if len(result.PublicKeyHex) != falconfamily.PublicKeySize*2 {
+		t.Fatalf("PublicKeyHex length = %d, want %d", len(result.PublicKeyHex), falconfamily.PublicKeySize*2)
 	}
 	if !keytypes.IsComponentKeySelector(result.Address) {
 		t.Fatalf("Address = %q, want Sentry Key ID", result.Address)
 	}
 	if result.Address == result.PublicKeyHex {
-		t.Fatal("Address unexpectedly equals public key hex")
+		t.Fatalf("Address unexpectedly equals full Falcon public key hex")
 	}
 	if result.Mnemonic != "" {
 		t.Fatalf("Mnemonic = %q, want empty", result.Mnemonic)
@@ -63,8 +65,8 @@ func TestSentryEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	if info.Category != keys.CategoryComponent {
 		t.Fatalf("scan category = %q, want %q", info.Category, keys.CategoryComponent)
 	}
-	if info.KeyType != keytypes.SentryComponentEd25519V1 {
-		t.Fatalf("scan key type = %q, want %q", info.KeyType, keytypes.SentryComponentEd25519V1)
+	if info.KeyType != keytypes.SentryComponentFalcon1024V1 {
+		t.Fatalf("scan key type = %q, want %q", info.KeyType, keytypes.SentryComponentFalcon1024V1)
 	}
 	if info.PublicKeyHex != result.PublicKeyHex {
 		t.Fatalf("scan public key = %q, want %q", info.PublicKeyHex, result.PublicKeyHex)
@@ -84,8 +86,8 @@ func TestSentryEd25519GenerateRandomScansAndLoads(t *testing.T) {
 	assertComponentMaterial(t, km, result.Address)
 }
 
-func TestSentryEd25519GeneratorRejectsWrongKeyType(t *testing.T) {
-	g := &SentryEd25519Generator{}
+func TestSentryFalcon1024GeneratorRejectsWrongKeyType(t *testing.T) {
+	g := &SentryFalcon1024Generator{}
 	_, err := g.GenerateRandom(context.Background(), storepaths.NewPaths(t.TempDir()), "default", nil, "ed25519", nil)
 	if err == nil {
 		t.Fatal("GenerateRandom() error = nil, want wrong key type rejection")

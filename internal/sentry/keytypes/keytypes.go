@@ -11,8 +11,16 @@ import (
 	"encoding/base32"
 	"fmt"
 	"strings"
+)
 
-	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
+// Falcon-1024 key sizes are fixed by the algorithm specification and define
+// the sentry wire format; they can never change for the v1 key types. They
+// are declared here as literals so this vocabulary package stays free of
+// algorithm-family imports (keytypes_consistency_test.go cross-checks them
+// against lsig/falcon1024/family).
+const (
+	falcon1024PublicKeySize  = 1793
+	falcon1024PrivateKeySize = 2305
 )
 
 const (
@@ -153,7 +161,7 @@ func ComponentPublicKeySize(keyType string) (int, bool) {
 	case SentryComponentEd25519V1:
 		return ed25519.PublicKeySize, true
 	case SentryComponentFalcon1024V1:
-		return falconfamily.PublicKeySize, true
+		return falcon1024PublicKeySize, true
 	default:
 		return 0, false
 	}
@@ -166,7 +174,7 @@ func ComponentPrivateKeySize(keyType string) (int, bool) {
 	case SentryComponentEd25519V1:
 		return ed25519.PrivateKeySize, true
 	case SentryComponentFalcon1024V1:
-		return falconfamily.PrivateKeySize, true
+		return falcon1024PrivateKeySize, true
 	default:
 		return 0, false
 	}

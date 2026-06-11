@@ -38,7 +38,7 @@ func (g *SentryEd25519Generator) GenerateFromSeed(ctx context.Context, paths sto
 	defer securecrypto.ZeroBytes(privateKey)
 	publicKey := privateKey.Public().(ed25519.PublicKey)
 
-	return saveSentryComponentKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
+	return SaveSentryComponentKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
 }
 
 func (g *SentryEd25519Generator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, masterKey []byte, keyType string, params map[string]string) (*GenerationResult, error) {
@@ -64,7 +64,7 @@ func (g *SentryEd25519Generator) GenerateRandom(ctx context.Context, paths store
 	}
 	defer securecrypto.ZeroBytes(privateKey)
 
-	return saveSentryComponentKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
+	return SaveSentryComponentKey(paths, identityID, keyType, publicKey, privateKey, masterKey)
 }
 
 var registerSentryEd25519GeneratorOnce sync.Once

@@ -91,6 +91,59 @@ func TestSignerappExceptionsStayCurrent(t *testing.T) {
 	}
 }
 
+// templateInfraPackages are lsig packages that are template infrastructure
+// rather than concrete DSA families; shared code may import them.
+var templateInfraPackages = map[string]bool{
+	modulePrefix + "/lsig/generictemplate": true,
+	modulePrefix + "/lsig/composeddsa":     true,
+}
+
+// familyImportExceptions are shared packages with a known, tracked dependency
+// on a concrete DSA-family package. Do not add entries to make a build pass;
+// family-specific behavior belongs in the family's lsig tree, registered
+// through the core registries.
+var familyImportExceptions = map[string]string{
+	// The guarded component sign/assemble flow is Falcon-only by design until
+	// family-neutral component ops exist.
+	modulePrefix + "/internal/signerapp/signing": "guarded component flow is falcon-only pending neutral component ops",
+}
+
+// TestSharedPackagesDoNotImportDSAFamilies pins the algorithm-family boundary:
+// core code under internal/ and pkg/ must stay family-agnostic. Concrete
+// family packages (lsig/falcon1024*, lsig/ecdsak1, ...) hook into core through
+// registries (keygen, mnemonic, lsigprovider, component-pair validators), so
+// the production edge points strictly lsig -> internal. Template
+// infrastructure (generictemplate, composeddsa) is exempt; spec-frozen size
+// literals with test-only cross-checks are the sanctioned pattern for
+// vocabulary packages (see internal/sentry/keytypes).
+func TestSharedPackagesDoNotImportDSAFamilies(t *testing.T) {
+	cmd := exec.Command("go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...")
+	cmd.Dir = "../.."
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		pkg := fields[0]
+		if !strings.HasPrefix(pkg, modulePrefix+"/internal/") && !strings.HasPrefix(pkg, modulePrefix+"/pkg") {
+			continue
+		}
+		if _, ok := familyImportExceptions[pkg]; ok {
+			continue
+		}
+		for _, imp := range fields[1:] {
+			if strings.HasPrefix(imp, modulePrefix+"/lsig/") && !templateInfraPackages[imp] {
+				t.Errorf("%s imports %s: core packages must stay algorithm-family-agnostic; register family behavior through the core registries instead", pkg, imp)
+			}
+		}
+	}
+}
+
 func policed(pkg string) bool {
 	switch {
 	case strings.HasPrefix(pkg, modulePrefix+"/internal/signerapp"):

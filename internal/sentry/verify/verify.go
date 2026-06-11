@@ -16,7 +16,6 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/txnutil"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 
 	"github.com/algorand/falcon"
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -56,11 +55,11 @@ func VerifyEd25519(publicKey, message, signature []byte) error {
 
 // VerifyFalcon1024 verifies a user-role Falcon-1024 component signature.
 func VerifyFalcon1024(publicKey, message, signature []byte) error {
-	if len(publicKey) != family.PublicKeySize {
-		return fmt.Errorf("falcon1024 public key length %d invalid (expected %d bytes)", len(publicKey), family.PublicKeySize)
+	if len(publicKey) != falcon1024PublicKeySize {
+		return fmt.Errorf("falcon1024 public key length %d invalid (expected %d bytes)", len(publicKey), falcon1024PublicKeySize)
 	}
-	if len(signature) == 0 || len(signature) > family.MaxSignatureSize {
-		return fmt.Errorf("falcon1024 signature length %d invalid (expected 1..%d bytes)", len(signature), family.MaxSignatureSize)
+	if len(signature) == 0 || len(signature) > falcon1024MaxSignatureSize {
+		return fmt.Errorf("falcon1024 signature length %d invalid (expected 1..%d bytes)", len(signature), falcon1024MaxSignatureSize)
 	}
 
 	var pub falcongo.PublicKey
@@ -202,3 +201,13 @@ func ValidateGroupConsistency(txns []types.Transaction) (types.Digest, error) {
 	}
 	return groupID, nil
 }
+
+// Falcon-1024 sizes are fixed by the algorithm specification; they are
+// declared as literals so this package's only falcon dependencies are the
+// upstream implementation libraries, not the aplane lsig family tree
+// (verify_consistency_test.go cross-checks them against
+// lsig/falcon1024/family).
+const (
+	falcon1024PublicKeySize    = 1793
+	falcon1024MaxSignatureSize = 1280
+)

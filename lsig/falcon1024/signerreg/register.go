@@ -7,7 +7,6 @@ package signerreg
 import (
 	"sync"
 
-	internalkeygen "github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
@@ -28,7 +27,7 @@ func RegisterSigner() {
 		falcon.RegisterClient()
 		falconsigning.RegisterProvider()
 		keygen.RegisterGenerator()
-		internalkeygen.RegisterSentryFalcon1024Generator()
+		keygen.RegisterSentryComponents()
 		keytypecatalog.Register(keytypecatalog.Entry{
 			KeyType:      keytypes.SentryComponentFalcon1024V1,
 			Family:       "sentry-falcon1024",

@@ -4,9 +4,7 @@
 package keystore
 
 import (
-	"bytes"
 	"context"
-	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
 	"maps"
@@ -18,10 +16,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
 // FileKeyStore implements KeyStore using encrypted files on disk
@@ -387,7 +383,7 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 		return nil, fmt.Errorf("invalid sentry private key length: expected %d bytes, got %d", privateKeySize, len(privateKey))
 	}
 
-	if err := validateComponentPublicPrivatePair(keyType, publicKey, privateKey); err != nil {
+	if err := keytypes.ValidateComponentPair(keyType, publicKey, privateKey); err != nil {
 		crypto.ZeroBytes(publicKey)
 		crypto.ZeroBytes(privateKey)
 		return nil, err
@@ -434,30 +430,6 @@ func zeroLoadedKeyMaterialForKeystore(key *signing.KeyMaterial) {
 	}
 	key.Parameters = nil
 	key.SigningArgs = nil
-}
-
-func validateComponentPublicPrivatePair(keyType string, publicKey, privateKey []byte) error {
-	switch keyType {
-	case keytypes.SentryComponentEd25519V1:
-		derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
-		if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
-			return fmt.Errorf("sentry public key does not match private key")
-		}
-		return nil
-	case keytypes.SentryComponentFalcon1024V1:
-		const probe = "APLANE_COMPONENT_KEY_LOAD_V1"
-		signature, err := signerops.New(nil).Sign(privateKey, []byte(probe))
-		if err != nil {
-			return fmt.Errorf("sentry public/private key validation failed: %w", err)
-		}
-		defer crypto.ZeroBytes(signature)
-		if err := verify.VerifyFalcon1024(publicKey, []byte(probe), signature); err != nil {
-			return fmt.Errorf("sentry public key does not match private key")
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported sentry key type: %s", keyType)
-	}
 }
 
 // GetMetadata returns metadata for a single key
