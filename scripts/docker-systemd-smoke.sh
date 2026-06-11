@@ -333,7 +333,8 @@ populate_known_hosts() {
         ' $OPERATOR_ROOT/apclient/endpoints.yaml)
         ssh_port=\${ssh_url##*:}
         [ -n \"\$ssh_port\" ] && [ \"\$ssh_port\" != \"\$ssh_url\" ] || { echo 'could not read primary endpoint SSH port'; exit 1; }
-        printf '[localhost]:%s %s\n' \"\$ssh_port\" '$pub' > $OPERATOR_ROOT/apclient/.ssh/known_hosts && \
+        { printf '[localhost]:%s %s\n' \"\$ssh_port\" '$pub'; \
+          printf '[127.0.0.1]:%s %s\n' \"\$ssh_port\" '$pub'; } > $OPERATOR_ROOT/apclient/.ssh/known_hosts && \
         chmod 600 $OPERATOR_ROOT/apclient/.ssh/known_hosts"
 }
 
@@ -455,24 +456,21 @@ run_stopped_systemd_reinstaller() {
     docker_exec systemctl stop apsigner
 docker_exec_bash "cd /tmp/aplane && expect <<'EXPECT'
 set timeout 180
-set rejected 0
+set completed 0
 spawn env SUDO_USER=$TEST_USER ./install.sh --systemd $OPERATOR_ROOT
 expect {
   \"Proceed with systemd install?*\" { send \"\r\"; exp_continue }
   \"Add apenv.sh to *\" { send \"y\r\"; exp_continue }
-  \"new-install-only\" { set rejected 1; exp_continue }
+  \"=== Installation complete ===\" { set completed 1; exp_continue }
   timeout { exit 17 }
   eof {}
 }
 set result [wait]
 set rc [lindex \$result 3]
-if {\$rejected != 1} {
+if {\$completed != 1} {
   exit 18
 }
-if {\$rc == 0} {
-  exit 19
-}
-exit 0
+exit \$rc
 EXPECT"
 }
 
