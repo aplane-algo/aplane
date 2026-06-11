@@ -575,10 +575,8 @@ classify_local_install() {
     fi
 
     if [ -f "$keystore_file" ]; then
-        echo "Error: existing initialized signer store found at $identity_dir" >&2
-        echo "This release is new-install-only and does not support installing over an existing APlane data directory." >&2
-        echo "Create a fresh install root, or move the existing install aside before running install.sh." >&2
-        exit 1
+        printf '%s\n' "upgrade"
+        return
     fi
 
     if [ -d "$identity_dir" ] && ! dir_is_empty "$identity_dir"; then
@@ -616,9 +614,19 @@ print_local_install_plan() {
     echo "  Install to:  $local_path"
     echo "  Signer:      $signer_dir"
     echo "  Client:      $client_dir"
-    echo "  Signer port: $signer_port"
-    echo "  SSH port:    $ssh_port"
-    echo "  Keystore:    will be initialized"
+    if [ "$mode" = "upgrade" ]; then
+        echo "  Binaries:    will be replaced"
+        echo "  Config:      existing config files will be preserved"
+        echo "  Keystore:    initialized, will be preserved"
+    else
+        echo "  Signer port: $signer_port"
+        echo "  SSH port:    $ssh_port"
+        if [ -f "$keystore_file" ]; then
+            echo "  Keystore:    initialized, will be preserved"
+        else
+            echo "  Keystore:    will be initialized"
+        fi
+    fi
     echo ""
 }
 
@@ -871,7 +879,7 @@ check_local_config_consistency() {
     fi
     echo "Client config still uses legacy signer settings in $client_config."
     echo "apshell now requires $client_endpoints for default signer routing."
-    echo "This release is new-install-only; create a fresh apclient data directory or write $client_endpoints manually."
+    echo "Write $client_endpoints manually (the legacy migrate-config-v1 utility is obsolete and no longer shipped)."
     return 0
 }
 
@@ -2013,11 +2021,15 @@ STARTEOF
     fi
     install_release_metadata "$LOCAL_PATH/install"
 
-    # Initialize keystore
+    # Initialize keystore (skip if already initialized)
     echo ""
     echo "=== Keystore initialization ==="
     echo ""
-    "$SIGNER_BINDIR/apstore" -d "$DATA_DIR" initialize --role "$NODE_ROLE" </dev/tty
+    if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
+        echo "Keystore already initialized; skipping."
+    else
+        "$SIGNER_BINDIR/apstore" -d "$DATA_DIR" initialize --role "$NODE_ROLE" </dev/tty
+    fi
     ensure_policy_integrity_sidecar "$DATA_DIR" "$SIGNER_BINDIR/apstore"
 
     # Configure apshell
@@ -2207,13 +2219,6 @@ if [ -z "$DATA_DIR" ]; then
     echo "Error: could not determine home directory for $SVC_USER" >&2
     exit 1
 fi
-if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
-    echo "Error: existing initialized signer store found at $DATA_DIR/identities/default" >&2
-    echo "This release is new-install-only and does not support installing over an existing APlane data directory." >&2
-    echo "Use a fresh signer data directory before running install.sh --systemd." >&2
-    exit 1
-fi
-
 if [ ! -d "$DATA_DIR" ]; then
     echo "Recreating missing data directory $DATA_DIR..."
 fi
@@ -2302,8 +2307,13 @@ fi
 echo ""
 echo "=== Keystore initialization ==="
 echo ""
-"$BINDIR/apstore" -d "$DATA_DIR" initialize --role "$NODE_ROLE" </dev/tty
-repair_prod_store_lock_permissions "$DATA_DIR"
+if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
+    echo "Keystore already initialized; skipping."
+    repair_prod_store_lock_permissions "$DATA_DIR"
+else
+    "$BINDIR/apstore" -d "$DATA_DIR" initialize --role "$NODE_ROLE" </dev/tty
+    repair_prod_store_lock_permissions "$DATA_DIR"
+fi
 ensure_policy_integrity_sidecar "$DATA_DIR" "$BINDIR/apstore"
 
 # Step 7: Configure apshell for the installing user
