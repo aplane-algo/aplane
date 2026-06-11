@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package tealsubst provides shared TEAL variable substitution utilities.
-// Both generic templates and Falcon DSA compositions use
-// this package for @variable_name substitution in TEAL source.
-package tealsubst
+// Legacy (@variable) textual substitution and restricted list-template
+// expansion, used by legacy- and generated-mode templates. Strict-mode
+// templates use the $symbol constant-block renderer in template.go instead.
+package tealtemplate
 
 import (
 	"fmt"
@@ -14,8 +14,8 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-// variablePattern matches @variable_name in TEAL source.
-var variablePattern = regexp.MustCompile(`@([a-zA-Z_][a-zA-Z0-9_]*)`)
+// legacyVariablePattern matches @variable_name in TEAL source.
+var legacyVariablePattern = regexp.MustCompile(`@([a-zA-Z_][a-zA-Z0-9_]*)`)
 
 // ParamDef holds the name and type of a parameter for TEAL substitution.
 type ParamDef struct {
@@ -27,7 +27,7 @@ type ParamDef struct {
 // Variables are identified by the pattern @variable_name.
 // Returns a sorted list of unique variable names.
 func ExtractVariables(teal string) []string {
-	matches := variablePattern.FindAllStringSubmatch(teal, -1)
+	matches := legacyVariablePattern.FindAllStringSubmatch(teal, -1)
 	seen := make(map[string]bool)
 	var vars []string
 
@@ -60,7 +60,7 @@ func SubstituteVariables(teal string, params map[string]string, paramDefs []Para
 
 	var substituteErr error
 
-	result := variablePattern.ReplaceAllStringFunc(teal, func(match string) string {
+	result := legacyVariablePattern.ReplaceAllStringFunc(teal, func(match string) string {
 		varName := match[1:]
 
 		value, ok := params[varName]

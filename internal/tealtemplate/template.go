@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package tealtemplate renders strict LogicSig templates into TEAL programs
-// with typed creation-time values stored in generated constant blocks.
+// Package tealtemplate owns the TEAL template grammar for all three template
+// modes. Strict mode renders $symbol references into typed generated constant
+// blocks (this file); legacy and generated modes use @variable textual
+// substitution and restricted list-template expansion (legacy.go,
+// legacy_list.go). Mode resolution and validation dispatch live in
+// lsig/generictemplate.ValidateTemplateSpecMode, shared by generic and
+// composed templates.
 package tealtemplate
 
 import (

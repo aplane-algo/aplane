@@ -16,7 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/tealsubst"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 
@@ -361,17 +360,17 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		b.WriteString("\n\n")
 	case generictemplate.TemplateModeLegacy, generictemplate.TemplateModeGenerated:
 		// Optional user-supplied suffix with @variable substitution.
-		paramDefs := make([]tealsubst.ParamDef, len(c.params))
+		paramDefs := make([]tealtemplate.ParamDef, len(c.params))
 		for i, p := range c.params {
-			paramDefs[i] = tealsubst.ParamDef{Name: p.Name, Type: composedTemplateParamType(p.Type)}
+			paramDefs[i] = tealtemplate.ParamDef{Name: p.Name, Type: composedTemplateParamType(p.Type)}
 		}
 
-		expanded, err := tealsubst.ExpandLists(c.tealSuffix, normalizedParams, paramDefs)
+		expanded, err := tealtemplate.ExpandLists(c.tealSuffix, normalizedParams, paramDefs)
 		if err != nil {
 			return "", fmt.Errorf("failed to expand list templates: %w", err)
 		}
 
-		substituted, err := tealsubst.SubstituteVariables(expanded, normalizedParams, paramDefs)
+		substituted, err := tealtemplate.SubstituteVariables(expanded, normalizedParams, paramDefs)
 		if err != nil {
 			return "", fmt.Errorf("failed to substitute variables: %w", err)
 		}
