@@ -6,9 +6,8 @@ package falcon1024ed25519
 import (
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
-	"github.com/aplane-algo/aplane/internal/algorithm"
-	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/lsig/dsafamily"
+
 	falconkeys "github.com/aplane-algo/aplane/lsig/falcon1024/keys"
 )
 
@@ -31,8 +30,14 @@ var (
 
 func RegisterClient() {
 	registerClientOnce.Do(func() {
-		logicsigdsa.Register(NewProviderV1())
-		algorithm.RegisterMetadata(metadata{})
-		addressderive.Register(KeyTypeV1, falconkeys.GetFalconAddressDeriverForType(KeyTypeV1))
+		dsafamily.RegisterClient(dsafamily.ClientRegistration{
+			Family:   FamilyName,
+			Metadata: metadata{},
+			KeyTypes: []dsafamily.KeyType{{
+				KeyType:        KeyTypeV1,
+				DSA:            NewProviderV1(),
+				AddressDeriver: falconkeys.GetFalconAddressDeriverForType(KeyTypeV1),
+			}},
+		})
 	})
 }

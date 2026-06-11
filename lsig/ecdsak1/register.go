@@ -10,8 +10,7 @@ package ecdsak1
 import (
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
-	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/lsig/dsafamily"
 	"github.com/aplane-algo/aplane/lsig/ecdsak1/family"
 	v1 "github.com/aplane-algo/aplane/lsig/ecdsak1/v1"
 	falconkeys "github.com/aplane-algo/aplane/lsig/falcon1024/keys"
@@ -44,8 +43,14 @@ var (
 // RegisterClient wires client-safe ecdsak1 metadata and derivation. Idempotent.
 func RegisterClient() {
 	registerClientOnce.Do(func() {
-		v1.RegisterLogicSigDSA()
-		algorithm.RegisterMetadata(metadata{})
-		addressderive.Register(KeyTypeV1, falconkeys.GetFalconAddressDeriverForType(KeyTypeV1))
+		dsafamily.RegisterClient(dsafamily.ClientRegistration{
+			Family:   FamilyName,
+			Metadata: metadata{},
+			KeyTypes: []dsafamily.KeyType{{
+				KeyType:        KeyTypeV1,
+				DSA:            &v1.ECDSAK1V1{},
+				AddressDeriver: falconkeys.GetFalconAddressDeriverForType(KeyTypeV1),
+			}},
+		})
 	})
 }

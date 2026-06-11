@@ -8,7 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/signing/ed25519"
-	falconsigning "github.com/aplane-algo/aplane/lsig/falcon1024/signing"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
 )
 
@@ -16,7 +16,11 @@ func init() {
 	// Register providers explicitly instead of using blank imports
 	v1.RegisterLogicSigDSA() // Must be called first - falcon signing depends on logicsigdsa.Get()
 	ed25519.RegisterProvider()
-	falconsigning.RegisterProvider()
+	falconOps := signerops.New(nil)
+	signing.Register(signing.NewLogicSigProvider("falcon1024", map[string]signing.LogicSigSignerOps{
+		"falcon1024":           falconOps,
+		"aplane.falcon1024.v1": falconOps,
+	}))
 }
 
 // MockProvider for testing

@@ -44,8 +44,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	"github.com/aplane-algo/aplane/lsig/dsafamily"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
@@ -871,7 +871,7 @@ func registerAddressListImportProvider(t *testing.T) {
 	}
 	if _, err := internalkeygen.GetGenerator(addressListImportKeyType); err != nil {
 		ops := addressListImportProvider{}
-		internalkeygen.Register(falconkeygen.NewFalconGenerator(addressListImportFamily, map[string]falconkeygen.LogicSigKeygenOps{
+		internalkeygen.Register(dsafamily.NewLogicSigGenerator(addressListImportFamily, map[string]dsafamily.LogicSigKeygenOps{
 			addressListImportFamily:  ops,
 			addressListImportKeyType: ops,
 		}))

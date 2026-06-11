@@ -8,14 +8,15 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
-	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/dsafamily"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	falconkeys "github.com/aplane-algo/aplane/lsig/falcon1024/keys"
-	falconsigning "github.com/aplane-algo/aplane/lsig/falcon1024/signing"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
 var registerSignerOnce sync.Once
@@ -24,16 +25,33 @@ var registerSignerOnce sync.Once
 // This is idempotent and safe to call multiple times.
 func RegisterSigner() {
 	registerSignerOnce.Do(func() {
-		falcon.RegisterClient()
-		falconsigning.RegisterProvider()
-		keygen.RegisterGenerator()
-		keygen.RegisterSentryComponents()
-		keytypecatalog.Register(keytypecatalog.Entry{
-			KeyType:      keytypes.SentryComponentFalcon1024V1,
-			Family:       "sentry-falcon1024",
-			Availability: keytypecatalog.AvailabilityDefaultEnabled,
+		signingOps := signerops.New(nil)
+		keygenOps := signerops.New(nil)
+		dsafamily.RegisterSigner(dsafamily.SignerRegistration{
+			RegisterClient: falcon.RegisterClient,
+			SigningProvider: signing.NewLogicSigProvider(family.Name, map[string]signing.LogicSigSignerOps{
+				family.Name:            signingOps,
+				"aplane.falcon1024.v1": signingOps,
+			}),
+			Generators: []dsafamily.GeneratorSpec{{
+				Family: family.Name,
+				Ops: map[string]dsafamily.LogicSigKeygenOps{
+					family.Name:            keygenOps,
+					"aplane.falcon1024.v1": keygenOps,
+				},
+				Mnemonic: bip39impl.NewHandler(family.Name, family.MnemonicWordCount),
+			}},
+			Extra: []func(){
+				keygen.RegisterSentryComponents,
+				func() {
+					keytypecatalog.Register(keytypecatalog.Entry{
+						KeyType:      keytypes.SentryComponentFalcon1024V1,
+						Family:       "sentry-falcon1024",
+						Availability: keytypecatalog.AvailabilityDefaultEnabled,
+					})
+				},
+				falconkeys.RegisterProcessors,
+			},
 		})
-		mnemonic.Register(bip39impl.NewHandler(family.Name, family.MnemonicWordCount))
-		falconkeys.RegisterProcessors()
 	})
 }

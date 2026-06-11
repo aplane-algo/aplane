@@ -6,9 +6,8 @@ package falcon1024guarded
 import (
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
-	"github.com/aplane-algo/aplane/internal/algorithm"
-	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/lsig/dsafamily"
+
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconkeys "github.com/aplane-algo/aplane/lsig/falcon1024/keys"
 )
@@ -33,11 +32,26 @@ var registerClientOnce sync.Once
 
 func RegisterClient() {
 	registerClientOnce.Do(func() {
-		logicsigdsa.Register(NewProviderV1())
-		logicsigdsa.Register(NewFalconSentryProviderV1())
-		algorithm.RegisterMetadata(metadata{family: FamilyName, signatureSize: SignatureSize})
-		algorithm.RegisterMetadata(metadata{family: FamilyNameFalcon1024, signatureSize: SignatureSizeFalcon1024})
-		addressderive.Register(KeyTypeV1, falconkeys.GetFalconAddressDeriverForType(KeyTypeV1))
-		addressderive.Register(KeyTypeFalcon1024V1, falconkeys.GetFalconAddressDeriverForType(KeyTypeFalcon1024V1))
+		// Two single-key-type registrations: the guarded variants have
+		// distinct registry family names, and algorithm metadata is keyed by
+		// family, so each carries its own metadata.
+		dsafamily.RegisterClient(dsafamily.ClientRegistration{
+			Family:   FamilyName,
+			Metadata: metadata{family: FamilyName, signatureSize: SignatureSize},
+			KeyTypes: []dsafamily.KeyType{{
+				KeyType:        KeyTypeV1,
+				DSA:            NewProviderV1(),
+				AddressDeriver: falconkeys.GetFalconAddressDeriverForType(KeyTypeV1),
+			}},
+		})
+		dsafamily.RegisterClient(dsafamily.ClientRegistration{
+			Family:   FamilyNameFalcon1024,
+			Metadata: metadata{family: FamilyNameFalcon1024, signatureSize: SignatureSizeFalcon1024},
+			KeyTypes: []dsafamily.KeyType{{
+				KeyType:        KeyTypeFalcon1024V1,
+				DSA:            NewFalconSentryProviderV1(),
+				AddressDeriver: falconkeys.GetFalconAddressDeriverForType(KeyTypeFalcon1024V1),
+			}},
+		})
 	})
 }

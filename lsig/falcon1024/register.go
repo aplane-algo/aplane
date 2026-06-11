@@ -26,6 +26,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	"github.com/aplane-algo/aplane/lsig/dsafamily"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconkeys "github.com/aplane-algo/aplane/lsig/falcon1024/keys"
 	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
@@ -44,17 +45,25 @@ var (
 // - Pure address derivation
 func RegisterClient() {
 	registerClientOnce.Do(func() {
-		v1.RegisterLogicSigDSA()
-		composeddsa.RegisterBase(composeddsa.BaseRegistration{
-			BaseKeyType: "aplane.falcon1024.v1",
-			FamilyName:  family.Name,
-			Version:     1,
-			Ops:         v1.NewFalconOps(family.FalconBase),
-			NewAddressDeriver: func(templateKeyType string) addressderive.Deriver {
-				return falconkeys.GetFalconAddressDeriverForType(templateKeyType)
-			},
+		dsafamily.RegisterClient(dsafamily.ClientRegistration{
+			Family:   family.Name,
+			Metadata: &FalconMetadata{},
+			KeyTypes: []dsafamily.KeyType{{
+				KeyType:        "aplane.falcon1024.v1",
+				DSA:            &v1.Falcon1024V1{},
+				AddressDeriver: falconkeys.GetFalconAddressDeriverForType("aplane.falcon1024.v1"),
+			}},
+			Extra: []func(){func() {
+				composeddsa.RegisterBase(composeddsa.BaseRegistration{
+					BaseKeyType: "aplane.falcon1024.v1",
+					FamilyName:  family.Name,
+					Version:     1,
+					Ops:         v1.NewFalconOps(family.FalconBase),
+					NewAddressDeriver: func(templateKeyType string) addressderive.Deriver {
+						return falconkeys.GetFalconAddressDeriverForType(templateKeyType)
+					},
+				})
+			}},
 		})
-		RegisterMetadata()
-		falconkeys.RegisterAddressDerivers()
 	})
 }

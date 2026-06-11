@@ -8,31 +8,40 @@ package signerreg
 import (
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/keygen"
-	"github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
+	"github.com/aplane-algo/aplane/lsig/dsafamily"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 )
 
 var registerSignerOnce sync.Once
 
+// RegisterSigner wires guarded-account signer-side registry entries. The
+// guarded key types are pure LogicSig accounts (no transaction-signing
+// provider); their generators are registered under the key-type names, so
+// their BIP-39 mnemonic handlers are too.
 func RegisterSigner() {
 	registerSignerOnce.Do(func() {
-		falcon1024guarded.RegisterClient()
 		ops := signerops.New(nil)
-		keygen.Register(falconkeygen.NewFalconGenerator(falcon1024guarded.KeyTypeV1, map[string]falconkeygen.LogicSigKeygenOps{
-			falcon1024guarded.KeyTypeV1: ops,
-		}))
-		keygen.Register(falconkeygen.NewFalconGenerator(falcon1024guarded.KeyTypeFalcon1024V1, map[string]falconkeygen.LogicSigKeygenOps{
-			falcon1024guarded.KeyTypeFalcon1024V1: ops,
-		}))
-		// The guarded generators are registered under their key-type names,
-		// so their BIP-39 mnemonic handlers are too: the generator resolves
-		// its handler by its registered family string.
-		mnemonic.Register(bip39impl.NewHandler(falcon1024guarded.KeyTypeV1, family.MnemonicWordCount))
-		mnemonic.Register(bip39impl.NewHandler(falcon1024guarded.KeyTypeFalcon1024V1, family.MnemonicWordCount))
+		dsafamily.RegisterSigner(dsafamily.SignerRegistration{
+			RegisterClient: falcon1024guarded.RegisterClient,
+			Generators: []dsafamily.GeneratorSpec{
+				{
+					Family: falcon1024guarded.KeyTypeV1,
+					Ops: map[string]dsafamily.LogicSigKeygenOps{
+						falcon1024guarded.KeyTypeV1: ops,
+					},
+					Mnemonic: bip39impl.NewHandler(falcon1024guarded.KeyTypeV1, family.MnemonicWordCount),
+				},
+				{
+					Family: falcon1024guarded.KeyTypeFalcon1024V1,
+					Ops: map[string]dsafamily.LogicSigKeygenOps{
+						falcon1024guarded.KeyTypeFalcon1024V1: ops,
+					},
+					Mnemonic: bip39impl.NewHandler(falcon1024guarded.KeyTypeFalcon1024V1, family.MnemonicWordCount),
+				},
+			},
+		})
 	})
 }

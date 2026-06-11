@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package keygen
+package dsafamily
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	keygenreg "github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -21,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1/reference"
 
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
@@ -34,7 +36,10 @@ func init() {
 		logicsigdsa.Register(&testFalcon1024V1{})
 	}
 	// Also register the generator now that it's needed
-	RegisterGenerator()
+	keygenreg.Register(NewLogicSigGenerator("falcon1024", map[string]LogicSigKeygenOps{
+		"falcon1024":           signerops.New(nil),
+		"aplane.falcon1024.v1": signerops.New(nil),
+	}))
 }
 
 // testFalcon1024V1 is a minimal DSA implementation for tests.
@@ -151,9 +156,9 @@ var testMasterKey = []byte("test-master-key-32-bytes-long!!!")
 
 const testIdentityID = "test-identity"
 
-func newTestGenerator() *FalconGenerator {
+func newTestGenerator() *LogicSigGenerator {
 	ops := &testFalcon1024V1{}
-	return NewFalconGenerator("falcon1024", map[string]LogicSigKeygenOps{
+	return NewLogicSigGenerator("falcon1024", map[string]LogicSigKeygenOps{
 		"falcon1024":           ops,
 		"aplane.falcon1024.v1": ops,
 	})
@@ -169,8 +174,8 @@ func setupTestKeystore(t *testing.T) (utilkeys.Paths, func()) {
 	}
 }
 
-// TestFalconGeneratorKeyType verifies the key type identifier
-func TestFalconGeneratorKeyType(t *testing.T) {
+// TestLogicSigGeneratorKeyType verifies the key type identifier
+func TestLogicSigGeneratorKeyType(t *testing.T) {
 	generator := newTestGenerator()
 
 	if generator.Family() != "falcon1024" {

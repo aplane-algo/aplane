@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package keygen
+package dsafamily
 
 import (
 	"context"
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keygen"
@@ -17,7 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/storepaths"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
 // LogicSigKeygenOps defines signer-side key generation for a versioned LogicSig key type.
@@ -29,36 +27,38 @@ type baseKeyTypeProvider interface {
 	BaseKeyType() string
 }
 
-// FalconGenerator implements Generator for Falcon-1024 keys.
-// The family can be overridden to allow alias registrations (e.g., hybrid families).
-type FalconGenerator struct {
+// LogicSigGenerator implements keygen.Generator for LogicSig-backed DSA
+// families. It is family-neutral: keypair generation dispatches through the
+// per-key-type ops map and mnemonic/seed derivation through the family's
+// registered mnemonic handler.
+type LogicSigGenerator struct {
 	family          string
 	keygenOpsByType map[string]LogicSigKeygenOps
 }
 
-// NewFalconGenerator returns a Falcon generator for the specified family.
-func NewFalconGenerator(family string, keygenOpsByType map[string]LogicSigKeygenOps) *FalconGenerator {
+// NewLogicSigGenerator returns a generator for the specified family.
+func NewLogicSigGenerator(family string, keygenOpsByType map[string]LogicSigKeygenOps) *LogicSigGenerator {
+	if family == "" {
+		panic("LogicSigGenerator requires a family name")
+	}
 	if len(keygenOpsByType) == 0 {
-		panic("FalconGenerator requires keygen ops")
+		panic("LogicSigGenerator requires keygen ops")
 	}
 	opsCopy := make(map[string]LogicSigKeygenOps, len(keygenOpsByType))
 	for keyType, ops := range keygenOpsByType {
 		if ops == nil {
-			panic("FalconGenerator got nil keygen ops for key type: " + keyType)
+			panic("LogicSigGenerator got nil keygen ops for key type: " + keyType)
 		}
 		opsCopy[keyType] = ops
 	}
-	return &FalconGenerator{
+	return &LogicSigGenerator{
 		family:          family,
 		keygenOpsByType: opsCopy,
 	}
 }
 
 // Family returns the algorithm family this generator supports
-func (g *FalconGenerator) Family() string {
-	if g.family == "" {
-		return "falcon1024"
-	}
+func (g *LogicSigGenerator) Family() string {
 	return g.family
 }
 
@@ -73,7 +73,7 @@ type keygenOpts struct {
 // generateKey is the internal helper that handles the common keygen logic:
 // keypair generation, LSig derivation, key file saving, and result building.
 // All sensitive data (seed, priv) is zeroed by this function.
-func (g *FalconGenerator) generateKey(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string, opts *keygenOpts) (*keygen.GenerationResult, error) {
+func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string, opts *keygenOpts) (*keygen.GenerationResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -191,7 +191,7 @@ func deriveSaltedLogicSig(ctx context.Context, dsa logicsigdsa.LogicSigDSA, publ
 
 // GenerateFromSeed generates a Falcon key from a deterministic seed.
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
-func (g *FalconGenerator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
+func (g *LogicSigGenerator) GenerateFromSeed(ctx context.Context, paths storepaths.Paths, identityID string, seed []byte, masterKey []byte, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
 	// Make a copy of seed since generateKey will zero it
 	seedCopy := make([]byte, len(seed))
 	copy(seedCopy, seed)
@@ -203,7 +203,7 @@ func (g *FalconGenerator) GenerateFromSeed(ctx context.Context, paths storepaths
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
 // Seed and entropy derivation route through the family's registered mnemonic
 // handler so families with a non-BIP-39 scheme derive correctly.
-func (g *FalconGenerator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, masterKey []byte, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
+func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, masterKey []byte, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
 	handler, err := mnemonicreg.GetHandler(g.Family())
 	if err != nil {
 		return nil, err
@@ -234,7 +234,7 @@ func (g *FalconGenerator) GenerateFromMnemonic(ctx context.Context, paths storep
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
 // Mnemonic, seed, and entropy come from the family's registered mnemonic
 // handler so families with a non-BIP-39 scheme derive correctly.
-func (g *FalconGenerator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
+func (g *LogicSigGenerator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
 	handler, err := mnemonicreg.GetHandler(g.Family())
 	if err != nil {
 		return nil, err
@@ -250,19 +250,5 @@ func (g *FalconGenerator) GenerateRandom(ctx context.Context, paths storepaths.P
 		entropy:    entropy,
 		mnemonic:   mnemonic,
 		derivation: "bip39-standard",
-	})
-}
-
-var registerGeneratorOnce sync.Once
-
-// RegisterGenerator registers the Falcon key generator with the keygen registry.
-// This is idempotent and safe to call multiple times.
-func RegisterGenerator() {
-	registerGeneratorOnce.Do(func() {
-		ops := signerops.New(nil)
-		keygen.Register(NewFalconGenerator("falcon1024", map[string]LogicSigKeygenOps{
-			"falcon1024":           ops,
-			"aplane.falcon1024.v1": ops,
-		}))
 	})
 }

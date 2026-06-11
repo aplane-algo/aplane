@@ -89,11 +89,15 @@ func (f *testFalcon1024V1) Sign(privateKey []byte, message []byte) ([]byte, erro
 
 func init() {
 	// Register Falcon LogicSigDSA and signing provider for tests
-	// Uses local test implementation to avoid import cycle
+	// Uses local test implementation to avoid import cycle. Production
+	// registration moved to the lsig/falcon1024/signerreg descriptor; this
+	// package now only hosts the provider behavior tests.
 	if logicsigdsa.Get("aplane.falcon1024.v1") == nil {
 		logicsigdsa.Register(&testFalcon1024V1{})
 	}
-	RegisterProvider()
+	if signing.GetProvider("falcon1024") == nil {
+		signing.Register(newTestProvider())
+	}
 }
 
 func newTestProvider() *signing.LogicSigProvider {

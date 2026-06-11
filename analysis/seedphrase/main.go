@@ -44,7 +44,7 @@ var exemptFiles = map[string]string{
 	"internal/mnemonic/ed25519_test.go":           "tests mnemonic encoding/decoding",
 	"internal/mnemonic/bip39impl/bip39_test.go":   "tests BIP-39 mnemonic handling (shared across Falcon, Falcon+Ed25519, and ecdsak1)",
 	"internal/keygen/ed25519_test.go":             "tests key generation from mnemonics",
-	"lsig/falcon1024/keygen/generator_test.go":    "tests key generation from mnemonics",
+	"lsig/dsafamily/generator_test.go":            "tests key generation from mnemonics",
 	"test/integration/":                           "integration tests may use test mnemonics",
 	"cmd/apsigner/ipc_import_cache_test.go":       "tests IPC import caching with test mnemonic",
 	"internal/signerapp/storemut/service_test.go": "tests store mutation with test mnemonic",
