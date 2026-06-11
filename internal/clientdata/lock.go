@@ -4,9 +4,12 @@
 package clientdata
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"sync"
 	"syscall"
 )
@@ -14,25 +17,38 @@ import (
 const lockFileName = ".apclient.lock"
 
 var (
-	lockMu     sync.Mutex
-	lockStates = make(map[string]bool)
-	lockCond   = sync.NewCond(&lockMu)
+	lockMu sync.Mutex
+	// lockHolders maps a held dataDir to the goroutine that holds it, so a
+	// nested acquisition by the same goroutine fails loudly instead of
+	// deadlocking on the condition variable (and then on the flock).
+	lockHolders = make(map[string]uint64)
+	lockCond    = sync.NewCond(&lockMu)
 )
 
 // WithExclusiveLock serializes mutations to shared APCLIENT_DATA state.
 // The lock is advisory and only effective for writers that participate.
-// Nested acquisition by the same goroutine is not supported; callers that already
-// hold the lock must avoid lock-taking helpers beneath them.
+// The lock is not reentrant: a caller that already holds it must use the
+// *Locked variants of the cache mutators beneath it. Nested acquisition by
+// the same goroutine returns an error instead of self-deadlocking.
 func WithExclusiveLock(dataDir string, fn func() error) error {
 	if dataDir == "" {
 		return fmt.Errorf("client data directory not set")
 	}
 
+	gid := goroutineID()
 	lockMu.Lock()
-	for lockStates[dataDir] {
+	for {
+		holder, held := lockHolders[dataDir]
+		if !held {
+			break
+		}
+		if holder == gid {
+			lockMu.Unlock()
+			return fmt.Errorf("nested WithExclusiveLock for %s on the same goroutine: callers already holding the lock must use the *Locked variants", dataDir)
+		}
 		lockCond.Wait()
 	}
-	lockStates[dataDir] = true
+	lockHolders[dataDir] = gid
 	lockMu.Unlock()
 	defer releaseExclusiveLock(dataDir)
 
@@ -60,6 +76,22 @@ func WithExclusiveLock(dataDir string, fn func() error) error {
 func releaseExclusiveLock(dataDir string) {
 	lockMu.Lock()
 	defer lockMu.Unlock()
-	delete(lockStates, dataDir)
+	delete(lockHolders, dataDir)
 	lockCond.Broadcast()
+}
+
+// goroutineID extracts the current goroutine's id from its stack header
+// ("goroutine N [..."). The format has been stable across Go releases and is
+// used only to detect nested acquisition, never for correctness of the lock
+// itself.
+func goroutineID() uint64 {
+	buf := make([]byte, 64)
+	buf = buf[:runtime.Stack(buf, false)]
+	buf = bytes.TrimPrefix(buf, []byte("goroutine "))
+	if i := bytes.IndexByte(buf, ' '); i > 0 {
+		if id, err := strconv.ParseUint(string(buf[:i]), 10, 64); err == nil {
+			return id
+		}
+	}
+	return 0
 }

@@ -67,6 +67,18 @@ func RegisterIfAbsent(p LSigProvider) bool {
 	return true
 }
 
+// Unregister removes a provider from the registry, reporting whether it was
+// present. It exists for the template removal and failed-install rollback
+// paths, which delete the template's files and records and must also release
+// the process-global key-type name so a corrected template can be installed
+// without restarting the daemon. Compiled family providers must never be
+// unregistered; callers pass key types read from installed-template records.
+func Unregister(keyType string) bool {
+	registerMu.Lock()
+	defer registerMu.Unlock()
+	return providers.Delete(normalize(strings.TrimSpace(keyType)))
+}
+
 // Get retrieves an LSigProvider by its key type.
 // Input is normalized to lowercase.
 // Returns nil if not found.

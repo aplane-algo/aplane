@@ -111,3 +111,59 @@ func TestWithExclusiveLockAllowsIndependentDirs(t *testing.T) {
 	close(release)
 	wg.Wait()
 }
+
+// TestWithExclusiveLockRejectsNestedAcquisition pins the loud-failure
+// behavior: re-acquiring the lock on the same goroutine returns an error
+// instead of self-deadlocking, while other goroutines still wait normally.
+func TestWithExclusiveLockRejectsNestedAcquisition(t *testing.T) {
+	dir := t.TempDir()
+	var nestedErr error
+	err := WithExclusiveLock(dir, func() error {
+		nestedErr = WithExclusiveLock(dir, func() error { return nil })
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("outer WithExclusiveLock error = %v", err)
+	}
+	if nestedErr == nil {
+		t.Fatal("nested WithExclusiveLock succeeded, want loud error")
+	}
+}
+
+// TestWithExclusiveLockStillBlocksOtherGoroutines verifies the nested-detect
+// change did not weaken cross-goroutine exclusion.
+func TestWithExclusiveLockStillBlocksOtherGoroutines(t *testing.T) {
+	dir := t.TempDir()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+
+	go func() {
+		done <- WithExclusiveLock(dir, func() error {
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	<-entered
+
+	second := make(chan error, 1)
+	go func() {
+		second <- WithExclusiveLock(dir, func() error { return nil })
+	}()
+
+	select {
+	case err := <-second:
+		t.Fatalf("second acquisition completed while first held: %v", err)
+	case <-time.After(100 * time.Millisecond):
+		// Correctly blocked.
+	}
+
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("first WithExclusiveLock error = %v", err)
+	}
+	if err := <-second; err != nil {
+		t.Fatalf("second WithExclusiveLock error = %v", err)
+	}
+}

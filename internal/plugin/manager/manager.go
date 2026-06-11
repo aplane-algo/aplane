@@ -11,7 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
@@ -31,19 +31,9 @@ type Instance struct {
 	Client  *jsonrpc.Client
 	Started time.Time
 
-	lastUsed atomic.Int64
-
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
 	stderr io.ReadCloser
-}
-
-func (i *Instance) touch() {
-	i.lastUsed.Store(time.Now().UnixNano())
-}
-
-func (i *Instance) lastUsedTime() time.Time {
-	return time.Unix(0, i.lastUsed.Load())
 }
 
 // Manager manages external plugin instances
@@ -279,7 +269,7 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 	// Check if already running (read lock)
 	m.mu.RLock()
 	if inst, ok := m.instances[pluginName]; ok {
-		inst.touch()
+
 		m.mu.RUnlock()
 		return inst, nil
 	}
@@ -303,7 +293,7 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 	// through m.stderr(), which also reads manager state.
 	m.mu.Lock()
 	if inst, ok := m.instances[pluginName]; ok {
-		inst.touch()
+
 		m.mu.Unlock()
 		return inst, nil
 	}
@@ -328,7 +318,7 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 
 	m.mu.Lock()
 	if inst, ok := m.instances[pluginName]; ok {
-		inst.touch()
+
 		m.mu.Unlock()
 		instance.Stop()
 		return inst, nil
@@ -475,8 +465,6 @@ func (m *Manager) ExecuteCommand(pluginName, command string, args []string, cont
 		return nil, err
 	}
 
-	instance.touch()
-
 	params := jsonrpc.ExecuteParams{
 		Command: command,
 		Args:    args,
@@ -553,24 +541,6 @@ func (m *Manager) GetRunningPlugins() []string {
 	return names
 }
 
-// CleanupIdlePlugins stops plugins that haven't been used recently
-func (m *Manager) CleanupIdlePlugins(idleTimeout time.Duration) {
-	m.mu.Lock()
-	now := time.Now()
-	var idle []*Instance
-	for name, instance := range m.instances {
-		if now.Sub(instance.lastUsedTime()) > idleTimeout {
-			idle = append(idle, instance)
-			delete(m.instances, name)
-		}
-	}
-	m.mu.Unlock()
-
-	for _, instance := range idle {
-		stopInstance(instance)
-	}
-}
-
 func stopInstance(instance *Instance) {
 	if instance.Client != nil {
 		var result jsonrpc.ShutdownResult
@@ -608,12 +578,12 @@ func (i *Instance) Stop() {
 	i.Client.Close()
 }
 
-// IsRunning checks if the plugin process is still running
+// IsRunning checks if the plugin process is still running. It probes the
+// process with signal 0 rather than reading Process.ProcessState, which is
+// written by the Wait call in Stop and would race concurrent stops.
 func (i *Instance) IsRunning() bool {
 	if i.Process == nil || i.Process.Process == nil {
 		return false
 	}
-
-	// Check if process is still alive
-	return i.Process.ProcessState == nil
+	return i.Process.Process.Signal(syscall.Signal(0)) == nil
 }

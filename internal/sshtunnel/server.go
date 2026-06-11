@@ -787,11 +787,23 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	}
 	connectedLogged = true
 
-	// Handle global requests (including keepalives from client)
-	go s.handleGlobalRequests(reqs)
+	// Handle global requests (including keepalives from client).
+	// Every per-connection goroutine joins activeConns so Stop's wait covers
+	// them; otherwise channel handlers could outlive shutdown into the
+	// daemon's key-zeroing teardown. The Adds happen while this handler's own
+	// activeConns slot is held, so they cannot race a concurrent Wait.
+	s.activeConns.Add(1)
+	go func() {
+		defer s.activeConns.Done()
+		s.handleGlobalRequests(reqs)
+	}()
 
 	// Start server-side keepalive monitor to detect dead clients
-	go s.monitorClientConnection(sshConn, remoteAddr, keepaliveDone)
+	s.activeConns.Add(1)
+	go func() {
+		defer s.activeConns.Done()
+		s.monitorClientConnection(sshConn, remoteAddr, keepaliveDone)
+	}()
 
 	connCtx, cancelConnCtx := context.WithCancel(context.Background())
 	defer cancelConnCtx()
@@ -800,15 +812,27 @@ func (s *Server) handleConnection(netConn net.Conn) {
 	for newChannel := range chans {
 		if isTokenProvisioning {
 			// Token provisioning mode: handle session channels for exec
-			go s.handleTokenProvisioningChannel(connCtx, sshConn, newChannel)
+			s.activeConns.Add(1)
+			go func(ch ssh.NewChannel) {
+				defer s.activeConns.Done()
+				s.handleTokenProvisioningChannel(connCtx, sshConn, ch)
+			}(newChannel)
 			continue
 		}
 
 		switch newChannel.ChannelType() {
 		case "direct-tcpip":
-			go s.handleChannel(newChannel)
+			s.activeConns.Add(1)
+			go func(ch ssh.NewChannel) {
+				defer s.activeConns.Done()
+				s.handleChannel(ch)
+			}(newChannel)
 		case "session":
-			go s.handleSessionChannel(sshConn, newChannel)
+			s.activeConns.Add(1)
+			go func(ch ssh.NewChannel) {
+				defer s.activeConns.Done()
+				s.handleSessionChannel(sshConn, ch)
+			}(newChannel)
 		default:
 			if err := newChannel.Reject(ssh.UnknownChannelType, "unsupported channel type"); err != nil && !isClosedConnError(err) {
 				fmt.Printf("Failed to reject SSH channel: %v\n", err)

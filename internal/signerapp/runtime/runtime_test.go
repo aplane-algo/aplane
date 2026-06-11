@@ -86,3 +86,45 @@ func TestTryUnlockSuccessUnlocksAndCallsOnUnlocked(t *testing.T) {
 		t.Fatalf("onUnlocked calls after successful unlock = %d, want 1", got)
 	}
 }
+
+// TestTryUnlockLosesToRacingLock pins the lock-wins semantics: a Lock that
+// lands while the unlock function is running must leave the runtime locked,
+// re-run the lock callback to destroy whatever the unlock loaded, and fail
+// the unlock.
+func TestTryUnlockLosesToRacingLock(t *testing.T) {
+	r := New()
+	lockCalls := 0
+	r.SetOnLock(func() { lockCalls++ })
+	r.SetUnlocked() // so the racing Lock takes the unlocked->locked path
+
+	ok, _, errMsg := r.TryUnlock(func() (int, error) {
+		r.Lock() // races the in-flight unlock
+		return 3, nil
+	}, nil)
+
+	if ok {
+		t.Fatal("TryUnlock succeeded despite racing Lock")
+	}
+	if errMsg == "" {
+		t.Fatal("TryUnlock returned no error message")
+	}
+	if r.GetState() != SignerStateLocked {
+		t.Fatalf("state = %v, want locked", r.GetState())
+	}
+	// Once for the racing Lock, once for the rollback of the loaded session.
+	if lockCalls != 2 {
+		t.Fatalf("lock callback ran %d times, want 2", lockCalls)
+	}
+}
+
+// TestTryUnlockSucceedsWithoutRacingLock pins the happy path.
+func TestTryUnlockSucceedsWithoutRacingLock(t *testing.T) {
+	r := New()
+	ok, keyCount, errMsg := r.TryUnlock(func() (int, error) { return 5, nil }, nil)
+	if !ok || keyCount != 5 || errMsg != "" {
+		t.Fatalf("TryUnlock = (%v, %d, %q), want (true, 5, \"\")", ok, keyCount, errMsg)
+	}
+	if r.GetState() != SignerStateUnlocked {
+		t.Fatalf("state = %v, want unlocked", r.GetState())
+	}
+}

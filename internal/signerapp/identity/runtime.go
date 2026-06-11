@@ -92,10 +92,11 @@ type Runtime struct {
 	keysetRev    atomic.Uint64     // Process-local revision of the published key snapshot.
 	keysLock     sync.RWMutex
 
-	watcherCancel context.CancelFunc
-	watcherMu     sync.Mutex
-	dirty         bool // Filesystem changes detected while locked; reconcile on next unlock
-	reloadLock    func() sync.Locker
+	watcherCancel   context.CancelFunc
+	watcherMu       sync.Mutex
+	watcherStarting bool // A watcher start is in flight; prevents duplicate starts
+	dirty           bool // Filesystem changes detected while locked; reconcile on next unlock
+	reloadLock      func() sync.Locker
 
 	approval              atomic.Pointer[signerapproval.Coordinator]
 	authenticator         auth.Authenticator
@@ -809,10 +810,17 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	ir.watcherMu.Lock()
 	wasDirty := ir.dirty
 	ir.dirty = false
-	alreadyRunning := ir.watcherCancel != nil
+	// Claim the start under the same critical section as the running check so
+	// two concurrent callers cannot both start a watcher (the loser used to
+	// leak its fsnotify watcher when the winner's cancel was overwritten).
+	alreadyRunning := ir.watcherCancel != nil || ir.watcherStarting
+	if !alreadyRunning {
+		ir.watcherStarting = true
+	}
 	ir.watcherMu.Unlock()
 
-	// Reconcile any changes that accumulated while locked
+	// Reconcile any changes that accumulated while locked. This takes the
+	// reload lock, so it must run outside watcherMu.
 	if wasDirty {
 		ir.reconcileDirty()
 	}
@@ -843,12 +851,22 @@ func (ir *Runtime) EnsureKeyWatcher(startFn WatcherStartFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := startFn(dirs, ctx, reloadOrDirty); err != nil {
 		cancel()
+		ir.watcherMu.Lock()
+		ir.watcherStarting = false
+		ir.watcherMu.Unlock()
 		fmt.Printf("⚠️  Warning: Failed to start file watcher: %v\n", err)
 		fmt.Println("Keys will not auto-reload when filesystem changes")
 		return
 	}
 
 	ir.watcherMu.Lock()
+	ir.watcherStarting = false
+	if ir.decommissioned.Load() {
+		// Decommissioned while starting; do not leave a watcher running.
+		ir.watcherMu.Unlock()
+		cancel()
+		return
+	}
 	ir.watcherCancel = cancel
 	ir.watcherMu.Unlock()
 }

@@ -60,7 +60,11 @@ func NewFileKeyStoreForPaths(paths storepaths.Paths, identityID string) *FileKey
 // This should be called before Scan() when you need the master key early
 // (e.g., for template scanning that happens before key scanning).
 // Returns the master key for external use (e.g., template scanning).
-// Caller should NOT zero the returned key - it's owned by FileKeyStore.
+// Caller should NOT zero the returned key - it's owned by FileKeyStore, and
+// a concurrent lock (identity.Runtime.performLock under passphraseLock)
+// zeroes it via ClearMasterKey. The returned slice is therefore only valid
+// while the caller holds whatever lock serializes it against locking - in
+// the daemon that is identity.Runtime's passphraseLock.
 func (f *FileKeyStore) InitializeMasterKey(passphrase []byte) ([]byte, error) {
 	// The .keystore metadata is in the identity directory (identities/<identityID>/).
 	keystoreRoot := f.paths.KeystoreMetadataDir(f.identityID)

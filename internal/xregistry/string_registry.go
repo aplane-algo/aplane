@@ -36,6 +36,17 @@ func (r *StringRegistry[V]) Get(key string) (V, bool) {
 	return v, ok
 }
 
+// Delete removes the entry for key, reporting whether it was present.
+func (r *StringRegistry[V]) Delete(key string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.items[key]; !ok {
+		return false
+	}
+	delete(r.items, key)
+	return true
+}
+
 func (r *StringRegistry[V]) Has(key string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
