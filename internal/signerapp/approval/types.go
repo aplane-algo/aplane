@@ -3,13 +3,13 @@
 
 package approval
 
-const (
-	// SignRequestCancelReasonClientCanceled means the original signing requester
-	// disconnected or canceled its request before approval completed.
-	SignRequestCancelReasonClientCanceled = "client_canceled"
+import "github.com/aplane-algo/aplane/internal/protocol"
 
-	// SignRequestCancelReasonTimeout means apsigner's approval wait expired.
-	SignRequestCancelReasonTimeout = "timeout"
+// Cancellation reasons are wire values owned by internal/protocol; the
+// aliases keep this package's API stable for coordinator callers.
+const (
+	SignRequestCancelReasonClientCanceled = protocol.SignRequestCancelReasonClientCanceled
+	SignRequestCancelReasonTimeout        = protocol.SignRequestCancelReasonTimeout
 )
 
 // SignRequestCancelState describes the result of a sign-request cancellation.

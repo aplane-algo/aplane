@@ -7,16 +7,11 @@ package tui
 // View-specific handlers are in update_*.go files.
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/protocol"
-	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
-	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/theme"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -102,12 +97,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AuthResultMsg:
 		m.loggingIn = false
 		if msg.Success {
-			// Authentication successful - load runtime templates using master key
-			if m.passphraseInput != "" && m.dataDir != "" {
-				m.loadRuntimeTemplates([]byte(m.passphraseInput))
-				m.setTemplateWarning()
-			}
-			// Server will send signer status next
+			// Server will send signer status next; key-type and template
+			// information arrives via the admin protocol (ListKeyTypes).
 			m.passphraseError = ""
 			m.passphraseInput = ""
 			m.resetActivityState()
@@ -162,11 +153,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case UnlockResultMsg:
 		m.loggingIn = false
 		if msg.Success {
-			// Load runtime templates using master key
-			if m.passphraseInput != "" && m.dataDir != "" {
-				m.loadRuntimeTemplates([]byte(m.passphraseInput))
-				m.setTemplateWarning()
-			}
 			m.applySignerUnlockedState(msg.KeyCount)
 			m.passphraseError = ""
 			m.passphraseInput = ""
@@ -762,51 +748,4 @@ func isSeriousUnlockError(code, message string) bool {
 		strings.Contains(text, "reload pre-scan hook failed") ||
 		strings.Contains(text, "policy integrity") ||
 		strings.Contains(text, "hmac mismatch")
-}
-
-// loadRuntimeTemplates loads runtime templates from the keystore using the master key.
-// This is needed to recognize generic LogicSig key types (e.g., htlc-v3, timelock-v3)
-// and Falcon-1024 DSA composition templates (e.g., falcon1024-timedlock-v1).
-func (m *Model) loadRuntimeTemplates(passphrase []byte) {
-	// Reset template warnings for this load attempt
-	m.templateLoadWarnings = nil
-	m.clearWarning()
-
-	// Create a keystore to derive the master key using configured keystore path
-	paths := storepaths.NewPaths(m.dataDir)
-	ks := keystore.NewFileKeyStoreForPaths(paths, auth.CurrentProductIdentityID())
-
-	// Initialize master key (verifies passphrase and derives key from metadata salt)
-	masterKey, err := ks.InitializeMasterKey(passphrase)
-	if err != nil {
-		// Can't load templates without master key - this is expected if keystore
-		// metadata is missing or passphrase verification failed
-		return
-	}
-
-	manager := signertemplates.NewManager(paths)
-	report, err := manager.RegisterKeystoreTemplates(auth.CurrentProductIdentityID(), masterKey)
-	if err != nil {
-		m.templateLoadWarnings = append(m.templateLoadWarnings, fmt.Sprintf("Failed to load templates: %v", err))
-		return
-	}
-	m.templateLoadWarnings = append(m.templateLoadWarnings, report.Warnings()...)
-}
-
-// setTemplateWarning sets lastWarning if any template load warnings were collected.
-func (m *Model) setTemplateWarning() {
-	if warning := templateLoadWarningSummary(m.templateLoadWarnings); warning != "" {
-		m.setPersistentWarning(warning)
-	}
-}
-
-func templateLoadWarningSummary(warnings []string) string {
-	switch len(warnings) {
-	case 0:
-		return ""
-	case 1:
-		return warnings[0]
-	default:
-		return fmt.Sprintf("%d template(s) failed to load: %s (+%d more)", len(warnings), warnings[0], len(warnings)-1)
-	}
 }

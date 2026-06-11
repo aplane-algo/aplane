@@ -5,9 +5,9 @@ package tui
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"strings"
 
-	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -49,9 +49,9 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func signRequestCanceledWarning(reason string) string {
 	switch reason {
-	case signerapproval.SignRequestCancelReasonClientCanceled:
+	case protocol.SignRequestCancelReasonClientCanceled:
 		return "Signing request canceled by requester"
-	case signerapproval.SignRequestCancelReasonTimeout:
+	case protocol.SignRequestCancelReasonTimeout:
 		return "Signing request timed out"
 	case "":
 		return "Signing request canceled"

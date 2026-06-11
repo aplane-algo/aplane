@@ -279,7 +279,6 @@ type Model struct {
 	lastWarningGeneration uint64
 
 	// Template load warnings (collected during unlock)
-	templateLoadWarnings []string
 
 	// Screen dimensions
 	width  int

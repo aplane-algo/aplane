@@ -145,6 +145,19 @@ type AuthMessage struct {
 	IdentityID string         `json:"identity_id,omitempty"`
 }
 
+// Sign-request cancellation reasons carried on SignRequestCanceled
+// notifications. These are wire values: admin clients display them and the
+// approval coordinator produces them.
+const (
+	// SignRequestCancelReasonClientCanceled means the original signing
+	// requester disconnected or canceled its request before approval
+	// completed.
+	SignRequestCancelReasonClientCanceled = "client_canceled"
+
+	// SignRequestCancelReasonTimeout means apsigner's approval wait expired.
+	SignRequestCancelReasonTimeout = "timeout"
+)
+
 // AuthResultMessage is sent back after an authentication attempt
 type AuthResultMessage struct {
 	BaseMessage
