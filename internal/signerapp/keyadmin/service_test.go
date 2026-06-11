@@ -34,6 +34,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
+	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -42,6 +44,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
@@ -873,6 +876,7 @@ func registerAddressListImportProvider(t *testing.T) {
 			addressListImportKeyType: ops,
 		}))
 	}
+	mnemonicreg.Register(bip39impl.NewHandler(addressListImportFamily, falconfamily.MnemonicWordCount))
 }
 
 type addressListImportProvider struct{}

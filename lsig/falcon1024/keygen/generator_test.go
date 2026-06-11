@@ -17,7 +17,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
+	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	v1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1/reference"
 
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
@@ -306,7 +309,12 @@ func TestGenerateFromSeedDifferentSizes(t *testing.T) {
 }
 
 // TestGenerateFromMnemonic verifies Falcon key generation from BIP-39 mnemonic
+func registerTestMnemonicHandler() {
+	mnemonicreg.Register(bip39impl.NewHandler("falcon1024", family.MnemonicWordCount))
+}
+
 func TestGenerateFromMnemonic(t *testing.T) {
+	registerTestMnemonicHandler()
 	paths, cleanup := setupTestKeystore(t)
 	defer cleanup()
 
@@ -353,6 +361,7 @@ func TestGenerateFromMnemonic(t *testing.T) {
 
 // TestGenerateFromMnemonicInvalid verifies error handling for invalid mnemonics
 func TestGenerateFromMnemonicInvalid(t *testing.T) {
+	registerTestMnemonicHandler()
 	paths, cleanup := setupTestKeystore(t)
 	defer cleanup()
 

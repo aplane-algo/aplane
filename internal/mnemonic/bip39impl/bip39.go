@@ -90,6 +90,16 @@ func (h *BIP39Handler) EntropyToMnemonic(entropy []byte) (string, error) {
 	return strings.Join(words, " "), nil
 }
 
+// MnemonicToEntropy converts BIP-39 words back to the underlying entropy
+// (used to store entropy in key files so the mnemonic can be re-exported).
+func (h *BIP39Handler) MnemonicToEntropy(words []string) ([]byte, error) {
+	entropy, err := falconmnemonic.MnemonicToEntropy(words)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive entropy from mnemonic: %w", err)
+	}
+	return entropy, nil
+}
+
 // ValidateWordCount checks the given count against the handler's configured
 // word count. Error messages carry the family name so users importing an
 // ecdsak1 key don't see "falcon1024 requires exactly ..." style messages.

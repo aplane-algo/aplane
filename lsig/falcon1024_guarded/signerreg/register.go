@@ -9,6 +9,9 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/keygen"
+	"github.com/aplane-algo/aplane/internal/mnemonic"
+	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
@@ -26,5 +29,10 @@ func RegisterSigner() {
 		keygen.Register(falconkeygen.NewFalconGenerator(falcon1024guarded.KeyTypeFalcon1024V1, map[string]falconkeygen.LogicSigKeygenOps{
 			falcon1024guarded.KeyTypeFalcon1024V1: ops,
 		}))
+		// The guarded generators are registered under their key-type names,
+		// so their BIP-39 mnemonic handlers are too: the generator resolves
+		// its handler by its registered family string.
+		mnemonic.Register(bip39impl.NewHandler(falcon1024guarded.KeyTypeV1, family.MnemonicWordCount))
+		mnemonic.Register(bip39impl.NewHandler(falcon1024guarded.KeyTypeFalcon1024V1, family.MnemonicWordCount))
 	})
 }

@@ -5,7 +5,6 @@ package keygen
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -16,10 +15,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	mnemonicreg "github.com/aplane-algo/aplane/internal/mnemonic"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
-
-	falconmnemonic "github.com/algorandfoundation/falcon-signatures/mnemonic"
 )
 
 // LogicSigKeygenOps defines signer-side key generation for a versioned LogicSig key type.
@@ -203,22 +201,29 @@ func (g *FalconGenerator) GenerateFromSeed(ctx context.Context, paths storepaths
 
 // GenerateFromMnemonic generates a Falcon key from mnemonic words.
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
+// Seed and entropy derivation route through the family's registered mnemonic
+// handler so families with a non-BIP-39 scheme derive correctly.
 func (g *FalconGenerator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, masterKey []byte, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
+	handler, err := mnemonicreg.GetHandler(g.Family())
+	if err != nil {
+		return nil, err
+	}
+
 	// Convert mnemonic to seed
 	words := strings.Fields(mnemonic)
-	seedArray, err := falconmnemonic.SeedFromMnemonic(words, "")
+	seed, err := handler.SeedFromMnemonic(words, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive seed from mnemonic: %w", err)
 	}
 
 	// Convert mnemonic back to entropy for storage (so it can be re-exported)
-	entropy, err := falconmnemonic.MnemonicToEntropy(words)
+	entropy, err := handler.MnemonicToEntropy(words)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive entropy from mnemonic: %w", err)
 	}
 	defer crypto.ZeroBytes(entropy)
 
-	return g.generateKey(ctx, paths, identityID, seedArray[:], masterKey, keyType, params, &keygenOpts{
+	return g.generateKey(ctx, paths, identityID, seed, masterKey, keyType, params, &keygenOpts{
 		entropy:    entropy,
 		mnemonic:   mnemonic,
 		derivation: "bip39-standard",
@@ -227,28 +232,21 @@ func (g *FalconGenerator) GenerateFromMnemonic(ctx context.Context, paths storep
 
 // GenerateRandom generates a new random Falcon key.
 // keyType must be a registered versioned type (e.g., "aplane.falcon1024.v1").
+// Mnemonic, seed, and entropy come from the family's registered mnemonic
+// handler so families with a non-BIP-39 scheme derive correctly.
 func (g *FalconGenerator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
-	// Generate 256 bits of entropy (24 words)
-	entropy := make([]byte, 32)
-	if _, err := rand.Read(entropy); err != nil {
-		return nil, fmt.Errorf("failed to generate entropy: %w", err)
+	handler, err := mnemonicreg.GetHandler(g.Family())
+	if err != nil {
+		return nil, err
+	}
+
+	mnemonic, seed, entropy, err := handler.GenerateMnemonic()
+	if err != nil {
+		return nil, err
 	}
 	defer crypto.ZeroBytes(entropy)
 
-	// Convert entropy to mnemonic
-	words, err := falconmnemonic.EntropyToMnemonic(entropy)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate mnemonic from entropy: %w", err)
-	}
-	mnemonic := strings.Join(words, " ")
-
-	// Derive seed from mnemonic
-	seedArray, err := falconmnemonic.SeedFromMnemonic(words, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive seed from mnemonic: %w", err)
-	}
-
-	return g.generateKey(ctx, paths, identityID, seedArray[:], masterKey, keyType, params, &keygenOpts{
+	return g.generateKey(ctx, paths, identityID, seed, masterKey, keyType, params, &keygenOpts{
 		entropy:    entropy,
 		mnemonic:   mnemonic,
 		derivation: "bip39-standard",

@@ -29,6 +29,11 @@ type Handler interface {
 	// Not all handlers support this (e.g., Ed25519 doesn't use entropy)
 	EntropyToMnemonic(entropy []byte) (string, error)
 
+	// MnemonicToEntropy converts mnemonic words back to the underlying
+	// entropy. Not all handlers support this (e.g., Ed25519 doesn't use
+	// entropy).
+	MnemonicToEntropy(words []string) ([]byte, error)
+
 	// ValidateWordCount checks if the word count is valid for this mnemonic type
 	ValidateWordCount(wordCount int) error
 
