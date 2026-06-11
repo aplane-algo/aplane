@@ -71,7 +71,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.viewState == ViewSigningPopup {
 			m.resizeSigningViewport()
 		}
-		if m.viewState == ViewPolicyEditor && m.policyEditor != nil {
+		if m.viewState == ViewPolicyEditor && m.policyEd.editor != nil {
 			return m.forwardPolicyEditorMsg(tea.WindowSizeMsg{Width: m.width, Height: m.policyEditorHeight()})
 		}
 		return m, nil
@@ -90,28 +90,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearRestorePassphrase()
 		m.resetActivityState()
 		m.viewState = ViewAuth
-		m.passphraseInput = ""
-		m.passphraseError = ""
+		m.auth.passphraseInput = ""
+		m.auth.passphraseError = ""
 		return m, m.waitForMessageCmd()
 
 	case AuthResultMsg:
-		m.loggingIn = false
+		m.auth.loggingIn = false
 		if msg.Success {
 			// Server will send signer status next; key-type and template
 			// information arrives via the admin protocol (ListKeyTypes).
-			m.passphraseError = ""
-			m.passphraseInput = ""
+			m.auth.passphraseError = ""
+			m.auth.passphraseInput = ""
 			m.resetActivityState()
 		} else {
 			// Authentication failed - show error and stay on auth screen
-			m.passphraseError = msg.Error
-			if m.passphraseError == "" {
-				m.passphraseError = "Authentication failed"
+			m.auth.passphraseError = msg.Error
+			if m.auth.passphraseError == "" {
+				m.auth.passphraseError = "Authentication failed"
 			}
 			if isSeriousUnlockError(msg.Code, msg.Error) {
 				m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewAuth)
-				m.passphraseInput = ""
-				m.loggingIn = false
+				m.auth.passphraseInput = ""
+				m.auth.loggingIn = false
 			}
 		}
 		return m, m.waitForMessageCmd()
@@ -119,7 +119,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DisconnectedMsg:
 		m.clearRestorePassphrase()
 		m.resetActivityState()
-		m.manualLockPending = false
+		m.manualLock.pending = false
 		m.connectionState = ConnectionDisconnected
 		if msg.Error != nil {
 			m.lastError = msg.Error.Error()
@@ -129,7 +129,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case localIdleDisconnectedMsg:
 		m.clearRestorePassphrase()
 		m.resetActivityState()
-		m.manualLockPending = false
+		m.manualLock.pending = false
 		m.connectionState = ConnectionDisconnected
 		m.signerStatusKnown = false
 		m.lastError = ""
@@ -151,20 +151,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case UnlockResultMsg:
-		m.loggingIn = false
+		m.auth.loggingIn = false
 		if msg.Success {
 			m.applySignerUnlockedState(msg.KeyCount)
-			m.passphraseError = ""
-			m.passphraseInput = ""
+			m.auth.passphraseError = ""
+			m.auth.passphraseInput = ""
 			idleCmd := m.armLocalIdleTimer()
 			// Request the key list after unlocking
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
 		} else {
-			m.passphraseError = msg.Error
+			m.auth.passphraseError = msg.Error
 			if isSeriousUnlockError(msg.Code, msg.Error) {
 				m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewUnlock)
-				m.passphraseInput = ""
-				m.loggingIn = false
+				m.auth.passphraseInput = ""
+				m.auth.loggingIn = false
 			}
 		}
 		// Continue listening for messages
@@ -172,18 +172,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case LockIdentityResultMsg:
 		if msg.Success {
-			m.manualLockPending = false
+			m.manualLock.pending = false
 			m.applySignerLockedState()
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeyTypesCmd())
 		}
-		if m.manualLockPending {
+		if m.manualLock.pending {
 			return m, tea.Batch(m.waitForMessageCmd(), m.handleManualLockFailed(msg.Error))
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), m.handleManualLockFailed(msg.Error))
 
 	case SignRequestReceivedMsg:
-		m.pendingSign = &msg.Request
-		m.pendingSignFocus = 1 // Default to reject button (safety-first)
+		m.signing.request = &msg.Request
+		m.signing.focus = 1 // Default to reject button (safety-first)
 		m.viewState = ViewSigningPopup
 		// Initialize scrollable viewport with description + violations
 		m.initSigningViewport(m.buildSigningViewportContent())
@@ -192,16 +192,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SignRequestCanceledMsg:
 		var warningCmd tea.Cmd
-		if m.pendingSign != nil && m.pendingSign.ID == msg.ID {
-			m.pendingSign = nil
+		if m.signing.request != nil && m.signing.request.ID == msg.ID {
+			m.signing.request = nil
 			m.viewState = ViewKeyList
 			warningCmd = m.setTransientWarning(signRequestCanceledWarning(msg.Reason))
 		}
 		return m, tea.Batch(m.waitForMessageCmd(), warningCmd)
 
 	case TokenProvisioningRequestReceivedMsg:
-		m.pendingTokenRequest = &msg.Request
-		m.pendingTokenRequestFocus = 1 // Default to reject button (safety-first)
+		m.tokenApproval.request = &msg.Request
+		m.tokenApproval.focus = 1 // Default to reject button (safety-first)
 		m.viewState = ViewTokenProvisioningPopup
 		// Continue listening for messages
 		return m, m.waitForMessageCmd()
@@ -211,18 +211,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sort.Slice(msg.Keys, func(i, j int) bool {
 			return msg.Keys[i].Address < msg.Keys[j].Address
 		})
-		m.keys = msg.Keys
+		m.keylist.keys = msg.Keys
 		m.keyCount = len(msg.Keys)
 		// Ensure selectedKey and scrollOffset are within bounds
 		displayKeys := m.filteredKeys()
-		if m.selectedKey >= len(displayKeys) {
-			m.selectedKey = len(displayKeys) - 1
-			if m.selectedKey < 0 {
-				m.selectedKey = 0
+		if m.keylist.selectedKey >= len(displayKeys) {
+			m.keylist.selectedKey = len(displayKeys) - 1
+			if m.keylist.selectedKey < 0 {
+				m.keylist.selectedKey = 0
 			}
 		}
-		if m.scrollOffset > m.selectedKey {
-			m.scrollOffset = m.selectedKey
+		if m.keylist.scrollOffset > m.keylist.selectedKey {
+			m.keylist.scrollOffset = m.keylist.selectedKey
 		}
 		// Continue listening for messages
 		return m, m.waitForMessageCmd()
@@ -230,7 +230,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ErrorMsg:
 		if m.viewState == ViewRestorePassphrase || m.viewState == ViewRestorePreview || m.viewState == ViewRestoring {
 			m.clearRestorePassphrase()
-			m.restorePreviewing = false
+			m.restore.previewing = false
 		}
 		m.lastError = msg.Error.Error()
 		// Continue listening for messages
@@ -250,14 +250,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case GenerateResultMsg:
 		if msg.Success {
 			m.lastError = ""
-			m.generatedAddress = msg.Address
-			m.generatedKeyType = msg.KeyType
+			m.forms.generatedAddress = msg.Address
+			m.forms.generatedKeyType = msg.KeyType
 			m.viewState = ViewGenerateDisplay
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd())
 		} else {
-			m.generateError = msg.Error
+			m.forms.generateError = msg.Error
 			// Go back to params view for generic LogicSigs, otherwise form
-			if m.genericLSigParams != nil {
+			if m.forms.genericLSigParams != nil {
 				m.viewState = ViewGenerateParams
 			} else {
 				m.viewState = ViewGenerateForm
@@ -281,8 +281,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Success {
 			m.lastError = ""
 			// Clear delete state and return to key list
-			m.deleteAddress = ""
-			m.deleteKeyType = ""
+			m.del.address = ""
+			m.del.keyType = ""
 			m.viewState = ViewKeyList
 			// Request updated key list
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd())
@@ -296,24 +296,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case BackupResultMsg:
 		if msg.Success {
 			m.lastError = ""
-			m.backupArchivePath = msg.ArchivePath
-			m.backupExportPassphrase = ""
-			m.backupConfirmPassphrase = ""
-			m.backupConfirmError = ""
+			m.backup.archivePath = msg.ArchivePath
+			m.backup.exportPassphrase = ""
+			m.backup.confirmPassphrase = ""
+			m.backup.confirmError = ""
 			m.viewState = ViewBackupDisplay
 		} else {
-			m.backupConfirmError = msg.Error
+			m.backup.confirmError = msg.Error
 			m.viewState = ViewBackupConfirm
 		}
 		return m, m.waitForMessageCmd()
 
 	case BackupsListMsg:
-		m.restoreBackupsLoaded = true
+		m.restore.backupsLoaded = true
 		if msg.Error != "" {
 			m.lastError = "Backup list failed: " + msg.Error
 		} else {
 			m.lastError = ""
-			m.restoreBackups = msg.Backups
+			m.restore.backups = msg.Backups
 			m.clampRestoreSelection()
 			if m.viewState != ViewRestoreList {
 				m.viewState = ViewRestoreList
@@ -322,34 +322,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case RestorePreviewMsg:
-		m.restorePreviewing = false
+		m.restore.previewing = false
 		if msg.Error != "" || (len(msg.Keys) == 0 && len(msg.Errors) > 0) {
 			m.clearRestorePassphrase()
-			m.restorePassphraseError = msg.Error
-			if m.restorePassphraseError == "" {
-				m.restorePassphraseError = firstRestoreError(msg.Errors)
+			m.restore.passphraseError = msg.Error
+			if m.restore.passphraseError == "" {
+				m.restore.passphraseError = firstRestoreError(msg.Errors)
 			}
-			if m.restorePassphraseError == "" {
-				m.restorePassphraseError = "Restore preview failed"
+			if m.restore.passphraseError == "" {
+				m.restore.passphraseError = "Restore preview failed"
 			}
 			m.viewState = ViewRestorePassphrase
 			return m, m.waitForMessageCmd()
 		}
 		m.lastError = ""
-		m.restoreArchivePath = msg.ArchivePath
-		m.restorePreviewKeys = msg.Keys
-		m.restorePreviewErrors = msg.Errors
-		m.restorePassphraseError = ""
-		m.restorePreviewError = ""
-		m.restoreSelectedKey = 0
-		m.restorePreviewScrollOffset = 0
+		m.restore.archivePath = msg.ArchivePath
+		m.restore.previewKeys = msg.Keys
+		m.restore.previewErrors = msg.Errors
+		m.restore.passphraseError = ""
+		m.restore.previewError = ""
+		m.restore.selectedKey = 0
+		m.restore.previewScrollOffset = 0
 		m.initializeRestoreSelection()
 		m.viewState = ViewRestorePreview
 		return m, m.waitForMessageCmd()
 
 	case RestoreBackupResultMsg:
 		m.clearRestorePassphrase()
-		m.restoreResult = RestoreBackupResultMessage{
+		m.restore.result = RestoreBackupResultMessage{
 			ArchivePath: msg.ArchivePath,
 			Success:     msg.Success,
 			Restored:    msg.Restored,
@@ -359,8 +359,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			KeyCount:    msg.KeyCount,
 			Error:       msg.Error,
 		}
-		m.restoreDisplaySelectedKey = 0
-		m.restoreDisplayScrollOffset = 0
+		m.restore.displaySelectedKey = 0
+		m.restore.displayScrollOffset = 0
 		m.viewState = ViewRestoreDisplay
 		cmds := []tea.Cmd{m.waitForMessageCmd()}
 		if msg.Success || len(msg.Restored) > 0 || msg.KeyCount > 0 {
@@ -371,17 +371,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ImportResultMsg:
 		if msg.Success {
 			m.lastError = ""
-			m.importMnemonicInput.SetValue("")
-			m.importMnemonicInput.Blur()
-			m.importError = ""
+			m.forms.importMnemonicInput.SetValue("")
+			m.forms.importMnemonicInput.Blur()
+			m.forms.importError = ""
 			// Store imported key info for display
-			m.importedAddress = msg.Address
-			m.importedKeyType = msg.KeyType
+			m.forms.importedAddress = msg.Address
+			m.forms.importedKeyType = msg.KeyType
 			m.viewState = ViewImportDisplay
 			// Also refresh key list in background
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd())
 		} else {
-			m.importError = msg.Error
+			m.forms.importError = msg.Error
 			// Return to the appropriate form to show the error
 			if m.viewState == ViewImportParams || m.viewState == ViewImporting {
 				m.viewState = ViewImportParams
@@ -405,11 +405,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case AdminSettingsMsg:
 		// Detect theme change and re-init styles
-		if m.adminSettings == nil || m.adminSettings.Theme != msg.Settings.Theme {
+		if m.admin.settings == nil || m.admin.settings.Theme != msg.Settings.Theme {
 			theme.Init(msg.Settings.Theme)
 			initStyles()
 		}
-		m.adminSettings = &msg.Settings
+		m.admin.settings = &msg.Settings
 		m.syncKeyListTabWithMode()
 		timeoutCmd := m.applyAdminSettingsTimeout(msg.Settings)
 		return m, tea.Batch(m.waitForMessageCmd(), timeoutCmd)
@@ -451,21 +451,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != nil {
 			errText = msg.Error.Error()
 		}
-		if m.manualLockPending {
+		if m.manualLock.pending {
 			return m, m.handleManualLockFailed(errText)
 		}
 		return m, m.handleManualLockFailed(errText)
 
 	case KeyDetailsMsg:
 		if msg.Success {
-			m.detailsAddress = msg.Address
-			m.detailsKeyType = msg.KeyType
-			m.detailsPublicKeyHex = msg.PublicKeyHex
-			m.detailsParameters = msg.Parameters
-			m.detailsTEAL = msg.DisplayTEAL
-			m.detailsTemplateProvenanceStatus = msg.TemplateProvenanceStatus
-			m.detailsTemplateProvenanceNote = msg.TemplateProvenanceNote
-			m.detailsScrollOffset = 0 // Reset scroll on open
+			m.details.address = msg.Address
+			m.details.keyType = msg.KeyType
+			m.details.publicKeyHex = msg.PublicKeyHex
+			m.details.parameters = msg.Parameters
+			m.details.teal = msg.DisplayTEAL
+			m.details.templateProvenanceStatus = msg.TemplateProvenanceStatus
+			m.details.templateProvenanceNote = msg.TemplateProvenanceNote
+			m.details.scrollOffset = 0 // Reset scroll on open
 			m.viewState = ViewKeyDetails
 		} else {
 			m.lastError = msg.Error
@@ -474,15 +474,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case LibraryTemplatesMsg:
 		if msg.Error != "" {
-			m.templateInstallError = msg.Error
-			m.templateInstallStatus = ""
+			m.library.installError = msg.Error
+			m.library.installStatus = ""
 		} else {
-			m.libraryTemplates = msg.Templates
-			if m.selectedTemplate >= len(m.libraryTemplates) {
-				m.selectedTemplate = len(m.libraryTemplates) - 1
+			m.library.templates = msg.Templates
+			if m.library.selectedTemplate >= len(m.library.templates) {
+				m.library.selectedTemplate = len(m.library.templates) - 1
 			}
-			if m.selectedTemplate < 0 {
-				m.selectedTemplate = 0
+			if m.library.selectedTemplate < 0 {
+				m.library.selectedTemplate = 0
 			}
 			m = m.ensureTemplateVisible()
 		}
@@ -490,14 +490,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case InstallLibraryTemplateResultMsg:
 		if msg.Success {
-			m.templateInstallError = ""
+			m.library.installError = ""
 			tmpl := protocol.LibraryTemplateInfo{KeyType: msg.KeyType, TemplateType: msg.TemplateType}
 			if msg.AlreadyExists {
-				m.templateInstallStatus = displayKeyType(msg.KeyType) + " was already " + libraryPastTense(tmpl)
+				m.library.installStatus = displayKeyType(msg.KeyType) + " was already " + libraryPastTense(tmpl)
 			} else {
-				m.templateInstallStatus = displayKeyType(msg.KeyType) + " " + libraryPastTense(tmpl)
+				m.library.installStatus = displayKeyType(msg.KeyType) + " " + libraryPastTense(tmpl)
 			}
-			m.pendingTemplate = nil
+			m.library.pendingTemplate = nil
 			m.viewState = ViewTemplateLibrary
 			return m, tea.Batch(
 				m.waitForMessageCmd(),
@@ -506,9 +506,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sendListKeysCmd(),
 			)
 		}
-		m.templateInstallError = msg.Error
-		if m.templateInstallError == "" {
-			m.templateInstallError = "Key type enable failed"
+		m.library.installError = msg.Error
+		if m.library.installError == "" {
+			m.library.installError = "Key type enable failed"
 		}
 		m.viewState = ViewTemplateInstallConfirm
 		return m, m.waitForMessageCmd()
@@ -517,24 +517,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Only adopt the result if we're still waiting for it; ignore late replies
 		// after the user has navigated away.
 		if m.viewState == ViewLibraryTemplateDetails &&
-			m.libraryDetailsLoading &&
-			msg.KeyType == m.libraryDetailsKeyType &&
-			msg.TemplateType == m.libraryDetailsTemplateType {
-			m.libraryDetailsLoading = false
+			m.library.detailsLoading &&
+			msg.KeyType == m.library.detailsKeyType &&
+			msg.TemplateType == m.library.detailsTemplateType {
+			m.library.detailsLoading = false
 			if msg.Success {
-				m.libraryDetailsContent = string(msg.TemplateYAML)
-				m.libraryDetailsSourcePath = msg.SourcePath
-				m.libraryDetailsSourceSHA256 = msg.SourceSHA256
-				m.libraryDetailsSourceModTime = msg.SourceModTime
-				m.libraryDetailsError = ""
-				m.libraryDetailsScrollOffset = 0
+				m.library.detailsContent = string(msg.TemplateYAML)
+				m.library.detailsSourcePath = msg.SourcePath
+				m.library.detailsSourceSHA256 = msg.SourceSHA256
+				m.library.detailsSourceModTime = msg.SourceModTime
+				m.library.detailsError = ""
+				m.library.detailsScrollOffset = 0
 			} else {
-				m.libraryDetailsContent = ""
-				m.libraryDetailsSourceSHA256 = ""
-				m.libraryDetailsSourceModTime = 0
-				m.libraryDetailsError = msg.Error
-				if m.libraryDetailsError == "" {
-					m.libraryDetailsError = "Failed to load library YAML"
+				m.library.detailsContent = ""
+				m.library.detailsSourceSHA256 = ""
+				m.library.detailsSourceModTime = 0
+				m.library.detailsError = msg.Error
+				if m.library.detailsError == "" {
+					m.library.detailsError = "Failed to load library YAML"
 				}
 			}
 		}
@@ -543,13 +543,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ActivateKeyTypeResultMsg:
 		tmpl := m.libraryEntryForResult(msg.KeyType, libraryTypeCompiledProvider)
 		if msg.Success {
-			m.templateInstallError = ""
+			m.library.installError = ""
 			if msg.AlreadyExists {
-				m.templateInstallStatus = displayKeyType(msg.KeyType) + " was already " + libraryPastTense(tmpl)
+				m.library.installStatus = displayKeyType(msg.KeyType) + " was already " + libraryPastTense(tmpl)
 			} else {
-				m.templateInstallStatus = displayKeyType(msg.KeyType) + " " + libraryPastTense(tmpl)
+				m.library.installStatus = displayKeyType(msg.KeyType) + " " + libraryPastTense(tmpl)
 			}
-			m.pendingTemplate = nil
+			m.library.pendingTemplate = nil
 			m.viewState = ViewTemplateLibrary
 			return m, tea.Batch(
 				m.waitForMessageCmd(),
@@ -558,9 +558,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sendListKeysCmd(),
 			)
 		}
-		m.templateInstallError = msg.Error
-		if m.templateInstallError == "" {
-			m.templateInstallError = libraryActivateFailure(tmpl)
+		m.library.installError = msg.Error
+		if m.library.installError == "" {
+			m.library.installError = libraryActivateFailure(tmpl)
 		}
 		m.viewState = ViewTemplateInstallConfirm
 		return m, m.waitForMessageCmd()
@@ -568,13 +568,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DeactivateKeyTypeResultMsg:
 		tmpl := m.libraryEntryForResult(msg.KeyType, libraryTypeCompiledProvider)
 		if msg.Success {
-			m.templateInstallError = ""
+			m.library.installError = ""
 			if msg.Removed {
-				m.templateInstallStatus = displayKeyType(msg.KeyType) + " " + libraryDeactivatePastTense()
+				m.library.installStatus = displayKeyType(msg.KeyType) + " " + libraryDeactivatePastTense()
 			} else {
-				m.templateInstallStatus = displayKeyType(msg.KeyType) + " was already disabled"
+				m.library.installStatus = displayKeyType(msg.KeyType) + " was already disabled"
 			}
-			m.pendingTemplate = nil
+			m.library.pendingTemplate = nil
 			m.viewState = ViewTemplateLibrary
 			return m, tea.Batch(
 				m.waitForMessageCmd(),
@@ -583,9 +583,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sendListKeysCmd(),
 			)
 		}
-		m.templateInstallError = msg.Error
-		if m.templateInstallError == "" {
-			m.templateInstallError = libraryDeactivateFailure(tmpl)
+		m.library.installError = msg.Error
+		if m.library.installError == "" {
+			m.library.installError = libraryDeactivateFailure(tmpl)
 		}
 		m.viewState = ViewTemplateInstallConfirm
 		return m, m.waitForMessageCmd()
@@ -596,23 +596,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.serverKeyTypes = msg.KeyTypes
 			setServerKeyTypes(msg.KeyTypes)
-			if m.generateKeyType >= getKeyTypeCount() {
-				m.generateKeyType = getKeyTypeCount() - 1
+			if m.forms.generateKeyType >= getKeyTypeCount() {
+				m.forms.generateKeyType = getKeyTypeCount() - 1
 			}
-			if m.importKeyType >= getImportKeyTypeCount() {
-				m.importKeyType = getImportKeyTypeCount() - 1
+			if m.forms.importKeyType >= getImportKeyTypeCount() {
+				m.forms.importKeyType = getImportKeyTypeCount() - 1
 			}
-			if m.generateKeyType < 0 {
-				m.generateKeyType = 0
+			if m.forms.generateKeyType < 0 {
+				m.forms.generateKeyType = 0
 			}
-			if m.importKeyType < 0 {
-				m.importKeyType = 0
+			if m.forms.importKeyType < 0 {
+				m.forms.importKeyType = 0
 			}
 		}
 		return m, m.waitForMessageCmd()
 	}
 
-	if m.viewState == ViewPolicyEditor && m.policyEditor != nil {
+	if m.viewState == ViewPolicyEditor && m.policyEd.editor != nil {
 		return m.forwardPolicyEditorMsg(msg)
 	}
 
@@ -706,19 +706,19 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) showSeriousErrorPopup(title, message string, returnView ViewState) {
-	m.errorPopupTitle = title
-	m.errorPopupMessage = message
-	m.errorPopupReturnView = returnView
+	m.errorPopup.title = title
+	m.errorPopup.message = message
+	m.errorPopup.returnView = returnView
 	m.viewState = ViewError
 }
 
 func (m Model) handleErrorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.viewState = m.errorPopupReturnView
-		m.errorPopupTitle = ""
-		m.errorPopupMessage = ""
-		m.passphraseError = ""
+		m.viewState = m.errorPopup.returnView
+		m.errorPopup.title = ""
+		m.errorPopup.message = ""
+		m.auth.passphraseError = ""
 		return m, nil
 	}
 	return m, nil

@@ -11,8 +11,8 @@ import (
 
 func (m Model) nodeRole() string {
 	role := m.initialNodeRole
-	if m.adminSettings != nil && strings.TrimSpace(m.adminSettings.NodeRole) != "" {
-		role = m.adminSettings.NodeRole
+	if m.admin.settings != nil && strings.TrimSpace(m.admin.settings.NodeRole) != "" {
+		role = m.admin.settings.NodeRole
 	}
 	return strings.ToLower(strings.TrimSpace(role))
 }

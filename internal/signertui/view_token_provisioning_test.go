@@ -13,12 +13,12 @@ func TestTokenProvisioningPopupFitsPanelBody(t *testing.T) {
 		width:     48,
 		height:    10,
 		viewState: ViewTokenProvisioningPopup,
-		pendingTokenRequest: &PendingTokenRequest{
+		tokenApproval: tokenApprovalState{request: &PendingTokenRequest{
 			ID:             "request-1",
 			IdentityID:     "default",
 			SSHFingerprint: "SHA256:abcdefghijklmnopqrstuvwxyz",
 			RemoteAddr:     "127.0.0.1:12345",
-		},
+		}},
 	}
 
 	rendered := m.renderTokenProvisioningPopup()

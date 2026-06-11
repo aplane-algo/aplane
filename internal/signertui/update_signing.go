@@ -17,17 +17,17 @@ const signingDetailsBoxHorizontalChrome = 4 // rounded border plus horizontal pa
 // handleSigningPopupKeys handles keyboard input on signing popup
 func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	requestID := ""
-	if m.pendingSign != nil {
-		requestID = m.pendingSign.ID
+	if m.signing.request != nil {
+		requestID = m.signing.request.ID
 	}
 
-	m, cmd, focus, handled := m.handleApprovalKeys(msg, m.pendingSignFocus, requestID,
+	m, cmd, focus, handled := m.handleApprovalKeys(msg, m.signing.focus, requestID,
 		func(m Model, id string, approved bool) (Model, tea.Cmd) {
-			m.pendingSign = nil
+			m.signing.request = nil
 			m.viewState = ViewKeyList
 			return m, m.sendSignResponse(id, approved)
 		})
-	m.pendingSignFocus = focus
+	m.signing.focus = focus
 	if handled {
 		return m, cmd
 	}
@@ -35,13 +35,13 @@ func (m Model) handleSigningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Signing-specific: viewport scrolling
 	switch msg.String() {
 	case "up", "k":
-		m.pendingSignViewport.ScrollUp(1)
+		m.signing.viewport.ScrollUp(1)
 	case "down", "j":
-		m.pendingSignViewport.ScrollDown(1)
+		m.signing.viewport.ScrollDown(1)
 	case "pgup":
-		m.pendingSignViewport.PageUp()
+		m.signing.viewport.PageUp()
 	case "pgdown":
-		m.pendingSignViewport.PageDown()
+		m.signing.viewport.PageDown()
 	}
 
 	return m, nil
@@ -120,17 +120,17 @@ func (m Model) signingViewportDimensions() (int, int) {
 // buildSigningViewportContent builds the scrollable content for the signing viewport,
 // including the transaction description and any policy violations.
 func (m Model) buildSigningViewportContent() string {
-	if m.pendingSign == nil {
+	if m.signing.request == nil {
 		return ""
 	}
 	var sb strings.Builder
-	sb.WriteString(m.pendingSign.Description)
+	sb.WriteString(m.signing.request.Description)
 
-	if len(m.pendingSign.Violations) > 0 {
+	if len(m.signing.request.Violations) > 0 {
 		sb.WriteString("\n")
 		sb.WriteString(strings.Repeat("=", 50))
 		sb.WriteString("\n")
-		for _, v := range m.pendingSign.Violations {
+		for _, v := range m.signing.request.Violations {
 			if v.Severity == "critical" {
 				sb.WriteString(fmt.Sprintf("⚠ CRITICAL: %s\n", v.Field))
 			} else {
@@ -149,16 +149,16 @@ func (m Model) buildSigningViewportContent() string {
 // initSigningViewport initializes the viewport for the signing popup description
 func (m *Model) initSigningViewport(content string) {
 	vpHeight, vpWidth := m.signingViewportDimensions()
-	m.pendingSignViewport = viewport.New(vpWidth, vpHeight)
-	m.pendingSignViewport.SetContent(wrapText(content, vpWidth))
+	m.signing.viewport = viewport.New(vpWidth, vpHeight)
+	m.signing.viewport.SetContent(wrapText(content, vpWidth))
 }
 
 // resizeSigningViewport updates the viewport dimensions and reflows content after a terminal resize.
 func (m *Model) resizeSigningViewport() {
 	vpHeight, vpWidth := m.signingViewportDimensions()
-	m.pendingSignViewport.Width = vpWidth
-	m.pendingSignViewport.Height = vpHeight
-	m.pendingSignViewport.SetContent(wrapText(m.buildSigningViewportContent(), vpWidth))
+	m.signing.viewport.Width = vpWidth
+	m.signing.viewport.Height = vpHeight
+	m.signing.viewport.SetContent(wrapText(m.buildSigningViewportContent(), vpWidth))
 }
 
 // wrapText wraps each line of text to fit within the given width.

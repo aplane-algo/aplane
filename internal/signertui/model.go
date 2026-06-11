@@ -101,7 +101,178 @@ type PendingTokenRequest struct {
 	Timestamp      time.Time
 }
 
-// Model is the main TUI application model
+// activityState tracks local user activity for idle locking.
+type activityState struct {
+	lastInputAt        time.Time
+	idleDisconnectSent bool
+	idleGeneration     uint64
+	idleDueAt          time.Time
+	sessionTimeout     time.Duration
+}
+
+// authState is the unlock/auth passphrase prompt.
+type authState struct {
+	passphraseInput  string
+	passphraseMasked bool
+	passphraseError  string
+	loggingIn        bool // true while waiting for auth/unlock response
+}
+
+// keyListState is the main key list with filter and tabs.
+type keyListState struct {
+	keys         []KeyInfo
+	selectedKey  int
+	scrollOffset int
+	tab          keyListTab
+	filterInput  string // current filter text
+	filterActive bool   // true when filter input is focused
+}
+
+// signingState is the signing-approval popup.
+type signingState struct {
+	request  *PendingSignRequest
+	focus    int            // 0 = approve, 1 = reject
+	viewport viewport.Model // scrollable transaction description
+}
+
+// tokenApprovalState is the token-provisioning approval popup.
+type tokenApprovalState struct {
+	request *PendingTokenRequest
+	focus   int // 0 = approve, 1 = reject
+}
+
+// backupState is the managed-backup confirm/result flow.
+type backupState struct {
+	exportPassphrase  string
+	confirmPassphrase string
+	confirmError      string
+	confirmFocus      int // 0 = export passphrase, 1 = confirm passphrase
+	archivePath       string
+}
+
+// restoreState is the backup browse/preview/restore flow.
+type restoreState struct {
+	backups             []BackupInfo
+	backupsLoaded       bool
+	selectedBackup      int
+	backupScrollOffset  int
+	archivePath         string
+	passphrase          []byte
+	passphraseError     string
+	previewing          bool
+	previewKeys         []RestoreKeyInfo
+	previewErrors       []RestoreError
+	selected            map[string]bool
+	selectedKey         int
+	previewScrollOffset int
+	previewError        string
+	overwrite           bool
+	displaySelectedKey  int
+	displayScrollOffset int
+	result              RestoreBackupResultMessage
+}
+
+// formsState covers the generate and import forms, their parameter modals,
+// and the post-completion display screens.
+type formsState struct {
+	generatedAddress string
+	generatedKeyType string
+
+	importKeyType       int // 0 = ed25519, 1 = falcon1024
+	importMnemonicInput textarea.Model
+	importError         string
+	importFocus         int // 0 = key type, 1 = mnemonic input, 2 = submit button
+	importedAddress     string
+	importedKeyType     string
+
+	generateKeyType           int // index into key type list
+	generateError             string
+	generateFocus             int // 0 = key type, then dynamic params, then generate button
+	generateParamScrollOffset int
+
+	genericLSigParams      map[string]string
+	genericLSigParamOrder  []string
+	genericLSigParamModes  map[string]int
+	genericLSigParamScroll map[string]int
+}
+
+// deleteConfirmState is the key-deletion confirmation dialog.
+type deleteConfirmState struct {
+	address string
+	keyType string
+	focus   int // 0 = cancel, 1 = delete
+}
+
+// adminPanelState is the admin control panel.
+type adminPanelState struct {
+	settings         *AdminSettings
+	selectedRow      int
+	editingRow       int // -1 = none
+	editValue        string
+	revokeTokenFocus int // 0 = cancel, 1 = revoke
+}
+
+// manualLockState is the manual signer-lock confirmation dialog.
+type manualLockState struct {
+	focus      int       // 0 = cancel, 1 = lock
+	returnView ViewState // view to restore when canceling or if lock fails
+	pending    bool
+}
+
+// keyDetailsState is the key metadata viewer.
+type keyDetailsState struct {
+	address                  string
+	keyType                  string
+	publicKeyHex             string
+	parameters               map[string]string
+	scrollOffset             int
+	teal                     string
+	templateProvenanceStatus string
+	templateProvenanceNote   string
+	saveStatus               string
+}
+
+// policyEditorState is the embedded guided policy editor.
+type policyEditorState struct {
+	editor     tea.Model
+	loading    bool
+	err        string
+	target     string
+	returnView ViewState
+}
+
+// libraryState is the KeyType Library browser, install confirm flow, and the
+// full-screen details viewer.
+type libraryState struct {
+	templates        []protocol.LibraryTemplateInfo
+	selectedTemplate int
+	scrollOffset     int
+	installFocus     int // 0 = cancel, 1 = confirm action
+	installError     string
+	installStatus    string
+	pendingTemplate  *protocol.LibraryTemplateInfo
+
+	detailsKeyType       string
+	detailsTemplateType  string
+	detailsSourcePath    string
+	detailsSourceSHA256  string
+	detailsSourceModTime int64
+	detailsContent       string
+	detailsScrollOffset  int
+	detailsLoading       bool
+	detailsError         string
+	detailsReturnView    ViewState
+}
+
+// errorPopupState is the blocking serious-error popup.
+type errorPopupState struct {
+	title      string
+	message    string
+	returnView ViewState
+}
+
+// Model is the main TUI application model. Cross-view state lives directly on
+// the struct; each view's state lives in its per-view sub-model.
 type Model struct {
 	// Current view state
 	viewState ViewState
@@ -117,168 +288,34 @@ type Model struct {
 	signerLocked      bool
 	signerStatusKnown bool // true once we've received a status from apsigner
 	keyCount          int
+	serverKeyTypes    []protocol.KeyTypeInfo
 
-	// Local activity and idle locking state
-	lastUserInputAt         time.Time
-	localIdleDisconnectSent bool
-	localIdleGeneration     uint64
-	localIdleDueAt          time.Time
-	effectiveSessionTimeout time.Duration
-
-	// Key list
-	keys         []KeyInfo
-	selectedKey  int
-	scrollOffset int
-	keyListTab   keyListTab
-
-	// Key list filter
-	filterInput  string // Current filter text
-	filterActive bool   // True when filter input is focused
-
-	// Passphrase input (for unlock screen)
-	passphraseInput  string
-	passphraseMasked bool
-	passphraseError  string
-	loggingIn        bool // True while waiting for auth/unlock response
-
-	// Pending signing request
-	pendingSign         *PendingSignRequest
-	pendingSignFocus    int            // 0 = approve, 1 = reject
-	pendingSignViewport viewport.Model // Scrollable viewport for transaction description
-
-	// Pending token provisioning request
-	pendingTokenRequest      *PendingTokenRequest
-	pendingTokenRequestFocus int // 0 = approve, 1 = reject
-
-	// Backup confirmation / result state
-	backupExportPassphrase  string
-	backupConfirmPassphrase string
-	backupConfirmError      string
-	backupConfirmFocus      int // 0 = export passphrase, 1 = confirm passphrase
-	backupArchivePath       string
-
-	// Restore backup state
-	restoreBackups             []BackupInfo
-	restoreBackupsLoaded       bool
-	selectedBackup             int
-	restoreBackupScrollOffset  int
-	restoreArchivePath         string
-	restorePassphrase          []byte
-	restorePassphraseError     string
-	restorePreviewing          bool
-	restorePreviewKeys         []RestoreKeyInfo
-	restorePreviewErrors       []RestoreError
-	restoreSelected            map[string]bool
-	restoreSelectedKey         int
-	restorePreviewScrollOffset int
-	restorePreviewError        string
-	restoreOverwrite           bool
-	restoreDisplaySelectedKey  int
-	restoreDisplayScrollOffset int
-	restoreResult              RestoreBackupResultMessage
-
-	// Generate display state (confirmation after generation)
-	generatedAddress string
-	generatedKeyType string
-
-	// Import form state
-	importKeyType       int // 0 = ed25519, 1 = falcon1024
-	importMnemonicInput textarea.Model
-	importError         string
-	importFocus         int // 0 = key type, 1 = mnemonic input, 2 = submit button
-
-	// Import display state (confirmation after import)
-	importedAddress string
-	importedKeyType string
-
-	// Generate form state
-	generateKeyType           int // Index into key type list (cryptographic types + generic lsigs)
-	generateError             string
-	generateFocus             int // 0 = key type, then dynamic params, then generate button
-	generateParamScrollOffset int // Scroll offset for parameter list (used when params exceed visible area)
-
-	// Generic LogicSig parameters (used when generateKeyType is a generic lsig)
-	genericLSigParams      map[string]string // Parameter name -> value
-	genericLSigParamOrder  []string          // Ordered list of parameter names for focus navigation
-	genericLSigParamModes  map[string]int    // Parameter name -> selected input mode index
-	genericLSigParamScroll map[string]int    // Parameter name -> multiline input scroll offset
-
-	// Delete confirmation state
-	deleteAddress      string // Address of key to delete
-	deleteKeyType      string // Type of key to delete
-	deleteConfirmFocus int    // 0 = cancel, 1 = delete
-
-	// Token revocation confirmation state
-	revokeTokenConfirmFocus int // 0 = cancel, 1 = revoke
-
-	// Manual lock confirmation state
-	manualLockConfirmFocus int       // 0 = cancel, 1 = lock
-	manualLockReturnView   ViewState // View to restore when canceling or if lock fails
-	manualLockPending      bool
+	// Per-view sub-models
+	activity      activityState
+	auth          authState
+	keylist       keyListState
+	signing       signingState
+	tokenApproval tokenApprovalState
+	backup        backupState
+	restore       restoreState
+	forms         formsState
+	del           deleteConfirmState
+	admin         adminPanelState
+	manualLock    manualLockState
+	details       keyDetailsState
+	policyEd      policyEditorState
+	library       libraryState
+	errorPopup    errorPopupState
 
 	// Displace confirmation state
 	displaceConfirmFocus int // 0 = cancel, 1 = proceed
 
-	// Key details state (for viewing key metadata)
-	detailsAddress                  string            // Address of key being viewed
-	detailsKeyType                  string            // Key type
-	detailsPublicKeyHex             string            // Hex-encoded public key, when available
-	detailsParameters               map[string]string // Parameters for generic LogicSigs
-	detailsScrollOffset             int               // Scroll offset for parameter list
-	detailsTEAL                     string            // TEAL source (for LogicSig keys)
-	detailsTemplateProvenanceStatus string
-	detailsTemplateProvenanceNote   string
-	detailsSaveStatus               string // Status message after save
-
-	// Admin panel state
-	adminSettings    *AdminSettings // Current settings from server
-	adminSelectedRow int            // Currently selected row in admin panel
-	adminEditingRow  int            // Row being edited (-1 = none)
-	adminEditValue   string         // Value being edited
-
-	// Shared policy editor state
-	policyEditor           tea.Model
-	policyEditorLoading    bool
-	policyEditorError      string
-	policyEditorTarget     string
-	policyEditorReturnView ViewState
-
-	// KeyType Library state
-	libraryTemplates      []protocol.LibraryTemplateInfo
-	selectedTemplate      int
-	templateScrollOffset  int
-	templateInstallFocus  int // 0 = cancel, 1 = confirm action
-	templateInstallError  string
-	templateInstallStatus string
-	pendingTemplate       *protocol.LibraryTemplateInfo
-	serverKeyTypes        []protocol.KeyTypeInfo
-
-	// Library details viewer (YAML for YAML templates, synthesized parameter
-	// listing for compiled providers).
-	libraryDetailsKeyType       string
-	libraryDetailsTemplateType  string
-	libraryDetailsSourcePath    string
-	libraryDetailsSourceSHA256  string
-	libraryDetailsSourceModTime int64
-	libraryDetailsContent       string
-	libraryDetailsScrollOffset  int
-	libraryDetailsLoading       bool
-	libraryDetailsError         string
-	libraryDetailsReturnView    ViewState
-
 	// Error message
 	lastError string
-
-	// Blocking serious error popup.
-	errorPopupTitle      string
-	errorPopupMessage    string
-	errorPopupReturnView ViewState
 
 	// Warning message (shown in status bar)
 	lastWarning           string
 	lastWarningGeneration uint64
-
-	// Template load warnings (collected during unlock)
 
 	// Screen dimensions
 	width  int
@@ -300,14 +337,14 @@ type Model struct {
 // NewModel creates a new TUI model
 func NewModel(connector AdminConnector, dataDir string) Model {
 	return Model{
-		viewState:           ViewUnlock,
-		connectionState:     ConnectionConnecting,
-		connector:           connector,
-		transportLabel:      connector.Label(),
-		dataDir:             dataDir,
-		signerLocked:        true,
-		passphraseMasked:    true,
-		importMnemonicInput: newImportMnemonicInput(),
+		viewState:       ViewUnlock,
+		connectionState: ConnectionConnecting,
+		connector:       connector,
+		transportLabel:  connector.Label(),
+		dataDir:         dataDir,
+		signerLocked:    true,
+		auth:            authState{passphraseMasked: true},
+		forms:           formsState{importMnemonicInput: newImportMnemonicInput()},
 	}
 }
 

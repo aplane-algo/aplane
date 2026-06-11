@@ -20,11 +20,11 @@ func TestKeyListLockShortcutOpensLockConfirm(t *testing.T) {
 	if got.viewState != ViewLockConfirm {
 		t.Fatalf("viewState = %v, want ViewLockConfirm", got.viewState)
 	}
-	if got.manualLockConfirmFocus != 0 {
-		t.Fatalf("manualLockConfirmFocus = %d, want 0", got.manualLockConfirmFocus)
+	if got.manualLock.focus != 0 {
+		t.Fatalf("manualLockConfirmFocus = %d, want 0", got.manualLock.focus)
 	}
-	if got.manualLockReturnView != ViewKeyList {
-		t.Fatalf("manualLockReturnView = %v, want ViewKeyList", got.manualLockReturnView)
+	if got.manualLock.returnView != ViewKeyList {
+		t.Fatalf("manualLockReturnView = %v, want ViewKeyList", got.manualLock.returnView)
 	}
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -33,9 +33,8 @@ func TestKeyListLockShortcutOpensLockConfirm(t *testing.T) {
 
 func TestLockConfirmStartsManualLock(t *testing.T) {
 	m := Model{
-		viewState:              ViewLockConfirm,
-		manualLockReturnView:   ViewKeyList,
-		manualLockConfirmFocus: 1,
+		viewState:  ViewLockConfirm,
+		manualLock: manualLockState{returnView: ViewKeyList, focus: 1},
 	}
 
 	next, cmd := m.handleLockConfirmKeys(tea.KeyMsg{Type: tea.KeyEnter})
@@ -43,7 +42,7 @@ func TestLockConfirmStartsManualLock(t *testing.T) {
 	if got.viewState != ViewKeyList {
 		t.Fatalf("viewState = %v, want ViewKeyList", got.viewState)
 	}
-	if !got.manualLockPending {
+	if !got.manualLock.pending {
 		t.Fatal("manualLockPending = false, want true")
 	}
 	if cmd == nil {
@@ -53,18 +52,18 @@ func TestLockConfirmStartsManualLock(t *testing.T) {
 
 func TestManualLockFailureDoesNotAffectIdleDisconnectState(t *testing.T) {
 	m := activityReadyModel()
-	m.manualLockPending = true
-	m.localIdleDisconnectSent = true
+	m.manualLock.pending = true
+	m.activity.idleDisconnectSent = true
 
 	next, _ := m.Update(LockIdentityResultMsg{
 		Success: false,
 		Error:   "authorization denied",
 	})
 	got := next.(Model)
-	if got.manualLockPending {
+	if got.manualLock.pending {
 		t.Fatal("manualLockPending = true, want false")
 	}
-	if !got.localIdleDisconnectSent {
+	if !got.activity.idleDisconnectSent {
 		t.Fatal("manual lock failure changed localIdleDisconnectSent")
 	}
 	if !strings.Contains(got.lastError, "Lock failed: authorization denied") {

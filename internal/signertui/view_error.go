@@ -8,11 +8,11 @@ import (
 )
 
 func (m Model) renderErrorView() string {
-	title := strings.TrimSpace(m.errorPopupTitle)
+	title := strings.TrimSpace(m.errorPopup.title)
 	if title == "" {
 		title = "Serious signer error"
 	}
-	message := strings.TrimSpace(m.errorPopupMessage)
+	message := strings.TrimSpace(m.errorPopup.message)
 	if message == "" {
 		message = "An unknown signer error occurred."
 	}

@@ -32,38 +32,38 @@ func (m Model) handlePassphraseKeys(msg tea.KeyMsg, onSubmit func(string) tea.Cm
 		// Allow reconnect when disconnected
 		if m.connectionState == ConnectionDisconnected {
 			m.connectionState = ConnectionConnecting
-			m.passphraseInput = ""
+			m.auth.passphraseInput = ""
 			return m, m.reconnectCmd()
 		}
 		// Otherwise treat as regular character
-		m.passphraseInput += msg.String()
-		m.passphraseError = "" // Clear error on input
+		m.auth.passphraseInput += msg.String()
+		m.auth.passphraseError = "" // Clear error on input
 
 	case "enter":
 		// Don't submit if disconnected
 		if m.connectionState == ConnectionDisconnected {
 			return m, nil
 		}
-		if m.passphraseInput != "" {
-			m.loggingIn = true
-			return m, onSubmit(m.passphraseInput)
+		if m.auth.passphraseInput != "" {
+			m.auth.loggingIn = true
+			return m, onSubmit(m.auth.passphraseInput)
 		}
 
 	case "backspace":
-		if len(m.passphraseInput) > 0 {
-			m.passphraseInput = m.passphraseInput[:len(m.passphraseInput)-1]
-			m.passphraseError = "" // Clear error on input
+		if len(m.auth.passphraseInput) > 0 {
+			m.auth.passphraseInput = m.auth.passphraseInput[:len(m.auth.passphraseInput)-1]
+			m.auth.passphraseError = "" // Clear error on input
 		}
 
 	case "tab":
 		// Toggle passphrase visibility
-		m.passphraseMasked = !m.passphraseMasked
+		m.auth.passphraseMasked = !m.auth.passphraseMasked
 
 	default:
 		// Add character to passphrase input (only when connected)
 		if m.connectionState != ConnectionDisconnected && len(msg.String()) == 1 {
-			m.passphraseInput += msg.String()
-			m.passphraseError = "" // Clear error on input
+			m.auth.passphraseInput += msg.String()
+			m.auth.passphraseError = "" // Clear error on input
 		}
 	}
 

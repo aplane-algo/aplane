@@ -145,11 +145,11 @@ func (m Model) openPolicyViewer() (tea.Model, tea.Cmd) {
 
 func (m Model) openPolicyEditor() (tea.Model, tea.Cmd) {
 	target := m.defaultPolicyEditorTarget()
-	m.policyEditorReturnView = m.viewState
-	m.policyEditor = nil
-	m.policyEditorTarget = string(target)
-	m.policyEditorLoading = true
-	m.policyEditorError = ""
+	m.policyEd.returnView = m.viewState
+	m.policyEd.editor = nil
+	m.policyEd.target = string(target)
+	m.policyEd.loading = true
+	m.policyEd.err = ""
 	m.viewState = ViewPolicyEditor
 	return m, m.loadPolicyEditorCmd(target)
 }
@@ -175,7 +175,7 @@ func (m Model) loadPolicyEditorCmd(target policyeditor.Target) tea.Cmd {
 }
 
 func (m Model) defaultPolicyEditorTarget() policyeditor.Target {
-	if m.adminSettings != nil && strings.EqualFold(strings.TrimSpace(m.adminSettings.NodeRole), "sentry") {
+	if m.admin.settings != nil && strings.EqualFold(strings.TrimSpace(m.admin.settings.NodeRole), "sentry") {
 		return policyeditor.TargetSentry
 	}
 	return policyeditor.TargetSigner
@@ -185,10 +185,10 @@ func (m Model) handlePolicyEditorLoaded(msg policyEditorLoadedMsg) (tea.Model, t
 	if m.viewState != ViewPolicyEditor {
 		return m, nil
 	}
-	m.policyEditorLoading = false
-	m.policyEditorError = ""
+	m.policyEd.loading = false
+	m.policyEd.err = ""
 	if msg.err != nil {
-		m.policyEditorError = msg.err.Error()
+		m.policyEd.err = msg.err.Error()
 		m.lastError = "Policy editor failed: " + msg.err.Error()
 		return m, nil
 	}
@@ -198,22 +198,22 @@ func (m Model) handlePolicyEditorLoaded(msg policyEditorLoadedMsg) (tea.Model, t
 	}
 	editor := policytui.NewWithTarget(msg.store, msg.stored, "apsigner admin protocol", identityID, msg.target)
 	editorModel, cmd := editor.Update(tea.WindowSizeMsg{Width: m.width, Height: m.policyEditorHeight()})
-	m.policyEditor = editorModel
+	m.policyEd.editor = editorModel
 	return m, wrapPolicyEditorCmd(cmd)
 }
 
 func (m Model) handlePolicyEditorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.policyEditor == nil {
+	if m.policyEd.editor == nil {
 		switch msg.String() {
 		case "esc", "q":
 			return m.closePolicyEditor()
 		case "r", "R":
 			target := m.defaultPolicyEditorTarget()
-			if m.policyEditorTarget != "" {
-				target = policyeditor.Target(m.policyEditorTarget)
+			if m.policyEd.target != "" {
+				target = policyeditor.Target(m.policyEd.target)
 			}
-			m.policyEditorLoading = true
-			m.policyEditorError = ""
+			m.policyEd.loading = true
+			m.policyEd.err = ""
 			return m, m.loadPolicyEditorCmd(target)
 		default:
 			return m, nil
@@ -223,44 +223,44 @@ func (m Model) handlePolicyEditorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) forwardPolicyEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.policyEditor == nil {
+	if m.policyEd.editor == nil {
 		return m, nil
 	}
-	editor, cmd := m.policyEditor.Update(msg)
-	m.policyEditor = editor
+	editor, cmd := m.policyEd.editor.Update(msg)
+	m.policyEd.editor = editor
 	return m, wrapPolicyEditorCmd(cmd)
 }
 
 func (m Model) closePolicyEditor() (tea.Model, tea.Cmd) {
-	if m.policyEditorReturnView == 0 || m.policyEditorReturnView == ViewPolicyEditor {
-		m.policyEditorReturnView = ViewAdminPanel
+	if m.policyEd.returnView == 0 || m.policyEd.returnView == ViewPolicyEditor {
+		m.policyEd.returnView = ViewAdminPanel
 	}
-	m.viewState = m.policyEditorReturnView
-	m.policyEditor = nil
-	m.policyEditorLoading = false
-	m.policyEditorError = ""
-	m.policyEditorTarget = ""
+	m.viewState = m.policyEd.returnView
+	m.policyEd.editor = nil
+	m.policyEd.loading = false
+	m.policyEd.err = ""
+	m.policyEd.target = ""
 	return m, nil
 }
 
 func (m Model) renderPolicyEditor() string {
-	if m.policyEditorLoading {
+	if m.policyEd.loading {
 		return titleStyle.Render("Policy") + "\n" + subtitleStyle.Render("Loading policy editor...")
 	}
-	if m.policyEditorError != "" {
-		return titleStyle.Render("Policy") + "\n" + errorStyle.Render(m.policyEditorError)
+	if m.policyEd.err != "" {
+		return titleStyle.Render("Policy") + "\n" + errorStyle.Render(m.policyEd.err)
 	}
-	if m.policyEditor == nil {
+	if m.policyEd.editor == nil {
 		return titleStyle.Render("Policy") + "\n" + subtitleStyle.Render("No policy editor loaded")
 	}
-	return m.policyEditor.View()
+	return m.policyEd.editor.View()
 }
 
 func (m Model) policyEditorFooterText() string {
-	if m.policyEditorLoading {
+	if m.policyEd.loading {
 		return "loading policy editor"
 	}
-	if m.policyEditorError != "" || m.policyEditor == nil {
+	if m.policyEd.err != "" || m.policyEd.editor == nil {
 		return "r: Retry | esc/q: Back"
 	}
 	return "policy editor: q/esc: Back | v: Validate | a: Apply | w: Write draft"

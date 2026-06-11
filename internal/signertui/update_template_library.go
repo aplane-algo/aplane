@@ -9,62 +9,62 @@ func (m Model) handleTemplateLibraryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
 		m.viewState = ViewAdminPanel
-		m.templateInstallError = ""
+		m.library.installError = ""
 		return m, nil
 
 	case "r", "R":
-		m.templateInstallError = ""
-		m.templateInstallStatus = ""
+		m.library.installError = ""
+		m.library.installStatus = ""
 		return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
 
 	case "up", "k":
-		if m.selectedTemplate > 0 {
-			m.selectedTemplate--
+		if m.library.selectedTemplate > 0 {
+			m.library.selectedTemplate--
 			m = m.ensureTemplateVisible()
 		}
 		return m, nil
 
 	case "down", "j":
-		if m.selectedTemplate < len(m.libraryTemplates)-1 {
-			m.selectedTemplate++
+		if m.library.selectedTemplate < len(m.library.templates)-1 {
+			m.library.selectedTemplate++
 			m = m.ensureTemplateVisible()
 		}
 		return m, nil
 
 	case "t", "T":
-		if len(m.libraryTemplates) == 0 || m.selectedTemplate < 0 || m.selectedTemplate >= len(m.libraryTemplates) {
+		if len(m.library.templates) == 0 || m.library.selectedTemplate < 0 || m.library.selectedTemplate >= len(m.library.templates) {
 			return m, nil
 		}
-		tmpl := m.libraryTemplates[m.selectedTemplate]
-		m.libraryDetailsReturnView = ViewTemplateLibrary
+		tmpl := m.library.templates[m.library.selectedTemplate]
+		m.library.detailsReturnView = ViewTemplateLibrary
 		next, cmd, errMsg := m.openLibraryTemplateDetails(tmpl)
 		if errMsg != "" {
 			m = next
-			m.templateInstallStatus = ""
-			m.templateInstallError = errMsg
+			m.library.installStatus = ""
+			m.library.installError = errMsg
 			return m, nil
 		}
 		return next, cmd
 
 	case "enter":
-		if len(m.libraryTemplates) == 0 || m.selectedTemplate < 0 || m.selectedTemplate >= len(m.libraryTemplates) {
+		if len(m.library.templates) == 0 || m.library.selectedTemplate < 0 || m.library.selectedTemplate >= len(m.library.templates) {
 			return m, nil
 		}
-		tmpl := m.libraryTemplates[m.selectedTemplate]
+		tmpl := m.library.templates[m.library.selectedTemplate]
 		if tmpl.Invalid != "" {
-			m.templateInstallError = "Cannot " + libraryActionVerb(tmpl) + " invalid " + libraryEntryNoun(tmpl) + ": " + tmpl.Invalid
-			m.templateInstallStatus = ""
+			m.library.installError = "Cannot " + libraryActionVerb(tmpl) + " invalid " + libraryEntryNoun(tmpl) + ": " + tmpl.Invalid
+			m.library.installStatus = ""
 			return m, nil
 		}
 		if tmpl.Conflict != "" {
-			m.templateInstallError = "Cannot " + libraryActionVerb(tmpl) + " conflicting " + libraryEntryNoun(tmpl) + ": " + tmpl.Conflict
-			m.templateInstallStatus = ""
+			m.library.installError = "Cannot " + libraryActionVerb(tmpl) + " conflicting " + libraryEntryNoun(tmpl) + ": " + tmpl.Conflict
+			m.library.installStatus = ""
 			return m, nil
 		}
-		m.pendingTemplate = &tmpl
-		m.templateInstallFocus = 0
-		m.templateInstallError = ""
-		m.templateInstallStatus = ""
+		m.library.pendingTemplate = &tmpl
+		m.library.installFocus = 0
+		m.library.installError = ""
+		m.library.installStatus = ""
 		m.viewState = ViewTemplateInstallConfirm
 		return m, nil
 	}
@@ -73,31 +73,31 @@ func (m Model) handleTemplateLibraryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) openLibraryTemplateDetails(tmpl LibraryTemplateInfo) (Model, tea.Cmd, string) {
-	m.libraryDetailsKeyType = tmpl.KeyType
-	m.libraryDetailsTemplateType = tmpl.TemplateType
-	m.libraryDetailsSourceSHA256 = ""
-	m.libraryDetailsSourceModTime = 0
-	m.libraryDetailsContent = ""
-	m.libraryDetailsError = ""
-	m.libraryDetailsScrollOffset = 0
-	if m.libraryDetailsReturnView == 0 {
-		m.libraryDetailsReturnView = ViewTemplateLibrary
+	m.library.detailsKeyType = tmpl.KeyType
+	m.library.detailsTemplateType = tmpl.TemplateType
+	m.library.detailsSourceSHA256 = ""
+	m.library.detailsSourceModTime = 0
+	m.library.detailsContent = ""
+	m.library.detailsError = ""
+	m.library.detailsScrollOffset = 0
+	if m.library.detailsReturnView == 0 {
+		m.library.detailsReturnView = ViewTemplateLibrary
 	}
 
 	if isCompiledProviderLibraryEntry(tmpl) {
 		// No YAML on disk for compiled providers; synthesize a parameter
 		// listing from the metadata the server already shipped with the list.
-		m.libraryDetailsSourcePath = ""
-		m.libraryDetailsContent = renderCompiledProviderDetailsText(tmpl)
-		m.libraryDetailsLoading = false
+		m.library.detailsSourcePath = ""
+		m.library.detailsContent = renderCompiledProviderDetailsText(tmpl)
+		m.library.detailsLoading = false
 		m.viewState = ViewLibraryTemplateDetails
 		return m, nil, ""
 	}
 	if tmpl.SourcePath == "" {
 		return m, nil, displayKeyType(tmpl.KeyType) + " has no plaintext library YAML source to view."
 	}
-	m.libraryDetailsSourcePath = tmpl.SourcePath
-	m.libraryDetailsLoading = true
+	m.library.detailsSourcePath = tmpl.SourcePath
+	m.library.detailsLoading = true
 	m.viewState = ViewLibraryTemplateDetails
 	return m, tea.Batch(
 		m.sendShowLibraryTemplateCmd(tmpl.KeyType, tmpl.TemplateType),
@@ -109,25 +109,25 @@ func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.
 	switch msg.String() {
 	case "esc", "n", "N":
 		m.viewState = ViewTemplateLibrary
-		m.pendingTemplate = nil
+		m.library.pendingTemplate = nil
 		return m, nil
 
 	case "tab", "left", "right", "h", "l":
-		m.templateInstallFocus = (m.templateInstallFocus + 1) % 2
+		m.library.installFocus = (m.library.installFocus + 1) % 2
 		return m, nil
 
 	case "enter", " ":
-		if m.templateInstallFocus == 0 {
+		if m.library.installFocus == 0 {
 			m.viewState = ViewTemplateLibrary
-			m.pendingTemplate = nil
+			m.library.pendingTemplate = nil
 			return m, nil
 		}
-		if m.pendingTemplate == nil {
-			m.templateInstallError = "No library entry selected"
+		if m.library.pendingTemplate == nil {
+			m.library.installError = "No library entry selected"
 			m.viewState = ViewTemplateLibrary
 			return m, nil
 		}
-		tmpl := *m.pendingTemplate
+		tmpl := *m.library.pendingTemplate
 		m.viewState = ViewTemplateInstalling
 		return m, tea.Batch(
 			m.libraryActionCmd(tmpl),
@@ -135,12 +135,12 @@ func (m Model) handleTemplateInstallConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.
 		)
 
 	case "y", "Y":
-		if m.pendingTemplate == nil {
-			m.templateInstallError = "No library entry selected"
+		if m.library.pendingTemplate == nil {
+			m.library.installError = "No library entry selected"
 			m.viewState = ViewTemplateLibrary
 			return m, nil
 		}
-		tmpl := *m.pendingTemplate
+		tmpl := *m.library.pendingTemplate
 		m.viewState = ViewTemplateInstalling
 		return m, tea.Batch(
 			m.libraryActionCmd(tmpl),
@@ -169,14 +169,14 @@ func (m Model) libraryActionCmd(tmpl LibraryTemplateInfo) tea.Cmd {
 
 func (m Model) ensureTemplateVisible() Model {
 	visible := m.templateLibraryVisibleHeight()
-	if m.selectedTemplate < m.templateScrollOffset {
-		m.templateScrollOffset = m.selectedTemplate
+	if m.library.selectedTemplate < m.library.scrollOffset {
+		m.library.scrollOffset = m.library.selectedTemplate
 	}
-	if m.selectedTemplate >= m.templateScrollOffset+visible {
-		m.templateScrollOffset = m.selectedTemplate - visible + 1
+	if m.library.selectedTemplate >= m.library.scrollOffset+visible {
+		m.library.scrollOffset = m.library.selectedTemplate - visible + 1
 	}
-	if m.templateScrollOffset < 0 {
-		m.templateScrollOffset = 0
+	if m.library.scrollOffset < 0 {
+		m.library.scrollOffset = 0
 	}
 	return m
 }

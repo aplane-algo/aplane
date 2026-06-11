@@ -29,10 +29,9 @@ func TestApplyInputModeTransforms_NormalizesAddressListParams(t *testing.T) {
 
 	m := Model{
 		dataDir: "/does/not/exist",
-		genericLSigParams: map[string]string{
+		forms: formsState{genericLSigParams: map[string]string{
 			"recipients": addr1 + "\n" + addr2 + ", " + addr3 + "\r\n" + addr4,
-		},
-		genericLSigParamModes: map[string]int{},
+		}, genericLSigParamModes: map[string]int{}},
 	}
 	params := []lsigprovider.ParameterDef{
 		{Name: "recipients", Type: "address[]"},
@@ -73,10 +72,9 @@ func TestApplyInputModeTransforms_ResolvesAddressListAliasesAndSets(t *testing.T
 
 	m := Model{
 		dataDir: tmpDir,
-		genericLSigParams: map[string]string{
+		forms: formsState{genericLSigParams: map[string]string{
 			"recipients": "alice\n@friends",
-		},
-		genericLSigParamModes: map[string]int{},
+		}, genericLSigParamModes: map[string]int{}},
 	}
 	params := []lsigprovider.ParameterDef{
 		{Name: "recipients", Type: "address[]"},
@@ -104,29 +102,21 @@ func TestSplitAddressListValueAcceptsWhitespaceSeparators(t *testing.T) {
 }
 
 func TestHandleParamInput_AddressListPreservesAliasCase(t *testing.T) {
-	m := Model{
-		genericLSigParams:     map[string]string{},
-		genericLSigParamOrder: []string{"recipients"},
-		generateFocus:         0,
-	}
+	m := Model{forms: formsState{genericLSigParams: map[string]string{}, genericLSigParamOrder: []string{"recipients"}, generateFocus: 0}}
 
 	got := m.appendToCurrentParam("alice\n@friends", []lsigprovider.ParameterDef{
 		{Name: "recipients", Type: "address[]"},
 	})
-	if got.genericLSigParams["recipients"] != "alice\n@friends" {
-		t.Fatalf("address[] input = %q, want %q", got.genericLSigParams["recipients"], "alice\n@friends")
+	if got.forms.genericLSigParams["recipients"] != "alice\n@friends" {
+		t.Fatalf("address[] input = %q, want %q", got.forms.genericLSigParams["recipients"], "alice\n@friends")
 	}
 
-	m = Model{
-		genericLSigParams:     map[string]string{},
-		genericLSigParamOrder: []string{"recipients"},
-		generateFocus:         0,
-	}
+	m = Model{forms: formsState{genericLSigParams: map[string]string{}, genericLSigParamOrder: []string{"recipients"}, generateFocus: 0}}
 	got = m.appendToCurrentParam("alice,bob", []lsigprovider.ParameterDef{
 		{Name: "recipients", Type: "address[]"},
 	})
-	if got.genericLSigParams["recipients"] != "alice\nbob" {
-		t.Fatalf("address[] comma input = %q, want %q", got.genericLSigParams["recipients"], "alice\nbob")
+	if got.forms.genericLSigParams["recipients"] != "alice\nbob" {
+		t.Fatalf("address[] comma input = %q, want %q", got.forms.genericLSigParams["recipients"], "alice\nbob")
 	}
 }
 
@@ -144,35 +134,31 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 		}},
 	}})
 
-	m := Model{generateKeyType: 0}
+	m := Model{forms: formsState{generateKeyType: 0}}
 	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-sentry-ed25519.v1")
-	if got := m.genericLSigParams["sentry"]; got != "lab-sentry" {
+	if got := m.forms.genericLSigParams["sentry"]; got != "lab-sentry" {
 		t.Fatalf("default sentry = %q, want lab-sentry", got)
 	}
 
-	m.generateFocus = 0
+	m.forms.generateFocus = 0
 	next, cmd := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'>'}})
 	if cmd != nil {
 		t.Fatalf("cycle command = %v, want nil", cmd)
 	}
 	m = next.(Model)
-	if got := m.genericLSigParams["sentry"]; got != "backup-sentry" {
+	if got := m.forms.genericLSigParams["sentry"]; got != "backup-sentry" {
 		t.Fatalf("cycled sentry = %q, want backup-sentry", got)
 	}
 
 	next, _ = m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeyLeft})
 	m = next.(Model)
-	if got := m.genericLSigParams["sentry"]; got != "lab-sentry" {
+	if got := m.forms.genericLSigParams["sentry"]; got != "lab-sentry" {
 		t.Fatalf("left-cycled sentry = %q, want lab-sentry", got)
 	}
 }
 
 func TestHandleParamInputBytesAcceptsDeclaredHexLength(t *testing.T) {
-	m := Model{
-		genericLSigParams:     map[string]string{},
-		genericLSigParamOrder: []string{"sentry_public_key"},
-		generateFocus:         0,
-	}
+	m := Model{forms: formsState{genericLSigParams: map[string]string{}, genericLSigParamOrder: []string{"sentry_public_key"}, generateFocus: 0}}
 	input := "D6FB74E10151AC3B0EAA7431B9B92C772C2A4A600C10B88CFD30169EA1AB4D0A"
 	params := []lsigprovider.ParameterDef{{
 		Name:      "sentry_public_key",
@@ -181,32 +167,28 @@ func TestHandleParamInputBytesAcceptsDeclaredHexLength(t *testing.T) {
 	}}
 
 	got := m.appendToCurrentParam(input, params)
-	if got.genericLSigParams["sentry_public_key"] != strings.ToLower(input) {
-		t.Fatalf("bytes input = %q, want lowercase 64-char hex", got.genericLSigParams["sentry_public_key"])
+	if got.forms.genericLSigParams["sentry_public_key"] != strings.ToLower(input) {
+		t.Fatalf("bytes input = %q, want lowercase 64-char hex", got.forms.genericLSigParams["sentry_public_key"])
 	}
 
 	got = got.appendToCurrentParam("ffff", params)
-	if got.genericLSigParams["sentry_public_key"] != strings.ToLower(input) {
-		t.Fatalf("bytes input exceeded max length: %q", got.genericLSigParams["sentry_public_key"])
+	if got.forms.genericLSigParams["sentry_public_key"] != strings.ToLower(input) {
+		t.Fatalf("bytes input exceeded max length: %q", got.forms.genericLSigParams["sentry_public_key"])
 	}
 }
 
 func TestHandleParamInput_AddressListCapsLineLength(t *testing.T) {
-	m := Model{
-		genericLSigParams:     map[string]string{},
-		genericLSigParamOrder: []string{"recipients"},
-		generateFocus:         0,
-	}
+	m := Model{forms: formsState{genericLSigParams: map[string]string{}, genericLSigParamOrder: []string{"recipients"}, generateFocus: 0}}
 	params := []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]"}}
 	maxLineLen := getFieldWidthForType("address[]", 0) - 1
 
 	got := m.appendToCurrentParam(strings.Repeat("A", maxLineLen+20), params)
-	if gotLen := currentParamLineLength(got.genericLSigParams["recipients"]); gotLen != maxLineLen {
+	if gotLen := currentParamLineLength(got.forms.genericLSigParams["recipients"]); gotLen != maxLineLen {
 		t.Fatalf("address[] line length = %d, want %d", gotLen, maxLineLen)
 	}
 
 	got = got.appendToCurrentParam(" "+strings.Repeat("B", maxLineLen+20), params)
-	lines := strings.Split(got.genericLSigParams["recipients"], "\n")
+	lines := strings.Split(got.forms.genericLSigParams["recipients"], "\n")
 	if len(lines) != 2 {
 		t.Fatalf("address[] lines = %#v, want two lines", lines)
 	}
@@ -228,48 +210,43 @@ func TestHandleParamInput_AddressListAutoScrollsAndPages(t *testing.T) {
 		}},
 	}})
 
-	m := Model{
-		generateKeyType: 0,
-		generateFocus:   0,
-		genericLSigParams: map[string]string{
-			"recipients": "",
-		},
-		genericLSigParamModes: map[string]int{
-			"recipients": 0,
-		},
-		genericLSigParamScroll: map[string]int{
-			"recipients": 0,
-		},
+	m := Model{forms: formsState{generateKeyType: 0, generateFocus: 0, genericLSigParams: map[string]string{
+		"recipients": "",
+	}, genericLSigParamModes: map[string]int{
+		"recipients": 0,
+	}, genericLSigParamScroll: map[string]int{
+		"recipients": 0,
+	}},
 	}
 	params := []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]"}}
 	m = m.appendToCurrentParam("addr1\naddr2\naddr3\naddr4\naddr5\naddr6\naddr7\naddr8", params)
 
-	if got, want := m.genericLSigParamScroll["recipients"], 2; got != want {
+	if got, want := m.forms.genericLSigParamScroll["recipients"], 2; got != want {
 		t.Fatalf("address[] auto-scroll = %d, want %d", got, want)
 	}
 
 	m = applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyPgUp})
-	if got, want := m.genericLSigParamScroll["recipients"], 0; got != want {
+	if got, want := m.forms.genericLSigParamScroll["recipients"], 0; got != want {
 		t.Fatalf("address[] scroll after pgup = %d, want %d", got, want)
 	}
 
 	m = applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyPgDown})
-	if got, want := m.genericLSigParamScroll["recipients"], 2; got != want {
+	if got, want := m.forms.genericLSigParamScroll["recipients"], 2; got != want {
 		t.Fatalf("address[] scroll after pgdown = %d, want %d", got, want)
 	}
 
 	m = applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyUp})
-	if got, want := m.genericLSigParamScroll["recipients"], 1; got != want {
+	if got, want := m.forms.genericLSigParamScroll["recipients"], 1; got != want {
 		t.Fatalf("address[] scroll after up = %d, want %d", got, want)
 	}
 
 	m = applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyDown})
-	if got, want := m.genericLSigParamScroll["recipients"], 2; got != want {
+	if got, want := m.forms.genericLSigParamScroll["recipients"], 2; got != want {
 		t.Fatalf("address[] scroll after down = %d, want %d", got, want)
 	}
 
 	m = applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	if got, want := m.generateFocus, 1; got != want {
+	if got, want := m.forms.generateFocus, 1; got != want {
 		t.Fatalf("focus after j = %d, want %d", got, want)
 	}
 }
@@ -298,13 +275,13 @@ func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 	}})
 
 	m := Model{
-		viewState:       ViewGenerateForm,
-		generateKeyType: 0,
-		libraryTemplates: []protocol.LibraryTemplateInfo{{
+		viewState: ViewGenerateForm,
+		forms:     formsState{generateKeyType: 0},
+		library: libraryState{templates: []protocol.LibraryTemplateInfo{{
 			KeyType:      "aplane.whitelist.v1",
 			TemplateType: "generic",
 			SourcePath:   "/tmp/keystore/library/templates/aplane.whitelist.v1.yaml",
-		}},
+		}}},
 	}
 
 	next, cmd := m.handleGenerateFormKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
@@ -312,8 +289,8 @@ func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 	if got.viewState != ViewLibraryTemplateDetails {
 		t.Fatalf("viewState after t = %v, want ViewLibraryTemplateDetails", got.viewState)
 	}
-	if !got.libraryDetailsLoading || got.libraryDetailsKeyType != "aplane.whitelist.v1" || got.libraryDetailsTemplateType != "generic" {
-		t.Fatalf("library details state = loading:%v key:%q type:%q", got.libraryDetailsLoading, got.libraryDetailsKeyType, got.libraryDetailsTemplateType)
+	if !got.library.detailsLoading || got.library.detailsKeyType != "aplane.whitelist.v1" || got.library.detailsTemplateType != "generic" {
+		t.Fatalf("library details state = loading:%v key:%q type:%q", got.library.detailsLoading, got.library.detailsKeyType, got.library.detailsTemplateType)
 	}
 	if cmd == nil {
 		t.Fatal("template shortcut for YAML entry returned nil cmd, want show-template request")
@@ -333,7 +310,7 @@ func TestGenerateFormTemplateShortcutSynthesizesDefaultCompiledProviderDetails(t
 		RequiresLogicSig: true,
 	}})
 
-	m := Model{viewState: ViewGenerateForm, generateKeyType: 0}
+	m := Model{viewState: ViewGenerateForm, forms: formsState{generateKeyType: 0}}
 
 	next, cmd := m.handleGenerateFormKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 	got := next.(Model)
@@ -343,7 +320,7 @@ func TestGenerateFormTemplateShortcutSynthesizesDefaultCompiledProviderDetails(t
 	if got.viewState != ViewLibraryTemplateDetails {
 		t.Fatalf("viewState after t = %v, want ViewLibraryTemplateDetails", got.viewState)
 	}
-	if got.libraryDetailsLoading {
+	if got.library.detailsLoading {
 		t.Fatal("compiled provider details are loading, want synthesized details")
 	}
 	for _, want := range []string{"Compiled provider: falcon1024.v1", "Publisher: aplane", "Default post-quantum signer"} {
@@ -361,7 +338,7 @@ func TestGenerateFormTemplateShortcutReportsMissingTemplate(t *testing.T) {
 		DisplayName: "Ed25519",
 	}})
 
-	m := Model{viewState: ViewGenerateForm, generateKeyType: 0}
+	m := Model{viewState: ViewGenerateForm, forms: formsState{generateKeyType: 0}}
 
 	next, cmd := m.handleGenerateFormKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 	got := next.(Model)
@@ -371,8 +348,8 @@ func TestGenerateFormTemplateShortcutReportsMissingTemplate(t *testing.T) {
 	if got.viewState != ViewGenerateForm {
 		t.Fatalf("viewState after missing template = %v, want ViewGenerateForm", got.viewState)
 	}
-	if !strings.Contains(got.generateError, "no template details available") {
-		t.Fatalf("generateError = %q, want missing template details", got.generateError)
+	if !strings.Contains(got.forms.generateError, "no template details available") {
+		t.Fatalf("generateError = %q, want missing template details", got.forms.generateError)
 	}
 }
 
@@ -387,15 +364,11 @@ func TestHandleParamModalKeys_AddressListSpaceAndEnterStayInField(t *testing.T) 
 		}},
 	}})
 
-	m := Model{
-		generateKeyType: 0,
-		generateFocus:   0,
-		genericLSigParams: map[string]string{
-			"recipients": "alice",
-		},
-		genericLSigParamModes: map[string]int{
-			"recipients": 0,
-		},
+	m := Model{forms: formsState{generateKeyType: 0, generateFocus: 0, genericLSigParams: map[string]string{
+		"recipients": "alice",
+	}, genericLSigParamModes: map[string]int{
+		"recipients": 0,
+	}},
 	}
 
 	next, cmd := m.handleGenerateParamsKeys(tea.KeyMsg{Type: tea.KeySpace})
@@ -406,17 +379,17 @@ func TestHandleParamModalKeys_AddressListSpaceAndEnterStayInField(t *testing.T) 
 	if !ok {
 		t.Fatalf("handleGenerateParamsKeys(space) returned %T, want Model", next)
 	}
-	if got, want := updated.generateFocus, 0; got != want {
+	if got, want := updated.forms.generateFocus, 0; got != want {
 		t.Fatalf("focus after space = %d, want %d", got, want)
 	}
-	if got, want := updated.genericLSigParams["recipients"], "alice\n"; got != want {
+	if got, want := updated.forms.genericLSigParams["recipients"], "alice\n"; got != want {
 		t.Fatalf("recipients after space = %q, want %q", got, want)
 	}
 
 	updated = applyParamKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
 	updated = applyParamKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	updated = applyParamKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
-	if got, want := updated.genericLSigParams["recipients"], "alice\nbob"; got != want {
+	if got, want := updated.forms.genericLSigParams["recipients"], "alice\nbob"; got != want {
 		t.Fatalf("recipients after typing next address = %q, want %q", got, want)
 	}
 
@@ -428,10 +401,10 @@ func TestHandleParamModalKeys_AddressListSpaceAndEnterStayInField(t *testing.T) 
 	if !ok {
 		t.Fatalf("handleGenerateParamsKeys(enter) returned %T, want Model", next)
 	}
-	if got, want := updated.generateFocus, 0; got != want {
+	if got, want := updated.forms.generateFocus, 0; got != want {
 		t.Fatalf("focus after enter = %d, want %d", got, want)
 	}
-	if got, want := updated.genericLSigParams["recipients"], "alice\nbob\n"; got != want {
+	if got, want := updated.forms.genericLSigParams["recipients"], "alice\nbob\n"; got != want {
 		t.Fatalf("recipients after enter = %q, want %q", got, want)
 	}
 }
@@ -462,10 +435,7 @@ func TestNewImportMnemonicInputIsMultiline(t *testing.T) {
 func TestHandleImportFormKeys_MnemonicCursorEditing(t *testing.T) {
 	input := newImportMnemonicInput()
 	_ = input.Focus()
-	m := Model{
-		importFocus:         1,
-		importMnemonicInput: input,
-	}
+	m := Model{forms: formsState{importFocus: 1, importMnemonicInput: input}}
 
 	m = applyImportKeys(t, m, keyRunes("alpha beta gamma"))
 	for i := 0; i < len("gamma"); i++ {
@@ -473,7 +443,7 @@ func TestHandleImportFormKeys_MnemonicCursorEditing(t *testing.T) {
 	}
 	m = applyImportKeys(t, m, keyRunes("fixed "))
 
-	if got, want := m.importMnemonicInput.Value(), "alpha beta fixed gamma"; got != want {
+	if got, want := m.forms.importMnemonicInput.Value(), "alpha beta fixed gamma"; got != want {
 		t.Fatalf("mnemonic input = %q, want %q", got, want)
 	}
 }
@@ -481,10 +451,10 @@ func TestHandleImportFormKeys_MnemonicCursorEditing(t *testing.T) {
 func TestSubmitImportValidatesMnemonicWordCountLocally(t *testing.T) {
 	input := newImportMnemonicInput()
 	input.SetValue("alpha beta gamma")
-	m := Model{
+	m := Model{forms: formsState{
 		importKeyType:       0, // ed25519 expects 25 words
 		importMnemonicInput: input,
-	}
+	}}
 
 	next, cmd := m.submitImport()
 	if cmd != nil {
@@ -494,7 +464,7 @@ func TestSubmitImportValidatesMnemonicWordCountLocally(t *testing.T) {
 	if !ok {
 		t.Fatalf("submitImport returned %T, want Model", next)
 	}
-	if got, want := updated.importError, "Recovery phrase must contain 25 words, got 3"; got != want {
+	if got, want := updated.forms.importError, "Recovery phrase must contain 25 words, got 3"; got != want {
 		t.Fatalf("importError = %q, want %q", got, want)
 	}
 }

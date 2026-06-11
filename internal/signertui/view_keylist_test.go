@@ -69,12 +69,9 @@ func TestRenderKeyDetailsShowsAddressListOnePerLine(t *testing.T) {
 		}},
 	}})
 
-	rendered := Model{
-		detailsKeyType: "whitelist-test-v1",
-		detailsParameters: map[string]string{
-			"recipients": "ADDR1,ADDR2",
-		},
-		height: 30,
+	rendered := Model{details: keyDetailsState{keyType: "whitelist-test-v1", parameters: map[string]string{
+		"recipients": "ADDR1,ADDR2",
+	}}, height: 30,
 	}.renderKeyDetails()
 
 	if strings.Contains(rendered, "ADDR1,ADDR2") ||
@@ -91,10 +88,10 @@ func TestRenderKeyListMiddleEllipsizesLongAddresses(t *testing.T) {
 	m := Model{
 		width:  120,
 		height: 20,
-		keys: []KeyInfo{{
+		keylist: keyListState{keys: []KeyInfo{{
 			Address: address,
 			KeyType: "ed25519",
-		}},
+		}}},
 	}
 
 	rendered := m.renderKeyListView()
@@ -123,11 +120,11 @@ func TestRenderKeyListViewShowsTemplateConflictStatus(t *testing.T) {
 	m := Model{
 		width:  120,
 		height: 20,
-		keys: []KeyInfo{{
+		keylist: keyListState{keys: []KeyInfo{{
 			Address:                  "ADDR",
 			KeyType:                  "mytemplate-v1",
 			TemplateProvenanceStatus: "conflict",
-		}},
+		}}},
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
@@ -138,13 +135,13 @@ func TestRenderKeyListViewShowsTemplateConflictStatus(t *testing.T) {
 
 func TestRenderKeyListViewUsesSignerNodeWithoutTabs(t *testing.T) {
 	m := Model{
-		width:         120,
-		height:        24,
-		adminSettings: &AdminSettings{NodeRole: "signer"},
-		keys: []KeyInfo{
+		width:  120,
+		height: 24,
+		admin:  adminPanelState{settings: &AdminSettings{NodeRole: "signer"}},
+		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
-		},
+		}},
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
@@ -161,14 +158,14 @@ func TestRenderKeyListViewUsesSignerNodeWithoutTabs(t *testing.T) {
 
 func TestRenderKeyListViewDefaultsToSignerNodeWithoutTabs(t *testing.T) {
 	m := Model{
-		viewState:     ViewKeyList,
-		width:         120,
-		height:        24,
-		adminSettings: &AdminSettings{},
-		keys: []KeyInfo{
+		viewState: ViewKeyList,
+		width:     120,
+		height:    24,
+		admin:     adminPanelState{settings: &AdminSettings{}},
+		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
-		},
+		}},
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
@@ -188,14 +185,14 @@ func TestRenderKeyListViewDefaultsToSignerNodeWithoutTabs(t *testing.T) {
 
 func TestRenderKeyListViewUsesSentryNodeWithoutTabs(t *testing.T) {
 	m := Model{
-		viewState:     ViewKeyList,
-		width:         120,
-		height:        24,
-		adminSettings: &AdminSettings{NodeRole: "sentry"},
-		keys: []KeyInfo{
+		viewState: ViewKeyList,
+		width:     120,
+		height:    24,
+		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}},
+		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
-		},
+		}},
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
@@ -215,12 +212,12 @@ func TestRenderKeyListViewUsesSentryNodeWithoutTabs(t *testing.T) {
 
 func TestHandleKeyListKeysIgnoresTabOnSentryNode(t *testing.T) {
 	m := Model{
-		viewState:     ViewKeyList,
-		adminSettings: &AdminSettings{NodeRole: "sentry"},
-		keys: []KeyInfo{
+		viewState: ViewKeyList,
+		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}},
+		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
-		},
+		}},
 	}
 
 	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyTab})
@@ -236,12 +233,12 @@ func TestHandleKeyListKeysIgnoresTabOnSentryNode(t *testing.T) {
 
 func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 	m := Model{
-		viewState:     ViewKeyList,
-		adminSettings: &AdminSettings{NodeRole: "signer"},
-		keys: []KeyInfo{
+		viewState: ViewKeyList,
+		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "signer"}},
+		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
-		},
+		}},
 	}
 
 	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyTab})
@@ -256,31 +253,24 @@ func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 }
 
 func TestSelectKeyByAddressSwitchesToSentryTab(t *testing.T) {
-	m := Model{
-		adminSettings: &AdminSettings{NodeRole: "sentry"},
-		keys: []KeyInfo{
+	m := Model{admin: adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}},
+		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
 			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentEd25519V1},
-		},
+		}},
 	}
 
 	m.selectKeyByAddress("SENTRYKEY")
-	if m.keyListTab != keyListTabSentry {
-		t.Fatalf("keyListTab = %v, want sentry", m.keyListTab)
+	if m.keylist.tab != keyListTabSentry {
+		t.Fatalf("keyListTab = %v, want sentry", m.keylist.tab)
 	}
-	if m.selectedKey != 0 {
-		t.Fatalf("selectedKey = %d, want first sentry tab row", m.selectedKey)
+	if m.keylist.selectedKey != 0 {
+		t.Fatalf("selectedKey = %d, want first sentry tab row", m.keylist.selectedKey)
 	}
 }
 
 func TestRenderKeyDetailsShowsPreciseTemplateProvenanceNote(t *testing.T) {
-	rendered := stripANSI(Model{
-		detailsAddress:                  "ADDR",
-		detailsKeyType:                  "mytemplate-v1",
-		detailsTemplateProvenanceStatus: "conflict",
-		detailsTemplateProvenanceNote:   "creation template fingerprint differs",
-		height:                          30,
-	}.renderKeyDetails())
+	rendered := stripANSI(Model{details: keyDetailsState{address: "ADDR", keyType: "mytemplate-v1", templateProvenanceStatus: "conflict", templateProvenanceNote: "creation template fingerprint differs"}, height: 30}.renderKeyDetails())
 
 	if !strings.Contains(rendered, "Type:    [mytemplate-v1] [template provenance]") {
 		t.Fatalf("renderKeyDetails() missing projected template provenance label:\n%s", rendered)
@@ -291,12 +281,7 @@ func TestRenderKeyDetailsShowsPreciseTemplateProvenanceNote(t *testing.T) {
 }
 
 func TestRenderKeyDetailsShowsSentryPublicKey(t *testing.T) {
-	rendered := stripANSI(Model{
-		detailsAddress:      "aabbccdd",
-		detailsKeyType:      keytypes.SentryComponentEd25519V1,
-		detailsPublicKeyHex: "aabbccdd",
-		height:              30,
-	}.renderKeyDetails())
+	rendered := stripANSI(Model{details: keyDetailsState{address: "aabbccdd", keyType: keytypes.SentryComponentEd25519V1, publicKeyHex: "aabbccdd"}, height: 30}.renderKeyDetails())
 
 	if !strings.Contains(rendered, "Sentry public key: aabbccdd") {
 		t.Fatalf("renderKeyDetails() missing sentry public key:\n%s", rendered)
@@ -305,12 +290,7 @@ func TestRenderKeyDetailsShowsSentryPublicKey(t *testing.T) {
 
 func TestRenderKeyDetailsTruncatesLongPublicKey(t *testing.T) {
 	const publicKey = "0123456789abcdef0123456789abcdef0123456789abcdef"
-	rendered := stripANSI(Model{
-		detailsAddress:      "SENTRYKEY",
-		detailsKeyType:      keytypes.SentryComponentFalcon1024V1,
-		detailsPublicKeyHex: publicKey,
-		height:              30,
-	}.renderKeyDetails())
+	rendered := stripANSI(Model{details: keyDetailsState{address: "SENTRYKEY", keyType: keytypes.SentryComponentFalcon1024V1, publicKeyHex: publicKey}, height: 30}.renderKeyDetails())
 
 	if !strings.Contains(rendered, "Sentry public key: 0123456789abcdef0123...") {
 		t.Fatalf("renderKeyDetails() missing truncated sentry public key:\n%s", rendered)
@@ -323,9 +303,7 @@ func TestRenderKeyDetailsTruncatesLongPublicKey(t *testing.T) {
 func TestRenderKeyDetailsLabelsSentryKey(t *testing.T) {
 	rendered := stripANSI(Model{
 		initialNodeRole: "sentry",
-		detailsAddress:  "SENTRYKEY",
-		detailsKeyType:  keytypes.SentryComponentEd25519V1,
-		height:          30,
+		details:         keyDetailsState{address: "SENTRYKEY", keyType: keytypes.SentryComponentEd25519V1}, height: 30,
 	}.renderKeyDetails())
 
 	if !strings.Contains(rendered, "Sentry Key: SENTRYKEY") {
@@ -339,10 +317,10 @@ func TestRenderKeyDetailsLabelsSentryKey(t *testing.T) {
 func TestHandleKeyListKeysDoesNotExportOrDeleteFromMainScreen(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyList,
-		keys: []KeyInfo{{
+		keylist: keyListState{keys: []KeyInfo{{
 			Address: "ADDR",
 			KeyType: "ed25519",
-		}},
+		}}},
 	}
 
 	nextModel, _ := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
@@ -356,18 +334,18 @@ func TestHandleKeyListKeysDoesNotExportOrDeleteFromMainScreen(t *testing.T) {
 	if next.viewState != ViewKeyList {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewKeyList)
 	}
-	if next.deleteAddress != "" {
-		t.Fatalf("deleteAddress = %q, want empty", next.deleteAddress)
+	if next.del.address != "" {
+		t.Fatalf("deleteAddress = %q, want empty", next.del.address)
 	}
 }
 
 func TestKeyListPolicyShortcutOpensPolicyEditor(t *testing.T) {
 	m := Model{
 		viewState: ViewKeyList,
-		keys: []KeyInfo{{
+		keylist: keyListState{keys: []KeyInfo{{
 			Address: "ADDR",
 			KeyType: "ed25519",
-		}},
+		}}},
 	}
 
 	nextModel, cmd := m.handleKeyListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
@@ -375,10 +353,10 @@ func TestKeyListPolicyShortcutOpensPolicyEditor(t *testing.T) {
 	if next.viewState != ViewPolicyEditor {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewPolicyEditor)
 	}
-	if next.policyEditorReturnView != ViewKeyList {
-		t.Fatalf("policyEditorReturnView = %v, want %v", next.policyEditorReturnView, ViewKeyList)
+	if next.policyEd.returnView != ViewKeyList {
+		t.Fatalf("policyEditorReturnView = %v, want %v", next.policyEd.returnView, ViewKeyList)
 	}
-	if !next.policyEditorLoading {
+	if !next.policyEd.loading {
 		t.Fatal("policyEditorLoading = false, want true")
 	}
 	if cmd == nil {
@@ -393,11 +371,8 @@ func TestKeyListPolicyShortcutOpensPolicyEditor(t *testing.T) {
 
 func TestHandleKeyDetailsKeysDoesNotExportFromDetailsScreen(t *testing.T) {
 	m := Model{
-		viewState:         ViewKeyDetails,
-		detailsAddress:    "ADDR",
-		detailsKeyType:    "ed25519",
-		detailsTEAL:       "int 1",
-		detailsSaveStatus: "saved",
+		viewState: ViewKeyDetails,
+		details:   keyDetailsState{address: "ADDR", keyType: "ed25519", teal: "int 1", saveStatus: "saved"},
 	}
 
 	nextModel, _ := m.handleKeyDetailsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
@@ -409,9 +384,8 @@ func TestHandleKeyDetailsKeysDoesNotExportFromDetailsScreen(t *testing.T) {
 
 func TestHandleKeyDetailsKeysDeletesFromDetailsScreen(t *testing.T) {
 	m := Model{
-		viewState:      ViewKeyDetails,
-		detailsAddress: "ADDR",
-		detailsKeyType: "ed25519",
+		viewState: ViewKeyDetails,
+		details:   keyDetailsState{address: "ADDR", keyType: "ed25519"},
 	}
 
 	nextModel, _ := m.handleKeyDetailsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
@@ -419,24 +393,21 @@ func TestHandleKeyDetailsKeysDeletesFromDetailsScreen(t *testing.T) {
 	if next.viewState != ViewDeleteConfirm {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewDeleteConfirm)
 	}
-	if next.deleteAddress != "ADDR" {
-		t.Fatalf("deleteAddress = %q, want ADDR", next.deleteAddress)
+	if next.del.address != "ADDR" {
+		t.Fatalf("deleteAddress = %q, want ADDR", next.del.address)
 	}
-	if next.deleteKeyType != "ed25519" {
-		t.Fatalf("deleteKeyType = %q, want ed25519", next.deleteKeyType)
+	if next.del.keyType != "ed25519" {
+		t.Fatalf("deleteKeyType = %q, want ed25519", next.del.keyType)
 	}
-	if next.deleteConfirmFocus != 0 {
-		t.Fatalf("deleteConfirmFocus = %d, want 0", next.deleteConfirmFocus)
+	if next.del.focus != 0 {
+		t.Fatalf("deleteConfirmFocus = %d, want 0", next.del.focus)
 	}
 }
 
 func TestHandleKeyDetailsTKeyOpensInternalTEALDisplay(t *testing.T) {
 	m := Model{
-		viewState:      ViewKeyDetails,
-		detailsAddress: "ADDR",
-		detailsKeyType: "generic",
-		detailsTEAL:    "int 1",
-		dataDir:        "",
+		viewState: ViewKeyDetails,
+		details:   keyDetailsState{address: "ADDR", keyType: "generic", teal: "int 1"}, dataDir: "",
 	}
 
 	nextModel, cmd := m.handleKeyDetailsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
@@ -451,10 +422,8 @@ func TestHandleKeyDetailsTKeyOpensInternalTEALDisplay(t *testing.T) {
 
 func TestHandleKeyDetailsVKeyDoesNotOpenTEALDisplay(t *testing.T) {
 	m := Model{
-		viewState:      ViewKeyDetails,
-		detailsAddress: "ADDR",
-		detailsKeyType: "generic",
-		detailsTEAL:    "int 1",
+		viewState: ViewKeyDetails,
+		details:   keyDetailsState{address: "ADDR", keyType: "generic", teal: "int 1"},
 	}
 
 	nextModel, cmd := m.handleKeyDetailsKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
@@ -469,9 +438,8 @@ func TestHandleKeyDetailsVKeyDoesNotOpenTEALDisplay(t *testing.T) {
 
 func TestHandleTEALFullDisplayEscReturnsToKeyDetails(t *testing.T) {
 	m := Model{
-		viewState:           ViewTEALFullDisplay,
-		detailsScrollOffset: 2,
-		detailsTEAL:         "int 1\nint 2\nint 3",
+		viewState: ViewTEALFullDisplay,
+		details:   keyDetailsState{scrollOffset: 2, teal: "int 1\nint 2\nint 3"},
 	}
 
 	nextModel, cmd := m.handleTEALFullDisplayKeys(tea.KeyMsg{Type: tea.KeyEsc})
@@ -482,28 +450,27 @@ func TestHandleTEALFullDisplayEscReturnsToKeyDetails(t *testing.T) {
 	if next.viewState != ViewKeyDetails {
 		t.Fatalf("viewState = %v, want %v", next.viewState, ViewKeyDetails)
 	}
-	if next.detailsScrollOffset != 0 {
-		t.Fatalf("detailsScrollOffset = %d, want reset", next.detailsScrollOffset)
+	if next.details.scrollOffset != 0 {
+		t.Fatalf("detailsScrollOffset = %d, want reset", next.details.scrollOffset)
 	}
 }
 
 func TestHandleTEALFullDisplayPageKeysScrollByPage(t *testing.T) {
 	m := Model{
-		viewState:   ViewTEALFullDisplay,
-		detailsTEAL: strings.Repeat("int 1\n", 30),
-		height:      17,
+		viewState: ViewTEALFullDisplay,
+		details:   keyDetailsState{teal: strings.Repeat("int 1\n", 30)}, height: 17,
 	}
 
 	nextModel, _ := m.handleTEALFullDisplayKeys(tea.KeyMsg{Type: tea.KeyPgDown})
 	next := nextModel.(Model)
-	if next.detailsScrollOffset != next.tealFullDisplayVisibleLines() {
+	if next.details.scrollOffset != next.tealFullDisplayVisibleLines() {
 		t.Fatalf("detailsScrollOffset after pgdown = %d, want %d",
-			next.detailsScrollOffset, next.tealFullDisplayVisibleLines())
+			next.details.scrollOffset, next.tealFullDisplayVisibleLines())
 	}
 
 	nextModel, _ = next.handleTEALFullDisplayKeys(tea.KeyMsg{Type: tea.KeyPgUp})
 	next = nextModel.(Model)
-	if next.detailsScrollOffset != 0 {
-		t.Fatalf("detailsScrollOffset after pgup = %d, want 0", next.detailsScrollOffset)
+	if next.details.scrollOffset != 0 {
+		t.Fatalf("detailsScrollOffset after pgup = %d, want 0", next.details.scrollOffset)
 	}
 }

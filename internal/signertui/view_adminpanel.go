@@ -25,10 +25,10 @@ type adminRow struct {
 
 // adminRows builds the list of admin panel rows from current settings.
 func (m Model) adminRows() []adminRow {
-	if m.adminSettings == nil {
+	if m.admin.settings == nil {
 		return nil
 	}
-	s := m.adminSettings
+	s := m.admin.settings
 	isPromptMode := s.PassphraseMethod == "none" || s.PassphraseMethod == ""
 
 	rows := []adminRow{
@@ -155,14 +155,14 @@ func (m Model) renderAdminPanel() string {
 			}
 
 			prefix := "  "
-			if i == m.adminSelectedRow {
+			if i == m.admin.selectedRow {
 				prefix = "> "
 			}
 
 			// Format value display
 			var valueStr string
-			if m.adminEditingRow == i {
-				valueStr = fmt.Sprintf("[%s_]", m.adminEditValue)
+			if m.admin.editingRow == i {
+				valueStr = fmt.Sprintf("[%s_]", m.admin.editValue)
 			} else if r.action != "" {
 				valueStr = r.value
 			} else if r.choices != nil {
@@ -179,7 +179,7 @@ func (m Model) renderAdminPanel() string {
 
 			line := fmt.Sprintf("%s%-*s  %s", prefix, maxLabel, r.label, valueStr)
 
-			if i == m.adminSelectedRow {
+			if i == m.admin.selectedRow {
 				sb.WriteString(selectedStyle.Render(line))
 			} else if r.isBool && r.value == "true" {
 				sb.WriteString(statusUnlockedStyle.Render(line))

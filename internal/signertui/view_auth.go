@@ -40,7 +40,7 @@ func (m Model) renderPassphrasePrompt(subtitle string, showTimeout bool) string 
 		return sb.String()
 	}
 
-	if m.loggingIn {
+	if m.auth.loggingIn {
 		sb.WriteString("\n")
 		sb.WriteString(subtitleStyle.Render("Logging in..."))
 		return sb.String()
@@ -56,8 +56,8 @@ func (m Model) renderPassphrasePrompt(subtitle string, showTimeout bool) string 
 	sb.WriteString("\n\n")
 
 	// Passphrase input
-	displayPass := m.passphraseInput
-	if m.passphraseMasked && len(displayPass) > 0 {
+	displayPass := m.auth.passphraseInput
+	if m.auth.passphraseMasked && len(displayPass) > 0 {
 		displayPass = strings.Repeat("*", len(displayPass))
 	}
 
@@ -69,8 +69,8 @@ func (m Model) renderPassphrasePrompt(subtitle string, showTimeout bool) string 
 	sb.WriteString("  [ " + inputContent + " ]\n\n")
 
 	// Error message
-	if m.passphraseError != "" {
-		sb.WriteString(errorStyle.Render(m.passphraseError))
+	if m.auth.passphraseError != "" {
+		sb.WriteString(errorStyle.Render(m.auth.passphraseError))
 		sb.WriteString("\n\n")
 	}
 
@@ -78,9 +78,9 @@ func (m Model) renderPassphrasePrompt(subtitle string, showTimeout bool) string 
 }
 
 func (m Model) adminInactivityNotice() string {
-	timeout := m.effectiveSessionTimeout
-	if timeout <= 0 && m.adminSettings != nil && m.adminSettings.PassphraseTimeout != "" {
-		parsed, err := serverconfig.ParsePassphraseTimeout(m.adminSettings.PassphraseTimeout)
+	timeout := m.activity.sessionTimeout
+	if timeout <= 0 && m.admin.settings != nil && m.admin.settings.PassphraseTimeout != "" {
+		parsed, err := serverconfig.ParsePassphraseTimeout(m.admin.settings.PassphraseTimeout)
 		if err == nil {
 			timeout = parsed
 		}
@@ -88,7 +88,7 @@ func (m Model) adminInactivityNotice() string {
 	if timeout > 0 {
 		return fmt.Sprintf("Admin disconnects after %s of inactivity", timeout)
 	}
-	if m.adminSettings != nil && strings.TrimSpace(m.adminSettings.PassphraseTimeout) == "0" {
+	if m.admin.settings != nil && strings.TrimSpace(m.admin.settings.PassphraseTimeout) == "0" {
 		return "Admin inactivity disconnect is disabled"
 	}
 	return ""

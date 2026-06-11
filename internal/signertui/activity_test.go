@@ -12,20 +12,20 @@ import (
 
 func activityReadyModel() Model {
 	return Model{
-		viewState:           ViewKeyList,
-		connectionState:     ConnectionConnected,
-		adminClient:         &IPCClient{},
-		signerStatusKnown:   true,
-		signerLocked:        false,
-		passphraseMasked:    true,
-		restoreSelected:     map[string]bool{},
-		importMnemonicInput: newImportMnemonicInput(),
+		viewState:         ViewKeyList,
+		connectionState:   ConnectionConnected,
+		adminClient:       &IPCClient{},
+		signerStatusKnown: true,
+		signerLocked:      false,
+		auth:              authState{passphraseMasked: true},
+		restore:           restoreState{selected: map[string]bool{}},
+		forms:             formsState{importMnemonicInput: newImportMnemonicInput()},
 	}
 }
 
 func TestRecordUserActivityArmsLocalIdleTimer(t *testing.T) {
 	m := activityReadyModel()
-	m.effectiveSessionTimeout = time.Minute
+	m.activity.sessionTimeout = time.Minute
 	now := time.Now()
 
 	got, cmd := m.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
@@ -33,14 +33,14 @@ func TestRecordUserActivityArmsLocalIdleTimer(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("recordUserActivity returned nil cmd, want local idle timer")
 	}
-	if !got.lastUserInputAt.Equal(now) {
-		t.Fatalf("lastUserInputAt = %v, want %v", got.lastUserInputAt, now)
+	if !got.activity.lastInputAt.Equal(now) {
+		t.Fatalf("lastUserInputAt = %v, want %v", got.activity.lastInputAt, now)
 	}
-	if got.localIdleDueAt.IsZero() {
+	if got.activity.idleDueAt.IsZero() {
 		t.Fatal("localIdleDueAt is zero, want idle due time")
 	}
-	if !got.localIdleDueAt.Equal(now.Add(time.Minute)) {
-		t.Fatalf("localIdleDueAt = %v, want %v", got.localIdleDueAt, now.Add(time.Minute))
+	if !got.activity.idleDueAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("localIdleDueAt = %v, want %v", got.activity.idleDueAt, now.Add(time.Minute))
 	}
 }
 
@@ -50,7 +50,7 @@ func TestRecordUserActivityIgnoresUnlockView(t *testing.T) {
 	unlock := activityReadyModel()
 	unlock.viewState = ViewUnlock
 	got, cmd := unlock.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
-	if cmd != nil || !got.lastUserInputAt.IsZero() {
+	if cmd != nil || !got.activity.lastInputAt.IsZero() {
 		t.Fatalf("unlock activity state = %+v cmd %v, want ignored", got, cmd)
 	}
 }
@@ -58,7 +58,7 @@ func TestRecordUserActivityIgnoresUnlockView(t *testing.T) {
 func TestRecordUserActivityCountsSignResponseKeysAsLocalActivity(t *testing.T) {
 	m := activityReadyModel()
 	m.viewState = ViewSigningPopup
-	m.effectiveSessionTimeout = time.Minute
+	m.activity.sessionTimeout = time.Minute
 	now := time.Now()
 
 	got, cmd := m.recordUserActivity(now, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
@@ -66,8 +66,8 @@ func TestRecordUserActivityCountsSignResponseKeysAsLocalActivity(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("sign response activity returned nil cmd, want local idle timer")
 	}
-	if !got.lastUserInputAt.Equal(now) {
-		t.Fatalf("lastUserInputAt = %v, want %v", got.lastUserInputAt, now)
+	if !got.activity.lastInputAt.Equal(now) {
+		t.Fatalf("lastUserInputAt = %v, want %v", got.activity.lastInputAt, now)
 	}
 }
 
@@ -79,30 +79,30 @@ func TestUpdateIgnoresUnlockTypingEvenWithStaleUnlockedState(t *testing.T) {
 
 	got, _ := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 
-	if !got.lastUserInputAt.IsZero() {
-		t.Fatalf("unlock typing activity state = last %v, want ignored", got.lastUserInputAt)
+	if !got.activity.lastInputAt.IsZero() {
+		t.Fatalf("unlock typing activity state = last %v, want ignored", got.activity.lastInputAt)
 	}
-	if got.passphraseInput != "s" {
-		t.Fatalf("passphraseInput = %q, want key still handled by unlock view", got.passphraseInput)
+	if got.auth.passphraseInput != "s" {
+		t.Fatalf("passphraseInput = %q, want key still handled by unlock view", got.auth.passphraseInput)
 	}
 }
 
 func TestUpdateCountsRestorePreviewNavigationAsActivity(t *testing.T) {
 	m := activityReadyModel()
 	m.viewState = ViewRestorePreview
-	m.effectiveSessionTimeout = time.Minute
-	m.restorePreviewKeys = []RestoreKeyInfo{
+	m.activity.sessionTimeout = time.Minute
+	m.restore.previewKeys = []RestoreKeyInfo{
 		{Address: "ADDR1", KeyType: "ed25519"},
 		{Address: "ADDR2", KeyType: "ed25519"},
 	}
-	m.restoreSelected = map[string]bool{"ADDR1": true}
+	m.restore.selected = map[string]bool{"ADDR1": true}
 
 	got, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyDown})
 
-	if got.lastUserInputAt.IsZero() {
+	if got.activity.lastInputAt.IsZero() {
 		t.Fatal("restore preview navigation did not record activity")
 	}
-	if got.selectedKey == 0 && got.restoreSelectedKey == 0 {
+	if got.keylist.selectedKey == 0 && got.restore.selectedKey == 0 {
 		t.Fatal("restore preview key was not handled")
 	}
 	if cmd == nil {
@@ -114,8 +114,8 @@ func TestNonKeyMessagesDoNotRecordActivity(t *testing.T) {
 	m := activityReadyModel()
 
 	got, _ := updateForTest(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
-	if !got.lastUserInputAt.IsZero() {
-		t.Fatalf("window resize recorded activity: last %v", got.lastUserInputAt)
+	if !got.activity.lastInputAt.IsZero() {
+		t.Fatalf("window resize recorded activity: last %v", got.activity.lastInputAt)
 	}
 
 	got, _ = updateForTest(t, got, AdminSettingsMsg{
@@ -124,36 +124,36 @@ func TestNonKeyMessagesDoNotRecordActivity(t *testing.T) {
 			Theme:             "auto",
 		},
 	})
-	if !got.lastUserInputAt.IsZero() {
-		t.Fatalf("admin settings recorded activity: last %v", got.lastUserInputAt)
+	if !got.activity.lastInputAt.IsZero() {
+		t.Fatalf("admin settings recorded activity: last %v", got.activity.lastInputAt)
 	}
 
 	got, _ = updateForTest(t, got, adminRefreshTickMsg{})
-	if !got.lastUserInputAt.IsZero() {
-		t.Fatalf("admin refresh tick recorded activity: last %v", got.lastUserInputAt)
+	if !got.activity.lastInputAt.IsZero() {
+		t.Fatalf("admin refresh tick recorded activity: last %v", got.activity.lastInputAt)
 	}
 
 	got, _ = updateForTest(t, got, tea.MouseMsg{})
-	if !got.lastUserInputAt.IsZero() {
-		t.Fatalf("mouse event recorded activity: last %v", got.lastUserInputAt)
+	if !got.activity.lastInputAt.IsZero() {
+		t.Fatalf("mouse event recorded activity: last %v", got.activity.lastInputAt)
 	}
 }
 
 func TestLocalIdleTickDisconnectsAdminWhenIdle(t *testing.T) {
 	m := activityReadyModel()
-	m.effectiveSessionTimeout = time.Millisecond
-	m.lastUserInputAt = time.Now().Add(-time.Second)
+	m.activity.sessionTimeout = time.Millisecond
+	m.activity.lastInputAt = time.Now().Add(-time.Second)
 	_ = m.armLocalIdleTimer()
 
 	cmd := m.handleLocalIdleTick(localIdleTickMsg{
-		Generation: m.localIdleGeneration,
-		DueAt:      m.localIdleDueAt,
+		Generation: m.activity.idleGeneration,
+		DueAt:      m.activity.idleDueAt,
 	})
 
 	if cmd == nil {
 		t.Fatal("handleLocalIdleTick returned nil cmd, want disconnect command")
 	}
-	if !m.localIdleDisconnectSent {
+	if !m.activity.idleDisconnectSent {
 		t.Fatal("localIdleDisconnectSent = false, want true")
 	}
 	msg := cmd()
@@ -164,13 +164,13 @@ func TestLocalIdleTickDisconnectsAdminWhenIdle(t *testing.T) {
 
 func TestLocalIdleTickIgnoresStaleTickAfterNewerKeystroke(t *testing.T) {
 	m := activityReadyModel()
-	m.effectiveSessionTimeout = time.Second
-	m.lastUserInputAt = time.Now().Add(-2 * time.Second)
+	m.activity.sessionTimeout = time.Second
+	m.activity.lastInputAt = time.Now().Add(-2 * time.Second)
 	_ = m.armLocalIdleTimer()
-	oldGeneration := m.localIdleGeneration
-	oldDueAt := m.localIdleDueAt
+	oldGeneration := m.activity.idleGeneration
+	oldDueAt := m.activity.idleDueAt
 
-	m.lastUserInputAt = time.Now()
+	m.activity.lastInputAt = time.Now()
 	_ = m.armLocalIdleTimer()
 	cmd := m.handleLocalIdleTick(localIdleTickMsg{
 		Generation: oldGeneration,
@@ -180,15 +180,15 @@ func TestLocalIdleTickIgnoresStaleTickAfterNewerKeystroke(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("stale local idle tick returned cmd, want nil")
 	}
-	if m.localIdleDisconnectSent {
+	if m.activity.idleDisconnectSent {
 		t.Fatal("stale local idle tick set localIdleDisconnectSent")
 	}
 }
 
 func TestLocalIdleDisconnectedMsgMarksDisconnectedWithoutLocking(t *testing.T) {
 	m := activityReadyModel()
-	m.lastUserInputAt = time.Now()
-	m.localIdleDisconnectSent = true
+	m.activity.lastInputAt = time.Now()
+	m.activity.idleDisconnectSent = true
 
 	got, _ := updateForTest(t, m, localIdleDisconnectedMsg{Reason: localIdleDisconnectReason})
 
@@ -220,42 +220,42 @@ func TestLocalIdleDisconnectedMsgMarksDisconnectedWithoutLocking(t *testing.T) {
 
 func TestAdminSettingsRearmsKnownTimeoutAfterFreshUnlock(t *testing.T) {
 	m := activityReadyModel()
-	m.effectiveSessionTimeout = time.Second
-	m.lastUserInputAt = time.Now()
+	m.activity.sessionTimeout = time.Second
+	m.activity.lastInputAt = time.Now()
 
 	cmd := m.applyAdminSettingsTimeout(AdminSettings{PassphraseTimeout: "1s"})
 
 	if cmd == nil {
 		t.Fatal("applyAdminSettingsTimeout returned nil cmd, want idle timer")
 	}
-	if m.localIdleDueAt.IsZero() {
+	if m.activity.idleDueAt.IsZero() {
 		t.Fatal("localIdleDueAt is zero, want idle due time")
 	}
 }
 
 func TestDisconnectAndServerLockClearActivityAndSensitiveRestoreState(t *testing.T) {
 	m := activityReadyModel()
-	m.lastUserInputAt = time.Now()
-	m.localIdleDisconnectSent = true
-	m.localIdleDueAt = time.Now().Add(time.Second)
+	m.activity.lastInputAt = time.Now()
+	m.activity.idleDisconnectSent = true
+	m.activity.idleDueAt = time.Now().Add(time.Second)
 
 	got, _ := updateForTest(t, m, DisconnectedMsg{})
-	if !got.lastUserInputAt.IsZero() ||
-		got.localIdleDisconnectSent ||
-		!got.localIdleDueAt.IsZero() {
+	if !got.activity.lastInputAt.IsZero() ||
+		got.activity.idleDisconnectSent ||
+		!got.activity.idleDueAt.IsZero() {
 		t.Fatalf("disconnect did not clear activity state: %+v", got)
 	}
 
 	passphrase := []byte("export-passphrase")
 	m = activityReadyModel()
 	m.viewState = ViewRestorePreview
-	m.restorePassphrase = passphrase
+	m.restore.passphrase = passphrase
 	got, _ = updateForTest(t, m, SignerStatusMsg{Locked: true})
 	if got.viewState != ViewUnlock || !got.signerLocked {
 		t.Fatalf("server lock state = view %v locked %v, want unlock locked", got.viewState, got.signerLocked)
 	}
-	if len(got.restorePassphrase) != 0 {
-		t.Fatalf("restorePassphrase length = %d, want 0", len(got.restorePassphrase))
+	if len(got.restore.passphrase) != 0 {
+		t.Fatalf("restorePassphrase length = %d, want 0", len(got.restore.passphrase))
 	}
 	for i, b := range passphrase {
 		if b != 0 {
@@ -266,9 +266,9 @@ func TestDisconnectAndServerLockClearActivityAndSensitiveRestoreState(t *testing
 
 func TestReconnectAndAuthRequiredClearActivityState(t *testing.T) {
 	m := activityReadyModel()
-	m.lastUserInputAt = time.Now()
-	m.localIdleDisconnectSent = true
-	m.localIdleDueAt = time.Now().Add(time.Second)
+	m.activity.lastInputAt = time.Now()
+	m.activity.idleDisconnectSent = true
+	m.activity.idleDueAt = time.Now().Add(time.Second)
 
 	got, _ := updateForTest(t, m, ReconnectingMsg{Delay: time.Second})
 	if got.connectionState != ConnectionConnecting {
@@ -277,8 +277,8 @@ func TestReconnectAndAuthRequiredClearActivityState(t *testing.T) {
 	assertActivityStateCleared(t, got)
 
 	m = activityReadyModel()
-	m.lastUserInputAt = time.Now()
-	m.localIdleDisconnectSent = true
+	m.activity.lastInputAt = time.Now()
+	m.activity.idleDisconnectSent = true
 	got, _ = updateForTest(t, m, AuthRequiredMsg{})
 	if got.viewState != ViewAuth {
 		t.Fatalf("viewState = %v, want ViewAuth", got.viewState)
@@ -288,9 +288,9 @@ func TestReconnectAndAuthRequiredClearActivityState(t *testing.T) {
 
 func assertActivityStateCleared(t *testing.T, m Model) {
 	t.Helper()
-	if !m.lastUserInputAt.IsZero() ||
-		m.localIdleDisconnectSent ||
-		!m.localIdleDueAt.IsZero() {
+	if !m.activity.lastInputAt.IsZero() ||
+		m.activity.idleDisconnectSent ||
+		!m.activity.idleDueAt.IsZero() {
 		t.Fatalf("activity state not cleared: %+v", m)
 	}
 }

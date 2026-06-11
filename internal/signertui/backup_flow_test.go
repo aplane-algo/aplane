@@ -20,17 +20,15 @@ func TestKeyListBackupShortcutOpensBackupConfirm(t *testing.T) {
 	if got.viewState != ViewBackupConfirm {
 		t.Fatalf("viewState = %v, want ViewBackupConfirm", got.viewState)
 	}
-	if got.backupConfirmFocus != 0 {
-		t.Fatalf("backupConfirmFocus = %d, want 0", got.backupConfirmFocus)
+	if got.backup.confirmFocus != 0 {
+		t.Fatalf("backupConfirmFocus = %d, want 0", got.backup.confirmFocus)
 	}
 }
 
 func TestBackupConfirmMatchingPassphrasesStartsBackup(t *testing.T) {
 	m := Model{
-		viewState:               ViewBackupConfirm,
-		backupExportPassphrase:  "export-passphrase",
-		backupConfirmPassphrase: "export-passphrase",
-		backupConfirmFocus:      1,
+		viewState: ViewBackupConfirm,
+		backup:    backupState{exportPassphrase: "export-passphrase", confirmPassphrase: "export-passphrase", confirmFocus: 1},
 	}
 
 	next, cmd := m.handleBackupConfirmKeys(tea.KeyMsg{Type: tea.KeyEnter})
@@ -38,8 +36,8 @@ func TestBackupConfirmMatchingPassphrasesStartsBackup(t *testing.T) {
 	if got.viewState != ViewBackingUp {
 		t.Fatalf("viewState = %v, want ViewBackingUp", got.viewState)
 	}
-	if got.backupConfirmError != "" {
-		t.Fatalf("backupConfirmError = %q, want empty", got.backupConfirmError)
+	if got.backup.confirmError != "" {
+		t.Fatalf("backupConfirmError = %q, want empty", got.backup.confirmError)
 	}
 	if cmd == nil {
 		t.Fatal("cmd = nil, want backup send command")
@@ -48,10 +46,8 @@ func TestBackupConfirmMatchingPassphrasesStartsBackup(t *testing.T) {
 
 func TestBackupConfirmCancelReturnsToKeyList(t *testing.T) {
 	m := Model{
-		viewState:               ViewBackupConfirm,
-		backupExportPassphrase:  "export-passphrase",
-		backupConfirmPassphrase: "export-passphrase",
-		backupConfirmError:      "old error",
+		viewState: ViewBackupConfirm,
+		backup:    backupState{exportPassphrase: "export-passphrase", confirmPassphrase: "export-passphrase", confirmError: "old error"},
 	}
 
 	next, cmd := m.handleBackupConfirmKeys(tea.KeyMsg{Type: tea.KeyEsc})
@@ -59,7 +55,7 @@ func TestBackupConfirmCancelReturnsToKeyList(t *testing.T) {
 	if got.viewState != ViewKeyList {
 		t.Fatalf("viewState = %v, want ViewKeyList", got.viewState)
 	}
-	if got.backupExportPassphrase != "" || got.backupConfirmPassphrase != "" || got.backupConfirmError != "" {
+	if got.backup.exportPassphrase != "" || got.backup.confirmPassphrase != "" || got.backup.confirmError != "" {
 		t.Fatalf("backup confirm state was not cleared: %+v", got)
 	}
 	if cmd != nil {
@@ -79,15 +75,15 @@ func TestBackupResultSuccessShowsArchivePath(t *testing.T) {
 	if got.viewState != ViewBackupDisplay {
 		t.Fatalf("viewState = %v, want ViewBackupDisplay", got.viewState)
 	}
-	if got.backupArchivePath == "" {
+	if got.backup.archivePath == "" {
 		t.Fatal("backupArchivePath is empty")
 	}
 }
 
 func TestBackupDisplayCloseReturnsToKeyList(t *testing.T) {
 	m := Model{
-		viewState:         ViewBackupDisplay,
-		backupArchivePath: filepath.Join(t.TempDir(), "backups", "default", "aplane-backup.tar.gz"),
+		viewState: ViewBackupDisplay,
+		backup:    backupState{archivePath: filepath.Join(t.TempDir(), "backups", "default", "aplane-backup.tar.gz")},
 	}
 
 	next, cmd := m.handleBackupDisplayKeys(tea.KeyMsg{Type: tea.KeyEnter})
@@ -95,8 +91,8 @@ func TestBackupDisplayCloseReturnsToKeyList(t *testing.T) {
 	if got.viewState != ViewKeyList {
 		t.Fatalf("viewState = %v, want ViewKeyList", got.viewState)
 	}
-	if got.backupArchivePath != "" {
-		t.Fatalf("backupArchivePath = %q, want empty", got.backupArchivePath)
+	if got.backup.archivePath != "" {
+		t.Fatalf("backupArchivePath = %q, want empty", got.backup.archivePath)
 	}
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)

@@ -10,17 +10,17 @@ import (
 // handleTokenProvisioningPopupKeys handles keyboard input on token provisioning popup
 func (m Model) handleTokenProvisioningPopupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	requestID := ""
-	if m.pendingTokenRequest != nil {
-		requestID = m.pendingTokenRequest.ID
+	if m.tokenApproval.request != nil {
+		requestID = m.tokenApproval.request.ID
 	}
 
-	m, cmd, focus, _ := m.handleApprovalKeys(msg, m.pendingTokenRequestFocus, requestID,
+	m, cmd, focus, _ := m.handleApprovalKeys(msg, m.tokenApproval.focus, requestID,
 		func(m Model, id string, approved bool) (Model, tea.Cmd) {
-			m.pendingTokenRequest = nil
+			m.tokenApproval.request = nil
 			m.viewState = ViewKeyList
 			return m, m.sendTokenProvisioningResponse(id, approved)
 		})
-	m.pendingTokenRequestFocus = focus
+	m.tokenApproval.focus = focus
 	return m, cmd
 }
 

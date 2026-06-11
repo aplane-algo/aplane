@@ -21,40 +21,40 @@ func (m Model) renderTemplateLibrary() string {
 	sb.WriteString(titleStyle.Render("KeyType Library"))
 	sb.WriteString("\n")
 
-	if m.templateInstallStatus != "" {
-		sb.WriteString(statusUnlockedStyle.Render(m.templateInstallStatus))
+	if m.library.installStatus != "" {
+		sb.WriteString(statusUnlockedStyle.Render(m.library.installStatus))
 		sb.WriteString("\n\n")
-	} else if m.templateInstallError != "" {
-		sb.WriteString(errorStyle.Render(m.templateInstallError))
+	} else if m.library.installError != "" {
+		sb.WriteString(errorStyle.Render(m.library.installError))
 		sb.WriteString("\n\n")
 	} else {
 		sb.WriteString(subtitleStyle.Render("Optional KeyTypes available for this identity"))
 		sb.WriteString("\n\n")
 	}
 
-	if len(m.libraryTemplates) == 0 {
+	if len(m.library.templates) == 0 {
 		sb.WriteString(subtitleStyle.Render("  No library entries found"))
 		return sb.String()
 	}
 
-	selected := m.selectedTemplate
+	selected := m.library.selectedTemplate
 	if selected < 0 {
 		selected = 0
 	}
-	if selected >= len(m.libraryTemplates) {
-		selected = len(m.libraryTemplates) - 1
+	if selected >= len(m.library.templates) {
+		selected = len(m.library.templates) - 1
 	}
 
 	visible := m.templateLibraryVisibleHeight()
-	sb.WriteString(scrollMoreAboveLine(m.templateScrollOffset))
+	sb.WriteString(scrollMoreAboveLine(m.library.scrollOffset))
 	sb.WriteString("\n")
-	end := m.templateScrollOffset + visible
-	if end > len(m.libraryTemplates) {
-		end = len(m.libraryTemplates)
+	end := m.library.scrollOffset + visible
+	if end > len(m.library.templates) {
+		end = len(m.library.templates)
 	}
 
-	for i := m.templateScrollOffset; i < end; i++ {
-		tmpl := m.libraryTemplates[i]
+	for i := m.library.scrollOffset; i < end; i++ {
+		tmpl := m.library.templates[i]
 		prefix := "  "
 		if i == selected {
 			prefix = "> "
@@ -73,11 +73,11 @@ func (m Model) renderTemplateLibrary() string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(scrollMoreBelowLine(len(m.libraryTemplates) - end))
+	sb.WriteString(scrollMoreBelowLine(len(m.library.templates) - end))
 	sb.WriteString("\n")
 
 	sb.WriteString("\n")
-	sb.WriteString(m.renderTemplateDetails(m.libraryTemplates[selected]))
+	sb.WriteString(m.renderTemplateDetails(m.library.templates[selected]))
 
 	return sb.String()
 }
@@ -233,7 +233,7 @@ func (m Model) templateLibraryRowWidth() int {
 
 func (m Model) renderTemplateInstallConfirm() string {
 	var sb strings.Builder
-	tmpl := m.pendingTemplate
+	tmpl := m.library.pendingTemplate
 	if tmpl == nil {
 		sb.WriteString(errorStyle.Render("No library entry selected"))
 		sb.WriteString("\n")
@@ -255,16 +255,16 @@ func (m Model) renderTemplateInstallConfirm() string {
 		sb.WriteString(subtitleStyle.Render(wrapText(tmpl.Description, 64)))
 		sb.WriteString("\n")
 	}
-	if m.templateInstallError != "" {
+	if m.library.installError != "" {
 		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(m.templateInstallError))
+		sb.WriteString(errorStyle.Render(m.library.installError))
 		sb.WriteString("\n")
 	}
 
 	sb.WriteString("\n")
 	cancel := buttonInactiveStyle.Render("CANCEL")
 	confirm := buttonInactiveStyle.Render(strings.ToUpper(libraryActionVerb(*tmpl)))
-	if m.templateInstallFocus == 0 {
+	if m.library.installFocus == 0 {
 		cancel = buttonActiveStyle.Render("CANCEL")
 	} else {
 		confirm = buttonActiveStyle.Render(strings.ToUpper(libraryActionVerb(*tmpl)))
@@ -277,15 +277,15 @@ func (m Model) renderTemplateInstallConfirm() string {
 func (m Model) renderTemplateInstalling() string {
 	var sb strings.Builder
 	title := "Enabling Template Key Type"
-	if m.pendingTemplate != nil {
-		if isCompiledProviderLibraryEntry(*m.pendingTemplate) {
-			if m.pendingTemplate.Installed {
+	if m.library.pendingTemplate != nil {
+		if isCompiledProviderLibraryEntry(*m.library.pendingTemplate) {
+			if m.library.pendingTemplate.Installed {
 				title = "Disabling Key Type"
 			} else {
 				title = "Enabling Key Type"
 			}
-		} else if m.pendingTemplate.Installed {
-			if m.pendingTemplate.Enabled {
+		} else if m.library.pendingTemplate.Installed {
+			if m.library.pendingTemplate.Enabled {
 				title = "Disabling Template Key Type"
 			} else {
 				title = "Enabling Template Key Type"
@@ -294,9 +294,9 @@ func (m Model) renderTemplateInstalling() string {
 	}
 	sb.WriteString(titleStyle.Render(title))
 	sb.WriteString("\n\n")
-	if m.pendingTemplate != nil {
-		sb.WriteString(templateDetailField("Key Type", displayKeyType(m.pendingTemplate.KeyType)))
-		if publisher := keyTypePublisher(m.pendingTemplate.KeyType); publisher != "" {
+	if m.library.pendingTemplate != nil {
+		sb.WriteString(templateDetailField("Key Type", displayKeyType(m.library.pendingTemplate.KeyType)))
+		if publisher := keyTypePublisher(m.library.pendingTemplate.KeyType); publisher != "" {
 			sb.WriteString(templateDetailField("Publisher", publisher))
 		}
 		sb.WriteString("\n")
@@ -362,10 +362,10 @@ func libraryDeactivatePastTense() string {
 }
 
 func (m Model) libraryEntryForResult(keyType, fallbackTemplateType string) LibraryTemplateInfo {
-	if m.pendingTemplate != nil && m.pendingTemplate.KeyType == keyType {
-		return *m.pendingTemplate
+	if m.library.pendingTemplate != nil && m.library.pendingTemplate.KeyType == keyType {
+		return *m.library.pendingTemplate
 	}
-	for _, tmpl := range m.libraryTemplates {
+	for _, tmpl := range m.library.templates {
 		if tmpl.KeyType == keyType {
 			return tmpl
 		}

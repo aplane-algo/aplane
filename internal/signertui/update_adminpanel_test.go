@@ -23,7 +23,7 @@ func TestValidateAdminSettingValuePassphraseTimeout(t *testing.T) {
 func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 	m := Model{
 		transportLabel: "IPC",
-		adminSettings: &AdminSettings{
+		admin: adminPanelState{settings: &AdminSettings{
 			UserAutoApprove:   false,
 			LockOnDisconnect:  false,
 			PassphraseTimeout: "15m0s",
@@ -31,7 +31,7 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 			Theme:             "dark",
 			SignerPort:        4010,
 			TEALCompileNet:    "testnet",
-		},
+		}},
 	}
 
 	rows := m.adminRows()
@@ -79,12 +79,11 @@ func TestAdminRowsGroupEditableSettingsFirst(t *testing.T) {
 }
 
 func TestAdminRowsUseSentryPortLabelForSentryNodes(t *testing.T) {
-	m := Model{
-		adminSettings: &AdminSettings{
-			NodeRole:         "sentry",
-			PassphraseMethod: "none",
-			SignerPort:       11270,
-		},
+	m := Model{admin: adminPanelState{settings: &AdminSettings{
+		NodeRole:         "sentry",
+		PassphraseMethod: "none",
+		SignerPort:       11270,
+	}},
 	}
 
 	rows := m.adminRows()
@@ -95,12 +94,11 @@ func TestAdminRowsUseSentryPortLabelForSentryNodes(t *testing.T) {
 
 func TestAdminPanelKShortcutOpensKeyTypes(t *testing.T) {
 	m := Model{
-		viewState:       ViewAdminPanel,
-		adminEditingRow: -1,
-		adminSettings: &AdminSettings{
+		viewState: ViewAdminPanel,
+		admin: adminPanelState{editingRow: -1, settings: &AdminSettings{
 			PassphraseMethod: "none",
 			Theme:            "auto",
-		},
+		}},
 	}
 
 	next, cmd := m.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
@@ -115,12 +113,11 @@ func TestAdminPanelKShortcutOpensKeyTypes(t *testing.T) {
 
 func TestAdminPanelPolicyShortcutOpensPolicyEditor(t *testing.T) {
 	m := Model{
-		viewState:       ViewAdminPanel,
-		adminEditingRow: -1,
-		adminSettings: &AdminSettings{
+		viewState: ViewAdminPanel,
+		admin: adminPanelState{editingRow: -1, settings: &AdminSettings{
 			PassphraseMethod: "none",
 			Theme:            "auto",
-		},
+		}},
 	}
 
 	next, cmd := m.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
@@ -128,7 +125,7 @@ func TestAdminPanelPolicyShortcutOpensPolicyEditor(t *testing.T) {
 	if got.viewState != ViewPolicyEditor {
 		t.Fatalf("viewState = %v, want ViewPolicyEditor", got.viewState)
 	}
-	if !got.policyEditorLoading {
+	if !got.policyEd.loading {
 		t.Fatal("policyEditorLoading = false, want true")
 	}
 	if cmd == nil {
@@ -143,17 +140,16 @@ func TestAdminPanelPolicyShortcutOpensPolicyEditor(t *testing.T) {
 
 func TestAdminPanelPolicyRowOpensPolicyEditor(t *testing.T) {
 	m := Model{
-		viewState:       ViewAdminPanel,
-		adminEditingRow: -1,
-		adminSettings: &AdminSettings{
+		viewState: ViewAdminPanel,
+		admin: adminPanelState{editingRow: -1, settings: &AdminSettings{
 			PassphraseMethod: "none",
 			Theme:            "auto",
-		},
+		}},
 	}
 	found := false
 	for i, row := range m.adminRows() {
 		if row.action == "open_policy" {
-			m.adminSelectedRow = i
+			m.admin.selectedRow = i
 			found = true
 			break
 		}
@@ -175,9 +171,9 @@ func TestAdminPanelPolicyRowOpensPolicyEditor(t *testing.T) {
 func TestPolicyEditorTargetsSentryOnSentryNode(t *testing.T) {
 	m := Model{
 		viewState: ViewAdminPanel,
-		adminSettings: &AdminSettings{
+		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole: "sentry",
-		},
+		}},
 	}
 
 	next, cmd := m.openPolicyEditor()
@@ -185,8 +181,8 @@ func TestPolicyEditorTargetsSentryOnSentryNode(t *testing.T) {
 	if got.viewState != ViewPolicyEditor {
 		t.Fatalf("viewState = %v, want ViewPolicyEditor", got.viewState)
 	}
-	if got.policyEditorTarget != "sentry" {
-		t.Fatalf("policyEditorTarget = %q, want sentry", got.policyEditorTarget)
+	if got.policyEd.target != "sentry" {
+		t.Fatalf("policyEditorTarget = %q, want sentry", got.policyEd.target)
 	}
 	if cmd == nil {
 		t.Fatal("cmd = nil, want policy editor load command")
@@ -195,10 +191,8 @@ func TestPolicyEditorTargetsSentryOnSentryNode(t *testing.T) {
 
 func TestPolicyEditorCloseReturnsToCallerView(t *testing.T) {
 	m := Model{
-		viewState:              ViewPolicyEditor,
-		policyEditorReturnView: ViewKeyList,
-		policyEditorLoading:    true,
-		policyEditorTarget:     "signer",
+		viewState: ViewPolicyEditor,
+		policyEd:  policyEditorState{returnView: ViewKeyList, loading: true, target: "signer"},
 	}
 
 	next, cmd := m.closePolicyEditor()
@@ -206,8 +200,8 @@ func TestPolicyEditorCloseReturnsToCallerView(t *testing.T) {
 	if got.viewState != ViewKeyList {
 		t.Fatalf("viewState = %v, want ViewKeyList", got.viewState)
 	}
-	if got.policyEditorLoading || got.policyEditorTarget != "" {
-		t.Fatalf("policy editor state not cleared: loading=%v target=%q", got.policyEditorLoading, got.policyEditorTarget)
+	if got.policyEd.loading || got.policyEd.target != "" {
+		t.Fatalf("policy editor state not cleared: loading=%v target=%q", got.policyEd.loading, got.policyEd.target)
 	}
 	if cmd != nil {
 		t.Fatal("cmd != nil, want nil")
@@ -216,12 +210,11 @@ func TestPolicyEditorCloseReturnsToCallerView(t *testing.T) {
 
 func TestAdminPanelTShortcutOpensRevokeTokenConfirm(t *testing.T) {
 	m := Model{
-		viewState:       ViewAdminPanel,
-		adminEditingRow: -1,
-		adminSettings: &AdminSettings{
+		viewState: ViewAdminPanel,
+		admin: adminPanelState{editingRow: -1, settings: &AdminSettings{
 			PassphraseMethod: "none",
 			Theme:            "auto",
-		},
+		}},
 	}
 
 	next, cmd := m.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
@@ -236,12 +229,11 @@ func TestAdminPanelTShortcutOpensRevokeTokenConfirm(t *testing.T) {
 
 func TestAdminPanelLockShortcutOpensLockConfirm(t *testing.T) {
 	m := Model{
-		viewState:       ViewAdminPanel,
-		adminEditingRow: -1,
-		adminSettings: &AdminSettings{
+		viewState: ViewAdminPanel,
+		admin: adminPanelState{editingRow: -1, settings: &AdminSettings{
 			PassphraseMethod: "none",
 			Theme:            "auto",
-		},
+		}},
 	}
 
 	next, cmd := m.handleAdminPanelKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
@@ -249,8 +241,8 @@ func TestAdminPanelLockShortcutOpensLockConfirm(t *testing.T) {
 	if got.viewState != ViewLockConfirm {
 		t.Fatalf("viewState = %v, want ViewLockConfirm", got.viewState)
 	}
-	if got.manualLockReturnView != ViewAdminPanel {
-		t.Fatalf("manualLockReturnView = %v, want ViewAdminPanel", got.manualLockReturnView)
+	if got.manualLock.returnView != ViewAdminPanel {
+		t.Fatalf("manualLockReturnView = %v, want ViewAdminPanel", got.manualLock.returnView)
 	}
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)

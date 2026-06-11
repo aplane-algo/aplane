@@ -282,12 +282,12 @@ func (m Model) renderAdminHeader() string {
 }
 
 func (m Model) adminHeaderMeta() string {
-	if m.adminSettings == nil {
+	if m.admin.settings == nil {
 		return ""
 	}
 	var parts []string
-	if m.adminSettings.SignerPort != 0 {
-		parts = append(parts, fmt.Sprintf("%s: %d", m.rolePortLabel(), m.adminSettings.SignerPort))
+	if m.admin.settings.SignerPort != 0 {
+		parts = append(parts, fmt.Sprintf("%s: %d", m.rolePortLabel(), m.admin.settings.SignerPort))
 	}
 	if endpoint := m.adminEndpointDisplayURL(); endpoint != "" {
 		parts = append(parts, "Endpoint: "+endpoint)
@@ -296,26 +296,26 @@ func (m Model) adminHeaderMeta() string {
 }
 
 func (m Model) adminEndpointDisplayURL() string {
-	if m.adminSettings == nil {
+	if m.admin.settings == nil {
 		return ""
 	}
-	if endpoint := strings.TrimSpace(m.adminSettings.EndpointDisplayURL); endpoint != "" {
+	if endpoint := strings.TrimSpace(m.admin.settings.EndpointDisplayURL); endpoint != "" {
 		return endpoint
 	}
-	if endpoint := strings.TrimSpace(m.adminSettings.EndpointAdvertiseURL); endpoint != "" {
+	if endpoint := strings.TrimSpace(m.admin.settings.EndpointAdvertiseURL); endpoint != "" {
 		return endpoint
 	}
-	if !m.adminSettings.SSHEnabled || m.adminSettings.SSHPort <= 0 {
+	if !m.admin.settings.SSHEnabled || m.admin.settings.SSHPort <= 0 {
 		return ""
 	}
-	host := strings.TrimSpace(m.adminSettings.SSHListenAddress)
+	host := strings.TrimSpace(m.admin.settings.SSHListenAddress)
 	if host == "" {
 		host = "127.0.0.1"
 	}
 	if host == "0.0.0.0" {
 		host = "127.0.0.1"
 	}
-	return "ssh://" + net.JoinHostPort(host, strconv.Itoa(m.adminSettings.SSHPort))
+	return "ssh://" + net.JoinHostPort(host, strconv.Itoa(m.admin.settings.SSHPort))
 }
 
 func (m Model) renderViewContent() string {

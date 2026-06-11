@@ -34,25 +34,25 @@ func saveTEALToFile(dataDir, address, teal string) (string, error) {
 // handleKeyListKeys handles keyboard input on key list screen
 func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle filter mode input
-	if m.filterActive {
+	if m.keylist.filterActive {
 		switch msg.String() {
 		case "esc":
 			// Clear filter and exit filter mode
-			m.filterInput = ""
-			m.filterActive = false
+			m.keylist.filterInput = ""
+			m.keylist.filterActive = false
 			m.resetKeyListSelection()
 		case "enter":
 			// Keep filter, exit filter mode
-			m.filterActive = false
+			m.keylist.filterActive = false
 			m.resetKeyListSelection()
 		case "backspace":
-			if len(m.filterInput) > 0 {
-				m.filterInput = m.filterInput[:len(m.filterInput)-1]
+			if len(m.keylist.filterInput) > 0 {
+				m.keylist.filterInput = m.keylist.filterInput[:len(m.keylist.filterInput)-1]
 				m.resetKeyListSelection()
 			}
 		default:
 			if len(msg.String()) == 1 {
-				m.filterInput += msg.String()
+				m.keylist.filterInput += msg.String()
 				m.resetKeyListSelection()
 			}
 		}
@@ -66,15 +66,15 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "esc":
 		// Clear filter if active, otherwise do nothing (only q quits)
-		if m.filterInput != "" {
-			m.filterInput = ""
+		if m.keylist.filterInput != "" {
+			m.keylist.filterInput = ""
 			m.resetKeyListSelection()
 		}
 		return m, nil
 
 	case "/":
 		// Activate filter mode
-		m.filterActive = true
+		m.keylist.filterActive = true
 		return m, nil
 
 	}
@@ -84,40 +84,40 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "up", "k":
-		if m.selectedKey > 0 {
-			m.selectedKey--
+		if m.keylist.selectedKey > 0 {
+			m.keylist.selectedKey--
 			// Scroll up if selected key is above visible area
-			if m.selectedKey < m.scrollOffset {
-				m.scrollOffset = m.selectedKey
+			if m.keylist.selectedKey < m.keylist.scrollOffset {
+				m.keylist.scrollOffset = m.keylist.selectedKey
 			}
 		}
 
 	case "down", "j":
-		if m.selectedKey < len(displayKeys)-1 {
-			m.selectedKey++
+		if m.keylist.selectedKey < len(displayKeys)-1 {
+			m.keylist.selectedKey++
 			// Scroll down if selected key is below visible area
 			visibleHeight := m.keyListVisibleHeight()
-			if m.selectedKey >= m.scrollOffset+visibleHeight {
-				m.scrollOffset = m.selectedKey - visibleHeight + 1
+			if m.keylist.selectedKey >= m.keylist.scrollOffset+visibleHeight {
+				m.keylist.scrollOffset = m.keylist.selectedKey - visibleHeight + 1
 			}
 		}
 
 	case "g":
 		// Generate new key
-		m.generateFocus = 0 // Start on key type selection
-		m.generateKeyType = 0
-		m.generateError = ""
-		m.generateParamScrollOffset = 0 // Reset scroll
+		m.forms.generateFocus = 0 // Start on key type selection
+		m.forms.generateKeyType = 0
+		m.forms.generateError = ""
+		m.forms.generateParamScrollOffset = 0 // Reset scroll
 		m.viewState = ViewGenerateForm
 		return m, tea.Batch(m.sendListKeyTypesCmd(), m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
 
 	case "i":
 		// Import key
-		m.importFocus = 0 // Start on key type selection
-		m.importKeyType = 0
-		m.importMnemonicInput.SetValue("")
-		m.importMnemonicInput.Blur()
-		m.importError = ""
+		m.forms.importFocus = 0 // Start on key type selection
+		m.forms.importKeyType = 0
+		m.forms.importMnemonicInput.SetValue("")
+		m.forms.importMnemonicInput.Blur()
+		m.forms.importError = ""
 		m.viewState = ViewImportForm
 
 	case "b", "B":
@@ -134,16 +134,16 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "s", "S":
 		// Open settings panel
-		m.adminSelectedRow = 0
-		m.adminEditingRow = -1
-		m.adminEditValue = ""
+		m.admin.selectedRow = 0
+		m.admin.editingRow = -1
+		m.admin.editValue = ""
 		m.viewState = ViewAdminPanel
 		return m, tea.Batch(m.sendGetAdminSettingsCmd(), m.waitForMessageCmd(), adminRefreshTickCmd())
 
 	case "enter":
 		// Show key details
-		if len(displayKeys) > 0 && m.selectedKey < len(displayKeys) {
-			return m, tea.Batch(m.sendGetKeyDetailsCmd(displayKeys[m.selectedKey].Address), m.waitForMessageCmd())
+		if len(displayKeys) > 0 && m.keylist.selectedKey < len(displayKeys) {
+			return m, tea.Batch(m.sendGetKeyDetailsCmd(displayKeys[m.keylist.selectedKey].Address), m.waitForMessageCmd())
 		}
 	}
 
@@ -151,15 +151,15 @@ func (m Model) handleKeyListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) resetKeyListSelection() {
-	m.selectedKey = 0
-	m.scrollOffset = 0
+	m.keylist.selectedKey = 0
+	m.keylist.scrollOffset = 0
 }
 
 func (m Model) openBackupConfirm() (tea.Model, tea.Cmd) {
-	m.backupExportPassphrase = ""
-	m.backupConfirmPassphrase = ""
-	m.backupConfirmError = ""
-	m.backupConfirmFocus = 0
+	m.backup.exportPassphrase = ""
+	m.backup.confirmPassphrase = ""
+	m.backup.confirmError = ""
+	m.backup.confirmFocus = 0
 	m.viewState = ViewBackupConfirm
 	return m, nil
 }
@@ -169,41 +169,41 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "enter", " ", "q":
 		m.viewState = ViewKeyList
-		m.detailsScrollOffset = 0 // Reset scroll on close
-		m.detailsSaveStatus = ""
+		m.details.scrollOffset = 0 // Reset scroll on close
+		m.details.saveStatus = ""
 		return m, nil
 
 	case "s":
 		// Save TEAL to file (only if TEAL is available)
-		if m.detailsTEAL != "" && m.dataDir != "" {
-			_, err := saveTEALToFile(m.dataDir, m.detailsAddress, m.detailsTEAL)
+		if m.details.teal != "" && m.dataDir != "" {
+			_, err := saveTEALToFile(m.dataDir, m.details.address, m.details.teal)
 			if err != nil {
-				m.detailsSaveStatus = fmt.Sprintf("Save failed: %v", err)
+				m.details.saveStatus = fmt.Sprintf("Save failed: %v", err)
 			} else {
-				m.detailsSaveStatus = fmt.Sprintf("Saved to files/%s.teal", m.detailsAddress)
+				m.details.saveStatus = fmt.Sprintf("Saved to files/%s.teal", m.details.address)
 			}
 		}
 		return m, nil
 
 	case "t":
-		if m.detailsTEAL != "" {
-			m.detailsScrollOffset = 0
+		if m.details.teal != "" {
+			m.details.scrollOffset = 0
 			m.viewState = ViewTEALFullDisplay
 		}
 		return m, nil
 
 	case "d":
 		// Delete selected key - show confirmation dialog
-		m.deleteAddress = m.detailsAddress
-		m.deleteKeyType = m.detailsKeyType
-		m.deleteConfirmFocus = 0 // Default to Cancel (safer)
+		m.del.address = m.details.address
+		m.del.keyType = m.details.keyType
+		m.del.focus = 0 // Default to Cancel (safer)
 		m.viewState = ViewDeleteConfirm
 		return m, nil
 
 	case "up", "k":
 		// Scroll up
-		if m.detailsScrollOffset > 0 {
-			m.detailsScrollOffset--
+		if m.details.scrollOffset > 0 {
+			m.details.scrollOffset--
 		}
 		return m, nil
 
@@ -211,15 +211,15 @@ func (m Model) handleKeyDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Scroll down - calculate max offset based on content
 		maxVisibleLines := m.detailsVisibleLines()
 		// Parameters: count rendered lines so multi-line address lists scroll correctly.
-		itemCount := len(buildDetailsParameterLines(m.detailsKeyType, m.detailsParameters))
+		itemCount := len(buildDetailsParameterLines(m.details.keyType, m.details.parameters))
 		visibleItems := maxVisibleLines
 
 		maxOffset := itemCount - visibleItems
 		if maxOffset < 0 {
 			maxOffset = 0
 		}
-		if m.detailsScrollOffset < maxOffset {
-			m.detailsScrollOffset++
+		if m.details.scrollOffset < maxOffset {
+			m.details.scrollOffset++
 		}
 		return m, nil
 	}
@@ -230,38 +230,38 @@ func (m Model) handleTEALFullDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
 		m.viewState = ViewKeyDetails
-		m.detailsScrollOffset = 0
+		m.details.scrollOffset = 0
 		return m, nil
 	case "up", "k":
-		if m.detailsScrollOffset > 0 {
-			m.detailsScrollOffset--
+		if m.details.scrollOffset > 0 {
+			m.details.scrollOffset--
 		}
 		return m, nil
 	case "down", "j":
-		maxOffset := len(strings.Split(m.detailsTEAL, "\n")) - m.tealFullDisplayVisibleLines()
+		maxOffset := len(strings.Split(m.details.teal, "\n")) - m.tealFullDisplayVisibleLines()
 		if maxOffset < 0 {
 			maxOffset = 0
 		}
-		if m.detailsScrollOffset < maxOffset {
-			m.detailsScrollOffset++
+		if m.details.scrollOffset < maxOffset {
+			m.details.scrollOffset++
 		}
 		return m, nil
 	case "pgup":
 		visible := m.tealFullDisplayVisibleLines()
-		m.detailsScrollOffset -= visible
-		if m.detailsScrollOffset < 0 {
-			m.detailsScrollOffset = 0
+		m.details.scrollOffset -= visible
+		if m.details.scrollOffset < 0 {
+			m.details.scrollOffset = 0
 		}
 		return m, nil
 	case "pgdown":
 		visible := m.tealFullDisplayVisibleLines()
-		maxOffset := len(strings.Split(m.detailsTEAL, "\n")) - visible
+		maxOffset := len(strings.Split(m.details.teal, "\n")) - visible
 		if maxOffset < 0 {
 			maxOffset = 0
 		}
-		m.detailsScrollOffset += visible
-		if m.detailsScrollOffset > maxOffset {
-			m.detailsScrollOffset = maxOffset
+		m.details.scrollOffset += visible
+		if m.details.scrollOffset > maxOffset {
+			m.details.scrollOffset = maxOffset
 		}
 		return m, nil
 	}

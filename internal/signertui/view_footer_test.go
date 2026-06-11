@@ -18,7 +18,7 @@ func TestWindowFooterAndStatusArePinnedAcrossScreens(t *testing.T) {
 			name: "key list",
 			model: Model{
 				viewState: ViewKeyList,
-				keys:      []KeyInfo{{Address: "ADDR", KeyType: "ed25519"}},
+				keylist:   keyListState{keys: []KeyInfo{{Address: "ADDR", KeyType: "ed25519"}}},
 			},
 			footerWant: "g: Generate",
 		},
@@ -26,10 +26,10 @@ func TestWindowFooterAndStatusArePinnedAcrossScreens(t *testing.T) {
 			name: "admin panel",
 			model: Model{
 				viewState: ViewAdminPanel,
-				adminSettings: &AdminSettings{
+				admin: adminPanelState{settings: &AdminSettings{
 					PassphraseMethod: "none",
 					Theme:            "auto",
-				},
+				}},
 			},
 			footerWant: "p: Policy",
 		},
@@ -74,7 +74,7 @@ func TestWindowFooterWrapsAbovePinnedStatus(t *testing.T) {
 		height:            18,
 		connectionState:   ConnectionConnected,
 		signerStatusKnown: true,
-		keys:              []KeyInfo{{Address: "ADDR", KeyType: "ed25519"}},
+		keylist:           keyListState{keys: []KeyInfo{{Address: "ADDR", KeyType: "ed25519"}}},
 	}
 
 	lines := renderedViewLines(m.View())
@@ -101,7 +101,7 @@ func TestAdminTitleUsesSentryNodeRole(t *testing.T) {
 	if got := m.AdminTitle(); got != "Sentry Admin" {
 		t.Fatalf("initial sentry AdminTitle() = %q, want Sentry Admin", got)
 	}
-	m = Model{adminSettings: &AdminSettings{NodeRole: "sentry"}}
+	m = Model{admin: adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}}}
 	if got := m.AdminTitle(); got != "Sentry Admin" {
 		t.Fatalf("sentry AdminTitle() = %q, want Sentry Admin", got)
 	}
@@ -110,13 +110,13 @@ func TestAdminTitleUsesSentryNodeRole(t *testing.T) {
 func TestStandaloneAdminHeaderShowsEndpointAndRolePort(t *testing.T) {
 	m := Model{
 		width: 120,
-		adminSettings: &AdminSettings{
+		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:             "sentry",
 			SSHEnabled:           true,
 			SSHPort:              1127,
 			SignerPort:           11270,
 			EndpointAdvertiseURL: "ssh://sentry.example.test:1127",
-		},
+		}},
 	}
 
 	got := stripANSI(m.renderAdminHeader())
@@ -134,13 +134,13 @@ func TestStandaloneAdminHeaderShowsEndpointAndRolePort(t *testing.T) {
 func TestStandaloneAdminHeaderBuildsEndpointWhenAdvertiseURLEmpty(t *testing.T) {
 	m := Model{
 		width: 120,
-		adminSettings: &AdminSettings{
+		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:         "signer",
 			SSHEnabled:       true,
 			SSHListenAddress: "192.0.2.10",
 			SSHPort:          1127,
 			SignerPort:       11270,
-		},
+		}},
 	}
 
 	got := stripANSI(m.renderAdminHeader())
@@ -158,12 +158,12 @@ func TestStandaloneAdminHeaderBuildsEndpointWhenAdvertiseURLEmpty(t *testing.T) 
 func TestStandaloneAdminHeaderDefaultsEndpointHostForOlderSettings(t *testing.T) {
 	m := Model{
 		width: 120,
-		adminSettings: &AdminSettings{
+		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:   "signer",
 			SSHEnabled: true,
 			SSHPort:    1127,
 			SignerPort: 11270,
-		},
+		}},
 	}
 
 	got := stripANSI(m.renderAdminHeader())
@@ -175,14 +175,14 @@ func TestStandaloneAdminHeaderDefaultsEndpointHostForOlderSettings(t *testing.T)
 func TestStandaloneAdminHeaderUsesServerDerivedEndpointForWildcardBind(t *testing.T) {
 	m := Model{
 		width: 120,
-		adminSettings: &AdminSettings{
+		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:           "signer",
 			SSHEnabled:         true,
 			SSHListenAddress:   "0.0.0.0",
 			SSHPort:            64804,
 			SignerPort:         11270,
 			EndpointDisplayURL: "ssh://192.168.1.42:64804",
-		},
+		}},
 	}
 
 	got := stripANSI(m.renderAdminHeader())
@@ -197,13 +197,13 @@ func TestStandaloneAdminHeaderUsesServerDerivedEndpointForWildcardBind(t *testin
 func TestStandaloneAdminHeaderUsesLoopbackEndpointForOlderWildcardSettings(t *testing.T) {
 	m := Model{
 		width: 120,
-		adminSettings: &AdminSettings{
+		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:         "signer",
 			SSHEnabled:       true,
 			SSHListenAddress: "0.0.0.0",
 			SSHPort:          64804,
 			SignerPort:       11270,
-		},
+		}},
 	}
 
 	got := stripANSI(m.renderAdminHeader())
@@ -218,11 +218,11 @@ func TestStandaloneAdminHeaderUsesLoopbackEndpointForOlderWildcardSettings(t *te
 func TestStandaloneAdminHeaderStaysWithinWidth(t *testing.T) {
 	m := Model{
 		width: 58,
-		adminSettings: &AdminSettings{
+		admin: adminPanelState{settings: &AdminSettings{
 			NodeRole:             "signer",
 			SignerPort:           11270,
 			EndpointAdvertiseURL: "ssh://very-long-signer-hostname.example.test:1127",
-		},
+		}},
 	}
 
 	got := m.renderAdminHeader()

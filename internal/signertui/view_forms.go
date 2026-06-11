@@ -28,14 +28,14 @@ func (m Model) renderBackupConfirm() string {
 
 	exportStyle := inputInactiveStyle
 	confirmStyle := inputInactiveStyle
-	if m.backupConfirmFocus == 0 {
+	if m.backup.confirmFocus == 0 {
 		exportStyle = inputActiveStyle
 	}
-	if m.backupConfirmFocus == 1 {
+	if m.backup.confirmFocus == 1 {
 		confirmStyle = inputActiveStyle
 	}
-	if m.backupConfirmError != "" {
-		if m.backupConfirmFocus == 0 {
+	if m.backup.confirmError != "" {
+		if m.backup.confirmFocus == 0 {
 			exportStyle = exportStyle.BorderForeground(lipgloss.Color("196"))
 		} else {
 			confirmStyle = confirmStyle.BorderForeground(lipgloss.Color("196"))
@@ -43,7 +43,7 @@ func (m Model) renderBackupConfirm() string {
 	}
 
 	sb.WriteString("Export passphrase:\n")
-	exportMasked := strings.Repeat("*", len(m.backupExportPassphrase))
+	exportMasked := strings.Repeat("*", len(m.backup.exportPassphrase))
 	if exportMasked == "" {
 		exportMasked = " "
 	}
@@ -51,16 +51,16 @@ func (m Model) renderBackupConfirm() string {
 	sb.WriteString("\n\n")
 
 	sb.WriteString("Confirm export passphrase:\n")
-	confirmMasked := strings.Repeat("*", len(m.backupConfirmPassphrase))
+	confirmMasked := strings.Repeat("*", len(m.backup.confirmPassphrase))
 	if confirmMasked == "" {
 		confirmMasked = " "
 	}
 	sb.WriteString(confirmStyle.Width(40).Render(confirmMasked))
 	sb.WriteString("\n")
 
-	if m.backupConfirmError != "" {
+	if m.backup.confirmError != "" {
 		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(m.backupConfirmError))
+		sb.WriteString(errorStyle.Render(m.backup.confirmError))
 		sb.WriteString("\n")
 	}
 
@@ -81,7 +81,7 @@ func (m Model) renderBackupDisplay() string {
 	sb.WriteString(titleStyle.Render("Backup Created"))
 	sb.WriteString("\n\n")
 	sb.WriteString("Archive path:\n")
-	sb.WriteString(m.backupArchivePath)
+	sb.WriteString(m.backup.archivePath)
 	sb.WriteString("\n")
 	return m.renderPopup(90, sb.String())
 }
@@ -98,12 +98,12 @@ func (m Model) renderImportForm() string {
 	sb.WriteString("Key Type:\n")
 	for i, kt := range keyTypes {
 		prefix := "  "
-		if i == m.importKeyType {
+		if i == m.forms.importKeyType {
 			prefix = "> "
 		}
-		if m.importFocus == 0 && i == m.importKeyType {
+		if m.forms.importFocus == 0 && i == m.forms.importKeyType {
 			sb.WriteString(selectedStyle.Render(prefix + kt))
-		} else if i == m.importKeyType {
+		} else if i == m.forms.importKeyType {
 			sb.WriteString(keyTypeStyle.Render(prefix + kt))
 		} else {
 			sb.WriteString(subtitleStyle.Render(prefix + kt))
@@ -114,11 +114,11 @@ func (m Model) renderImportForm() string {
 
 	// Mnemonic input
 	sb.WriteString("Mnemonic Phrase:\n")
-	mnemonicInput := m.importMnemonicInput
+	mnemonicInput := m.forms.importMnemonicInput
 	mnemonicInput.SetWidth(62)
 	mnemonicInput.SetHeight(4)
 	mnemonicInput.MaxHeight = 4
-	if m.importFocus == 1 {
+	if m.forms.importFocus == 1 {
 		_ = mnemonicInput.Focus()
 		sb.WriteString(inputStyle.Width(64).Render(mnemonicInput.View()))
 	} else {
@@ -129,10 +129,10 @@ func (m Model) renderImportForm() string {
 
 	// Word count indicator (dynamically determined by selected key type)
 	wordCount := 0
-	if value := m.importMnemonicInput.Value(); value != "" {
+	if value := m.forms.importMnemonicInput.Value(); value != "" {
 		wordCount = len(strings.Fields(value))
 	}
-	expectedWords := getExpectedImportWordCount(m.importKeyType)
+	expectedWords := getExpectedImportWordCount(m.forms.importKeyType)
 	wordCountStr := fmt.Sprintf("Words: %d/%d", wordCount, expectedWords)
 	if wordCount == expectedWords {
 		sb.WriteString(statusUnlockedStyle.Render(wordCountStr))
@@ -143,7 +143,7 @@ func (m Model) renderImportForm() string {
 
 	// Submit button
 	var importBtn string
-	if m.importFocus == 2 {
+	if m.forms.importFocus == 2 {
 		importBtn = buttonActiveStyle.Render("IMPORT KEY")
 	} else {
 		importBtn = buttonInactiveStyle.Render("IMPORT KEY")
@@ -152,8 +152,8 @@ func (m Model) renderImportForm() string {
 	sb.WriteString("\n\n")
 
 	// Error message
-	if m.importError != "" {
-		sb.WriteString(errorStyle.Render(m.importError))
+	if m.forms.importError != "" {
+		sb.WriteString(errorStyle.Render(m.forms.importError))
 		sb.WriteString("\n")
 	}
 
@@ -167,8 +167,8 @@ func (m Model) renderImportDisplay() string {
 	sb.WriteString(titleStyle.Render("Key Imported Successfully"))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.importedKeyType), m.importedAddress))
-	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.importedKeyType)))
+	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.forms.importedKeyType), m.forms.importedAddress))
+	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.forms.importedKeyType)))
 	sb.WriteString("\n")
 
 	return m.renderPopup(75, sb.String())
@@ -186,10 +186,10 @@ func (m Model) renderGenerateForm() string {
 	sb.WriteString("Select Key Type:\n\n")
 	for i, kt := range keyTypes {
 		prefix := "  "
-		if i == m.generateKeyType {
+		if i == m.forms.generateKeyType {
 			prefix = "> "
 		}
-		if i == m.generateKeyType {
+		if i == m.forms.generateKeyType {
 			sb.WriteString(selectedStyle.Render(prefix + kt))
 		} else {
 			sb.WriteString(subtitleStyle.Render(prefix + kt))
@@ -199,13 +199,13 @@ func (m Model) renderGenerateForm() string {
 	sb.WriteString("\n")
 
 	// Selected key type label.
-	selectedKeyType := getKeyTypeByIndex(m.generateKeyType)
+	selectedKeyType := getKeyTypeByIndex(m.forms.generateKeyType)
 	sb.WriteString(subtitleStyle.Render(getKeyTypeSelectionLabel(selectedKeyType)))
 	sb.WriteString("\n\n")
 
 	// Error message
-	if m.generateError != "" {
-		sb.WriteString(errorStyle.Render(m.generateError))
+	if m.forms.generateError != "" {
+		sb.WriteString(errorStyle.Render(m.forms.generateError))
 		sb.WriteString("\n")
 	}
 
@@ -244,11 +244,11 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		maxVisibleParams = 1
 	}
 
-	sb.WriteString(scrollMoreAboveLine(m.generateParamScrollOffset))
+	sb.WriteString(scrollMoreAboveLine(m.forms.generateParamScrollOffset))
 	sb.WriteString("\n")
 
 	// Calculate visible range
-	startIdx := m.generateParamScrollOffset
+	startIdx := m.forms.generateParamScrollOffset
 	endIdx := startIdx + maxVisibleParams
 	if endIdx > totalParams {
 		endIdx = totalParams
@@ -257,15 +257,15 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	// Render only visible parameter fields
 	for i := startIdx; i < endIdx; i++ {
 		paramDef := params[i]
-		isFieldFocused := m.generateFocus == i
+		isFieldFocused := m.forms.generateFocus == i
 
 		// Determine label - use input mode label if multiple modes exist
 		labelText := paramDef.Label
 		var modeHint string
 		if len(paramDef.InputModes) > 1 {
 			modeIdx := 0
-			if m.genericLSigParamModes != nil {
-				modeIdx = m.genericLSigParamModes[paramDef.Name]
+			if m.forms.genericLSigParamModes != nil {
+				modeIdx = m.forms.genericLSigParamModes[paramDef.Name]
 			}
 			if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
 				labelText = paramDef.InputModes[modeIdx].Label
@@ -276,7 +276,7 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 			}
 		}
 		if len(paramDef.Options) > 0 && isFieldFocused {
-			optionIdx := indexOfOption(paramDef.Options, m.genericLSigParams[paramDef.Name])
+			optionIdx := indexOfOption(paramDef.Options, m.forms.genericLSigParams[paramDef.Name])
 			if optionIdx < 0 {
 				optionIdx = 0
 			}
@@ -300,8 +300,8 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		if len(paramDef.Options) > 0 {
 			fieldWidth = optionFieldWidth(paramDef.Options)
 		}
-		if len(paramDef.InputModes) > 1 && m.genericLSigParamModes != nil {
-			modeIdx := m.genericLSigParamModes[paramDef.Name]
+		if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
+			modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
 			if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
 				mode := paramDef.InputModes[modeIdx]
 				if mode.ByteLength > 0 {
@@ -314,8 +314,8 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		fieldHeight = m.constrainParameterFieldHeight(fieldHeight, sb.String())
 
 		value := ""
-		if m.genericLSigParams != nil {
-			value = m.genericLSigParams[paramDef.Name]
+		if m.forms.genericLSigParams != nil {
+			value = m.forms.genericLSigParams[paramDef.Name]
 		}
 		if value == "" && len(paramDef.Options) > 0 {
 			value = defaultParamValue(paramDef)
@@ -325,8 +325,8 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		}
 
 		lines := paramInputLines(value)
-		if isFieldFocused && m.genericLSigParams != nil {
-			currentValue := m.genericLSigParams[paramDef.Name]
+		if isFieldFocused && m.forms.genericLSigParams != nil {
+			currentValue := m.forms.genericLSigParams[paramDef.Name]
 			if currentValue == "" && len(paramDef.Options) > 0 {
 				currentValue = defaultParamValue(paramDef)
 			}
@@ -338,8 +338,8 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		if isMultilineParamType(paramDef.Type) {
 			offset := 0
 			maxOffset := maxParamInputScrollOffset(lines, fieldHeight)
-			if m.genericLSigParamScroll != nil {
-				offset = m.genericLSigParamScroll[paramDef.Name]
+			if m.forms.genericLSigParamScroll != nil {
+				offset = m.forms.genericLSigParamScroll[paramDef.Name]
 			}
 			if offset < 0 {
 				offset = 0
@@ -386,7 +386,7 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	// Action button
 	buttonFocus := len(params)
 	var btn string
-	if m.generateFocus == buttonFocus {
+	if m.forms.generateFocus == buttonFocus {
 		btn = buttonActiveStyle.Render(fmt.Sprintf("> [ %s %s ] <", buttonVerb, strings.ToUpper(spec.DisplayName)))
 	} else {
 		btn = buttonInactiveStyle.Render(fmt.Sprintf("  [ %s %s ]  ", buttonVerb, strings.ToUpper(spec.DisplayName)))
@@ -484,7 +484,7 @@ func renderedLinesBeforeAppend(s string) int {
 
 // renderGenerateParams renders the parameter input modal for LSig types with creation params
 func (m Model) renderGenerateParams() string {
-	return m.renderParameterModal(m.generateKeyType, "GENERATE", m.generateError)
+	return m.renderParameterModal(m.forms.generateKeyType, "GENERATE", m.forms.generateError)
 }
 
 // renderGenerating renders the loading state while generating a key
@@ -494,7 +494,7 @@ func (m Model) renderGenerating() string {
 	sb.WriteString(titleStyle.Render("Generating Key"))
 	sb.WriteString("\n\n")
 
-	keyType := getKeyTypeByIndex(m.generateKeyType)
+	keyType := getKeyTypeByIndex(m.forms.generateKeyType)
 	sb.WriteString(fmt.Sprintf("Key Type: %s\n\n", displayKeyType(keyType)))
 
 	sb.WriteString(subtitleStyle.Render("Please wait..."))
@@ -510,7 +510,7 @@ func (m Model) renderImporting() string {
 	sb.WriteString(titleStyle.Render("Importing Key"))
 	sb.WriteString("\n\n")
 
-	keyType := getImportKeyTypeByIndex(m.importKeyType)
+	keyType := getImportKeyTypeByIndex(m.forms.importKeyType)
 	sb.WriteString(fmt.Sprintf("Key Type: %s\n\n", displayKeyType(keyType)))
 
 	sb.WriteString(subtitleStyle.Render("Please wait..."))
@@ -526,8 +526,8 @@ func (m Model) renderGenerateDisplay() string {
 	sb.WriteString(titleStyle.Render("Key Generated Successfully"))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.generatedKeyType), m.generatedAddress))
-	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.generatedKeyType)))
+	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.forms.generatedKeyType), m.forms.generatedAddress))
+	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.forms.generatedKeyType)))
 	sb.WriteString("\n")
 
 	sb.WriteString(subtitleStyle.Render("Recovery material is stored encrypted in the signer keyfile."))
@@ -540,8 +540,8 @@ func (m Model) renderGenerateDisplay() string {
 
 // renderImportParams renders the parameter input modal for import when required.
 func (m Model) renderImportParams() string {
-	keyType := getImportKeyTypeByIndex(m.importKeyType)
-	return m.renderParameterModalForKeyType(keyType, "IMPORT", m.importError)
+	keyType := getImportKeyTypeByIndex(m.forms.importKeyType)
+	return m.renderParameterModalForKeyType(keyType, "IMPORT", m.forms.importError)
 }
 
 // renderDeleting renders the loading state while deleting a key
@@ -551,7 +551,7 @@ func (m Model) renderDeleting() string {
 	sb.WriteString(titleStyle.Render("Deleting Key"))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(fmt.Sprintf("%s: %s\n\n", m.keyIdentifierLabel(m.deleteKeyType), m.deleteAddress))
+	sb.WriteString(fmt.Sprintf("%s: %s\n\n", m.keyIdentifierLabel(m.del.keyType), m.del.address))
 
 	sb.WriteString(subtitleStyle.Render("Please wait..."))
 	sb.WriteString("\n")
@@ -594,8 +594,8 @@ func (m Model) renderDeleteConfirm() string {
 
 	sb.WriteString("Are you sure you want to delete this key?\n\n")
 
-	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.deleteKeyType), m.deleteAddress))
-	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.deleteKeyType)))
+	sb.WriteString(fmt.Sprintf("%s: %s\n", m.keyIdentifierLabel(m.del.keyType), m.del.address))
+	sb.WriteString(fmt.Sprintf("Type:    %s\n", displayKeyType(m.del.keyType)))
 	sb.WriteString("\n")
 
 	sb.WriteString(errorStyle.Render("WARNING: This action cannot be undone!"))
@@ -605,7 +605,7 @@ func (m Model) renderDeleteConfirm() string {
 
 	// Buttons - Cancel is default (safer)
 	var cancelBtn, deleteBtn string
-	if m.deleteConfirmFocus == 0 {
+	if m.del.focus == 0 {
 		cancelBtn = buttonActiveStyle.Render("> CANCEL")
 		deleteBtn = buttonInactiveStyle.Render("  DELETE")
 	} else {
@@ -635,7 +635,7 @@ func (m Model) renderRevokeTokenConfirm() string {
 
 	// Buttons - Cancel is default (safer)
 	var cancelBtn, revokeBtn string
-	if m.revokeTokenConfirmFocus == 0 {
+	if m.admin.revokeTokenFocus == 0 {
 		cancelBtn = buttonActiveStyle.Render("> CANCEL")
 		revokeBtn = buttonInactiveStyle.Render("  REVOKE")
 	} else {
@@ -660,7 +660,7 @@ func (m Model) renderLockConfirm() string {
 	sb.WriteString("apadmin will stay open and return to the unlock screen.\n\n")
 
 	var cancelBtn, lockBtn string
-	if m.manualLockConfirmFocus == 0 {
+	if m.manualLock.focus == 0 {
 		cancelBtn = buttonActiveStyle.Render("> CANCEL")
 		lockBtn = buttonInactiveStyle.Render("  LOCK")
 	} else {

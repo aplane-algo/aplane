@@ -18,17 +18,17 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "backups", "default", backupFileName)
 	m := Model{
 		viewState: ViewKeyList,
-		keys: []KeyInfo{{
+		keylist: keyListState{keys: []KeyInfo{{
 			Address: "CURRENTADDR",
 			KeyType: "ed25519",
-		}},
+		}}},
 	}
 
 	m, cmd := updateForTest(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	if m.viewState != ViewRestoreList {
 		t.Fatalf("after restore key viewState = %v, want ViewRestoreList", m.viewState)
 	}
-	if m.restoreBackupsLoaded {
+	if m.restore.backupsLoaded {
 		t.Fatal("restoreBackupsLoaded = true, want false while list request is in flight")
 	}
 	if cmd == nil {
@@ -45,15 +45,15 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	if m.viewState != ViewRestoreList {
 		t.Fatalf("after backups list viewState = %v, want ViewRestoreList", m.viewState)
 	}
-	if len(m.restoreBackups) != 1 {
-		t.Fatalf("restoreBackups len = %d, want 1", len(m.restoreBackups))
+	if len(m.restore.backups) != 1 {
+		t.Fatalf("restoreBackups len = %d, want 1", len(m.restore.backups))
 	}
 
 	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.viewState != ViewRestorePassphrase {
 		t.Fatalf("after backup selection viewState = %v, want ViewRestorePassphrase", m.viewState)
 	}
-	if m.restoreArchivePath == "" {
+	if m.restore.archivePath == "" {
 		t.Fatal("restoreArchivePath is empty")
 	}
 
@@ -62,18 +62,18 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	if m.viewState != ViewRestorePassphrase {
 		t.Fatalf("after preview submit viewState = %v, want ViewRestorePassphrase", m.viewState)
 	}
-	if !m.restorePreviewing {
+	if !m.restore.previewing {
 		t.Fatal("restorePreviewing = false, want true")
 	}
-	if string(m.restorePassphrase) != "export-passphrase" {
-		t.Fatalf("restorePassphrase = %q, want retained passphrase for restore", string(m.restorePassphrase))
+	if string(m.restore.passphrase) != "export-passphrase" {
+		t.Fatalf("restorePassphrase = %q, want retained passphrase for restore", string(m.restore.passphrase))
 	}
 	if cmd == nil {
 		t.Fatal("preview submit cmd = nil, want preview command")
 	}
 
 	m, _ = updateForTest(t, m, RestorePreviewMsg{
-		ArchivePath: m.restoreArchivePath,
+		ArchivePath: m.restore.archivePath,
 		Keys: []RestoreKeyInfo{
 			{Address: "NEWADDR", KeyType: "ed25519"},
 			{Address: "EXISTINGADDR", KeyType: "ed25519", AlreadyExists: true},
@@ -82,20 +82,20 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	if m.viewState != ViewRestorePreview {
 		t.Fatalf("after preview response viewState = %v, want ViewRestorePreview", m.viewState)
 	}
-	if !m.restoreSelected["NEWADDR"] {
+	if !m.restore.selected["NEWADDR"] {
 		t.Fatal("new key was not preselected")
 	}
-	if m.restoreSelected["EXISTINGADDR"] {
+	if m.restore.selected["EXISTINGADDR"] {
 		t.Fatal("existing key was preselected without overwrite")
 	}
 
-	passphrase := m.restorePassphrase
+	passphrase := m.restore.passphrase
 	m, cmd = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.viewState != ViewRestoring {
 		t.Fatalf("after restore submit viewState = %v, want ViewRestoring", m.viewState)
 	}
-	if len(m.restorePassphrase) != 0 {
-		t.Fatalf("restorePassphrase length = %d, want 0", len(m.restorePassphrase))
+	if len(m.restore.passphrase) != 0 {
+		t.Fatalf("restorePassphrase length = %d, want 0", len(m.restore.passphrase))
 	}
 	for i, b := range passphrase {
 		if b != 0 {
@@ -118,8 +118,8 @@ func TestRestoreFlowUpdateSmoke(t *testing.T) {
 	if m.viewState != ViewRestoreDisplay {
 		t.Fatalf("after restore result viewState = %v, want ViewRestoreDisplay", m.viewState)
 	}
-	if !m.restoreResult.Success || len(m.restoreResult.Restored) != 1 {
-		t.Fatalf("restoreResult = %+v, want successful one-key result", m.restoreResult)
+	if !m.restore.result.Success || len(m.restore.result.Restored) != 1 {
+		t.Fatalf("restoreResult = %+v, want successful one-key result", m.restore.result)
 	}
 
 	m, _ = updateForTest(t, m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -138,7 +138,7 @@ func TestKeyListRestoreShortcutOpensRestoreList(t *testing.T) {
 	if got.viewState != ViewRestoreList {
 		t.Fatalf("viewState = %v, want ViewRestoreList", got.viewState)
 	}
-	if got.restoreBackupsLoaded {
+	if got.restore.backupsLoaded {
 		t.Fatal("restoreBackupsLoaded = true, want false while list request is in flight")
 	}
 	if cmd == nil {
@@ -149,13 +149,11 @@ func TestKeyListRestoreShortcutOpensRestoreList(t *testing.T) {
 func TestRestoreListCancelReturnsToKeyList(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "backups", "default", "aplane-backup.tar.gz")
 	m := Model{
-		viewState:            ViewRestoreList,
-		restoreBackupsLoaded: true,
-		restoreBackups: []BackupInfo{{
+		viewState: ViewRestoreList,
+		restore: restoreState{backupsLoaded: true, backups: []BackupInfo{{
 			Path:     archivePath,
 			FileName: "aplane-backup.tar.gz",
-		}},
-		selectedBackup: 0,
+		}}, selectedBackup: 0},
 	}
 
 	next, cmd := m.handleRestoreListKeys(tea.KeyMsg{Type: tea.KeyEsc})
@@ -163,7 +161,7 @@ func TestRestoreListCancelReturnsToKeyList(t *testing.T) {
 	if got.viewState != ViewKeyList {
 		t.Fatalf("viewState = %v, want ViewKeyList", got.viewState)
 	}
-	if got.restoreBackupsLoaded || len(got.restoreBackups) != 0 {
+	if got.restore.backupsLoaded || len(got.restore.backups) != 0 {
 		t.Fatalf("restore list state was not reset: %+v", got)
 	}
 	if cmd != nil {
@@ -174,16 +172,15 @@ func TestRestoreListCancelReturnsToKeyList(t *testing.T) {
 func TestRenderRestoreListShowsBackupDirectory(t *testing.T) {
 	dataDir := t.TempDir()
 	m := Model{
-		width:                120,
-		height:               30,
-		dataDir:              dataDir,
-		viewState:            ViewRestoreList,
-		restoreBackupsLoaded: true,
-		restoreBackups: []BackupInfo{{
+		width:     120,
+		height:    30,
+		dataDir:   dataDir,
+		viewState: ViewRestoreList,
+		restore: restoreState{backupsLoaded: true, backups: []BackupInfo{{
 			Path:     filepath.Join(dataDir, "backups", "default", "aplane-backup.tar.gz"),
 			FileName: "aplane-backup.tar.gz",
 			Size:     4096,
-		}},
+		}}},
 	}
 
 	view := stripANSI(m.renderRestoreList())
@@ -208,21 +205,19 @@ func TestBackupsListResponsePopulatesRestoreBrowser(t *testing.T) {
 	if got.viewState != ViewRestoreList {
 		t.Fatalf("viewState = %v, want ViewRestoreList", got.viewState)
 	}
-	if !got.restoreBackupsLoaded {
+	if !got.restore.backupsLoaded {
 		t.Fatal("restoreBackupsLoaded = false, want true")
 	}
-	if len(got.restoreBackups) != 1 || got.restoreBackups[0].FileName != "backup.tar.gz" {
-		t.Fatalf("restoreBackups = %+v, want backup.tar.gz", got.restoreBackups)
+	if len(got.restore.backups) != 1 || got.restore.backups[0].FileName != "backup.tar.gz" {
+		t.Fatalf("restoreBackups = %+v, want backup.tar.gz", got.restore.backups)
 	}
 }
 
 func TestRestorePreviewPreselectsOnlyNewKeysAndKeepsPassphrase(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "aplane-backup.tar.gz")
 	m := Model{
-		viewState:          ViewRestorePassphrase,
-		restoreArchivePath: archivePath,
-		restorePassphrase:  []byte("export-passphrase"),
-		restorePreviewing:  true,
+		viewState: ViewRestorePassphrase,
+		restore:   restoreState{archivePath: archivePath, passphrase: []byte("export-passphrase"), previewing: true},
 	}
 
 	next, _ := m.Update(RestorePreviewMsg{
@@ -236,16 +231,16 @@ func TestRestorePreviewPreselectsOnlyNewKeysAndKeepsPassphrase(t *testing.T) {
 	if got.viewState != ViewRestorePreview {
 		t.Fatalf("viewState = %v, want ViewRestorePreview", got.viewState)
 	}
-	if got.restorePreviewing {
+	if got.restore.previewing {
 		t.Fatal("restorePreviewing = true, want false")
 	}
-	if string(got.restorePassphrase) != "export-passphrase" {
-		t.Fatalf("restorePassphrase = %q, want retained passphrase for restore", string(got.restorePassphrase))
+	if string(got.restore.passphrase) != "export-passphrase" {
+		t.Fatalf("restorePassphrase = %q, want retained passphrase for restore", string(got.restore.passphrase))
 	}
-	if !got.restoreSelected["NEWADDR"] {
+	if !got.restore.selected["NEWADDR"] {
 		t.Fatal("new key was not preselected")
 	}
-	if got.restoreSelected["EXISTINGADDR"] {
+	if got.restore.selected["EXISTINGADDR"] {
 		t.Fatal("existing key was preselected without overwrite")
 	}
 }
@@ -254,10 +249,8 @@ func TestRestorePreviewFailureClearsPassphrase(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "aplane-backup.tar.gz")
 	passphrase := []byte("export-passphrase")
 	m := Model{
-		viewState:          ViewRestorePassphrase,
-		restoreArchivePath: archivePath,
-		restorePassphrase:  passphrase,
-		restorePreviewing:  true,
+		viewState: ViewRestorePassphrase,
+		restore:   restoreState{archivePath: archivePath, passphrase: passphrase, previewing: true},
 	}
 
 	next, _ := m.Update(RestorePreviewMsg{
@@ -267,18 +260,18 @@ func TestRestorePreviewFailureClearsPassphrase(t *testing.T) {
 	if got.viewState != ViewRestorePassphrase {
 		t.Fatalf("viewState = %v, want ViewRestorePassphrase", got.viewState)
 	}
-	if got.restorePreviewing {
+	if got.restore.previewing {
 		t.Fatal("restorePreviewing = true, want false")
 	}
-	if len(got.restorePassphrase) != 0 {
-		t.Fatalf("restorePassphrase length = %d, want 0", len(got.restorePassphrase))
+	if len(got.restore.passphrase) != 0 {
+		t.Fatalf("restorePassphrase length = %d, want 0", len(got.restore.passphrase))
 	}
 	for i, b := range passphrase {
 		if b != 0 {
 			t.Fatalf("passphrase byte %d = %d, want zero", i, b)
 		}
 	}
-	if got.restorePassphraseError == "" {
+	if got.restore.passphraseError == "" {
 		t.Fatal("restorePassphraseError is empty")
 	}
 }
@@ -287,8 +280,8 @@ func TestRestoreBackupResultClearsPassphraseAndShowsResult(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "backups", "default", "backup.tar.gz")
 	passphrase := []byte("export-passphrase")
 	m := Model{
-		viewState:         ViewRestoring,
-		restorePassphrase: passphrase,
+		viewState: ViewRestoring,
+		restore:   restoreState{passphrase: passphrase},
 	}
 
 	next, cmd := m.Update(RestoreBackupResultMsg{
@@ -304,16 +297,16 @@ func TestRestoreBackupResultClearsPassphraseAndShowsResult(t *testing.T) {
 	if got.viewState != ViewRestoreDisplay {
 		t.Fatalf("viewState = %v, want ViewRestoreDisplay", got.viewState)
 	}
-	if len(got.restorePassphrase) != 0 {
-		t.Fatalf("restorePassphrase length = %d, want 0", len(got.restorePassphrase))
+	if len(got.restore.passphrase) != 0 {
+		t.Fatalf("restorePassphrase length = %d, want 0", len(got.restore.passphrase))
 	}
 	for i, b := range passphrase {
 		if b != 0 {
 			t.Fatalf("passphrase byte %d = %d, want zero", i, b)
 		}
 	}
-	if !got.restoreResult.Success || len(got.restoreResult.Restored) != 1 {
-		t.Fatalf("restoreResult = %+v, want successful one-key result", got.restoreResult)
+	if !got.restore.result.Success || len(got.restore.result.Restored) != 1 {
+		t.Fatalf("restoreResult = %+v, want successful one-key result", got.restore.result)
 	}
 	if cmd == nil {
 		t.Fatal("cmd = nil, want key refresh commands")
@@ -323,18 +316,17 @@ func TestRestoreBackupResultClearsPassphraseAndShowsResult(t *testing.T) {
 func TestRestorePreviewRequiresOverwriteBeforeSelectingExistingKey(t *testing.T) {
 	m := Model{
 		viewState: ViewRestorePreview,
-		restorePreviewKeys: []RestoreKeyInfo{
+		restore: restoreState{previewKeys: []RestoreKeyInfo{
 			{Address: "EXISTINGADDR", KeyType: "ed25519", AlreadyExists: true},
-		},
-		restoreSelected: make(map[string]bool),
+		}, selected: make(map[string]bool)},
 	}
 
 	next, _ := m.handleRestorePreviewKeys(tea.KeyMsg{Type: tea.KeySpace})
 	got := next.(Model)
-	if got.restoreSelected["EXISTINGADDR"] {
+	if got.restore.selected["EXISTINGADDR"] {
 		t.Fatal("existing key selected while overwrite was disabled")
 	}
-	if got.restorePreviewError == "" {
+	if got.restore.previewError == "" {
 		t.Fatal("restorePreviewError is empty")
 	}
 
@@ -342,7 +334,7 @@ func TestRestorePreviewRequiresOverwriteBeforeSelectingExistingKey(t *testing.T)
 	got = next.(Model)
 	next, _ = got.handleRestorePreviewKeys(tea.KeyMsg{Type: tea.KeySpace})
 	got = next.(Model)
-	if !got.restoreSelected["EXISTINGADDR"] {
+	if !got.restore.selected["EXISTINGADDR"] {
 		t.Fatal("existing key was not selectable after overwrite was enabled")
 	}
 }
@@ -356,10 +348,9 @@ func TestRestorePreviewRendersScrollableKeyWindowLikeKeyList(t *testing.T) {
 		})
 	}
 	m := Model{
-		viewState:          ViewRestorePreview,
-		height:             16,
-		restorePreviewKeys: keys,
-		restoreSelected:    map[string]bool{"RESTOREADDR00": true},
+		viewState: ViewRestorePreview,
+		height:    16,
+		restore:   restoreState{previewKeys: keys, selected: map[string]bool{"RESTOREADDR00": true}},
 	}
 
 	view := m.renderRestorePreview()
@@ -380,7 +371,7 @@ func TestRestorePreviewRendersScrollableKeyWindowLikeKeyList(t *testing.T) {
 		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		m = next.(Model)
 	}
-	if m.restorePreviewScrollOffset == 0 {
+	if m.restore.previewScrollOffset == 0 {
 		t.Fatal("restorePreviewScrollOffset = 0, want scrolled window")
 	}
 
@@ -405,13 +396,10 @@ func TestRestorePreviewPopupFitsTerminalHeight(t *testing.T) {
 		selected[address] = true
 	}
 	m := Model{
-		viewState:                  ViewRestorePreview,
-		width:                      90,
-		height:                     16,
-		restorePreviewKeys:         keys,
-		restoreSelected:            selected,
-		restoreSelectedKey:         4,
-		restorePreviewScrollOffset: 3,
+		viewState: ViewRestorePreview,
+		width:     90,
+		height:    16,
+		restore:   restoreState{previewKeys: keys, selected: selected, selectedKey: 4, previewScrollOffset: 3},
 	}
 
 	view := m.renderRestorePreview()
@@ -428,11 +416,10 @@ func TestRestorePreviewReservesContinuationRows(t *testing.T) {
 		viewState: ViewRestorePreview,
 		width:     90,
 		height:    16,
-		restorePreviewKeys: []RestoreKeyInfo{
+		restore: restoreState{previewKeys: []RestoreKeyInfo{
 			{Address: "RESTOREADDR00", KeyType: "ed25519"},
 			{Address: "RESTOREADDR01", KeyType: "ed25519"},
-		},
-		restoreSelected: map[string]bool{"RESTOREADDR00": true},
+		}, selected: map[string]bool{"RESTOREADDR00": true}},
 	}
 
 	keys := make([]RestoreKeyInfo, 0, 8)
@@ -446,13 +433,10 @@ func TestRestorePreviewReservesContinuationRows(t *testing.T) {
 		selected[address] = true
 	}
 	withContinuation := Model{
-		viewState:                  ViewRestorePreview,
-		width:                      90,
-		height:                     16,
-		restorePreviewKeys:         keys,
-		restoreSelected:            selected,
-		restoreSelectedKey:         4,
-		restorePreviewScrollOffset: 3,
+		viewState: ViewRestorePreview,
+		width:     90,
+		height:    16,
+		restore:   restoreState{previewKeys: keys, selected: selected, selectedKey: 4, previewScrollOffset: 3},
 	}
 
 	noContinuationView := noContinuation.renderRestorePreview()
@@ -479,7 +463,7 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 		viewState: ViewRestoreDisplay,
 		width:     90,
 		height:    21,
-		restoreResult: RestoreBackupResultMessage{
+		restore: restoreState{result: RestoreBackupResultMessage{
 			ArchivePath: archivePath,
 			Restored:    restored,
 			Errors: []RestoreError{{
@@ -492,7 +476,7 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 				Warning: "skipped bundled template for aplane.timed-whitelist.v1: backup template conflicts with existing keystore definition",
 			}},
 			Error: "1 key(s) failed to restore",
-		},
+		}},
 	}
 
 	view := m.renderRestoreDisplay()
@@ -540,13 +524,10 @@ func TestRestoreSubmitClearsPassphrase(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "aplane-backup.tar.gz")
 	passphrase := []byte("export-passphrase")
 	m := Model{
-		viewState:          ViewRestorePreview,
-		restoreArchivePath: archivePath,
-		restorePassphrase:  passphrase,
-		restorePreviewKeys: []RestoreKeyInfo{
+		viewState: ViewRestorePreview,
+		restore: restoreState{archivePath: archivePath, passphrase: passphrase, previewKeys: []RestoreKeyInfo{
 			{Address: "NEWADDR", KeyType: "ed25519"},
-		},
-		restoreSelected: map[string]bool{"NEWADDR": true},
+		}, selected: map[string]bool{"NEWADDR": true}},
 	}
 
 	next, cmd := m.handleRestorePreviewKeys(tea.KeyMsg{Type: tea.KeyEnter})
@@ -554,8 +535,8 @@ func TestRestoreSubmitClearsPassphrase(t *testing.T) {
 	if got.viewState != ViewRestoring {
 		t.Fatalf("viewState = %v, want ViewRestoring", got.viewState)
 	}
-	if len(got.restorePassphrase) != 0 {
-		t.Fatalf("restorePassphrase length = %d, want 0", len(got.restorePassphrase))
+	if len(got.restore.passphrase) != 0 {
+		t.Fatalf("restorePassphrase length = %d, want 0", len(got.restore.passphrase))
 	}
 	for i, b := range passphrase {
 		if b != 0 {

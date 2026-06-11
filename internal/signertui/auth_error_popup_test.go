@@ -15,13 +15,10 @@ func TestAuthResultSeriousUnlockErrorShowsBlockingPopup(t *testing.T) {
 		"policy verification failed for identity \"default\": policy integrity check failed: " +
 		"policy integrity mismatch: hmac mismatch"
 	m := Model{
-		viewState:        ViewAuth,
-		connectionState:  ConnectionConnected,
-		passphraseInput:  "secret",
-		passphraseError:  "old error",
-		passphraseMasked: true,
-		width:            80,
-		height:           20,
+		viewState:       ViewAuth,
+		connectionState: ConnectionConnected,
+		auth:            authState{passphraseInput: "secret", passphraseError: "old error", passphraseMasked: true}, width: 80,
+		height: 20,
 	}
 
 	next, _ := m.Update(AuthResultMsg{Success: false, Error: msg})
@@ -29,10 +26,10 @@ func TestAuthResultSeriousUnlockErrorShowsBlockingPopup(t *testing.T) {
 	if got.viewState != ViewError {
 		t.Fatalf("viewState = %v, want ViewError", got.viewState)
 	}
-	if got.errorPopupReturnView != ViewAuth {
-		t.Fatalf("errorPopupReturnView = %v, want ViewAuth", got.errorPopupReturnView)
+	if got.errorPopup.returnView != ViewAuth {
+		t.Fatalf("errorPopupReturnView = %v, want ViewAuth", got.errorPopup.returnView)
 	}
-	if got.passphraseInput != "" {
+	if got.auth.passphraseInput != "" {
 		t.Fatal("passphraseInput retained after serious auth error")
 	}
 
@@ -50,12 +47,10 @@ func TestAuthResultSeriousUnlockErrorShowsBlockingPopup(t *testing.T) {
 
 func TestSeriousErrorPopupEscReturnsToPassphraseView(t *testing.T) {
 	m := Model{
-		viewState:            ViewError,
-		connectionState:      ConnectionConnected,
-		errorPopupTitle:      "Signer unlock failed",
-		errorPopupMessage:    "failed to load keys",
-		errorPopupReturnView: ViewAuth,
-		passphraseError:      "failed to load keys",
+		viewState:       ViewError,
+		connectionState: ConnectionConnected,
+		errorPopup:      errorPopupState{title: "Signer unlock failed", message: "failed to load keys", returnView: ViewAuth},
+		auth:            authState{passphraseError: "failed to load keys"},
 	}
 
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -63,9 +58,9 @@ func TestSeriousErrorPopupEscReturnsToPassphraseView(t *testing.T) {
 	if got.viewState != ViewAuth {
 		t.Fatalf("viewState = %v, want ViewAuth", got.viewState)
 	}
-	if got.errorPopupMessage != "" || got.passphraseError != "" {
+	if got.errorPopup.message != "" || got.auth.passphraseError != "" {
 		t.Fatalf("popup/passphrase error not cleared: popup=%q passphrase=%q",
-			got.errorPopupMessage, got.passphraseError)
+			got.errorPopup.message, got.auth.passphraseError)
 	}
 }
 
@@ -77,10 +72,10 @@ func TestInvalidPassphraseStaysInlineOnAuthView(t *testing.T) {
 	if got.viewState != ViewAuth {
 		t.Fatalf("viewState = %v, want ViewAuth", got.viewState)
 	}
-	if got.passphraseError != "invalid passphrase" {
-		t.Fatalf("passphraseError = %q, want invalid passphrase", got.passphraseError)
+	if got.auth.passphraseError != "invalid passphrase" {
+		t.Fatalf("passphraseError = %q, want invalid passphrase", got.auth.passphraseError)
 	}
-	if got.errorPopupMessage != "" {
-		t.Fatalf("errorPopupMessage = %q, want empty", got.errorPopupMessage)
+	if got.errorPopup.message != "" {
+		t.Fatalf("errorPopupMessage = %q, want empty", got.errorPopup.message)
 	}
 }

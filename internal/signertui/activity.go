@@ -21,8 +21,8 @@ func (m Model) recordUserActivity(now time.Time, msg tea.KeyMsg) (Model, tea.Cmd
 		return m, nil
 	}
 
-	m.lastUserInputAt = now
-	m.localIdleDisconnectSent = false
+	m.activity.lastInputAt = now
+	m.activity.idleDisconnectSent = false
 
 	return m, m.armLocalIdleTimer()
 }
@@ -42,74 +42,74 @@ func (m Model) canTrackLocalIdle() bool {
 }
 
 func (m *Model) resetActivityState() {
-	m.lastUserInputAt = time.Time{}
-	m.localIdleDisconnectSent = false
-	m.localIdleGeneration++
-	m.localIdleDueAt = time.Time{}
+	m.activity.lastInputAt = time.Time{}
+	m.activity.idleDisconnectSent = false
+	m.activity.idleGeneration++
+	m.activity.idleDueAt = time.Time{}
 }
 
 func (m *Model) applySignerLockedState() {
 	m.clearRestorePassphrase()
-	m.manualLockPending = false
-	m.manualLockConfirmFocus = 0
-	m.manualLockReturnView = ViewKeyList
+	m.manualLock.pending = false
+	m.manualLock.focus = 0
+	m.manualLock.returnView = ViewKeyList
 	m.signerLocked = true
 	m.signerStatusKnown = true
 	m.viewState = ViewUnlock
-	m.passphraseInput = ""
-	m.passphraseError = ""
+	m.auth.passphraseInput = ""
+	m.auth.passphraseError = ""
 	m.resetActivityState()
 }
 
 func (m *Model) applySignerUnlockedState(keyCount int) {
-	m.manualLockPending = false
-	m.manualLockConfirmFocus = 0
-	m.manualLockReturnView = ViewKeyList
+	m.manualLock.pending = false
+	m.manualLock.focus = 0
+	m.manualLock.returnView = ViewKeyList
 	m.signerLocked = false
 	m.signerStatusKnown = true
 	m.keyCount = keyCount
 	m.viewState = ViewKeyList
 	m.resetActivityState()
-	m.lastUserInputAt = time.Now()
+	m.activity.lastInputAt = time.Now()
 }
 
 func (m *Model) applyAdminSettingsTimeout(settings AdminSettings) tea.Cmd {
 	timeout, err := serverconfig.ParsePassphraseTimeout(settings.PassphraseTimeout)
 	if err != nil {
-		m.effectiveSessionTimeout = 0
-		m.localIdleGeneration++
-		m.localIdleDueAt = time.Time{}
+		m.activity.sessionTimeout = 0
+		m.activity.idleGeneration++
+		m.activity.idleDueAt = time.Time{}
 		m.setPersistentWarning("Invalid passphrase timeout from server: " + err.Error())
 		return nil
 	}
 
-	if timeout == m.effectiveSessionTimeout {
-		if m.localIdleDueAt.IsZero() {
+	if timeout == m.activity.sessionTimeout {
+		if m.activity.idleDueAt.IsZero() {
 			return m.armLocalIdleTimer()
 		}
 		return nil
 	}
-	m.effectiveSessionTimeout = timeout
+	m.activity.sessionTimeout = timeout
 	return m.armLocalIdleTimer()
 }
 
 func (m *Model) armLocalIdleTimer() tea.Cmd {
 	if !m.canTrackLocalIdle() ||
-		m.effectiveSessionTimeout <= 0 ||
-		m.lastUserInputAt.IsZero() {
+		m.activity.sessionTimeout <= 0 ||
+		m.activity.lastInputAt.IsZero() {
 		return nil
 	}
 
-	m.localIdleGeneration++
-	m.localIdleDueAt = m.lastUserInputAt.Add(m.effectiveSessionTimeout)
-	return localIdleTickCmd(m.localIdleGeneration, m.localIdleDueAt)
+	m.activity.idleGeneration++
+	m.activity.idleDueAt = m.activity.lastInputAt.Add(m.activity.sessionTimeout)
+	return localIdleTickCmd(m.activity.idleGeneration, m.activity.idleDueAt)
 }
 
 func (m *Model) handleLocalIdleTick(msg localIdleTickMsg) tea.Cmd {
-	if msg.Generation != m.localIdleGeneration || !msg.DueAt.Equal(m.localIdleDueAt) {
+	if msg.Generation != m.activity.idleGeneration || !msg.DueAt.Equal(m.activity.idleDueAt) {
 		return nil
 	}
-	if !m.canTrackLocalIdle() || m.localIdleDisconnectSent {
+	if !m.canTrackLocalIdle() || m.activity.idleDisconnectSent {
 		return nil
 	}
 
@@ -118,7 +118,7 @@ func (m *Model) handleLocalIdleTick(msg localIdleTickMsg) tea.Cmd {
 		return m.armLocalIdleTimer()
 	}
 
-	m.localIdleDisconnectSent = true
+	m.activity.idleDisconnectSent = true
 	return m.disconnectForLocalIdleCmd()
 }
 
@@ -129,14 +129,14 @@ func localIdleTickCmd(generation uint64, dueAt time.Time) tea.Cmd {
 }
 
 func (m Model) isLocallyIdle(now time.Time) bool {
-	if m.effectiveSessionTimeout <= 0 || m.lastUserInputAt.IsZero() {
+	if m.activity.sessionTimeout <= 0 || m.activity.lastInputAt.IsZero() {
 		return false
 	}
-	return !now.Before(m.lastUserInputAt.Add(m.effectiveSessionTimeout))
+	return !now.Before(m.activity.lastInputAt.Add(m.activity.sessionTimeout))
 }
 
 func (m *Model) handleManualLockFailed(errText string) tea.Cmd {
-	m.manualLockPending = false
+	m.manualLock.pending = false
 	if errText == "" {
 		errText = "request failed"
 	}
@@ -148,10 +148,10 @@ func (m *Model) handleManualLockFailed(errText string) tea.Cmd {
 }
 
 func (m Model) lockConfirmReturnView() ViewState {
-	if m.manualLockReturnView == ViewAuth || m.manualLockReturnView == ViewUnlock || m.manualLockReturnView == ViewLockConfirm {
+	if m.manualLock.returnView == ViewAuth || m.manualLock.returnView == ViewUnlock || m.manualLock.returnView == ViewLockConfirm {
 		return ViewKeyList
 	}
-	return m.manualLockReturnView
+	return m.manualLock.returnView
 }
 
 func tickDelay(dueAt time.Time) time.Duration {

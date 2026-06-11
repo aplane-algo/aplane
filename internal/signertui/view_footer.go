@@ -10,20 +10,20 @@ func (m Model) viewFooterText() string {
 	case ViewAuth, ViewUnlock:
 		return m.passphraseFooterText()
 	case ViewKeyList:
-		if m.filterActive {
+		if m.keylist.filterActive {
 			return "Enter: Apply | Esc: Clear"
 		}
 		return m.keyListFooterText()
 	case ViewKeyDetails:
 		parts := []string{"d=delete"}
-		if m.detailsTEAL != "" {
+		if m.details.teal != "" {
 			parts = append(parts, "t=TEAL", "s=save")
 		}
 		parts = append(parts, "esc/q: Back")
 		return strings.Join(parts, " | ")
 	case ViewTEALFullDisplay:
 		footer := "Esc/q close"
-		if len(strings.Split(m.detailsTEAL, "\n")) > m.tealFullDisplayVisibleLines() {
+		if len(strings.Split(m.details.teal, "\n")) > m.tealFullDisplayVisibleLines() {
 			footer += " | up/down/pgup/pgdown: Scroll"
 		}
 		return footer
@@ -36,7 +36,7 @@ func (m Model) viewFooterText() string {
 	case ViewRestoreList:
 		return "Enter: Preview | r: Refresh | Esc: Back"
 	case ViewRestorePassphrase:
-		if m.restorePreviewing {
+		if m.restore.previewing {
 			return "Previewing backup archive"
 		}
 		return "Enter: Preview | Esc: Back"
@@ -47,11 +47,11 @@ func (m Model) viewFooterText() string {
 	case ViewGenerateForm:
 		return "up/down: Select | enter: Generate | t: Template | esc: Back"
 	case ViewGenerateParams:
-		return m.parameterModalFooterText(getKeyTypeByIndex(m.generateKeyType), "Generate")
+		return m.parameterModalFooterText(getKeyTypeByIndex(m.forms.generateKeyType), "Generate")
 	case ViewImportForm:
 		return "up/down: Select key type | tab: Next | enter: Import | esc: Back"
 	case ViewImportParams:
-		return m.parameterModalFooterText(getImportKeyTypeByIndex(m.importKeyType), "Import")
+		return m.parameterModalFooterText(getImportKeyTypeByIndex(m.forms.importKeyType), "Import")
 	case ViewGenerating, ViewImporting, ViewDeleting, ViewTemplateInstalling, ViewBackingUp, ViewRestoring:
 		return "q: Quit"
 	case ViewDeleteConfirm:
@@ -83,7 +83,7 @@ func (m Model) passphraseFooterText() string {
 	switch {
 	case m.connectionState == ConnectionDisconnected:
 		return "c: Retry | Esc: Quit"
-	case m.connectionState == ConnectionConnecting || m.loggingIn:
+	case m.connectionState == ConnectionConnecting || m.auth.loggingIn:
 		return "Esc: Quit"
 	default:
 		return "Enter: Submit | Tab: Toggle visibility | Esc: Quit"
@@ -105,8 +105,8 @@ func (m Model) parameterModalFooterText(keyType, verb string) string {
 
 func (m Model) libraryTemplateDetailsFooterText() string {
 	footer := "Esc/q close"
-	if m.libraryDetailsContent != "" &&
-		len(strings.Split(m.libraryDetailsContent, "\n")) > m.libraryTemplateDetailsVisibleLines() {
+	if m.library.detailsContent != "" &&
+		len(strings.Split(m.library.detailsContent, "\n")) > m.libraryTemplateDetailsVisibleLines() {
 		footer += " | up/down/pgup/pgdown: Scroll"
 	}
 	return footer

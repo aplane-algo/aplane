@@ -12,9 +12,8 @@ import (
 
 func TestRenderGenerateDisplayLabelsSentryKey(t *testing.T) {
 	rendered := stripANSI(Model{
-		initialNodeRole:  "sentry",
-		generatedAddress: "SENTRYKEY",
-		generatedKeyType: keytypes.SentryComponentFalcon1024V1,
+		initialNodeRole: "sentry",
+		forms:           formsState{generatedAddress: "SENTRYKEY", generatedKeyType: keytypes.SentryComponentFalcon1024V1},
 	}.renderGenerateDisplay())
 	if !strings.Contains(rendered, "Sentry Key: SENTRYKEY") {
 		t.Fatalf("renderGenerateDisplay() missing sentry key label:\n%s", rendered)
@@ -25,10 +24,7 @@ func TestRenderGenerateDisplayLabelsSentryKey(t *testing.T) {
 }
 
 func TestRenderGenerateDisplayLabelsSignerAddress(t *testing.T) {
-	rendered := stripANSI(Model{
-		generatedAddress: "ADDR",
-		generatedKeyType: "ed25519",
-	}.renderGenerateDisplay())
+	rendered := stripANSI(Model{forms: formsState{generatedAddress: "ADDR", generatedKeyType: "ed25519"}}.renderGenerateDisplay())
 	if !strings.Contains(rendered, "Address: ADDR") {
 		t.Fatalf("renderGenerateDisplay() missing address label:\n%s", rendered)
 	}

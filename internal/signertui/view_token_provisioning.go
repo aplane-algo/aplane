@@ -14,14 +14,14 @@ import (
 
 // renderTokenProvisioningPopup renders the token provisioning approval popup
 func (m Model) renderTokenProvisioningPopup() string {
-	if m.pendingTokenRequest == nil {
+	if m.tokenApproval.request == nil {
 		return m.renderKeyListView()
 	}
 
 	rows := []string{
 		"Client Enrollment Request",
-		fmt.Sprintf("SSH Key:     %s", m.pendingTokenRequest.SSHFingerprint),
-		fmt.Sprintf("Remote Addr: %s", m.pendingTokenRequest.RemoteAddr),
+		fmt.Sprintf("SSH Key:     %s", m.tokenApproval.request.SSHFingerprint),
+		fmt.Sprintf("Remote Addr: %s", m.tokenApproval.request.RemoteAddr),
 	}
 	var sb strings.Builder
 
@@ -34,7 +34,7 @@ func (m Model) renderTokenProvisioningPopup() string {
 
 	// Buttons - use JoinHorizontal for proper alignment
 	var approveBtn, rejectBtn string
-	if m.pendingTokenRequestFocus == 0 {
+	if m.tokenApproval.focus == 0 {
 		approveBtn = buttonActiveStyle.Render("> APPROVE")
 		rejectBtn = buttonInactiveStyle.Render("  REJECT")
 	} else {

@@ -18,16 +18,16 @@ func (m Model) handleRestoreListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewState = ViewKeyList
 		return m, nil
 	case "r", "R":
-		m.restoreBackupsLoaded = false
-		m.restoreBackups = nil
+		m.restore.backupsLoaded = false
+		m.restore.backups = nil
 		return m, tea.Batch(m.sendListBackupsCmd(), m.waitForMessageCmd())
 	case "up", "k":
-		if m.selectedBackup > 0 {
-			m.selectedBackup--
+		if m.restore.selectedBackup > 0 {
+			m.restore.selectedBackup--
 		}
 	case "down", "j":
-		if m.selectedBackup < len(m.restoreBackups)-1 {
-			m.selectedBackup++
+		if m.restore.selectedBackup < len(m.restore.backups)-1 {
+			m.restore.selectedBackup++
 		}
 	case "enter":
 		backupInfo, ok := m.currentRestoreBackup()
@@ -35,22 +35,22 @@ func (m Model) handleRestoreListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.clearRestorePassphrase()
-		m.restoreArchivePath = backupInfo.Path
-		m.restorePassphraseError = ""
-		m.restorePreviewError = ""
-		m.restorePreviewKeys = nil
-		m.restorePreviewErrors = nil
-		m.restoreSelected = nil
-		m.restoreSelectedKey = 0
-		m.restorePreviewScrollOffset = 0
-		m.restoreOverwrite = false
+		m.restore.archivePath = backupInfo.Path
+		m.restore.passphraseError = ""
+		m.restore.previewError = ""
+		m.restore.previewKeys = nil
+		m.restore.previewErrors = nil
+		m.restore.selected = nil
+		m.restore.selectedKey = 0
+		m.restore.previewScrollOffset = 0
+		m.restore.overwrite = false
 		m.viewState = ViewRestorePassphrase
 	}
 	return m, nil
 }
 
 func (m Model) handleRestorePassphraseKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.restorePreviewing {
+	if m.restore.previewing {
 		if msg.String() == "esc" {
 			m.lastError = "Preview in progress; wait for completion"
 		}
@@ -60,32 +60,32 @@ func (m Model) handleRestorePassphraseKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	switch msg.String() {
 	case "esc":
 		m.clearRestorePassphrase()
-		m.restorePassphraseError = ""
+		m.restore.passphraseError = ""
 		m.viewState = ViewRestoreList
 		return m, nil
 	case "enter":
-		if len(m.restorePassphrase) == 0 {
-			m.restorePassphraseError = "Please enter the backup export passphrase"
+		if len(m.restore.passphrase) == 0 {
+			m.restore.passphraseError = "Please enter the backup export passphrase"
 			return m, nil
 		}
-		if m.restoreArchivePath == "" {
-			m.restorePassphraseError = "Please select a backup archive"
+		if m.restore.archivePath == "" {
+			m.restore.passphraseError = "Please select a backup archive"
 			return m, nil
 		}
-		m.restorePassphraseError = ""
-		m.restorePreviewing = true
-		return m, tea.Batch(m.sendPreviewRestoreCmd(m.restoreArchivePath, m.restorePassphrase), m.waitForMessageCmd())
+		m.restore.passphraseError = ""
+		m.restore.previewing = true
+		return m, tea.Batch(m.sendPreviewRestoreCmd(m.restore.archivePath, m.restore.passphrase), m.waitForMessageCmd())
 	case "backspace":
-		if len(m.restorePassphrase) > 0 {
-			m.restorePassphrase[len(m.restorePassphrase)-1] = 0
-			m.restorePassphrase = m.restorePassphrase[:len(m.restorePassphrase)-1]
-			m.restorePassphraseError = ""
+		if len(m.restore.passphrase) > 0 {
+			m.restore.passphrase[len(m.restore.passphrase)-1] = 0
+			m.restore.passphrase = m.restore.passphrase[:len(m.restore.passphrase)-1]
+			m.restore.passphraseError = ""
 		}
 		return m, nil
 	default:
 		if len(msg.String()) == 1 {
-			m.restorePassphrase = append(m.restorePassphrase, msg.String()...)
-			m.restorePassphraseError = ""
+			m.restore.passphrase = append(m.restore.passphrase, msg.String()...)
+			m.restore.passphraseError = ""
 		}
 	}
 	return m, nil
@@ -95,76 +95,76 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc":
 		m.clearRestorePassphrase()
-		m.restorePreviewError = ""
+		m.restore.previewError = ""
 		m.viewState = ViewRestoreList
 		return m, nil
 	case "up", "k":
-		if m.restoreSelectedKey > 0 {
-			m.restoreSelectedKey--
-			if m.restoreSelectedKey < m.restorePreviewScrollOffset {
-				m.restorePreviewScrollOffset = m.restoreSelectedKey
+		if m.restore.selectedKey > 0 {
+			m.restore.selectedKey--
+			if m.restore.selectedKey < m.restore.previewScrollOffset {
+				m.restore.previewScrollOffset = m.restore.selectedKey
 			}
 		}
 	case "down", "j":
-		if m.restoreSelectedKey < len(m.restorePreviewKeys)-1 {
-			m.restoreSelectedKey++
+		if m.restore.selectedKey < len(m.restore.previewKeys)-1 {
+			m.restore.selectedKey++
 			visibleHeight := m.restorePreviewVisibleHeight()
-			if m.restoreSelectedKey >= m.restorePreviewScrollOffset+visibleHeight {
-				m.restorePreviewScrollOffset = m.restoreSelectedKey - visibleHeight + 1
+			if m.restore.selectedKey >= m.restore.previewScrollOffset+visibleHeight {
+				m.restore.previewScrollOffset = m.restore.selectedKey - visibleHeight + 1
 			}
 		}
 	case " ":
-		if len(m.restorePreviewKeys) == 0 {
+		if len(m.restore.previewKeys) == 0 {
 			return m, nil
 		}
-		key := m.restorePreviewKeys[m.restoreSelectedKey]
+		key := m.restore.previewKeys[m.restore.selectedKey]
 		if !m.restoreKeySelectable(key) {
-			if key.AlreadyExists && !m.restoreOverwrite {
-				m.restorePreviewError = "Enable overwrite before selecting existing keys"
+			if key.AlreadyExists && !m.restore.overwrite {
+				m.restore.previewError = "Enable overwrite before selecting existing keys"
 			}
 			return m, nil
 		}
-		if m.restoreSelected == nil {
-			m.restoreSelected = make(map[string]bool)
+		if m.restore.selected == nil {
+			m.restore.selected = make(map[string]bool)
 		}
-		m.restoreSelected[key.Address] = !m.restoreSelected[key.Address]
-		if !m.restoreSelected[key.Address] {
-			delete(m.restoreSelected, key.Address)
+		m.restore.selected[key.Address] = !m.restore.selected[key.Address]
+		if !m.restore.selected[key.Address] {
+			delete(m.restore.selected, key.Address)
 		}
-		m.restorePreviewError = ""
+		m.restore.previewError = ""
 	case "a", "A":
-		m.restoreSelected = make(map[string]bool)
-		for _, key := range m.restorePreviewKeys {
+		m.restore.selected = make(map[string]bool)
+		for _, key := range m.restore.previewKeys {
 			if m.restoreKeySelectable(key) {
-				m.restoreSelected[key.Address] = true
+				m.restore.selected[key.Address] = true
 			}
 		}
-		m.restorePreviewError = ""
+		m.restore.previewError = ""
 	case "o", "O":
-		m.restoreOverwrite = !m.restoreOverwrite
-		if !m.restoreOverwrite {
-			for _, key := range m.restorePreviewKeys {
+		m.restore.overwrite = !m.restore.overwrite
+		if !m.restore.overwrite {
+			for _, key := range m.restore.previewKeys {
 				if key.AlreadyExists {
-					delete(m.restoreSelected, key.Address)
+					delete(m.restore.selected, key.Address)
 				}
 			}
 		}
-		m.restorePreviewError = ""
+		m.restore.previewError = ""
 	case "enter":
 		addresses := m.selectedRestoreAddresses()
 		if len(addresses) == 0 {
-			m.restorePreviewError = "Select at least one key to restore"
+			m.restore.previewError = "Select at least one key to restore"
 			return m, nil
 		}
-		for _, key := range m.restorePreviewKeys {
-			if m.restoreSelected[key.Address] && key.AlreadyExists && !m.restoreOverwrite {
-				m.restorePreviewError = "Enable overwrite before restoring existing keys"
+		for _, key := range m.restore.previewKeys {
+			if m.restore.selected[key.Address] && key.AlreadyExists && !m.restore.overwrite {
+				m.restore.previewError = "Enable overwrite before restoring existing keys"
 				return m, nil
 			}
 		}
-		restoreCmd := m.sendRestoreBackupCmd(m.restoreArchivePath, addresses, m.restoreOverwrite, m.restorePassphrase)
+		restoreCmd := m.sendRestoreBackupCmd(m.restore.archivePath, addresses, m.restore.overwrite, m.restore.passphrase)
 		m.clearRestorePassphrase()
-		m.restorePreviewError = ""
+		m.restore.previewError = ""
 		m.viewState = ViewRestoring
 		return m, tea.Batch(restoreCmd, m.waitForMessageCmd())
 	}
@@ -174,15 +174,15 @@ func (m Model) handleRestorePreviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleRestoreDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up":
-		if m.restoreDisplaySelectedKey > 0 {
-			m.restoreDisplaySelectedKey--
+		if m.restore.displaySelectedKey > 0 {
+			m.restore.displaySelectedKey--
 		}
 	case "down":
-		if m.restoreDisplaySelectedKey < len(m.restoreResult.Restored)-1 {
-			m.restoreDisplaySelectedKey++
+		if m.restore.displaySelectedKey < len(m.restore.result.Restored)-1 {
+			m.restore.displaySelectedKey++
 		}
 	case "q", "esc", "enter", " ":
-		result := m.restoreResult
+		result := m.restore.result
 		m.resetRestoreFlow(true)
 		if len(result.Restored) > 0 {
 			m.selectKeyByAddress(result.Restored[0].Address)

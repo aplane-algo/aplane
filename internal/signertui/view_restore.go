@@ -23,22 +23,22 @@ func (m Model) renderRestoreList() string {
 		sb.WriteString("\n")
 	}
 
-	if !m.restoreBackupsLoaded {
+	if !m.restore.backupsLoaded {
 		sb.WriteString(subtitleStyle.Render("Loading backup archives..."))
 		sb.WriteString("\n")
 		return m.renderPopup(popupWidth, sb.String())
 	}
 
-	if len(m.restoreBackups) == 0 {
+	if len(m.restore.backups) == 0 {
 		sb.WriteString(subtitleStyle.Render("No signer-managed backup archives found."))
 		return m.renderPopup(popupWidth, sb.String())
 	}
 
 	sb.WriteString(subtitleStyle.Render("Select a backup archive to preview."))
 	sb.WriteString("\n\n")
-	for i, backupInfo := range m.restoreBackups {
+	for i, backupInfo := range m.restore.backups {
 		prefix := "  "
-		if i == m.selectedBackup {
+		if i == m.restore.selectedBackup {
 			prefix = "> "
 		}
 		line := fmt.Sprintf("%s%-34s  %s  %s",
@@ -47,7 +47,7 @@ func (m Model) renderRestoreList() string {
 			formatRestoreTime(backupInfo.CreatedAt),
 			formatRestoreSize(backupInfo.Size),
 		)
-		if i == m.selectedBackup {
+		if i == m.restore.selectedBackup {
 			sb.WriteString(selectedStyle.Render(line))
 		} else {
 			sb.WriteString(normalStyle.Render(line))
@@ -75,27 +75,27 @@ func (m Model) renderRestorePassphrase() string {
 	sb.WriteString(titleStyle.Render("Unlock Backup Preview"))
 	sb.WriteString("\n\n")
 	sb.WriteString("Archive:\n")
-	sb.WriteString(restoreArchiveLabel(m.restoreArchivePath))
+	sb.WriteString(restoreArchiveLabel(m.restore.archivePath))
 	sb.WriteString("\n\n")
 	sb.WriteString(subtitleStyle.Render("Enter the backup export passphrase before metadata is shown."))
 	sb.WriteString("\n\n")
 
-	masked := strings.Repeat("*", len(m.restorePassphrase))
+	masked := strings.Repeat("*", len(m.restore.passphrase))
 	if masked == "" {
 		masked = " "
 	}
 	sb.WriteString(inputActiveStyle.Width(44).Render(masked))
 	sb.WriteString("\n")
 
-	if m.restorePreviewing {
+	if m.restore.previewing {
 		sb.WriteString("\n")
 		sb.WriteString(subtitleStyle.Render("Previewing backup archive..."))
 		sb.WriteString("\n")
 	}
 
-	if m.restorePassphraseError != "" {
+	if m.restore.passphraseError != "" {
 		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(m.restorePassphraseError))
+		sb.WriteString(errorStyle.Render(m.restore.passphraseError))
 		sb.WriteString("\n")
 	}
 
@@ -109,17 +109,17 @@ func (m Model) renderRestorePreview() string {
 
 	sb.WriteString(titleStyle.Render("Restore Preview"))
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("Archive:   %s\n", restoreArchiveLabel(m.restoreArchivePath)))
-	sb.WriteString(fmt.Sprintf("Overwrite: %s | Selected: %d\n", restoreOverwriteLabel(m.restoreOverwrite), m.selectedRestoreCount()))
+	sb.WriteString(fmt.Sprintf("Archive:   %s\n", restoreArchiveLabel(m.restore.archivePath)))
+	sb.WriteString(fmt.Sprintf("Overwrite: %s | Selected: %d\n", restoreOverwriteLabel(m.restore.overwrite), m.selectedRestoreCount()))
 	sb.WriteString("\n")
 
-	if len(m.restorePreviewKeys) == 0 {
+	if len(m.restore.previewKeys) == 0 {
 		sb.WriteString(subtitleStyle.Render("No restorable keys were found in this archive."))
 		sb.WriteString("\n")
 	} else {
 		visibleHeight := m.restorePreviewVisibleHeight()
-		scrollOffset := m.restorePreviewScrollOffset
-		if scrollOffset >= len(m.restorePreviewKeys) {
+		scrollOffset := m.restore.previewScrollOffset
+		if scrollOffset >= len(m.restore.previewKeys) {
 			scrollOffset = 0
 		}
 
@@ -127,14 +127,14 @@ func (m Model) renderRestorePreview() string {
 		sb.WriteString("\n")
 
 		endIdx := scrollOffset + visibleHeight
-		if endIdx > len(m.restorePreviewKeys) {
-			endIdx = len(m.restorePreviewKeys)
+		if endIdx > len(m.restore.previewKeys) {
+			endIdx = len(m.restore.previewKeys)
 		}
 
 		for i := scrollOffset; i < endIdx; i++ {
-			key := m.restorePreviewKeys[i]
+			key := m.restore.previewKeys[i]
 			prefix := "  "
-			if i == m.restoreSelectedKey {
+			if i == m.restore.selectedKey {
 				prefix = "> "
 			}
 			line := restorePreviewKeyLine(m, key, prefix, rowWidth)
@@ -142,7 +142,7 @@ func (m Model) renderRestorePreview() string {
 				sb.WriteString(errorStyle.Render(line))
 			} else if key.AlreadyExists {
 				sb.WriteString(helpStyle.Render(line))
-			} else if i == m.restoreSelectedKey {
+			} else if i == m.restore.selectedKey {
 				sb.WriteString(selectedStyle.Render(line))
 			} else {
 				sb.WriteString(normalStyle.Render(line))
@@ -150,17 +150,17 @@ func (m Model) renderRestorePreview() string {
 			sb.WriteString("\n")
 		}
 
-		sb.WriteString(scrollMoreBelowLine(len(m.restorePreviewKeys) - endIdx))
+		sb.WriteString(scrollMoreBelowLine(len(m.restore.previewKeys) - endIdx))
 		sb.WriteString("\n")
 
-		sb.WriteString(fmt.Sprintf("  Total: %d keys\n", len(m.restorePreviewKeys)))
+		sb.WriteString(fmt.Sprintf("  Total: %d keys\n", len(m.restore.previewKeys)))
 	}
 
-	if len(m.restorePreviewErrors) > 0 {
+	if len(m.restore.previewErrors) > 0 {
 		sb.WriteString("\n")
 		sb.WriteString(warningStyle.Render("Preview warnings:"))
 		sb.WriteString("\n")
-		for _, restoreErr := range m.restorePreviewErrors {
+		for _, restoreErr := range m.restore.previewErrors {
 			sb.WriteString("  ")
 			if restoreErr.Address != "" {
 				sb.WriteString(restoreErr.Address)
@@ -171,9 +171,9 @@ func (m Model) renderRestorePreview() string {
 		}
 	}
 
-	if m.restorePreviewError != "" {
+	if m.restore.previewError != "" {
 		sb.WriteString("\n")
-		sb.WriteString(errorStyle.Render(m.restorePreviewError))
+		sb.WriteString(errorStyle.Render(m.restore.previewError))
 		sb.WriteString("\n")
 	}
 
@@ -190,7 +190,7 @@ func (m Model) renderRestoring() string {
 }
 
 func (m Model) renderRestoreDisplay() string {
-	result := m.restoreResult
+	result := m.restore.result
 	popupWidth := m.popupWidth(110)
 	rowWidth := restorePreviewRowWidth(popupWidth)
 	contentHeight := m.restoreDisplayContentHeight()
@@ -225,7 +225,7 @@ func (m Model) renderRestoreDisplay() string {
 		}
 		displayModel := m
 		displayModel.clampRestoreDisplayScroll(visibleRows)
-		scrollOffset := displayModel.restoreDisplayScrollOffset
+		scrollOffset := displayModel.restore.displayScrollOffset
 		endIdx := scrollOffset + visibleRows
 		if endIdx > len(result.Restored) {
 			endIdx = len(result.Restored)
@@ -237,11 +237,11 @@ func (m Model) renderRestoreDisplay() string {
 		}
 		for i := scrollOffset; i < endIdx; i++ {
 			prefix := "  "
-			if i == displayModel.restoreDisplaySelectedKey {
+			if i == displayModel.restore.displaySelectedKey {
 				prefix = "> "
 			}
 			line := restoreDisplayKeyLine(result.Restored[i], prefix, rowWidth)
-			if i == displayModel.restoreDisplaySelectedKey {
+			if i == displayModel.restore.displaySelectedKey {
 				lines = append(lines, selectedStyle.Render(line))
 			} else {
 				lines = append(lines, normalStyle.Render(line))
@@ -353,7 +353,7 @@ func restoreOverwriteLabel(overwrite bool) string {
 }
 
 func restoreSelectionMark(m Model, key RestoreKeyInfo) string {
-	if m.restoreSelected[key.Address] {
+	if m.restore.selected[key.Address] {
 		return "* "
 	}
 	return "  "

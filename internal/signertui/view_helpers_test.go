@@ -161,21 +161,17 @@ func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 	}})
 
 	m := Model{
-		width:           58,
-		height:          72,
-		generateKeyType: 0,
-		generateFocus:   1,
-		genericLSigParams: map[string]string{
+		width:  58,
+		height: 72,
+		forms: formsState{generateKeyType: 0, generateFocus: 1, genericLSigParams: map[string]string{
 			"recipient":         strings.Repeat("A", 58),
 			"recipients":        strings.Repeat("B", 58) + "\n" + strings.Repeat("C", 58),
 			"unlock_round":      "18446744073709551615",
 			"sentry_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
 			"note":              strings.Repeat("D", 200),
-		},
-		genericLSigParamModes: map[string]int{},
-		genericLSigParamScroll: map[string]int{
+		}, genericLSigParamModes: map[string]int{}, genericLSigParamScroll: map[string]int{
 			"recipients": 0,
-		},
+		}},
 	}
 
 	rendered := m.renderParameterModalForKeyType("test.param-fit.v1", "GENERATE", "")
@@ -202,12 +198,9 @@ func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 	}})
 
 	m := Model{
-		width:                  100,
-		height:                 30,
-		generateFocus:          0,
-		genericLSigParams:      map[string]string{"sentry": ""},
-		genericLSigParamModes:  map[string]int{"sentry": 0},
-		genericLSigParamScroll: map[string]int{"sentry": 0},
+		width:  100,
+		height: 30,
+		forms:  formsState{generateFocus: 0, genericLSigParams: map[string]string{"sentry": ""}, genericLSigParamModes: map[string]int{"sentry": 0}, genericLSigParamScroll: map[string]int{"sentry": 0}},
 	}
 
 	rendered := m.renderParameterModalForKeyType("aplane.falcon1024-sentry-falcon1024.v1", "GENERATE", "")
@@ -237,12 +230,10 @@ func TestParameterModalMultilineFieldBottomFitsShortPane(t *testing.T) {
 	}})
 
 	m := Model{
-		width:           58,
-		height:          18,
-		viewState:       ViewGenerateParams,
-		generateKeyType: 0,
-		generateFocus:   0,
-		genericLSigParams: map[string]string{
+		width:     58,
+		height:    18,
+		viewState: ViewGenerateParams,
+		forms: formsState{generateKeyType: 0, generateFocus: 0, genericLSigParams: map[string]string{
 			"recipients": strings.Join([]string{
 				strings.Repeat("A", 58),
 				strings.Repeat("B", 58),
@@ -251,11 +242,9 @@ func TestParameterModalMultilineFieldBottomFitsShortPane(t *testing.T) {
 				strings.Repeat("E", 58),
 				strings.Repeat("F", 58),
 			}, "\n"),
-		},
-		genericLSigParamModes: map[string]int{},
-		genericLSigParamScroll: map[string]int{
+		}, genericLSigParamModes: map[string]int{}, genericLSigParamScroll: map[string]int{
 			"recipients": 0,
-		},
+		}},
 	}
 
 	rendered := m.View()

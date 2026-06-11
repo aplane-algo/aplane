@@ -19,56 +19,56 @@ import (
 func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.backupExportPassphrase = ""
-		m.backupConfirmPassphrase = ""
-		m.backupConfirmError = ""
+		m.backup.exportPassphrase = ""
+		m.backup.confirmPassphrase = ""
+		m.backup.confirmError = ""
 		m.viewState = ViewKeyList
 		return m, nil
 	case "tab":
-		m.backupConfirmFocus = (m.backupConfirmFocus + 1) % 2
+		m.backup.confirmFocus = (m.backup.confirmFocus + 1) % 2
 		return m, nil
 	case "shift+tab":
-		m.backupConfirmFocus = (m.backupConfirmFocus + 1) % 2
+		m.backup.confirmFocus = (m.backup.confirmFocus + 1) % 2
 		return m, nil
 	case "enter":
-		if m.backupConfirmFocus == 0 {
-			m.backupConfirmFocus = 1
+		if m.backup.confirmFocus == 0 {
+			m.backup.confirmFocus = 1
 			return m, nil
 		}
-		if m.backupExportPassphrase == "" {
-			m.backupConfirmError = "Please enter an export passphrase"
+		if m.backup.exportPassphrase == "" {
+			m.backup.confirmError = "Please enter an export passphrase"
 			return m, nil
 		}
-		if m.backupExportPassphrase != m.backupConfirmPassphrase {
-			m.backupConfirmError = "Passphrases do not match"
+		if m.backup.exportPassphrase != m.backup.confirmPassphrase {
+			m.backup.confirmError = "Passphrases do not match"
 			return m, nil
 		}
-		passphrase := m.backupExportPassphrase
-		m.backupExportPassphrase = ""
-		m.backupConfirmPassphrase = ""
-		m.backupConfirmError = ""
+		passphrase := m.backup.exportPassphrase
+		m.backup.exportPassphrase = ""
+		m.backup.confirmPassphrase = ""
+		m.backup.confirmError = ""
 		m.viewState = ViewBackingUp
 		return m, tea.Batch(m.sendBackupCmd(passphrase), m.waitForMessageCmd())
 	case "backspace":
-		if m.backupConfirmFocus == 0 {
-			if len(m.backupExportPassphrase) > 0 {
-				m.backupExportPassphrase = m.backupExportPassphrase[:len(m.backupExportPassphrase)-1]
+		if m.backup.confirmFocus == 0 {
+			if len(m.backup.exportPassphrase) > 0 {
+				m.backup.exportPassphrase = m.backup.exportPassphrase[:len(m.backup.exportPassphrase)-1]
 			}
 		} else {
-			if len(m.backupConfirmPassphrase) > 0 {
-				m.backupConfirmPassphrase = m.backupConfirmPassphrase[:len(m.backupConfirmPassphrase)-1]
+			if len(m.backup.confirmPassphrase) > 0 {
+				m.backup.confirmPassphrase = m.backup.confirmPassphrase[:len(m.backup.confirmPassphrase)-1]
 			}
 		}
-		m.backupConfirmError = ""
+		m.backup.confirmError = ""
 		return m, nil
 	default:
 		if len(msg.String()) == 1 {
-			if m.backupConfirmFocus == 0 {
-				m.backupExportPassphrase += msg.String()
+			if m.backup.confirmFocus == 0 {
+				m.backup.exportPassphrase += msg.String()
 			} else {
-				m.backupConfirmPassphrase += msg.String()
+				m.backup.confirmPassphrase += msg.String()
 			}
-			m.backupConfirmError = ""
+			m.backup.confirmError = ""
 		}
 	}
 	return m, nil
@@ -77,7 +77,7 @@ func (m Model) handleBackupConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleBackupDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc", "enter", " ":
-		m.backupArchivePath = ""
+		m.backup.archivePath = ""
 		m.viewState = ViewKeyList
 		return m, nil
 	}
@@ -88,9 +88,9 @@ func (m Model) handleBackupDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleGenerateDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc", "enter", " ":
-		m.selectKeyByAddress(m.generatedAddress)
-		m.generatedAddress = ""
-		m.generatedKeyType = ""
+		m.selectKeyByAddress(m.forms.generatedAddress)
+		m.forms.generatedAddress = ""
+		m.forms.generatedKeyType = ""
 		m.viewState = ViewKeyList
 	}
 
@@ -102,8 +102,8 @@ func (m Model) handleImportDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc", "enter", " ":
 		// Return to key list
-		m.importedAddress = ""
-		m.importedKeyType = ""
+		m.forms.importedAddress = ""
+		m.forms.importedKeyType = ""
 		m.viewState = ViewKeyList
 	}
 
@@ -112,12 +112,12 @@ func (m Model) handleImportDisplayKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleImportFormKeys handles keyboard input on import form
 func (m Model) handleImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.importFocus == 1 {
+	if m.forms.importFocus == 1 {
 		switch msg.String() {
 		case "esc":
-			m.importMnemonicInput.SetValue("")
-			m.importMnemonicInput.Blur()
-			m.importError = ""
+			m.forms.importMnemonicInput.SetValue("")
+			m.forms.importMnemonicInput.Blur()
+			m.forms.importError = ""
 			m.viewState = ViewKeyList
 			return m, nil
 		case "tab":
@@ -132,66 +132,66 @@ func (m Model) handleImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
 		}
 		var cmd tea.Cmd
-		m.importMnemonicInput, cmd = m.importMnemonicInput.Update(msg)
-		m.importError = ""
+		m.forms.importMnemonicInput, cmd = m.forms.importMnemonicInput.Update(msg)
+		m.forms.importError = ""
 		return m, cmd
 	}
 
 	switch msg.String() {
 	case "esc":
 		// Cancel and return to key list
-		m.importMnemonicInput.SetValue("")
-		m.importMnemonicInput.Blur()
-		m.importError = ""
+		m.forms.importMnemonicInput.SetValue("")
+		m.forms.importMnemonicInput.Blur()
+		m.forms.importError = ""
 		m.viewState = ViewKeyList
 		return m, nil
 
 	case "tab":
 		// Cycle through fields
-		return m.setImportFocus((m.importFocus + 1) % 3)
+		return m.setImportFocus((m.forms.importFocus + 1) % 3)
 
 	case "shift+tab":
 		// Cycle backwards through fields
-		return m.setImportFocus((m.importFocus + 2) % 3)
+		return m.setImportFocus((m.forms.importFocus + 2) % 3)
 
 	case "up":
 		// In key type field, switch to previous type
-		if m.importFocus == 0 && m.importKeyType > 0 {
-			m.importKeyType--
+		if m.forms.importFocus == 0 && m.forms.importKeyType > 0 {
+			m.forms.importKeyType--
 		}
 		return m, nil
 
 	case "k":
 		// In key type field, vim-style up navigation
-		if m.importFocus == 0 {
-			if m.importKeyType > 0 {
-				m.importKeyType--
+		if m.forms.importFocus == 0 {
+			if m.forms.importKeyType > 0 {
+				m.forms.importKeyType--
 			}
 		}
 		return m, nil
 
 	case "down":
 		// In key type field, switch to next type (dynamic bounds)
-		if m.importFocus == 0 && m.importKeyType < getImportKeyTypeCount()-1 {
-			m.importKeyType++
+		if m.forms.importFocus == 0 && m.forms.importKeyType < getImportKeyTypeCount()-1 {
+			m.forms.importKeyType++
 		}
 		return m, nil
 
 	case "j":
 		// In key type field, vim-style down navigation (dynamic bounds)
-		if m.importFocus == 0 {
-			if m.importKeyType < getImportKeyTypeCount()-1 {
-				m.importKeyType++
+		if m.forms.importFocus == 0 {
+			if m.forms.importKeyType < getImportKeyTypeCount()-1 {
+				m.forms.importKeyType++
 			}
 		}
 		return m, nil
 
 	case "enter":
-		if m.importFocus == 2 {
+		if m.forms.importFocus == 2 {
 			return m.submitImport()
 		}
 		// In key type field, move to next field
-		if m.importFocus == 0 {
+		if m.forms.importFocus == 0 {
 			return m.setImportFocus(1)
 		}
 		return m, nil
@@ -202,7 +202,7 @@ func (m Model) handleImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case " ":
 		// Space - add to mnemonic or submit if on button
-		switch m.importFocus {
+		switch m.forms.importFocus {
 		case 2:
 			return m.submitImport()
 		}
@@ -215,39 +215,39 @@ func (m Model) handleImportFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) setImportFocus(focus int) (tea.Model, tea.Cmd) {
-	m.importFocus = focus
-	if m.importFocus == 1 {
-		return m, m.importMnemonicInput.Focus()
+	m.forms.importFocus = focus
+	if m.forms.importFocus == 1 {
+		return m, m.forms.importMnemonicInput.Focus()
 	}
-	m.importMnemonicInput.Blur()
+	m.forms.importMnemonicInput.Blur()
 	return m, nil
 }
 
 func (m Model) importMnemonic() string {
-	return strings.Join(strings.Fields(m.importMnemonicInput.Value()), " ")
+	return strings.Join(strings.Fields(m.forms.importMnemonicInput.Value()), " ")
 }
 
 func (m Model) submitImport() (tea.Model, tea.Cmd) {
 	mnemonic := m.importMnemonic()
 	if mnemonic == "" {
-		m.importError = "Please enter a mnemonic phrase"
+		m.forms.importError = "Please enter a mnemonic phrase"
 		return m, nil
 	}
-	if wordCount, expected := len(strings.Fields(mnemonic)), getExpectedImportWordCount(m.importKeyType); wordCount != expected {
-		m.importError = fmt.Sprintf("Recovery phrase must contain %d words, got %d", expected, wordCount)
+	if wordCount, expected := len(strings.Fields(mnemonic)), getExpectedImportWordCount(m.forms.importKeyType); wordCount != expected {
+		m.forms.importError = fmt.Sprintf("Recovery phrase must contain %d words, got %d", expected, wordCount)
 		return m, nil
 	}
 
-	keyType := getImportKeyTypeByIndex(m.importKeyType)
+	keyType := getImportKeyTypeByIndex(m.forms.importKeyType)
 	if keyType == "" {
-		m.importError = "Invalid key type selected"
+		m.forms.importError = "Invalid key type selected"
 		return m, nil
 	}
 
 	if spec := getParamSpecForKeyType(keyType); spec != nil {
 		m = m.initGenericLSigParamsForKeyType(keyType)
-		m.generateFocus = 0
-		m.importError = ""
+		m.forms.generateFocus = 0
+		m.forms.importError = ""
 		m.viewState = ViewImportParams
 		return m, nil
 	}
@@ -261,9 +261,9 @@ func (m Model) handleImportParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	submitFn := func(keyType string, params map[string]string) tea.Cmd {
 		return tea.Batch(m.sendImportKeyWithParamsCmd(keyType, mnemonic, params), m.waitForMessageCmd())
 	}
-	m, cmd, errStr := m.handleParamModalKeys(msg, m.importKeyType, ViewImportForm, ViewImporting, submitFn)
+	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.importKeyType, ViewImportForm, ViewImporting, submitFn)
 	if errStr != "" || m.viewState == ViewImporting || m.viewState == ViewImportForm {
-		m.importError = errStr
+		m.forms.importError = errStr
 	}
 	return m, cmd
 }
@@ -274,58 +274,58 @@ func (m Model) handleGenerateFormKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		// Cancel and return to key list
-		m.generateError = ""
+		m.forms.generateError = ""
 		m.viewState = ViewKeyList
 		return m, nil
 
 	case "up", "k":
 		// Move to previous key type
-		if m.generateKeyType > 0 {
-			m.generateKeyType--
+		if m.forms.generateKeyType > 0 {
+			m.forms.generateKeyType--
 		}
 		return m, nil
 
 	case "down", "j":
 		// Move to next key type
-		if m.generateKeyType < getKeyTypeCount()-1 {
-			m.generateKeyType++
+		if m.forms.generateKeyType < getKeyTypeCount()-1 {
+			m.forms.generateKeyType++
 		}
 		return m, nil
 
 	case "t", "T":
-		keyType := getKeyTypeByIndex(m.generateKeyType)
+		keyType := getKeyTypeByIndex(m.forms.generateKeyType)
 		tmpl, ok := m.generateTemplateDetailsForKeyType(keyType)
 		if !ok {
-			m.generateError = fmt.Sprintf("%s has no template details available", displayKeyType(keyType))
+			m.forms.generateError = fmt.Sprintf("%s has no template details available", displayKeyType(keyType))
 			return m, nil
 		}
-		m.libraryDetailsReturnView = ViewGenerateForm
+		m.library.detailsReturnView = ViewGenerateForm
 		next, cmd, errMsg := m.openLibraryTemplateDetails(tmpl)
 		if errMsg != "" {
-			next.generateError = errMsg
+			next.forms.generateError = errMsg
 			return next, nil
 		}
-		next.generateError = ""
+		next.forms.generateError = ""
 		return next, cmd
 
 	case "enter", " ":
-		keyType := getKeyTypeByIndex(m.generateKeyType)
+		keyType := getKeyTypeByIndex(m.forms.generateKeyType)
 		if keyType == "" {
-			m.generateError = "Invalid key type selected"
+			m.forms.generateError = "Invalid key type selected"
 			return m, nil
 		}
 
 		// For parameterized LSigs, transition to parameter input modal
 		if spec := getParamSpecForKeyType(keyType); spec != nil {
-			m = m.initGenericLSigParams(m.generateKeyType)
-			m.generateFocus = 0 // Start at first parameter
-			m.generateError = ""
+			m = m.initGenericLSigParams(m.forms.generateKeyType)
+			m.forms.generateFocus = 0 // Start at first parameter
+			m.forms.generateError = ""
 			m.viewState = ViewGenerateParams
 			return m, nil
 		}
 
 		// For non-parameterized keys, generate immediately
-		m.generateError = ""
+		m.forms.generateError = ""
 		m.viewState = ViewGenerating // Show loading state
 		return m, tea.Batch(m.sendGenerateKeyCmd(keyType, ""), m.waitForMessageCmd())
 	}
@@ -354,7 +354,7 @@ func (m Model) generateTemplateDetailsForKeyType(keyType string) (LibraryTemplat
 }
 
 func (m Model) findLibraryTemplateForKeyType(keyType string) (LibraryTemplateInfo, bool) {
-	for _, tmpl := range m.libraryTemplates {
+	for _, tmpl := range m.library.templates {
 		if tmpl.KeyType == keyType {
 			return tmpl, true
 		}
@@ -367,9 +367,9 @@ func (m Model) handleGenerateParamsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	submitFn := func(keyType string, params map[string]string) tea.Cmd {
 		return tea.Batch(m.sendGenerateKeyWithParamsCmd(keyType, "", params), m.waitForMessageCmd())
 	}
-	m, cmd, errStr := m.handleParamModalKeys(msg, m.generateKeyType, ViewGenerateForm, ViewGenerating, submitFn)
+	m, cmd, errStr := m.handleParamModalKeys(msg, m.forms.generateKeyType, ViewGenerateForm, ViewGenerating, submitFn)
 	if errStr != "" || m.viewState == ViewGenerating || m.viewState == ViewGenerateForm {
-		m.generateError = errStr
+		m.forms.generateError = errStr
 	}
 	return m, cmd
 }
@@ -401,59 +401,59 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "tab":
-		m.generateFocus = (m.generateFocus + 1) % (maxFocus + 1)
-		if m.generateFocus < len(params) {
-			m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+		m.forms.generateFocus = (m.forms.generateFocus + 1) % (maxFocus + 1)
+		if m.forms.generateFocus < len(params) {
+			m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
 		}
 		return m, nil, ""
 
 	case "up":
-		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
+		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
 			m = m.scrollCurrentParamInput(params, -1)
 			return m, nil, ""
 		}
-		if m.generateFocus > 0 {
-			m.generateFocus--
-			if m.generateFocus < len(params) {
-				m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+		if m.forms.generateFocus > 0 {
+			m.forms.generateFocus--
+			if m.forms.generateFocus < len(params) {
+				m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
 			}
 		}
 		return m, nil, ""
 
 	case "shift+tab", "k":
-		if m.generateFocus > 0 {
-			m.generateFocus--
-			if m.generateFocus < len(params) {
-				m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+		if m.forms.generateFocus > 0 {
+			m.forms.generateFocus--
+			if m.forms.generateFocus < len(params) {
+				m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
 			}
 		}
 		return m, nil, ""
 
 	case "down":
-		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
+		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
 			m = m.scrollCurrentParamInput(params, 1)
 			return m, nil, ""
 		}
-		if m.generateFocus < maxFocus {
-			m.generateFocus++
-			if m.generateFocus < len(params) {
-				m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+		if m.forms.generateFocus < maxFocus {
+			m.forms.generateFocus++
+			if m.forms.generateFocus < len(params) {
+				m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
 			}
 		}
 		return m, nil, ""
 
 	case "j":
-		if m.generateFocus < maxFocus {
-			m.generateFocus++
-			if m.generateFocus < len(params) {
-				m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+		if m.forms.generateFocus < maxFocus {
+			m.forms.generateFocus++
+			if m.forms.generateFocus < len(params) {
+				m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
 			}
 		}
 		return m, nil, ""
 
 	case "<", ">":
-		if m.generateFocus < len(params) {
-			paramDef := params[m.generateFocus]
+		if m.forms.generateFocus < len(params) {
+			paramDef := params[m.forms.generateFocus]
 			if len(paramDef.Options) > 0 {
 				delta := 1
 				if msg.String() == "<" {
@@ -461,25 +461,25 @@ func (m Model) handleParamModalKeys(
 				}
 				m = m.cycleCurrentParamOption(params, delta)
 			} else if len(paramDef.InputModes) > 1 {
-				currentMode := m.genericLSigParamModes[paramDef.Name]
+				currentMode := m.forms.genericLSigParamModes[paramDef.Name]
 				if msg.String() == ">" {
 					currentMode = (currentMode + 1) % len(paramDef.InputModes)
 				} else {
 					currentMode = (currentMode - 1 + len(paramDef.InputModes)) % len(paramDef.InputModes)
 				}
-				m.genericLSigParamModes[paramDef.Name] = currentMode
-				m.genericLSigParams[paramDef.Name] = ""
+				m.forms.genericLSigParamModes[paramDef.Name] = currentMode
+				m.forms.genericLSigParams[paramDef.Name] = ""
 				m.setParamScroll(paramDef.Name, 0)
 			}
 		}
 		return m, nil, ""
 
 	case "backspace":
-		if m.generateFocus < len(params) {
-			paramName := params[m.generateFocus].Name
-			if m.genericLSigParams != nil {
-				if val, ok := m.genericLSigParams[paramName]; ok && len(val) > 0 {
-					m.genericLSigParams[paramName] = val[:len(val)-1]
+		if m.forms.generateFocus < len(params) {
+			paramName := params[m.forms.generateFocus].Name
+			if m.forms.genericLSigParams != nil {
+				if val, ok := m.forms.genericLSigParams[paramName]; ok && len(val) > 0 {
+					m.forms.genericLSigParams[paramName] = val[:len(val)-1]
 				}
 			}
 			m = m.ensureCurrentParamInputVisible(params)
@@ -487,7 +487,7 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "enter", " ":
-		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
+		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
 			if msg.String() == "enter" {
 				m = m.appendToCurrentParam("\n", params)
 			} else {
@@ -495,7 +495,7 @@ func (m Model) handleParamModalKeys(
 			}
 			return m, nil, ""
 		}
-		if m.generateFocus == maxFocus || msg.String() == "enter" {
+		if m.forms.generateFocus == maxFocus || msg.String() == "enter" {
 			transformedParams, err := m.applyInputModeTransforms(params)
 			if err != nil {
 				return m, nil, err.Error()
@@ -506,17 +506,17 @@ func (m Model) handleParamModalKeys(
 			m.viewState = submitView
 			return m, submitFn(keyType, transformedParams), ""
 		}
-		if m.generateFocus < maxFocus {
-			m.generateFocus++
-			if m.generateFocus < len(params) {
-				m = m.ensureParamVisible(m.generateFocus, m.getMaxVisibleParams())
+		if m.forms.generateFocus < maxFocus {
+			m.forms.generateFocus++
+			if m.forms.generateFocus < len(params) {
+				m = m.ensureParamVisible(m.forms.generateFocus, m.getMaxVisibleParams())
 			}
 		}
 		return m, nil, ""
 
 	case "pgup", "pgdown":
-		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
-			paramDef := params[m.generateFocus]
+		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
+			paramDef := params[m.forms.generateFocus]
 			delta := -getFieldHeightForType(paramDef.Type)
 			if msg.String() == "pgdown" {
 				delta = getFieldHeightForType(paramDef.Type)
@@ -526,19 +526,19 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "home":
-		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
-			m.setParamScroll(params[m.generateFocus].Name, 0)
+		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
+			m.setParamScroll(params[m.forms.generateFocus].Name, 0)
 		}
 		return m, nil, ""
 
 	case "end":
-		if m.generateFocus < len(params) && isMultilineParamType(params[m.generateFocus].Type) {
+		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
 			m = m.ensureCurrentParamInputVisible(params)
 		}
 		return m, nil, ""
 
 	case "left", "right":
-		if m.generateFocus < len(params) && len(params[m.generateFocus].Options) > 0 {
+		if m.forms.generateFocus < len(params) && len(params[m.forms.generateFocus].Options) > 0 {
 			delta := -1
 			if msg.String() == "right" {
 				delta = 1
@@ -552,7 +552,7 @@ func (m Model) handleParamModalKeys(
 
 	default:
 		input := msg.String()
-		if len(input) > 0 && m.generateFocus < len(params) {
+		if len(input) > 0 && m.forms.generateFocus < len(params) {
 			m = m.appendToCurrentParam(input, params)
 		}
 	}
@@ -561,7 +561,7 @@ func (m Model) handleParamModalKeys(
 }
 
 // initGenericLSigParams initializes the parameter map for a generic LogicSig.
-// keyTypeIndex is the index into the key type list (use m.generateKeyType or m.importKeyType).
+// keyTypeIndex is the index into the key type list (use m.forms.generateKeyType or m.forms.importKeyType).
 func (m Model) initGenericLSigParams(keyTypeIndex int) Model {
 	keyType := getKeyTypeByIndex(keyTypeIndex)
 	return m.initGenericLSigParamsForKeyType(keyType)
@@ -574,17 +574,17 @@ func (m Model) initGenericLSigParamsForKeyType(keyType string) Model {
 	}
 
 	params := spec.Params
-	m.genericLSigParams = make(map[string]string)
-	m.genericLSigParamOrder = make([]string, len(params))
-	m.genericLSigParamModes = make(map[string]int)
-	m.genericLSigParamScroll = make(map[string]int)
+	m.forms.genericLSigParams = make(map[string]string)
+	m.forms.genericLSigParamOrder = make([]string, len(params))
+	m.forms.genericLSigParamModes = make(map[string]int)
+	m.forms.genericLSigParamScroll = make(map[string]int)
 	for i, p := range params {
-		m.genericLSigParamOrder[i] = p.Name
-		m.genericLSigParams[p.Name] = defaultParamValue(p)
-		m.genericLSigParamModes[p.Name] = 0 // Default to first input mode
-		m.genericLSigParamScroll[p.Name] = 0
+		m.forms.genericLSigParamOrder[i] = p.Name
+		m.forms.genericLSigParams[p.Name] = defaultParamValue(p)
+		m.forms.genericLSigParamModes[p.Name] = 0 // Default to first input mode
+		m.forms.genericLSigParamScroll[p.Name] = 0
 	}
-	m.generateParamScrollOffset = 0 // Reset scroll when initializing params
+	m.forms.generateParamScrollOffset = 0 // Reset scroll when initializing params
 	return m
 }
 
@@ -594,12 +594,12 @@ func (m Model) ensureParamVisible(paramIdx, maxVisibleParams int) Model {
 		return m
 	}
 	// Scroll up if focused param is above visible area
-	if paramIdx < m.generateParamScrollOffset {
-		m.generateParamScrollOffset = paramIdx
+	if paramIdx < m.forms.generateParamScrollOffset {
+		m.forms.generateParamScrollOffset = paramIdx
 	}
 	// Scroll down if focused param is below visible area
-	if paramIdx >= m.generateParamScrollOffset+maxVisibleParams {
-		m.generateParamScrollOffset = paramIdx - maxVisibleParams + 1
+	if paramIdx >= m.forms.generateParamScrollOffset+maxVisibleParams {
+		m.forms.generateParamScrollOffset = paramIdx - maxVisibleParams + 1
 	}
 	return m
 }
@@ -622,18 +622,18 @@ func (m Model) getMaxVisibleParams() int {
 // It strips bracketed paste sequences and other non-printable characters.
 // Note: In ViewGenerateParams, focus 0..N-1 are parameters (not 1..N like before).
 func (m Model) appendToCurrentParam(input string, params []lsigprovider.ParameterDef) Model {
-	if m.genericLSigParams == nil {
+	if m.forms.genericLSigParams == nil {
 		// Safety fallback: determine key type index based on view state
-		keyTypeIndex := m.generateKeyType
+		keyTypeIndex := m.forms.generateKeyType
 		keyType := getKeyTypeByIndex(keyTypeIndex)
 		if m.viewState == ViewImportParams {
-			keyTypeIndex = m.importKeyType
+			keyTypeIndex = m.forms.importKeyType
 			keyType = getImportKeyTypeByIndex(keyTypeIndex)
 		}
 		m = m.initGenericLSigParamsForKeyType(keyType)
 	}
 
-	paramIdx := m.generateFocus // Focus is now 0-indexed for params
+	paramIdx := m.forms.generateFocus // Focus is now 0-indexed for params
 	if paramIdx < 0 || paramIdx >= len(params) {
 		return m
 	}
@@ -642,12 +642,12 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 	if len(paramDef.Options) > 0 {
 		return m
 	}
-	currentVal := m.genericLSigParams[paramDef.Name]
+	currentVal := m.forms.genericLSigParams[paramDef.Name]
 
 	// Determine effective input type (mode's InputType overrides paramDef.Type)
 	effectiveType := paramDef.Type
-	if len(paramDef.InputModes) > 1 && m.genericLSigParamModes != nil {
-		modeIdx := m.genericLSigParamModes[paramDef.Name]
+	if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
+		modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
 		if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
 			mode := paramDef.InputModes[modeIdx]
 			if mode.InputType != "" {
@@ -720,7 +720,7 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 		}
 	}
 
-	m.genericLSigParams[paramDef.Name] = currentVal
+	m.forms.genericLSigParams[paramDef.Name] = currentVal
 	if isMultilineParamType(effectiveType) {
 		m = m.ensureCurrentParamInputVisible(params)
 	}
@@ -738,20 +738,20 @@ func defaultParamValue(paramDef lsigprovider.ParameterDef) string {
 }
 
 func (m Model) cycleCurrentParamOption(params []lsigprovider.ParameterDef, delta int) Model {
-	if m.generateFocus < 0 || m.generateFocus >= len(params) {
+	if m.forms.generateFocus < 0 || m.forms.generateFocus >= len(params) {
 		return m
 	}
-	paramDef := params[m.generateFocus]
+	paramDef := params[m.forms.generateFocus]
 	if len(paramDef.Options) == 0 {
 		return m
 	}
-	current := indexOfOption(paramDef.Options, m.genericLSigParams[paramDef.Name])
+	current := indexOfOption(paramDef.Options, m.forms.genericLSigParams[paramDef.Name])
 	if current < 0 {
 		current = 0
 	} else {
 		current = (current + delta + len(paramDef.Options)) % len(paramDef.Options)
 	}
-	m.genericLSigParams[paramDef.Name] = paramDef.Options[current]
+	m.forms.genericLSigParams[paramDef.Name] = paramDef.Options[current]
 	return m
 }
 
@@ -765,7 +765,7 @@ func indexOfOption(options []string, value string) int {
 }
 
 func (m Model) ensureCurrentParamInputVisible(params []lsigprovider.ParameterDef) Model {
-	paramIdx := m.generateFocus
+	paramIdx := m.forms.generateFocus
 	if paramIdx < 0 || paramIdx >= len(params) {
 		return m
 	}
@@ -774,8 +774,8 @@ func (m Model) ensureCurrentParamInputVisible(params []lsigprovider.ParameterDef
 		return m
 	}
 	value := ""
-	if m.genericLSigParams != nil {
-		value = m.genericLSigParams[paramDef.Name]
+	if m.forms.genericLSigParams != nil {
+		value = m.forms.genericLSigParams[paramDef.Name]
 	}
 	lines := paramInputLines(value)
 	maxOffset := maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
@@ -784,7 +784,7 @@ func (m Model) ensureCurrentParamInputVisible(params []lsigprovider.ParameterDef
 }
 
 func (m Model) scrollCurrentParamInput(params []lsigprovider.ParameterDef, delta int) Model {
-	paramIdx := m.generateFocus
+	paramIdx := m.forms.generateFocus
 	if paramIdx < 0 || paramIdx >= len(params) {
 		return m
 	}
@@ -793,12 +793,12 @@ func (m Model) scrollCurrentParamInput(params []lsigprovider.ParameterDef, delta
 		return m
 	}
 	current := 0
-	if m.genericLSigParamScroll != nil {
-		current = m.genericLSigParamScroll[paramDef.Name]
+	if m.forms.genericLSigParamScroll != nil {
+		current = m.forms.genericLSigParamScroll[paramDef.Name]
 	}
 	value := ""
-	if m.genericLSigParams != nil {
-		value = m.genericLSigParams[paramDef.Name]
+	if m.forms.genericLSigParams != nil {
+		value = m.forms.genericLSigParams[paramDef.Name]
 	}
 	lines := paramInputLines(value)
 	maxOffset := maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
@@ -814,10 +814,10 @@ func (m Model) scrollCurrentParamInput(params []lsigprovider.ParameterDef, delta
 }
 
 func (m *Model) setParamScroll(paramName string, offset int) {
-	if m.genericLSigParamScroll == nil {
-		m.genericLSigParamScroll = make(map[string]int)
+	if m.forms.genericLSigParamScroll == nil {
+		m.forms.genericLSigParamScroll = make(map[string]int)
 	}
-	m.genericLSigParamScroll[paramName] = offset
+	m.forms.genericLSigParamScroll[paramName] = offset
 }
 
 func paramInputLines(value string) []string {
@@ -852,32 +852,32 @@ func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "n":
 		// Cancel and return to key list
-		m.deleteAddress = ""
-		m.deleteKeyType = ""
+		m.del.address = ""
+		m.del.keyType = ""
 		m.viewState = ViewKeyList
 		return m, nil
 
 	case "tab", "left", "right", "h", "l":
 		// Toggle between Cancel and Delete buttons
-		m.deleteConfirmFocus = (m.deleteConfirmFocus + 1) % 2
+		m.del.focus = (m.del.focus + 1) % 2
 		return m, nil
 
 	case "enter", " ":
-		if m.deleteConfirmFocus == 0 {
+		if m.del.focus == 0 {
 			// Cancel selected
-			m.deleteAddress = ""
-			m.deleteKeyType = ""
+			m.del.address = ""
+			m.del.keyType = ""
 			m.viewState = ViewKeyList
 			return m, nil
 		}
 		// Delete selected - send delete request
 		m.viewState = ViewDeleting // Show loading state
-		return m, tea.Batch(m.sendDeleteKeyCmd(m.deleteAddress), m.waitForMessageCmd())
+		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address), m.waitForMessageCmd())
 
 	case "y":
 		// Quick confirm delete
 		m.viewState = ViewDeleting // Show loading state
-		return m, tea.Batch(m.sendDeleteKeyCmd(m.deleteAddress), m.waitForMessageCmd())
+		return m, tea.Batch(m.sendDeleteKeyCmd(m.del.address), m.waitForMessageCmd())
 	}
 
 	return m, nil
@@ -891,11 +891,11 @@ func (m Model) handleRevokeTokenConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		return m, nil
 
 	case "tab", "left", "right", "h", "l":
-		m.revokeTokenConfirmFocus = (m.revokeTokenConfirmFocus + 1) % 2
+		m.admin.revokeTokenFocus = (m.admin.revokeTokenFocus + 1) % 2
 		return m, nil
 
 	case "enter", " ":
-		if m.revokeTokenConfirmFocus == 0 {
+		if m.admin.revokeTokenFocus == 0 {
 			// Cancel
 			m.viewState = ViewAdminPanel
 			return m, nil
@@ -914,8 +914,8 @@ func (m Model) handleRevokeTokenConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 }
 
 func (m Model) openManualLockConfirm() (tea.Model, tea.Cmd) {
-	m.manualLockConfirmFocus = 0
-	m.manualLockReturnView = m.viewState
+	m.manualLock.focus = 0
+	m.manualLock.returnView = m.viewState
 	m.viewState = ViewLockConfirm
 	return m, nil
 }
@@ -924,16 +924,16 @@ func (m Model) openManualLockConfirm() (tea.Model, tea.Cmd) {
 func (m Model) handleLockConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "n":
-		m.manualLockConfirmFocus = 0
+		m.manualLock.focus = 0
 		m.viewState = m.lockConfirmReturnView()
 		return m, nil
 
 	case "tab", "left", "right", "h", "l":
-		m.manualLockConfirmFocus = (m.manualLockConfirmFocus + 1) % 2
+		m.manualLock.focus = (m.manualLock.focus + 1) % 2
 		return m, nil
 
 	case "enter", " ":
-		if m.manualLockConfirmFocus == 0 {
+		if m.manualLock.focus == 0 {
 			m.viewState = m.lockConfirmReturnView()
 			return m, nil
 		}
@@ -947,8 +947,8 @@ func (m Model) handleLockConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startManualLock() (tea.Model, tea.Cmd) {
-	m.manualLockPending = true
-	m.manualLockConfirmFocus = 0
+	m.manualLock.pending = true
+	m.manualLock.focus = 0
 	m.viewState = m.lockConfirmReturnView()
 	m.lastError = ""
 	return m, tea.Batch(m.sendLockIdentityCmd(manualLockReason), m.waitForMessageCmd())
@@ -990,7 +990,7 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 	result := make(map[string]string)
 
 	for _, paramDef := range params {
-		value := m.genericLSigParams[paramDef.Name]
+		value := m.forms.genericLSigParams[paramDef.Name]
 		if value == "" && len(paramDef.Options) > 0 {
 			value = defaultParamValue(paramDef)
 		}
@@ -1004,7 +1004,7 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 
 		// Check if this parameter has input modes and a non-default mode is selected
 		if len(paramDef.InputModes) > 1 {
-			modeIdx := m.genericLSigParamModes[paramDef.Name]
+			modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
 			if modeIdx > 0 && modeIdx < len(paramDef.InputModes) {
 				mode := paramDef.InputModes[modeIdx]
 
@@ -1044,21 +1044,21 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 // selectKeyByAddress sets the selected key index to the key matching the given address.
 // It also adjusts scrollOffset to ensure the key is visible.
 func (m *Model) selectKeyByAddress(address string) {
-	for _, k := range m.keys {
+	for _, k := range m.keylist.keys {
 		if k.Address == address {
-			m.keyListTab = m.effectiveKeyListTab()
-			m.selectedKey = 0
+			m.keylist.tab = m.effectiveKeyListTab()
+			m.keylist.selectedKey = 0
 			for i, displayKey := range m.filteredKeys() {
 				if displayKey.Address == address {
-					m.selectedKey = i
+					m.keylist.selectedKey = i
 					break
 				}
 			}
 			visibleHeight := m.keyListVisibleHeight()
-			if m.selectedKey < m.scrollOffset {
-				m.scrollOffset = m.selectedKey
-			} else if m.selectedKey >= m.scrollOffset+visibleHeight {
-				m.scrollOffset = m.selectedKey - visibleHeight + 1
+			if m.keylist.selectedKey < m.keylist.scrollOffset {
+				m.keylist.scrollOffset = m.keylist.selectedKey
+			} else if m.keylist.selectedKey >= m.keylist.scrollOffset+visibleHeight {
+				m.keylist.scrollOffset = m.keylist.selectedKey - visibleHeight + 1
 			}
 			return
 		}

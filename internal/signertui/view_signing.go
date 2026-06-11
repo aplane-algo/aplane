@@ -18,7 +18,7 @@ func isGroupApprovalDescription(desc string) bool {
 
 // renderSigningPopup renders the signing approval popup
 func (m Model) renderSigningPopup() string {
-	if m.pendingSign == nil {
+	if m.signing.request == nil {
 		return m.renderKeyListView()
 	}
 
@@ -27,15 +27,15 @@ func (m Model) renderSigningPopup() string {
 	sb.WriteString(titleStyle.Render("Signing Request"))
 	sb.WriteString("\n\n")
 
-	if isGroupApprovalDescription(m.pendingSign.Description) {
-		sb.WriteString(fmt.Sprintf("Group:   %s\n", m.pendingSign.TxnSender))
-		if m.pendingSign.Address != "" {
-			sb.WriteString(fmt.Sprintf("Auth:    %s\n", m.pendingSign.Address))
+	if isGroupApprovalDescription(m.signing.request.Description) {
+		sb.WriteString(fmt.Sprintf("Group:   %s\n", m.signing.request.TxnSender))
+		if m.signing.request.Address != "" {
+			sb.WriteString(fmt.Sprintf("Auth:    %s\n", m.signing.request.Address))
 		}
 	} else {
-		sb.WriteString(fmt.Sprintf("Address: %s\n", m.pendingSign.Address))
-		if m.pendingSign.TxnSender != "" && m.pendingSign.TxnSender != m.pendingSign.Address {
-			sb.WriteString(fmt.Sprintf("Sender:  %s (rekeyed)\n", m.pendingSign.TxnSender))
+		sb.WriteString(fmt.Sprintf("Address: %s\n", m.signing.request.Address))
+		if m.signing.request.TxnSender != "" && m.signing.request.TxnSender != m.signing.request.Address {
+			sb.WriteString(fmt.Sprintf("Sender:  %s (rekeyed)\n", m.signing.request.TxnSender))
 		}
 	}
 	sb.WriteString("\n")
@@ -48,31 +48,31 @@ func (m Model) renderSigningPopup() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("240")).
 		Padding(0, 1)
-	sb.WriteString(viewportStyle.Render(m.pendingSignViewport.View()))
+	sb.WriteString(viewportStyle.Render(m.signing.viewport.View()))
 
 	// Show scroll indicator
-	scrollPct := m.pendingSignViewport.ScrollPercent() * 100
-	if m.pendingSignViewport.TotalLineCount() > m.pendingSignViewport.Height {
-		sb.WriteString(fmt.Sprintf("\n[%.0f%% - %d lines]", scrollPct, m.pendingSignViewport.TotalLineCount()))
+	scrollPct := m.signing.viewport.ScrollPercent() * 100
+	if m.signing.viewport.TotalLineCount() > m.signing.viewport.Height {
+		sb.WriteString(fmt.Sprintf("\n[%.0f%% - %d lines]", scrollPct, m.signing.viewport.TotalLineCount()))
 	}
 	sb.WriteString("\n\n")
 
 	// Validity window (if available)
-	if m.pendingSign.FirstValid > 0 && m.pendingSign.LastValid > 0 {
-		window := m.pendingSign.LastValid - m.pendingSign.FirstValid
+	if m.signing.request.FirstValid > 0 && m.signing.request.LastValid > 0 {
+		window := m.signing.request.LastValid - m.signing.request.FirstValid
 		sb.WriteString(fmt.Sprintf("Valid Rounds: %d - %d (window: %d blocks)\n\n",
-			m.pendingSign.FirstValid, m.pendingSign.LastValid, window))
+			m.signing.request.FirstValid, m.signing.request.LastValid, window))
 	}
 
 	// Display policy violations prominently (outside viewport so they're always visible)
-	if len(m.pendingSign.Violations) > 0 {
-		sb.WriteString(warningStyle.Render(fmt.Sprintf("⚠ %d WARNING(S) - scroll down in details to review", len(m.pendingSign.Violations))))
+	if len(m.signing.request.Violations) > 0 {
+		sb.WriteString(warningStyle.Render(fmt.Sprintf("⚠ %d WARNING(S) - scroll down in details to review", len(m.signing.request.Violations))))
 		sb.WriteString("\n\n")
 	}
 
 	// Buttons - use JoinHorizontal for proper alignment
 	var approveBtn, rejectBtn string
-	if m.pendingSignFocus == 0 {
+	if m.signing.focus == 0 {
 		approveBtn = buttonActiveStyle.Render("> APPROVE")
 		rejectBtn = buttonInactiveStyle.Render("  REJECT")
 	} else {

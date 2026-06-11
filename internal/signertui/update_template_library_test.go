@@ -12,10 +12,7 @@ import (
 )
 
 func TestLibraryTemplatesMsgPreservesServerOrder(t *testing.T) {
-	m := Model{
-		selectedTemplate: 9,
-		height:           30,
-	}
+	m := Model{library: libraryState{selectedTemplate: 9}, height: 30}
 
 	next, _ := m.Update(LibraryTemplatesMsg{
 		Templates: []protocol.LibraryTemplateInfo{
@@ -26,25 +23,24 @@ func TestLibraryTemplatesMsgPreservesServerOrder(t *testing.T) {
 	})
 
 	got := next.(Model)
-	if len(got.libraryTemplates) != 3 {
-		t.Fatalf("template count = %d, want 3", len(got.libraryTemplates))
+	if len(got.library.templates) != 3 {
+		t.Fatalf("template count = %d, want 3", len(got.library.templates))
 	}
 	wantOrder := []string{"z-key-v1", "a-key-v1", "m-key-v1"}
 	for i, want := range wantOrder {
-		if got.libraryTemplates[i].KeyType != want {
-			t.Fatalf("template[%d].KeyType = %q, want %q", i, got.libraryTemplates[i].KeyType, want)
+		if got.library.templates[i].KeyType != want {
+			t.Fatalf("template[%d].KeyType = %q, want %q", i, got.library.templates[i].KeyType, want)
 		}
 	}
-	if got.selectedTemplate != 2 {
-		t.Fatalf("selectedTemplate = %d, want clamped index 2", got.selectedTemplate)
+	if got.library.selectedTemplate != 2 {
+		t.Fatalf("selectedTemplate = %d, want clamped index 2", got.library.selectedTemplate)
 	}
 }
 
 func TestLockedSignerStatusFetchesKeyTypes(t *testing.T) {
 	m := Model{
-		viewState:       ViewKeyList,
-		passphraseInput: "secret",
-		passphraseError: "old error",
+		viewState: ViewKeyList,
+		auth:      authState{passphraseInput: "secret", passphraseError: "old error"},
 	}
 
 	next, cmd := m.Update(SignerStatusMsg{Locked: true, KeyCount: 12})
@@ -55,8 +51,8 @@ func TestLockedSignerStatusFetchesKeyTypes(t *testing.T) {
 	if got.viewState != ViewUnlock {
 		t.Fatalf("viewState = %v, want ViewUnlock", got.viewState)
 	}
-	if got.passphraseInput != "" || got.passphraseError != "" {
-		t.Fatalf("passphrase state = input %q error %q, want cleared", got.passphraseInput, got.passphraseError)
+	if got.auth.passphraseInput != "" || got.auth.passphraseError != "" {
+		t.Fatalf("passphrase state = input %q error %q, want cleared", got.auth.passphraseInput, got.auth.passphraseError)
 	}
 	if cmd == nil {
 		t.Fatal("Update returned nil cmd, want wait, key-type fetch, and admin settings fetch")
@@ -132,13 +128,12 @@ func TestCompiledProviderLifecycleVocabulary(t *testing.T) {
 
 func TestTemplateLibraryViewKeyOpensDetailsViewerForYAMLEntry(t *testing.T) {
 	m := Model{
-		viewState:        ViewTemplateLibrary,
-		selectedTemplate: 0,
-		libraryTemplates: []protocol.LibraryTemplateInfo{{
+		viewState: ViewTemplateLibrary,
+		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
 			KeyType:      "aplane.whitelist.v1",
 			TemplateType: "generic",
 			SourcePath:   "/tmp/keystore/library/templates/aplane.whitelist.v1.yaml",
-		}},
+		}}},
 	}
 
 	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
@@ -146,11 +141,11 @@ func TestTemplateLibraryViewKeyOpensDetailsViewerForYAMLEntry(t *testing.T) {
 	if got.viewState != ViewLibraryTemplateDetails {
 		t.Fatalf("viewState after t = %v, want ViewLibraryTemplateDetails", got.viewState)
 	}
-	if !got.libraryDetailsLoading {
+	if !got.library.detailsLoading {
 		t.Fatal("libraryDetailsLoading = false after t on YAML entry, want true")
 	}
-	if got.libraryDetailsKeyType != "aplane.whitelist.v1" || got.libraryDetailsTemplateType != "generic" {
-		t.Fatalf("libraryDetailsKeyType/TemplateType = %q/%q, want aplane.whitelist.v1/generic", got.libraryDetailsKeyType, got.libraryDetailsTemplateType)
+	if got.library.detailsKeyType != "aplane.whitelist.v1" || got.library.detailsTemplateType != "generic" {
+		t.Fatalf("libraryDetailsKeyType/TemplateType = %q/%q, want aplane.whitelist.v1/generic", got.library.detailsKeyType, got.library.detailsTemplateType)
 	}
 	closed, _ := got.handleLibraryTemplateDetailsKeys(tea.KeyMsg{Type: tea.KeyEsc})
 	if closed.(Model).viewState != ViewTemplateLibrary {
@@ -169,9 +164,8 @@ func TestTemplateLibraryViewKeySynthesizesCompiledProviderDetails(t *testing.T) 
 		},
 	}
 	m := Model{
-		viewState:        ViewTemplateLibrary,
-		selectedTemplate: 0,
-		libraryTemplates: []protocol.LibraryTemplateInfo{tmpl},
+		viewState: ViewTemplateLibrary,
+		library:   libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{tmpl}},
 	}
 
 	next, cmd := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
@@ -179,27 +173,26 @@ func TestTemplateLibraryViewKeySynthesizesCompiledProviderDetails(t *testing.T) 
 	if got.viewState != ViewLibraryTemplateDetails {
 		t.Fatalf("viewState after t on compiled provider = %v, want ViewLibraryTemplateDetails", got.viewState)
 	}
-	if got.libraryDetailsLoading {
+	if got.library.detailsLoading {
 		t.Fatal("libraryDetailsLoading = true after t on compiled provider, want false (no IPC roundtrip)")
 	}
 	if cmd != nil {
 		t.Fatalf("t on compiled provider returned cmd = %v, want nil (no IPC roundtrip)", cmd)
 	}
 	for _, want := range []string{"Source: built-in key type", "Publisher: aplane", "Falcon1024 Ed25519", "Threshold", "Signing threshold"} {
-		if !strings.Contains(got.libraryDetailsContent, want) {
-			t.Fatalf("compiled provider details missing %q:\n%s", want, got.libraryDetailsContent)
+		if !strings.Contains(got.library.detailsContent, want) {
+			t.Fatalf("compiled provider details missing %q:\n%s", want, got.library.detailsContent)
 		}
 	}
 }
 
 func TestTemplateLibraryViewKeyRejectsMissingYAMLSource(t *testing.T) {
 	m := Model{
-		viewState:        ViewTemplateLibrary,
-		selectedTemplate: 0,
-		libraryTemplates: []protocol.LibraryTemplateInfo{{
+		viewState: ViewTemplateLibrary,
+		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
 			KeyType:      "orphan-v1",
 			TemplateType: "generic",
-		}},
+		}}},
 	}
 
 	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
@@ -207,19 +200,17 @@ func TestTemplateLibraryViewKeyRejectsMissingYAMLSource(t *testing.T) {
 	if got.viewState != ViewTemplateLibrary {
 		t.Fatalf("viewState after t on missing source = %v, want ViewTemplateLibrary unchanged", got.viewState)
 	}
-	if !strings.Contains(got.templateInstallError, "no plaintext library YAML source") {
-		t.Fatalf("templateInstallError = %q, want missing-source message", got.templateInstallError)
+	if !strings.Contains(got.library.installError, "no plaintext library YAML source") {
+		t.Fatalf("templateInstallError = %q, want missing-source message", got.library.installError)
 	}
 }
 
 func TestLibraryDetailsViewerRendersSourceIntegrityMetadata(t *testing.T) {
 	m := Model{
-		viewState:                  ViewLibraryTemplateDetails,
-		width:                      100,
-		height:                     30,
-		libraryDetailsLoading:      true,
-		libraryDetailsKeyType:      "aplane.whitelist.v1",
-		libraryDetailsTemplateType: "generic",
+		viewState: ViewLibraryTemplateDetails,
+		width:     100,
+		height:    30,
+		library:   libraryState{detailsLoading: true, detailsKeyType: "aplane.whitelist.v1", detailsTemplateType: "generic"},
 	}
 
 	next, _ := m.Update(ShowLibraryTemplateResultMsg{
@@ -232,8 +223,8 @@ func TestLibraryDetailsViewerRendersSourceIntegrityMetadata(t *testing.T) {
 		TemplateYAML:  []byte("schema_version: 1\n"),
 	})
 	got := next.(Model)
-	if got.libraryDetailsSourceSHA256 != "0123456789abcdef" || got.libraryDetailsSourceModTime != 1778600000 {
-		t.Fatalf("source metadata = %q/%d, want checksum and mtime", got.libraryDetailsSourceSHA256, got.libraryDetailsSourceModTime)
+	if got.library.detailsSourceSHA256 != "0123456789abcdef" || got.library.detailsSourceModTime != 1778600000 {
+		t.Fatalf("source metadata = %q/%d, want checksum and mtime", got.library.detailsSourceSHA256, got.library.detailsSourceModTime)
 	}
 
 	rendered := got.renderLibraryTemplateDetails()
@@ -252,11 +243,10 @@ func TestCompiledProviderLibraryEntryUsesActivationLanguage(t *testing.T) {
 		Description:  "Dual signature provider",
 	}
 	m := Model{
-		viewState:        ViewTemplateLibrary,
-		width:            100,
-		height:           30,
-		selectedTemplate: 0,
-		libraryTemplates: []protocol.LibraryTemplateInfo{tmpl},
+		viewState: ViewTemplateLibrary,
+		width:     100,
+		height:    30,
+		library:   libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{tmpl}},
 	}
 
 	rendered := m.View()
@@ -275,8 +265,8 @@ func TestCompiledProviderLibraryEntryUsesActivationLanguage(t *testing.T) {
 
 	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
-	if got.viewState != ViewTemplateInstallConfirm || got.pendingTemplate == nil {
-		t.Fatalf("enter moved to %v pending=%#v, want enable confirm with pending template", got.viewState, got.pendingTemplate)
+	if got.viewState != ViewTemplateInstallConfirm || got.library.pendingTemplate == nil {
+		t.Fatalf("enter moved to %v pending=%#v, want enable confirm with pending template", got.viewState, got.library.pendingTemplate)
 	}
 
 	confirm := got.renderTemplateInstallConfirm()
@@ -289,20 +279,19 @@ func TestCompiledProviderLibraryEntryUsesActivationLanguage(t *testing.T) {
 
 func TestUninstalledTemplateOpensEnableConfirmation(t *testing.T) {
 	m := Model{
-		viewState:        ViewTemplateLibrary,
-		selectedTemplate: 0,
-		libraryTemplates: []protocol.LibraryTemplateInfo{{
+		viewState: ViewTemplateLibrary,
+		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
 			KeyType:      "aplane.timed-whitelist.v1",
 			TemplateType: "generic",
 			Installed:    false,
 			Enabled:      false,
-		}},
+		}}},
 	}
 
 	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
-	if got.viewState != ViewTemplateInstallConfirm || got.pendingTemplate == nil {
-		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.pendingTemplate)
+	if got.viewState != ViewTemplateInstallConfirm || got.library.pendingTemplate == nil {
+		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.library.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
 	for _, want := range []string{"Enable Key Type", "Key type:  timed-whitelist.v1", "Publisher: aplane", "Source:    generic", "ENABLE"} {
@@ -339,8 +328,8 @@ func TestCompiledProviderInstallResultUsesActivatedStatus(t *testing.T) {
 		KeyType: "aplane.falcon1024_ed25519.v1",
 	})
 	got := next.(Model)
-	if got.templateInstallStatus != "falcon1024_ed25519.v1 Enabled" {
-		t.Fatalf("templateInstallStatus = %q, want Enabled status", got.templateInstallStatus)
+	if got.library.installStatus != "falcon1024_ed25519.v1 Enabled" {
+		t.Fatalf("templateInstallStatus = %q, want Enabled status", got.library.installStatus)
 	}
 }
 
@@ -353,26 +342,25 @@ func TestTemplateInstallResultUsesEnabledStatus(t *testing.T) {
 		TemplateType: "generic",
 	})
 	got := next.(Model)
-	if got.templateInstallStatus != "timed-whitelist.v1 Enabled" {
-		t.Fatalf("templateInstallStatus = %q, want Enabled status", got.templateInstallStatus)
+	if got.library.installStatus != "timed-whitelist.v1 Enabled" {
+		t.Fatalf("templateInstallStatus = %q, want Enabled status", got.library.installStatus)
 	}
 }
 
 func TestCompiledProviderAlreadyActivatedStatus(t *testing.T) {
 	m := Model{
-		viewState:        ViewTemplateLibrary,
-		selectedTemplate: 0,
-		libraryTemplates: []protocol.LibraryTemplateInfo{{
+		viewState: ViewTemplateLibrary,
+		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
 			KeyType:      "aplane.falcon1024_ed25519.v1",
 			TemplateType: libraryTypeCompiledProvider,
 			Installed:    true,
-		}},
+		}}},
 	}
 
 	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
-	if got.viewState != ViewTemplateInstallConfirm || got.pendingTemplate == nil {
-		t.Fatalf("enter moved to %v pending=%#v, want disable confirm", got.viewState, got.pendingTemplate)
+	if got.viewState != ViewTemplateInstallConfirm || got.library.pendingTemplate == nil {
+		t.Fatalf("enter moved to %v pending=%#v, want disable confirm", got.viewState, got.library.pendingTemplate)
 	}
 
 	confirm := got.renderTemplateInstallConfirm()
@@ -392,27 +380,26 @@ func TestCompiledProviderDeactivateResultUsesDeactivatedStatus(t *testing.T) {
 		Removed: true,
 	})
 	got := next.(Model)
-	if got.templateInstallStatus != "falcon1024_ed25519.v1 Disabled" {
-		t.Fatalf("templateInstallStatus = %q, want Disabled status", got.templateInstallStatus)
+	if got.library.installStatus != "falcon1024_ed25519.v1 Disabled" {
+		t.Fatalf("templateInstallStatus = %q, want Disabled status", got.library.installStatus)
 	}
 }
 
 func TestInstalledEnabledTemplateOpensDisableConfirmation(t *testing.T) {
 	m := Model{
-		viewState:        ViewTemplateLibrary,
-		selectedTemplate: 0,
-		libraryTemplates: []protocol.LibraryTemplateInfo{{
+		viewState: ViewTemplateLibrary,
+		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
 			KeyType:      "aplane.timed-whitelist.v1",
 			TemplateType: "generic",
 			Installed:    true,
 			Enabled:      true,
-		}},
+		}}},
 	}
 
 	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
-	if got.viewState != ViewTemplateInstallConfirm || got.pendingTemplate == nil {
-		t.Fatalf("enter moved to %v pending=%#v, want disable confirm", got.viewState, got.pendingTemplate)
+	if got.viewState != ViewTemplateInstallConfirm || got.library.pendingTemplate == nil {
+		t.Fatalf("enter moved to %v pending=%#v, want disable confirm", got.viewState, got.library.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
 	for _, want := range []string{"Disable Key Type", "Key type:  timed-whitelist.v1", "Publisher: aplane", "Source:    generic", "DISABLE"} {
@@ -424,20 +411,19 @@ func TestInstalledEnabledTemplateOpensDisableConfirmation(t *testing.T) {
 
 func TestInstalledDisabledTemplateOpensEnableConfirmation(t *testing.T) {
 	m := Model{
-		viewState:        ViewTemplateLibrary,
-		selectedTemplate: 0,
-		libraryTemplates: []protocol.LibraryTemplateInfo{{
+		viewState: ViewTemplateLibrary,
+		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
 			KeyType:      "aplane.falcon1024-whitelist.v1",
 			TemplateType: "falcon",
 			Installed:    true,
 			Enabled:      false,
-		}},
+		}}},
 	}
 
 	next, _ := m.handleTemplateLibraryKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
-	if got.viewState != ViewTemplateInstallConfirm || got.pendingTemplate == nil {
-		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.pendingTemplate)
+	if got.viewState != ViewTemplateInstallConfirm || got.library.pendingTemplate == nil {
+		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.library.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
 	for _, want := range []string{"Enable Key Type", "Key type:  falcon1024-whitelist.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {

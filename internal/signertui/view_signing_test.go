@@ -12,13 +12,13 @@ func TestSigningPopupTransactionDetailsFitsPopupWidth(t *testing.T) {
 	m := Model{
 		width:  48,
 		height: 32,
-		pendingSign: &PendingSignRequest{
+		signing: signingState{request: &PendingSignRequest{
 			ID:          "sign-1",
 			Address:     "ADDR",
 			Description: "Payment\n    Note: " + strings.Repeat("abcdef", 20),
 			FirstValid:  10,
 			LastValid:   20,
-		},
+		}},
 	}
 	m.initSigningViewport(m.buildSigningViewportContent())
 

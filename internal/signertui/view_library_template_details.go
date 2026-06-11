@@ -18,39 +18,39 @@ func (m Model) renderLibraryTemplateDetails() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render(libraryDetailsTitle(m.libraryDetailsTemplateType, m.libraryDetailsKeyType)))
+	sb.WriteString(titleStyle.Render(libraryDetailsTitle(m.library.detailsTemplateType, m.library.detailsKeyType)))
 	sb.WriteString("\n")
-	if publisher := keyTypePublisher(m.libraryDetailsKeyType); publisher != "" {
+	if publisher := keyTypePublisher(m.library.detailsKeyType); publisher != "" {
 		sb.WriteString(subtitleStyle.Render("Publisher: " + publisher))
 		sb.WriteString("\n")
 	}
-	if m.libraryDetailsSourcePath != "" {
-		sb.WriteString(subtitleStyle.Render(ellipsize(m.libraryDetailsSourcePath, width)))
+	if m.library.detailsSourcePath != "" {
+		sb.WriteString(subtitleStyle.Render(ellipsize(m.library.detailsSourcePath, width)))
 		sb.WriteString("\n")
 	}
-	if m.libraryDetailsSourceModTime > 0 {
-		modified := time.Unix(m.libraryDetailsSourceModTime, 0).UTC().Format("2006-01-02 15:04:05 UTC")
+	if m.library.detailsSourceModTime > 0 {
+		modified := time.Unix(m.library.detailsSourceModTime, 0).UTC().Format("2006-01-02 15:04:05 UTC")
 		sb.WriteString(subtitleStyle.Render("Modified: " + modified))
 		sb.WriteString("\n")
 	}
-	if m.libraryDetailsSourceSHA256 != "" {
-		sb.WriteString(subtitleStyle.Render("SHA-256: " + ellipsize(m.libraryDetailsSourceSHA256, width-9)))
+	if m.library.detailsSourceSHA256 != "" {
+		sb.WriteString(subtitleStyle.Render("SHA-256: " + ellipsize(m.library.detailsSourceSHA256, width-9)))
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
 
 	switch {
-	case m.libraryDetailsLoading:
+	case m.library.detailsLoading:
 		sb.WriteString(subtitleStyle.Render("Loading..."))
 		return sb.String()
-	case m.libraryDetailsError != "" && m.libraryDetailsContent == "":
-		sb.WriteString(errorStyle.Render(m.libraryDetailsError))
+	case m.library.detailsError != "" && m.library.detailsContent == "":
+		sb.WriteString(errorStyle.Render(m.library.detailsError))
 		return sb.String()
 	}
 
-	lines := strings.Split(m.libraryDetailsContent, "\n")
+	lines := strings.Split(m.library.detailsContent, "\n")
 	visibleLines := m.libraryTemplateDetailsVisibleLines()
-	offset := m.libraryDetailsScrollOffset
+	offset := m.library.detailsScrollOffset
 	if offset < 0 {
 		offset = 0
 	}
@@ -99,52 +99,52 @@ func (m Model) libraryTemplateDetailsVisibleLines() int {
 func (m Model) handleLibraryTemplateDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
-		returnView := m.libraryDetailsReturnView
+		returnView := m.library.detailsReturnView
 		if returnView == 0 {
 			returnView = ViewTemplateLibrary
 		}
 		m.viewState = returnView
-		m.libraryDetailsContent = ""
-		m.libraryDetailsError = ""
-		m.libraryDetailsSourcePath = ""
-		m.libraryDetailsSourceSHA256 = ""
-		m.libraryDetailsSourceModTime = 0
-		m.libraryDetailsKeyType = ""
-		m.libraryDetailsTemplateType = ""
-		m.libraryDetailsScrollOffset = 0
-		m.libraryDetailsLoading = false
-		m.libraryDetailsReturnView = 0
+		m.library.detailsContent = ""
+		m.library.detailsError = ""
+		m.library.detailsSourcePath = ""
+		m.library.detailsSourceSHA256 = ""
+		m.library.detailsSourceModTime = 0
+		m.library.detailsKeyType = ""
+		m.library.detailsTemplateType = ""
+		m.library.detailsScrollOffset = 0
+		m.library.detailsLoading = false
+		m.library.detailsReturnView = 0
 		return m, nil
 	case "up", "k":
-		if m.libraryDetailsScrollOffset > 0 {
-			m.libraryDetailsScrollOffset--
+		if m.library.detailsScrollOffset > 0 {
+			m.library.detailsScrollOffset--
 		}
 		return m, nil
 	case "down", "j":
-		maxOffset := len(strings.Split(m.libraryDetailsContent, "\n")) - m.libraryTemplateDetailsVisibleLines()
+		maxOffset := len(strings.Split(m.library.detailsContent, "\n")) - m.libraryTemplateDetailsVisibleLines()
 		if maxOffset < 0 {
 			maxOffset = 0
 		}
-		if m.libraryDetailsScrollOffset < maxOffset {
-			m.libraryDetailsScrollOffset++
+		if m.library.detailsScrollOffset < maxOffset {
+			m.library.detailsScrollOffset++
 		}
 		return m, nil
 	case "pgup":
 		visible := m.libraryTemplateDetailsVisibleLines()
-		m.libraryDetailsScrollOffset -= visible
-		if m.libraryDetailsScrollOffset < 0 {
-			m.libraryDetailsScrollOffset = 0
+		m.library.detailsScrollOffset -= visible
+		if m.library.detailsScrollOffset < 0 {
+			m.library.detailsScrollOffset = 0
 		}
 		return m, nil
 	case "pgdown":
 		visible := m.libraryTemplateDetailsVisibleLines()
-		maxOffset := len(strings.Split(m.libraryDetailsContent, "\n")) - visible
+		maxOffset := len(strings.Split(m.library.detailsContent, "\n")) - visible
 		if maxOffset < 0 {
 			maxOffset = 0
 		}
-		m.libraryDetailsScrollOffset += visible
-		if m.libraryDetailsScrollOffset > maxOffset {
-			m.libraryDetailsScrollOffset = maxOffset
+		m.library.detailsScrollOffset += visible
+		if m.library.detailsScrollOffset > maxOffset {
+			m.library.detailsScrollOffset = maxOffset
 		}
 		return m, nil
 	}

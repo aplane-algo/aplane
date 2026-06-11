@@ -147,11 +147,11 @@ func matchesFilter(value, filter string) bool {
 }
 
 func (m Model) filteredKeys() []KeyInfo {
-	tabKeys := filterKeysForTab(m.keys, m.effectiveKeyListTab())
-	if m.filterInput == "" {
+	tabKeys := filterKeysForTab(m.keylist.keys, m.effectiveKeyListTab())
+	if m.keylist.filterInput == "" {
 		return tabKeys
 	}
-	filter := strings.ToLower(m.filterInput)
+	filter := strings.ToLower(m.keylist.filterInput)
 	var result []KeyInfo
 	for _, key := range tabKeys {
 		if matchesFilter(strings.ToLower(key.Address), filter) ||
@@ -203,10 +203,10 @@ func (m Model) effectiveKeyListTab() keyListTab {
 // driven key view changes (e.g. admin settings arrive after startup).
 func (m *Model) syncKeyListTabWithMode() {
 	tab := m.effectiveKeyListTab()
-	if m.keyListTab == tab {
+	if m.keylist.tab == tab {
 		return
 	}
-	m.keyListTab = tab
+	m.keylist.tab = tab
 	m.resetKeyListSelection()
 }
 
@@ -226,18 +226,18 @@ func (m Model) renderKeyListView() string {
 	var sb strings.Builder
 
 	// Filter input
-	if m.filterActive {
-		sb.WriteString(fmt.Sprintf("Filter: %s_\n", m.filterInput))
-	} else if m.filterInput != "" {
-		sb.WriteString(fmt.Sprintf("Filter: %s (/ to edit, Esc to clear)\n", m.filterInput))
+	if m.keylist.filterActive {
+		sb.WriteString(fmt.Sprintf("Filter: %s_\n", m.keylist.filterInput))
+	} else if m.keylist.filterInput != "" {
+		sb.WriteString(fmt.Sprintf("Filter: %s (/ to edit, Esc to clear)\n", m.keylist.filterInput))
 	}
 	sb.WriteString("\n")
 
 	// Get filtered key list
-	tabKeys := filterKeysForTab(m.keys, m.effectiveKeyListTab())
+	tabKeys := filterKeysForTab(m.keylist.keys, m.effectiveKeyListTab())
 	displayKeys := m.filteredKeys()
 
-	if len(m.keys) == 0 {
+	if len(m.keylist.keys) == 0 {
 		if m.keyCount > 0 {
 			sb.WriteString(fmt.Sprintf("✓ %d keys loaded in signer\n", m.keyCount))
 			sb.WriteString(subtitleStyle.Render("Press 'r' to load key details"))
@@ -248,7 +248,7 @@ func (m Model) renderKeyListView() string {
 	} else if len(tabKeys) == 0 {
 		sb.WriteString(subtitleStyle.Render(fmt.Sprintf("No %s keys found", strings.ToLower(m.activeKeyListTabLabel()))))
 		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("\n  Total: %d keys\n", len(m.keys)))
+		sb.WriteString(fmt.Sprintf("\n  Total: %d keys\n", len(m.keylist.keys)))
 	} else if len(displayKeys) == 0 {
 		// Filter returned no matches
 		sb.WriteString(subtitleStyle.Render("No keys match filter"))
@@ -258,7 +258,7 @@ func (m Model) renderKeyListView() string {
 		visibleHeight := m.keyListVisibleHeight()
 
 		// Adjust scroll offset for filtered list
-		scrollOffset := m.scrollOffset
+		scrollOffset := m.keylist.scrollOffset
 		if scrollOffset >= len(displayKeys) {
 			scrollOffset = 0
 		}
@@ -278,7 +278,7 @@ func (m Model) renderKeyListView() string {
 
 			// Use cursor prefix for selection (more reliable than background colors)
 			var prefix string
-			if i == m.selectedKey {
+			if i == m.keylist.selectedKey {
 				prefix = "> "
 			} else {
 				prefix = "  "
@@ -292,7 +292,7 @@ func (m Model) renderKeyListView() string {
 				styledKeyTypeWithTemplateProvenanceStatus(key.KeyType, key.TemplateProvenanceStatus),
 			)
 
-			if i == m.selectedKey {
+			if i == m.keylist.selectedKey {
 				sb.WriteString(selectedStyle.Render(line))
 			} else {
 				sb.WriteString(normalStyle.Render(line))
@@ -304,7 +304,7 @@ func (m Model) renderKeyListView() string {
 		sb.WriteString("\n")
 
 		// Show filtered count vs total
-		if m.filterInput != "" {
+		if m.keylist.filterInput != "" {
 			sb.WriteString(fmt.Sprintf("\n  Showing: %d of %d %s keys\n", len(displayKeys), len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
 		} else {
 			sb.WriteString(fmt.Sprintf("\n  Total: %d %s keys\n", len(tabKeys), strings.ToLower(m.activeKeyListTabLabel())))
@@ -312,7 +312,7 @@ func (m Model) renderKeyListView() string {
 	}
 
 	// If there's a pending signing request, show indicator
-	if m.pendingSign != nil {
+	if m.signing.request != nil {
 		sb.WriteString("\n")
 		sb.WriteString(statusLockedStyle.Render("! Signing request pending - press any key to view"))
 	}
@@ -353,40 +353,40 @@ func (m Model) renderKeyDetails() string {
 	sb.WriteString(titleStyle.Render("Key Details"))
 	sb.WriteString("\n")
 
-	sb.WriteString(fmt.Sprintf("%s: %s", m.keyIdentifierLabel(m.detailsKeyType), m.detailsAddress))
+	sb.WriteString(fmt.Sprintf("%s: %s", m.keyIdentifierLabel(m.details.keyType), m.details.address))
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("Type:    %s\n", styledKeyTypeWithTemplateProvenanceStatus(m.detailsKeyType, m.detailsTemplateProvenanceStatus)))
-	if m.detailsPublicKeyHex != "" {
+	sb.WriteString(fmt.Sprintf("Type:    %s\n", styledKeyTypeWithTemplateProvenanceStatus(m.details.keyType, m.details.templateProvenanceStatus)))
+	if m.details.publicKeyHex != "" {
 		label := "Public key"
-		if keytypes.IsSentryComponentKeyType(m.detailsKeyType) {
+		if keytypes.IsSentryComponentKeyType(m.details.keyType) {
 			label = "Sentry public key"
 		}
-		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, displayPublicKeyHex(m.detailsPublicKeyHex)), m.popupBodyWidth(62)))
+		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, displayPublicKeyHex(m.details.publicKeyHex)), m.popupBodyWidth(62)))
 		sb.WriteString("\n")
 	}
-	if m.detailsTemplateProvenanceNote != "" {
-		sb.WriteString(warningStyle.Render("Template provenance: " + m.detailsTemplateProvenanceNote))
+	if m.details.templateProvenanceNote != "" {
+		sb.WriteString(warningStyle.Render("Template provenance: " + m.details.templateProvenanceNote))
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
 
 	maxVisibleLines := m.detailsVisibleLines()
 
-	if len(m.detailsParameters) > 0 {
+	if len(m.details.parameters) > 0 {
 		// Parameters view (for generic LogicSigs)
 		sb.WriteString(keyTypeStyle.Render("═══ Parameters ═══"))
 		sb.WriteString("\n\n")
 
-		paramLines := buildDetailsParameterLines(m.detailsKeyType, m.detailsParameters)
+		paramLines := buildDetailsParameterLines(m.details.keyType, m.details.parameters)
 		totalParams := len(paramLines)
 		needsScroll := totalParams > maxVisibleLines
 
-		if needsScroll && m.detailsScrollOffset > 0 {
+		if needsScroll && m.details.scrollOffset > 0 {
 			sb.WriteString(helpStyle.Render("  ▲ more above"))
 			sb.WriteString("\n")
 		}
 
-		startIdx := m.detailsScrollOffset
+		startIdx := m.details.scrollOffset
 		endIdx := startIdx + maxVisibleLines
 		if endIdx > totalParams {
 			endIdx = totalParams
@@ -404,9 +404,9 @@ func (m Model) renderKeyDetails() string {
 	}
 
 	// Show save status if present
-	if m.detailsSaveStatus != "" {
+	if m.details.saveStatus != "" {
 		sb.WriteString("\n")
-		sb.WriteString(subtitleStyle.Render(m.detailsSaveStatus))
+		sb.WriteString(subtitleStyle.Render(m.details.saveStatus))
 		sb.WriteString("\n")
 	}
 
@@ -427,9 +427,9 @@ func (m Model) renderTEALFullDisplay() string {
 		width = 80
 	}
 
-	lines := strings.Split(m.detailsTEAL, "\n")
+	lines := strings.Split(m.details.teal, "\n")
 	visibleLines := m.tealFullDisplayVisibleLines()
-	offset := m.detailsScrollOffset
+	offset := m.details.scrollOffset
 	if offset < 0 {
 		offset = 0
 	}
@@ -444,8 +444,8 @@ func (m Model) renderTEALFullDisplay() string {
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render("TEAL Source"))
 	sb.WriteString("\n")
-	if m.detailsAddress != "" {
-		sb.WriteString(subtitleStyle.Render(ellipsize(m.detailsAddress, width)))
+	if m.details.address != "" {
+		sb.WriteString(subtitleStyle.Render(ellipsize(m.details.address, width)))
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
@@ -471,7 +471,7 @@ func (m Model) tealFullDisplayVisibleLines() int {
 		return 20
 	}
 	visible := m.height - 7
-	if m.detailsAddress == "" {
+	if m.details.address == "" {
 		visible++
 	}
 	if visible < 3 {

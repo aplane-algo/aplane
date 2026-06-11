@@ -12,10 +12,9 @@ import (
 func TestSignRequestCanceledClosesMatchingPopup(t *testing.T) {
 	m := Model{
 		viewState: ViewSigningPopup,
-		pendingSign: &PendingSignRequest{
+		signing: signingState{request: &PendingSignRequest{
 			ID: "sign-1",
-		},
-		lastWarningGeneration: 2,
+		}}, lastWarningGeneration: 2,
 	}
 
 	next, cmd := m.Update(SignRequestCanceledMsg{
@@ -23,8 +22,8 @@ func TestSignRequestCanceledClosesMatchingPopup(t *testing.T) {
 		Reason: signerapproval.SignRequestCancelReasonClientCanceled,
 	})
 	got := next.(Model)
-	if got.pendingSign != nil {
-		t.Fatalf("pendingSign = %#v, want nil", got.pendingSign)
+	if got.signing.request != nil {
+		t.Fatalf("pendingSign = %#v, want nil", got.signing.request)
 	}
 	if got.viewState != ViewKeyList {
 		t.Fatalf("viewState = %v, want ViewKeyList", got.viewState)
@@ -47,11 +46,9 @@ func TestSignRequestCanceledClosesMatchingPopup(t *testing.T) {
 func TestSignRequestCanceledIgnoresNonMatchingPopup(t *testing.T) {
 	pending := &PendingSignRequest{ID: "sign-1"}
 	m := Model{
-		viewState:             ViewSigningPopup,
-		pendingSign:           pending,
-		lastWarning:           "previous",
+		viewState: ViewSigningPopup,
+		signing:   signingState{request: pending, focus: 1}, lastWarning: "previous",
 		lastWarningGeneration: 7,
-		pendingSignFocus:      1,
 	}
 
 	next, _ := m.Update(SignRequestCanceledMsg{
@@ -59,8 +56,8 @@ func TestSignRequestCanceledIgnoresNonMatchingPopup(t *testing.T) {
 		Reason: signerapproval.SignRequestCancelReasonTimeout,
 	})
 	got := next.(Model)
-	if got.pendingSign != pending {
-		t.Fatalf("pendingSign changed to %#v, want original", got.pendingSign)
+	if got.signing.request != pending {
+		t.Fatalf("pendingSign changed to %#v, want original", got.signing.request)
 	}
 	if got.viewState != ViewSigningPopup {
 		t.Fatalf("viewState = %v, want ViewSigningPopup", got.viewState)

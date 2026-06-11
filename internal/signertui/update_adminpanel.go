@@ -16,31 +16,31 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.adminRows()
 
 	// Handle editing mode
-	if m.adminEditingRow >= 0 {
+	if m.admin.editingRow >= 0 {
 		switch msg.String() {
 		case "esc":
-			m.adminEditingRow = -1
-			m.adminEditValue = ""
+			m.admin.editingRow = -1
+			m.admin.editValue = ""
 		case "enter":
 			// Submit the edit
-			if m.adminEditingRow < len(rows) {
-				row := rows[m.adminEditingRow]
-				value := strings.TrimSpace(m.adminEditValue)
-				m.adminEditingRow = -1
+			if m.admin.editingRow < len(rows) {
+				row := rows[m.admin.editingRow]
+				value := strings.TrimSpace(m.admin.editValue)
+				m.admin.editingRow = -1
 				if err := validateAdminSettingValue(row.key, value); err != nil {
 					m.lastError = err.Error()
 					return m, nil
 				}
 				return m, m.sendUpdateAdminSettingCmd(row.key, value)
 			}
-			m.adminEditingRow = -1
+			m.admin.editingRow = -1
 		case "backspace":
-			if len(m.adminEditValue) > 0 {
-				m.adminEditValue = m.adminEditValue[:len(m.adminEditValue)-1]
+			if len(m.admin.editValue) > 0 {
+				m.admin.editValue = m.admin.editValue[:len(m.admin.editValue)-1]
 			}
 		default:
 			if len(msg.String()) == 1 {
-				m.adminEditValue += msg.String()
+				m.admin.editValue += msg.String()
 			}
 		}
 		return m, nil
@@ -53,11 +53,11 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "k", "K":
-		m.selectedTemplate = 0
-		m.templateScrollOffset = 0
-		m.templateInstallError = ""
-		m.templateInstallStatus = ""
-		m.pendingTemplate = nil
+		m.library.selectedTemplate = 0
+		m.library.scrollOffset = 0
+		m.library.installError = ""
+		m.library.installStatus = ""
+		m.library.pendingTemplate = nil
 		m.viewState = ViewTemplateLibrary
 		return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
 
@@ -65,32 +65,32 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openPolicyViewer()
 
 	case "up":
-		if m.adminSelectedRow > 0 {
-			m.adminSelectedRow--
+		if m.admin.selectedRow > 0 {
+			m.admin.selectedRow--
 		}
 
 	case "down", "j":
-		if m.adminSelectedRow < len(rows)-1 {
-			m.adminSelectedRow++
+		if m.admin.selectedRow < len(rows)-1 {
+			m.admin.selectedRow++
 		}
 
 	case "t", "T":
 		// Revoke API token
-		m.revokeTokenConfirmFocus = 0 // Default to Cancel
+		m.admin.revokeTokenFocus = 0 // Default to Cancel
 		m.viewState = ViewRevokeTokenConfirm
 
 	case "l":
 		return m.openManualLockConfirm()
 
 	case "enter":
-		if m.adminSelectedRow < len(rows) {
-			row := rows[m.adminSelectedRow]
+		if m.admin.selectedRow < len(rows) {
+			row := rows[m.admin.selectedRow]
 			if row.action == "open_templates" {
-				m.selectedTemplate = 0
-				m.templateScrollOffset = 0
-				m.templateInstallError = ""
-				m.templateInstallStatus = ""
-				m.pendingTemplate = nil
+				m.library.selectedTemplate = 0
+				m.library.scrollOffset = 0
+				m.library.installError = ""
+				m.library.installStatus = ""
+				m.library.pendingTemplate = nil
 				m.viewState = ViewTemplateLibrary
 				return m, tea.Batch(m.sendListLibraryTemplatesCmd(), m.waitForMessageCmd())
 			}
@@ -119,8 +119,8 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.sendUpdateAdminSettingCmd(row.key, nextChoice(row.value, row.choices))
 			}
 			// Start editing text value
-			m.adminEditingRow = m.adminSelectedRow
-			m.adminEditValue = row.value
+			m.admin.editingRow = m.admin.selectedRow
+			m.admin.editValue = row.value
 		}
 	}
 

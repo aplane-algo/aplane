@@ -13,11 +13,11 @@ import (
 
 func TestUnlockViewShowsAdminInactivityTimeout(t *testing.T) {
 	m := Model{
-		viewState:               ViewUnlock,
-		connectionState:         ConnectionConnected,
-		passphraseMasked:        true,
-		effectiveSessionTimeout: 15 * time.Minute,
-		importMnemonicInput:     newImportMnemonicInput(),
+		viewState:       ViewUnlock,
+		connectionState: ConnectionConnected,
+		auth:            authState{passphraseMasked: true},
+		activity:        activityState{sessionTimeout: 15 * time.Minute},
+		forms:           formsState{importMnemonicInput: newImportMnemonicInput()},
 	}
 
 	view := stripANSI(m.renderUnlockView())
@@ -31,11 +31,11 @@ func TestUnlockViewShowsAdminInactivityTimeout(t *testing.T) {
 
 func TestUnlockViewUsesAdminSettingsTimeoutBeforeIdleTimerApplied(t *testing.T) {
 	m := Model{
-		viewState:           ViewUnlock,
-		connectionState:     ConnectionConnected,
-		passphraseMasked:    true,
-		importMnemonicInput: newImportMnemonicInput(),
-		adminSettings:       &AdminSettings{PassphraseTimeout: "15m"},
+		viewState:       ViewUnlock,
+		connectionState: ConnectionConnected,
+		auth:            authState{passphraseMasked: true},
+		forms:           formsState{importMnemonicInput: newImportMnemonicInput()},
+		admin:           adminPanelState{settings: &AdminSettings{PassphraseTimeout: "15m"}},
 	}
 
 	view := stripANSI(m.renderUnlockView())
@@ -77,8 +77,8 @@ func TestPassphraseEntryAcceptsLetterQ(t *testing.T) {
 	if updated.quitting {
 		t.Fatal("typing 'q' on a passphrase screen must not quit")
 	}
-	if updated.passphraseInput != "q" {
-		t.Fatalf("passphrase input = %q, want %q", updated.passphraseInput, "q")
+	if updated.auth.passphraseInput != "q" {
+		t.Fatalf("passphrase input = %q, want %q", updated.auth.passphraseInput, "q")
 	}
 }
 
