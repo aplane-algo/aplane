@@ -269,7 +269,7 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 		return km, nil
 	}
 
-	if keys.IsComponentKey(signingMeta.Category, keyType) {
+	if keys.IsComponentKey(signingMeta.Category) {
 		return loadComponentKeyMaterial(decryptedData, keyType, signingMeta)
 	}
 

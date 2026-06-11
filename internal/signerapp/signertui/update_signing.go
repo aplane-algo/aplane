@@ -169,21 +169,21 @@ func wrapText(text string, width int) string {
 	}
 	var result strings.Builder
 	for _, line := range strings.Split(text, "\n") {
-		if len(line) <= width {
+		// Work in runes: descriptions contain multi-byte characters (e.g. the
+		// ⚠ violation marker) and byte indexing would split them mid-rune.
+		runes := []rune(line)
+		if len(runes) <= width {
 			result.WriteString(line)
 			result.WriteByte('\n')
 			continue
 		}
 		// Detect leading whitespace to preserve indent on wrapped lines
-		indent := ""
-		for i, ch := range line {
-			if ch != ' ' {
-				indent = line[:i]
-				break
-			}
+		indentLen := 0
+		for indentLen < len(runes) && runes[indentLen] == ' ' {
+			indentLen++
 		}
-		wrapIndent := indent + "  "
-		remaining := line
+		wrapIndent := string(runes[:indentLen]) + "  "
+		remaining := runes
 		first := true
 		for len(remaining) > 0 {
 			prefix := ""
@@ -199,7 +199,7 @@ func wrapText(text string, width int) string {
 			}
 			if len(remaining) <= w {
 				result.WriteString(prefix)
-				result.WriteString(remaining)
+				result.WriteString(string(remaining))
 				result.WriteByte('\n')
 				break
 			}
@@ -212,9 +212,12 @@ func wrapText(text string, width int) string {
 				}
 			}
 			result.WriteString(prefix)
-			result.WriteString(remaining[:breakAt])
+			result.WriteString(string(remaining[:breakAt]))
 			result.WriteByte('\n')
-			remaining = strings.TrimLeft(remaining[breakAt:], " ")
+			remaining = remaining[breakAt:]
+			for len(remaining) > 0 && remaining[0] == ' ' {
+				remaining = remaining[1:]
+			}
 			first = false
 		}
 	}

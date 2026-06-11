@@ -27,7 +27,7 @@ type remoteAdminConfig struct {
 	connector tui.SSHAdminConnector
 }
 
-func formatRemoteConnectError(err error, interactive bool) error {
+func formatRemoteConnectError(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -37,7 +37,7 @@ func formatRemoteConnectError(err error, interactive bool) error {
 	return err
 }
 
-func loadRemoteAdminConfig(clientDataDirFlag string, _ bool) (*remoteAdminConfig, error) {
+func loadRemoteAdminConfig(clientDataDirFlag string) (*remoteAdminConfig, error) {
 	clientDataDir := config.GetClientDataDir(clientDataDirFlag)
 	if clientDataDir == "" {
 		return nil, fmt.Errorf("client data directory not specified: pass --client-data <path> or set APCLIENT_DATA")

@@ -86,13 +86,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	startup, err := bootstrap.Load(*dataDir)
+	startup, err := bootstrap.LoadResolved(resolvedDataDir)
 	if err != nil {
 		logErrorf("%v", err)
 		logErrorf("use -d <path> or set APSIGNER_DATA environment variable")
 		os.Exit(1)
 	}
-	resolvedDataDir = startup.DataDir
 	config := startup.Config
 	// Initialize color theme based on config
 	theme.Init(config.Theme)
@@ -194,7 +193,7 @@ func initialNodeRole(dataDir string) string {
 }
 
 func runRemoteMode(clientDataDirFlag string) {
-	remoteCfg, err := loadRemoteAdminConfig(clientDataDirFlag, !isTestMode())
+	remoteCfg, err := loadRemoteAdminConfig(clientDataDirFlag)
 	if err != nil {
 		logErrorf("%v", err)
 		os.Exit(1)

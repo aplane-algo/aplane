@@ -104,7 +104,7 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 		if signingAddr == address {
 			return nil, fmt.Errorf("%w: %s is not available for signing", ErrNoSigningKey, address)
 		}
-		return nil, fmt.Errorf("account is rekeyed to %s but that address is not signable", authAddr)
+		return nil, fmt.Errorf("%w: account is rekeyed to %s but that address is not signable", ErrNoSigningKey, authAddr)
 	}
 
 	// Get key type from signer cache (source of truth, populated from server's /keys response)

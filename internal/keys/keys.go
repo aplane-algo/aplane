@@ -352,7 +352,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 		var publicKeyHex string
 		var lsigSize int
 
-		if IsComponentKey(category, keyType) {
+		if IsComponentKey(category) {
 			address, publicKeyHex, err = componentAddressAndPublicKey(payloadMeta)
 			if err != nil {
 				crypto.ZeroBytes(data)
@@ -478,7 +478,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 }
 
 // IsComponentKey classifies a key payload as a sentry key.
-func IsComponentKey(category, keyType string) bool {
+func IsComponentKey(category string) bool {
 	return category == CategoryComponent
 }
 

@@ -56,9 +56,14 @@ func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Optio
 	}
 
 	go func() {
-		defer func() { _ = watcher.Close() }()
-
 		var debounceTimer *time.Timer
+		defer func() {
+			if debounceTimer != nil {
+				debounceTimer.Stop()
+			}
+			_ = watcher.Close()
+		}()
+
 		const debounceDelay = 500 * time.Millisecond
 
 		for {
@@ -96,6 +101,9 @@ func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Optio
 					}
 
 					debounceTimer = time.AfterFunc(debounceDelay, func() {
+						if ctx.Err() != nil {
+							return
+						}
 						if err := reloadFn(); err != nil {
 							warnf(opts, "error reloading keys/templates: %v", err)
 						}

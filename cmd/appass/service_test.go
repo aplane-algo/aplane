@@ -67,11 +67,11 @@ LoadCredentialEncrypted=aplane-passphrase:/var/lib/apsigner/identities/default/p
 }
 
 func TestCandidateServiceFilesHonorsTestOverride(t *testing.T) {
-	original := serviceFilePath
-	serviceFilePath = filepath.Join(t.TempDir(), "apsigner.service")
-	t.Cleanup(func() { serviceFilePath = original })
+	original := currentServiceFile()
+	setServiceFile(filepath.Join(t.TempDir(), "apsigner.service"))
+	t.Cleanup(func() { setServiceFile(original) })
 
-	if got, want := candidateServiceFiles(), []string{serviceFilePath}; !reflect.DeepEqual(got, want) {
+	if got, want := candidateServiceFiles(), []string{currentServiceFile()}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("candidateServiceFiles() = %#v, want %#v", got, want)
 	}
 }

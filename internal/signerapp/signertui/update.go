@@ -491,11 +491,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case InstallLibraryTemplateResultMsg:
 		if msg.Success {
 			m.library.installError = ""
-			tmpl := protocol.LibraryTemplateInfo{KeyType: msg.KeyType, TemplateType: msg.TemplateType}
 			if msg.AlreadyExists {
-				m.library.installStatus = displayKeyType(msg.KeyType) + " was already " + libraryPastTense(tmpl)
+				m.library.installStatus = displayKeyType(msg.KeyType) + " was already " + libraryPastTense()
 			} else {
-				m.library.installStatus = displayKeyType(msg.KeyType) + " " + libraryPastTense(tmpl)
+				m.library.installStatus = displayKeyType(msg.KeyType) + " " + libraryPastTense()
 			}
 			m.library.pendingTemplate = nil
 			m.viewState = ViewTemplateLibrary
@@ -541,13 +540,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForMessageCmd()
 
 	case ActivateKeyTypeResultMsg:
-		tmpl := m.libraryEntryForResult(msg.KeyType, libraryTypeCompiledProvider)
 		if msg.Success {
 			m.library.installError = ""
 			if msg.AlreadyExists {
-				m.library.installStatus = displayKeyType(msg.KeyType) + " was already " + libraryPastTense(tmpl)
+				m.library.installStatus = displayKeyType(msg.KeyType) + " was already " + libraryPastTense()
 			} else {
-				m.library.installStatus = displayKeyType(msg.KeyType) + " " + libraryPastTense(tmpl)
+				m.library.installStatus = displayKeyType(msg.KeyType) + " " + libraryPastTense()
 			}
 			m.library.pendingTemplate = nil
 			m.viewState = ViewTemplateLibrary
@@ -560,13 +558,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.library.installError = msg.Error
 		if m.library.installError == "" {
-			m.library.installError = libraryActivateFailure(tmpl)
+			m.library.installError = libraryActivateFailure()
 		}
 		m.viewState = ViewTemplateInstallConfirm
 		return m, m.waitForMessageCmd()
 
 	case DeactivateKeyTypeResultMsg:
-		tmpl := m.libraryEntryForResult(msg.KeyType, libraryTypeCompiledProvider)
 		if msg.Success {
 			m.library.installError = ""
 			if msg.Removed {
@@ -585,7 +582,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.library.installError = msg.Error
 		if m.library.installError == "" {
-			m.library.installError = libraryDeactivateFailure(tmpl)
+			m.library.installError = libraryDeactivateFailure()
 		}
 		m.viewState = ViewTemplateInstallConfirm
 		return m, m.waitForMessageCmd()

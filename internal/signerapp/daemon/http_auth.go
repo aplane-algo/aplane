@@ -12,10 +12,10 @@ import (
 )
 
 func authFailureReason(err error) string {
-	switch err {
-	case auth.ErrNoCredentials:
+	switch {
+	case errors.Is(err, auth.ErrNoCredentials):
 		return "missing_credentials"
-	case auth.ErrInvalidCredentials:
+	case errors.Is(err, auth.ErrInvalidCredentials):
 		return "invalid_credentials"
 	default:
 		return "auth_failed"

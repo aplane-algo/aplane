@@ -218,14 +218,22 @@ func (c *IPCClient) SendAndReceive(msg interface{}, timeout time.Duration) ([]by
 func (c *IPCClient) emit(sessionID uint64, msg tea.Msg) bool {
 	c.mu.Lock()
 	currentSession := c.sessionID
+	done := c.done
 	c.mu.Unlock()
 
-	if currentSession > sessionID {
+	if currentSession > sessionID || done == nil {
 		return false
 	}
 
-	c.msgChan <- queuedMsg{sessionID: sessionID, msg: msg}
-	return true
+	// Select on the session's done channel so a forwarder blocked on a full,
+	// undrained msgChan (e.g. the TUI went away) unblocks on teardown instead
+	// of leaking.
+	select {
+	case <-done:
+		return false
+	case c.msgChan <- queuedMsg{sessionID: sessionID, msg: msg}:
+		return true
+	}
 }
 
 // forwardMessages receives dispatcher notifications/lifecycle events and

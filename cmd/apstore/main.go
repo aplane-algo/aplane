@@ -62,13 +62,12 @@ func main() {
 		os.Exit(apstoreExitUsage)
 	}
 
-	startup, err := bootstrap.Load(*dataDir)
+	startup, err := bootstrap.LoadResolved(resolvedDataDir)
 	if err != nil {
 		logErrorf("%v", err)
 		logErrorf("use -d <path> or set APSIGNER_DATA environment variable")
 		os.Exit(apstoreExitUsage)
 	}
-	dataDirectory = startup.DataDir
 	config = startup.Config
 
 	// Register all providers (must be called before using any registries)

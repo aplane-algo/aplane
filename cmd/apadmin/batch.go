@@ -237,7 +237,7 @@ func runTestSession(conn transport.Transport, remote bool, args []string) {
 	client := newTestModeClient()
 	if err := client.Connect(conn); err != nil {
 		if remote {
-			logErrorf("%v", formatRemoteConnectError(err, false))
+			logErrorf("%v", formatRemoteConnectError(err))
 		} else {
 			logErrorf("%v", err)
 		}

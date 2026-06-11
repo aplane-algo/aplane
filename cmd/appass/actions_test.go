@@ -15,7 +15,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	serviceFilePath = filepath.Join(os.TempDir(), "aplane-appass-test-missing.service")
+	setServiceFile(filepath.Join(os.TempDir(), "aplane-appass-test-missing.service"))
 	os.Exit(m.Run())
 }
 

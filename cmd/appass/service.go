@@ -10,11 +10,29 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const defaultServiceFile = "/etc/systemd/system/apsigner.service"
 
+// serviceFilePath is written by the async status load and read by action
+// commands; both run in bubbletea command goroutines, so access goes through
+// the mutex-guarded accessors below.
+var serviceFileMu sync.Mutex
 var serviceFilePath = defaultServiceFile
+
+func currentServiceFile() string {
+	serviceFileMu.Lock()
+	defer serviceFileMu.Unlock()
+	return serviceFilePath
+}
+
+func setServiceFile(path string) {
+	serviceFileMu.Lock()
+	defer serviceFileMu.Unlock()
+	serviceFilePath = path
+}
+
 var serviceFileCandidates = []string{
 	defaultServiceFile,
 	"/lib/systemd/system/apsigner.service",
@@ -85,7 +103,7 @@ func resolveServiceInfo() (*serviceInfo, bool) {
 	for _, path := range candidateServiceFiles() {
 		svc, err := parseServiceFile(path)
 		if err == nil {
-			serviceFilePath = path
+			setServiceFile(path)
 			return svc, false
 		}
 	}
@@ -102,8 +120,8 @@ func localServiceInfo() *serviceInfo {
 }
 
 func candidateServiceFiles() []string {
-	if serviceFilePath != defaultServiceFile {
-		return []string{serviceFilePath}
+	if path := currentServiceFile(); path != defaultServiceFile {
+		return []string{path}
 	}
 	return serviceFileCandidates
 }

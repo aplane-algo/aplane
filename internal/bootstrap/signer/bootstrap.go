@@ -38,7 +38,12 @@ func Load(dataDirFlag string) (*Startup, error) {
 	if err != nil {
 		return nil, err
 	}
+	return LoadResolved(dataDir)
+}
 
+// LoadResolved is Load for callers that already resolved the data directory
+// (typically to access-check it first) — avoids resolving twice.
+func LoadResolved(dataDir string) (*Startup, error) {
 	cfg, err := serverconfig.LoadServerConfig(dataDir)
 	if err != nil {
 		return nil, err

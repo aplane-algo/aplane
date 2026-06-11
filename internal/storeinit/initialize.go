@@ -109,7 +109,7 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 		return result, fmt.Errorf("failed to generate API token: %w", err)
 	}
 
-	chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths)
+	chownIdentitiesTreeToDataDirOwner(opts.DataDir, opts.Paths, opts.Logf)
 	success = true
 	return result, nil
 }
@@ -150,7 +150,7 @@ func requireLocalOwnerOrRoot(dataDir string) error {
 	return nil
 }
 
-func chownIdentitiesTreeToDataDirOwner(dataDir string, paths storepaths.Paths) {
+func chownIdentitiesTreeToDataDirOwner(dataDir string, paths storepaths.Paths, log func(format string, args ...any)) {
 	info, err := os.Stat(dataDir)
 	if err != nil {
 		return
@@ -162,12 +162,14 @@ func chownIdentitiesTreeToDataDirOwner(dataDir string, paths storepaths.Paths) {
 	uid := int(stat.Uid)
 	gid := int(stat.Gid)
 	usersDir := filepath.Join(paths.Root(), "identities")
-	_ = filepath.Walk(usersDir, func(path string, _ os.FileInfo, err error) error {
+	if err := filepath.Walk(usersDir, func(path string, _ os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		return os.Chown(path, uid, gid)
-	})
+	}); err != nil {
+		logf(log, "warning: best-effort chown of identities tree failed: %v", err)
+	}
 }
 
 func logf(log func(format string, args ...any), format string, args ...any) {

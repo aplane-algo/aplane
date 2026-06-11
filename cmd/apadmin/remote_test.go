@@ -22,7 +22,7 @@ import (
 func TestFormatRemoteConnectErrorAddsBatchBootstrapHint(t *testing.T) {
 	err := errors.New("SSH connection failed: unknown SSH host signer.example (key abc)")
 
-	got := formatRemoteConnectError(err, false)
+	got := formatRemoteConnectError(err)
 	if got == nil {
 		t.Fatal("formatRemoteConnectError() = nil, want error")
 	}
@@ -34,7 +34,7 @@ func TestFormatRemoteConnectErrorAddsBatchBootstrapHint(t *testing.T) {
 func TestFormatRemoteConnectErrorAddsInteractiveBootstrapHint(t *testing.T) {
 	err := errors.New("SSH connection failed: unknown SSH host signer.example (key abc)")
 
-	got := formatRemoteConnectError(err, true)
+	got := formatRemoteConnectError(err)
 	if got == nil {
 		t.Fatal("formatRemoteConnectError() = nil, want error")
 	}
@@ -64,7 +64,7 @@ endpoints:
 		t.Fatalf("write token: %v", err)
 	}
 
-	cfg, err := loadRemoteAdminConfig(dir, false)
+	cfg, err := loadRemoteAdminConfig(dir)
 	if err == nil {
 		t.Fatal("err = nil, want missing known_hosts error")
 	}
@@ -98,7 +98,7 @@ endpoints:
 	}
 	writeDummyKnownHost(t, filepath.Join(dir, "hosts/known_hosts"), "signer.local", 2222)
 
-	cfg, err := loadRemoteAdminConfig(dir, false)
+	cfg, err := loadRemoteAdminConfig(dir)
 	if err == nil {
 		t.Fatal("err = nil, want dummy known_hosts rejection")
 	}
@@ -128,7 +128,7 @@ endpoints:
     token_file: aplane.token
 `)
 
-	cfg, err := loadRemoteAdminConfig(dir, false)
+	cfg, err := loadRemoteAdminConfig(dir)
 	if err == nil {
 		t.Fatal("err = nil, want missing token error")
 	}
@@ -160,7 +160,7 @@ endpoints:
     token_file: aplane.token
 `)
 
-	cfg, err := loadRemoteAdminConfig(dir, false)
+	cfg, err := loadRemoteAdminConfig(dir)
 	if err == nil {
 		t.Fatal("err = nil, want unsupported endpoint config error")
 	}
@@ -198,7 +198,7 @@ endpoints:
 	}
 	writeKnownHost(t, filepath.Join(dir, "hosts/known_hosts"), "signer.local", 2222)
 
-	cfg, err := loadRemoteAdminConfig(dir, true)
+	cfg, err := loadRemoteAdminConfig(dir)
 	if err != nil {
 		t.Fatalf("loadRemoteAdminConfig failed: %v", err)
 	}

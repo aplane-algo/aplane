@@ -498,14 +498,14 @@ func (s Service) ReplacePolicy(ir *identity.Runtime, req adminproto.ReplacePolic
 			if _, err := ops.loadVerified(s.Deps.DataDir(), ir.ID(), masterKey); err != nil {
 				return newPolicyReplaceError(
 					"policy_verify_failed",
-					fmt.Errorf("failed to verify existing %s: %w", policyTargetFileName(target), err),
+					fmt.Errorf("failed to verify existing %s: %w", policyTargetFileName(), err),
 				)
 			}
 			if _, err := ops.apply(s.Deps.DataDir(), s.Deps.Config(), stored); err != nil {
 				return newPolicyReplaceError("policy_validation_failed", fmt.Errorf("invalid policy: %w", err))
 			}
 			if err := ops.saveBytes(s.Deps.DataDir(), ir.ID(), data, masterKey, time.Now()); err != nil {
-				return newPolicyReplaceError("policy_save_failed", fmt.Errorf("failed to save %s: %w", policyTargetFileName(target), err))
+				return newPolicyReplaceError("policy_save_failed", fmt.Errorf("failed to save %s: %w", policyTargetFileName(), err))
 			}
 
 			verified, err := ops.loadVerified(s.Deps.DataDir(), ir.ID(), masterKey)
@@ -574,7 +574,7 @@ func (s Service) ValidatePolicy(ir *identity.Runtime, req adminproto.ValidatePol
 	}
 }
 
-func policyTargetFileName(target adminproto.PolicyTarget) string {
+func policyTargetFileName() string {
 	return "policy.yaml"
 }
 

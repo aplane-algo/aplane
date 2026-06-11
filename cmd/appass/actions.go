@@ -326,9 +326,10 @@ func setProdUnlockConfigPermissions(dataDir, identityID string, svc *serviceInfo
 // removeLoadCredentialFromService removes any LoadCredentialEncrypted line
 // from the systemd service file and runs daemon-reload.
 func removeLoadCredentialFromService() error {
-	data, err := os.ReadFile(serviceFilePath)
+	servicePath := currentServiceFile()
+	data, err := os.ReadFile(servicePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not read service file %s: %v\n", serviceFilePath, err)
+		fmt.Fprintf(os.Stderr, "Warning: could not read service file %s: %v\n", servicePath, err)
 		return nil
 	}
 
@@ -352,7 +353,7 @@ func removeLoadCredentialFromService() error {
 	}
 
 	output := strings.Join(kept, "\n") + "\n"
-	if err := os.WriteFile(serviceFilePath, []byte(output), 0644); err != nil {
+	if err := os.WriteFile(servicePath, []byte(output), 0644); err != nil {
 		return fmt.Errorf("writing service file: %w", err)
 	}
 
@@ -367,9 +368,10 @@ func removeLoadCredentialFromService() error {
 }
 
 func ensureLoadCredentialInService(credFile string) error {
-	data, err := os.ReadFile(serviceFilePath)
+	servicePath := currentServiceFile()
+	data, err := os.ReadFile(servicePath)
 	if err != nil {
-		return fmt.Errorf("reading service file %s: %w", serviceFilePath, err)
+		return fmt.Errorf("reading service file %s: %w", servicePath, err)
 	}
 
 	loadLine := fmt.Sprintf("LoadCredentialEncrypted=%s:%s", systemdCredentialName, credFile)
@@ -399,11 +401,11 @@ func ensureLoadCredentialInService(credFile string) error {
 	}
 
 	if !inserted {
-		return fmt.Errorf("service file %s has no [Service] section", serviceFilePath)
+		return fmt.Errorf("service file %s has no [Service] section", servicePath)
 	}
 
 	updated := strings.Join(output, "\n") + "\n"
-	if err := os.WriteFile(serviceFilePath, []byte(updated), 0644); err != nil {
+	if err := os.WriteFile(servicePath, []byte(updated), 0644); err != nil {
 		return fmt.Errorf("writing service file: %w", err)
 	}
 

@@ -182,14 +182,21 @@ func startDaemonProcess(bin, dataDir string) (*daemonProcess, error) {
 
 	events := make(chan daemonEvent, 128)
 	dp := &daemonProcess{cmd: cmd, events: events, done: make(chan struct{})}
-	go scanDaemonOutput(events, stdout)
-	go scanDaemonOutput(events, stderr)
+	go scanDaemonOutput(events, dp.done, stdout)
+	go scanDaemonOutput(events, dp.done, stderr)
 	go func() {
 		err := cmd.Wait()
+		event := daemonEvent{Status: daemonStatusExited, Line: "apsigner exited"}
 		if err != nil {
-			events <- daemonEvent{Status: daemonStatusExited, Detail: err.Error(), Line: "apsigner exited: " + err.Error()}
-		} else {
-			events <- daemonEvent{Status: daemonStatusExited, Line: "apsigner exited"}
+			event.Detail = err.Error()
+			event.Line = "apsigner exited: " + err.Error()
+		}
+		// Never block Stop on an unread events channel: if the buffer is
+		// full nobody is draining it, and closing done below carries the
+		// exit signal.
+		select {
+		case events <- event:
+		default:
 		}
 		close(dp.done)
 	}()
@@ -214,13 +221,13 @@ func findApsigner(deps daemonDeps) (string, error) {
 	return "", fmt.Errorf("apsigner binary not found in PATH or next to apconsole")
 }
 
-func scanDaemonOutput(events chan<- daemonEvent, r io.Reader) {
+func scanDaemonOutput(events chan<- daemonEvent, done <-chan struct{}, r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		events <- daemonEvent{Line: scanner.Text()}
+		sendDaemonEvent(events, done, daemonEvent{Line: scanner.Text()})
 	}
 	if err := scanner.Err(); err != nil {
-		events <- daemonEvent{Line: "log stream error: " + err.Error()}
+		sendDaemonEvent(events, done, daemonEvent{Line: "log stream error: " + err.Error()})
 	}
 }
 

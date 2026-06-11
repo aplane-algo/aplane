@@ -10,7 +10,7 @@ import (
 )
 
 //nolint:errcheck // display-only writes
-func ShowHelp(w io.Writer, registry *Registry, _ string) {
+func ShowHelp(w io.Writer, registry *Registry) {
 	fmt.Fprintln(w, "\nAvailable commands:")
 
 	categories := registry.ByCategory()

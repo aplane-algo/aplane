@@ -353,7 +353,7 @@ func libraryActionVerb(tmpl LibraryTemplateInfo) string {
 	return "enable"
 }
 
-func libraryPastTense(_ LibraryTemplateInfo) string {
+func libraryPastTense() string {
 	return keytypeux.AvailableToCreate
 }
 
@@ -361,23 +361,11 @@ func libraryDeactivatePastTense() string {
 	return keytypeux.NotAvailableToCreate
 }
 
-func (m Model) libraryEntryForResult(keyType, fallbackTemplateType string) LibraryTemplateInfo {
-	if m.library.pendingTemplate != nil && m.library.pendingTemplate.KeyType == keyType {
-		return *m.library.pendingTemplate
-	}
-	for _, tmpl := range m.library.templates {
-		if tmpl.KeyType == keyType {
-			return tmpl
-		}
-	}
-	return LibraryTemplateInfo{KeyType: keyType, TemplateType: fallbackTemplateType}
-}
-
-func libraryActivateFailure(tmpl LibraryTemplateInfo) string {
+func libraryActivateFailure() string {
 	return "Key type enable failed"
 }
 
-func libraryDeactivateFailure(tmpl LibraryTemplateInfo) string {
+func libraryDeactivateFailure() string {
 	return "Key type disable failed"
 }
 

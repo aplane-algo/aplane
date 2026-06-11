@@ -19,7 +19,7 @@ import (
 
 func (r *REPLState) cmdHelp(args []string, _ interface{}) error {
 	if len(args) == 0 {
-		command.ShowHelp(r.Out, r.CommandRegistry, r.app().Network())
+		command.ShowHelp(r.Out, r.CommandRegistry)
 		showPluginHelpSummary(r)
 	} else {
 		// Show detailed help for specific command

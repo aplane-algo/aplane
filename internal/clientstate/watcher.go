@@ -4,6 +4,7 @@
 package clientstate
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,10 +103,11 @@ func (w *CacheWatcher) run() {
 			if event.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Remove|fsnotify.Rename) != 0 {
 				w.MarkFile(filepath.Base(event.Name))
 			}
-		case _, ok := <-w.watcher.Errors:
+		case err, ok := <-w.watcher.Errors:
 			if !ok {
 				return
 			}
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: cache watcher error: %v\n", err)
 		case <-w.done:
 			return
 		}
