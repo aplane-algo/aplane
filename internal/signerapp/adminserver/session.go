@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package adminproto
+package adminserver
 
 import (
 	"context"
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -33,7 +34,7 @@ const (
 
 // Session owns one admin client protocol lifecycle.
 type Session struct {
-	conn             AdminConn
+	conn             adminproto.AdminConn
 	identityServices IdentityServices
 	settingsServices SettingsServices
 	keyServices      KeyServices
@@ -56,7 +57,7 @@ type Session struct {
 	preboundIdentityID string
 }
 
-func NewSession(conn AdminConn, deps SessionDeps) *Session {
+func NewSession(conn adminproto.AdminConn, deps SessionDeps) *Session {
 	method := "ipc-passphrase"
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Session{
@@ -234,14 +235,14 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 
 func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutcome {
 	if s.Transport() != "ipc" {
-		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, InitializeStoreResult{
+		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeAuthorizationDenied,
 			Error: "initialize_store is only available over local IPC",
 		}))
 		return AuthOutcomeBootstrapHandled
 	}
 	if s.identityServices == nil {
-		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, InitializeStoreResult{
+		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeInternal,
 			Error: "identity service unavailable",
 		}))
@@ -249,7 +250,7 @@ func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutc
 	}
 	var msg protocol.InitializeStoreMessage
 	if err := json.Unmarshal(raw, &msg); err != nil {
-		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, InitializeStoreResult{
+		_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(requestID, adminproto.InitializeStoreResult{
 			Code:  protocol.ErrCodeInvalidRequest,
 			Error: "invalid initialize store message",
 		}))
@@ -258,7 +259,7 @@ func (s *Session) handlePreAuthInitialize(requestID string, raw []byte) AuthOutc
 	defer msg.Passphrase.Zero()
 	passphrase := msg.Passphrase.Clone()
 	defer zeroBytes(passphrase)
-	result := s.identityServices.InitializeStore(InitializeStoreRequest{Passphrase: passphrase})
+	result := s.identityServices.InitializeStore(adminproto.InitializeStoreRequest{Passphrase: passphrase})
 	_ = s.WriteJSON(ProtocolInitializeStoreResultMessage(msg.ID, result))
 	return AuthOutcomeBootstrapHandled
 }
@@ -400,7 +401,7 @@ func (s *Session) reconcileAuthIdentity(authIdentityID string) (string, bool) {
 	return authIdentityID, authIdentityID == preboundIdentityID
 }
 
-func (s *Session) Conn() AdminConn {
+func (s *Session) Conn() adminproto.AdminConn {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.conn

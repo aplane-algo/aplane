@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package adminproto
+package adminserver
 
 import (
 	"context"
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -131,9 +132,9 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{
-		policySnapshotResult: PolicySnapshot{
+		policySnapshotResult: adminproto.PolicySnapshot{
 			Success:      true,
-			Target:       PolicyTargetSentry,
+			Target:       adminproto.PolicyTargetSentry,
 			IdentityID:   auth.DefaultIdentityID,
 			PolicyYAML:   "reject_foreign_rekey: true\n",
 			PolicySHA256: "abc123",
@@ -157,7 +158,7 @@ func TestHandleGetPolicySnapshotAuthorizesPolicyView(t *testing.T) {
 	if svc.policySnapshotCalls != 1 {
 		t.Fatalf("BuildPolicySnapshot calls = %d, want 1", svc.policySnapshotCalls)
 	}
-	if svc.lastPolicySnapshot != PolicyTargetSentry {
+	if svc.lastPolicySnapshot != adminproto.PolicyTargetSentry {
 		t.Fatalf("BuildPolicySnapshot target = %q, want sentry", svc.lastPolicySnapshot)
 	}
 	if authorizer.got.action != auth.ActionPolicyView {
@@ -185,7 +186,7 @@ func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{
-		replacePolicyResult: PolicySnapshot{
+		replacePolicyResult: adminproto.PolicySnapshot{
 			Success:    true,
 			IdentityID: auth.DefaultIdentityID,
 			PolicyYAML: "reject_foreign_rekey: false\n",
@@ -213,7 +214,7 @@ func TestHandleReplacePolicyAuthorizesPolicyUpdate(t *testing.T) {
 	}
 	if svc.lastReplacePolicy.PolicyYAML != "reject_foreign_rekey: false\n" ||
 		svc.lastReplacePolicy.ExpectedCurrentSHA256 != "abc123" ||
-		svc.lastReplacePolicy.Target != PolicyTargetSentry {
+		svc.lastReplacePolicy.Target != adminproto.PolicyTargetSentry {
 		t.Fatalf("ReplacePolicy request = %+v, want YAML and expected SHA", svc.lastReplacePolicy)
 	}
 	if authorizer.got.action != auth.ActionPolicyUpdate {
@@ -241,9 +242,9 @@ func TestHandleValidatePolicyAuthorizesPolicyView(t *testing.T) {
 		Authenticator: auth.NewTokenAuthenticator("token"),
 	})
 	svc := &stubServices{
-		validatePolicyResult: ValidatePolicyResult{
+		validatePolicyResult: adminproto.ValidatePolicyResult{
 			Success:    true,
-			Target:     PolicyTargetSentry,
+			Target:     adminproto.PolicyTargetSentry,
 			IdentityID: auth.DefaultIdentityID,
 		},
 	}
@@ -265,7 +266,7 @@ func TestHandleValidatePolicyAuthorizesPolicyView(t *testing.T) {
 	if svc.validatePolicyCalls != 1 {
 		t.Fatalf("ValidatePolicy calls = %d, want 1", svc.validatePolicyCalls)
 	}
-	if svc.lastValidatePolicy.Target != PolicyTargetSentry ||
+	if svc.lastValidatePolicy.Target != adminproto.PolicyTargetSentry ||
 		svc.lastValidatePolicy.PolicyYAML != "sentry:\n  transfer_policy:\n    schema_version: 1\n" {
 		t.Fatalf("ValidatePolicy request = %+v, want sentry YAML", svc.lastValidatePolicy)
 	}

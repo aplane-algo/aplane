@@ -4,6 +4,7 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -13,21 +14,21 @@ import (
 
 func newIPCServerWithActiveConn(conn net.Conn) *IPCServer {
 	server := &IPCServer{
-		manager: adminproto.NewSessionManager(),
+		manager: adminserver.NewSessionManager(),
 	}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil), adminproto.SessionDeps{})
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), adminserver.SessionDeps{})
 	_ = server.manager.RegisterPending(auth.CurrentProductIdentityID(), session)
 	server.manager.PromoteToActive(auth.CurrentProductIdentityID(), session)
 	return server
 }
 
-func newBoundTestSession(server *IPCServer, conn net.Conn, ir *identity.Runtime) *adminproto.Session {
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.signer.adminSessionDeps())
+func newBoundTestSession(server *IPCServer, conn net.Conn, ir *identity.Runtime) *adminserver.Session {
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.signer.adminSessionDeps())
 	remoteAddr := "test-ipc"
 	if addr := conn.RemoteAddr(); addr != nil {
 		remoteAddr = addr.String()
 	}
-	session.SetTransportInfo(adminproto.TransportIPC, remoteAddr)
+	session.SetTransportInfo(adminserver.TransportIPC, remoteAddr)
 	session.Bind(auth.NewDefaultIdentity("test"), ir)
 	return session
 }

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package adminproto
+package adminserver
 
 import (
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"strings"
 	"testing"
 	"time"
@@ -65,7 +66,7 @@ func TestSessionOmitsGeneratedMnemonicOnEveryAdminTransport(t *testing.T) {
 	for _, transport := range []string{TransportIPC, TransportSSH, TransportUnknown} {
 		t.Run(transport, func(t *testing.T) {
 			session, conn, svc := newKeyTransportTestSession(transport)
-			svc.generateKeyResult = GenerateKeyResult{
+			svc.generateKeyResult = adminproto.GenerateKeyResult{
 				Success: true,
 				Address: "ADDR",
 				KeyType: "ed25519",
@@ -93,12 +94,12 @@ func TestSessionOmitsGeneratedMnemonicOnEveryAdminTransport(t *testing.T) {
 
 func TestSessionAllowsGenerateAndImportOverIPC(t *testing.T) {
 	session, conn, svc := newKeyTransportTestSession(TransportIPC)
-	svc.generateKeyResult = GenerateKeyResult{
+	svc.generateKeyResult = adminproto.GenerateKeyResult{
 		Success: true,
 		Address: "ADDR",
 		KeyType: "ed25519",
 	}
-	svc.importKeyResult = ImportKeyResult{
+	svc.importKeyResult = adminproto.ImportKeyResult{
 		Success: true,
 		Address: "ADDR",
 		KeyType: "ed25519",

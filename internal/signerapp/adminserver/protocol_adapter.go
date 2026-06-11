@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package adminproto
+package adminserver
 
 import (
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -55,7 +56,7 @@ func ProtocolRevokeTokenResultMessage(id string, err error) protocol.RevokeToken
 	return result
 }
 
-func ProtocolUpdateAdminSettingResultMessage(id string, request UpdateAdminSettingRequest, err error) protocol.UpdateAdminSettingResultMessage {
+func ProtocolUpdateAdminSettingResultMessage(id string, request adminproto.UpdateAdminSettingRequest, err error) protocol.UpdateAdminSettingResultMessage {
 	result := protocol.UpdateAdminSettingResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeUpdateAdminSettingResult,
@@ -72,7 +73,7 @@ func ProtocolUpdateAdminSettingResultMessage(id string, request UpdateAdminSetti
 	return result
 }
 
-func ProtocolUpdatePolicySettingResultMessage(id string, request UpdatePolicySettingRequest, err error) protocol.UpdatePolicySettingResultMessage {
+func ProtocolUpdatePolicySettingResultMessage(id string, request adminproto.UpdatePolicySettingRequest, err error) protocol.UpdatePolicySettingResultMessage {
 	result := protocol.UpdatePolicySettingResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeUpdatePolicySettingResult,
@@ -132,7 +133,7 @@ func ProtocolLockIdentityResultMessage(id string, err error) protocol.LockIdenti
 	return result
 }
 
-func ProtocolBackupResultMessage(id string, result BackupIdentityResult) protocol.BackupResultMessage {
+func ProtocolBackupResultMessage(id string, result adminproto.BackupIdentityResult) protocol.BackupResultMessage {
 	return protocol.BackupResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeBackupResult,
@@ -150,7 +151,7 @@ func ProtocolBackupResultMessage(id string, result BackupIdentityResult) protoco
 	}
 }
 
-func ProtocolBackupsListMessage(id string, result ListBackupsResult) protocol.BackupsListMessage {
+func ProtocolBackupsListMessage(id string, result adminproto.ListBackupsResult) protocol.BackupsListMessage {
 	return protocol.BackupsListMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeBackupsList,
@@ -162,7 +163,7 @@ func ProtocolBackupsListMessage(id string, result ListBackupsResult) protocol.Ba
 	}
 }
 
-func ProtocolDeleteBackupResultMessage(id string, result DeleteBackupResult) protocol.DeleteBackupResultMessage {
+func ProtocolDeleteBackupResultMessage(id string, result adminproto.DeleteBackupResult) protocol.DeleteBackupResultMessage {
 	return protocol.DeleteBackupResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeDeleteBackupResult,
@@ -174,7 +175,7 @@ func ProtocolDeleteBackupResultMessage(id string, result DeleteBackupResult) pro
 	}
 }
 
-func ProtocolInitializeStoreResultMessage(id string, result InitializeStoreResult) protocol.InitializeStoreResultMessage {
+func ProtocolInitializeStoreResultMessage(id string, result adminproto.InitializeStoreResult) protocol.InitializeStoreResultMessage {
 	return protocol.InitializeStoreResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeInitializeStoreResult,
@@ -188,7 +189,7 @@ func ProtocolInitializeStoreResultMessage(id string, result InitializeStoreResul
 	}
 }
 
-func ProtocolChangeStorePassphraseResultMessage(id string, result ChangeStorePassphraseResult) protocol.ChangeStorePassphraseResultMessage {
+func ProtocolChangeStorePassphraseResultMessage(id string, result adminproto.ChangeStorePassphraseResult) protocol.ChangeStorePassphraseResultMessage {
 	return protocol.ChangeStorePassphraseResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeChangeStorePassResult,
@@ -204,7 +205,7 @@ func ProtocolChangeStorePassphraseResultMessage(id string, result ChangeStorePas
 	}
 }
 
-func ProtocolRestorePreviewMessage(id string, result RestorePreviewResult) protocol.RestorePreviewMessage {
+func ProtocolRestorePreviewMessage(id string, result adminproto.RestorePreviewResult) protocol.RestorePreviewMessage {
 	return protocol.RestorePreviewMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeRestorePreview,
@@ -218,7 +219,7 @@ func ProtocolRestorePreviewMessage(id string, result RestorePreviewResult) proto
 	}
 }
 
-func ProtocolRestoreBackupResultMessage(id string, result RestoreBackupResult) protocol.RestoreBackupResultMessage {
+func ProtocolRestoreBackupResultMessage(id string, result adminproto.RestoreBackupResult) protocol.RestoreBackupResultMessage {
 	return protocol.RestoreBackupResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeRestoreBackupResult,
@@ -236,7 +237,7 @@ func ProtocolRestoreBackupResultMessage(id string, result RestoreBackupResult) p
 	}
 }
 
-func ProtocolKeysListMessage(id string, keys []KeyInfo) protocol.KeysListMessage {
+func ProtocolKeysListMessage(id string, keys []adminproto.KeyInfo) protocol.KeysListMessage {
 	return protocol.KeysListMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeKeysList,
@@ -246,7 +247,7 @@ func ProtocolKeysListMessage(id string, keys []KeyInfo) protocol.KeysListMessage
 	}
 }
 
-func protocolBackupInfos(items []BackupInfo) []protocol.BackupInfo {
+func protocolBackupInfos(items []adminproto.BackupInfo) []protocol.BackupInfo {
 	if len(items) == 0 {
 		return nil
 	}
@@ -264,7 +265,7 @@ func protocolBackupInfos(items []BackupInfo) []protocol.BackupInfo {
 	return out
 }
 
-func protocolRestoreKeyInfos(items []RestoreKeyInfo) []protocol.RestoreKeyInfo {
+func protocolRestoreKeyInfos(items []adminproto.RestoreKeyInfo) []protocol.RestoreKeyInfo {
 	if len(items) == 0 {
 		return nil
 	}
@@ -282,7 +283,7 @@ func protocolRestoreKeyInfos(items []RestoreKeyInfo) []protocol.RestoreKeyInfo {
 	return out
 }
 
-func protocolRestoreErrors(items []RestoreError) []protocol.RestoreError {
+func protocolRestoreErrors(items []adminproto.RestoreError) []protocol.RestoreError {
 	if len(items) == 0 {
 		return nil
 	}
@@ -296,7 +297,7 @@ func protocolRestoreErrors(items []RestoreError) []protocol.RestoreError {
 	return out
 }
 
-func protocolRestoreWarnings(items []RestoreWarning) []protocol.RestoreWarning {
+func protocolRestoreWarnings(items []adminproto.RestoreWarning) []protocol.RestoreWarning {
 	if len(items) == 0 {
 		return nil
 	}
@@ -311,7 +312,7 @@ func protocolRestoreWarnings(items []RestoreWarning) []protocol.RestoreWarning {
 	return out
 }
 
-func ProtocolAdminSettingsMessage(requestID string, settings AdminSettings) protocol.AdminSettingsMessage {
+func ProtocolAdminSettingsMessage(requestID string, settings adminproto.AdminSettings) protocol.AdminSettingsMessage {
 	return protocol.AdminSettingsMessage{
 		BaseMessage:          protocol.BaseMessage{Type: protocol.MsgTypeAdminSettings, ID: requestID},
 		UserAutoApprove:      settings.UserAutoApprove,
@@ -332,7 +333,7 @@ func ProtocolAdminSettingsMessage(requestID string, settings AdminSettings) prot
 	}
 }
 
-func ProtocolPolicySettingsMessage(requestID string, settings PolicySettings) protocol.PolicySettingsMessage {
+func ProtocolPolicySettingsMessage(requestID string, settings adminproto.PolicySettings) protocol.PolicySettingsMessage {
 	return protocol.PolicySettingsMessage{
 		BaseMessage:                 protocol.BaseMessage{Type: protocol.MsgTypePolicySettings, ID: requestID},
 		RejectForeignRekey:          settings.RejectForeignRekey,
@@ -354,7 +355,7 @@ func ProtocolPolicySettingsMessage(requestID string, settings PolicySettings) pr
 	}
 }
 
-func ProtocolPolicySnapshotMessage(id string, snapshot PolicySnapshot) protocol.PolicySnapshotMessage {
+func ProtocolPolicySnapshotMessage(id string, snapshot adminproto.PolicySnapshot) protocol.PolicySnapshotMessage {
 	return protocol.PolicySnapshotMessage{
 		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypePolicySnapshot, ID: id},
 		Success:      snapshot.Success,
@@ -368,7 +369,7 @@ func ProtocolPolicySnapshotMessage(id string, snapshot PolicySnapshot) protocol.
 	}
 }
 
-func ProtocolReplacePolicyResultMessage(id string, snapshot PolicySnapshot) protocol.ReplacePolicyResultMessage {
+func ProtocolReplacePolicyResultMessage(id string, snapshot adminproto.PolicySnapshot) protocol.ReplacePolicyResultMessage {
 	return protocol.ReplacePolicyResultMessage{
 		BaseMessage:  protocol.BaseMessage{Type: protocol.MsgTypeReplacePolicyResult, ID: id},
 		Success:      snapshot.Success,
@@ -382,7 +383,7 @@ func ProtocolReplacePolicyResultMessage(id string, snapshot PolicySnapshot) prot
 	}
 }
 
-func ProtocolValidatePolicyResultMessage(id string, result ValidatePolicyResult) protocol.ValidatePolicyResultMessage {
+func ProtocolValidatePolicyResultMessage(id string, result adminproto.ValidatePolicyResult) protocol.ValidatePolicyResultMessage {
 	return protocol.ValidatePolicyResultMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeValidatePolicyResult, ID: id},
 		Success:     result.Success,
@@ -393,7 +394,7 @@ func ProtocolValidatePolicyResultMessage(id string, result ValidatePolicyResult)
 	}
 }
 
-func ProtocolASAMetadataResultsMessage(result ASAMetadataResults) protocol.ASAMetadataResultsMessage {
+func ProtocolASAMetadataResultsMessage(result adminproto.ASAMetadataResults) protocol.ASAMetadataResultsMessage {
 	return protocol.ASAMetadataResultsMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeASAMetadataResults},
 		Network:     result.Network,
@@ -404,7 +405,7 @@ func ProtocolASAMetadataResultsMessage(result ASAMetadataResults) protocol.ASAMe
 	}
 }
 
-func ProtocolASAMetadataResultMessage(result ASAMetadataResult) protocol.ASAMetadataResultMessage {
+func ProtocolASAMetadataResultMessage(result adminproto.ASAMetadataResult) protocol.ASAMetadataResultMessage {
 	var asset *protocol.ASAMetadataInfo
 	if result.Error == "" && result.Code == "" {
 		info := protocolASAMetadataInfo(result.Asset)
@@ -419,7 +420,7 @@ func ProtocolASAMetadataResultMessage(result ASAMetadataResult) protocol.ASAMeta
 	}
 }
 
-func protocolASAMetadataInfos(in []ASAMetadataInfo) []protocol.ASAMetadataInfo {
+func protocolASAMetadataInfos(in []adminproto.ASAMetadataInfo) []protocol.ASAMetadataInfo {
 	if in == nil {
 		return nil
 	}
@@ -430,7 +431,7 @@ func protocolASAMetadataInfos(in []ASAMetadataInfo) []protocol.ASAMetadataInfo {
 	return out
 }
 
-func protocolPolicyASAMetadata(in map[string][]ASAMetadataInfo) map[string][]protocol.ASAMetadataInfo {
+func protocolPolicyASAMetadata(in map[string][]adminproto.ASAMetadataInfo) map[string][]protocol.ASAMetadataInfo {
 	if in == nil {
 		return nil
 	}
@@ -441,7 +442,7 @@ func protocolPolicyASAMetadata(in map[string][]ASAMetadataInfo) map[string][]pro
 	return out
 }
 
-func protocolASAMetadataInfo(in ASAMetadataInfo) protocol.ASAMetadataInfo {
+func protocolASAMetadataInfo(in adminproto.ASAMetadataInfo) protocol.ASAMetadataInfo {
 	return protocol.ASAMetadataInfo{
 		AssetID:  in.AssetID,
 		Name:     in.Name,
@@ -462,7 +463,7 @@ func clonePolicyStringMap(in map[string]string) map[string]string {
 	return out
 }
 
-func ProtocolGenerateResultMessage(id string, result GenerateKeyResult) protocol.GenerateResultMessage {
+func ProtocolGenerateResultMessage(id string, result adminproto.GenerateKeyResult) protocol.GenerateResultMessage {
 	// Mnemonic and WordCount remain in the wire schema for client
 	// compatibility but are never populated: recovery material does not cross
 	// the admin-protocol boundary.
@@ -480,7 +481,7 @@ func ProtocolGenerateResultMessage(id string, result GenerateKeyResult) protocol
 	}
 }
 
-func ProtocolDeleteResultMessage(id string, result DeleteKeyResult) protocol.DeleteResultMessage {
+func ProtocolDeleteResultMessage(id string, result adminproto.DeleteKeyResult) protocol.DeleteResultMessage {
 	return protocol.DeleteResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeDeleteResult,
@@ -492,7 +493,7 @@ func ProtocolDeleteResultMessage(id string, result DeleteKeyResult) protocol.Del
 	}
 }
 
-func ProtocolImportResultMessage(id string, result ImportKeyResult) protocol.ImportResultMessage {
+func ProtocolImportResultMessage(id string, result adminproto.ImportKeyResult) protocol.ImportResultMessage {
 	return protocol.ImportResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeImportResult,
@@ -506,7 +507,7 @@ func ProtocolImportResultMessage(id string, result ImportKeyResult) protocol.Imp
 	}
 }
 
-func ProtocolKeyDetailsMessage(id string, result GetKeyDetailsResult) protocol.KeyDetailsMessage {
+func ProtocolKeyDetailsMessage(id string, result adminproto.GetKeyDetailsResult) protocol.KeyDetailsMessage {
 	return protocol.KeyDetailsMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeKeyDetails,
@@ -525,7 +526,7 @@ func ProtocolKeyDetailsMessage(id string, result GetKeyDetailsResult) protocol.K
 	}
 }
 
-func ProtocolLibraryTemplatesMessage(id string, result ListLibraryTemplatesResult) protocol.LibraryTemplatesMessage {
+func ProtocolLibraryTemplatesMessage(id string, result adminproto.ListLibraryTemplatesResult) protocol.LibraryTemplatesMessage {
 	return protocol.LibraryTemplatesMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeLibraryTemplates,
@@ -537,7 +538,7 @@ func ProtocolLibraryTemplatesMessage(id string, result ListLibraryTemplatesResul
 	}
 }
 
-func ProtocolInstallLibraryTemplateResultMessage(id string, result InstallLibraryTemplateResult) protocol.InstallLibraryTemplateResultMessage {
+func ProtocolInstallLibraryTemplateResultMessage(id string, result adminproto.InstallLibraryTemplateResult) protocol.InstallLibraryTemplateResultMessage {
 	return protocol.InstallLibraryTemplateResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeInstallLibraryTemplateResult,
@@ -552,7 +553,7 @@ func ProtocolInstallLibraryTemplateResultMessage(id string, result InstallLibrar
 	}
 }
 
-func ProtocolInstalledTemplatesMessage(id string, result ListInstalledTemplatesResult) protocol.InstalledTemplatesMessage {
+func ProtocolInstalledTemplatesMessage(id string, result adminproto.ListInstalledTemplatesResult) protocol.InstalledTemplatesMessage {
 	items := make([]protocol.InstalledTemplateInfo, 0, len(result.Templates))
 	for _, item := range result.Templates {
 		items = append(items, protocol.InstalledTemplateInfo{
@@ -573,7 +574,7 @@ func ProtocolInstalledTemplatesMessage(id string, result ListInstalledTemplatesR
 	}
 }
 
-func ProtocolShowInstalledTemplateResultMessage(id string, result ShowInstalledTemplateResult) protocol.ShowInstalledTemplateResultMessage {
+func ProtocolShowInstalledTemplateResultMessage(id string, result adminproto.ShowInstalledTemplateResult) protocol.ShowInstalledTemplateResultMessage {
 	return protocol.ShowInstalledTemplateResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeShowInstalledTemplateResult,
@@ -588,7 +589,7 @@ func ProtocolShowInstalledTemplateResultMessage(id string, result ShowInstalledT
 	}
 }
 
-func ProtocolShowLibraryTemplateResultMessage(id string, result ShowLibraryTemplateResult) protocol.ShowLibraryTemplateResultMessage {
+func ProtocolShowLibraryTemplateResultMessage(id string, result adminproto.ShowLibraryTemplateResult) protocol.ShowLibraryTemplateResultMessage {
 	return protocol.ShowLibraryTemplateResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeShowLibraryTemplateResult,
@@ -606,7 +607,7 @@ func ProtocolShowLibraryTemplateResultMessage(id string, result ShowLibraryTempl
 	}
 }
 
-func ProtocolImportInstalledTemplateResultMessage(id string, result ImportInstalledTemplateResult) protocol.ImportInstalledTemplateResultMessage {
+func ProtocolImportInstalledTemplateResultMessage(id string, result adminproto.ImportInstalledTemplateResult) protocol.ImportInstalledTemplateResultMessage {
 	return protocol.ImportInstalledTemplateResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeImportInstalledTemplateResult,
@@ -621,7 +622,7 @@ func ProtocolImportInstalledTemplateResultMessage(id string, result ImportInstal
 	}
 }
 
-func ProtocolRemoveInstalledTemplateResultMessage(id string, result RemoveInstalledTemplateResult) protocol.RemoveInstalledTemplateResultMessage {
+func ProtocolRemoveInstalledTemplateResultMessage(id string, result adminproto.RemoveInstalledTemplateResult) protocol.RemoveInstalledTemplateResultMessage {
 	return protocol.RemoveInstalledTemplateResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeRemoveInstalledTemplateResult,
@@ -636,7 +637,7 @@ func ProtocolRemoveInstalledTemplateResultMessage(id string, result RemoveInstal
 	}
 }
 
-func ProtocolActivateKeyTypeResultMessage(id string, result ActivateKeyTypeResult) protocol.ActivateKeyTypeResultMessage {
+func ProtocolActivateKeyTypeResultMessage(id string, result adminproto.ActivateKeyTypeResult) protocol.ActivateKeyTypeResultMessage {
 	return protocol.ActivateKeyTypeResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeActivateKeyTypeResult,
@@ -650,7 +651,7 @@ func ProtocolActivateKeyTypeResultMessage(id string, result ActivateKeyTypeResul
 	}
 }
 
-func ProtocolDeactivateKeyTypeResultMessage(id string, result DeactivateKeyTypeResult) protocol.DeactivateKeyTypeResultMessage {
+func ProtocolDeactivateKeyTypeResultMessage(id string, result adminproto.DeactivateKeyTypeResult) protocol.DeactivateKeyTypeResultMessage {
 	return protocol.DeactivateKeyTypeResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeDeactivateKeyTypeResult,
@@ -664,7 +665,7 @@ func ProtocolDeactivateKeyTypeResultMessage(id string, result DeactivateKeyTypeR
 	}
 }
 
-func ProtocolKeyTypesMessage(id string, result ListKeyTypesResult) protocol.KeyTypesMessage {
+func ProtocolKeyTypesMessage(id string, result adminproto.ListKeyTypesResult) protocol.KeyTypesMessage {
 	return protocol.KeyTypesMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeKeyTypes,
@@ -676,7 +677,7 @@ func ProtocolKeyTypesMessage(id string, result ListKeyTypesResult) protocol.KeyT
 	}
 }
 
-func ProtocolKeyInfos(keys []KeyInfo) []protocol.KeyInfo {
+func ProtocolKeyInfos(keys []adminproto.KeyInfo) []protocol.KeyInfo {
 	if len(keys) == 0 {
 		return nil
 	}
@@ -693,7 +694,7 @@ func ProtocolKeyInfos(keys []KeyInfo) []protocol.KeyInfo {
 	return out
 }
 
-func protocolLibraryTemplates(items []LibraryTemplateInfo) []protocol.LibraryTemplateInfo {
+func protocolLibraryTemplates(items []adminproto.LibraryTemplateInfo) []protocol.LibraryTemplateInfo {
 	if len(items) == 0 {
 		return nil
 	}
@@ -840,14 +841,14 @@ func ProtocolTokenProvisioningRequestMessage(req signerapproval.TokenProvisionin
 	}
 }
 
-func ProtocolSignerLockedMessage(notification SignerLockedNotification) protocol.SignerLockedMessage {
+func ProtocolSignerLockedMessage(notification adminproto.SignerLockedNotification) protocol.SignerLockedMessage {
 	return protocol.SignerLockedMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeSignerLocked},
 		Reason:      notification.Reason,
 	}
 }
 
-func ProtocolKeysChangedMessage(notification KeysChangedNotification) protocol.KeysChangedMessage {
+func ProtocolKeysChangedMessage(notification adminproto.KeysChangedNotification) protocol.KeysChangedMessage {
 	return protocol.KeysChangedMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeKeysChanged},
 		KeyCount:    notification.KeyCount,

@@ -352,9 +352,9 @@ Enforced callsites:
   mutates public sentry reference metadata, not private key material.
 - `cmd/apsigner/http_auth.go` calls `Authorizer.Authorize` after
   authentication and before the handler executes.
-- `internal/adminproto/session.go` gates auth-time unlock through
+- `internal/signerapp/adminserver/session.go` gates auth-time unlock through
   `authorizeIdentity`.
-- `internal/adminproto/handlers.go` gates admin `unlock`, key
+- `internal/signerapp/adminserver/handlers.go` gates admin `unlock`, key
   list/details/generate/import/export/delete, key type list/activate/deactivate,
   template list/install/remove, policy view/update, settings view/update,
   signer-managed backup creation, signer-managed backup list/preview/restore,
@@ -449,8 +449,8 @@ Primary implementation files:
 
 - `internal/auth/authorizer.go`
 - `internal/authz/authorizer.go`
-- `internal/adminproto/session.go`
-- `internal/adminproto/handlers.go`
+- `internal/signerapp/adminserver/session.go`
+- `internal/signerapp/adminserver/handlers.go`
 - `cmd/apsigner/http_auth.go`
 - `cmd/apsigner/http_runtime.go`
 - `cmd/apsigner/admin_services.go`

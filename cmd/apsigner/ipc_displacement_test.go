@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"testing"
 	"time"
@@ -88,9 +89,9 @@ func TestPreboundAdminSessionDoesNotDisplaceDifferentIdentity(t *testing.T) {
 
 	ipcServer := &IPCServer{
 		signer:  signer,
-		manager: adminproto.NewSessionManager(),
+		manager: adminserver.NewSessionManager(),
 	}
-	bobSession := adminproto.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
+	bobSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
 	_ = ipcServer.manager.RegisterPending("bob", bobSession)
 	_, _ = ipcServer.manager.PromoteToActive("bob", bobSession)
 

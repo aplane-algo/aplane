@@ -597,7 +597,7 @@ Important secret-handling contracts:
 - active admin client connection state across IPC and SSH admin transport,
 - apadmin's configured local idle disconnect timeout.
 
-Admin protocol sessions carry `adminproto.SessionContext`: session ID,
+Admin protocol sessions carry `adminserver.SessionContext`: session ID,
 admin principal, target identity, auth method, transport, remote address, and
 requester/approver attribution fields. This context is internal to the admin
 transport and audit plumbing; it is not a new public product surface.
@@ -605,7 +605,7 @@ Admin authorization denials are audited with the session context, action,
 resource, and denial reason before returning `authorization_denied` to the
 admin client.
 
-`adminproto.SessionManager` stores active and pending sessions per identity.
+`adminserver.SessionManager` stores active and pending sessions per identity.
 Local IPC sessions start in a pre-auth pending slot and move to the product
 identity after auth. SSH admin sessions may be pre-bound to the SSH-authenticated
 identity before the admin protocol passphrase exchange. Displacement, pending
@@ -732,7 +732,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Coordinator.pendingRequestsLock` | Pending sign approvals |
 | `Coordinator.pendingTokenRequestsLock` | Pending token provisioning approvals |
 | `IPCServer.writeMu` | Serializes outbound IPC JSON writes |
-| `adminproto.SessionManager.mu` | Per-identity admin session registration/displacement |
+| `adminserver.SessionManager.mu` | Per-identity admin session registration/displacement |
 | `AuditLogger.mu` | Audit file writes |
 | SSH server locks | Authorized keys, token callbacks, identity-scoped connections, listener |
 
@@ -1594,7 +1594,7 @@ Product-level boundaries:
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `cmd/apsigner/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/service.go`, `internal/signerapp/backupadmin/limiter.go`, `internal/backup/*.go` |
 | LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/lsig/wrapper.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_ed25519/provider.go`, `lsig/falcon1024_ed25519/signerops/ops.go`, `lsig/ecdsak1/register.go`, `lsig/ecdsak1/signerops/ops.go`, `lsig/ecdsak1/v1/standard.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `internal/tealsubst/list.go`, `internal/tealtemplate/template.go` |
-| Protocol | `internal/protocol/messages.go`, `internal/adminproto/dispatch.go`, `internal/adminproto/displacement.go`, `internal/adminproto/stream_conn.go` |
+| Protocol | `internal/protocol/messages.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/config/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
 | LocalNet Setup | `cmd/aplocalnet/main.go`, `internal/aplocalnet/setup.go`, `plugins/algokit-localnet/algokit-localnet.go`, `plugins/algokit-localnet/manifest.json` |
 | Policy | `internal/policy/config.go`, `internal/policy/store.go`, `internal/policy/integrity.go`, `internal/crypto/policy_integrity.go`, `internal/signerapp/policyruntime/policy.go`, `internal/policy/lint.go`, `internal/policy/review.go`, `internal/signerapp/signing/always_review.go`, `internal/signerapp/signing/service.go`, `internal/signerapp/admin/service.go`, `cmd/apstore/policy.go`, `internal/templatepolicy/outcome.go` |

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"os"
 	"path/filepath"
 	"strings"
@@ -657,7 +658,7 @@ teal: |
 `, family, version, displayName, teal))
 }
 
-func dispatchIPCMessage(t *testing.T, session *adminproto.Session, msg any) {
+func dispatchIPCMessage(t *testing.T, session *adminserver.Session, msg any) {
 	t.Helper()
 	data, err := protocol.MarshalAdminMessage(msg)
 	if err != nil {

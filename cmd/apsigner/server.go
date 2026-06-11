@@ -4,9 +4,9 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"sync"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
@@ -110,7 +110,7 @@ type Signer struct {
 	authorizer         auth.Authorizer                    // Pluggable authorization
 	auditLog           *AuditLogger                       // Audit logger for security events
 	ipcServer          *IPCServer                         // IPC server for local Unix socket connections
-	hub                adminproto.AdminHub                // Process-root admin facade for non-transport code
+	hub                adminserver.AdminHub               // Process-root admin facade for non-transport code
 	sshServer          *sshtunnel.Server                  // SSH tunnel server (nil if SSH disabled)
 	sshRuntime         *sshRuntime                        // SSH runtime holder for live listener restarts
 	sshRuntimeMu       sync.RWMutex                       // Protects sshRuntime and sshServer swaps

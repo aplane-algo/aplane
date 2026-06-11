@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"os"
 	"strings"
@@ -22,7 +23,7 @@ type IPCServer struct {
 	listener net.Listener
 	signer   *Signer
 	path     string
-	manager  *adminproto.SessionManager
+	manager  *adminserver.SessionManager
 }
 
 // NewIPCServer creates a new IPC server.
@@ -30,7 +31,7 @@ func NewIPCServer(path string, signer *Signer) *IPCServer {
 	return &IPCServer{
 		path:    path,
 		signer:  signer,
-		manager: adminproto.NewSessionManager(),
+		manager: adminserver.NewSessionManager(),
 	}
 }
 
@@ -100,8 +101,8 @@ func (s *IPCServer) offerDisplacement(newConn net.Conn) bool {
 	return s.offerDisplacementSession(identityID, s.activeIdentitySession(identityID), adminproto.NewUnixAdminConn(newConn, nil))
 }
 
-func (s *IPCServer) offerDisplacementSession(identityID string, active *adminproto.Session, newConn adminproto.AdminConn) bool {
-	confirmed, displaced := adminproto.OfferDisplacement(identityID, s.sessionManager(), active, newConn, displacementTimeout)
+func (s *IPCServer) offerDisplacementSession(identityID string, active *adminserver.Session, newConn adminproto.AdminConn) bool {
+	confirmed, displaced := adminserver.OfferDisplacement(identityID, s.sessionManager(), active, newConn, displacementTimeout)
 	if displaced {
 		logWarnf("existing apadmin client displaced by new connection")
 	}
@@ -114,13 +115,13 @@ func (s *IPCServer) handleClient(conn net.Conn) {
 }
 
 func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport, authMethod, preboundIdentityID string) {
-	session := adminproto.NewSession(adminConn, s.signer.adminSessionDeps())
+	session := adminserver.NewSession(adminConn, s.signer.adminSessionDeps())
 	session.SetAuthMethod(authMethod)
 	session.SetTransportInfo(transport, adminConn.RemoteAddr())
 	session.SetPreboundIdentityID(preboundIdentityID)
 
 	pendingIdentityID := preboundIdentityID
-	var active *adminproto.Session
+	var active *adminserver.Session
 	var ok bool
 	if pendingIdentityID != "" {
 		ok = s.sessionManager().RegisterPending(pendingIdentityID, session)
@@ -149,7 +150,7 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport
 	s.handleRegisteredClient(session, transport, preboundIdentityID)
 }
 
-func (s *IPCServer) handleRegisteredClient(session *adminproto.Session, transport, preboundIdentityID string) {
+func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transport, preboundIdentityID string) {
 	// Track whether we successfully authenticated (for cleanup logic)
 	authenticated := false
 	adminConn := session.Conn()
@@ -191,8 +192,8 @@ func (s *IPCServer) handleRegisteredClient(session *adminproto.Session, transpor
 	// Authenticate the client before allowing normal operations. A fresh store
 	// can also handle one local initialize request before passphrase auth exists.
 	switch session.AuthenticateOutcome() {
-	case adminproto.AuthOutcomeAuthenticated:
-	case adminproto.AuthOutcomeBootstrapHandled:
+	case adminserver.AuthOutcomeAuthenticated:
+	case adminserver.AuthOutcomeBootstrapHandled:
 		return
 	default:
 		logWarnf("%s client authentication failed", strings.ToUpper(transport))
@@ -261,7 +262,7 @@ func (s *IPCServer) SendSignRequest(identityID string, req *signerapproval.SignR
 	if active == nil {
 		return false
 	}
-	return active.WriteJSON(adminproto.ProtocolSignRequestMessage(*req)) == nil
+	return active.WriteJSON(adminserver.ProtocolSignRequestMessage(*req)) == nil
 }
 
 // SendSignRequestCanceled tells the IPC client that a previously delivered
@@ -271,7 +272,7 @@ func (s *IPCServer) SendSignRequestCanceled(identityID string, msg *signerapprov
 	if active == nil || msg == nil {
 		return false
 	}
-	return active.WriteJSON(adminproto.ProtocolSignRequestCanceledMessage(*msg)) == nil
+	return active.WriteJSON(adminserver.ProtocolSignRequestCanceledMessage(*msg)) == nil
 }
 
 // SendTokenProvisioningRequest sends a token provisioning request to the IPC client.
@@ -280,13 +281,13 @@ func (s *IPCServer) SendTokenProvisioningRequest(identityID string, req *signera
 	if active == nil {
 		return false
 	}
-	return active.WriteJSON(adminproto.ProtocolTokenProvisioningRequestMessage(*req)) == nil
+	return active.WriteJSON(adminserver.ProtocolTokenProvisioningRequestMessage(*req)) == nil
 }
 
 // NotifyLocked sends a signer_locked notification to the connected IPC client.
 // This allows apadmin to transition to the unlock screen when the signer locks.
 func (s *IPCServer) NotifyLocked(identityID string, notification adminproto.SignerLockedNotification) {
-	msg := adminproto.ProtocolSignerLockedMessage(notification)
+	msg := adminserver.ProtocolSignerLockedMessage(notification)
 	active := s.activeIdentitySession(identityID)
 	if active == nil {
 		return
@@ -297,7 +298,7 @@ func (s *IPCServer) NotifyLocked(identityID string, notification adminproto.Sign
 // NotifyKeysChanged sends a keys_changed notification to the connected IPC client.
 // This allows apadmin to refresh its key list when keys are added/removed.
 func (s *IPCServer) NotifyKeysChanged(identityID string, notification adminproto.KeysChangedNotification) {
-	msg := adminproto.ProtocolKeysChangedMessage(notification)
+	msg := adminserver.ProtocolKeysChangedMessage(notification)
 	active := s.activeIdentitySession(identityID)
 	if active == nil {
 		return
@@ -305,24 +306,24 @@ func (s *IPCServer) NotifyKeysChanged(identityID string, notification adminproto
 	_ = active.WriteJSON(msg) // Best-effort notification
 }
 
-func (s *IPCServer) sessionManager() *adminproto.SessionManager {
+func (s *IPCServer) sessionManager() *adminserver.SessionManager {
 	if s.manager == nil {
-		s.manager = adminproto.NewSessionManager()
+		s.manager = adminserver.NewSessionManager()
 	}
 	return s.manager
 }
 
 // activeSession is a product-mode compatibility helper for legacy tests and
 // local IPC call sites that have not selected an identity explicitly.
-func (s *IPCServer) activeSession() *adminproto.Session {
+func (s *IPCServer) activeSession() *adminserver.Session {
 	return s.activeIdentitySession(auth.CurrentProductIdentityID())
 }
 
-func (s *IPCServer) activeIdentitySession(identityID string) *adminproto.Session {
+func (s *IPCServer) activeIdentitySession(identityID string) *adminserver.Session {
 	return s.sessionManager().ActiveSession(identityID)
 }
 
-func (s *IPCServer) clearPendingSession(identityID string, session *adminproto.Session) {
+func (s *IPCServer) clearPendingSession(identityID string, session *adminserver.Session) {
 	s.sessionManager().ClearPreAuthPending(session)
 	if identityID != "" {
 		s.sessionManager().ClearPending(identityID, session)

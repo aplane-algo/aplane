@@ -20,9 +20,6 @@ const modulePrefix = "github.com/aplane-algo/aplane"
 // new package belongs under internal/signerapp, or the type it needs belongs
 // in a neutral leaf package.
 var signerappExceptions = map[string]string{
-	// Carries dispatch/session logic awaiting the wire-types/server-logic
-	// split; service interfaces still thread *identity.Runtime.
-	modulePrefix + "/internal/adminproto": "pending adminproto wire/server split",
 	// The signer's own TUI; signer-owned but not yet relocated, pending the
 	// god-model split.
 	modulePrefix + "/internal/signertui": "signer-owned TUI, relocation deferred",

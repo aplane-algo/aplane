@@ -4,6 +4,7 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"os"
 	"testing"
 	"time"
@@ -27,9 +28,9 @@ func TestSSHPreboundAdminSessionDefaultsToSSHIdentityInDaemon(t *testing.T) {
 	alice := registerAdditionalAdminTestIdentity(t, server, "alice")
 	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `"}` + "\n"
 	conn := newIPCMockConn(authLine, "ssh:remote")
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ssh-passphrase")
-	session.SetTransportInfo(adminproto.TransportSSH, "ssh:remote")
+	session.SetTransportInfo(adminserver.TransportSSH, "ssh:remote")
 	session.SetPreboundIdentityID("alice")
 
 	if !session.Authenticate() {
@@ -48,8 +49,8 @@ func TestSSHPreboundAdminSessionDefaultsToSSHIdentityInDaemon(t *testing.T) {
 	if sessionCtx.TargetIdentityID != "alice" {
 		t.Fatalf("SessionContext().TargetIdentityID = %q, want alice", sessionCtx.TargetIdentityID)
 	}
-	if sessionCtx.Transport != adminproto.TransportSSH {
-		t.Fatalf("SessionContext().Transport = %q, want %q", sessionCtx.Transport, adminproto.TransportSSH)
+	if sessionCtx.Transport != adminserver.TransportSSH {
+		t.Fatalf("SessionContext().Transport = %q, want %q", sessionCtx.Transport, adminserver.TransportSSH)
 	}
 	if sessionCtx.AuthMethod != "ssh-passphrase" {
 		t.Fatalf("SessionContext().AuthMethod = %q, want ssh-passphrase", sessionCtx.AuthMethod)
@@ -76,9 +77,9 @@ func TestSSHPreboundAdminSessionRejectsPayloadIdentitySwitchInDaemon(t *testing.
 	bob := registerAdditionalAdminTestIdentity(t, server, "bob")
 	authLine := `{"kind":"request","type":"auth","identity_id":"bob","passphrase":"` + string(testPassphrase) + `"}` + "\n"
 	conn := newIPCMockConn(authLine, "ssh:remote")
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ssh-passphrase")
-	session.SetTransportInfo(adminproto.TransportSSH, "ssh:remote")
+	session.SetTransportInfo(adminserver.TransportSSH, "ssh:remote")
 	session.SetPreboundIdentityID("alice")
 
 	if session.Authenticate() {

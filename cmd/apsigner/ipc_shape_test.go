@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 
 	authLine := `{"type":"auth","passphrase":"` + string(testPassphrase) + `"}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
-	session := adminproto.NewSession(
+	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine))),
 		server.adminSessionDeps(),
 	)
@@ -64,7 +65,7 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 
 	authLine := `{"kind":"request","type":"auth","passphrase":"` + string(testPassphrase) + `"}` + "\n"
 	recorder := &ipcJSONRecorderConn{}
-	session := adminproto.NewSession(
+	session := adminserver.NewSession(
 		adminproto.NewUnixAdminConn(recorder, bufio.NewReader(strings.NewReader(authLine))),
 		server.adminSessionDeps(),
 	)
@@ -163,7 +164,7 @@ func TestHandleListKeysRejectsUnboundSession(t *testing.T) {
 	defer cleanup()
 
 	recorder := &ipcJSONRecorderConn{}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(recorder, bufio.NewReader(bytes.NewReader(nil))), server.adminSessionDeps())
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(recorder, bufio.NewReader(bytes.NewReader(nil))), server.adminSessionDeps())
 	session.Bind(&auth.Identity{ID: "other-identity", Type: "service", Method: "test"}, nil)
 	session.HandleListKeys("req-1")
 
@@ -277,8 +278,8 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	if connected.AdminSessionID == "" {
 		t.Fatal("connected admin_session_id is empty")
 	}
-	if connected.Transport != adminproto.TransportIPC {
-		t.Fatalf("connected transport = %q, want %q", connected.Transport, adminproto.TransportIPC)
+	if connected.Transport != adminserver.TransportIPC {
+		t.Fatalf("connected transport = %q, want %q", connected.Transport, adminserver.TransportIPC)
 	}
 	if connected.TargetIdentityID != auth.CurrentProductIdentityID() {
 		t.Fatalf("connected target_identity_id = %q, want %q", connected.TargetIdentityID, auth.CurrentProductIdentityID())
@@ -297,8 +298,8 @@ func TestHandleClientAuditsIPCSessionLifecycle(t *testing.T) {
 	if disconnected.AdminSessionID != connected.AdminSessionID {
 		t.Fatalf("disconnected admin_session_id = %q, want %q", disconnected.AdminSessionID, connected.AdminSessionID)
 	}
-	if disconnected.Transport != adminproto.TransportIPC {
-		t.Fatalf("disconnected transport = %q, want %q", disconnected.Transport, adminproto.TransportIPC)
+	if disconnected.Transport != adminserver.TransportIPC {
+		t.Fatalf("disconnected transport = %q, want %q", disconnected.Transport, adminserver.TransportIPC)
 	}
 	if disconnected.TargetIdentityID != auth.CurrentProductIdentityID() {
 		t.Fatalf("disconnected target_identity_id = %q, want %q", disconnected.TargetIdentityID, auth.CurrentProductIdentityID())
@@ -314,7 +315,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 	conn := newIPCMockConn(authLine+unknownLine, "unix:/tmp/test-ipc.sock")
 
 	ipcServer := &IPCServer{signer: server}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, nil), server.adminSessionDeps())
 	session.SetAuthMethod("ipc-passphrase")
 	if !ipcServer.sessionManager().RegisterPreAuthPending(session) {
 		t.Fatal("RegisterPreAuthPending() = false, want true")
@@ -342,7 +343,7 @@ func TestHandleRegisteredClientReturnsGenericErrorForUnknownMessageType(t *testi
 
 func TestIPCConnWriteJSONSerializesConcurrentWriters(t *testing.T) {
 	conn := &interleavingRecorderConn{}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(conn, bufio.NewReader(bytes.NewReader(nil))), adminproto.SessionDeps{})
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(conn, bufio.NewReader(bytes.NewReader(nil))), adminserver.SessionDeps{})
 
 	msgA := protocol.ErrorMessage{
 		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeError, ID: "a"},

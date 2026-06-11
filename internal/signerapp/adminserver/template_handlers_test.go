@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package adminproto
+package adminserver
 
 import (
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -21,33 +22,33 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 	ir.SetUnlocked()
 
 	svc := &stubServices{
-		listLibraryResult: ListLibraryTemplatesResult{
-			Templates: []LibraryTemplateInfo{{
+		listLibraryResult: adminproto.ListLibraryTemplatesResult{
+			Templates: []adminproto.LibraryTemplateInfo{{
 				KeyType:      "aplane.timed-whitelist.v1",
 				TemplateType: "generic",
 				DisplayName:  "Timed Whitelist",
 			}},
 		},
-		installResult: InstallLibraryTemplateResult{
+		installResult: adminproto.InstallLibraryTemplateResult{
 			Success:      true,
 			KeyType:      "aplane.timed-whitelist.v1",
 			TemplateType: "generic",
 		},
-		listInstalledResult: ListInstalledTemplatesResult{
-			Templates: []InstalledTemplateInfo{{
+		listInstalledResult: adminproto.ListInstalledTemplatesResult{
+			Templates: []adminproto.InstalledTemplateInfo{{
 				KeyType:      "escrow-v1",
 				TemplateType: "generic",
 				Size:         123,
 				Enabled:      true,
 			}},
 		},
-		showInstalledResult: ShowInstalledTemplateResult{
+		showInstalledResult: adminproto.ShowInstalledTemplateResult{
 			Success:      true,
 			KeyType:      "escrow-v1",
 			TemplateType: "generic",
 			TemplateYAML: []byte("schema_version: 1\n"),
 		},
-		showLibraryResult: ShowLibraryTemplateResult{
+		showLibraryResult: adminproto.ShowLibraryTemplateResult{
 			Success:       true,
 			KeyType:       "aplane.timed-whitelist.v1",
 			TemplateType:  "generic",
@@ -56,27 +57,27 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 			SourceModTime: 1778600000,
 			TemplateYAML:  []byte("schema_version: 1\n"),
 		},
-		importInstalledResult: ImportInstalledTemplateResult{
+		importInstalledResult: adminproto.ImportInstalledTemplateResult{
 			Success:      true,
 			KeyType:      "escrow-v1",
 			TemplateType: "generic",
 		},
-		removeInstalledResult: RemoveInstalledTemplateResult{
+		removeInstalledResult: adminproto.RemoveInstalledTemplateResult{
 			Success:      true,
 			KeyType:      "escrow-v1",
 			TemplateType: "generic",
 			Removed:      true,
 		},
-		activateResult: ActivateKeyTypeResult{
+		activateResult: adminproto.ActivateKeyTypeResult{
 			Success: true,
 			KeyType: "aplane.falcon1024_ed25519.v1",
 		},
-		deactivateResult: DeactivateKeyTypeResult{
+		deactivateResult: adminproto.DeactivateKeyTypeResult{
 			Success: true,
 			KeyType: "aplane.falcon1024_ed25519.v1",
 			Removed: true,
 		},
-		keyTypesResult: ListKeyTypesResult{
+		keyTypesResult: adminproto.ListKeyTypesResult{
 			KeyTypes: []signerapi.KeyTypeInfo{{
 				KeyType:     "aplane.timed-whitelist.v1",
 				DisplayName: "Timed Whitelist",
@@ -312,7 +313,7 @@ func TestListKeyTypesOnlyRequiresBoundRuntime(t *testing.T) {
 	})
 
 	svc := &stubServices{
-		keyTypesResult: ListKeyTypesResult{
+		keyTypesResult: adminproto.ListKeyTypesResult{
 			KeyTypes: []signerapi.KeyTypeInfo{{KeyType: "ed25519"}},
 		},
 	}

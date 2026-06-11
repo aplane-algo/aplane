@@ -6,12 +6,12 @@ package audit
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 )
 
@@ -249,11 +249,11 @@ func identityAuditFields(identityID string) AuditEntry {
 	}
 }
 
-func sessionPrincipalID(p adminproto.SessionPrincipal) string {
+func sessionPrincipalID(p adminserver.SessionPrincipal) string {
 	return p.ID
 }
 
-func sessionAuditFields(ctx adminproto.SessionContext) AuditEntry {
+func sessionAuditFields(ctx adminserver.SessionContext) AuditEntry {
 	principal := sessionPrincipalID(ctx.AdminPrincipal)
 	requester := sessionPrincipalID(ctx.RequesterPrincipal)
 	approver := sessionPrincipalID(ctx.ApproverPrincipal)
@@ -394,7 +394,7 @@ func (a *AuditLogger) LogAuthFailed(identityID, remoteAddr, reason string) {
 }
 
 // LogAuthorizationDenied logs an authorization denial for an authenticated admin session.
-func (a *AuditLogger) LogAuthorizationDenied(ctx adminproto.SessionContext, action auth.Action, resource auth.Resource, reason string) {
+func (a *AuditLogger) LogAuthorizationDenied(ctx adminserver.SessionContext, action auth.Action, resource auth.Resource, reason string) {
 	entry := sessionAuditFields(ctx)
 	if resource.IdentityID != "" {
 		entry.IdentityID = resource.IdentityID
@@ -452,7 +452,7 @@ func (a *AuditLogger) LogSessionConnected(identityID, remoteAddr, user string) {
 }
 
 // LogSessionConnectedContext logs a structured admin session connection.
-func (a *AuditLogger) LogSessionConnectedContext(ctx adminproto.SessionContext) {
+func (a *AuditLogger) LogSessionConnectedContext(ctx adminserver.SessionContext) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditSessionConnected
 	entry.Outcome = "connected"
@@ -470,7 +470,7 @@ func (a *AuditLogger) LogSessionDisconnected(identityID, remoteAddr, user string
 }
 
 // LogSessionDisconnectedContext logs a structured admin session disconnection.
-func (a *AuditLogger) LogSessionDisconnectedContext(ctx adminproto.SessionContext) {
+func (a *AuditLogger) LogSessionDisconnectedContext(ctx adminserver.SessionContext) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditSessionDisconnected
 	entry.Outcome = "disconnected"
@@ -478,7 +478,7 @@ func (a *AuditLogger) LogSessionDisconnectedContext(ctx adminproto.SessionContex
 }
 
 // LogIdentityLockedContext logs an explicit admin lock request for an identity.
-func (a *AuditLogger) LogIdentityLockedContext(ctx adminproto.SessionContext, reason string) {
+func (a *AuditLogger) LogIdentityLockedContext(ctx adminserver.SessionContext, reason string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditIdentityLocked
 	entry.Outcome = "locked"
@@ -546,7 +546,7 @@ func (a *AuditLogger) LogKeyRejected(identityID, keyFile, reason string) {
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogBackupCreatedContext(ctx adminproto.SessionContext, archivePath string) {
+func (a *AuditLogger) LogBackupCreatedContext(ctx adminserver.SessionContext, archivePath string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupCreated
 	entry.Outcome = "created"
@@ -554,7 +554,7 @@ func (a *AuditLogger) LogBackupCreatedContext(ctx adminproto.SessionContext, arc
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogBackupFailedContext(ctx adminproto.SessionContext, reason string) {
+func (a *AuditLogger) LogBackupFailedContext(ctx adminserver.SessionContext, reason string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupFailed
 	entry.Outcome = "failed"
@@ -562,7 +562,7 @@ func (a *AuditLogger) LogBackupFailedContext(ctx adminproto.SessionContext, reas
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogBackupRestorePreviewedContext(ctx adminproto.SessionContext, archivePath string, keyCount int) {
+func (a *AuditLogger) LogBackupRestorePreviewedContext(ctx adminserver.SessionContext, archivePath string, keyCount int) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupRestorePreviewed
 	entry.Outcome = "previewed"
@@ -571,7 +571,7 @@ func (a *AuditLogger) LogBackupRestorePreviewedContext(ctx adminproto.SessionCon
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogBackupRestorePreviewFailedContext(ctx adminproto.SessionContext, reason string) {
+func (a *AuditLogger) LogBackupRestorePreviewFailedContext(ctx adminserver.SessionContext, reason string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupRestorePreviewFailed
 	entry.Outcome = "failed"
@@ -579,7 +579,7 @@ func (a *AuditLogger) LogBackupRestorePreviewFailedContext(ctx adminproto.Sessio
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogBackupRestoreStartedContext(ctx adminproto.SessionContext, archivePath string, selectedCount int) {
+func (a *AuditLogger) LogBackupRestoreStartedContext(ctx adminserver.SessionContext, archivePath string, selectedCount int) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupRestoreStarted
 	entry.Outcome = "started"
@@ -588,7 +588,7 @@ func (a *AuditLogger) LogBackupRestoreStartedContext(ctx adminproto.SessionConte
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogBackupRestoreCompletedContext(ctx adminproto.SessionContext, archivePath string, restoredCount int) {
+func (a *AuditLogger) LogBackupRestoreCompletedContext(ctx adminserver.SessionContext, archivePath string, restoredCount int) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupRestoreCompleted
 	entry.Outcome = "completed"
@@ -597,7 +597,7 @@ func (a *AuditLogger) LogBackupRestoreCompletedContext(ctx adminproto.SessionCon
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogBackupRestorePartialContext(ctx adminproto.SessionContext, archivePath string, restoredCount, failedCount int) {
+func (a *AuditLogger) LogBackupRestorePartialContext(ctx adminserver.SessionContext, archivePath string, restoredCount, failedCount int) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupRestorePartial
 	entry.Outcome = "partial"
@@ -606,7 +606,7 @@ func (a *AuditLogger) LogBackupRestorePartialContext(ctx adminproto.SessionConte
 	a.Log(entry)
 }
 
-func (a *AuditLogger) LogBackupRestoreFailedContext(ctx adminproto.SessionContext, reason string) {
+func (a *AuditLogger) LogBackupRestoreFailedContext(ctx adminserver.SessionContext, reason string) {
 	entry := sessionAuditFields(ctx)
 	entry.Event = AuditBackupRestoreFailed
 	entry.Outcome = "failed"

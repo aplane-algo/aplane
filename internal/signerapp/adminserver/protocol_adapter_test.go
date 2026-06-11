@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package adminproto
+package adminserver
 
 import (
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 func TestProtocolKeyDetailsMessageIncludesPublicKey(t *testing.T) {
-	msg := ProtocolKeyDetailsMessage("details-1", GetKeyDetailsResult{
+	msg := ProtocolKeyDetailsMessage("details-1", adminproto.GetKeyDetailsResult{
 		Success:      true,
 		Address:      "ADDR",
 		KeyType:      "aplane.sentry-ed25519.v1",

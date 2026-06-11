@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package adminproto
+package adminserver
 
 import (
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -11,7 +12,7 @@ import (
 
 // OfferDisplacement sends a client_exists message to newConn and waits for a
 // displace_confirm response. If confirmed, it clears and closes active.
-func OfferDisplacement(identityID string, manager *SessionManager, active *Session, newConn AdminConn, timeout time.Duration) (confirmed bool, displaced bool) {
+func OfferDisplacement(identityID string, manager *SessionManager, active *Session, newConn adminproto.AdminConn, timeout time.Duration) (confirmed bool, displaced bool) {
 	reject := func() (bool, bool) {
 		_ = newConn.Close()
 		return false, false
@@ -69,7 +70,7 @@ func OfferDisplacement(identityID string, manager *SessionManager, active *Sessi
 	return true, false
 }
 
-func writeJSONMessage(conn AdminConn, v interface{}) error {
+func writeJSONMessage(conn adminproto.AdminConn, v interface{}) error {
 	data, err := protocol.MarshalAdminMessage(v)
 	if err != nil {
 		return err

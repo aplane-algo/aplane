@@ -4,6 +4,7 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"sync"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 func addActiveIdentitySession(t *testing.T, server *IPCServer, identityID string) *ipcJSONRecorderConn {
 	t.Helper()
 	recorder := &ipcJSONRecorderConn{}
-	session := adminproto.NewSession(adminproto.NewUnixAdminConn(recorder, nil), adminproto.SessionDeps{})
+	session := adminserver.NewSession(adminproto.NewUnixAdminConn(recorder, nil), adminserver.SessionDeps{})
 	if !server.sessionManager().RegisterPending(identityID, session) {
 		t.Fatalf("RegisterPending(%q) = false, want true", identityID)
 	}
@@ -26,7 +27,7 @@ func addActiveIdentitySession(t *testing.T, server *IPCServer, identityID string
 }
 
 func TestIPCSendSignRequestRoutesOnlyToTargetIdentity(t *testing.T) {
-	ipcServer := &IPCServer{manager: adminproto.NewSessionManager()}
+	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	alice := addActiveIdentitySession(t, ipcServer, "alice")
 	bob := addActiveIdentitySession(t, ipcServer, "bob")
 
@@ -51,7 +52,7 @@ func TestIPCSendSignRequestRoutesOnlyToTargetIdentity(t *testing.T) {
 }
 
 func TestIPCTokenProvisioningRoutesOnlyToTargetIdentity(t *testing.T) {
-	ipcServer := &IPCServer{manager: adminproto.NewSessionManager()}
+	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	alice := addActiveIdentitySession(t, ipcServer, "alice")
 	bob := addActiveIdentitySession(t, ipcServer, "bob")
 
@@ -77,7 +78,7 @@ func TestIPCTokenProvisioningRoutesOnlyToTargetIdentity(t *testing.T) {
 }
 
 func TestIPCSendSignRequestCanceledRoutesOnlyToTargetIdentity(t *testing.T) {
-	ipcServer := &IPCServer{manager: adminproto.NewSessionManager()}
+	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	alice := addActiveIdentitySession(t, ipcServer, "alice")
 	bob := addActiveIdentitySession(t, ipcServer, "bob")
 
@@ -106,7 +107,7 @@ func TestIPCSendSignRequestCanceledRoutesOnlyToTargetIdentity(t *testing.T) {
 }
 
 func TestIPCNotificationsRouteOnlyToTargetIdentity(t *testing.T) {
-	ipcServer := &IPCServer{manager: adminproto.NewSessionManager()}
+	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	alice := addActiveIdentitySession(t, ipcServer, "alice")
 	bob := addActiveIdentitySession(t, ipcServer, "bob")
 
@@ -139,7 +140,7 @@ func TestIPCNotificationsRouteOnlyToTargetIdentity(t *testing.T) {
 }
 
 func TestConcurrentIPCSendSignRequestsForDifferentIdentities(t *testing.T) {
-	ipcServer := &IPCServer{manager: adminproto.NewSessionManager()}
+	ipcServer := &IPCServer{manager: adminserver.NewSessionManager()}
 	alice := addActiveIdentitySession(t, ipcServer, "alice")
 	bob := addActiveIdentitySession(t, ipcServer, "bob")
 

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package adminproto
+package adminserver
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"sync/atomic"
 
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -40,7 +41,7 @@ type SessionContext struct {
 	ApproverPrincipal  SessionPrincipal
 }
 
-func newSessionContext(method string, conn AdminConn) SessionContext {
+func newSessionContext(method string, conn adminproto.AdminConn) SessionContext {
 	return SessionContext{
 		SessionID:  newSessionID(),
 		AuthMethod: method,
@@ -53,7 +54,7 @@ func newSessionID() string {
 	return fmt.Sprintf("admin-%d", sessionIDCounter.Add(1))
 }
 
-func connRemoteAddr(conn AdminConn) string {
+func connRemoteAddr(conn adminproto.AdminConn) string {
 	if conn == nil {
 		return ""
 	}

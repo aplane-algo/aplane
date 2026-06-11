@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package adminproto
+package adminserver
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/adminproto"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -46,7 +47,7 @@ func (s *Session) HandleUpdateAdminSetting(msg *protocol.UpdateAdminSettingMessa
 	if !s.authorize(msg.ID, auth.ActionSettingsUpdate, auth.Resource{Type: "settings", IdentityID: ir.ID()}) {
 		return
 	}
-	request := UpdateAdminSettingRequest{Key: msg.Key, Value: msg.Value}
+	request := adminproto.UpdateAdminSettingRequest{Key: msg.Key, Value: msg.Value}
 	err := s.settingsServices.UpdateAdminSetting(ir, request)
 	_ = s.WriteJSON(ProtocolUpdateAdminSettingResultMessage(msg.ID, request, err))
 }
@@ -65,7 +66,7 @@ func (s *Session) HandleGetPolicySnapshot(msg *protocol.GetPolicySnapshotMessage
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
 		return
 	}
-	snapshot := s.settingsServices.BuildPolicySnapshot(ir, NormalizePolicyTarget(msg.Target))
+	snapshot := s.settingsServices.BuildPolicySnapshot(ir, adminproto.NormalizePolicyTarget(msg.Target))
 	_ = s.WriteJSON(ProtocolPolicySnapshotMessage(msg.ID, snapshot))
 }
 
@@ -74,8 +75,8 @@ func (s *Session) HandleReplacePolicy(msg *protocol.ReplacePolicyMessage) {
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.settingsServices.ReplacePolicy(ir, ReplacePolicyRequest{
-		Target:                NormalizePolicyTarget(msg.Target),
+	result := s.settingsServices.ReplacePolicy(ir, adminproto.ReplacePolicyRequest{
+		Target:                adminproto.NormalizePolicyTarget(msg.Target),
 		PolicyYAML:            msg.PolicyYAML,
 		ExpectedCurrentSHA256: msg.ExpectedCurrentSHA256,
 	})
@@ -87,8 +88,8 @@ func (s *Session) HandleValidatePolicy(msg *protocol.ValidatePolicyMessage) {
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.settingsServices.ValidatePolicy(ir, ValidatePolicyRequest{
-		Target:     NormalizePolicyTarget(msg.Target),
+	result := s.settingsServices.ValidatePolicy(ir, adminproto.ValidatePolicyRequest{
+		Target:     adminproto.NormalizePolicyTarget(msg.Target),
 		PolicyYAML: msg.PolicyYAML,
 	})
 	_ = s.WriteJSON(ProtocolValidatePolicyResultMessage(msg.ID, result))
@@ -99,7 +100,7 @@ func (s *Session) HandleUpdatePolicySetting(msg *protocol.UpdatePolicySettingMes
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
 		return
 	}
-	request := UpdatePolicySettingRequest{Key: msg.Key, Value: msg.Value}
+	request := adminproto.UpdatePolicySettingRequest{Key: msg.Key, Value: msg.Value}
 	err := s.settingsServices.UpdatePolicySetting(ir, request)
 	_ = s.WriteJSON(ProtocolUpdatePolicySettingResultMessage(msg.ID, request, err))
 }
@@ -109,7 +110,7 @@ func (s *Session) HandleUpdatePolicyASAAmounts(msg *protocol.UpdatePolicyASAAmou
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
 		return
 	}
-	err := s.settingsServices.UpdatePolicyASAAmounts(ir, UpdatePolicyASAAmountsRequest{
+	err := s.settingsServices.UpdatePolicyASAAmounts(ir, adminproto.UpdatePolicyASAAmountsRequest{
 		ReviewASAAmounts:   msg.ReviewASAAmounts,
 		MaxASAAmounts:      msg.MaxASAAmounts,
 		ReviewAlgoPayments: msg.ReviewAlgoPayments,
@@ -127,7 +128,7 @@ func (s *Session) HandleSearchASAMetadata(msg *protocol.SearchASAMetadataMessage
 	if !s.authorize(msg.ID, auth.ActionPolicyView, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.settingsServices.SearchASAMetadata(ir, SearchASAMetadataRequest{
+	result := s.settingsServices.SearchASAMetadata(ir, adminproto.SearchASAMetadataRequest{
 		Network: msg.Network,
 		Query:   msg.Query,
 	})
@@ -141,7 +142,7 @@ func (s *Session) HandleResolveASAMetadata(msg *protocol.ResolveASAMetadataMessa
 	if !s.authorize(msg.ID, auth.ActionPolicyUpdate, auth.Resource{Type: "policy", IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.settingsServices.ResolveASAMetadata(ir, ResolveASAMetadataRequest{
+	result := s.settingsServices.ResolveASAMetadata(ir, adminproto.ResolveASAMetadataRequest{
 		Network: msg.Network,
 		AssetID: msg.AssetID,
 	})
@@ -230,7 +231,7 @@ func (s *Session) HandleBackup(msg *protocol.BackupMessage) {
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
 	defer msg.ExportPassphrase.Zero()
-	result := s.backupServices.BackupIdentity(ir, BackupIdentityRequest{
+	result := s.backupServices.BackupIdentity(ir, adminproto.BackupIdentityRequest{
 		ExportPassphrase: exportPassphrase,
 		Addresses:        append([]string(nil), msg.Addresses...),
 	})
@@ -275,7 +276,7 @@ func (s *Session) HandleDeleteBackup(msg *protocol.DeleteBackupMessage) {
 		_ = s.SendError(msg.ID, "", "backup service unavailable")
 		return
 	}
-	result := s.backupServices.DeleteBackup(ir, DeleteBackupRequest{ArchivePath: msg.ArchivePath})
+	result := s.backupServices.DeleteBackup(ir, adminproto.DeleteBackupRequest{ArchivePath: msg.ArchivePath})
 	_ = s.WriteJSON(ProtocolDeleteBackupResultMessage(msg.ID, result))
 }
 
@@ -297,7 +298,7 @@ func (s *Session) HandleChangeStorePassphrase(msg *protocol.ChangeStorePassphras
 	newPassphrase := msg.NewPassphrase.Clone()
 	defer zeroBytes(currentPassphrase)
 	defer zeroBytes(newPassphrase)
-	result := s.identityServices.ChangeStorePassphrase(ir, ChangeStorePassphraseRequest{
+	result := s.identityServices.ChangeStorePassphrase(ir, adminproto.ChangeStorePassphraseRequest{
 		CurrentPassphrase: currentPassphrase,
 		NewPassphrase:     newPassphrase,
 	})
@@ -319,7 +320,7 @@ func (s *Session) HandlePreviewRestore(msg *protocol.PreviewRestoreMessage) {
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
 	defer msg.ExportPassphrase.Zero()
-	result := s.backupServices.PreviewRestore(ir, PreviewRestoreRequest{
+	result := s.backupServices.PreviewRestore(ir, adminproto.PreviewRestoreRequest{
 		ArchivePath:      msg.ArchivePath,
 		ExportPassphrase: exportPassphrase,
 	})
@@ -359,7 +360,7 @@ func (s *Session) HandleRestoreBackup(msg *protocol.RestoreBackupMessage) {
 	exportPassphrase := msg.ExportPassphrase.Clone()
 	defer zeroBytes(exportPassphrase)
 	defer msg.ExportPassphrase.Zero()
-	result := s.backupServices.RestoreBackup(ir, RestoreBackupRequest{
+	result := s.backupServices.RestoreBackup(ir, adminproto.RestoreBackupRequest{
 		ArchivePath:      msg.ArchivePath,
 		Addresses:        append([]string(nil), msg.Addresses...),
 		Overwrite:        msg.Overwrite,
@@ -409,7 +410,7 @@ func (s *Session) HandleGetKeyDetails(msg *protocol.GetKeyDetailsMessage) {
 		return
 	}
 
-	details := s.keyServices.GetKeyDetails(ir, GetKeyDetailsRequest{Address: msg.Address})
+	details := s.keyServices.GetKeyDetails(ir, adminproto.GetKeyDetailsRequest{Address: msg.Address})
 	_ = s.WriteJSON(ProtocolKeyDetailsMessage(msg.ID, details))
 }
 
@@ -433,7 +434,7 @@ func (s *Session) HandleInstallLibraryTemplate(msg *protocol.InstallLibraryTempl
 	if !s.authorize(msg.ID, auth.ActionTemplatesInstall, auth.Resource{Type: "template", ID: msg.KeyType, IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.templateServices.InstallLibraryTemplate(ir, InstallLibraryTemplateRequest{
+	result := s.templateServices.InstallLibraryTemplate(ir, adminproto.InstallLibraryTemplateRequest{
 		KeyType:      msg.KeyType,
 		TemplateType: msg.TemplateType,
 	})
@@ -460,7 +461,7 @@ func (s *Session) HandleShowInstalledTemplate(msg *protocol.ShowInstalledTemplat
 	if !s.authorize(msg.ID, auth.ActionTemplatesView, auth.Resource{Type: "template", ID: msg.KeyType, IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.templateServices.ShowInstalledTemplate(ir, ShowInstalledTemplateRequest{
+	result := s.templateServices.ShowInstalledTemplate(ir, adminproto.ShowInstalledTemplateRequest{
 		KeyType: msg.KeyType,
 	})
 	_ = s.WriteJSON(ProtocolShowInstalledTemplateResultMessage(msg.ID, result))
@@ -474,7 +475,7 @@ func (s *Session) HandleShowLibraryTemplate(msg *protocol.ShowLibraryTemplateMes
 	if !s.authorize(msg.ID, auth.ActionTemplatesView, auth.Resource{Type: "template", ID: msg.KeyType, IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.templateServices.ShowLibraryTemplate(ir, ShowLibraryTemplateRequest{
+	result := s.templateServices.ShowLibraryTemplate(ir, adminproto.ShowLibraryTemplateRequest{
 		KeyType:      msg.KeyType,
 		TemplateType: msg.TemplateType,
 	})
@@ -489,7 +490,7 @@ func (s *Session) HandleImportInstalledTemplate(msg *protocol.ImportInstalledTem
 	if !s.authorize(msg.ID, auth.ActionTemplatesInstall, auth.Resource{Type: "template", IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.templateServices.ImportInstalledTemplate(ir, ImportInstalledTemplateRequest{
+	result := s.templateServices.ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: []byte(msg.TemplateYAML),
 	})
 	_ = s.WriteJSON(ProtocolImportInstalledTemplateResultMessage(msg.ID, result))
@@ -503,7 +504,7 @@ func (s *Session) HandleRemoveInstalledTemplate(msg *protocol.RemoveInstalledTem
 	if !s.authorize(msg.ID, auth.ActionTemplatesRemove, auth.Resource{Type: "template", ID: msg.KeyType, IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.templateServices.RemoveInstalledTemplate(ir, RemoveInstalledTemplateRequest{
+	result := s.templateServices.RemoveInstalledTemplate(ir, adminproto.RemoveInstalledTemplateRequest{
 		KeyType: msg.KeyType,
 	})
 	_ = s.WriteJSON(ProtocolRemoveInstalledTemplateResultMessage(msg.ID, result))
@@ -517,7 +518,7 @@ func (s *Session) HandleActivateKeyType(msg *protocol.ActivateKeyTypeMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeyTypesActivate, auth.Resource{Type: "keytype", ID: msg.KeyType, IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.templateServices.ActivateKeyType(ir, ActivateKeyTypeRequest{
+	result := s.templateServices.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
 		KeyType: msg.KeyType,
 	})
 	_ = s.WriteJSON(ProtocolActivateKeyTypeResultMessage(msg.ID, result))
@@ -531,7 +532,7 @@ func (s *Session) HandleDeactivateKeyType(msg *protocol.DeactivateKeyTypeMessage
 	if !s.authorize(msg.ID, auth.ActionKeyTypesDeactivate, auth.Resource{Type: "keytype", ID: msg.KeyType, IdentityID: ir.ID()}) {
 		return
 	}
-	result := s.templateServices.DeactivateKeyType(ir, DeactivateKeyTypeRequest{
+	result := s.templateServices.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{
 		KeyType: msg.KeyType,
 	})
 	_ = s.WriteJSON(ProtocolDeactivateKeyTypeResultMessage(msg.ID, result))
@@ -590,7 +591,7 @@ func (s *Session) HandleGenerateKey(msg *protocol.GenerateKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysGenerate, resource) {
 		return
 	}
-	gen := s.keyServices.GenerateKey(s.Context(), ir, GenerateKeyRequest{
+	gen := s.keyServices.GenerateKey(s.Context(), ir, adminproto.GenerateKeyRequest{
 		KeyType:    msg.KeyType,
 		Name:       msg.Name,
 		Parameters: msg.Parameters,
@@ -606,7 +607,7 @@ func (s *Session) HandleDeleteKey(msg *protocol.DeleteKeyMessage) {
 	if !s.authorize(msg.ID, auth.ActionKeysDelete, auth.Resource{Type: "key", ID: msg.Address, IdentityID: ir.ID()}) {
 		return
 	}
-	del := s.keyServices.DeleteKey(ir, DeleteKeyRequest{Address: msg.Address})
+	del := s.keyServices.DeleteKey(ir, adminproto.DeleteKeyRequest{Address: msg.Address})
 	_ = s.WriteJSON(ProtocolDeleteResultMessage(msg.ID, del))
 }
 
@@ -637,7 +638,7 @@ func (s *Session) HandleImportKey(msg *protocol.ImportKeyMessage) {
 	if !s.requireLocalImportTransport(msg.ID, auth.ActionKeysImport, resource) {
 		return
 	}
-	imp := s.keyServices.ImportKey(ir, ImportKeyRequest{
+	imp := s.keyServices.ImportKey(ir, adminproto.ImportKeyRequest{
 		KeyType:    msg.KeyType,
 		Mnemonic:   msg.Mnemonic,
 		Parameters: msg.Parameters,

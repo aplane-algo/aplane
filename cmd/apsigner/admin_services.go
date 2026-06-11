@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -33,12 +34,12 @@ func (fs *Signer) adminServices() signerAdminServices {
 	return signerAdminServices{signer: fs}
 }
 
-func (fs *Signer) adminSessionDeps() adminproto.SessionDeps {
+func (fs *Signer) adminSessionDeps() adminserver.SessionDeps {
 	if fs == nil {
-		return adminproto.SessionDeps{}
+		return adminserver.SessionDeps{}
 	}
 	svc := fs.adminServices()
-	return adminproto.SessionDeps{
+	return adminserver.SessionDeps{
 		Identity:   svc,
 		Settings:   svc,
 		Keys:       svc,
@@ -93,7 +94,7 @@ func (s signerAdminServices) NewSessionIdentity(method string) *auth.Identity {
 	return authz.NewProductPrincipalIdentity(method)
 }
 
-func (s signerAdminServices) LogAuthorizationDenied(ctx adminproto.SessionContext, action auth.Action, resource auth.Resource, reason string) {
+func (s signerAdminServices) LogAuthorizationDenied(ctx adminserver.SessionContext, action auth.Action, resource auth.Resource, reason string) {
 	if s.signer == nil || s.signer.auditLog == nil {
 		return
 	}
@@ -291,13 +292,13 @@ func (s signerAdminServices) LogSessionDisconnected(identityID, remoteAddr, tran
 	}
 }
 
-func (s signerAdminServices) LogSessionConnectedContext(ctx adminproto.SessionContext) {
+func (s signerAdminServices) LogSessionConnectedContext(ctx adminserver.SessionContext) {
 	if s.signer.auditLog != nil {
 		s.signer.auditLog.LogSessionConnectedContext(ctx)
 	}
 }
 
-func (s signerAdminServices) LogSessionDisconnectedContext(ctx adminproto.SessionContext) {
+func (s signerAdminServices) LogSessionDisconnectedContext(ctx adminserver.SessionContext) {
 	if s.signer.auditLog != nil {
 		s.signer.auditLog.LogSessionDisconnectedContext(ctx)
 	}

@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -166,18 +166,18 @@ func TestAuditSessionContextAttribution(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	ctx := adminproto.SessionContext{
+	ctx := adminserver.SessionContext{
 		SessionID:        "admin-42",
 		TargetIdentityID: "alice",
-		Transport:        adminproto.TransportSSH,
+		Transport:        adminserver.TransportSSH,
 		RemoteAddr:       "10.0.0.1:2222",
-		AdminPrincipal: adminproto.SessionPrincipal{
+		AdminPrincipal: adminserver.SessionPrincipal{
 			ID:     "alice-admin",
 			Type:   "service",
 			Method: "ssh-passphrase",
 		},
-		RequesterPrincipal: adminproto.SessionPrincipal{ID: "requester"},
-		ApproverPrincipal:  adminproto.SessionPrincipal{ID: "approver"},
+		RequesterPrincipal: adminserver.SessionPrincipal{ID: "requester"},
+		ApproverPrincipal:  adminserver.SessionPrincipal{ID: "approver"},
 	}
 	logger.LogSessionConnectedContext(ctx)
 	logger.LogSessionDisconnectedContext(ctx)
@@ -193,7 +193,7 @@ func TestAuditSessionContextAttribution(t *testing.T) {
 		if entry.Principal != "alice-admin" || entry.RequesterPrincipal != "requester" || entry.ApproverPrincipal != "approver" {
 			t.Fatalf("session principal attribution = %#v", entry)
 		}
-		if entry.AdminSessionID != "admin-42" || entry.Transport != adminproto.TransportSSH || entry.RemoteAddr != "10.0.0.1:2222" {
+		if entry.AdminSessionID != "admin-42" || entry.Transport != adminserver.TransportSSH || entry.RemoteAddr != "10.0.0.1:2222" {
 			t.Fatalf("session transport attribution = %#v", entry)
 		}
 	}
@@ -210,12 +210,12 @@ func TestAuditAuthorizationDeniedCarriesSessionAndActionContext(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	ctx := adminproto.SessionContext{
+	ctx := adminserver.SessionContext{
 		SessionID:        "admin-42",
 		TargetIdentityID: "alice",
-		Transport:        adminproto.TransportSSH,
+		Transport:        adminserver.TransportSSH,
 		RemoteAddr:       "10.0.0.1:2222",
-		AdminPrincipal:   adminproto.SessionPrincipal{ID: "alice-admin"},
+		AdminPrincipal:   adminserver.SessionPrincipal{ID: "alice-admin"},
 	}
 	logger.LogAuthorizationDenied(ctx, auth.ActionKeysDelete, auth.Resource{
 		Type:       "key",
@@ -237,7 +237,7 @@ func TestAuditAuthorizationDeniedCarriesSessionAndActionContext(t *testing.T) {
 	if entry.Principal != "alice-admin" || entry.RequesterPrincipal != "alice-admin" {
 		t.Fatalf("entry principal fields = %#v, want alice-admin", entry)
 	}
-	if entry.AdminSessionID != "admin-42" || entry.Transport != adminproto.TransportSSH || entry.RemoteAddr != "10.0.0.1:2222" {
+	if entry.AdminSessionID != "admin-42" || entry.Transport != adminserver.TransportSSH || entry.RemoteAddr != "10.0.0.1:2222" {
 		t.Fatalf("entry session fields = %#v", entry)
 	}
 	for _, want := range []string{"action=keys.delete", "resource_type=key", "resource_id=ADDR", "reason=forbidden"} {

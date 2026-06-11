@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"testing"
 	"time"
@@ -43,7 +44,7 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 
 			ipcServer := &IPCServer{
 				signer:  signer,
-				manager: adminproto.NewSessionManager(),
+				manager: adminserver.NewSessionManager(),
 			}
 			signer.ipcServer = ipcServer
 
@@ -55,7 +56,7 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 				defer close(done)
 				ipcServer.acceptAdminSession(
 					adminproto.NewUnixAdminConn(serverConn, nil),
-					adminproto.TransportIPC,
+					adminserver.TransportIPC,
 					"ipc-passphrase",
 					"",
 				)

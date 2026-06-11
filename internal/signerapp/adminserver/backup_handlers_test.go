@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package adminproto
+package adminserver
 
 import (
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -20,12 +21,12 @@ func TestBackupRestoreMessagesDispatchToBackupServices(t *testing.T) {
 	ir.SetUnlocked()
 
 	svc := &stubServices{
-		backupResult: BackupIdentityResult{
+		backupResult: adminproto.BackupIdentityResult{
 			Success:     true,
 			ArchivePath: "/data/identities/default/backups/backup.tar.gz",
 		},
-		listBackupsResult: ListBackupsResult{
-			Backups: []BackupInfo{{
+		listBackupsResult: adminproto.ListBackupsResult{
+			Backups: []adminproto.BackupInfo{{
 				Path:      "/data/identities/default/backups/backup.tar.gz",
 				FileName:  "backup.tar.gz",
 				CreatedAt: 1710000000,
@@ -34,23 +35,23 @@ func TestBackupRestoreMessagesDispatchToBackupServices(t *testing.T) {
 				Verified:  true,
 			}},
 		},
-		deleteBackupResult: DeleteBackupResult{Success: true},
-		previewRestoreResult: RestorePreviewResult{
+		deleteBackupResult: adminproto.DeleteBackupResult{Success: true},
+		previewRestoreResult: adminproto.RestorePreviewResult{
 			ArchivePath: "/data/identities/default/backups/backup.tar.gz",
-			Keys: []RestoreKeyInfo{{
+			Keys: []adminproto.RestoreKeyInfo{{
 				Address:       "ADDR1",
 				KeyType:       "ed25519",
 				AlreadyExists: true,
 			}},
 		},
-		restoreBackupResult: RestoreBackupResult{
+		restoreBackupResult: adminproto.RestoreBackupResult{
 			ArchivePath: "/data/identities/default/backups/backup.tar.gz",
 			Success:     true,
-			Restored: []RestoreKeyInfo{{
+			Restored: []adminproto.RestoreKeyInfo{{
 				Address: "ADDR1",
 				KeyType: "ed25519",
 			}},
-			Warnings: []RestoreWarning{{
+			Warnings: []adminproto.RestoreWarning{{
 				Address: "ADDR1",
 				KeyType: "aplane.timed-whitelist.v1",
 				Warning: "skipped bundled template for aplane.timed-whitelist.v1: backup template conflicts with existing keystore definition",
@@ -255,8 +256,8 @@ func TestRestoreHandlersZeroProtocolPassphrases(t *testing.T) {
 	ir.SetUnlocked()
 
 	svc := &stubServices{
-		previewRestoreResult: RestorePreviewResult{ArchivePath: "backup.tar.gz"},
-		restoreBackupResult:  RestoreBackupResult{ArchivePath: "backup.tar.gz", Success: true},
+		previewRestoreResult: adminproto.RestorePreviewResult{ArchivePath: "backup.tar.gz"},
+		restoreBackupResult:  adminproto.RestoreBackupResult{ArchivePath: "backup.tar.gz", Success: true},
 	}
 	conn := &queueConn{}
 	session := NewSession(conn, svc.backupDeps())
@@ -293,7 +294,7 @@ func TestBackupHandlerZeroesProtocolPassphrase(t *testing.T) {
 	ir.SetUnlocked()
 
 	svc := &stubServices{
-		backupResult: BackupIdentityResult{ArchivePath: "backup.tar.gz", Success: true},
+		backupResult: adminproto.BackupIdentityResult{ArchivePath: "backup.tar.gz", Success: true},
 	}
 	conn := &queueConn{}
 	session := NewSession(conn, svc.backupDeps())
@@ -318,14 +319,14 @@ func TestRestoreHandlersWriteAuditEvents(t *testing.T) {
 	ir.SetUnlocked()
 
 	svc := &stubServices{
-		previewRestoreResult: RestorePreviewResult{
+		previewRestoreResult: adminproto.RestorePreviewResult{
 			ArchivePath: "backup.tar.gz",
-			Keys:        []RestoreKeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
+			Keys:        []adminproto.RestoreKeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
 		},
-		restoreBackupResult: RestoreBackupResult{
+		restoreBackupResult: adminproto.RestoreBackupResult{
 			ArchivePath: "backup.tar.gz",
 			Success:     true,
-			Restored:    []RestoreKeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
+			Restored:    []adminproto.RestoreKeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
 		},
 	}
 	audit := &recordingRestoreAudit{}
