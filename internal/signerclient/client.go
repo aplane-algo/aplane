@@ -474,6 +474,12 @@ func (c *Client) RequestGroupSignWithContext(ctx context.Context, requests []sig
 
 // RequestComponentSign sends a role-specific component-signing request to
 // /sign/component.
+//
+// Unlike RequestGroupSign, the component and guarded-assembly endpoints do
+// not run the cancel-on-ctx-done watcher: they never park on the signer's
+// manual-approval coordinator (sentry policy is pass/reject only), so there
+// is no pending prompt for /sign/cancel to clear. Context cancellation
+// aborts the HTTP request and the server honors r.Context() directly.
 func (c *Client) RequestComponentSign(req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
 	return c.RequestComponentSignWithContext(context.Background(), req)
 }

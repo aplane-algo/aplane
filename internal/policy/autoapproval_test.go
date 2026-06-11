@@ -103,7 +103,7 @@ func TestMatchesSelfNoOpTransferAutoApprovalASA(t *testing.T) {
 
 func TestStoredConfigApplyAutoApproveSelfNoOpTransfer(t *testing.T) {
 	enabled := true
-	stored := &StoredConfig{AutoApproveSelfNoOpTransfer: &enabled}
+	stored := &StoredConfig{StoredPolicyCore: StoredPolicyCore{AutoApproveSelfNoOpTransfer: &enabled}}
 
 	got, err := stored.Apply(DefaultConfig())
 	if err != nil {
@@ -116,7 +116,7 @@ func TestStoredConfigApplyAutoApproveSelfNoOpTransfer(t *testing.T) {
 
 func TestStoredConfigApplyAlwaysReviewWarnings(t *testing.T) {
 	enabled := true
-	stored := &StoredConfig{AlwaysReviewWarnings: &enabled}
+	stored := &StoredConfig{StoredPolicyCore: StoredPolicyCore{AlwaysReviewWarnings: &enabled}}
 
 	got, err := stored.Apply(DefaultConfig())
 	if err != nil {

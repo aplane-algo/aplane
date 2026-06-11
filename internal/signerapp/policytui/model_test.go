@@ -225,14 +225,13 @@ func TestModelValidateReportsStoreError(t *testing.T) {
 func TestViewShowsTransferPolicySummary(t *testing.T) {
 	enabled := true
 	onNoRoute := "reject"
-	m := New(&fakeStore{}, &policy.StoredConfig{
-		TransferPolicy: &policy.StoredTransferPolicy{
-			Enabled:   &enabled,
-			OnNoRoute: &onNoRoute,
-			Routes: []policy.StoredTransferRoute{
-				{ID: "route_one"},
-			},
+	m := New(&fakeStore{}, &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{TransferPolicy: &policy.StoredTransferPolicy{
+		Enabled:   &enabled,
+		OnNoRoute: &onNoRoute,
+		Routes: []policy.StoredTransferRoute{
+			{ID: "route_one"},
 		},
+	}},
 	}, "/tmp/aplane", "default")
 
 	view := m.View()
@@ -283,14 +282,11 @@ func TestHomeViewShowsExplicitPolicySources(t *testing.T) {
 	maxFee := uint64(2000)
 	enabled := false
 	onNoRoute := "operator_default"
-	m := New(&fakeStore{}, &policy.StoredConfig{
-		RejectForeignRekey: &rejectForeignRekey,
-		MaxFeeMicroAlgos:   &maxFee,
-		TransferPolicy: &policy.StoredTransferPolicy{
-			SchemaVersion: 1,
-			Enabled:       &enabled,
-			OnNoRoute:     &onNoRoute,
-		},
+	m := New(&fakeStore{}, &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{RejectForeignRekey: &rejectForeignRekey, MaxFeeMicroAlgos: &maxFee, TransferPolicy: &policy.StoredTransferPolicy{
+		SchemaVersion: 1,
+		Enabled:       &enabled,
+		OnNoRoute:     &onNoRoute,
+	}},
 	}, "/tmp/aplane", "default")
 
 	view := m.View()
@@ -952,12 +948,11 @@ func TestTransferSettingsOpenInitializesDisabledPolicy(t *testing.T) {
 func TestRouteScreenNewRouteMarksRoutesSetOnExistingTransferPolicy(t *testing.T) {
 	enabled := true
 	onNoRoute := "reject"
-	m := New(&fakeStore{}, &policy.StoredConfig{
-		TransferPolicy: &policy.StoredTransferPolicy{
-			SchemaVersion: 1,
-			Enabled:       &enabled,
-			OnNoRoute:     &onNoRoute,
-		},
+	m := New(&fakeStore{}, &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{TransferPolicy: &policy.StoredTransferPolicy{
+		SchemaVersion: 1,
+		Enabled:       &enabled,
+		OnNoRoute:     &onNoRoute,
+	}},
 	}, "/tmp/aplane", "default")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2042,21 +2037,20 @@ func settingsFieldValue(m Model, key string) string {
 func routePolicy() *policy.StoredConfig {
 	enabled := true
 	onNoRoute := "reject"
-	return &policy.StoredConfig{
-		TransferPolicy: &policy.StoredTransferPolicy{
-			Enabled:   &enabled,
-			OnNoRoute: &onNoRoute,
-			Routes: []policy.StoredTransferRoute{
-				{
-					ID:           "treasury_algo",
-					Description:  "Treasury payments",
-					Networks:     []string{"mainnet"},
-					Sources:      []string{"*"},
-					Assets:       []policy.StoredAssetTerm{{Raw: "algo"}},
-					Destinations: []string{"self"},
-				},
+	return &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{TransferPolicy: &policy.StoredTransferPolicy{
+		Enabled:   &enabled,
+		OnNoRoute: &onNoRoute,
+		Routes: []policy.StoredTransferRoute{
+			{
+				ID:           "treasury_algo",
+				Description:  "Treasury payments",
+				Networks:     []string{"mainnet"},
+				Sources:      []string{"*"},
+				Assets:       []policy.StoredAssetTerm{{Raw: "algo"}},
+				Destinations: []string{"self"},
 			},
 		},
+	}},
 	}
 }
 

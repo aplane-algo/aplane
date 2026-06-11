@@ -95,9 +95,7 @@ func TestOfflineStoreSaveWritesVerifiedPolicy(t *testing.T) {
 		Now:        func() time.Time { return when },
 	}
 
-	if err := store.Save(context.Background(), &policy.StoredConfig{
-		MaxFeeMicroAlgos: &maxFee,
-	}); err != nil {
+	if err := store.Save(context.Background(), &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	stored, err := store.Load(context.Background())
@@ -140,9 +138,7 @@ func TestOfflineStoreSaveUsesPassphraseProvider(t *testing.T) {
 		},
 	}
 
-	if err := store.Save(context.Background(), &policy.StoredConfig{
-		MaxFeeMicroAlgos: &maxFee,
-	}); err != nil {
+	if err := store.Save(context.Background(), &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	if calls != 1 {
@@ -236,11 +232,10 @@ func TestOfflineStoreSaveRejectsInvalidPolicyWithoutWriting(t *testing.T) {
 		Passphrase: passphrase,
 	}
 
-	err = store.Save(context.Background(), &policy.StoredConfig{
-		TransferPolicy: &policy.StoredTransferPolicy{
-			SchemaVersion: 1,
-			Enabled:       &enabled,
-		},
+	err = store.Save(context.Background(), &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{TransferPolicy: &policy.StoredTransferPolicy{
+		SchemaVersion: 1,
+		Enabled:       &enabled,
+	}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "on_no_route is required") {
 		t.Fatalf("Save() error = %v, want on_no_route validation failure", err)

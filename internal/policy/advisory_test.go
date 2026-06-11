@@ -8,15 +8,12 @@ import "testing"
 func TestCheckStoredConfigAdvisoriesReportsLegacyCloseOverlap(t *testing.T) {
 	reject := true
 	allow := true
-	stored := &StoredConfig{
-		RejectCloseRemainder: &reject,
-		RejectAssetClose:     &reject,
-		TransferPolicy: &StoredTransferPolicy{
-			Routes: []StoredTransferRoute{{
-				ID:    "recovery_algo",
-				Close: StoredRoutePermission{Allow: &allow},
-			}},
-		},
+	stored := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectCloseRemainder: &reject, RejectAssetClose: &reject, TransferPolicy: &StoredTransferPolicy{
+		Routes: []StoredTransferRoute{{
+			ID:    "recovery_algo",
+			Close: StoredRoutePermission{Allow: &allow},
+		}},
+	}},
 	}
 
 	got := CheckStoredConfigAdvisories(stored)
@@ -30,14 +27,12 @@ func TestCheckStoredConfigAdvisoriesReportsLegacyCloseOverlap(t *testing.T) {
 func TestCheckStoredConfigAdvisoriesReportsClawbackOverlap(t *testing.T) {
 	reject := true
 	allow := true
-	stored := &StoredConfig{
-		RejectClawback: &reject,
-		TransferPolicy: &StoredTransferPolicy{
-			Routes: []StoredTransferRoute{{
-				ID:       "clawback_recovery",
-				Clawback: StoredRoutePermission{Allow: &allow},
-			}},
-		},
+	stored := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectClawback: &reject, TransferPolicy: &StoredTransferPolicy{
+		Routes: []StoredTransferRoute{{
+			ID:       "clawback_recovery",
+			Clawback: StoredRoutePermission{Allow: &allow},
+		}},
+	}},
 	}
 
 	got := CheckStoredConfigAdvisories(stored)
@@ -50,14 +45,13 @@ func TestCheckStoredConfigAdvisoriesReportsClawbackOverlap(t *testing.T) {
 
 func TestCheckStoredConfigAdvisoriesIgnoresUnsetLegacyRejects(t *testing.T) {
 	allow := true
-	stored := &StoredConfig{
-		TransferPolicy: &StoredTransferPolicy{
-			Routes: []StoredTransferRoute{{
-				ID:       "recovery",
-				Close:    StoredRoutePermission{Allow: &allow},
-				Clawback: StoredRoutePermission{Allow: &allow},
-			}},
-		},
+	stored := &StoredConfig{StoredPolicyCore: StoredPolicyCore{TransferPolicy: &StoredTransferPolicy{
+		Routes: []StoredTransferRoute{{
+			ID:       "recovery",
+			Close:    StoredRoutePermission{Allow: &allow},
+			Clawback: StoredRoutePermission{Allow: &allow},
+		}},
+	}},
 	}
 
 	if got := CheckStoredConfigAdvisories(stored); len(got) != 0 {

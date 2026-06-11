@@ -19,7 +19,7 @@ func TestEvaluateAlwaysReviewRulesUsesKeyOverride(t *testing.T) {
 	cfg, err := (&policy.StoredConfig{
 		KeyOverrides: map[string]*policy.StoredConfig{
 			authKey: {
-				AlwaysReviewWarnings: &enabled,
+				StoredPolicyCore: policy.StoredPolicyCore{AlwaysReviewWarnings: &enabled},
 			},
 		},
 	}).Apply(policy.DefaultConfig())

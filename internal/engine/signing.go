@@ -70,7 +70,7 @@ func (e *Engine) BuildSigningContext(ctx context.Context, addressOrAlias string)
 			if e.DataDir != "" {
 				e.AuthCache = cache.LoadAuthCacheFromStore(e.CacheStore, e.Network)
 			}
-			return e.AuthCache.UpdateAuthAddressLocked(address, authAddr, e.Network)
+			return e.AuthCache.UpdateAuthAddress(address, authAddr, e.Network)
 		}); err != nil {
 			cache.Debug("failed to save auth cache", "error", err)
 		}
@@ -139,7 +139,7 @@ func (e *Engine) RefreshAuthCache(ctx context.Context) error {
 		}
 		e.signerCacheMu.RLock()
 		defer e.signerCacheMu.RUnlock()
-		e.AuthCache = cache.BuildAuthCacheFromStoreLockedWithContext(ctx, e.CacheStore, e.AlgodClient, &e.AliasCache, &e.SignerCache, e.Network)
+		e.AuthCache = cache.BuildAuthCacheFromStoreWithContext(ctx, e.CacheStore, e.AlgodClient, &e.AliasCache, &e.SignerCache, e.Network)
 		return nil
 	})
 }

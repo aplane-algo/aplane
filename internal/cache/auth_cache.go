@@ -49,15 +49,13 @@ func LoadAuthCacheFromStore(store *Store, network string) AuthAddressCache {
 	return cache
 }
 
-// SaveCache saves the auth address cache to disk for the specified network
+// SaveCache saves the auth address cache to disk for the specified network.
+//
+// Auth-cache persistence never takes the APCLIENT_DATA mutation lock itself
+// (it writes through saveSignedCacheWithoutClientLock); callers needing
+// mutation atomicity hold the clientdata lock at a higher level. The former
+// *Locked method variants were byte-identical and were collapsed away.
 func (cache *AuthAddressCache) SaveCache(network string) error {
-	cache.ensureInitialized()
-	return cache.persistCache(network)
-}
-
-// SaveCacheLocked saves the auth cache while the caller already holds the
-// APCLIENT_DATA mutation lock.
-func (cache *AuthAddressCache) SaveCacheLocked(network string) error {
 	cache.ensureInitialized()
 	return cache.persistCache(network)
 }
@@ -78,14 +76,10 @@ func BuildAuthCacheFromStore(store *Store, algodClient *algod.Client, aliasCache
 }
 
 func BuildAuthCacheFromStoreWithContext(ctx context.Context, store *Store, algodClient *algod.Client, aliasCache *AliasCache, signerCache *SignerCache, network string) AuthAddressCache {
-	return buildAuthCacheFromStore(ctx, store, algodClient, aliasCache, signerCache, network, false)
+	return buildAuthCacheFromStore(ctx, store, algodClient, aliasCache, signerCache, network)
 }
 
-func BuildAuthCacheFromStoreLockedWithContext(ctx context.Context, store *Store, algodClient *algod.Client, aliasCache *AliasCache, signerCache *SignerCache, network string) AuthAddressCache {
-	return buildAuthCacheFromStore(ctx, store, algodClient, aliasCache, signerCache, network, true)
-}
-
-func buildAuthCacheFromStore(ctx context.Context, store *Store, algodClient *algod.Client, aliasCache *AliasCache, signerCache *SignerCache, network string, locked bool) AuthAddressCache {
+func buildAuthCacheFromStore(ctx context.Context, store *Store, algodClient *algod.Client, aliasCache *AliasCache, signerCache *SignerCache, network string) AuthAddressCache {
 	// Load existing cache from disk
 	cache := LoadAuthCacheFromStore(store, network)
 
@@ -111,11 +105,7 @@ func buildAuthCacheFromStore(ctx context.Context, store *Store, algodClient *alg
 	if len(addressesToCheck) == 0 {
 		cache.ensureInitialized()
 		cache.AuthAddresses = make(map[string]string)
-		if locked {
-			_ = cache.SaveCacheLocked(network)
-		} else {
-			_ = cache.SaveCache(network)
-		}
+		_ = cache.SaveCache(network)
 		return cache
 	}
 
@@ -149,13 +139,7 @@ func buildAuthCacheFromStore(ctx context.Context, store *Store, algodClient *alg
 	}
 
 	// Save to disk
-	saveErr := error(nil)
-	if locked {
-		saveErr = cache.SaveCacheLocked(network)
-	} else {
-		saveErr = cache.SaveCache(network)
-	}
-	if saveErr != nil {
+	if saveErr := cache.SaveCache(network); saveErr != nil {
 		warnf("failed to save auth cache: %v", saveErr)
 	}
 
@@ -234,63 +218,6 @@ func (cache *AuthAddressCache) RefreshAuthAddressWithContext(ctx context.Context
 // PruneToOwnedAddresses removes auth-cache entries for addresses no longer owned
 // by aliases or signer inventory and persists the updated cache.
 func (cache *AuthAddressCache) PruneToOwnedAddresses(owned map[string]bool, network string) error {
-	cache.ensureInitialized()
-
-	for address := range cache.AuthAddresses {
-		if !owned[address] {
-			delete(cache.AuthAddresses, address)
-		}
-	}
-
-	return cache.persistCache(network)
-}
-
-// UpdateAuthAddressLocked updates the cached auth address while the caller
-// already holds the APCLIENT_DATA mutation lock.
-func (cache *AuthAddressCache) UpdateAuthAddressLocked(address string, authAddress string, network string) error {
-	cache.ensureInitialized()
-
-	if authAddress == address {
-		cache.AuthAddresses[address] = ""
-	} else {
-		cache.AuthAddresses[address] = authAddress
-	}
-
-	return cache.persistCache(network)
-}
-
-// RefreshAuthAddressLocked refreshes one address from algod while the caller
-// already holds the APCLIENT_DATA mutation lock.
-func (cache *AuthAddressCache) RefreshAuthAddressLocked(algodClient *algod.Client, address string, network string) (string, error) {
-	return cache.RefreshAuthAddressLockedWithContext(context.Background(), algodClient, address, network)
-}
-
-func (cache *AuthAddressCache) RefreshAuthAddressLockedWithContext(ctx context.Context, algodClient *algod.Client, address string, network string) (string, error) {
-	acctInfo, err := algodClient.AccountInformation(address).Do(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to query account info: %w", err)
-	}
-
-	cache.ensureInitialized()
-
-	authAddr := acctInfo.AuthAddr
-	if authAddr == "" || authAddr == address {
-		cache.AuthAddresses[address] = ""
-		authAddr = ""
-	} else {
-		cache.AuthAddresses[address] = authAddr
-	}
-
-	if err := cache.persistCache(network); err != nil {
-		return authAddr, fmt.Errorf("updated cache but failed to save: %w", err)
-	}
-
-	return authAddr, nil
-}
-
-// PruneToOwnedAddressesLocked removes stale auth-cache entries while the caller
-// already holds the APCLIENT_DATA mutation lock.
-func (cache *AuthAddressCache) PruneToOwnedAddressesLocked(owned map[string]bool, network string) error {
 	cache.ensureInitialized()
 
 	for address := range cache.AuthAddresses {

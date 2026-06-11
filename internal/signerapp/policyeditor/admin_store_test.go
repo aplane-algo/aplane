@@ -126,7 +126,7 @@ func TestAdminStoreSaveSendsExpectedSHAAndUpdatesFromReplaceSnapshot(t *testing.
 		t.Fatalf("Load() error = %v", err)
 	}
 	maxFee := uint64(9000)
-	if err := store.Save(context.Background(), &policy.StoredConfig{MaxFeeMicroAlgos: &maxFee}); err != nil {
+	if err := store.Save(context.Background(), &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	if client.replaceCalls != 1 || client.lastExpectedSHA != "abc123" {
@@ -158,7 +158,7 @@ func TestAdminStoreFailedSaveDoesNotUpdateExpectedSHA(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	maxFee := uint64(9000)
-	err := store.Save(context.Background(), &policy.StoredConfig{MaxFeeMicroAlgos: &maxFee})
+	err := store.Save(context.Background(), &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}})
 	if err == nil {
 		t.Fatal("Save() error = nil, want replace failure")
 	}

@@ -35,16 +35,7 @@ func ConvertSigningPolicyToSentry(stored *StoredConfig) (*StoredConfig, error) {
 		return nil, err
 	}
 
-	out := &StoredConfig{
-		RejectRekey:          boolPtr(true),
-		RejectCloseRemainder: cloneBoolPtr(effective.RejectCloseRemainder),
-		RejectAssetClose:     cloneBoolPtr(effective.RejectAssetClose),
-		RejectClawback:       cloneBoolPtr(effective.RejectClawback),
-		MaxFeeMicroAlgos:     cloneUint64Ptr(effective.MaxFeeMicroAlgos),
-		MaxAlgoPayments:      cloneUintMap(effective.MaxAlgoPayments),
-		MaxASAAmounts:        cloneStoredASAAmounts(effective.MaxASAAmounts),
-		TransferPolicy:       convertTransferPolicyToSentry(effective.TransferPolicy),
-	}
+	out := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectRekey: boolPtr(true), RejectCloseRemainder: cloneBoolPtr(effective.RejectCloseRemainder), RejectAssetClose: cloneBoolPtr(effective.RejectAssetClose), RejectClawback: cloneBoolPtr(effective.RejectClawback), MaxFeeMicroAlgos: cloneUint64Ptr(effective.MaxFeeMicroAlgos), MaxAlgoPayments: cloneUintMap(effective.MaxAlgoPayments), MaxASAAmounts: cloneStoredASAAmounts(effective.MaxASAAmounts), TransferPolicy: convertTransferPolicyToSentry(effective.TransferPolicy)}}
 	if err := validateSentryDocument(out); err != nil {
 		return nil, err
 	}

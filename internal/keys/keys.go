@@ -283,7 +283,9 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 	warn := func(code KeyScanWarningCode, keyFile string, err error) {
 		warning := KeyScanWarning{Code: code, KeyFile: keyFile, Err: err}
 		warnings = append(warnings, warning)
-		fmt.Printf("Warning: %s\n", warning.Message())
+		// Stderr, not stdout: callers emit machine-readable output on stdout
+		// and surface report.Warnings through their own channels.
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: %s\n", warning.Message())
 	}
 
 	keysDir := paths.KeysDir(identityID)

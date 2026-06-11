@@ -140,24 +140,21 @@ func TestRuntimePolicySnapshotStoresDefensiveCopies(t *testing.T) {
 	maxFee := uint64(7000)
 	enabled := true
 	onNoRoute := string(policy.TransferOnNoRouteReject)
-	stored := &policy.StoredConfig{
-		RejectForeignRekey: &rejectForeignRekey,
-		MaxFeeMicroAlgos:   &maxFee,
-		TransferPolicy: &policy.StoredTransferPolicy{
-			SchemaVersion: 1,
-			Enabled:       &enabled,
-			OnNoRoute:     &onNoRoute,
-			Routes: []policy.StoredTransferRoute{
-				{
-					ID:           "ops_algo",
-					Networks:     []string{"mainnet"},
-					Sources:      []string{"*"},
-					Assets:       []policy.StoredAssetTerm{{Raw: "algo"}},
-					Destinations: []string{"*"},
-				},
+	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{RejectForeignRekey: &rejectForeignRekey, MaxFeeMicroAlgos: &maxFee, TransferPolicy: &policy.StoredTransferPolicy{
+		SchemaVersion: 1,
+		Enabled:       &enabled,
+		OnNoRoute:     &onNoRoute,
+		Routes: []policy.StoredTransferRoute{
+			{
+				ID:           "ops_algo",
+				Networks:     []string{"mainnet"},
+				Sources:      []string{"*"},
+				Assets:       []policy.StoredAssetTerm{{Raw: "algo"}},
+				Destinations: []string{"*"},
 			},
-			RoutesSet: true,
 		},
+		RoutesSet: true,
+	}},
 	}
 	effective := policy.DefaultConfig()
 	effective.RejectForeignRekey = false

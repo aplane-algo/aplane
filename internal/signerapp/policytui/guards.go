@@ -391,9 +391,7 @@ func (m Model) transferPolicyYAML() string {
 	if m.policy == nil || m.policy.TransferPolicy == nil {
 		return "transfer_policy: null\n"
 	}
-	data, err := m.target.Marshal(&policy.StoredConfig{
-		TransferPolicy: cloneTransferPolicy(m.policy.TransferPolicy),
-	})
+	data, err := m.target.Marshal(&policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{TransferPolicy: cloneTransferPolicy(m.policy.TransferPolicy)}})
 	if err != nil {
 		return fmt.Sprintf("# failed to render transfer_policy: %v\n", err)
 	}

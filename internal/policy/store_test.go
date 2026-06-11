@@ -19,10 +19,7 @@ func TestSaveAndLoadVerifiedStoredConfig(t *testing.T) {
 	key := policyIntegrityTestKey(t)
 	wantReject := false
 	wantFee := uint64(7000)
-	want := &StoredConfig{
-		RejectForeignRekey: &wantReject,
-		MaxFeeMicroAlgos:   &wantFee,
-	}
+	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &wantReject, MaxFeeMicroAlgos: &wantFee}}
 
 	if err := SaveStoredConfigWithIntegrity(root, "alice", want, key, time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveStoredConfigWithIntegrity() error = %v", err)
@@ -47,7 +44,7 @@ func TestSaveAndLoadVerifiedStoredConfigWithMasterKey(t *testing.T) {
 	root := t.TempDir()
 	masterKey := []byte("test master key")
 	wantReject := false
-	want := &StoredConfig{RejectForeignRekey: &wantReject}
+	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &wantReject}}
 
 	if err := SaveStoredConfigWithMasterKey(root, "alice", want, masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveStoredConfigWithMasterKey() error = %v", err)
@@ -65,7 +62,7 @@ func TestSaveAndLoadVerifiedSentryConfigWithMasterKey(t *testing.T) {
 	root := t.TempDir()
 	masterKey := []byte("test master key")
 	rejectRekey := true
-	want := &StoredConfig{RejectRekey: &rejectRekey}
+	want := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectRekey: &rejectRekey}}
 
 	if err := SaveStoredSentryConfigWithMasterKey(root, "alice", want, masterKey, time.Unix(1700000000, 0)); err != nil {
 		t.Fatalf("SaveStoredSentryConfigWithMasterKey() error = %v", err)

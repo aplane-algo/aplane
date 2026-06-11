@@ -330,7 +330,7 @@ func TestUpdateAuthAddressInitializesZeroValueCache(t *testing.T) {
 	}
 }
 
-func TestRefreshAuthAddressLockedInitializesZeroValueCache(t *testing.T) {
+func TestRefreshAuthAddressInitializesZeroValueCache(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(oldDir) }()
@@ -340,9 +340,9 @@ func TestRefreshAuthAddressLockedInitializesZeroValueCache(t *testing.T) {
 
 	cache := AuthAddressCache{}
 	client := newBuildAuthCacheTestAlgodClient(t, map[string]string{"ADDR1": "AUTH1"})
-	got, err := cache.RefreshAuthAddressLocked(client, "ADDR1", "testnet")
+	got, err := cache.RefreshAuthAddress(client, "ADDR1", "testnet")
 	if err != nil {
-		t.Fatalf("RefreshAuthAddressLocked failed: %v", err)
+		t.Fatalf("RefreshAuthAddress failed: %v", err)
 	}
 
 	if got != "AUTH1" {

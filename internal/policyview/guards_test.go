@@ -93,28 +93,25 @@ func TestTransferGuardGroupsKeepAdvancedRoutesSeparate(t *testing.T) {
 func TestBuildPolicyViewModelSummarizesFieldsAndCollections(t *testing.T) {
 	enabled := true
 	rejectForeignRekey := false
-	stored := &policy.StoredConfig{
-		RejectForeignRekey: &rejectForeignRekey,
-		TransferPolicy: &policy.StoredTransferPolicy{
-			SchemaVersion:       1,
-			Enabled:             &enabled,
-			BlockedDestinations: []string{"ADDR..."},
-			AssetSets: map[string]policy.StoredAssetSet{
-				"usdc": {"testnet": []uint64{10458941}},
-			},
-			Routes: []policy.StoredTransferRoute{
-				{
-					ID:           "test_algo",
-					Networks:     []string{"testnet"},
-					Sources:      []string{"*"},
-					Assets:       []policy.StoredAssetTerm{{Raw: "algo"}},
-					Destinations: []string{"self"},
-				},
+	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{RejectForeignRekey: &rejectForeignRekey, TransferPolicy: &policy.StoredTransferPolicy{
+		SchemaVersion:       1,
+		Enabled:             &enabled,
+		BlockedDestinations: []string{"ADDR..."},
+		AssetSets: map[string]policy.StoredAssetSet{
+			"usdc": {"testnet": []uint64{10458941}},
+		},
+		Routes: []policy.StoredTransferRoute{
+			{
+				ID:           "test_algo",
+				Networks:     []string{"testnet"},
+				Sources:      []string{"*"},
+				Assets:       []policy.StoredAssetTerm{{Raw: "algo"}},
+				Destinations: []string{"self"},
 			},
 		},
-		KeyOverrides: map[string]*policy.StoredConfig{
-			types.Address{9}.String(): {},
-		},
+	}}, KeyOverrides: map[string]*policy.StoredConfig{
+		types.Address{9}.String(): {},
+	},
 	}
 
 	model := Build(stored, "policy yaml")

@@ -30,23 +30,19 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestStoredConfigApplyParsesASAKeys(t *testing.T) {
-	sp := &StoredConfig{
-		ReviewAlgoPayments: map[string]uint64{
-			"testnet": 5_000_000,
+	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{ReviewAlgoPayments: map[string]uint64{
+		"testnet": 5_000_000,
+	}, MaxAlgoPayments: map[string]uint64{
+		"testnet": 10_000_000,
+	}, ReviewASAAmounts: map[string]map[string]uint64{
+		"testnet": {
+			"123": 12,
 		},
-		MaxAlgoPayments: map[string]uint64{
-			"testnet": 10_000_000,
+	}, MaxASAAmounts: map[string]map[string]uint64{
+		"testnet": {
+			"123": 45,
 		},
-		ReviewASAAmounts: map[string]map[string]uint64{
-			"testnet": {
-				"123": 12,
-			},
-		},
-		MaxASAAmounts: map[string]map[string]uint64{
-			"testnet": {
-				"123": 45,
-			},
-		},
+	}},
 	}
 	cfg, err := sp.Apply(DefaultConfig())
 	if err != nil {
@@ -67,12 +63,11 @@ func TestStoredConfigApplyParsesASAKeys(t *testing.T) {
 }
 
 func TestStoredConfigApplyRejectsInvalidASAKey(t *testing.T) {
-	sp := &StoredConfig{
-		MaxASAAmounts: map[string]map[string]uint64{
-			"testnet": {
-				"abc": 1,
-			},
+	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{MaxASAAmounts: map[string]map[string]uint64{
+		"testnet": {
+			"abc": 1,
 		},
+	}},
 	}
 	if _, err := sp.Apply(DefaultConfig()); err == nil {
 		t.Fatal("Apply() error = nil, want parse failure")
@@ -80,12 +75,11 @@ func TestStoredConfigApplyRejectsInvalidASAKey(t *testing.T) {
 }
 
 func TestStoredConfigApplyRejectsNonCanonicalASAKey(t *testing.T) {
-	sp := &StoredConfig{
-		MaxASAAmounts: map[string]map[string]uint64{
-			"testnet": {
-				"00123": 1,
-			},
+	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{MaxASAAmounts: map[string]map[string]uint64{
+		"testnet": {
+			"00123": 1,
 		},
+	}},
 	}
 	if _, err := sp.Apply(DefaultConfig()); err == nil {
 		t.Fatal("Apply() error = nil, want canonical ASA key failure")
@@ -93,12 +87,11 @@ func TestStoredConfigApplyRejectsNonCanonicalASAKey(t *testing.T) {
 }
 
 func TestStoredConfigApplyRejectsZeroASAKey(t *testing.T) {
-	sp := &StoredConfig{
-		ReviewASAAmounts: map[string]map[string]uint64{
-			"testnet": {
-				"0": 1,
-			},
+	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{ReviewASAAmounts: map[string]map[string]uint64{
+		"testnet": {
+			"0": 1,
 		},
+	}},
 	}
 	if _, err := sp.Apply(DefaultConfig()); err == nil {
 		t.Fatal("Apply() error = nil, want zero ASA ID failure")
@@ -112,27 +105,19 @@ func TestStoredConfigApplyRejectsInvalidLegacyLimitNetworks(t *testing.T) {
 	}{
 		{
 			name: "review algo",
-			cfg: &StoredConfig{
-				ReviewAlgoPayments: map[string]uint64{"bad network": 1},
-			},
+			cfg:  &StoredConfig{StoredPolicyCore: StoredPolicyCore{ReviewAlgoPayments: map[string]uint64{"bad network": 1}}},
 		},
 		{
 			name: "max algo",
-			cfg: &StoredConfig{
-				MaxAlgoPayments: map[string]uint64{"bad network": 1},
-			},
+			cfg:  &StoredConfig{StoredPolicyCore: StoredPolicyCore{MaxAlgoPayments: map[string]uint64{"bad network": 1}}},
 		},
 		{
 			name: "review asa",
-			cfg: &StoredConfig{
-				ReviewASAAmounts: map[string]map[string]uint64{"bad network": {"123": 1}},
-			},
+			cfg:  &StoredConfig{StoredPolicyCore: StoredPolicyCore{ReviewASAAmounts: map[string]map[string]uint64{"bad network": {"123": 1}}}},
 		},
 		{
 			name: "max asa",
-			cfg: &StoredConfig{
-				MaxASAAmounts: map[string]map[string]uint64{"bad network": {"123": 1}},
-			},
+			cfg:  &StoredConfig{StoredPolicyCore: StoredPolicyCore{MaxASAAmounts: map[string]map[string]uint64{"bad network": {"123": 1}}}},
 		},
 	}
 	for _, tt := range tests {
@@ -145,10 +130,7 @@ func TestStoredConfigApplyRejectsInvalidLegacyLimitNetworks(t *testing.T) {
 }
 
 func TestStoredConfigApplyRejectsReviewThresholdAboveDenyThreshold(t *testing.T) {
-	sp := &StoredConfig{
-		ReviewAlgoPayments: map[string]uint64{"testnet": 10_000_000},
-		MaxAlgoPayments:    map[string]uint64{"testnet": 5_000_000},
-	}
+	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{ReviewAlgoPayments: map[string]uint64{"testnet": 10_000_000}, MaxAlgoPayments: map[string]uint64{"testnet": 5_000_000}}}
 	if _, err := sp.Apply(DefaultConfig()); err == nil {
 		t.Fatal("Apply() error = nil, want review/deny threshold validation failure")
 	}
@@ -159,18 +141,16 @@ func TestStoredConfigApplyKeyOverridesInheritBase(t *testing.T) {
 	falseVal := false
 	whitelistKey := types.Address{1}.String()
 	strictKey := types.Address{2}.String()
-	sp := &StoredConfig{
-		RejectCloseRemainder: &falseVal,
-		KeyOverrides: map[string]*StoredConfig{
-			whitelistKey: {
-				// Override only RejectForeignRekey; inherit the rest from the identity base.
-				RejectForeignRekey: &falseVal,
-			},
-			strictKey: {
-				// Tighter guard for a specific signing key.
-				RejectCloseRemainder: &trueVal,
-			},
+	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectCloseRemainder: &falseVal}, KeyOverrides: map[string]*StoredConfig{
+		whitelistKey: {
+			// Override only RejectForeignRekey; inherit the rest from the identity base.
+			StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &falseVal},
 		},
+		strictKey: {
+			// Tighter guard for a specific signing key.
+			StoredPolicyCore: StoredPolicyCore{RejectCloseRemainder: &trueVal},
+		},
+	},
 	}
 	cfg, err := sp.Apply(DefaultConfig())
 	if err != nil {
@@ -208,9 +188,9 @@ func TestStoredConfigApplyRejectsNestedKeyOverrides(t *testing.T) {
 	sp := &StoredConfig{
 		KeyOverrides: map[string]*StoredConfig{
 			outerKey: {
-				RejectForeignRekey: &trueVal,
+				StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &trueVal},
 				KeyOverrides: map[string]*StoredConfig{
-					innerKey: {RejectForeignRekey: &trueVal},
+					innerKey: {StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &trueVal}},
 				},
 			},
 		},

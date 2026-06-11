@@ -480,10 +480,7 @@ func TestBuildPolicySnapshotReturnsCanonicalActivePolicy(t *testing.T) {
 	svc, ir, _ := setupAdminService(t)
 	rejectForeignRekey := false
 	maxFee := uint64(7000)
-	stored := &policy.StoredConfig{
-		RejectForeignRekey: &rejectForeignRekey,
-		MaxFeeMicroAlgos:   &maxFee,
-	}
+	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{RejectForeignRekey: &rejectForeignRekey, MaxFeeMicroAlgos: &maxFee}}
 	effective := policy.DefaultConfig()
 	effective.RejectForeignRekey = false
 	effective.MaxFeeMicroAlgos = maxFee

@@ -51,28 +51,25 @@ type Config struct {
 // StoredConfig that is layered on top of the identity-wide settings when that
 // key signs. Overrides never recurse.
 type StoredConfig struct {
-	RejectRekey                 *bool                        `yaml:"reject_rekey,omitempty"`
-	RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
-	RejectCloseRemainder        *bool                        `yaml:"reject_close_remainder,omitempty"`
-	RejectAssetClose            *bool                        `yaml:"reject_asset_close,omitempty"`
-	RejectClawback              *bool                        `yaml:"reject_clawback,omitempty"`
-	AlwaysReviewWarnings        *bool                        `yaml:"always_review_warnings,omitempty"`
-	AutoApproveSelfNoOpTransfer *bool                        `yaml:"auto_approve_self_noop_transfer,omitempty"`
-	MaxFeeMicroAlgos            *uint64                      `yaml:"max_fee_microalgos,omitempty"`
-	ReviewAlgoPayments          map[string]uint64            `yaml:"review_algo_payments,omitempty"`
-	MaxAlgoPayments             map[string]uint64            `yaml:"max_algo_payments,omitempty"`
-	ReviewASAAmounts            map[string]map[string]uint64 `yaml:"review_asa_amounts,omitempty"`
-	MaxASAAmounts               map[string]map[string]uint64 `yaml:"max_asa_amounts,omitempty"`
-	TransferPolicy              *StoredTransferPolicy        `yaml:"transfer_policy,omitempty"`
-	ClientSigning               *StoredRoleConfig            `yaml:"client_signing,omitempty"`
-	Sentry                      *StoredRoleConfig            `yaml:"sentry,omitempty"`
-	KeyOverrides                map[string]*StoredConfig     `yaml:"key_overrides,omitempty"`
+	StoredPolicyCore `yaml:",inline"`
+
+	ClientSigning *StoredRoleConfig        `yaml:"client_signing,omitempty"`
+	Sentry        *StoredRoleConfig        `yaml:"sentry,omitempty"`
+	KeyOverrides  map[string]*StoredConfig `yaml:"key_overrides,omitempty"`
 }
 
 // StoredRoleConfig is a sparse role-domain policy block nested under
 // client_signing: or sentry:. It intentionally does not recurse into role
 // blocks or key_overrides.
 type StoredRoleConfig struct {
+	StoredPolicyCore `yaml:",inline"`
+}
+
+// StoredPolicyCore is the policy field block shared by StoredConfig and
+// StoredRoleConfig. Adding a field here (plus storedPolicyCoreFields below)
+// extends both the identity-wide document and the role-domain blocks in one
+// place.
+type StoredPolicyCore struct {
 	RejectRekey                 *bool                        `yaml:"reject_rekey,omitempty"`
 	RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
 	RejectCloseRemainder        *bool                        `yaml:"reject_close_remainder,omitempty"`
@@ -88,8 +85,37 @@ type StoredRoleConfig struct {
 	TransferPolicy              *StoredTransferPolicy        `yaml:"transfer_policy,omitempty"`
 }
 
-// Clone returns a deep copy of the stored policy config.
-func (c *StoredConfig) Clone() *StoredConfig {
+// storedPolicyCoreFields lists the YAML keys of StoredPolicyCore for the
+// unmarshal allow-lists. Keep in sync with the struct tags above.
+var storedPolicyCoreFields = []string{
+	"reject_rekey",
+	"reject_foreign_rekey",
+	"reject_close_remainder",
+	"reject_asset_close",
+	"reject_clawback",
+	"always_review_warnings",
+	"auto_approve_self_noop_transfer",
+	"max_fee_microalgos",
+	"review_algo_payments",
+	"max_algo_payments",
+	"review_asa_amounts",
+	"max_asa_amounts",
+	"transfer_policy",
+}
+
+func allowedFieldSet(fields ...string) map[string]struct{} {
+	allowed := make(map[string]struct{}, len(storedPolicyCoreFields)+len(fields))
+	for _, key := range storedPolicyCoreFields {
+		allowed[key] = struct{}{}
+	}
+	for _, key := range fields {
+		allowed[key] = struct{}{}
+	}
+	return allowed
+}
+
+// Clone returns a deep copy of the shared policy field block.
+func (c *StoredPolicyCore) Clone() *StoredPolicyCore {
 	if c == nil {
 		return nil
 	}
@@ -107,6 +133,16 @@ func (c *StoredConfig) Clone() *StoredConfig {
 	cp.ReviewASAAmounts = cloneStoredASAAmounts(c.ReviewASAAmounts)
 	cp.MaxASAAmounts = cloneStoredASAAmounts(c.MaxASAAmounts)
 	cp.TransferPolicy = c.TransferPolicy.Clone()
+	return &cp
+}
+
+// Clone returns a deep copy of the stored policy config.
+func (c *StoredConfig) Clone() *StoredConfig {
+	if c == nil {
+		return nil
+	}
+	cp := *c
+	cp.StoredPolicyCore = *c.StoredPolicyCore.Clone()
 	cp.ClientSigning = c.ClientSigning.Clone()
 	cp.Sentry = c.Sentry.Clone()
 	if c.KeyOverrides != nil {
@@ -122,89 +158,26 @@ func (c *StoredRoleConfig) Clone() *StoredRoleConfig {
 	if c == nil {
 		return nil
 	}
-	cp := *c
-	cp.RejectRekey = cloneBoolPtr(c.RejectRekey)
-	cp.RejectForeignRekey = cloneBoolPtr(c.RejectForeignRekey)
-	cp.RejectCloseRemainder = cloneBoolPtr(c.RejectCloseRemainder)
-	cp.RejectAssetClose = cloneBoolPtr(c.RejectAssetClose)
-	cp.RejectClawback = cloneBoolPtr(c.RejectClawback)
-	cp.AlwaysReviewWarnings = cloneBoolPtr(c.AlwaysReviewWarnings)
-	cp.AutoApproveSelfNoOpTransfer = cloneBoolPtr(c.AutoApproveSelfNoOpTransfer)
-	cp.MaxFeeMicroAlgos = cloneUint64Ptr(c.MaxFeeMicroAlgos)
-	cp.ReviewAlgoPayments = cloneUintMap(c.ReviewAlgoPayments)
-	cp.MaxAlgoPayments = cloneUintMap(c.MaxAlgoPayments)
-	cp.ReviewASAAmounts = cloneStoredASAAmounts(c.ReviewASAAmounts)
-	cp.MaxASAAmounts = cloneStoredASAAmounts(c.MaxASAAmounts)
-	cp.TransferPolicy = c.TransferPolicy.Clone()
-	return &cp
+	return &StoredRoleConfig{StoredPolicyCore: *c.StoredPolicyCore.Clone()}
 }
 
 func (c *StoredConfig) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("policy config must be a mapping")
 	}
-	allowed := map[string]struct{}{
-		"reject_rekey":                    {},
-		"reject_foreign_rekey":            {},
-		"reject_close_remainder":          {},
-		"reject_asset_close":              {},
-		"reject_clawback":                 {},
-		"always_review_warnings":          {},
-		"auto_approve_self_noop_transfer": {},
-		"max_fee_microalgos":              {},
-		"review_algo_payments":            {},
-		"max_algo_payments":               {},
-		"review_asa_amounts":              {},
-		"max_asa_amounts":                 {},
-		"transfer_policy":                 {},
-		"client_signing":                  {},
-		"sentry":                          {},
-		"key_overrides":                   {},
-	}
+	allowed := allowedFieldSet("client_signing", "sentry", "key_overrides")
 	for i := 0; i < len(value.Content); i += 2 {
 		key := value.Content[i].Value
 		if _, ok := allowed[key]; !ok {
 			return fmt.Errorf("unknown policy field %q", key)
 		}
 	}
-	type rawConfig struct {
-		RejectRekey                 *bool                        `yaml:"reject_rekey,omitempty"`
-		RejectForeignRekey          *bool                        `yaml:"reject_foreign_rekey,omitempty"`
-		RejectCloseRemainder        *bool                        `yaml:"reject_close_remainder,omitempty"`
-		RejectAssetClose            *bool                        `yaml:"reject_asset_close,omitempty"`
-		RejectClawback              *bool                        `yaml:"reject_clawback,omitempty"`
-		AlwaysReviewWarnings        *bool                        `yaml:"always_review_warnings,omitempty"`
-		AutoApproveSelfNoOpTransfer *bool                        `yaml:"auto_approve_self_noop_transfer,omitempty"`
-		MaxFeeMicroAlgos            *uint64                      `yaml:"max_fee_microalgos,omitempty"`
-		ReviewAlgoPayments          map[string]uint64            `yaml:"review_algo_payments,omitempty"`
-		MaxAlgoPayments             map[string]uint64            `yaml:"max_algo_payments,omitempty"`
-		ReviewASAAmounts            map[string]map[string]uint64 `yaml:"review_asa_amounts,omitempty"`
-		MaxASAAmounts               map[string]map[string]uint64 `yaml:"max_asa_amounts,omitempty"`
-		TransferPolicy              *StoredTransferPolicy        `yaml:"transfer_policy,omitempty"`
-		ClientSigning               *StoredRoleConfig            `yaml:"client_signing,omitempty"`
-		Sentry                      *StoredRoleConfig            `yaml:"sentry,omitempty"`
-		KeyOverrides                map[string]*StoredConfig     `yaml:"key_overrides,omitempty"`
-	}
+	type rawConfig StoredConfig
 	var raw rawConfig
 	if err := value.Decode(&raw); err != nil {
 		return err
 	}
-	c.RejectRekey = raw.RejectRekey
-	c.RejectForeignRekey = raw.RejectForeignRekey
-	c.RejectCloseRemainder = raw.RejectCloseRemainder
-	c.RejectAssetClose = raw.RejectAssetClose
-	c.RejectClawback = raw.RejectClawback
-	c.AlwaysReviewWarnings = raw.AlwaysReviewWarnings
-	c.AutoApproveSelfNoOpTransfer = raw.AutoApproveSelfNoOpTransfer
-	c.MaxFeeMicroAlgos = raw.MaxFeeMicroAlgos
-	c.ReviewAlgoPayments = raw.ReviewAlgoPayments
-	c.MaxAlgoPayments = raw.MaxAlgoPayments
-	c.ReviewASAAmounts = raw.ReviewASAAmounts
-	c.MaxASAAmounts = raw.MaxASAAmounts
-	c.TransferPolicy = raw.TransferPolicy
-	c.ClientSigning = raw.ClientSigning
-	c.Sentry = raw.Sentry
-	c.KeyOverrides = raw.KeyOverrides
+	*c = StoredConfig(raw)
 	if err := validateRoleConfig("client_signing", c.ClientSigning); err != nil {
 		return err
 	}
@@ -218,21 +191,7 @@ func (c *StoredRoleConfig) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("policy role config must be a mapping")
 	}
-	allowed := map[string]struct{}{
-		"reject_rekey":                    {},
-		"reject_foreign_rekey":            {},
-		"reject_close_remainder":          {},
-		"reject_asset_close":              {},
-		"reject_clawback":                 {},
-		"always_review_warnings":          {},
-		"auto_approve_self_noop_transfer": {},
-		"max_fee_microalgos":              {},
-		"review_algo_payments":            {},
-		"max_algo_payments":               {},
-		"review_asa_amounts":              {},
-		"max_asa_amounts":                 {},
-		"transfer_policy":                 {},
-	}
+	allowed := allowedFieldSet()
 	for i := 0; i < len(value.Content); i += 2 {
 		key := value.Content[i].Value
 		if _, ok := allowed[key]; !ok {
@@ -997,7 +956,7 @@ func (c *StoredConfig) commonStoredConfig() *StoredConfig {
 	if c == nil {
 		return &StoredConfig{}
 	}
-	return &StoredConfig{
+	return &StoredConfig{StoredPolicyCore: StoredPolicyCore{
 		RejectCloseRemainder: c.RejectCloseRemainder,
 		RejectAssetClose:     c.RejectAssetClose,
 		RejectClawback:       c.RejectClawback,
@@ -1005,49 +964,21 @@ func (c *StoredConfig) commonStoredConfig() *StoredConfig {
 		MaxAlgoPayments:      cloneUintMap(c.MaxAlgoPayments),
 		MaxASAAmounts:        cloneStoredASAAmounts(c.MaxASAAmounts),
 		TransferPolicy:       normalizeSentryTransferPolicy(c.TransferPolicy),
-	}
+	}}
 }
 
 func (c *StoredRoleConfig) toStoredConfig() *StoredConfig {
 	if c == nil {
 		return &StoredConfig{}
 	}
-	return &StoredConfig{
-		RejectRekey:                 c.RejectRekey,
-		RejectForeignRekey:          c.RejectForeignRekey,
-		RejectCloseRemainder:        c.RejectCloseRemainder,
-		RejectAssetClose:            c.RejectAssetClose,
-		RejectClawback:              c.RejectClawback,
-		AlwaysReviewWarnings:        c.AlwaysReviewWarnings,
-		AutoApproveSelfNoOpTransfer: c.AutoApproveSelfNoOpTransfer,
-		MaxFeeMicroAlgos:            c.MaxFeeMicroAlgos,
-		ReviewAlgoPayments:          cloneUintMap(c.ReviewAlgoPayments),
-		MaxAlgoPayments:             cloneUintMap(c.MaxAlgoPayments),
-		ReviewASAAmounts:            cloneStoredASAAmounts(c.ReviewASAAmounts),
-		MaxASAAmounts:               cloneStoredASAAmounts(c.MaxASAAmounts),
-		TransferPolicy:              c.TransferPolicy.Clone(),
-	}
+	return &StoredConfig{StoredPolicyCore: *c.StoredPolicyCore.Clone()}
 }
 
 func (c *StoredConfig) toStoredRoleConfig() *StoredRoleConfig {
 	if c == nil {
 		return nil
 	}
-	return &StoredRoleConfig{
-		RejectRekey:                 c.RejectRekey,
-		RejectForeignRekey:          c.RejectForeignRekey,
-		RejectCloseRemainder:        c.RejectCloseRemainder,
-		RejectAssetClose:            c.RejectAssetClose,
-		RejectClawback:              c.RejectClawback,
-		AlwaysReviewWarnings:        c.AlwaysReviewWarnings,
-		AutoApproveSelfNoOpTransfer: c.AutoApproveSelfNoOpTransfer,
-		MaxFeeMicroAlgos:            c.MaxFeeMicroAlgos,
-		ReviewAlgoPayments:          cloneUintMap(c.ReviewAlgoPayments),
-		MaxAlgoPayments:             cloneUintMap(c.MaxAlgoPayments),
-		ReviewASAAmounts:            cloneStoredASAAmounts(c.ReviewASAAmounts),
-		MaxASAAmounts:               cloneStoredASAAmounts(c.MaxASAAmounts),
-		TransferPolicy:              c.TransferPolicy.Clone(),
-	}
+	return &StoredRoleConfig{StoredPolicyCore: *c.StoredPolicyCore.Clone()}
 }
 
 func normalizeSentryTransferPolicy(tp *StoredTransferPolicy) *StoredTransferPolicy {

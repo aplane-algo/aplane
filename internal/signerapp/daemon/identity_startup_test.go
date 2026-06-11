@@ -342,14 +342,11 @@ func TestBuildIdentityRuntimeLoadsStoredPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	maxFee := uint64(1234)
-	stored := &policy.StoredConfig{
-		RejectForeignRekey: boolPtr(false),
-		MaxFeeMicroAlgos:   &maxFee,
-		MaxASAAmounts: map[string]map[string]uint64{
-			"testnet": {
-				"31566704": 77,
-			},
+	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{RejectForeignRekey: boolPtr(false), MaxFeeMicroAlgos: &maxFee, MaxASAAmounts: map[string]map[string]uint64{
+		"testnet": {
+			"31566704": 77,
 		},
+	}},
 	}
 	masterKey := testMasterKeyForIdentity(t, server.keyPaths, "alice", passphrase)
 	defer crypto.ZeroBytes(masterKey)
@@ -488,7 +485,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 		t.Fatal(err)
 	}
 	maxFee := uint64(1234)
-	stored := &policy.StoredConfig{MaxFeeMicroAlgos: &maxFee}
+	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{MaxFeeMicroAlgos: &maxFee}}
 	masterKey := testMasterKeyForIdentity(t, server.keyPaths, "alice", passphrase)
 	defer crypto.ZeroBytes(masterKey)
 	if err := policy.SaveStoredConfigWithMasterKey(root, "alice", stored, masterKey, time.Unix(1700000000, 0)); err != nil {

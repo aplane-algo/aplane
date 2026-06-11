@@ -33,7 +33,7 @@ func (s *State) RefreshAuthAddressWithContext(ctx context.Context, addr string) 
 			s.AuthCache = cache.LoadAuthCacheFromStore(s.CacheStore, s.Network)
 		}
 		var err error
-		authAddr, err = s.AuthCache.RefreshAuthAddressLockedWithContext(ctx, s.AlgodClient, addr, s.Network)
+		authAddr, err = s.AuthCache.RefreshAuthAddressWithContext(ctx, s.AlgodClient, addr, s.Network)
 		return err
 	})
 	return authAddr, err
@@ -101,13 +101,13 @@ func (s *State) AddAliasWithContext(ctx context.Context, name, address string) (
 				if s.DataDir != "" {
 					s.AuthCache = cache.LoadAuthCacheFromStore(s.CacheStore, s.Network)
 				}
-				if err := s.AuthCache.UpdateAuthAddressLocked(address, acctInfo.AuthAddr, s.Network); err != nil {
+				if err := s.AuthCache.UpdateAuthAddress(address, acctInfo.AuthAddr, s.Network); err != nil {
 					if rollbackErr := restoreAlias(); rollbackErr != nil {
 						return fmt.Errorf("failed to update auth cache: %w (alias rollback also failed: %v)", err, rollbackErr)
 					}
 					return fmt.Errorf("failed to update auth cache: %w", err)
 				}
-				if err := s.AuthCache.PruneToOwnedAddressesLocked(s.ownedAuthAddresses(), s.Network); err != nil {
+				if err := s.AuthCache.PruneToOwnedAddresses(s.ownedAuthAddresses(), s.Network); err != nil {
 					if rollbackErr := restoreAlias(); rollbackErr != nil {
 						return fmt.Errorf("failed to prune auth cache: %w (alias rollback also failed: %v)", err, rollbackErr)
 					}
@@ -161,7 +161,7 @@ func (s *State) RemoveAlias(name string) (string, bool, error) {
 		if s.DataDir != "" {
 			s.AuthCache = cache.LoadAuthCacheFromStore(s.CacheStore, s.Network)
 		}
-		return s.AuthCache.PruneToOwnedAddressesLocked(s.ownedAuthAddresses(), s.Network)
+		return s.AuthCache.PruneToOwnedAddresses(s.ownedAuthAddresses(), s.Network)
 	})
 	if err != nil {
 		return "", false, err

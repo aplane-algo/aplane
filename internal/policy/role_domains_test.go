@@ -42,12 +42,7 @@ func TestRoleDomainsFixtureParsesAndRoundTrips(t *testing.T) {
 func TestStoredConfigApplyClientSigningRoleOverridesLegacyTopLevel(t *testing.T) {
 	topReject := true
 	clientReject := false
-	stored := &StoredConfig{
-		RejectForeignRekey: &topReject,
-		ClientSigning: &StoredRoleConfig{
-			RejectForeignRekey: &clientReject,
-		},
-	}
+	stored := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &topReject}, ClientSigning: &StoredRoleConfig{StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &clientReject}}}
 
 	cfg, err := stored.Apply(DefaultConfig())
 	if err != nil {
@@ -62,19 +57,17 @@ func TestStoredConfigApplySentryRole(t *testing.T) {
 	rejectRekey := true
 	enabled := true
 	addr := types.Address{1}.String()
-	stored := &StoredConfig{
-		RejectRekey: &rejectRekey,
-		TransferPolicy: &StoredTransferPolicy{
-			SchemaVersion: 1,
-			Enabled:       &enabled,
-			Routes: []StoredTransferRoute{{
-				ID:           "sentry_route",
-				Networks:     []string{"testnet"},
-				Sources:      []string{"*"},
-				Assets:       []StoredAssetTerm{{Raw: "algo"}},
-				Destinations: []string{addr},
-			}},
-		},
+	stored := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectRekey: &rejectRekey, TransferPolicy: &StoredTransferPolicy{
+		SchemaVersion: 1,
+		Enabled:       &enabled,
+		Routes: []StoredTransferRoute{{
+			ID:           "sentry_route",
+			Networks:     []string{"testnet"},
+			Sources:      []string{"*"},
+			Assets:       []StoredAssetTerm{{Raw: "algo"}},
+			Destinations: []string{addr},
+		}},
+	}},
 	}
 
 	cfg, err := stored.ApplySentry(DefaultConfig())
