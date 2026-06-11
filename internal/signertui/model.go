@@ -358,6 +358,7 @@ type AuthRequiredMsg struct{}
 // AuthResultMsg is sent when authentication result is received
 type AuthResultMsg struct {
 	Success bool
+	Code    string
 	Error   string
 }
 
@@ -376,6 +377,7 @@ type SignerStatusMsg struct {
 type UnlockResultMsg struct {
 	Success  bool
 	KeyCount int
+	Code     string
 	Error    string
 }
 

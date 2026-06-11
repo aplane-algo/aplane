@@ -117,7 +117,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.passphraseError == "" {
 				m.passphraseError = "Authentication failed"
 			}
-			if isSeriousUnlockError(msg.Error) {
+			if isSeriousUnlockError(msg.Code, msg.Error) {
 				m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewAuth)
 				m.passphraseInput = ""
 				m.loggingIn = false
@@ -175,7 +175,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
 		} else {
 			m.passphraseError = msg.Error
-			if isSeriousUnlockError(msg.Error) {
+			if isSeriousUnlockError(msg.Code, msg.Error) {
 				m.showSeriousErrorPopup("Signer unlock failed", msg.Error, ViewUnlock)
 				m.passphraseInput = ""
 				m.loggingIn = false
@@ -738,7 +738,18 @@ func (m Model) handleErrorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func isSeriousUnlockError(message string) bool {
+// isSeriousUnlockError reports whether an auth/unlock failure is a server-side
+// fault that deserves a popup rather than the inline "try again" treatment a
+// wrong passphrase gets. The structured code from the IPC result is
+// authoritative; the text heuristic remains only for older signers that do
+// not send codes.
+func isSeriousUnlockError(code, message string) bool {
+	switch code {
+	case protocol.ErrCodeUnlockFailed:
+		return true
+	case protocol.ErrCodeInvalidPassphrase, protocol.ErrCodeAuthenticationFailed:
+		return false
+	}
 	text := strings.ToLower(strings.TrimSpace(message))
 	if text == "" {
 		return false

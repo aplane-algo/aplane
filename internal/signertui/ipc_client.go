@@ -291,6 +291,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				}
 				c.emit(sessionID, AuthResultMsg{
 					Success: authResult.Success,
+					Code:    authResult.Code,
 					Error:   authResult.Error,
 				})
 
@@ -312,6 +313,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				c.emit(sessionID, UnlockResultMsg{
 					Success:  result.Success,
 					KeyCount: result.KeyCount,
+					Code:     result.Code,
 					Error:    result.Error,
 				})
 
