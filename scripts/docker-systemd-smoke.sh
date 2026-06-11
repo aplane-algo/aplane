@@ -393,7 +393,7 @@ run_request_token() {
     docker_exec_as_tester ". $OPERATOR_ROOT/apenv.sh && \
         apshell -script /tmp/req-token.script 2>&1 | tee /tmp/req-token.log"
     docker_exec_as_tester "test -s $OPERATOR_ROOT/apclient/aplane.token" \
-        || die "request-token did not systemduce a client token file"
+        || die "request-token did not produce a client token file"
 }
 
 verify_signer_reachable() {
