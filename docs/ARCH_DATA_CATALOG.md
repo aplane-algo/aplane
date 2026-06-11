@@ -191,7 +191,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Authorization action | source-defined authority | `internal/auth/authorizer.go` constants | authorizer known-action vocabulary | `internal/auth`, `internal/authz` | Unknown actions fail closed before grant matching. |
 | Authorization resource | request-scoped model | `auth.Resource` | target type/id/identity | `internal/auth`, HTTP/admin adapters | Empty identity is resolved at boundary or rejected. |
 | Product bootstrap grants | source-defined authority | `internal/authz` bootstrap setup | in-memory authorizer grants | `internal/authz` | No durable grant YAML in product mode. |
-| Authenticated HTTP identity | runtime-only | token authenticator match | `auth.Identity` | `internal/auth`, `cmd/apsigner/http_auth.go` | Token authenticates exactly one identity; cross-identity target rejects. |
+| Authenticated HTTP identity | runtime-only | token authenticator match | `auth.Identity` | `internal/auth`, `internal/signerapp/daemon/http_auth.go` | Token authenticates exactly one identity; cross-identity target rejects. |
 | Admin session context | runtime-only | admin transport auth result | `adminproto.SessionContext` | `internal/adminproto`, `internal/protocol` | Bound to target identity; approvals carry approver principal. |
 | Token provisioning request | runtime wire model | SSH key-only request plus admin approval | admin `token_provisioning_request` | `internal/sshtunnel`, `internal/signerapp/sshprovision` | No token issued until admin approval and SSH key enrollment succeed. |
 
@@ -318,8 +318,8 @@ name a test inline:
 
 - HTTP DTO and contract fixtures: `pkg/signerapi/types_contract_test.go`,
   `pkg/signerapi/sentry_test.go`, `test/contracts/signerapi/*.json`.
-- HTTP method/shape enforcement: `cmd/apsigner/method_compat_test.go`,
-  `cmd/apsigner/rest_shape_test.go`, `internal/signerclient/client_test.go`.
+- HTTP method/shape enforcement: `internal/signerapp/daemon/method_compat_test.go`,
+  `internal/signerapp/daemon/rest_shape_test.go`, `internal/signerclient/client_test.go`.
 - Endpoint registry and endpoint writes:
   `internal/config/client_endpoints.go`,
   `internal/config/client_endpoint_writes_test.go`,

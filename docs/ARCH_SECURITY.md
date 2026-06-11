@@ -576,7 +576,7 @@ Denial behavior:
 All sensitive handlers run through both authentication and authorization:
 
 ```go
-// cmd/apsigner/main.go composes the Signer; cmd/apsigner/http_runtime.go
+// cmd/apsigner/main.go composes the Signer; internal/signerapp/daemon/http_runtime.go
 // registers handlers.
 registryAuth := identity.NewRegistryAuthenticator(reg)
 authorizer := authz.NewProductSingleAuthorizer()
@@ -586,7 +586,7 @@ server := &Signer{
     authorizer:   authorizer,
 }
 
-// Handler registration with action and resource (cmd/apsigner/http_runtime.go)
+// Handler registration with action and resource (internal/signerapp/daemon/http_runtime.go)
 mux.HandleFunc("/sign", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSign))
 mux.HandleFunc("/sign/cancel", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSignCancel))
 mux.HandleFunc("/plan", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handlePlan))
@@ -604,7 +604,7 @@ request must match exactly one identity token; duplicate token matches across
 identities fail closed instead of routing nondeterministically.
 
 ```go
-// cmd/apsigner/http_auth.go
+// internal/signerapp/daemon/http_auth.go
 func (fs *Signer) requireAuth(action auth.Action, resource auth.Resource, next http.HandlerFunc) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         ctx := r.Context()
@@ -766,7 +766,7 @@ Multiple signing or export requests proceed concurrently under `RLock`. When the
 
 #### Lock Path
 
-`Signer.lock()` (in `cmd/apsigner/runtime.go`) delegates to `identity.Runtime.Lock()`, which conceptually executes the following steps in order:
+`Signer.lock()` (in `internal/signerapp/daemon/runtime.go`) delegates to `identity.Runtime.Lock()`, which conceptually executes the following steps in order:
 
 1. Set the lock runtime state to `Locked`; if it was already locked, return without side effects.
 2. Run the identity lock callback (`performLock`). The key watcher stays running; while locked it marks the identity dirty instead of reloading keys.

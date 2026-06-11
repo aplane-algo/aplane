@@ -506,7 +506,7 @@ signs any dummies. The successful response is a `GroupSignResponse` carrying
 the aligned `signed` slots plus a `mutations` report; any failure short-circuits
 to a `GroupSignResponse` with a populated `error`.
 
-See `cmd/apsigner/http_handlers_signing.go`'s `handleSign` for the dispatch
+See `internal/signerapp/daemon/http_handlers_signing.go`'s `handleSign` for the dispatch
 implementation, and `internal/signerapp/signing/planner.go` and
 `internal/signerapp/signing/execution.go` for the planning and per-key
 signing logic it drives.

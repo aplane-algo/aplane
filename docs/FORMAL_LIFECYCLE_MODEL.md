@@ -370,7 +370,7 @@ Implementation areas that should remain aligned with this model:
 - `internal/signerapp/approval`
 - `internal/signerapp/filewatcher`
 - `internal/signerapp/templates`
-- `cmd/apsigner/http_runtime.go`
+- `internal/signerapp/daemon/http_runtime.go`
 - `internal/adminproto`
 
 High-value test anchors:

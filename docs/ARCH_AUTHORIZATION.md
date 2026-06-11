@@ -345,12 +345,12 @@ response handling, token rotation, or policy/settings changes.
 
 Enforced callsites:
 
-- `cmd/apsigner/http_runtime.go` wraps HTTP `/sign`, `/sign/component`,
+- `internal/signerapp/daemon/http_runtime.go` wraps HTTP `/sign`, `/sign/component`,
   `/sign/assemble`, `/plan`, `/simulate`, `/status`, `/keys`, `/keytypes`,
   `/admin/generate`, `/admin/sentries/sync`, and `/admin/keys` with
   `requireAuth`. `/admin/sentries/sync` uses `sentries.sync` because it
   mutates public sentry reference metadata, not private key material.
-- `cmd/apsigner/http_auth.go` calls `Authorizer.Authorize` after
+- `internal/signerapp/daemon/http_auth.go` calls `Authorizer.Authorize` after
   authentication and before the handler executes.
 - `internal/signerapp/adminserver/session.go` gates auth-time unlock through
   `authorizeIdentity`.
@@ -451,10 +451,10 @@ Primary implementation files:
 - `internal/authz/authorizer.go`
 - `internal/signerapp/adminserver/session.go`
 - `internal/signerapp/adminserver/handlers.go`
-- `cmd/apsigner/http_auth.go`
-- `cmd/apsigner/http_runtime.go`
-- `cmd/apsigner/admin_services.go`
-- `cmd/apsigner/audit_attribution.go`
+- `internal/signerapp/daemon/http_auth.go`
+- `internal/signerapp/daemon/http_runtime.go`
+- `internal/signerapp/daemon/admin_services.go`
+- `internal/signerapp/daemon/audit_attribution.go`
 - `internal/signerapp/audit/audit.go`
 
 Compatibility-bearing references:

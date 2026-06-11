@@ -359,7 +359,7 @@ identity from request context; admin sessions over IPC or the SSH
 
 The admin protocol is split into transport and protocol layers:
 - `internal/adminproto` owns the transport-neutral protocol: session state machine, auth handshake, message dispatch, and business operation handlers
-- `internal/adminproto` owns active-session tracking, displacement negotiation, and line-stream adapters; `cmd/apsigner/ipc.go` owns the Unix socket transport
+- `internal/adminproto` owns active-session tracking, displacement negotiation, and line-stream adapters; `internal/signerapp/daemon/ipc.go` owns the Unix socket transport
 - `internal/sshtunnel` carries the same admin protocol over the SSH `aplane-admin` subsystem
 
 Non-transport code reaches the admin channel through the `AdminHub` interface on `Signer`, not by depending on the Unix IPC implementation directly. Protocol handlers access business logic through the `Services` interface, implemented by the Signer-backed `signerAdminServices`.

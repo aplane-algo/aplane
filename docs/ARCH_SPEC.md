@@ -619,7 +619,7 @@ admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
 
 ## Server Ownership Model
 
-`Signer` (`cmd/apsigner/server.go`) is the composition root. Per-identity mutable state lives in `identity.Runtime` (`internal/signerapp/identity/runtime.go`).
+`Signer` (`internal/signerapp/daemon/server.go`) is the composition root. Per-identity mutable state lives in `identity.Runtime` (`internal/signerapp/identity/runtime.go`).
 
 | Concern | Owner |
 |---------|-------|
@@ -789,10 +789,10 @@ The server-side plan/sign boundary is split as follows:
 - startup option resolution, validation, identity assembly, and lifecycle entrypoint in `internal/signerapp/startup`,
 - transport adapters/builders for HTTP, IPC, and SSH in `cmd/apsigner`,
 - server-side admin protocol/session state machine in `internal/adminproto`,
-- process-root identity-targeted admin facade for server-originated admin traffic in `internal/adminproto.AdminHub` and `cmd/apsigner/admin_hub.go`,
-- signer-backed admin protocol services in `cmd/apsigner/admin_services.go`,
+- process-root identity-targeted admin facade for server-originated admin traffic in `internal/adminproto.AdminHub` and `internal/signerapp/daemon/admin_hub.go`,
+- signer-backed admin protocol services in `internal/signerapp/daemon/admin_services.go`,
 - admin settings and policy service composition in `internal/signerapp/admin`,
-- admin key-mutation HTTP/IPC transport mapping in `cmd/apsigner/http_handlers_admin.go` and `cmd/apsigner/admin_services.go`, with reusable key operations in `internal/signerapp/keyadmin`,
+- admin key-mutation HTTP/IPC transport mapping in `internal/signerapp/daemon/http_handlers_admin.go` and `internal/signerapp/daemon/admin_services.go`, with reusable key operations in `internal/signerapp/keyadmin`,
 - IPC bind-path validation in `internal/signerapp/ipcbind`,
 - filesystem key/template reload watching in `internal/signerapp/filewatcher`,
 - REST service composition for signing, planning, simulation, key administration, and generic LogicSig generation in `internal/signerapp/rest`,
@@ -1584,14 +1584,14 @@ Product-level boundaries:
 
 | Area | Files |
 |------|-------|
-| Server | `cmd/apsigner/main.go`, `cmd/apsigner/server.go`, `internal/signerapp/startup/*.go` |
+| Server | `cmd/apsigner/main.go`, `internal/signerapp/daemon/server.go`, `internal/signerapp/startup/*.go` |
 | Client | `cmd/apshell/main.go`, `internal/apshellcli/registry.go`, `internal/apshellcli/mcp.go`, `internal/apshellcli/status_poll.go`, `internal/shellrepl/*.go` |
 | Client Enrollment / Remote Preflight | `internal/clientenroll/preflight.go`, `cmd/apconsole/preflight.go`, `cmd/apadmin/remote.go` |
 | Shell App | `internal/apshellapp/app.go`, `internal/apshellapp/runtime.go`, `internal/apshellapp/connect.go` |
 | Engine | `internal/engine/engine.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go` |
 | Signing | `internal/signerapp/signing/service.go`, `internal/signerapp/signing/planner.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/execution.go`, `internal/signerapp/signing/approval.go`, `internal/signerapp/signing/simulation.go` |
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
-| KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `cmd/apsigner/admin_services.go` |
+| KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/service.go`, `internal/signerapp/backupadmin/limiter.go`, `internal/backup/*.go` |
 | LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/lsig/wrapper.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_ed25519/provider.go`, `lsig/falcon1024_ed25519/signerops/ops.go`, `lsig/ecdsak1/register.go`, `lsig/ecdsak1/signerops/ops.go`, `lsig/ecdsak1/v1/standard.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
@@ -1600,7 +1600,7 @@ Product-level boundaries:
 | Policy | `internal/policy/config.go`, `internal/policy/store.go`, `internal/policy/integrity.go`, `internal/crypto/policy_integrity.go`, `internal/signerapp/policyruntime/policy.go`, `internal/policy/lint.go`, `internal/policy/review.go`, `internal/signerapp/signing/always_review.go`, `internal/signerapp/signing/service.go`, `internal/signerapp/admin/service.go`, `cmd/apstore/policy.go`, `internal/templatepolicy/outcome.go` |
 | Keystore | `internal/keystore/file.go`, `internal/keystore/session.go` |
 | Node Role / Key Class | `internal/noderole/role.go`, `internal/noderole/integrity.go`, `internal/keyclass/keyclass.go`, `internal/sentry/keytypes/keytypes.go` |
-| Store Init/Passphrase | `internal/storeinit/initialize.go`, `internal/storepass/rotate.go`, `internal/signerapp/unlockconfig/unlock.go`, `cmd/apstore/main.go`, `cmd/apsigner/admin_services.go` |
+| Store Init/Passphrase | `internal/storeinit/initialize.go`, `internal/storepass/rotate.go`, `internal/signerapp/unlockconfig/unlock.go`, `cmd/apstore/main.go`, `internal/signerapp/daemon/admin_services.go` |
 | Client Data | `internal/clientdata/lock.go`, `internal/clientstate/state.go`, `internal/refname/refname.go` |
 | Identity | `internal/signerapp/identity/runtime.go`, `internal/signerapp/identity/config.go` |
 | Release/Distribution | `Makefile`, `.github/workflows/release.yml`, `scripts/package-bootstrap-release.sh`, `scripts/build-algokit-localnet-plugin-target.sh`, `scripts/stage-bundled-plugins.sh`, `scripts/docker-systemd-smoke.sh`, `scripts/docker-local-four-node-smoke.sh`, `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`, `uninstall.sh`, `installer/`, `library/templates/` |

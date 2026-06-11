@@ -161,7 +161,7 @@ func TestGenerateFromSeed(t *testing.T) {
 
 - Prefer in-process transport fakes (`http.RoundTripper`, injected dial/listen seams, SDK transport hooks) over real local listeners for unit tests.
 - Reserve `net.Listen`, `httptest.NewServer`, and similar listener-binding helpers for tests that are explicitly about transport behavior rather than application logic.
-- Treat `cmd/apsigner/ssh_admin_shape_test.go` as a self-contained loopback transport-shape suite, not a pure unit test. It intentionally exercises real localhost TCP, SSH framing, and admin subsystem wiring to pin the SSH admin contract, and skips when the environment forbids loopback listener binds.
+- Treat `internal/signerapp/daemon/ssh_admin_shape_test.go` as a self-contained loopback transport-shape suite, not a pure unit test. It intentionally exercises real localhost TCP, SSH framing, and admin subsystem wiring to pin the SSH admin contract, and skips when the environment forbids loopback listener binds.
 - When adding new signer tests, keep business logic under in-process tests in owner packages and add listener-based tests only when the transport contract itself is the thing being verified.
 
 1. **Isolation**: Use `t.TempDir()` for file operations
