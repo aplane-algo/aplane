@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
-	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -63,7 +63,7 @@ func TestBuildIdentityRuntimeAppliesStoredConfig(t *testing.T) {
 		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
-	cfg := config.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 
 	if err := identity.SaveStoredSetting(root, "alice", "user_auto_approve", true); err != nil {
@@ -116,7 +116,7 @@ func TestBuildIdentityRuntimeRejectsStoredMode(t *testing.T) {
 		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
-	cfg := config.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 
 	if err := identity.SaveStoredSetting(root, "alice", "mode", "sentry"); err != nil {
@@ -177,7 +177,7 @@ func TestBuildIdentityRuntimeForcesHeadlessOverrides_IdentityScopedPassfile(t *t
 		keyPaths: utilkeys.NewPaths(root),
 		dataDir:  root,
 	}
-	cfg := config.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 	// Process-global config has NO passphrase_command_argv, so
 	// cfg.ShouldLockOnDisconnect() returns true (the default).
@@ -228,7 +228,7 @@ func TestBuildIdentityRuntimeForcesHeadlessOverrides_GlobalPassfile(t *testing.T
 		keyPaths: utilkeys.NewPaths(root),
 		dataDir:  root,
 	}
-	cfg := config.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 	// Process-global passphrase command — ShouldLockOnDisconnect() returns false.
 	// But also write a stored override to prove the headless path catches it.
@@ -270,7 +270,7 @@ func TestBuildIdentityRuntimeRoutesLockedNotificationByIdentity(t *testing.T) {
 		keyPaths: utilkeys.NewPaths(root),
 		dataDir:  root,
 	}
-	cfg := config.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	hub := &recordingAdminHub{}
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 
@@ -307,7 +307,7 @@ func TestBuildIdentityRuntimeRejectsSecondaryIdentityWithoutToken(t *testing.T) 
 		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
-	cfg := config.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	writeTestNodeRole(t, root, noderole.RoleSigner)
 
 	_, err := signerstartup.BuildIdentityRuntime(server.registry, signerstartup.IdentityBuildOptions{
@@ -331,7 +331,7 @@ func TestBuildIdentityRuntimeLoadsStoredPolicy(t *testing.T) {
 		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
-	cfg := config.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	passphrase := []byte("policy-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
@@ -395,7 +395,7 @@ func TestBuildIdentityRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
-	cfg := config.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	passphrase := []byte("policy-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
@@ -437,7 +437,7 @@ func TestBuildIdentityRuntimeRejectsTamperedNodeRoleOnUnlock(t *testing.T) {
 		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
-	cfg := config.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	passphrase := []byte("role-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{
@@ -477,7 +477,7 @@ func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
 		registry: identity.NewRegistry(),
 		keyPaths: utilkeys.NewPaths(root),
 	}
-	cfg := config.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	passphrase := []byte("policy-passphrase")
 	defer crypto.ZeroBytes(passphrase)
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{

@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"reflect"
 	"strings"
@@ -44,7 +45,7 @@ func main() {
 	fmt.Println()
 	fmt.Println("File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, required)")
 	fmt.Println()
-	printStructTable(reflect.TypeOf(config.ServerConfig{}))
+	printStructTable(reflect.TypeOf(serverconfig.ServerConfig{}))
 	fmt.Println()
 	fmt.Println("Identity-scoped `identities/<identity>/config.yaml` contains settings")
 	fmt.Println("only. Node role is stored separately in root `node.yaml`.")

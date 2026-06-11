@@ -6,6 +6,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,7 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -83,7 +83,7 @@ func Run(dataDir string) int {
 	config := startupOpts.Config
 	passphraseTimeout := startupOpts.PassphraseTimeout
 	identityID := startupOpts.IdentityID
-	if _, err := apconfig.ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {
+	if _, err := serverconfig.ParsePassphraseTimeout(config.PassphraseTimeout); err != nil {
 		logWarnf("invalid passphrase_timeout in config: %v, using default (0)", err)
 		_ = os.Stderr.Sync()
 	}
@@ -335,7 +335,7 @@ func ensureProviders() error {
 }
 
 // printSecurityAudit prints a consolidated security configuration summary
-func printSecurityAudit(passphraseTimeout time.Duration, config *apconfig.ServerConfig, ipcPath string, coreDumpsDisabled bool, memoryLocked bool, lockOnDisconnect bool, passphraseSource string) {
+func printSecurityAudit(passphraseTimeout time.Duration, config *serverconfig.ServerConfig, ipcPath string, coreDumpsDisabled bool, memoryLocked bool, lockOnDisconnect bool, passphraseSource string) {
 	logInfof("Security configuration:")
 
 	// Passphrase source status
@@ -390,7 +390,7 @@ func printSecurityAudit(passphraseTimeout time.Duration, config *apconfig.Server
 
 // printInteractiveModeWarnings prints warnings for unusual configs in interactive mode.
 // These are not errors, just alerts that the user may have misconfigured something.
-func printInteractiveModeWarnings(config *apconfig.ServerConfig) {
+func printInteractiveModeWarnings(config *serverconfig.ServerConfig) {
 	var warnings []string
 
 	// Warn if user auto-approve is enabled - all non-rejected default-fallback transactions sign without confirmation.
@@ -418,7 +418,7 @@ func printInteractiveModeWarnings(config *apconfig.ServerConfig) {
 
 // configureAlgodOnDSAs sets up the algod client on all DSA providers that support it.
 // This enables runtime TEAL compilation for composed providers during key import.
-func configureAlgodOnDSAs(serverCfg *apconfig.ServerConfig) {
+func configureAlgodOnDSAs(serverCfg *serverconfig.ServerConfig) {
 	cfg, err := serverCfg.GetTEALCompileAlgod()
 	if err != nil || cfg.Server == "" {
 		return // No algod configured, providers will use precompiled fallback where available

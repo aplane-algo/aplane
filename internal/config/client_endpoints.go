@@ -84,7 +84,7 @@ func LoadClientEndpointRegistry(dataDir string, cfg Config) (ClientEndpointRegis
 	}
 
 	var stored ClientEndpointRegistry
-	if err := unmarshalKnownFields(data, &stored); err != nil {
+	if err := UnmarshalKnownFields(data, &stored); err != nil {
 		return ClientEndpointRegistry{}, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
 	if stored.SchemaVersion == 0 {

@@ -4,13 +4,13 @@
 package storemut
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
@@ -210,7 +210,7 @@ func TestSaveServerSettingPersistsConfigValue(t *testing.T) {
 		t.Fatalf("SaveServerSetting() error = %v", err)
 	}
 
-	cfg, err := apconfig.LoadServerConfig(dir)
+	cfg, err := serverconfig.LoadServerConfig(dir)
 	if err != nil {
 		t.Fatalf("LoadServerConfig() error = %v", err)
 	}

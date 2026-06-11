@@ -5,12 +5,12 @@ package identity
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -57,7 +57,7 @@ type StoredConfig struct {
 // NewIdentityConfig creates an identity config with values from the process config.
 func NewIdentityConfig(userAutoApprove, lockOnDisconnect bool, sessionTimeout, approvalWait time.Duration) *IdentityConfig {
 	if approvalWait <= 0 {
-		approvalWait = apconfig.DefaultApprovalWait
+		approvalWait = serverconfig.DefaultApprovalWait
 	}
 	return &IdentityConfig{
 		userAutoApprove:  userAutoApprove,
@@ -198,7 +198,7 @@ func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 	}
 
 	if c.PassphraseTimeout != "" {
-		parsed, err := apconfig.ParsePassphraseTimeout(c.PassphraseTimeout)
+		parsed, err := serverconfig.ParsePassphraseTimeout(c.PassphraseTimeout)
 		if err != nil {
 			return EffectiveConfig{}, fmt.Errorf("invalid identity passphrase_timeout: %w", err)
 		}
@@ -206,7 +206,7 @@ func (c *StoredConfig) Apply(defaults ConfigDefaults) (EffectiveConfig, error) {
 	}
 
 	if c.ApprovalWait != "" {
-		parsed, err := apconfig.ParseApprovalWait(c.ApprovalWait)
+		parsed, err := serverconfig.ParseApprovalWait(c.ApprovalWait)
 		if err != nil {
 			return EffectiveConfig{}, fmt.Errorf("invalid identity approval_wait: %w", err)
 		}

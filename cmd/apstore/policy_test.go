@@ -4,12 +4,12 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -153,7 +153,7 @@ func withPolicyCommandStoreWithRole(t *testing.T, role noderole.Role, fn func(ro
 
 	root := t.TempDir()
 	dataDirectory = root
-	config = apconfig.DefaultServerConfig()
+	config = serverconfig.DefaultServerConfig()
 	stdinReader = nil
 	passphrase := []byte("policy-passphrase")
 	if _, err := storeinit.Initialize(passphrase, storeinit.Options{

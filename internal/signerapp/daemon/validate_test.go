@@ -4,9 +4,9 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"testing"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -14,7 +14,7 @@ import (
 func TestValidateStartupAcceptsSSHDefaults(t *testing.T) {
 	t.Parallel()
 
-	cfg := apconfig.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	runtime := &signerstartup.RuntimeState{}
 
 	if _, err := signerstartup.Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir()), "default"); err != nil {
@@ -25,7 +25,7 @@ func TestValidateStartupAcceptsSSHDefaults(t *testing.T) {
 func TestValidateStartupRejectsInvalidSSHConfig(t *testing.T) {
 	t.Parallel()
 
-	cfg := apconfig.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	cfg.Endpoint.SSH.AuthorizedKeysPath = ""
 	runtime := &signerstartup.RuntimeState{}
 

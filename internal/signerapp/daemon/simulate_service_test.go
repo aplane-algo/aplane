@@ -4,10 +4,10 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"strings"
 	"testing"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -15,7 +15,7 @@ import (
 )
 
 func TestAlgodForTransactionGroupRejectsUnrecognizedGenesisHashBeforeAlgod(t *testing.T) {
-	cfg := apconfig.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	calledMakeAlgod := false
 	signer := &Signer{
 		config: &cfg,

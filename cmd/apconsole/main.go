@@ -6,6 +6,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"io"
 	"os"
 	"path/filepath"
@@ -22,7 +23,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/apshellcli"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
 	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/manifest"
@@ -339,7 +339,7 @@ func ensureProviders() error {
 	return nil
 }
 
-func configureAlgodOnDSAs(config config.ServerConfig) {
+func configureAlgodOnDSAs(config serverconfig.ServerConfig) {
 	cfg, err := config.GetTEALCompileAlgod()
 	if err != nil || cfg.Server == "" {
 		logWarnf("no algod.%s.server configured - composed Falcon templates unavailable", config.TEALCompileNetwork)

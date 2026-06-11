@@ -6,6 +6,7 @@ package startup
 import (
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"sort"
 	"sync"
 	"time"
@@ -21,7 +22,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/tokenfile"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 )
 
 // IdentityBuildOptions describes the config and paths needed to construct all
@@ -29,7 +29,7 @@ import (
 type IdentityBuildOptions struct {
 	DataDir               string
 	KeyPaths              storepaths.Paths
-	Config                *apconfig.ServerConfig
+	Config                *serverconfig.ServerConfig
 	DefaultSessionTimeout time.Duration
 	ProductIdentityID     string
 }
@@ -142,7 +142,7 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 		}
 	}
 
-	defaultApprovalWait, err := apconfig.ParseApprovalWait(opts.Config.ApprovalWait)
+	defaultApprovalWait, err := serverconfig.ParseApprovalWait(opts.Config.ApprovalWait)
 	if err != nil {
 		return nil, fmt.Errorf("invalid approval_wait for identity %q: %w", identityID, err)
 	}

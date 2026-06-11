@@ -4,19 +4,19 @@
 package startup
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 func TestValidateRequiresSSHDefaults(t *testing.T) {
 	t.Parallel()
 
-	cfg := apconfig.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	runtime := &RuntimeState{}
 
 	if _, err := Validate(&cfg, runtime, utilkeys.NewPaths(t.TempDir()), "default"); err != nil {
@@ -27,7 +27,7 @@ func TestValidateRequiresSSHDefaults(t *testing.T) {
 func TestValidateRejectsInvalidSSHConfig(t *testing.T) {
 	t.Parallel()
 
-	cfg := apconfig.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	cfg.Endpoint.SSH.HostKeyPath = ""
 	runtime := &RuntimeState{}
 

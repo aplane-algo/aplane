@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"os"
@@ -19,7 +20,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
-	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
@@ -221,7 +221,7 @@ func TestHandleUpdateAdminSettingPersistsIdentityScopedConfigSeparately(t *testi
 		t.Fatalf("update_admin_setting_result shape mismatch: %#v", msgs[0])
 	}
 
-	diskCfg, err := config.LoadServerConfig(server.dataDir)
+	diskCfg, err := serverconfig.LoadServerConfig(server.dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

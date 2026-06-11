@@ -6,12 +6,12 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
@@ -243,7 +243,7 @@ func (s signerAdminServices) SetTheme(v string) {
 	s.signer.SetTheme(v)
 }
 
-func (s signerAdminServices) Config() *apconfig.ServerConfig {
+func (s signerAdminServices) Config() *serverconfig.ServerConfig {
 	cfg := s.signer.ConfigSnapshot()
 	return &cfg
 }
@@ -336,7 +336,7 @@ func (d signerAdminAppDeps) DataDir() string {
 	return d.signer.dataDir
 }
 
-func (d signerAdminAppDeps) Config() *apconfig.ServerConfig {
+func (d signerAdminAppDeps) Config() *serverconfig.ServerConfig {
 	cfg := d.signer.ConfigSnapshot()
 	return &cfg
 }

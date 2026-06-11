@@ -5,6 +5,7 @@ package signing
 
 import (
 	"context"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"strings"
 	"testing"
 
@@ -35,8 +36,8 @@ func TestSimulatorRejectsEmptyGroupBeforeAlgodLookup(t *testing.T) {
 func TestSimulatorRejectsMixedGenesisHashesBeforeAlgodLookup(t *testing.T) {
 	called := false
 	sim := Simulator{
-		Config: func() apconfig.ServerConfig {
-			cfg := apconfig.DefaultServerConfig()
+		Config: func() serverconfig.ServerConfig {
+			cfg := serverconfig.DefaultServerConfig()
 			cfg.Algod = apconfig.AlgodConfig{
 				apconfig.NetworkTestnet: {Server: "http://localhost:4001", Token: "token"},
 			}
@@ -65,8 +66,8 @@ func TestSimulatorRejectsMixedGenesisHashesBeforeAlgodLookup(t *testing.T) {
 
 func TestSimulatorReportsMissingAlgodServerForResolvedNetwork(t *testing.T) {
 	sim := Simulator{
-		Config: func() apconfig.ServerConfig {
-			cfg := apconfig.DefaultServerConfig()
+		Config: func() serverconfig.ServerConfig {
+			cfg := serverconfig.DefaultServerConfig()
 			cfg.Algod = apconfig.AlgodConfig{
 				apconfig.NetworkTestnet: {Token: "token"},
 			}
@@ -88,8 +89,8 @@ func TestSimulatorReportsMissingAlgodServerForResolvedNetwork(t *testing.T) {
 func TestSimulatorPassesResolvedNetworkAlgodConfigToFactory(t *testing.T) {
 	var gotServer, gotToken string
 	sim := Simulator{
-		Config: func() apconfig.ServerConfig {
-			cfg := apconfig.DefaultServerConfig()
+		Config: func() serverconfig.ServerConfig {
+			cfg := serverconfig.DefaultServerConfig()
 			cfg.Algod = apconfig.AlgodConfig{
 				apconfig.NetworkTestnet: {Server: "http://algod.example", Token: "secret-token"},
 			}

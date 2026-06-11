@@ -4,11 +4,11 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
@@ -114,7 +114,7 @@ type Signer struct {
 	sshServer          *sshtunnel.Server                  // SSH tunnel server (nil if SSH disabled)
 	sshRuntime         *sshRuntime                        // SSH runtime holder for live listener restarts
 	sshRuntimeMu       sync.RWMutex                       // Protects sshRuntime and sshServer swaps
-	config             *apconfig.ServerConfig             // Server configuration (includes policy settings)
+	config             *serverconfig.ServerConfig         // Server configuration (includes policy settings)
 	configMu           sync.RWMutex                       // Protects live-mutable ServerConfig fields.
 	configMutationMu   sync.Mutex                         // Serializes process-owned config.yaml mutations
 	storeMutationMu    sync.Mutex                         // Protects storeMutationLocks map
@@ -155,11 +155,11 @@ func (fs *Signer) SetTheme(v string) {
 }
 
 // ConfigSnapshot returns an independent copy of the process config.
-func (fs *Signer) ConfigSnapshot() apconfig.ServerConfig {
+func (fs *Signer) ConfigSnapshot() serverconfig.ServerConfig {
 	fs.configMu.RLock()
 	defer fs.configMu.RUnlock()
 	if fs.config == nil {
-		return apconfig.ServerConfig{}
+		return serverconfig.ServerConfig{}
 	}
 	return fs.config.Clone()
 }

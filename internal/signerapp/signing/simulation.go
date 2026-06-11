@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	txsigning "github.com/aplane-algo/aplane/internal/signing"
@@ -19,7 +20,7 @@ import (
 type AlgodFactory func(serverURL, token string) (*algod.Client, error)
 
 type Simulator struct {
-	Config    func() apconfig.ServerConfig
+	Config    func() serverconfig.ServerConfig
 	MakeAlgod AlgodFactory
 }
 
@@ -85,9 +86,9 @@ func (s Simulator) AlgodForTransactionGroup(signedTxns []types.SignedTxn) (*algo
 	return algodClient, nil
 }
 
-func (s Simulator) serverConfig() apconfig.ServerConfig {
+func (s Simulator) serverConfig() serverconfig.ServerConfig {
 	if s.Config == nil {
-		return apconfig.DefaultServerConfig()
+		return serverconfig.DefaultServerConfig()
 	}
 	return s.Config()
 }

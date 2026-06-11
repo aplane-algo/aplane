@@ -6,11 +6,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/version"
 
@@ -18,7 +18,7 @@ import (
 )
 
 // Global config for commands that need it
-var config apconfig.ServerConfig
+var config serverconfig.ServerConfig
 
 // dataDirectory holds the resolved data directory path
 var dataDirectory string

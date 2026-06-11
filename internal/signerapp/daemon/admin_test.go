@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -123,8 +124,8 @@ func setupTestSigner(t *testing.T) (*Signer, func()) {
 	return server, cleanup
 }
 
-func serverConfigForTest() *config.ServerConfig {
-	cfg := config.DefaultServerConfig()
+func serverConfigForTest() *serverconfig.ServerConfig {
+	cfg := serverconfig.DefaultServerConfig()
 	cfg.Theme = "auto"
 	return &cfg
 }

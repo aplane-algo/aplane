@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net"
 	"os"
 	"path/filepath"
@@ -19,7 +20,7 @@ import (
 
 var localSignerHostKeyProbe = probeLoopbackSignerHostKey
 
-func trustLocalSignerHostKey(clientDataDir string, signerCfg config.ServerConfig) (string, error) {
+func trustLocalSignerHostKey(clientDataDir string, signerCfg serverconfig.ServerConfig) (string, error) {
 	if err := config.CheckSupportedClientEndpointConfig(clientDataDir); err != nil {
 		return "", err
 	}

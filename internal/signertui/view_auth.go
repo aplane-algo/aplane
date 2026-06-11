@@ -7,9 +7,8 @@ package tui
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"strings"
-
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 )
 
 // renderAuthView renders the IPC authentication screen
@@ -81,7 +80,7 @@ func (m Model) renderPassphrasePrompt(subtitle string, showTimeout bool) string 
 func (m Model) adminInactivityNotice() string {
 	timeout := m.effectiveSessionTimeout
 	if timeout <= 0 && m.adminSettings != nil && m.adminSettings.PassphraseTimeout != "" {
-		parsed, err := apconfig.ParsePassphraseTimeout(m.adminSettings.PassphraseTimeout)
+		parsed, err := serverconfig.ParsePassphraseTimeout(m.adminSettings.PassphraseTimeout)
 		if err == nil {
 			timeout = parsed
 		}

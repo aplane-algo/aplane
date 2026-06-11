@@ -5,11 +5,11 @@ package policytui
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"strconv"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/asa"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policyview"
 	"github.com/aplane-algo/aplane/internal/signerapp/asametadata"
 )
@@ -134,7 +134,7 @@ func (m Model) guardAmountMetadata(asset string, networks []string, allowLive bo
 	if len(concreteNetworks) != 1 {
 		return asa.Metadata{}, false, fmt.Errorf("ASA display amount thresholds require one concrete network")
 	}
-	var cfg *apconfig.ServerConfig
+	var cfg *serverconfig.ServerConfig
 	if allowLive {
 		cfg = m.serverConfigPtr()
 	}
@@ -158,7 +158,7 @@ func (m Model) assetSetGuardAmountMetadata(setName string, networks []string, al
 		return asa.Metadata{}, false, fmt.Errorf("asset-set display amounts require concrete networks")
 	}
 	var first *asa.Metadata
-	var cfg *apconfig.ServerConfig
+	var cfg *serverconfig.ServerConfig
 	if allowLive {
 		cfg = m.serverConfigPtr()
 	}
@@ -186,8 +186,8 @@ func (m Model) assetSetGuardAmountMetadata(setName string, networks []string, al
 	return *first, true, nil
 }
 
-func (m Model) serverConfigPtr() *apconfig.ServerConfig {
-	cfg, err := apconfig.LoadServerConfig(m.dataDir)
+func (m Model) serverConfigPtr() *serverconfig.ServerConfig {
+	cfg, err := serverconfig.LoadServerConfig(m.dataDir)
 	if err != nil {
 		return nil
 	}

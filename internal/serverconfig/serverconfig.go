@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package config
+package serverconfig
 
 import (
 	"fmt"
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/endpointrefs"
@@ -54,8 +54,8 @@ type ServerConfig struct {
 	Networks           ServerNetworkConfigs `yaml:"networks" description:"Grouped settings per network context token"`
 	TEALCompileNetwork string               `yaml:"teal_compile_network" description:"Network context token whose algod is used for TEAL compilation" default:"testnet"`
 	// Algod and GenesisHashNetworks are derived runtime indexes built from Networks.
-	Algod               AlgodConfig       `yaml:"-"`
-	GenesisHashNetworks map[string]string `yaml:"-"`
+	Algod               apconfig.AlgodConfig `yaml:"-"`
+	GenesisHashNetworks map[string]string    `yaml:"-"`
 	// Security settings
 	RequireMemoryProtection bool `yaml:"require_memory_protection" description:"Fail startup if memory protection unavailable" default:"false"`
 	// Operator-default approval setting. Policy rules live in identity policy.yaml.
@@ -86,7 +86,7 @@ func (c ServerConfig) Clone() ServerConfig {
 		}
 	}
 	if c.Algod != nil {
-		out.Algod = make(AlgodConfig, len(c.Algod))
+		out.Algod = make(apconfig.AlgodConfig, len(c.Algod))
 		for network, cfg := range c.Algod {
 			if cfg == nil {
 				continue
@@ -96,7 +96,7 @@ func (c ServerConfig) Clone() ServerConfig {
 		}
 	}
 	if c.GenesisHashNetworks != nil {
-		out.GenesisHashNetworks = cloneStringMap(c.GenesisHashNetworks)
+		out.GenesisHashNetworks = cloneServerStringMap(c.GenesisHashNetworks)
 	}
 	if c.Networks != nil {
 		out.Networks = make(ServerNetworkConfigs, len(c.Networks))
@@ -115,21 +115,12 @@ func (c ServerConfig) Clone() ServerConfig {
 	return out
 }
 
-// ResolvePath resolves a path relative to baseDir if not absolute.
-// Returns path unchanged if empty or already absolute.
-func ResolvePath(path, baseDir string) string {
-	if path == "" || baseDir == "" || filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(baseDir, path)
-}
-
 // DefaultSSHServerConfig returns default SSH server settings
 // (used when ssh block exists but fields are missing)
 func DefaultSSHServerConfig() SSHServerConfig {
 	return SSHServerConfig{
-		ListenAddress:      DefaultSSHListenAddress,
-		Port:               DefaultSSHPort,
+		ListenAddress:      apconfig.DefaultSSHListenAddress,
+		Port:               apconfig.DefaultSSHPort,
 		HostKeyPath:        ".ssh/ssh_host_key",    // Relative to data directory
 		AuthorizedKeysPath: ".ssh/authorized_keys", // Relative to data directory
 	}
@@ -138,7 +129,7 @@ func DefaultSSHServerConfig() SSHServerConfig {
 // DefaultServerEndpointConfig returns default signer endpoint settings.
 func DefaultServerEndpointConfig() ServerEndpointConfig {
 	return ServerEndpointConfig{
-		SignerPort: DefaultRESTPort,
+		SignerPort: apconfig.DefaultRESTPort,
 		SSH:        DefaultSSHServerConfig(),
 	}
 }
@@ -245,7 +236,7 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 
 	// Parse YAML
 	configFile := serverConfigFile{ServerConfig: defaults}
-	if err := unmarshalKnownFields(data, &configFile); err != nil {
+	if err := apconfig.UnmarshalKnownFields(data, &configFile); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 	config := configFile.ServerConfig
@@ -280,17 +271,17 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 	}
 
 	// Validate teal_compile_network is a filesystem-safe context token.
-	if err := ValidateNetworkID(config.TEALCompileNetwork); err != nil {
+	if err := apconfig.ValidateNetworkID(config.TEALCompileNetwork); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid teal_compile_network in config: %w", err)
 	}
 
 	// Validate algod map keys are valid context tokens.
 	for network := range config.Algod {
-		if err := ValidateNetworkID(network); err != nil {
+		if err := apconfig.ValidateNetworkID(network); err != nil {
 			return ServerConfig{}, fmt.Errorf("invalid network in algod config: %w", err)
 		}
 	}
-	if _, err := NewGenesisHashNetworkResolver(config.GenesisHashNetworks); err != nil {
+	if _, err := apconfig.NewGenesisHashNetworkResolver(config.GenesisHashNetworks); err != nil {
 		return ServerConfig{}, fmt.Errorf("invalid network genesis_hash: %w", err)
 	}
 
@@ -318,13 +309,13 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 		}
 	}
 	// Resolve relative SSH paths to absolute paths.
-	config.Endpoint.SSH.HostKeyPath = ResolvePath(config.Endpoint.SSH.HostKeyPath, dataDir)
-	config.Endpoint.SSH.AuthorizedKeysPath = ResolvePath(config.Endpoint.SSH.AuthorizedKeysPath, dataDir)
+	config.Endpoint.SSH.HostKeyPath = apconfig.ResolvePath(config.Endpoint.SSH.HostKeyPath, dataDir)
+	config.Endpoint.SSH.AuthorizedKeysPath = apconfig.ResolvePath(config.Endpoint.SSH.AuthorizedKeysPath, dataDir)
 
 	// Resolve relative paths in passphrase_command_argv against the data directory.
 	// All elements (binary and arguments) use the same resolution logic.
 	for i := range config.PassphraseCommandArgv {
-		config.PassphraseCommandArgv[i] = ResolvePath(config.PassphraseCommandArgv[i], dataDir)
+		config.PassphraseCommandArgv[i] = apconfig.ResolvePath(config.PassphraseCommandArgv[i], dataDir)
 	}
 
 	return config, nil
@@ -363,12 +354,12 @@ func yamlHasTopLevelKey(data []byte, key string) bool {
 }
 
 // GetAlgodConfig returns the algod settings for the specified network.
-func (c *ServerConfig) GetAlgodConfig(network string) (*AlgodNetworkConfig, error) {
+func (c *ServerConfig) GetAlgodConfig(network string) (*apconfig.AlgodNetworkConfig, error) {
 	return c.Algod.GetNetwork(network)
 }
 
 // GetTEALCompileAlgod returns the algod config used for TEAL compilation.
-func (c *ServerConfig) GetTEALCompileAlgod() (*AlgodNetworkConfig, error) {
+func (c *ServerConfig) GetTEALCompileAlgod() (*apconfig.AlgodNetworkConfig, error) {
 	return c.Algod.GetNetwork(c.TEALCompileNetwork)
 }
 
@@ -436,7 +427,7 @@ func SaveSetting(dataDir, key string, value interface{}) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := writeConfigAtomic(path, out, 0o640); err != nil {
+	if err := apconfig.WriteConfigAtomic(path, out, 0o640); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -484,7 +475,7 @@ func SaveNestedSetting(dataDir, section, key string, value interface{}) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := writeConfigAtomic(path, out, 0o640); err != nil {
+	if err := apconfig.WriteConfigAtomic(path, out, 0o640); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -546,62 +537,6 @@ func ConfigFileChanged(dataDir string, startup ServerConfig) (bool, error) {
 	return false, nil
 }
 
-func writeConfigAtomic(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "config.yaml.tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		_ = tmp.Close()
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if _, err := tmp.Write(data); err != nil {
-		return err
-	}
-
-	targetMode := mode
-	var targetUID, targetGID int
-	hasOwnership := false
-
-	info, statErr := os.Stat(path)
-	switch {
-	case statErr == nil:
-		targetMode = info.Mode().Perm()
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			targetUID = int(stat.Uid)
-			targetGID = int(stat.Gid)
-			hasOwnership = true
-		}
-	case os.IsNotExist(statErr):
-		// New file: keep default mode and current ownership.
-	default:
-		return statErr
-	}
-
-	if err := tmp.Chmod(targetMode); err != nil {
-		return err
-	}
-	if hasOwnership && (os.Getuid() != targetUID || os.Getgid() != targetGID) {
-		if err := tmp.Chown(targetUID, targetGID); err != nil {
-			return err
-		}
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return nil
-}
-
 // ParsePassphraseTimeout parses an admin idle timeout string into a time.Duration.
 // Accepts formats like: "0" (disabled), "15m" (15 minutes), "1h" (1 hour).
 // Negative durations are rejected.
@@ -643,4 +578,15 @@ func ParseApprovalWait(waitStr string) (time.Duration, error) {
 		return 0, fmt.Errorf("duration %q above maximum %s", waitStr, MaxApprovalWait)
 	}
 	return duration, nil
+}
+
+func cloneServerStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

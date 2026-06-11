@@ -845,7 +845,7 @@ generation availability, provenance, and policy editing behavior.
 | Authorization actions/resources | `internal/auth`, `internal/authz`, [ARCH_AUTHORIZATION.md](ARCH_AUTHORIZATION.md) |
 | Policy config and verdicts | `internal/policy`, [ARCH_POLICY.md](ARCH_POLICY.md) |
 | Network tokens and genesis hashes | `internal/config/networkid.go`, `internal/config/genesishash.go`, [ARCH_NETWORKS.md](ARCH_NETWORKS.md) |
-| Client/server config | `internal/config/config.go`, `internal/config/serverconfig.go` |
+| Client/server config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go` |
 | Client endpoint registry | `internal/config/client_endpoints.go`, `internal/config/client_endpoint_writes.go` |
 | Identity runtime/config | `internal/signerapp/identity` |
 | Keystore and key files | `internal/crypto`, `internal/keystore`, `internal/keys` |

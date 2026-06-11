@@ -167,7 +167,7 @@ func LoadConfigFromPath(path string) (Config, error) {
 
 	// Start with defaults, then overlay config file values
 	config := DefaultConfig()
-	if err := unmarshalKnownFields(data, &config); err != nil {
+	if err := UnmarshalKnownFields(data, &config); err != nil {
 		return Config{}, fmt.Errorf("failed to parse config file: %w", err)
 	}
 	if config.Algod, err = mergeClientNetworkAlgodConfig(nil, config.Networks); err != nil {

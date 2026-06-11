@@ -4,10 +4,10 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
@@ -16,7 +16,7 @@ func TestNewSigningServiceForIdentityCapturesPolicyAndUserAutoApproveSnapshot(t 
 	userAutoApprove := false
 	signer := &Signer{
 		registry: identity.NewRegistry(),
-		config:   &apconfig.ServerConfig{},
+		config:   &serverconfig.ServerConfig{},
 	}
 	ir := identity.New(identity.Config{
 		ID:              auth.DefaultIdentityID,

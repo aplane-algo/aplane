@@ -5,6 +5,7 @@ package policyruntime
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"time"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
@@ -15,7 +16,7 @@ import (
 
 // DefaultConfig returns the signer-runtime default policy with process
 // genesis-hash mappings and local ASA amount formatting installed.
-func DefaultConfig(dataDir string, serverCfg *apconfig.ServerConfig) (*policy.Config, error) {
+func DefaultConfig(dataDir string, serverCfg *serverconfig.ServerConfig) (*policy.Config, error) {
 	resolver := apconfig.DefaultGenesisHashNetworkResolver()
 	if serverCfg != nil {
 		configured, err := apconfig.NewGenesisHashNetworkResolver(serverCfg.GenesisHashNetworks)
@@ -31,7 +32,7 @@ func DefaultConfig(dataDir string, serverCfg *apconfig.ServerConfig) (*policy.Co
 
 // ApplyStoredConfig resolves a stored policy overlay into an effective signer
 // policy using the runtime defaults for this process.
-func ApplyStoredConfig(dataDir string, serverCfg *apconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error) {
+func ApplyStoredConfig(dataDir string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error) {
 	defaultPolicy, err := DefaultConfig(dataDir, serverCfg)
 	if err != nil {
 		return nil, err
@@ -46,7 +47,7 @@ func ApplyStoredConfig(dataDir string, serverCfg *apconfig.ServerConfig, stored 
 // ApplySentryStoredConfig resolves a stored sentry policy overlay into
 // an effective sentry component policy using the runtime defaults for this
 // process.
-func ApplySentryStoredConfig(dataDir string, serverCfg *apconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error) {
+func ApplySentryStoredConfig(dataDir string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error) {
 	defaultPolicy, err := DefaultConfig(dataDir, serverCfg)
 	if err != nil {
 		return nil, err
@@ -60,7 +61,7 @@ func ApplySentryStoredConfig(dataDir string, serverCfg *apconfig.ServerConfig, s
 
 // LoadVerified loads policy.yaml only after verifying its integrity sidecar
 // with the identity master key, then applies runtime defaults.
-func LoadVerified(dataDir, identityID string, serverCfg *apconfig.ServerConfig, masterKey []byte) (*policy.Config, error) {
+func LoadVerified(dataDir, identityID string, serverCfg *serverconfig.ServerConfig, masterKey []byte) (*policy.Config, error) {
 	_, effective, err := LoadVerifiedWithStored(dataDir, identityID, serverCfg, masterKey)
 	return effective, err
 }
@@ -68,7 +69,7 @@ func LoadVerified(dataDir, identityID string, serverCfg *apconfig.ServerConfig, 
 // LoadVerifiedWithStored loads policy.yaml only after verifying its integrity
 // sidecar with the identity master key, then returns both the stored policy
 // snapshot and the applied runtime policy.
-func LoadVerifiedWithStored(dataDir, identityID string, serverCfg *apconfig.ServerConfig, masterKey []byte) (*policy.StoredConfig, *policy.Config, error) {
+func LoadVerifiedWithStored(dataDir, identityID string, serverCfg *serverconfig.ServerConfig, masterKey []byte) (*policy.StoredConfig, *policy.Config, error) {
 	stored, err := policy.LoadVerifiedStoredConfigWithMasterKey(dataDir, identityID, masterKey)
 	if err != nil {
 		return nil, nil, err
@@ -84,7 +85,7 @@ func LoadVerifiedWithStored(dataDir, identityID string, serverCfg *apconfig.Serv
 // after verifying its integrity sidecar with the identity master key, then
 // returns both the stored policy snapshot and the applied runtime sentry
 // policy.
-func LoadVerifiedSentryWithStored(dataDir, identityID string, serverCfg *apconfig.ServerConfig, masterKey []byte) (*policy.StoredConfig, *policy.Config, error) {
+func LoadVerifiedSentryWithStored(dataDir, identityID string, serverCfg *serverconfig.ServerConfig, masterKey []byte) (*policy.StoredConfig, *policy.Config, error) {
 	stored, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataDir, identityID, masterKey)
 	if err != nil {
 		return nil, nil, err
@@ -99,7 +100,7 @@ func LoadVerifiedSentryWithStored(dataDir, identityID string, serverCfg *apconfi
 // LoadVerifiedForNodeRoleWithStored loads and applies the active policy domain
 // for role. Single-mode nodes store the selected role policy in policy.yaml;
 // role decides which schema and runtime defaults are used.
-func LoadVerifiedForNodeRoleWithStored(role noderole.Role, dataDir, identityID string, serverCfg *apconfig.ServerConfig, masterKey []byte) (*policy.StoredConfig, *policy.Config, error) {
+func LoadVerifiedForNodeRoleWithStored(role noderole.Role, dataDir, identityID string, serverCfg *serverconfig.ServerConfig, masterKey []byte) (*policy.StoredConfig, *policy.Config, error) {
 	if role == "" {
 		role = noderole.DefaultRole()
 	}
@@ -115,7 +116,7 @@ func LoadVerifiedForNodeRoleWithStored(role noderole.Role, dataDir, identityID s
 
 // SaveStoredConfigWithMasterKey writes policy.yaml plus policy.yaml.hmac and
 // returns the effective runtime policy for the stored content.
-func SaveStoredConfigWithMasterKey(dataDir, identityID string, serverCfg *apconfig.ServerConfig, stored *policy.StoredConfig, masterKey []byte, signedAt time.Time) (*policy.Config, error) {
+func SaveStoredConfigWithMasterKey(dataDir, identityID string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig, masterKey []byte, signedAt time.Time) (*policy.Config, error) {
 	effective, err := ApplyStoredConfig(dataDir, serverCfg, stored)
 	if err != nil {
 		return nil, err
@@ -129,7 +130,7 @@ func SaveStoredConfigWithMasterKey(dataDir, identityID string, serverCfg *apconf
 // SaveStoredSentryConfigWithMasterKey writes policy.yaml plus
 // policy.yaml.hmac and returns the effective runtime sentry policy for the
 // stored content.
-func SaveStoredSentryConfigWithMasterKey(dataDir, identityID string, serverCfg *apconfig.ServerConfig, stored *policy.StoredConfig, masterKey []byte, signedAt time.Time) (*policy.Config, error) {
+func SaveStoredSentryConfigWithMasterKey(dataDir, identityID string, serverCfg *serverconfig.ServerConfig, stored *policy.StoredConfig, masterKey []byte, signedAt time.Time) (*policy.Config, error) {
 	effective, err := ApplySentryStoredConfig(dataDir, serverCfg, stored)
 	if err != nil {
 		return nil, err

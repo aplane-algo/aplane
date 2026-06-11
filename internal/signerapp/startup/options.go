@@ -5,10 +5,10 @@ package startup
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"time"
 
 	bootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -17,7 +17,7 @@ import (
 // Options captures resolved signer startup inputs after bootstrap.
 type Options struct {
 	DataDir           string
-	Config            apconfig.ServerConfig
+	Config            serverconfig.ServerConfig
 	PassphraseTimeout time.Duration
 	Paths             storepaths.Paths
 	IdentityID        string
@@ -59,7 +59,7 @@ type UnlockPlan struct {
 // ResolveUnlockConfig returns the passphrase command config for an identity.
 // It checks identity-scoped unlock.yaml first, then falls back to the
 // process-global config for backward compatibility.
-func ResolveUnlockConfig(dataDir, identityID string, config *apconfig.ServerConfig) (*identity.UnlockConfig, error) {
+func ResolveUnlockConfig(dataDir, identityID string, config *serverconfig.ServerConfig) (*identity.UnlockConfig, error) {
 	unlockCfg, err := identity.LoadUnlockConfig(dataDir, identityID)
 	if err != nil {
 		return nil, err
@@ -113,12 +113,12 @@ func BuildUnlockPlan(opts *Options, keystoreExists bool, testPassphrase string) 
 		}, nil
 	}
 
-	cmdCfg := &apconfig.PassphraseCommandConfig{
+	cmdCfg := &serverconfig.PassphraseCommandConfig{
 		Argv: unlockCfg.PassphraseCommandArgv,
 		Env:  unlockCfg.PassphraseCommandEnv,
 		Verb: "read",
 	}
-	passphrase, err := apconfig.RunPassphraseCommand(cmdCfg, nil)
+	passphrase, err := serverconfig.RunPassphraseCommand(cmdCfg, nil)
 	if err != nil {
 		return nil, err
 	}

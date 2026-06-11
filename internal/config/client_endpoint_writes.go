@@ -30,7 +30,7 @@ func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, b
 		return ClientEndpointRegistry{}, false, fmt.Errorf("failed to read %s: %w", path, err)
 	}
 	var registry ClientEndpointRegistry
-	if err := unmarshalKnownFields(data, &registry); err != nil {
+	if err := UnmarshalKnownFields(data, &registry); err != nil {
 		return ClientEndpointRegistry{}, false, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
 	if err := normalizeStoredClientEndpointRegistry(&registry); err != nil {
@@ -85,7 +85,7 @@ func SaveStoredClientEndpointRegistry(dataDir string, registry ClientEndpointReg
 	if path == "" {
 		return fmt.Errorf("data directory is required")
 	}
-	return writeConfigAtomic(path, data, 0o600)
+	return WriteConfigAtomic(path, data, 0o600)
 }
 
 // StoredClientEndpointUpsertPlan describes the endpoint registry change that

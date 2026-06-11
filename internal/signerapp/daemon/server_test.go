@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"encoding/hex"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -226,7 +227,7 @@ func TestIsValidationTransactionNonPayment(t *testing.T) {
 
 func TestSignerConfigSnapshotIsIndependent(t *testing.T) {
 	lockOnDisconnect := true
-	cfg := apconfig.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	cfg.LockOnDisconnect = &lockOnDisconnect
 	cfg.PassphraseCommandArgv = []string{"appass-file", "/tmp/pass"}
 	cfg.PassphraseCommandEnv = map[string]string{"A": "B"}

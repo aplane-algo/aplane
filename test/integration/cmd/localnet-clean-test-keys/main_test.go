@@ -4,6 +4,7 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/config"
@@ -19,17 +20,17 @@ func TestRequirePathInside(t *testing.T) {
 }
 
 func TestServerConfigLooksLocalnet(t *testing.T) {
-	if !serverConfigLooksLocalnet(config.ServerConfig{TEALCompileNetwork: localnetNetwork}) {
+	if !serverConfigLooksLocalnet(serverconfig.ServerConfig{TEALCompileNetwork: localnetNetwork}) {
 		t.Fatal("serverConfigLooksLocalnet rejected localnet teal compile network")
 	}
-	if !serverConfigLooksLocalnet(config.ServerConfig{
+	if !serverConfigLooksLocalnet(serverconfig.ServerConfig{
 		Algod: config.AlgodConfig{
 			localnetNetwork: &config.AlgodNetworkConfig{Server: "http://localhost:4001"},
 		},
 	}) {
 		t.Fatal("serverConfigLooksLocalnet rejected localnet algod config")
 	}
-	if serverConfigLooksLocalnet(config.ServerConfig{TEALCompileNetwork: "testnet"}) {
+	if serverConfigLooksLocalnet(serverconfig.ServerConfig{TEALCompileNetwork: "testnet"}) {
 		t.Fatal("serverConfigLooksLocalnet accepted testnet-only config")
 	}
 }

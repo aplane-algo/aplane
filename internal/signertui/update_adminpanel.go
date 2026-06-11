@@ -4,10 +4,10 @@
 package tui
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -130,7 +130,7 @@ func (m Model) handleAdminPanelKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func validateAdminSettingValue(key, value string) error {
 	switch key {
 	case adminproto.AdminSettingPassphraseTimeout:
-		_, err := apconfig.ParsePassphraseTimeout(value)
+		_, err := serverconfig.ParsePassphraseTimeout(value)
 		return err
 	default:
 		return nil

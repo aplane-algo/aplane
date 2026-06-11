@@ -8,9 +8,9 @@ package storemut
 import (
 	"context"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"path/filepath"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -117,12 +117,12 @@ func (s *Service) SaveGenericLSig(address, keyType, template string, parameters 
 
 // SaveServerSetting persists a single signer-owned config setting.
 func (s *Service) SaveServerSetting(dataDir, key string, value interface{}) error {
-	return apconfig.SaveSetting(dataDir, key, value)
+	return serverconfig.SaveSetting(dataDir, key, value)
 }
 
 // SaveServerNestedSetting persists one nested signer-owned config setting.
 func (s *Service) SaveServerNestedSetting(dataDir, section, key string, value interface{}) error {
-	return apconfig.SaveNestedSetting(dataDir, section, key, value)
+	return serverconfig.SaveNestedSetting(dataDir, section, key, value)
 }
 
 // SaveIdentitySetting persists a single identity-scoped setting.

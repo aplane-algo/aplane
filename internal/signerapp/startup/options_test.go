@@ -4,12 +4,12 @@
 package startup
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -19,7 +19,7 @@ func TestResolveUnlockConfigPrefersIdentityScoped(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	cfg := apconfig.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	cfg.PassphraseCommandArgv = []string{"global-pass", "/tmp/global"}
 	cfg.PassphraseCommandEnv = map[string]string{"GLOBAL": "1"}
 
@@ -43,7 +43,7 @@ func TestResolveUnlockConfigPrefersIdentityScoped(t *testing.T) {
 func TestResolveUnlockConfigFallsBackToGlobal(t *testing.T) {
 	t.Parallel()
 
-	cfg := apconfig.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	cfg.PassphraseCommandArgv = []string{"global-pass", "/tmp/global"}
 	cfg.PassphraseCommandEnv = map[string]string{"GLOBAL": "1"}
 
@@ -66,7 +66,7 @@ func TestBuildUnlockPlanLockedWithoutKeystore(t *testing.T) {
 	root := t.TempDir()
 	opts := &Options{
 		DataDir:    root,
-		Config:     apconfig.DefaultServerConfig(),
+		Config:     serverconfig.DefaultServerConfig(),
 		Paths:      storepaths.NewPaths(root),
 		IdentityID: "default",
 	}
@@ -98,7 +98,7 @@ func TestBuildUnlockPlanUsesTestPassphrase(t *testing.T) {
 
 	opts := &Options{
 		DataDir:    root,
-		Config:     apconfig.DefaultServerConfig(),
+		Config:     serverconfig.DefaultServerConfig(),
 		Paths:      paths,
 		IdentityID: "default",
 	}

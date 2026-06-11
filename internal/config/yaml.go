@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func unmarshalKnownFields(data []byte, out interface{}) error {
+func UnmarshalKnownFields(data []byte, out interface{}) error {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	return decoder.Decode(out)

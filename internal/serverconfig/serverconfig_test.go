@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package config
+package serverconfig
 
 import (
+	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,8 +64,8 @@ func TestLoadServerConfigDefaultsUserAutoApprove(t *testing.T) {
 	if cfg.ApprovalWait != DefaultApprovalWaitString {
 		t.Fatalf("approval_wait default = %q, want %q", cfg.ApprovalWait, DefaultApprovalWaitString)
 	}
-	if cfg.Endpoint.SSH.ListenAddress != DefaultSSHListenAddress {
-		t.Fatalf("endpoint.ssh.listen_address default = %q, want %q", cfg.Endpoint.SSH.ListenAddress, DefaultSSHListenAddress)
+	if cfg.Endpoint.SSH.ListenAddress != apconfig.DefaultSSHListenAddress {
+		t.Fatalf("endpoint.ssh.listen_address default = %q, want %q", cfg.Endpoint.SSH.ListenAddress, apconfig.DefaultSSHListenAddress)
 	}
 }
 
@@ -628,7 +629,7 @@ func TestServerConfigExamplesUseKnownFields(t *testing.T) {
 
 func decodeServerConfigKnownFields(data []byte) error {
 	var cfg ServerConfig
-	return unmarshalKnownFields(data, &cfg)
+	return apconfig.UnmarshalKnownFields(data, &cfg)
 }
 
 func TestServerConfigCloneDeepCopiesMutableFields(t *testing.T) {
@@ -638,12 +639,12 @@ func TestServerConfigCloneDeepCopiesMutableFields(t *testing.T) {
 		LockOnDisconnect:      &lockOnDisconnect,
 		PassphraseCommandArgv: []string{"appass-file", "/tmp/pass"},
 		PassphraseCommandEnv:  map[string]string{"A": "B"},
-		Algod: AlgodConfig{
+		Algod: apconfig.AlgodConfig{
 			"testnet": {Server: "http://algod", Token: "token"},
 		},
 		GenesisHashNetworks: map[string]string{"hash": "voi_mainnet"},
 		Networks: ServerNetworkConfigs{
-			"localnet": {Algod: &AlgodNetworkConfig{Server: "http://localnet", Token: "token"}, GenesisHash: "hash2"},
+			"localnet": {Algod: &apconfig.AlgodNetworkConfig{Server: "http://localnet", Token: "token"}, GenesisHash: "hash2"},
 		},
 	}
 
@@ -721,4 +722,40 @@ func TestSaveSettingPreservesFileMetadata(t *testing.T) {
 	if afterStat.Gid != beforeStat.Gid {
 		t.Fatalf("gid = %d, want %d", afterStat.Gid, beforeStat.Gid)
 	}
+}
+
+func mustReadTestFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return data
+}
+
+func extractInstallHereDocAfter(t *testing.T, installer, after, marker string) string {
+	t.Helper()
+	sectionStart := strings.Index(installer, after)
+	if sectionStart == -1 {
+		t.Fatalf("install.sh section marker not found: %s", after)
+	}
+	return extractInstallHereDoc(t, installer[sectionStart:], marker)
+}
+
+func extractInstallHereDoc(t *testing.T, installer, marker string) string {
+	t.Helper()
+	start := strings.Index(installer, marker)
+	if start == -1 {
+		t.Fatalf("install.sh heredoc marker not found: %s", marker)
+	}
+	bodyStart := strings.Index(installer[start:], "\n")
+	if bodyStart == -1 {
+		t.Fatalf("install.sh heredoc marker has no body: %s", marker)
+	}
+	body := installer[start+bodyStart+1:]
+	end := strings.Index(body, "\nEOF")
+	if end == -1 {
+		t.Fatalf("install.sh heredoc terminator not found after marker: %s", marker)
+	}
+	return body[:end]
 }

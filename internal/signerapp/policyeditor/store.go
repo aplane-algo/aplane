@@ -9,9 +9,9 @@ package policyeditor
 import (
 	"context"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"time"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -46,7 +46,7 @@ type OfflineStore struct {
 
 	// Config overrides the runtime signer config used for validation. When nil,
 	// the config is loaded from DataDir.
-	Config *apconfig.ServerConfig
+	Config *serverconfig.ServerConfig
 }
 
 // Load verifies the selected policy document integrity sidecar, parses the
@@ -305,16 +305,16 @@ func (s OfflineStore) now() time.Time {
 	return time.Now()
 }
 
-func (s OfflineStore) serverConfig() (apconfig.ServerConfig, error) {
+func (s OfflineStore) serverConfig() (serverconfig.ServerConfig, error) {
 	if s.Config != nil {
 		return s.Config.Clone(), nil
 	}
 	if s.DataDir == "" {
-		return apconfig.ServerConfig{}, nil
+		return serverconfig.ServerConfig{}, nil
 	}
-	cfg, err := apconfig.LoadServerConfig(s.DataDir)
+	cfg, err := serverconfig.LoadServerConfig(s.DataDir)
 	if err != nil {
-		return apconfig.ServerConfig{}, fmt.Errorf("failed to load signer config: %w", err)
+		return serverconfig.ServerConfig{}, fmt.Errorf("failed to load signer config: %w", err)
 	}
 	return cfg, nil
 }

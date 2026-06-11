@@ -267,7 +267,7 @@ Validation:
 
 ### Server Config
 
-Source: `internal/config/serverconfig.go`
+Source: `internal/serverconfig/serverconfig.go`
 
 Loaded from `-d <path>` or `APSIGNER_DATA`.
 Installer-written signer configs include `networks` entries for `testnet`,
@@ -431,7 +431,7 @@ config/plugin/env files).
 ### Passphrase Helper Contract
 
 Sources: `internal/signerapp/unlockconfig/unlock.go` owns identity-scoped
-`unlock.yaml` persistence; `internal/config/passphrasecmd.go` owns helper
+`unlock.yaml` persistence; `internal/serverconfig/passphrasecmd.go` owns helper
 execution, output decoding, environment filtering, and validation.
 
 - each `passphrase_command_argv` element resolves relative to signer data dir

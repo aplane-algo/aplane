@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net"
 	"sort"
 	"strconv"
@@ -37,7 +38,7 @@ type SSHInfo struct {
 
 type Deps interface {
 	DataDir() string
-	Config() *apconfig.ServerConfig
+	Config() *serverconfig.ServerConfig
 	KeyPaths() storepaths.Paths
 	Theme() string
 	SetTheme(v string)
@@ -87,7 +88,7 @@ func (s Service) BuildAdminSettings(ir *identity.Runtime) adminproto.AdminSettin
 	}
 }
 
-func endpointDisplayURL(cfg *apconfig.ServerConfig, sshInfo SSHInfo) string {
+func endpointDisplayURL(cfg *serverconfig.ServerConfig, sshInfo SSHInfo) string {
 	if cfg == nil {
 		return ""
 	}
@@ -160,7 +161,7 @@ func (s Service) UpdateAdminSetting(ir *identity.Runtime, req adminproto.UpdateA
 func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.UpdateAdminSettingRequest) error {
 	cfg := s.Deps.Config()
 
-	changed, checkErr := apconfig.ConfigFileChanged(s.Deps.DataDir(), *cfg)
+	changed, checkErr := serverconfig.ConfigFileChanged(s.Deps.DataDir(), *cfg)
 	if checkErr != nil {
 		return fmt.Errorf("failed to check config file: %w", checkErr)
 	}
@@ -193,7 +194,7 @@ func (s Service) updateAdminSettingLocked(ir *identity.Runtime, req adminproto.U
 			saveKey, saveValue = adminproto.AdminSettingLockOnDisconnect, v
 		}
 	case adminproto.AdminSettingPassphraseTimeout:
-		duration, parseErr := apconfig.ParsePassphraseTimeout(req.Value)
+		duration, parseErr := serverconfig.ParsePassphraseTimeout(req.Value)
 		if parseErr != nil {
 			err = parseErr
 		} else {
@@ -292,7 +293,7 @@ type policyTargetOps struct {
 	parse                   func([]byte) (*policy.StoredConfig, error)
 	loadVerified            func(dataDir, identityID string, masterKey []byte) (*policy.StoredConfig, error)
 	saveBytes               func(dataDir, identityID string, data []byte, masterKey []byte, signedAt time.Time) error
-	apply                   func(dataDir string, cfg *apconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error)
+	apply                   func(dataDir string, cfg *serverconfig.ServerConfig, stored *policy.StoredConfig) (*policy.Config, error)
 	activeSnapshot          func(*identity.Runtime) (*policy.StoredConfig, *policy.Config)
 	setState                func(*identity.Runtime, *policy.StoredConfig, *policy.Config)
 }
@@ -808,7 +809,7 @@ func (s Service) updateVerifiedPolicyLocked(ir *identity.Runtime, mutate func(*p
 	return nil
 }
 
-func (s Service) detectPassphraseMethodForIdentity(ir *identity.Runtime, cfg *apconfig.ServerConfig) string {
+func (s Service) detectPassphraseMethodForIdentity(ir *identity.Runtime, cfg *serverconfig.ServerConfig) string {
 	unlockCfg, _ := identity.LoadUnlockConfig(s.Deps.DataDir(), ir.ID())
 	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
 		return DetectPassphraseMethod(unlockCfg.PassphraseCommandArgv)

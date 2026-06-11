@@ -5,9 +5,9 @@ package tui
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"time"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -74,7 +74,7 @@ func (m *Model) applySignerUnlockedState(keyCount int) {
 }
 
 func (m *Model) applyAdminSettingsTimeout(settings AdminSettings) tea.Cmd {
-	timeout, err := apconfig.ParsePassphraseTimeout(settings.PassphraseTimeout)
+	timeout, err := serverconfig.ParsePassphraseTimeout(settings.PassphraseTimeout)
 	if err != nil {
 		m.effectiveSessionTimeout = 0
 		m.localIdleGeneration++

@@ -5,23 +5,23 @@ package signer
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"time"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 // Startup captures resolved apsigner startup configuration.
 type Startup struct {
 	DataDir           string
-	Config            apconfig.ServerConfig
+	Config            serverconfig.ServerConfig
 	PassphraseTimeout time.Duration
 	Paths             storepaths.Paths
 }
 
 // ResolveDataDir resolves the signer data directory from flags and environment.
 func ResolveDataDir(dataDirFlag string) (string, error) {
-	dataDir := apconfig.GetSignerDataDir(dataDirFlag)
+	dataDir := serverconfig.GetSignerDataDir(dataDirFlag)
 	if dataDir == "" {
 		return "", fmt.Errorf("data directory not specified")
 	}
@@ -39,12 +39,12 @@ func Load(dataDirFlag string) (*Startup, error) {
 		return nil, err
 	}
 
-	cfg, err := apconfig.LoadServerConfig(dataDir)
+	cfg, err := serverconfig.LoadServerConfig(dataDir)
 	if err != nil {
 		return nil, err
 	}
 
-	passphraseTimeout, err := apconfig.ParsePassphraseTimeout(cfg.PassphraseTimeout)
+	passphraseTimeout, err := serverconfig.ParsePassphraseTimeout(cfg.PassphraseTimeout)
 	if err != nil {
 		passphraseTimeout = 0
 	}

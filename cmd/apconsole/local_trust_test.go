@@ -8,12 +8,12 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/config"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
@@ -235,10 +235,10 @@ func writeTestSSHHostKey(t *testing.T, dir string) string {
 	return path
 }
 
-func testSignerConfigWithHostKey(hostKeyPath string) config.ServerConfig {
-	return config.ServerConfig{
-		Endpoint: config.ServerEndpointConfig{
-			SSH: config.SSHServerConfig{HostKeyPath: hostKeyPath},
+func testSignerConfigWithHostKey(hostKeyPath string) serverconfig.ServerConfig {
+	return serverconfig.ServerConfig{
+		Endpoint: serverconfig.ServerEndpointConfig{
+			SSH: serverconfig.SSHServerConfig{HostKeyPath: hostKeyPath},
 		},
 	}
 }

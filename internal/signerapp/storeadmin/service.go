@@ -6,9 +6,9 @@ package storeadmin
 import (
 	"bytes"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
@@ -19,7 +19,7 @@ import (
 
 type Deps interface {
 	DataDir() string
-	Config() *apconfig.ServerConfig
+	Config() *serverconfig.ServerConfig
 	KeyPaths() storepaths.Paths
 	WithIdentityMutation(identityID string, fn func() error) error
 	Logf(format string, args ...interface{})
@@ -80,7 +80,7 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 			return initErr
 		}
 		if passphraseCmdCfg != nil {
-			if err := apconfig.WritePassphrase(passphraseCmdCfg, req.Passphrase); err != nil {
+			if err := serverconfig.WritePassphrase(passphraseCmdCfg, req.Passphrase); err != nil {
 				helperWarning = fmt.Sprintf("could not store passphrase via passphrase command helper: %v", err)
 			}
 		}
@@ -148,7 +148,7 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 				if passphraseCmdCfg == nil {
 					return nil
 				}
-				if err := apconfig.WritePassphrase(passphraseCmdCfg, req.NewPassphrase); err != nil {
+				if err := serverconfig.WritePassphrase(passphraseCmdCfg, req.NewPassphrase); err != nil {
 					return fmt.Errorf("passphrase change aborted: helper write failed: %w", err)
 				}
 				return nil
@@ -179,11 +179,11 @@ func (s Service) ChangeStorePassphrase(ir *identity.Runtime, req adminproto.Chan
 	}
 }
 
-func passphraseCommandConfigFromUnlock(unlockCfg *identity.UnlockConfig) *apconfig.PassphraseCommandConfig {
+func passphraseCommandConfigFromUnlock(unlockCfg *identity.UnlockConfig) *serverconfig.PassphraseCommandConfig {
 	if unlockCfg == nil || !unlockCfg.HasPassphraseCommand() {
 		return nil
 	}
-	return &apconfig.PassphraseCommandConfig{
+	return &serverconfig.PassphraseCommandConfig{
 		Argv: unlockCfg.PassphraseCommandArgv,
 		Env:  unlockCfg.PassphraseCommandEnv,
 	}

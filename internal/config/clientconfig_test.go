@@ -373,7 +373,7 @@ func extractInstallHereDocAfter(t *testing.T, installer, after, marker string) s
 
 func decodeClientConfigKnownFields(data []byte) error {
 	var cfg Config
-	if err := unmarshalKnownFields(data, &cfg); err != nil {
+	if err := UnmarshalKnownFields(data, &cfg); err != nil {
 		return err
 	}
 	return nil
@@ -381,7 +381,7 @@ func decodeClientConfigKnownFields(data []byte) error {
 
 func decodeClientEndpointRegistryKnownFields(data []byte) error {
 	var registry ClientEndpointRegistry
-	if err := unmarshalKnownFields(data, &registry); err != nil {
+	if err := UnmarshalKnownFields(data, &registry); err != nil {
 		return err
 	}
 	return normalizeStoredClientEndpointRegistry(&registry)

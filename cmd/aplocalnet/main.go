@@ -8,6 +8,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
@@ -130,7 +131,7 @@ func resolveSignerDataDir(flagValue string) string {
 	if strings.TrimSpace(flagValue) != "" {
 		return flagValue
 	}
-	if dataDir := apconfig.GetSignerDataDir(""); dataDir != "" {
+	if dataDir := serverconfig.GetSignerDataDir(""); dataDir != "" {
 		return dataDir
 	}
 	if home, err := os.UserHomeDir(); err == nil {

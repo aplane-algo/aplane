@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -86,7 +87,7 @@ func TestBackupImportTemplateValidationClientUsesConfiguredTEALCompileToken(t *t
 	}))
 	defer server.Close()
 
-	config = apconfig.ServerConfig{
+	config = serverconfig.ServerConfig{
 		TEALCompileNetwork: "localnet",
 		Algod: apconfig.AlgodConfig{
 			"localnet": &apconfig.AlgodNetworkConfig{

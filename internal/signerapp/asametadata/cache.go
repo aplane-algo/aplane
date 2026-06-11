@@ -6,6 +6,7 @@ package asametadata
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cache"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	signutil "github.com/aplane-algo/aplane/internal/signing"
 )
 
@@ -33,7 +33,7 @@ func NewStore(dataDir string) Store {
 
 // MetadataByID resolves signer-side metadata for an ASA. When allowLive is
 // true, a cold cache can be filled from the configured algod endpoint.
-func (s Store) MetadataByID(network string, assetID uint64, cfg *apconfig.ServerConfig, allowLive bool) (asa.Metadata, error) {
+func (s Store) MetadataByID(network string, assetID uint64, cfg *serverconfig.ServerConfig, allowLive bool) (asa.Metadata, error) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 
@@ -109,7 +109,7 @@ func (s Store) load(network string) cache.ASACache {
 	return cache.LoadASACacheFromStore(s.cacheStore, network)
 }
 
-func algodClientForNetwork(network string, cfg *apconfig.ServerConfig, allowLive bool) *algod.Client {
+func algodClientForNetwork(network string, cfg *serverconfig.ServerConfig, allowLive bool) *algod.Client {
 	if !allowLive || cfg == nil {
 		return nil
 	}

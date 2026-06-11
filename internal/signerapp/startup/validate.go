@@ -5,10 +5,10 @@ package startup
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 
 	signerbootstrap "github.com/aplane-algo/aplane/internal/bootstrap/signer"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -64,14 +64,14 @@ func RunningUnderSystemd() bool {
 
 // Validate performs comprehensive signer startup validation.
 // It returns an error for required failures and writes optional warnings to stderr.
-func Validate(config *apconfig.ServerConfig, runtime *RuntimeState, keyPaths storepaths.Paths, identityID string) (*ValidationInfo, error) {
+func Validate(config *serverconfig.ServerConfig, runtime *RuntimeState, keyPaths storepaths.Paths, identityID string) (*ValidationInfo, error) {
 	var warnings []string
 	info := &ValidationInfo{}
 
 	if config.Endpoint.SSH.Port <= 0 {
 		return nil, fmt.Errorf("invalid endpoint.ssh configuration: endpoint.ssh.port must be greater than zero")
 	}
-	if err := apconfig.ValidateSSHListenAddress(config.Endpoint.SSH.ListenAddress); err != nil {
+	if err := serverconfig.ValidateSSHListenAddress(config.Endpoint.SSH.ListenAddress); err != nil {
 		return nil, fmt.Errorf("invalid endpoint.ssh configuration: %w", err)
 	}
 	if config.Endpoint.SSH.HostKeyPath == "" {
@@ -94,10 +94,10 @@ func Validate(config *apconfig.ServerConfig, runtime *RuntimeState, keyPaths sto
 			if config.PassphraseTimeout != "" && config.PassphraseTimeout != "0" {
 				return nil, fmt.Errorf("conflicting config: passphrase_command_argv requires passphrase_timeout:0 (headless mode disables admin idle timeout, got %q)", config.PassphraseTimeout)
 			}
-			if err := apconfig.ValidatePassphraseCommandConfig(config.PassphraseCommandCfg()); err != nil {
+			if err := serverconfig.ValidatePassphraseCommandConfig(config.PassphraseCommandCfg()); err != nil {
 				return nil, err
 			}
-			warnings = append(warnings, apconfig.ValidateHeadlessPolicy(config)...)
+			warnings = append(warnings, serverconfig.ValidateHeadlessPolicy(config)...)
 		}
 	}
 

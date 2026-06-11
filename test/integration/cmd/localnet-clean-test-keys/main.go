@@ -9,11 +9,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 )
 
@@ -128,7 +128,7 @@ func resolveOptions(opts options) (resolvedOptions, error) {
 	if _, err := os.Stat(configPath); err != nil {
 		return resolvedOptions{}, fmt.Errorf("read signer fixture config %s: %w", configPath, err)
 	}
-	cfg, err := config.LoadServerConfig(signerData)
+	cfg, err := serverconfig.LoadServerConfig(signerData)
 	if err != nil {
 		return resolvedOptions{}, err
 	}
@@ -180,7 +180,7 @@ func requirePathInside(path, parent string) error {
 	return nil
 }
 
-func serverConfigLooksLocalnet(cfg config.ServerConfig) bool {
+func serverConfigLooksLocalnet(cfg serverconfig.ServerConfig) bool {
 	if cfg.TEALCompileNetwork == localnetNetwork {
 		return true
 	}

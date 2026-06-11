@@ -4,11 +4,11 @@
 package storeadmin
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
@@ -144,6 +144,6 @@ func testIdentityRuntime(id string) *identity.Runtime {
 	return identity.New(identity.Config{
 		ID:            id,
 		Authenticator: auth.NewTokenAuthenticator("test-token"),
-		ApprovalWait:  apconfig.DefaultApprovalWait,
+		ApprovalWait:  serverconfig.DefaultApprovalWait,
 	})
 }

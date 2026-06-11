@@ -4,12 +4,12 @@
 package main
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/storeinit"
@@ -56,7 +56,7 @@ func TestCmdInitializeInitializes(t *testing.T) {
 	}()
 
 	dataDirectory = t.TempDir()
-	config = apconfig.ServerConfig{}
+	config = serverconfig.ServerConfig{}
 	stdinReader = nil
 	var gotPassphrase string
 	var gotRole noderole.Role

@@ -4,6 +4,7 @@
 package daemon
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
@@ -262,7 +263,7 @@ func TestConcurrentProcessConfigUpdatesAreSerialized(t *testing.T) {
 		}
 	}
 
-	disk, err := apconfig.LoadServerConfig(server.dataDir)
+	disk, err := serverconfig.LoadServerConfig(server.dataDir)
 	if err != nil {
 		t.Fatalf("LoadServerConfig() error = %v", err)
 	}

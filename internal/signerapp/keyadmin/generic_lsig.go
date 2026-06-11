@@ -7,8 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -25,7 +25,7 @@ var (
 )
 
 type GenericLSigGenerator struct {
-	Config    *apconfig.ServerConfig
+	Config    *serverconfig.ServerConfig
 	MakeAlgod func(string, string) (*algod.Client, error)
 	AuditLog  AuditLogger
 }

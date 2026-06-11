@@ -5,15 +5,15 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 )
 
-const signerHTTPWriteTimeout = apconfig.MaxApprovalWait + 2*time.Minute
+const signerHTTPWriteTimeout = serverconfig.MaxApprovalWait + 2*time.Minute
 
 func buildHTTPServer(server *Signer, port int) *http.Server {
 	mux := http.NewServeMux()

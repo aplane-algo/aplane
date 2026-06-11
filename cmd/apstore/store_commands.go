@@ -8,9 +8,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"io"
 
-	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -195,11 +195,11 @@ func initializeStoreLocal(passphrase []byte, role noderole.Role) (protocol.Initi
 
 	var helperWarning string
 	if unlockCfg != nil && unlockCfg.HasPassphraseCommand() {
-		passphraseCmdCfg := &apconfig.PassphraseCommandConfig{
+		passphraseCmdCfg := &serverconfig.PassphraseCommandConfig{
 			Argv: unlockCfg.PassphraseCommandArgv,
 			Env:  unlockCfg.PassphraseCommandEnv,
 		}
-		if err := apconfig.WritePassphrase(passphraseCmdCfg, passphrase); err != nil {
+		if err := serverconfig.WritePassphrase(passphraseCmdCfg, passphrase); err != nil {
 			helperWarning = fmt.Sprintf("could not store passphrase via passphrase command helper: %v", err)
 		}
 	}

@@ -272,7 +272,7 @@ Primary files:
 - `internal/config/networkid.go` - token syntax validation,
 - `internal/config/genesishash.go` - built-in and custom genesis-hash resolver,
 - `internal/config/config.go` - client config validation,
-- `internal/config/serverconfig.go` - signer config validation,
+- `internal/serverconfig/serverconfig.go` - signer config validation,
 - `internal/engine/engine.go` - client network switching,
 - `internal/apshellapp/network.go` - shell-facing network switching workflow,
 - `internal/signerapp/signing/planner.go` - signer transaction network validation,

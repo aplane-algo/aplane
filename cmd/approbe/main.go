@@ -6,11 +6,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"io"
 	"os"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerprobe"
 	"github.com/aplane-algo/aplane/internal/version"
 )
@@ -72,7 +72,7 @@ func runSignerRunning(args []string, stdout, stderr io.Writer) int {
 		return exitUnknown
 	}
 
-	dataDir = config.GetSignerDataDir(dataDir)
+	dataDir = serverconfig.GetSignerDataDir(dataDir)
 	if dataDir == "" {
 		writeln(stderr, "Error: signer data directory is required (-d or APSIGNER_DATA).")
 		return exitUnknown

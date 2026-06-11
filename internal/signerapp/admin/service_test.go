@@ -6,6 +6,7 @@ package admin
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +30,7 @@ import (
 
 type fakeDeps struct {
 	dataDir  string
-	config   *apconfig.ServerConfig
+	config   *serverconfig.ServerConfig
 	keyPaths storepaths.Paths
 	theme    string
 	sshInfo  SSHInfo
@@ -43,7 +44,7 @@ func (d *fakeDeps) DataDir() string {
 	return d.dataDir
 }
 
-func (d *fakeDeps) Config() *apconfig.ServerConfig {
+func (d *fakeDeps) Config() *serverconfig.ServerConfig {
 	return d.config
 }
 
@@ -90,7 +91,7 @@ func setupAdminServiceWithRole(t *testing.T, role noderole.Role) (Service, *iden
 		t.Fatalf("MkdirAll(keysDir): %v", err)
 	}
 
-	cfg := apconfig.DefaultServerConfig()
+	cfg := serverconfig.DefaultServerConfig()
 	cfg.Theme = "auto"
 	deps := &fakeDeps{
 		dataDir:  tmpDir,

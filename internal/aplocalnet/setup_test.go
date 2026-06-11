@@ -4,6 +4,7 @@
 package aplocalnet
 
 import (
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,7 +80,7 @@ networks:
 		t.Fatalf("path = %q", path)
 	}
 
-	cfg, err := apconfig.LoadServerConfig(dir)
+	cfg, err := serverconfig.LoadServerConfig(dir)
 	if err != nil {
 		t.Fatalf("LoadServerConfig: %v", err)
 	}
