@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
-	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	util "github.com/aplane-algo/aplane/internal/tokenfile"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
@@ -35,7 +35,7 @@ func (r *recordingUpdater) UpdateToken(token string) {
 func registerProviders() {
 	registerProvidersOnce.Do(func() {
 		lsigsignerreg.RegisterSigner()
-		ed25519.RegisterSigner()
+		ed25519signerreg.RegisterSigner()
 	})
 }
 

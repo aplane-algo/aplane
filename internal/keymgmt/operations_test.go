@@ -23,7 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
@@ -32,7 +32,7 @@ import (
 
 func init() {
 	lsigsignerreg.RegisterSigner()
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 }
 
 func TestGenerateKeyRejectsMissingAndInvalidType(t *testing.T) {

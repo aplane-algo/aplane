@@ -21,7 +21,7 @@ import (
 	utilkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -92,7 +92,7 @@ func TestVerifyBackupRejectsPlaintextPayload(t *testing.T) {
 }
 
 func TestDeepVerifyBackupValidStandaloneFile(t *testing.T) {
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 
 	backupRoot := t.TempDir()
 	keysDir := filepath.Join(backupRoot, "apb")
@@ -380,7 +380,7 @@ func TestDeepVerifyBackupValidFalconLogicSigBytecodeFile(t *testing.T) {
 }
 
 func TestDeepVerifyBackupRejectsWrongPassphrase(t *testing.T) {
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 
 	backupRoot := t.TempDir()
 	keysDir := filepath.Join(backupRoot, "apb")
@@ -476,7 +476,7 @@ func TestDeepVerifyBackupRejectsMalformedBundledTemplate(t *testing.T) {
 }
 
 func TestDeepVerifyBackupRejectsAddressMismatch(t *testing.T) {
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 
 	backupRoot := t.TempDir()
 	keysDir := filepath.Join(backupRoot, "apb")

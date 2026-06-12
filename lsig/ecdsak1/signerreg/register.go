@@ -9,7 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
 	"github.com/aplane-algo/aplane/internal/signing"
-	"github.com/aplane-algo/aplane/lsig/dsafamily"
+	dsafamilyreg "github.com/aplane-algo/aplane/lsig/dsafamily/signerreg"
 	"github.com/aplane-algo/aplane/lsig/ecdsak1"
 	"github.com/aplane-algo/aplane/lsig/ecdsak1/family"
 	"github.com/aplane-algo/aplane/lsig/ecdsak1/signerops"
@@ -23,15 +23,15 @@ func RegisterSigner() {
 	registerSignerOnce.Do(func() {
 		signingOps := signerops.New(nil)
 		keygenOps := signerops.New(nil)
-		dsafamily.RegisterSigner(dsafamily.SignerRegistration{
+		dsafamilyreg.RegisterSigner(dsafamilyreg.SignerRegistration{
 			RegisterClient: ecdsak1.RegisterClient,
 			SigningProvider: signing.NewLogicSigProvider(ecdsak1.FamilyName, map[string]signing.LogicSigSignerOps{
 				ecdsak1.FamilyName: signingOps,
 				ecdsak1.KeyTypeV1:  signingOps,
 			}),
-			Generators: []dsafamily.GeneratorSpec{{
+			Generators: []dsafamilyreg.GeneratorSpec{{
 				Family: ecdsak1.FamilyName,
-				Ops: map[string]dsafamily.LogicSigKeygenOps{
+				Ops: map[string]dsafamilyreg.LogicSigKeygenOps{
 					ecdsak1.FamilyName: keygenOps,
 					ecdsak1.KeyTypeV1:  keygenOps,
 				},

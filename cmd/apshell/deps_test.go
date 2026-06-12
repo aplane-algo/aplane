@@ -37,3 +37,31 @@ func TestClientDoesNotLinkFalcon(t *testing.T) {
 		}
 	}
 }
+
+// TestClientDoesNotLinkSignerRegistration pins the client registration
+// boundary: apshell registers client-safe key-type metadata only (catalogs,
+// display metadata, address derivation), never signer-side machinery. Key
+// generation, mnemonic handling, and signing providers live behind the
+// per-family signerreg packages, which only signer binaries link.
+func TestClientDoesNotLinkSignerRegistration(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", ".").Output()
+	if err != nil {
+		t.Fatalf("go list -deps: %v", err)
+	}
+
+	forbidden := []string{
+		"github.com/aplane-algo/aplane/internal/keygen",
+		"github.com/aplane-algo/aplane/internal/mnemonic",
+		"github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg",
+		"github.com/aplane-algo/aplane/lsig/dsafamily/signerreg",
+		"github.com/aplane-algo/aplane/lsig/signerreg",
+	}
+	deps := string(out)
+	for _, pkg := range forbidden {
+		for _, line := range strings.Split(deps, "\n") {
+			if strings.TrimSpace(line) == pkg {
+				t.Errorf("cmd/apshell transitively depends on signer-side registration package %s", pkg)
+			}
+		}
+	}
+}

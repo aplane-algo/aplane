@@ -40,11 +40,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
-	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	"github.com/aplane-algo/aplane/lsig/dsafamily"
+	dsafamilyreg "github.com/aplane-algo/aplane/lsig/dsafamily/signerreg"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
@@ -54,7 +54,7 @@ var testPassphrase = []byte("test-passphrase-for-unit-tests!")
 
 func init() {
 	lsigsignerreg.RegisterSigner()
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 }
 
 type auditRecorder struct {
@@ -871,7 +871,7 @@ func registerAddressListImportProvider(t *testing.T) {
 	}
 	if _, err := internalkeygen.GetGenerator(addressListImportKeyType); err != nil {
 		ops := addressListImportProvider{}
-		internalkeygen.Register(dsafamily.NewLogicSigGenerator(addressListImportFamily, map[string]dsafamily.LogicSigKeygenOps{
+		internalkeygen.Register(dsafamilyreg.NewLogicSigGenerator(addressListImportFamily, map[string]dsafamilyreg.LogicSigKeygenOps{
 			addressListImportFamily:  ops,
 			addressListImportKeyType: ops,
 		}))

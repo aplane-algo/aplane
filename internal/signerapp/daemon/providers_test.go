@@ -4,7 +4,7 @@
 package daemon
 
 import (
-	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -13,5 +13,5 @@ import (
 // binary so embedders choose their own provider set.
 func RegisterProviders() {
 	lsigsignerreg.RegisterSigner()
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 }

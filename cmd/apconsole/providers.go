@@ -5,7 +5,7 @@ package main
 
 import (
 	"github.com/aplane-algo/aplane/internal/apshellcli"
-	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -16,5 +16,5 @@ import (
 func RegisterProviders() {
 	apshellcli.RegisterProviders()
 	lsigsignerreg.RegisterSigner()
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 }

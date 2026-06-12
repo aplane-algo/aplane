@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
-	"github.com/aplane-algo/aplane/lsig/dsafamily"
+	dsafamilyreg "github.com/aplane-algo/aplane/lsig/dsafamily/signerreg"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
@@ -24,19 +24,19 @@ var registerSignerOnce sync.Once
 func RegisterSigner() {
 	registerSignerOnce.Do(func() {
 		ops := signerops.New(nil)
-		dsafamily.RegisterSigner(dsafamily.SignerRegistration{
+		dsafamilyreg.RegisterSigner(dsafamilyreg.SignerRegistration{
 			RegisterClient: falcon1024guarded.RegisterClient,
-			Generators: []dsafamily.GeneratorSpec{
+			Generators: []dsafamilyreg.GeneratorSpec{
 				{
 					Family: falcon1024guarded.KeyTypeV1,
-					Ops: map[string]dsafamily.LogicSigKeygenOps{
+					Ops: map[string]dsafamilyreg.LogicSigKeygenOps{
 						falcon1024guarded.KeyTypeV1: ops,
 					},
 					Mnemonic: bip39impl.NewHandler(falcon1024guarded.KeyTypeV1, family.MnemonicWordCount),
 				},
 				{
 					Family: falcon1024guarded.KeyTypeFalcon1024V1,
-					Ops: map[string]dsafamily.LogicSigKeygenOps{
+					Ops: map[string]dsafamilyreg.LogicSigKeygenOps{
 						falcon1024guarded.KeyTypeFalcon1024V1: ops,
 					},
 					Mnemonic: bip39impl.NewHandler(falcon1024guarded.KeyTypeFalcon1024V1, family.MnemonicWordCount),

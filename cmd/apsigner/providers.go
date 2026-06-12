@@ -4,7 +4,7 @@
 package main
 
 import (
-	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
 
@@ -15,5 +15,5 @@ func RegisterProviders() {
 	lsigsignerreg.RegisterSigner()
 
 	// Ed25519 native signatures
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 }

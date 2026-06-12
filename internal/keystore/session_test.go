@@ -18,7 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signing"
-	ed25519signing "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signing "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 )
 

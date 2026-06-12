@@ -14,12 +14,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
 func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *testing.T) {
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 	oldUmask := syscall.Umask(0o077)
 	defer syscall.Umask(oldUmask)
 

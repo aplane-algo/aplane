@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package dsafamily holds the family-neutral pieces a LogicSig DSA family
-// needs: the shared key generator and the registration descriptors that fan a
-// family's capabilities out to the process-global registries. A family
-// declares one ClientRegistration (and, in its signerreg package, one
-// SignerRegistration) instead of hand-writing per-registry calls, so partial
-// registration is not representable.
+// Package dsafamily holds the client-safe registration descriptor a LogicSig
+// DSA family needs: LogicSig derivation, address derivation, and display
+// metadata. A family declares one ClientRegistration (and, in
+// lsig/dsafamily/signerreg, one SignerRegistration) instead of hand-writing
+// per-registry calls, so partial registration is not representable. This
+// package must not reference signer-side machinery (key generation, signing
+// providers, mnemonics) so client binaries stay lean; the shared key
+// generator and signer descriptor live in lsig/dsafamily/signerreg.
 //
 // Product-level visibility (keytypecatalog entries and availability gating)
 // intentionally stays in the lsig root aggregator: which compiled key types
@@ -16,10 +18,7 @@ package dsafamily
 import (
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/algorithm"
-	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
-	"github.com/aplane-algo/aplane/internal/mnemonic"
-	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 // KeyType describes one versioned key type a family compiles in.
@@ -63,56 +62,6 @@ func RegisterClient(r ClientRegistration) {
 	}
 	if r.Metadata != nil {
 		algorithm.RegisterMetadata(r.Metadata)
-	}
-	for _, fn := range r.Extra {
-		fn()
-	}
-}
-
-// GeneratorSpec describes one key generator a family registers, together with
-// the mnemonic handler its seed derivation routes through.
-type GeneratorSpec struct {
-	// Family is the generator registry key; the shared generator resolves its
-	// mnemonic handler by this name, so Mnemonic must be registered under it.
-	Family string
-	// Ops maps each accepted key type (and the family name, when accepted) to
-	// its keypair-generation ops.
-	Ops map[string]LogicSigKeygenOps
-	// Mnemonic is the handler registered for Family; nil skips mnemonic
-	// registration (the generator then rejects mnemonic-based generation).
-	Mnemonic mnemonic.Handler
-}
-
-// SignerRegistration is the signer-side half of a family's capabilities.
-type SignerRegistration struct {
-	// RegisterClient is the family's once-guarded client registration; it
-	// runs first so signer binaries always carry the client-safe surface.
-	RegisterClient func()
-	// SigningProvider is the family's transaction-signing provider; nil for
-	// pure-LogicSig families that sign via component flows.
-	SigningProvider signing.Provider
-	// Generators lists the key generators the family registers.
-	Generators []GeneratorSpec
-	// Extra holds family-specific signer-side registrations that have no
-	// generic slot (e.g. sentry component generators and validators).
-	Extra []func()
-}
-
-// RegisterSigner fans a family's signer-side capabilities out to the global
-// registries. Callers guard idempotency with their own sync.Once, matching
-// the per-family RegisterSigner convention.
-func RegisterSigner(r SignerRegistration) {
-	if r.RegisterClient != nil {
-		r.RegisterClient()
-	}
-	if r.SigningProvider != nil {
-		signing.Register(r.SigningProvider)
-	}
-	for _, g := range r.Generators {
-		keygen.Register(NewLogicSigGenerator(g.Family, g.Ops))
-		if g.Mnemonic != nil {
-			mnemonic.Register(g.Mnemonic)
-		}
 	}
 	for _, fn := range r.Extra {
 		fn()

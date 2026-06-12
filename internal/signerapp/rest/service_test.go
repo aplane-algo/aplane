@@ -30,7 +30,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/keyadmin"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
-	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -70,7 +70,7 @@ func writeTemplateStateForRestTest(t *testing.T, paths storepaths.Paths, identit
 
 func init() {
 	lsigsignerreg.RegisterSigner()
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 }
 
 type stubSigningService struct {

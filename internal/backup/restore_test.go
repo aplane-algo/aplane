@@ -19,7 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
+	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 
@@ -202,7 +202,7 @@ func TestStatManagedBackupArchiveRejectsSymlink(t *testing.T) {
 }
 
 func TestPreviewRestoreManagedArchiveReportsKeyMetadataAndExistingConflict(t *testing.T) {
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
@@ -240,7 +240,7 @@ func TestPreviewRestoreManagedArchiveReportsKeyMetadataAndExistingConflict(t *te
 }
 
 func TestPreviewRestoreWithNodeRoleReportsRoleForbiddenKey(t *testing.T) {
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
@@ -358,7 +358,7 @@ func TestPreviewRestoreRejectsEmptyManagedArchive(t *testing.T) {
 }
 
 func TestRestoreKeyWritesStorePermissions(t *testing.T) {
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
@@ -450,7 +450,7 @@ func TestRestoreKeyWritesComponentPublicMetadataOnSentryNode(t *testing.T) {
 }
 
 func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T) {
-	ed25519.RegisterSigner()
+	ed25519signerreg.RegisterSigner()
 
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
