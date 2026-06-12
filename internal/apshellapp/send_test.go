@@ -176,6 +176,41 @@ func TestAtomicValidationNotesChecksAlgoGroupTotal(t *testing.T) {
 	}
 }
 
+// TestAtomicValidationNotesIncludesFees pins finding 2B's fee leg: the group
+// total must include each transaction's fee, not just the amounts. A balance
+// that covers the bare amounts but not amounts+fees is rejected at pre-flight
+// rather than failing on-chain. 3 payments of 5 ALGO = 15 ALGO + 3 * 0.001
+// ALGO of min fee = 15.003 ALGO needed; a 15.001-ALGO balance clears the
+// amount-only sum (15.0) but not the fee-inclusive total.
+func TestAtomicValidationNotesIncludesFees(t *testing.T) {
+	plan := &AtomicSendPlan{
+		Mode:   SendModeAtomicToMultiple,
+		Amount: asa.Amount{Raw: 5_000_000},
+		To:     []string{"bob", "carol", "dave"},
+		Checks: []BalanceCheckDetails{
+			{SufficientFunds: true, SenderBalance: 15.001},
+			{SufficientFunds: true, SenderBalance: 15.001},
+			{SufficientFunds: true, SenderBalance: 15.001},
+		},
+	}
+
+	_, err := atomicValidationNotes(plan)
+	if err == nil {
+		t.Fatal("atomicValidationNotes() error = nil, want fee-inclusive insufficiency")
+	}
+	if !strings.Contains(err.Error(), "insufficient balance") {
+		t.Fatalf("atomicValidationNotes() error = %v, want insufficient balance", err)
+	}
+
+	// Bumping the balance above the fee-inclusive total (15.003) clears it.
+	for i := range plan.Checks {
+		plan.Checks[i].SenderBalance = 15.004
+	}
+	if _, err := atomicValidationNotes(plan); err != nil {
+		t.Fatalf("atomicValidationNotes() error = %v, want success once fees are covered", err)
+	}
+}
+
 func TestCheckedSendTotal(t *testing.T) {
 	const maxUint64 = ^uint64(0)
 

@@ -61,6 +61,18 @@ func TestSweepSendAmountReservesAlgoFee(t *testing.T) {
 	if _, feeReserve, ok = sweepSendAmount(2_000, 1_000, 0, 0, false, 0); ok || feeReserve != 1_000 {
 		t.Fatalf("sweepSendAmount(insufficient) ok=%v fee=%d, want false/1000", ok, feeReserve)
 	}
+
+	// An explicit flat zero fee is authoritative when opted in (useFlatFee=true,
+	// fee=0): the reserve is a flat zero, not the default min fee. This matches
+	// the unified fee model rather than the old `useFlatFee && fee > 0` guard
+	// that silently substituted the default for a flat zero.
+	amount, feeReserve, ok = sweepSendAmount(10_000, 1_000, 0, 0, true, 0)
+	if !ok {
+		t.Fatal("sweepSendAmount(flat zero) ok = false, want true")
+	}
+	if amount != 9_000 || feeReserve != 0 {
+		t.Fatalf("sweepSendAmount(flat zero) = (%d, %d), want amount 9000 fee 0", amount, feeReserve)
+	}
 }
 
 // TestSweepSendAmountReservesDummyFees pins finding 2B: an ALGO sweep from a

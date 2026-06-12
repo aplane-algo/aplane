@@ -1315,7 +1315,7 @@ func (s *componentKeyTestSession) GetKeyWithContext(_ context.Context, address s
 	if s.keysByAddr != nil {
 		km, ok := s.keysByAddr[address]
 		if !ok {
-			return nil, fmt.Errorf("no key for address %s", address)
+			return nil, keystore.ErrKeyNotFound
 		}
 		return km, nil
 	}
@@ -1468,5 +1468,12 @@ func TestValidateGuardedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
 	}}
 	if _, err := validateGuardedPassthrough(context.Background(), signerapi.GuardedPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, guardedSession); err == nil {
 		t.Fatal("guarded-account passthrough: expected rejection, got nil")
+	}
+
+	// A non-not-found keystore error (e.g. locked session, decrypt failure) must
+	// fail closed rather than be treated as a foreign passthrough.
+	erroringSession := &componentKeyTestSession{err: fmt.Errorf("session locked")}
+	if _, err := validateGuardedPassthrough(context.Background(), signerapi.GuardedPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, erroringSession); err == nil {
+		t.Fatal("keystore error passthrough: expected fail-closed error, got nil")
 	}
 }

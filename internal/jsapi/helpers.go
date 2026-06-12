@@ -139,11 +139,15 @@ func toUint64(vm *goja.Runtime, v goja.Value) uint64 {
 	case uint64:
 		return val
 	default:
-		i := v.ToInteger()
-		if i < 0 {
-			panic(vm.ToValue("value cannot be negative"))
+		// Non-numeric inputs (e.g. a string amount like "1.5") reach here. Run
+		// the same finite/integral/range validation as the float64 case via
+		// ToFloat() instead of ToInteger(), which would silently truncate
+		// "1.5" to 1.
+		f := v.ToFloat()
+		if err := validateUint64Float(f); err != nil {
+			panic(vm.ToValue(err.Error()))
 		}
-		return uint64(i)
+		return uint64(f)
 	}
 }
 

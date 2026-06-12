@@ -829,8 +829,10 @@ func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, dum
 	if assetID != 0 {
 		return available, 0, true
 	}
+	// A flat fee is authoritative when opted in, including an explicit flat
+	// zero, matching the unified fee model (engine.getSuggestedParamsWithFee).
 	baseFee := uint64(signing.DefaultMinFee)
-	if useFlatFee && fee > 0 {
+	if useFlatFee {
 		baseFee = fee
 	}
 	feeReserve = baseFee + dummyFeeReserve

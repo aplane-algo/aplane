@@ -87,7 +87,7 @@ func (e *Engine) checkPaymentBalances(ctx context.Context, fromAddr, toAddr stri
 
 	// Calculate required amount
 	txnFee := uint64(1000) // Standard fee
-	if useFlatFee && fee > 0 {
+	if useFlatFee {        // explicit flat fee, including a flat zero
 		txnFee = fee
 	}
 	txnFeeAlgo := float64(txnFee) / 1000000.0

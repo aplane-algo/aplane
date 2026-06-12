@@ -10,6 +10,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 // SendRequest captures parsed send-command inputs before semantic resolution.
@@ -408,10 +409,25 @@ func atomicValidationNotes(plan *AtomicSendPlan) ([]string, error) {
 			// Validate the whole group's total against the balance, not just one
 			// payment: Checks[0].SufficientFunds only covers a single amount+fee,
 			// so a sender with enough for one leg but not all N would otherwise
-			// pass pre-flight and fail on-chain. Mirrors the ASA branch below.
-			totalRaw, ok := checkedSendTotal(amount.Raw, len(plan.To))
+			// pass pre-flight and fail on-chain. Unlike the ASA branch below
+			// (whose fees are paid in ALGO, separate from the swept asset), the
+			// ALGO total must include every leg's fee, since they all draw from
+			// this same balance.
+			totalAmount, ok := checkedSendTotal(amount.Raw, len(plan.To))
 			if !ok {
 				return nil, fmt.Errorf("total send amount overflows uint64 for %d payments", len(plan.To))
+			}
+			perTxnFee := uint64(signing.DefaultMinFee)
+			if plan.GroupParams.UseFlatFee {
+				perTxnFee = plan.GroupParams.Fee
+			}
+			totalFees, ok := checkedSendTotal(perTxnFee, len(plan.To))
+			if !ok {
+				return nil, fmt.Errorf("total fee overflows uint64 for %d payments", len(plan.To))
+			}
+			totalRaw := totalAmount + totalFees
+			if totalRaw < totalAmount {
+				return nil, fmt.Errorf("total amount plus fees overflows uint64 for %d payments", len(plan.To))
 			}
 			totalNeeded := float64(totalRaw) / 1000000.0
 			if plan.Checks[0].SenderBalance < totalNeeded {

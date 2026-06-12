@@ -7,10 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
@@ -233,7 +235,18 @@ func rejectLocalGuardedPassthrough(ctx context.Context, stxn types.SignedTxn, ta
 			continue
 		}
 		km, err := session.GetKeyWithContext(ctx, addr.String())
-		if err != nil || km == nil {
+		if err != nil {
+			// Only a genuine not-found means this is a foreign passthrough. Any
+			// other error (locked session, decrypt/storage failure) must fail
+			// closed: treating it as "not held" would let a guarded account slip
+			// through as passthrough during exactly the conditions this check
+			// guards against.
+			if errors.Is(err, keystore.ErrKeyNotFound) {
+				continue
+			}
+			return internal(fmt.Sprintf("passthrough index %d: failed to resolve key for %s: %v", targetIndex, addr.String(), err))
+		}
+		if km == nil {
 			continue // not held by this signer — a legitimate foreign passthrough
 		}
 		if keytypes.IsGuardedAccountKeyType(km.Type) {

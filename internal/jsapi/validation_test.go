@@ -482,6 +482,11 @@ func TestAmountConversionsRejectImprecise(t *testing.T) {
 		{"microalgos fractional truncates", "microalgos(1.5)", "whole number"},
 		{"microalgos out of range", "microalgos(1e36)", "too large"},
 		{"microalgos NaN", "microalgos(0/0)", "finite"},
+		// A string amount reaches toUint64's default case; it must run the same
+		// whole-number validation as a numeric float rather than truncating via
+		// ToInteger() ("1.5" -> 1).
+		{"microalgos fractional string truncates", "microalgos(\"1.5\")", "whole number"},
+		{"microalgos non-numeric string", "microalgos(\"abc\")", "finite"},
 	}
 
 	for _, tt := range tests {
