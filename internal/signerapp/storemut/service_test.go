@@ -4,6 +4,7 @@
 package storemut
 
 import (
+	"context"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
@@ -129,7 +130,7 @@ func TestGenerateKeyCreatesPersistedKey(t *testing.T) {
 	defer cleanup()
 
 	svc := New(identityID, paths, nil, nil)
-	result, err := svc.GenerateKey("ed25519", masterKey, nil)
+	result, err := svc.GenerateKeyWithActivatedContext(context.Background(), "ed25519", masterKey, nil, nil)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
@@ -153,7 +154,7 @@ func TestImportKeyFromMnemonicCreatesPersistedKey(t *testing.T) {
 	defer cleanup()
 
 	svc := New(identityID, paths, nil, nil)
-	result, err := svc.ImportKeyFromMnemonic("ed25519", testMnemonic, masterKey, nil)
+	result, err := svc.ImportKeyFromMnemonicWithActivated("ed25519", testMnemonic, masterKey, nil, nil)
 	if err != nil {
 		t.Fatalf("ImportKeyFromMnemonic() error = %v", err)
 	}

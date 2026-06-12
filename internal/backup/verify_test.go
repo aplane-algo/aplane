@@ -34,63 +34,6 @@ func saltedLogicSigBytecodeForTest() []byte {
 	return []byte{0x26, 0x01, 0x01, saltCounterForTest, 0x81, 0x01}
 }
 
-func TestVerifyBackupReportsValidStandaloneFile(t *testing.T) {
-	backupDir := t.TempDir()
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	if err := writeStandaloneBackupFile(filepath.Join(backupDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
-		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
-	}
-
-	report, err := VerifyBackup(backupDir)
-	if err != nil {
-		t.Fatalf("VerifyBackup() error = %v", err)
-	}
-	if report.TotalFiles != 1 || report.ValidFiles != 1 || report.FailedFiles != 0 {
-		t.Fatalf("report counts = %+v, want 1 valid file", *report)
-	}
-	if !report.Results[0].Valid {
-		t.Fatalf("result.Valid = false, want true: %+v", report.Results[0])
-	}
-}
-
-func TestVerifyBackupRejectsUnsupportedEnvelopeVersion(t *testing.T) {
-	backupDir := t.TempDir()
-	address, _ := testEd25519BackupKeyJSON(t)
-	if err := os.WriteFile(filepath.Join(backupDir, address+".apb"), []byte(`{"envelope_version":99,"nonce":"","ciphertext":""}`), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	report, err := VerifyBackup(backupDir)
-	if err != nil {
-		t.Fatalf("VerifyBackup() error = %v", err)
-	}
-	if report.FailedFiles != 1 {
-		t.Fatalf("FailedFiles = %d, want 1", report.FailedFiles)
-	}
-	if !strings.Contains(report.Results[0].Error, "unsupported envelope_version: 99") {
-		t.Fatalf("result.Error = %q, want unsupported envelope", report.Results[0].Error)
-	}
-}
-
-func TestVerifyBackupRejectsPlaintextPayload(t *testing.T) {
-	backupDir := t.TempDir()
-	address, keyJSON := testEd25519BackupKeyJSON(t)
-	if err := os.WriteFile(filepath.Join(backupDir, address+".apb"), keyJSON, 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	report, err := VerifyBackup(backupDir)
-	if err != nil {
-		t.Fatalf("VerifyBackup() error = %v", err)
-	}
-	if report.FailedFiles != 1 {
-		t.Fatalf("FailedFiles = %d, want 1", report.FailedFiles)
-	}
-	if !strings.Contains(report.Results[0].Error, "backup file must be encrypted") {
-		t.Fatalf("result.Error = %q, want encrypted rejection", report.Results[0].Error)
-	}
-}
-
 func TestDeepVerifyBackupValidStandaloneFile(t *testing.T) {
 	ed25519signerreg.RegisterSigner()
 

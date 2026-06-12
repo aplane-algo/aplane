@@ -28,13 +28,6 @@ type ArchiveResult struct {
 	Verified        bool
 }
 
-// CreateAllKeysArchive exports all active keys for identityID into a single
-// tar.gz/tgz archive at archivePath. The archive contains README.md and
-// apb/*.apb payloads; the .apb files remain the actual encrypted backup units.
-func CreateAllKeysArchive(paths storepaths.Paths, identityID, archivePath string, masterKey, exportPassphrase []byte) (*ArchiveResult, error) {
-	return CreateKeysArchive(paths, identityID, archivePath, nil, masterKey, exportPassphrase)
-}
-
 // CreateKeysArchive exports selected active keys for identityID into a single
 // tar.gz/tgz archive at archivePath. When addresses is empty, all active keys
 // are exported.

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -1086,4 +1087,21 @@ func expectJSPanicContaining(t *testing.T, want string) func() {
 			t.Fatalf("panic = %q, want containing %q", got, want)
 		}
 	}
+}
+
+// Test-only goja value converters.
+func toUint64Value(vm *goja.Runtime, v interface{}) uint64 {
+	out, err := toUint64Interface(v)
+	if err != nil {
+		panic(vm.ToValue(err.Error()))
+	}
+	return out
+}
+
+func toBoolValue(vm *goja.Runtime, v interface{}) bool {
+	b, ok := v.(bool)
+	if !ok {
+		panic(vm.ToValue(fmt.Sprintf("unsupported type for bool conversion: %T", v)))
+	}
+	return b
 }

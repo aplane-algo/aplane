@@ -15,16 +15,8 @@ type transferGuardRow = policyview.TransferGuardRow
 type transferGuardAssetRow = policyview.TransferGuardAssetRow
 type transferGuardGroup = policyview.TransferGuardGroup
 
-func transferGuardRows(routes []policy.StoredTransferRoute) []transferGuardRow {
-	return policyview.TransferGuardRows(routes)
-}
-
 func transferGuardGroups(routes []policy.StoredTransferRoute) []transferGuardGroup {
 	return policyview.TransferGuardGroups(routes)
-}
-
-func routeToGuardRow(index int, route policy.StoredTransferRoute) transferGuardRow {
-	return policyview.RouteToGuardRow(index, route)
 }
 
 func guardNameFromRoute(routeID, asset string) string {

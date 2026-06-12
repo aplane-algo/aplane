@@ -74,18 +74,3 @@ func ReadManifest(sourceRoot string) (Manifest, bool, error) {
 	}
 	return manifest, true, nil
 }
-
-func SourceNodeRoleOrDefault(sourceRoot string) (noderole.Role, error) {
-	manifest, ok, err := ReadManifest(sourceRoot)
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		return noderole.DefaultRole(), nil
-	}
-	role, err := noderole.ParseRole(manifest.SourceNodeRole)
-	if err != nil {
-		return "", err
-	}
-	return role, nil
-}

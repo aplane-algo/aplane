@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
+	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -640,15 +641,15 @@ func TestGuardedAccountParametersProjection(t *testing.T) {
 }
 
 func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
-	resp := Service{}.KeyTypes()
-	if resp == nil || len(resp.KeyTypes) == 0 {
-		t.Fatal("KeyTypes() returned no key types")
+	keyTypes := Service{}.buildKeyTypes(keymgmt.GetValidKeyTypes(), nil)
+	if len(keyTypes) == 0 {
+		t.Fatal("buildKeyTypes() returned no key types")
 	}
 
 	foundEd25519 := false
 	foundEd25519Component := false
 	foundFalconComponent := false
-	for _, keyType := range resp.KeyTypes {
+	for _, keyType := range keyTypes {
 		if keyType.KeyType == "ed25519" {
 			foundEd25519 = true
 		}
@@ -677,8 +678,8 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 }
 
 func TestServiceKeyTypesHidesLibraryOnlyCompiledProvider(t *testing.T) {
-	resp := Service{}.KeyTypes()
-	for _, keyType := range resp.KeyTypes {
+	keyTypes := Service{}.buildKeyTypes(keymgmt.GetValidKeyTypes(), nil)
+	for _, keyType := range keyTypes {
 		if keyType.KeyType == "aplane.falcon1024_ed25519.v1" {
 			t.Fatal("KeyTypes() included library-only provider before identity activation")
 		}

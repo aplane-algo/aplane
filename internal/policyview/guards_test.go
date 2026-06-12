@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/policy"
-
-	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 func TestTransferGuardGroupsMergeAdjacentRoutesWithSameMovementShape(t *testing.T) {
@@ -87,53 +85,6 @@ func TestTransferGuardGroupsKeepAdvancedRoutesSeparate(t *testing.T) {
 	}
 	if groups[1].Advanced || len(groups[1].AssetRows) != 1 {
 		t.Fatalf("simple group = %+v, want one editable asset row", groups[1])
-	}
-}
-
-func TestBuildPolicyViewModelSummarizesFieldsAndCollections(t *testing.T) {
-	enabled := true
-	rejectForeignRekey := false
-	stored := &policy.StoredConfig{StoredPolicyCore: policy.StoredPolicyCore{RejectForeignRekey: &rejectForeignRekey, TransferPolicy: &policy.StoredTransferPolicy{
-		SchemaVersion:       1,
-		Enabled:             &enabled,
-		BlockedDestinations: []string{"ADDR..."},
-		AssetSets: map[string]policy.StoredAssetSet{
-			"usdc": {"testnet": []uint64{10458941}},
-		},
-		Routes: []policy.StoredTransferRoute{
-			{
-				ID:           "test_algo",
-				Networks:     []string{"testnet"},
-				Sources:      []string{"*"},
-				Assets:       []policy.StoredAssetTerm{{Raw: "algo"}},
-				Destinations: []string{"self"},
-			},
-		},
-	}}, KeyOverrides: map[string]*policy.StoredConfig{
-		types.Address{9}.String(): {},
-	},
-	}
-
-	model := Build(stored, "policy yaml")
-
-	if model.TransferSummary != "enabled=true routes=1" {
-		t.Fatalf("TransferSummary = %q, want enabled=true routes=1", model.TransferSummary)
-	}
-	if len(model.TransferGuards) != 1 || model.TransferGuards[0].ID != "test" {
-		t.Fatalf("TransferGuards = %+v, want one test guard", model.TransferGuards)
-	}
-	if len(model.AssetSets) != 1 || model.AssetSets[0].Preview != "testnet:10458941" {
-		t.Fatalf("AssetSets = %+v, want testnet USDC preview", model.AssetSets)
-	}
-	if len(model.BlockedDestinations) != 1 || model.BlockedDestinations[0] != "ADDR..." {
-		t.Fatalf("BlockedDestinations = %+v, want ADDR...", model.BlockedDestinations)
-	}
-	wantOverride := types.Address{9}.String()
-	if len(model.KeyOverrides) != 1 || model.KeyOverrides[0] != wantOverride {
-		t.Fatalf("KeyOverrides = %+v, want %s", model.KeyOverrides, wantOverride)
-	}
-	if got := model.Fields[0]; got.Key != "reject_foreign_rekey" || got.Value != "false" || got.Source != "explicit" {
-		t.Fatalf("first field = %+v, want explicit reject_foreign_rekey=false", got)
 	}
 }
 

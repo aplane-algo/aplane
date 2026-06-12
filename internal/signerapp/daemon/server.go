@@ -17,7 +17,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnutil"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -32,61 +31,6 @@ const maxRequestBodyBytes = 5 * 1024 * 1024
 // encodeTxnToHex encodes a transaction to TX-prefixed hex string (same format as TxnBytesHex)
 func encodeTxnToHex(txn types.Transaction) string {
 	return txnutil.EncodeWithPrefixHex(txn)
-}
-
-// isValidationTransaction checks if transaction is a 0 ALGO self-send
-func isValidationTransaction(messageBytes []byte, txnSender string, _ string) bool {
-	txnBytes := messageBytes
-	if len(messageBytes) > 2 && messageBytes[0] == 'T' && messageBytes[1] == 'X' {
-		txnBytes = messageBytes[2:]
-	}
-
-	var txn types.Transaction
-	if err := msgpack.Decode(txnBytes, &txn); err != nil {
-		return false
-	}
-
-	// Must be a payment transaction
-	if txn.Type != types.PaymentTx {
-		return false
-	}
-
-	// Must be 0 ALGO
-	if txn.Amount != 0 {
-		return false
-	}
-
-	senderAddr := txn.Sender.String()
-	receiverAddr := txn.Receiver.String()
-
-	// Must be self-send
-	if senderAddr != receiverAddr {
-		return false
-	}
-
-	if txnSender != "" && txnSender != senderAddr {
-		return false
-	}
-
-	// CRITICAL: Ensure no other actions are performed
-	// A pure validation transaction should ONLY be a 0 ALGO self-send
-
-	// No rekeying allowed
-	if !txn.RekeyTo.IsZero() {
-		return false
-	}
-
-	// No account closing allowed
-	if !txn.CloseRemainderTo.IsZero() {
-		return false
-	}
-
-	// No asset closing allowed
-	if !txn.AssetCloseTo.IsZero() {
-		return false
-	}
-
-	return true
 }
 
 // assembleSignedTransaction creates a complete signed transaction ready for submission.

@@ -44,9 +44,9 @@ func TestGetAuthCacheFilename(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.network, func(t *testing.T) {
-			filename := GetAuthCacheFilename(tt.network)
+			filename := GetAuthCacheFilenameForStore(nil, tt.network)
 			if filename != tt.expected {
-				t.Errorf("GetAuthCacheFilename(%q) = %q, want %q",
+				t.Errorf("GetAuthCacheFilenameForStore(nil, %q) = %q, want %q",
 					tt.network, filename, tt.expected)
 			}
 		})
@@ -77,13 +77,13 @@ func TestSaveAndLoadAuthCache(t *testing.T) {
 	}
 
 	// Verify file exists
-	filename := GetAuthCacheFilename(network)
+	filename := GetAuthCacheFilenameForStore(nil, network)
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		t.Fatal("Cache file was not created")
 	}
 
 	// Load
-	loaded := LoadAuthCache(network)
+	loaded := LoadAuthCacheFromStore(nil, network)
 
 	// Verify contents match
 	if len(loaded.AuthAddresses) != len(cache.AuthAddresses) {
@@ -113,7 +113,7 @@ func TestLoadAuthCacheNonExistent(t *testing.T) {
 	}
 
 	// Load non-existent cache
-	cache := LoadAuthCache("nonexistent-network")
+	cache := LoadAuthCacheFromStore(nil, "nonexistent-network")
 
 	// Should return empty cache without error
 	if cache.AuthAddresses == nil {
@@ -141,7 +141,7 @@ func TestSaveAuthCachePermissions(t *testing.T) {
 		t.Fatalf("SaveCache failed: %v", err)
 	}
 
-	filename := GetAuthCacheFilename("testnet")
+	filename := GetAuthCacheFilenameForStore(nil, "testnet")
 	info, err := os.Stat(filename)
 	if err != nil {
 		t.Fatalf("Failed to stat cache file: %v", err)
@@ -258,7 +258,7 @@ func TestUpdateAuthAddress(t *testing.T) {
 			}
 
 			// Verify persistence
-			loaded := LoadAuthCache(network)
+			loaded := LoadAuthCacheFromStore(nil, network)
 			loadedAuth, exists := loaded.AuthAddresses[tt.address]
 			if !exists {
 				t.Error("Address not found in loaded cache")
@@ -384,7 +384,7 @@ func TestAuthCacheConcurrentReads(t *testing.T) {
 			_, _ = cache.GetAuthAddress("ADDR2")
 
 			// Load from disk (creates new instance)
-			loaded := LoadAuthCache(network)
+			loaded := LoadAuthCacheFromStore(nil, network)
 			_, _ = loaded.GetAuthAddress("ADDR1")
 
 			done <- true
@@ -458,7 +458,7 @@ func TestAuthCacheJSONFormat(t *testing.T) {
 	}
 
 	// Read raw JSON
-	filename := GetAuthCacheFilename(network)
+	filename := GetAuthCacheFilenameForStore(nil, network)
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		t.Fatalf("Failed to read cache file: %v", err)
@@ -496,11 +496,11 @@ func TestLoadAuthCacheInvalidJSON(t *testing.T) {
 
 	// Write invalid JSON
 	network := "testnet"
-	filename := GetAuthCacheFilename(network)
+	filename := GetAuthCacheFilenameForStore(nil, network)
 	_ = os.WriteFile(filename, []byte("{invalid json"), 0600)
 
 	// Should return empty cache without crashing
-	cache := LoadAuthCache(network)
+	cache := LoadAuthCacheFromStore(nil, network)
 
 	if cache.AuthAddresses == nil {
 		t.Fatal("Cache should have initialized map even with invalid JSON")
@@ -528,7 +528,7 @@ func TestBuildAuthCacheNilClient(t *testing.T) {
 	}
 
 	// Should not crash with nil client
-	cache := BuildAuthCache(nil, aliasCache, signerCache, "testnet")
+	cache := BuildAuthCacheFromStore(nil, nil, aliasCache, signerCache, "testnet")
 
 	if cache.AuthAddresses == nil {
 		t.Fatal("Cache should be initialized")
@@ -558,7 +558,7 @@ func TestBuildAuthCacheEmptyInputs(t *testing.T) {
 	}
 
 	// Should handle empty inputs gracefully
-	cache := BuildAuthCache(nil, emptyAliasCache, emptySignerCache, "testnet")
+	cache := BuildAuthCacheFromStore(nil, nil, emptyAliasCache, emptySignerCache, "testnet")
 
 	if cache.AuthAddresses == nil {
 		t.Fatal("Cache should be initialized")

@@ -8,33 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/aplane-algo/aplane/internal/noderole"
 )
-
-func TestManifestSourceNodeRoleOrDefault(t *testing.T) {
-	dir := t.TempDir()
-
-	role, err := SourceNodeRoleOrDefault(dir)
-	if err != nil {
-		t.Fatalf("SourceNodeRoleOrDefault(missing) error = %v", err)
-	}
-	if role != noderole.RoleSigner {
-		t.Fatalf("missing manifest role = %q, want signer", role)
-	}
-
-	if err := WriteManifest(dir, noderole.RoleSentry, time.Unix(1700000000, 0)); err != nil {
-		t.Fatalf("WriteManifest() error = %v", err)
-	}
-	role, err = SourceNodeRoleOrDefault(dir)
-	if err != nil {
-		t.Fatalf("SourceNodeRoleOrDefault(sentry) error = %v", err)
-	}
-	if role != noderole.RoleSentry {
-		t.Fatalf("manifest role = %q, want sentry", role)
-	}
-}
 
 func TestReadManifestRejectsInvalidRole(t *testing.T) {
 	dir := t.TempDir()

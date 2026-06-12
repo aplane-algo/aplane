@@ -91,27 +91,12 @@ func (s *IPCServer) acceptLoop() {
 // displacementTimeout is the maximum time to wait for a displacement confirmation.
 const displacementTimeout = 30 * time.Second
 
-// offerDisplacement sends a client_exists message to the new connection and waits
-// for a displace_confirm response. If confirmed, it displaces the old client.
-// Returns the bufio.Reader (to avoid data loss from buffering) and true on success.
-// This legacy IPC helper is product-mode scoped; identity-aware paths should
-// call offerDisplacementSession with an explicit identity.
-func (s *IPCServer) offerDisplacement(newConn net.Conn) bool {
-	identityID := auth.CurrentProductIdentityID()
-	return s.offerDisplacementSession(identityID, s.activeIdentitySession(identityID), adminproto.NewUnixAdminConn(newConn, nil))
-}
-
 func (s *IPCServer) offerDisplacementSession(identityID string, active *adminserver.Session, newConn adminproto.AdminConn) bool {
 	confirmed, displaced := adminserver.OfferDisplacement(identityID, s.sessionManager(), active, newConn, displacementTimeout)
 	if displaced {
 		logWarnf("existing apadmin client displaced by new connection")
 	}
 	return confirmed
-}
-
-// handleClient handles a single IPC client connection.
-func (s *IPCServer) handleClient(conn net.Conn) {
-	s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase", "")
 }
 
 func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport, authMethod, preboundIdentityID string) {

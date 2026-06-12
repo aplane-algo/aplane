@@ -186,7 +186,7 @@ func (e *Engine) SetNetwork(network string, algodClient *algod.Client) error {
 	e.Network = network
 	e.AlgodClient = algodClient
 	e.AsaCache = cache.LoadASACacheFromStore(e.CacheStore, network)
-	// RLock covers the SignerCache read inside BuildAuthCache against a
+	// RLock covers the SignerCache read inside BuildAuthCacheFromStore against a
 	// concurrent disconnect reset; the cache assignments themselves are
 	// command-goroutine-confined (see clientstate.State).
 	e.signerCacheMu.RLock()

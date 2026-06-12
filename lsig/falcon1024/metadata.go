@@ -4,9 +4,6 @@
 package falcon
 
 import (
-	"sync"
-
-	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/derivation"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
@@ -24,13 +21,3 @@ func (m *FalconMetadata) CurrentLsigVersion() int      { return derivation.Curre
 func (m *FalconMetadata) SupportedLsigVersions() []int { return derivation.SupportedVersions() }
 func (m *FalconMetadata) DefaultDerivation() string    { return "bip39-standard" }
 func (m *FalconMetadata) DisplayColor() string         { return family.DisplayColor }
-
-var registerMetadataOnce sync.Once
-
-// RegisterMetadata registers Falcon metadata with the algorithm registry.
-// This is idempotent and safe to call multiple times.
-func RegisterMetadata() {
-	registerMetadataOnce.Do(func() {
-		algorithm.RegisterMetadata(&FalconMetadata{})
-	})
-}

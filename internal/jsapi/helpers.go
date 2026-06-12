@@ -133,22 +133,6 @@ func toUint64Interface(v interface{}) (uint64, error) {
 	}
 }
 
-func toUint64Value(vm *goja.Runtime, v interface{}) uint64 {
-	out, err := toUint64Interface(v)
-	if err != nil {
-		panic(vm.ToValue(err.Error()))
-	}
-	return out
-}
-
-func toBoolValue(vm *goja.Runtime, v interface{}) bool {
-	b, ok := v.(bool)
-	if !ok {
-		panic(vm.ToValue(fmt.Sprintf("unsupported type for bool conversion: %T", v)))
-	}
-	return b
-}
-
 // txnOptions holds common transaction options parsed from JS call arguments.
 type txnOptions struct {
 	Fee        uint64

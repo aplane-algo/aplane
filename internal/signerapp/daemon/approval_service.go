@@ -10,10 +10,6 @@ import (
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
 )
 
-func (fs *Signer) newApprovalServiceForIdentity(ir *identity.Runtime) *signersigning.ApprovalService {
-	return fs.newApprovalServiceForIdentityWithAudit(ir, fs.auditLog)
-}
-
 func (fs *Signer) newApprovalServiceForIdentityWithAudit(ir *identity.Runtime, auditLog signersigning.AuditRejectLogger) *signersigning.ApprovalService {
 	userAutoApprove := ir.Config().UserAutoApprove()
 	return &signersigning.ApprovalService{

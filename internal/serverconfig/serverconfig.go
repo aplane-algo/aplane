@@ -434,54 +434,6 @@ func SaveSetting(dataDir, key string, value interface{}) error {
 	return nil
 }
 
-// SaveNestedSetting writes one key inside a top-level mapping to config.yaml,
-// preserving sibling keys in that mapping and other top-level fields.
-func SaveNestedSetting(dataDir, section, key string, value interface{}) error {
-	if dataDir == "" {
-		return fmt.Errorf("data directory not set")
-	}
-	if section == "" || key == "" {
-		return fmt.Errorf("section and key are required")
-	}
-
-	path := filepath.Join(dataDir, "config.yaml")
-
-	existing := make(map[string]interface{})
-	data, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to read config file: %w", err)
-	}
-	if len(data) > 0 {
-		if err := yaml.Unmarshal(data, &existing); err != nil {
-			return fmt.Errorf("failed to parse config file: %w", err)
-		}
-	}
-
-	nested := make(map[string]interface{})
-	if raw, ok := existing[section]; ok && raw != nil {
-		rawMap, ok := raw.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("config section %q is not a mapping", section)
-		}
-		for k, v := range rawMap {
-			nested[k] = v
-		}
-	}
-	nested[key] = value
-	existing[section] = nested
-
-	out, err := yaml.Marshal(existing)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	if err := apconfig.WriteConfigAtomic(path, out, 0o640); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	return nil
-}
-
 // ConfigFileChanged checks whether the on-disk config.yaml has been modified
 // externally (e.g., by appass) since apsigner loaded it. Compares the mutable
 // fields that could conflict if stale.

@@ -262,10 +262,6 @@ func StatManagedBackupArchive(archivePath string) (os.FileInfo, error) {
 	return info, nil
 }
 
-func PreviewRestore(paths storepaths.Paths, identityID, archivePath string, exportPassphrase []byte) (*RestorePreview, error) {
-	return PreviewRestoreWithNodeRole(paths, identityID, archivePath, exportPassphrase, noderole.DefaultRole())
-}
-
 func PreviewRestoreWithNodeRole(paths storepaths.Paths, identityID, archivePath string, exportPassphrase []byte, role noderole.Role) (*RestorePreview, error) {
 	resolvedArchive, err := ResolveManagedBackupPath(paths, identityID, archivePath)
 	if err != nil {

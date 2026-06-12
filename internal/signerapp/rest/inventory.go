@@ -132,10 +132,6 @@ func (s Service) Keys(ir *identity.Runtime) (*signerapi.KeysResponse, *signersig
 	}, nil
 }
 
-func (s Service) BuildKeyTypes() []signerapi.KeyTypeInfo {
-	return s.buildKeyTypes(keymgmt.GetValidKeyTypes(), nil)
-}
-
 func (s Service) BuildKeyTypesForIdentity(ir *identity.Runtime) ([]signerapi.KeyTypeInfo, error) {
 	validTypes, err := keymgmt.GetValidKeyTypesForIdentity(ir.KeyPaths(), ir.ID())
 	if err != nil {
@@ -346,10 +342,6 @@ func sentryComponentKeyTypeMetadata(keyType string) (family, displayName, descri
 	default:
 		return keyType, keyType, "Raw sentry signing key for sentry-role component signatures"
 	}
-}
-
-func (s Service) KeyTypes() *signerapi.KeyTypesResponse {
-	return &signerapi.KeyTypesResponse{KeyTypes: s.BuildKeyTypes()}
 }
 
 func (s Service) KeyTypesForIdentity(ir *identity.Runtime) (*signerapi.KeyTypesResponse, *signersigning.ServiceError) {

@@ -383,48 +383,6 @@ endpoint:
 	}
 }
 
-func TestSaveNestedSettingPreservesSiblingFields(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	initial := `theme: auto
-endpoint:
-  ssh:
-    port: 2222
-    host_key_path: .ssh/custom_host_key
-    authorized_keys_path: .ssh/custom_authorized_keys
-`
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(initial), 0o640); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	if err := SaveNestedSetting(dir, "endpoint", "ssh", map[string]interface{}{
-		"listen_address":       "0.0.0.0",
-		"port":                 2222,
-		"host_key_path":        ".ssh/custom_host_key",
-		"authorized_keys_path": ".ssh/custom_authorized_keys",
-	}); err != nil {
-		t.Fatalf("SaveNestedSetting: %v", err)
-	}
-
-	cfg, err := LoadServerConfig(dir)
-	if err != nil {
-		t.Fatalf("LoadServerConfig: %v", err)
-	}
-	if cfg.Endpoint.SSH.ListenAddress != "0.0.0.0" {
-		t.Fatalf("Endpoint.SSH.ListenAddress = %q, want 0.0.0.0", cfg.Endpoint.SSH.ListenAddress)
-	}
-	if cfg.Endpoint.SSH.Port != 2222 {
-		t.Fatalf("Endpoint.SSH.Port = %d, want 2222", cfg.Endpoint.SSH.Port)
-	}
-	if !strings.HasSuffix(cfg.Endpoint.SSH.HostKeyPath, ".ssh/custom_host_key") {
-		t.Fatalf("Endpoint.SSH.HostKeyPath = %q, want preserved custom path", cfg.Endpoint.SSH.HostKeyPath)
-	}
-	if !strings.HasSuffix(cfg.Endpoint.SSH.AuthorizedKeysPath, ".ssh/custom_authorized_keys") {
-		t.Fatalf("Endpoint.SSH.AuthorizedKeysPath = %q, want preserved custom path", cfg.Endpoint.SSH.AuthorizedKeysPath)
-	}
-}
-
 func TestParseApprovalWait(t *testing.T) {
 	t.Parallel()
 

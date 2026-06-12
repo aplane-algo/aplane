@@ -45,8 +45,8 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	}
 
 	archivePath := BuildManagedArchivePath(paths, identityID, "20260428-010203")
-	if _, err := CreateAllKeysArchive(paths, identityID, archivePath, testExportMasterKey, []byte("export-passphrase")); err != nil {
-		t.Fatalf("CreateAllKeysArchive() error = %v", err)
+	if _, err := CreateKeysArchive(paths, identityID, archivePath, nil, testExportMasterKey, []byte("export-passphrase")); err != nil {
+		t.Fatalf("CreateKeysArchive() error = %v", err)
 	}
 
 	assertStoreDirMode(t, paths.BackupsRootDir())

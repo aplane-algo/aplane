@@ -72,30 +72,10 @@ func (s *Service) DeleteKey(address, keyFile string) (*keymgmt.DeleteResult, err
 	return keymgmt.DeleteKey(address, keyFile, s.keyPaths.DeletedKeysDir(s.identityID))
 }
 
-// GenerateKey creates and persists a new standard key type.
-func (s *Service) GenerateKey(keyType string, masterKey []byte, params map[string]string) (*keymgmt.GenerateResult, error) {
-	return s.GenerateKeyContext(context.Background(), keyType, masterKey, params)
-}
-
-// GenerateKeyContext creates and persists a new standard key type.
-func (s *Service) GenerateKeyContext(ctx context.Context, keyType string, masterKey []byte, params map[string]string) (*keymgmt.GenerateResult, error) {
-	return keymgmt.GenerateKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, masterKey, params, nil)
-}
-
 // GenerateKeyWithActivatedContext creates and persists a key type using the
 // identity-scoped activated compiled key type set.
 func (s *Service) GenerateKeyWithActivatedContext(ctx context.Context, keyType string, masterKey []byte, params map[string]string, activated []string) (*keymgmt.GenerateResult, error) {
 	return keymgmt.GenerateKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, masterKey, params, activated)
-}
-
-// ImportKeyFromMnemonic imports and persists a standard key from mnemonic words.
-func (s *Service) ImportKeyFromMnemonic(keyType, mnemonic string, masterKey []byte, params map[string]string) (*keymgmt.ImportResult, error) {
-	return s.ImportKeyFromMnemonicContext(context.Background(), keyType, mnemonic, masterKey, params)
-}
-
-// ImportKeyFromMnemonicContext imports and persists a standard key from mnemonic words.
-func (s *Service) ImportKeyFromMnemonicContext(ctx context.Context, keyType, mnemonic string, masterKey []byte, params map[string]string) (*keymgmt.ImportResult, error) {
-	return keymgmt.ImportKeyWithActivatedContext(ctx, s.keyPaths, s.identityID, keyType, mnemonic, masterKey, params, nil)
 }
 
 // ImportKeyFromMnemonicWithActivated imports and persists a standard key using
@@ -118,11 +98,6 @@ func (s *Service) SaveGenericLSig(address, keyType, template string, parameters 
 // SaveServerSetting persists a single signer-owned config setting.
 func (s *Service) SaveServerSetting(dataDir, key string, value interface{}) error {
 	return serverconfig.SaveSetting(dataDir, key, value)
-}
-
-// SaveServerNestedSetting persists one nested signer-owned config setting.
-func (s *Service) SaveServerNestedSetting(dataDir, section, key string, value interface{}) error {
-	return serverconfig.SaveNestedSetting(dataDir, section, key, value)
 }
 
 // SaveIdentitySetting persists a single identity-scoped setting.

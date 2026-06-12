@@ -328,10 +328,6 @@ func PackComponentSignaturesForKeyType(keyType string, userSignature, sentrySign
 	}
 }
 
-func UnpackComponentSignatures(signature []byte) ([]byte, []byte, error) {
-	return UnpackComponentSignaturesForKeyType(KeyTypeV1, signature)
-}
-
 func UnpackComponentSignaturesForKeyType(keyType string, signature []byte) ([]byte, []byte, error) {
 	switch keyType {
 	case KeyTypeV1:

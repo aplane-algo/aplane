@@ -84,17 +84,6 @@ func (h *Ed25519Handler) WordCount() int {
 	return 25
 }
 
-// KeyToMnemonic converts an Ed25519 private key to Algorand mnemonic
-// This is a helper for exporting existing keys
-func KeyToMnemonic(privateKey []byte) (string, error) {
-	// Algorand SDK expects 64-byte private keys
-	if len(privateKey) != 64 {
-		return "", fmt.Errorf("invalid private key length: expected 64 bytes, got %d", len(privateKey))
-	}
-
-	return algomnemonic.FromPrivateKey(privateKey)
-}
-
 var registerEd25519HandlerOnce sync.Once
 
 // RegisterEd25519Handler registers the Ed25519 mnemonic handler.

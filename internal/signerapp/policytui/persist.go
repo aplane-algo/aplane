@@ -360,10 +360,6 @@ func (m Model) marshalStored(stored *policy.StoredConfig) ([]byte, error) {
 	return marshalStoredForTarget(stored, m.target)
 }
 
-func marshalStored(stored *policy.StoredConfig) ([]byte, error) {
-	return marshalStoredForTarget(stored, policyeditor.TargetSigner)
-}
-
 func marshalStoredForTarget(stored *policy.StoredConfig, target policyeditor.Target) ([]byte, error) {
 	data, err := target.Marshal(stored)
 	if err != nil {

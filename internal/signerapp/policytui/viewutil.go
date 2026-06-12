@@ -11,8 +11,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/aplane-algo/aplane/internal/policy"
 )
 
 func (m Model) appChromeLines() int {
@@ -247,15 +245,4 @@ func joinTerms(terms []string) string {
 		return "-"
 	}
 	return strings.Join(terms, ",")
-}
-
-func joinAssetTerms(terms []policy.StoredAssetTerm) string {
-	if len(terms) == 0 {
-		return "-"
-	}
-	raw := make([]string, 0, len(terms))
-	for _, term := range terms {
-		raw = append(raw, term.Raw)
-	}
-	return strings.Join(raw, ",")
 }

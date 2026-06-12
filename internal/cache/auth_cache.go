@@ -10,11 +10,6 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
 
-// GetAuthCacheFilename returns the auth cache filename for a network
-func GetAuthCacheFilename(network string) string {
-	return GetAuthCacheFilenameForStore(nil, network)
-}
-
 // GetAuthCacheFilenameForStore returns the auth cache filename for a network in the provided store.
 func GetAuthCacheFilenameForStore(store *Store, network string) string {
 	return storePath(store, fmt.Sprintf("%s_auth_cache.json", network))
@@ -35,11 +30,6 @@ func NewAuthAddressCacheForStore(store *Store) AuthAddressCache {
 	return cache
 }
 
-// LoadAuthCache loads the auth address cache from disk for the specified network
-func LoadAuthCache(network string) AuthAddressCache {
-	return LoadAuthCacheFromStore(nil, network)
-}
-
 // LoadAuthCacheFromStore loads the auth address cache from the provided store.
 func LoadAuthCacheFromStore(store *Store, network string) AuthAddressCache {
 	cache := NewAuthAddressCacheForStore(store)
@@ -58,16 +48,6 @@ func LoadAuthCacheFromStore(store *Store, network string) AuthAddressCache {
 func (cache *AuthAddressCache) SaveCache(network string) error {
 	cache.ensureInitialized()
 	return cache.persistCache(network)
-}
-
-// BuildAuthCache builds the auth address cache by querying the blockchain for all alias and signer addresses
-// It loads existing cache from disk, updates it with current blockchain data, and saves back to disk
-func BuildAuthCache(algodClient *algod.Client, aliasCache *AliasCache, signerCache *SignerCache, network string) AuthAddressCache {
-	return BuildAuthCacheWithContext(context.Background(), algodClient, aliasCache, signerCache, network)
-}
-
-func BuildAuthCacheWithContext(ctx context.Context, algodClient *algod.Client, aliasCache *AliasCache, signerCache *SignerCache, network string) AuthAddressCache {
-	return BuildAuthCacheFromStoreWithContext(ctx, nil, algodClient, aliasCache, signerCache, network)
 }
 
 // BuildAuthCacheFromStore builds the auth cache using the provided store.

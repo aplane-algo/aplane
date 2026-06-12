@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,98 +52,6 @@ type DeepVerifyOptions struct {
 	ValidateBundledTemplateBytecode bool
 	AlgodClient                     *algod.Client
 	Context                         context.Context
-}
-
-// VerifyBackup performs basic validation of all .apb files in a backup directory
-// Does not require passphrase - only checks file format
-func VerifyBackup(backupDir string) (*VerifyReport, error) {
-	// Scan for .apb files
-	addresses, err := ScanBackupFiles(backupDir)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(addresses) == 0 {
-		return nil, fmt.Errorf("no .apb files found in %s", backupDir)
-	}
-
-	report := &VerifyReport{
-		BackupDir: backupDir,
-		Results:   make([]VerifyResult, 0, len(addresses)),
-	}
-
-	for _, address := range addresses {
-		result := verifyFileBasic(backupDir, address)
-		report.Results = append(report.Results, result)
-
-		if result.Valid {
-			report.ValidFiles++
-		} else {
-			report.FailedFiles++
-		}
-	}
-
-	report.TotalFiles = len(report.Results)
-	return report, nil
-}
-
-// verifyFileBasic performs basic validation without decryption
-func verifyFileBasic(backupDir, address string) VerifyResult {
-	result := VerifyResult{
-		Address:  address,
-		FileName: address + ".apb",
-	}
-
-	filePath := filepath.Join(backupDir, result.FileName)
-
-	// Check file exists and get size
-	info, err := os.Stat(filePath)
-	if err != nil {
-		result.Valid = false
-		result.Error = fmt.Sprintf("file not found: %v", err)
-		return result
-	}
-	result.Size = info.Size()
-
-	// Check file is not empty
-	if result.Size == 0 {
-		result.Valid = false
-		result.Error = "file is empty"
-		return result
-	}
-
-	// Try to read and parse as JSON
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		result.Valid = false
-		result.Error = fmt.Sprintf("failed to read file: %v", err)
-		return result
-	}
-
-	if !crypto.IsEncrypted(data) {
-		result.Valid = false
-		result.Error = "backup file must be encrypted"
-		return result
-	}
-	var encrypted crypto.EncryptedData
-	if err := json.Unmarshal(data, &encrypted); err != nil {
-		result.Valid = false
-		result.Error = "invalid encrypted data format"
-		return result
-	}
-	if encrypted.EnvelopeVersion != 2 {
-		result.Valid = false
-		result.Error = fmt.Sprintf("unsupported envelope_version: %d", encrypted.EnvelopeVersion)
-		return result
-	}
-	if encrypted.Salt == "" || encrypted.Nonce == "" || encrypted.Ciphertext == "" {
-		result.Valid = false
-		result.Error = "missing required encryption fields (standalone v2)"
-		return result
-	}
-
-	result.Valid = true
-	return result
 }
 
 // DeepVerifyBackup performs deep validation by decrypting and validating all key files.

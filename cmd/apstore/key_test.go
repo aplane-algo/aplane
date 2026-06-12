@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 )
 
 func TestCmdSentryExportWritesEnvelopeFile(t *testing.T) {
@@ -31,12 +32,12 @@ func TestCmdSentryExportWritesEnvelopeFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ReadFile(export) error = %v", err)
 		}
-		var env keymgmt.SentryPublicKeyExport
+		var env sentryrefs.ExportEnvelope
 		if err := json.Unmarshal(data, &env); err != nil {
 			t.Fatalf("Unmarshal(export) error = %v", err)
 		}
-		if env.Schema != keymgmt.SentryPublicKeyExportSchema {
-			t.Fatalf("Schema = %q, want %q", env.Schema, keymgmt.SentryPublicKeyExportSchema)
+		if env.Schema != sentryrefs.ExportSchema {
+			t.Fatalf("Schema = %q, want %q", env.Schema, sentryrefs.ExportSchema)
 		}
 		if env.ComponentKey != result.Address {
 			t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, result.Address)
@@ -63,7 +64,7 @@ func TestCmdSentryExportStdoutIsJSONOnly(t *testing.T) {
 		if strings.Contains(out, "Enter store passphrase") {
 			t.Fatalf("stdout contains passphrase prompt: %q", out)
 		}
-		var env keymgmt.SentryPublicKeyExport
+		var env sentryrefs.ExportEnvelope
 		if err := json.Unmarshal([]byte(out), &env); err != nil {
 			t.Fatalf("stdout is not a JSON envelope: %v\n%s", err, out)
 		}

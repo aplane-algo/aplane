@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/crypto"
+	algomnemonic "github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -274,68 +275,6 @@ func TestEd25519HandlerEntropyToMnemonic(t *testing.T) {
 	}
 }
 
-// TestKeyToMnemonic verifies private key to mnemonic conversion
-func TestKeyToMnemonic(t *testing.T) {
-	// Generate a new account
-	account := crypto.GenerateAccount()
-
-	// Convert to mnemonic
-	mnemonic, err := KeyToMnemonic(account.PrivateKey)
-	if err != nil {
-		t.Fatalf("KeyToMnemonic failed: %v", err)
-	}
-
-	// Verify it's 25 words
-	words := strings.Fields(mnemonic)
-	if len(words) != 25 {
-		t.Errorf("Expected 25 words, got %d", len(words))
-	}
-
-	// Verify round-trip: mnemonic back to key
-	handler := &Ed25519Handler{}
-	reconstructedKey, err := handler.SeedFromMnemonic(words, "")
-	if err != nil {
-		t.Fatalf("Failed to reconstruct key: %v", err)
-	}
-
-	// Verify the reconstructed key produces the same account
-	reconstructedAccount, err := crypto.AccountFromPrivateKey(reconstructedKey)
-	if err != nil {
-		t.Fatalf("Failed to create account from reconstructed key: %v", err)
-	}
-
-	if reconstructedAccount.Address != account.Address {
-		t.Error("Reconstructed account address doesn't match original")
-	}
-}
-
-// TestKeyToMnemonicInvalidSize verifies error handling for wrong key size
-func TestKeyToMnemonicInvalidSize(t *testing.T) {
-	tests := []struct {
-		name   string
-		keyLen int
-	}{
-		{"too short", 32},
-		{"too long", 128},
-		{"empty", 0},
-		{"slightly wrong", 63},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			invalidKey := make([]byte, tt.keyLen)
-			_, err := KeyToMnemonic(invalidKey)
-			if err == nil {
-				t.Fatal("Expected error for invalid key size")
-			}
-
-			if !strings.Contains(err.Error(), "invalid private key length") {
-				t.Errorf("Error should mention invalid length: %v", err)
-			}
-		})
-	}
-}
-
 // TestEd25519HandlerRegistration verifies automatic registration
 func TestEd25519HandlerRegistration(t *testing.T) {
 	// The handler should be auto-registered at init()
@@ -372,7 +311,7 @@ func TestMnemonicFormatConsistency(t *testing.T) {
 	}
 
 	// Converting the account's private key back to mnemonic should work
-	mnemonicFromKey, err := KeyToMnemonic(account.PrivateKey)
+	mnemonicFromKey, err := algomnemonic.FromPrivateKey(account.PrivateKey)
 	if err != nil {
 		t.Fatalf("Failed to convert key back to mnemonic: %v", err)
 	}

@@ -151,10 +151,6 @@ type routeEditField struct {
 }
 
 // New returns an appolicy model initialized with a verified signer policy.
-func New(store policyeditor.Store, stored *policy.StoredConfig, dataDir, identityID string) Model {
-	return NewWithTarget(store, stored, dataDir, identityID, policyeditor.TargetSigner)
-}
-
 // NewWithTarget returns an appolicy model initialized with a verified stored
 // policy document for the selected domain.
 func NewWithTarget(store policyeditor.Store, stored *policy.StoredConfig, dataDir, identityID string, target policyeditor.Target) Model {

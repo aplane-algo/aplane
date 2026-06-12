@@ -220,7 +220,7 @@ func TestPreviewRestoreManagedArchiveReportsKeyMetadataAndExistingConflict(t *te
 		t.Fatalf("WriteFile(existing key) error = %v", err)
 	}
 
-	preview, err := PreviewRestore(paths, identityID, filepath.Base(archivePath), []byte("export-passphrase"))
+	preview, err := PreviewRestoreWithNodeRole(paths, identityID, filepath.Base(archivePath), []byte("export-passphrase"), noderole.DefaultRole())
 	if err != nil {
 		t.Fatalf("PreviewRestore() error = %v", err)
 	}
@@ -277,7 +277,7 @@ func TestPreviewRestoreWrongPassphraseDoesNotLeakAddress(t *testing.T) {
 		}
 	})
 
-	preview, err := PreviewRestore(paths, identityID, archivePath, []byte("wrong-passphrase"))
+	preview, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("wrong-passphrase"), noderole.DefaultRole())
 	if err != nil {
 		t.Fatalf("PreviewRestore() error = %v", err)
 	}
@@ -305,7 +305,7 @@ func TestPreviewRestoreUnsupportedEnvelopeDoesNotLeakAddress(t *testing.T) {
 		}
 	})
 
-	preview, err := PreviewRestore(paths, identityID, archivePath, []byte("export-passphrase"))
+	preview, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("export-passphrase"), noderole.DefaultRole())
 	if err != nil {
 		t.Fatalf("PreviewRestore() error = %v", err)
 	}
@@ -333,7 +333,7 @@ func TestPreviewRestoreRejectsPlaintextBackupPayload(t *testing.T) {
 		}
 	})
 
-	preview, err := PreviewRestore(paths, identityID, archivePath, []byte("export-passphrase"))
+	preview, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("export-passphrase"), noderole.DefaultRole())
 	if err != nil {
 		t.Fatalf("PreviewRestore() error = %v", err)
 	}
@@ -350,7 +350,7 @@ func TestPreviewRestoreRejectsEmptyManagedArchive(t *testing.T) {
 	identityID := "default"
 	archivePath := writeManagedRestoreArchive(t, paths, identityID, func(keysDir string) {})
 
-	if _, err := PreviewRestore(paths, identityID, archivePath, []byte("export-passphrase")); err == nil {
+	if _, err := PreviewRestoreWithNodeRole(paths, identityID, archivePath, []byte("export-passphrase"), noderole.DefaultRole()); err == nil {
 		t.Fatal("PreviewRestore(empty archive) error = nil, want no .apb rejection")
 	} else if !strings.Contains(err.Error(), "no .apb files found") {
 		t.Fatalf("PreviewRestore(empty archive) error = %v, want no .apb rejection", err)

@@ -15,10 +15,6 @@ import (
 // These exist for call sites (IPC handlers, SSH callbacks) that don't yet
 // resolve identity themselves.
 
-func (fs *Signer) pendingSignCount() int {
-	return fs.productIdentityRuntime().PendingSignCount()
-}
-
 func (fs *Signer) requestSigningApproval(identityID, requestID, address, txnSender, description string, firstValid, lastValid uint64, violations []signerapproval.Violation, timeout time.Duration) (bool, error) {
 	response, err := fs.requestSigningApprovalResponseContext(context.Background(), identityID, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
 	if err != nil {
@@ -45,10 +41,6 @@ func (fs *Signer) requestSigningApprovalResponseContext(ctx context.Context, ide
 		return signerapproval.SignResponse{}, fmt.Errorf("identity not found: %s", identityID)
 	}
 	return ir.RequestSigningApprovalResponseContext(ctx, requestID, address, txnSender, description, firstValid, lastValid, violations, timeout)
-}
-
-func (fs *Signer) failAllPendingApprovals(reason string) {
-	fs.productIdentityRuntime().FailAllPendingApprovals(reason)
 }
 
 func (fs *Signer) requestTokenProvisioning(requestID, identityID, sshFingerprint, remoteAddr string, timeout time.Duration) (bool, error) {
