@@ -6,7 +6,8 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"syscall"
+
+	"github.com/aplane-algo/aplane/internal/fsutil"
 )
 
 // ResolvePath resolves a path relative to baseDir if not absolute.
@@ -47,9 +48,9 @@ func WriteConfigAtomic(path string, data []byte, mode os.FileMode) error {
 	switch {
 	case statErr == nil:
 		targetMode = info.Mode().Perm()
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			targetUID = int(stat.Uid)
-			targetGID = int(stat.Gid)
+		if uid, gid, ok := fsutil.FileOwnership(info); ok {
+			targetUID = uid
+			targetGID = gid
 			hasOwnership = true
 		}
 	case os.IsNotExist(statErr):

@@ -45,6 +45,9 @@ jobs:
       - name: Build all Linux platforms
         run: make bin-amd64 bin-arm64
 
+      - name: Build Windows client binary
+        run: make bin-windows-amd64
+
       - name: Build Linux bundled plugins
         run: make bundled-plugins-linux
 
@@ -55,6 +58,7 @@ jobs:
           path: |
             bin/amd64/
             bin/arm64/
+            bin/windows-amd64/
 
       - name: Upload Linux bundled plugins
         uses: actions/upload-artifact@v4
@@ -191,6 +195,28 @@ jobs:
               > dist/staging/aplane-client/README.txt
           }
 
+          write_client_readme_windows() {
+            printf '%s\r\n' \
+              'apshell - SSH Client for APlane Signer' \
+              '=====================================' \
+              '' \
+              'Setup:' \
+              '1. Edit config.yaml and set the signer host/ports for your apsigner machine' \
+              '2. Run: bin\apshell.exe -d .' \
+              '' \
+              'First connection:' \
+              '- SSH identity key will be auto-generated in .ssh\id_ed25519' \
+              "- You'll be prompted to trust the server's host key (TOFU) unless known_hosts is pre-populated" \
+              '- API token can be provisioned from the server via request-token' \
+              '' \
+              'Files:' \
+              '  bin\apshell.exe   - General shell client' \
+              '  config.yaml       - Configuration template (edit signer host/ports)' \
+              '  .ssh\             - SSH keys and known_hosts (created/managed locally)' \
+              '  aplane.token      - API token (created after request-token or copied from operator)' \
+              > dist/staging/aplane-client/README.txt
+          }
+
           # Linux archives (structured tarball with installer helper scripts)
           for arch in amd64 arm64; do
             archive="aplane_${VERSION}_linux_${arch}.tar.gz"
@@ -266,9 +292,21 @@ jobs:
             echo "Created dist/${archive}"
           done
 
+          # Windows client-only archive (zip; apshell is the only Windows binary)
+          archive="aplane-client_${VERSION}_windows_amd64.zip"
+          rm -rf dist/staging
+          mkdir -p dist/staging/aplane-client/{bin,.ssh}
+          cp bin/windows-amd64/apshell.exe dist/staging/aplane-client/bin/
+          cp examples/config/apclient/config.yaml.example dist/staging/aplane-client/config.yaml
+          write_client_readme_windows
+          write_release_metadata dist/staging/aplane-client
+          (cd dist/staging && zip -qr "../${archive}" aplane-client)
+          echo "Created dist/${archive}"
+          rm -rf dist/staging
+
           # Generate checksums
           cd dist
-          sha256sum *.tar.gz > checksums.txt
+          sha256sum *.tar.gz *.zip > checksums.txt
           cd ..
           echo "Generated dist/checksums.txt"
           cat dist/checksums.txt
@@ -306,6 +344,7 @@ jobs:
             --title "${RELEASE_TAG}" \
             --notes-file dist/changelog.md \
             dist/*.tar.gz \
+            dist/*.zip \
             dist/checksums.txt \
             dist/checksums.txt.minisig
         env:

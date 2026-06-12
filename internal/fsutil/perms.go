@@ -10,7 +10,6 @@ package fsutil
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // StoreDirPerm is the permission mode for store directories.
@@ -51,7 +50,7 @@ func WriteFile(path string, data []byte) error {
 	info, statErr := os.Stat(path)
 	switch {
 	case statErr == nil:
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok && int(stat.Uid) != os.Getuid() {
+		if uid, _, ok := FileOwnership(info); ok && uid != os.Getuid() {
 			// Shared-group update of someone else's file: preserve ownership by
 			// writing in place, matching the pre-atomic behavior.
 			return writeFileInPlace(path, data)
@@ -87,8 +86,8 @@ func WriteFile(path string, data []byte) error {
 	switch {
 	case statErr == nil:
 		targetMode = info.Mode().Perm()
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			targetGID = int(stat.Gid)
+		if _, gid, ok := FileOwnership(info); ok {
+			targetGID = gid
 			hasOwnership = targetGID != os.Getgid()
 		}
 	case os.IsNotExist(statErr):

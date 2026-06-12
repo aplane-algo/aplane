@@ -248,6 +248,14 @@ bin-darwin-amd64: compile-teal compile-docassets
 	fi
 	@echo "✓ Built darwin/amd64 binaries in bin/darwin-amd64/"
 
+# Windows client binary. Only apshell ships for Windows: it is the
+# client-only binary with no CGo and no signer-side machinery (pinned by
+# cmd/apshell/deps_test.go), so it cross-compiles from any platform.
+bin-windows-amd64: compile-teal compile-docassets
+	@mkdir -p bin/windows-amd64
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags '$(VERSION_LDFLAGS)' -o bin/windows-amd64/apshell.exe ./cmd/apshell
+	@echo "✓ Built windows/amd64 apshell.exe in bin/windows-amd64/"
+
 clean:
 	find bin -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
 	rm -rf internal/docassets/generated
@@ -257,7 +265,8 @@ clean:
 # Local release dry-run (builds archives without publishing)
 # On macOS: also builds darwin archives. On Linux: linux only.
 # Linux tarballs include installer/, installer/scripts/, install.sh, and uninstall.sh.
-release-local: bin-amd64 bin-arm64 bundled-plugins-linux
+# Always builds the Windows client-only zip (requires the zip tool).
+release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 	@mkdir -p dist
 	@RAW_VERSION=$$(git describe --tags --always --dirty 2>/dev/null || echo dev); \
 	VERSION=$$(printf '%s' "$$RAW_VERSION" | sed 's/^v//'); \
@@ -313,7 +322,39 @@ release-local: bin-amd64 bin-arm64 bundled-plugins-linux
 		echo "✓ Created dist/$${archive}"; \
 	done; \
 	rm -rf dist/staging; \
-	cd dist && sha256sum *.tar.gz > checksums.txt && cd ..; \
+	if command -v zip >/dev/null 2>&1; then \
+		archive="aplane-client_$${VERSION}_windows_amd64.zip"; \
+		rm -rf dist/staging "dist/$${archive}"; \
+		mkdir -p dist/staging/aplane-client/bin dist/staging/aplane-client/.ssh; \
+		cp bin/windows-amd64/apshell.exe dist/staging/aplane-client/bin/; \
+		cp examples/config/apclient/config.yaml.example dist/staging/aplane-client/config.yaml; \
+		printf '%s\r\n' \
+			'apshell - SSH Client for APlane Signer' \
+			'=====================================' \
+			'' \
+			'Setup:' \
+			'1. Edit config.yaml and set the signer host/ports for your apsigner machine' \
+			'2. Run: bin\apshell.exe -d .' \
+			'' \
+			'First connection:' \
+			'- SSH identity key will be auto-generated in .ssh\id_ed25519' \
+			"- You'll be prompted to trust the server's host key (TOFU) unless known_hosts is pre-populated" \
+			'- API token can be provisioned from the server via request-token' \
+			'' \
+			'Files:' \
+			'  bin\apshell.exe   - General shell client' \
+			'  config.yaml       - Configuration template (edit signer host/ports)' \
+			'  .ssh\             - SSH keys and known_hosts (created/managed locally)' \
+			'  aplane.token      - API token (created after request-token or copied from operator)' \
+			> dist/staging/aplane-client/README.txt; \
+		write_release_metadata dist/staging/aplane-client; \
+		(cd dist/staging && zip -qr "../$${archive}" aplane-client); \
+		echo "✓ Created dist/$${archive}"; \
+		rm -rf dist/staging; \
+	else \
+		echo "⚠ zip not installed; skipping aplane-client windows zip"; \
+	fi; \
+	cd dist && sha256sum *.tar.gz *.zip > checksums.txt 2>/dev/null || sha256sum *.tar.gz > checksums.txt; cd ..; \
 	echo "✓ Generated dist/checksums.txt"; \
 	cat dist/checksums.txt
 
@@ -534,6 +575,8 @@ race-cover-test: compile-docassets
 build-check:
 	@echo "Building all packages..."
 	@go build ./...
+	@echo "Cross-compiling apshell for windows/amd64..."
+	@GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/apshell
 	@echo "✓ build clean"
 
 # Run tests with race detector (slower but catches data races)

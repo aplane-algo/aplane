@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
-	"syscall"
 )
 
 const lockFileName = ".apclient.lock"
@@ -63,12 +62,11 @@ func WithExclusiveLock(dataDir string, fn func() error) error {
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	unlock, err := lockFileExclusive(f)
+	if err != nil {
 		return fmt.Errorf("failed to lock client data: %w", err)
 	}
-	defer func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-	}()
+	defer unlock()
 
 	return fn()
 }
