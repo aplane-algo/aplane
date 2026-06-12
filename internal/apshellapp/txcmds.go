@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/partkeyparse"
+	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 // OptInRequest captures parsed opt-in inputs.
@@ -739,7 +740,8 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 			}
 		}
 
-		sendAmount, feeReserve, ok := sweepSendAmount(balance, leavingAmount.Raw, assetMeta.AssetID, req.Fee, req.UseFlatFee)
+		dummyReserve := a.eng.DummyFeeReserve(fromAddress, signing.DefaultMinFee)
+		sendAmount, feeReserve, ok := sweepSendAmount(balance, leavingAmount.Raw, assetMeta.AssetID, req.Fee, req.UseFlatFee, dummyReserve)
 		if !ok {
 			item.SkippedReason = fmt.Sprintf("balance %d <= leaving amount %d", balance, leavingAmount.Raw)
 			if assetMeta.AssetID == 0 && balance > leavingAmount.Raw {
@@ -813,7 +815,13 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 	return result, nil
 }
 
-func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool) (amount uint64, feeReserve uint64, ok bool) {
+// sweepSendAmount computes how much to send so the account is left with exactly
+// `leaving`. For ALGO sweeps the fee reserve is the base transaction fee plus
+// dummyFeeReserve — the dummy-transaction fees the signer pools onto a LogicSig
+// sender — so sweeping from a Falcon/large-LogicSig account no longer overspends
+// and fails. ASA sweeps pay their fee from the ALGO balance, not the swept
+// asset, so dummyFeeReserve does not apply there.
+func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool, dummyFeeReserve uint64) (amount uint64, feeReserve uint64, ok bool) {
 	if balance <= leaving {
 		return 0, 0, false
 	}
@@ -821,10 +829,11 @@ func sweepSendAmount(balance, leaving, assetID, fee uint64, useFlatFee bool) (am
 	if assetID != 0 {
 		return available, 0, true
 	}
-	feeReserve = 1000
+	baseFee := uint64(signing.DefaultMinFee)
 	if useFlatFee && fee > 0 {
-		feeReserve = fee
+		baseFee = fee
 	}
+	feeReserve = baseFee + dummyFeeReserve
 	if available <= feeReserve {
 		return 0, feeReserve, false
 	}

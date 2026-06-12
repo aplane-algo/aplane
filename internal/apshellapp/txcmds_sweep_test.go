@@ -42,7 +42,7 @@ func TestDecorateSweepResult(t *testing.T) {
 }
 
 func TestSweepSendAmountReservesAlgoFee(t *testing.T) {
-	amount, feeReserve, ok := sweepSendAmount(10_000, 1_000, 0, 0, false)
+	amount, feeReserve, ok := sweepSendAmount(10_000, 1_000, 0, 0, false, 0)
 	if !ok {
 		t.Fatal("sweepSendAmount() ok = false, want true")
 	}
@@ -50,7 +50,7 @@ func TestSweepSendAmountReservesAlgoFee(t *testing.T) {
 		t.Fatalf("sweepSendAmount() = (%d, %d), want amount 8000 fee 1000", amount, feeReserve)
 	}
 
-	amount, feeReserve, ok = sweepSendAmount(10_000, 1_000, 0, 2_000, true)
+	amount, feeReserve, ok = sweepSendAmount(10_000, 1_000, 0, 2_000, true, 0)
 	if !ok {
 		t.Fatal("sweepSendAmount(flat fee) ok = false, want true")
 	}
@@ -58,13 +58,38 @@ func TestSweepSendAmountReservesAlgoFee(t *testing.T) {
 		t.Fatalf("sweepSendAmount(flat fee) = (%d, %d), want amount 7000 fee 2000", amount, feeReserve)
 	}
 
-	if _, feeReserve, ok = sweepSendAmount(2_000, 1_000, 0, 0, false); ok || feeReserve != 1_000 {
+	if _, feeReserve, ok = sweepSendAmount(2_000, 1_000, 0, 0, false, 0); ok || feeReserve != 1_000 {
 		t.Fatalf("sweepSendAmount(insufficient) ok=%v fee=%d, want false/1000", ok, feeReserve)
 	}
 }
 
+// TestSweepSendAmountReservesDummyFees pins finding 2B: an ALGO sweep from a
+// LogicSig account reserves the base fee plus the dummy-transaction fees the
+// signer pools onto it, so it cannot overspend and fail.
+func TestSweepSendAmountReservesDummyFees(t *testing.T) {
+	// base 1000 + 3000 dummy reserve = 4000 reserved.
+	amount, feeReserve, ok := sweepSendAmount(10_000, 1_000, 0, 0, false, 3_000)
+	if !ok {
+		t.Fatal("sweepSendAmount(dummy reserve) ok = false, want true")
+	}
+	if amount != 5_000 || feeReserve != 4_000 {
+		t.Fatalf("sweepSendAmount(dummy reserve) = (%d, %d), want amount 5000 fee 4000", amount, feeReserve)
+	}
+
+	// Dummy reserve applies on top of a flat base fee too.
+	if amount, feeReserve, ok = sweepSendAmount(10_000, 1_000, 0, 2_000, true, 3_000); !ok || amount != 4_000 || feeReserve != 5_000 {
+		t.Fatalf("sweepSendAmount(flat+dummy) = (%d, %d, %v), want 4000/5000/true", amount, feeReserve, ok)
+	}
+
+	// ASA sweeps pay fees from the ALGO balance, not the asset, so the dummy
+	// reserve does not reduce the swept asset amount.
+	if amount, feeReserve, ok = sweepSendAmount(10_000, 1_000, 10458941, 0, false, 3_000); !ok || amount != 9_000 || feeReserve != 0 {
+		t.Fatalf("sweepSendAmount(ASA+dummy) = (%d, %d, %v), want 9000/0/true", amount, feeReserve, ok)
+	}
+}
+
 func TestSweepSendAmountDoesNotReserveASATransferFee(t *testing.T) {
-	amount, feeReserve, ok := sweepSendAmount(10_000, 1_000, 10458941, 0, false)
+	amount, feeReserve, ok := sweepSendAmount(10_000, 1_000, 10458941, 0, false, 0)
 	if !ok {
 		t.Fatal("sweepSendAmount(ASA) ok = false, want true")
 	}

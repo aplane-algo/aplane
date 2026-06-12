@@ -141,6 +141,41 @@ func TestAtomicValidationNotesRejectsTotalOverflow(t *testing.T) {
 	}
 }
 
+// TestAtomicValidationNotesChecksAlgoGroupTotal pins finding 2B: an ALGO
+// atomic-to-multiple send validates the whole group's total against the
+// balance, so a sender with enough for one leg but not all N is rejected at
+// pre-flight rather than failing on-chain.
+func TestAtomicValidationNotesChecksAlgoGroupTotal(t *testing.T) {
+	// 5 ALGO to each of 3 receivers = 15 ALGO needed; sender has 8.
+	// Checks[0].SufficientFunds is true for a single 5-ALGO payment.
+	plan := &AtomicSendPlan{
+		Mode:   SendModeAtomicToMultiple,
+		Amount: asa.Amount{Raw: 5_000_000},
+		To:     []string{"bob", "carol", "dave"},
+		Checks: []BalanceCheckDetails{
+			{SufficientFunds: true, SenderBalance: 8.0},
+			{SufficientFunds: true, SenderBalance: 8.0},
+			{SufficientFunds: true, SenderBalance: 8.0},
+		},
+	}
+
+	_, err := atomicValidationNotes(plan)
+	if err == nil {
+		t.Fatal("atomicValidationNotes() error = nil, want group-total insufficiency")
+	}
+	if !strings.Contains(err.Error(), "insufficient balance") {
+		t.Fatalf("atomicValidationNotes() error = %v, want insufficient balance", err)
+	}
+
+	// With enough for the whole group (20 ALGO), it passes.
+	for i := range plan.Checks {
+		plan.Checks[i].SenderBalance = 20.0
+	}
+	if _, err := atomicValidationNotes(plan); err != nil {
+		t.Fatalf("atomicValidationNotes() error = %v, want success for sufficient total", err)
+	}
+}
+
 func TestCheckedSendTotal(t *testing.T) {
 	const maxUint64 = ^uint64(0)
 

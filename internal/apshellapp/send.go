@@ -405,12 +405,16 @@ func atomicValidationNotes(plan *AtomicSendPlan) ([]string, error) {
 	switch plan.Mode {
 	case SendModeAtomicToMultiple:
 		if amount.Meta.AssetID == 0 {
-			if !plan.Checks[0].SufficientFunds {
-				totalRaw, ok := checkedSendTotal(amount.Raw, len(plan.To))
-				if !ok {
-					return nil, fmt.Errorf("total send amount overflows uint64 for %d payments", len(plan.To))
-				}
-				totalNeeded := float64(totalRaw) / 1000000.0
+			// Validate the whole group's total against the balance, not just one
+			// payment: Checks[0].SufficientFunds only covers a single amount+fee,
+			// so a sender with enough for one leg but not all N would otherwise
+			// pass pre-flight and fail on-chain. Mirrors the ASA branch below.
+			totalRaw, ok := checkedSendTotal(amount.Raw, len(plan.To))
+			if !ok {
+				return nil, fmt.Errorf("total send amount overflows uint64 for %d payments", len(plan.To))
+			}
+			totalNeeded := float64(totalRaw) / 1000000.0
+			if plan.Checks[0].SenderBalance < totalNeeded {
 				return nil, fmt.Errorf("insufficient balance: have %.6f ALGO, need %.6f ALGO for %d payments",
 					plan.Checks[0].SenderBalance, totalNeeded, len(plan.To))
 			}

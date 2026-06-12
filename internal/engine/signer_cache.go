@@ -5,6 +5,7 @@ package engine
 
 import (
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -65,6 +66,23 @@ func (e *Engine) signerCacheLsigSize(address string) int {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()
 	return e.SignerCache.GetLsigSize(address)
+}
+
+// DummyFeeReserve returns the additional microAlgo fee a single standalone
+// transaction from sender will accrue from server-side dummy transactions
+// added for LogicSig budget. It is 0 for ed25519 and for LogicSigs small
+// enough to need no dummies. "Spend everything" flows (sweep) must reserve
+// this on top of the base transaction fee, because the signer pools the dummy
+// fees onto the LogicSig transaction and the account pays them.
+func (e *Engine) DummyFeeReserve(sender string, minFee uint64) uint64 {
+	effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
+	lsigSize := e.signerCacheLsigSize(effectiveSigner)
+	if lsigSize <= lsig.TxLsigBudget {
+		return 0
+	}
+	extra := lsigSize - lsig.TxLsigBudget
+	dummies := (extra + lsig.TxLsigBudget - 1) / lsig.TxLsigBudget
+	return uint64(dummies) * minFee
 }
 
 func (e *Engine) signerCacheSentryPublicKey(address string) (string, bool) {
