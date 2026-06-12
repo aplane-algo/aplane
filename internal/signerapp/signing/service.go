@@ -10,7 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
-	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
+	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -147,7 +147,7 @@ func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID str
 	if err := req.Validate(); err != nil {
 		return nil, badRequest(err.Error())
 	}
-	group, decodeErr := sentryverify.DecodeCanonicalGroupHex(req.GroupBytesHex)
+	group, decodeErr := canonical.DecodeGroupHex(req.GroupBytesHex)
 	if decodeErr != nil {
 		return nil, badRequest(decodeErr.Error())
 	}

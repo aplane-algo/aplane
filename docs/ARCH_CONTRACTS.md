@@ -196,9 +196,10 @@ IPC failure semantics:
 older policy settings payload remains intentionally limited for compatibility:
 it can mutate the admin-projected settings exposed by `get_policy_settings`,
 `update_policy_setting`, and `update_policy_asa_amounts`, including scalar
-policy toggles, max fee, and network-scoped transfer guard thresholds. YAML-only
-fields such as `key_overrides` are handled through canonical policy YAML, not
-through that legacy scalar settings payload.
+policy toggles other than clawback controls, max fee, and network-scoped
+transfer guard thresholds. YAML-only fields such as `reject_clawback` and
+`key_overrides` are handled through canonical policy YAML, not through that
+legacy scalar settings payload.
 
 These client capabilities describe the product surface for the product
 identity. Backend admin routing is identity-scoped internally; `apadmin`,

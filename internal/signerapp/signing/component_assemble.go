@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
@@ -24,7 +25,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRequest, group *sentryverify.CanonicalGroup, session componentKeyGetter) (*GuardedAssemblyResult, *ServiceError) {
+func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRequest, group *canonical.Group, session componentKeyGetter) (*GuardedAssemblyResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -67,7 +68,7 @@ func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRe
 	}, nil
 }
 
-func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssemblyTarget, entry sentryverify.CanonicalTxn, session componentKeyGetter) (string, *ServiceError) {
+func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssemblyTarget, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
 	keyMaterial, err := loadGuardedAccountKeyMaterial(ctx, session, target.GuardedAccount)
 	if err != nil {
 		return "", err
@@ -158,7 +159,7 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 	return hex.EncodeToString(signedTxnBytes), nil
 }
 
-func validateAssembledGuardedTarget(target signerapi.GuardedAssemblyTarget, entry sentryverify.CanonicalTxn, signedTxnBytes []byte) *ServiceError {
+func validateAssembledGuardedTarget(target signerapi.GuardedAssemblyTarget, entry canonical.Txn, signedTxnBytes []byte) *ServiceError {
 	var stxn types.SignedTxn
 	if err := msgpack.Decode(signedTxnBytes, &stxn); err != nil {
 		return internal(fmt.Sprintf("failed to decode assembled guarded transaction: %v", err))
@@ -178,7 +179,7 @@ func validateAssembledGuardedTarget(target signerapi.GuardedAssemblyTarget, entr
 	return nil
 }
 
-func validateGuardedPassthrough(passthrough signerapi.GuardedPassthroughItem, entry sentryverify.CanonicalTxn) (string, *ServiceError) {
+func validateGuardedPassthrough(passthrough signerapi.GuardedPassthroughItem, entry canonical.Txn) (string, *ServiceError) {
 	signedTxnBytes, err := decodeAssemblySignatureHex(passthrough.SignedTxnHex, "signed_txn_hex")
 	if err != nil {
 		return "", err

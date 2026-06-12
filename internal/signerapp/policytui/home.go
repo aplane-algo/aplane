@@ -108,9 +108,6 @@ func signerPolicyFields() []field {
 		boolField("reject_asset_close", "Reject asset close", false, func(c *policy.StoredConfig) **bool {
 			return &c.RejectAssetClose
 		}),
-		boolField("reject_clawback", "Reject clawback", false, func(c *policy.StoredConfig) **bool {
-			return &c.RejectClawback
-		}),
 		boolField("always_review_warnings", "Always review warnings", false, func(c *policy.StoredConfig) **bool {
 			return &c.AlwaysReviewWarnings
 		}),
@@ -159,9 +156,6 @@ func sentryPolicyFields() []field {
 		}),
 		boolField("reject_asset_close", "Reject asset close", false, func(c *policy.StoredConfig) **bool {
 			return &c.RejectAssetClose
-		}),
-		boolField("reject_clawback", "Reject clawback", false, func(c *policy.StoredConfig) **bool {
-			return &c.RejectClawback
 		}),
 		{
 			key:   "max_fee_microalgos",

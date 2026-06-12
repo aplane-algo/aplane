@@ -305,9 +305,9 @@ func friendlyPolicyError(err error) string {
 	msg := err.Error()
 	switch {
 	case strings.Contains(msg, "asset_sources requires clawback.allow:true"):
-		return msg + " (clear Asset Sources for normal sends, or set Clawback Allow to true for clawback routes)"
+		return msg + " (clear asset_sources for normal sends, or edit YAML to set clawback.allow:true for clawback routes)"
 	case strings.Contains(msg, "clawback.allow:true requires asset_sources"):
-		return msg + " (set Asset Sources for clawback routes, or set Clawback Allow to false for normal routes)"
+		return msg + " (edit YAML to set asset_sources for clawback routes, or clear clawback.allow for normal routes)"
 	case strings.Contains(msg, "self is not allowed in clawback route destinations"):
 		return msg + " (clawback destinations must be explicit addresses or address sets, not self)"
 	case strings.Contains(msg, "self is not allowed in asset_sources"):

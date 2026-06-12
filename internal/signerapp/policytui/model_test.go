@@ -262,7 +262,6 @@ func TestHomeViewShowsEffectivePolicyDefaults(t *testing.T) {
 		{label: "Reject foreign rekey", value: "true", source: "default"},
 		{label: "Reject close remainder", value: "false", source: "default"},
 		{label: "Reject asset close", value: "false", source: "default"},
-		{label: "Reject clawback", value: "false", source: "default"},
 		{label: "Always review warnings", value: "false", source: "default"},
 		{label: "Auto-approve self no-op transfer", value: "false", source: "default"},
 		{label: "Max fee microAlgos", value: "0 (no limit)", source: "default"},
@@ -274,6 +273,9 @@ func TestHomeViewShowsEffectivePolicyDefaults(t *testing.T) {
 	}
 	if strings.Contains(view, "inherit") {
 		t.Fatalf("home view includes inherit:\n%s", view)
+	}
+	if strings.Contains(view, "Reject clawback") {
+		t.Fatalf("home view exposes YAML-only clawback setting:\n%s", view)
 	}
 }
 
@@ -414,6 +416,9 @@ func TestBlockedDestinationsEditorInitializesRoutingSafely(t *testing.T) {
 	}
 	if m.policy.TransferPolicy.OnNoRoute == nil || *m.policy.TransferPolicy.OnNoRoute != string(policy.TransferOnNoRouteOperatorDefault) {
 		t.Fatalf("on_no_route = %v, want operator_default", m.policy.TransferPolicy.OnNoRoute)
+	}
+	if m.policy.TransferPolicy.ClawbackOnNoRoute != nil {
+		t.Fatalf("clawback_on_no_route = %v, want YAML-only default omitted", m.policy.TransferPolicy.ClawbackOnNoRoute)
 	}
 	if !m.policy.TransferPolicy.RoutesSet {
 		t.Fatal("RoutesSet = false, want explicit empty route list")
@@ -909,6 +914,9 @@ func TestRouteScreenNewRouteInitializesTransferPolicy(t *testing.T) {
 	}
 	if got := len(m.policy.TransferPolicy.Routes); got != 1 {
 		t.Fatalf("routes = %d, want 1", got)
+	}
+	if m.policy.TransferPolicy.ClawbackOnNoRoute != nil {
+		t.Fatalf("clawback_on_no_route = %v, want YAML-only default omitted", m.policy.TransferPolicy.ClawbackOnNoRoute)
 	}
 	if route := m.policy.TransferPolicy.Routes[0]; route.ID != "new_guard_algo" {
 		t.Fatalf("new guard route ID = %q, want new_guard_algo", route.ID)
@@ -1752,7 +1760,7 @@ func TestRouteEditFormKeepsFormOpenOnValidationError(t *testing.T) {
 
 func TestFriendlyPolicyErrorExplainsAssetSources(t *testing.T) {
 	got := friendlyPolicyError(errors.New("invalid policy: transfer_policy: routes[1]: asset_sources requires clawback.allow:true"))
-	if !strings.Contains(got, "clear Asset Sources for normal sends") {
+	if !strings.Contains(got, "clear asset_sources for normal sends") {
 		t.Fatalf("friendlyPolicyError() = %q, want normal-send guidance", got)
 	}
 }
@@ -1761,6 +1769,8 @@ func TestTransferSettingsApplyValidatedChanges(t *testing.T) {
 	store := &fakeStore{}
 	stored := routePolicy()
 	stored.TransferPolicy.BlockedDestinations = []string{"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"}
+	clawbackOnNoRoute := "review"
+	stored.TransferPolicy.ClawbackOnNoRoute = &clawbackOnNoRoute
 	m := New(store, stored, "/tmp/aplane", "default")
 	m.cursor = len(m.fields) - 1
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1774,7 +1784,6 @@ func TestTransferSettingsApplyValidatedChanges(t *testing.T) {
 	setSettingsField(&m, "enabled", "false")
 	setSettingsField(&m, "on_no_route", "review")
 	setSettingsField(&m, "close_on_no_route", "operator_default")
-	setSettingsField(&m, "clawback_on_no_route", "review")
 
 	updated, cmd := m.applyTransferSettings()
 	if cmd == nil {
@@ -1797,13 +1806,33 @@ func TestTransferSettingsApplyValidatedChanges(t *testing.T) {
 		t.Fatalf("close_on_no_route = %v, want operator_default", m.policy.TransferPolicy.CloseOnNoRoute)
 	}
 	if m.policy.TransferPolicy.ClawbackOnNoRoute == nil || *m.policy.TransferPolicy.ClawbackOnNoRoute != "review" {
-		t.Fatalf("clawback_on_no_route = %v, want review", m.policy.TransferPolicy.ClawbackOnNoRoute)
+		t.Fatalf("clawback_on_no_route = %v, want preserved review", m.policy.TransferPolicy.ClawbackOnNoRoute)
 	}
 	if len(m.policy.TransferPolicy.BlockedDestinations) != 1 {
 		t.Fatalf("blocked destinations = %+v, want preserved one", m.policy.TransferPolicy.BlockedDestinations)
 	}
 	if store.validations != 1 {
 		t.Fatalf("validations = %d, want 1", store.validations)
+	}
+}
+
+func TestTransferSettingsHideClawbackFallback(t *testing.T) {
+	stored := routePolicy()
+	clawbackOnNoRoute := "review"
+	stored.TransferPolicy.ClawbackOnNoRoute = &clawbackOnNoRoute
+	m := New(&fakeStore{}, stored, "/tmp/aplane", "default")
+	m.cursor = len(m.fields) - 1
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	updated, _ = m.Update(keyRunes("p"))
+	m = updated.(Model)
+
+	if got := settingsFieldValue(m, "clawback_on_no_route"); got != "" {
+		t.Fatalf("clawback_on_no_route settings field = %q, want hidden", got)
+	}
+	view := m.transferSettingsView()
+	if strings.Contains(view, "Clawback On No Route") {
+		t.Fatalf("transfer settings view exposes clawback fallback:\n%s", view)
 	}
 }
 

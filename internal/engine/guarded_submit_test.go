@@ -24,13 +24,12 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
-	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
 func TestGuardedTargetsNormalizeSentryPublicKey(t *testing.T) {
@@ -283,62 +282,6 @@ func TestPlanGuardedGroupReturnsGroupedDummies(t *testing.T) {
 	}
 }
 
-func TestVerifySentryComponentSignaturesUsesSharedMessage(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(cryptorand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
-	group, err := sentryverify.DecodeCanonicalGroupHex(encodeGroupHex([]types.Transaction{txn}))
-	if err != nil {
-		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
-	}
-
-	msg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	signatures := map[int]string{0: hex.EncodeToString(ed25519.Sign(privateKey, msg[:]))}
-	if err := verifySentryComponentSignatures(keytypes.SentryComponentEd25519V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err != nil {
-		t.Fatalf("verifySentryComponentSignatures() error = %v", err)
-	}
-
-	wrongRoleMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
-	signatures[0] = hex.EncodeToString(ed25519.Sign(privateKey, wrongRoleMsg[:]))
-	if err := verifySentryComponentSignatures(keytypes.SentryComponentEd25519V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err == nil {
-		t.Fatal("verifySentryComponentSignatures() accepted user-role signature for sentry role")
-	}
-}
-
-func TestVerifySentryComponentSignaturesUsesFalcon1024Scheme(t *testing.T) {
-	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(make([]byte, 64))
-	if err != nil {
-		t.Fatalf("GenerateKeypair() error = %v", err)
-	}
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
-	group, err := sentryverify.DecodeCanonicalGroupHex(encodeGroupHex([]types.Transaction{txn}))
-	if err != nil {
-		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
-	}
-
-	msg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	signature, err := signerops.New(nil).Sign(privateKey, msg[:])
-	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
-	}
-	signatures := map[int]string{0: hex.EncodeToString(signature)}
-	if err := verifySentryComponentSignatures(keytypes.SentryComponentFalcon1024V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err != nil {
-		t.Fatalf("verifySentryComponentSignatures() error = %v", err)
-	}
-
-	wrongRoleMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
-	signature, err = signerops.New(nil).Sign(privateKey, wrongRoleMsg[:])
-	if err != nil {
-		t.Fatalf("Sign(wrong role) error = %v", err)
-	}
-	signatures[0] = hex.EncodeToString(signature)
-	if err := verifySentryComponentSignatures(keytypes.SentryComponentFalcon1024V1, hex.EncodeToString(publicKey), group, []int{0}, signatures); err == nil {
-		t.Fatal("verifySentryComponentSignatures() accepted user-role signature for sentry role")
-	}
-}
-
 func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -423,10 +366,6 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
-	group, err := sentryverify.DecodeCanonicalGroupHex(groupBytesHex)
-	if err != nil {
-		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
-	}
 	server := newSentryEndpointTestServer(t, sentryHex, privateKey, "sentry-token", nil)
 	defer server.Close()
 	tokenFile := writeSentryTokenFile(t, "sentry-token")
@@ -438,7 +377,6 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	signatures, requestIDs, err := eng.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		group,
 		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
 	)
 	if err != nil {
@@ -465,10 +403,6 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 	wrongHex := hex.EncodeToString(wrongPublicKey)
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
-	group, err := sentryverify.DecodeCanonicalGroupHex(groupBytesHex)
-	if err != nil {
-		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
-	}
 
 	selfServer := newSentryEndpointTestServer(t, sentryHex, privateKey, "", nil)
 	defer selfServer.Close()
@@ -486,7 +420,6 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 	_, _, err = eng.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		group,
 		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
 	)
 	if err == nil {
@@ -516,10 +449,6 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
-	group, err := sentryverify.DecodeCanonicalGroupHex(groupBytesHex)
-	if err != nil {
-		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
-	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
@@ -537,7 +466,6 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	_, _, err = eng.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		group,
 		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
 	)
 	if err == nil {
@@ -562,10 +490,6 @@ func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) 
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
-	group, err := sentryverify.DecodeCanonicalGroupHex(groupBytesHex)
-	if err != nil {
-		t.Fatalf("DecodeCanonicalGroupHex() error = %v", err)
-	}
 	server := newSentryEndpointTestServer(t, sentryHex, privateKey, "", nil)
 	defer server.Close()
 	eng := newGuardedSubmitTestEngine(t, txn.Sender.String(), 1500, sentryHex)
@@ -574,7 +498,6 @@ func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) 
 	signatures, _, err := eng.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		group,
 		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
 	)
 	if err != nil {
@@ -714,7 +637,7 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey e
 			http.Error(w, "wrong Sentry Key ID", http.StatusBadRequest)
 			return
 		}
-		group, err := sentryverify.DecodeCanonicalGroupHex(req.GroupBytesHex)
+		group, err := canonical.DecodeGroupHex(req.GroupBytesHex)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

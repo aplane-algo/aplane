@@ -115,7 +115,8 @@ transaction facts, not to which guarded key acted as authorizer.
 Owned primitives:
 
 - `internal/sentry/message`: message construction.
-- `internal/sentry/verify`: component signature verification.
+- `internal/sentry/verify`: component signature verification (signer-side
+  only; clients treat component signatures as opaque).
 - SDKs must match the same vectors rather than reconstructing a variant.
 
 Changing the message shape is a versioned cryptographic and LogicSig change.
@@ -331,7 +332,9 @@ Primary packages and files:
 - `internal/sentry/keytypes`: sentry key-type identifiers, guarded key-type
   mapping, Sentry Key ID derivation and validation.
 - `internal/sentry/message`: role-separated component messages.
-- `internal/sentry/verify`: component signature verification.
+- `internal/sentry/canonical`: canonical group decoding and group hashing.
+- `internal/sentry/verify`: component signature verification (signer-side
+  only).
 - `internal/sentry/sentryrefs`: public sentry reference catalog.
 - `internal/signerapp/signing`: component request planning, sentry policy
   evaluation, user/sentry component signing, assembly, and `/sign` rejection

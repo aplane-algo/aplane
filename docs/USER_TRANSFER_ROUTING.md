@@ -119,6 +119,10 @@ Use `--yaml`/`--save` or direct selected-document YAML edits for non-uniform
 advanced fields. After direct in-place YAML edits, check it, sign it, and then
 reload or restart the signer:
 
+The guided transfer settings editor also leaves
+`transfer_policy.clawback_on_no_route` YAML-only. It preserves an existing YAML
+value during unrelated settings edits, but does not show a choice field for it.
+
 ```bash
 apstore -d "$APSIGNER_DATA" policy check
 apstore -d "$APSIGNER_DATA" policy sign

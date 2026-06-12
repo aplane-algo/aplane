@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/policy"
+	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/sentry/verify"
@@ -686,7 +687,7 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	receiver := types.Address{19}.String()
 	txns := groupedPaymentTransactions(t, sender, receiver)
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txns[0]), txnutil.EncodeWithPrefixHex(txns[1])}
-	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
+	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
 	if decodeErr != nil {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
 	}
@@ -779,7 +780,7 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 func TestAssembleDecodedGuardedGeneratesRequestIDWhenMissing(t *testing.T) {
 	txn := paymentTransaction(t, types.Address{17}.String(), types.Address{18}.String(), 7)
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
-	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
+	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
 	if decodeErr != nil {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
 	}
@@ -813,7 +814,7 @@ func TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup(t *testi
 	guardedAccount := logicSigAddressForTest(t, bytecode)
 	txn := paymentTransaction(t, guardedAccount, types.Address{19}.String(), 14)
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
-	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
+	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
 	if decodeErr != nil {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
 	}
@@ -892,7 +893,7 @@ func TestAssembleDecodedGuardedRejectsWrongSentrySignature(t *testing.T) {
 	guardedAccount := logicSigAddressForTest(t, bytecode)
 	txn := paymentTransaction(t, guardedAccount, types.Address{19}.String(), 14)
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
-	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
+	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
 	if decodeErr != nil {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
 	}
@@ -954,7 +955,7 @@ func TestAssembleDecodedGuardedRejectsWrongUserSignature(t *testing.T) {
 	guardedAccount := logicSigAddressForTest(t, bytecode)
 	txn := paymentTransaction(t, guardedAccount, types.Address{20}.String(), 15)
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
-	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
+	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
 	if decodeErr != nil {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
 	}
@@ -1005,7 +1006,7 @@ func TestAssembleDecodedGuardedRejectsMismatchedPassthrough(t *testing.T) {
 	txn := paymentTransaction(t, sender, types.Address{22}.String(), 16)
 	wrongTxn := paymentTransaction(t, sender, types.Address{23}.String(), 17)
 	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
-	group, decodeErr := verify.DecodeCanonicalGroupHex(groupBytesHex)
+	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
 	if decodeErr != nil {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
 	}

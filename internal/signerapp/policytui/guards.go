@@ -417,15 +417,13 @@ func (m *Model) ensureTransferPolicy() {
 	enabled := false
 	onNoRoute := string(policy.TransferOnNoRouteReject)
 	closeOnNoRoute := string(policy.TransferOnNoRouteReject)
-	clawbackOnNoRoute := string(policy.TransferOnNoRouteReject)
 	m.policy.TransferPolicy = &policy.StoredTransferPolicy{
-		SchemaVersion:     1,
-		Enabled:           &enabled,
-		OnNoRoute:         &onNoRoute,
-		CloseOnNoRoute:    &closeOnNoRoute,
-		ClawbackOnNoRoute: &clawbackOnNoRoute,
-		AssetSets:         defaultAssetSets(),
-		RoutesSet:         true,
+		SchemaVersion:  1,
+		Enabled:        &enabled,
+		OnNoRoute:      &onNoRoute,
+		CloseOnNoRoute: &closeOnNoRoute,
+		AssetSets:      defaultAssetSets(),
+		RoutesSet:      true,
 	}
 }
 
@@ -440,10 +438,6 @@ func (m *Model) enableTransferPolicyForGuards() {
 	if m.policy.TransferPolicy.CloseOnNoRoute == nil {
 		closeOnNoRoute := string(policy.TransferOnNoRouteReject)
 		m.policy.TransferPolicy.CloseOnNoRoute = &closeOnNoRoute
-	}
-	if m.policy.TransferPolicy.ClawbackOnNoRoute == nil {
-		clawbackOnNoRoute := string(policy.TransferOnNoRouteReject)
-		m.policy.TransferPolicy.ClawbackOnNoRoute = &clawbackOnNoRoute
 	}
 }
 

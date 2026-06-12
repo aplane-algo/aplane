@@ -138,6 +138,12 @@ applied.
 New operator-facing transfer policy should prefer `transfer_policy` over the
 legacy payment and ASA threshold maps.
 
+Clawback controls are YAML-only in the guided policy editor. `reject_clawback`,
+`transfer_policy.clawback_on_no_route`, and clawback routes using
+`asset_sources` / `clawback.allow` remain valid in `policy.yaml`, but the
+`apadmin` / `appolicy` TUI does not expose controls to change them. Existing
+YAML-authored clawback settings are preserved by unrelated guided edits.
+
 ## Basic Example
 
 ```yaml
@@ -263,8 +269,8 @@ use display units. Policy YAML stores raw on-chain units: microAlgos for ALGO
 and raw ASA units for ASAs.
 
 Advanced route shapes remain YAML-only, including multi-asset routes,
-non-uniform `limits_by_network`, clawback `asset_sources`, and some wildcard or
-asset-set amount-limit combinations.
+non-uniform `limits_by_network`, clawback `asset_sources` /
+`clawback.allow`, and some wildcard or asset-set amount-limit combinations.
 
 ## Key Overrides
 

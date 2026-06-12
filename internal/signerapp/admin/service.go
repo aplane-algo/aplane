@@ -619,11 +619,7 @@ func (s Service) updatePolicySettingLocked(ir *identity.Runtime, req adminproto.
 			}
 			stored.RejectAssetClose = &v
 		case adminproto.PolicySettingRejectClawback:
-			v, parseErr := parsePolicyBool(value)
-			if parseErr != nil {
-				return parseErr
-			}
-			stored.RejectClawback = &v
+			return fmt.Errorf("policy setting %s is YAML-only; use whole-policy YAML replacement", req.Key)
 		case adminproto.PolicySettingAlwaysReviewWarnings:
 			v, parseErr := parsePolicyBool(value)
 			if parseErr != nil {

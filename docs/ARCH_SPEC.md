@@ -1118,7 +1118,8 @@ through the component-signing and assembly flow below.
 
 Component signatures are role-separated. Message construction is owned by
 `internal/sentry/message`, and signature verification is owned by
-`internal/sentry/verify`. Callers must use those shared primitives rather
+`internal/sentry/verify` (signer-side only; clients treat component
+signatures as opaque). Callers must use those shared primitives rather
 than reconstructing the component message locally.
 
 The message commits to:
@@ -1195,11 +1196,12 @@ stored in the key file. Later endpoint routing is mechanical:
 
 The enforcement layers are:
 
-1. optional client-side component signature verification using
-   `internal/sentry/verify`,
-2. required `/sign/assemble` verification against the sentry public key
+1. required `/sign/assemble` verification against the sentry public key
    embedded in the local user signer's guarded-account key, and
-3. final on-chain LogicSig verification.
+2. final on-chain LogicSig verification.
+
+Clients do not verify component signatures; they validate response shape and
+forward signatures to assembly as opaque material.
 
 ### Endpoint Routing
 
@@ -1264,7 +1266,9 @@ Primary implementation ownership:
 
 - `pkg/signerapi`: component-signing and assembly DTOs plus fixtures.
 - `internal/sentry/message`: role-separated component message construction.
-- `internal/sentry/verify`: component signature verification primitives.
+- `internal/sentry/canonical`: canonical group decoding and group hashing.
+- `internal/sentry/verify`: component signature verification primitives
+  (signer-side only; client binaries must not link them).
 - `internal/sentry/keytypes`: sentry and guarded key-type identifiers,
   Sentry Key ID validation, and DSA mapping.
 - `internal/signerapp/signing`: signer-side component signing, sentry policy

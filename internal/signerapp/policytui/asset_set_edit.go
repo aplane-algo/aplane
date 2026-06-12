@@ -377,14 +377,12 @@ func (m Model) policyWithEditedAssetSet(oldName, name string, set policy.StoredA
 		enabled := true
 		onNoRoute := string(policy.TransferOnNoRouteReject)
 		closeOnNoRoute := string(policy.TransferOnNoRouteReject)
-		clawbackOnNoRoute := string(policy.TransferOnNoRouteReject)
 		draft.TransferPolicy = &policy.StoredTransferPolicy{
-			SchemaVersion:     1,
-			Enabled:           &enabled,
-			OnNoRoute:         &onNoRoute,
-			CloseOnNoRoute:    &closeOnNoRoute,
-			ClawbackOnNoRoute: &clawbackOnNoRoute,
-			RoutesSet:         true,
+			SchemaVersion:  1,
+			Enabled:        &enabled,
+			OnNoRoute:      &onNoRoute,
+			CloseOnNoRoute: &closeOnNoRoute,
+			RoutesSet:      true,
 		}
 	}
 	if draft.TransferPolicy.AssetSets == nil {

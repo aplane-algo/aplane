@@ -587,6 +587,34 @@ func TestUpdatePolicySetting_PersistsAndApplies(t *testing.T) {
 	assertPolicySidecarVerifies(t, ir, server.dataDir)
 }
 
+func TestUpdatePolicySettingRejectClawbackIsYAMLOnly(t *testing.T) {
+	server, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	ir := server.registry.Get(auth.DefaultIdentityID)
+	if ir == nil {
+		t.Fatal("expected default identity runtime")
+	}
+
+	err := signerAdminServices{signer: server}.UpdatePolicySetting(ir, adminproto.UpdatePolicySettingRequest{
+		Key:   adminproto.PolicySettingRejectClawback,
+		Value: "true",
+	})
+	if err == nil || !strings.Contains(err.Error(), "YAML-only") {
+		t.Fatalf("UpdatePolicySetting(reject_clawback) error = %v, want YAML-only error", err)
+	}
+	if ir.Policy().RejectClawback {
+		t.Fatal("runtime RejectClawback = true after rejected scalar update")
+	}
+	stored, err := policy.LoadStoredConfig(server.dataDir, auth.DefaultIdentityID)
+	if err != nil {
+		t.Fatalf("LoadStoredConfig() error = %v", err)
+	}
+	if stored.RejectClawback != nil {
+		t.Fatalf("stored RejectClawback = %v, want nil after rejected scalar update", stored.RejectClawback)
+	}
+}
+
 func TestUpdatePolicySettingFailsWhenLocked(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()

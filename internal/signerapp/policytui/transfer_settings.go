@@ -282,15 +282,10 @@ func transferSettingsToFields(tp *policy.StoredTransferPolicy) []routeEditField 
 	if tp.CloseOnNoRoute != nil {
 		closeOnNoRoute = *tp.CloseOnNoRoute
 	}
-	clawbackOnNoRoute := string(policy.TransferOnNoRouteReject)
-	if tp.ClawbackOnNoRoute != nil {
-		clawbackOnNoRoute = *tp.ClawbackOnNoRoute
-	}
 	return []routeEditField{
 		{key: "enabled", label: "Enabled", value: enabled},
 		{key: "on_no_route", label: "On No Route", value: onNoRoute},
 		{key: "close_on_no_route", label: "Close On No Route", value: closeOnNoRoute},
-		{key: "clawback_on_no_route", label: "Clawback On No Route", value: clawbackOnNoRoute},
 	}
 }
 
@@ -368,7 +363,7 @@ func (m Model) openTransferSettingsChoiceEditor() Model {
 
 func transferSettingsEditorKind(key string) string {
 	switch key {
-	case "enabled", "on_no_route", "close_on_no_route", "clawback_on_no_route":
+	case "enabled", "on_no_route", "close_on_no_route":
 		return "choice"
 	default:
 		return "text"
@@ -379,7 +374,7 @@ func transferSettingsChoiceOptionsForKey(key string) []string {
 	switch key {
 	case "enabled":
 		return []string{"true", "false"}
-	case "on_no_route", "close_on_no_route", "clawback_on_no_route":
+	case "on_no_route", "close_on_no_route":
 		return []string{"default", "reject", "review", "operator_default"}
 	default:
 		return nil
@@ -459,15 +454,10 @@ func editFieldsToTransferSettings(fields []routeEditField, current *policy.Store
 	if err != nil {
 		return nil, err
 	}
-	clawbackOnNoRoute, err := parseOnNoRoute("clawback_on_no_route", values["clawback_on_no_route"])
-	if err != nil {
-		return nil, err
-	}
 	tp.SchemaVersion = 1
 	tp.Enabled = enabled
 	tp.OnNoRoute = onNoRoute
 	tp.CloseOnNoRoute = closeOnNoRoute
-	tp.ClawbackOnNoRoute = clawbackOnNoRoute
 	return tp, nil
 }
 
@@ -574,14 +564,12 @@ func (m Model) defaultBlockedDestinationsTransferPolicy() *policy.StoredTransfer
 		onNoRoute = string(policy.TransferOnNoRouteOperatorDefault)
 	}
 	closeOnNoRoute := string(policy.TransferOnNoRouteReject)
-	clawbackOnNoRoute := string(policy.TransferOnNoRouteReject)
 	return &policy.StoredTransferPolicy{
-		SchemaVersion:     1,
-		Enabled:           &enabled,
-		OnNoRoute:         &onNoRoute,
-		CloseOnNoRoute:    &closeOnNoRoute,
-		ClawbackOnNoRoute: &clawbackOnNoRoute,
-		RoutesSet:         true,
+		SchemaVersion:  1,
+		Enabled:        &enabled,
+		OnNoRoute:      &onNoRoute,
+		CloseOnNoRoute: &closeOnNoRoute,
+		RoutesSet:      true,
 	}
 }
 

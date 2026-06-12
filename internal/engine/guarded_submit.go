@@ -16,9 +16,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/lsig"
+	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
-	"github.com/aplane-algo/aplane/internal/sentry/message"
-	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -77,8 +76,7 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts client
 		return nil, nil, err
 	}
 	groupBytesHex := encodeGroupHex(plannedTxns)
-	group, err := sentryverify.DecodeCanonicalGroupHex(groupBytesHex)
-	if err != nil {
+	if _, err := canonical.DecodeGroupHex(groupBytesHex); err != nil {
 		return nil, nil, fmt.Errorf("failed to build canonical guarded group: %w", err)
 	}
 
@@ -91,7 +89,7 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts client
 	if err != nil {
 		return nil, nil, err
 	}
-	sentrySignatures, sentryRequestIDs, err := e.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, group, targets)
+	sentrySignatures, sentryRequestIDs, err := e.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, targets)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -484,7 +482,7 @@ func (e *Engine) requestUserComponentSignatures(ctx context.Context, groupBytesH
 	return signatures, requestIDs, nil
 }
 
-func (e *Engine) requestSentryComponentSignatures(ctx context.Context, groupBytesHex []string, group *sentryverify.CanonicalGroup, targets []guardedTarget) (map[int]string, map[sentryRequestKey]string, error) {
+func (e *Engine) requestSentryComponentSignatures(ctx context.Context, groupBytesHex []string, targets []guardedTarget) (map[int]string, map[sentryRequestKey]string, error) {
 	bySentry := make(map[sentryRequestKey][]int)
 	for _, target := range targets {
 		key := target.sentryRequestKey()
@@ -493,7 +491,7 @@ func (e *Engine) requestSentryComponentSignatures(ctx context.Context, groupByte
 	signatures := make(map[int]string, len(targets))
 	requestIDs := make(map[sentryRequestKey]string, len(bySentry))
 	for sentryKey, indices := range bySentry {
-		requestID, err := e.requestOneSentryComponentSignatureSet(ctx, groupBytesHex, group, sentryKey, indices, signatures)
+		requestID, err := e.requestOneSentryComponentSignatureSet(ctx, groupBytesHex, sentryKey, indices, signatures)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -502,7 +500,12 @@ func (e *Engine) requestSentryComponentSignatures(ctx context.Context, groupByte
 	return signatures, requestIDs, nil
 }
 
-func (e *Engine) requestOneSentryComponentSignatureSet(ctx context.Context, groupBytesHex []string, group *sentryverify.CanonicalGroup, sentryKey sentryRequestKey, indices []int, signatures map[int]string) (string, error) {
+// requestOneSentryComponentSignatureSet collects component signatures from a
+// sentry endpoint without verifying them cryptographically: the client treats
+// component signatures as opaque material. Invalid signatures are rejected by
+// the signer during guarded assembly and, authoritatively, by the guarded
+// LogicSig on-chain.
+func (e *Engine) requestOneSentryComponentSignatureSet(ctx context.Context, groupBytesHex []string, sentryKey sentryRequestKey, indices []int, signatures map[int]string) (string, error) {
 	endpoint, err := e.resolveSentryEndpoint(ctx, sentryKey)
 	if err != nil {
 		return "", err
@@ -526,9 +529,6 @@ func (e *Engine) requestOneSentryComponentSignatureSet(ctx context.Context, grou
 	}
 	if err := collectComponentSignatures(resp, indices, sentryKey.ComponentKeyType, signatures); err != nil {
 		return "", fmt.Errorf("sentry component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
-	}
-	if err := verifySentryComponentSignatures(sentryKey.ComponentKeyType, sentryKey.PublicKey, group, indices, signatures); err != nil {
-		return "", err
 	}
 	return resp.RequestID, nil
 }
@@ -561,40 +561,6 @@ func collectComponentSignatures(resp *signerapi.ComponentSignResponse, expected 
 		}
 	}
 	return nil
-}
-
-func verifySentryComponentSignatures(componentKeyType string, sentryPublicKey string, group *sentryverify.CanonicalGroup, indices []int, signatures map[int]string) error {
-	canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey, componentKeyType)
-	if err != nil {
-		return err
-	}
-	publicKey, err := hex.DecodeString(canonicalPublicKey)
-	if err != nil {
-		return fmt.Errorf("sentry public key must be hex: %w", err)
-	}
-	for _, index := range indices {
-		signatureHex := signatures[index]
-		signature, err := hex.DecodeString(signatureHex)
-		if err != nil {
-			return fmt.Errorf("sentry signature for target index %d must be hex: %w", index, err)
-		}
-		msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
-		if err := verifySentryComponentSignature(componentKeyType, publicKey, msg[:], signature); err != nil {
-			return fmt.Errorf("sentry signature for target index %d did not verify against embedded sentry public key: %w", index, err)
-		}
-	}
-	return nil
-}
-
-func verifySentryComponentSignature(componentKeyType string, publicKey, msg, signature []byte) error {
-	switch componentKeyType {
-	case keytypes.SentryComponentEd25519V1:
-		return sentryverify.VerifyEd25519(publicKey, msg, signature)
-	case keytypes.SentryComponentFalcon1024V1:
-		return sentryverify.VerifyFalcon1024(publicKey, msg, signature)
-	default:
-		return fmt.Errorf("key type %q is not a sentry key type", componentKeyType)
-	}
 }
 
 func decodeGuardedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {

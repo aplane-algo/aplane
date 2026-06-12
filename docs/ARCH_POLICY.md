@@ -769,7 +769,10 @@ fields as effective values with a source column, such as
 `default`, `explicit`, or `absent`, rather than showing YAML-null markers as
 values. Values that match the product default can still be omitted from saved
 YAML. For common transfer policies, transfer settings edit the binary
-`transfer_policy.enabled` switch and the route-miss fallback fields. Guard,
+`transfer_policy.enabled` switch, `on_no_route`, and `close_on_no_route`.
+Clawback-specific settings such as `reject_clawback` and
+`transfer_policy.clawback_on_no_route` are YAML-only in the guided editor;
+existing YAML values are preserved by unrelated guided edits. Guard,
 transfer-settings, and asset-set field editors
 validate and commit successful edits into the in-memory draft as each field
 editor closes; applying the draft to production remains a separate `a` action.
@@ -796,7 +799,8 @@ Multi-network asset-set guard rows are written as uniform `limits_by_network`
 entries.
 Advanced routing structures that are not yet surfaced in the guard editor
 still round-trip through YAML and can be edited directly with
-`apstore policy check/sign/verify`. For non-interactive use,
+`apstore policy check/sign/verify`. This includes clawback routes using
+`asset_sources` and `clawback.allow`. For non-interactive use,
 `APPOLICY_PASSPHRASE` is checked before `APSIGNER_PASSPHRASE`.
 `appolicy --sha256` verifies the selected sidecar and prints the SHA-256 digest
 of the exact trusted selected document bytes. `appolicy --yaml` verifies the

@@ -263,7 +263,7 @@ unlock/reload after passphrase verification through
 - `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, `mode`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
-- `policy_settings`: `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, `reject_clawback`, `always_review_warnings`, `auto_approve_self_noop_transfer`, `max_fee_microalgos`, `review_algo_payments`, `max_algo_payments`, `policy_networks`, `review_asa_amounts`, `max_asa_amounts`, optional `policy_asa_metadata`; compatibility fields `max_asa_amounts_mainnet`, `max_asa_amounts_testnet`, and `max_asa_amounts_betanet` may also be present; `key_overrides` is not projected over admin IPC
+- `policy_settings`: `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, `reject_clawback`, `always_review_warnings`, `auto_approve_self_noop_transfer`, `max_fee_microalgos`, `review_algo_payments`, `max_algo_payments`, `policy_networks`, `review_asa_amounts`, `max_asa_amounts`, optional `policy_asa_metadata`; compatibility fields `max_asa_amounts_mainnet`, `max_asa_amounts_testnet`, and `max_asa_amounts_betanet` may also be present; `reject_clawback` is reported for visibility but is YAML-only for mutation; `key_overrides` is not projected over admin IPC
 - `get_policy_snapshot`: optional `target` (`signer` or `sentry`, omitted means `signer`); requests the active signer-owned stored policy projection for display/editing
 - `policy_snapshot`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
 - `validate_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`; parses and runtime-validates the submitted YAML in the selected policy domain without writing it
@@ -312,10 +312,13 @@ Writable policy settings:
 - `reject_foreign_rekey`
 - `reject_close_remainder`
 - `reject_asset_close`
-- `reject_clawback`
 - `always_review_warnings` (second-phase forced-review rule)
 - `auto_approve_self_noop_transfer` (policy auto-approval rule)
 - `max_fee_microalgos`
+
+`reject_clawback` remains in `policy_settings` as a read projection, but scalar
+`update_policy_setting` rejects it as YAML-only. Change it through whole-policy
+YAML replacement, `appolicy --save`, or direct checked/signed policy YAML.
 
 Scalar threshold update semantics:
 

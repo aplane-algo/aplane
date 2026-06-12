@@ -93,8 +93,8 @@ m = SHA512_256("APLANE_SENTRY_V1" || role_byte || txid)
 ```
 
 `role_byte = 0x01` for the user role and `role_byte = 0x02` for the sentry
-role. The same pure message/verification primitives must be used by signer
-services and optional client-side verification.
+role. The same pure message/verification primitives must be used by all
+signer services; clients do not verify component signatures (A10).
 
 ### Sentry Policy Snapshot
 
@@ -307,13 +307,18 @@ not EndpointAdvertises(pubkey) =>
 
 Security still comes from A7 and from on-chain LogicSig verification.
 
-### A10: Client Verification Uses Shared Primitive
+### A10: Component Signatures Are Opaque To The Client
 
-Any client-side sentry signature precheck derives the message through the
-shared sentry verification package, not by reconstructing bytes ad hoc.
+The client performs no cryptographic verification of component signatures.
+It validates response shape (A11) and forwards signatures to assembly.
+Rejection authority is signer assembly (A6, A7) and the on-chain LogicSig.
+The client therefore must not link the signature verification primitives;
+`cmd/apshell` is pinned to not compile `internal/sentry/verify` or the
+Falcon implementation libraries.
 
 ```text
-ClientVerifySentrySig(target) uses ComponentMessage(sentry, target.txid)
+ClientHandles(signature) = collect + forward
+not exists ClientVerify(signature)
 ```
 
 ### A11: Component Response Shape Is Exact
@@ -382,6 +387,7 @@ This model assumes:
 Implementation areas that should remain aligned with this model:
 
 - `internal/sentry/message`
+- `internal/sentry/canonical`
 - `internal/sentry/verify`
 - `internal/sentry/keytypes`
 - `internal/signerapp/signing/component.go`
@@ -408,7 +414,7 @@ High-value test anchors:
 - assembly rejection for wrong sentry signatures,
 - passthrough transaction-ID mismatch rejection,
 - explicit endpoint mismatch rejection without self fallback,
-- shared client-side sentry signature verification,
+- client binaries excluding signature verification primitives,
 - malformed component response rejection,
 - endpoint sync preserve/abort behavior,
 - node role generation/import/reload/service-dispatch gates.

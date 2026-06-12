@@ -22,9 +22,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
-	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/test/integration/harness"
@@ -264,7 +264,7 @@ func startMockSentryEndpoint(t *testing.T, publicKey ed25519.PublicKey, privateK
 			http.Error(w, "wrong Sentry Key ID", http.StatusBadRequest)
 			return
 		}
-		group, err := sentryverify.DecodeCanonicalGroupHex(req.GroupBytesHex)
+		group, err := canonical.DecodeGroupHex(req.GroupBytesHex)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
