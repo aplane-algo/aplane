@@ -3,11 +3,25 @@
 ## Overview
 
 When multiple LogicSig accounts participate in the same atomic group, dummy
-transaction fees are **split evenly** across all LogicSig transactions that
-contribute to the budget requirement. This includes local signer-managed
-LogicSig transactions and foreign unsigned LogicSig entries that provide an
-`lsig_size` hint. This ensures fair cost distribution when different parties
-coordinate transactions.
+transaction fees are **split evenly** across the LogicSig transactions **the
+signer actually signs**. Foreign unsigned LogicSig entries that provide an
+`lsig_size` hint still contribute to the dummy **budget** calculation (they
+raise how many dummies the group needs), but they do **not** carry a fee
+share: the signer never rewrites the fee on a transaction it neither signs nor
+verifies. If every LogicSig participant is foreign, the pooled fee falls back
+to the first transaction the signer signs (never a foreign or passthrough
+slot).
+
+> **Why foreign positions are excluded.** Mutating a foreign transaction's fee
+> changes bytes another party must sign and shifts the group ID, relying on an
+> implicit, unenforced cross-party invariant (that a coordinator forwards the
+> fee-adjusted `/plan` output, not the originally submitted bytes). Pooling only
+> across signer-signed positions removes that invariant entirely. The cost is
+> that the local party pays the full dummy fee in a multi-party group rather
+> than splitting it with foreign parties; this is acceptable while no
+> multi-party fee-splitting coordinator ships, and would be revisited (with an
+> explicit `/plan`-bytes contract and a coordinator-side group-ID check)
+> alongside such a feature.
 
 ## Why Fee Splitting is Needed
 
@@ -31,7 +45,7 @@ Each dummy has a minimum fee (typically 1000 microAlgos), so **someone needs to 
 
 ### The Solution
 
-Instead of making the first sender pay for all dummies (unfair), we **split the cost evenly** across all LogicSig participants.
+Instead of making the first sender pay for all dummies (unfair), we **split the cost evenly** across the LogicSig participants the signer signs. Foreign participants raise the budget but are never charged a share (see Overview).
 
 ## How It Works
 
@@ -328,7 +342,10 @@ Algorand allows flexible fee distribution in groups:
 
 1. **First sender pays all** - Unfair for multi-party scenarios
 2. **Split across ALL transactions** - Ed25519 shouldn't pay for LSig overhead
-3. **Split across LogicSig only** - Fair and logical (current implementation)
+3. **Split across all LogicSig incl. foreign** - Fair, but mutates foreign bytes
+   and relies on an unenforced cross-party invariant (rejected; see Overview)
+4. **Split across signer-signed LogicSig only** - Fair among local participants,
+   never mutates foreign bytes (current implementation)
 
 ---
 

@@ -449,6 +449,72 @@ func TestCalculateDummies_PreGroupedMixedForeignAndSign(t *testing.T) {
 	})
 }
 
+// TestCalculateDummies_FeePoolingExcludesForeign pins Option C: dummy fees are
+// pooled only across positions this signer signs. A foreign LogicSig position
+// contributes to the dummy budget but never carries a fee share, so the signer
+// never rewrites bytes it neither signs nor verifies.
+func TestCalculateDummies_FeePoolingExcludesForeign(t *testing.T) {
+	const falconAddr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+	t.Run("mixed local and foreign lsig pools only onto the local position", func(t *testing.T) {
+		// Index 0: local falcon (1500) signed here. Index 1: foreign falcon hint
+		// (1500). Demand 3000 over 2*1000 budget -> 1 dummy. lsigIndices must be
+		// exactly [0]; index 1 (foreign) must not appear.
+		deps := stubPlannerDeps{
+			keyTypes:  map[string]string{falconAddr: "aplane.falcon1024.v1"},
+			lsigSizes: map[string]int{falconAddr: 1500},
+		}
+		requests := []signerapi.SignRequest{
+			{AuthAddress: falconAddr, TxnBytesHex: "deadbeef"},
+			{TxnBytesHex: "deadbeef", LsigSize: 1500},
+		}
+		txns := []types.Transaction{makePlannerTxn(types.Digest{}), makePlannerTxn(types.Digest{})}
+		foreign := map[int]bool{1: true}
+
+		dummies, lsigIndices, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, map[int]bool{}, foreign, false, false)
+		if err != nil {
+			t.Fatalf("calculateDummies() error = %v", err)
+		}
+		if dummies != 1 {
+			t.Fatalf("dummies = %d, want 1", dummies)
+		}
+		if len(lsigIndices) != 1 || lsigIndices[0] != 0 {
+			t.Fatalf("lsigIndices = %v, want [0] (foreign index 1 must not carry a fee share)", lsigIndices)
+		}
+	})
+
+	t.Run("all-foreign lsig falls back to the first signer-signed position", func(t *testing.T) {
+		// Index 0: ed25519 signed here, no local lsig. Index 1: foreign falcon
+		// hint (2500). Demand 2500 over 2*1000 budget -> 1 dummy. No local lsig
+		// position exists, so the pooled fee must fall back to index 0 (sign
+		// mode) and never to the foreign slot.
+		deps := stubPlannerDeps{
+			keyTypes:  map[string]string{falconAddr: "ed25519"},
+			lsigSizes: map[string]int{},
+		}
+		requests := []signerapi.SignRequest{
+			{AuthAddress: falconAddr, TxnBytesHex: "deadbeef"},
+			{TxnBytesHex: "deadbeef", LsigSize: 2500},
+		}
+		txns := []types.Transaction{makePlannerTxn(types.Digest{}), makePlannerTxn(types.Digest{})}
+		foreign := map[int]bool{1: true}
+
+		dummies, lsigIndices, err := calculateDummies(nil, deps.Snapshot("default"), "default", requests, txns, map[int]bool{}, foreign, false, false)
+		if err != nil {
+			t.Fatalf("calculateDummies() error = %v", err)
+		}
+		if dummies != 1 {
+			t.Fatalf("dummies = %d, want 1", dummies)
+		}
+		if len(lsigIndices) != 1 || lsigIndices[0] != 0 {
+			t.Fatalf("lsigIndices = %v, want [0] (fee must fall back to the signed position, never foreign)", lsigIndices)
+		}
+		if foreign[lsigIndices[0]] {
+			t.Fatalf("fee pooled onto foreign index %d", lsigIndices[0])
+		}
+	})
+}
+
 func TestCalculateDummiesRejectsNegativeForeignLSigSize(t *testing.T) {
 	const authAddr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 

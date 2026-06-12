@@ -150,15 +150,36 @@ func calculateDummies(console Console, snapshot PlannerIdentitySnapshot, identit
 		consoleOf(console).Printf("[GROUP] Need %d dummy transaction(s) for additional budget\n", dummiesNeeded)
 	}
 
+	// Pool dummy fees only across positions this signer actually signs. The
+	// signer must not rewrite the fee on a foreign transaction it neither signs
+	// nor verifies: doing so silently mutates another party's bytes and relies
+	// on an unenforced cross-party invariant (that a coordinator forwards the
+	// fee-adjusted /plan bytes, not the originals). Foreign lsig_size still
+	// counts toward dummiesNeeded above, so budget sizing is unchanged; foreign
+	// positions simply do not carry a fee share.
 	for i, txReq := range requests {
 		if foreignIndices[i] {
-			if txReq.LsigSize > 0 {
-				lsigIndices = append(lsigIndices, i)
-			}
 			continue
 		}
 		if size, ok := lsigSizes[txReq.AuthAddress]; ok && size > 0 {
 			lsigIndices = append(lsigIndices, i)
+		}
+	}
+
+	// If every LogicSig participant is foreign, there is no local LogicSig
+	// position to carry the pooled dummy fee. Fall back to the first
+	// signer-signed (sign mode) position so the fee lands on a funded
+	// transaction the signer controls — never on a foreign or passthrough slot
+	// (which is what ApplyDummyFees' own txns[0] fallback would otherwise do).
+	// Request validation guarantees at least one sign-mode position whenever
+	// foreign slots are present, so this loop always finds a target.
+	if dummiesNeeded > 0 && len(lsigIndices) == 0 {
+		for i := range requests {
+			if foreignIndices[i] || passthroughIndices[i] {
+				continue
+			}
+			lsigIndices = append(lsigIndices, i)
+			break
 		}
 	}
 
