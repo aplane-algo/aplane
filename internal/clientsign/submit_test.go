@@ -285,3 +285,19 @@ func TestSignAndSubmitViaGroupWritesSubmittedTransactions(t *testing.T) {
 		t.Fatal("test setup invalid: original and submitted fees match")
 	}
 }
+
+func TestValidateSignedGroupShape(t *testing.T) {
+	if err := validateSignedGroupShape([]string{"aa", "bb"}, 2); err != nil {
+		t.Fatalf("exact count: unexpected error %v", err)
+	}
+	// Server may append signed dummies after the request slots.
+	if err := validateSignedGroupShape([]string{"aa", "bb", "cc"}, 2); err != nil {
+		t.Fatalf("with dummies: unexpected error %v", err)
+	}
+	if err := validateSignedGroupShape([]string{"aa"}, 2); err == nil {
+		t.Fatal("truncated response: expected error, got nil")
+	}
+	if err := validateSignedGroupShape([]string{"aa", ""}, 2); err == nil {
+		t.Fatal("empty slot: expected error, got nil")
+	}
+}

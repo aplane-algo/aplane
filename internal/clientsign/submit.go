@@ -141,6 +141,10 @@ func SignAndSubmitViaGroup(
 		return nil, nil, fmt.Errorf("/sign returned %d foreign placeholder slot(s); use /plan or a list-based multi-party flow instead", resp.Mutations.ForeignCount)
 	}
 
+	if err := validateSignedGroupShape(resp.Signed, len(txns)); err != nil {
+		return nil, nil, err
+	}
+
 	signedTxns, err := decodeSignedTransactionHex(resp.Signed)
 	if err != nil {
 		return nil, nil, err
@@ -185,6 +189,24 @@ func SignAndSubmitViaGroup(
 	writeSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
 
 	return txIDs, submittedTxns, nil
+}
+
+// validateSignedGroupShape rejects a truncated or partially empty /sign reply
+// before submission. This path sends only sign-mode requests (foreign slots are
+// rejected above), so every requested position must come back non-empty, and
+// the server may append signed dummy transactions after them. An empty hex slot
+// would otherwise decode to empty bytes and submit an incomplete group. The
+// SDKs apply the same check; this brings the internal client to parity.
+func validateSignedGroupShape(signed []string, requestCount int) error {
+	if len(signed) < requestCount {
+		return fmt.Errorf("signer returned %d signed transaction(s), want at least %d", len(signed), requestCount)
+	}
+	for i, s := range signed {
+		if s == "" {
+			return fmt.Errorf("signer returned an empty signed transaction at position %d", i+1)
+		}
+	}
+	return nil
 }
 
 func decodeSignedTransactionHex(signedHex []string) ([][]byte, error) {

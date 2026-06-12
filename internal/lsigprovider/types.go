@@ -179,13 +179,21 @@ func ValidateAndOrderArgs(argDefs []RuntimeArgDef, runtimeArgs map[string][]byte
 	}
 
 	var args [][]byte
+	skippedOptional := ""
 	for _, argDef := range argDefs {
 		val, ok := runtimeArgs[argDef.Name]
 		if !ok {
 			if argDef.Required {
 				return nil, fmt.Errorf("missing required arg: %s", argDef.Name)
 			}
+			skippedOptional = argDef.Name
 			continue
+		}
+		// LogicSig args are positional. Omitting a non-trailing optional and then
+		// providing a later arg would silently left-shift it into the wrong slot,
+		// so reject that combination: optionals must be trailing or all present.
+		if skippedOptional != "" {
+			return nil, fmt.Errorf("arg %s provided after omitted optional arg %s; positional LogicSig args require omitted optionals to be trailing", argDef.Name, skippedOptional)
 		}
 		if argDef.ByteLength > 0 && len(val) != argDef.ByteLength {
 			return nil, fmt.Errorf("arg %s: expected %d bytes, got %d", argDef.Name, argDef.ByteLength, len(val))

@@ -127,3 +127,36 @@ func TestNormalizeCreationParamsRejectsInvalidUint64ListItems(t *testing.T) {
 		t.Fatalf("NormalizeCreationParams() error = %v, want invalid uint64 item error", err)
 	}
 }
+
+func TestValidateAndOrderArgsRejectsLeftShift(t *testing.T) {
+	argDefs := []RuntimeArgDef{
+		{Name: "a", Required: false},
+		{Name: "b", Required: true},
+	}
+
+	// Omitting non-trailing optional "a" while providing "b" would left-shift
+	// "b" into slot 0; this must be rejected.
+	_, err := ValidateAndOrderArgs(argDefs, map[string][]byte{"b": []byte("vb")})
+	if err == nil {
+		t.Fatal("expected rejection for omitted non-trailing optional, got nil")
+	}
+
+	// Providing both is fine (in order).
+	args, err := ValidateAndOrderArgs(argDefs, map[string][]byte{"a": []byte("va"), "b": []byte("vb")})
+	if err != nil {
+		t.Fatalf("both provided: unexpected error %v", err)
+	}
+	if len(args) != 2 || string(args[0]) != "va" || string(args[1]) != "vb" {
+		t.Fatalf("args = %v, want [va vb]", args)
+	}
+
+	// Omitting a trailing optional is fine.
+	trailing := []RuntimeArgDef{{Name: "b", Required: true}, {Name: "a", Required: false}}
+	args, err = ValidateAndOrderArgs(trailing, map[string][]byte{"b": []byte("vb")})
+	if err != nil {
+		t.Fatalf("trailing optional omitted: unexpected error %v", err)
+	}
+	if len(args) != 1 || string(args[0]) != "vb" {
+		t.Fatalf("args = %v, want [vb]", args)
+	}
+}

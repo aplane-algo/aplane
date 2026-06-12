@@ -78,7 +78,9 @@ func (e *Engine) PrepareAppDeploy(ctx context.Context, params AppDeployParams) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to get suggested params: %w", err)
 	}
-	if params.UseFlatFee && params.Fee > 0 {
+	// Apply a flat fee whenever the caller opts in, including an explicit flat
+	// zero, matching the unified fee model used by send and getSuggestedParams.
+	if params.UseFlatFee {
 		sp.FlatFee = true
 		sp.Fee = types.MicroAlgos(params.Fee)
 	}

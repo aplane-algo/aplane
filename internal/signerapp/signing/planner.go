@@ -10,6 +10,7 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -313,6 +314,16 @@ func validateGroupConsistency(txns []types.Transaction, hasPassthrough bool, con
 		}
 	}
 
+	// For pre-grouped input the signer signs the bytes as-is and the approval
+	// display asserts the claimed group ID. Recompute it from the transactions
+	// and reject a mismatch, so the operator is never shown (and the signer
+	// never signs over) a group ID that does not bind these exact members.
+	if isPreGrouped {
+		if err := verifyClaimedGroupID(txns, firstGroup); err != nil {
+			return false, err
+		}
+	}
+
 	if hasPassthrough && !isPreGrouped {
 		return false, badRequest("passthrough transactions require pre-set group ID - server cannot add dummies or modify group without invalidating existing signatures")
 	}
@@ -327,6 +338,25 @@ func validateGroupConsistency(txns []types.Transaction, hasPassthrough bool, con
 	}
 
 	return isPreGrouped, nil
+}
+
+// verifyClaimedGroupID recomputes the group ID over the pre-grouped
+// transactions (with their Group field cleared) and checks it equals the
+// claimed digest every member carries.
+func verifyClaimedGroupID(txns []types.Transaction, claimed types.Digest) *ServiceError {
+	cleared := make([]types.Transaction, len(txns))
+	copy(cleared, txns)
+	for i := range cleared {
+		cleared[i].Group = types.Digest{}
+	}
+	computed, err := algocrypto.ComputeGroupID(cleared)
+	if err != nil {
+		return internal(fmt.Sprintf("failed to recompute group ID: %v", err))
+	}
+	if computed != claimed {
+		return badRequest("claimed group ID does not match the transactions in the group")
+	}
+	return nil
 }
 
 func validateKnownNetwork(txns []types.Transaction, resolver apconfig.GenesisHashNetworkResolver) *ServiceError {

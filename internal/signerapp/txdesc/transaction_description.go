@@ -13,6 +13,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/asa"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 )
 
@@ -20,8 +21,7 @@ type transactionDescriber func(txn types.Transaction) string
 
 func describePaymentTx(txn types.Transaction) string {
 	var desc strings.Builder
-	amountAlgo := float64(txn.Amount) / 1_000_000.0
-	desc.WriteString(fmt.Sprintf("Payment: %.6f ALGO", amountAlgo))
+	desc.WriteString(fmt.Sprintf("Payment: %s ALGO", asa.FormatAmountWithDecimals(uint64(txn.Amount), 6)))
 	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 	desc.WriteString(fmt.Sprintf("\n  To:   %s", txn.Receiver.String()))
 
@@ -34,7 +34,7 @@ func describePaymentTx(txn types.Transaction) string {
 
 func describeAssetTransferTx(txn types.Transaction) string {
 	var desc strings.Builder
-	desc.WriteString(fmt.Sprintf("ASA Transfer: %d units of asset #%d", txn.AssetAmount, txn.XferAsset))
+	desc.WriteString(fmt.Sprintf("ASA Transfer: %d base units of asset #%d", txn.AssetAmount, txn.XferAsset))
 	desc.WriteString(fmt.Sprintf("\n  From: %s", txn.Sender.String()))
 	desc.WriteString(fmt.Sprintf("\n  To:   %s", txn.AssetReceiver.String()))
 
@@ -226,8 +226,7 @@ func describeUnknownTx(txn types.Transaction) string {
 
 // appendCommonFields adds fee, network identity, note, close remainder, rekey, group, and round info.
 func appendCommonFields(desc *strings.Builder, txn types.Transaction, resolver apconfig.GenesisHashNetworkResolver) {
-	feeAlgo := float64(txn.Fee) / 1_000_000.0
-	fmt.Fprintf(desc, "\n  Fee: %.6f ALGO", feeAlgo)
+	fmt.Fprintf(desc, "\n  Fee: %s ALGO", asa.FormatAmountWithDecimals(uint64(txn.Fee), 6))
 
 	if network, ok := resolver.NetworkForGenesisHashBytes(txn.GenesisHash[:]); ok {
 		fmt.Fprintf(desc, "\n  Network: %s", network)

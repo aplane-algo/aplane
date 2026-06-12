@@ -22,6 +22,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/appspec"
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/config"
 )
 
 func testFixturePath(t *testing.T, elems ...string) string {
@@ -394,9 +395,10 @@ func (m *mockAlgodTransport) RoundTrip(req *http.Request) (*http.Response, error
 
 	switch {
 	case req.Method == http.MethodGet && req.URL.Path == "/v2/transactions/params":
+		genesisHash, _ := base64.StdEncoding.DecodeString(config.AlgorandTestnetGenesisHash)
 		payload, err := json.Marshal(models.TransactionParametersResponse{
 			Fee:              1000,
-			GenesisHash:      []byte("12345678901234567890123456789012"),
+			GenesisHash:      genesisHash,
 			GenesisId:        "testnet-v1.0",
 			LastRound:        77,
 			ConsensusVersion: "test",

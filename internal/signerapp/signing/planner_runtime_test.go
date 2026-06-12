@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -303,6 +304,28 @@ func makePlannerTxn(groupID types.Digest) types.Transaction {
 	}
 }
 
+// groupedPlannerTxns builds n distinct transactions sharing a real group ID
+// (computed via ComputeGroupID), so validateGroupConsistency's group-ID
+// recomputation accepts them.
+func groupedPlannerTxns(t *testing.T, n int) []types.Transaction {
+	t.Helper()
+	txns := make([]types.Transaction, n)
+	for i := range txns {
+		txns[i] = types.Transaction{
+			Type:   types.PaymentTx,
+			Header: types.Header{Sender: types.Address{byte(i + 1)}},
+		}
+	}
+	gid, err := algocrypto.ComputeGroupID(txns)
+	if err != nil {
+		t.Fatalf("ComputeGroupID() error = %v", err)
+	}
+	for i := range txns {
+		txns[i].Group = gid
+	}
+	return txns
+}
+
 func TestCalculateDummies_PreGroupedImmutability(t *testing.T) {
 	const largeLsigSize = 2500
 	const addr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -566,6 +589,13 @@ func TestValidateGroupConsistency(t *testing.T) {
 	groupB := types.Digest{4, 5, 6}
 	empty := types.Digest{}
 
+	// Pre-grouped cases must carry a group ID that actually matches the
+	// transactions, since validateGroupConsistency now recomputes and verifies
+	// it. A fabricated group ID (groupA below) is used only for the negative
+	// "members disagree" cases where the recompute is never reached.
+	singleGrouped := groupedPlannerTxns(t, 1)
+	multiGrouped := groupedPlannerTxns(t, 2)
+
 	tests := []struct {
 		name           string
 		txns           []types.Transaction
@@ -580,16 +610,21 @@ func TestValidateGroupConsistency(t *testing.T) {
 		},
 		{
 			name:        "single pre-grouped transaction",
-			txns:        []types.Transaction{makePlannerTxn(groupA)},
+			txns:        singleGrouped,
 			wantGrouped: true,
 		},
 		{
-			name: "multiple matching pre-grouped transactions",
+			name:        "multiple matching pre-grouped transactions",
+			txns:        multiGrouped,
+			wantGrouped: true,
+		},
+		{
+			name: "pre-grouped with a forged group ID is rejected",
 			txns: []types.Transaction{
 				makePlannerTxn(groupA),
 				makePlannerTxn(groupA),
 			},
-			wantGrouped: true,
+			wantErr: true,
 		},
 		{
 			name: "multiple ungrouped transactions",
@@ -687,5 +722,21 @@ func TestBuildFinalGroupUsesTransactionGenesisHashForMinFee(t *testing.T) {
 		if dummy.GenesisHash != genesisHash {
 			t.Fatalf("dummy %d genesis hash = %x, want %x", i, dummy.GenesisHash[:], genesisHash[:])
 		}
+	}
+}
+
+func TestBuildFinalGroupRejectsImplausibleMinFee(t *testing.T) {
+	genesisHash := types.Digest{5, 5, 5}
+	txns := []types.Transaction{{
+		Type:   types.PaymentTx,
+		Header: types.Header{Sender: types.Address{1}, Fee: 1000, GenesisHash: genesisHash},
+	}}
+	deps := stubPlannerDeps{
+		minTxnFees: map[types.Digest]uint64{genesisHash: 2_000_000}, // absurd min fee
+	}
+
+	_, _, _, _, err := buildFinalGroup(deps, nil, txns, 2, []int{0}, false)
+	if err == nil || !strings.Contains(err.Error(), "implausibly high") {
+		t.Fatalf("buildFinalGroup() error = %v, want implausible-min-fee rejection", err)
 	}
 }

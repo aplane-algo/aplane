@@ -152,6 +152,9 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts client
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := verifyAssembledAgainstFrozen(groupBytesHex, submittedTxns); err != nil {
+		return nil, nil, err
+	}
 
 	if opts.Simulate {
 		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(opts.Ctx, signedObjects, e.AlgodClient, w)
@@ -165,6 +168,25 @@ func (e *Engine) signAndSubmitGuardedGroup(txns []types.Transaction, opts client
 	}
 	writeGuardedSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
 	return txIDs, submittedTxns, nil
+}
+
+// verifyAssembledAgainstFrozen pins the client's frozen-bytes invariant at the
+// last step: the signer's assembled group must have one signed transaction per
+// frozen canonical entry, and each assembled transaction must re-encode to
+// exactly the bytes the client signed over. The signer already enforces this on
+// its side and the network would reject a mismatch, but re-checking here keeps
+// the client from submitting (and recording in its TxnWriter) bytes it never
+// committed to.
+func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Transaction) error {
+	if len(assembled) != len(groupBytesHex) {
+		return fmt.Errorf("assembled group has %d transaction(s), want %d", len(assembled), len(groupBytesHex))
+	}
+	for i, txn := range assembled {
+		if got := txnutil.EncodeWithPrefixHex(txn); got != groupBytesHex[i] {
+			return fmt.Errorf("assembled transaction %d does not match the frozen canonical bytes", i)
+		}
+	}
+	return nil
 }
 
 // requestNonGuardedSignatures signs the non-guarded original positions of a

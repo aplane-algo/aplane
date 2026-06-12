@@ -706,3 +706,19 @@ func writeSentryTokenFile(t *testing.T, token string) string {
 	}
 	return path
 }
+
+func TestVerifyAssembledAgainstFrozen(t *testing.T) {
+	txnA := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
+	txnB := testPreparedTxn(t, testAddress(3), testAddress(4), "guarded", nil).Transaction
+	frozen := encodeGroupHex([]types.Transaction{txnA, txnB})
+
+	if err := verifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA, txnB}); err != nil {
+		t.Fatalf("matching group: unexpected error %v", err)
+	}
+	if err := verifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA}); err == nil {
+		t.Fatal("wrong length: expected error, got nil")
+	}
+	if err := verifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA, txnA}); err == nil {
+		t.Fatal("substituted transaction: expected error, got nil")
+	}
+}

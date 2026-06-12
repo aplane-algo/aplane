@@ -269,3 +269,34 @@ func testAlwaysReviewGenesisDigest(t *testing.T, encoded string) types.Digest {
 	copy(out[:], decoded)
 	return out
 }
+
+func TestEvaluateAlwaysReviewRulesForcesReviewOnDangerousPassthrough(t *testing.T) {
+	cfg := policy.DefaultConfig() // AlwaysReviewWarnings off by default
+
+	rekeyTxn := types.Transaction{
+		Type: types.PaymentTx,
+		Header: types.Header{
+			Sender:  types.Address{1},
+			RekeyTo: types.Address{7},
+		},
+	}
+	// Index 0 is a passthrough leg carrying a rekey: review must be forced even
+	// though AlwaysReviewWarnings is off (it only governs the signer's own legs).
+	if _, review := EvaluateAlwaysReviewRules(
+		[]types.Transaction{rekeyTxn}, 1,
+		map[int]bool{0: true}, map[int]bool{},
+		cfg, []string{""}, nil, nil,
+	); !review {
+		t.Fatal("dangerous passthrough: review = false, want true")
+	}
+
+	// A benign passthrough leg does not force review.
+	plain := types.Transaction{Type: types.PaymentTx, Header: types.Header{Sender: types.Address{1}}}
+	if _, review := EvaluateAlwaysReviewRules(
+		[]types.Transaction{plain}, 1,
+		map[int]bool{0: true}, map[int]bool{},
+		cfg, []string{""}, nil, nil,
+	); review {
+		t.Fatal("benign passthrough: review = true, want false")
+	}
+}

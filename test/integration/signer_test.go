@@ -962,7 +962,7 @@ func TestAssetCloseTransferEmitsWarningAndSignsAfterApproval(t *testing.T) {
 	if signReq.Address != address {
 		t.Fatalf("expected approval request for %s, got %s", address, signReq.Address)
 	}
-	if !strings.Contains(signReq.Description, "ASA Transfer: 7 units of asset #12345") {
+	if !strings.Contains(signReq.Description, "ASA Transfer: 7 base units of asset #12345") {
 		t.Fatalf("expected ASA transfer summary in approval description, got:\n%s", signReq.Description)
 	}
 	if !strings.Contains(signReq.Description, "Close remainder to: "+closeTarget) {
@@ -1077,7 +1077,7 @@ func TestClawbackTransferEmitsWarningAndSignsAfterApproval(t *testing.T) {
 	if signReq.Address != address {
 		t.Fatalf("expected approval request for %s, got %s", address, signReq.Address)
 	}
-	if !strings.Contains(signReq.Description, "ASA Transfer: 9 units of asset #54321") {
+	if !strings.Contains(signReq.Description, "ASA Transfer: 9 base units of asset #54321") {
 		t.Fatalf("expected ASA transfer summary in approval description, got:\n%s", signReq.Description)
 	}
 	if !strings.Contains(signReq.Description, "CLAWBACK FROM: "+clawbackTarget) {

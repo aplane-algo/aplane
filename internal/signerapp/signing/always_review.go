@@ -37,10 +37,16 @@ func EvaluateAlwaysReviewRules(txns []types.Transaction, requestCount int, passt
 			if violations := policy.CheckTxnTransferRoutingReviewPolicyLints(txns[i], cfg, routingExemptIndices[i]); len(violations) > 0 {
 				return violations[0].RuleID, true
 			}
-		}
-		if !cfg.AlwaysReviewWarnings {
+			if cfg.AlwaysReviewWarnings && len(approvalpolicy.CheckDecodedTxnWarnings(txns[i], knownAddresses)) > 0 {
+				return policy.AlwaysReviewWarningsRuleID, true
+			}
 			continue
 		}
+		// Passthrough/foreign slot: the signer contributes no signature here, but
+		// a group it co-signs that rekeys, closes, clawbacks, or otherwise carries
+		// a dangerous field via a passthrough/foreign leg must always reach the
+		// operator — even under auto-approve and even when AlwaysReviewWarnings is
+		// off, which only governs the signer's own legs.
 		if len(approvalpolicy.CheckDecodedTxnWarnings(txns[i], knownAddresses)) > 0 {
 			return policy.AlwaysReviewWarningsRuleID, true
 		}

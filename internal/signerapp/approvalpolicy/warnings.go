@@ -12,6 +12,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
+	"github.com/aplane-algo/aplane/internal/asa"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 )
 
@@ -100,13 +101,32 @@ func CheckDecodedTxnWarnings(txn types.Transaction, knownAddresses map[string]bo
 		})
 	}
 
+	if txn.Type == types.ApplicationCallTx {
+		switch txn.OnCompletion {
+		case types.DeleteApplicationOC:
+			violations = append(violations, signerapproval.Violation{
+				Field:    "OnCompletion",
+				Value:    "DeleteApplication",
+				Severity: signerapproval.ViolationSeverityWarning,
+				Message:  "This transaction will DELETE the application.",
+			})
+		case types.ClearStateOC:
+			violations = append(violations, signerapproval.Violation{
+				Field:    "OnCompletion",
+				Value:    "ClearState",
+				Severity: signerapproval.ViolationSeverityWarning,
+				Message:  "This transaction will force-clear your local state for the application.",
+			})
+		}
+	}
+
 	if uint64(txn.Fee) > DefaultMaxFeeMicroAlgos {
-		algoFee := float64(txn.Fee) / 1_000_000
+		algoFee := asa.FormatAmountWithDecimals(uint64(txn.Fee), 6)
 		violations = append(violations, signerapproval.Violation{
 			Field:    "Fee",
-			Value:    fmt.Sprintf("%.6f ALGO", algoFee),
+			Value:    algoFee + " ALGO",
 			Severity: signerapproval.ViolationSeverityWarning,
-			Message:  fmt.Sprintf("Transaction fee is unusually high (%.6f ALGO). Normal fees are ~0.001 ALGO.", algoFee),
+			Message:  fmt.Sprintf("Transaction fee is unusually high (%s ALGO). Normal fees are ~0.001 ALGO.", algoFee),
 		})
 	}
 

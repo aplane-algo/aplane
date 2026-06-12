@@ -55,7 +55,7 @@ func assembleDecodedGuarded(ctx context.Context, req signerapi.GuardedAssemblyRe
 		signedGroup[target.TargetIndex] = signedTxnHex
 	}
 	for _, passthrough := range req.Passthrough {
-		signedTxnHex, err := validateGuardedPassthrough(passthrough, group.Entries[passthrough.TargetIndex])
+		signedTxnHex, err := validateGuardedPassthrough(ctx, passthrough, group.Entries[passthrough.TargetIndex], session)
 		if err != nil {
 			return nil, err
 		}
@@ -179,7 +179,7 @@ func validateAssembledGuardedTarget(target signerapi.GuardedAssemblyTarget, entr
 	return nil
 }
 
-func validateGuardedPassthrough(passthrough signerapi.GuardedPassthroughItem, entry canonical.Txn) (string, *ServiceError) {
+func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.GuardedPassthroughItem, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {
 	signedTxnBytes, err := decodeAssemblySignatureHex(passthrough.SignedTxnHex, "signed_txn_hex")
 	if err != nil {
 		return "", err
@@ -193,7 +193,70 @@ func validateGuardedPassthrough(passthrough signerapi.GuardedPassthroughItem, en
 	if !bytes.Equal(txID[:], entry.TxID[:]) {
 		return "", badRequest(fmt.Sprintf("passthrough index %d signed transaction does not match group transaction", passthrough.TargetIndex))
 	}
-	return hex.EncodeToString(signedTxnBytes), nil
+	// A guarded account this signer holds must be authorized through the
+	// component+assembly flow (user + sentry signatures), never slipped in as a
+	// passthrough that bypasses that verification. Reject if the passthrough's
+	// effective signer is a locally-held guarded account.
+	if err := rejectLocalGuardedPassthrough(ctx, stxn, passthrough.TargetIndex, session); err != nil {
+		return "", err
+	}
+	// A passthrough slot must carry a real signature: the signer contributes no
+	// authority of its own, so an unsigned SignedTxn{Txn:...} would assemble a
+	// group leg nobody authorized. Reject any blank-signature passthrough.
+	if !signedTxnHasSignature(stxn) {
+		return "", badRequest(fmt.Sprintf("passthrough index %d signed transaction carries no signature", passthrough.TargetIndex))
+	}
+	// Enforce canonical encoding on the forwarded bytes, matching the canonical
+	// round-trip the transport already applies to component targets. Re-encode
+	// and require equality so a non-canonical SignedTxn cannot be submitted, and
+	// return the canonical bytes.
+	reencoded := msgpack.Encode(stxn)
+	if !bytes.Equal(reencoded, signedTxnBytes) {
+		return "", badRequest(fmt.Sprintf("passthrough index %d signed transaction bytes are not canonical", passthrough.TargetIndex))
+	}
+	return hex.EncodeToString(reencoded), nil
+}
+
+// rejectLocalGuardedPassthrough rejects a passthrough whose effective signer
+// (sender, or AuthAddr when rekeyed) is a guarded account this signer holds:
+// such an account must be authorized through component signing and assembly,
+// not forwarded as an already-signed passthrough. Accounts this signer does
+// not hold (the common passthrough case) are left alone.
+func rejectLocalGuardedPassthrough(ctx context.Context, stxn types.SignedTxn, targetIndex int, session componentKeyGetter) *ServiceError {
+	var zero types.Address
+	candidates := []types.Address{stxn.Txn.Sender}
+	if stxn.AuthAddr != zero {
+		candidates = append(candidates, stxn.AuthAddr)
+	}
+	for _, addr := range candidates {
+		if addr == zero {
+			continue
+		}
+		km, err := session.GetKeyWithContext(ctx, addr.String())
+		if err != nil || km == nil {
+			continue // not held by this signer — a legitimate foreign passthrough
+		}
+		if keytypes.IsGuardedAccountKeyType(km.Type) {
+			return badRequest(fmt.Sprintf("passthrough index %d is a guarded account; it must be signed through component assembly, not passthrough", targetIndex))
+		}
+	}
+	return nil
+}
+
+// signedTxnHasSignature reports whether a SignedTxn carries any signature: a
+// bare ed25519 signature, a LogicSig, or a multisig. An unsigned
+// SignedTxn{Txn:...} has all three blank.
+func signedTxnHasSignature(stxn types.SignedTxn) bool {
+	if stxn.Sig != (types.Signature{}) {
+		return true
+	}
+	if len(stxn.Lsig.Logic) > 0 {
+		return true
+	}
+	if !stxn.Msig.Blank() {
+		return true
+	}
+	return false
 }
 
 func verifySentryAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {

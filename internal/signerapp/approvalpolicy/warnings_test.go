@@ -32,6 +32,23 @@ func TestCheckDecodedTxnWarnings(t *testing.T) {
 		},
 		{name: "high fee", txn: types.Transaction{Header: types.Header{Fee: types.MicroAlgos(2_000_000)}}, wantCount: 1, wantField: "Fee"},
 		{
+			name:      "app delete",
+			txn:       types.Transaction{Type: types.ApplicationCallTx, ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{OnCompletion: types.DeleteApplicationOC}}},
+			wantCount: 1,
+			wantField: "OnCompletion",
+		},
+		{
+			name:      "app clear state",
+			txn:       types.Transaction{Type: types.ApplicationCallTx, ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{OnCompletion: types.ClearStateOC}}},
+			wantCount: 1,
+			wantField: "OnCompletion",
+		},
+		{
+			name:      "app noop is not flagged",
+			txn:       types.Transaction{Type: types.ApplicationCallTx, ApplicationFields: types.ApplicationFields{ApplicationCallTxnFields: types.ApplicationCallTxnFields{OnCompletion: types.NoOpOC}}},
+			wantCount: 0,
+		},
+		{
 			name:      "multiple warnings",
 			txn:       types.Transaction{Header: types.Header{RekeyTo: nonZeroAddr, Fee: types.MicroAlgos(5_000_000)}, PaymentTxnFields: types.PaymentTxnFields{CloseRemainderTo: nonZeroAddr}},
 			wantCount: 3,

@@ -348,6 +348,11 @@ func (e *Engine) getSuggestedParamsWithFee(ctx context.Context, fee uint64, useF
 	if err != nil {
 		return types.SuggestedParams{}, fmt.Errorf("failed to get suggested params: %w", err)
 	}
+	// A client-side genesis-hash assertion was considered here (audit finding:
+	// mis-pointed algod). It is deferred: the signer authoritatively rejects an
+	// unrecognized genesis hash (signing.validateKnownNetwork) and its policy is
+	// genesis-derived, so a wrong-chain client build is caught at the trust
+	// boundary. A client check would only move the error earlier.
 	if useFlatFee {
 		sp.FlatFee = true
 		sp.Fee = types.MicroAlgos(fee)

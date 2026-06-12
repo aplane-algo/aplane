@@ -699,7 +699,7 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	}
 	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
 	sentrySignature := stded25519.Sign(sentryPrivateKey, sentryMsg[:])
-	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txns[1]})
+	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txns[1], Sig: types.Signature{0x01}})
 
 	keyMaterial := &coresigning.KeyMaterial{
 		Type:                   keytypes.GuardedFalcon1024SentryEd25519V1,
@@ -711,7 +711,10 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
 		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
 	}
-	session := &componentKeyTestSession{key: keyMaterial}
+	// Address-keyed: the guarded target resolves to its key, while the
+	// passthrough sender is not held by this signer (so the passthrough is not
+	// mistaken for a locally-held guarded account).
+	session := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{guardedAccount: keyMaterial}}
 	req := signerapi.GuardedAssemblyRequest{
 		RequestID:     "asm-live",
 		GroupBytesHex: groupBytesHex,
@@ -784,7 +787,7 @@ func TestAssembleDecodedGuardedGeneratesRequestIDWhenMissing(t *testing.T) {
 	if decodeErr != nil {
 		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
 	}
-	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txn})
+	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{0x01}})
 
 	result, signErr := assembleDecodedGuarded(context.Background(), signerapi.GuardedAssemblyRequest{
 		GroupBytesHex: groupBytesHex,
@@ -1297,6 +1300,7 @@ func testEd25519ComponentSelector(t *testing.T, fill byte) string {
 
 type componentKeyTestSession struct {
 	key        *coresigning.KeyMaterial
+	keysByAddr map[string]*coresigning.KeyMaterial // optional per-address lookup; when set, addresses not present return not-found
 	err        error
 	calls      int
 	gotAddress string
@@ -1307,6 +1311,13 @@ func (s *componentKeyTestSession) GetKeyWithContext(_ context.Context, address s
 	s.gotAddress = address
 	if s.err != nil {
 		return nil, s.err
+	}
+	if s.keysByAddr != nil {
+		km, ok := s.keysByAddr[address]
+		if !ok {
+			return nil, fmt.Errorf("no key for address %s", address)
+		}
+		return km, nil
 	}
 	return s.key, nil
 }
@@ -1422,5 +1433,40 @@ func TestLoadSentryComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T) {
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil {
 		t.Fatalf("key material was not zeroed after mismatch: %#v", keyMaterial)
+	}
+}
+
+func TestValidateGuardedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
+	sender := types.Address{1}.String()
+	receiver := types.Address{2}.String()
+	txn := paymentTransaction(t, sender, receiver, 1)
+
+	group, decodeErr := canonical.DecodeGroupHex([]string{txnutil.EncodeWithPrefixHex(txn)})
+	if decodeErr != nil {
+		t.Fatalf("DecodeGroupHex() error = %v", decodeErr)
+	}
+	entry := group.Entries[0]
+	// Sender is not a key this signer holds (the normal passthrough case).
+	notHeld := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{}}
+
+	// Unsigned passthrough is rejected even though its TxID matches.
+	unsigned := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))
+	if _, err := validateGuardedPassthrough(context.Background(), signerapi.GuardedPassthroughItem{TargetIndex: 0, SignedTxnHex: unsigned}, entry, notHeld); err == nil {
+		t.Fatal("unsigned passthrough: expected rejection, got nil")
+	}
+
+	// A signed passthrough whose txn matches the canonical entry is accepted.
+	signed := hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn, Sig: types.Signature{0x01}}))
+	if _, err := validateGuardedPassthrough(context.Background(), signerapi.GuardedPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, notHeld); err != nil {
+		t.Fatalf("signed passthrough: unexpected error %v", err)
+	}
+
+	// A passthrough whose sender is a locally-held guarded account is rejected:
+	// it must go through component assembly, not passthrough.
+	guardedSession := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
+		sender: {Type: keytypes.GuardedFalcon1024SentryEd25519V1},
+	}}
+	if _, err := validateGuardedPassthrough(context.Background(), signerapi.GuardedPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, guardedSession); err == nil {
+		t.Fatal("guarded-account passthrough: expected rejection, got nil")
 	}
 }

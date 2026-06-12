@@ -205,6 +205,15 @@ func buildFinalGroup(deps PlannerDeps, console Console, txns []types.Transaction
 	if minFee == 0 {
 		minFee = txsigning.DefaultMinFee
 	}
+	// Bound the per-transaction min fee against a sane ceiling. A real network's
+	// min fee is ~1000 microAlgos; an absurd value (e.g. from a hostile or
+	// misconfigured algod) would inflate the pooled dummy fee and could overflow
+	// the int-typed mutation report. 1 ALGO is already three orders of magnitude
+	// above any real min fee.
+	const maxSaneMinFee = uint64(1_000_000)
+	if minFee > maxSaneMinFee {
+		return nil, nil, feeInfo, false, badRequest(fmt.Sprintf("network minimum fee %d microAlgos is implausibly high; refusing to build dummy-fee group", minFee))
+	}
 
 	if dummiesNeeded > 0 {
 		calc, feeErr := txsigning.CalculateDummyFees(dummiesNeeded, len(lsigIndices), minFee)

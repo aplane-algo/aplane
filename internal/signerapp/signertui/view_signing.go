@@ -35,7 +35,7 @@ func (m Model) renderSigningPopup() string {
 	} else {
 		sb.WriteString(fmt.Sprintf("Address: %s\n", m.signing.request.Address))
 		if m.signing.request.TxnSender != "" && m.signing.request.TxnSender != m.signing.request.Address {
-			sb.WriteString(fmt.Sprintf("Sender:  %s (rekeyed)\n", m.signing.request.TxnSender))
+			sb.WriteString(fmt.Sprintf("Sender:  %s (auth claimed)\n", m.signing.request.TxnSender))
 		}
 	}
 	sb.WriteString("\n")
