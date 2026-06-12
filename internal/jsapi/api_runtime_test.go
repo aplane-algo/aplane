@@ -448,8 +448,8 @@ func TestPlanValidationAndRequestMapping(t *testing.T) {
 			if r == nil {
 				t.Fatal("expected panic")
 			}
-			if got := r.(goja.Value).String(); !strings.Contains(got, "invalid lsigSize: value exceeds max int") {
-				t.Fatalf("panic = %q, want lsigSize overflow error", got)
+			if got := r.(goja.Value).String(); !strings.Contains(got, "invalid lsigSize") || !strings.Contains(got, "too large") {
+				t.Fatalf("panic = %q, want lsigSize too-large error", got)
 			}
 		}()
 

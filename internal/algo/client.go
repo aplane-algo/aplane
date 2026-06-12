@@ -51,6 +51,14 @@ func GetAlgodClientWithConfig(network string, config *config.Config) (*algod.Cli
 }
 
 func ConvertTokenAmountToBaseUnits(tokenAmount string, decimals uint64) (uint64, error) {
+	// Algorand asset decimals are capped at 19 by the protocol. Reject anything
+	// larger up front: a pathological value would drive strings.Repeat below to
+	// a gigabyte allocation (and len(fractionalPart)-vs-decimals math into
+	// nonsense), and no real asset reaches it.
+	if decimals > 19 {
+		return 0, fmt.Errorf("invalid asset decimals %d (max 19)", decimals)
+	}
+
 	// Validate input format (digits and optional dot)
 	if tokenAmount == "" {
 		return 0, fmt.Errorf("empty amount")

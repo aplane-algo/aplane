@@ -33,6 +33,25 @@ func TestConvertTokenAmountToBaseUnits(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name:     "decimals at protocol max",
+			amount:   "1",
+			decimals: 19,
+			want:     10000000000000000000, // 10^19
+			wantErr:  false,
+		},
+		{
+			name:     "decimals above protocol max rejected",
+			amount:   "1",
+			decimals: 20,
+			wantErr:  true,
+		},
+		{
+			name:     "pathological decimals rejected before huge alloc",
+			amount:   "1",
+			decimals: 1 << 40,
+			wantErr:  true,
+		},
+		{
 			name:     "zero amount",
 			amount:   "0",
 			decimals: 6,

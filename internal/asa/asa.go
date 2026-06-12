@@ -139,6 +139,15 @@ func AmountFromDisplay(amount string, meta Metadata) (Amount, error) {
 }
 
 func ParseDisplayAmount(amount string, meta Metadata) (uint64, error) {
+	// SourceIDOnly means the resolver could not determine the asset's decimals
+	// (no cache entry, not built in, no algod) and defaulted Decimals to 0.
+	// Converting a display amount against unknown decimals would silently
+	// under-send by 10^d (e.g. "5" of a 6-decimal asset becomes 5 base units),
+	// so refuse: callers must resolve real metadata or pass a raw base-unit
+	// amount via AmountFromRaw instead.
+	if meta.Source == SourceIDOnly {
+		return 0, fmt.Errorf("cannot parse display amount for asset %d: decimals are unknown (resolve asset metadata or pass a raw base-unit amount)", meta.AssetID)
+	}
 	return algoutil.ConvertTokenAmountToBaseUnits(strings.TrimSpace(amount), meta.Decimals)
 }
 

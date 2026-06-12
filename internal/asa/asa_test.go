@@ -68,6 +68,23 @@ func TestParseAndFormatDisplayAmount(t *testing.T) {
 	}
 }
 
+// TestParseDisplayAmountRejectsIDOnly pins that a display amount is never
+// parsed against unknown (defaulted-to-zero) decimals, which would silently
+// under-send by 10^d. ID-only metadata must be rejected; a raw amount is fine.
+func TestParseDisplayAmountRejectsIDOnly(t *testing.T) {
+	meta := Metadata{Network: "testnet", AssetID: 31566704, Source: SourceIDOnly}
+	if _, err := ParseDisplayAmount("5", meta); err == nil {
+		t.Fatal("ParseDisplayAmount() error = nil, want rejection for unknown decimals")
+	}
+	if _, err := AmountFromDisplay("5", meta); err == nil {
+		t.Fatal("AmountFromDisplay() error = nil, want rejection for unknown decimals")
+	}
+	// A raw base-unit amount needs no decimal interpretation and is allowed.
+	if amt := AmountFromRaw(5, meta); amt.Raw != 5 {
+		t.Fatalf("AmountFromRaw() = %d, want 5", amt.Raw)
+	}
+}
+
 func TestResolverMetadataByIDUsesCache(t *testing.T) {
 	asaCache := &cache.ASACache{
 		Assets: map[uint64]cache.ASAInfo{

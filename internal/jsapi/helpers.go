@@ -7,9 +7,40 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 
+	algoutil "github.com/aplane-algo/aplane/internal/algo"
 	"github.com/dop251/goja"
 )
+
+// maxSafeUint64Float is the exclusive upper bound for a float64 -> uint64
+// conversion. At or above 2^63 the cast is implementation-defined (it produces
+// garbage), so such values are rejected. Note that float64 cannot represent
+// consecutive integers above 2^53; an amount that large was already rounded by
+// the JS engine before it reached Go, so the precise bound only needs to fence
+// off the garbage-cast region.
+const maxSafeUint64Float = float64(1 << 63)
+
+// validateUint64Float rejects float64 amounts that cannot be converted to a
+// uint64 base-unit count without silent loss: NaN/Inf, negative, non-integral
+// (e.g. 1.5, which a bare cast would truncate to 1), and values in the
+// garbage-cast region. JS numbers are float64, so callers building transaction
+// amounts/fees from JS must run this before casting.
+func validateUint64Float(val float64) error {
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		return fmt.Errorf("value must be a finite number")
+	}
+	if val < 0 {
+		return errNegativeValue
+	}
+	if val != math.Trunc(val) {
+		return fmt.Errorf("value must be a whole number of base units (got %v)", val)
+	}
+	if val >= maxSafeUint64Float {
+		return fmt.Errorf("value %v is too large", val)
+	}
+	return nil
+}
 
 // makeAlgoFunc creates the algo() helper function bound to a runtime.
 // algo(1.5) -> 1500000
@@ -20,10 +51,22 @@ func makeAlgoFunc(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
 		}
 
 		val := call.Arguments[0].ToFloat()
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			panic(vm.ToValue("algo() requires a finite number"))
+		}
 		if val < 0 {
 			panic(vm.ToValue("algo() cannot be negative"))
 		}
-		microAlgos := uint64(math.Round(val * 1_000_000))
+		// Convert through exact decimal-string arithmetic rather than float
+		// multiply + round, so fractional ALGO never silently loses
+		// sub-microAlgo precision (algo(0.0000001) is rejected, not rounded to
+		// 0) and the result matches the CLI's string-based conversion.
+		// FormatFloat(-1) yields the shortest round-tripping decimal, so 0.1
+		// becomes "0.1", not its float64 expansion.
+		microAlgos, err := algoutil.ConvertTokenAmountToBaseUnits(strconv.FormatFloat(val, 'f', -1, 64), 6)
+		if err != nil {
+			panic(vm.ToValue(fmt.Sprintf("algo() invalid amount: %v", err)))
+		}
 		return vm.ToValue(microAlgos)
 	}
 }
@@ -84,8 +127,8 @@ func toUint64(vm *goja.Runtime, v goja.Value) uint64 {
 		}
 		return uint64(val)
 	case float64:
-		if val < 0 {
-			panic(vm.ToValue("value cannot be negative"))
+		if err := validateUint64Float(val); err != nil {
+			panic(vm.ToValue(err.Error()))
 		}
 		return uint64(val)
 	case int:
@@ -117,8 +160,8 @@ func toUint64Interface(v interface{}) (uint64, error) {
 		}
 		return uint64(val), nil
 	case float64:
-		if val < 0 {
-			return 0, errNegativeValue
+		if err := validateUint64Float(val); err != nil {
+			return 0, err
 		}
 		return uint64(val), nil
 	case int:

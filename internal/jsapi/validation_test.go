@@ -459,6 +459,44 @@ func TestAlgoValidConversions(t *testing.T) {
 	}
 }
 
+// TestAmountConversionsRejectImprecise pins the unit-conversion hardening:
+// fractional microAlgos and non-integral / out-of-range base-unit amounts must
+// error rather than silently truncate or round to a wrong value.
+func TestAmountConversionsRejectImprecise(t *testing.T) {
+	eng, err := engine.NewEngine("testnet")
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+	vm := goja.New()
+	api := NewAPI(eng, false, nil)
+	if err := api.RegisterAll(vm); err != nil {
+		t.Fatalf("failed to register API: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		jsCode    string
+		wantError string
+	}{
+		{"algo sub-microalgo precision", "algo(0.0000001)", "decimal places"},
+		{"microalgos fractional truncates", "microalgos(1.5)", "whole number"},
+		{"microalgos out of range", "microalgos(1e36)", "too large"},
+		{"microalgos NaN", "microalgos(0/0)", "finite"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := vm.RunString(tt.jsCode)
+			if err == nil {
+				t.Fatalf("%s: expected error, got none", tt.jsCode)
+			}
+			if !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("%s: error = %q, want containing %q", tt.jsCode, err.Error(), tt.wantError)
+			}
+		})
+	}
+}
+
 // TestGetAsaId tests well-known asset lookup.
 func TestGetAsaId(t *testing.T) {
 	eng, err := engine.NewEngine("mainnet")

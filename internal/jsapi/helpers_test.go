@@ -264,9 +264,9 @@ func TestToUint64(t *testing.T) {
 			want:  123,
 		},
 		{
-			name:  "float64 with decimal truncates",
-			input: float64(99.9),
-			want:  99,
+			name:      "float64 with decimal rejected (no silent truncation)",
+			input:     float64(99.9),
+			wantPanic: true,
 		},
 		{
 			name:  "int positive",
@@ -286,6 +286,11 @@ func TestToUint64(t *testing.T) {
 		{
 			name:      "float64 negative",
 			input:     float64(-0.5),
+			wantPanic: true,
+		},
+		{
+			name:      "float64 out of range",
+			input:     float64(1e36),
 			wantPanic: true,
 		},
 		{
@@ -347,9 +352,16 @@ func TestToUint64Interface(t *testing.T) {
 			want:  123,
 		},
 		{
-			name:  "float64 truncates",
-			input: float64(99.9),
-			want:  99,
+			name:    "float64 fractional rejected (no silent truncation)",
+			input:   float64(99.9),
+			wantErr: true,
+			errMsg:  "value must be a whole number of base units (got 99.9)",
+		},
+		{
+			name:    "float64 out of range",
+			input:   float64(1e36),
+			wantErr: true,
+			errMsg:  "value 1e+36 is too large",
 		},
 		{
 			name:  "int positive",
