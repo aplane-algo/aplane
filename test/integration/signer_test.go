@@ -1233,7 +1233,7 @@ func TestPolicyHardRejectClawbackSkipsApprovalAndReturnsForbidden(t *testing.T) 
 
 	policyClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer policyClient.Close()
-	mustUpdateIPCPolicySetting(t, policyClient, "reject_clawback", "true")
+	mustReplaceIPCPolicySetting(t, policyClient, "reject_clawback", true)
 
 	approvalClient := mustConnectIPCClient(t, signerd.GetWorkDir())
 	defer approvalClient.Close()
@@ -2739,6 +2739,62 @@ func mustUpdateIPCPolicySetting(t *testing.T, ipcClient *transport.IPCClient, ke
 	}
 	if result.Key != key || result.Value != value {
 		t.Fatalf("policy update echoed key/value = %s/%s, want %s/%s", result.Key, result.Value, key, value)
+	}
+}
+
+// mustReplaceIPCPolicySetting sets one top-level policy field through
+// whole-policy YAML replacement, the supported mutation path for YAML-only
+// settings such as reject_clawback that update_policy_setting rejects.
+func mustReplaceIPCPolicySetting(t *testing.T, ipcClient *transport.IPCClient, key string, value any) {
+	t.Helper()
+
+	snapBytes, err := ipcClient.SendAndReceive(protocol.GetPolicySnapshotMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeGetPolicySnapshot,
+			ID:   fmt.Sprintf("policy-snapshot-%d", time.Now().UnixNano()),
+		},
+	}, 10*time.Second)
+	if err != nil {
+		t.Fatalf("failed to get policy snapshot: %v", err)
+	}
+	var snapshot protocol.PolicySnapshotMessage
+	if err := json.Unmarshal(snapBytes, &snapshot); err != nil {
+		t.Fatalf("failed to parse policy snapshot: %v", err)
+	}
+	if !snapshot.Success {
+		t.Fatalf("policy snapshot failed: %s", snapshot.Error)
+	}
+
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(snapshot.PolicyYAML), &doc); err != nil {
+		t.Fatalf("failed to parse snapshot policy YAML: %v", err)
+	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
+	doc[key] = value
+	updatedYAML, err := yaml.Marshal(doc)
+	if err != nil {
+		t.Fatalf("failed to marshal updated policy YAML: %v", err)
+	}
+
+	respBytes, err := ipcClient.SendAndReceive(protocol.ReplacePolicyMessage{
+		BaseMessage: protocol.BaseMessage{
+			Type: protocol.MsgTypeReplacePolicy,
+			ID:   fmt.Sprintf("policy-replace-%d", time.Now().UnixNano()),
+		},
+		PolicyYAML:            string(updatedYAML),
+		ExpectedCurrentSHA256: snapshot.PolicySHA256,
+	}, 10*time.Second)
+	if err != nil {
+		t.Fatalf("failed to replace policy for %s: %v", key, err)
+	}
+	var result protocol.ReplacePolicyResultMessage
+	if err := json.Unmarshal(respBytes, &result); err != nil {
+		t.Fatalf("failed to parse replace-policy result: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("policy replacement for %s=%v failed: %s", key, value, result.Error)
 	}
 }
 
