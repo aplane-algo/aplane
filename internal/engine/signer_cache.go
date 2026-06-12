@@ -73,6 +73,18 @@ func (e *Engine) signerCacheSentryPublicKey(address string) (string, bool) {
 	return e.SignerCache.SentryPublicKeyForAddress(address)
 }
 
+func (e *Engine) signerCacheSigningFlow(address string) string {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	return e.SignerCache.SigningFlowForAddress(address)
+}
+
+func (e *Engine) signerCacheSentryComponentKeyType(address string) (string, bool) {
+	e.signerCacheMu.RLock()
+	defer e.signerCacheMu.RUnlock()
+	return e.SignerCache.SentryComponentKeyTypeForAddress(address)
+}
+
 func (e *Engine) signerCacheIsGenericLsig(address string) bool {
 	e.signerCacheMu.RLock()
 	defer e.signerCacheMu.RUnlock()

@@ -66,6 +66,10 @@ program requires two component signatures. The model observes:
 - stored guarded account key type, which determines the sentry key family,
 - stored signing metadata, bytecode, and runtime argument contract.
 
+Signer inventory projects each guarded key with `signing_flow: sentry1` and
+its `sentry_component_key_type`; clients route on that projection rather than
+on the key-type string.
+
 The sentry trust decision is made at key generation time by embedding the
 chosen sentry public key into this key's LogicSig program and stored
 parameters. Later endpoint routing does not move that trust anchor.
@@ -120,12 +124,16 @@ only; it is not proof that the endpoint owns any private key.
 ### Detect Guarded Send
 
 `apshell send` resolves each original sender through the auth-address cache and
-consults the primary signer's key cache for the effective signer. If any
-effective signer is a guarded account key type, the client uses the guarded
-orchestration path. Mixed ordinary positions, direct guarded senders, and
-senders rekeyed to guarded authorizers are supported: guarded positions become
-component-signing targets, and ordinary signer-managed positions are signed
-later over the same canonical group.
+consults the primary signer's key cache for the effective signer. Detection is
+flow-driven: signer inventory labels each guarded key with
+`signing_flow: sentry1` plus its `sentry_component_key_type`, and any
+effective signer with a non-empty signing flow routes through guarded
+orchestration, which then rejects flow labels other than `sentry1` before any
+signing request (A15). The client does not classify key-type strings itself.
+Mixed ordinary positions, direct guarded senders, and senders rekeyed to
+guarded authorizers are supported: guarded positions become component-signing
+targets, and ordinary signer-managed positions are signed later over the same
+canonical group.
 
 ### Build Canonical Group
 
@@ -368,6 +376,23 @@ TxID(AssembledSignedTxn.txn) != CanonicalGroup[target].txid =>
 CanonicalGroup[target].sender != guarded_account and
 AssembledSignedTxn.AuthAddr != guarded_account =>
   Reject(Assemble)
+```
+
+### A15: Clients Route On Versioned Signing-Flow Metadata
+
+The current guarded choreography is named `sentry1`: canonical TX-prefixed
+transport, role-tagged component messages, one user plus one sentry component
+signature per target, Sentry Key ID selectors, and assembly with
+arg 0 = user / arg 1 = sentry. The label is frozen — any choreography change
+mints a new label, and unrelated future mechanisms get their own label family.
+Clients detect guarded sends from the `signing_flow` inventory field, treat
+key-type and component-key-type strings as opaque, and fail fast on flow
+labels they do not implement, before any component signing request is sent.
+
+```text
+SignerInventory(key).signing_flow == "" => PlainSignPath(key)
+SignerInventory(key).signing_flow == "sentry1" => Sentry1Orchestration(key)
+SignerInventory(key).signing_flow not in ClientFlows => Reject(Send)
 ```
 
 ## Assumptions

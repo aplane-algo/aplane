@@ -576,6 +576,42 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	}
 }
 
+func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
+	infos := Service{}.buildKeyTypes([]string{
+		"ed25519",
+		keytypes.SentryComponentEd25519V1,
+		keytypes.GuardedFalcon1024SentryEd25519V1,
+		keytypes.GuardedFalcon1024SentryFalcon1024V1,
+	}, nil)
+	byType := make(map[string]signerapi.KeyTypeInfo, len(infos))
+	for _, info := range infos {
+		byType[info.KeyType] = info
+	}
+
+	guarded := map[string]string{
+		keytypes.GuardedFalcon1024SentryEd25519V1:    keytypes.SentryComponentEd25519V1,
+		keytypes.GuardedFalcon1024SentryFalcon1024V1: keytypes.SentryComponentFalcon1024V1,
+	}
+	for keyType, wantComponent := range guarded {
+		info, ok := byType[keyType]
+		if !ok {
+			t.Fatalf("buildKeyTypes() missing %s", keyType)
+		}
+		if info.SigningFlow != signerapi.SigningFlowSentry1 {
+			t.Fatalf("%s signing_flow = %q, want %q", keyType, info.SigningFlow, signerapi.SigningFlowSentry1)
+		}
+		if info.SentryComponentKeyType != wantComponent {
+			t.Fatalf("%s sentry_component_key_type = %q, want %q", keyType, info.SentryComponentKeyType, wantComponent)
+		}
+	}
+	for _, keyType := range []string{"ed25519", keytypes.SentryComponentEd25519V1} {
+		info := byType[keyType]
+		if info.SigningFlow != "" || info.SentryComponentKeyType != "" {
+			t.Fatalf("%s signing flow metadata = %q/%q, want empty", keyType, info.SigningFlow, info.SentryComponentKeyType)
+		}
+	}
+}
+
 func TestGuardedAccountParametersProjection(t *testing.T) {
 	const sentryPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
 

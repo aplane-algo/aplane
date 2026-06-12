@@ -115,9 +115,11 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 				Address: sender,
 				KeyType: "ed25519",
 			}, {
-				Address:  guarded,
-				KeyType:  keytypes.GuardedFalcon1024SentryEd25519V1,
-				LsigSize: 1500,
+				Address:                guarded,
+				KeyType:                keytypes.GuardedFalcon1024SentryEd25519V1,
+				SigningFlow:            signerapi.SigningFlowSentry1,
+				SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+				LsigSize:               1500,
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,
 				},
@@ -176,9 +178,11 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 				Address: sender,
 				KeyType: "ed25519",
 			}, {
-				Address:  guarded,
-				KeyType:  keytypes.GuardedFalcon1024SentryEd25519V1,
-				LsigSize: 1500,
+				Address:                guarded,
+				KeyType:                keytypes.GuardedFalcon1024SentryEd25519V1,
+				SigningFlow:            signerapi.SigningFlowSentry1,
+				SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+				LsigSize:               1500,
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,
 				},
@@ -235,6 +239,35 @@ func TestGuardedTargetsRequireSentryMetadata(t *testing.T) {
 	_, err := eng.guardedTargets([]types.Transaction{txn})
 	if err == nil || !strings.Contains(err.Error(), "missing sentry_public_key") {
 		t.Fatalf("guardedTargets() error = %v, want missing sentry_public_key", err)
+	}
+}
+
+func TestGuardedTargetsRejectUnsupportedSigningFlow(t *testing.T) {
+	sender := testAddress(1).String()
+	sentryHex := testSentryPublicKeyHex(0xd6)
+	eng := newGuardedSubmitTestEngine(t, sender, 1500, sentryHex)
+	eng.SignerCache.SetSigningFlowForAddress(sender, "sentry2")
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
+
+	if !eng.hasGuardedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasGuardedEffectiveSigner() = false, want true for unknown flow (must not fall through to /sign)")
+	}
+	_, err := eng.guardedTargets([]types.Transaction{txn})
+	if err == nil || !strings.Contains(err.Error(), `signing flow "sentry2"`) {
+		t.Fatalf("guardedTargets() error = %v, want unsupported signing flow rejection", err)
+	}
+}
+
+func TestGuardedTargetsRequireSentryComponentKeyTypeMetadata(t *testing.T) {
+	sender := testAddress(1).String()
+	sentryHex := testSentryPublicKeyHex(0xd6)
+	eng := newGuardedSubmitTestEngine(t, sender, 1500, sentryHex)
+	eng.SignerCache.SetSentryComponentKeyTypeForAddress(sender, "")
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
+
+	_, err := eng.guardedTargets([]types.Transaction{txn})
+	if err == nil || !strings.Contains(err.Error(), "missing sentry_component_key_type") {
+		t.Fatalf("guardedTargets() error = %v, want missing sentry_component_key_type", err)
 	}
 }
 
@@ -533,6 +566,11 @@ func newGuardedSubmitTestEngineForKeyType(t *testing.T, sender, keyType string, 
 	t.Helper()
 	signerCache := cache.NewSignerCache()
 	signerCache.AddAddress(sender, keyType)
+	// Mirror the signing-flow metadata the daemon serves for guarded keys.
+	if componentType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType); ok {
+		signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowSentry1)
+		signerCache.SetSentryComponentKeyTypeForAddress(sender, componentType)
+	}
 	if lsigSize > 0 {
 		signerCache.SetLsigSize(sender, lsigSize)
 	}

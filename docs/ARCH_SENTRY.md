@@ -163,7 +163,11 @@ hex.
 
 Runtime guarded-send routing works like this:
 
-1. The guarded account key identifies the required sentry public key.
+1. Signer inventory labels the guarded account key with
+   `signing_flow: sentry1`, its `sentry_component_key_type`, and the required
+   sentry public key. The client routes on the flow label (key-type strings
+   are opaque to the client) and fails fast on flow labels it does not
+   implement.
 2. The client builds an in-memory map from endpoint `published_sentries`.
 3. The client selects the sentry endpoint that advertises that public key.
 4. Before requesting a sentry component signature, the client verifies the

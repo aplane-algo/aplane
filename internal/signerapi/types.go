@@ -65,6 +65,7 @@ const (
 	SignCancelStateNotFound = pub.SignCancelStateNotFound
 	ComponentSignRoleUser   = pub.ComponentSignRoleUser
 	ComponentSignRoleSentry = pub.ComponentSignRoleSentry
+	SigningFlowSentry1      = pub.SigningFlowSentry1
 
 	ErrCodeBadRequest        = pub.ErrCodeBadRequest
 	ErrCodeUnauthorized      = pub.ErrCodeUnauthorized

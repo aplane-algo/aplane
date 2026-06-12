@@ -162,6 +162,8 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 	s.SignerCache.GenericLsigs = make(map[string]bool)
 	s.SignerCache.LsigSizes = make(map[string]int)
 	s.SignerCache.SigningArgs = make(map[string][]cache.SigningArgInfo)
+	s.SignerCache.SigningFlows = make(map[string]string)
+	s.SignerCache.SentryComponentKeyTypes = make(map[string]string)
 	s.SignerCache.SentryPublicKeys = make(map[string]string)
 	s.SignerCache.Locked = false
 	s.SignerCache.BindStore(s.CacheStore)
@@ -173,6 +175,12 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 		}
 		if keyInfo.IsGenericLsig {
 			s.SignerCache.SetGenericLsig(keyInfo.Address, true)
+		}
+		if keyInfo.SigningFlow != "" {
+			s.SignerCache.SetSigningFlowForAddress(keyInfo.Address, keyInfo.SigningFlow)
+		}
+		if keyInfo.SentryComponentKeyType != "" {
+			s.SignerCache.SetSentryComponentKeyTypeForAddress(keyInfo.Address, keyInfo.SentryComponentKeyType)
 		}
 		if sentryPublicKey := keyInfo.Parameters[keytypes.ParameterSentryPublicKey]; sentryPublicKey != "" {
 			s.SignerCache.SetSentryPublicKeyForAddress(keyInfo.Address, sentryPublicKey)

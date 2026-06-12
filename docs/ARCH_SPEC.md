@@ -1134,9 +1134,16 @@ against the sentry public key embedded in the local guarded-account key.
 
 ### Runtime Flow
 
+The current guarded choreography is named `sentry1`. Signer `/keys` and
+`/keytypes` inventory label guarded keys with `signing_flow: sentry1` and
+`sentry_component_key_type`; clients route on the flow label, treat key-type
+and component-key-type strings as opaque, and fail fast on flow labels they do
+not implement. The `sentry1` label is frozen: any choreography change mints a
+new label, and unrelated future mechanisms get their own label family.
+
 `apshell send` resolves each original sender through the auth-address cache and
-detects guarded targets by effective signer. If any effective signer is a
-guarded account key type, the client uses guarded orchestration for the whole
+detects guarded targets by effective signer. If any effective signer declares
+a signing flow, the client uses guarded orchestration for the whole
 atomic group. The group may mix direct guarded senders, senders rekeyed to a
 guarded authorizer, and ordinary signer-managed senders.
 

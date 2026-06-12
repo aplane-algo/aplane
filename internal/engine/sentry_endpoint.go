@@ -264,10 +264,14 @@ func discoverSentryComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredSentryCo
 	discovered := make([]DiscoveredSentryComponentKey, 0)
 	seen := map[string]struct{}{}
 	for _, key := range keys {
-		if !key.IsComponentKey || !keytypes.IsSentryComponentKeyType(key.KeyType) {
+		// Component key types are runtime metadata: any advertised component
+		// key participates in discovery, and its key-type string is treated
+		// as opaque. Selector cross-derivation below pins the advertised
+		// Sentry Key ID to the advertised key type and public key.
+		if !key.IsComponentKey || key.KeyType == "" {
 			continue
 		}
-		publicKey, err := normalizeSentryPublicKeyHex(key.PublicKeyHex, key.KeyType)
+		publicKey, err := normalizeSentryPublicKeyHex(key.PublicKeyHex)
 		if err != nil {
 			return nil, fmt.Errorf("%w: Sentry Key ID %q has invalid public_key_hex: %v", ErrSentryDiscoveryInvalidMetadata, key.Address, err)
 		}
@@ -311,7 +315,7 @@ func (e *Engine) signerProgressWriter() io.Writer {
 }
 
 func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentClient, sentryKey sentryRequestKey, source string) error {
-	expectedPublicKey, err := normalizeSentryPublicKeyHex(sentryKey.PublicKey, sentryKey.ComponentKeyType)
+	expectedPublicKey, err := normalizeSentryPublicKeyHex(sentryKey.PublicKey)
 	if err != nil {
 		return fmt.Errorf("invalid expected sentry public key: %w", err)
 	}
@@ -331,7 +335,7 @@ func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentC
 		if key.KeyType != sentryKey.ComponentKeyType || !key.IsComponentKey {
 			continue
 		}
-		publicKey, err := normalizeSentryPublicKeyHex(key.PublicKeyHex, sentryKey.ComponentKeyType)
+		publicKey, err := normalizeSentryPublicKeyHex(key.PublicKeyHex)
 		if err != nil {
 			continue
 		}

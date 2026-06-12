@@ -101,7 +101,9 @@ func SentryComponentKeyTypeForGuardedAccount(keyType string) (string, bool) {
 // ComponentKeySelector returns the canonical Sentry Key ID for a sentry key.
 // Sentry Key IDs are uppercase base32-no-padding SHA-512/256 digests over a
 // domain-separated key-type/public-key tuple, independent of the sentry key
-// family.
+// family. It gates on the compiled component key-type vocabulary and is the
+// signer-side entry point; clients deriving selectors from runtime metadata
+// use DeriveComponentKeySelector.
 func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 	if !IsSentryComponentKeyType(keyType) {
 		return "", fmt.Errorf("key type %q is not a sentry key type", keyType)
@@ -113,14 +115,25 @@ func ComponentKeySelector(keyType string, publicKey []byte) (string, error) {
 	if len(publicKey) != wantSize {
 		return "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
 	}
+	return DeriveComponentKeySelector(keyType, publicKey), nil
+}
 
+// DeriveComponentKeySelector computes the canonical Sentry Key ID hash for
+// any component key-type string and public key, without consulting the
+// compiled key-type vocabulary. The derivation is family-generic by design
+// (domain-separated SHA-512/256 over the key-type/public-key tuple), so
+// clients can derive and cross-check selectors for component key types they
+// learned from signer inventory at runtime. Callers own any public-key
+// validation; end-to-end integrity comes from selector matching against the
+// advertising endpoint and, ultimately, the on-chain LogicSig.
+func DeriveComponentKeySelector(keyType string, publicKey []byte) string {
 	h := sha512.New512_256()
 	_, _ = h.Write([]byte(componentKeySelectorDomain))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(keyType))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write(publicKey)
-	return componentKeySelectorEncoding.EncodeToString(h.Sum(nil)), nil
+	return componentKeySelectorEncoding.EncodeToString(h.Sum(nil))
 }
 
 // NormalizeComponentKeySelector validates and canonicalizes a Sentry Key ID.

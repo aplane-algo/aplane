@@ -36,11 +36,17 @@ type sentryRequestKey struct {
 	PublicKey        string
 }
 
+// hasGuardedEffectiveSigner reports whether any transaction's effective
+// signer declares a component signing flow (signing_flow in signer
+// inventory). Any non-empty flow routes through guarded orchestration, which
+// rejects flow labels this client does not implement; routing on the flow
+// label rather than the key type keeps the client forward-compatible with
+// new guarded key families.
 func (e *Engine) hasGuardedEffectiveSigner(txns []types.Transaction) bool {
 	for _, txn := range txns {
 		sender := txn.Sender.String()
 		effectiveSigner := e.AuthCache.ResolveEffectiveSigner(sender)
-		if keytypes.IsGuardedAccountKeyType(e.signerCacheKeyType(effectiveSigner)) {
+		if e.signerCacheSigningFlow(effectiveSigner) != "" {
 			return true
 		}
 	}
@@ -241,19 +247,22 @@ func (e *Engine) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 	for i, txn := range txns {
 		sender := txn.Sender.String()
 		account := e.AuthCache.ResolveEffectiveSigner(sender)
-		keyType := e.signerCacheKeyType(account)
-		if !keytypes.IsGuardedAccountKeyType(keyType) {
+		flow := e.signerCacheSigningFlow(account)
+		if flow == "" {
 			continue
 		}
-		sentryComponentKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
+		if flow != signerapi.SigningFlowSentry1 {
+			return nil, fmt.Errorf("account %s requires signing flow %q, which this client does not support; upgrade the client", account, flow)
+		}
+		sentryComponentKeyType, ok := e.signerCacheSentryComponentKeyType(account)
 		if !ok {
-			return nil, fmt.Errorf("guarded account %s uses unsupported guarded key type %s", account, keyType)
+			return nil, fmt.Errorf("guarded account %s is missing sentry_component_key_type metadata; run keys refresh", account)
 		}
 		sentryPublicKey, ok := e.signerCacheSentryPublicKey(account)
 		if !ok || sentryPublicKey == "" {
 			return nil, fmt.Errorf("guarded account %s is missing sentry_public_key metadata; run keys refresh", account)
 		}
-		canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey, sentryComponentKeyType)
+		canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("guarded account %s has invalid sentry_public_key metadata: %w", account, err)
 		}
@@ -275,7 +284,12 @@ func (t guardedTarget) sentryRequestKey() sentryRequestKey {
 	}
 }
 
-func normalizeSentryPublicKeyHex(raw string, componentKeyType string) (string, error) {
+// normalizeSentryPublicKeyHex canonicalizes a sentry public key as lowercase
+// hex. Component key types and public keys are runtime metadata, so no
+// per-family size table is consulted: integrity comes from the Sentry Key ID
+// selector matching the advertising endpoint and, authoritatively, from the
+// on-chain LogicSig.
+func normalizeSentryPublicKeyHex(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return "", fmt.Errorf("sentry public key is required")
@@ -285,18 +299,17 @@ func normalizeSentryPublicKeyHex(raw string, componentKeyType string) (string, e
 	if err != nil {
 		return "", fmt.Errorf("sentry public key must be hex: %w", err)
 	}
-	wantSize, ok := keytypes.ComponentPublicKeySize(componentKeyType)
-	if !ok {
-		return "", fmt.Errorf("key type %q is not a sentry key type", componentKeyType)
-	}
-	if len(publicKey) != wantSize {
-		return "", fmt.Errorf("sentry public key length %d invalid (expected %d bytes)", len(publicKey), wantSize)
+	if len(publicKey) == 0 {
+		return "", fmt.Errorf("sentry public key is empty")
 	}
 	return hex.EncodeToString(publicKey), nil
 }
 
 func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (string, error) {
-	canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey, componentKeyType)
+	if componentKeyType == "" {
+		return "", fmt.Errorf("sentry component key type is required")
+	}
+	canonicalPublicKey, err := normalizeSentryPublicKeyHex(sentryPublicKey)
 	if err != nil {
 		return "", err
 	}
@@ -304,7 +317,7 @@ func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (s
 	if err != nil {
 		return "", err
 	}
-	return keytypes.ComponentKeySelector(componentKeyType, publicKey)
+	return keytypes.DeriveComponentKeySelector(componentKeyType, publicKey), nil
 }
 
 func sentryComponentLabel(componentKeyType, sentryPublicKey string) string {

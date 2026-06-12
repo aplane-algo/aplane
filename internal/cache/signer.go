@@ -11,12 +11,14 @@ import (
 // NewSignerCache creates an empty SignerCache
 func NewSignerCache() SignerCache {
 	cache := SignerCache{
-		SchemaVersion:    cachePayloadSchemaVersion,
-		Keys:             make(map[string]string),
-		GenericLsigs:     make(map[string]bool),
-		LsigSizes:        make(map[string]int),
-		SigningArgs:      make(map[string][]SigningArgInfo),
-		SentryPublicKeys: make(map[string]string),
+		SchemaVersion:           cachePayloadSchemaVersion,
+		Keys:                    make(map[string]string),
+		GenericLsigs:            make(map[string]bool),
+		LsigSizes:               make(map[string]int),
+		SigningArgs:             make(map[string][]SigningArgInfo),
+		SigningFlows:            make(map[string]string),
+		SentryComponentKeyTypes: make(map[string]string),
+		SentryPublicKeys:        make(map[string]string),
 	}
 	return cache
 }
@@ -65,6 +67,8 @@ func (cache *SignerCache) RemoveAddress(address string) {
 	delete(cache.GenericLsigs, address)
 	delete(cache.LsigSizes, address)
 	delete(cache.SigningArgs, address)
+	delete(cache.SigningFlows, address)
+	delete(cache.SentryComponentKeyTypes, address)
 	delete(cache.SentryPublicKeys, address)
 }
 
@@ -108,6 +112,52 @@ func (cache *SignerCache) SetLsigSize(address string, size int) {
 		cache.LsigSizes = make(map[string]int)
 	}
 	cache.LsigSizes[address] = size
+}
+
+// SigningFlowForAddress returns the signing choreography label the signer
+// inventory reported for an address (e.g. "sentry1"). Empty means the
+// ordinary /sign path.
+func (cache *SignerCache) SigningFlowForAddress(address string) string {
+	if cache.SigningFlows == nil {
+		return ""
+	}
+	return cache.SigningFlows[address]
+}
+
+// SetSigningFlowForAddress stores or clears the signing choreography label
+// for an address.
+func (cache *SignerCache) SetSigningFlowForAddress(address, flow string) {
+	if cache.SigningFlows == nil {
+		cache.SigningFlows = make(map[string]string)
+	}
+	if flow == "" {
+		delete(cache.SigningFlows, address)
+		return
+	}
+	cache.SigningFlows[address] = flow
+}
+
+// SentryComponentKeyTypeForAddress returns the sentry component key type the
+// signer inventory reported for a guarded account.
+func (cache *SignerCache) SentryComponentKeyTypeForAddress(address string) (string, bool) {
+	if cache.SentryComponentKeyTypes == nil {
+		return "", false
+	}
+	value, ok := cache.SentryComponentKeyTypes[address]
+	return value, ok && value != ""
+}
+
+// SetSentryComponentKeyTypeForAddress stores or clears the sentry component
+// key type for a guarded account.
+func (cache *SignerCache) SetSentryComponentKeyTypeForAddress(address, componentKeyType string) {
+	if cache.SentryComponentKeyTypes == nil {
+		cache.SentryComponentKeyTypes = make(map[string]string)
+	}
+	if componentKeyType == "" {
+		delete(cache.SentryComponentKeyTypes, address)
+		return
+	}
+	cache.SentryComponentKeyTypes[address] = componentKeyType
 }
 
 // SentryPublicKeyForAddress returns the sentry public key embedded in a

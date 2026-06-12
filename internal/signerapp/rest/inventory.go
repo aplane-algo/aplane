@@ -56,6 +56,8 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			keyInfo.IsSpendingAccount = &spending
 		}
 		if keytypes.IsGuardedAccountKeyType(keyType) {
+			keyInfo.SigningFlow = signerapi.SigningFlowSentry1
+			keyInfo.SentryComponentKeyType, _ = keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 			keyInfo.Parameters = guardedAccountParameters(summary.Parameters)
 		}
 		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = keys.CompareTemplateFingerprint(keyType, summary.TemplateFingerprint)
@@ -173,6 +175,10 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			info.Family, info.DisplayName, info.Description = sentryComponentKeyTypeMetadata(keyType)
 			keyTypes = append(keyTypes, info)
 			continue
+		}
+		if componentType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType); ok {
+			info.SigningFlow = signerapi.SigningFlowSentry1
+			info.SentryComponentKeyType = componentType
 		}
 
 		meta, err := algorithm.GetMetadata(keyType)

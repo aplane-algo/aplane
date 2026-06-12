@@ -263,18 +263,31 @@ type StatusResponse struct {
 	ApprovalWaitSeconds int64  `json:"approval_wait_seconds,omitempty"`
 }
 
+// SigningFlowSentry1 names the sentry co-signed component signing
+// choreography: canonical TX-prefixed group transport, role-tagged component
+// messages, exactly one user plus one sentry component signature per target,
+// Sentry Key ID selectors, and assembly via /sign/assemble with arg 0 = user
+// signature and arg 1 = sentry signature. The label is frozen: any change to
+// that choreography mints a new label (sentry2, ...), and unrelated future
+// mechanisms get their own label family. Clients route on this field and must
+// fail fast on flow labels they do not implement; an empty signing_flow means
+// the ordinary /sign path.
+const SigningFlowSentry1 = "sentry1"
+
 // KeyTypeInfo describes an available key type from the /keytypes endpoint.
 type KeyTypeInfo struct {
-	KeyType           string              `json:"key_type"`
-	Family            string              `json:"family"`
-	DisplayName       string              `json:"display_name"`
-	Description       string              `json:"description"`
-	RequiresLogicSig  bool                `json:"requires_logicsig"`
-	MnemonicWordCount int                 `json:"mnemonic_word_count"`
-	MnemonicImport    bool                `json:"mnemonic_import"`
-	MnemonicScheme    string              `json:"mnemonic_scheme"`
-	CreationParams    []CreationParamInfo `json:"creation_params"`
-	RuntimeArgs       []RuntimeArgInfo    `json:"runtime_args"`
+	KeyType                string              `json:"key_type"`
+	Family                 string              `json:"family"`
+	DisplayName            string              `json:"display_name"`
+	Description            string              `json:"description"`
+	RequiresLogicSig       bool                `json:"requires_logicsig"`
+	MnemonicWordCount      int                 `json:"mnemonic_word_count"`
+	MnemonicImport         bool                `json:"mnemonic_import"`
+	MnemonicScheme         string              `json:"mnemonic_scheme"`
+	SigningFlow            string              `json:"signing_flow,omitempty"`              // signing choreography label (e.g. "sentry1"); empty = plain /sign
+	SentryComponentKeyType string              `json:"sentry_component_key_type,omitempty"` // sentry component key type for signing_flow "sentry1"
+	CreationParams         []CreationParamInfo `json:"creation_params"`
+	RuntimeArgs            []RuntimeArgInfo    `json:"runtime_args"`
 }
 
 // CreationParamInfo describes a parameter required to generate a key of a given type.
@@ -335,7 +348,9 @@ type KeyInfo struct {
 	Address                  string            `json:"address"`
 	PublicKeyHex             string            `json:"public_key_hex"`
 	KeyType                  string            `json:"key_type"`
-	LsigSize                 int               `json:"lsig_size,omitempty"` // Total LogicSig size for budget calculation (bytecode + crypto sig)
+	SigningFlow              string            `json:"signing_flow,omitempty"`              // signing choreography label (e.g. "sentry1"); empty = plain /sign
+	SentryComponentKeyType   string            `json:"sentry_component_key_type,omitempty"` // sentry component key type for signing_flow "sentry1"
+	LsigSize                 int               `json:"lsig_size,omitempty"`                 // Total LogicSig size for budget calculation (bytecode + crypto sig)
 	IsGenericLsig            bool              `json:"is_generic_lsig,omitempty"`
 	IsComponentKey           bool              `json:"is_component_key,omitempty"`
 	IsSpendingAccount        *bool             `json:"is_spending_account,omitempty"`
