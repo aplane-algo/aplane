@@ -538,7 +538,10 @@ runtime service. It probes the running AlgoKit LocalNet algod, writes the
 client `localnet` default and signer `localnet` genesis mapping, activates the
 bundled `algokit-localnet` plugin, and can persist a KMD endpoint override into
 the install `apenv.sh` so later `apconsole`/`apshell` plugin processes inherit
-it. The compatibility details are documented in
+it. Installers use the same `aplocalnet --check`/`--apply` surface to offer
+LocalNet setup when a reachable AlgoKit LocalNet is detected, defaulting the
+prompt to no and applying only to the client and/or signer data roots being
+installed. The compatibility details are documented in
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 `apsigner` startup resolves unlock config per identity: identity-scoped `unlock.yaml` takes precedence over the process-global `config.yaml` passphrase command. `appass` accepts `-identity <id>` to target a specific identity and defaults to `"default"`.

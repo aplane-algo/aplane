@@ -8,7 +8,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/aplocalnet"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/theme"
 	"github.com/aplane-algo/aplane/internal/version"
 )
@@ -81,9 +81,20 @@ func main() {
 		return
 	}
 
+	resolvedClientDataDir := resolveClientDataDir(clientDataDir)
+	resolvedSignerDataDir := resolveSignerDataDir(signerDataDir)
+	if applyOnly && (clientTargetSpecified(clientDataDir) || signerTargetSpecified(signerDataDir)) {
+		if !clientTargetSpecified(clientDataDir) {
+			resolvedClientDataDir = ""
+		}
+		if !signerTargetSpecified(signerDataDir) {
+			resolvedSignerDataDir = ""
+		}
+	}
+
 	opts := aplocalnet.NormalizeOptions(aplocalnet.Options{
-		ClientDataDir: resolveClientDataDir(clientDataDir),
-		SignerDataDir: resolveSignerDataDir(signerDataDir),
+		ClientDataDir: resolvedClientDataDir,
+		SignerDataDir: resolvedSignerDataDir,
 		AlgodURL:      algodURL,
 		AlgodToken:    algodToken,
 		KMDURL:        kmdURL,
@@ -127,6 +138,10 @@ func resolveClientDataDir(flagValue string) string {
 	return ""
 }
 
+func clientTargetSpecified(flagValue string) bool {
+	return strings.TrimSpace(flagValue) != "" || strings.TrimSpace(os.Getenv("APCLIENT_DATA")) != ""
+}
+
 func resolveSignerDataDir(flagValue string) string {
 	if strings.TrimSpace(flagValue) != "" {
 		return flagValue
@@ -138,6 +153,10 @@ func resolveSignerDataDir(flagValue string) string {
 		return filepath.Join(home, "aplane", "apsigner")
 	}
 	return ""
+}
+
+func signerTargetSpecified(flagValue string) bool {
+	return strings.TrimSpace(flagValue) != "" || strings.TrimSpace(os.Getenv("APSIGNER_DATA")) != ""
 }
 
 func runCheck(opts aplocalnet.Options) error {
@@ -168,9 +187,15 @@ func runApply(opts aplocalnet.Options) error {
 func printApplyResult(result aplocalnet.ApplyResult) {
 	fmt.Printf("LocalNet reachable at %s\n", result.LocalNet.AlgodURL)
 	fmt.Printf("Genesis hash: %s\n", result.LocalNet.GenesisHash)
-	fmt.Printf("Signer config: %s (%s)\n", changedText(result.SignerConfigChanged), result.SignerConfigPath)
-	fmt.Printf("Client config: %s (%s)\n", changedText(result.ClientConfigChanged), result.ClientConfigPath)
-	fmt.Printf("Plugin activation: %s (%s)\n", changedText(result.PluginActivationChanged), result.PluginConfigPath)
+	if result.SignerConfigPath != "" {
+		fmt.Printf("Signer config: %s (%s)\n", changedText(result.SignerConfigChanged), result.SignerConfigPath)
+	}
+	if result.ClientConfigPath != "" {
+		fmt.Printf("Client config: %s (%s)\n", changedText(result.ClientConfigChanged), result.ClientConfigPath)
+	}
+	if result.PluginConfigPath != "" {
+		fmt.Printf("Plugin activation: %s (%s)\n", changedText(result.PluginActivationChanged), result.PluginConfigPath)
+	}
 	if result.EnvConfigPath != "" {
 		fmt.Printf("Plugin env: %s (%s)\n", changedText(result.EnvConfigChanged), result.EnvConfigPath)
 	}
@@ -324,16 +349,24 @@ func (m model) View() string {
 	}
 	if m.result != nil {
 		sb.WriteString("\n")
-		sb.WriteString(kv("Signer config", changedText(m.result.SignerConfigChanged)+" - "+m.result.SignerConfigPath))
-		sb.WriteString(kv("Client config", changedText(m.result.ClientConfigChanged)+" - "+m.result.ClientConfigPath))
-		sb.WriteString(kv("Plugin config", changedText(m.result.PluginActivationChanged)+" - "+m.result.PluginConfigPath))
+		if m.result.SignerConfigPath != "" {
+			sb.WriteString(kv("Signer config", changedText(m.result.SignerConfigChanged)+" - "+m.result.SignerConfigPath))
+		}
+		if m.result.ClientConfigPath != "" {
+			sb.WriteString(kv("Client config", changedText(m.result.ClientConfigChanged)+" - "+m.result.ClientConfigPath))
+		}
+		if m.result.PluginConfigPath != "" {
+			sb.WriteString(kv("Plugin config", changedText(m.result.PluginActivationChanged)+" - "+m.result.PluginConfigPath))
+		}
 		if m.result.EnvConfigPath != "" {
 			sb.WriteString(kv("Plugin env", changedText(m.result.EnvConfigChanged)+" - "+m.result.EnvConfigPath))
 		}
-		if m.result.PluginAvailable {
-			sb.WriteString(kv("Plugin payload", "installed"))
-		} else {
-			sb.WriteString(kv("Plugin payload", "not found"))
+		if m.result.PluginConfigPath != "" {
+			if m.result.PluginAvailable {
+				sb.WriteString(kv("Plugin payload", "installed"))
+			} else {
+				sb.WriteString(kv("Plugin payload", "not found"))
+			}
 		}
 		for _, warning := range m.result.Warnings {
 			sb.WriteString(warningStyle.Render("Warning: "+warning) + "\n")
@@ -344,7 +377,7 @@ func (m model) View() string {
 	if m.busy {
 		sb.WriteString(helpStyle.Render("q quit"))
 	} else {
-		sb.WriteString(selectedStyle.Render("enter setup"))
+		sb.WriteString(selectedStyle.Render("apply"))
 		sb.WriteString(helpStyle.Render("  r recheck  q quit"))
 	}
 	sb.WriteString("\n")

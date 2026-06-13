@@ -125,15 +125,13 @@ func CheckReachable(ctx context.Context, opts Options) (LocalNetInfo, error) {
 	}, nil
 }
 
-// Apply checks LocalNet reachability, updates apsigner config.yaml, and enables
-// the LocalNet plugin in APCLIENT_DATA/plugins.yaml.
+// Apply checks LocalNet reachability and updates the explicitly supplied target
+// data roots. A non-empty SignerDataDir updates apsigner config.yaml; a
+// non-empty ClientDataDir updates apclient config/plugin/env state.
 func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 	opts = NormalizeOptions(opts)
-	if opts.SignerDataDir == "" {
-		return ApplyResult{}, fmt.Errorf("signer data directory is required")
-	}
-	if opts.ClientDataDir == "" {
-		return ApplyResult{}, fmt.Errorf("client data directory is required")
+	if opts.SignerDataDir == "" && opts.ClientDataDir == "" {
+		return ApplyResult{}, fmt.Errorf("at least one of signer data directory or client data directory is required")
 	}
 
 	info, err := CheckReachable(ctx, opts)
@@ -141,45 +139,48 @@ func Apply(ctx context.Context, opts Options) (ApplyResult, error) {
 		return ApplyResult{}, err
 	}
 
-	signerChanged, signerPath, err := EnsureSignerLocalnetConfig(opts.SignerDataDir, info, opts.AlgodToken)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	clientChanged, clientPath, err := EnsureClientLocalnetConfig(opts.ClientDataDir, info, opts.AlgodToken)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	pluginChanged, pluginPath, err := EnsurePluginActivated(opts.ClientDataDir)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	envChanged, envPath, envWarnings, err := EnsureLocalnetEnvConfig(opts.ClientDataDir, opts.KMDURL)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-
 	result := ApplyResult{
-		LocalNet:                info,
-		SignerConfigPath:        signerPath,
-		SignerConfigChanged:     signerChanged,
-		ClientConfigPath:        clientPath,
-		ClientConfigChanged:     clientChanged,
-		PluginConfigPath:        pluginPath,
-		PluginActivationChanged: pluginChanged,
-		PluginAvailable:         PluginAvailable(opts.ClientDataDir),
-		EnvConfigPath:           envPath,
-		EnvConfigChanged:        envChanged,
+		LocalNet: info,
 	}
-	if !result.PluginAvailable {
-		result.Warnings = append(result.Warnings,
-			fmt.Sprintf("%s is enabled but not installed under %s",
-				PluginName,
-				filepath.Join(opts.ClientDataDir, discovery.AvailableDirName, PluginName),
-			),
-		)
+	if opts.SignerDataDir != "" {
+		signerChanged, signerPath, err := EnsureSignerLocalnetConfig(opts.SignerDataDir, info, opts.AlgodToken)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+		result.SignerConfigPath = signerPath
+		result.SignerConfigChanged = signerChanged
 	}
-	result.Warnings = append(result.Warnings, envWarnings...)
-	result.Warnings = append(result.Warnings, clientConfigWarnings(opts.ClientDataDir)...)
+	if opts.ClientDataDir != "" {
+		clientChanged, clientPath, err := EnsureClientLocalnetConfig(opts.ClientDataDir, info, opts.AlgodToken)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+		pluginChanged, pluginPath, err := EnsurePluginActivated(opts.ClientDataDir)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+		envChanged, envPath, envWarnings, err := EnsureLocalnetEnvConfig(opts.ClientDataDir, opts.KMDURL)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+		result.ClientConfigPath = clientPath
+		result.ClientConfigChanged = clientChanged
+		result.PluginConfigPath = pluginPath
+		result.PluginActivationChanged = pluginChanged
+		result.PluginAvailable = PluginAvailable(opts.ClientDataDir)
+		result.EnvConfigPath = envPath
+		result.EnvConfigChanged = envChanged
+		if !result.PluginAvailable {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("%s is enabled but not installed under %s",
+					PluginName,
+					filepath.Join(opts.ClientDataDir, discovery.AvailableDirName, PluginName),
+				),
+			)
+		}
+		result.Warnings = append(result.Warnings, envWarnings...)
+		result.Warnings = append(result.Warnings, clientConfigWarnings(opts.ClientDataDir)...)
+	}
 	return result, nil
 }
 

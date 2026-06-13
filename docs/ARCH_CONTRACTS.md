@@ -381,7 +381,8 @@ Source: `cmd/aplocalnet/main.go` and `internal/aplocalnet/setup.go`.
 `aplocalnet` is an operator-run setup utility for an already running AlgoKit
 LocalNet. It has a Bubble Tea TUI by default, `--check` for reachability-only
 inspection, and `--apply` for non-interactive mutation. It is not a long-running
-runtime service and does not add HTTP or admin-protocol endpoints.
+runtime service and does not add HTTP or admin-protocol endpoints. The TUI's
+primary action is labeled `apply`.
 
 Data directory resolution:
 
@@ -405,7 +406,13 @@ Endpoint URL inputs are trimmed and trailing slashes are removed.
 `--check` constructs an algod client, reads status and versions, canonicalizes
 the returned genesis hash, prints LocalNet metadata, and writes nothing.
 
-`--apply` and the TUI apply path perform the same reachability check, then:
+`--apply` and the TUI apply path perform the same reachability check. The TUI
+uses the resolved client and signer paths it displays. Non-interactive
+`--apply` targets the explicitly supplied data roots: `--client-data` or
+`APCLIENT_DATA` enables client mutation, and `--signer-data`/`-d` or
+`APSIGNER_DATA` enables signer mutation. If no explicit target source is present,
+`--apply` preserves the historical default-root behavior. At least one target is
+required after resolution. For each selected target it then:
 
 - write signer `config.yaml` with `networks.localnet.algod.server`,
   `networks.localnet.algod.token`, and `networks.localnet.genesis_hash`
@@ -560,6 +567,7 @@ Additional client-state notes:
 - systemd records the selected operator root in `/var/lib/apsigner/install/operator-root`; systemd uninstall removes the operator-side client workspace only when an operator root is explicitly provided or recorded by the installer, and does not guess `$SUDO_USER_HOME/aplane` for deletion
 - existing local-mode installs are probed with the bundled `approbe` helper before binaries are replaced; reachable signer IPC aborts the install, missing/stale/refused IPC is treated as stopped, and unknown probe errors fail closed
 - systemd installs refuse to proceed while `apsigner.service` is `active`, `activating`, `reloading`, or `deactivating`; operators must stop the service before running the installer against that data directory
+- interactive installers probe the default or environment-overridden AlgoKit LocalNet endpoint with `aplocalnet --check` after target data roots and `apenv.sh` exist; when reachable, they ask whether to apply LocalNet setup to the data roots being installed, defaulting to `No`. `APLANE_SKIP_LOCALNET_SETUP=1` suppresses this prompt. Client-only installs apply only the client target, local installs apply client and signer targets, and systemd installs apply the signer target plus the operator client target when one exists.
 - local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
 - `apconsole.yaml` supports `mode: local|remote`, `client_data`, and local-mode `signer_data`; relative paths resolve against the profile file
 - `endpoints.yaml` is the normal client-local endpoint registry for new installs, with `schema_version: 1`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.

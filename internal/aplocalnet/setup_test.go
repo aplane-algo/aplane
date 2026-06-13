@@ -4,7 +4,7 @@
 package aplocalnet
 
 import (
-	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,8 +12,16 @@ import (
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"gopkg.in/yaml.v3"
 )
+
+func TestApplyRequiresAtLeastOneTarget(t *testing.T) {
+	_, err := Apply(context.Background(), Options{})
+	if err == nil || !strings.Contains(err.Error(), "at least one") {
+		t.Fatalf("Apply() error = %v, want target requirement", err)
+	}
+}
 
 func TestNormalizeOptionsUsesAlgodOverrides(t *testing.T) {
 	t.Setenv("APLANE_LOCALNET_ALGOD_URL", " http://localhost:4011/ ")

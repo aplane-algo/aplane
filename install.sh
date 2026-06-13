@@ -127,6 +127,8 @@ EOF
 Environment:
   APLANE_INSTALL_ROOT  Default [path] / [operator-root] when omitted.
   APLANE_BINDIR        Default --systemd --bindir when omitted.
+  APLANE_SKIP_LOCALNET_SETUP=1
+                       Skip the optional LocalNet setup prompt.
 
 Explicit command-line arguments override environment values.
 EOF
@@ -1671,6 +1673,64 @@ repair_macos_binary() {
     fi
 }
 
+LOCALNET_SETUP_APPLIED=0
+
+offer_localnet_setup() {
+    local aplocalnet_bin="$1"
+    local client_data="${2:-}"
+    local signer_data="${3:-}"
+
+    LOCALNET_SETUP_APPLIED=0
+    [ -x "$aplocalnet_bin" ] || return 0
+    [ -n "$client_data" ] || [ -n "$signer_data" ] || return 0
+    [ -r /dev/tty ] || return 0
+    if [ "${APLANE_SKIP_LOCALNET_SETUP:-}" = "1" ]; then
+        echo "Skipping LocalNet setup (APLANE_SKIP_LOCALNET_SETUP=1)."
+        return 0
+    fi
+
+    local check_output
+    if ! check_output="$("$aplocalnet_bin" --check 2>&1)"; then
+        return 0
+    fi
+
+    echo ""
+    echo "=== AlgoKit LocalNet detected ==="
+    printf '%s\n' "$check_output" | while IFS= read -r line; do
+        echo "  $line"
+    done
+    echo ""
+    local target_text=""
+    if [ -n "$client_data" ]; then
+        target_text="client data at $client_data"
+    fi
+    if [ -n "$signer_data" ]; then
+        if [ -n "$target_text" ]; then
+            target_text="$target_text and signer data at $signer_data"
+        else
+            target_text="signer data at $signer_data"
+        fi
+    fi
+    read -rp "Apply LocalNet setup to this install ($target_text)? [y/N] " answer </dev/tty
+    if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+        echo "Skipped LocalNet setup. You can run aplocalnet later."
+        return 0
+    fi
+
+    local args=(--apply)
+    if [ -n "$client_data" ]; then
+        args+=(--client-data "$client_data")
+    fi
+    if [ -n "$signer_data" ]; then
+        args+=(--signer-data "$signer_data")
+    fi
+    if "$aplocalnet_bin" "${args[@]}"; then
+        LOCALNET_SETUP_APPLIED=1
+    else
+        echo "Warning: LocalNet setup failed; continuing installation." >&2
+    fi
+}
+
 # --- Client-only mode ---
 if [ "$CLIENT_MODE" = "1" ]; then
     # Guard: refuse to run as root in client mode
@@ -1804,6 +1864,8 @@ export APCLIENT_DATA="$APCLIENT_DIR"
 ENVEOF
     bash -n "$ENV_SH"
     write_mcp_config "$APCLIENT_DIR" "$BINDIR/apshell"
+
+    offer_localnet_setup "$BINDIR/aplocalnet" "$APCLIENT_DIR" ""
 
     # Offer to add apenv.sh to shell rc
     SHELL_RC="$(detect_shell_rc "$HOME")"
@@ -2060,6 +2122,8 @@ STARTEOF
         check_local_config_consistency "$CONFIG_PATH" "$APCLIENT_CONFIG"
     fi
     write_mcp_config "$APCLIENT_DIR" "$CLIENT_BINDIR/apshell"
+
+    offer_localnet_setup "$CLIENT_BINDIR/aplocalnet" "$APCLIENT_DIR" "$DATA_DIR"
 
     if [ "$NODE_ROLE" = "signer" ]; then
         echo "Token setup uses SSH provisioning; run 'request-token' from apshell after install."
@@ -2398,6 +2462,18 @@ ENVEOF
             echo "Skipped. To set up manually, run:"
             echo "  source $(shell_quote "$ENV_SH")"
         fi
+    fi
+fi
+
+offer_localnet_setup "$BINDIR/aplocalnet" "${APCLIENT_DIR:-}" "$DATA_DIR"
+if [ "$LOCALNET_SETUP_APPLIED" = "1" ]; then
+    if [ -n "${SUDO_USER:-}" ] && [ -n "${APCLIENT_DIR:-}" ]; then
+        chown -R "$SUDO_USER" "$APCLIENT_DIR"
+        [ -n "${ENV_SH:-}" ] && chown "$SUDO_USER" "$ENV_SH"
+    fi
+    if [ -f "$DATA_DIR/config.yaml" ]; then
+        chown "$SVC_USER:$SVC_GROUP" "$DATA_DIR/config.yaml"
+        chmod 640 "$DATA_DIR/config.yaml"
     fi
 fi
 
