@@ -158,8 +158,8 @@ at a subsequent construction):
   the corridor is permanent;
 - optional structural bounds: a per-transaction amount cap, a hard validity
   window, and a fee cap;
-- an optional escape hatch: an activation round and recovery corridor
-  (§7.3).
+- an optional escape hatch: a recovery corridor, with or without an
+  activation round (§7.3).
 
 ### 2.4 Account profiles
 
@@ -357,11 +357,11 @@ construction authority constructs corridors; it does not travel them.
 
 | Compromise / failure | Worst case | Bound |
 |---|---|---|
-| Spend (holder Falcon) key | Attacker initiates transfers | Corridor destinations only; on guarded accounts every transfer still needs an open gate, so rule-violating traffic is stopped at the gate |
+| Spend (holder Falcon) key | Attacker initiates transfers | Corridor destinations only; on guarded accounts every transfer still needs an open gate, so rule-violating traffic is stopped at the gate — except an always-available escape hatch, which the holder key can use without a gate but only to push value to the fixed recovery corridor (§7.3) |
 | Guard (sentry) key | Attacker opens gates | **Opens gates, cannot construct corridors**: no spend occurs without the holder signature, and holder–guard collusion is still confined to the corridor |
 | Gate-rule tampering | Improper gate openings | Same bound as guard-key compromise; rule files are tamper-evident and edits are audited |
 | Governance key | Attacker rekeys the account to an arbitrary program | **Total for that account — this is the one power that constructs corridors.** Hence cold, M-of-N, distinct from the spend key, and absent entirely on immutable accounts |
-| Guard unavailability | Every gate that guard controls is shut (fail closed) | Availability loss only, never integrity loss; bounded by the escape hatch where compiled (§7.3) |
+| Guard unavailability | Every gate that guard controls is shut (fail closed) | Availability loss only, never integrity loss; bounded by the escape hatch where present — a timed hatch unlocks after its activation round, an always-available hatch is open throughout (§7.3) |
 | Account operator coercion | Operator signs transfers under duress | The corridor and gate rules still bound destinations and facts |
 
 The asymmetry between the spend key (travels corridors) and the governance
@@ -370,23 +370,45 @@ drives the key-separation requirement.
 
 ### 7.3 Escape hatch (optional)
 
-An account may compile in an activation round and a recovery corridor: at
-or after the activation round, a transfer path requiring the holder
-signature but **no gate** becomes valid, restricted to the recovery
-corridor (typically a single treasury or successor address). The hatch
-is a passage that exists in the structure from day one but only unlocks at
-a date — it bounds the worst case of permanent guard loss while preserving
-shut-by-default gates before activation. Operational pattern: periodically
-rekey the account to push the activation round forward (a dead-man switch); a
-healthy governance process never lets the hatch unlock. Accounts for which
-frozen-on-guard-loss is the desired posture simply omit the hatch.
+An account may include a recovery corridor: a transfer path requiring the
+holder signature but **no gate**, restricted to a recovery corridor
+(typically a single treasury or successor address). The hatch bounds the
+worst case of permanent guard loss — value can always reach a safe address
+even if the guard is gone — without widening where account-controlled value
+may travel: the recovery corridor is itself a whitelist of one or a few
+fixed destinations.
+
+The hatch comes in two variants, chosen at construction:
+
+- **Timed (dead-man switch).** The hatch is gated by an activation round
+  and stays shut until then, preserving shut-by-default gates before
+  activation. Operational pattern: periodically rekey the account to push
+  the activation round forward; a healthy governance process never lets the
+  hatch unlock. This is the right posture when the gate should hold value in
+  place until guard loss is confirmed.
+- **Always-available.** The hatch carries no activation round and is open
+  from day one: the holder can move value to the recovery corridor at any
+  time without a gate. This trades the timed variant's before-activation
+  gate coverage for a standing, gate-free lane to a safe address — a panic
+  button that no guard outage can disable. Because the recovery corridor is
+  a fixed safe destination, a compromised spend key can use this lane only
+  to push value into that destination, never to an attacker-chosen address;
+  the cost is that the guard can no longer hold value away from the recovery
+  corridor (see §7.2).
+
+The recovery corridor may be realized as a dedicated gate-free destination
+compiled into the account, or as a separate hatch side account — an ungated
+whitelist whose sole destination is the recovery address — that the account
+lists as a corridor destination. Accounts for which frozen-on-guard-loss is
+the desired posture simply omit the hatch.
 
 ### 7.4 Monitoring
 
 Production deployments monitor: gate rejections and gate openings (from the
 sentry's signed audit log), construction rekeys on every account (an on-chain
 watch), spend attempts rejected at the signer, balances below operating
-reserve, and escape-hatch activation proximity. Transactions failing
+reserve, and escape-hatch activity — activation proximity for timed hatches,
+and any use of an always-available hatch. Transactions failing
 program evaluation are rejected at submission and never appear on-chain;
 rejection monitoring is therefore signing-infrastructure logging, not chain
 scanning.
@@ -412,7 +434,7 @@ one architectural element, and this document uses both consistently.
 | Ungated corridor | A non-attested corridor | The corridor of an ungated account: structurally constructed, no guard posted. Used where structural bounds alone are the intended control. |
 | Gate rules | The sentry's policy document | The deterministic, fail-closed policy under which the guard opens gates. |
 | Corridor map | The network graph | The emergent union of every account's corridor. Not stored anywhere. |
-| Escape hatch | Compiled recovery path | An optional passage that unlocks only after an activation round, restricted to a recovery corridor, requiring no gate (§7.3). |
+| Escape hatch | Recovery path | An optional gate-free path restricted to a recovery corridor. Either timed — unlocks only after an activation round — or always-available, open from day one. Realizable as a compiled destination or a hatch side account (§7.3). |
 
 Two sentences carry the security model and recur throughout:
 
