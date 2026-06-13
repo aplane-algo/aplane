@@ -417,11 +417,7 @@ func atomicValidationNotes(plan *AtomicSendPlan) ([]string, error) {
 			if !ok {
 				return nil, fmt.Errorf("total send amount overflows uint64 for %d payments", len(plan.To))
 			}
-			perTxnFee := uint64(signing.DefaultMinFee)
-			if plan.GroupParams.UseFlatFee {
-				perTxnFee = plan.GroupParams.Fee
-			}
-			totalFees, ok := checkedSendTotal(perTxnFee, len(plan.To))
+			totalFees, ok := atomicGroupFees(plan)
 			if !ok {
 				return nil, fmt.Errorf("total fee overflows uint64 for %d payments", len(plan.To))
 			}
@@ -487,6 +483,30 @@ func atomicValidationNotes(plan *AtomicSendPlan) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("unsupported atomic send mode: %s", plan.Mode)
 	}
+}
+
+// atomicGroupFees sums the fees the group will actually pay. The prepared
+// transactions are the source of truth: when UseFlatFee is off the engine
+// derives each fee from suggested params (per-byte, floored at the min fee),
+// which can exceed the flat reconstruction below. The reconstruction remains
+// as a fallback for plans validated without a prepared group.
+func atomicGroupFees(plan *AtomicSendPlan) (uint64, bool) {
+	if plan.Prep != nil && plan.Prep.enginePrep != nil && len(plan.Prep.enginePrep.Transactions) > 0 {
+		var total uint64
+		for _, txn := range plan.Prep.enginePrep.Transactions {
+			fee := uint64(txn.Fee)
+			if total+fee < total {
+				return 0, false
+			}
+			total += fee
+		}
+		return total, true
+	}
+	perTxnFee := uint64(signing.DefaultMinFee)
+	if plan.GroupParams.UseFlatFee {
+		perTxnFee = plan.GroupParams.Fee
+	}
+	return checkedSendTotal(perTxnFee, len(plan.To))
 }
 
 func checkedSendTotal(amount uint64, count int) (uint64, bool) {

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
+
 	"github.com/aplane-algo/aplane/internal/asa"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -208,6 +210,48 @@ func TestAtomicValidationNotesIncludesFees(t *testing.T) {
 	}
 	if _, err := atomicValidationNotes(plan); err != nil {
 		t.Fatalf("atomicValidationNotes() error = %v, want success once fees are covered", err)
+	}
+}
+
+// TestAtomicValidationNotesUsesPreparedFees pins that the prepared
+// transactions' actual fees are the source of truth over the GroupParams
+// reconstruction: when the engine computed higher per-byte fees from suggested
+// params (here 2000 each, 15.006 total), a balance that would clear the
+// min-fee reconstruction (15.004 > 15.003) is still rejected.
+func TestAtomicValidationNotesUsesPreparedFees(t *testing.T) {
+	prep := &engine.AtomicPrepResult{
+		Transactions: make([]types.Transaction, 3),
+	}
+	for i := range prep.Transactions {
+		prep.Transactions[i].Fee = 2000
+	}
+
+	plan := &AtomicSendPlan{
+		Mode:   SendModeAtomicToMultiple,
+		Amount: asa.Amount{Raw: 5_000_000},
+		To:     []string{"bob", "carol", "dave"},
+		Prep:   preparedAtomicGroupFromEngine(prep),
+		Checks: []BalanceCheckDetails{
+			{SufficientFunds: true, SenderBalance: 15.004},
+			{SufficientFunds: true, SenderBalance: 15.004},
+			{SufficientFunds: true, SenderBalance: 15.004},
+		},
+	}
+
+	_, err := atomicValidationNotes(plan)
+	if err == nil {
+		t.Fatal("atomicValidationNotes() error = nil, want prepared-fee insufficiency")
+	}
+	if !strings.Contains(err.Error(), "insufficient balance") {
+		t.Fatalf("atomicValidationNotes() error = %v, want insufficient balance", err)
+	}
+
+	// Above the prepared-fee total (15.006), it passes.
+	for i := range plan.Checks {
+		plan.Checks[i].SenderBalance = 15.007
+	}
+	if _, err := atomicValidationNotes(plan); err != nil {
+		t.Fatalf("atomicValidationNotes() error = %v, want success once prepared fees are covered", err)
 	}
 }
 
