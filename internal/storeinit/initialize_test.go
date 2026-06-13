@@ -10,12 +10,18 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/defaultkeytypes"
+	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/lsig"
 )
 
 func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
+	lsig.RegisterClient()
+
 	dataDir := t.TempDir()
 	paths := storepaths.NewPaths(dataDir)
 	identityID := "default"
@@ -61,6 +67,20 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if role.Role != noderole.RoleSigner {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSigner)
 	}
+	rec, ok, err := keytypestate.Get(paths, identityID, defaultkeytypes.Falcon1024WhitelistKeyType)
+	if err != nil {
+		t.Fatalf("keytypestate.Get(default key type) error = %v", err)
+	}
+	if !ok {
+		t.Fatalf("default key type %s state missing", defaultkeytypes.Falcon1024WhitelistKeyType)
+	}
+	if rec.Source != keytypestate.SourceYAMLComposed || rec.State != keytypestate.StateEnabled {
+		t.Fatalf("default key type state = (%s, %s), want (%s, %s)",
+			rec.Source, rec.State, keytypestate.SourceYAMLComposed, keytypestate.StateEnabled)
+	}
+	if !templatestore.TemplateExistsForPaths(paths, identityID, defaultkeytypes.Falcon1024WhitelistKeyType, templatestore.TemplateTypeComposed) {
+		t.Fatalf("default key type template %s missing", defaultkeytypes.Falcon1024WhitelistKeyType)
+	}
 }
 
 func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
@@ -96,6 +116,13 @@ func TestInitializeCreatesExplicitSentryNodeRole(t *testing.T) {
 	}
 	if _, err := policy.LoadVerifiedSentryConfigWithMasterKey(dataDir, identityID, masterKey); err != nil {
 		t.Fatalf("sentry policy integrity baseline did not verify: %v", err)
+	}
+	rec, ok, err := keytypestate.Get(paths, identityID, defaultkeytypes.Falcon1024WhitelistKeyType)
+	if err != nil {
+		t.Fatalf("keytypestate.Get(default key type) error = %v", err)
+	}
+	if ok {
+		t.Fatalf("sentry initialization installed signer default key type: %+v", rec)
 	}
 }
 

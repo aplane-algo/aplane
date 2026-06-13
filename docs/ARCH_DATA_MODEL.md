@@ -355,8 +355,10 @@ Identity key type records are plaintext because they are not key material:
 
 Installed templates are encrypted adjacent `.template` files under the same
 `keytypes/` directory. Library templates under `library/templates/` are
-plaintext install sources only; they are not active key types until installed
-or enabled for an identity.
+plaintext install sources only; they are not active key types by presence
+alone. New signer identities initialize with `aplane.falcon1024-whitelist.v1`
+installed and enabled from the bundled library source; otherwise YAML templates
+become active only after identity-local installation and enablement.
 
 ### Policy
 

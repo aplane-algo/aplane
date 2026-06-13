@@ -326,6 +326,8 @@ func TestBuildIdentityRuntimeRejectsSecondaryIdentityWithoutToken(t *testing.T) 
 }
 
 func TestBuildIdentityRuntimeLoadsStoredPolicy(t *testing.T) {
+	RegisterProviders()
+
 	root := t.TempDir()
 	server := &Signer{
 		registry: identity.NewRegistry(),
@@ -387,6 +389,8 @@ func TestBuildIdentityRuntimeLoadsStoredPolicy(t *testing.T) {
 }
 
 func TestBuildIdentityRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
+	RegisterProviders()
+
 	root := t.TempDir()
 	server := &Signer{
 		registry: identity.NewRegistry(),
@@ -429,6 +433,8 @@ func TestBuildIdentityRuntimeRejectsUnsignedPolicyOnUnlock(t *testing.T) {
 }
 
 func TestBuildIdentityRuntimeRejectsTamperedNodeRoleOnUnlock(t *testing.T) {
+	RegisterProviders()
+
 	root := t.TempDir()
 	server := &Signer{
 		registry: identity.NewRegistry(),
@@ -469,6 +475,8 @@ func TestBuildIdentityRuntimeRejectsTamperedNodeRoleOnUnlock(t *testing.T) {
 }
 
 func TestReloadRejectsTamperedPolicyAndKeepsLastKnownGood(t *testing.T) {
+	RegisterProviders()
+
 	root := t.TempDir()
 	server := &Signer{
 		registry: identity.NewRegistry(),

@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/policyeditor"
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/lsig"
 )
 
 func TestRunYAMLPrintsVerifiedPolicyOnly(t *testing.T) {
@@ -313,6 +314,8 @@ func initializedAppolicyStore(t *testing.T) (string, string) {
 
 func initializedAppolicyStoreWithRole(t *testing.T, role noderole.Role) (string, string) {
 	t.Helper()
+	lsig.RegisterClient()
+
 	dataDir := t.TempDir()
 	passphrase := "appolicy-test-passphrase"
 	_, err := storeinit.Initialize([]byte(passphrase), storeinit.Options{

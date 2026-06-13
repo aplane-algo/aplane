@@ -63,7 +63,7 @@ aplane/
 │   ├── ecdsak1/              # ECDSA k=1 LogicSig provider
 │   ├── generictemplate/      # YAML-backed generic LogicSig providers
 │   └── composeddsa/          # DSA + TEAL-suffix composition helpers
-├── library/templates/        # Optional KeyType Library YAML source
+├── library/templates/        # KeyType Library YAML sources
 ├── test/integration/         # End-to-end integration tests
 ├── examples/                 # Example scripts and external plugins
 ├── analysis/                 # Security analyzers
@@ -475,5 +475,5 @@ workflows and do not need this capability.
 - Plugin system uses external processes communicating via JSON-RPC
 - Cross-compilation targets Linux ARM64/AMD64 and Darwin ARM64/AMD64
 - Linux CGO binaries use musl static linking; macOS binaries are dynamically linked
-- Optional KeyType Library YAML lives under `library/templates/` in the repo or `<APSIGNER_DATA>/library/templates/`; installed optional templates are encrypted under `identities/<identity>/keytypes/` with adjacent state records, and removed keys/templates are archived under `identities/<identity>/deleted/`
+- KeyType Library YAML sources live under `library/templates/` in the repo or `<APSIGNER_DATA>/library/templates/`; installed templates are encrypted under `identities/<identity>/keytypes/` with adjacent state records, new signer identities start with the Falcon whitelist template installed, and removed keys/templates are archived under `identities/<identity>/deleted/`
 - See [USER_CONFIG.md](USER_CONFIG.md) for configuration reference

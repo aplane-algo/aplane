@@ -102,7 +102,7 @@ Built-in key types:
 - `falcon1024_ed25519`
 - `ecdsak1`
 - optional generic templates like `aplane.timed-whitelist.v1`, `aplane.whitelist.v1`, and `aplane.htlc.v1`
-- optional Falcon-composed templates such as `aplane.falcon1024-whitelist.v1`, `aplane.falcon1024-hashlock.v1`, and `aplane.falcon1024-timelock.v1`
+- Falcon-composed templates such as default-installed `aplane.falcon1024-whitelist.v1` and optional `aplane.falcon1024-hashlock.v1` / `aplane.falcon1024-timelock.v1`
 
 Creation parameters are part of the provider boundary. `internal/lsigprovider`
 owns shared parameter metadata and normalization helpers used by UI adapters,
@@ -145,10 +145,11 @@ that unified registry.
 Generic LogicSig templates are TEAL-only providers. `internal/genericlsig`
 provides the template-oriented filtered view over the same unified registry.
 
-Optional template YAML files under top-level `library/templates/` are install
-sources, not active key types. They become active only after being installed
-into an identity as encrypted `.template` files and then reloaded/unlocked by
-the signer.
+Template YAML files under top-level `library/templates/` are install sources,
+not active key types by presence alone. New signer identities initialize with
+`aplane.falcon1024-whitelist.v1` installed and enabled as an encrypted
+identity-local `.template`; other templates and existing identities become
+active only after installation and reload/unlock by the signer.
 
 ### Off-curve LogicSig salting
 
@@ -252,6 +253,7 @@ Optional YAML templates have a source-library lifecycle:
   `<APSIGNER_DATA>/library/templates/`,
 - `internal/storepaths.Paths.TemplateLibraryDir()` is the source of truth for the signer-data library path,
 - library YAML files are reference material only; they are not active key types by being present on disk,
+- new signer-store initialization installs the bundled `aplane.falcon1024-whitelist.v1` YAML into the identity store by default,
 - `apadmin` browses the signer-data library over the admin IPC protocol,
 - installing a library template parses and encrypts the YAML into the identity-scoped template store under
   `identities/<identity>/keytypes/<key_type>.template` and writes an enabled state record,
@@ -385,10 +387,10 @@ Generic templates:
 
 ## Template Lifecycle
 
-Optional templates follow this lifecycle:
+YAML templates follow this lifecycle:
 
 1. plaintext YAML exists in `library/templates/` or another supplied path
-2. admin installs it with `apstore template import`
+2. new signer-store initialization or an admin installs it with `apstore template import`
 3. installation encrypts the YAML into `keytypes/<key_type>.template` and writes an enabled state record
 4. reload/unlock registers enabled installed templates before key scanning
 5. disable sets the state record to `disabled` and keeps the encrypted `.template`

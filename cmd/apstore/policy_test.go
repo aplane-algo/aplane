@@ -142,6 +142,8 @@ func withPolicyCommandStore(t *testing.T, fn func(root string, passphrase []byte
 
 func withPolicyCommandStoreWithRole(t *testing.T, role noderole.Role, fn func(root string, passphrase []byte)) {
 	t.Helper()
+	RegisterProviders()
+
 	oldDataDirectory := dataDirectory
 	oldConfig := config
 	oldReader := stdinReader

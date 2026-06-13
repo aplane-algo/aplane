@@ -104,10 +104,11 @@ the importer recompiles/derives it with the key's stored creation parameters and
 requires the result to reproduce the key's stored LogicSig bytecode before the
 archive is admitted.
 
-Shipped optional templates live under the top-level `library/templates/`
+Shipped YAML template sources live under the top-level `library/templates/`
 directory and are installed into an identity before use. Source-tree YAML files
 are install sources only; the runtime form is the encrypted identity-local
-`.template` file plus key type state record.
+`.template` file plus key type state record. New signer identities install and
+enable `aplane.falcon1024-whitelist.v1` during initialization.
 
 Go-defined key types:
 
@@ -135,7 +136,7 @@ Opt-in state records are plaintext identity-scoped metadata under
 creation, not the ability to sign with keys that already exist. Mnemonic import
 is additionally gated by the provider's explicit mnemonic-import capability.
 Only `ed25519` and `aplane.falcon1024.v1` allow user-entered mnemonic import;
-optional templates and library-visible compiled providers do not. `apstore restore` creates or enables this state record
+YAML templates and library-visible compiled providers do not. `apstore restore` creates or enables this state record
 idempotently when restoring a key for a library-visible compiled provider.
 
 Installed YAML templates use the same state-record model. The encrypted
@@ -166,23 +167,25 @@ Avoid using "inactive" as a durable technical term. Prefer precise phrases
 such as "library-visible but not enabled for this identity" or
 "installed but disabled for this identity".
 
-User-loaded optional templates, if installed:
+Bundled YAML templates, if installed:
 
 | Library key type | Behavior category | Install command | Runtime storage |
 |---|---|---|---|
 | `aplane.timed-whitelist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.timed-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.timed-whitelist.v1.{json,template}` |
 | `aplane.whitelist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.whitelist.v1.{json,template}` |
 | `aplane.htlc.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.htlc.v1.yaml` | `identities/<identity>/keytypes/aplane.htlc.v1.{json,template}` |
-| `aplane.falcon1024-whitelist.v1` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-whitelist.v1.{json,template}` |
+| `aplane.falcon1024-whitelist.v1` | Composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-whitelist.v1.{json,template}` |
 | `aplane.falcon1024-hashlock.v1` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-hashlock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-hashlock.v1.{json,template}` |
 | `aplane.falcon1024-timelock.v1` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
 
-These template files are optional imports, not product built-ins. They do not
+These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed into
 the active signer identity, enabled for that identity, and loaded by
-`apsigner`. The `apadmin` KeyType Library lists plaintext library entries and
-also reports installed identity templates that do not have a matching library
-YAML source; those installed-only rows are derived from encrypted `.template`
+`apsigner`. New signer identities start with `aplane.falcon1024-whitelist.v1`
+already installed and enabled; sentry-role identities do not. The `apadmin`
+KeyType Library lists plaintext library entries and also reports installed
+identity templates that do not have a matching library YAML source; those
+installed-only rows are derived from encrypted `.template`
 filenames and may not have parameter metadata.
 
 ## Identity Filesystem State
@@ -349,11 +352,12 @@ version: 1
 ```
 
 Files in the top-level `library/templates/` directory are install sources, not
-active key types. Installing one of these YAML entries through
-`apstore template import` or the authenticated
-KeyType Library flow writes an encrypted `.template` file and adjacent enabled
-state record under the target identity's `keytypes/` directory. Enabled
-installed templates are registered on that identity's reload/unlock path.
+active key types by presence alone. Installing one of these YAML entries through
+new signer-store initialization, `apstore template import`, or the
+authenticated KeyType Library flow writes an encrypted `.template` file and
+adjacent enabled state record under the target identity's `keytypes/`
+directory. Enabled installed templates are registered on that identity's
+reload/unlock path.
 
 Disabling an installed YAML template is different from removing it. Disable
 writes `state:"disabled"` into `identities/<identity>/keytypes/<key_type>.json`

@@ -391,9 +391,10 @@ When designing or reviewing a LogicSig TEAL policy:
 
 ## Bundled LogicSigs In APlane
 
-APlane bundles both signer-gated LogicSig providers and optional template
-library entries. Users should understand the security model of each one before
-funding or relying on it.
+APlane bundles both signer-gated LogicSig providers and template library
+entries. New signer stores install the Falcon whitelist template by default;
+users should understand the security model of each one before funding or
+relying on it.
 
 ### Signer-Gated Compiled Providers
 

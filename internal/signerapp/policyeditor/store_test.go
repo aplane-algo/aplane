@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storeinit"
 	"github.com/aplane-algo/aplane/internal/storelock"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/lsig"
 )
 
 func TestOfflineStoreLoadVerifiesPolicy(t *testing.T) {
@@ -284,6 +285,8 @@ func initializedPolicyStore(t *testing.T) (string, []byte) {
 
 func initializedPolicyStoreWithRole(t *testing.T, role noderole.Role) (string, []byte) {
 	t.Helper()
+	lsig.RegisterClient()
+
 	dataDir := t.TempDir()
 	passphrase := []byte("policyeditor-passphrase")
 	_, err := storeinit.Initialize(passphrase, storeinit.Options{

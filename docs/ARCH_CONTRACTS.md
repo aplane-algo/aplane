@@ -638,12 +638,16 @@ not a signing secret and is not an authorization token.
 
 There are two plaintext library locations with the same relative layout:
 
-- repository and release artifacts carry optional template YAML under top-level `library/templates/`,
+- repository and release artifacts carry template YAML sources under top-level `library/templates/`,
 - signer installations may carry a copy under `<APSIGNER_DATA>/library/templates/`.
 
 The signer-data path is defined by `internal/storepaths.Paths.TemplateLibraryDir()`. Release installers,
 installer re-runs, and test setup flows may refresh this directory from the repository or packaged copy. Files in this
 directory are reference material and are not active key types by themselves.
+New signer-store initialization installs and enables
+`aplane.falcon1024-whitelist.v1` from the bundled library source into the
+identity-local encrypted template store; sentry-role initialization skips this
+signer account key type.
 
 `apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the
 admin protocol and also includes installed identity templates that no longer have a matching plaintext
@@ -668,7 +672,9 @@ runtime source for key generation and key-type discovery; the installed template
 already-created keys. Template enabled state changes discovery and generation only; it is not a
 signing authorization gate for existing key files. The low-level template store
 persists encrypted template bytes only; install/admin code owns the paired key
-type state mutation. Activating a
+type state mutation. Store initialization uses the same encrypted template
+store and enabled state-record model for default YAML key types, but runs before
+the identity has a live reload surface. Activating a
 `compiled_provider` library entry uses `activate_key_type` and writes only the
 identity state record because the executable provider is already registered in
 the binary. Calling `activate_key_type` for an installed YAML template sets its

@@ -1,7 +1,7 @@
 # Key Type And Template Management
 
-This guide explains how operators manage optional APlane key types. It focuses
-on runtime use, not on writing new provider code or authoring TEAL policies.
+This guide explains how operators manage APlane key types. It focuses on
+runtime use, not on writing new provider code or authoring TEAL policies.
 
 For development details, see [DEV_KEYTYPES.md](DEV_KEYTYPES.md). For LogicSig
 policy design, see [USER_LOGICSIG_GUIDELINES.md](USER_LOGICSIG_GUIDELINES.md).
@@ -25,6 +25,9 @@ them.
 
 YAML templates are different: a library YAML file is only an install source. It
 does not become an active key type until it is imported into an identity store.
+New signer stores are initialized with `aplane.falcon1024-whitelist.v1`
+already installed and enabled from the bundled library source. Existing stores
+can import that template manually if they were created before this default.
 
 ## Operator Mental Model
 
@@ -138,6 +141,10 @@ apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.
 
 Import encrypts the YAML into the identity's keystore and enables the key type
 for that identity.
+
+Fresh signer identities already include `aplane.falcon1024-whitelist.v1`;
+`template import` remains the path for existing identities that do not have it
+and for the other bundled templates.
 
 Generated LogicSig keys store their salted bytecode and selected off-curve
 salt counter in the `.key` file. They also store the signing-argument schema

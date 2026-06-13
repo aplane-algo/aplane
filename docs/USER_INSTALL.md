@@ -88,7 +88,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   ├── bin/               # apsigner, apadmin, apapprover, apstore, appolicy, appass, approbe, and other signer-side tools
 │   ├── config.yaml        # Signer config (ports, SSH, algod)
 │   ├── library/           # KeyType Library install sources
-│   │   └── templates/     # Optional template YAML files for apstore imports
+│   │   └── templates/     # Template YAML files for defaults and apstore imports
 │   ├── .ssh/              # SSH host key and legacy/global authorized_keys
 │   └── identities/default/ # Keystore (created during install)
 │       ├── .keystore
@@ -431,7 +431,7 @@ aplane/
 ├── installer/      # systemd files, sudoers template, and installer helper scripts
 │   └── scripts/    # systemd, environment-audit, and MCP config helpers
 ├── library/
-│   └── templates/  # Optional template library copied into $APSIGNER_DATA/library/templates
+│   └── templates/  # Template library copied into $APSIGNER_DATA/library/templates
 ├── plugins.available/ # Bundled plugin catalog
 ├── install.sh      # Installer
 └── uninstall.sh    # State-preserving uninstaller

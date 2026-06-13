@@ -1,11 +1,13 @@
 # Template Library
 
-This directory contains optional LogicSig templates that users can import into a
-signer keystore with `apstore`.
+This directory contains LogicSig templates that users can import into a signer
+keystore with `apstore`.
 
-Templates in this directory are not built into APlane and are not active by
-default. After importing a template, unlock or reload `apsigner` before using
-the new key type.
+Templates in this directory are plaintext install sources. Presence here does
+not make a key type active by itself. New signer stores automatically install
+and enable `aplane.falcon1024-whitelist.v1`; existing stores and the other
+templates use the normal import flow. After importing a template, unlock or
+reload `apsigner` before using the new key type.
 
 ## Install
 
@@ -20,9 +22,14 @@ apstore template import library/templates/aplane.htlc.v1.yaml
 Falcon-1024 composed templates combine a Falcon signature with additional TEAL checks:
 
 ```bash
-apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
 apstore template import library/templates/aplane.falcon1024-hashlock.v1.yaml
 apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml
+```
+
+For existing stores that were initialized before the default was added:
+
+```bash
+apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
 ```
 
 ## Generic Templates

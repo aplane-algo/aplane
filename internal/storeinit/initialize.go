@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/defaultkeytypes"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
@@ -98,6 +99,10 @@ func Initialize(passphrase []byte, opts Options) (Result, error) {
 	if policyErr != nil {
 		crypto.ZeroBytes(masterKey)
 		return result, fmt.Errorf("failed to create policy integrity baseline: %w", policyErr)
+	}
+	if err := defaultkeytypes.InstallForNewIdentity(opts.Paths, opts.IdentityID, role, masterKey, opts.Logf); err != nil {
+		crypto.ZeroBytes(masterKey)
+		return result, fmt.Errorf("failed to install default key types: %w", err)
 	}
 	crypto.ZeroBytes(masterKey)
 
