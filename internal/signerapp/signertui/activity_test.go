@@ -185,15 +185,21 @@ func TestLocalIdleTickIgnoresStaleTickAfterNewerKeystroke(t *testing.T) {
 	}
 }
 
-func TestLocalIdleDisconnectedMsgMarksDisconnectedWithoutLocking(t *testing.T) {
+func TestLocalIdleDisconnectedMsgShowsAuthAndReconnectsWithoutLocking(t *testing.T) {
 	m := activityReadyModel()
 	m.activity.lastInputAt = time.Now()
 	m.activity.idleDisconnectSent = true
 
-	got, _ := updateForTest(t, m, localIdleDisconnectedMsg{Reason: localIdleDisconnectReason})
+	got, cmd := updateForTest(t, m, localIdleDisconnectedMsg{Reason: localIdleDisconnectReason})
 
-	if got.connectionState != ConnectionDisconnected {
-		t.Fatalf("connectionState = %v, want disconnected", got.connectionState)
+	if got.connectionState != ConnectionConnecting {
+		t.Fatalf("connectionState = %v, want connecting", got.connectionState)
+	}
+	if got.viewState != ViewAuth {
+		t.Fatalf("viewState = %v, want ViewAuth", got.viewState)
+	}
+	if got.auth.passphraseInput != "" || got.auth.passphraseError != "" || got.auth.loggingIn {
+		t.Fatalf("auth state = %+v, want fresh login prompt", got.auth)
 	}
 	if got.signerLocked {
 		t.Fatal("signerLocked = true, want unchanged false")
@@ -205,16 +211,8 @@ func TestLocalIdleDisconnectedMsgMarksDisconnectedWithoutLocking(t *testing.T) {
 		t.Fatalf("lastWarning = %q, want %q", got.lastWarning, localIdleDisconnectReason)
 	}
 	assertActivityStateCleared(t, got)
-
-	reconnecting, cmd := updateForTest(t, got, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
-	if reconnecting.lastWarning != "" {
-		t.Fatalf("lastWarning after reconnect key = %q, want cleared", reconnecting.lastWarning)
-	}
-	if reconnecting.connectionState != ConnectionConnecting {
-		t.Fatalf("connectionState after reconnect key = %v, want connecting", reconnecting.connectionState)
-	}
 	if cmd == nil {
-		t.Fatal("reconnect key cmd = nil, want reconnect command")
+		t.Fatal("local idle disconnect cmd = nil, want automatic reconnect command")
 	}
 }
 

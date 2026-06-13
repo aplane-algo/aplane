@@ -94,8 +94,11 @@ arms a local idle timer from the latest local activity baseline. If the UI is
 still idle when that timer fires, it disconnects the admin session. Any signer
 lock that follows that disconnect is decided by the signer-owned
 `lock_on_disconnect` setting. Manual lock actions are separate explicit
-`lock_identity` requests. Disconnect, reconnect, reauthentication, and server
-lock notifications clear pending activity and idle state.
+`lock_identity` requests. After a local idle disconnect, `apadmin` immediately
+returns to the authentication view and starts a fresh pre-auth reconnect so the
+operator sees the login screen instead of the stale authenticated view.
+Disconnect, reconnect, reauthentication, and server lock notifications clear
+pending activity and idle state.
 
 ## Error Handling
 

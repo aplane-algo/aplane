@@ -130,11 +130,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearRestorePassphrase()
 		m.resetActivityState()
 		m.manualLock.pending = false
-		m.connectionState = ConnectionDisconnected
+		m.connectionState = ConnectionConnecting
 		m.signerStatusKnown = false
+		m.viewState = ViewAuth
+		m.auth.passphraseInput = ""
+		m.auth.passphraseError = ""
+		m.auth.loggingIn = false
 		m.lastError = ""
 		m.setPersistentWarning(msg.Reason)
-		return m, nil
+		return m, m.reconnectCmd()
 
 	case SignerStatusMsg:
 		if msg.Locked {
