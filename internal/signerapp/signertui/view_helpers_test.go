@@ -209,6 +209,43 @@ func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 	}
 }
 
+func TestParameterModalMarksOnlyOptionalParameters(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType:     "aplane.whitelist.v1",
+		DisplayName: "Whitelist",
+		CreationParams: []protocol.TemplateParamInfo{
+			{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true},
+			{Name: "allowed_optin_assets", Label: "Approved Opt-In Assets", Type: "uint64[]", Required: false},
+		},
+	}})
+
+	m := Model{
+		width:  100,
+		height: 40,
+		forms: formsState{
+			generateFocus:         1,
+			genericLSigParams:     map[string]string{"recipients": "", "allowed_optin_assets": ""},
+			genericLSigParamModes: map[string]int{},
+			genericLSigParamScroll: map[string]int{
+				"recipients":           0,
+				"allowed_optin_assets": 0,
+			},
+		},
+	}
+
+	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.whitelist.v1", "GENERATE", ""))
+	if !strings.Contains(rendered, "Recipients:") {
+		t.Fatalf("required label missing:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "Recipients (required):") {
+		t.Fatalf("required marker should not be shown:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "Approved Opt-In Assets (optional):") {
+		t.Fatalf("optional marker missing:\n%s", rendered)
+	}
+}
+
 func TestBytesParameterFieldUsesDeclaredHexLength(t *testing.T) {
 	if got := getFieldWidthForType("bytes", 64); got != 66 {
 		t.Fatalf("bytes field width = %d, want 66", got)

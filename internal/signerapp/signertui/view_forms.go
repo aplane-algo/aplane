@@ -284,6 +284,7 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		}
 
 		// Label with focus indicator
+		labelText = parameterRequirementLabel(labelText, paramDef.Required)
 		label := "  " + labelText + ":"
 		if isFieldFocused {
 			label = "> " + labelText + ":"
@@ -414,6 +415,13 @@ func optionFieldWidth(options []string) int {
 		width = 20
 	}
 	return width + 4
+}
+
+func parameterRequirementLabel(label string, required bool) string {
+	if required {
+		return label
+	}
+	return label + " (optional)"
 }
 
 func fixedWidthFieldLine(line string, width int) string {
