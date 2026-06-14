@@ -2,6 +2,7 @@
 
 **A LogicSig + Rekey Primitive for Provable Transfer Constraints**
 
+![Constrained network diagram](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/constrained.png)
 
 ## 1. The Goal
 
@@ -67,8 +68,6 @@ there is no adjacency table, route map, or registry, and no
 privileged component mediates a transfer. Each node enforces its own outbound
 edges, and multi-hop paths exist only where consecutive operators have
 constructed consecutive edges.
-
-![Constrained network diagram](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/constrained.png)
 
 ## 4. Construction: the rekeyed formation
 
