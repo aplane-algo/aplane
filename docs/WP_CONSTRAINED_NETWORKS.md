@@ -2,19 +2,24 @@
 
 **A LogicSig + Rekey Primitive for Provable Transfer Constraints**
 
-![Constrained network diagram](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/constrained.png)
+![Constrained network diagram](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/mesh.png)
 
-## 1. The Goal
+## 1. Overview
 
-Suppose you want to restrict token movement to a set of approved routes:
-"corridors" whose endpoint accounts are predetermined and fixed. This is
-especially useful if an account key is leaked or stolen, or if a rogue agent
-tries to send to an incorrect destination address.
+Suppose you want to restrict token movement to a set of approved routes ("corridors")
+whose endpoint accounts are predetermined.
+Such constraints are useful in regulated payment networks, corporate treasury systems,
+custodial transfer meshes, and other environments where value remains within a controlled
+transfer graph.
+
+Cryptographically locking funds to that graph provides a strong security guarantee. Even if keys are leaked or stolen,
+or if software defects cause an agent to attempt a transfer to an unintended destination, value can move only along
+pre-set paths.
 
 You can do this on Algorand using only standard protocol-level capabilities:
 LogicSigs and rekeying.
-Unlike on many other chains, no stateful apps or application state
-is necessary to do this. This results in a much smaller attack surface.
+Unlike on many other chains, no stateful application state
+is necessary to do this. This results in a smaller attack surface.
 
 In a nutshell, the LogicSig handles the corridor specification, while rekeying
 allows you to change the graph without changing account addresses.
