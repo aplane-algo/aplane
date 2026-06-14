@@ -5,16 +5,9 @@ package apshellapp
 
 import (
 	"context"
-	"fmt"
-	"slices"
-	"sort"
-	"strings"
 
 	"github.com/aplane-algo/aplane/internal/appresult"
-	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
 // GenerateKeyRequest captures parsed generate-command inputs.
@@ -70,23 +63,12 @@ func (a *App) KeyTypes(ctx context.Context) (*KeyTypesCommandResult, error) {
 	return &KeyTypesCommandResult{KeyTypes: keyTypes}, nil
 }
 
-// GenerateKey resolves address-list creation params and generates a signer key.
+// GenerateKey generates a signer key. Key-type canonicalization and address-list
+// creation-param resolution (e.g. a whitelist's "recipients") are performed by
+// the engine (engine.GenerateKey) so every entry point — REPL, JS, MCP —
+// behaves identically.
 func (a *App) GenerateKey(ctx context.Context, req GenerateKeyRequest) (*GenerateKeyCommandResult, error) {
-	// Resolve an elided default-publisher key type (e.g. "falcon1024-whitelist.v1")
-	// to its canonical form before any lookup or storage.
-	req.KeyType = keytypefmt.Canonicalize(req.KeyType)
-
-	keyTypes, err := a.eng.ListKeyTypes(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	params, err := ExpandGenerateAddressListParams(req.KeyType, req.Params, keyTypes, a.eng.NewAddressResolver())
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := a.eng.GenerateKey(ctx, req.KeyType, params)
+	result, err := a.eng.GenerateKey(ctx, req.KeyType, req.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -109,70 +91,4 @@ func (a *App) ResolveDeleteKeyTarget(_ context.Context, req DeleteKeyRequest) (*
 		return nil, err
 	}
 	return &DeleteKeyTarget{Address: address}, nil
-}
-
-// ExpandGenerateAddressListParams resolves address[] creation params through the address resolver.
-func ExpandGenerateAddressListParams(
-	keyType string,
-	params map[string]string,
-	keyTypes []signerapi.KeyTypeInfo,
-	resolver cmdspec.AddressListResolver,
-) (map[string]string, error) {
-	if len(params) == 0 {
-		return params, nil
-	}
-
-	addressListParams, err := addressListCreationParams(keyType, keyTypes)
-	if err != nil {
-		return nil, err
-	}
-	if len(addressListParams) == 0 {
-		return params, nil
-	}
-
-	expanded := make(map[string]string, len(params))
-	for name, value := range params {
-		if slices.Contains(addressListParams, name) {
-			parts := splitAddressListParam(value)
-			addresses, err := resolver.ResolveList(parts)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve %s %q: %w", name, value, err)
-			}
-			sort.Strings(addresses)
-			expanded[name] = strings.Join(addresses, ",")
-			continue
-		}
-		expanded[name] = value
-	}
-
-	return expanded, nil
-}
-
-func splitAddressListParam(value string) []string {
-	parts := strings.Split(value, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		item := strings.TrimSpace(part)
-		if item == "" {
-			continue
-		}
-		out = append(out, item)
-	}
-	return out
-}
-
-func addressListCreationParams(keyType string, keyTypes []signerapi.KeyTypeInfo) ([]string, error) {
-	for _, kt := range keyTypes {
-		if kt.KeyType != keyType {
-			continue
-		}
-		var names []string
-		for _, param := range kt.CreationParams {
-			if param.Type == "address[]" {
-				names = append(names, param.Name)
-			}
-		}
-		return names, nil
-	}
-	return nil, fmt.Errorf("unknown key type: %s", keyType)
 }

@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/cmdspec"
+	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -24,6 +26,21 @@ func (e *Engine) ListKeyTypes(ctx context.Context) ([]signerapi.KeyTypeInfo, err
 func (e *Engine) GenerateKey(ctx context.Context, keyType string, params map[string]string) (*GenerateKeyResult, error) {
 	if !e.IsConnected() {
 		return nil, ErrNotConnected
+	}
+	// Canonicalize the key type and resolve any address[] creation params (e.g. a
+	// whitelist's "recipients") before handing off to the signer, which has no
+	// alias/set knowledge. Done here — not in the REPL layer — so REPL, JS, and
+	// MCP callers all behave identically.
+	keyType = keytypefmt.Canonicalize(keyType)
+	if len(params) > 0 {
+		keyTypes, err := e.ListKeyTypes(ctx)
+		if err != nil {
+			return nil, err
+		}
+		params, err = cmdspec.ExpandGenerateAddressListParams(keyType, params, keyTypes, e.NewAddressResolver())
+		if err != nil {
+			return nil, err
+		}
 	}
 	resp, err := e.AdminGenerateWithContext(ctx, keyType, params)
 	if err != nil {

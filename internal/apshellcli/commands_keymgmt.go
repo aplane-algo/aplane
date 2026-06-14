@@ -47,7 +47,7 @@ func expandGenerateAddressListParams(
 	keyTypes []signerapi.KeyTypeInfo,
 	resolver cmdspec.AddressListResolver,
 ) (map[string]string, error) {
-	return apshellapp.ExpandGenerateAddressListParams(keyType, params, keyTypes, resolver)
+	return cmdspec.ExpandGenerateAddressListParams(keyType, params, keyTypes, resolver)
 }
 
 func (r *REPLState) cmdDelete(args []string, _ interface{}) error {

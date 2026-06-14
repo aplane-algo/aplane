@@ -67,6 +67,12 @@ func TestEngineGenerateKeyRefreshesSignerCache(t *testing.T) {
 	addr := testAddr(11)
 	eng := newConnectedEngineForKeyMgmtTest(t, func(req *http.Request) (*http.Response, error) {
 		switch {
+		case req.Method == http.MethodGet && req.URL.Path == "/keytypes":
+			// GenerateKey now fetches key types to resolve any address[] creation
+			// params; ed25519 has none, so params pass through unchanged.
+			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeyTypesResponse{
+				KeyTypes: []signerapi.KeyTypeInfo{{KeyType: "ed25519", Family: "ed25519"}},
+			}, req), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/admin/generate":
 			var body signerapi.AdminGenerateRequest
 			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
