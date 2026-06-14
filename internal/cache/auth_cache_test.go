@@ -29,6 +29,18 @@ func TestNewAuthAddressCache(t *testing.T) {
 	}
 }
 
+func TestGetAuthAddressZeroValueIsReadOnly(t *testing.T) {
+	var cache AuthAddressCache
+
+	authAddr, ok := cache.GetAuthAddress("ADDR")
+	if ok || authAddr != "" {
+		t.Fatalf("GetAuthAddress() = %q, %v; want empty, false", authAddr, ok)
+	}
+	if cache.AuthAddresses != nil {
+		t.Fatal("GetAuthAddress() initialized AuthAddresses on a zero-value cache")
+	}
+}
+
 // TestGetAuthCacheFilename verifies cache filename generation
 func TestGetAuthCacheFilename(t *testing.T) {
 	tests := []struct {

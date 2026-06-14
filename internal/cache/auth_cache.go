@@ -145,7 +145,9 @@ func (cache *AuthAddressCache) UpdateAuthAddress(address string, authAddress str
 // GetAuthAddress returns the cached auth address for an account
 // Returns empty string if not cached or if account is not rekeyed
 func (cache *AuthAddressCache) GetAuthAddress(address string) (string, bool) {
-	cache.ensureInitialized()
+	if cache == nil || cache.AuthAddresses == nil {
+		return "", false
+	}
 
 	authAddr, exists := cache.AuthAddresses[address]
 	return authAddr, exists
