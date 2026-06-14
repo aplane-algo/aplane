@@ -1,6 +1,6 @@
 # Building Constrained Networks on Algorand
 
-**A LogicSig + Rekey Primitive for Provable Transfer Constraints**
+**Using LogicSigs and Rekeying for Provable Transfer Constraints**
 
 ![Constrained network diagram](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/mesh.png)
 
@@ -9,7 +9,7 @@
 Suppose you want to restrict token movement to a set of approved routes ("corridors")
 whose endpoint accounts are predetermined.
 Such constraints are useful in regulated payment networks, corporate treasury systems,
-custodial transfer meshes, and other environments where value remains within a controlled
+agentic buyer/seller ecosystems, and other environments where value remains within a controlled
 transfer graph.
 
 Cryptographically locking funds to that graph provides a strong security guarantee. Even if keys are leaked or stolen,
