@@ -23,10 +23,11 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// runMCPMode starts an MCP server over stdio, exposing apshell as six MCP tools:
+// runMCPMode starts an MCP server over stdio, exposing apshell as eight MCP tools:
 // execute (shell commands), mcp_reference (shell command reference),
 // js (JavaScript execution), js_reference (JavaScript API reference),
-// jssave (save JS to file), and jslist (list saved scripts).
+// jssave (save JS to file), jslist (list saved scripts), mcp_manual
+// (condensed operating manual), and doc (bundled reference docs).
 func runMCPMode(network string, cfg config.Config, dataDir string) {
 	if _, err := clientenroll.LoadEnrolledClient(dataDir, clientenroll.Options{
 		Product:              "apshell --mcp",
@@ -154,6 +155,22 @@ Use the js_reference tool to fetch the JavaScript API reference.`),
 		mcp.WithDescription("Return the JavaScript API reference for apshell scripting. Call this when you need available JS functions, signatures, and return types."),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return mcp.NewToolResultText(docassets.UserJSAPI), nil
+	})
+
+	// Register the "mcp_manual" tool for the condensed operating manual.
+	mcpServer.AddTool(mcp.NewTool("mcp_manual",
+		mcp.WithDescription("Return the apshell MCP operating manual: the system/trust model, tool surface, key model, transaction and signing flow, policy and approval behavior, and common workflows. Read this first to understand how the pieces fit together; use mcp_reference and js_reference for exact command and API signatures."),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText(docassets.UserMCPManual), nil
+	})
+
+	// Register the "doc" tool for on-demand bundled reference docs.
+	mcpServer.AddTool(mcp.NewTool("doc",
+		mcp.WithDescription("List or fetch the bundled APlane reference docs that mcp_manual points to. Call with no arguments to list available docs (name + one-line summary); pass name to return that doc's full Markdown (e.g. name=\"WP_CORRIDORS\")."),
+		mcp.WithString("name", mcp.Description("Doc name to fetch, with or without the .md suffix (e.g. \"ARCH_TXNFLOW\"). Omit to list all available docs.")),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		name, _ := request.Params.Arguments["name"].(string)
+		return mcpDocResult(dataDir, name), nil
 	})
 
 	// Register the "jssave" tool for saving JavaScript code to files
@@ -463,6 +480,8 @@ func mcpJSExecutionResult(ctx context.Context, state *REPLState, code string) *m
 
 const mcpBaseDescription = `Execute an apshell command on the Algorand blockchain.
 
+New here? Call mcp_manual first for the operating model (architecture, key model, signing flow, policy, and workflows).
+Use the doc tool to list or fetch the full reference docs mcp_manual points to (e.g. doc name=WP_CORRIDORS).
 Run "help <command>" for detailed syntax on a specific command.
 Use mcp_reference to see all available shell commands.
 Use the js tool to execute JavaScript code.

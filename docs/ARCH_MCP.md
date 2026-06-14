@@ -9,13 +9,13 @@ but produces structured JSON instead of terminal text.
 ```
 +----------+  JSON-RPC/stdio  +------------------+  SSH tunnel  +-----------+
 |   LLM    | <--------------> |  apshell --mcp   | <----------> |  apsigner |
-|  client  |                  |  (6 MCP tools)   |              |  (signer) |
+|  client  |                  |  (8 MCP tools)   |              |  (signer) |
 +----------+                  +------------------+              +-----------+
 ```
 
 ## Tool Surface
 
-The MCP server registers six tools:
+The MCP server registers eight tools:
 
 | Tool | Purpose |
 |------|---------|
@@ -23,6 +23,8 @@ The MCP server registers six tools:
 | `mcp_reference` | Live command reference (captures `help` output) |
 | `js` | Execute JavaScript in the Goja runtime, returns `{value, output}` |
 | `js_reference` | Embedded `USER_JSAPI.md` reference text (stateless) |
+| `mcp_manual` | Embedded `USER_MCP_MANUAL.md` operating manual (stateless) |
+| `doc` | List or return a bundled curated reference doc (embedded, with `<dataDir>/docs` overlay) |
 | `jssave` | Save JavaScript by filename into `scripts/` (or absolute path) |
 | `jslist` | List saved scripts as `[{name, size, mtime}, ...]` |
 
@@ -33,7 +35,8 @@ shell parser. The REPL `js` command accepts a `-help` flag that prints the JS
 API reference; MCP clients fetch the same reference via `js_reference`.
 
 LLMs pull command and API references on demand via `mcp_reference` and
-`js_reference` rather than having them injected periodically.
+`js_reference`, the operating manual via `mcp_manual`, and the deep reference
+docs via `doc`, rather than having them injected periodically.
 
 ## Configuration
 
@@ -216,4 +219,5 @@ defer mu.Unlock()
 - [ARCH_REPL.md](ARCH_REPL.md) — Shared parsing, dispatch, and `CommandResult`
 - [ARCH_PLUGINS.md](ARCH_PLUGINS.md) — Plugin manifests, `mcp.md`, and lifecycle
 - [USER_JSAPI.md](USER_JSAPI.md) — JavaScript API reference exposed via `js_reference`
+- [USER_MCP_MANUAL.md](USER_MCP_MANUAL.md) — condensed operating manual exposed via `mcp_manual`
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) — MCP tool contract under compatibility surfaces

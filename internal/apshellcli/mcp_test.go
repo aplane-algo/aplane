@@ -376,6 +376,12 @@ func TestMCPBaseDescriptionReferencesExplicitManualTools(t *testing.T) {
 	if !strings.Contains(mcpBaseDescription, "js_reference") {
 		t.Fatalf("mcpBaseDescription missing js_reference: %q", mcpBaseDescription)
 	}
+	if !strings.Contains(mcpBaseDescription, "mcp_manual") {
+		t.Fatalf("mcpBaseDescription missing mcp_manual: %q", mcpBaseDescription)
+	}
+	if !strings.Contains(mcpBaseDescription, "doc tool") {
+		t.Fatalf("mcpBaseDescription missing doc tool: %q", mcpBaseDescription)
+	}
 	if strings.Contains(mcpBaseDescription, "execute_commands") {
 		t.Fatalf("mcpBaseDescription still references execute_commands: %q", mcpBaseDescription)
 	}
@@ -478,6 +484,51 @@ func TestEmbeddedUserJSAPIContent(t *testing.T) {
 	}
 	if !strings.Contains(content, "JavaScript API Reference") {
 		t.Fatal("embedded content missing expected header")
+	}
+}
+
+func TestEmbeddedUserMCPManualContent(t *testing.T) {
+	content := docassets.UserMCPManual
+	if content == "" {
+		t.Fatal("embedded USER_MCP_MANUAL.md is empty")
+	}
+	if !strings.Contains(content, "apshell MCP Manual") {
+		t.Fatal("embedded content missing expected header")
+	}
+}
+
+func TestBundledDocsListAndFetch(t *testing.T) {
+	entries := listDocs("")
+	if len(entries) == 0 {
+		t.Fatal("expected embedded curated docs in listing")
+	}
+	found := false
+	for _, e := range entries {
+		if e.Name == "WP_CORRIDORS" {
+			found = true
+			if e.Description == "" {
+				t.Fatal("WP_CORRIDORS missing description in listing")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("WP_CORRIDORS not present in curated doc listing")
+	}
+
+	for _, name := range []string{"WP_CORRIDORS", "WP_CORRIDORS.md"} {
+		content, err := readDoc("", name)
+		if err != nil {
+			t.Fatalf("readDoc(%q) error = %v", name, err)
+		}
+		if !strings.Contains(content, "CORRIDOR") {
+			t.Fatalf("readDoc(%q) returned unexpected content", name)
+		}
+	}
+
+	for _, bad := range []string{"", "../secret", "a/b", "DOES_NOT_EXIST"} {
+		if _, err := readDoc("", bad); err == nil {
+			t.Fatalf("readDoc(%q) expected error, got nil", bad)
+		}
 	}
 }
 

@@ -1,4 +1,4 @@
-.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets test check formal-test race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -31,14 +31,39 @@ endif
 compile-teal: resources/dummy.teal.tok internal/signing/dummy.teal.tok internal/lsig/dummy.teal.tok
 
 GENERATED_JSAPI = internal/docassets/generated/USER_JSAPI.md
+GENERATED_MANUAL = internal/docassets/generated/USER_MCP_MANUAL.md
+GENERATED_DOCS_DIR = internal/docassets/generated/docs
 
-compile-docassets: $(GENERATED_JSAPI)
+# Curated client-facing reference docs bundled into the binary and served by the
+# MCP 'doc' tool. Excludes dev/formal/internal-architecture docs.
+CURATED_DOCS = \
+	ARCH_OVERVIEW ARCH_MCP ARCH_REPL ARCH_AUTHORIZATION ARCH_NETWORKS \
+	ARCH_CRYPTO ARCH_KEY_LIFECYCLE ARCH_LSIG_PROVIDER ARCH_TXNFLOW ARCH_POLICY \
+	ARCH_SENTRY ARCH_COOPERATIVE_SIGNING ARCH_PLUGINS ARCH_APP_INTERACTION \
+	USER_COMMANDS USER_JSAPI USER_KEYTYPES USER_POLICY USER_CONFIG \
+	USER_CONFIG_REFERENCE USER_LOGGING USER_QUICKSTART USER_QUICKSTART_LOCALNET \
+	USER_TRANSFER_ROUTING USER_LOGICSIG_GUIDELINES USER_STORE_MGMT \
+	TXN_MIXED_GROUPS TXN_FEE_SPLITTING TXN_BALANCE_VERIFICATION TXN_BYTES_HEX \
+	KEYTYPE_CAPABILITIES AGENTS_KEYTYPES WP_CORRIDORS WP_CONSTRAINED_NETWORKS
+
+compile-docassets: $(GENERATED_JSAPI) $(GENERATED_MANUAL) curated-docs
 
 $(GENERATED_JSAPI): docs/USER_JSAPI.md
 	@echo "Updating $(GENERATED_JSAPI)..."
 	@mkdir -p $(dir $(GENERATED_JSAPI))
 	@cp docs/USER_JSAPI.md $(GENERATED_JSAPI)
 	@echo "✓ Updated $(GENERATED_JSAPI)"
+
+$(GENERATED_MANUAL): docs/USER_MCP_MANUAL.md
+	@echo "Updating $(GENERATED_MANUAL)..."
+	@mkdir -p $(dir $(GENERATED_MANUAL))
+	@cp docs/USER_MCP_MANUAL.md $(GENERATED_MANUAL)
+	@echo "✓ Updated $(GENERATED_MANUAL)"
+
+curated-docs:
+	@mkdir -p $(GENERATED_DOCS_DIR)
+	@for d in $(CURATED_DOCS); do cp docs/$$d.md $(GENERATED_DOCS_DIR)/$$d.md; done
+	@echo "✓ Updated $(GENERATED_DOCS_DIR) ($(words $(CURATED_DOCS)) docs)"
 
 resources/dummy.teal.tok: resources/dummy.teal
 	@echo "Compiling resources/dummy.teal..."
@@ -876,7 +901,7 @@ help:
 	@echo "  make all             - Build all first-party binaries and bundled plugins"
 	@echo "  make clean           - Remove built binaries"
 	@echo "  make compile-teal    - Compile TEAL programs and update embedded copies"
-	@echo "  make compile-docassets - Copy docs/USER_JSAPI.md into the generated embed location"
+	@echo "  make compile-docassets - Copy USER_JSAPI.md, USER_MCP_MANUAL.md, and curated docs into the generated embed location"
 	@echo ""
 	@echo "Cross-compilation:"
 	@echo "  make bin-arm64         - Build all binaries for ARM64 into bin/arm64/"
