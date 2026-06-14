@@ -2,6 +2,7 @@
 
 **A LogicSig + Rekey Primitive for Provable Transfer Constraints**
 
+
 ## 1. The Goal
 
 Suppose you want to restrict token movement to a set of approved routes:
@@ -66,6 +67,8 @@ there is no adjacency table, route map, or registry, and no
 privileged component mediates a transfer. Each node enforces its own outbound
 edges, and multi-hop paths exist only where consecutive operators have
 constructed consecutive edges.
+
+![Constrained network diagram](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/constrained.png)
 
 ## 4. Construction: the rekeyed formation
 
