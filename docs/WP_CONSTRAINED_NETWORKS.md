@@ -6,23 +6,17 @@
 
 ## 1. Overview
 
-Suppose you want to restrict token movement to a set of approved routes ("corridors")
-whose endpoint accounts are predetermined.
-Such constraints are useful in regulated payment networks, corporate treasury systems,
-agentic buyer/seller ecosystems, and other environments where value remains within a controlled
-transfer graph.
+Suppose you want to restrict token movement to a set of approved corridors
+whose endpoint accounts are predetermined. Value remains within
+a controlled transfer graph. This might be useful for payment networks, corporate treasury systems,
+agentic buyer/seller ecosystems, etc.
 
-Cryptographically locking funds to that graph provides a strong security guarantee. Even if keys are leaked or stolen,
-or if software defects cause an agent to attempt a transfer to an unintended destination, value can move only along
-pre-set paths.
+So even if keys are leaked or stolen, or if a software defect causes an agent to attempt a transfer to an 
+unintended destination, those tokens can move only along pre-set paths.
 
-You can do this on Algorand using only standard protocol-level capabilities:
-LogicSigs and rekeying.
-Unlike on many other chains, no stateful application state
-is necessary to do this. This results in a smaller attack surface.
-
-In a nutshell, the LogicSig handles the corridor specification, while rekeying
-allows you to change the graph without changing account addresses.
+You can do this on Algorand simply using logic signatures and rekeying. Unlike on many other chains, no 
+stateful application state is necessary. This results in a smaller attack surface. The LogicSigs handle 
+*who* can send and *where* they can send to, while rekeying allows you to change the graph topology.
 
 Let's first zoom in on a single sender account.
 
@@ -56,13 +50,15 @@ fixed before the whitelist programs are compiled. While they are members of the
 graph, they are rekeyed to the whitelisted Falcon LogicSigs. The whitelist logic
 is the same regardless: destinations are compiled as literal addresses and
 compared against the transaction's destination fields. Everything outside the
-whitelist is blocked, unreachable by the constrained account.
+whitelist is unreachable through those constrained transfer paths.
+
+The LogicSig itself is an extension of the canonical Algorand Falcon verification LogicSig.
 
 ```text
-// sketch (payment path)
+falcon_verify() // canonical Falcon verification
+
 txn Receiver  == Sender || is_whitelisted(Receiver)      -> else err
 txn CloseRemainderTo == Zero || Sender || is_whitelisted  -> else err
-// Falcon signature over TxID is checked by the account-key portion of the LogicSig
 ```
 
 ## 3. From accounts to a network
@@ -139,7 +135,7 @@ is a consequence of the building block rather than an added feature:
 - **Reconfiguration is the apex authority.** Whoever can rekey an account can
   replace its constraints entirely. This authority must be *separated from the
   spend key* and hardened. Rekey authority must not be satisfiable by the spend
-  key alone; the LogicSig program can enforce this additional constraints.
+  key alone; the LogicSig program can enforce this additional constraint.
 - **Immutability option.** Using a LogicSig *without* rekey capability
   (enforced by the LogicSig) makes its constraints permanent - the strongest
   posture, where reconfiguration is never needed.
