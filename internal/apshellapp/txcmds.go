@@ -450,11 +450,10 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 		Output:           submit.Output,
 		Warnings:         warningsFromTransactionWriteNotices(submit.WriteNotices),
 	}
-	if submit.Confirmed {
-		if _, err := a.eng.RefreshAuthAddressWithContext(ctx, fromAddress); err != nil {
-			result.RefreshWarning = err.Error()
-		}
-	}
+	// The auth-cache refresh after a confirmed rekey happens in the engine submit
+	// path (SignAndSubmit -> refreshRekeyedSenders), so every caller — REPL, JS,
+	// MCP — stays consistent without duplicating it. Surface its non-fatal warning.
+	result.RefreshWarning = submit.AuthRefreshWarning
 	decorateRekeyResult(result)
 	return result, nil
 }
@@ -502,11 +501,8 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 		Output:             submit.Output,
 		Warnings:           warningsFromTransactionWriteNotices(submit.WriteNotices),
 	}
-	if submit.Confirmed {
-		if _, err := a.eng.RefreshAuthAddressWithContext(ctx, address); err != nil {
-			result.RefreshWarning = err.Error()
-		}
-	}
+	// See App.Rekey: the engine submit path performs the refresh; surface its warning.
+	result.RefreshWarning = submit.AuthRefreshWarning
 	decorateRekeyResult(result)
 	return result, nil
 }

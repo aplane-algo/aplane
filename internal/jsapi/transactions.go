@@ -416,10 +416,14 @@ func (a *API) jsRekey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("rekey() error submitting transaction: %v", err)))
 	}
 
-	return a.runtime.ToValue(map[string]interface{}{
+	out := map[string]interface{}{
 		"txid":      result.TxID,
 		"confirmed": result.Confirmed,
-	})
+	}
+	if result.AuthRefreshWarning != "" {
+		out["authCacheWarning"] = result.AuthRefreshWarning
+	}
+	return a.runtime.ToValue(out)
 }
 
 // jsUnrekey rekeys an account back to itself.
@@ -450,10 +454,14 @@ func (a *API) jsUnrekey(call goja.FunctionCall) goja.Value {
 		panic(a.runtime.ToValue(fmt.Sprintf("unrekey() error submitting transaction: %v", err)))
 	}
 
-	return a.runtime.ToValue(map[string]interface{}{
+	out := map[string]interface{}{
 		"txid":      result.TxID,
 		"confirmed": result.Confirmed,
-	})
+	}
+	if result.AuthRefreshWarning != "" {
+		out["authCacheWarning"] = result.AuthRefreshWarning
+	}
+	return a.runtime.ToValue(out)
 }
 
 // jsIsRekeyed checks if an account is rekeyed.

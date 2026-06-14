@@ -35,6 +35,9 @@ type SubmitResult struct {
 	Confirmed    bool
 	Output       string
 	WriteNotices []TransactionWriteNotice
+	// AuthRefreshWarning is set (non-fatal) when a confirmed rekey committed but
+	// the follow-up auth-cache refresh failed, leaving the local cache stale.
+	AuthRefreshWarning string
 }
 
 // ConfirmationResult contains confirmation-wait presentation output.
@@ -140,6 +143,38 @@ func (e *Engine) refreshMissingSubmitAuthAddresses(ctx context.Context, txns []t
 	return nil
 }
 
+// refreshRekeyedSenders re-queries and overwrites the auth-address cache for the
+// senders of confirmed rekey transactions. It is the post-submit counterpart to
+// refreshMissingSubmitAuthAddresses: that hook is fill-on-miss, so after a rekey
+// it cannot correct the entry it just cached as the pre-rekey authorizer. This
+// hook overwrites that stale entry with the new on-chain authorizer.
+//
+// It returns the first refresh error encountered. Such a failure is non-fatal —
+// the rekey already committed — but the local cache is left stale, so the caller
+// should surface it as a warning (and the user can run `rekey refresh`).
+func (e *Engine) refreshRekeyedSenders(ctx context.Context, txns []types.Transaction) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var zero types.Address
+	var firstErr error
+	seen := make(map[string]struct{}, len(txns))
+	for _, txn := range txns {
+		if txn.RekeyTo == zero {
+			continue
+		}
+		sender := txn.Sender.String()
+		if _, ok := seen[sender]; ok {
+			continue
+		}
+		seen[sender] = struct{}{}
+		if _, err := e.RefreshAuthAddressWithContext(ctx, sender); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("failed to refresh auth address for %s: %w", sender, err)
+		}
+	}
+	return firstErr
+}
+
 func (e *Engine) submitEffectiveSignersNeedKeyRefresh(txns []types.Transaction) bool {
 	seenSigners := make(map[string]struct{}, len(txns))
 	for _, txn := range txns {
@@ -192,6 +227,16 @@ func (e *Engine) SignAndSubmit(ctx context.Context, prep *TransactionPrepResult,
 	}
 	if err != nil {
 		return result, fmt.Errorf("failed to sign and submit: %w", errorWithSubmissionOutput(err, output.String()))
+	}
+
+	// A confirmed rekey changes the sender's on-chain authorizer; refresh the
+	// stale auth-cache entry captured before signing. All rekeys flow through this
+	// path (only PrepareRekey sets RekeyTo). Best-effort: a failure is reported as
+	// a warning on the result, not an error, since the rekey already committed.
+	if result.Confirmed {
+		if refreshErr := e.refreshRekeyedSenders(ctx, []types.Transaction{submittedTxn}); refreshErr != nil {
+			result.AuthRefreshWarning = refreshErr.Error()
+		}
 	}
 
 	return result, nil
