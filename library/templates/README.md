@@ -46,7 +46,7 @@ apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
 | `aplane.falcon1024-whitelist.v1` | `aplane.falcon1024-whitelist.v1.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to a fixed unordered recipient address set or the sender itself; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-30) | None |
-| `aplane.falcon1024-whitelist.v2` | `aplane.falcon1024-whitelist.v2.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to the sender itself or addresses proven against a fixed-depth Merkle root; non-transfer transaction types keep the base Falcon authorization surface. | `merkle_root` | `proof` |
+| `aplane.falcon1024-whitelist.v2` | `aplane.falcon1024-whitelist.v2.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to the sender itself or addresses proven against a fixed-depth Merkle tree built from key-file recipients; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-65536) | None; signer generates proofs |
 | `aplane.falcon1024-hashlock.v1` | `aplane.falcon1024-hashlock.v1.yaml` | Requires a Falcon signature plus a SHA256 preimage check. | `hash` | `preimage` |
 | `aplane.falcon1024-timelock.v1` | `aplane.falcon1024-timelock.v1.yaml` | Requires a Falcon signature and `FirstValid >= unlock_round`; after the unlock round, transaction policy matches the base Falcon key type. | `unlock_round` | None |
 
@@ -63,7 +63,9 @@ apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
 
 ### Merkle whitelist proof format
 
-`aplane.falcon1024-whitelist.v2` commits to a fixed-depth 16 Merkle tree:
+`aplane.falcon1024-whitelist.v2` stores the public recipient whitelist in the
+encrypted key file and commits the LogicSig TEAL to a fixed-depth 16 Merkle
+tree derived from that list:
 
 1. Decode each whitelisted Algorand address to its 32-byte public key.
 2. Reject duplicates, sort the unique public keys lexicographically ascending,
@@ -72,11 +74,11 @@ apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
 4. Build 16 levels by pairing adjacent nodes. Each parent is
    `sha256(0x01 || min(left,right) || max(left,right))`, where `min` and `max`
    use lexicographic byte ordering.
-5. A runtime `proof` is the 16 sibling hashes for the receiver address,
-   concatenated leaf-to-root as 512 bytes.
+5. For a non-self `pay` or `axfer`, the signer generates the 16 sibling hashes
+   for the receiver address and appends them as a 512-byte LogicSig argument.
 
-The proof is required only for non-self `pay` and `axfer` destinations. Self
-transfers and ASA opt-ins are allowed without a proof.
+The caller does not supply this proof. Self transfers and ASA opt-ins are
+allowed without a proof.
 
 ## Authoring rules: rekey and close-remainder
 
@@ -129,11 +131,12 @@ signature correctly, but the whitelist would be bypassed if the template only
 checked `Receiver`. The composed `aplane.falcon1024-whitelist.v1` template
 therefore checks `Receiver` and `CloseRemainderTo` for payments, and
 `AssetReceiver` and `AssetCloseTo` for ASA transfers. The Merkle whitelist
-template checks the same destination fields by proof against `merkle_root`;
-close-out is allowed only to zero or the just-validated receiver. The sender
-itself is allowed as a destination; non-`pay`/`axfer` transaction types and
-clawback source selection through `AssetSender` remain governed by the base
-Falcon signature and signer policy.
+template checks the same destination fields by signer-generated proof against
+the root derived from the key-file recipient list; close-out is allowed only to
+zero or the just-validated receiver. The sender itself is allowed as a
+destination; non-`pay`/`axfer` transaction types and clawback source selection
+through `AssetSender` remain governed by the base Falcon signature and signer
+policy.
 
 The composed wrap order is locked in by
 `TestComposerVerifierAssertsBeforeUserSuffix` (in `lsig/composeddsa/`) and

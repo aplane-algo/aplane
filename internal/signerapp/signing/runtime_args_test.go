@@ -7,6 +7,11 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	coresigning "github.com/aplane-algo/aplane/internal/signing"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 func TestDecodeHexRuntimeArgs(t *testing.T) {
@@ -53,5 +58,108 @@ func TestDecodeHexRuntimeArgsReportsArgumentName(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid byte") {
 		t.Fatalf("error %q does not include hex decode context", err)
+	}
+}
+
+func TestSignerGeneratedDSAArgsFalconWhitelistV2Proof(t *testing.T) {
+	sender := types.Address{1}
+	receiver := types.Address{2}
+	secondReceiver := types.Address{3}
+	recipients := strings.Join([]string{secondReceiver.String(), receiver.String()}, ",")
+	root, err := merklewhitelist.RootFromRecipientsParam(recipients)
+	if err != nil {
+		t.Fatalf("RootFromRecipientsParam() error = %v", err)
+	}
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:       falcon1024WhitelistV2KeyType,
+		Parameters: map[string]string{"recipients": recipients},
+	}
+
+	for _, tc := range []struct {
+		name string
+		txn  types.Transaction
+	}{
+		{
+			name: "payment",
+			txn: types.Transaction{
+				Type:   types.PaymentTx,
+				Header: types.Header{Sender: sender},
+				PaymentTxnFields: types.PaymentTxnFields{
+					Receiver: receiver,
+				},
+			},
+		},
+		{
+			name: "asset transfer",
+			txn: types.Transaction{
+				Type:   types.AssetTransferTx,
+				Header: types.Header{Sender: sender},
+				AssetTransferTxnFields: types.AssetTransferTxnFields{
+					AssetReceiver: receiver,
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args, signErr := signerGeneratedDSAArgs(tc.txn, keyMaterial)
+			if signErr != nil {
+				t.Fatalf("signerGeneratedDSAArgs() error = %v", signErr)
+			}
+			if len(args) != 1 {
+				t.Fatalf("signerGeneratedDSAArgs() len = %d, want 1", len(args))
+			}
+			if len(args[0]) != merklewhitelist.ProofSize {
+				t.Fatalf("proof length = %d, want %d", len(args[0]), merklewhitelist.ProofSize)
+			}
+			if !merklewhitelist.Verify(receiver, args[0], root) {
+				t.Fatalf("generated proof did not verify for %s", receiver.String())
+			}
+		})
+	}
+}
+
+func TestSignerGeneratedDSAArgsFalconWhitelistV2SkipsSelfTransfer(t *testing.T) {
+	sender := types.Address{1}
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:       falcon1024WhitelistV2KeyType,
+		Parameters: map[string]string{"recipients": sender.String()},
+	}
+	args, signErr := signerGeneratedDSAArgs(types.Transaction{
+		Type:   types.PaymentTx,
+		Header: types.Header{Sender: sender},
+		PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: sender,
+		},
+	}, keyMaterial)
+	if signErr != nil {
+		t.Fatalf("signerGeneratedDSAArgs() error = %v", signErr)
+	}
+	if args != nil {
+		t.Fatalf("signerGeneratedDSAArgs() = %#v, want nil", args)
+	}
+}
+
+func TestSignerGeneratedDSAArgsFalconWhitelistV2RejectsNonMember(t *testing.T) {
+	sender := types.Address{1}
+	receiver := types.Address{2}
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:       falcon1024WhitelistV2KeyType,
+		Parameters: map[string]string{"recipients": types.Address{3}.String()},
+	}
+	_, signErr := signerGeneratedDSAArgs(types.Transaction{
+		Type:   types.PaymentTx,
+		Header: types.Header{Sender: sender},
+		PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: receiver,
+		},
+	}, keyMaterial)
+	if signErr == nil {
+		t.Fatal("signerGeneratedDSAArgs() error = nil, want rejection")
+	}
+	if signErr.Kind != ErrorBadRequest {
+		t.Fatalf("error kind = %q, want %q", signErr.Kind, ErrorBadRequest)
+	}
+	if !strings.Contains(signErr.Message, "not in whitelist") {
+		t.Fatalf("error message = %q, want whitelist context", signErr.Message)
 	}
 }

@@ -7,41 +7,35 @@ publisher: aplane
 family: falcon1024-whitelist
 version: 2
 display_name: "Falcon-1024 Whitelist v2"
-description: "Whitelist implementation based on a fixed-depth Merkle root and 512-byte proofs."
+description: "Whitelist implementation based on a fixed-depth Merkle root with signer-generated 512-byte proofs."
 
 parameters:
-  - name: merkle_root
-    label: "Merkle Root"
-    description: "32-byte SHA-256 Merkle root (64 hex characters) for the canonical fixed-depth padded address tree."
-    type: bytes
+  - name: recipients
+    label: "Whitelisted Addresses"
+    description: "Comma-separated Algorand addresses that may receive funds from this Falcon LogicSig. The signer stores this public list in the key file and generates Merkle proofs automatically when signing."
+    type: address[]
     required: true
-    max_length: 64
-    example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    placeholder: "64-character hex Merkle root"
+    min_items: 1
+    max_items: 65536
+    placeholder: "ADDR1, ADDR2, ADDR3"
 
 template_variables:
   - name: root
     source: parameter
-    parameter: merkle_root
-    type: bytes
+    parameter: recipients
+    type: address[]
     constant: byte
-
-runtime_args:
-  - name: proof
-    label: "Merkle Proof"
-    description: "Concatenated 16 sibling hashes (512 bytes) from the canonical padded tree, proving a non-self receiver is in the whitelist; hex-encoded and ordered leaf-to-root."
-    type: bytes
-    required: false
-    byte_length: 512
 
 teal: |
   // Falcon-1024 Whitelist v2 suffix (runs after base Falcon verification;
-  // arg 0 is the Falcon signature, arg 1 is the Merkle inclusion proof).
+  // arg 0 is the Falcon signature, arg 1 is the signer-generated Merkle
+  // inclusion proof).
   //
   // Receiver / AssetReceiver must be the sender itself or a member proven by the
-  // proof in arg 1. The Merkle tree is fixed-depth 16: unique address public
-  // keys sorted ascending, leaves sha256(0x00 || pubkey), padded to 65536 leaves
-  // with sha256(0x00), and internal nodes sha256(0x01 || min || max).
+  // proof in arg 1. The Merkle tree is fixed-depth 16 over the key-file
+  // recipients: unique address public keys sorted ascending, leaves
+  // sha256(0x00 || pubkey), padded to 65536 leaves with sha256(0x00), and
+  // internal nodes sha256(0x01 || min || max).
   // Close-out is restricted to zero (no close) or the receiver that was just
   // validated. Other transaction types keep the base Falcon surface.
 

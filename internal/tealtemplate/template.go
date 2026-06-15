@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -185,7 +187,7 @@ func validateConstantType(variable TemplateVariable) error {
 		if variable.Constant != ConstantInt {
 			return fmt.Errorf("template variable %q with type uint64 must use int constants", variable.Name)
 		}
-	case "bytes", "address":
+	case "bytes", "address", "address[]":
 		if variable.Constant != ConstantByte {
 			return fmt.Errorf("template variable %q with type %s must use byte constants", variable.Name, variable.Type)
 		}
@@ -266,6 +268,12 @@ func encodeValue(value, valueType string) (string, error) {
 			return "", fmt.Errorf("expected Algorand address")
 		}
 		return "0x" + hex.EncodeToString(addr[:]), nil
+	case "address[]":
+		rootHex, err := merklewhitelist.RootHexFromRecipientsParam(value)
+		if err != nil {
+			return "", err
+		}
+		return "0x" + rootHex, nil
 	default:
 		return "", fmt.Errorf("unsupported value type %q", valueType)
 	}

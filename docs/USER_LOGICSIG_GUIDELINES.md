@@ -537,12 +537,13 @@ unless additional TEAL is added for the intended spending policy.
 - Falcon signature-gated plus Merkle recipient whitelist condition
 - more restrictive than a pure signer primitive, but signer-gated
 
-This template commits to a receiver whitelist with a single fixed-depth Merkle
-root. The root is built from unique address public keys sorted ascending, with
-leaves `sha256(0x00 || pubkey)`, padding to 65,536 leaves with `sha256(0x00)`,
-and internal nodes `sha256(0x01 || min(left,right) || max(left,right))`. A
-non-self destination must supply `arg:proof=0x...`, a 512-byte concatenation of
-the 16 sibling hashes from leaf to root.
+This template stores the public receiver whitelist in the encrypted key file
+and commits the LogicSig to a fixed-depth Merkle root derived from that list.
+The root is built from unique address public keys sorted ascending, with leaves
+`sha256(0x00 || pubkey)`, padding to 65,536 leaves with `sha256(0x00)`, and
+internal nodes `sha256(0x01 || min(left,right) || max(left,right))`. For a
+non-self destination, the signer generates the 512-byte proof and appends it to
+the LogicSig arguments; callers do not pass `arg:proof`.
 
 Its TEAL applies the whitelist proof only to destination-like fields on ALGO
 payments and ASA transfers. Payment and asset receivers may be the sender

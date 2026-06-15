@@ -166,7 +166,7 @@ func bundledTemplateTestParams(file string) map[string]string {
 		}
 	case "aplane.falcon1024-whitelist.v2.yaml":
 		return map[string]string{
-			"merkle_root": strings.Repeat("00", 32),
+			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 		}
 	case "aplane.falcon1024-timelock.v1.yaml":
 		return map[string]string{

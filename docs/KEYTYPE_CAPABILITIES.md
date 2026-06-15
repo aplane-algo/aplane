@@ -76,11 +76,11 @@ included as normal user-account operations.
   but additionally requires `FirstValid >= unlock_round`.
 - `aplane.falcon1024-whitelist.v2` restricts only `pay` and `axfer`
   destination fields. Payment receivers and asset receivers must be self or
-  proven with a 512-byte fixed-depth Merkle proof against `merkle_root`. Close
-  destinations must be zero or the just-validated receiver. Other transaction
-  types keep the base Falcon authorization surface. `AssetSender` is not denied
-  by this template, so clawback-shaped `axfer` is possible when destination
-  checks pass.
+  proven with a signer-generated 512-byte fixed-depth Merkle proof against the
+  root derived from the key-file recipient list. Close destinations must be
+  zero or the just-validated receiver. Other transaction types keep the base
+  Falcon authorization surface. `AssetSender` is not denied by this template,
+  so clawback-shaped `axfer` is possible when destination checks pass.
 - `aplane.falcon1024-sentry-ed25519.v1` and
   `aplane.falcon1024-sentry-falcon1024.v1` require guarded signing assembly.
   Once both the user and sentry component signatures verify, the on-chain

@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/merklewhitelist"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -333,13 +334,18 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 	if err != nil {
 		return nil, keyType, badRequest(err.Error())
 	}
+	providerArgs, signArgErr := signerGeneratedDSAArgs(txn, keyMaterial)
+	if signArgErr != nil {
+		return nil, keyType, signArgErr
+	}
 	runtimeArgs, err := lsigprovider.ValidateAndOrderArgs(keyMaterial.SigningArgs, decodedArgs)
 	if err != nil {
 		return nil, keyType, badRequest(err.Error())
 	}
 
-	lsigArgBytes := make([][]byte, 0, len(signatureArgs)+len(runtimeArgs))
+	lsigArgBytes := make([][]byte, 0, len(signatureArgs)+len(providerArgs)+len(runtimeArgs))
 	lsigArgBytes = append(lsigArgBytes, signatureArgs...)
+	lsigArgBytes = append(lsigArgBytes, providerArgs...)
 	lsigArgBytes = append(lsigArgBytes, runtimeArgs...)
 
 	lsigAcct := crypto.LogicSigAccount{
@@ -357,6 +363,38 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 	}
 
 	return signedTxnBytes, keyType, nil
+}
+
+const falcon1024WhitelistV2KeyType = "aplane.falcon1024-whitelist.v2"
+
+func signerGeneratedDSAArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial) ([][]byte, *ServiceError) {
+	if keyMaterial == nil || keyMaterial.Type != falcon1024WhitelistV2KeyType {
+		return nil, nil
+	}
+
+	recipients := keyMaterial.Parameters["recipients"]
+	if recipients == "" {
+		return nil, internal("falcon1024-whitelist.v2 key file missing recipients parameter")
+	}
+
+	var receiver types.Address
+	switch txn.Type {
+	case types.PaymentTx:
+		receiver = txn.Receiver
+	case types.AssetTransferTx:
+		receiver = txn.AssetReceiver
+	default:
+		return nil, nil
+	}
+	if receiver == txn.Sender {
+		return nil, nil
+	}
+
+	proof, err := merklewhitelist.ProofForAddressParam(recipients, receiver)
+	if err != nil {
+		return nil, badRequest(fmt.Sprintf("falcon1024-whitelist.v2 proof generation failed: %v", err))
+	}
+	return [][]byte{proof}, nil
 }
 
 func isGenericKeyMaterial(keyMaterial *coresigning.KeyMaterial) bool {

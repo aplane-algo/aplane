@@ -776,9 +776,12 @@ func TestFalconMerkleWhitelistTemplateRootProofContract(t *testing.T) {
 	if len(spec.TemplateVariables) != 1 || spec.TemplateVariables[0].Name != "root" {
 		t.Fatalf("TemplateVariables = %#v, want root variable", spec.TemplateVariables)
 	}
-	if len(spec.RuntimeArgs) != 1 || spec.RuntimeArgs[0].Name != "proof" ||
-		spec.RuntimeArgs[0].Required || spec.RuntimeArgs[0].ByteLength != 512 {
-		t.Fatalf("RuntimeArgs = %#v, want optional 512-byte proof", spec.RuntimeArgs)
+	if len(spec.Parameters) != 1 || spec.Parameters[0].Name != "recipients" ||
+		spec.Parameters[0].Type != "address[]" {
+		t.Fatalf("Parameters = %#v, want recipients address[] parameter", spec.Parameters)
+	}
+	if len(spec.RuntimeArgs) != 0 {
+		t.Fatalf("RuntimeArgs = %#v, want no caller-supplied runtime args", spec.RuntimeArgs)
 	}
 
 	accounts := []string{
@@ -811,7 +814,7 @@ func TestFalconMerkleWhitelistTemplateRootProofContract(t *testing.T) {
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
 	teal, err := provider.GenerateTEAL([]byte{0, 1, 2, 3}, map[string]string{
-		"merkle_root": hex.EncodeToString(root),
+		"recipients": strings.Join(accounts, ","),
 	})
 	if err != nil {
 		t.Fatalf("GenerateTEAL() error = %v", err)
@@ -839,19 +842,12 @@ func TestFalconMerkleWhitelistTemplateRootProofContract(t *testing.T) {
 		t.Fatalf("Merkle whitelist should leave AssetSender to base signer policy:\n%s", teal)
 	}
 
-	args, err := provider.BuildArgs([]byte{0xaa}, map[string][]byte{"proof": proofs[accounts[0]]})
+	args, err := provider.BuildArgs([]byte{0xaa}, nil)
 	if err != nil {
-		t.Fatalf("BuildArgs(proof) error = %v", err)
-	}
-	if len(args) != 2 || !bytes.Equal(args[0], []byte{0xaa}) || !bytes.Equal(args[1], proofs[accounts[0]]) {
-		t.Fatalf("BuildArgs(proof) = %#v, want [signature, proof]", args)
-	}
-	args, err = provider.BuildArgs([]byte{0xaa}, nil)
-	if err != nil {
-		t.Fatalf("BuildArgs(no proof) error = %v", err)
+		t.Fatalf("BuildArgs(no runtime args) error = %v", err)
 	}
 	if len(args) != 1 || !bytes.Equal(args[0], []byte{0xaa}) {
-		t.Fatalf("BuildArgs(no proof) = %#v, want [signature]", args)
+		t.Fatalf("BuildArgs(no runtime args) = %#v, want [signature]", args)
 	}
 }
 

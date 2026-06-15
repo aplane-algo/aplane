@@ -178,14 +178,14 @@ func TestRenderStrictRejectsConstantTypeMismatch(t *testing.T) {
 }
 
 func TestRenderStrictRejectsUnsupportedListType(t *testing.T) {
-	_, err := RenderStrict("$recipients", map[string]string{
-		"recipients": "ignored",
+	_, err := RenderStrict("$asset_ids", map[string]string{
+		"asset_ids": "1,2",
 	}, []TemplateVariable{
 		{
-			Name:      "recipients",
+			Name:      "asset_ids",
 			Source:    SourceParameter,
-			Parameter: "recipients",
-			Type:      "address[]",
+			Parameter: "asset_ids",
+			Type:      "uint64[]",
 			Constant:  ConstantByte,
 		},
 	})
