@@ -1741,8 +1741,8 @@ offer_localnet_setup() {
             target_text="signer data at $signer_data"
         fi
     fi
-    read -rp "Apply LocalNet setup to this install ($target_text)? [y/N] " answer </dev/tty
-    if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+    read -rp "Apply LocalNet setup to this install ($target_text)? [Y/n] " answer </dev/tty
+    if [ "$answer" = "n" ] || [ "$answer" = "N" ]; then
         echo "Skipped LocalNet setup. You can run aplocalnet later."
         return 0
     fi
