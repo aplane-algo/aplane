@@ -532,13 +532,32 @@ restrict transaction type, recipient, amount, fee, rekey, ALGO close-out, ASA
 close-out, or clawback sender use. Treat it as an extra signer-gated condition
 unless additional TEAL is added for the intended spending policy.
 
+##### `aplane.falcon1024-whitelist.v2`
+
+- Falcon signature-gated plus Merkle recipient whitelist condition
+- more restrictive than a pure signer primitive, but signer-gated
+
+This template commits to a receiver whitelist with a single fixed-depth Merkle
+root. The root is built from unique address public keys sorted ascending, with
+leaves `sha256(0x00 || pubkey)`, padding to 65,536 leaves with `sha256(0x00)`,
+and internal nodes `sha256(0x01 || min(left,right) || max(left,right))`. A
+non-self destination must supply `arg:proof=0x...`, a 512-byte concatenation of
+the 16 sibling hashes from leaf to root.
+
+Its TEAL applies the whitelist proof only to destination-like fields on ALGO
+payments and ASA transfers. Payment and asset receivers may be the sender
+itself without a proof. Close destinations must be zero or the just-validated
+receiver. Other transaction types, and clawback source selection through
+`AssetSender`, remain governed by the base Falcon signature and signer policy.
+
 ##### `aplane.falcon1024-whitelist.v1`
 
 - Falcon signature-gated plus recipient whitelist condition
 - more restrictive than a pure signer primitive, but signer-gated
 
 This template can be a good fit when users want both signer-side approval and
-an on-chain whitelist constraint. Its TEAL applies the whitelist only to
+an on-chain whitelist constraint. The bundled template accepts 1-30
+recipient addresses. Its TEAL applies the whitelist only to
 destination-like fields on ALGO payments and ASA transfers: `Receiver` and
 `CloseRemainderTo` for payments, and `AssetReceiver` and `AssetCloseTo` for ASA
 transfers. The sender itself is also allowed as a destination. Other transaction

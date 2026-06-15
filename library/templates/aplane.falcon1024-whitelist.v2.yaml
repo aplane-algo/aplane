@@ -1,0 +1,222 @@
+schema_version: 1
+derivation_version: 2
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: aplane
+family: falcon1024-whitelist
+version: 2
+display_name: "Falcon-1024 Whitelist v2"
+description: "Whitelist implementation based on a fixed-depth Merkle root and 512-byte proofs."
+
+parameters:
+  - name: merkle_root
+    label: "Merkle Root"
+    description: "32-byte SHA-256 Merkle root (64 hex characters) for the canonical fixed-depth padded address tree."
+    type: bytes
+    required: true
+    max_length: 64
+    example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    placeholder: "64-character hex Merkle root"
+
+template_variables:
+  - name: root
+    source: parameter
+    parameter: merkle_root
+    type: bytes
+    constant: byte
+
+runtime_args:
+  - name: proof
+    label: "Merkle Proof"
+    description: "Concatenated 16 sibling hashes (512 bytes) from the canonical padded tree, proving a non-self receiver is in the whitelist; hex-encoded and ordered leaf-to-root."
+    type: bytes
+    required: false
+    byte_length: 512
+
+teal: |
+  // Falcon-1024 Whitelist v2 suffix (runs after base Falcon verification;
+  // arg 0 is the Falcon signature, arg 1 is the Merkle inclusion proof).
+  //
+  // Receiver / AssetReceiver must be the sender itself or a member proven by the
+  // proof in arg 1. The Merkle tree is fixed-depth 16: unique address public
+  // keys sorted ascending, leaves sha256(0x00 || pubkey), padded to 65536 leaves
+  // with sha256(0x00), and internal nodes sha256(0x01 || min || max).
+  // Close-out is restricted to zero (no close) or the receiver that was just
+  // validated. Other transaction types keep the base Falcon surface.
+
+  txn TypeEnum
+  int pay
+  ==
+  bnz pay_path
+  txn TypeEnum
+  int axfer
+  ==
+  bnz asset_path
+  b allow
+
+  // --- asset transfer path ---
+  asset_path:
+  txn AssetReceiver
+  txn Sender
+  ==
+  bnz allow_asset_receiver
+  txn AssetReceiver
+  callsub verify_member
+  bnz allow_asset_receiver
+  err
+
+  allow_asset_receiver:
+  txn AssetCloseTo
+  global ZeroAddress
+  ==
+  bnz allow_asset_close
+  txn AssetCloseTo
+  txn AssetReceiver
+  ==
+  bnz allow_asset_close
+  err
+
+  allow_asset_close:
+  b allow
+
+  // --- payment path ---
+  pay_path:
+  txn Receiver
+  txn Sender
+  ==
+  bnz allow_pay_receiver
+  txn Receiver
+  callsub verify_member
+  bnz allow_pay_receiver
+  err
+
+  allow_pay_receiver:
+  txn CloseRemainderTo
+  global ZeroAddress
+  ==
+  bnz allow_pay_close
+  txn CloseRemainderTo
+  txn Receiver
+  ==
+  bnz allow_pay_close
+  err
+
+  allow_pay_close:
+  b allow
+
+  allow:
+  b end_checks
+
+  // verify_member: [candidate-address] -> [is_member 0/1]
+  // leaf = sha256(0x00 || candidate); fold 16 levels with sorted-pair node
+  // hashing sha256(0x01 || min || max); compare the result to $root.
+  verify_member:
+  arg 1
+  len
+  int 512
+  ==
+  assert
+  byte 0x00
+  swap
+  concat
+  sha256
+  arg 1
+  int 0
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 32
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 64
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 96
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 128
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 160
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 192
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 224
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 256
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 288
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 320
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 352
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 384
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 416
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 448
+  int 32
+  extract3
+  callsub combine
+  arg 1
+  int 480
+  int 32
+  extract3
+  callsub combine
+  $root
+  ==
+  retsub
+
+  // combine: [h, sib] -> [sha256(0x01 || min(h,sib) || max(h,sib))]
+  combine:
+  dup2
+  b<
+  bnz combine_ordered
+  swap
+  combine_ordered:
+  concat
+  byte 0x01
+  swap
+  concat
+  sha256
+  retsub
+
+  end_checks:

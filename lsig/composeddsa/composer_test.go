@@ -4,6 +4,7 @@
 package composeddsa
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -13,12 +14,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -48,13 +51,15 @@ func (suffixTestOps) BuildVerifyTEAL([]byte) (string, error)          { return "
 
 type falconBoundaryTestOps struct{}
 
-func (falconBoundaryTestOps) PublicKeySize() int                          { return 4 }
-func (falconBoundaryTestOps) CryptoSignatureSize() int                    { return 4 }
-func (falconBoundaryTestOps) MnemonicScheme() string                      { return "" }
-func (falconBoundaryTestOps) MnemonicWordCount() int                      { return 0 }
-func (falconBoundaryTestOps) DisplayColor() string                        { return "" }
-func (falconBoundaryTestOps) TEALVersion() int                            { return 12 }
-func (falconBoundaryTestOps) BuildSignatureArgs([]byte) ([][]byte, error) { return nil, nil }
+func (falconBoundaryTestOps) PublicKeySize() int       { return 4 }
+func (falconBoundaryTestOps) CryptoSignatureSize() int { return 4 }
+func (falconBoundaryTestOps) MnemonicScheme() string   { return "" }
+func (falconBoundaryTestOps) MnemonicWordCount() int   { return 0 }
+func (falconBoundaryTestOps) DisplayColor() string     { return "" }
+func (falconBoundaryTestOps) TEALVersion() int         { return 12 }
+func (falconBoundaryTestOps) BuildSignatureArgs(sig []byte) ([][]byte, error) {
+	return [][]byte{sig}, nil
+}
 func (falconBoundaryTestOps) BuildVerifyTEAL([]byte) (string, error) {
 	return "txn TxID\narg 0\npushbytes 0x01020304\nfalcon_verify\n", nil
 }
@@ -746,6 +751,110 @@ func TestFalconHashlockAndTimelockOnlyAddGatingPredicate(t *testing.T) {
 	}
 }
 
+func TestFalconMerkleWhitelistTemplateRootProofContract(t *testing.T) {
+	RegisterBase(BaseRegistration{
+		BaseKeyType: "aplane.falcon1024.v1",
+		FamilyName:  "falcon1024",
+		Version:     1,
+		Ops:         falconBoundaryTestOps{},
+		NewAddressDeriver: func(string) addressderive.Deriver {
+			return testDeriver{}
+		},
+	})
+
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-whitelist.v2.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(aplane.falcon1024-whitelist.v2.yaml) error = %v", err)
+	}
+	spec, err := ParseTemplateSpec(data)
+	if err != nil {
+		t.Fatalf("ParseTemplateSpec() error = %v", err)
+	}
+	if spec.TemplateMode != "strict" {
+		t.Fatalf("TemplateMode = %q, want strict", spec.TemplateMode)
+	}
+	if len(spec.TemplateVariables) != 1 || spec.TemplateVariables[0].Name != "root" {
+		t.Fatalf("TemplateVariables = %#v, want root variable", spec.TemplateVariables)
+	}
+	if len(spec.RuntimeArgs) != 1 || spec.RuntimeArgs[0].Name != "proof" ||
+		spec.RuntimeArgs[0].Required || spec.RuntimeArgs[0].ByteLength != 512 {
+		t.Fatalf("RuntimeArgs = %#v, want optional 512-byte proof", spec.RuntimeArgs)
+	}
+
+	accounts := []string{
+		algocrypto.GenerateAccount().Address.String(),
+		algocrypto.GenerateAccount().Address.String(),
+		algocrypto.GenerateAccount().Address.String(),
+	}
+	outside := algocrypto.GenerateAccount().Address.String()
+	root, proofs := merkleWhitelistRootAndProofsForTest(t, accounts)
+
+	for _, addr := range accounts {
+		if got := len(proofs[addr]); got != 512 {
+			t.Fatalf("proof length for %s = %d, want 512", addr, got)
+		}
+		if !verifyMerkleWhitelistProofForTest(t, addr, proofs[addr], root) {
+			t.Fatalf("proof for whitelisted address %s did not verify", addr)
+		}
+	}
+	if verifyMerkleWhitelistProofForTest(t, outside, proofs[accounts[0]], root) {
+		t.Fatalf("proof for %s verified for outsider %s", accounts[0], outside)
+	}
+	corrupt := append([]byte(nil), proofs[accounts[0]]...)
+	corrupt[17] ^= 0xff
+	if verifyMerkleWhitelistProofForTest(t, accounts[0], corrupt, root) {
+		t.Fatalf("corrupted proof for %s verified", accounts[0])
+	}
+
+	provider, err := NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
+	}
+	teal, err := provider.GenerateTEAL([]byte{0, 1, 2, 3}, map[string]string{
+		"merkle_root": hex.EncodeToString(root),
+	})
+	if err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+
+	for _, want := range []string{
+		"// Template constants\nbytecblock 0x" + hex.EncodeToString(root),
+		"arg 1\nlen\nint 512\n==\nassert",
+		"byte 0x00\nswap\nconcat\nsha256",
+		"byte 0x01\nswap\nconcat\nsha256",
+		"txn CloseRemainderTo\ntxn Receiver\n==",
+		"txn AssetCloseTo\ntxn AssetReceiver\n==",
+	} {
+		if !strings.Contains(teal, want) {
+			t.Fatalf("rendered Merkle whitelist TEAL missing %q:\n%s", want, teal)
+		}
+	}
+	if got := strings.Count(teal, "extract3"); got != 16 {
+		t.Fatalf("rendered Merkle whitelist extract3 count = %d, want 16:\n%s", got, teal)
+	}
+	if got := strings.Count(teal, "callsub combine"); got != 16 {
+		t.Fatalf("rendered Merkle whitelist combine count = %d, want 16:\n%s", got, teal)
+	}
+	if strings.Contains(teal, "txn AssetSender") {
+		t.Fatalf("Merkle whitelist should leave AssetSender to base signer policy:\n%s", teal)
+	}
+
+	args, err := provider.BuildArgs([]byte{0xaa}, map[string][]byte{"proof": proofs[accounts[0]]})
+	if err != nil {
+		t.Fatalf("BuildArgs(proof) error = %v", err)
+	}
+	if len(args) != 2 || !bytes.Equal(args[0], []byte{0xaa}) || !bytes.Equal(args[1], proofs[accounts[0]]) {
+		t.Fatalf("BuildArgs(proof) = %#v, want [signature, proof]", args)
+	}
+	args, err = provider.BuildArgs([]byte{0xaa}, nil)
+	if err != nil {
+		t.Fatalf("BuildArgs(no proof) error = %v", err)
+	}
+	if len(args) != 1 || !bytes.Equal(args[0], []byte{0xaa}) {
+		t.Fatalf("BuildArgs(no proof) = %#v, want [signature]", args)
+	}
+}
+
 func TestFalconWhitelistTemplateRendersMaxRecipientsWithinComposerBoundary(t *testing.T) {
 	RegisterBase(BaseRegistration{
 		BaseKeyType: "aplane.falcon1024.v1",
@@ -770,7 +879,11 @@ func TestFalconWhitelistTemplateRendersMaxRecipientsWithinComposerBoundary(t *te
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
 
-	recipients := make([]string, 30)
+	maxRecipients := spec.Parameters[0].MaxItems
+	if maxRecipients <= 0 {
+		t.Fatalf("falcon whitelist max_items = %d, want positive limit", maxRecipients)
+	}
+	recipients := make([]string, maxRecipients)
 	for i := range recipients {
 		account := algocrypto.GenerateAccount()
 		recipients[i] = account.Address.String()
@@ -823,10 +936,10 @@ func TestFalconWhitelistTemplateRendersMaxRecipientsWithinComposerBoundary(t *te
 		"recipients": strings.Join(append(recipients, algocrypto.GenerateAccount().Address.String()), ","),
 	})
 	if err == nil {
-		t.Fatal("GenerateTEAL(31 recipients) error = nil, want max_items rejection")
+		t.Fatalf("GenerateTEAL(%d recipients) error = nil, want max_items rejection", len(recipients)+1)
 	}
-	if !strings.Contains(err.Error(), "at most "+strconv.Itoa(len(recipients))) {
-		t.Fatalf("GenerateTEAL(31 recipients) error = %v, want max_items rejection", err)
+	if !strings.Contains(err.Error(), "at most "+strconv.Itoa(maxRecipients)) {
+		t.Fatalf("GenerateTEAL(%d recipients) error = %v, want max_items rejection", len(recipients)+1, err)
 	}
 }
 
@@ -866,4 +979,125 @@ whitelisted:
 			MaxItems: 3,
 		}},
 	})
+}
+
+const merkleWhitelistDepthForTest = 16
+
+func merkleWhitelistRootAndProofsForTest(t *testing.T, addresses []string) ([]byte, map[string][]byte) {
+	t.Helper()
+	if len(addresses) > 1<<merkleWhitelistDepthForTest {
+		t.Fatalf("too many addresses: %d", len(addresses))
+	}
+
+	type entry struct {
+		address string
+		pubkey  [32]byte
+		leaf    []byte
+	}
+
+	entries := make([]entry, 0, len(addresses))
+	seen := make(map[[32]byte]struct{}, len(addresses))
+	for _, address := range addresses {
+		pubkey := decodeAddressPubkeyForTest(t, address)
+		if _, ok := seen[pubkey]; ok {
+			t.Fatalf("duplicate whitelist address public key: %s", address)
+		}
+		seen[pubkey] = struct{}{}
+		entries = append(entries, entry{
+			address: address,
+			pubkey:  pubkey,
+			leaf:    merkleWhitelistLeafForTest(pubkey),
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return bytes.Compare(entries[i].pubkey[:], entries[j].pubkey[:]) < 0
+	})
+
+	leafCount := 1 << merkleWhitelistDepthForTest
+	emptyLeaf := merkleWhitelistEmptyLeafForTest()
+	level := make([][]byte, leafCount)
+	for i := range level {
+		level[i] = emptyLeaf
+	}
+	indices := make(map[string]int, len(entries))
+	proofParts := make(map[string][][]byte, len(entries))
+	for i, entry := range entries {
+		level[i] = entry.leaf
+		indices[entry.address] = i
+	}
+
+	for depth := 0; depth < merkleWhitelistDepthForTest; depth++ {
+		for address, index := range indices {
+			proofParts[address] = append(proofParts[address], level[index^1])
+			indices[address] = index / 2
+		}
+
+		next := make([][]byte, len(level)/2)
+		for i := range next {
+			next[i] = merkleWhitelistNodeForTest(level[i*2], level[i*2+1])
+		}
+		level = next
+	}
+	if len(level) != 1 {
+		t.Fatalf("root level length = %d, want 1", len(level))
+	}
+
+	proofs := make(map[string][]byte, len(proofParts))
+	for address, parts := range proofParts {
+		proof := make([]byte, 0, merkleWhitelistDepthForTest*32)
+		for _, part := range parts {
+			proof = append(proof, part...)
+		}
+		proofs[address] = proof
+	}
+	return level[0], proofs
+}
+
+func verifyMerkleWhitelistProofForTest(t *testing.T, address string, proof, root []byte) bool {
+	t.Helper()
+	if len(root) != 32 || len(proof) != merkleWhitelistDepthForTest*32 {
+		return false
+	}
+	pubkey := decodeAddressPubkeyForTest(t, address)
+	hash := merkleWhitelistLeafForTest(pubkey)
+	for offset := 0; offset < len(proof); offset += 32 {
+		hash = merkleWhitelistNodeForTest(hash, proof[offset:offset+32])
+	}
+	return bytes.Equal(hash, root)
+}
+
+func decodeAddressPubkeyForTest(t *testing.T, address string) [32]byte {
+	t.Helper()
+	decoded, err := types.DecodeAddress(address)
+	if err != nil {
+		t.Fatalf("DecodeAddress(%s) error = %v", address, err)
+	}
+	var out [32]byte
+	copy(out[:], decoded[:])
+	return out
+}
+
+func merkleWhitelistLeafForTest(pubkey [32]byte) []byte {
+	data := make([]byte, 0, 33)
+	data = append(data, 0x00)
+	data = append(data, pubkey[:]...)
+	sum := sha256.Sum256(data)
+	return sum[:]
+}
+
+func merkleWhitelistEmptyLeafForTest() []byte {
+	sum := sha256.Sum256([]byte{0x00})
+	return sum[:]
+}
+
+func merkleWhitelistNodeForTest(left, right []byte) []byte {
+	if bytes.Compare(left, right) > 0 {
+		left, right = right, left
+	}
+	data := make([]byte, 0, 65)
+	data = append(data, 0x01)
+	data = append(data, left...)
+	data = append(data, right...)
+	sum := sha256.Sum256(data)
+	return sum[:]
 }

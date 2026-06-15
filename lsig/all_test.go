@@ -27,6 +27,7 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 		"aplane.whitelist.v1",
 		"aplane.htlc.v1",
 		"aplane.falcon1024-whitelist.v1",
+		"aplane.falcon1024-whitelist.v2",
 		"aplane.falcon1024-hashlock.v1",
 		"aplane.falcon1024-timelock.v1",
 	} {
@@ -102,6 +103,7 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 		{"aplane.falcon1024-hashlock.v1.yaml", "sha256"},
 		{"aplane.falcon1024-timelock.v1.yaml", "FirstValid"},
 		{"aplane.falcon1024-whitelist.v1.yaml", "Only pay/axfer"},
+		{"aplane.falcon1024-whitelist.v2.yaml", "Whitelist v2"},
 	}
 
 	for _, c := range cases {
@@ -161,6 +163,10 @@ func bundledTemplateTestParams(file string) map[string]string {
 	case "aplane.falcon1024-hashlock.v1.yaml":
 		return map[string]string{
 			"hash": strings.Repeat("00", 32),
+		}
+	case "aplane.falcon1024-whitelist.v2.yaml":
+		return map[string]string{
+			"merkle_root": strings.Repeat("00", 32),
 		}
 	case "aplane.falcon1024-timelock.v1.yaml":
 		return map[string]string{

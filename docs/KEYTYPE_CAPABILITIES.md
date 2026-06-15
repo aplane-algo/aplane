@@ -34,6 +34,7 @@ included as normal user-account operations.
 | `aplane.falcon1024_ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.ecdsak1.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-whitelist.v1` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
+| `aplane.falcon1024-whitelist.v2` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-hashlock.v1` | C | C | C | C | C | C | C | C | C | C | C |
 | `aplane.falcon1024-timelock.v1` | C | C | C | C | C | C | C | C | C | C | C |
 | `aplane.falcon1024-sentry-ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
@@ -73,6 +74,13 @@ included as normal user-account operations.
   but additionally requires the configured SHA256 preimage.
 - `aplane.falcon1024-timelock.v1` keeps the base Falcon authorization surface
   but additionally requires `FirstValid >= unlock_round`.
+- `aplane.falcon1024-whitelist.v2` restricts only `pay` and `axfer`
+  destination fields. Payment receivers and asset receivers must be self or
+  proven with a 512-byte fixed-depth Merkle proof against `merkle_root`. Close
+  destinations must be zero or the just-validated receiver. Other transaction
+  types keep the base Falcon authorization surface. `AssetSender` is not denied
+  by this template, so clawback-shaped `axfer` is possible when destination
+  checks pass.
 - `aplane.falcon1024-sentry-ed25519.v1` and
   `aplane.falcon1024-sentry-falcon1024.v1` require guarded signing assembly.
   Once both the user and sentry component signatures verify, the on-chain

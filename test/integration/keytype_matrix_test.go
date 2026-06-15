@@ -410,6 +410,7 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 		"aplane.whitelist.v1.yaml",
 		"aplane.timed-whitelist.v1.yaml",
 		"aplane.falcon1024-whitelist.v1.yaml",
+		"aplane.falcon1024-whitelist.v2.yaml",
 		"aplane.falcon1024-hashlock.v1.yaml",
 		"aplane.falcon1024-timelock.v1.yaml",
 	}

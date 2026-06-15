@@ -359,6 +359,7 @@ func TestBundledComposedTemplatesValidate(t *testing.T) {
 		"library/templates/aplane.falcon1024-hashlock.v1.yaml",
 		"library/templates/aplane.falcon1024-timelock.v1.yaml",
 		"library/templates/aplane.falcon1024-whitelist.v1.yaml",
+		"library/templates/aplane.falcon1024-whitelist.v2.yaml",
 	}
 	for _, path := range paths {
 		t.Run(filepath.Base(path), func(t *testing.T) {
