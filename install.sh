@@ -306,7 +306,7 @@ prompt_prod_operator_root() {
             echo "" >&2
             echo "Warning: operator root already exists and is not empty: $path" >&2
             echo "Systemd install will reuse it." >&2
-            echo "Existing apclient/config.yaml and .mcp.json are left in place;" >&2
+            echo "Existing apclient/config.yaml, .mcp.json, and .codex/config.toml are left in place;" >&2
             echo "apenv.sh and apconsole.yaml are rewritten." >&2
             read -rp "Reuse this directory? [y/N] " reuse </dev/tty
             if [ "$reuse" = "y" ] || [ "$reuse" = "Y" ]; then
@@ -327,6 +327,14 @@ prompt_prod_operator_root() {
 shell_quote() {
     local value="$1"
     printf "'%s'" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
+}
+
+toml_escape() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    value="${value//$'\n'/\\n}"
+    printf '%s' "$value"
 }
 
 require_prod_service_stopped() {
@@ -1063,6 +1071,8 @@ write_mcp_config() {
     local data_dir="$1"
     local apshell_bin="$2"
     local target="$data_dir/.mcp.json"
+    local codex_dir="$data_dir/.codex"
+    local codex_config="$codex_dir/config.toml"
 
     mkdir -p "$data_dir"
     if [ -f "$target" ]; then
@@ -1082,6 +1092,26 @@ write_mcp_config() {
     }
   }
 }
+EOF
+
+    mkdir -p "$codex_dir"
+    target="$codex_config"
+    if [ -f "$target" ]; then
+        target="$codex_config.aplane-installer.new"
+        echo "Codex MCP config already exists at $codex_config; leaving it unchanged."
+        echo "Writing canonical Codex template to $target..."
+    else
+        echo "Writing $target..."
+    fi
+
+    local apshell_bin_toml
+    local data_dir_toml
+    apshell_bin_toml="$(toml_escape "$apshell_bin")"
+    data_dir_toml="$(toml_escape "$data_dir")"
+    cat > "$target" <<EOF
+[mcp_servers.aplane]
+command = "$apshell_bin_toml"
+args = ["--mcp", "-d", "$data_dir_toml"]
 EOF
 }
 
@@ -2215,7 +2245,7 @@ if [ -n "${SUDO_USER:-}" ]; then
     if [ "$OPERATOR_ROOT_REUSE_CONFIRMED" != "1" ] &&
        [ -d "$OPERATOR_ROOT" ] && ! dir_is_empty "$OPERATOR_ROOT"; then
         echo "Note: operator root already exists and is not empty: $OPERATOR_ROOT"
-        echo "Existing apclient/config.yaml and .mcp.json are left in place;"
+        echo "Existing apclient/config.yaml, .mcp.json, and .codex/config.toml are left in place;"
         echo "apenv.sh and apconsole.yaml are rewritten."
     fi
 elif [ -n "$PROD_OPERATOR_ROOT_INPUT" ]; then

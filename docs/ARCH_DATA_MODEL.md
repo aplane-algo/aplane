@@ -433,6 +433,7 @@ The client data root contains operator-side state:
 config.yaml
 endpoints.yaml
 .mcp.json
+.codex/config.toml
 aplane.token
 tokens/<alias>.token
 .apclient.lock
@@ -521,7 +522,8 @@ Plugin process state is runtime-only and owned by the plugin manager.
 
 Saved scripts live under `scripts/*.js`. The Goja runtime and MCP server are
 runtime surfaces over the same shell application and engine model. MCP does not
-define separate durable state beyond `.mcp.json` and saved scripts.
+define separate durable state beyond client MCP configuration (`.mcp.json` and
+`.codex/config.toml`) and saved scripts.
 
 ## Network Data Model
 

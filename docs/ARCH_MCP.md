@@ -40,8 +40,10 @@ docs via `doc`, rather than having them injected periodically.
 
 ## Configuration
 
-The installer writes `$APCLIENT_DATA/.mcp.json` for the installed `apshell`
-binary and data directory. To configure manually:
+The installer writes `$APCLIENT_DATA/.mcp.json` and
+`$APCLIENT_DATA/.codex/config.toml` for the installed `apshell` binary and data
+directory. `.mcp.json` supports MCP clients that read Claude-style JSON
+configuration:
 
 ```json
 {
@@ -56,6 +58,15 @@ binary and data directory. To configure manually:
     }
   }
 }
+```
+
+Codex reads project-scoped MCP configuration from `.codex/config.toml` when the
+client data directory is opened as a trusted Codex project:
+
+```toml
+[mcp_servers.my_aplane]
+command = "/path/to/my_aplane/bin/apshell"
+args = ["--mcp", "-d", "/path/to/my_aplane/apclient"]
 ```
 
 Each server instance uses its own data directory (`-d` flag), which determines

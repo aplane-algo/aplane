@@ -558,7 +558,8 @@ each MCP server instance uses its own:
 | `scripts/` | saved JS (`jssave` / `jslist` / `js <file.js>`) |
 | `txnjson/` | transaction JSON written in `write` mode |
 | `.ssh/` | tunnel identity (`id_ed25519`) and `known_hosts` |
-| `.mcp.json` | MCP server config (written by the installer) |
+| `.mcp.json` | MCP server config for clients that read Claude-style JSON (written by the installer) |
+| `.codex/config.toml` | Project-scoped Codex MCP server config (written by the installer) |
 | cache | token-scoped ASA/alias/auth caches |
 
 > Full detail: [USER_CONFIG.md](USER_CONFIG.md),

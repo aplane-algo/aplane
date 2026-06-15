@@ -21,7 +21,8 @@ The installer will:
   release provides one and `minisign` is installed on your machine
 - Install to `~/aplane` (you'll be asked to confirm)
 - Prompt you to set a keystore passphrase
-- Write an MCP config to `~/aplane/apclient/.mcp.json`
+- Write MCP configs to `~/aplane/apclient/.mcp.json` and
+  `~/aplane/apclient/.codex/config.toml`
 - Optionally add environment setup to your shell rc for standalone commands
 
 ## 2. Start AlgoKit LocalNet
@@ -172,14 +173,18 @@ For more detail, see [USER_KEYTYPES.md](USER_KEYTYPES.md).
 
 ## Optional: MCP for Agents
 
-The installer writes an MCP config file at:
+The installer writes MCP config files at:
 
 ```text
 ~/aplane/apclient/.mcp.json
+~/aplane/apclient/.codex/config.toml
 ```
 
-Start your MCP-capable agent in this directory. It will use an instance of the
-shell in "MCP mode" as the MCP server.
+The `.codex/config.toml` file is project-scoped Codex configuration. Start
+Codex from `~/aplane/apclient` and trust that directory to load the APlane MCP
+server without touching `~/.codex`. Other MCP-capable agents can use
+`.mcp.json`; they will use an instance of the shell in "MCP mode" as the MCP
+server.
 
 If you connect an agent through that MCP server, first ask it to read the
 `mcp_reference` MCP command. That returns the apshell command reference so the

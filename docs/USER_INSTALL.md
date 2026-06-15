@@ -98,6 +98,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   ├── config.yaml        # Client config (network and UI defaults)
 │   ├── endpoints.yaml     # Client endpoint registry
 │   ├── .mcp.json          # MCP client config for apshell --mcp
+│   ├── .codex/config.toml # Codex project MCP config for apshell --mcp
 │   ├── plugins.yaml       # Enabled plugin names
 │   ├── plugins.available/  # Installed plugin catalog entries
 │   └── scripts/           # Saved JavaScript/MCP snippets
@@ -372,6 +373,7 @@ This installs:
 - `~/aplane/apclient/config.yaml` — client configuration (network and UI defaults)
 - `~/aplane/apclient/endpoints.yaml` — client endpoint registry; new installs start with a `primary` signer endpoint
 - `~/aplane/apclient/.mcp.json` — MCP client configuration for `apshell --mcp`
+- `~/aplane/apclient/.codex/config.toml` — Codex project MCP configuration for `apshell --mcp`; Codex loads it when started from this trusted client directory
 - `~/aplane/apclient/.ssh/id_ed25519` — SSH key for signer tunnel, generated during install if `ssh-keygen` is available or by `apshell request-token` when first needed
 - `~/aplane/apclient/plugins.yaml` — enabled plugin names; new installs start with an empty activation list
 - `~/aplane/apclient/plugins.available/algokit-localnet/` — bundled LocalNet operations plugin, loaded only when `algokit-localnet` is listed in `plugins.yaml`
@@ -939,6 +941,7 @@ $APCLIENT_DATA/
 ├── aplane.token          # API token (created after request-token approval)
 ├── tokens/               # Optional endpoint-specific API tokens
 ├── .mcp.json             # Installer-written MCP client config for apshell --mcp
+├── .codex/config.toml    # Installer-written Codex project MCP config
 ├── .ssh/
 │   ├── id_ed25519        # SSH private key for authentication
 │   ├── id_ed25519.pub    # SSH public key
@@ -960,7 +963,7 @@ The `installer/` directory contains service files and installer helper scripts f
 | `installer/apsigner.service.template` | Service template with `@@BINDIR@@`, `@@USER@@`, `@@GROUP@@`, `@@DATA_DIR@@`, and `@@MEMORY_LOCK_SERVICE_LINES@@` placeholders. Used by `installer/scripts/systemd-setup.sh` for customizable installs. |
 | `installer/sudoers.template` | sudoers rules with `@@USER@@` placeholder. Allows the service user to manage the `apsigner` service without a password. Covers both `/bin/systemctl` (Ubuntu) and `/usr/bin/systemctl` (RHEL/CentOS) paths. |
 | `installer/scripts/aplane-env-audit.sh` | Read-only environment audit for local configuration, ports, listeners, IPC socket state, token/key permissions, and partial installs. |
-| `installer/scripts/config-mcp.sh` | Helper that writes `$APCLIENT_DATA/.mcp.json` for `apshell --mcp`. Installers call the same configuration logic automatically. |
+| `installer/scripts/config-mcp.sh` | Helper that writes `$APCLIENT_DATA/.mcp.json` and `$APCLIENT_DATA/.codex/config.toml` for `apshell --mcp`. Installers call the same configuration logic automatically. |
 
 ### Manual Installation (Without the Setup Script)
 

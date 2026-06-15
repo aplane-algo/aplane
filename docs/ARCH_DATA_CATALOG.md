@@ -144,7 +144,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Client SSH identity | client secret | `.ssh/id_ed25519` | SSH tunnel private key | `internal/sshtunnel`, `internal/engine/connect` | Generated/enrolled separately from tokens. |
 | Known hosts | trust store | `.ssh/known_hosts` or endpoint override | SSH host-key verification | `internal/sshtunnel`, `internal/clientenroll`, `cmd/apconsole` | Host trust is not imported through endpoint envelope. |
 | Client mutation lock | local coordination | `.apclient.lock` | cache/config mutation serialization | `internal/clientstate`, `internal/config` | Prevents concurrent local writers from corrupting client state. |
-| MCP config | client config | `.mcp.json` | installed MCP command registration | installer, `cmd/apshell` | Installer preserves existing file and writes `.new` when needed. |
+| MCP config | client config | `.mcp.json`, `.codex/config.toml` | installed MCP command registration | installer, `cmd/apshell` | Installer preserves existing files and writes `.aplane-installer.new` templates when needed. |
 | Plugin activation | authoritative client config | `plugins.yaml` | enabled plugin names | `internal/plugin`, installer | Empty activation list on fresh install; non-bundled choices preserved. |
 | Plugin catalog entry | client executable catalog | `plugins.available/<name>` plus manifest/checksums | plugin manager candidate | `internal/plugin`, installer | Symlinked directories ignored; checksum/manifest validation gates execution. |
 | JavaScript script | user-managed client artifact | `scripts/*.js` | Goja runtime input | `internal/scripting`, `internal/jsapi` | Script files are not signer authority. |

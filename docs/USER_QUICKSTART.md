@@ -17,7 +17,8 @@ The installer will:
   release provides one and `minisign` is installed on your machine
 - Install to `~/aplane` (you'll be asked to confirm)
 - Prompt you to set a keystore passphrase
-- Write an MCP config to `~/aplane/apclient/.mcp.json`
+- Write MCP configs to `~/aplane/apclient/.mcp.json` and
+  `~/aplane/apclient/.codex/config.toml`
 - Optionally add environment setup to your shell rc for standalone commands
 
 The two key environment variables that APlane uses are APSIGNER_DATA and APCLIENT_DATA. The script that sets them for your installation is at ~/aplane/apenv.sh.
@@ -158,12 +159,15 @@ For more detail, see [USER_KEYTYPES.md](USER_KEYTYPES.md).
 
 ## Optional: MCP for Agents
 
-The installer writes an MCP config file at:
+The installer writes MCP config files at:
 
 ```text
 ~/aplane/apclient/.mcp.json
+~/aplane/apclient/.codex/config.toml
 ```
-Adjust for the MCP-capable agent of your choice.
+The `.codex/config.toml` file is project-scoped Codex configuration. Start
+Codex from `~/aplane/apclient` and trust that directory to load the APlane MCP
+server without touching `~/.codex`.
 
 Start your MCP-capable agent in this directory. It will use an instance of the
 shell in "MCP mode" as the MCP server.

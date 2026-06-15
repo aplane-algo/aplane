@@ -71,6 +71,29 @@ shell_quote() {
     printf "'%s'" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
 }
 
+toml_escape() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    value="${value//$'\n'/\\n}"
+    printf '%s' "$value"
+}
+
+codex_mcp_config_matches_install() {
+    local config="$1"
+    local apshell_bin="$2"
+    local data_dir="$3"
+    local apshell_bin_toml
+    local data_dir_toml
+    apshell_bin_toml="$(toml_escape "$apshell_bin")"
+    data_dir_toml="$(toml_escape "$data_dir")"
+
+    [ -f "$config" ] &&
+        grep -qF '[mcp_servers.aplane]' "$config" &&
+        grep -qF "command = \"$apshell_bin_toml\"" "$config" &&
+        grep -qF "args = [\"--mcp\", \"-d\", \"$data_dir_toml\"]" "$config"
+}
+
 is_linux() {
     [ "$(uname -s)" = "Linux" ]
 }
@@ -375,6 +398,12 @@ if [ "$CLIENT_MODE" = "1" ]; then
             echo "Removed $APCLIENT_DIR/.mcp.json (installer template)"
         fi
         rm -f "$APCLIENT_DIR/.mcp.json.aplane-installer.new"
+        if codex_mcp_config_matches_install "$APCLIENT_DIR/.codex/config.toml" "$CLIENT_BINDIR/apshell" "$APCLIENT_DIR"; then
+            rm -f "$APCLIENT_DIR/.codex/config.toml"
+            echo "Removed $APCLIENT_DIR/.codex/config.toml (installer template)"
+        fi
+        rm -f "$APCLIENT_DIR/.codex/config.toml.aplane-installer.new"
+        rmdir "$APCLIENT_DIR/.codex" 2>/dev/null || true
 
         # Remove installer-generated SSH keys
         rm -f "$APCLIENT_DIR/.ssh/id_ed25519" "$APCLIENT_DIR/.ssh/id_ed25519.pub"
@@ -449,6 +478,8 @@ if [ "$LOCAL_MODE" = "1" ]; then
     ROOT_ARTIFACTS_REMOVED=0
     MCP_CONFIG_REMOVED=0
     MCP_TEMPLATE_REMOVED=0
+    CODEX_MCP_CONFIG_REMOVED=0
+    CODEX_MCP_TEMPLATE_REMOVED=0
     ENV_RC_CLEANED=0
     REMOVED_SIGNER_BINARIES=()
     REMOVED_ROOT_ARTIFACTS=()
@@ -485,6 +516,15 @@ if [ "$LOCAL_MODE" = "1" ]; then
             rm -f "$APCLIENT_DIR/.mcp.json.aplane-installer.new"
             MCP_TEMPLATE_REMOVED=1
         fi
+        if codex_mcp_config_matches_install "$APCLIENT_DIR/.codex/config.toml" "$CLIENT_BINDIR/apshell" "$APCLIENT_DIR"; then
+            rm -f "$APCLIENT_DIR/.codex/config.toml"
+            CODEX_MCP_CONFIG_REMOVED=1
+        fi
+        if [ -f "$APCLIENT_DIR/.codex/config.toml.aplane-installer.new" ]; then
+            rm -f "$APCLIENT_DIR/.codex/config.toml.aplane-installer.new"
+            CODEX_MCP_TEMPLATE_REMOVED=1
+        fi
+        rmdir "$APCLIENT_DIR/.codex" 2>/dev/null || true
     fi
 
     for artifact in apenv.sh apconsole.yaml start.sh start-tmux.sh start-screen.sh; do
@@ -542,6 +582,12 @@ if [ "$LOCAL_MODE" = "1" ]; then
     fi
     if [ "$MCP_TEMPLATE_REMOVED" = "1" ]; then
         echo "  - removed installer-generated MCP config template at $APCLIENT_DIR/.mcp.json.aplane-installer.new"
+    fi
+    if [ "$CODEX_MCP_CONFIG_REMOVED" = "1" ]; then
+        echo "  - removed installer-generated Codex MCP config at $APCLIENT_DIR/.codex/config.toml"
+    fi
+    if [ "$CODEX_MCP_TEMPLATE_REMOVED" = "1" ]; then
+        echo "  - removed installer-generated Codex MCP config template at $APCLIENT_DIR/.codex/config.toml.aplane-installer.new"
     fi
     if [ "$ROOT_ARTIFACTS_REMOVED" = "1" ]; then
         echo "  - removed generated local helper files from $LOCAL_PARENT: ${REMOVED_ROOT_ARTIFACTS[*]}"

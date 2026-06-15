@@ -530,6 +530,7 @@ Additional signer-state notes:
   config.yaml
   endpoints.yaml
   .mcp.json
+  .codex/config.toml
   aplane.token
   tokens/
     <endpoint-alias>.token
@@ -552,7 +553,10 @@ Additional signer-state notes:
 
 Additional client-state notes:
 
-- installers write `.mcp.json` for the installed `apshell --mcp` command and data directory; existing `.mcp.json` files are preserved and a `.mcp.json.aplane-installer.new` template is written instead
+- installers write `.mcp.json` and `.codex/config.toml` for the installed
+  `apshell --mcp` command and data directory; existing files are preserved and
+  `.mcp.json.aplane-installer.new` or
+  `.codex/config.toml.aplane-installer.new` templates are written instead
 - installers create the client `plugins.available/` catalog directory,
   `plugins.yaml` activation file, and `scripts/` directory; `apshell` loads only
   catalog plugin directories named in `plugins.yaml`
