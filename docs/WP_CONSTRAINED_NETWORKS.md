@@ -1,40 +1,44 @@
-# Building Constrained Networks on Algorand
-
-**Using LogicSigs and Rekeying for Provable Transfer Constraints**
+# Easy Algorand Guardrails
 
 ![Constrained network diagram](https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/mesh.png)
 
 ## 1. Overview
 
-Suppose you want to restrict token movement to a set of approved corridors
-whose endpoint accounts are predetermined. Value remains within
-a controlled transfer graph. This might be useful for payment networks, corporate treasury systems,
-agentic buyer/seller ecosystems, etc.
-
-So even if keys are leaked or stolen, or if a software defect causes an agent to attempt a transfer to an 
-unintended destination, those tokens can move only along pre-set paths.
+Suppose you want to restrict token movement to a set of approved,
+predetermined paths. Value remains within a controlled transfer graph, 
+which is useful for payment networks, corporate treasury systems,
+agentic buyer/seller ecosystems, and other cases where the topology is
+relatively stable.
 
 You can do this on Algorand simply using logic signatures and rekeying. Unlike on many other chains, no 
-stateful application state is necessary. This results in a smaller attack surface. The LogicSigs handle 
+stateful application state is necessary, resulting in a smaller attack surface. The logic signatures handle 
 *who* can send and *where* they can send to, while rekeying allows you to change the graph topology.
 
-Let's first zoom in on a single sender account.
+## 2. Whitelisted Falcon LogicSig
 
-## 2. Constraining accounts with a Whitelisted Falcon LogicSig
+The canonical Falcon implementation on Algorand today uses LogicSigs.
 
-A **constrained account** is an account whose effective authorizer is
-a canonical Algorand Falcon LogicSig that has been extended to enforce one or
-more whitelisted destination addresses. We'll call this key type "whitelisted
-Falcon".
+A LogicSig is a cryptographic mechanism that allows 
+an account's transaction authorization to be determined by a small
+TEAL program rather than a standard Algorand private key. In the case of
+Falcon accounts, the TEAL verifies that a transaction's Falcon signature sidecar
+was indeed produced by the account's authorized private key.
 
-For such accounts:
+For a new "whitelisted Falcon" key type, we simply take the canonical Algorand
+Falcon TEAL program and extend it with code that ensures the transaction's destination is
+included in a set of allowed destinations. 
 
-- the account's transactions carry a valid Falcon signature checked by the
-  LogicSig, and
-- every destination field - `Receiver` and `CloseRemainderTo` for
-  payments, `AssetReceiver` and `AssetCloseTo` for asset transfers - is either
-  the account itself or a member of a **destination whitelist compiled into the
-  LogicSig program**.
+```text
+  falcon_verify()
+
+  // If verified, we know the right key signed.
+  // Then enforce the destination guardrail:
+
+  assert primary_destination == Sender || is_whitelisted(primary_destination)
+  assert close_destination == Zero || Sender || is_whitelisted(close_destination)
+
+  // If all assertions pass, transaction is allowed.
+```
 
 Two properties make this the right primitive:
 
@@ -44,27 +48,15 @@ Two properties make this the right primitive:
 - **Signature-bearing.** The guarantee must be "only the **key holder** can move value, but only
   within the whitelist."
 
-The graph node accounts themselves can start life as either standard Algorand
-accounts or Falcon LogicSig accounts. What matters is that their addresses are
-fixed before the whitelist programs are compiled. While they are members of the
-graph, they are rekeyed to the whitelisted Falcon LogicSigs. The whitelist logic
-is the same regardless: destinations are compiled as literal addresses and
-compared against the transaction's destination fields. Everything outside the
-whitelist is unreachable through those constrained transfer paths.
-
-The LogicSig itself is an extension of the canonical Algorand Falcon verification LogicSig.
-
-```text
-falcon_verify() // canonical Falcon verification
-
-txn Receiver  == Sender || is_whitelisted(Receiver)      -> else err
-txn CloseRemainderTo == Zero || Sender || is_whitelisted  -> else err
-```
+The definition of "Sender"'s actual address is evaluated at runtime and is not 
+hard-coded in the TEAL. That means that standard accounts can rekey to a specific 
+whitelist LogicSig and become whitelisted themselves, adopting as their whitelist
+the destinations that *are* hardcoded in the LogicSig program. 
 
 ## 3. From accounts to a network
 
 A directed edge **A → B** exists exactly when `B` is in `A`'s whitelist. The
-network graph is the **emergent union of per-account whitelists** -
+network graph is the **emergent union of per-account whitelists**;
 there is no adjacency table, route map, or registry, and no
 privileged component mediates a transfer. Each node enforces its own outbound
 edges, and multi-hop paths exist only where consecutive operators have
@@ -73,29 +65,35 @@ constructed consecutive edges.
 ## 4. Construction: the rekeyed formation
 
 A whitelist account presents a **circularity**: a LogicSig account's address is
-derived from its program, and the program embeds its peers' addresses. In any
-cycle — a closed mesh, a ring, mutual links — the addresses become mutually
-recursive and cannot be computed, so the accounts cannot be built as pure
-contract accounts.
+directly derived from its program, and the program embeds its peers' addresses. In any
+cycle - a closed mesh, a ring, mutual links - the addresses become mutually
+recursive and cannot be computed: we have a chicken-and-egg situation.
+
 
 The resolution is to separate *identity* from *program*:
 
-1. **Fix node identities first** as accounts whose addresses do not depend on
+1. **Fix identities first** as accounts whose addresses do not depend on
    any whitelist.
 2. **Compile each whitelist** LogicSig program against those now-fixed peer addresses.
-3. **Rekey** each node to its whitelist program.
+3. **Rekey** each account to its whitelist program.
 
 Because an account's address is independent of the program it is rekeyed to,
-the **address is stable** while the **authorizer becomes the whitelist**. The
+the **address is stable** while the **authorizing LogicSig defines the whitelist**. The
 circularity dissolves: step 2 references the fixed addresses from step 1, never
 the whitelist programs themselves.
 
-This same mechanism also provides **reconfiguration**. To change a node's
-destination addresses, compile a new whitelist program and rekey to it: the
-account address is unchanged, counterparties update nothing, the change takes
-effect atomically at a round boundary, and the sequence of authorizer changes is
-publicly auditable on-chain. Topology is built, and later evolved, purely by
-construction.
+This same mechanism also provides **reconfiguration**. Changing to a new
+set of allowed destinations is as simple as rekeying the account to a new
+whitelist LogicSig. The account address is unchanged and counterparties update nothing.
+Topology is built, and later evolved, purely by construction.
+
+The graph accounts themselves can start life as either standard Algorand
+accounts or Falcon LogicSig accounts. What matters is that their addresses are
+fixed before the whitelist programs are compiled.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/rekey.png" alt="Rekey diagram" width="320">
+</p>
 
 ## 5. Boundary nodes (controlled exits)
 
@@ -105,7 +103,7 @@ A constrained region needs a sanctioned way out. Include a **standard,
 unconstrained signature account** as one entry in a node's whitelist: that
 single edge is the controlled exit, and every other destination remains walled.
 For example, that exit could be a CEX deposit address, or a general treasury
-account. Value leaves the constrained region only through that labeled path.
+account. 
 
 The exit is itself swappable by construction - rekey the node to a whitelist
 that names a different exit account, address unchanged.
@@ -127,30 +125,25 @@ is a consequence of the building block rather than an added feature:
 
 ## 7. Enforcement and security
 
-- **On-chain, not policy.** The constraint is evaluated by Algorand consensus on
+- **Consensus-level enforcement.** The constraint is evaluated by Algorand consensus on
   every transaction. There is no alternative path around the rule; a stolen key
-  can still travel only the whitelist.
+  can still only send to whitelisted destinations.
 - **Bounded blast radius.** Compromise of an account's key lets an attacker
   initiate transfers, but only to that account's whitelisted destinations.
 - **Reconfiguration is the apex authority.** Whoever can rekey an account can
   replace its constraints entirely. This authority must be *separated from the
   spend key* and hardened. Rekey authority must not be satisfiable by the spend
-  key alone; the LogicSig program can enforce this additional constraint.
-- **Immutability option.** Using a LogicSig *without* rekey capability
-  (enforced by the LogicSig) makes its constraints permanent - the strongest
-  posture, where reconfiguration is never needed.
+  key alone; the LogicSig program can enforce this additional constraint. 
 
 ## 8. Conclusion
 
-Constrained transfer networks require no smart contracts on Algorand. A
+Building such guardrails on Algorand requires no on-chain smart contracts. A
 signature-bearing whitelist LogicSig gives each account a non-bypassable,
-ledger-enforced set of outbound edges; rekeying gives a stable-address way to
+ledger-enforced set of fixed paths; rekeying gives a stable-address way to
 construct the topology despite circular references and to evolve it later
 without disturbing counterparties; and Algorand's native atomic groups compose
-these edges into all-or-nothing multi-hop flows in which intermediaries are
-constrained, signing participants. Two primitives — whitelist and rekey —
-yield auditable, reconfigurable, atomically-routable constrained networks.
+these paths into all-or-nothing multi-hop flows. 
 
 ---
 
-*— End of Document —*
+*- End of Document -*
