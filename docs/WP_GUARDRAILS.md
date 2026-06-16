@@ -60,36 +60,36 @@ there is no adjacency table, route map, or registry, and no
 privileged component mediates a transfer. Each node enforces its own outbound
 edges.
 
-## 4. Construction for Closed Graphs: the rekeyed formation
+## 4. Construction
 
-Suppose you want to build a closed graph with cycles, where nodes whitelist
-other members of the same graph. This creates a circularity: a LogicSig account's
-address is directly derived from its program, and the program embeds its peers'
-addresses.
-
-In any cycle - a closed mesh, a ring, mutual links - the addresses become mutually
-recursive and cannot be computed: we have a chicken-and-egg situation.
-
-The resolution is to separate *identity* from *program*:
+This technique for building guardrails separates an account's stable identity
+from the LogicSig program that authorizes its spending and constrains its
+destination set.
 
 1. **Fix identities first** as accounts whose addresses do not depend on
-   any whitelist.
-2. **Compile each whitelist** LogicSig program against those now-fixed peer addresses.
+   the whitelist being built.
+2. **Compile each whitelist** LogicSig program against those now-fixed peer
+   addresses.
 3. **Rekey** each account to its whitelist program.
 
-Because an account's address is independent of the program it is rekeyed to,
-the **address is stable** while the **authorizing LogicSig defines the whitelist**. The
-circularity dissolves: step 2 references the fixed addresses from step 1, never
-the whitelist programs themselves.
-
-This same mechanism also provides **reconfiguration**. Changing to a new
-set of allowed destinations is as simple as rekeying the account to a new
-whitelist LogicSig. The account address is unchanged and counterparties update nothing.
-Topology is built, and later evolved, purely by construction.
-
-The graph accounts themselves can start life as either standard Algorand
+The graph accounts themselves can start life as either standard Algorand Ed25519
 accounts or Falcon LogicSig accounts. What matters is that their addresses are
 fixed before the whitelist programs are compiled.
+
+This order is especially important for closed graphs with cycles. If nodes in a
+mesh, ring, or mutual-link pair were built as pure whitelist LogicSig accounts,
+each address would be derived from a program that embeds peer addresses. Those
+peer addresses could themselves depend on programs that embed the first address,
+creating a circular dependency.
+
+Rekeying breaks that circularity. A rekeyed account keeps its original address,
+while its authorizing LogicSig defines the whitelist. Step 2 references fixed
+account addresses, not recursively-defined whitelist program addresses.
+
+This same mechanism also provides **reconfiguration**. Changing to a new set of
+allowed destinations is as simple as rekeying the account to a new whitelist
+LogicSig. The account address is unchanged and counterparties update nothing.
+Topology is built, and later evolved, purely by construction.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/aplane-algo/aplane.io/main/img/rekey.png" alt="Rekey diagram" width="320">
