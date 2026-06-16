@@ -2,7 +2,7 @@
 # Smoke-test the bootstrap release tarball in a non-systemd Ubuntu container,
 # running install.sh in local (rootless, user-directory) mode as a regular
 # user. Asserts the install layout, exercises running-install gating, verifies
-# stopped reinstall is rejected for this new-install-only release, and checks
+# stopped in-place upgrade preserves state, and checks
 # uninstall state preservation.
 
 set -euo pipefail
@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARCH=""
 DIST_DIR=""
-VERSION="docker-smoke"
+VERSION="v0.24.0-docker-smoke"
 TARBALL=""
 SKIP_BUILD=0
 KEEP_CONTAINER=0
@@ -25,7 +25,7 @@ Usage: scripts/docker-local-smoke.sh [options]
 
 Options:
   --tarball <path>      Use an existing aplane_<version>_linux_<arch>.tar.gz
-  --version <version>   Version string for locally built tarball (default: docker-smoke)
+  --version <version>   Version string for locally built tarball (default: v0.24.0-docker-smoke)
   --arch <amd64|arm64>  Architecture to package/test (default: host arch)
   --skip-build          Reuse existing bin/<arch> binaries when building the tarball
   --keep-container      Leave the container running for debugging
@@ -37,8 +37,7 @@ verifies the install layout, exercises appass --check, starts apsigner,
 verifies the installer refuses to run while that signer is running, starts
 apapprover, drives `apshell request-token` end-to-end (including the
 apapprover-side approval), confirms the client can reach the signer with the
-issued token, verifies a stopped in-place reinstall is rejected as
-new-install-only without changing state, then runs the installed uninstaller
+issued token, verifies a stopped in-place upgrade preserves state, then runs the installed uninstaller
 and verifies state preservation.
 EOF
 }
@@ -442,25 +441,22 @@ diff -u /tmp/local-state-baseline.stat /tmp/local-state-current.stat"
 run_local_reinstaller() {
     docker_exec_as_tester "cd /home/$TEST_USER/src/aplane && expect <<'EXPECT'
 set timeout 180
-set rejected 0
+set completed 0
 spawn ./install.sh /home/$TEST_USER/aplane
 expect {
   \"Proceed with installation?*\" { send \"\r\"; exp_continue }
   \"Enable enforced memory locking for apsigner?*\" { send \"n\r\"; exp_continue }
   \"Add apenv.sh to *\" { send \"y\r\"; exp_continue }
-  \"new-install-only\" { set rejected 1; exp_continue }
+  \"=== Installation complete ===\" { set completed 1; exp_continue }
   timeout { exit 18 }
   eof {}
 }
 set result [wait]
 set rc [lindex \$result 3]
-if {\$rejected != 1} {
+if {\$completed != 1} {
   exit 19
 }
-if {\$rc == 0} {
-  exit 20
-}
-exit 0
+exit \$rc
 EXPECT"
 }
 
@@ -615,13 +611,13 @@ main() {
     log "Shutting down signer and approver"
     shutdown_services
 
-    log "Checking new-install-only rejects stopped local reinstall"
+    log "Checking stopped local in-place upgrade"
     run_local_reinstaller
 
-    log "Verifying local layout after rejected stopped reinstall"
+    log "Verifying local layout after stopped in-place upgrade"
     verify_install
 
-    log "Verifying local state survived rejected stopped reinstall"
+    log "Verifying local state survived stopped in-place upgrade"
     verify_local_state_fingerprint
 
     log "Configuring appass-file auto-unlock"

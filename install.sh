@@ -329,6 +329,87 @@ shell_quote() {
     printf "'%s'" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
 }
 
+MIN_SUPPORTED_UPGRADE_VERSION="v0.24.0"
+
+release_metadata_version() {
+    local path="$1"
+    sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$path" | head -n 1
+}
+
+normalize_release_version() {
+    local raw="$1"
+    local core major minor patch extra
+    local IFS=.
+    core="${raw#v}"
+    core="${core%%+*}"
+    core="${core%%-*}"
+    read -r major minor patch extra <<EOF
+$core
+EOF
+    [ -z "${extra:-}" ] || return 1
+    case "${major:-}.${minor:-}.${patch:-}" in
+        *[!0-9.]*|.*|*..*|*.) return 1 ;;
+    esac
+    [ -n "${major:-}" ] && [ -n "${minor:-}" ] && [ -n "${patch:-}" ] || return 1
+    printf '%s %s %s\n' "$major" "$minor" "$patch"
+}
+
+version_ge() {
+    local left="$1"
+    local right="$2"
+    local left_norm right_norm
+    local lmj lmn lpt rmj rmn rpt
+
+    left_norm="$(normalize_release_version "$left")" || return 2
+    right_norm="$(normalize_release_version "$right")" || return 2
+
+    read -r lmj lmn lpt <<EOF
+$left_norm
+EOF
+    read -r rmj rmn rpt <<EOF
+$right_norm
+EOF
+
+    if ((10#$lmj > 10#$rmj)); then return 0; fi
+    if ((10#$lmj < 10#$rmj)); then return 1; fi
+    if ((10#$lmn > 10#$rmn)); then return 0; fi
+    if ((10#$lmn < 10#$rmn)); then return 1; fi
+    if ((10#$lpt >= 10#$rpt)); then return 0; fi
+    return 1
+}
+
+require_supported_upgrade() {
+    local metadata_path="$1"
+    local install_label="$2"
+    local install_path="$3"
+    local installed_version
+
+    if [ ! -f "$metadata_path" ]; then
+        echo "Error: cannot upgrade this $install_label because release metadata is missing." >&2
+        echo "Expected: $metadata_path" >&2
+        echo "This installer supports in-place upgrades only from APlane $MIN_SUPPORTED_UPGRADE_VERSION or newer." >&2
+        echo "Use a fresh install root, then restore or re-enroll any state you still need." >&2
+        echo "Existing path: $install_path" >&2
+        exit 1
+    fi
+
+    installed_version="$(release_metadata_version "$metadata_path")"
+    if [ -z "$installed_version" ]; then
+        echo "Error: cannot determine installed APlane version from $metadata_path." >&2
+        echo "This installer supports in-place upgrades only from APlane $MIN_SUPPORTED_UPGRADE_VERSION or newer." >&2
+        echo "Use a fresh install root, then restore or re-enroll any state you still need." >&2
+        exit 1
+    fi
+
+    if ! version_ge "$installed_version" "$MIN_SUPPORTED_UPGRADE_VERSION"; then
+        echo "Error: installed APlane version $installed_version is too old for in-place upgrade." >&2
+        echo "Minimum supported upgrade version: $MIN_SUPPORTED_UPGRADE_VERSION" >&2
+        echo "Use a fresh install root, then restore or re-enroll any state you still need." >&2
+        echo "Existing path: $install_path" >&2
+        exit 1
+    fi
+}
+
 toml_escape() {
     local value="$1"
     value="${value//\\/\\\\}"
@@ -1794,6 +1875,9 @@ if [ "$CLIENT_MODE" = "1" ]; then
     APCLIENT_DIR="$CLIENT_PATH/apclient"
     BINDIR="$APCLIENT_DIR/bin"
     abort_if_macos_install_processes_running "$CLIENT_PATH"
+    if [ -d "$APCLIENT_DIR" ] && ! dir_is_empty "$APCLIENT_DIR"; then
+        require_supported_upgrade "$CLIENT_PATH/install/release.json" "client install" "$CLIENT_PATH"
+    fi
 
     echo "=== aplane client installer (client-only mode) ==="
     echo ""
@@ -1973,6 +2057,9 @@ if [ "$LOCAL_MODE" = "1" ]; then
         LOCAL_SIGNER_STOP_CHECKED=1
     fi
     INSTALL_MODE="$(classify_local_install "$LOCAL_PATH" "$INSTALL_ROOT" "$APCLIENT_DIR")"
+    if [ "$INSTALL_MODE" = "upgrade" ]; then
+        require_supported_upgrade "$LOCAL_PATH/install/release.json" "local install" "$LOCAL_PATH"
+    fi
     if [ "$LOCAL_SIGNER_STOP_CHECKED" != "1" ]; then
         require_local_signer_stopped "$DATA_DIR" "$INSTALL_MODE"
     fi
@@ -2315,6 +2402,9 @@ if [ -z "$DATA_DIR" ]; then
 fi
 if [ ! -d "$DATA_DIR" ]; then
     echo "Recreating missing data directory $DATA_DIR..."
+fi
+if [ -f "$DATA_DIR/identities/default/.keystore" ]; then
+    require_supported_upgrade "$DATA_DIR/install/release.json" "systemd install" "$DATA_DIR"
 fi
 ensure_prod_data_dir_permissions "$DATA_DIR"
 ensure_prod_backup_permissions "$DATA_DIR"

@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARCH=""
 DIST_DIR=""
-VERSION="docker-smoke"
+VERSION="v0.24.0-docker-smoke"
 TARBALL=""
 SKIP_BUILD=0
 KEEP_CONTAINER=0
@@ -22,7 +22,7 @@ Usage: scripts/docker-systemd-smoke.sh [options]
 
 Options:
   --tarball <path>      Use an existing aplane_<version>_linux_<arch>.tar.gz
-  --version <version>   Version string for locally built tarball (default: docker-smoke)
+  --version <version>   Version string for locally built tarball (default: v0.24.0-docker-smoke)
   --arch <amd64|arm64>  Architecture to package/test (default: host arch)
   --skip-build          Reuse existing bin/<arch> binaries when building the tarball
   --keep-container      Leave the container running for debugging
@@ -35,7 +35,7 @@ systemd service is active, runs appass --check to confirm systemd-mode detection
 drives `apshell request-token` end-to-end as the non-root installing user (with
 apapprover unlocking the signer and auto-approving), confirms the client can
 reach the signer with the issued token, verifies a stopped in-place systemd
-reinstall is rejected as new-install-only without changing state, stages the on-disk state of
+upgrade preserves state, stages the on-disk state of
 `appass set systemd-creds` (passphrase.cred + unlock.yaml + unit
 LoadCredentialEncrypted= directive), then runs the bundled systemd uninstaller
 and verifies signer data is preserved. (Runtime auto-unlock via systemd's
@@ -683,13 +683,13 @@ main() {
     log "Shutting down client-side services"
     shutdown_client_services
 
-    log "Checking new-install-only rejects stopped systemd reinstall"
+    log "Checking stopped systemd in-place upgrade"
     run_stopped_systemd_reinstaller
 
-    log "Verifying systemd layout after rejected stopped reinstall"
+    log "Verifying systemd layout after stopped in-place upgrade"
     verify_install_layout
 
-    log "Verifying systemd state survived rejected stopped reinstall"
+    log "Verifying systemd state survived stopped in-place upgrade"
     verify_systemd_in_place_state_fingerprint
 
     log "Configuring appass-file auto-unlock"

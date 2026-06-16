@@ -228,9 +228,9 @@ Each instance gets its own random ports, keystore, and `start.sh` launcher. They
 
 ### Existing install paths
 
-This release is new-install-only. Do not install it over an existing APlane
-data directory as an upgrade target; create a fresh install root and fresh
-`apclient`/`apsigner` data directories.
+In-place upgrades are supported only from APlane `v0.24.0` or newer. Older
+installs, or installs without `install/release.json`, must use a fresh install
+root and fresh `apclient`/`apsigner` data directories.
 
 The installer is still conservative when pointed at an existing path:
 - Existing `config.yaml` files are left unchanged
@@ -341,13 +341,14 @@ curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-i
 
 ---
 
-## New-Install-Only Release
+## Upgrade Compatibility
 
-This release is not an in-place upgrade target for existing APlane installs.
-Install into a fresh root and initialize fresh `apclient` and `apsigner` data
-directories. Preserve old install directories separately until you have
-confirmed the fresh environment has the keys, policy, endpoint routing, tokens,
-and network configuration you intend to use.
+This release supports in-place upgrades only from APlane `v0.24.0` or newer.
+If the existing install is older, or if the installer cannot read
+`install/release.json`, install into a fresh root and initialize fresh
+`apclient` and `apsigner` data directories. Preserve old install directories
+separately until you have confirmed the fresh environment has the keys, policy,
+endpoint routing, tokens, and network configuration you intend to use.
 
 ---
 
@@ -456,13 +457,13 @@ across `sudo` explicitly:
 sudo APLANE_INSTALL_ROOT="$APLANE_INSTALL_ROOT" APLANE_BINDIR="$APLANE_BINDIR" ./install.sh --systemd
 ```
 
-Do not use this release to upgrade an existing install in place. For a fresh
-install, run `install.sh` against a new local root or use `--systemd` with a
+In-place upgrades are supported only from APlane `v0.24.0` or newer. For older
+installs, run `install.sh` against a new local root or use `--systemd` with a
 fresh signer data directory.
 
 - Existing `config.yaml` is left unchanged
 - A canonical template is written to `config.yaml.aplane-installer.new`
-- If an initialized signer keystore already exists, the installer stops and
+- If an initialized signer keystore is from an unsupported install, the installer stops and
   asks you to use a fresh install root
 
 If `config.yaml.aplane-installer.new` is created, review and merge intentionally:
@@ -521,8 +522,9 @@ For unattended operation, install normally first, stop the service, then use
 
 ### Existing systemd installs
 
-This release is new-install-only for systemd deployments too. Use a fresh
-signer data directory instead of installing over an existing one.
+Systemd in-place upgrades are supported only from APlane `v0.24.0` or newer.
+Use a fresh signer data directory instead of installing over an older existing
+one.
 
 The installer still refuses to continue while `apsigner.service` is active,
 activating, reloading, or deactivating so it does not replace binaries under a
@@ -534,8 +536,8 @@ sudo ./install.sh --systemd
 ```
 
 When pointed at an existing systemd install after the service is stopped, the
-installer stops if `identities/default/.keystore` already exists. Treat that
-behavior as a safety guard, not an upgrade guarantee.
+installer checks `install/release.json` before upgrading an initialized signer
+store. Treat that behavior as a safety guard, not a migration guarantee.
 
 If a previous install left `identities/<id>/passphrase.cred` in place, the
 installer re-adds the matching `LoadCredentialEncrypted=` directive to the

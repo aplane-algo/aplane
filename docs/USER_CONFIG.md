@@ -173,10 +173,9 @@ export APCLIENT_DATA=/custom/path
 
 - All connections use SSH tunneling for uniform per-client identity
 - Clients store signer routing in `endpoints.yaml`
-- This release is new-install-only for apclient routing. Top-level `ssh:`
-  signer settings in `config.yaml` are not supported by `apshell` or the
-  apconsole shell pane; create a fresh apclient data directory or write signer
-  routing in `endpoints.yaml`.
+- Top-level `ssh:` signer settings in `config.yaml` are not supported by
+  `apshell` or the apconsole shell pane; create a fresh apclient data directory
+  or write signer routing in `endpoints.yaml`.
 - Edit `endpoints.yaml` or use `endpoints import` to change signer
   endpoint routing
 

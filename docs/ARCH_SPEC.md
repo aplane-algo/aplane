@@ -439,7 +439,7 @@ handoff envelope used by `apstore endpoint export` and
 `internal/config.Config` still has compatibility fields named
 `LegacySignerPort` and `LegacySSH` with YAML tags `signer_port` and `ssh`, but
 managed `apshell` startup calls `CheckSupportedClientEndpointConfig` and
-rejects top-level `ssh:` signer routing in this new-install-only release.
+rejects top-level `ssh:` signer routing in endpoint-routed client installs.
 Those fields are retained for old command forms and narrow internal
 materialization, not as the current routing contract.
 

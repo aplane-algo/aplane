@@ -737,9 +737,9 @@ make docker-local-test
 make docker-systemd-test
 ```
 
-`make docker-local-test` uses `scripts/docker-local-smoke.sh`. It verifies the rootless layout, bundled binaries including `approbe`, `appass --check`, token request approval through `apapprover`, `apshell status`, the live-signer install gate, stopped in-place reinstall rejection for this new-install-only release, installed-uninstaller behavior, and uninstall state preservation.
+`make docker-local-test` uses the Docker local install smoke path. It verifies the rootless layout, bundled binaries including `approbe`, `appass --check`, token request approval through `apapprover`, `apshell status`, the live-signer install gate, stopped in-place upgrade state preservation, installed-uninstaller behavior, and uninstall state preservation.
 
-`make docker-systemd-test` uses `scripts/docker-systemd-smoke.sh`. It verifies `/usr/local/bin` and `/var/lib/apsigner` layout, systemd service status, memory-locking unit settings, `appass --check`, token request approval, the active-service install gate, stopped in-place systemd reinstall rejection for this new-install-only release, and uninstall signer-state preservation.
+`make docker-systemd-test` uses `scripts/docker-systemd-smoke.sh`. It verifies `/usr/local/bin` and `/var/lib/apsigner` layout, systemd service status, memory-locking unit settings, `appass --check`, token request approval, the active-service install gate, stopped in-place systemd upgrade state preservation, and uninstall signer-state preservation.
 
 ## REPL Testing
 

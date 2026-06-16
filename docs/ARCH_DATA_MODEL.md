@@ -805,7 +805,8 @@ generation availability, provenance, and policy editing behavior.
 
 ## Compatibility Invariants
 
-- Before `v1.0`, this release is new-install-only. Key files created by this
+- Before `v1.0`, in-place installer upgrades are supported only from the
+  installer's minimum supported upgrade version. Key files created by this
   release are signing authority; config, setting, admin protocol, SDK DTO,
   cache, and docs-example shapes may be reset or renamed by later releases
   unless a later contract explicitly says otherwise.

@@ -31,10 +31,14 @@
 
 ## Current Release Compatibility Scope
 
-Until APlane reaches a stable `v1.0` compatibility contract, this release is
-new-install-only:
+Until APlane reaches a stable `v1.0` compatibility contract, in-place
+installer upgrades are intentionally narrow:
 
-- existing install directories are not a supported in-place upgrade target,
+- existing install directories are supported in place only when their
+  `install/release.json` reports at least the installer's minimum supported
+  upgrade version,
+- older install directories and installs without release metadata require a
+  fresh install root,
 - no config, key, cache, or endpoint migration utility is shipped,
 - usable apclient signer routing is endpoint-based and lives in
   `endpoints.yaml`; top-level `config.yaml` `ssh:` signer routing is rejected
@@ -230,7 +234,7 @@ Client config is loaded from `config.yaml` under the resolved data directory.
 Installer-written client configs include `networks` entries for `testnet`,
 `mainnet`, and `localnet`, but restrict `networks_allowed` to `mainnet` and
 `testnet` by default; existing configs are left unchanged if the installer is
-pointed at an existing path, but this release is not an in-place upgrade target.
+pointed at a supported in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader.
 
 The Go `Config` type contains compatibility-only `LegacySignerPort` and
@@ -273,8 +277,7 @@ Source: `internal/serverconfig/serverconfig.go`
 Loaded from `-d <path>` or `APSIGNER_DATA`.
 Installer-written signer configs include `networks` entries for `testnet`,
 `mainnet`, and `localnet`; existing configs are left unchanged if the installer
-is pointed at an existing path, but this release is not an in-place upgrade
-target.
+is pointed at a supported in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader.
 
 For compatibility with pre-`user_auto_approve` signer configs, the Go loader
@@ -575,7 +578,7 @@ Additional client-state notes:
 - local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
 - `apconsole.yaml` supports `mode: local|remote`, `client_data`, and local-mode `signer_data`; relative paths resolve against the profile file
 - `endpoints.yaml` is the normal client-local endpoint registry for new installs, with `schema_version: 1`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
-- if client `config.yaml` contains top-level `ssh:` signer settings, `apshell` startup and the apconsole shell pane fail closed with an operator-facing message that says this release is new-install-only. Startup never materializes or rewrites endpoint routing.
+- if client `config.yaml` contains top-level `ssh:` signer settings, `apshell` startup and the apconsole shell pane fail closed with an operator-facing endpoint-routing migration message. Startup never materializes or rewrites endpoint routing.
 - endpoint records carry connection profile fields together: required `role` (`signer` or `sentry`), `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, `token_file`, and endpoint-published `published_sentries`. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. `published_sentries` is valid only on `sentry` endpoints.
 - endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
 - `published_sentries` is keyed by canonical embedded sentry public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime guarded-send routing derives the endpoint for an embedded sentry public key from this endpoint-local inventory.

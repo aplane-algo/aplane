@@ -298,8 +298,8 @@ These decisions are part of the current data model and contract surface:
 
 | Decision | Rationale |
 |---|---|
-| This release is new-install-only. | Existing install directories are not supported in-place upgrade targets. |
-| `release.json` is release provenance metadata. | It helps identify the installed distribution but does not authenticate code or authorize upgrades by itself. |
+| In-place upgrades have a minimum supported release. | The installer upgrades only installs with `install/release.json` at or above the current floor; older installs require a fresh install root. |
+| `release.json` is release provenance metadata. | It helps identify the installed distribution and apply installer compatibility gates, but does not authenticate code or authorize upgrades by itself. |
 | `endpoints.yaml` is the client routing authority. | Client `config.yaml` owns network/theme/polling, not signer or sentry endpoint routes. |
 | Endpoint import and `/keys` discovery are routing metadata. | The trust anchor is the sentry public key embedded in the guarded account key, then `/sign/assemble` verification and on-chain LogicSig verification. |
 | `Config.SentryEndpoints` is derived runtime state. | Durable sentry endpoint inventory lives under endpoint records in `endpoints.yaml`. |

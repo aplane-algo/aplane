@@ -267,7 +267,7 @@ Applications read from `config.yaml` in their data directory:
 apshell uses `config.yaml` for network, theme, and polling defaults. Signer and
 sentry endpoint routing lives in `$APCLIENT_DATA/endpoints.yaml`; top-level
 client `ssh:` signer routing is not supported by managed startup in this
-new-install-only release.
+endpoint-routed client model.
 
 apsigner also reads per-identity configuration overlays:
 - `identities/<identity>/config.yaml` — identity-scoped settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `mode`, `decommissioned`) that override process-global defaults
