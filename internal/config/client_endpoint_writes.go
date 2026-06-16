@@ -39,15 +39,16 @@ func LoadStoredClientEndpointRegistry(dataDir string) (ClientEndpointRegistry, b
 	return registry, true, nil
 }
 
-// CheckSupportedClientEndpointConfig rejects pre-endpoint client config. This
-// release is new-install-only and does not convert config.yaml ssh routing.
+// CheckSupportedClientEndpointConfig rejects legacy config.yaml endpoint
+// routing. Endpoint routing must be written explicitly in endpoints.yaml;
+// startup does not materialize or rewrite routes from top-level ssh settings.
 func CheckSupportedClientEndpointConfig(dataDir string) error {
 	hasSSH, err := clientConfigHasTopLevelSSH(dataDir)
 	if err != nil {
 		return err
 	}
 	if hasSSH {
-		return fmt.Errorf("%w: config.yaml contains top-level ssh signer settings; this release is new-install-only, create a fresh apclient data directory or write signer routing in %s", ErrUnsupportedClientEndpointConfig, ClientEndpointsFile)
+		return fmt.Errorf("%w: config.yaml contains legacy top-level ssh signer routing; automatic endpoint-routing migration is unsupported, remove the ssh block and write signer routing in %s", ErrUnsupportedClientEndpointConfig, ClientEndpointsFile)
 	}
 	_, _, err = LoadStoredClientEndpointRegistry(dataDir)
 	return err

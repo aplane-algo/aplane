@@ -245,8 +245,8 @@ func TestCheckSupportedClientEndpointConfigRejectsLegacySSH(t *testing.T) {
 	if err == nil {
 		t.Fatal("CheckSupportedClientEndpointConfig() error = nil, want unsupported config")
 	}
-	if !strings.Contains(err.Error(), "new-install-only") {
-		t.Fatalf("error = %v, want new-install-only guidance", err)
+	if !strings.Contains(err.Error(), "automatic endpoint-routing migration is unsupported") {
+		t.Fatalf("error = %v, want endpoint-routing migration guidance", err)
 	}
 }
 

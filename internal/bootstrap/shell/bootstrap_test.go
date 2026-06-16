@@ -79,8 +79,8 @@ networks:
 	if !strings.Contains(err.Error(), "unsupported apclient endpoint config") {
 		t.Fatalf("error = %v, want unsupported endpoint config message", err)
 	}
-	if !strings.Contains(err.Error(), "new-install-only") {
-		t.Fatalf("error = %v, want new-install-only guidance", err)
+	if !strings.Contains(err.Error(), "automatic endpoint-routing migration is unsupported") {
+		t.Fatalf("error = %v, want endpoint-routing migration guidance", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(tmpDir, "endpoints.yaml")); !os.IsNotExist(statErr) {
 		t.Fatalf("endpoints.yaml stat error = %v, want not exist", statErr)

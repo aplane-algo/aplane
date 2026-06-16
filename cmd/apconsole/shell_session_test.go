@@ -28,7 +28,7 @@ networks:
 	if !strings.Contains(got, "unsupported apclient endpoint config") {
 		t.Fatalf("startup lines = %q, want unsupported endpoint config message", got)
 	}
-	if !strings.Contains(got, "new-install-only") {
-		t.Fatalf("startup lines = %q, want new-install-only guidance", got)
+	if !strings.Contains(got, "automatic endpoint-routing migration is unsupported") {
+		t.Fatalf("startup lines = %q, want endpoint-routing migration guidance", got)
 	}
 }
