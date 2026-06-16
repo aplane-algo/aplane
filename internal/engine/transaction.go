@@ -190,6 +190,9 @@ func (e *Engine) submitEffectiveSignersNeedKeyRefresh(txns []types.Transaction) 
 		if e.signerCacheKeyType(effectiveSigner) == "" {
 			return true
 		}
+		if e.signerCacheGuardedSigningMetadataNeedsRefresh(effectiveSigner) {
+			return true
+		}
 	}
 	return false
 }

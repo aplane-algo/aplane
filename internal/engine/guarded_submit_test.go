@@ -162,6 +162,60 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	}
 }
 
+func TestRefreshSubmitSigningStateRefreshesGuardedKeyMissingFlowMetadata(t *testing.T) {
+	sender := testAddress(1).String()
+	sentryHex := testSentryPublicKeyHex(0xd6)
+
+	staleSignerCache := cache.NewSignerCache()
+	staleSignerCache.AddAddress(sender, keytypes.GuardedFalcon1024SentryEd25519V1)
+	staleSignerCache.SetLsigSize(sender, 1500)
+
+	refreshes := 0
+	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, staleSignerCache, func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodGet || req.URL.Path != "/keys" {
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+		refreshes++
+		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
+			Count: 1,
+			Keys: []signerapi.KeyInfo{{
+				Address:                sender,
+				KeyType:                keytypes.GuardedFalcon1024SentryEd25519V1,
+				SigningFlow:            signerapi.SigningFlowSentry1,
+				SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+				LsigSize:               1500,
+				Parameters: map[string]string{
+					keytypes.ParameterSentryPublicKey: sentryHex,
+				},
+			}},
+		}, req), nil
+	})
+	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
+	eng.AuthCache.AuthAddresses[sender] = ""
+
+	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
+	if eng.hasGuardedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasGuardedEffectiveSigner() before refresh = true, want false with missing flow metadata")
+	}
+
+	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
+		t.Fatalf("refreshSubmitSigningState() error = %v", err)
+	}
+
+	if refreshes != 1 {
+		t.Fatalf("/keys refreshes = %d, want 1", refreshes)
+	}
+	if got := eng.signerCacheSigningFlow(sender); got != signerapi.SigningFlowSentry1 {
+		t.Fatalf("signing flow = %q, want %q", got, signerapi.SigningFlowSentry1)
+	}
+	if got, ok := eng.signerCacheSentryPublicKey(sender); !ok || got != sentryHex {
+		t.Fatalf("sentry public key = %q/%v, want %s/true", got, ok, sentryHex)
+	}
+	if !eng.hasGuardedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
+	}
+}
+
 func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) {
 	sender := testAddress(1).String()
 	guarded := testAddress(3).String()

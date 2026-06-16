@@ -6,6 +6,9 @@ package cache
 import (
 	"fmt"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
 // NewSignerCache creates an empty SignerCache
@@ -135,6 +138,31 @@ func (cache *SignerCache) SetSigningFlowForAddress(address, flow string) {
 		return
 	}
 	cache.SigningFlows[address] = flow
+}
+
+// GuardedSigningMetadataNeedsRefresh reports whether a cached signer row uses
+// a built-in guarded key type but lacks the runtime flow metadata current
+// signer inventory should publish. This is a cache freshness heuristic only:
+// clients still route guarded signing from signing_flow, not from key_type.
+func (cache *SignerCache) GuardedSigningMetadataNeedsRefresh(address string) bool {
+	keyType := cache.GetKeyType(address)
+	if !keytypes.IsGuardedAccountKeyType(keyType) {
+		return false
+	}
+	flow := cache.SigningFlowForAddress(address)
+	if flow == "" {
+		return true
+	}
+	if flow != signerapi.SigningFlowSentry1 {
+		return false
+	}
+	if _, ok := cache.SentryComponentKeyTypeForAddress(address); !ok {
+		return true
+	}
+	if _, ok := cache.SentryPublicKeyForAddress(address); !ok {
+		return true
+	}
+	return false
 }
 
 // SentryComponentKeyTypeForAddress returns the sentry component key type the
