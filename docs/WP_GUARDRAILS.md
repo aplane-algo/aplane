@@ -60,13 +60,15 @@ there is no adjacency table, route map, or registry, and no
 privileged component mediates a transfer. Each node enforces its own outbound
 edges.
 
-## 4. Construction: the rekeyed formation
+## 4. Construction for Closed Graphs: the rekeyed formation
 
-A whitelist account presents a **circularity**: a LogicSig account's address is
-directly derived from its program, and the program embeds its peers' addresses. In any
-cycle - a closed mesh, a ring, mutual links - the addresses become mutually
+Suppose you want to build a closed graph with cycles, where nodes whitelist
+other members of the same graph. This creates a circularity: a LogicSig account's
+address is directly derived from its program, and the program embeds its peers'
+addresses.
+
+In any cycle - a closed mesh, a ring, mutual links - the addresses become mutually
 recursive and cannot be computed: we have a chicken-and-egg situation.
-
 
 The resolution is to separate *identity* from *program*:
 
