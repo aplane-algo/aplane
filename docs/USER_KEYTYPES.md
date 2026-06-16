@@ -263,7 +263,7 @@ example.my_escrow.v2
 For APlane-defined key types, the standard format is:
 
 ```text
-publisher.family.version
+publisher.family.vN
 ```
 
 For example:

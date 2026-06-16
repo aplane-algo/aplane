@@ -350,7 +350,8 @@ uses.
 
 - request has `key_type`, optional `parameters`
 - no `name` field
-- response has `address`, `key_type`, optional `parameters`
+- response has `address`, optional `public_key_hex`, `key_type`, optional
+  `is_component_key`, optional `is_spending_account`, and optional `parameters`
 - no mnemonic in REST response
 
 `/admin/sentries/sync`:

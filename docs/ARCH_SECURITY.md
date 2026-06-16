@@ -95,6 +95,8 @@ Clients receiving the token should:
 
 **Protected Endpoints:**
 - `POST /sign` - Submit signing requests
+- `POST /sign/component` - Produce guarded-signing component signatures
+- `POST /sign/assemble` - Assemble guarded-account signed groups
 - `POST /sign/cancel` - Cancel a live synchronous signing request by request ID
 - `POST /plan` - Preview group building (dummies, fees, group ID) without signing
 - `POST /simulate` - Perform signer-managed signed preflight simulation without returning signed transaction bytes
@@ -102,10 +104,13 @@ Clients receiving the token should:
 - `GET /keys` - List available signing keys
 - `GET /keytypes` - List available key types and creation parameters
 - `POST /admin/generate` - Generate new keys
+- `POST /admin/sentries/sync` - Sync public sentry reference metadata
 - `DELETE /admin/keys` - Delete keys
 
 **Request Size Limits:**
-- POST endpoints (`/sign`, `/sign/cancel`, `/plan`, `/simulate`, `/admin/generate`) enforce a 5 MB request body limit
+- JSON POST endpoints (`/sign`, `/sign/component`, `/sign/assemble`,
+  `/sign/cancel`, `/plan`, `/simulate`, `/admin/generate`, and
+  `/admin/sentries/sync`) enforce a 5 MB request body limit
 - Oversized requests receive HTTP 413 (Payload Too Large)
 - All authentication error responses use JSON format (not text/plain)
 
@@ -369,14 +374,16 @@ New clients without a token can request one through the SSH tunnel using the `re
 
 ### Token Revocation
 
-The operator can revoke the current API token from the apadmin TUI using the `R` key. This invalidates the existing token and forces all clients to re-authenticate.
+The operator can revoke the current API token from the apadmin TUI Admin panel
+using the `t` key. This invalidates the existing token and forces all clients
+to re-authenticate.
 
 ```
 ┌──────────┐      ┌──────────┐                     ┌────────────┐
 │ apadmin │      │  apshell │                     │  apsigner │
 └────┬─────┘      └────┬─────┘                     └─────┬──────┘
      │                  │                                 │
-     │  1. Operator presses R (Revoke Token)              │
+     │  1. Operator presses t (Revoke Token)              │
      │───────────────────────────────────────────────────>│
      │                  │                                 │
      │                  │  2. Server generates new token  │
@@ -588,6 +595,8 @@ server := &Signer{
 
 // Handler registration with action and resource (internal/signerapp/daemon/http_runtime.go)
 mux.HandleFunc("/sign", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSign))
+mux.HandleFunc("/sign/component", server.requireAuth(auth.ActionSignComponent, auth.Resource{Type: "transaction"}, server.handleSignComponent))
+mux.HandleFunc("/sign/assemble", server.requireAuth(auth.ActionSignAssemble, auth.Resource{Type: "transaction"}, server.handleSignAssemble))
 mux.HandleFunc("/sign/cancel", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSignCancel))
 mux.HandleFunc("/plan", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handlePlan))
 mux.HandleFunc("/simulate", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSimulate))
@@ -595,6 +604,7 @@ mux.HandleFunc("/status", server.requireAuth(auth.ActionIdentityView, auth.Resou
 mux.HandleFunc("/keys", server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, server.handleKeys))
 mux.HandleFunc("/keytypes", server.requireAuth(auth.ActionKeyTypesView, auth.Resource{Type: "keytypes"}, server.handleKeyTypes))
 mux.HandleFunc("/admin/generate", server.requireAuth(auth.ActionKeysGenerate, auth.Resource{Type: "key"}, server.handleAdminGenerate))
+mux.HandleFunc("/admin/sentries/sync", server.requireAuth(auth.ActionSentriesSync, auth.Resource{Type: "sentries"}, server.handleAdminSyncSentries))
 mux.HandleFunc("/admin/keys", server.requireAuth(auth.ActionKeysDelete, auth.Resource{Type: "key"}, server.handleAdminDelete))
 ```
 

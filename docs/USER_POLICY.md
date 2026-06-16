@@ -121,7 +121,8 @@ applied.
 
 | Field | Meaning |
 |-------|---------|
-| `reject_foreign_rekey` | Reject txns whose non-zero `RekeyTo` target is not held by this signer identity. Defaults to `true`. |
+| `reject_foreign_rekey` | Signer-domain only. Reject txns whose non-zero `RekeyTo` target is not held by this signer identity. Defaults to `true`. |
+| `reject_rekey` | Sentry-domain only. Reject any txn with non-zero `RekeyTo`. Defaults to `true`. |
 | `reject_close_remainder` | Reject payment txns with non-zero `CloseRemainderTo`. Defaults to `false`. |
 | `reject_asset_close` | Reject ASA transfer txns with non-zero `AssetCloseTo`. Defaults to `false`. |
 | `reject_clawback` | Reject ASA clawback txns using `AssetSender`. Defaults to `false`. |

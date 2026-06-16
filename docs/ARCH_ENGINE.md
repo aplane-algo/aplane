@@ -137,7 +137,9 @@ internal/engine/
 ├── plugin_signing.go      # Cooperative signing with plugin local signers
 ├── plugin_transactions.go # Plugin transaction processing
 ├── rekey.go               # Rekey/unrekey operations
+├── signer_cache.go        # Signer cache helpers and guarded metadata access
 ├── signing.go             # SigningContext, auth address handling
+├── status_sync.go         # /status keyset-revision synchronization
 ├── transaction.go         # Transaction submission and confirmation
 ├── txnwrite.go            # Transaction JSON file writing
 └── *_test.go              # Unit tests
@@ -590,7 +592,9 @@ or signed by an unintended key. The blockchain and apsigner enforce correctness 
 submission time — caches only affect address resolution and display.
 
 **Self-healing mechanisms**:
-- SignerCache: rebuilt from `/keys` on `keys`/`accounts` commands and tab completion
+- SignerCache: rebuilt from `/keys` on `keys`/`accounts` commands, tab completion,
+  `/status` keyset-revision changes, and guarded submit paths whose cached
+  signer row is missing current signing-flow or sentry metadata
 - AuthCache: auto-refreshes individual entries when a cached auth address leads to an unsignable key
 - ASACache: fetches from blockchain on cache miss
 
