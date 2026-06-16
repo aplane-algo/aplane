@@ -175,6 +175,13 @@ build target-specific `algokit-localnet` release payloads under
 consumes those target payloads so archives ship ready-to-install bundled
 plugins. Production bundled plugin builds do not require Node.js or npm.
 
+For targeted local Linux packaging without the full release matrix, use
+`scripts/package-bootstrap-release.sh`. `--version` controls the archive label
+in `aplane_<version>_linux_<arch>.tar.gz`; `--release-version` controls the
+embedded `release.json` version copied into installs for diagnostics and
+upgrade gating. When `--release-version` is omitted, it defaults to
+`--version` or `git describe`.
+
 ### Option 2: Manual build commands
 
 ```bash

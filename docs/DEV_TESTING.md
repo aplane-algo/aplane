@@ -729,6 +729,13 @@ Contract decoding policy:
 
 The installer smoke tests build or consume a release tarball and run it inside Ubuntu containers. They validate packaging, install layouts, uninstall behavior, and the live-daemon gates that prevent replacing files while a signer is running.
 
+When a smoke script builds its own tarball, `--version` is an archive label and
+defaults to `docker-smoke`, producing names such as
+`aplane_docker-smoke_linux_amd64.tar.gz`. The embedded `release.json` version
+is derived from `install.sh`'s minimum supported upgrade version with a
+`-docker-smoke` suffix so the stopped in-place upgrade checks exercise the real
+installer gate with comparable metadata.
+
 ```bash
 # Local, rootless install mode in a non-systemd container
 make docker-local-test

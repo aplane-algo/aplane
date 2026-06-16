@@ -126,7 +126,7 @@ DTOs and contract fixtures.
 | Entity | Scope | Durable authority | Runtime projection | Wire projection | Owner |
 |--------|-------|-------------------|--------------------|-----------------|-------|
 | Client config | Client data dir | `APCLIENT_DATA/config.yaml` | `internal/config.Config` network/theme/polling state | SDK config loaders, shell runtime | `internal/config`, `internal/bootstrap/shell` |
-| Release metadata | Release archive and install root | `release.json`, copied to install metadata directory when present | installer/version provenance for diagnostics and future upgrade checks | installer output, support tooling | release workflow, `make release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` |
+| Release metadata | Release archive and install root | `release.json`, copied to install metadata directory when present | installer/version provenance for diagnostics and future upgrade checks; archive filenames are packaging labels only | installer output, support tooling | release workflow, `make release-local`, `scripts/package-bootstrap-release.sh`, `install.sh` |
 | Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and sentry connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
 | Endpoint-published sentries | Client data dir | `endpoints.yaml` `published_sentries` | derived `Config.SentryEndpoints` map keyed by embedded public key hex | guarded send orchestration | `internal/config`, `internal/apshellapp`, `internal/engine` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/config.ServerConfig` snapshot | Admin settings subset | `internal/config`, `cmd/apsigner` |
@@ -810,6 +810,8 @@ generation availability, provenance, and policy editing behavior.
   release are signing authority; config, setting, admin protocol, SDK DTO,
   cache, and docs-example shapes may be reset or renamed by later releases
   unless a later contract explicitly says otherwise.
+- Installer upgrade checks read `install/release.json`; tarball filenames and
+  local archive labels are not compatibility authorities.
 - Canonical `key_type` strings are stored and transmitted exactly; display
   labels are not identifiers.
 - Key files are signing authority for existing keys.

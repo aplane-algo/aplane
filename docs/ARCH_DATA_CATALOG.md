@@ -300,6 +300,7 @@ These decisions are part of the current data model and contract surface:
 |---|---|
 | In-place upgrades have a minimum supported release. | The installer upgrades only installs with `install/release.json` at or above the current floor; older installs require a fresh install root. |
 | `release.json` is release provenance metadata. | It helps identify the installed distribution and apply installer compatibility gates, but does not authenticate code or authorize upgrades by itself. |
+| Release archive labels are not upgrade authority. | Local packaging and smoke tests may use simple archive labels while embedding a semver-comparable `release.json.version`; installers compare the metadata file, not the tarball filename. |
 | `endpoints.yaml` is the client routing authority. | Client `config.yaml` owns network/theme/polling, not signer or sentry endpoint routes. |
 | Endpoint import and `/keys` discovery are routing metadata. | The trust anchor is the sentry public key embedded in the guarded account key, then `/sign/assemble` verification and on-chain LogicSig verification. |
 | `Config.SentryEndpoints` is derived runtime state. | Durable sentry endpoint inventory lives under endpoint records in `endpoints.yaml`. |
