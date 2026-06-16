@@ -224,6 +224,7 @@ build_or_resolve_tarball() {
     if [ -z "$ARCH" ]; then
         ARCH="$(detect_arch)"
     fi
+    VERSION="${VERSION#v}"
     DIST_DIR="$(mktemp -d)"
     local args=(--version "$VERSION" --arch "$ARCH" --dist-dir "$DIST_DIR")
     if [ "$SKIP_BUILD" = "1" ]; then

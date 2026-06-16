@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARCH=""
 DIST_DIR=""
-VERSION="v0.24.0-docker-smoke"
+VERSION="0.24.0-docker-smoke"
 TARBALL=""
 SKIP_BUILD=0
 KEEP_CONTAINER=0
@@ -25,7 +25,7 @@ Usage: scripts/docker-local-smoke.sh [options]
 
 Options:
   --tarball <path>      Use an existing aplane_<version>_linux_<arch>.tar.gz
-  --version <version>   Version string for locally built tarball (default: v0.24.0-docker-smoke)
+  --version <version>   Version string for locally built tarball (default: 0.24.0-docker-smoke)
   --arch <amd64|arm64>  Architecture to package/test (default: host arch)
   --skip-build          Reuse existing bin/<arch> binaries when building the tarball
   --keep-container      Leave the container running for debugging
@@ -143,6 +143,7 @@ build_or_resolve_tarball() {
     if [ -z "$ARCH" ]; then
         ARCH="$(detect_arch)"
     fi
+    VERSION="${VERSION#v}"
     DIST_DIR="$(mktemp -d)"
     local args=(--version "$VERSION" --arch "$ARCH" --dist-dir "$DIST_DIR")
     if [ "$SKIP_BUILD" = "1" ]; then
