@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/merklewhitelist"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
@@ -427,7 +428,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 				}
 				address = addr
 				publicKeyHex = payloadMeta.PublicKeyHex
-				lsigSize = len(bytecode) + cryptoSignatureSizeForKey(keyType, signingMeta.BaseKeyType)
+				lsigSize = len(bytecode) + dsaLogicSigArgBudgetForKey(keyType, signingMeta.BaseKeyType)
 			} else {
 				if category == CategoryDSALsig {
 					crypto.ZeroBytes(data)
@@ -497,6 +498,12 @@ func IsGenericKey(category, keyType string) bool {
 	return IsGenericLSigType(keyType)
 }
 
+const falcon1024WhitelistV2KeyType = "aplane.falcon1024-whitelist.v2"
+
+func dsaLogicSigArgBudgetForKey(keyType, baseKeyType string) int {
+	return cryptoSignatureSizeForKey(keyType, baseKeyType) + signerGeneratedDSAArgSizeForKey(keyType)
+}
+
 func cryptoSignatureSizeForKey(keyType, baseKeyType string) int {
 	if size := logicsigdsa.GetCryptoSignatureSize(keyType); size > 0 {
 		return size
@@ -505,6 +512,15 @@ func cryptoSignatureSizeForKey(keyType, baseKeyType string) int {
 		return logicsigdsa.GetCryptoSignatureSize(baseKeyType)
 	}
 	return 0
+}
+
+func signerGeneratedDSAArgSizeForKey(keyType string) int {
+	switch strings.ToLower(strings.TrimSpace(keyType)) {
+	case falcon1024WhitelistV2KeyType:
+		return merklewhitelist.ProofSize
+	default:
+		return 0
+	}
 }
 
 func componentAddressAndPublicKey(meta KeyPayloadMetadata) (string, string, error) {
