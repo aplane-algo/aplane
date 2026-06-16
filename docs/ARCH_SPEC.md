@@ -1143,6 +1143,10 @@ The current guarded choreography is named `sentry1`. Signer `/keys` and
 and component-key-type strings as opaque, and fail fast on flow labels they do
 not implement. The `sentry1` label is frozen: any choreography change mints a
 new label, and unrelated future mechanisms get their own label family.
+For cache compatibility, a client may treat a cached built-in guarded key type
+that lacks `signing_flow` or sentry metadata as stale and refresh `/keys`
+before route selection; the refreshed `signing_flow` remains the routing
+authority.
 
 `apshell send` resolves each original sender through the auth-address cache and
 detects guarded targets by effective signer. If any effective signer declares
@@ -1151,9 +1155,12 @@ atomic group. The group may mix direct guarded senders, senders rekeyed to a
 guarded authorizer, and ordinary signer-managed senders.
 
 The client first builds one canonical group. It sizes LogicSig-budget dummies
-across every LogicSig position, including non-guarded positions budgeted by
-effective signer/AuthAddr, then fixes fees and group ID. All downstream
-component and non-guarded signatures are over those frozen bytes.
+across every LogicSig position from signer-advertised `lsig_size`, including
+non-guarded positions budgeted by effective signer/AuthAddr, then fixes fees
+and group ID. `lsig_size` is the expected post-signing LogicSig program plus
+args budget: bytecode plus cryptographic signature args and any runtime or
+signer-generated args such as proof material. All downstream component and
+non-guarded signatures are over those frozen bytes.
 
 For guarded targets, the client obtains component signatures:
 
@@ -1323,8 +1330,8 @@ The keystore compatibility model is split between:
 A scan:
 
 - requires an initialized master key,
-- decrypts keys sufficiently to discover address, type, category, LogicSig size,
-  and stored signing metadata,
+- decrypts keys sufficiently to discover address, type, category, the
+  post-signing LogicSig program+args size budget, and stored signing metadata,
 - populates a cache of `address -> KeyScanInfo`,
 - is the foundation for the signer’s runtime key indexes.
 
@@ -1403,7 +1410,11 @@ These caches are not interchangeable:
   `signer_status_poll_interval` (default `10s`) and refresh `/keys` when
   `keyset_revision` changes. MCP mode does not run this background
   poller; it relies on startup connection and serialized command execution
-  instead,
+  instead. The signer cache carries the signer-advertised key type, LogicSig
+  size budget, signing argument schema, guarded `signing_flow`, sentry
+  component key type, and embedded sentry public key. Guarded key-type checks
+  in the cache layer are compatibility freshness heuristics only; client
+  signing route selection remains driven by `signing_flow`,
 - auth cache depends on network state and signer/alias information,
 - alias and set caches are local operator state,
 - ASA cache persistence lives in `internal/cache`, but most callers should not bypass `internal/asa` for display or conversion logic.

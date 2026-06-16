@@ -605,6 +605,16 @@ Additional client-state notes:
 - shared non-interactive client-enrollment preflight lives in `internal/clientenroll/preflight.go` and is used by `apshell --mcp` and remote-mode `apconsole`; remote `apadmin` has a separate implementation in `cmd/apadmin/remote.go`
 - tombstones suppress locally deleted proposals for that local actor
 - cache files are signed JSON with a per-client `.cache_key` and are local, rebuildable client state; the signed envelope has `version: 1`, and versioned cache payloads carry `schema_version: 1` with missing payload versions treated as legacy v1
+- `signer_cache.json` is a local projection of authenticated signer `/keys`
+  inventory. It may persist address key types, generic-LogicSig flags,
+  `lsig_sizes`, key-file signing argument schemas, `signing_flows`,
+  `sentry_component_key_types`, and `sentry_public_keys`. `lsig_sizes` is the
+  signer-advertised post-signing LogicSig program+args budget used for dummy
+  planning and foreign `lsig_size` hints: bytecode plus cryptographic
+  signature args and any runtime or signer-generated args such as proof
+  material. For guarded signing, clients route on `signing_flows`; a cached
+  built-in guarded key type with missing flow or sentry metadata is only a
+  stale-cache signal that triggers `/keys` refresh before route selection.
 - persisted alias and set names are canonicalized to lowercase by
   `internal/refname`; both allow only ASCII letters, digits, `-`, and `_`;
   aliases reserve `list`, `delete`, and `remove`; sets reserve `list`, `add`,
@@ -1883,9 +1893,10 @@ Cross-SDK compatibility-bearing behavior:
 - Guarded prepared signing is a special client-prep path because component
   signatures require canonical bytes before user and sentry signatures are
   requested. SDKs may mirror apshell's guarded client flow by classifying
-  guarded targets, sizing LogicSig-budget dummies, fixing fees and group ID,
-  signing dummy/passthrough slots locally, and then using `/sign/component`
-  plus `/sign/assemble`. Final guarded assembly remains signer-owned.
+  guarded targets, sizing LogicSig-budget dummies from signer-advertised
+  `lsig_size` program+args budgets, fixing fees and group ID, signing
+  dummy/passthrough slots locally, and then using `/sign/component` plus
+  `/sign/assemble`. Final guarded assembly remains signer-owned.
 - SDKs expose the authenticated `/status` DTO, including
   `keyset_revision` and `approval_wait_seconds`, and include the matching
   signer API fixture in their contract suites.
