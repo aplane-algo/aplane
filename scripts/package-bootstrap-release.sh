@@ -9,6 +9,7 @@ DIST_DIR="$ROOT_DIR/dist"
 BUILD_BINARIES=1
 ARCH=""
 VERSION=""
+RELEASE_VERSION=""
 OS_NAME="linux"
 
 usage() {
@@ -18,6 +19,7 @@ Usage: scripts/package-bootstrap-release.sh [options]
 Options:
   --arch <amd64|arm64>   Architecture to package (default: host arch)
   --version <version>    Version string for archive name (default: git describe, without leading v)
+  --release-version <v>  Version string for release.json (default: --version/git describe)
   --skip-build           Use existing bin/<arch>/ binaries
   --dist-dir <path>      Output directory (default: ./dist)
   -h, --help             Show this help
@@ -66,6 +68,11 @@ parse_args() {
             --version)
                 [ $# -ge 2 ] || die "--version requires a value"
                 VERSION="$2"
+                shift 2
+                ;;
+            --release-version)
+                [ $# -ge 2 ] || die "--release-version requires a value"
+                RELEASE_VERSION="$2"
                 shift 2
                 ;;
             --skip-build)
@@ -153,7 +160,10 @@ main() {
     else
         VERSION="${VERSION#v}"
     fi
-    local release_version="$VERSION"
+    if [ -z "$RELEASE_VERSION" ]; then
+        RELEASE_VERSION="$VERSION"
+    fi
+    local release_version="$RELEASE_VERSION"
     case "$release_version" in
         [0-9]*) release_version="v$release_version" ;;
     esac

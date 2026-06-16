@@ -25,7 +25,7 @@ Usage: scripts/docker-local-smoke.sh [options]
 
 Options:
   --tarball <path>      Use an existing aplane_<version>_linux_<arch>.tar.gz
-  --version <version>   Version string for locally built tarball (default: docker-smoke)
+  --version <version>   Archive label for locally built tarball (default: docker-smoke)
   --arch <amd64|arm64>  Architecture to package/test (default: host arch)
   --skip-build          Reuse existing bin/<arch> binaries when building the tarball
   --keep-container      Leave the container running for debugging
@@ -57,6 +57,13 @@ detect_arch() {
         aarch64|arm64) printf '%s\n' "arm64" ;;
         *) die "unsupported host architecture: $(uname -m)" ;;
     esac
+}
+
+smoke_release_version() {
+    local version
+    version="$(sed -n 's/^MIN_SUPPORTED_UPGRADE_VERSION="\([^"]*\)"/\1/p' "$ROOT_DIR/install.sh" | head -n 1)"
+    [ -n "$version" ] || die "could not determine minimum supported upgrade version from install.sh"
+    printf '%s-docker-smoke\n' "$version"
 }
 
 parse_args() {
@@ -152,7 +159,12 @@ build_or_resolve_tarball() {
         ARCH="$(detect_arch)"
     fi
     DIST_DIR="$(mktemp -d)"
-    local args=(--version "$VERSION" --arch "$ARCH" --dist-dir "$DIST_DIR")
+    local args=(
+        --version "$VERSION"
+        --release-version "$(smoke_release_version)"
+        --arch "$ARCH"
+        --dist-dir "$DIST_DIR"
+    )
     if [ "$SKIP_BUILD" = "1" ]; then
         args+=(--skip-build)
     fi
