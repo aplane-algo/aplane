@@ -101,7 +101,7 @@ parse_args() {
                 ;;
             --version)
                 [ $# -ge 2 ] || die "--version requires a value"
-                VERSION="${2#v}"
+                VERSION="$2"
                 shift 2
                 ;;
             --arch)
@@ -185,6 +185,14 @@ DOCKERFILE
     rm -f "$dockerfile"
 }
 
+resolve_built_tarball() {
+    local matches=("$DIST_DIR"/aplane_*_linux_"$ARCH".tar.gz)
+    if [ "${#matches[@]}" -ne 1 ] || [ ! -f "${matches[0]}" ]; then
+        die "expected exactly one linux/$ARCH tarball in $DIST_DIR"
+    fi
+    TARBALL="${matches[0]}"
+}
+
 resolve_sdk_repo() {
     local candidate=""
     if [ -n "$SDK_REPO" ]; then
@@ -224,15 +232,13 @@ build_or_resolve_tarball() {
     if [ -z "$ARCH" ]; then
         ARCH="$(detect_arch)"
     fi
-    VERSION="${VERSION#v}"
     DIST_DIR="$(mktemp -d)"
     local args=(--version "$VERSION" --arch "$ARCH" --dist-dir "$DIST_DIR")
     if [ "$SKIP_BUILD" = "1" ]; then
         args+=(--skip-build)
     fi
     "$ROOT_DIR/scripts/package-bootstrap-release.sh" "${args[@]}"
-    TARBALL="$DIST_DIR/aplane_${VERSION}_linux_${ARCH}.tar.gz"
-    [ -f "$TARBALL" ] || die "expected tarball not found: $TARBALL"
+    resolve_built_tarball
 }
 
 write_algod_localnet_files() {

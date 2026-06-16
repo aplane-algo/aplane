@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARCH=""
 DIST_DIR=""
-VERSION="0.24.0-docker-smoke"
+VERSION="docker-smoke"
 TARBALL=""
 SKIP_BUILD=0
 KEEP_CONTAINER=0
@@ -22,7 +22,7 @@ Usage: scripts/docker-systemd-smoke.sh [options]
 
 Options:
   --tarball <path>      Use an existing aplane_<version>_linux_<arch>.tar.gz
-  --version <version>   Version string for locally built tarball (default: 0.24.0-docker-smoke)
+  --version <version>   Version string for locally built tarball (default: docker-smoke)
   --arch <amd64|arm64>  Architecture to package/test (default: host arch)
   --skip-build          Reuse existing bin/<arch> binaries when building the tarball
   --keep-container      Leave the container running for debugging
@@ -71,7 +71,7 @@ parse_args() {
                 ;;
             --version)
                 [ $# -ge 2 ] || die "--version requires a value"
-                VERSION="${2#v}"
+                VERSION="$2"
                 shift 2
                 ;;
             --arch)
@@ -151,6 +151,14 @@ DOCKERFILE
     rm -f "$dockerfile"
 }
 
+resolve_built_tarball() {
+    local matches=("$DIST_DIR"/aplane_*_linux_"$ARCH".tar.gz)
+    if [ "${#matches[@]}" -ne 1 ] || [ ! -f "${matches[0]}" ]; then
+        die "expected exactly one linux/$ARCH tarball in $DIST_DIR"
+    fi
+    TARBALL="${matches[0]}"
+}
+
 build_or_resolve_tarball() {
     if [ -n "$TARBALL" ]; then
         TARBALL="$(cd "$(dirname "$TARBALL")" && pwd)/$(basename "$TARBALL")"
@@ -161,15 +169,13 @@ build_or_resolve_tarball() {
     if [ -z "$ARCH" ]; then
         ARCH="$(detect_arch)"
     fi
-    VERSION="${VERSION#v}"
     DIST_DIR="$(mktemp -d)"
     local args=(--version "$VERSION" --arch "$ARCH" --dist-dir "$DIST_DIR")
     if [ "$SKIP_BUILD" = "1" ]; then
         args+=(--skip-build)
     fi
     "$ROOT_DIR/scripts/package-bootstrap-release.sh" "${args[@]}"
-    TARBALL="$DIST_DIR/aplane_${VERSION}_linux_${ARCH}.tar.gz"
-    [ -f "$TARBALL" ] || die "expected tarball not found: $TARBALL"
+    resolve_built_tarball
 }
 
 run_installer() {
