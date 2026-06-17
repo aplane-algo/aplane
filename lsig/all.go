@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/lsig/ecdsak1"
 	ecdsak1family "github.com/aplane-algo/aplane/lsig/ecdsak1/family"
+	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024ed25519 "github.com/aplane-algo/aplane/lsig/falcon1024_ed25519"
@@ -71,6 +72,7 @@ func RegisterClient() {
 			Family:       ecdsak1family.Name,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, ecdsak1.RegisterClient)
+		ed25519lsig.RegisterClient()
 	})
 }
 

@@ -320,14 +320,14 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 		baseKeyType = keyType
 	}
 
-	signatureProvider := lsigprovider.Get(baseKeyType)
-	if signatureProvider == nil {
-		return nil, keyType, internal(fmt.Sprintf("provider not found for base key type %s", baseKeyType))
-	}
-
 	decodedArgs, err := e.DecodeRuntimeArgs(lsigArgs)
 	if err != nil {
 		return nil, keyType, badRequest(err.Error())
+	}
+
+	signatureProvider := lsigprovider.Get(baseKeyType)
+	if signatureProvider == nil {
+		return nil, keyType, internal(fmt.Sprintf("provider not found for base key type %s", baseKeyType))
 	}
 
 	signatureArgs, err := signatureProvider.BuildArgs(sig, nil)

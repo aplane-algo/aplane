@@ -64,14 +64,15 @@ type TemplateSpec struct {
 
 // ParameterSpec represents a parameter definition in the YAML schema.
 type ParameterSpec struct {
-	Name        string `yaml:"name"`
-	Label       string `yaml:"label"`
-	Description string `yaml:"description"`
-	Type        string `yaml:"type"` // address | address[] | uint64 | bytes
-	Required    bool   `yaml:"required"`
-	MaxLength   int    `yaml:"max_length"` // Optional: for UI input sizing
-	MinItems    int    `yaml:"min_items"`
-	MaxItems    int    `yaml:"max_items"`
+	Name        string          `yaml:"name"`
+	Label       string          `yaml:"label"`
+	Description string          `yaml:"description"`
+	Type        string          `yaml:"type"` // address | address[] | uint64 | bytes
+	Required    bool            `yaml:"required"`
+	MaxLength   int             `yaml:"max_length"` // Optional: for UI input sizing
+	InputModes  []InputModeSpec `yaml:"input_modes"`
+	MinItems    int             `yaml:"min_items"`
+	MaxItems    int             `yaml:"max_items"`
 
 	// UI hints
 	Example     string `yaml:"example"`     // Example value shown in UI
@@ -83,6 +84,15 @@ type ParameterSpec struct {
 
 	// Default value (for optional parameters)
 	Default string `yaml:"default"`
+}
+
+// InputModeSpec represents an alternate UI input mode for a creation parameter.
+type InputModeSpec struct {
+	Name       string `yaml:"name"`
+	Label      string `yaml:"label"`
+	Transform  string `yaml:"transform"`
+	ByteLength int    `yaml:"byte_length"`
+	InputType  string `yaml:"input_type"`
 }
 
 // RuntimeArgSpec represents a runtime argument definition in the YAML schema.
@@ -167,6 +177,7 @@ func ParameterSpecToParameterDefs(specs []ParameterSpec) []lsigprovider.Paramete
 			Type:        p.Type,
 			Required:    p.Required,
 			MaxLength:   maxLen,
+			InputModes:  inputModeSpecToInputModes(p.InputModes),
 			MinItems:    p.MinItems,
 			MaxItems:    p.MaxItems,
 			Example:     p.Example,
@@ -177,6 +188,23 @@ func ParameterSpecToParameterDefs(specs []ParameterSpec) []lsigprovider.Paramete
 		}
 	}
 	return defs
+}
+
+func inputModeSpecToInputModes(specs []InputModeSpec) []lsigprovider.InputMode {
+	if len(specs) == 0 {
+		return nil
+	}
+	modes := make([]lsigprovider.InputMode, len(specs))
+	for i, m := range specs {
+		modes[i] = lsigprovider.InputMode{
+			Name:       m.Name,
+			Label:      m.Label,
+			Transform:  m.Transform,
+			ByteLength: m.ByteLength,
+			InputType:  m.InputType,
+		}
+	}
+	return modes
 }
 
 // RuntimeArgSpecToRuntimeArgDefs converts runtime arg specs to provider runtime arg definitions.

@@ -69,6 +69,7 @@ func (r *REPLState) cmdOptin(args []string, _ interface{}) error {
 		AssetRef:   params.ASARef.String(),
 		Fee:        params.Fee,
 		UseFlatFee: params.UseFlatFee,
+		LsigArgs:   params.LsigArgs,
 		Wait:       params.Wait,
 	})
 	if err != nil {
@@ -158,6 +159,7 @@ func (r *REPLState) cmdKeyreg(args []string, _ interface{}) error {
 		VoteLast:          cmdParams.VoteLast,
 		KeyDilution:       cmdParams.KeyDilution,
 		IncentiveEligible: incentiveEligible,
+		LsigArgs:          cmdParams.LsigArgs,
 		Wait:              cmdParams.Wait,
 	})
 	if err != nil {

@@ -4,6 +4,7 @@
 package mnemonic
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -270,8 +271,8 @@ func TestEd25519HandlerEntropyToMnemonic(t *testing.T) {
 		t.Fatal("EntropyToMnemonic should not be supported for Ed25519")
 	}
 
-	if !strings.Contains(err.Error(), "does not support") {
-		t.Errorf("Error should mention lack of support: %v", err)
+	if !errors.Is(err, ErrEntropyUnsupported) {
+		t.Errorf("Error should be ErrEntropyUnsupported: %v", err)
 	}
 }
 

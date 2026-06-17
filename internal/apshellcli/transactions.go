@@ -17,17 +17,36 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/shellrepl"
 )
 
 // runValidate handles the validate command by parsing args, delegating
 // workflow to apshellapp, and rendering the result.
 func (r *REPLState) runValidate(args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: validate <account>\n  Sends a 0 ALGO self-send transaction to validate account signing capability")
+	if len(args) < 1 {
+		return fmt.Errorf("usage: validate <account> [arg:name=value]\n  Sends a 0 ALGO self-send transaction to validate account signing capability")
 	}
 
-	result, err := r.app().Validate(r.commandContext(), args[0])
+	var lsigArgs map[string][]byte
+	for _, arg := range args[1:] {
+		if !strings.HasPrefix(arg, "arg:") {
+			return fmt.Errorf("unknown validate argument: %s", arg)
+		}
+		name, value, err := cmdspec.ParseLsigArg(arg)
+		if err != nil {
+			return err
+		}
+		if lsigArgs == nil {
+			lsigArgs = make(map[string][]byte)
+		}
+		lsigArgs[name] = value
+	}
+
+	result, err := r.app().Validate(r.commandContext(), apshellapp.ValidateRequest{
+		Account:  args[0],
+		LsigArgs: lsigArgs,
+	})
 	result, err = checkedValidateResult(result, err)
 	if err != nil {
 		return err

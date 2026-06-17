@@ -7,6 +7,7 @@ package tui
 
 import (
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -1002,15 +1003,15 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 			}
 		}
 
-		// Check if this parameter has input modes and a non-default mode is selected
-		if len(paramDef.InputModes) > 1 {
+		// Check if this parameter has input modes and the selected mode requires a transform.
+		if len(paramDef.InputModes) > 0 {
 			modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
-			if modeIdx > 0 && modeIdx < len(paramDef.InputModes) {
+			if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) {
 				mode := paramDef.InputModes[modeIdx]
 
 				// Apply transform based on mode
 				switch mode.Transform {
-				case "sha256":
+				case "sha256", "sha512_256":
 					if value == "" {
 						result[paramDef.Name] = ""
 						continue
@@ -1029,8 +1030,14 @@ func (m Model) applyInputModeTransforms(params []lsigprovider.ParameterDef) (map
 						}
 					}
 
-					hash := sha256.Sum256(inputBytes)
-					value = hex.EncodeToString(hash[:])
+					switch mode.Transform {
+					case "sha256":
+						hash := sha256.Sum256(inputBytes)
+						value = hex.EncodeToString(hash[:])
+					case "sha512_256":
+						hash := sha512.Sum512_256(inputBytes)
+						value = hex.EncodeToString(hash[:])
+					}
 				}
 			}
 		}

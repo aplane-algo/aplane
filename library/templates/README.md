@@ -39,7 +39,7 @@ apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
 |---|---|---|---|---|
 | `aplane.timed-whitelist.v1` | `aplane.timed-whitelist.v1.yaml` | Allows ALGO or ASA transfers only to a fixed unordered recipient address set after `unlock_round`; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipients` (`address[]`), `unlock_round`, `allowed_optin_assets` (`uint64[]`, optional) | None |
 | `aplane.whitelist.v1` | `aplane.whitelist.v1.yaml` | Allows ALGO or ASA transfers only to a fixed unordered recipient address set; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipients` (`address[]`), `allowed_optin_assets` (`uint64[]`, optional) | None |
-| `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked contract for ALGO or ASA transfers: recipient can claim before timeout with a preimage; refund address can reclaim after timeout; optional parameterized ASA opt-in is available for approved asset IDs only. | `hash`, `recipient`, `refund_address`, `timeout_round`, `allowed_optin_assets` (`uint64[]`, optional) | `preimage` |
+| `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked contract for ALGO or ASA transfers: recipient can claim before timeout with a preimage; refund address can reclaim after timeout; optional parameterized ASA opt-in is available for approved asset IDs only. | `hash` (default input mode: preimage), `recipient`, `refund_address`, `timeout_round`, `allowed_optin_assets` (`uint64[]`, optional) | `preimage` |
 
 ## Falcon-1024 Composed Templates
 
@@ -47,7 +47,7 @@ apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
 |---|---|---|---|---|
 | `aplane.falcon1024-whitelist.v1` | `aplane.falcon1024-whitelist.v1.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to a fixed unordered recipient address set or the sender itself; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-30) | None |
 | `aplane.falcon1024-whitelist.v2` | `aplane.falcon1024-whitelist.v2.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to the sender itself or addresses proven against a fixed-depth Merkle tree built from key-file recipients; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-65536) | None; signer generates proofs |
-| `aplane.falcon1024-hashlock.v1` | `aplane.falcon1024-hashlock.v1.yaml` | Requires a Falcon signature plus a SHA256 preimage check. | `hash` | `preimage` |
+| `aplane.falcon1024-hashlock.v1` | `aplane.falcon1024-hashlock.v1.yaml` | Requires a Falcon signature plus a SHA256 preimage check. | `hash` (default input mode: preimage) | `preimage` |
 | `aplane.falcon1024-timelock.v1` | `aplane.falcon1024-timelock.v1.yaml` | Requires a Falcon signature and `FirstValid >= unlock_round`; after the unlock round, transaction policy matches the base Falcon key type. | `unlock_round` | None |
 
 ## Notes

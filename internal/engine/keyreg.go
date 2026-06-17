@@ -16,15 +16,16 @@ import (
 // KeyRegParams contains parameters for key registration.
 // Address must be resolved 58-character Algorand address.
 type KeyRegParams struct {
-	Account           string // Resolved address (58-char)
-	Mode              string // "online" or "offline"
-	VoteKey           string // Base64 encoded vote key
-	SelectionKey      string // Base64 encoded selection key
-	StateProofKey     string // Base64 encoded state proof key
-	VoteFirst         uint64 // First valid round
-	VoteLast          uint64 // Last valid round
-	KeyDilution       uint64 // Key dilution
-	IncentiveEligible bool   // Request incentive eligibility (costs 2 ALGO)
+	Account           string            // Resolved address (58-char)
+	Mode              string            // "online" or "offline"
+	VoteKey           string            // Base64 encoded vote key
+	SelectionKey      string            // Base64 encoded selection key
+	StateProofKey     string            // Base64 encoded state proof key
+	VoteFirst         uint64            // First valid round
+	VoteLast          uint64            // Last valid round
+	KeyDilution       uint64            // Key dilution
+	IncentiveEligible bool              // Request incentive eligibility (costs 2 ALGO)
+	LsigArgs          map[string][]byte // Optional LogicSig arguments for generic LogicSigs
 }
 
 func (e *Engine) PrepareKeyReg(ctx context.Context, params KeyRegParams) (*TransactionPrepResult, error) {
@@ -84,6 +85,7 @@ func (e *Engine) PrepareKeyReg(ctx context.Context, params KeyRegParams) (*Trans
 	return &TransactionPrepResult{
 		Transaction:    txnObj,
 		SigningContext: signingCtx,
+		LsigArgs:       params.LsigArgs,
 	}, nil
 }
 

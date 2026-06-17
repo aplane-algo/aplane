@@ -30,8 +30,9 @@ type OptInParams struct {
 	ASARef     cmdspec.AssetRef // ASA name or ID
 	From       string           // Account to opt-in
 	Wait       bool
-	Fee        uint64 // transaction fee in microAlgos
-	UseFlatFee bool   // true if user explicitly set fee (even if zero)
+	Fee        uint64            // transaction fee in microAlgos
+	UseFlatFee bool              // true if user explicitly set fee (even if zero)
+	LsigArgs   map[string][]byte // LogicSig arguments for generic LogicSigs
 }
 
 // RekeyParams holds parsed parameters for rekey command
@@ -39,8 +40,9 @@ type RekeyParams struct {
 	Account    string // Account to rekey
 	Signer     string // New signing authority
 	Wait       bool
-	Fee        uint64 // transaction fee in microAlgos
-	UseFlatFee bool   // true if user explicitly set fee (even if zero)
+	Fee        uint64            // transaction fee in microAlgos
+	UseFlatFee bool              // true if user explicitly set fee (even if zero)
+	LsigArgs   map[string][]byte // LogicSig arguments for generic LogicSigs
 }
 
 // OptOutParams holds parsed parameters for optout command
@@ -49,8 +51,9 @@ type OptOutParams struct {
 	Account    string           // Account to opt out
 	CloseTo    string           // Where to send remaining balance (optional)
 	Wait       bool
-	Fee        uint64 // transaction fee in microAlgos
-	UseFlatFee bool   // true if user explicitly set fee (even if zero)
+	Fee        uint64            // transaction fee in microAlgos
+	UseFlatFee bool              // true if user explicitly set fee (even if zero)
+	LsigArgs   map[string][]byte // LogicSig arguments for generic LogicSigs
 }
 
 // CloseParams holds parsed parameters for close command
@@ -76,6 +79,7 @@ type KeyRegParams struct {
 	KeyDilution       uint64
 	IncentiveEligible bool
 	Wait              bool
+	LsigArgs          map[string][]byte
 }
 
 // ParseSendCommand parses natural language send syntax:
@@ -137,7 +141,7 @@ func ParseSendCommand(args []string) (TransactionParams, error) {
 }
 
 // ParseOptinCommand parses natural language optin syntax:
-// optin <asset> for <account> [fee=<microalgos>] [nowait]
+// optin <asset> for <account> [fee=<microalgos>] [nowait] [arg:name=value]
 func ParseOptinCommand(args []string) (OptInParams, error) {
 	params := OptInParams{
 		Wait:       true,
@@ -167,7 +171,7 @@ func ParseOptinCommand(args []string) (OptInParams, error) {
 	params.From = args[2]
 
 	// Parse optional flags
-	if err := parseWaitFeeTrailingArgs(args[3:], &params.Wait, &params.Fee, &params.UseFlatFee); err != nil {
+	if err := parseWaitFeeLsigTrailingArgs(args[3:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {
 		return params, err
 	}
 
@@ -175,7 +179,7 @@ func ParseOptinCommand(args []string) (OptInParams, error) {
 }
 
 // ParseOptoutCommand parses natural language optout syntax:
-// optout <asset> from <account> [to <dest>] [fee=<microalgos>] [nowait]
+// optout <asset> from <account> [to <dest>] [fee=<microalgos>] [nowait] [arg:name=value]
 func ParseOptoutCommand(args []string) (OptOutParams, error) {
 	params := OptOutParams{
 		Wait:       true,
@@ -219,7 +223,7 @@ func ParseOptoutCommand(args []string) (OptOutParams, error) {
 	}
 
 	// Parse optional flags
-	if err := parseWaitFeeTrailingArgs(args[nextIdx:], &params.Wait, &params.Fee, &params.UseFlatFee); err != nil {
+	if err := parseWaitFeeLsigTrailingArgs(args[nextIdx:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {
 		return params, err
 	}
 
@@ -252,36 +256,16 @@ func ParseCloseCommand(args []string) (CloseParams, error) {
 	}
 	params.CloseTo = args[2]
 
-	// Parse optional flags
-	for _, arg := range args[3:] {
-		if arg == "nowait" {
-			params.Wait = false
-		} else if strings.HasPrefix(arg, "fee=") {
-			feeStr := strings.TrimPrefix(arg, "fee=")
-			feeVal, err := parseUint64(feeStr)
-			if err != nil {
-				return params, fmt.Errorf("invalid fee value: %s", feeStr)
-			}
-			params.Fee = feeVal
-			params.UseFlatFee = true
-		} else if strings.HasPrefix(arg, "arg:") {
-			argName, argValue, err := cmdspec.ParseLsigArg(arg)
-			if err != nil {
-				return params, err
-			}
-			if params.LsigArgs == nil {
-				params.LsigArgs = make(map[string][]byte)
-			}
-			params.LsigArgs[argName] = argValue
-		}
+	if err := parseWaitFeeLsigTrailingArgs(args[3:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {
+		return params, err
 	}
 
 	return params, nil
 }
 
 // ParseRekeyCommand parses natural language rekey syntax:
-// rekey <account> to <signer> [fee=<microalgos>] [nowait]
-// Also handles unrekey: unrekey <account> [fee=<microalgos>] [nowait]
+// rekey <account> to <signer> [fee=<microalgos>] [nowait] [arg:name=value]
+// Also handles unrekey: unrekey <account> [fee=<microalgos>] [nowait] [arg:name=value]
 func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 	params := RekeyParams{
 		Wait:       true,
@@ -290,15 +274,15 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 	}
 
 	if isUnrekey {
-		// unrekey <account> [fee=<microalgos>] [nowait]
+		// unrekey <account> [fee=<microalgos>] [nowait] [arg:name=value]
 		if len(args) < 1 {
-			return params, fmt.Errorf("usage: unrekey <account> [fee=<microalgos>] [nowait]\nExample: unrekey alice")
+			return params, fmt.Errorf("usage: unrekey <account> [fee=<microalgos>] [nowait] [arg:name=value]\nExample: unrekey alice")
 		}
 		params.Account = args[0]
 		params.Signer = args[0] // Rekey to self
 
 		// Parse optional flags
-		if err := parseWaitFeeTrailingArgs(args[1:], &params.Wait, &params.Fee, &params.UseFlatFee); err != nil {
+		if err := parseWaitFeeLsigTrailingArgs(args[1:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {
 			return params, err
 		}
 		return params, nil
@@ -322,8 +306,7 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 	}
 	params.Signer = args[2]
 
-	// Parse optional flags
-	if err := parseWaitFeeTrailingArgs(args[3:], &params.Wait, &params.Fee, &params.UseFlatFee); err != nil {
+	if err := parseWaitFeeLsigTrailingArgs(args[3:], &params.Wait, &params.Fee, &params.UseFlatFee, &params.LsigArgs); err != nil {
 		return params, err
 	}
 
@@ -331,7 +314,7 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 }
 
 // ParseTakeCommand parses natural language keyreg syntax:
-// keyreg <account> <online|offline> [votekey=...] [selkey=...] [sproofkey=...] [votefirst=...] [votelast=...] [keydilution=...] [eligible=true] [nowait]
+// keyreg <account> <online|offline> [votekey=...] [selkey=...] [sproofkey=...] [votefirst=...] [votelast=...] [keydilution=...] [eligible=true] [nowait] [arg:name=value]
 func ParseTakeCommand(args []string) (KeyRegParams, error) {
 	params := KeyRegParams{
 		Wait:              true,
@@ -365,6 +348,15 @@ func ParseTakeCommand(args []string) (KeyRegParams, error) {
 		arg := args[i]
 		if arg == "nowait" {
 			params.Wait = false
+		} else if strings.HasPrefix(arg, "arg:") {
+			argName, argValue, err := cmdspec.ParseLsigArg(arg)
+			if err != nil {
+				return params, err
+			}
+			if params.LsigArgs == nil {
+				params.LsigArgs = make(map[string][]byte)
+			}
+			params.LsigArgs[argName] = argValue
 		} else if strings.Contains(arg, "=") {
 			parts := strings.SplitN(arg, "=", 2)
 			if len(parts) != 2 {
@@ -422,7 +414,7 @@ func parseUint64(s string) (uint64, error) {
 	return result, nil
 }
 
-func parseWaitFeeTrailingArgs(args []string, wait *bool, fee *uint64, useFlatFee *bool) error {
+func parseWaitFeeLsigTrailingArgs(args []string, wait *bool, fee *uint64, useFlatFee *bool, lsigArgs *map[string][]byte) error {
 	for _, arg := range args {
 		if strings.EqualFold(arg, "nowait") {
 			*wait = false
@@ -434,6 +426,15 @@ func parseWaitFeeTrailingArgs(args []string, wait *bool, fee *uint64, useFlatFee
 			}
 			*fee = feeVal
 			*useFlatFee = true
+		} else if strings.HasPrefix(arg, "arg:") && lsigArgs != nil {
+			argName, argValue, err := cmdspec.ParseLsigArg(arg)
+			if err != nil {
+				return err
+			}
+			if *lsigArgs == nil {
+				*lsigArgs = make(map[string][]byte)
+			}
+			(*lsigArgs)[argName] = argValue
 		}
 	}
 	return nil
@@ -450,8 +451,9 @@ type SweepParams struct {
 	ToRaw      string             // Raw destination input (alias, address)
 	Leaving    cmdspec.AmountText // Amount to leave in each source (optional)
 	Wait       bool
-	Fee        uint64 // transaction fee in microAlgos
-	UseFlatFee bool   // true if user explicitly set fee (even if zero)
+	Fee        uint64            // transaction fee in microAlgos
+	UseFlatFee bool              // true if user explicitly set fee (even if zero)
+	LsigArgs   map[string][]byte // LogicSig arguments applied to each generated transaction
 }
 
 // ParseSweepCommand parses sweep syntax:
@@ -596,6 +598,15 @@ func parseSweepTrailingArgs(args []string, params *SweepParams) error {
 			}
 			params.Fee = feeVal
 			params.UseFlatFee = true
+		case strings.HasPrefix(args[i], "arg:"):
+			argName, argValue, err := cmdspec.ParseLsigArg(args[i])
+			if err != nil {
+				return err
+			}
+			if params.LsigArgs == nil {
+				params.LsigArgs = make(map[string][]byte)
+			}
+			params.LsigArgs[argName] = argValue
 		}
 	}
 	return nil

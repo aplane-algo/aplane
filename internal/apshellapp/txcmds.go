@@ -22,6 +22,7 @@ type OptInRequest struct {
 	AssetRef   string
 	Fee        uint64
 	UseFlatFee bool
+	LsigArgs   map[string][]byte
 	Wait       bool
 }
 
@@ -32,6 +33,7 @@ type OptOutRequest struct {
 	CloseTo    string
 	Fee        uint64
 	UseFlatFee bool
+	LsigArgs   map[string][]byte
 	Wait       bool
 }
 
@@ -47,6 +49,7 @@ type KeyRegRequest struct {
 	KeyDilution       uint64
 	IncentiveEligible bool
 	Wait              bool
+	LsigArgs          map[string][]byte
 }
 
 // RekeyRequest captures parsed rekey inputs.
@@ -55,6 +58,7 @@ type RekeyRequest struct {
 	Target     string
 	Fee        uint64
 	UseFlatFee bool
+	LsigArgs   map[string][]byte
 	Wait       bool
 }
 
@@ -63,6 +67,7 @@ type UnrekeyRequest struct {
 	Account    string
 	Fee        uint64
 	UseFlatFee bool
+	LsigArgs   map[string][]byte
 	Wait       bool
 }
 
@@ -84,7 +89,14 @@ type SweepRequest struct {
 	LeavingText string
 	Fee         uint64
 	UseFlatFee  bool
+	LsigArgs    map[string][]byte
 	Wait        bool
+}
+
+// ValidateRequest captures parsed account validation inputs.
+type ValidateRequest struct {
+	Account  string
+	LsigArgs map[string][]byte
 }
 
 // ResolveIncentiveEligibility queries current status and resolves whether to charge the fee.
@@ -102,26 +114,27 @@ func (a *App) ResolveIncentiveEligibility(ctx context.Context, address string, r
 }
 
 // Validate resolves and validates one account or address set via 0-ALGO self-send transactions.
-func (a *App) Validate(ctx context.Context, account string) (*ValidateCommandResult, error) {
+func (a *App) Validate(ctx context.Context, req ValidateRequest) (*ValidateCommandResult, error) {
 	resolver := a.eng.NewAddressResolver()
-	addresses, err := cmdspec.ResolveAddressList([]string{account}, resolver)
+	addresses, err := cmdspec.ResolveAddressList([]string{req.Account}, resolver)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve account: %w", err)
 	}
 	if len(addresses) == 0 {
-		return nil, fmt.Errorf("no addresses found for %q", account)
+		return nil, fmt.Errorf("no addresses found for %q", req.Account)
 	}
 
 	result := &ValidateCommandResult{
-		Input: account,
-		IsSet: len(account) > 0 && account[0] == '@',
+		Input: req.Account,
+		IsSet: len(req.Account) > 0 && req.Account[0] == '@',
 	}
 	for _, addr := range addresses {
 		item := ValidateItemResult{Address: addr}
 		prepResult, _, err := a.eng.PreparePayment(ctx, engine.SendPaymentParams{
-			From:   addr,
-			To:     addr,
-			Amount: 0,
+			From:     addr,
+			To:       addr,
+			Amount:   0,
+			LsigArgs: req.LsigArgs,
 		})
 		if err != nil {
 			item.Error = fmt.Sprintf("failed to prepare: %v", err)
@@ -196,6 +209,7 @@ func (a *App) OptIn(ctx context.Context, req OptInRequest) (*OptInCommandResult,
 		AssetID:    meta.AssetID,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
+		LsigArgs:   req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
@@ -245,6 +259,7 @@ func (a *App) OptOut(ctx context.Context, req OptOutRequest) (*OptOutCommandResu
 		CloseTo:    closeToAddr,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
+		LsigArgs:   req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
@@ -304,6 +319,7 @@ func (a *App) KeyReg(ctx context.Context, req KeyRegRequest) (*KeyRegCommandResu
 		VoteLast:          voteLast,
 		KeyDilution:       keyDilution,
 		IncentiveEligible: req.IncentiveEligible,
+		LsigArgs:          req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
@@ -422,6 +438,7 @@ func (a *App) Rekey(ctx context.Context, req RekeyRequest) (*RekeyCommandResult,
 		To:         toAddress,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
+		LsigArgs:   req.LsigArgs,
 	})
 	if err != nil {
 		check := rekeyCheckDetailsFromEngine(checkResult)
@@ -480,6 +497,7 @@ func (a *App) Unrekey(ctx context.Context, req UnrekeyRequest) (*RekeyCommandRes
 		To:         address,
 		Fee:        req.Fee,
 		UseFlatFee: req.UseFlatFee,
+		LsigArgs:   req.LsigArgs,
 	})
 	if err != nil {
 		return nil, err
@@ -756,6 +774,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				Amount:     item.Amount.Raw,
 				Fee:        req.Fee,
 				UseFlatFee: req.UseFlatFee,
+				LsigArgs:   req.LsigArgs,
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr
@@ -767,6 +786,7 @@ func (a *App) Sweep(ctx context.Context, req SweepRequest) (*SweepCommandResult,
 				Amount:     item.Amount.Raw,
 				Fee:        req.Fee,
 				UseFlatFee: req.UseFlatFee,
+				LsigArgs:   req.LsigArgs,
 			})
 			prep = preparedTxnFromEngine(prepResult)
 			err = prepErr

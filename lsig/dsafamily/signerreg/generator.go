@@ -6,6 +6,7 @@ package signerreg
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -113,7 +114,7 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	// Generate key pair
 	pub, priv, err := keygenOps.GenerateKeypair(seed)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate Falcon key: %w", err)
+		return nil, fmt.Errorf("failed to generate DSA key: %w", err)
 	}
 	defer crypto.ZeroBytes(priv)
 
@@ -218,15 +219,21 @@ func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths stor
 
 	// Convert mnemonic back to entropy for storage (so it can be re-exported)
 	entropy, err := handler.MnemonicToEntropy(words)
-	if err != nil {
+	if errors.Is(err, mnemonicreg.ErrEntropyUnsupported) {
+		entropy = nil
+	} else if err != nil {
 		return nil, fmt.Errorf("failed to derive entropy from mnemonic: %w", err)
 	}
 	defer crypto.ZeroBytes(entropy)
 
+	derivation := ""
+	if len(entropy) > 0 {
+		derivation = "bip39-standard"
+	}
 	return g.generateKey(ctx, paths, identityID, seed, masterKey, keyType, params, &keygenOpts{
 		entropy:    entropy,
 		mnemonic:   mnemonic,
-		derivation: "bip39-standard",
+		derivation: derivation,
 	})
 }
 
@@ -246,9 +253,13 @@ func (g *LogicSigGenerator) GenerateRandom(ctx context.Context, paths storepaths
 	}
 	defer crypto.ZeroBytes(entropy)
 
+	derivation := ""
+	if len(entropy) > 0 {
+		derivation = "bip39-standard"
+	}
 	return g.generateKey(ctx, paths, identityID, seed, masterKey, keyType, params, &keygenOpts{
 		entropy:    entropy,
 		mnemonic:   mnemonic,
-		derivation: "bip39-standard",
+		derivation: derivation,
 	})
 }

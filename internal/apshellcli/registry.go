@@ -27,7 +27,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 	// Transaction Commands
 	mustRegister(registry, &command.Command{
 		Name:        "send",
-		Usage:       "send <amount> <asset> from <sender> to <receiver> [note=<text>] [nowait] [atomic]",
+		Usage:       "send <amount> <asset> from <sender> to <receiver> [note=<text>] [fee=<microalgos>] [nowait] [atomic] [arg:name=value]",
 		Description: "Send ALGO or ASA tokens. Use 'atomic' with @setname to send as atomic group",
 		Category:    command.CategoryTransaction,
 		Handler:     command.NewInternalHandler(r.cmdSend),
@@ -35,7 +35,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 
 	mustRegister(registry, &command.Command{
 		Name:        "sweep",
-		Usage:       "sweep <asset> [from [account1 account2 ...]] to <dest> [leaving <amount>] [nowait]",
+		Usage:       "sweep <asset> [from [account1 account2 ...]] to <dest> [leaving <amount>] [fee=<microalgos>] [nowait] [arg:name=value]",
 		Description: "Sweep asset from accounts to destination (defaults to all signable accounts)",
 		Category:    command.CategoryTransaction,
 		Handler:     command.NewInternalHandler(r.cmdSweep),
@@ -51,7 +51,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 
 	mustRegister(registry, &command.Command{
 		Name:        "optin",
-		Usage:       "optin <asset> for <account> [nowait]",
+		Usage:       "optin <asset> for <account> [fee=<microalgos>] [nowait] [arg:name=value]",
 		Description: "Opt into an ASA",
 		Category:    command.CategoryTransaction,
 		Handler:     command.NewInternalHandler(r.cmdOptin),
@@ -59,7 +59,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 
 	mustRegister(registry, &command.Command{
 		Name:        "optout",
-		Usage:       "optout <asset> from <account> [to <dest>] [nowait]",
+		Usage:       "optout <asset> from <account> [to <dest>] [fee=<microalgos>] [nowait] [arg:name=value]",
 		Description: "Opt out of an ASA. Requires 'to <dest>' if account holds balance",
 		Category:    command.CategoryTransaction,
 		Handler:     command.NewInternalHandler(r.cmdOptout),
@@ -67,7 +67,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 
 	mustRegister(registry, &command.Command{
 		Name:        "keyreg",
-		Usage:       "keyreg [<account> online|offline [votekey=<key>] [selkey=<key>] [sproofkey=<key>] [votefirst=<round>] [votelast=<round>] [keydilution=<n>] [eligible=true] [nowait]]",
+		Usage:       "keyreg [<account> online|offline [votekey=<key>] [selkey=<key>] [sproofkey=<key>] [votefirst=<round>] [votelast=<round>] [keydilution=<n>] [eligible=true] [nowait] [arg:name=value]]",
 		Description: "Mark account status for consensus participation, or enter paste mode with no arguments",
 		Category:    command.CategoryTransaction,
 		Handler:     command.NewInternalHandler(r.cmdKeyreg),
@@ -75,7 +75,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 
 	mustRegister(registry, &command.Command{
 		Name:        "close",
-		Usage:       "close <account> to <destination> [nowait]",
+		Usage:       "close <account> to <destination> [fee=<microalgos>] [nowait] [arg:name=value]",
 		Description: "Close account and send all ALGO to destination. Fails if account is online or has ASAs",
 		Category:    command.CategoryTransaction,
 		Handler:     command.NewInternalHandler(r.cmdClose),
@@ -115,7 +115,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 
 	mustRegister(registry, &command.Command{
 		Name:        "app",
-		Usage:       "app read info <app-id> | app read global <app-id> | app read local <app-id> <account> | app read box <app-id> <box-name> | app read boxes <app-id> | app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] ... | app call <app-id> <method> --abi <path> from <account> [--pay <microalgos>] ... | app call raw <app-id> from <account> [--pay <microalgos>] ...",
+		Usage:       "app read info <app-id> | app read global <app-id> | app read local <app-id> <account> | app read box <app-id> <box-name> | app read boxes <app-id> | app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] ... [arg:name=value] | app call <app-id> <method> --abi <path> from <account> [--pay <microalgos>] ... | app call raw <app-id> from <account> [--pay <microalgos>] ...",
 		Description: "Read Algorand application metadata/state, deploy applications from TEAL source or compiled programs, and submit ABI-backed or raw application call transactions",
 		Category:    command.CategoryTransaction,
 		Handler:     command.NewInternalHandler(r.cmdApp),
@@ -133,7 +133,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 	// Account Validation
 	mustRegister(registry, &command.Command{
 		Name:        "validate",
-		Usage:       "validate <account>",
+		Usage:       "validate <account> [arg:name=value]",
 		Description: "Validate account signing by sending 0 ALGO to itself (works with sets: validate @setname)",
 		Category:    command.CategoryTransaction,
 		Handler:     command.NewInternalHandler(r.cmdValidate),
@@ -150,7 +150,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 	// Rekey Management
 	mustRegister(registry, &command.Command{
 		Name:        "rekey",
-		Usage:       "rekey list | rekey refresh [<address|alias>] | rekey <account> to <signer> [fee=<microalgos>] [nowait]",
+		Usage:       "rekey list | rekey refresh [<address|alias>] | rekey <account> to <signer> [fee=<microalgos>] [nowait] [arg:name=value]",
 		Description: "Query and manage account rekeying. Use 'rekey refresh' to rebuild auth cache",
 		Category:    command.CategoryRekey,
 		Handler:     command.NewInternalHandler(r.cmdRekey),
@@ -158,7 +158,7 @@ func (r *REPLState) initCommandRegistry() *command.Registry {
 
 	mustRegister(registry, &command.Command{
 		Name:        "unrekey",
-		Usage:       "unrekey <address|alias> [nowait]",
+		Usage:       "unrekey <address|alias> [fee=<microalgos>] [nowait] [arg:name=value]",
 		Description: "Rekey account back to itself",
 		Category:    command.CategoryRekey,
 		Handler:     command.NewInternalHandler(r.cmdUnrekey),

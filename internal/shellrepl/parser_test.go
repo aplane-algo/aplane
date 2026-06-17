@@ -310,6 +310,16 @@ func TestParseOptinCommand(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:    "optin with lsig arg",
+			args:    []string{"usdc", "for", "alice", "arg:preimage=text:secret"},
+			wantErr: false,
+			checkFunc: func(t *testing.T, p OptInParams) {
+				if got := string(p.LsigArgs["preimage"]); got != "secret" {
+					t.Errorf("LsigArgs[preimage] = %q, want secret", got)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -442,7 +452,7 @@ func TestParseOptoutCommand(t *testing.T) {
 		},
 		{
 			name:    "optout with close-to and all flags",
-			args:    []string{"usdc", "from", "alice", "to", "bob", "fee=3000", "nowait"},
+			args:    []string{"usdc", "from", "alice", "to", "bob", "fee=3000", "nowait", "arg:preimage=text:secret"},
 			wantErr: false,
 			checkFunc: func(t *testing.T, p OptOutParams) {
 				if p.Account != "alice" {
@@ -456,6 +466,9 @@ func TestParseOptoutCommand(t *testing.T) {
 				}
 				if p.Wait {
 					t.Error("Wait should be false with nowait flag")
+				}
+				if got := string(p.LsigArgs["preimage"]); got != "secret" {
+					t.Errorf("LsigArgs[preimage] = %q, want secret", got)
 				}
 			},
 		},
@@ -689,6 +702,17 @@ func TestParseRekeyCommand(t *testing.T) {
 			},
 		},
 		{
+			name:      "rekey with lsig arg",
+			args:      []string{"alice", "to", "bob", "arg:rekey_preimage=text:secret"},
+			isUnrekey: false,
+			wantErr:   false,
+			checkFunc: func(t *testing.T, p RekeyParams) {
+				if got := string(p.LsigArgs["rekey_preimage"]); got != "secret" {
+					t.Errorf("LsigArgs[rekey_preimage] = %q, want secret", got)
+				}
+			},
+		},
+		{
 			name:      "unrekey too few args",
 			args:      []string{},
 			isUnrekey: true,
@@ -800,7 +824,7 @@ func TestParseTakeCommand(t *testing.T) {
 		},
 		{
 			name:    "online mode with all options",
-			args:    []string{"alice", "online", "votekey=ABC", "selkey=DEF", "sproofkey=GHI", "votefirst=100", "votelast=200", "keydilution=50", "eligible=true", "nowait"},
+			args:    []string{"alice", "online", "votekey=ABC", "selkey=DEF", "sproofkey=GHI", "votefirst=100", "votelast=200", "keydilution=50", "eligible=true", "nowait", "arg:preimage=text:secret"},
 			wantErr: false,
 			checkFunc: func(t *testing.T, p KeyRegParams) {
 				if p.VoteFirst != 100 {
@@ -817,6 +841,9 @@ func TestParseTakeCommand(t *testing.T) {
 				}
 				if p.Wait {
 					t.Error("Wait should be false with nowait flag")
+				}
+				if got := string(p.LsigArgs["preimage"]); got != "secret" {
+					t.Errorf("LsigArgs[preimage] = %q, want secret", got)
 				}
 			},
 		},
@@ -912,7 +939,7 @@ func TestParseSweepCommand(t *testing.T) {
 		},
 		{
 			name:    "sweep with fee and nowait",
-			args:    []string{"algo", "to", "treasury", "fee=2000", "nowait"},
+			args:    []string{"algo", "to", "treasury", "fee=2000", "nowait", "arg:preimage=text:secret"},
 			wantErr: false,
 			checkFunc: func(t *testing.T, p SweepParams) {
 				if p.Fee != 2000 {
@@ -923,6 +950,9 @@ func TestParseSweepCommand(t *testing.T) {
 				}
 				if p.Wait {
 					t.Error("Wait should be false with nowait flag")
+				}
+				if got := string(p.LsigArgs["preimage"]); got != "secret" {
+					t.Errorf("LsigArgs[preimage] = %q, want secret", got)
 				}
 			},
 		},

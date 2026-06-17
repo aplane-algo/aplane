@@ -142,6 +142,9 @@ func ValidateParameterSpecs(params []ParameterSpec) error {
 		default:
 			return fmt.Errorf("parameter %s has invalid type %q (must be address, address[], uint64, uint64[], or bytes)", p.Name, p.Type)
 		}
+		if err := validateInputModeSpecs(p); err != nil {
+			return err
+		}
 
 		// Validate min/max only apply to uint64
 		if (p.Min != nil || p.Max != nil) && p.Type != "uint64" {
@@ -170,6 +173,36 @@ func ValidateParameterSpecs(params []ParameterSpec) error {
 			if err := validateDefaultValue(p); err != nil {
 				return fmt.Errorf("parameter %s: invalid default: %w", p.Name, err)
 			}
+		}
+	}
+	return nil
+}
+
+func validateInputModeSpecs(param ParameterSpec) error {
+	seenNames := make(map[string]bool)
+	for _, mode := range param.InputModes {
+		if mode.Name == "" {
+			return fmt.Errorf("parameter %s: input mode name is required", param.Name)
+		}
+		if seenNames[mode.Name] {
+			return fmt.Errorf("parameter %s: duplicate input mode name: %s", param.Name, mode.Name)
+		}
+		seenNames[mode.Name] = true
+		switch mode.Transform {
+		case "", "sha256", "sha512_256":
+		default:
+			return fmt.Errorf("parameter %s input mode %s has unsupported transform %q", param.Name, mode.Name, mode.Transform)
+		}
+		if (mode.Transform == "sha256" || mode.Transform == "sha512_256") && param.Type != "bytes" {
+			return fmt.Errorf("parameter %s input mode %s: %s transform requires bytes parameter type", param.Name, mode.Name, mode.Transform)
+		}
+		if mode.ByteLength < 0 {
+			return fmt.Errorf("parameter %s input mode %s: byte_length cannot be negative", param.Name, mode.Name)
+		}
+		switch mode.InputType {
+		case "", "string":
+		default:
+			return fmt.Errorf("parameter %s input mode %s has unsupported input_type %q", param.Name, mode.Name, mode.InputType)
 		}
 	}
 	return nil

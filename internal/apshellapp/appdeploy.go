@@ -29,6 +29,7 @@ type AppDeployRequest struct {
 	Wait             bool
 	Fee              uint64
 	UseFlatFee       bool
+	LsigArgs         map[string][]byte
 }
 
 func (r AppDeployRequest) toEngineParams() engine.AppDeployParams {
@@ -50,6 +51,7 @@ func (r AppDeployRequest) toEngineParams() engine.AppDeployParams {
 		Note:         r.Note,
 		Fee:          r.Fee,
 		UseFlatFee:   r.UseFlatFee,
+		LsigArgs:     r.LsigArgs,
 		OnCompletion: types.NoOpOC,
 	}
 }

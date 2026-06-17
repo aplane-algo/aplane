@@ -26,6 +26,7 @@ func TestParseRawAppCallArgs(t *testing.T) {
 		"note=test",
 		"fee=2000",
 		"nowait",
+		"arg:preimage=text:secret",
 	})
 	if err != nil {
 		t.Fatalf("parseRawAppCallArgs() error = %v", err)
@@ -157,6 +158,7 @@ func TestParseMethodAppCallArgs(t *testing.T) {
 		"note=test",
 		"fee=2000",
 		"nowait",
+		"arg:preimage=text:secret",
 	})
 	if err != nil {
 		t.Fatalf("parseMethodAppCallArgs() error = %v", err)
@@ -302,6 +304,7 @@ func TestParseAppDeployArgs(t *testing.T) {
 		"note=test",
 		"fee=2000",
 		"nowait",
+		"arg:preimage=text:secret",
 	})
 	if err != nil {
 		t.Fatalf("parseAppDeployArgs() error = %v", err)
@@ -327,6 +330,9 @@ func TestParseAppDeployArgs(t *testing.T) {
 	}
 	if params.Wait {
 		t.Fatal("expected nowait to disable waiting")
+	}
+	if got := string(params.LsigArgs["preimage"]); got != "secret" {
+		t.Fatalf("LsigArgs[preimage] = %q, want secret", got)
 	}
 }
 

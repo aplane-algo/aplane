@@ -4,12 +4,15 @@
 package mnemonic
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 )
+
+var ErrEntropyUnsupported = errors.New("mnemonic: entropy round-trip not supported")
 
 // Handler defines the interface for mnemonic operations
 type Handler interface {

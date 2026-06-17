@@ -5,6 +5,9 @@ package tui
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/hex"
 	"reflect"
 	"sort"
 	"strings"
@@ -47,6 +50,66 @@ func TestApplyInputModeTransforms_NormalizesAddressListParams(t *testing.T) {
 	want := map[string]string{"recipients": strings.Join(wantRecipients, ",")}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("transformed params = %v, want %v", got, want)
+	}
+}
+
+func TestApplyInputModeTransforms_AppliesFirstInputModeTransform(t *testing.T) {
+	m := Model{forms: formsState{
+		genericLSigParams: map[string]string{"hash": "open sesame"},
+		genericLSigParamModes: map[string]int{
+			"hash": 0,
+		},
+	}}
+	params := []lsigprovider.ParameterDef{{
+		Name:      "hash",
+		Type:      "bytes",
+		Required:  true,
+		MaxLength: 64,
+		InputModes: []lsigprovider.InputMode{
+			{Name: "preimage", Label: "Preimage", Transform: "sha256", InputType: "string"},
+			{Name: "hash", Label: "SHA256 Hash"},
+		},
+	}}
+
+	got, err := m.applyInputModeTransforms(params)
+	if err != nil {
+		t.Fatalf("applyInputModeTransforms returned error: %v", err)
+	}
+
+	sum := sha256.Sum256([]byte("open sesame"))
+	want := hex.EncodeToString(sum[:])
+	if got["hash"] != want {
+		t.Fatalf("hash = %q, want %q", got["hash"], want)
+	}
+}
+
+func TestApplyInputModeTransforms_AppliesSHA512_256InputModeTransform(t *testing.T) {
+	m := Model{forms: formsState{
+		genericLSigParams: map[string]string{"rekey_unlock_hash": "open sesame"},
+		genericLSigParamModes: map[string]int{
+			"rekey_unlock_hash": 0,
+		},
+	}}
+	params := []lsigprovider.ParameterDef{{
+		Name:      "rekey_unlock_hash",
+		Type:      "bytes",
+		Required:  true,
+		MaxLength: 64,
+		InputModes: []lsigprovider.InputMode{
+			{Name: "preimage", Label: "Rekey Unlock Preimage", Transform: "sha512_256", InputType: "string"},
+			{Name: "hash", Label: "Rekey Unlock Hash"},
+		},
+	}}
+
+	got, err := m.applyInputModeTransforms(params)
+	if err != nil {
+		t.Fatalf("applyInputModeTransforms returned error: %v", err)
+	}
+
+	sum := sha512.Sum512_256([]byte("open sesame"))
+	want := hex.EncodeToString(sum[:])
+	if got["rekey_unlock_hash"] != want {
+		t.Fatalf("rekey_unlock_hash = %q, want %q", got["rekey_unlock_hash"], want)
 	}
 }
 

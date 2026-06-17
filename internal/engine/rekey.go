@@ -16,10 +16,11 @@ import (
 // RekeyParams contains parameters for rekeying an account.
 // All addresses must be resolved 58-character Algorand addresses.
 type RekeyParams struct {
-	From       string // Account to rekey (58-char)
-	To         string // New auth address (58-char)
-	Fee        uint64 // Optional custom fee in microAlgos
-	UseFlatFee bool   // If true, use Fee as flat fee
+	From       string            // Account to rekey (58-char)
+	To         string            // New auth address (58-char)
+	Fee        uint64            // Optional custom fee in microAlgos
+	UseFlatFee bool              // If true, use Fee as flat fee
+	LsigArgs   map[string][]byte // Optional LogicSig arguments for the sender auth address
 }
 
 // RekeyCheckResult contains validation results for a rekey operation.
@@ -88,5 +89,6 @@ func (e *Engine) PrepareRekey(ctx context.Context, params RekeyParams) (*Transac
 	return &TransactionPrepResult{
 		Transaction:    txnObj,
 		SigningContext: signingCtx,
+		LsigArgs:       params.LsigArgs,
 	}, checkResult, nil
 }

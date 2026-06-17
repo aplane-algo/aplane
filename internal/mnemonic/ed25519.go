@@ -14,11 +14,23 @@ import (
 )
 
 // Ed25519Handler implements Handler for Ed25519 using Algorand mnemonic format
-type Ed25519Handler struct{}
+type Ed25519Handler struct {
+	family string
+}
+
+func NewEd25519Handler(family string) *Ed25519Handler {
+	if family == "" {
+		family = "ed25519"
+	}
+	return &Ed25519Handler{family: family}
+}
 
 // Family returns the algorithm family this handler supports
 func (h *Ed25519Handler) Family() string {
-	return "ed25519"
+	if h.family == "" {
+		return "ed25519"
+	}
+	return h.family
 }
 
 // GenerateMnemonic generates a new Algorand mnemonic (25 words)
@@ -63,12 +75,12 @@ func (h *Ed25519Handler) SeedFromMnemonic(words []string, passphrase string) ([]
 
 // EntropyToMnemonic is not supported for Ed25519/Algorand
 func (h *Ed25519Handler) EntropyToMnemonic(_ []byte) (string, error) {
-	return "", fmt.Errorf("Ed25519/Algorand does not support entropy-to-mnemonic conversion")
+	return "", ErrEntropyUnsupported
 }
 
 // MnemonicToEntropy is not supported for Ed25519/Algorand
 func (h *Ed25519Handler) MnemonicToEntropy(_ []string) ([]byte, error) {
-	return nil, fmt.Errorf("Ed25519/Algorand does not support mnemonic-to-entropy conversion")
+	return nil, ErrEntropyUnsupported
 }
 
 // ValidateWordCount checks if the word count is valid (25 for Ed25519/Algorand)
@@ -90,6 +102,6 @@ var registerEd25519HandlerOnce sync.Once
 // This is idempotent and safe to call multiple times.
 func RegisterEd25519Handler() {
 	registerEd25519HandlerOnce.Do(func() {
-		Register(&Ed25519Handler{})
+		Register(NewEd25519Handler("ed25519"))
 	})
 }

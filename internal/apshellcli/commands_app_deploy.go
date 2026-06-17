@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/appinput"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/cmdspec"
 )
 
 func (r *REPLState) runAppDeploy(args []string) error {
@@ -70,6 +71,7 @@ type appDeployArgs struct {
 	Wait             bool
 	Fee              uint64
 	UseFlatFee       bool
+	LsigArgs         map[string][]byte
 }
 
 func (a *appDeployArgs) toAppRequest() apshellapp.AppDeployRequest {
@@ -88,13 +90,14 @@ func (a *appDeployArgs) toAppRequest() apshellapp.AppDeployRequest {
 		Wait:             a.Wait,
 		Fee:              a.Fee,
 		UseFlatFee:       a.UseFlatFee,
+		LsigArgs:         a.LsigArgs,
 	}
 }
 
 func parseAppDeployArgs(args []string) (*appDeployArgs, error) {
 	params := &appDeployArgs{Wait: true}
 	if len(args) < 2 || args[0] != "from" || args[1] == "" {
-		return nil, fmt.Errorf("usage: app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] [note=<text>] [fee=<microalgos>] [nowait]")
+		return nil, fmt.Errorf("usage: app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] [note=<text>] [fee=<microalgos>] [nowait] [arg:name=value]")
 	}
 	params.From = args[1]
 
@@ -185,6 +188,15 @@ func parseAppDeployArgs(args []string) (*appDeployArgs, error) {
 			}
 			params.Fee = feeVal
 			params.UseFlatFee = true
+		case strings.HasPrefix(arg, "arg:"):
+			argName, argValue, err := cmdspec.ParseLsigArg(arg)
+			if err != nil {
+				return nil, err
+			}
+			if params.LsigArgs == nil {
+				params.LsigArgs = make(map[string][]byte)
+			}
+			params.LsigArgs[argName] = argValue
 		default:
 			return nil, fmt.Errorf("unknown app deploy argument: %s", arg)
 		}

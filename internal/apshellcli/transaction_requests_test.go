@@ -10,8 +10,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/shellrepl"
 )
 
-func TestOptOutRequestFromParamsPreservesFee(t *testing.T) {
-	params, err := shellrepl.ParseOptoutCommand([]string{"usdc", "from", "alice", "to", "bob", "fee=3000", "nowait"})
+func TestOptOutRequestFromParamsPreservesFeeAndLsigArgs(t *testing.T) {
+	params, err := shellrepl.ParseOptoutCommand([]string{"usdc", "from", "alice", "to", "bob", "fee=3000", "nowait", "arg:preimage=text:secret"})
 	if err != nil {
 		t.Fatalf("ParseOptoutCommand() error = %v", err)
 	}
@@ -26,6 +26,9 @@ func TestOptOutRequestFromParamsPreservesFee(t *testing.T) {
 	}
 	if req.Wait {
 		t.Fatal("Wait = true, want false")
+	}
+	if got := req.LsigArgs["preimage"]; !bytes.Equal(got, []byte("secret")) {
+		t.Fatalf("LsigArgs[preimage] = %q, want secret", string(got))
 	}
 }
 

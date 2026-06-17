@@ -15,8 +15,15 @@ parameters:
     type: bytes
     required: true
     max_length: 64
+    input_modes:
+      - name: preimage
+        label: "Preimage"
+        transform: sha256
+        input_type: string
+      - name: hash
+        label: "Hash (SHA256)"
     example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    placeholder: "Enter 64-character hex hash"
+    placeholder: "Enter secret preimage"
   - name: recipient
     label: "Recipient Address"
     description: "Address that can claim funds by providing the preimage"

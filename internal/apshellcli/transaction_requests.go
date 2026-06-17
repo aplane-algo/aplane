@@ -15,6 +15,7 @@ func optOutRequestFromParams(params shellrepl.OptOutParams) apshellapp.OptOutReq
 		CloseTo:    params.CloseTo,
 		Fee:        params.Fee,
 		UseFlatFee: params.UseFlatFee,
+		LsigArgs:   params.LsigArgs,
 		Wait:       params.Wait,
 	}
 }

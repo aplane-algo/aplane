@@ -88,12 +88,12 @@ is_linux() {
 print_usage() {
     cat <<'EOF'
 Usage:
-  ./install.sh [--role signer|sentry] [path]
-  ./install.sh --client [path]
+  ./install.sh [-f|--force] [--role signer|sentry] [path]
+  ./install.sh --client [-f|--force] [path]
 EOF
     if is_linux; then
         cat <<'EOF'
-  sudo ./install.sh --systemd [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
+  sudo ./install.sh --systemd [-f|--force] [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]
 EOF
     fi
 
@@ -110,6 +110,7 @@ EOF
 Options:
   --role <role>     Initialize the signer data root as signer or sentry (default: signer).
   --bindir <path>   Binary directory for --systemd (default: /usr/local/bin).
+  -f, --force       Override the in-place upgrade version check.
   --no-enable       Do not run systemctl enable in --systemd mode.
   --no-start        Do not run systemctl start in --systemd mode.
 EOF
@@ -118,6 +119,7 @@ EOF
 
 Options:
   --role <role>     Initialize the signer data root as signer or sentry (default: signer).
+  -f, --force       Override the in-place upgrade version check.
 EOF
     fi
 
@@ -147,6 +149,7 @@ GROUP_MEMBERSHIP_CHANGED=0
 INSTALL_ROOT_ENV="${APLANE_INSTALL_ROOT:-}"
 NODE_ROLE="signer"
 NODE_ROLE_FLAG=0
+FORCE_UPGRADE=0
 POSITIONAL=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -160,6 +163,10 @@ while [ $# -gt 0 ]; do
             ;;
         --client)
             CLIENT_MODE=1
+            shift
+            ;;
+        -f|--force)
+            FORCE_UPGRADE=1
             shift
             ;;
         --role)
@@ -385,6 +392,11 @@ require_supported_upgrade() {
     local installed_version
 
     if [ ! -f "$metadata_path" ]; then
+        if [ "$FORCE_UPGRADE" = "1" ]; then
+            echo "Warning: forcing upgrade of $install_label without release metadata." >&2
+            echo "Expected: $metadata_path" >&2
+            return 0
+        fi
         echo "Error: cannot upgrade this $install_label because release metadata is missing." >&2
         echo "Expected: $metadata_path" >&2
         echo "This installer supports in-place upgrades only from APlane $MIN_SUPPORTED_UPGRADE_VERSION or newer." >&2
@@ -395,6 +407,10 @@ require_supported_upgrade() {
 
     installed_version="$(release_metadata_version "$metadata_path")"
     if [ -z "$installed_version" ]; then
+        if [ "$FORCE_UPGRADE" = "1" ]; then
+            echo "Warning: forcing upgrade of $install_label with unreadable release metadata: $metadata_path" >&2
+            return 0
+        fi
         echo "Error: cannot determine installed APlane version from $metadata_path." >&2
         echo "This installer supports in-place upgrades only from APlane $MIN_SUPPORTED_UPGRADE_VERSION or newer." >&2
         echo "Use a fresh install root, then restore or re-enroll any state you still need." >&2
@@ -402,6 +418,12 @@ require_supported_upgrade() {
     fi
 
     if ! version_ge "$installed_version" "$MIN_SUPPORTED_UPGRADE_VERSION"; then
+        if [ "$FORCE_UPGRADE" = "1" ]; then
+            echo "Warning: forcing upgrade of $install_label from unsupported APlane version $installed_version." >&2
+            echo "Minimum supported upgrade version: $MIN_SUPPORTED_UPGRADE_VERSION" >&2
+            echo "Existing path: $install_path" >&2
+            return 0
+        fi
         echo "Error: installed APlane version $installed_version is too old for in-place upgrade." >&2
         echo "Minimum supported upgrade version: $MIN_SUPPORTED_UPGRADE_VERSION" >&2
         echo "Use a fresh install root, then restore or re-enroll any state you still need." >&2
@@ -1853,7 +1875,7 @@ if [ "$CLIENT_MODE" = "1" ]; then
 
     if [ ${#POSITIONAL[@]} -gt 1 ]; then
         echo "Error: --client accepts at most one optional path argument." >&2
-        echo "Usage: $0 --client [path]" >&2
+        echo "Usage: $0 --client [-f|--force] [path]" >&2
         exit 2
     fi
 
@@ -2028,7 +2050,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
     fi
     if [ ${#POSITIONAL[@]} -gt 1 ]; then
         echo "Error: local mode accepts at most one optional path argument." >&2
-        echo "Usage: $0 [--role signer|sentry] [path]" >&2
+        echo "Usage: $0 [-f|--force] [--role signer|sentry] [path]" >&2
         exit 2
     fi
 
@@ -2300,7 +2322,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if [ ${#POSITIONAL[@]} -gt 1 ]; then
-    echo "Usage: sudo $0 --systemd [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
+    echo "Usage: sudo $0 --systemd [-f|--force] [--role signer|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]" >&2
     exit 2
 fi
 PROD_OPERATOR_ROOT_INPUT="${POSITIONAL[0]:-${INSTALL_ROOT_ENV:-}}"

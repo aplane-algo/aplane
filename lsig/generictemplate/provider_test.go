@@ -19,6 +19,7 @@ import (
 	"testing/fstest"
 
 	"github.com/aplane-algo/aplane/internal/algo"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/internal/templatestore"
@@ -392,6 +393,27 @@ func TestValidateParametersUnknown(t *testing.T) {
 	}
 }
 
+func TestParameterSpecToParameterDefsPreservesInputModes(t *testing.T) {
+	defs := ParameterSpecToParameterDefs([]ParameterSpec{{
+		Name:      "hash",
+		Type:      "bytes",
+		Required:  true,
+		MaxLength: 64,
+		InputModes: []InputModeSpec{
+			{Name: "preimage", Label: "Preimage", Transform: "sha256", InputType: "string"},
+			{Name: "hash", Label: "SHA256 Hash"},
+		},
+	}})
+
+	if len(defs) != 1 || len(defs[0].InputModes) != 2 {
+		t.Fatalf("defs = %#v, want two input modes", defs)
+	}
+	want := lsigprovider.InputMode{Name: "preimage", Label: "Preimage", Transform: "sha256", InputType: "string"}
+	if defs[0].InputModes[0] != want {
+		t.Fatalf("first input mode = %#v, want %#v", defs[0].InputModes[0], want)
+	}
+}
+
 func TestValidateSpec(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -474,6 +496,26 @@ func TestValidateSpec(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "invalid type",
+		},
+		{
+			name: "invalid input mode transform",
+			spec: &TemplateSpec{
+				BaseTemplateSpec: testBase(),
+				Parameters: []ParameterSpec{
+					{
+						Name:      "hash",
+						Type:      "bytes",
+						Required:  true,
+						MaxLength: 64,
+						InputModes: []InputModeSpec{
+							{Name: "preimage", Transform: "md5"},
+						},
+					},
+				},
+				TEAL: "return",
+			},
+			wantErr: true,
+			errMsg:  "unsupported transform",
 		},
 		{
 			name: "undefined variable in TEAL",

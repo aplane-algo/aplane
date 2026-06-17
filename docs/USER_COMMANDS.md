@@ -81,6 +81,7 @@ sweep <asset> [from [accounts...]] to <dest> [leaving <amount>] [options]
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Args apply to each generated sweep transaction. |
 
 **Examples:**
 ```
@@ -88,6 +89,7 @@ sweep algo to treasury                              # All signable accounts
 sweep usdc from [alice bob charlie] to treasury
 sweep algo from @team to main leaving 1             # Leave 1 ALGO in each
 sweep usdc from @validators to cold leaving 100
+sweep algo from @lsigs to treasury arg:preimage=text:secret
 ```
 
 ---
@@ -130,11 +132,13 @@ optin <asset> for <account> [options]
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. |
 
 **Examples:**
 ```
 optin usdc for alice
 optin 31566704 for bob
+optin usdc for lsig-account arg:preimage=text:secret
 ```
 
 ---
@@ -154,11 +158,13 @@ optout <asset> from <account> [to <dest>] [options]
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. |
 
 **Examples:**
 ```
 optout usdc from alice                    # Must have 0 balance
 optout usdc from alice to bob             # Transfer remaining to bob
+optout usdc from lsig-account arg:preimage=text:secret
 ```
 
 ---
@@ -183,11 +189,13 @@ keyreg
 | `keydilution=<n>` | Key dilution (default: 10000) |
 | `eligible=true` | Mark as incentive-eligible |
 | `nowait` | Don't wait for confirmation |
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. |
 
 **Examples:**
 ```
 keyreg alice offline
 keyreg alice online votekey=ABC... selkey=DEF... sproofkey=GHI...
+keyreg lsig-account offline arg:preimage=text:secret
 keyreg alice online votekey=ABC... selkey=DEF... sproofkey=GHI... eligible=true
 ```
 
@@ -223,13 +231,19 @@ sign group.json nowait
 Validate signing capability by sending 0 ALGO to self.
 
 ```
-validate <account|@setname>
+validate <account|@setname> [arg:name=value]
 ```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `arg:name=<value>` | LogicSig argument; see [Byte Encodings](#byte-encodings) for supported forms. Args apply to each generated validation transaction. |
 
 **Examples:**
 ```
 validate alice
 validate @signers
+validate lsig-account arg:preimage=text:secret
 ```
 
 ---
@@ -439,7 +453,7 @@ rekey                           # Show rekey command forms
 rekey list                      # Show all rekeyed accounts
 rekey refresh                   # Rebuild auth cache
 rekey refresh <address|alias>   # Refresh one auth-cache entry
-rekey <account> to <signer>     # Rekey account
+rekey <account> to <signer> [arg:name=value]  # Rekey account
 ```
 
 **Options:**
@@ -447,6 +461,7 @@ rekey <account> to <signer>     # Rekey account
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
+| `arg:name=<value>` | LogicSig argument used when the account's current auth address is a LogicSig |
 
 **Examples:**
 ```
@@ -455,6 +470,7 @@ rekey list
 rekey refresh
 rekey alice to bob
 rekey alice to multisig-addr fee=2000
+rekey alice to makman-lsig arg:rekey_preimage=text:secret
 ```
 
 ---
@@ -472,10 +488,12 @@ unrekey <account> [options]
 |--------|-------------|
 | `fee=<microalgos>` | Custom transaction fee |
 | `nowait` | Don't wait for confirmation |
+| `arg:name=<value>` | LogicSig argument used when the account's current auth address is a LogicSig |
 
 **Examples:**
 ```
 unrekey alice
+unrekey alice arg:preimage=text:secret
 ```
 
 ---
@@ -689,7 +707,7 @@ app read global <app-id>
 app read local <app-id> <account>
 app read box <app-id> <box-name>
 app read boxes <app-id>
-app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] [note=<text>] [fee=<microalgos>] [nowait]
+app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> global-uint=<n> global-bytes=<n> local-uint=<n> local-bytes=<n> [extra-pages=<n>] [note=<text>] [fee=<microalgos>] [nowait] [arg:name=value]
 app call <app-id> <method> --abi <path>|abi=<path> from <account> [--arg <value>|arg=<value> ...] [--pay <microalgos>|pay=<microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:name=value]
 app call raw <app-id> from <account> [arg-raw=<bytes> ...] [--pay <microalgos>|pay=<microalgos>] [account=<account> ...] [app=<app-id> ...] [asset=<asset> ...] [box=<name>|<app-id>:<name> ...] [oncomp=<noop|optin|closeout|clear|update|delete>] [approval=<path>|approval-teal=<path>|approval-bin=<path>] [clear=<path>|clear-teal=<path>|clear-bin=<path>] [note=<text>] [fee=<microalgos>] [nowait] [arg:name=value]
 ```
@@ -704,6 +722,7 @@ on-completion modes.
 ```
 app read info 123
 app deploy from alice approval=approval.teal clear=clear.teal global-uint=2 global-bytes=2 local-uint=1 local-bytes=0
+app deploy from lsig-account approval=approval.teal clear=clear.teal global-uint=2 global-bytes=2 local-uint=1 local-bytes=0 arg:preimage=text:secret
 app call 123 deposit --abi ./contract.json from alice --pay 100000
 app call raw 123 from alice arg-raw=hex:010203 box=text:counter
 ```

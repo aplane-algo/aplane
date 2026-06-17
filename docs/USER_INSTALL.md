@@ -352,6 +352,11 @@ install directories separately until you have confirmed the fresh environment
 has the keys, policy, endpoint routing, tokens, and network configuration you
 intend to use.
 
+Use `-f` or `--force` only when you intentionally need to bypass that installer
+upgrade check. The override does not skip process/service stop checks or other
+safety validation; it only permits an in-place install when the release metadata
+is missing, unreadable, or older than the installer's supported upgrade floor.
+
 ---
 
 ## Client-Only Install (apshell)
@@ -462,6 +467,7 @@ sudo APLANE_INSTALL_ROOT="$APLANE_INSTALL_ROOT" APLANE_BINDIR="$APLANE_BINDIR" .
 In-place upgrades are supported only when the existing install meets the
 installer's minimum supported version. For older installs, run `install.sh`
 against a new local root or use `--systemd` with a fresh signer data directory.
+Use `-f` or `--force` only for an intentional installer upgrade-check override.
 
 - Existing `config.yaml` is left unchanged
 - A canonical template is written to `config.yaml.aplane-installer.new`

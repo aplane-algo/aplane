@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/lsig/ecdsak1"
 	ecdsak1family "github.com/aplane-algo/aplane/lsig/ecdsak1/family"
 	ecdsak1signerreg "github.com/aplane-algo/aplane/lsig/ecdsak1/signerreg"
+	ed25519lsigsignerreg "github.com/aplane-algo/aplane/lsig/ed25519lsig/signerreg"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024/signerreg"
 	falcon1024ed25519 "github.com/aplane-algo/aplane/lsig/falcon1024_ed25519"
@@ -52,6 +53,7 @@ func RegisterSigner() {
 			Family:       ecdsak1family.Name,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, ecdsak1signerreg.RegisterSigner)
+		ed25519lsigsignerreg.RegisterSigner()
 	})
 }
 

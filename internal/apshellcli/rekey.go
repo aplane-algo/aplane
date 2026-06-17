@@ -70,6 +70,7 @@ func (r *REPLState) runRekey(args []string) error {
 		Target:     params.Signer,
 		Fee:        params.Fee,
 		UseFlatFee: params.UseFlatFee,
+		LsigArgs:   params.LsigArgs,
 		Wait:       params.Wait,
 	})
 	if err != nil {
@@ -114,7 +115,7 @@ func rekeyUsageLines() []string {
 		"rekey list",
 		"rekey refresh",
 		"rekey refresh <address|alias>",
-		"rekey <account> to <signer> [fee=<microalgos>] [nowait]",
+		"rekey <account> to <signer> [fee=<microalgos>] [nowait] [arg:name=value]",
 	}
 }
 
@@ -130,6 +131,7 @@ func (r *REPLState) runUnrekey(args []string) error {
 		Account:    params.Account,
 		Fee:        params.Fee,
 		UseFlatFee: params.UseFlatFee,
+		LsigArgs:   params.LsigArgs,
 		Wait:       params.Wait,
 	})
 	if err != nil {

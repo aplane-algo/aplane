@@ -28,6 +28,7 @@ func (r *REPLState) runSweep(args []string) error {
 		LeavingText: params.Leaving.String(),
 		Fee:         params.Fee,
 		UseFlatFee:  params.UseFlatFee,
+		LsigArgs:    params.LsigArgs,
 		Wait:        params.Wait,
 	})
 	if err != nil && result == nil {

@@ -41,20 +41,22 @@ type SendASAParams struct {
 // OptInParams contains parameters for ASA opt-in.
 // Address must be resolved 58-character Algorand address.
 type OptInParams struct {
-	Account    string // Resolved address (58-char)
-	AssetID    uint64 // Resolved asset ID
-	Fee        uint64 // Optional custom fee in microAlgos
-	UseFlatFee bool   // If true, use Fee as flat fee
+	Account    string            // Resolved address (58-char)
+	AssetID    uint64            // Resolved asset ID
+	Fee        uint64            // Optional custom fee in microAlgos
+	UseFlatFee bool              // If true, use Fee as flat fee
+	LsigArgs   map[string][]byte // Optional LogicSig arguments for generic LogicSigs
 }
 
 // OptOutParams contains parameters for opting out of an ASA.
 // All addresses must be resolved 58-character Algorand addresses.
 type OptOutParams struct {
-	Account    string // Account opting out (58-char)
-	AssetID    uint64 // Asset ID to opt out of
-	CloseTo    string // Address to receive remaining balance (optional if balance is 0)
-	Fee        uint64 // Optional custom fee in microAlgos
-	UseFlatFee bool   // If true, use Fee as flat fee
+	Account    string            // Account opting out (58-char)
+	AssetID    uint64            // Asset ID to opt out of
+	CloseTo    string            // Address to receive remaining balance (optional if balance is 0)
+	Fee        uint64            // Optional custom fee in microAlgos
+	UseFlatFee bool              // If true, use Fee as flat fee
+	LsigArgs   map[string][]byte // Optional LogicSig arguments for generic LogicSigs
 }
 
 // OptOutCheckResult contains validation results for an opt-out operation.
@@ -190,6 +192,7 @@ func (e *Engine) PrepareOptIn(ctx context.Context, params OptInParams) (*Transac
 		Transaction:    txnObj,
 		SigningContext: signingCtx,
 		AssetInfo:      asaInfo,
+		LsigArgs:       params.LsigArgs,
 	}, nil
 }
 
@@ -273,5 +276,6 @@ func (e *Engine) PrepareOptOut(ctx context.Context, params OptOutParams) (*Trans
 	return &TransactionPrepResult{
 		Transaction:    txnObj,
 		SigningContext: signingCtx,
+		LsigArgs:       params.LsigArgs,
 	}, checkResult, nil
 }

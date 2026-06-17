@@ -33,6 +33,13 @@ parameters:
     # UI hints (optional)
     example: "AAAA..."     # Example value shown in UI
     placeholder: "Enter.." # Placeholder text for input field
+    input_modes:           # Alternate UI entry modes (optional)
+      - name: preimage
+        label: "Preimage"
+        transform: sha256  # Hash entered bytes before storing this parameter
+        input_type: string # Treat input as raw text instead of hex bytes
+      - name: hash
+        label: "SHA256 Hash"
 
     # Constraints (optional, uint64 only)
     min: 1                 # Minimum allowed value

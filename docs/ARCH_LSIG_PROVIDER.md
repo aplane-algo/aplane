@@ -303,8 +303,8 @@ ExampleFalconHashlock = NewComposedFalcon(ComposedFalconConfig{
     Params: []lsigprovider.ParameterDef{{
         Name: "hash", Type: "bytes", Required: true, MaxLength: 64,
         InputModes: []lsigprovider.InputMode{
-            {Name: "hash", Label: "SHA-256 Hash"},
             {Name: "preimage", Label: "Preimage", Transform: "sha256"},
+            {Name: "hash", Label: "SHA-256 Hash"},
         },
     }},
     RuntimeArgs: []lsigprovider.RuntimeArgDef{{

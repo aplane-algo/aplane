@@ -38,7 +38,8 @@ installer upgrades are intentionally narrow:
   `install/release.json` reports at least the installer's minimum supported
   upgrade version,
 - older install directories and installs without release metadata require a
-  fresh install root,
+  fresh install root unless the operator explicitly passes the installer
+  `-f`/`--force` upgrade-check override,
 - no config, key, cache, or endpoint migration utility is shipped,
 - usable apclient signer routing is endpoint-based and lives in
   `endpoints.yaml`; top-level `config.yaml` `ssh:` signer routing is rejected
