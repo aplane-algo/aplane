@@ -6,14 +6,16 @@ package tui
 import (
 	"fmt"
 	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 const (
-	localIdleDisconnectReason = "apadmin disconnected after inactivity timeout"
-	manualLockReason          = "apadmin manual lock"
+	localIdleDisconnectReason             = "apadmin disconnected after inactivity timeout"
+	manualLockReason                      = "apadmin manual lock"
+	invalidPassphraseTimeoutWarningPrefix = "Invalid passphrase timeout from server: "
 )
 
 func (m Model) recordUserActivity(now time.Time, msg tea.KeyMsg) (Model, tea.Cmd) {
@@ -79,8 +81,12 @@ func (m *Model) applyAdminSettingsTimeout(settings AdminSettings) tea.Cmd {
 		m.activity.sessionTimeout = 0
 		m.activity.idleGeneration++
 		m.activity.idleDueAt = time.Time{}
-		m.setPersistentWarning("Invalid passphrase timeout from server: " + err.Error())
+		m.setPersistentWarning(invalidPassphraseTimeoutWarningPrefix + err.Error())
 		return nil
+	}
+
+	if strings.HasPrefix(m.lastWarning, invalidPassphraseTimeoutWarningPrefix) {
+		m.clearWarning()
 	}
 
 	if timeout == m.activity.sessionTimeout {

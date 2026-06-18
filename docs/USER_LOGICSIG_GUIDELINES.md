@@ -12,13 +12,14 @@
 > - See [Security Review Checklist](#security-review-checklist) for the
 >   review items.
 
-This document is a general-purpose security and design guide for LogicSig TEAL.
-It is intended for users, operators, and template authors who want to design,
-review, or reason about LogicSig-based policies.
+This document is a security and design guide for APlane LogicSig key type
+templates and LogicSig-backed key types. It is intended for users, operators,
+and template authors who want to design, review, or reason about
+template-derived LogicSig policies.
 
 It is not a point-in-time audit of the current repository contents. Instead, it
 captures the review criteria and risk areas that should be applied to any
-LogicSig TEAL policy, whether it is:
+templated LogicSig TEAL policy, whether it is:
 
 - a generic TEAL-only LogicSig
 - a signer-gated DSA LogicSig
@@ -33,6 +34,8 @@ LogicSig TEAL policy, whether it is:
 - [Security Review Checklist](#security-review-checklist)
 - [Common Pitfalls](#common-pitfalls)
 - [Design Guidance](#design-guidance)
+- [Security Profiles And Claims](#security-profiles-and-claims)
+- [Concrete TEAL Safeguard Patterns](#concrete-teal-safeguard-patterns)
 - [Review Expectations](#review-expectations)
 - [Suggested Author Workflow](#suggested-author-workflow)
 - [Bundled LogicSigs In APlane](#bundled-logicsigs-in-aplane)
@@ -63,6 +66,11 @@ Use this guidance for:
 Use it before funding a LogicSig account, before enabling a template for
 production use, and before approving a new built-in LogicSig provider or
 template family.
+
+This is not a general Algorand application-contract guide. Application-only
+topics such as app update/delete authorization and inner transaction fee
+management are outside this document unless a LogicSig template explicitly
+checks grouped application-call transactions.
 
 ## LogicSig Categories
 
@@ -109,7 +117,10 @@ per-key-type notes below:
 
 ## Security Review Checklist
 
-Apply this checklist to every LogicSig policy.
+Apply this checklist to every LogicSig policy. Some sections are conditional:
+if the template does not use a feature such as time, app-call companions, or
+batch ASA distribution, mark that section not applicable rather than inventing
+irrelevant checks.
 
 ### 1. Authorization Model
 
@@ -171,7 +182,20 @@ Check all paths consistently:
   the same rule?
 - If it is not enforced in TEAL, is the signer-policy or workflow boundary clear?
 
-### 6. Transaction Type Allowlist
+### 6. Asset ID Protection
+
+- For every ASA transfer path, does TEAL check `txn XferAsset` against the
+  intended asset or an explicit allowlist?
+- Are ASA opt-in helper paths restricted to the same approved asset set?
+- Does an empty asset allowlist disable the helper path rather than allowing
+  arbitrary assets?
+- If asset ID checks are left to signer policy, is that boundary clear and is
+  the template signer-gated?
+
+Any public LogicSig that checks amount and receiver but not `XferAsset` may
+authorize the wrong asset.
+
+### 7. Transaction Type Allowlist
 
 - Does the LogicSig reject unexpected transaction types, or is transaction-type
   control intentionally left to signer policy?
@@ -183,7 +207,7 @@ Prefer explicit `txn TypeEnum` checks for public or self-contained TEAL policies
 Signer-gated signing primitives may deliberately leave transaction type control
 to signer approval and local policy.
 
-### 7. Key Registration And Opt-In Paths
+### 8. Key Registration And Opt-In Paths
 
 - Are `keyreg` and ASA opt-in paths intentionally allowed?
 - If the template is signatureless, is it acceptable that anyone can submit
@@ -193,18 +217,31 @@ to signer approval and local policy.
 
 If these paths are not a clear product requirement, remove them.
 
-### 8. Time Semantics
+### 9. Time Semantics And Replay
+
+Apply this section only when the template uses round checks, expirations,
+unlock rounds, refund/claim windows, or one-spend-per-period behavior.
 
 - Are round checks based on the correct transaction field?
 - Should the policy depend on `FirstValid`, `LastValid`, or both?
 - Can a transaction created before a timeout remain valid after the timeout due
   to a wide validity window?
+- If the template claims one spend per period, does it require a nonzero
+  deterministic `txn Lease`?
+- If repeated execution within a time window is intended, is that documented?
 
 For LogicSig timelocks, prefer deliberate use of transaction validity fields.
 Do not assume a single round comparison captures the intended before/after
-behavior.
+behavior. First/last-valid checks alone do not make smart-signature execution
+single-use: a caller can vary unchecked fields and produce multiple valid
+transaction IDs in the same period unless the lease or another explicit
+mechanism enforces mutual exclusion.
 
-### 9. Group Semantics
+### 10. Group Semantics
+
+Apply this section when the template permits grouped execution, depends on
+other transactions, uses `Gtxn` or `GroupIndex`, supports sponsored fees, or
+must remain compatible with APlane dummy transactions.
 
 - Does correctness depend on `GroupSize`, `GroupIndex`, or specific companion
   transactions?
@@ -213,10 +250,46 @@ behavior.
 - Does fee pooling introduce drain risk?
 - Are dummy transactions or signer-side group mutation compatible with the TEAL
   policy?
+- If the template uses `Gtxn`, relative group indexes, companion app calls, or
+  sponsored fees, does it assert the expected group size or otherwise prove the
+  allowed group shape?
 
 Grouped behavior should be modeled intentionally, not assumed safe.
 
-### 10. Runtime Args
+### 11. App-Call Companion Checks
+
+Apply this section only when the stateless LogicSig template validates grouped
+application-call transactions. LogicSigs cannot read application state, but they
+can inspect app-call transaction fields in the same group.
+
+- If the LogicSig validates a companion application call, does it check
+  `OnCompletion`?
+- Does it require the intended application ID?
+- Does it require the intended method selector or application arguments?
+- Does it reject `ClearState` calls when the policy expects approval-program
+  execution?
+
+Checking only `TypeEnum == appl` is not enough when correctness depends on the
+approval program running. A `ClearState` application call executes the clear
+state program instead.
+
+### 12. ASA Distribution Liveness
+
+Apply this section only when the LogicSig template coordinates a grouped ASA
+distribution or requires multiple ASA transfers as part of its policy.
+
+- Does the policy push ASAs to multiple recipients in one group?
+- Can one receiver who has not opted in cause every transfer in the operation
+  to fail?
+- Can the design use pull-over-push instead, where each receiver claims
+  independently after opting in?
+- If push distribution is required, can failures be isolated per recipient
+  rather than blocking the whole group?
+
+This is primarily a liveness and denial-of-service concern, but it matters for
+LogicSig designs that coordinate batch ASA movement.
+
+### 13. Runtime Args
 
 - Are all runtime args validated in TEAL?
 - Are missing args rejected?
@@ -228,7 +301,7 @@ Remember: LogicSig args are not part of `txn TxID`. The signature covers the
 transaction, not mutable LogicSig args. Treat every runtime arg as attacker
 controlled unless TEAL fully validates it.
 
-### 11. Template Substitution
+### 14. Template Substitution
 
 - Are all template variables declared?
 - Are they validated by type and format?
@@ -261,7 +334,7 @@ or `intcblock` declarations, numeric `bytec` or
 template variables, symbolic `$name` references, and generated-mode list
 expansion instead.
 
-### 12. Signature Binding
+### 15. Signature Binding
 
 For DSA LogicSigs:
 
@@ -315,6 +388,42 @@ spend created before a timeout to remain valid after the timeout.
 
 Always test transactions whose validity window crosses the boundary.
 
+### Time-Based Replay Without Lease
+
+For templates that intend to allow only one spend per period, checking
+`FirstValid` and `LastValid` is not enough. A caller can create multiple
+transactions that all satisfy the same round checks but differ in unchecked
+fields, producing distinct transaction IDs. Use a deterministic nonzero lease
+for single-use periodic authorization.
+
+### Asset Substitution
+
+ASA transfer TEAL that checks receiver and amount but not `XferAsset` may
+authorize a different asset than the one the template designer intended.
+Every ASA path should either bind the exact asset ID or use an explicit
+creation-time allowlist.
+
+### Missing Group Shape Checks
+
+Templates that inspect companion transactions with `Gtxn` can be abused when
+they do not also constrain the group shape. If the policy assumes exactly one
+companion payment or app call, assert that shape instead of relying only on
+fixed indexes.
+
+### ClearState Companion Calls
+
+When a LogicSig template checks that another transaction is an application
+call, it must also check the `OnCompletion` mode if it depends on
+approval-program behavior. A `ClearState` call executes the clear state
+program, not the approval program.
+
+### Push-Based ASA Distribution DoS
+
+For templates that coordinate batch ASA movement, pushing ASA transfers to
+multiple recipients in one atomic operation can make the whole operation depend
+on every receiver being opted in. Prefer pull-based claim flows or isolate
+failures so one recipient cannot block all recipients.
+
 ## Design Guidance
 
 ### Prefer Explicit Safety Checks
@@ -356,6 +465,187 @@ helper, refund, opt-in, or alternate paths remain less restricted.
 
 Check every branch.
 
+### Prefer Pull Over Push For ASA Distribution
+
+When a LogicSig template coordinates ASA distribution, a pull design is usually
+safer than one transaction group that pushes assets to many recipients. In a
+pull design, each recipient opts in first and then claims independently. That
+avoids turning one missing opt-in into a denial of service against the whole
+operation.
+
+### Use Leases For Single-Use Periodic Authorization
+
+If a LogicSig template is meant to authorize one transaction per time period,
+use a deterministic nonzero `txn Lease` tied to the period and template
+domain. Round checks define when a transaction is valid; a lease prevents
+multiple different transaction IDs from being accepted for the same sender and
+period.
+
+## Security Profiles And Claims
+
+Template authors should be able to state which security profile a LogicSig
+claims and which controls are TEAL-enforced versus signer-policy-owned. This
+does not replace code review, but it prevents ambiguity.
+
+### Public Generic Strict
+
+Use this profile for generic TEAL-only templates that may be funded directly.
+The template should enforce:
+
+- transaction type allowlist
+- exact fee or explicitly modeled sponsored-fee group
+- `RekeyTo == ZeroAddress`
+- payment close-out policy
+- asset close-out policy
+- asset sender / clawback policy
+- asset ID allowlist for every ASA path
+- group shape checks whenever group fields are used
+- lease checks when single-use or periodic behavior is claimed
+- runtime argument length and type checks
+- no public key registration path unless deliberately declared
+- no arbitrary ASA opt-in path
+
+### Composed Signer-Gated
+
+Use this profile for composed DSA templates where signer approval is the main
+authorization boundary. The template should enforce:
+
+- signature verification over `txn TxID`
+- runtime argument validation
+- no early `return` in the TEAL suffix
+- complete TEAL coverage for any extra policy it claims, such as whitelist,
+  hashlock, or timelock behavior
+
+Fields intentionally left to signer policy should be listed explicitly:
+fee, rekey, payment close-out, asset close-out, asset sender, transaction type,
+group shape, asset IDs, and any app-call completion or lease behavior that is
+in scope for the template.
+
+### Self-Contained Composed
+
+Use this profile only when a DSA-composed template claims both signer-gating and
+a full on-chain spending policy. It should satisfy the public-generic controls
+for the transaction behavior it permits, plus the DSA signature-binding
+requirements.
+
+## Concrete TEAL Safeguard Patterns
+
+These snippets are patterns for review. Template mode, generated variables, and
+branch structure may change the exact form, but the policy intent should remain
+visible in TEAL.
+
+### Rekey
+
+```teal
+txn RekeyTo
+global ZeroAddress
+==
+assert
+```
+
+### Strict Fee
+
+```teal
+txn Fee
+int 1000
+==
+assert
+```
+
+If fee pooling is required, constrain the group shape and prove which
+transaction pays the fee. Do not let a public LogicSig account pay unbounded
+fees.
+
+### Payment Close-Out
+
+```teal
+txn CloseRemainderTo
+global ZeroAddress
+==
+assert
+```
+
+Whitelist policies may instead allow zero, self, or the same approved
+destination set used for `Receiver`.
+
+### Asset Close-Out
+
+```teal
+txn AssetCloseTo
+global ZeroAddress
+==
+assert
+```
+
+Whitelist policies may instead allow zero, self, or the same approved
+destination set used for `AssetReceiver`.
+
+### Asset Sender / Clawback
+
+```teal
+txn AssetSender
+global ZeroAddress
+==
+assert
+```
+
+Only omit this when clawback sender use is an explicit, reviewed part of the
+template.
+
+### Asset ID
+
+```teal
+txn XferAsset
+int <asset_id>
+==
+assert
+```
+
+For multiple assets, generate canonical membership checks from a `uint64[]`
+creation parameter. Empty allowlists should disable the ASA helper path, not
+allow every asset.
+
+### Group Shape
+
+```teal
+global GroupSize
+int <expected_size>
+==
+assert
+```
+
+When using relative indexes, also prove the current `GroupIndex` and referenced
+indexes have the intended transaction types and cannot be out of bounds.
+
+### Lease
+
+```teal
+txn Lease
+byte <domain_separated_period_lease>
+==
+assert
+```
+
+The lease must be nonzero and deterministic. Do not accept an arbitrary caller
+provided lease when the template's purpose is replay prevention.
+
+### App-Call Completion
+
+```teal
+gtxn <index> TypeEnum
+int appl
+==
+assert
+
+gtxn <index> OnCompletion
+int NoOp
+==
+assert
+```
+
+Also check the intended application ID and method selector when policy depends
+on a specific application method.
+
 ## Review Expectations
 
 Before relying on a LogicSig in production, verify both positive and negative
@@ -370,11 +660,16 @@ Positive cases should show intended behavior succeeds, such as:
 
 Negative cases should show forbidden behavior fails, such as:
 
+- excessive fee on a public generic LogicSig
 - rekey attempt
 - send to an unapproved recipient
 - ALGO close-out to an unapproved address
 - ASA close-out when not explicitly allowed
 - clawback path when not explicitly allowed
+- transfer or opt-in of an unapproved ASA ID
+- wrong group size or wrong companion transaction type
+- `ClearState` companion app call where `NoOp` is required
+- missing or wrong lease for a single-use periodic policy
 - missing or malformed runtime args
 - timeout-crossing cases that should be rejected
 
@@ -383,18 +678,22 @@ Negative cases should show forbidden behavior fails, such as:
 When designing or reviewing a LogicSig TEAL policy:
 
 1. Classify it as generic, signer-gated DSA, or composed DSA.
-2. Write down the intended authorization boundary.
-3. Review the policy against every checklist section above.
-4. Test both valid and invalid transactions, including edge cases.
-5. Fund and deploy only after the policy is explicit about fees, rekey,
-   close-out, clawback, helper paths, and timing behavior.
+2. Choose the security profile it claims: public generic strict, composed
+   signer-gated, or self-contained composed.
+3. Write down the intended authorization boundary and which fields are
+   TEAL-enforced versus signer-policy-owned.
+4. Review the policy against every checklist section above.
+5. Test both valid and invalid transactions, including edge cases.
+6. Fund and deploy only after the policy is explicit about fees, rekey,
+   close-out, clawback, helper paths, asset IDs, group shape, app-call
+   completion, lease behavior, and timing behavior.
 
 ## Bundled LogicSigs In APlane
 
 APlane bundles both signer-gated LogicSig providers and template library
-entries. New signer stores install the Falcon whitelist template by default;
-users should understand the security model of each one before funding or
-relying on it.
+entries. New signer stores install the Falcon whitelist v1 and Ed25519
+whitelist v1 templates by default; users should understand the security model
+of each one before funding or relying on it.
 
 ### Signer-Gated Compiled Providers
 
@@ -432,10 +731,11 @@ This provider verifies an ECDSA secp256k1 signature over the transaction. Like
 the other signer-gated compiled providers, transaction policy is expected to
 live primarily in signer approval and local signer policy.
 
-### Optional Template Library
+### Template Library
 
-These ship as plaintext YAML templates for optional installation into an
-identity keystore.
+These ship as plaintext YAML templates. Some are installed into new signer
+identities by default; others require explicit installation into an identity
+keystore before generation.
 
 #### Generic Templates
 
@@ -595,9 +895,13 @@ Before funding or using a bundled LogicSig:
 2. Review fee behavior explicitly.
 3. Review rekey, ALGO close-out, ASA close-out, and clawback behavior.
 4. Review helper paths such as key registration and asset opt-in.
-5. For time-based policies, test boundary and crossing-window cases.
-6. For runtime-arg policies, test missing, malformed, and extra args.
-7. Do not assume a bundled template is safe for your exact use case without
+5. Review asset ID checks for every ASA path.
+6. Review group shape and companion app-call completion checks when grouped
+   logic or app calls are involved.
+7. For time-based policies, test boundary and crossing-window cases; for
+   single-use periodic policies, require a lease.
+8. For runtime-arg policies, test missing, malformed, and extra args.
+9. Do not assume a bundled template is safe for your exact use case without
    checking its full transaction policy.
 
 Backup import verifies that bundled template YAML reproduces the bundled key's
@@ -636,6 +940,9 @@ For public generic LogicSigs, APlane resolves this in favor of safety:
 - use strict fixed fees as the default for public generic LogicSigs
 - only allow sponsored-fee grouped execution through explicit, carefully
   designed TEAL rules
+- bind every ASA path to an intended `XferAsset` or approved asset allowlist
+- use deterministic nonzero leases for single-use periodic LogicSig templates
+- check `OnCompletion` for companion app calls that must run approval logic
 - keep template TEAL relocatable: do not depend on raw `bytecblock`/`intcblock`
   layout or numeric `bytec`/`intc` references, because APlane owns a generated
   salt slot to keep generated LogicSig addresses off-curve
@@ -650,3 +957,7 @@ For public generic LogicSigs, APlane resolves this in favor of safety:
   architecture
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) — compatibility-bearing contracts,
   including LogicSig-facing surfaces
+- Trail of Bits / Crytic
+  [Algorand Not So Smart Contracts](https://github.com/crytic/building-secure-contracts/tree/master/not-so-smart-contracts/algorand)
+  — external examples covering rekeying, fee drain, close-out, group size,
+  replay, asset ID, ASA liveness, and app-call completion pitfalls

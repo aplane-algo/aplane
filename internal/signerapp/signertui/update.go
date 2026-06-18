@@ -45,6 +45,12 @@ func (m *Model) clearWarning() {
 	m.lastWarning = ""
 }
 
+func (m *Model) clearWarningIf(warning string) {
+	if m.lastWarning == warning {
+		m.clearWarning()
+	}
+}
+
 func (m *Model) setTransientWarning(warning string) tea.Cmd {
 	m.setPersistentWarning(warning)
 	return clearWarningTickCmd(m.lastWarningGeneration)
@@ -101,6 +107,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// information arrives via the admin protocol (ListKeyTypes).
 			m.auth.passphraseError = ""
 			m.auth.passphraseInput = ""
+			m.clearWarningIf(localIdleDisconnectReason)
 			m.resetActivityState()
 		} else {
 			// Authentication failed - show error and stay on auth screen
@@ -160,6 +167,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applySignerUnlockedState(msg.KeyCount)
 			m.auth.passphraseError = ""
 			m.auth.passphraseInput = ""
+			m.clearWarningIf(localIdleDisconnectReason)
 			idleCmd := m.armLocalIdleTimer()
 			// Request the key list after unlocking
 			return m, tea.Batch(m.waitForMessageCmd(), m.sendListKeysCmd(), m.sendListKeyTypesCmd(), m.sendGetAdminSettingsCmd(), idleCmd)
