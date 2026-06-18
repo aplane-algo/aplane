@@ -195,8 +195,10 @@ For a generic LogicSig YAML template:
 apstore template import <template.yaml>
 ```
 
-For a Falcon-backed composed DSA YAML template, use `template_type: composed`
-and `base_key_type: aplane.falcon1024.v1`:
+For a composed DSA YAML template, use `template_type: composed` and
+`base_key_type` for the signing provider, such as `aplane.falcon1024.v1` for
+Falcon-backed templates or `aplane.ed25519lsig.v1` for Ed25519-backed
+templates:
 
 ```bash
 apstore template import <template.yaml>
@@ -216,8 +218,10 @@ After installing:
 4. Use the generated address in `send`, `close`, `sign`, or script flows.
 
 Do not tell the user that editing top-level `library/templates/` installs a template.
-Files under top-level `library/templates/` are optional library entries. They become
-installed only after `apstore template import`.
+Files under top-level `library/templates/` are library entries, not active
+runtime definitions by presence alone. Default templates are installed during
+new signer-store initialization; other templates become installed only after
+`apstore template import`.
 
 For the full disable/remove mechanics (state record transitions, archive
 locations, in-use guard, and reload behavior), see

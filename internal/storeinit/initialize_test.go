@@ -67,19 +67,21 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if role.Role != noderole.RoleSigner {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSigner)
 	}
-	rec, ok, err := keytypestate.Get(paths, identityID, defaultkeytypes.Falcon1024WhitelistKeyType)
-	if err != nil {
-		t.Fatalf("keytypestate.Get(default key type) error = %v", err)
-	}
-	if !ok {
-		t.Fatalf("default key type %s state missing", defaultkeytypes.Falcon1024WhitelistKeyType)
-	}
-	if rec.Source != keytypestate.SourceYAMLComposed || rec.State != keytypestate.StateEnabled {
-		t.Fatalf("default key type state = (%s, %s), want (%s, %s)",
-			rec.Source, rec.State, keytypestate.SourceYAMLComposed, keytypestate.StateEnabled)
-	}
-	if !templatestore.TemplateExistsForPaths(paths, identityID, defaultkeytypes.Falcon1024WhitelistKeyType, templatestore.TemplateTypeComposed) {
-		t.Fatalf("default key type template %s missing", defaultkeytypes.Falcon1024WhitelistKeyType)
+	for _, keyType := range []string{defaultkeytypes.Falcon1024WhitelistKeyType, defaultkeytypes.Ed25519WhitelistKeyType} {
+		rec, ok, err := keytypestate.Get(paths, identityID, keyType)
+		if err != nil {
+			t.Fatalf("keytypestate.Get(default key type %s) error = %v", keyType, err)
+		}
+		if !ok {
+			t.Fatalf("default key type %s state missing", keyType)
+		}
+		if rec.Source != keytypestate.SourceYAMLComposed || rec.State != keytypestate.StateEnabled {
+			t.Fatalf("default key type %s state = (%s, %s), want (%s, %s)",
+				keyType, rec.Source, rec.State, keytypestate.SourceYAMLComposed, keytypestate.StateEnabled)
+		}
+		if !templatestore.TemplateExistsForPaths(paths, identityID, keyType, templatestore.TemplateTypeComposed) {
+			t.Fatalf("default key type template %s missing", keyType)
+		}
 	}
 }
 

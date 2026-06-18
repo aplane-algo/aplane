@@ -512,6 +512,7 @@ make soak-test-localnet APLANE_SOAK_DURATION=4h SOAK_GO_ARGS='-count=1 -timeout 
 | `TestPreparedGroupDepositFlow` | Build, sign, and submit prepared payment/app-call groups |
 | `TestJavaScriptTransactionFlows` | Exercise JavaScript transaction helpers against the signer |
 | `TestGenericWhitelistTemplateAllowsSendAndCloseToFundingAccount` | Install and spend with a generic template-backed LogicSig |
+| `TestIncludedKeyTypesSignInBatchedGroups` | Imports bundled templates, activates opt-in compiled key types, generates/funds accounts including `aplane.ed25519-whitelist.v1`, and signs positive/negative grouped transactions |
 | `TestSignerManagedBackupRoundTripViaApstoreRestore` | Create a signer-managed backup, restore through `apstore`, and verify restored keys remain usable |
 | `TestKeyDerivationRegression` | Pin known-answer addresses for supported Ed25519, DSA LogicSig, and template-backed LogicSig derivation paths |
 | `TestPassthroughMixedGroup` | Sign + passthrough in one group: server signs txn A, pre-signed txn B passes through unchanged |

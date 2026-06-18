@@ -64,7 +64,8 @@ Canonical forms:
 - APlane-defined LogicSig, template, and compiled-provider key types use
   `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
   decimal version, for example `aplane.falcon1024.v1`,
-  `aplane.htlc.v1`, and `aplane.falcon1024-whitelist.v1`
+  `aplane.htlc.v1`, `aplane.falcon1024-whitelist.v1`, and
+  `aplane.ed25519-whitelist.v1`
 - sentry keys use the same canonical key-type identifier contract,
   for example `aplane.sentry-ed25519.v1` and
   `aplane.sentry-falcon1024.v1`; they are component-signing keys selected by
@@ -485,7 +486,7 @@ execution, output decoding, environment filtering, and validation.
     .cache_key
     <network>_asa_cache.json
   library/
-    templates/*.yaml        # plaintext optional KeyType Library YAML source
+    templates/*.yaml        # plaintext KeyType Library YAML sources
   backups/<identity>/
     *.tar.gz                # restorable managed/imported backup archives
   .ssh/ssh_host_key
@@ -663,9 +664,11 @@ The signer-data path is defined by `internal/storepaths.Paths.TemplateLibraryDir
 installer re-runs, and test setup flows may refresh this directory from the repository or packaged copy. Files in this
 directory are reference material and are not active key types by themselves.
 New signer-store initialization installs and enables
-`aplane.falcon1024-whitelist.v1` from the bundled library source into the
-identity-local encrypted template store; sentry-role initialization skips this
-signer account key type.
+`aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1` from the
+bundled library source into the identity-local encrypted template store;
+sentry-role initialization skips these signer account key types. Other bundled
+templates remain install sources until explicitly imported/enabled for an
+identity.
 
 `apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the
 admin protocol and also includes installed identity templates that no longer have a matching plaintext
@@ -890,8 +893,9 @@ LogicSig salting is a generation-time contract:
   `derivation_version: 1` use the generated marker, generic and composed
   templates with `derivation_version: 2` use the trailing dead-code
   `bytecblock`, `aplane.falcon1024.v1` uses the Algorand Foundation
-  reference-compatible fixed `bytecblock` preamble, and `aplane.ecdsak1.v1`
-  uses a fixed `bytecblock` preamble.
+  reference-compatible fixed `bytecblock` preamble, and
+  `aplane.ed25519lsig.v1` and `aplane.ecdsak1.v1` use fixed `bytecblock`
+  preambles.
 - After algod compilation, salted providers patch the selected byte through
   counter values `0..255` and persist the first compiled bytecode whose LogicSig
   address is off-curve. Unsalted template providers perform no patching and

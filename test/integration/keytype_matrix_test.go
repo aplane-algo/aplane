@@ -129,6 +129,14 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			},
 		},
 		{
+			keyType: "aplane.ed25519-whitelist.v1",
+			params:  map[string]string{"recipients": funder.GetAddress()},
+			negative: includedKeyTypeNegative{
+				name:     "non-whitelisted receiver",
+				receiver: integrationBurnAddress,
+			},
+		},
+		{
 			keyType: "aplane.falcon1024-hashlock.v1",
 			params:  map[string]string{"hash": hex.EncodeToString(preimageHash[:])},
 			positiveArgs: map[string]string{
@@ -409,6 +417,7 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 		"aplane.htlc.v1.yaml",
 		"aplane.whitelist.v1.yaml",
 		"aplane.timed-whitelist.v1.yaml",
+		"aplane.ed25519-whitelist.v1.yaml",
 		"aplane.falcon1024-whitelist.v1.yaml",
 		"aplane.falcon1024-whitelist.v2.yaml",
 		"aplane.falcon1024-hashlock.v1.yaml",

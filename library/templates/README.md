@@ -5,9 +5,10 @@ keystore with `apstore`.
 
 Templates in this directory are plaintext install sources. Presence here does
 not make a key type active by itself. New signer stores automatically install
-and enable `aplane.falcon1024-whitelist.v1`; existing stores and the other
-templates use the normal import flow. After importing a template, unlock or
-reload `apsigner` before using the new key type.
+and enable `aplane.falcon1024-whitelist.v1` and
+`aplane.ed25519-whitelist.v1`; existing stores and the other templates use the
+normal import flow. After importing a template, unlock or reload `apsigner`
+before using the new key type.
 
 ## Install
 
@@ -27,10 +28,11 @@ apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml
 apstore template import library/templates/aplane.falcon1024-whitelist.v2.yaml
 ```
 
-For existing stores that were initialized before the default was added:
+For existing stores that were initialized before these defaults were added:
 
 ```bash
 apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
+apstore template import library/templates/aplane.ed25519-whitelist.v1.yaml
 ```
 
 ## Generic Templates
@@ -49,6 +51,12 @@ apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
 | `aplane.falcon1024-whitelist.v2` | `aplane.falcon1024-whitelist.v2.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to the sender itself or addresses proven against a fixed-depth Merkle tree built from key-file recipients; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-65536) | None; signer generates proofs |
 | `aplane.falcon1024-hashlock.v1` | `aplane.falcon1024-hashlock.v1.yaml` | Requires a Falcon signature plus a SHA256 preimage check. | `hash` (default input mode: preimage) | `preimage` |
 | `aplane.falcon1024-timelock.v1` | `aplane.falcon1024-timelock.v1.yaml` | Requires a Falcon signature and `FirstValid >= unlock_round`; after the unlock round, transaction policy matches the base Falcon key type. | `unlock_round` | None |
+
+## Ed25519 Composed Templates
+
+| Key type | File | Purpose | Creation params | Runtime args |
+|---|---|---|---|---|
+| `aplane.ed25519-whitelist.v1` | `aplane.ed25519-whitelist.v1.yaml` | Requires an Ed25519 signature and restricts ALGO/ASA transfer destination fields to a fixed unordered recipient address set or the sender itself; non-transfer transaction types keep the base Ed25519 authorization surface. | `recipients` (`address[]`, 1-30) | None |
 
 ## Notes
 
@@ -109,8 +117,8 @@ assert
 //   assert
 ```
 
-This applies to `aplane.timed-whitelist.v1`, `aplane.whitelist.v1`, `aplane.htlc.v1`,
-and any new generic template.
+This applies to `aplane.timed-whitelist.v1`, `aplane.whitelist.v1`,
+`aplane.htlc.v1`, and any new generic template.
 
 **Composed templates** (`template_type: composed`, with `base_key_type` pointing
 at a registered DSA family — e.g. `aplane.falcon1024.v1`) are wrapped by
@@ -128,15 +136,15 @@ the predicate restricts which addresses can receive transfer value — still nee
 to enforce the whitelist on destination-like fields explicitly. A user who
 intentionally signs a payment with `CloseRemainderTo = attacker` would bind the
 signature correctly, but the whitelist would be bypassed if the template only
-checked `Receiver`. The composed `aplane.falcon1024-whitelist.v1` template
-therefore checks `Receiver` and `CloseRemainderTo` for payments, and
-`AssetReceiver` and `AssetCloseTo` for ASA transfers. The Merkle whitelist
-template checks the same destination fields by signer-generated proof against
-the root derived from the key-file recipient list; close-out is allowed only to
-zero or the just-validated receiver. The sender itself is allowed as a
-destination; non-`pay`/`axfer` transaction types and clawback source selection
-through `AssetSender` remain governed by the base Falcon signature and signer
-policy.
+checked `Receiver`. The composed `aplane.falcon1024-whitelist.v1` and
+`aplane.ed25519-whitelist.v1` templates therefore check `Receiver` and
+`CloseRemainderTo` for payments, and `AssetReceiver` and `AssetCloseTo` for ASA
+transfers. The Merkle whitelist template checks the same destination fields by
+signer-generated proof against the root derived from the key-file recipient
+list; close-out is allowed only to zero or the just-validated receiver. The
+sender itself is allowed as a destination; non-`pay`/`axfer` transaction types
+and clawback source selection through `AssetSender` remain governed by the base
+signature and signer policy.
 
 The composed wrap order is locked in by
 `TestComposerVerifierAssertsBeforeUserSuffix` (in `lsig/composeddsa/`) and

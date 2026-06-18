@@ -101,8 +101,9 @@ Built-in key types:
 - `falcon1024`
 - `falcon1024_ed25519`
 - `ecdsak1`
+- hidden Ed25519 LogicSig base provider `aplane.ed25519lsig.v1` for composed templates
 - optional generic templates like `aplane.timed-whitelist.v1`, `aplane.whitelist.v1`, and `aplane.htlc.v1`
-- Falcon-composed templates such as default-installed `aplane.falcon1024-whitelist.v1` and optional `aplane.falcon1024-hashlock.v1` / `aplane.falcon1024-timelock.v1`
+- composed DSA templates such as default-installed `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1`, plus optional `aplane.falcon1024-hashlock.v1` and `aplane.falcon1024-timelock.v1`
 
 Creation parameters are part of the provider boundary. `internal/lsigprovider`
 owns shared parameter metadata and normalization helpers used by UI adapters,
@@ -253,7 +254,7 @@ Optional YAML templates have a source-library lifecycle:
   `<APSIGNER_DATA>/library/templates/`,
 - `internal/storepaths.Paths.TemplateLibraryDir()` is the source of truth for the signer-data library path,
 - library YAML files are reference material only; they are not active key types by being present on disk,
-- new signer-store initialization installs the bundled `aplane.falcon1024-whitelist.v1` YAML into the identity store by default,
+- new signer-store initialization installs the bundled `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1` YAML into the identity store by default,
 - `apadmin` browses the signer-data library over the admin IPC protocol,
 - installing a library template parses and encrypts the YAML into the identity-scoped template store under
   `identities/<identity>/keytypes/<key_type>.template` and writes an enabled state record,

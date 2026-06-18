@@ -4,8 +4,8 @@
 
 > **TL;DR**
 > - The LogicSigs bundled with APlane (Falcon hashlock, Falcon timelock,
->   Falcon whitelist, and the signer-gated Falcon providers) are safe to fund
->   and use as documented.
+>   Falcon whitelist, Ed25519 whitelist, and the signer-gated DSA providers)
+>   are safe to fund and use as documented.
 > - Anything you compile yourself — your own TEAL, your own YAML template, or
 >   an externally-supplied LogicSig — needs to pass the full review checklist
 >   below before you fund the account.
@@ -565,6 +565,27 @@ transfers. The sender itself is also allowed as a destination. Other transaction
 types, and clawback source selection through `AssetSender`, remain governed by
 the base Falcon signature and signer policy rather than additional whitelist
 TEAL.
+
+#### Ed25519-Backed Composed Templates
+
+These are signer-gated templates built by combining Algorand Ed25519 signature
+verification with a YAML-defined TEAL suffix. Their YAML uses
+`template_type: composed` and `base_key_type: aplane.ed25519lsig.v1`.
+
+##### `aplane.ed25519-whitelist.v1`
+
+- Ed25519 signature-gated plus recipient whitelist condition
+- installed and enabled by default for new signer identities
+- more restrictive than a pure signer primitive, but signer-gated
+
+This template is the Ed25519 counterpart to the fixed-list Falcon whitelist.
+The bundled template accepts 1-30 recipient addresses. Its TEAL applies the
+whitelist only to destination-like fields on ALGO payments and ASA transfers:
+`Receiver` and `CloseRemainderTo` for payments, and `AssetReceiver` and
+`AssetCloseTo` for ASA transfers. The sender itself is also allowed as a
+destination. Other transaction types, and clawback source selection through
+`AssetSender`, remain governed by the base Ed25519 signature and signer policy
+rather than additional whitelist TEAL.
 
 ## How To Use Bundled LogicSigs Safely
 

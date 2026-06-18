@@ -118,9 +118,10 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/templatestore` | Encrypted template file storage |
 | `internal/lsig` | Dummy transaction construction and LogicSig budget constant |
 | `internal/signing` | Dummy fee distribution and transaction signing helpers |
-| `lsig/composeddsa` | Generic runtime-compiled LogicSig composer used by Falcon and ecdsak1 composed templates, and parser/provider builder for composed DSA YAML templates |
+| `lsig/composeddsa` | Generic runtime-compiled LogicSig composer used by Falcon, Ed25519, and ecdsak1 composed templates, and parser/provider builder for composed DSA YAML templates |
 | `lsig/falcon1024` | Falcon-1024 DSA base provider; `v1/composer.go` is the Falcon-specific wrapper over `lsig/composeddsa` |
 | `lsig/falcon1024_ed25519` | Dual Falcon-1024 / Ed25519 DSA provider |
+| `lsig/ed25519lsig` | Hidden Ed25519 LogicSig DSA base provider used by composed templates such as `aplane.ed25519-whitelist.v1` |
 | `lsig/ecdsak1` | secp256k1 LogicSig DSA provider |
 | `internal/signerapp/templates` | Keystore template reload coordinator and state/fingerprint policy |
 | `lsig/generictemplate` | Parser/provider builder for generic YAML templates |
@@ -132,7 +133,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | Category | Example Key Types | Has Keys | Signing |
 |----------|-------------------|----------|---------|
 | `generic_lsig` | `aplane.timed-whitelist.v1`, `aplane.whitelist.v1` after template import | No | TEAL-only authorization |
-| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`; `aplane.falcon1024-whitelist.v1` after new-store default install or template import | Yes | Cryptographic signature |
+| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`; `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1` after new-store default install or template import | Yes | Cryptographic signature |
 
 ## Interface Hierarchy
 
@@ -567,7 +568,9 @@ For composed templates, `base_key_type` selects the signing provider while
 the YAML `family` field names the template's own version line. The two are
 independent: `base_key_type: aplane.falcon1024.v1` plus
 `family: falcon1024-whitelist` yields a `key_type` of
-`<publisher>.falcon1024-whitelist.vN` that signs with Falcon-1024.
+`<publisher>.falcon1024-whitelist.vN` that signs with Falcon-1024, while
+`base_key_type: aplane.ed25519lsig.v1` plus `family: ed25519-whitelist`
+yields a template key type that signs with Ed25519 inside a LogicSig.
 
 ## Key Types Summary
 
@@ -576,9 +579,11 @@ independent: `base_key_type: aplane.falcon1024.v1` plus
 | `aplane.falcon1024.v1` | `falcon1024` | `dsa_lsig` | Default-enabled pure Falcon signature |
 | `aplane.falcon1024_ed25519.v1` | `falcon1024_ed25519` | `dsa_lsig` | Library-visible dual Falcon + Ed25519 DSA |
 | `aplane.ecdsak1.v1` | `ecdsak1` | `dsa_lsig` | Library-visible secp256k1 DSA |
+| `aplane.ed25519lsig.v1` | `ed25519lsig` | `dsa_lsig` | Hidden Ed25519 LogicSig base used by composed templates; not catalog-visible |
 | `aplane.timed-whitelist.v1` | `timed-whitelist` | `generic_lsig` | Optional template library: timed recipient whitelist |
 | `aplane.whitelist.v1` | `whitelist` | `generic_lsig` | Optional template library: restrict outgoing transfers to fixed recipient addresses |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
+| `aplane.ed25519-whitelist.v1` | `ed25519-whitelist` | `dsa_lsig` | Bundled composed template: installed/enabled for new signer identities; Ed25519 + fixed receiver whitelist |
 | `aplane.falcon1024-whitelist.v1` | `falcon1024-whitelist` | `dsa_lsig` | Bundled composed template: installed/enabled for new signer identities; Falcon + fixed receiver whitelist |
 | `aplane.falcon1024-hashlock.v1` | `falcon1024-hashlock` | `dsa_lsig` | Optional template library: Falcon + hashlock |
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional template library: Falcon + timelock |

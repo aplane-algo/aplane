@@ -35,6 +35,7 @@ included as normal user-account operations.
 | `aplane.ecdsak1.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-whitelist.v1` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-whitelist.v2` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
+| `aplane.ed25519-whitelist.v1` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-hashlock.v1` | C | C | C | C | C | C | C | C | C | C | C |
 | `aplane.falcon1024-timelock.v1` | C | C | C | C | C | C | C | C | C | C | C |
 | `aplane.falcon1024-sentry-ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
@@ -64,12 +65,13 @@ included as normal user-account operations.
 - `ed25519`, `aplane.falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, and
   `aplane.ecdsak1.v1` do not restrict transaction type or special transaction
   fields at the key-type layer. Local signer policy remains the safety boundary.
-- `aplane.falcon1024-whitelist.v1` restricts only `pay` and `axfer`
+- `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1`
+  restrict only `pay` and `axfer`
   destination fields. Payment receivers and asset receivers must be self or
   whitelisted. Close destinations must be zero, self, or whitelisted. Other
-  transaction types keep the base Falcon authorization surface. `AssetSender`
-  is not denied by this template, so clawback-shaped `axfer` is possible when
-  destination checks pass.
+  transaction types keep the base signature authorization surface.
+  `AssetSender` is not denied by these templates, so clawback-shaped `axfer` is
+  possible when destination checks pass.
 - `aplane.falcon1024-hashlock.v1` keeps the base Falcon authorization surface
   but additionally requires the configured SHA256 preimage.
 - `aplane.falcon1024-timelock.v1` keeps the base Falcon authorization surface

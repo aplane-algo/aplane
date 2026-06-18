@@ -231,6 +231,7 @@ aplane/
 │   │   ├── derivation/, family/, keygen/, keys/, signing/
 │   │   └── v1/                    # v1 standard provider, ops, composer, templates
 │   ├── falcon1024_ed25519/        # Dual Falcon-1024 / Ed25519 DSA provider
+│   ├── ed25519lsig/               # Ed25519 LogicSig DSA base for composed templates
 │   ├── ecdsak1/                   # ECDSA secp256k1 LogicSig DSA provider
 │   ├── composeddsa/               # Generic ComposedDSA composer
 │   └── generictemplate/           # YAML-backed generic template provider

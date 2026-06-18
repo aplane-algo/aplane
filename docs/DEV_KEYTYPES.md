@@ -108,7 +108,8 @@ Shipped YAML template sources live under the top-level `library/templates/`
 directory and are installed into an identity before use. Source-tree YAML files
 are install sources only; the runtime form is the encrypted identity-local
 `.template` file plus key type state record. New signer identities install and
-enable `aplane.falcon1024-whitelist.v1` during initialization.
+enable `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1`
+during initialization.
 
 Go-defined key types:
 
@@ -122,6 +123,7 @@ Go-defined key types:
 | `aplane.falcon1024-sentry-falcon1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
 | `aplane.falcon1024_ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_ed25519` |
 | `aplane.ecdsak1.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ecdsak1` |
+| `aplane.ed25519lsig.v1` | DSA LogicSig provider | Go-defined | hidden base for composed templates | `lsig/ed25519lsig` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
@@ -130,7 +132,9 @@ default-visible for generation. Visibility is recorded in
 default-enabled, while `aplane.falcon1024-sentry-ed25519.v1`,
 `aplane.falcon1024-sentry-falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, and
 `aplane.ecdsak1.v1` are library-visible and hidden from generation until the
-current identity enables them from the library.
+current identity enables them from the library. `aplane.ed25519lsig.v1` is a
+registered hidden base provider for Ed25519-backed composed templates such as
+`aplane.ed25519-whitelist.v1`; it is not catalog-visible on its own.
 Opt-in state records are plaintext identity-scoped metadata under
 `identities/<identity>/keytypes/<key_type>.json`; they affect discovery and key
 creation, not the ability to sign with keys that already exist. Mnemonic import
@@ -174,6 +178,7 @@ Bundled YAML templates, if installed:
 | `aplane.timed-whitelist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.timed-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.timed-whitelist.v1.{json,template}` |
 | `aplane.whitelist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.whitelist.v1.{json,template}` |
 | `aplane.htlc.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.htlc.v1.yaml` | `identities/<identity>/keytypes/aplane.htlc.v1.{json,template}` |
+| `aplane.ed25519-whitelist.v1` | Composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.ed25519-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.ed25519-whitelist.v1.{json,template}` |
 | `aplane.falcon1024-whitelist.v1` | Composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-whitelist.v1.{json,template}` |
 | `aplane.falcon1024-whitelist.v2` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-whitelist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-whitelist.v2.{json,template}` |
 | `aplane.falcon1024-hashlock.v1` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-hashlock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-hashlock.v1.{json,template}` |
@@ -183,8 +188,8 @@ These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed into
 the active signer identity, enabled for that identity, and loaded by
 `apsigner`. New signer identities start with `aplane.falcon1024-whitelist.v1`
-already installed and enabled; sentry-role identities do not. The `apadmin`
-KeyType Library lists plaintext library entries and also reports installed
+and `aplane.ed25519-whitelist.v1` already installed and enabled; sentry-role
+identities do not. The `apadmin` KeyType Library lists plaintext library entries and also reports installed
 identity templates that do not have a matching library YAML source; those
 installed-only rows are derived from encrypted `.template`
 filenames and may not have parameter metadata.

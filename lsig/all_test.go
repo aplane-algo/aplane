@@ -26,6 +26,7 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 		"aplane.timed-whitelist.v1",
 		"aplane.whitelist.v1",
 		"aplane.htlc.v1",
+		"aplane.ed25519-whitelist.v1",
 		"aplane.falcon1024-whitelist.v1",
 		"aplane.falcon1024-whitelist.v2",
 		"aplane.falcon1024-hashlock.v1",
@@ -104,6 +105,7 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 		{"aplane.falcon1024-timelock.v1.yaml", "FirstValid"},
 		{"aplane.falcon1024-whitelist.v1.yaml", "Only pay/axfer"},
 		{"aplane.falcon1024-whitelist.v2.yaml", "Whitelist v2"},
+		{"aplane.ed25519-whitelist.v1.yaml", "Only pay/axfer"},
 	}
 
 	for _, c := range cases {
@@ -121,10 +123,10 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 				t.Fatalf("NewProviderFromTemplateSpec: %v", err)
 			}
 
-			// Use a dummy Falcon-1024-sized public key. GenerateTEAL only
-			// embeds it in the verifier; correctness of the produced
-			// signature is not in scope here, only the wrap shape.
-			pubKey := make([]byte, family.PublicKeySize)
+			// Use a dummy public key. GenerateTEAL only embeds it in the
+			// verifier; correctness of the produced signature is not in
+			// scope here, only the wrap shape.
+			pubKey := bundledTemplateTestPublicKey(c.file)
 			params := bundledTemplateTestParams(c.file)
 			teal, err := provider.GenerateTEAL(pubKey, params)
 			if err != nil {
@@ -145,13 +147,32 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 			}
 
 			between := teal[txidIdx:suffixIdx]
-			if !strings.Contains(between, "falcon_verify") {
-				t.Fatalf("verifier section must include `falcon_verify` between txid and suffix:\n%s", between)
+			verifyOp := bundledTemplateTestVerifyOp(c.file)
+			if !strings.Contains(between, verifyOp) {
+				t.Fatalf("verifier section must include %q between txid and suffix:\n%s", verifyOp, between)
 			}
 			if !strings.Contains(between, "assert") {
 				t.Fatalf("`assert` must appear between verifier output and user suffix:\n%s", between)
 			}
 		})
+	}
+}
+
+func bundledTemplateTestPublicKey(file string) []byte {
+	switch file {
+	case "aplane.ed25519-whitelist.v1.yaml":
+		return make([]byte, 32)
+	default:
+		return make([]byte, family.PublicKeySize)
+	}
+}
+
+func bundledTemplateTestVerifyOp(file string) string {
+	switch file {
+	case "aplane.ed25519-whitelist.v1.yaml":
+		return "ed25519verify_bare"
+	default:
+		return "falcon_verify"
 	}
 }
 
@@ -173,6 +194,10 @@ func bundledTemplateTestParams(file string) map[string]string {
 			"unlock_round": "1",
 		}
 	case "aplane.falcon1024-whitelist.v1.yaml":
+		return map[string]string{
+			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+		}
+	case "aplane.ed25519-whitelist.v1.yaml":
 		return map[string]string{
 			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 		}

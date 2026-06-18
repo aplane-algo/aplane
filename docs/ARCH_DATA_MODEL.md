@@ -357,8 +357,9 @@ Installed templates are encrypted adjacent `.template` files under the same
 `keytypes/` directory. Library templates under `library/templates/` are
 plaintext install sources only; they are not active key types by presence
 alone. New signer identities initialize with `aplane.falcon1024-whitelist.v1`
-installed and enabled from the bundled library source; otherwise YAML templates
-become active only after identity-local installation and enablement.
+and `aplane.ed25519-whitelist.v1` installed and enabled from the bundled
+library source; otherwise YAML templates become active only after
+identity-local installation and enablement.
 
 ### Policy
 

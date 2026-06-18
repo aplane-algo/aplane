@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/lsig"
 )
 
-func TestInstallForNewIdentityInstallsFalconWhitelistForSigner(t *testing.T) {
+func TestInstallForNewIdentityInstallsDefaultWhitelistTemplatesForSigner(t *testing.T) {
 	lsig.RegisterClient()
 
 	paths := storepaths.NewPaths(t.TempDir())
@@ -29,36 +29,38 @@ func TestInstallForNewIdentityInstallsFalconWhitelistForSigner(t *testing.T) {
 		t.Fatalf("InstallForNewIdentity() error = %v", err)
 	}
 
-	rec, ok, err := keytypestate.Get(paths, identityID, Falcon1024WhitelistKeyType)
-	if err != nil {
-		t.Fatalf("keytypestate.Get() error = %v", err)
-	}
-	if !ok {
-		t.Fatalf("default key type state %s missing", Falcon1024WhitelistKeyType)
-	}
-	if rec.Source != keytypestate.SourceYAMLComposed || rec.State != keytypestate.StateEnabled {
-		t.Fatalf("state = (%s, %s), want (%s, %s)",
-			rec.Source, rec.State, keytypestate.SourceYAMLComposed, keytypestate.StateEnabled)
-	}
-	if rec.Fingerprint == "" {
-		t.Fatal("default key type fingerprint missing")
-	}
-	if !templatestore.TemplateExistsForPaths(paths, identityID, Falcon1024WhitelistKeyType, templatestore.TemplateTypeComposed) {
-		t.Fatalf("default template %s not installed", Falcon1024WhitelistKeyType)
-	}
-	installed, err := templatestore.LoadTemplateFromPath(
-		templatestore.GetTemplateFilePathForPaths(paths, identityID, Falcon1024WhitelistKeyType, templatestore.TemplateTypeComposed),
-		masterKey,
-	)
-	if err != nil {
-		t.Fatalf("LoadTemplateFromPath() error = %v", err)
-	}
-	bundled, err := librarytemplates.ReadFile(Falcon1024WhitelistKeyType + ".yaml")
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
-	if string(installed) != string(bundled) {
-		t.Fatal("installed default template does not match bundled template")
+	for _, keyType := range []string{Falcon1024WhitelistKeyType, Ed25519WhitelistKeyType} {
+		rec, ok, err := keytypestate.Get(paths, identityID, keyType)
+		if err != nil {
+			t.Fatalf("keytypestate.Get(%s) error = %v", keyType, err)
+		}
+		if !ok {
+			t.Fatalf("default key type state %s missing", keyType)
+		}
+		if rec.Source != keytypestate.SourceYAMLComposed || rec.State != keytypestate.StateEnabled {
+			t.Fatalf("%s state = (%s, %s), want (%s, %s)",
+				keyType, rec.Source, rec.State, keytypestate.SourceYAMLComposed, keytypestate.StateEnabled)
+		}
+		if rec.Fingerprint == "" {
+			t.Fatalf("default key type %s fingerprint missing", keyType)
+		}
+		if !templatestore.TemplateExistsForPaths(paths, identityID, keyType, templatestore.TemplateTypeComposed) {
+			t.Fatalf("default template %s not installed", keyType)
+		}
+		installed, err := templatestore.LoadTemplateFromPath(
+			templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeComposed),
+			masterKey,
+		)
+		if err != nil {
+			t.Fatalf("LoadTemplateFromPath(%s) error = %v", keyType, err)
+		}
+		bundled, err := librarytemplates.ReadFile(keyType + ".yaml")
+		if err != nil {
+			t.Fatalf("ReadFile(%s) error = %v", keyType, err)
+		}
+		if string(installed) != string(bundled) {
+			t.Fatalf("installed default template %s does not match bundled template", keyType)
+		}
 	}
 }
 

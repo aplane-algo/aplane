@@ -15,7 +15,10 @@ import (
 	librarytemplates "github.com/aplane-algo/aplane/library/templates"
 )
 
-const Falcon1024WhitelistKeyType = "aplane.falcon1024-whitelist.v1"
+const (
+	Falcon1024WhitelistKeyType = "aplane.falcon1024-whitelist.v1"
+	Ed25519WhitelistKeyType    = "aplane.ed25519-whitelist.v1"
+)
 
 type bundledTemplate struct {
 	fileName     string
@@ -23,11 +26,18 @@ type bundledTemplate struct {
 	templateType templatestore.TemplateType
 }
 
-var signerDefaultTemplates = []bundledTemplate{{
-	fileName:     Falcon1024WhitelistKeyType + ".yaml",
-	keyType:      Falcon1024WhitelistKeyType,
-	templateType: templatestore.TemplateTypeComposed,
-}}
+var signerDefaultTemplates = []bundledTemplate{
+	{
+		fileName:     Falcon1024WhitelistKeyType + ".yaml",
+		keyType:      Falcon1024WhitelistKeyType,
+		templateType: templatestore.TemplateTypeComposed,
+	},
+	{
+		fileName:     Ed25519WhitelistKeyType + ".yaml",
+		keyType:      Ed25519WhitelistKeyType,
+		templateType: templatestore.TemplateTypeComposed,
+	},
+}
 
 // InstallForNewIdentity installs key types that should be available and enabled
 // immediately after a new identity store is initialized.
