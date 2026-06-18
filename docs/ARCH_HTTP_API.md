@@ -48,6 +48,28 @@ Transport behavior:
 - oversized bodies return `413`,
 - request body limit is 5 MB for POST endpoints.
 
+Error codes:
+
+The stable wire-contract `code` values that SDK clients branch on are defined in
+`pkg/signerapi/error_codes.go`; their HTTP status mapping is owned by
+`internal/signerapp/svcerr` (`Kind.HTTPStatus()`):
+
+| Code | Meaning | HTTP status |
+|------|---------|-------------|
+| `bad_request` | malformed or invalid request input | `400` |
+| `unauthorized` | missing or invalid authentication | `401` |
+| `forbidden` | authenticated request the signer refuses (policy/role/identity) | `403` |
+| `locked` | signer keystore is locked | `403` |
+| `not_found` | unknown key or resource | `404` |
+| `invalid_passphrase` | passphrase verification failure | `403` |
+| `unavailable` | temporary inability to serve the request | `503` |
+| `cache_refresh` | store mutated but the signer key cache failed to refresh | `500` |
+| `internal` | unexpected server-side failure | `500` |
+
+An empty `code` means the server predates code support or the failure had no
+specific classification. New codes may be added; existing values must not change
+meaning.
+
 Timeout behavior:
 
 - `apsigner` sets HTTP `ReadHeaderTimeout` to 10 seconds, `ReadTimeout` to 30

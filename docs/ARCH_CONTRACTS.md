@@ -670,6 +670,23 @@ sentry-role initialization skips these signer account key types. Other bundled
 templates remain install sources until explicitly imported/enabled for an
 identity.
 
+The bundled templates that ship under `library/templates/` are:
+
+| Template | Purpose |
+|----------|---------|
+| `aplane.falcon1024-hashlock.v1` | Falcon-1024 signature with SHA256 hash verification |
+| `aplane.falcon1024-timelock.v1` | Falcon-1024 signature gated by round-based timelock |
+| `aplane.falcon1024-whitelist.v1` | Falcon-1024 signature restricted to a fixed set of receiver addresses (default-installed) |
+| `aplane.falcon1024-whitelist.v2` | Falcon-1024 whitelist using a fixed-depth Merkle root with signer-generated proofs |
+| `aplane.ed25519-whitelist.v1` | Ed25519 signature restricted to a fixed set of receiver addresses (default-installed) |
+| `aplane.htlc.v1` | Hash time-locked contract |
+| `aplane.timed-whitelist.v1` | Restrict funds to approved recipients after a specified round |
+| `aplane.whitelist.v1` | Restrict outgoing transfers to a fixed set of recipient addresses |
+
+Only `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1` are
+installed and enabled by default for new signer stores; the rest are available to
+install from the library.
+
 `apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the
 admin protocol and also includes installed identity templates that no longer have a matching plaintext
 library YAML entry. The list result includes parsed metadata (`key_type`, `template_type`, display text,

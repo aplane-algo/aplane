@@ -60,12 +60,19 @@ For a current ownership map and source-of-truth files, prefer `docs/ARCH_SPEC.md
 
 ### Cryptographic Modules (`lsig/`)
 - `lsig/falcon1024/`: Falcon-1024 post-quantum signature implementation
-  - `family/`: Family registration and metadata
-  - `signing/`: Signing provider implementation
+  - `family/`: Family registration and metadata (with `family/ops/` for family operations)
+  - `v1/`: Versioned standard implementation (with `v1/reference/`)
   - `keys/`: Key derivation and processing
   - `keygen/`: Key generation
-  - `mnemonic/`: Mnemonic handling
   - `derivation/`: Version-specific derivation logic
+  - `signerops/`: Signer-side signing operations
+  - `signerreg/`: Signer registration
+- `lsig/ed25519lsig/`: Ed25519 LogicSig DSA family (base key type `aplane.ed25519lsig.v1`; backs the composed `aplane.ed25519-whitelist.v1` template)
+- `lsig/falcon1024_ed25519/`: Hybrid Falcon-1024 + Ed25519 provider
+- `lsig/falcon1024_guarded/`: Guarded DSA provider for `aplane.falcon1024-sentry-ed25519.v1` and `aplane.falcon1024-sentry-falcon1024.v1` guarded signing key types
+- `lsig/ecdsak1/`: ECDSA secp256k1 provider implementing `aplane.ecdsak1.v1`
+- `lsig/composeddsa/`: Runtime-compiled LogicSig composer for DSA-based schemes (guarded/composed signing)
+- `lsig/dsafamily/`: Shared DSA family registration descriptors and key generator
 - `lsig/generictemplate/`: YAML-backed provider for generic LogicSigs
 
 ### Other Directories
