@@ -55,7 +55,7 @@ type Config struct {
 	// Identity
 	KeyType     string // e.g., "aplane.falcon1024-hashlock.v1"
 	BaseKeyType string // e.g., "aplane.falcon1024.v1"
-	FamilyName  string // e.g., "falcon1024"
+	FamilyName  string // qualified registry family, e.g. "aplane.falcon1024"
 	Version     int
 	DisplayName string
 	Description string
@@ -78,6 +78,9 @@ type ComposedDSA struct {
 	// Identity
 	keyType     string
 	baseKeyType string
+	// familyName is the qualified registry family ("publisher.family"). For a
+	// composed template it is the base DSA's family; for a self-generating DSA
+	// it is the provider's own family.
 	familyName  string
 	version     int
 	displayName string
@@ -139,7 +142,11 @@ func (c *ComposedDSA) BaseKeyType() string {
 	return c.baseKeyType
 }
 
-// Family returns the algorithm family without version.
+// Family returns the qualified registry family ("publisher.family"). For a
+// composed template this is the base DSA's family (set from the base
+// registration), so keygen/signing/metadata lookups via GetFamily route to the
+// base provider's ops. For a DSA that owns its key generation (e.g.
+// falcon1024_ed25519) it is that provider's own qualified family.
 func (c *ComposedDSA) Family() string {
 	return c.familyName
 }

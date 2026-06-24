@@ -56,7 +56,7 @@ func TestEd25519LogicSigBaseAcceptsComposedTemplateShape(t *testing.T) {
 schema_version: 1
 derivation_version: 2
 template_type: composed
-base_key_type: aplane.ed25519lsig.v1
+base_key_type: aplane.ed25519.v1
 template_mode: generated
 publisher: makman
 family: demo-v2-test

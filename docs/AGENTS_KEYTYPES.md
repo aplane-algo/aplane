@@ -197,7 +197,7 @@ apstore template import <template.yaml>
 
 For a composed DSA YAML template, use `template_type: composed` and
 `base_key_type` for the signing provider, such as `aplane.falcon1024.v1` for
-Falcon-backed templates or `aplane.ed25519lsig.v1` for Ed25519-backed
+Falcon-backed templates or `aplane.ed25519.v1` for Ed25519-backed
 templates:
 
 ```bash

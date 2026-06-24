@@ -870,7 +870,7 @@ TEAL.
 
 These are signer-gated templates built by combining Algorand Ed25519 signature
 verification with a YAML-defined TEAL suffix. Their YAML uses
-`template_type: composed` and `base_key_type: aplane.ed25519lsig.v1`.
+`template_type: composed` and `base_key_type: aplane.ed25519.v1`.
 
 ##### `aplane.ed25519-whitelist.v1`
 

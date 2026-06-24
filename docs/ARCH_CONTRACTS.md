@@ -907,7 +907,7 @@ LogicSig salting is a generation-time contract:
   templates with `derivation_version: 2` use the trailing dead-code
   `bytecblock`, `aplane.falcon1024.v1` uses the Algorand Foundation
   reference-compatible fixed `bytecblock` preamble, and
-  `aplane.ed25519lsig.v1` and `aplane.ecdsak1.v1` use fixed `bytecblock`
+  `aplane.ed25519.v1` and `aplane.ecdsak1.v1` use fixed `bytecblock`
   preambles.
 - After algod compilation, salted providers patch the selected byte through
   counter values `0..255` and persist the first compiled bytecode whose LogicSig

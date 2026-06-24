@@ -169,7 +169,7 @@ persisted alias or set names.
 ```javascript
 {
   keyType: "aplane.falcon1024.v1",
-  family: "falcon1024",
+  family: "aplane.falcon1024",
   displayName: "Falcon-1024",
   description: "...",
   requiresLogicSig: true,

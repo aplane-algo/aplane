@@ -6,8 +6,10 @@
 // dsa/falcon1024 and its sub-packages.
 package family
 
-// Family identity
-const Name = "falcon1024"
+// Family identity. This is the qualified registry family ("publisher.family"),
+// used as the key in the keygen/mnemonic/metadata/signing registries. It is
+// intentionally distinct from any future native "falcon1024" key type.
+const Name = "aplane.falcon1024"
 
 // Key sizes (from the falcongo library)
 const (

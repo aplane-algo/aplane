@@ -4,8 +4,9 @@
 // Package family provides ECDSA secp256k1 family constants.
 package family
 
-// Family identity.
-const Name = "ecdsak1"
+// Family identity. This is the qualified registry family ("publisher.family"),
+// used as the key in the keygen/mnemonic/metadata/signing registries.
+const Name = "aplane.ecdsak1"
 
 // Key sizes.
 const (

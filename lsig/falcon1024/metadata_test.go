@@ -12,9 +12,9 @@ import (
 func TestFalconMetadata(t *testing.T) {
 	m := &FalconMetadata{}
 
-	t.Run("KeyType", func(t *testing.T) {
-		if m.Family() != "falcon1024" {
-			t.Errorf("KeyType() = %v, want falcon1024", m.Family())
+	t.Run("Family", func(t *testing.T) {
+		if m.Family() != "aplane.falcon1024" {
+			t.Errorf("Family() = %v, want aplane.falcon1024", m.Family())
 		}
 	})
 
@@ -64,8 +64,8 @@ func TestRegisterClientRegistersComposableBase(t *testing.T) {
 	if !ok {
 		t.Fatal("aplane.falcon1024.v1 was not registered as a composable base")
 	}
-	if reg.FamilyName != "falcon1024" {
-		t.Fatalf("FamilyName = %q, want falcon1024", reg.FamilyName)
+	if reg.FamilyName != "aplane.falcon1024" {
+		t.Fatalf("FamilyName = %q, want aplane.falcon1024", reg.FamilyName)
 	}
 	if reg.Version != 1 {
 		t.Fatalf("Version = %d, want 1", reg.Version)

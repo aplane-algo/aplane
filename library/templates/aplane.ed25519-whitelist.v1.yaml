@@ -1,7 +1,7 @@
 schema_version: 1
 derivation_version: 2
 template_type: composed
-base_key_type: aplane.ed25519lsig.v1
+base_key_type: aplane.ed25519.v1
 template_mode: generated
 publisher: aplane
 family: ed25519-whitelist

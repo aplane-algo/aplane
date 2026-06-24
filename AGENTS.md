@@ -67,7 +67,7 @@ For a current ownership map and source-of-truth files, prefer `docs/ARCH_SPEC.md
   - `derivation/`: Version-specific derivation logic
   - `signerops/`: Signer-side signing operations
   - `signerreg/`: Signer registration
-- `lsig/ed25519lsig/`: Ed25519 LogicSig DSA family (base key type `aplane.ed25519lsig.v1`; backs the composed `aplane.ed25519-whitelist.v1` template)
+- `lsig/ed25519lsig/`: Ed25519 LogicSig DSA family (base key type `aplane.ed25519.v1`; backs the composed `aplane.ed25519-whitelist.v1` template)
 - `lsig/falcon1024_ed25519/`: Hybrid Falcon-1024 + Ed25519 provider
 - `lsig/falcon1024_guarded/`: Guarded DSA provider for `aplane.falcon1024-sentry-ed25519.v1` and `aplane.falcon1024-sentry-falcon1024.v1` guarded signing key types
 - `lsig/ecdsak1/`: ECDSA secp256k1 provider implementing `aplane.ecdsak1.v1`

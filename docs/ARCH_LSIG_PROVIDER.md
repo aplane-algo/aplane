@@ -141,7 +141,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 LSigProvider (base interface - ALL providers implement this)
 ├── Identity
 │   ├── KeyType() string        "aplane.falcon1024.v1", "aplane.timed-whitelist.v1"
-│   ├── Family() string         "falcon1024", "timed-whitelist" (display metadata; routing uses KeyType)
+│   ├── Family() string         "aplane.falcon1024", "timed-whitelist" (display metadata; routing uses KeyType)
 │   └── Version() int           1, 2, etc.
 ├── Category
 │   └── Category() string       "generic_lsig" or "dsa_lsig"
@@ -297,7 +297,7 @@ path. Falcon exposes that engine through Falcon-specific names:
 ```go
 ExampleFalconHashlock = NewComposedFalcon(ComposedFalconConfig{
     KeyType:     "aplane.falcon1024-hashlock.v1",
-    FamilyName:  "falcon1024",
+    FamilyName:  "aplane.falcon1024",
     Version:     1,
     DisplayName: "Falcon-1024 Hashlock",
     Base:        FalconBase,
@@ -569,17 +569,17 @@ the YAML `family` field names the template's own version line. The two are
 independent: `base_key_type: aplane.falcon1024.v1` plus
 `family: falcon1024-whitelist` yields a `key_type` of
 `<publisher>.falcon1024-whitelist.vN` that signs with Falcon-1024, while
-`base_key_type: aplane.ed25519lsig.v1` plus `family: ed25519-whitelist`
+`base_key_type: aplane.ed25519.v1` plus `family: ed25519-whitelist`
 yields a template key type that signs with Ed25519 inside a LogicSig.
 
 ## Key Types Summary
 
 | Key Type | Key-type family | Category | Description |
 |----------|--------|----------|-------------|
-| `aplane.falcon1024.v1` | `falcon1024` | `dsa_lsig` | Default-enabled pure Falcon signature |
-| `aplane.falcon1024_ed25519.v1` | `falcon1024_ed25519` | `dsa_lsig` | Library-visible dual Falcon + Ed25519 DSA |
-| `aplane.ecdsak1.v1` | `ecdsak1` | `dsa_lsig` | Library-visible secp256k1 DSA |
-| `aplane.ed25519lsig.v1` | `ed25519lsig` | `dsa_lsig` | Hidden Ed25519 LogicSig base used by composed templates; not catalog-visible |
+| `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Default-enabled pure Falcon signature |
+| `aplane.falcon1024_ed25519.v1` | `aplane.falcon1024_ed25519` | `dsa_lsig` | Library-visible dual Falcon + Ed25519 DSA |
+| `aplane.ecdsak1.v1` | `aplane.ecdsak1` | `dsa_lsig` | Library-visible secp256k1 DSA |
+| `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Hidden Ed25519 LogicSig base used by composed templates; not catalog-visible |
 | `aplane.timed-whitelist.v1` | `timed-whitelist` | `generic_lsig` | Optional template library: timed recipient whitelist |
 | `aplane.whitelist.v1` | `whitelist` | `generic_lsig` | Optional template library: restrict outgoing transfers to fixed recipient addresses |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |

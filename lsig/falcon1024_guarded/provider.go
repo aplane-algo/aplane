@@ -27,8 +27,11 @@ import (
 )
 
 const (
-	FamilyName           = "falcon1024-sentry-ed25519"
-	FamilyNameFalcon1024 = "falcon1024-sentry-falcon1024"
+	// FamilyName / FamilyNameFalcon1024 are qualified registry families
+	// ("publisher.family"), used as keygen/mnemonic/metadata/signing registry
+	// keys for the two guarded variants.
+	FamilyName           = "aplane.falcon1024-sentry-ed25519"
+	FamilyNameFalcon1024 = "aplane.falcon1024-sentry-falcon1024"
 	KeyTypeV1            = keytypes.GuardedFalcon1024SentryEd25519V1
 	KeyTypeFalcon1024V1  = keytypes.GuardedFalcon1024SentryFalcon1024V1
 	BaseKeyType          = "aplane.falcon1024.v1"

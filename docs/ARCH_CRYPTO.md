@@ -100,7 +100,7 @@ Built-in key types:
 - `falcon1024`
 - `falcon1024_ed25519`
 - `ecdsak1`
-- hidden Ed25519 LogicSig base provider `aplane.ed25519lsig.v1` for composed templates
+- hidden Ed25519 LogicSig base provider `aplane.ed25519.v1` for composed templates
 - optional generic templates like `aplane.timed-whitelist.v1`, `aplane.whitelist.v1`, and `aplane.htlc.v1`
 - composed DSA templates such as default-installed `aplane.falcon1024-whitelist.v1`, plus optional `aplane.ed25519-whitelist.v1`, `aplane.falcon1024-hashlock.v1`, and `aplane.falcon1024-timelock.v1`
 
