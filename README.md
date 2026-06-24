@@ -11,7 +11,7 @@ It is designed for security-focused operations where private keys can be isolate
 
 ## EXPERIMENTAL Status
 
-APlane is currently in alpha and should be considered experimental.  The Algorand Foundation has releaeed its <a href="https://algorand.co/blog/algorand-post-quantum-cryptography-roadmap">2026 post-quantum roadmap</a>. As the new standards take shape, APlane will evolve with them.
+APlane is currently in alpha and should be considered experimental.  The Algorand Foundation has released its <a href="https://algorand.co/blog/algorand-post-quantum-cryptography-roadmap">2026 post-quantum roadmap</a>; as its new standards take shape, APlane will evolve with them.
 
 - Release-to-release compatibility should be considered best-effort but is not currently guaranteed.
 - Breaking changes may still occur, especially across CLI, SDK, config, and plugin surfaces.
