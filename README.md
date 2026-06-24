@@ -11,7 +11,7 @@ It is designed for security-focused operations where private keys can be isolate
 
 ## EXPERIMENTAL Status
 
-APlane is currently in alpha and should be considered experimental.  The Algorand Foundation has released its <a href="https://algorand.co/blog/algorand-post-quantum-cryptography-roadmap">2026 post-quantum roadmap</a> that introduces new key types and Logic Signature standards that APlane will fully adopt and evolve with. After those standards are put into place, APlane will adopt a new production-oriented footing.
+APlane is currently in alpha and should be considered experimental.  The Algorand Foundation has released its <a href="https://algorand.co/blog/algorand-post-quantum-cryptography-roadmap">2026 post-quantum roadmap</a>, which introduces new key types and LogicSig templates that APlane will adopt and evolve with. After those standards are in place, APlane will move toward a production-oriented footing.
 
 - Release-to-release compatibility should be considered best-effort but is not currently guaranteed.
 - Breaking changes may still occur, especially across CLI, SDK, config, and plugin surfaces.
