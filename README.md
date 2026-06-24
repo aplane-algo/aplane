@@ -5,18 +5,17 @@
 <sub><a href="docs/USER_QUICKSTART.md">APlane QuickStart</a></sub>&nbsp;&nbsp;<sub><a href="https://github.com/aplane-algo/aplanesdk">SDK Repo</a></sub>
 # APlane - A Signing System for Algorand 
 
-APlane is a flexible command-line signing system for Algorand. In addition to standard Ed25519 keys, it supports Falcon post-quantum signatures, generic LogicSig templates (e.g. whitelists, timelocks, hashlocks, and custom templates), and composed signature + LogicSig authorization schemes (e.g. whitelisted Falcon, Falcon+ed25519 hybrid, etc.)
+APlane is a flexible command-line signing system for Algorand. In addition to standard Ed25519 keys, it supports Falcon post-quantum signatures, generic LogicSig templates (e.g. whitelists, timelocks, hashlocks, and custom templates), and composed signature + LogicSig authorization schemes (e.g. whitelist-constrained Falcon, Falcon+ed25519 hybrid, etc.)
 
-It is designed for security-focused operations where private keys can be isolated on dedicated signing machines with restricted network exposure and accessed via encrypted, identity-gated channels.
+It is designed for security-focused operations where private keys can be isolated on dedicated signing machines with restricted network exposure.
 
-## Alpha Status
+## EXPERIMENTAL Status
 
-APlane is currently in alpha.
+APlane is currently in alpha and should be considered experimental.  The Algorand Foundation has releaeed its <a href="https://algorand.co/blog/algorand-post-quantum-cryptography-roadmap">2026 post-quantum roadmap</a>. As the new standards take shape, APlane will evolve with them.
 
-- The project is security-conscious, but it has not undergone a full external security audit.
-- Production use should be conservative.
-- Release-to-release compatibility should be considered best-effort until the project reaches a stable `v1.0` contract.
+- Release-to-release compatibility should be considered best-effort but is not currently guaranteed.
 - Breaking changes may still occur, especially across CLI, SDK, config, and plugin surfaces.
+- The project is security-conscious, but it has not undergone a full external security audit.
 
 ## Key Features
 
