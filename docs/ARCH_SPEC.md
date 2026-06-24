@@ -161,7 +161,7 @@ Documentation notes:
 | Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/merklewhitelist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
-| Tooling | `analysis/`, `test/integration`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
+| Tooling | `analysis/`, `test/arch`, `test/integration`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
 This table is an orientation map rather than an ownership API. Small support
 packages are listed under the closest layer that depends on them.
@@ -359,7 +359,8 @@ be audited and updated in the same release window.
 Repository release/distribution workflow includes:
 
 - GitHub release archives for full binary bundles on Linux and macOS,
-- GitHub release archives for client-only bundles (`apshell`) on Linux and macOS.
+- GitHub release archives for client-only bundles (`apshell`) on Linux, macOS,
+  and Windows (`windows-amd64` zip with `apshell.exe`).
 
 Release/distribution source-of-truth files are `Makefile` (`release-local` and
 bundled plugin targets), `.github/workflows/release.yml`,
@@ -372,9 +373,10 @@ bundled plugin targets), `.github/workflows/release.yml`,
 `uninstall.sh`, `installer/`, and `library/templates/`. Full release archives
 include installer helpers, template libraries, and staged plugin runtime
 payloads at `plugins.available/algokit-localnet`;
-client-only archives include `apshell`, client config templates, and MCP setup
-helpers. Checksums are generated for release archives, and CI release checksums
-are minisign-signed.
+client-only archives include `apshell`/`apshell.exe`, client config templates,
+README/setup metadata, and MCP setup helpers where supported by the platform.
+Checksums are generated for release archives, and CI release checksums are
+minisign-signed.
 
 ## Deployment Model
 
@@ -1442,6 +1444,9 @@ The repo uses:
 
 - package-level unit tests beside source,
 - integration tests in `test/integration`,
+- architecture guard tests in `test/arch` that pin signer/client layering,
+  family-agnostic core-package imports, and guarded signing route selection on
+  runtime `signing_flow` metadata,
 - dedicated test harness packages,
 - analysis tools for security properties,
 - signer API and SDK contract tests backed by JSON fixtures in `test/contracts/signerapi/`.
@@ -1499,6 +1504,8 @@ The codebase is verified with tests around:
 Verification expectations remain:
 
 - unit tests for touched core packages pass,
+- `test/arch` remains current when changing package layering, provider
+  registration boundaries, or guarded signing route-selection metadata,
 - contract fixtures and per-SDK contract tests pass when signer API shapes change,
 - `make formal-test` passes when formalized behavior or `docs/formal/` modules change,
 - external SDK fixtures and timeout behavior are reviewed when `/status`,

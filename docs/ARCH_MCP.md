@@ -81,7 +81,7 @@ the config, caches, token, plugin catalog, and plugin activation config.
 5. Initialize the command registry and the plugin runtime (`initPluginRuntime`).
 6. Require an operational startup signer connection (`attemptStartupConnection`); MCP exits if the connection cannot be established.
 7. Build the `execute` tool description (base reference plus discovered plugin `mcp.md` files).
-8. Register the six tools and serve over stdio using the saved real stdout.
+8. Register the eight tools and serve over stdio using the saved real stdout.
 
 ## `execute` Routing
 

@@ -1605,7 +1605,7 @@ Integrity and sandboxing:
 
 ## MCP Contract
 
-Six MCP tools:
+Eight MCP tools:
 
 | Tool | Parameters | Purpose |
 |------|-----------|---------|
@@ -1613,6 +1613,8 @@ Six MCP tools:
 | `mcp_reference` | none | Return the shell command reference |
 | `js` | `code` (string) | Execute JavaScript with structured results |
 | `js_reference` | none | Return the JavaScript API reference |
+| `mcp_manual` | none | Return the condensed apshell MCP operating manual |
+| `doc` | `name` (string, optional) | List bundled curated reference docs, or return one doc by name |
 | `jssave` | `path` (string), `filename` (string, optional alias), `code` (string, optional), `last` (bool, optional), `overwrite` (bool, optional) | Save JavaScript for later execution |
 | `jslist` | none | List saved JavaScript scripts in the data directory's `scripts/` folder |
 
@@ -1691,6 +1693,17 @@ The `code` argument is required.
 ### `js_reference` tool
 
 Returns the embedded `USER_JSAPI.md` content. No parameters. Stateless.
+
+### `mcp_manual` tool
+
+Returns the embedded `USER_MCP_MANUAL.md` operating manual text. No
+parameters. Stateless.
+
+### `doc` tool
+
+Lists or fetches bundled curated reference docs. With no `name`, it returns the
+curated bundled doc index. With `name`, it returns the matching bundled
+Markdown doc; names may be supplied with or without `.md`.
 
 ### `jssave` tool
 
