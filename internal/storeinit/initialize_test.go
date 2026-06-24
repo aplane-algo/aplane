@@ -67,7 +67,7 @@ func TestInitializeCreatesStoreMetadataKeysAndToken(t *testing.T) {
 	if role.Role != noderole.RoleSigner {
 		t.Fatalf("node role = %q, want %q", role.Role, noderole.RoleSigner)
 	}
-	for _, keyType := range []string{defaultkeytypes.Falcon1024WhitelistKeyType, defaultkeytypes.Ed25519WhitelistKeyType} {
+	for _, keyType := range []string{defaultkeytypes.Falcon1024WhitelistKeyType} {
 		rec, ok, err := keytypestate.Get(paths, identityID, keyType)
 		if err != nil {
 			t.Fatalf("keytypestate.Get(default key type %s) error = %v", keyType, err)

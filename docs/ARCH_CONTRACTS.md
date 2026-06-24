@@ -664,11 +664,10 @@ The signer-data path is defined by `internal/storepaths.Paths.TemplateLibraryDir
 installer re-runs, and test setup flows may refresh this directory from the repository or packaged copy. Files in this
 directory are reference material and are not active key types by themselves.
 New signer-store initialization installs and enables
-`aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1` from the
-bundled library source into the identity-local encrypted template store;
-sentry-role initialization skips these signer account key types. Other bundled
-templates remain install sources until explicitly imported/enabled for an
-identity.
+`aplane.falcon1024-whitelist.v1` from the bundled library source into the
+identity-local encrypted template store; sentry-role initialization skips this
+signer account key type. Other bundled templates remain install sources until
+explicitly imported/enabled for an identity.
 
 The bundled templates that ship under `library/templates/` are:
 
@@ -678,14 +677,13 @@ The bundled templates that ship under `library/templates/` are:
 | `aplane.falcon1024-timelock.v1` | Falcon-1024 signature gated by round-based timelock |
 | `aplane.falcon1024-whitelist.v1` | Falcon-1024 signature restricted to a fixed set of receiver addresses (default-installed) |
 | `aplane.falcon1024-whitelist.v2` | Falcon-1024 whitelist using a fixed-depth Merkle root with signer-generated proofs |
-| `aplane.ed25519-whitelist.v1` | Ed25519 signature restricted to a fixed set of receiver addresses (default-installed) |
+| `aplane.ed25519-whitelist.v1` | Ed25519 signature restricted to a fixed set of receiver addresses |
 | `aplane.htlc.v1` | Hash time-locked contract |
 | `aplane.timed-whitelist.v1` | Restrict funds to approved recipients after a specified round |
 | `aplane.whitelist.v1` | Restrict outgoing transfers to a fixed set of recipient addresses |
 
-Only `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1` are
-installed and enabled by default for new signer stores; the rest are available to
-install from the library.
+Only `aplane.falcon1024-whitelist.v1` is installed and enabled by default for
+new signer stores; the rest are available to install from the library.
 
 `apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the
 admin protocol and also includes installed identity templates that no longer have a matching plaintext

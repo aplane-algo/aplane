@@ -133,7 +133,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | Category | Example Key Types | Has Keys | Signing |
 |----------|-------------------|----------|---------|
 | `generic_lsig` | `aplane.timed-whitelist.v1`, `aplane.whitelist.v1` after template import | No | TEAL-only authorization |
-| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`; `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1` after new-store default install or template import | Yes | Cryptographic signature |
+| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`; `aplane.falcon1024-whitelist.v1` after new-store default install, `aplane.ed25519-whitelist.v1` after template import | Yes | Cryptographic signature |
 
 ## Interface Hierarchy
 
@@ -583,7 +583,7 @@ yields a template key type that signs with Ed25519 inside a LogicSig.
 | `aplane.timed-whitelist.v1` | `timed-whitelist` | `generic_lsig` | Optional template library: timed recipient whitelist |
 | `aplane.whitelist.v1` | `whitelist` | `generic_lsig` | Optional template library: restrict outgoing transfers to fixed recipient addresses |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
-| `aplane.ed25519-whitelist.v1` | `ed25519-whitelist` | `dsa_lsig` | Bundled composed template: installed/enabled for new signer identities; Ed25519 + fixed receiver whitelist |
+| `aplane.ed25519-whitelist.v1` | `ed25519-whitelist` | `dsa_lsig` | Optional composed template library: Ed25519 + fixed receiver whitelist |
 | `aplane.falcon1024-whitelist.v1` | `falcon1024-whitelist` | `dsa_lsig` | Bundled composed template: installed/enabled for new signer identities; Falcon + fixed receiver whitelist |
 | `aplane.falcon1024-hashlock.v1` | `falcon1024-hashlock` | `dsa_lsig` | Optional template library: Falcon + hashlock |
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional template library: Falcon + timelock |

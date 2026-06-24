@@ -108,8 +108,7 @@ Shipped YAML template sources live under the top-level `library/templates/`
 directory and are installed into an identity before use. Source-tree YAML files
 are install sources only; the runtime form is the encrypted identity-local
 `.template` file plus key type state record. New signer identities install and
-enable `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1`
-during initialization.
+enable `aplane.falcon1024-whitelist.v1` during initialization.
 
 Go-defined key types:
 
@@ -178,7 +177,7 @@ Bundled YAML templates, if installed:
 | `aplane.timed-whitelist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.timed-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.timed-whitelist.v1.{json,template}` |
 | `aplane.whitelist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.whitelist.v1.{json,template}` |
 | `aplane.htlc.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.htlc.v1.yaml` | `identities/<identity>/keytypes/aplane.htlc.v1.{json,template}` |
-| `aplane.ed25519-whitelist.v1` | Composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.ed25519-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.ed25519-whitelist.v1.{json,template}` |
+| `aplane.ed25519-whitelist.v1` | Composed DSA template | `apstore template import library/templates/aplane.ed25519-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.ed25519-whitelist.v1.{json,template}` |
 | `aplane.falcon1024-whitelist.v1` | Composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-whitelist.v1.{json,template}` |
 | `aplane.falcon1024-whitelist.v2` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-whitelist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-whitelist.v2.{json,template}` |
 | `aplane.falcon1024-hashlock.v1` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-hashlock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-hashlock.v1.{json,template}` |
@@ -188,8 +187,8 @@ These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed into
 the active signer identity, enabled for that identity, and loaded by
 `apsigner`. New signer identities start with `aplane.falcon1024-whitelist.v1`
-and `aplane.ed25519-whitelist.v1` already installed and enabled; sentry-role
-identities do not. The `apadmin` KeyType Library lists plaintext library entries and also reports installed
+already installed and enabled; sentry-role identities do not. The `apadmin`
+KeyType Library lists plaintext library entries and also reports installed
 identity templates that do not have a matching library YAML source; those
 installed-only rows are derived from encrypted `.template`
 filenames and may not have parameter metadata.

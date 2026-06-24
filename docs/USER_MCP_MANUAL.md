@@ -180,7 +180,7 @@ Everything except `ed25519` is LogicSig-backed.
 | `aplane.falcon1024_ed25519.v1` | dsa_lsig (dual Falcon+Ed25519) | library-visible |
 | `aplane.ecdsak1.v1` | dsa_lsig (secp256k1) | library-visible |
 | `aplane.falcon1024-whitelist.v1` | dsa_lsig (composed) | bundled, installed+enabled on new identities |
-| `aplane.ed25519-whitelist.v1` | dsa_lsig (composed) | bundled, installed+enabled on new identities |
+| `aplane.ed25519-whitelist.v1` | dsa_lsig (composed) | optional template |
 | `aplane.falcon1024-hashlock.v1` | dsa_lsig (composed) | optional template |
 | `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | optional template |
 | `aplane.whitelist.v1` | generic_lsig | optional template |

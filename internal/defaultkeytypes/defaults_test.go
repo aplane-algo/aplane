@@ -29,7 +29,7 @@ func TestInstallForNewIdentityInstallsDefaultWhitelistTemplatesForSigner(t *test
 		t.Fatalf("InstallForNewIdentity() error = %v", err)
 	}
 
-	for _, keyType := range []string{Falcon1024WhitelistKeyType, Ed25519WhitelistKeyType} {
+	for _, keyType := range []string{Falcon1024WhitelistKeyType} {
 		rec, ok, err := keytypestate.Get(paths, identityID, keyType)
 		if err != nil {
 			t.Fatalf("keytypestate.Get(%s) error = %v", keyType, err)
@@ -61,6 +61,17 @@ func TestInstallForNewIdentityInstallsDefaultWhitelistTemplatesForSigner(t *test
 		if string(installed) != string(bundled) {
 			t.Fatalf("installed default template %s does not match bundled template", keyType)
 		}
+	}
+
+	// Ed25519 whitelist is a bundled but optional template (like the generic
+	// templates); it must not be auto-installed or enabled for new identities.
+	if _, ok, err := keytypestate.Get(paths, identityID, Ed25519WhitelistKeyType); err != nil {
+		t.Fatalf("keytypestate.Get(%s) error = %v", Ed25519WhitelistKeyType, err)
+	} else if ok {
+		t.Fatalf("optional key type %s must not be default-enabled", Ed25519WhitelistKeyType)
+	}
+	if templatestore.TemplateExistsForPaths(paths, identityID, Ed25519WhitelistKeyType, templatestore.TemplateTypeComposed) {
+		t.Fatalf("optional template %s must not be auto-installed", Ed25519WhitelistKeyType)
 	}
 }
 

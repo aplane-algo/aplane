@@ -875,7 +875,7 @@ verification with a YAML-defined TEAL suffix. Their YAML uses
 ##### `aplane.ed25519-whitelist.v1`
 
 - Ed25519 signature-gated plus recipient whitelist condition
-- installed and enabled by default for new signer identities
+- bundled as an optional template; import to install and enable it for an identity
 - more restrictive than a pure signer primitive, but signer-gated
 
 This template is the Ed25519 counterpart to the fixed-list Falcon whitelist.

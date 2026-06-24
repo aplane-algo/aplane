@@ -32,11 +32,6 @@ var signerDefaultTemplates = []bundledTemplate{
 		keyType:      Falcon1024WhitelistKeyType,
 		templateType: templatestore.TemplateTypeComposed,
 	},
-	{
-		fileName:     Ed25519WhitelistKeyType + ".yaml",
-		keyType:      Ed25519WhitelistKeyType,
-		templateType: templatestore.TemplateTypeComposed,
-	},
 }
 
 // InstallForNewIdentity installs key types that should be available and enabled

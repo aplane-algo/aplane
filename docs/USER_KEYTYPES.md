@@ -25,10 +25,9 @@ them.
 
 YAML templates are different: a library YAML file is only an install source. It
 does not become an active key type until it is imported into an identity store.
-New signer stores are initialized with `aplane.falcon1024-whitelist.v1` and
-`aplane.ed25519-whitelist.v1` already installed and enabled from the bundled
-library source. Existing stores can import those templates manually if they
-were created before these defaults.
+New signer stores are initialized with `aplane.falcon1024-whitelist.v1`
+already installed and enabled from the bundled library source. Existing stores
+can import that template manually if they were created before this default.
 
 ## Operator Mental Model
 
@@ -144,9 +143,9 @@ apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.
 Import encrypts the YAML into the identity's keystore and enables the key type
 for that identity.
 
-Fresh signer identities already include `aplane.falcon1024-whitelist.v1` and
-`aplane.ed25519-whitelist.v1`; `template import` remains the path for existing
-identities that do not have those defaults and for the other bundled templates.
+Fresh signer identities already include `aplane.falcon1024-whitelist.v1`;
+`template import` remains the path for existing identities that do not have it
+and for the other bundled templates such as `aplane.ed25519-whitelist.v1`.
 
 Generated LogicSig keys store their salted bytecode and selected off-curve
 salt counter in the `.key` file. They also store the signing-argument schema

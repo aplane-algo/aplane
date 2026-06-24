@@ -482,5 +482,5 @@ workflows and do not need this capability.
 - Plugin system uses external processes communicating via JSON-RPC
 - Cross-compilation targets Linux ARM64/AMD64 and Darwin ARM64/AMD64
 - Linux CGO binaries use musl static linking; macOS binaries are dynamically linked
-- KeyType Library YAML sources live under `library/templates/` in the repo or `<APSIGNER_DATA>/library/templates/`; installed templates are encrypted under `identities/<identity>/keytypes/` with adjacent state records, new signer identities start with the Falcon and Ed25519 whitelist v1 templates installed, other templates must be imported/enabled, and removed keys/templates are archived under `identities/<identity>/deleted/`
+- KeyType Library YAML sources live under `library/templates/` in the repo or `<APSIGNER_DATA>/library/templates/`; installed templates are encrypted under `identities/<identity>/keytypes/` with adjacent state records, new signer identities start with the Falcon whitelist v1 template installed, other templates must be imported/enabled, and removed keys/templates are archived under `identities/<identity>/deleted/`
 - See [USER_CONFIG.md](USER_CONFIG.md) for configuration reference

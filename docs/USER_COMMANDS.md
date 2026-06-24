@@ -753,7 +753,7 @@ generate ed25519
 generate falcon1024.v1
 generate whitelist.v1 recipients="ADDR1, ADDR2"                  # after installing/enabling from the KeyType Library
 generate falcon1024-whitelist.v1 recipients="@validators"        # address[] params resolve aliases and sets
-generate ed25519-whitelist.v1 recipients="@operators"            # default-installed Ed25519 composed template
+generate ed25519-whitelist.v1 recipients="@operators"            # after installing/enabling from the KeyType Library
 ```
 
 Run `keytypes` to see available key types and required generation parameters.

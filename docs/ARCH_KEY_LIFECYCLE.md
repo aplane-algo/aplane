@@ -67,7 +67,7 @@ This separation is deliberate:
 | Installed YAML template | `identities/<identity>/keytypes/<key_type>.template` | Encrypted generation source for that identity after reload. |
 | Deleted key archive | `identities/<identity>/deleted/keys/` | Removed key files; outside active scans. |
 | Deleted template archive | `identities/<identity>/deleted/keytypes/` | Removed template files; outside active scans. |
-| Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer identities install the bundled Falcon and Ed25519 whitelist v1 sources during initialization; other entries require identity-local import/enablement. |
+| Signer library template | `library/templates/<key_type>.yaml` | Install source only; not active by itself. New signer identities install the bundled Falcon whitelist v1 source during initialization; other entries require identity-local import/enablement. |
 | Compiled provider | Go provider registry and key type catalog | Binary capability; identity visibility may be default-enabled or opt-in. |
 | Backup payload | `.apb` inside managed backup archive | Encrypted backup unit containing a key and optional bundled template provenance. |
 
