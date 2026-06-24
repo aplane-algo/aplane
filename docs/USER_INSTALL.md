@@ -8,7 +8,7 @@ APlane supports three install modes:
 | **Client-only** | `./install.sh --client` | apshell only, connects to a remote signer. |
 | **Systemd** | `sudo ./install.sh --systemd [--role signer\|sentry] [operator-root] [--bindir <path>] [--no-enable] [--no-start]` | systemd service for production servers. |
 
-**Requirements:** Linux with systemd for `--systemd` mode. Auto-unlock requires systemd 250+ (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+, Fedora 36+). Local and `--client` modes work on both Linux and macOS.
+**Requirements:** Linux with systemd for `--systemd` mode. Auto-unlock requires systemd 250+ (Ubuntu 24.04+, Debian 12+, RHEL/Rocky 9+, Fedora 36+). Local and bootstrap `--client` modes work on both Linux and macOS. Windows is client-only via the `aplane-client_<version>_windows_amd64.zip` release archive.
 
 **Optional `--systemd` flags:**
 
@@ -363,7 +363,7 @@ is missing, unreadable, or older than the installer's supported upgrade floor.
 
 If you only need the transaction shell (apshell) and will connect to a remote signer, use `--client`. This installs apshell under `~/aplane/apclient/` by default — no root, no systemd, no signer binaries.
 
-**Works on both Linux and macOS.** The bootstrap script auto-detects the OS and downloads the correct tarball.
+**Works on both Linux and macOS.** The bootstrap script auto-detects the OS and downloads the correct tarball. Windows users should use the `aplane-client_<version>_windows_amd64.zip` release archive, which contains `bin\apshell.exe`, `config.yaml`, `.ssh\`, and `README.txt`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-install.sh | \

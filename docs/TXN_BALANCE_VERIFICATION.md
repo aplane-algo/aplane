@@ -49,15 +49,15 @@ exposes four context-aware entry points the apshell layer drives during send:
 
 - A single-payment preparer that builds the unsigned ALGO payment and runs the
   sender balance check. Implementation: `internal/engine/payment.go` (look for
-  `PreparePaymentWithContext`).
+  `PreparePayment`).
 - A single-transfer preparer that builds the unsigned ASA transfer and runs the
   sender opt-in, sender balance, and receiver opt-in checks. Implementation:
-  `internal/engine/asa.go` (`PrepareASATransferWithContext`).
+  `internal/engine/asa.go` (`PrepareASATransfer`).
 - A group validator that statically checks each payment in an atomic group
   against on-chain balances. Implementation: `internal/engine/atomic.go`
-  (`ValidateAtomicPaymentsWithContext`).
+  (`ValidateAtomicPayments`).
 - A matching group validator for atomic ASA transfers. Implementation:
-  `internal/engine/atomic.go` (`ValidateAtomicASATransfersWithContext`).
+  `internal/engine/atomic.go` (`ValidateAtomicASATransfers`).
 
 Each preparer returns a prepared transaction plus a `BalanceCheckResult`; the
 atomic validators return one `BalanceCheckResult` per entry. `BalanceCheckResult`
@@ -83,12 +83,12 @@ For ALGO transfers, the engine fetches the sender's account from algod, derives
 the effective transaction fee (default 1000 microAlgos, or the caller-supplied
 fee when flat-fee mode is requested), and checks that the sender's amount
 covers `send_amount + txn_fee`. Implementation: `internal/engine/payment.go`
-(`checkPaymentBalancesWithContext`).
+(`checkPaymentBalances`).
 
 For ASA transfers, the engine fetches the sender's account from algod, locates
 the holding for the requested asset ID, and checks both that the holding exists
 (opt-in) and that its balance covers the requested base-unit amount.
-Implementation: `internal/engine/asa.go` (`checkASABalancesWithContext`).
+Implementation: `internal/engine/asa.go` (`checkASABalances`).
 
 ### Minimum Balance Warning
 

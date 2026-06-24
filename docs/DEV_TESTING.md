@@ -24,9 +24,10 @@ The project uses a layered testing approach:
 
 1. **Unit Tests**: Fast, isolated tests for individual components (Go test framework)
 2. **API Contract Tests**: Golden fixture compatibility tests for signer API wire surfaces
-3. **Integration Tests**: End-to-end tests against an explicitly selected Algorand network profile, either public testnet or a running AlgoKit LocalNet (Go test framework)
-4. **Docker Install Smoke Tests**: Local and Systemd installer/uninstaller checks
-5. **REPL Tests**: Interactive command-line testing for user workflows (manual)
+3. **Architecture Tests**: Repository layering and signing-flow guard tests under `test/arch`
+4. **Integration Tests**: End-to-end tests against an explicitly selected Algorand network profile, either public testnet or a running AlgoKit LocalNet (Go test framework)
+5. **Docker Install Smoke Tests**: Local and Systemd installer/uninstaller checks
+6. **REPL Tests**: Interactive command-line testing for user workflows (manual)
 
 This combination ensures code correctness, API compatibility, installer behavior, real-world
 network compatibility, and user experience validation.
@@ -233,6 +234,9 @@ Integration tests validate:
 
 ```
 test/
+├── arch/
+│   ├── layering_test.go            # Import boundary and package layering guards
+│   └── signingflow_test.go         # Signing-flow terminology and metadata guards
 ├── setup-test-env.sh              # Creates self-contained test environment
 ├── integration/
 │   ├── harness/

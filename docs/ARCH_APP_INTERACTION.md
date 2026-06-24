@@ -165,7 +165,7 @@ Supported preparation inputs include:
 - fee / flat-fee control
 
 The engine entrypoint is:
-- `PrepareAppCallRawWithContext(ctx, params RawAppCallParams)`
+- `PrepareAppCallRaw(ctx, params RawAppCallParams)`
 
 The CLI surface is:
 - `app call raw <app-id> from <account> ...`
@@ -193,14 +193,14 @@ Supported deployment inputs include:
 - fee / flat-fee control
 
 The engine entrypoint is:
-- `PrepareAppDeployWithContext(ctx, params AppDeployParams)`
+- `PrepareAppDeploy(ctx, params AppDeployParams)`
 
 The CLI surface is:
 - `app deploy from <account> approval=<path>|approval-teal=<path>|approval-bin=<path> clear=<path>|clear-teal=<path>|clear-bin=<path> ...`
 
 After confirmed submission, the engine can also resolve the created
 application:
-- `LookupCreatedApplicationWithContext(ctx, txID)`
+- `LookupCreatedApplication(ctx, txID)`
 
 ### ABI-backed method calls
 
@@ -214,7 +214,7 @@ The ABI layer:
 - delegates to the raw preparation path
 
 The engine entrypoint is:
-- `PrepareAppCallMethodWithContext(ctx, params MethodAppCallParams)`
+- `PrepareAppCallMethod(ctx, params MethodAppCallParams)`
 
 The CLI surface is:
 - `app call <app-id> <method> --abi <path> from <account> --arg ...`
@@ -262,7 +262,7 @@ The engine exposes:
 - `PrepareGroup(preps ...*TransactionPrepResult)`
 - `PreparePaymentAppGroupWithContext(ctx, prepper, payment, app)`
 - `PreparePaymentMethodGroupWithContext(ctx, prepper, payment, app)`
-- `ExecutePreparedGroupWithContext(ctx, group, wait)`
+- `ExecutePreparedGroup(ctx, group, wait)`
 
 The first concrete grouped dApp pattern is companion payment plus app call.
 

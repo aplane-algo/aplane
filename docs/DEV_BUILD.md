@@ -144,6 +144,7 @@ make bin-amd64
 make bin-arm64
 make bin-darwin-amd64
 make bin-darwin-arm64
+make bin-windows-amd64   # client-only apshell.exe
 
 # Build bundled external plugin payloads
 make bundled-plugins
@@ -166,6 +167,10 @@ than the token files then `goal` must be available to recompile them.
 Most developer helpers, such as `compile_teal` and `configdoc`, are built or
 run separately when needed. `applugin-checksum` is built by `make all` because
 the bundled plugin checksum target depends on it.
+
+`make bin-windows-amd64` builds only the client-side `apshell.exe`; Windows
+does not ship signer/admin/runtime binaries. `make release-local` includes
+`aplane-client_<version>_windows_amd64.zip` when `zip` is available.
 
 `make bundled-plugins` builds installable bundled plugin payloads from
 `plugins/` (currently the host `algokit-localnet` binary) for local installs

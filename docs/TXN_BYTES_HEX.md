@@ -114,8 +114,9 @@ This is the same format that Ed25519 transactions sign, ensuring consistency.
 Sign-mode request construction encodes the unsigned transaction with the `TX`
 prefix via `txnutil.EncodeWithPrefix`, hex-encodes the result into
 `TxnBytesHex`, and attaches `AuthAddress`, `TxnSender`, and any generic
-LogicSig args. See `internal/signing/multi.go` and
-`internal/engine/plugin_signing.go` for the call sites.
+LogicSig args. See `internal/clientsign/submit.go` for the standard
+sign-and-submit path and `internal/engine/plugin_signing.go` for
+plugin/mixed-party call sites.
 
 ### In Signer (server side)
 
@@ -186,11 +187,11 @@ group-ID assignment.
 ## Related Files
 
 - `pkg/signerapi/types.go` - SignRequest type definition
-- `internal/signing/multi.go` - client-side request construction
+- `internal/clientsign/submit.go` - client-side request construction
 - `internal/engine/plugin_signing.go` - plugin/mixed-party request construction
 - `internal/txnutil/txn.go` - TX-prefixed transaction encoding helpers
 - `internal/signerapp/signing/planner.go` - request categorization and transaction decoding
 - `internal/signerapp/signing/execution.go` - key-type-specific message selection and assembly
 - `internal/signerapp/signing/approval.go` - policy and approval description flow
-- `lsig/falcon1024/signing/provider.go` - Falcon signing provider
-- `internal/signing/ed25519/provider.go` - Ed25519 signing provider
+- `lsig/falcon1024/signerops/ops.go` - Falcon signer-side operations
+- `internal/signing/ed25519.go` - Ed25519 signing provider

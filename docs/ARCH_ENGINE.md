@@ -36,7 +36,7 @@ Shell ownership is layered:
 - `internal/cmdspec` owns shared parsing and resolution helpers used by those
   command parsers
 
-However, some convenience methods in the Engine do accept aliases and resolve them internally (e.g., `GetBalanceWithContext()`, `BuildSigningContextWithContext()`). The Engine also owns alias, set, and signer caches. The boundary is partially clean: transaction preparation is alias-agnostic, but query and signing-context methods are not.
+However, some convenience methods in the Engine do accept aliases and resolve them internally (e.g., `GetBalance()`, `BuildSigningContext()`). The Engine also owns alias, set, and signer caches. The boundary is partially clean: transaction preparation is alias-agnostic, but query and signing-context methods are not.
 
 This separation ensures:
 1. **Testability**: Engine logic can be unit tested without UI dependencies
@@ -238,7 +238,7 @@ var (
 These allow callers to handle specific error conditions:
 
 ```go
-result, err := engine.SignAndSubmitWithContext(ctx, prep, true)
+result, err := engine.SignAndSubmit(ctx, prep, true)
 if errors.Is(err, engine.ErrNotConnected) {
     fmt.Println("Please connect to Signer first")
     return
@@ -419,7 +419,7 @@ Transaction operations follow a two-phase pattern:
 
 ```go
 // Phase 1: Prepare transaction (validate, build, check balances)
-prep, balanceCheck, err := engine.PreparePaymentWithContext(ctx, SendPaymentParams{
+prep, balanceCheck, err := engine.PreparePayment(ctx, SendPaymentParams{
     From:   "ABC123...",  // Pre-resolved address
     To:     "DEF456...",  // Pre-resolved address
     Amount: 1000000,      // 1 ALGO in microAlgos
@@ -431,33 +431,33 @@ if !balanceCheck.SufficientFunds {
 }
 
 // Phase 2: Sign and submit
-result, err := engine.SignAndSubmitWithContext(ctx, prep, true) // wait for confirmation
+result, err := engine.SignAndSubmit(ctx, prep, true) // wait for confirmation
 ```
 
 ### Available Transaction Methods
 
 | Method | Description |
 |--------|-------------|
-| `PreparePaymentWithContext` | Prepare ALGO payment |
-| `PrepareASATransferWithContext` | Prepare ASA transfer |
-| `PrepareOptInWithContext` | Prepare ASA opt-in |
-| `PrepareOptOutWithContext` | Prepare ASA opt-out with balance handling |
-| `PrepareKeyRegWithContext` | Prepare key registration (online/offline) |
-| `PrepareRekeyWithContext` | Prepare rekey transaction |
-| `PrepareCloseWithContext` | Prepare account close (with validation) |
+| `PreparePayment` | Prepare ALGO payment |
+| `PrepareASATransfer` | Prepare ASA transfer |
+| `PrepareOptIn` | Prepare ASA opt-in |
+| `PrepareOptOut` | Prepare ASA opt-out with balance handling |
+| `PrepareKeyReg` | Prepare key registration (online/offline) |
+| `PrepareRekey` | Prepare rekey transaction |
+| `PrepareClose` | Prepare account close (with validation) |
 | `PrepareAtomicPayments` | Prepare atomic ALGO group |
 | `PrepareAtomicASATransfers` | Prepare atomic ASA group |
-| `PrepareAppDeployWithContext` | Prepare app creation |
-| `PrepareAppCallRawWithContext` | Prepare raw app call |
-| `PrepareAppCallMethodWithContext` | Prepare ABI-backed app call |
+| `PrepareAppDeploy` | Prepare app creation |
+| `PrepareAppCallRaw` | Prepare raw app call |
+| `PrepareAppCallMethod` | Prepare ABI-backed app call |
 | `PrepareGroup` | Assemble prepared transactions into a group |
-| `ExecutePreparedGroupWithContext` | Sign and submit a prepared group |
-| `SignAndSubmitWithContext` | Sign and submit single transaction |
+| `ExecutePreparedGroup` | Sign and submit a prepared group |
+| `SignAndSubmit` | Sign and submit single transaction |
 | `SignAndSubmitAtomic` | Sign and submit atomic group |
-| `SignAndSubmitTransactionsWithContext` | Sign pre-built transactions |
+| `SignAndSubmitTransactions` | Sign pre-built transactions |
 | `ValidateAtomicPayments` | Validate atomic ALGO payments |
 | `ValidateAtomicASATransfers` | Validate atomic ASA transfers |
-| `WaitForConfirmationWithContext` | Wait for transaction confirmation |
+| `WaitForConfirmation` | Wait for transaction confirmation |
 
 ## Signing API
 
@@ -474,11 +474,11 @@ type SigningContext struct {
     IsLSig      bool   // true for LSig-based accounts (DSA or generic)
 }
 
-// BuildSigningContextWithContext handles:
+// BuildSigningContext handles:
 // 1. Alias resolution (accepts address or alias)
 // 2. Auth address lookup (for rekeyed accounts)
 // 3. Key type and LSig metadata retrieval
-signingCtx, err := engine.BuildSigningContextWithContext(ctx, "ABC123...")
+signingCtx, err := engine.BuildSigningContext(ctx, "ABC123...")
 ```
 
 ### Auth and Signing Helpers
@@ -606,16 +606,16 @@ The algod HTTP client uses a 30-second `ResponseHeaderTimeout` — the maximum t
 
 ```go
 // Get balance
-result, err := engine.GetBalanceWithContext(ctx, address)
+result, err := engine.GetBalance(ctx, address)
 
 // Get account info (all known accounts)
 accounts, err := engine.ListAccounts()
 
 // Get participation status
-result, err := engine.GetParticipationStatusWithContext(ctx, address)
+result, err := engine.GetParticipationStatus(ctx, address)
 
 // Check incentive eligibility
-eligible, err := engine.GetIncentiveEligibilityWithContext(ctx, address)
+eligible, err := engine.GetIncentiveEligibility(ctx, address)
 ```
 
 ## Thread Safety
@@ -645,20 +645,20 @@ func (e *Engine) IsConnected() bool {
 
 | Command | Engine Methods Used |
 |---------|---------------------|
-| send | `PreparePaymentWithContext`, `PrepareASATransferWithContext`, `SignAndSubmitWithContext` |
-| optin | `PrepareOptInWithContext`, `SignAndSubmitWithContext` |
-| optout | `PrepareOptOutWithContext`, `SignAndSubmitWithContext` |
-| rekey/unrekey | `PrepareRekeyWithContext`, `SignAndSubmitWithContext` |
-| close | `PrepareCloseWithContext`, `SignAndSubmitWithContext` |
-| sweep | `PreparePaymentWithContext`, `PrepareASATransferWithContext`, `SignAndSubmitWithContext` |
-| sign | `SignAndSubmitTransactionsWithContext` |
-| keyreg | `PrepareKeyRegWithContext`, `SignAndSubmitWithContext` |
-| app | `PrepareAppDeployWithContext`, `PrepareAppCallRawWithContext`, `PrepareAppCallMethodWithContext`, `ExecutePreparedGroupWithContext` |
+| send | `PreparePayment`, `PrepareASATransfer`, `SignAndSubmit` |
+| optin | `PrepareOptIn`, `SignAndSubmit` |
+| optout | `PrepareOptOut`, `SignAndSubmit` |
+| rekey/unrekey | `PrepareRekey`, `SignAndSubmit` |
+| close | `PrepareClose`, `SignAndSubmit` |
+| sweep | `PreparePayment`, `PrepareASATransfer`, `SignAndSubmit` |
+| sign | `SignAndSubmitTransactions` |
+| keyreg | `PrepareKeyReg`, `SignAndSubmit` |
+| app | `PrepareAppDeploy`, `PrepareAppCallRaw`, `PrepareAppCallMethod`, `ExecutePreparedGroup` |
 | alias | ListAliases, GetAlias, AddAlias, RemoveAlias |
 | sets | ListSets, GetSet, AddSet, RemoveSet, AddToSet, RemoveFromSet |
-| balance | `GetBalanceWithContext`, `GetASAInfoWithContext` |
+| balance | `GetBalance`, `GetASAInfoWithContext` |
 | accounts | `ListAccounts` |
-| participation | `GetParticipationStatusWithContext` |
+| participation | `GetParticipationStatus` |
 | status | `GetStatus` |
 | connect | `ConnectWithTunnel`, `RequestToken`, `Disconnect` |
 | rekey refresh | `RefreshAuthCacheWithContext`, `RefreshAuthAddressWithContext` |
