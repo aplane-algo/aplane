@@ -95,22 +95,22 @@ func TestActivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 	}
 }
 
-func TestActivateKeyTypeCanonicalizesDefaultPublisherAlias(t *testing.T) {
+func TestActivateKeyTypeDoesNotInferPublisher(t *testing.T) {
 	svc, ir, _ := setupServiceWithReloadCounter(t)
 
 	result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
 		KeyType: "falcon1024_ed25519.v1",
 	})
-	if !result.Success {
-		t.Fatalf("ActivateKeyType(alias) failed: code=%q error=%q", result.Code, result.Error)
+	if result.Success {
+		t.Fatal("ActivateKeyType(unqualified) succeeded, want failure")
 	}
-	if result.KeyType != "aplane.falcon1024_ed25519.v1" {
-		t.Fatalf("KeyType = %q, want canonical aplane.falcon1024_ed25519.v1", result.KeyType)
+	if result.KeyType != "falcon1024_ed25519.v1" {
+		t.Fatalf("KeyType = %q, want falcon1024_ed25519.v1", result.KeyType)
 	}
 	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.falcon1024_ed25519.v1"); err != nil {
 		t.Fatalf("Get after Activate: %v", err)
-	} else if !ok {
-		t.Fatal("canonical state record missing after alias activation")
+	} else if ok {
+		t.Fatal("canonical state record was created for unqualified key type")
 	}
 }
 
@@ -144,7 +144,7 @@ func TestDeactivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 	}
 }
 
-func TestDeactivateKeyTypeCanonicalizesDefaultPublisherAlias(t *testing.T) {
+func TestDeactivateKeyTypeDoesNotInferPublisher(t *testing.T) {
 	svc, ir, _ := setupServiceWithReloadCounter(t)
 
 	if result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
@@ -156,15 +156,15 @@ func TestDeactivateKeyTypeCanonicalizesDefaultPublisherAlias(t *testing.T) {
 	result := svc.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{
 		KeyType: "falcon1024_ed25519.v1",
 	})
-	if !result.Success {
-		t.Fatalf("DeactivateKeyType(alias) failed: code=%q error=%q", result.Code, result.Error)
+	if result.KeyType != "falcon1024_ed25519.v1" {
+		t.Fatalf("KeyType = %q, want falcon1024_ed25519.v1", result.KeyType)
 	}
-	if result.KeyType != "aplane.falcon1024_ed25519.v1" {
-		t.Fatalf("KeyType = %q, want canonical aplane.falcon1024_ed25519.v1", result.KeyType)
+	if result.Removed {
+		t.Fatal("DeactivateKeyType(unqualified).Removed = true, want false")
 	}
 	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.falcon1024_ed25519.v1"); err != nil {
 		t.Fatalf("Get after Deactivate: %v", err)
-	} else if ok {
-		t.Fatal("canonical state record still present after alias deactivation")
+	} else if !ok {
+		t.Fatal("canonical state record was removed by unqualified deactivation")
 	}
 }

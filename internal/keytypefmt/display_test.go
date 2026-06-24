@@ -12,14 +12,14 @@ func TestDisplay(t *testing.T) {
 		want    string
 	}{
 		{name: "ed25519", keyType: "ed25519", want: "ed25519"},
-		{name: "aplane falcon elided", keyType: "aplane.falcon1024.v1", want: "falcon1024.v1"},
-		{name: "aplane template elided", keyType: "aplane.falcon1024-whitelist.v1", want: "falcon1024-whitelist.v1"},
+		{name: "aplane falcon unchanged", keyType: "aplane.falcon1024.v1", want: "aplane.falcon1024.v1"},
+		{name: "aplane template unchanged", keyType: "aplane.falcon1024-whitelist.v1", want: "aplane.falcon1024-whitelist.v1"},
 		{name: "other publisher unchanged", keyType: "custom.whitelist.v2", want: "custom.whitelist.v2"},
 		{name: "filename unchanged", keyType: "aplane.whitelist.v1.yaml", want: "aplane.whitelist.v1.yaml"},
 		{name: "extra family dot unchanged", keyType: "aplane.white.list.v1", want: "aplane.white.list.v1"},
 		{name: "unsafe family unchanged", keyType: "aplane.white list.v1", want: "aplane.white list.v1"},
 		{name: "legacy unchanged", keyType: "whitelist-v1", want: "whitelist-v1"},
-		{name: "already elided unchanged", keyType: "whitelist.v1", want: "whitelist.v1"},
+		{name: "unqualified versioned unchanged", keyType: "whitelist.v1", want: "whitelist.v1"},
 		{name: "invalid version unchanged", keyType: "aplane.whitelist.version1", want: "aplane.whitelist.version1"},
 	}
 
@@ -39,10 +39,10 @@ func TestCanonicalize(t *testing.T) {
 		want    string
 	}{
 		{name: "ed25519 unchanged", keyType: "ed25519", want: "ed25519"},
-		{name: "elided falcon qualified", keyType: "falcon1024.v1", want: "aplane.falcon1024.v1"},
-		{name: "elided template qualified", keyType: "falcon1024-whitelist.v1", want: "aplane.falcon1024-whitelist.v1"},
-		{name: "bare elided qualified", keyType: "whitelist.v1", want: "aplane.whitelist.v1"},
-		{name: "trims and lowers elided", keyType: " Whitelist.V1 ", want: "aplane.whitelist.v1"},
+		{name: "unqualified falcon unchanged", keyType: "falcon1024.v1", want: "falcon1024.v1"},
+		{name: "unqualified template unchanged", keyType: "falcon1024-whitelist.v1", want: "falcon1024-whitelist.v1"},
+		{name: "bare unqualified unchanged", keyType: "whitelist.v1", want: "whitelist.v1"},
+		{name: "trims and lowers unqualified", keyType: " Whitelist.V1 ", want: "whitelist.v1"},
 		{name: "already aplane idempotent", keyType: "aplane.falcon1024.v1", want: "aplane.falcon1024.v1"},
 		{name: "trims and lowers canonical", keyType: " APLANE.FALCON1024.V1 ", want: "aplane.falcon1024.v1"},
 		{name: "other publisher unchanged", keyType: "custom.whitelist.v2", want: "custom.whitelist.v2"},
@@ -62,8 +62,6 @@ func TestCanonicalize(t *testing.T) {
 	}
 }
 
-// Canonicalize is the inverse of Display for default-publisher key types:
-// resolving a displayed (elided) form must recover the canonical form.
 func TestDisplayCanonicalizeRoundTrip(t *testing.T) {
 	canonical := []string{
 		"aplane.falcon1024.v1",

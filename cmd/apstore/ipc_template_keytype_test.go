@@ -104,11 +104,11 @@ func TestCmdTemplateShowUsesIPC(t *testing.T) {
 	}
 }
 
-func TestCmdTemplateShowCanonicalizesDefaultPublisherAlias(t *testing.T) {
+func TestCmdTemplateShowDoesNotInferPublisher(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		showTemplateResult: protocol.ShowInstalledTemplateResultMessage{
 			Success:      true,
-			KeyType:      "aplane.whitelist.v1",
+			KeyType:      "whitelist.v1",
 			TemplateType: "generic",
 			TemplateYAML: protocol.SensitiveBytes("schema_version: 1\n"),
 		},
@@ -116,10 +116,10 @@ func TestCmdTemplateShowCanonicalizesDefaultPublisherAlias(t *testing.T) {
 	withFakeApstoreAdminClient(t, fake)
 
 	if err := cmdTemplate([]string{"show", "whitelist.v1", "--show-sensitive-template"}); err != nil {
-		t.Fatalf("cmdTemplate(show alias) error = %v", err)
+		t.Fatalf("cmdTemplate(show) error = %v", err)
 	}
-	if fake.showTemplateRequest.KeyType != "aplane.whitelist.v1" {
-		t.Fatalf("show key type = %q, want aplane.whitelist.v1", fake.showTemplateRequest.KeyType)
+	if fake.showTemplateRequest.KeyType != "whitelist.v1" {
+		t.Fatalf("show key type = %q, want whitelist.v1", fake.showTemplateRequest.KeyType)
 	}
 }
 
@@ -228,11 +228,11 @@ func TestCmdTemplateRemoveUsesIPC(t *testing.T) {
 	}
 }
 
-func TestCmdTemplateRemoveCanonicalizesDefaultPublisherAlias(t *testing.T) {
+func TestCmdTemplateRemoveDoesNotInferPublisher(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		removeTemplateResult: protocol.RemoveInstalledTemplateResultMessage{
 			Success: true,
-			KeyType: "aplane.whitelist.v1",
+			KeyType: "whitelist.v1",
 			Removed: true,
 		},
 	}
@@ -241,10 +241,10 @@ func TestCmdTemplateRemoveCanonicalizesDefaultPublisherAlias(t *testing.T) {
 	if err := withTestStdin("y\n", func() error {
 		return cmdTemplate([]string{"remove", "whitelist.v1"})
 	}); err != nil {
-		t.Fatalf("cmdTemplate(remove alias) error = %v", err)
+		t.Fatalf("cmdTemplate(remove) error = %v", err)
 	}
-	if fake.removeTemplateRequest.KeyType != "aplane.whitelist.v1" {
-		t.Fatalf("remove key type = %q, want aplane.whitelist.v1", fake.removeTemplateRequest.KeyType)
+	if fake.removeTemplateRequest.KeyType != "whitelist.v1" {
+		t.Fatalf("remove key type = %q, want whitelist.v1", fake.removeTemplateRequest.KeyType)
 	}
 }
 
@@ -306,20 +306,20 @@ func TestCmdKeyTypeActivateUsesIPC(t *testing.T) {
 	}
 }
 
-func TestCmdKeyTypeActivateCanonicalizesDefaultPublisherAlias(t *testing.T) {
+func TestCmdKeyTypeActivateDoesNotInferPublisher(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		activateResult: protocol.ActivateKeyTypeResultMessage{
 			Success: true,
-			KeyType: "aplane.ecdsak1.v1",
+			KeyType: "ecdsak1.v1",
 		},
 	}
 	withFakeApstoreAdminClient(t, fake)
 
 	if err := cmdKeyType([]string{"enable", "ecdsak1.v1"}); err != nil {
-		t.Fatalf("cmdKeyType(enable alias) error = %v", err)
+		t.Fatalf("cmdKeyType(enable) error = %v", err)
 	}
-	if fake.activateRequest.KeyType != "aplane.ecdsak1.v1" {
-		t.Fatalf("activate key type = %q, want aplane.ecdsak1.v1", fake.activateRequest.KeyType)
+	if fake.activateRequest.KeyType != "ecdsak1.v1" {
+		t.Fatalf("activate key type = %q, want ecdsak1.v1", fake.activateRequest.KeyType)
 	}
 }
 
@@ -349,11 +349,11 @@ func TestCmdKeyTypeDeactivateUsesIPC(t *testing.T) {
 	}
 }
 
-func TestCmdKeyTypeDeactivateCanonicalizesDefaultPublisherAlias(t *testing.T) {
+func TestCmdKeyTypeDeactivateDoesNotInferPublisher(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		deactivateResult: protocol.DeactivateKeyTypeResultMessage{
 			Success: true,
-			KeyType: "aplane.ecdsak1.v1",
+			KeyType: "ecdsak1.v1",
 			Removed: true,
 		},
 	}
@@ -362,10 +362,10 @@ func TestCmdKeyTypeDeactivateCanonicalizesDefaultPublisherAlias(t *testing.T) {
 	if err := withTestStdin("y\n", func() error {
 		return cmdKeyType([]string{"disable", "ecdsak1.v1"})
 	}); err != nil {
-		t.Fatalf("cmdKeyType(disable alias) error = %v", err)
+		t.Fatalf("cmdKeyType(disable) error = %v", err)
 	}
-	if fake.deactivateRequest.KeyType != "aplane.ecdsak1.v1" {
-		t.Fatalf("deactivate key type = %q, want aplane.ecdsak1.v1", fake.deactivateRequest.KeyType)
+	if fake.deactivateRequest.KeyType != "ecdsak1.v1" {
+		t.Fatalf("deactivate key type = %q, want ecdsak1.v1", fake.deactivateRequest.KeyType)
 	}
 }
 

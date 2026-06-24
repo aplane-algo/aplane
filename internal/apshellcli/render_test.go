@@ -46,7 +46,7 @@ func TestKeysResultRenderTextOmitsCounterAndIndent(t *testing.T) {
 			t.Fatalf("RenderText() line has leading indent: %q\nfull output:\n%s", line, got)
 		}
 	}
-	if !strings.Contains(got, "ADDRONE [falcon1024.v1]\n") ||
+	if !strings.Contains(got, "ADDRONE [aplane.falcon1024.v1]\n") ||
 		!strings.Contains(got, "ADDRTWO [ed25519]\n") ||
 		!strings.Contains(got, "ADDRTHREE [mytemplate-v1] [template provenance]\n") {
 		t.Fatalf("RenderText() missing key rows:\n%s", got)

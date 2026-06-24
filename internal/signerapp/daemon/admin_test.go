@@ -366,7 +366,7 @@ func TestAdminGenerateFalcon1024(t *testing.T) {
 	}
 }
 
-func TestAdminGenerateCanonicalizesDefaultPublisherAlias(t *testing.T) {
+func TestAdminGenerateDoesNotInferPublisher(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
@@ -381,17 +381,14 @@ func TestAdminGenerateCanonicalizesDefaultPublisherAlias(t *testing.T) {
 	r := requestWithIdentity(http.MethodPost, "/admin/generate", reqBody)
 	server.handleAdminGenerate(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	if w.Code == http.StatusOK {
+		t.Fatalf("Expected failure for unqualified key type, got 200: %s", w.Body.String())
 	}
 
 	var resp AdminGenerateResponse
 	decodeResponse(t, w, &resp)
-	if resp.Error != "" {
-		t.Fatalf("Unexpected error: %s", resp.Error)
-	}
-	if resp.KeyType != "aplane.falcon1024.v1" {
-		t.Errorf("Expected canonical key_type aplane.falcon1024.v1, got %s", resp.KeyType)
+	if resp.Error == "" {
+		t.Fatal("Expected error for unqualified key type")
 	}
 }
 

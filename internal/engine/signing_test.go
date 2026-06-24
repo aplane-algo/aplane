@@ -194,7 +194,7 @@ func TestDisplayKeyType(t *testing.T) {
 		want string
 	}{
 		{"ed25519", SigningContext{KeyType: "ed25519", IsLSig: false}, "Ed25519 key"},
-		{"falcon lsig", SigningContext{KeyType: "aplane.falcon1024.v1", IsLSig: true}, "falcon1024.v1 lsig"},
+		{"falcon lsig", SigningContext{KeyType: "aplane.falcon1024.v1", IsLSig: true}, "aplane.falcon1024.v1 lsig"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

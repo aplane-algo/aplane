@@ -750,15 +750,14 @@ generate <key_type> [param=value ...]
 **Examples:**
 ```
 generate ed25519
-generate falcon1024.v1
-generate whitelist.v1 recipients="ADDR1, ADDR2"                  # after installing/enabling from the KeyType Library
-generate falcon1024-whitelist.v1 recipients="@validators"        # address[] params resolve aliases and sets
-generate ed25519-whitelist.v1 recipients="@operators"            # after installing/enabling from the KeyType Library
+generate aplane.falcon1024.v1
+generate aplane.whitelist.v1 recipients="ADDR1, ADDR2"                  # after installing/enabling from the KeyType Library
+generate aplane.falcon1024-whitelist.v1 recipients="@validators"        # address[] params resolve aliases and sets
+generate aplane.ed25519-whitelist.v1 recipients="@operators"            # after installing/enabling from the KeyType Library
 ```
 
 Run `keytypes` to see available key types and required generation parameters.
-APlane key types may be entered with the default-publisher shorthand shown
-above; third-party key types keep their publisher prefix.
+Use the full key type shown by `keytypes`.
 For installing or activating optional key types, see
 [USER_KEYTYPES.md](USER_KEYTYPES.md).
 

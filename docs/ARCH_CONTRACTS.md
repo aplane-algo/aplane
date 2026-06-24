@@ -81,10 +81,8 @@ Canonical forms:
 YAML templates declare `publisher`, `family`, and integer `version`; the
 computed key type is `publisher.family.v<version>`. Clients and tools must send
 and persist the full canonical identifier in `key_type` fields. Human-facing
-CLI/TUI input may additionally accept the default-publisher shorthand
-`family.vN`, which resolves to `aplane.family.vN`; this shorthand is never
-persisted or emitted in wire/storage fields. Compact human display may elide the
-default `aplane` publisher, but third-party publishers stay explicit.
+CLI/TUI input and display use the same canonical identifier; publisher
+namespaces are not inferred or elided.
 
 Terminology:
 

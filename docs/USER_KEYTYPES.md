@@ -62,8 +62,8 @@ apstore -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-te
 apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.yaml
 apstore -d $APSIGNER_DATA template import library/templates/aplane.ed25519-whitelist.v1.yaml
 apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
-apstore -d $APSIGNER_DATA keytype enable falcon1024_ed25519.v1
-apstore -d $APSIGNER_DATA keytype disable falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype enable aplane.falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype disable aplane.falcon1024_ed25519.v1
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -79,10 +79,10 @@ generate <key_type> [param=value ...]
 ```
 
 `keytypes` lists only key types currently exposed by the connected signer.
-APlane-published key types may be displayed and entered without the leading
-`aplane.` publisher, for example `timed-whitelist.v1`; third-party publishers remain
-explicit, for example `example.my_escrow.v1`. Files, IPC/HTTP responses, and
-JSON fields still use the canonical `publisher.family.vN` identifier.
+Use the full canonical key type shown by `keytypes`, for example
+`aplane.timed-whitelist.v1` or `example.my_escrow.v1`. Files, IPC/HTTP
+responses, and JSON fields use the same canonical `publisher.family.vN`
+identifier.
 
 ## Compiled Providers
 
@@ -93,7 +93,7 @@ enablement.
 Enable a library-visible compiled provider:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype enable falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype enable aplane.falcon1024_ed25519.v1
 ```
 
 Enabling writes or updates:
@@ -117,7 +117,7 @@ with:
 Disable a library-visible compiled provider:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype disable falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype disable aplane.falcon1024_ed25519.v1
 ```
 
 Disabling removes the identity enablement record after checking that no
@@ -226,7 +226,7 @@ change.
 Refresh the enablement record:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype enable falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype enable aplane.falcon1024_ed25519.v1
 ```
 
 This updates the state-record fingerprint. It does not rewrite existing key
@@ -274,16 +274,9 @@ aplane.falcon1024.v1
 aplane.whitelist.v1
 ```
 
-In human command input and compact UI display, APlane-published key types may
-use the default-publisher shorthand:
-
-```text
-falcon1024.v1
-whitelist.v1
-```
-
-This shorthand is only an alias. On disk, in backups, in policy files, in
-IPC/HTTP JSON, and in SDK-facing fields, the key type remains canonical.
+Use the full canonical key type in command input. On disk, in backups, in
+policy files, in IPC/HTTP JSON, in SDK-facing fields, and in UI display, the key
+type remains canonical.
 
 Existing key files keep their own stored LogicSig bytecode, off-curve salt
 counter, and signing metadata. Enabling, disabling, importing, or removing a

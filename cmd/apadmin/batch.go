@@ -427,7 +427,7 @@ Environment variables:
 Examples:
   apadmin --test list
   apadmin --test --remote --client-data ~/aplane/apclient list
-  apadmin --test generate falcon1024.v1
+  apadmin --test generate aplane.falcon1024.v1
   apadmin --test import ed25519 word1 word2 ... word25
 `)
 }
