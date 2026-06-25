@@ -85,8 +85,8 @@ func TestComposedFalconHashlockIdentity(t *testing.T) {
 		t.Errorf("KeyType() = %q, want %q", p.KeyType(), "aplane.falcon1024-hashlock.v1")
 	}
 
-	if p.Family() != family.Name {
-		t.Errorf("Family() = %q, want %q", p.Family(), family.Name)
+	if p.RoutingFamily() != family.Name {
+		t.Errorf("RoutingFamily() = %q, want %q", p.RoutingFamily(), family.Name)
 	}
 
 	if p.Version() != 1 {

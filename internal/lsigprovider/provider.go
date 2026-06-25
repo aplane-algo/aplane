@@ -21,9 +21,9 @@ import "context"
 // This provides identity, display, and parameter metadata for any LSig type.
 type LSigProvider interface {
 	// Identity
-	KeyType() string // Versioned identifier (e.g., "aplane.timed-whitelist.v1", "aplane.falcon1024.v1")
-	Family() string  // Family name without version (e.g., "timed-whitelist", "falcon1024")
-	Version() int    // Version number (e.g., 1)
+	KeyType() string       // Versioned identifier (e.g., "aplane.timed-whitelist.v1", "aplane.falcon1024.v1")
+	RoutingFamily() string // Routing family / registry key (e.g., "aplane.falcon1024"); see docs/ARCH_KEYTYPE_AXES.md
+	Version() int          // Version number (e.g., 1)
 
 	// Category returns the LSig category.
 	// Use the constants CategoryGenericLsig ("generic_lsig") or CategoryDSALsig ("dsa_lsig").

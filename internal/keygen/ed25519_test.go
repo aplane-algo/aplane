@@ -41,8 +41,8 @@ func setupTestKeystore(t *testing.T) (utilpaths.Paths, func()) {
 // TestEd25519GeneratorKeyType verifies the key type identifier
 func TestEd25519GeneratorKeyType(t *testing.T) {
 	gen := &Ed25519Generator{}
-	if gen.Family() != "ed25519" {
-		t.Errorf("KeyType() = %q, want %q", gen.Family(), "ed25519")
+	if gen.RoutingFamily() != "ed25519" {
+		t.Errorf("KeyType() = %q, want %q", gen.RoutingFamily(), "ed25519")
 	}
 }
 

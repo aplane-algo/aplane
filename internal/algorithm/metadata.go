@@ -24,9 +24,9 @@ import (
 
 // SignatureMetadata provides metadata about a signature algorithm
 type SignatureMetadata interface {
-	// Family returns the algorithm family name (e.g., "falcon1024", "ed25519")
+	// RoutingFamily returns the algorithm family name (e.g., "falcon1024", "ed25519")
 	// This is distinct from LogicSigDSA.KeyType() which returns versioned types like "aplane.falcon1024.v1"
-	Family() string
+	RoutingFamily() string
 
 	// CryptoSignatureSize returns the maximum cryptographic signature size in bytes
 	CryptoSignatureSize() int
@@ -75,7 +75,7 @@ type basicMetadata struct {
 	displayColor           string
 }
 
-func (m *basicMetadata) Family() string               { return m.family }
+func (m *basicMetadata) RoutingFamily() string        { return m.family }
 func (m *basicMetadata) CryptoSignatureSize() int     { return m.signatureSize }
 func (m *basicMetadata) MnemonicWordCount() int       { return m.mnemonicWordCount }
 func (m *basicMetadata) SupportsMnemonicImport() bool { return m.supportsMnemonicImport }
@@ -92,7 +92,7 @@ var metadataRegistry = xregistry.NewStringRegistry[SignatureMetadata]()
 // RegisterMetadata registers metadata for a signature algorithm family
 // This is idempotent - duplicate registrations are silently ignored
 func RegisterMetadata(metadata SignatureMetadata) {
-	metadataRegistry.Set(metadata.Family(), metadata)
+	metadataRegistry.Set(metadata.RoutingFamily(), metadata)
 }
 
 // GetMetadata retrieves metadata for a key type, resolving via the key type's

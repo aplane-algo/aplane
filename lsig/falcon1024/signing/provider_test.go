@@ -25,7 +25,7 @@ type testFalcon1024V1 struct{}
 
 // LogicSigDSA interface
 func (f *testFalcon1024V1) KeyType() string          { return "aplane.falcon1024.v1" }
-func (f *testFalcon1024V1) Family() string           { return "falcon1024" }
+func (f *testFalcon1024V1) RoutingFamily() string    { return "falcon1024" }
 func (f *testFalcon1024V1) Version() int             { return 1 }
 func (f *testFalcon1024V1) CryptoSignatureSize() int { return 1280 }
 func (f *testFalcon1024V1) MnemonicScheme() string   { return "bip39" }
@@ -110,8 +110,8 @@ func newTestProvider() *signing.LogicSigProvider {
 
 func TestFalconProvider_Family(t *testing.T) {
 	p := newTestProvider()
-	if p.Family() != "falcon1024" {
-		t.Errorf("Family() = %v, want falcon1024", p.Family())
+	if p.RoutingFamily() != "falcon1024" {
+		t.Errorf("RoutingFamily() = %v, want falcon1024", p.RoutingFamily())
 	}
 }
 
@@ -354,7 +354,7 @@ func TestFalconProviderRegistration(t *testing.T) {
 		t.Fatal("Falcon signing provider not registered")
 	}
 
-	if provider.Family() != "falcon1024" {
-		t.Errorf("Registered provider Family() = %v, want falcon1024", provider.Family())
+	if provider.RoutingFamily() != "falcon1024" {
+		t.Errorf("Registered provider RoutingFamily() = %v, want falcon1024", provider.RoutingFamily())
 	}
 }

@@ -348,7 +348,7 @@ func (p *Provider) CompatibilityFingerprint() string {
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
 		KeyType:     p.KeyType(),
 		BaseKeyType: p.BaseKeyType(),
-		Family:      p.Family(),
+		Family:      p.RoutingFamily(),
 		Version:     p.Version(),
 		SaltStyle:   string(lsigsalt.StylePushbytes),
 		MerkleDepth: merklewhitelist.Depth,

@@ -183,7 +183,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 
 		meta, err := algorithm.GetMetadata(keyType)
 		if err == nil {
-			info.Family = meta.Family()
+			info.Family = meta.RoutingFamily()
 			info.RequiresLogicSig = meta.RequiresLogicSig()
 			info.MnemonicWordCount = meta.MnemonicWordCount()
 			info.MnemonicImport = keymgmt.SupportsMnemonicImport(keyType)
@@ -246,7 +246,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		}
 		info := signerapi.KeyTypeInfo{
 			KeyType:          tmpl.KeyType(),
-			Family:           tmpl.Family(),
+			Family:           tmpl.RoutingFamily(),
 			DisplayName:      tmpl.DisplayName(),
 			Description:      tmpl.Description(),
 			RequiresLogicSig: true,

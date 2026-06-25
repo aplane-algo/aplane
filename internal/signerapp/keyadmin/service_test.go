@@ -882,7 +882,7 @@ func registerAddressListImportProvider(t *testing.T) {
 type addressListImportProvider struct{}
 
 func (addressListImportProvider) KeyType() string          { return addressListImportKeyType }
-func (addressListImportProvider) Family() string           { return addressListImportFamily }
+func (addressListImportProvider) RoutingFamily() string    { return addressListImportFamily }
 func (addressListImportProvider) Version() int             { return 1 }
 func (addressListImportProvider) CryptoSignatureSize() int { return 0 }
 func (addressListImportProvider) MnemonicScheme() string   { return "bip39" }
@@ -943,13 +943,13 @@ type keyadminFingerprintProvider struct {
 	fingerprint string
 }
 
-func (p keyadminFingerprintProvider) KeyType() string      { return p.keyType }
-func (p keyadminFingerprintProvider) Family() string       { return p.keyType }
-func (p keyadminFingerprintProvider) Version() int         { return 1 }
-func (p keyadminFingerprintProvider) Category() string     { return lsigprovider.CategoryGenericLsig }
-func (p keyadminFingerprintProvider) DisplayName() string  { return p.keyType }
-func (p keyadminFingerprintProvider) Description() string  { return "provenance test provider" }
-func (p keyadminFingerprintProvider) DisplayColor() string { return "" }
+func (p keyadminFingerprintProvider) KeyType() string       { return p.keyType }
+func (p keyadminFingerprintProvider) RoutingFamily() string { return p.keyType }
+func (p keyadminFingerprintProvider) Version() int          { return 1 }
+func (p keyadminFingerprintProvider) Category() string      { return lsigprovider.CategoryGenericLsig }
+func (p keyadminFingerprintProvider) DisplayName() string   { return p.keyType }
+func (p keyadminFingerprintProvider) Description() string   { return "provenance test provider" }
+func (p keyadminFingerprintProvider) DisplayColor() string  { return "" }
 func (p keyadminFingerprintProvider) CreationParams() []lsigprovider.ParameterDef {
 	return nil
 }

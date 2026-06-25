@@ -38,7 +38,7 @@ func NewHandler(family string, wordCount int) *BIP39Handler {
 	return &BIP39Handler{family: family, wordCount: wordCount}
 }
 
-func (h *BIP39Handler) Family() string { return h.family }
+func (h *BIP39Handler) RoutingFamily() string { return h.family }
 
 // entropyBytes returns the BIP-39 entropy size for the handler's word count.
 // Per BIP-39: entropyBits = wordCount * 32 / 3, and wordCount is always a

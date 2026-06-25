@@ -35,27 +35,27 @@ forces a call site to depend on something it does not have.
 resolver and the shared `ResolveByKeyType` two-step lookup.
 
 - `internal/lsigprovider/registry.go` — `RoutingFamily(keyType)` looks up the
-  registered provider and returns `provider.Family()`; for an unregistered key
-  type it returns the normalized input.
+  registered provider and returns `provider.RoutingFamily()`; for an unregistered
+  key type it returns the normalized input.
 - `internal/logicsigdsa/registry.go` — `ResolveByKeyType[T]` is the shared
   pattern used by the family-keyed registries: try an **exact key-type** match
   first (native + per-key-type registrations), then fall back to the key type's
   **routing family**.
 - `internal/logicsigdsa/dsa.go` — the `LogicSigDSA` contract and package doc.
 
-**Routing key = `Family()`, not `BaseKeyType`.** A provider's `Family()` is its
-declared routing family — the registry key. For a self-handling DSA that is its
-own family; for a composed template that delegates to a base it is the *base's*
-family (e.g. `aplane.falcon1024-whitelist.v1` → `aplane.falcon1024`). That base
-is a **registration fact**, not something derivable from the key-type string, and
-it is deliberately not the same as the key type's own display label.
+**Routing key = `RoutingFamily()`, not `BaseKeyType`.** A provider's
+`RoutingFamily()` is its declared routing family — the registry key. For a
+self-handling DSA that is its own family; for a composed template that delegates
+to a base it is the *base's* family (e.g. `aplane.falcon1024-whitelist.v1` →
+`aplane.falcon1024`). That base is a **registration fact**, not something
+derivable from the key-type string, and it is deliberately not the same as the
+key type's own display label.
 
-> Naming wart, called out so it is not mistaken for a bug: the method is named
-> `Family()` but it returns the *routing* family. The same word "family" also
-> appears as a key-type display segment and as a YAML `family:` field with a
-> different value. They are different concepts; only the method/field is the
-> routing key. (A `Family()` → `RoutingFamily()` rename was considered and
-> declined as not worth the blast radius; this note is the substitute.)
+> The routing method is named `RoutingFamily()` precisely so it is not confused
+> with the other uses of the word "family": the key-type display segment and the
+> YAML `family:` / wire `family` fields all carry a *different* value (the key
+> type's own label, not its routing key). The method is the only one that is the
+> registry routing key — and its name now says so.
 
 ---
 
@@ -119,14 +119,17 @@ packed, _ := packer.PackComponentSignatures(u, s)     // Behave: call
 Two tempting unifications, both wrong, for the same reason — a call site would be
 forced to depend on something it doesn't have.
 
-**1. Route by `BaseKeyType` instead of `Family()` (tried, abandoned).** The idea
-was to make Resolve key off the `BaseKeyType` edge. It breaks on guarded/sentry
-accounts: a guarded provider's `BaseKeyType` is `aplane.falcon1024.v1`, but that
-is its *component-signing primitive*, not its routing authority — the guarded
-account owns its own keygen/mnemonic/metadata under its own family. Routing
+**1. Route by `BaseKeyType` instead of `RoutingFamily()` (tried, abandoned).** The
+idea was to make Resolve key off the `BaseKeyType` edge. It breaks on
+guarded/sentry accounts: a guarded provider's `BaseKeyType` is
+`aplane.falcon1024.v1`, but that is its *component-signing primitive*, not its
+routing authority — the guarded account owns its own keygen, mnemonic-handler
+registration, and metadata under its own family (this is internal handler
+routing only; guarded/corridor accounts still report
+`SupportsMnemonicImport() == false`, i.e. no user mnemonic import). Routing
 metadata by `BaseKeyType` returned Falcon's metadata (wrong signature size) for
 guarded keys. `BaseKeyType` cannot express the delegate-vs-self distinction;
-`Family()` can. **Route by `Family()`.**
+`RoutingFamily()` can. **Route by `RoutingFamily()`.**
 
 **2. Classify by provider capability instead of string switches (correctly never
 shipped).** After the assembly hooks made Behave capability-driven, the natural

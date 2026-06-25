@@ -141,7 +141,7 @@ func CompatibilityFingerprintOf(p LSigProvider) (string, bool) {
 func RoutingFamily(keyType string) string {
 	normalized := normalize(keyType)
 	if p, ok := providers.Get(normalized); ok {
-		return strings.ToLower(p.Family())
+		return strings.ToLower(p.RoutingFamily())
 	}
 	return normalized
 }
@@ -181,7 +181,7 @@ func validateProviderContract(p LSigProvider) string {
 		panic("LSig provider key type contains whitespace: " + rawKeyType)
 	}
 
-	family := strings.TrimSpace(p.Family())
+	family := strings.TrimSpace(p.RoutingFamily())
 	if family == "" {
 		panic("LSig provider has empty family for key type: " + rawKeyType)
 	}

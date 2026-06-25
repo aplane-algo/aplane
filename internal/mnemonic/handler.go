@@ -16,9 +16,9 @@ var ErrEntropyUnsupported = errors.New("mnemonic: entropy round-trip not support
 
 // Handler defines the interface for mnemonic operations
 type Handler interface {
-	// Family returns the algorithm family this handler supports (e.g., "falcon1024", "ed25519")
+	// RoutingFamily returns the algorithm family this handler supports (e.g., "falcon1024", "ed25519")
 	// This is distinct from LogicSigDSA.KeyType() which returns versioned types like "aplane.falcon1024.v1"
-	Family() string
+	RoutingFamily() string
 
 	// GenerateMnemonic generates a new mnemonic phrase
 	// Returns: mnemonic words, seed bytes, entropy bytes (if applicable), error
@@ -61,7 +61,7 @@ func Register(handler Handler) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 
-	family := handler.Family()
+	family := handler.RoutingFamily()
 	if _, exists := registry.handlers[family]; exists {
 		// Already registered - silently ignore
 		return

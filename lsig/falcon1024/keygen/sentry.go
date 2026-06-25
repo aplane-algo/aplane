@@ -26,7 +26,7 @@ type SentryFalcon1024Generator struct {
 	ops *signerops.Ops
 }
 
-func (g *SentryFalcon1024Generator) Family() string {
+func (g *SentryFalcon1024Generator) RoutingFamily() string {
 	return keytypes.SentryComponentFalcon1024V1
 }
 

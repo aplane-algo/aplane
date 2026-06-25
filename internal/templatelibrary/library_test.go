@@ -1106,7 +1106,7 @@ type stubProvider struct {
 }
 
 func (s stubProvider) KeyType() string                             { return s.keyType }
-func (s stubProvider) Family() string                              { return strings.TrimSuffix(s.keyType, "-v1") }
+func (s stubProvider) RoutingFamily() string                       { return strings.TrimSuffix(s.keyType, "-v1") }
 func (s stubProvider) Version() int                                { return 1 }
 func (s stubProvider) DisplayName() string                         { return s.keyType }
 func (s stubProvider) Description() string                         { return "" }

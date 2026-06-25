@@ -49,9 +49,9 @@ type ComponentKeyMaterial struct {
 // Provider defines the interface for cryptographic signature providers
 // Each provider handles loading keys and signing messages for a specific algorithm
 type Provider interface {
-	// Family returns the algorithm family name (e.g., "falcon1024", "ed25519")
+	// RoutingFamily returns the algorithm family name (e.g., "falcon1024", "ed25519")
 	// This is distinct from LogicSigDSA.KeyType() which returns versioned types like "aplane.falcon1024.v1"
-	Family() string
+	RoutingFamily() string
 
 	// LoadKeysFromData loads key pair from decrypted JSON data
 	// Returns the key wrapped in KeyMaterial for type safety

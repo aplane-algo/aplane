@@ -141,7 +141,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 LSigProvider (base interface - ALL providers implement this)
 ├── Identity
 │   ├── KeyType() string        "aplane.falcon1024.v1", "aplane.timed-whitelist.v1"
-│   ├── Family() string         "aplane.falcon1024", "timed-whitelist" (display metadata; routing uses KeyType)
+│   ├── RoutingFamily() string  "aplane.falcon1024" (registry routing key; see ARCH_KEYTYPE_AXES.md)
 │   └── Version() int           1, 2, etc.
 ├── Category
 │   └── Category() string       "generic_lsig" or "dsa_lsig"

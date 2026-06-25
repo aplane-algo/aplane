@@ -63,9 +63,9 @@ Terminology:
   key generation, mnemonic import, TEAL, or guarded assembly. The full
   `key_type` owns those semantics unless a narrower contract explicitly
   delegates one operation.
-- `Family()` / `FamilyName` on Go provider types are registry/display metadata
-  used by current registry plumbing; persistent identity is always the full
-  `key_type`.
+- `RoutingFamily()` on Go provider types (backed by a `FamilyName` field/constant)
+  is the registry routing key used by current registry plumbing; persistent
+  identity is always the full `key_type`.
 
 Templates are generation/catalog definitions. The stored signing metadata
 referenced above is `signing_metadata_version`, `salt_counter`, `base_key_type`

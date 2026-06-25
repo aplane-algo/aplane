@@ -25,8 +25,8 @@ func NewEd25519Handler(family string) *Ed25519Handler {
 	return &Ed25519Handler{family: family}
 }
 
-// Family returns the algorithm family this handler supports
-func (h *Ed25519Handler) Family() string {
+// RoutingFamily returns the algorithm family this handler supports
+func (h *Ed25519Handler) RoutingFamily() string {
 	if h.family == "" {
 		return "ed25519"
 	}

@@ -1555,7 +1555,7 @@ type componentUserTestProvider struct {
 	signatures [][]byte
 }
 
-func (p *componentUserTestProvider) Family() string {
+func (p *componentUserTestProvider) RoutingFamily() string {
 	return p.family
 }
 

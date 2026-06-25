@@ -21,8 +21,8 @@ func TestHandlerRegistry(t *testing.T) {
 		t.Fatalf("Ed25519 handler should be registered: %v", err)
 	}
 
-	if handler.Family() != "ed25519" {
-		t.Errorf("Expected key type 'ed25519', got '%s'", handler.Family())
+	if handler.RoutingFamily() != "ed25519" {
+		t.Errorf("Expected key type 'ed25519', got '%s'", handler.RoutingFamily())
 	}
 }
 
@@ -100,7 +100,7 @@ func TestRegisterIdempotency(t *testing.T) {
 // MockHandler is a test handler for verification
 type MockHandler struct{}
 
-func (m *MockHandler) Family() string {
+func (m *MockHandler) RoutingFamily() string {
 	return "mock-key-type-test"
 }
 
@@ -146,7 +146,7 @@ func TestMultipleHandlerTypes(t *testing.T) {
 	}
 
 	// Verify they're different types
-	if ed25519Handler.Family() == mockRetrieved.Family() {
+	if ed25519Handler.RoutingFamily() == mockRetrieved.RoutingFamily() {
 		t.Error("Handlers should have different key types")
 	}
 }
@@ -160,7 +160,7 @@ func TestHandlerInterface(t *testing.T) {
 
 	// Verify all interface methods are callable
 	t.Run("KeyType", func(t *testing.T) {
-		keyType := handler.Family()
+		keyType := handler.RoutingFamily()
 		if keyType == "" {
 			t.Error("KeyType should not be empty")
 		}
@@ -221,7 +221,7 @@ func TestConcurrentAccess(t *testing.T) {
 				t.Errorf("GetHandler failed: %v", err)
 			}
 			if handler != nil {
-				_ = handler.Family()
+				_ = handler.RoutingFamily()
 			}
 
 			types := GetRegisteredFamilies()

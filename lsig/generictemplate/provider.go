@@ -125,9 +125,9 @@ func NewYAMLTemplate(spec *TemplateSpec) *YAMLTemplate {
 }
 
 // Identity methods
-func (t *YAMLTemplate) KeyType() string { return t.keyType }
-func (t *YAMLTemplate) Family() string  { return t.spec.Family }
-func (t *YAMLTemplate) Version() int    { return t.spec.Version }
+func (t *YAMLTemplate) KeyType() string       { return t.keyType }
+func (t *YAMLTemplate) RoutingFamily() string { return t.spec.Family }
+func (t *YAMLTemplate) Version() int          { return t.spec.Version }
 
 // Display methods
 func (t *YAMLTemplate) DisplayName() string { return t.spec.DisplayName }

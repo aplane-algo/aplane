@@ -1205,7 +1205,7 @@ type restTestDSAProvider struct {
 }
 
 func (p restTestDSAProvider) KeyType() string { return p.keyType }
-func (p restTestDSAProvider) Family() string {
+func (p restTestDSAProvider) RoutingFamily() string {
 	return strings.TrimSuffix(p.keyType, "-v1")
 }
 func (p restTestDSAProvider) Version() int                                { return 1 }

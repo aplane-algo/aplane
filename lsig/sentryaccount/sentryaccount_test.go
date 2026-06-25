@@ -30,8 +30,8 @@ func TestMetaDefaults(t *testing.T) {
 	if got := meta.BaseKeyType(); got != "aplane.falcon1024.v1" {
 		t.Fatalf("BaseKeyType() = %q", got)
 	}
-	if got := meta.Family(); got != "aplane.example" {
-		t.Fatalf("Family() = %q", got)
+	if got := meta.RoutingFamily(); got != "aplane.example" {
+		t.Fatalf("RoutingFamily() = %q", got)
 	}
 	if got := meta.Version(); got != 1 {
 		t.Fatalf("Version() = %d, want 1", got)
@@ -53,8 +53,8 @@ func TestMetaDefaults(t *testing.T) {
 func TestNewAlgorithmMetadata(t *testing.T) {
 	meta := NewAlgorithmMetadata("aplane.example", 99, "bip39", 24, "#123456")
 
-	if got := meta.Family(); got != "aplane.example" {
-		t.Fatalf("Family() = %q", got)
+	if got := meta.RoutingFamily(); got != "aplane.example" {
+		t.Fatalf("RoutingFamily() = %q", got)
 	}
 	if got := meta.CryptoSignatureSize(); got != 99 {
 		t.Fatalf("CryptoSignatureSize() = %d, want 99", got)

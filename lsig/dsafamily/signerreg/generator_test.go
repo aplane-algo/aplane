@@ -48,7 +48,7 @@ type testFalcon1024V1 struct{}
 
 // LogicSigDSA interface
 func (f *testFalcon1024V1) KeyType() string          { return "aplane.falcon1024.v1" }
-func (f *testFalcon1024V1) Family() string           { return "falcon1024" }
+func (f *testFalcon1024V1) RoutingFamily() string    { return "falcon1024" }
 func (f *testFalcon1024V1) Version() int             { return 1 }
 func (f *testFalcon1024V1) CryptoSignatureSize() int { return 1280 }
 func (f *testFalcon1024V1) MnemonicScheme() string   { return "bip39" }
@@ -141,7 +141,7 @@ func (f *testFalcon1024V1) Sign(privateKey []byte, message []byte) ([]byte, erro
 type unsaltedTestDSA struct{}
 
 func (unsaltedTestDSA) KeyType() string          { return "test.unsalted.v1" }
-func (unsaltedTestDSA) Family() string           { return "unsalted" }
+func (unsaltedTestDSA) RoutingFamily() string    { return "unsalted" }
 func (unsaltedTestDSA) Version() int             { return 1 }
 func (unsaltedTestDSA) CryptoSignatureSize() int { return 1 }
 func (unsaltedTestDSA) MnemonicScheme() string   { return "bip39" }
@@ -178,8 +178,8 @@ func setupTestKeystore(t *testing.T) (utilkeys.Paths, func()) {
 func TestLogicSigGeneratorKeyType(t *testing.T) {
 	generator := newTestGenerator()
 
-	if generator.Family() != "falcon1024" {
-		t.Errorf("Expected key type 'falcon1024', got '%s'", generator.Family())
+	if generator.RoutingFamily() != "falcon1024" {
+		t.Errorf("Expected key type 'falcon1024', got '%s'", generator.RoutingFamily())
 	}
 }
 

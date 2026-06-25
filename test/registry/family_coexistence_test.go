@@ -55,14 +55,14 @@ func TestNativeEd25519AndLogicSigBaseCoexist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGenerator(%q): %v", lsigEd25519, err)
 	}
-	if nativeGen.Family() != nativeEd25519Family {
-		t.Errorf("native generator Family() = %q, want %q", nativeGen.Family(), nativeEd25519Family)
+	if nativeGen.RoutingFamily() != nativeEd25519Family {
+		t.Errorf("native generator RoutingFamily() = %q, want %q", nativeGen.RoutingFamily(), nativeEd25519Family)
 	}
-	if lsigGen.Family() != lsigEd25519Family {
-		t.Errorf("lsig generator Family() = %q, want %q", lsigGen.Family(), lsigEd25519Family)
+	if lsigGen.RoutingFamily() != lsigEd25519Family {
+		t.Errorf("lsig generator RoutingFamily() = %q, want %q", lsigGen.RoutingFamily(), lsigEd25519Family)
 	}
-	if nativeGen.Family() == lsigGen.Family() {
-		t.Fatalf("native and lsig generators share family %q — collision", nativeGen.Family())
+	if nativeGen.RoutingFamily() == lsigGen.RoutingFamily() {
+		t.Fatalf("native and lsig generators share family %q — collision", nativeGen.RoutingFamily())
 	}
 
 	// Metadata resolves to distinct families.
@@ -74,9 +74,9 @@ func TestNativeEd25519AndLogicSigBaseCoexist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMetadata(%q): %v", lsigEd25519, err)
 	}
-	if nativeMeta.Family() != nativeEd25519Family || lsigMeta.Family() != lsigEd25519Family {
+	if nativeMeta.RoutingFamily() != nativeEd25519Family || lsigMeta.RoutingFamily() != lsigEd25519Family {
 		t.Fatalf("metadata families = (%q, %q), want (%q, %q)",
-			nativeMeta.Family(), lsigMeta.Family(), nativeEd25519Family, lsigEd25519Family)
+			nativeMeta.RoutingFamily(), lsigMeta.RoutingFamily(), nativeEd25519Family, lsigEd25519Family)
 	}
 
 	// Mnemonic handlers resolve for both; native mnemonic import still works.
@@ -88,8 +88,8 @@ func TestNativeEd25519AndLogicSigBaseCoexist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetHandler(%q): %v", lsigEd25519, err)
 	}
-	if nativeHandler.Family() == lsigHandler.Family() {
-		t.Fatalf("native and lsig mnemonic handlers share family %q — collision", nativeHandler.Family())
+	if nativeHandler.RoutingFamily() == lsigHandler.RoutingFamily() {
+		t.Fatalf("native and lsig mnemonic handlers share family %q — collision", nativeHandler.RoutingFamily())
 	}
 }
 

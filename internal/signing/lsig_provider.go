@@ -48,8 +48,8 @@ type LsigKeyMaterial struct {
 	PrivateKey []byte
 }
 
-// Family returns the algorithm family name.
-func (p *LogicSigProvider) Family() string {
+// RoutingFamily returns the algorithm family name.
+func (p *LogicSigProvider) RoutingFamily() string {
 	return p.family
 }
 

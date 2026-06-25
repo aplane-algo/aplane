@@ -18,7 +18,7 @@ import (
 const (
 	// FamilyName is the qualified registry family ("publisher.family") used as
 	// the key in the keygen/mnemonic/metadata/signing registries and as the
-	// provider's Family().
+	// provider's RoutingFamily().
 	FamilyName = "aplane.falcon1024_ed25519"
 	KeyTypeV1  = "aplane.falcon1024_ed25519.v1"
 

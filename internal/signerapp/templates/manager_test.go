@@ -628,7 +628,7 @@ type templatesTestProvider struct {
 }
 
 func (p templatesTestProvider) KeyType() string                                { return p.keyType }
-func (p templatesTestProvider) Family() string                                 { return p.keyType }
+func (p templatesTestProvider) RoutingFamily() string                          { return p.keyType }
 func (p templatesTestProvider) Version() int                                   { return 1 }
 func (p templatesTestProvider) Category() string                               { return lsigprovider.CategoryDSALsig }
 func (p templatesTestProvider) DisplayName() string                            { return "Templates Test Provider" }

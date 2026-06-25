@@ -379,7 +379,7 @@ type restoreLibraryProvider struct {
 }
 
 func (p restoreLibraryProvider) KeyType() string                             { return p.keyType }
-func (p restoreLibraryProvider) Family() string                              { return strings.TrimSuffix(p.keyType, "-v1") }
+func (p restoreLibraryProvider) RoutingFamily() string                       { return strings.TrimSuffix(p.keyType, "-v1") }
 func (p restoreLibraryProvider) Version() int                                { return 1 }
 func (p restoreLibraryProvider) Category() string                            { return lsigprovider.CategoryDSALsig }
 func (p restoreLibraryProvider) DisplayName() string                         { return p.keyType }

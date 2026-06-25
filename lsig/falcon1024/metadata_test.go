@@ -13,8 +13,8 @@ func TestFalconMetadata(t *testing.T) {
 	m := &FalconMetadata{}
 
 	t.Run("Family", func(t *testing.T) {
-		if m.Family() != "aplane.falcon1024" {
-			t.Errorf("Family() = %v, want aplane.falcon1024", m.Family())
+		if m.RoutingFamily() != "aplane.falcon1024" {
+			t.Errorf("RoutingFamily() = %v, want aplane.falcon1024", m.RoutingFamily())
 		}
 	})
 

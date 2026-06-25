@@ -42,8 +42,8 @@ func (f *Falcon1024V1) KeyType() string {
 	return "aplane.falcon1024.v1"
 }
 
-// Family returns the algorithm family without version.
-func (f *Falcon1024V1) Family() string {
+// RoutingFamily returns the algorithm family without version.
+func (f *Falcon1024V1) RoutingFamily() string {
 	return family.Name
 }
 

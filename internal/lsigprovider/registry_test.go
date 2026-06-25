@@ -27,8 +27,8 @@ func TestFalcon1024V1Registration(t *testing.T) {
 		t.Errorf("KeyType = %q, want %q", p.KeyType(), "aplane.falcon1024.v1")
 	}
 
-	if p.Family() != "aplane.falcon1024" {
-		t.Errorf("Family = %q, want %q", p.Family(), "aplane.falcon1024")
+	if p.RoutingFamily() != "aplane.falcon1024" {
+		t.Errorf("Family = %q, want %q", p.RoutingFamily(), "aplane.falcon1024")
 	}
 
 	if p.Version() != 1 {

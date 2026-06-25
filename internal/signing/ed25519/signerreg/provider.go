@@ -26,8 +26,8 @@ type Ed25519Keys struct {
 // Ed25519Provider implements signing.Provider for Ed25519 signatures
 type Ed25519Provider struct{}
 
-// Family returns the algorithm family for Ed25519
-func (p *Ed25519Provider) Family() string {
+// RoutingFamily returns the algorithm family for Ed25519
+func (p *Ed25519Provider) RoutingFamily() string {
 	return "ed25519"
 }
 
@@ -67,7 +67,7 @@ func (p *Ed25519Provider) LoadKeysFromData(data []byte) (*signing.KeyMaterial, e
 	}
 
 	return &signing.KeyMaterial{
-		Type:  p.Family(),
+		Type:  p.RoutingFamily(),
 		Value: account,
 	}, nil
 }
@@ -75,7 +75,7 @@ func (p *Ed25519Provider) LoadKeysFromData(data []byte) (*signing.KeyMaterial, e
 // SignMessage signs a message using an Ed25519 key pair
 func (p *Ed25519Provider) SignMessage(key *signing.KeyMaterial, message []byte) ([]byte, error) {
 	// Validate key material
-	if err := signing.ValidateKeyMaterial(key, p.Family()); err != nil {
+	if err := signing.ValidateKeyMaterial(key, p.RoutingFamily()); err != nil {
 		return nil, err
 	}
 

@@ -20,7 +20,7 @@ import (
 // exact sentry key type.
 type SentryEd25519Generator struct{}
 
-func (g *SentryEd25519Generator) Family() string {
+func (g *SentryEd25519Generator) RoutingFamily() string {
 	return keytypes.SentryComponentEd25519V1
 }
 

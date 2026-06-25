@@ -24,8 +24,8 @@ func init() {
 // TestEd25519Provider_Family verifies it returns "ed25519"
 func TestEd25519Provider_Family(t *testing.T) {
 	provider := &Ed25519Provider{}
-	if provider.Family() != "ed25519" {
-		t.Errorf("Expected family 'ed25519', got '%s'", provider.Family())
+	if provider.RoutingFamily() != "ed25519" {
+		t.Errorf("Expected family 'ed25519', got '%s'", provider.RoutingFamily())
 	}
 }
 
@@ -493,8 +493,8 @@ func TestEd25519Provider_Registration(t *testing.T) {
 		t.Fatal("Ed25519 provider should be registered")
 	}
 
-	if provider.Family() != "ed25519" {
-		t.Errorf("Registered provider has wrong family: %s", provider.Family())
+	if provider.RoutingFamily() != "ed25519" {
+		t.Errorf("Registered provider has wrong family: %s", provider.RoutingFamily())
 	}
 }
 

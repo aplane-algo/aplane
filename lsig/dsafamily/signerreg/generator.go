@@ -58,8 +58,8 @@ func NewLogicSigGenerator(family string, keygenOpsByType map[string]LogicSigKeyg
 	}
 }
 
-// Family returns the algorithm family this generator supports
-func (g *LogicSigGenerator) Family() string {
+// RoutingFamily returns the algorithm family this generator supports
+func (g *LogicSigGenerator) RoutingFamily() string {
 	return g.family
 }
 
@@ -105,7 +105,7 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 
 	keygenOps := g.keygenOpsByType[keyType]
 	if keygenOps == nil {
-		keygenOps = g.keygenOpsByType[g.Family()]
+		keygenOps = g.keygenOpsByType[g.RoutingFamily()]
 	}
 	if keygenOps == nil {
 		return nil, fmt.Errorf("no LogicSig keygen ops registered for %s", keyType)
@@ -205,7 +205,7 @@ func (g *LogicSigGenerator) GenerateFromSeed(ctx context.Context, paths storepat
 // Seed and entropy derivation route through the family's registered mnemonic
 // handler so families with a non-BIP-39 scheme derive correctly.
 func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths storepaths.Paths, identityID string, mnemonic string, masterKey []byte, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
-	handler, err := mnemonicreg.GetHandler(g.Family())
+	handler, err := mnemonicreg.GetHandler(g.RoutingFamily())
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +242,7 @@ func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths stor
 // Mnemonic, seed, and entropy come from the family's registered mnemonic
 // handler so families with a non-BIP-39 scheme derive correctly.
 func (g *LogicSigGenerator) GenerateRandom(ctx context.Context, paths storepaths.Paths, identityID string, masterKey []byte, keyType string, params map[string]string) (*keygen.GenerationResult, error) {
-	handler, err := mnemonicreg.GetHandler(g.Family())
+	handler, err := mnemonicreg.GetHandler(g.RoutingFamily())
 	if err != nil {
 		return nil, err
 	}

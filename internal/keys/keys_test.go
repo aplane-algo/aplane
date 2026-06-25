@@ -40,7 +40,7 @@ type scanSizeTestDSA struct {
 
 func (p scanSizeTestDSA) KeyType() string { return p.keyType }
 
-func (p scanSizeTestDSA) Family() string { return "scan-size-test" }
+func (p scanSizeTestDSA) RoutingFamily() string { return "scan-size-test" }
 
 func (p scanSizeTestDSA) Version() int { return 1 }
 

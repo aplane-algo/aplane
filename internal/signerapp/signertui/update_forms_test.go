@@ -565,7 +565,7 @@ type testWordCountDSA struct {
 }
 
 func (t *testWordCountDSA) KeyType() string          { return t.keyType }
-func (t *testWordCountDSA) Family() string           { return t.family }
+func (t *testWordCountDSA) RoutingFamily() string    { return t.family }
 func (t *testWordCountDSA) Version() int             { return 1 }
 func (t *testWordCountDSA) CryptoSignatureSize() int { return 0 }
 func (t *testWordCountDSA) MnemonicScheme() string   { return "bip39" }

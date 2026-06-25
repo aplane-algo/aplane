@@ -17,7 +17,7 @@ type metadata struct {
 	signatureSize int
 }
 
-func (m metadata) Family() string             { return m.family }
+func (m metadata) RoutingFamily() string      { return m.family }
 func (m metadata) CryptoSignatureSize() int   { return m.signatureSize }
 func (metadata) MnemonicWordCount() int       { return family.MnemonicWordCount }
 func (metadata) SupportsMnemonicImport() bool { return false }

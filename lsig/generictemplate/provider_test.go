@@ -773,8 +773,8 @@ func TestYAMLTemplateInterface(t *testing.T) {
 	if tmpl.KeyType() != "test.test.v1" {
 		t.Errorf("expected KeyType test.test.v1, got %s", tmpl.KeyType())
 	}
-	if tmpl.Family() != "test" {
-		t.Errorf("expected Family test, got %s", tmpl.Family())
+	if tmpl.RoutingFamily() != "test" {
+		t.Errorf("expected Family test, got %s", tmpl.RoutingFamily())
 	}
 	if tmpl.Version() != 1 {
 		t.Errorf("expected Version 1, got %d", tmpl.Version())
@@ -1186,8 +1186,8 @@ parameters: []
 	if len(templates) != 1 {
 		t.Errorf("expected 1 valid template, got %d", len(templates))
 	}
-	if len(templates) > 0 && templates[0].Family() != "good" {
-		t.Errorf("expected family 'good', got %q", templates[0].Family())
+	if len(templates) > 0 && templates[0].RoutingFamily() != "good" {
+		t.Errorf("expected family 'good', got %q", templates[0].RoutingFamily())
 	}
 }
 

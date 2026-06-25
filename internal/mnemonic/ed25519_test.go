@@ -22,8 +22,8 @@ func init() {
 func TestEd25519HandlerKeyType(t *testing.T) {
 	handler := &Ed25519Handler{}
 
-	if handler.Family() != "ed25519" {
-		t.Errorf("Expected key type 'ed25519', got '%s'", handler.Family())
+	if handler.RoutingFamily() != "ed25519" {
+		t.Errorf("Expected key type 'ed25519', got '%s'", handler.RoutingFamily())
 	}
 }
 
@@ -290,7 +290,7 @@ func TestEd25519HandlerRegistration(t *testing.T) {
 		t.Fatal("Handler should be Ed25519Handler type")
 	}
 
-	if ed25519Handler.Family() != "ed25519" {
+	if ed25519Handler.RoutingFamily() != "ed25519" {
 		t.Error("Handler key type mismatch")
 	}
 }

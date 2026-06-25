@@ -38,9 +38,9 @@ type Meta struct {
 	CategoryValue               string
 }
 
-func (m Meta) KeyType() string     { return m.KeyTypeName }
-func (m Meta) BaseKeyType() string { return m.BaseKeyTypeName }
-func (m Meta) Family() string      { return m.FamilyName }
+func (m Meta) KeyType() string       { return m.KeyTypeName }
+func (m Meta) BaseKeyType() string   { return m.BaseKeyTypeName }
+func (m Meta) RoutingFamily() string { return m.FamilyName }
 func (m Meta) Version() int {
 	if m.VersionValue != 0 {
 		return m.VersionValue
@@ -128,7 +128,7 @@ func NewAlgorithmMetadata(family string, signatureSize int, mnemonicScheme strin
 	}
 }
 
-func (m algorithmMetadata) Family() string               { return m.family }
+func (m algorithmMetadata) RoutingFamily() string        { return m.family }
 func (m algorithmMetadata) CryptoSignatureSize() int     { return m.signatureSize }
 func (m algorithmMetadata) MnemonicWordCount() int       { return m.mnemonicWordCount }
 func (m algorithmMetadata) SupportsMnemonicImport() bool { return false }

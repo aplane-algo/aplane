@@ -95,7 +95,7 @@ func Generate() *ProviderManifest {
 	for _, tmpl := range genericlsig.GetAll() {
 		manifest.GenericLSigTemplates = append(manifest.GenericLSigTemplates, GenericLSigTemplateInfo{
 			KeyType:      tmpl.KeyType(),
-			Family:       tmpl.Family(),
+			Family:       tmpl.RoutingFamily(),
 			Version:      tmpl.Version(),
 			DisplayName:  tmpl.DisplayName(),
 			Description:  tmpl.Description(),

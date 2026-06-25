@@ -89,12 +89,12 @@ func (p *Provider) SetAlgodClient(client *algod.Client) {
 	p.algodClient = client
 }
 
-func (p *Provider) KeyType() string     { return p.keyType }
-func (p *Provider) BaseKeyType() string { return BaseKeyType }
-func (p *Provider) Family() string      { return p.familyName }
-func (p *Provider) Version() int        { return 1 }
-func (p *Provider) Category() string    { return lsigprovider.CategoryDSALsig }
-func (p *Provider) DisplayName() string { return p.displayName }
+func (p *Provider) KeyType() string       { return p.keyType }
+func (p *Provider) BaseKeyType() string   { return BaseKeyType }
+func (p *Provider) RoutingFamily() string { return p.familyName }
+func (p *Provider) Version() int          { return 1 }
+func (p *Provider) Category() string      { return lsigprovider.CategoryDSALsig }
+func (p *Provider) DisplayName() string   { return p.displayName }
 func (p *Provider) Description() string {
 	return p.description
 }
@@ -286,7 +286,7 @@ func (p *Provider) CompatibilityFingerprint() string {
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
 		KeyType:     p.KeyType(),
 		BaseKeyType: p.BaseKeyType(),
-		Family:      p.Family(),
+		Family:      p.RoutingFamily(),
 		Version:     p.Version(),
 		SaltStyle:   string(lsigsalt.StylePushbytes),
 		Arg0:        "user_falcon1024_component_signature",

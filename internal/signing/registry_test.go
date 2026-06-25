@@ -28,7 +28,7 @@ type MockProvider struct {
 	keyType string
 }
 
-func (m *MockProvider) Family() string {
+func (m *MockProvider) RoutingFamily() string {
 	return m.keyType
 }
 
@@ -64,8 +64,8 @@ func TestRegistry(t *testing.T) {
 		t.Fatal("Failed to retrieve registered provider")
 	}
 
-	if retrieved.Family() != "test-algo" {
-		t.Errorf("Expected key type 'test-algo', got %s", retrieved.Family())
+	if retrieved.RoutingFamily() != "test-algo" {
+		t.Errorf("Expected key type 'test-algo', got %s", retrieved.RoutingFamily())
 	}
 
 	// Test signing

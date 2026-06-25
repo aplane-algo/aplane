@@ -51,10 +51,10 @@ func (p *Ed25519LsigV1) KeyType() string { return family.KeyTypeV1 }
 func (p *Ed25519LsigV1) BaseKeyType() string {
 	return family.KeyTypeV1
 }
-func (p *Ed25519LsigV1) Family() string      { return family.Name }
-func (p *Ed25519LsigV1) Version() int        { return 1 }
-func (p *Ed25519LsigV1) Category() string    { return lsigprovider.CategoryDSALsig }
-func (p *Ed25519LsigV1) DisplayName() string { return "Ed25519 LogicSig" }
+func (p *Ed25519LsigV1) RoutingFamily() string { return family.Name }
+func (p *Ed25519LsigV1) Version() int          { return 1 }
+func (p *Ed25519LsigV1) Category() string      { return lsigprovider.CategoryDSALsig }
+func (p *Ed25519LsigV1) DisplayName() string   { return "Ed25519 LogicSig" }
 func (p *Ed25519LsigV1) Description() string {
 	return "Ed25519 signature scheme verified inside a LogicSig"
 }

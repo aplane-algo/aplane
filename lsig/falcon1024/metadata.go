@@ -11,7 +11,7 @@ import (
 // FalconMetadata implements SignatureMetadata for the Falcon-1024 family
 type FalconMetadata struct{}
 
-func (m *FalconMetadata) Family() string               { return family.Name }
+func (m *FalconMetadata) RoutingFamily() string        { return family.Name }
 func (m *FalconMetadata) CryptoSignatureSize() int     { return family.MaxSignatureSize }
 func (m *FalconMetadata) MnemonicWordCount() int       { return family.MnemonicWordCount }
 func (m *FalconMetadata) SupportsMnemonicImport() bool { return true }

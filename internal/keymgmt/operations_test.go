@@ -714,7 +714,7 @@ type keymgmtTestDSAProvider struct {
 }
 
 func (p keymgmtTestDSAProvider) KeyType() string { return p.keyType }
-func (p keymgmtTestDSAProvider) Family() string {
+func (p keymgmtTestDSAProvider) RoutingFamily() string {
 	return strings.TrimSuffix(p.keyType, "-v1")
 }
 func (p keymgmtTestDSAProvider) Version() int                                { return 1 }

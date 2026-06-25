@@ -15,7 +15,7 @@ type fingerprintTestProvider struct {
 }
 
 func (p fingerprintTestProvider) KeyType() string                                { return p.keyType }
-func (p fingerprintTestProvider) Family() string                                 { return "fingerprint-test" }
+func (p fingerprintTestProvider) RoutingFamily() string                          { return "fingerprint-test" }
 func (p fingerprintTestProvider) Version() int                                   { return 1 }
 func (p fingerprintTestProvider) Category() string                               { return lsigprovider.CategoryGenericLsig }
 func (p fingerprintTestProvider) DisplayName() string                            { return "Fingerprint Test" }

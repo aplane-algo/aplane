@@ -34,7 +34,7 @@ func (e *ECDSAK1V1) KeyType() string {
 	return "aplane.ecdsak1.v1"
 }
 
-func (e *ECDSAK1V1) Family() string {
+func (e *ECDSAK1V1) RoutingFamily() string {
 	return family.Name
 }
 

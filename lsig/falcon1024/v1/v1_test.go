@@ -32,8 +32,8 @@ func TestFalcon1024V1_KeyType(t *testing.T) {
 
 func TestFalcon1024V1_Family(t *testing.T) {
 	f := &Falcon1024V1{}
-	if f.Family() != family.Name {
-		t.Errorf("Family() = %q, want %q", f.Family(), family.Name)
+	if f.RoutingFamily() != family.Name {
+		t.Errorf("RoutingFamily() = %q, want %q", f.RoutingFamily(), family.Name)
 	}
 }
 

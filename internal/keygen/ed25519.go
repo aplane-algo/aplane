@@ -21,8 +21,8 @@ import (
 // Ed25519Generator implements Generator for Ed25519 keys
 type Ed25519Generator struct{}
 
-// Family returns the algorithm family this generator supports
-func (g *Ed25519Generator) Family() string {
+// RoutingFamily returns the algorithm family this generator supports
+func (g *Ed25519Generator) RoutingFamily() string {
 	return "ed25519"
 }
 

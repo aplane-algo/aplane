@@ -30,8 +30,8 @@ type LogicSigDSA interface {
 	// KeyType returns the full identifier including version (e.g., "aplane.falcon1024.v1")
 	KeyType() string
 
-	// Family returns the algorithm family without version (e.g., "falcon1024")
-	Family() string
+	// RoutingFamily returns the algorithm family without version (e.g., "falcon1024")
+	RoutingFamily() string
 
 	// Version returns the derivation version number (e.g., 1 for "aplane.falcon1024.v1")
 	Version() int

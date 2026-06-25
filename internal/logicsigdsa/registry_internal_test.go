@@ -13,7 +13,7 @@ import (
 type brokenDSA struct{}
 
 func (brokenDSA) KeyType() string          { return "broken-v1" }
-func (brokenDSA) Family() string           { return "broken" }
+func (brokenDSA) RoutingFamily() string    { return "broken" }
 func (brokenDSA) Version() int             { return 1 }
 func (brokenDSA) CryptoSignatureSize() int { return 0 }
 func (brokenDSA) MnemonicScheme() string   { return "" }

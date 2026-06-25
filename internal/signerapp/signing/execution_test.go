@@ -26,13 +26,13 @@ type testBaseSignatureProvider struct {
 	family  string
 }
 
-func (p *testBaseSignatureProvider) KeyType() string      { return p.keyType }
-func (p *testBaseSignatureProvider) Family() string       { return p.family }
-func (p *testBaseSignatureProvider) Version() int         { return 1 }
-func (p *testBaseSignatureProvider) Category() string     { return lsigprovider.CategoryDSALsig }
-func (p *testBaseSignatureProvider) DisplayName() string  { return p.keyType }
-func (p *testBaseSignatureProvider) Description() string  { return "" }
-func (p *testBaseSignatureProvider) DisplayColor() string { return "" }
+func (p *testBaseSignatureProvider) KeyType() string       { return p.keyType }
+func (p *testBaseSignatureProvider) RoutingFamily() string { return p.family }
+func (p *testBaseSignatureProvider) Version() int          { return 1 }
+func (p *testBaseSignatureProvider) Category() string      { return lsigprovider.CategoryDSALsig }
+func (p *testBaseSignatureProvider) DisplayName() string   { return p.keyType }
+func (p *testBaseSignatureProvider) Description() string   { return "" }
+func (p *testBaseSignatureProvider) DisplayColor() string  { return "" }
 func (p *testBaseSignatureProvider) CreationParams() []lsigprovider.ParameterDef {
 	return nil
 }
@@ -53,7 +53,7 @@ type testNativeSigningProvider struct {
 	family string
 }
 
-func (p *testNativeSigningProvider) Family() string { return p.family }
+func (p *testNativeSigningProvider) RoutingFamily() string { return p.family }
 func (p *testNativeSigningProvider) LoadKeysFromData(data []byte) (*coresigning.KeyMaterial, error) {
 	return nil, fmt.Errorf("not implemented")
 }
@@ -853,7 +853,7 @@ type testTemplateMetadataProvider struct {
 }
 
 func (p *testTemplateMetadataProvider) KeyType() string                             { return p.keyType }
-func (p *testTemplateMetadataProvider) Family() string                              { return p.keyType }
+func (p *testTemplateMetadataProvider) RoutingFamily() string                       { return p.keyType }
 func (p *testTemplateMetadataProvider) Version() int                                { return 1 }
 func (p *testTemplateMetadataProvider) Category() string                            { return lsigprovider.CategoryGenericLsig }
 func (p *testTemplateMetadataProvider) DisplayName() string                         { return p.keyType }

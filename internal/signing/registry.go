@@ -14,7 +14,7 @@ var providers = xregistry.NewStringRegistry[Provider]()
 // Panics if a provider for the same family is already registered.
 // This is called at init time only — a duplicate here is a programming error.
 func Register(provider Provider) {
-	family := provider.Family()
+	family := provider.RoutingFamily()
 	if !providers.Set(family, provider) {
 		panic("duplicate signing provider registration for family: " + family)
 	}

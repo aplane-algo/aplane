@@ -41,7 +41,7 @@ func TestRegisterSigner(t *testing.T) {
 	if !meta.RequiresLogicSig() {
 		t.Fatal("ecdsak1 metadata should require LogicSig")
 	}
-	if meta.Family() != ecdsak1.FamilyName {
-		t.Fatalf("metadata.Family() = %q, want %q", meta.Family(), ecdsak1.FamilyName)
+	if meta.RoutingFamily() != ecdsak1.FamilyName {
+		t.Fatalf("metadata.RoutingFamily() = %q, want %q", meta.RoutingFamily(), ecdsak1.FamilyName)
 	}
 }

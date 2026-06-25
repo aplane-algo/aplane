@@ -22,7 +22,7 @@ const (
 
 type metadata struct{}
 
-func (metadata) Family() string               { return FamilyName }
+func (metadata) RoutingFamily() string        { return FamilyName }
 func (metadata) CryptoSignatureSize() int     { return family.MaxSignatureSize }
 func (metadata) MnemonicWordCount() int       { return family.MnemonicWordCount }
 func (metadata) SupportsMnemonicImport() bool { return true }

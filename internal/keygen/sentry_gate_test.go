@@ -16,7 +16,7 @@ type registryTestGenerator struct {
 	family string
 }
 
-func (g *registryTestGenerator) Family() string { return g.family }
+func (g *registryTestGenerator) RoutingFamily() string { return g.family }
 
 func (g *registryTestGenerator) GenerateFromSeed(context.Context, storepaths.Paths, string, []byte, []byte, string, map[string]string) (*GenerationResult, error) {
 	return nil, nil

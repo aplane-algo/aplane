@@ -304,7 +304,7 @@ type backupRegisteredTemplateProvider struct {
 }
 
 func (p backupRegisteredTemplateProvider) KeyType() string                                { return p.keyType }
-func (p backupRegisteredTemplateProvider) Family() string                                 { return "backup-registered-template" }
+func (p backupRegisteredTemplateProvider) RoutingFamily() string                          { return "backup-registered-template" }
 func (p backupRegisteredTemplateProvider) Version() int                                   { return 1 }
 func (p backupRegisteredTemplateProvider) Category() string                               { return lsigprovider.CategoryGenericLsig }
 func (p backupRegisteredTemplateProvider) DisplayName() string                            { return "Backup Registered Template" }

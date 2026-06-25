@@ -19,8 +19,8 @@ func TestProviderV1Identity(t *testing.T) {
 	if p.KeyType() != KeyTypeV1 {
 		t.Fatalf("KeyType() = %q, want %q", p.KeyType(), KeyTypeV1)
 	}
-	if p.Family() != FamilyName {
-		t.Fatalf("Family() = %q, want %q", p.Family(), FamilyName)
+	if p.RoutingFamily() != FamilyName {
+		t.Fatalf("RoutingFamily() = %q, want %q", p.RoutingFamily(), FamilyName)
 	}
 	if p.CryptoSignatureSize() != SignatureSize {
 		t.Fatalf("CryptoSignatureSize() = %d, want %d", p.CryptoSignatureSize(), SignatureSize)

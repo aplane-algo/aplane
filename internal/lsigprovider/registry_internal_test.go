@@ -21,8 +21,8 @@ type stubProvider struct {
 	category string
 }
 
-func (p stubProvider) KeyType() string { return p.keyType }
-func (p stubProvider) Family() string  { return p.family }
+func (p stubProvider) KeyType() string       { return p.keyType }
+func (p stubProvider) RoutingFamily() string { return p.family }
 func (p stubProvider) Version() int {
 	if p.version != 0 {
 		return p.version

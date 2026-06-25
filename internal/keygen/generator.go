@@ -21,8 +21,8 @@ import (
 // implicitly chooses a key type for the user.
 // masterKey is the derived encryption key from the keystore (not raw passphrase).
 type Generator interface {
-	// Family returns the algorithm family this generator supports (e.g., "falcon1024", "ed25519")
-	Family() string
+	// RoutingFamily returns the algorithm family this generator supports (e.g., "falcon1024", "ed25519")
+	RoutingFamily() string
 
 	// GenerateFromSeed generates a key from a deterministic seed.
 	// keyType must be explicitly specified (e.g., "aplane.falcon1024.v1", "ed25519").
@@ -67,7 +67,7 @@ func Register(generator Generator) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 
-	family := generator.Family()
+	family := generator.RoutingFamily()
 	if _, exists := registry.generators[family]; exists {
 		panic(fmt.Sprintf("key generator already registered for family %q", family))
 	}

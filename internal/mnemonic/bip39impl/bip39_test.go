@@ -14,8 +14,8 @@ func newTestBIP39Handler() *BIP39Handler {
 
 func TestBIP39Handler_Family(t *testing.T) {
 	h := newTestBIP39Handler()
-	if h.Family() != "falcon1024" {
-		t.Errorf("Family() = %v, want falcon1024", h.Family())
+	if h.RoutingFamily() != "falcon1024" {
+		t.Errorf("RoutingFamily() = %v, want falcon1024", h.RoutingFamily())
 	}
 }
 
