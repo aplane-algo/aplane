@@ -516,7 +516,7 @@ func cryptoSignatureSizeForKey(keyType, baseKeyType string) int {
 
 func signerGeneratedDSAArgSizeForKey(keyType string) int {
 	switch strings.ToLower(strings.TrimSpace(keyType)) {
-	case falcon1024WhitelistV2KeyType:
+	case falcon1024WhitelistV2KeyType, keytypes.CorridorV1:
 		return merklewhitelist.ProofSize
 	default:
 		return 0

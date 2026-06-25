@@ -583,6 +583,8 @@ Always Deny > Always Review > Always Approve > Operator Default
 | Field | Type | Meaning |
 |-------|------|---------|
 | `reject_foreign_rekey` | bool | Reject txns with non-zero `RekeyTo` only when the rekey target is not held by the current signer |
+| `reject_rekey` | bool | Sentry-domain only. Coarse deny-all switch for txns with non-zero `RekeyTo` |
+| `rekey_policy` | map | Sentry-domain only. Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
 | `reject_close_remainder` | bool | Reject payment txns with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | bool | Reject ASA transfer txns with non-zero `AssetCloseTo` |
 | `reject_clawback` | bool | Reject ASA clawback txns using `AssetSender` |
@@ -608,12 +610,17 @@ increase exactly matches the required dummy fees.
 New identities default to:
 
 - `reject_foreign_rekey: true` (foreign rekey changes account control to an address outside this signer, so it is rejected by default)
+- sentry-domain `reject_rekey: false`, but non-zero `RekeyTo` still fails closed unless `rekey_policy.allowed` authorizes the sender-to-target edge
 - `reject_close_remainder: false`
 - `reject_asset_close: false`
 - `reject_clawback: false`
 - `always_review_warnings: false`
 - `auto_approve_self_noop_transfer: false`
 - other guards unset / disabled
+
+For corridor accounts, `rekey_policy` authorizes rekey targets off-chain. The
+compiled corridor recipient list bounds ordinary transfers, not future rekey
+targets.
 
 ### Example
 

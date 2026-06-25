@@ -181,19 +181,22 @@ client_signing:
 Sentry-node `policy.yaml` is the sentry component policy document:
 
 ```yaml
-reject_rekey: true
 transfer_policy:
   schema_version: 1
   enabled: true
   routes: [...]
   # on_no_route, close_on_no_route, and clawback_on_no_route may be omitted;
   # when enabled, omitted values are interpreted as reject.
+rekey_policy:
+  allowed:
+    - sender: <account-or-address-set>
+      targets: [<account-or-address-set>]
 ```
 
 On signer nodes, the accepted top-level keys in `policy.yaml` are the
 client-signing field set, `client_signing`, and `key_overrides`.
-Signer-domain `policy.yaml` rejects `sentry:` and top-level
-`reject_rekey`; those belong to the sentry policy domain.
+Signer-domain `policy.yaml` rejects `sentry:` and top-level `reject_rekey` or
+`rekey_policy`; those belong to the sentry policy domain.
 
 On sentry nodes, the accepted top-level keys in `policy.yaml` are the
 sentry field set and `key_overrides`. Sentry-domain `policy.yaml` rejects
@@ -213,12 +216,18 @@ Client-signing semantics:
 Sentry semantics:
 
 - Top-level fields in sentry-domain `policy.yaml` are the sentry policy.
-- `reject_rekey` is valid only here.
+- `reject_rekey` and `rekey_policy` are valid only here.
 - `reject_foreign_rekey`, `always_review_warnings`,
   `auto_approve_self_noop_transfer`, `review_algo_payments`, and
   `review_asa_amounts` are invalid here.
 - `transfer_policy` is the positive authorization surface. If enabled, route
   miss behavior is deterministic reject.
+- `rekey_policy` is the positive authorization surface for non-zero `RekeyTo`
+  transactions when `reject_rekey` is absent or false. It authorizes only pure
+  0 ALGO self-payment rekeys whose sender and target match an allowed edge.
+  For corridor accounts, this authorization is off-chain sentry policy: the
+  on-chain recipient corridor still bounds ordinary transfers, but it does not
+  bound the rekey target.
 
 Both policy domains are validated by schema, not by the identity's current key
 inventory. A sentry node can carry sentry-domain `policy.yaml` before an
@@ -262,7 +271,8 @@ Policy fields by domain:
 | Field | Domain | Meaning |
 |-------|--------|---------|
 | `reject_foreign_rekey` | client_signing | Reject transactions whose non-zero `RekeyTo` target is not held by the current signer identity |
-| `reject_rekey` | sentry | Reject any transaction with non-zero `RekeyTo` |
+| `reject_rekey` | sentry | Coarse deny-all switch for transactions with non-zero `RekeyTo` |
+| `rekey_policy` | sentry | Allow-list for pure 0 ALGO self-payment rekeys by sender and rekey target |
 | `reject_close_remainder` | common | Reject payment transactions with non-zero `CloseRemainderTo` |
 | `reject_asset_close` | common | Reject ASA transfers with non-zero `AssetCloseTo` |
 | `reject_clawback` | common | Reject ASA clawback transactions using `AssetSender` |
@@ -273,9 +283,14 @@ Policy fields by domain:
 
 `reject_foreign_rekey` evaluates the rekey target against the set of addresses
 held by the current signer, which is meaningful only when the signer owns the
-sender. `reject_rekey` is the sentry analog and ignores key ownership: any
-non-zero `RekeyTo` rejects. The MVP sentry default is `reject_rekey:true`;
-allowing guarded rekeys requires explicit policy that does not yet exist.
+sender. `reject_rekey` is the sentry coarse-deny analog and ignores key
+ownership: when true, any non-zero `RekeyTo` rejects. When it is absent or
+false, the sentry still fails closed unless `rekey_policy.allowed` authorizes
+the exact sender-to-target edge and the target transaction is a pure 0 ALGO
+self-payment with no close remainder.
+For corridor accounts, the recipient Merkle root is an on-chain transfer
+constraint, not a rekey-target constraint. Rekey target safety depends on
+sentry key secrecy and the effective sentry-domain `rekey_policy`.
 
 Network-scoped rules derive transaction network identity from `GenesisHash`,
 not `GenesisID`. Unknown genesis hashes fail closed when a network-scoped rule
@@ -681,7 +696,9 @@ Sentry component policy rule IDs:
 These rule IDs are emitted when the sentry role has no effective
 sentry-domain `policy.yaml` policy, lacks an enabled positive transfer policy, has
 route-miss behavior that is not deterministic `reject`, is asked to attest a
-target with no supported transfer movement, or sees a non-zero `RekeyTo`.
+target with no supported transfer movement, or rejects a non-zero `RekeyTo`
+because the coarse deny switch is set, the rekey shape is unsupported, or
+`rekey_policy.allowed` has no matching sender-to-target edge.
 
 ## Key Overrides
 

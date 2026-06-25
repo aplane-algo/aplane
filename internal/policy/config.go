@@ -39,6 +39,7 @@ type Config struct {
 	ReviewASAAmounts            map[string]map[uint64]uint64
 	MaxASAAmounts               map[string]map[uint64]uint64
 	TransferPolicy              *TransferPolicy
+	RekeyPolicy                 *RekeyPolicy
 	KeyOverrides                map[string]*Config
 	Sentry                      *Config
 	GenesisHashResolver         apconfig.GenesisHashNetworkResolver
@@ -83,6 +84,7 @@ type StoredPolicyCore struct {
 	ReviewASAAmounts            map[string]map[string]uint64 `yaml:"review_asa_amounts,omitempty"`
 	MaxASAAmounts               map[string]map[string]uint64 `yaml:"max_asa_amounts,omitempty"`
 	TransferPolicy              *StoredTransferPolicy        `yaml:"transfer_policy,omitempty"`
+	RekeyPolicy                 *StoredRekeyPolicy           `yaml:"rekey_policy,omitempty"`
 }
 
 // storedPolicyCoreFields lists the YAML keys of StoredPolicyCore for the
@@ -101,6 +103,7 @@ var storedPolicyCoreFields = []string{
 	"review_asa_amounts",
 	"max_asa_amounts",
 	"transfer_policy",
+	"rekey_policy",
 }
 
 func allowedFieldSet(fields ...string) map[string]struct{} {
@@ -133,6 +136,7 @@ func (c *StoredPolicyCore) Clone() *StoredPolicyCore {
 	cp.ReviewASAAmounts = cloneStoredASAAmounts(c.ReviewASAAmounts)
 	cp.MaxASAAmounts = cloneStoredASAAmounts(c.MaxASAAmounts)
 	cp.TransferPolicy = c.TransferPolicy.Clone()
+	cp.RekeyPolicy = c.RekeyPolicy.Clone()
 	return &cp
 }
 
@@ -215,6 +219,9 @@ func validateRoleConfig(role string, cfg *StoredRoleConfig) error {
 	case "client_signing":
 		if cfg.RejectRekey != nil {
 			return fmt.Errorf("client_signing.reject_rekey is not supported; reject_rekey is sentry-only")
+		}
+		if cfg.RekeyPolicy != nil {
+			return fmt.Errorf("client_signing.rekey_policy is not supported; rekey_policy is sentry-only")
 		}
 	case "sentry":
 		if cfg.RejectForeignRekey != nil {
@@ -326,6 +333,9 @@ func (c *Config) Clone() *Config {
 	}
 	if c.TransferPolicy != nil {
 		cp.TransferPolicy = c.TransferPolicy.Clone()
+	}
+	if c.RekeyPolicy != nil {
+		cp.RekeyPolicy = c.RekeyPolicy.Clone()
 	}
 	if c.Sentry != nil {
 		cp.Sentry = c.Sentry.Clone()
@@ -675,6 +685,9 @@ func validateSigningDocument(c *StoredConfig) error {
 	if c.RejectRekey != nil {
 		return fmt.Errorf("signer policy reject_rekey is not supported; use sentry policy")
 	}
+	if c.RekeyPolicy != nil {
+		return fmt.Errorf("signer policy rekey_policy is not supported; use sentry policy")
+	}
 	if c.Sentry != nil {
 		return fmt.Errorf("signer policy sentry is not supported; use sentry policy")
 	}
@@ -684,6 +697,9 @@ func validateSigningDocument(c *StoredConfig) error {
 		}
 		if override.RejectRekey != nil {
 			return fmt.Errorf("key_overrides for %q: reject_rekey is not supported in signer policy; use sentry policy", key)
+		}
+		if override.RekeyPolicy != nil {
+			return fmt.Errorf("key_overrides for %q: rekey_policy is not supported in signer policy; use sentry policy", key)
 		}
 		if override.Sentry != nil {
 			return fmt.Errorf("key_overrides for %q: sentry is not supported in signer policy; use sentry policy", key)
@@ -735,7 +751,7 @@ func defaultSentryConfig(defaults *Config) *Config {
 		base.FormatASAAmount = defaults.FormatASAAmount
 	}
 	base.RejectForeignRekey = false
-	base.RejectRekey = true
+	base.RejectRekey = false
 	return base
 }
 
@@ -848,6 +864,13 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		}
 		effective.TransferPolicy = compiled
 	}
+	if c.RekeyPolicy != nil {
+		compiled, err := c.RekeyPolicy.Apply(effective.RekeyPolicy, addressSetsForRekeyPolicy(effective.TransferPolicy))
+		if err != nil {
+			return nil, fmt.Errorf("rekey_policy: %w", err)
+		}
+		effective.RekeyPolicy = compiled
+	}
 
 	if c.ClientSigning != nil {
 		clientSigningCfg, err := c.ClientSigning.toStoredConfig().Apply(effective)
@@ -913,7 +936,7 @@ func (c *StoredConfig) applySentry(clientEffective *Config) (*Config, error) {
 	} else {
 		base = DefaultConfigWithGenesisHashResolver(clientEffective.GenesisHashResolver)
 		base.FormatASAAmount = clientEffective.FormatASAAmount
-		base.RejectRekey = true
+		base.RejectRekey = false
 	}
 	common := c.commonStoredConfig()
 	cfg, err := common.Apply(base)
@@ -946,6 +969,13 @@ func (c *StoredConfig) commonStoredConfig() *StoredConfig {
 		MaxASAAmounts:        cloneStoredASAAmounts(c.MaxASAAmounts),
 		TransferPolicy:       normalizeSentryTransferPolicy(c.TransferPolicy),
 	}}
+}
+
+func addressSetsForRekeyPolicy(tp *TransferPolicy) map[string]compiledAddressSet {
+	if tp == nil {
+		return nil
+	}
+	return tp.AddressSets
 }
 
 func (c *StoredRoleConfig) toStoredConfig() *StoredConfig {

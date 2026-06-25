@@ -126,6 +126,7 @@ Go-defined key types:
 | `aplane.sentry-falcon1024.v1` | Sentry key | Go-defined | default-enabled | `lsig/falcon1024/keygen/sentry.go` |
 | `aplane.falcon1024-sentry-ed25519.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
 | `aplane.falcon1024-sentry-falcon1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
+| `aplane.corridor.v1` | Guarded-account DSA LogicSig provider with recipient corridor and sentry-authorized rekey path | Go-defined | library-visible | `lsig/corridor` |
 | `aplane.falcon1024_ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_ed25519` |
 | `aplane.ecdsak1.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ecdsak1` |
 | `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | hidden base for composed templates | `lsig/ed25519lsig` |
@@ -135,9 +136,10 @@ default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: `ed25519`, `aplane.falcon1024.v1`,
 `aplane.sentry-ed25519.v1`, and `aplane.sentry-falcon1024.v1` are
 default-enabled, while `aplane.falcon1024-sentry-ed25519.v1`,
-`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, and
-`aplane.ecdsak1.v1` are library-visible and hidden from generation until the
-current identity enables them from the library. `aplane.ed25519.v1` is a
+`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`,
+`aplane.falcon1024_ed25519.v1`, and `aplane.ecdsak1.v1` are library-visible and
+hidden from generation until the current identity enables them from the
+library. `aplane.ed25519.v1` is a
 registered hidden base provider for Ed25519-backed composed templates such as
 `aplane.ed25519-whitelist.v1`; it is not catalog-visible on its own.
 Opt-in state records are plaintext identity-scoped metadata under

@@ -15,6 +15,7 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
+	"github.com/aplane-algo/aplane/internal/merklewhitelist"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
@@ -23,6 +24,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/lsig/corridor"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
@@ -35,6 +37,7 @@ import (
 
 func init() {
 	falcon1024guarded.RegisterClient()
+	corridor.RegisterClient()
 }
 
 func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
@@ -454,6 +457,94 @@ func TestSignComponentSentryRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	}
 	if got := audit.rejected[0].policyRule; got != policy.SentryRekeyRuleID {
 		t.Fatalf("audit policyRule = %q, want %q", got, policy.SentryRekeyRuleID)
+	}
+}
+
+func TestSignComponentSentryAllowsExplicitRekeyPolicy(t *testing.T) {
+	seed := bytes.Repeat([]byte{0x62}, stded25519.SeedSize)
+	privateKey := stded25519.NewKeyFromSeed(seed)
+	publicKey := append([]byte(nil), privateKey.Public().(stded25519.PublicKey)...)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+
+	source := types.Address{68}
+	target := types.Address{69}
+	cfg := sentryPolicyConfigForSigningTest(t, fmt.Sprintf(`
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  routes: []
+rekey_policy:
+  allowed:
+    - sender: %q
+      targets: [%q]
+`, source.String(), target.String()))
+	txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
+	txn.RekeyTo = target
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:     keytypes.SentryComponentEd25519V1,
+		Category: keys.CategoryComponent,
+		Value: &coresigning.ComponentKeyMaterial{
+			ComponentKey: componentKey,
+			PublicKey:    append([]byte(nil), publicKey...),
+			PrivateKey:   append([]byte(nil), privateKey...),
+		},
+	}
+	store := &componentKeyStore{key: keyMaterial}
+
+	result, signErr := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
+		RequestID:     "cmp-sentry-rekey-allow",
+		Role:          signerapi.ComponentSignRoleSentry,
+		ComponentKey:  componentKey,
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if signErr != nil {
+		t.Fatalf("SignComponentWithContext() error = %v", signErr)
+	}
+	if store.calls != 1 {
+		t.Fatalf("store calls = %d, want 1 after policy approval", store.calls)
+	}
+	if result == nil || len(result.Signatures) != 1 {
+		t.Fatalf("result = %#v, want one signature", result)
+	}
+}
+
+func TestSignComponentSentryRejectsUnlistedRekeyTargetBeforeKeyLoad(t *testing.T) {
+	source := types.Address{70}
+	allowedTarget := types.Address{71}
+	blockedTarget := types.Address{72}
+	cfg := sentryPolicyConfigForSigningTest(t, fmt.Sprintf(`
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  routes: []
+rekey_policy:
+  allowed:
+    - sender: %q
+      targets: [%q]
+`, source.String(), allowedTarget.String()))
+	txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
+	txn.RekeyTo = blockedTarget
+	store := &componentKeyStore{}
+
+	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
+		RequestID:     "cmp-sentry-rekey-deny",
+		Role:          signerapi.ComponentSignRoleSentry,
+		ComponentKey:  testEd25519ComponentSelector(t, 0xbb),
+		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
+		TargetIndices: []int{0},
+	}, newComponentKeySession(store))
+	if err == nil || err.Kind != ErrorForbidden {
+		t.Fatalf("SignComponentWithContext() error = %#v, want forbidden", err)
+	}
+	if !strings.Contains(err.Message, policy.SentryRekeyRuleID) {
+		t.Fatalf("SignComponentWithContext() error = %q, want rekey rejection", err.Message)
+	}
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0 before policy rejection", store.calls)
 	}
 }
 
@@ -880,6 +971,94 @@ func TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup(t *testi
 	}
 	if keyMaterial.Type != "" || keyMaterial.Value != nil || keyMaterial.Bytecode != nil || keyMaterial.PublicKey != nil {
 		t.Fatalf("key material was not zeroed after assembly: %#v", keyMaterial)
+	}
+}
+
+func TestAssembleDecodedGuardedBuildsCorridorProofArg(t *testing.T) {
+	sentryPublicKey, sentryPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x64}, 64))
+	if err != nil {
+		t.Fatalf("GenerateKeypair(sentry) error = %v", err)
+	}
+	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x65}, 64))
+	if err != nil {
+		t.Fatalf("GenerateKeypair(user) error = %v", err)
+	}
+	bytecode := []byte{0x06, 0x20, 0x01, 0x01, 0x22, 0xde, 0xad}
+	guardedAccount := logicSigAddressForTest(t, bytecode)
+	recipient := types.Address{66}
+	recipients := strings.Join([]string{recipient.String(), types.Address{67}.String()}, ",")
+	root, err := merklewhitelist.RootFromRecipientsParam(recipients)
+	if err != nil {
+		t.Fatalf("RootFromRecipientsParam() error = %v", err)
+	}
+	txn := paymentTransaction(t, guardedAccount, recipient.String(), 14)
+	groupBytesHex := []string{txnutil.EncodeWithPrefixHex(txn)}
+	group, decodeErr := canonical.DecodeGroupHex(groupBytesHex)
+	if decodeErr != nil {
+		t.Fatalf("DecodeCanonicalGroupHex() error = %v", decodeErr)
+	}
+
+	userMsg := message.ComponentMessage(message.RoleUser, group.Entries[0].TxID)
+	userSignature, err := signerops.New(nil).Sign(userPrivateKey, userMsg[:])
+	if err != nil {
+		t.Fatalf("Sign(user) error = %v", err)
+	}
+	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
+	sentrySignature, err := signerops.New(nil).Sign(sentryPrivateKey, sentryMsg[:])
+	if err != nil {
+		t.Fatalf("Sign(sentry) error = %v", err)
+	}
+
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:        keytypes.CorridorV1,
+		Category:    keys.CategoryDSALsig,
+		BaseKeyType: corridor.BaseKeyType,
+		PublicKey:   append([]byte(nil), userPublicKey...),
+		Bytecode:    append([]byte(nil), bytecode...),
+		Parameters: map[string]string{
+			keytypes.ParameterSentryPublicKey: hex.EncodeToString(sentryPublicKey),
+			corridor.ParamRecipients:          recipients,
+		},
+		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
+		Value:                  &coresigning.LsigKeyMaterial{PrivateKey: append([]byte(nil), userPrivateKey...)},
+	}
+	session := &componentKeyTestSession{key: keyMaterial}
+
+	result, signErr := assembleDecodedGuarded(context.Background(), signerapi.GuardedAssemblyRequest{
+		RequestID:     "asm-corridor",
+		GroupBytesHex: groupBytesHex,
+		Targets: []signerapi.GuardedAssemblyTarget{{
+			TargetIndex:     0,
+			GuardedAccount:  guardedAccount,
+			UserSignature:   hex.EncodeToString(userSignature),
+			SentrySignature: hex.EncodeToString(sentrySignature),
+		}},
+	}, group, session)
+	if signErr != nil {
+		t.Fatalf("assembleDecodedGuarded() error = %v", signErr)
+	}
+	if len(result.SignedGroup) != 1 {
+		t.Fatalf("SignedGroup len = %d, want 1", len(result.SignedGroup))
+	}
+	signedTargetBytes, err := hex.DecodeString(result.SignedGroup[0])
+	if err != nil {
+		t.Fatalf("DecodeString(signed target) error = %v", err)
+	}
+	var signedTarget types.SignedTxn
+	if err := msgpack.Decode(signedTargetBytes, &signedTarget); err != nil {
+		t.Fatalf("Decode(signed target) error = %v", err)
+	}
+	if len(signedTarget.Lsig.Args) != 3 {
+		t.Fatalf("LogicSig args len = %d, want 3", len(signedTarget.Lsig.Args))
+	}
+	if !bytes.Equal(signedTarget.Lsig.Args[0], userSignature) {
+		t.Fatalf("LogicSig arg 0 = %x, want user signature %x", signedTarget.Lsig.Args[0], userSignature)
+	}
+	if !bytes.Equal(signedTarget.Lsig.Args[1], sentrySignature) {
+		t.Fatalf("LogicSig arg 1 = %x, want sentry signature %x", signedTarget.Lsig.Args[1], sentrySignature)
+	}
+	if !merklewhitelist.Verify(recipient, signedTarget.Lsig.Args[2], root) {
+		t.Fatal("LogicSig arg 2 is not a valid Merkle proof for recipient")
 	}
 }
 

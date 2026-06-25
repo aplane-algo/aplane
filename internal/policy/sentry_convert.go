@@ -103,6 +103,9 @@ func mergeStoredRoleConfig(base *StoredConfig, role *StoredRoleConfig) *StoredCo
 	if role.TransferPolicy != nil {
 		out.TransferPolicy = mergeStoredTransferPolicy(out.TransferPolicy, role.TransferPolicy)
 	}
+	if role.RekeyPolicy != nil {
+		out.RekeyPolicy = role.RekeyPolicy.Clone()
+	}
 	return out
 }
 

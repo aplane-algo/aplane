@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -775,6 +776,12 @@ func TestScanKeysDirectoryWithMasterKeyIncludesWhitelistV2ProofBudget(t *testing
 	want := len(bytecode) + baseSigSize + merklewhitelist.ProofSize
 	if info.LsigSize != want {
 		t.Fatalf("LsigSize = %d, want %d", info.LsigSize, want)
+	}
+}
+
+func TestSignerGeneratedDSAArgSizeIncludesCorridorProofBudget(t *testing.T) {
+	if got := signerGeneratedDSAArgSizeForKey(keytypes.CorridorV1); got != merklewhitelist.ProofSize {
+		t.Fatalf("signerGeneratedDSAArgSizeForKey(corridor) = %d, want %d", got, merklewhitelist.ProofSize)
 	}
 }
 

@@ -19,6 +19,9 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.GuardedFalcon1024SentryFalcon1024V1) {
 		t.Fatal("signer node rejected Falcon-guarded account key")
 	}
+	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.CorridorV1) {
+		t.Fatal("signer node rejected corridor account key")
+	}
 	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.SentryComponentEd25519V1) {
 		t.Fatal("signer node allowed Ed25519 sentry key")
 	}
@@ -36,6 +39,9 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.GuardedFalcon1024SentryFalcon1024V1) {
 		t.Fatal("sentry node allowed guarded account key")
+	}
+	if NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.CorridorV1) {
+		t.Fatal("sentry node allowed corridor account key")
 	}
 	if NodeRoleAllowsKeyType(noderole.Role("unknown"), "ed25519") {
 		t.Fatal("unknown node role allowed Ed25519 account key")

@@ -42,6 +42,11 @@ const (
 	// sentry component signature.
 	GuardedFalcon1024SentryFalcon1024V1 = "aplane.falcon1024-sentry-falcon1024.v1"
 
+	// CorridorV1 is a Falcon-1024 user-account key type whose LogicSig verifies
+	// a Falcon-1024 user signature plus a Falcon-1024 sentry component
+	// signature, then enforces a recipient corridor or sentry-authorized rekey.
+	CorridorV1 = "aplane.corridor.v1"
+
 	// ParameterSentryPublicKey is the durable creation parameter that records
 	// the sentry public key embedded in a guarded account LogicSig.
 	ParameterSentryPublicKey = "sentry_public_key"
@@ -72,7 +77,7 @@ func IsSentryComponentKeyType(keyType string) bool {
 // account that requires the component signing and assembly flow.
 func IsGuardedAccountKeyType(keyType string) bool {
 	switch keyType {
-	case GuardedFalcon1024SentryEd25519V1, GuardedFalcon1024SentryFalcon1024V1:
+	case GuardedFalcon1024SentryEd25519V1, GuardedFalcon1024SentryFalcon1024V1, CorridorV1:
 		return true
 	default:
 		return false
@@ -91,7 +96,7 @@ func SentryComponentKeyTypeForGuardedAccount(keyType string) (string, bool) {
 	switch keyType {
 	case GuardedFalcon1024SentryEd25519V1:
 		return SentryComponentEd25519V1, true
-	case GuardedFalcon1024SentryFalcon1024V1:
+	case GuardedFalcon1024SentryFalcon1024V1, CorridorV1:
 		return SentryComponentFalcon1024V1, true
 	default:
 		return "", false

@@ -4,6 +4,7 @@
 package policy
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -82,10 +83,46 @@ func TestStoredConfigApplySentryRole(t *testing.T) {
 	}
 }
 
+func TestStoredConfigApplySentryRekeyPolicy(t *testing.T) {
+	source := types.Address{90}
+	target := types.Address{91}
+	otherTarget := types.Address{92}
+	stored, err := ParseStoredSentryConfig([]byte(fmt.Sprintf(`
+transfer_policy:
+  schema_version: 1
+  enabled: true
+  address_sets:
+    senders: [%q]
+    targets: [%q]
+  routes: []
+rekey_policy:
+  allowed:
+    - sender: "@senders"
+      targets: ["@targets"]
+`, source.String(), target.String())))
+	if err != nil {
+		t.Fatalf("ParseStoredSentryConfig() error = %v", err)
+	}
+	cfg, err := stored.ApplySentry(DefaultConfig())
+	if err != nil {
+		t.Fatalf("ApplySentry() error = %v", err)
+	}
+	if cfg.RekeyPolicy == nil {
+		t.Fatal("RekeyPolicy = nil")
+	}
+	if !cfg.RekeyPolicy.Allows(source, target) {
+		t.Fatal("RekeyPolicy did not allow configured sender -> target")
+	}
+	if cfg.RekeyPolicy.Allows(source, otherTarget) {
+		t.Fatal("RekeyPolicy allowed unconfigured target")
+	}
+}
+
 func TestParseStoredConfigRejectsSentryPolicyFields(t *testing.T) {
 	for _, raw := range []string{
 		"sentry: {}\n",
 		"reject_rekey: true\n",
+		"rekey_policy: {}\n",
 	} {
 		_, err := ParseStoredConfig([]byte(raw))
 		if err == nil {

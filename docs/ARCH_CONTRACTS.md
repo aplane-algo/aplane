@@ -74,7 +74,8 @@ Canonical forms:
   `component_key`.
 - guarded account key types name both the account DSA and the sentry DSA,
   for example `aplane.falcon1024-sentry-ed25519.v1` and
-  `aplane.falcon1024-sentry-falcon1024.v1`; the older Go-level
+  `aplane.falcon1024-sentry-falcon1024.v1`; `aplane.corridor.v1`
+  is the Falcon-1024-only corridor shorthand. The older Go-level
   `GuardedFalcon1024SentryEd25519V1` symbol is a compatibility alias for the Ed25519
   sentry form and is not a separate persisted identifier
 
@@ -1060,14 +1061,17 @@ signer. When generating a guarded account, callers may provide
 with older scripts, `sentry=<name>` is also accepted. The signer resolves the
 Sentry Key ID or name to `public_key_hex`, verifies that the reference key type
 matches the guarded-account key type's required sentry key type,
-rejects requests that provide both forms, and persists only the resolved
-`sentry_public_key` in the key file.
+rejects requests that provide both forms, and persists the resolved
+`sentry_public_key` plus any other guarded-account creation parameters in the
+key file. For example, `aplane.corridor.v1` also persists its recipient
+corridor list.
 
 Identity-scoped `/keytypes` metadata may expose imported references as a
 creation parameter named `sentry` with `type:"select"` and `options[]`
 containing Sentry Key IDs whose sentry key type matches the guarded
 account key type. This is UI metadata for generation clients such as `apadmin`;
-the durable key file still stores the resolved `sentry_public_key`.
+the durable key file still stores the resolved `sentry_public_key`; other
+provider-specific creation parameters remain exposed normally.
 
 ### Template Files (`.template`)
 

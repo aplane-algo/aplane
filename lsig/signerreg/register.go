@@ -9,6 +9,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/lsig"
+	"github.com/aplane-algo/aplane/lsig/corridor"
+	corridorsignerreg "github.com/aplane-algo/aplane/lsig/corridor/signerreg"
 	"github.com/aplane-algo/aplane/lsig/ecdsak1"
 	ecdsak1family "github.com/aplane-algo/aplane/lsig/ecdsak1/family"
 	ecdsak1signerreg "github.com/aplane-algo/aplane/lsig/ecdsak1/signerreg"
@@ -43,6 +45,11 @@ func RegisterSigner() {
 			Family:       falcon1024guarded.FamilyNameFalcon1024,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, guardedsignerreg.RegisterSigner)
+		registerCompiledSigner(keytypecatalog.Entry{
+			KeyType:      corridor.KeyTypeV1,
+			Family:       corridor.FamilyName,
+			Availability: keytypecatalog.AvailabilityLibrary,
+		}, corridorsignerreg.RegisterSigner)
 		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType:      falcon1024ed25519.KeyTypeV1,
 			Family:       falcon1024ed25519.FamilyName,

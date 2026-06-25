@@ -58,7 +58,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 		if keytypes.IsGuardedAccountKeyType(keyType) {
 			keyInfo.SigningFlow = signerapi.SigningFlowSentry1
 			keyInfo.SentryComponentKeyType, _ = keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
-			keyInfo.Parameters = guardedAccountParameters(summary.Parameters)
+			keyInfo.Parameters = guardedAccountParameters(keyType, summary.Parameters)
 		}
 		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = keys.CompareTemplateFingerprint(keyType, summary.TemplateFingerprint)
 
@@ -72,14 +72,18 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 	return keyList
 }
 
-func guardedAccountParameters(parameters map[string]string) map[string]string {
+func guardedAccountParameters(keyType string, parameters map[string]string) map[string]string {
 	sentryPublicKey := parameters[keytypes.ParameterSentryPublicKey]
 	if sentryPublicKey == "" {
 		return nil
 	}
-	return map[string]string{
+	out := map[string]string{
 		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 	}
+	if keyType == keytypes.CorridorV1 && parameters["recipients"] != "" {
+		out["recipients"] = parameters["recipients"]
+	}
+	return out
 }
 
 func restInputModeInfos(modes []lsigprovider.InputMode) []signerapi.InputModeInfo {
@@ -321,7 +325,7 @@ func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeI
 		if len(componentIDs) == 0 {
 			continue
 		}
-		infos[i].CreationParams = []signerapi.CreationParamInfo{{
+		sentryParam := signerapi.CreationParamInfo{
 			Name:        sentryrefs.ParamSentryName,
 			Label:       "Sentry Key ID",
 			Description: "Imported Sentry Key ID to embed in the guarded account",
@@ -329,8 +333,26 @@ func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeI
 			Required:    true,
 			Options:     append([]string(nil), componentIDs...),
 			Default:     componentIDs[0],
-		}}
+		}
+		infos[i].CreationParams = replaceSentryPublicKeyParam(infos[i].CreationParams, sentryParam)
 	}
+}
+
+func replaceSentryPublicKeyParam(params []signerapi.CreationParamInfo, replacement signerapi.CreationParamInfo) []signerapi.CreationParamInfo {
+	out := make([]signerapi.CreationParamInfo, 0, len(params))
+	replaced := false
+	for _, param := range params {
+		if param.Name == keytypes.ParameterSentryPublicKey {
+			out = append(out, replacement)
+			replaced = true
+			continue
+		}
+		out = append(out, param)
+	}
+	if !replaced {
+		return []signerapi.CreationParamInfo{replacement}
+	}
+	return out
 }
 
 func sentryComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {

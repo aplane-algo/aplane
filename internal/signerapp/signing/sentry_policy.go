@@ -83,7 +83,8 @@ func sentryTransferPolicyConfigLints(tp *policy.TransferPolicy) []policy.LintVio
 
 func sentryTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *policy.Config) []policy.LintViolation {
 	var violations []policy.LintViolation
-	if len(policy.ExtractTransferMovements(txn)) == 0 {
+	isRekey := !txn.RekeyTo.IsZero()
+	if !isRekey && len(policy.ExtractTransferMovements(txn)) == 0 {
 		violations = append(violations, policy.LintViolation{
 			RuleID:   policy.SentryNonTransferRuleID,
 			Scope:    "txn",
@@ -91,15 +92,6 @@ func sentryTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *policy
 			Message:  fmt.Sprintf("sentry policy only supports direct pay and axfer targets, got %s", txn.Type),
 		})
 	}
-	if cfg.RejectRekey && !txn.RekeyTo.IsZero() {
-		violations = append(violations, policy.LintViolation{
-			RuleID:   policy.SentryRekeyRuleID,
-			Scope:    "txn",
-			TxnIndex: targetIndex,
-			Message:  "rekey transactions are rejected by sentry policy",
-		})
-	}
-
 	commonLintCfg := cfg.Clone()
 	commonLintCfg.RejectForeignRekey = false
 	commonLintCfg.RejectRekey = false
@@ -107,6 +99,19 @@ func sentryTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *policy
 		policy.CheckTxnPolicyLintsWithKnownAddresses(txn, txn.Sender.String(), commonLintCfg, nil),
 		targetIndex,
 	)...)
+	if isRekey {
+		if cfg.RejectRekey {
+			violations = append(violations, policy.LintViolation{
+				RuleID:   policy.SentryRekeyRuleID,
+				Scope:    "txn",
+				TxnIndex: targetIndex,
+				Message:  "rekey transactions are rejected by sentry policy",
+			})
+			return violations
+		}
+		violations = append(violations, sentryRekeyPolicyLints(txn, targetIndex, cfg)...)
+		return violations
+	}
 	violations = append(violations, withTargetIndex(
 		policy.CheckTxnTransferRoutingPolicyLints(txn, cfg, false),
 		targetIndex,
@@ -116,6 +121,37 @@ func sentryTargetPolicyLints(txn types.Transaction, targetIndex int, cfg *policy
 		targetIndex,
 	)...)
 	return violations
+}
+
+func sentryRekeyPolicyLints(txn types.Transaction, targetIndex int, cfg *policy.Config) []policy.LintViolation {
+	if txn.Type != types.PaymentTx {
+		return []policy.LintViolation{sentryRekeyViolation(targetIndex, "rekey transactions must be payment transactions")}
+	}
+	if txn.Amount != 0 {
+		return []policy.LintViolation{sentryRekeyViolation(targetIndex, "rekey transactions must transfer 0 microalgos")}
+	}
+	if txn.Receiver != txn.Sender {
+		return []policy.LintViolation{sentryRekeyViolation(targetIndex, "rekey transactions must be self-payments")}
+	}
+	if !txn.CloseRemainderTo.IsZero() {
+		return []policy.LintViolation{sentryRekeyViolation(targetIndex, "rekey transactions must not close remainder")}
+	}
+	if cfg == nil || cfg.RekeyPolicy == nil || !cfg.RekeyPolicy.Allows(txn.Sender, txn.RekeyTo) {
+		return []policy.LintViolation{sentryRekeyViolation(
+			targetIndex,
+			fmt.Sprintf("rekey from %s to %s is not allowed by sentry rekey_policy", txn.Sender, txn.RekeyTo),
+		)}
+	}
+	return nil
+}
+
+func sentryRekeyViolation(targetIndex int, message string) policy.LintViolation {
+	return policy.LintViolation{
+		RuleID:   policy.SentryRekeyRuleID,
+		Scope:    "txn",
+		TxnIndex: targetIndex,
+		Message:  message,
+	}
 }
 
 func withTargetIndex(violations []policy.LintViolation, targetIndex int) []policy.LintViolation {

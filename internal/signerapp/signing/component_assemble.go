@@ -14,11 +14,14 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/merklewhitelist"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/corridor"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 
@@ -115,7 +118,7 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 		return "", badRequest(fmt.Sprintf("target index %d sentry_signature invalid: %v", target.TargetIndex, verifyErr))
 	}
 
-	packedSignature, packErr := falcon1024guarded.PackComponentSignaturesForKeyType(keyMaterial.Type, userSignature, sentrySignature)
+	packedSignature, packErr := packGuardedComponentSignatures(keyMaterial.Type, userSignature, sentrySignature)
 	if packErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d signatures invalid: %v", target.TargetIndex, packErr))
 	}
@@ -129,13 +132,18 @@ func assembleGuardedTarget(ctx context.Context, target signerapi.GuardedAssembly
 	if buildErr != nil {
 		return "", badRequest(fmt.Sprintf("target index %d signatures invalid: %v", target.TargetIndex, buildErr))
 	}
+	providerArgs, err := guardedAssemblyProviderArgs(target, entry, keyMaterial)
+	if err != nil {
+		return "", err
+	}
 	runtimeArgs, err := orderedAssemblyRuntimeArgs(target, keyMaterial.SigningArgs)
 	if err != nil {
 		return "", err
 	}
 
-	lsigArgs := make([][]byte, 0, len(signatureArgs)+len(runtimeArgs))
+	lsigArgs := make([][]byte, 0, len(signatureArgs)+len(providerArgs)+len(runtimeArgs))
 	lsigArgs = append(lsigArgs, signatureArgs...)
+	lsigArgs = append(lsigArgs, providerArgs...)
 	lsigArgs = append(lsigArgs, runtimeArgs...)
 	lsigAcct := algocrypto.LogicSigAccount{
 		Lsig: types.LogicSig{
@@ -179,6 +187,66 @@ func validateAssembledGuardedTarget(target signerapi.GuardedAssemblyTarget, entr
 		))
 	}
 	return nil
+}
+
+func packGuardedComponentSignatures(keyType string, userSignature, sentrySignature []byte) ([]byte, error) {
+	if keyType == keytypes.CorridorV1 {
+		return corridor.PackComponentSignatures(userSignature, sentrySignature)
+	}
+	return falcon1024guarded.PackComponentSignaturesForKeyType(keyType, userSignature, sentrySignature)
+}
+
+func guardedAssemblyProviderArgs(target signerapi.GuardedAssemblyTarget, entry canonical.Txn, keyMaterial *coresigning.KeyMaterial) ([][]byte, *ServiceError) {
+	if keyMaterial == nil || keyMaterial.Type != keytypes.CorridorV1 {
+		return nil, nil
+	}
+	proof, err := corridorProofArg(entry.Txn, keyMaterial.Parameters)
+	if err != nil {
+		return nil, badRequest(fmt.Sprintf("target index %d corridor proof generation failed: %v", target.TargetIndex, err))
+	}
+	if len(proof) == 0 {
+		return nil, nil
+	}
+	return [][]byte{proof}, nil
+}
+
+func corridorProofArg(txn types.Transaction, params map[string]string) ([]byte, error) {
+	if params == nil || strings.TrimSpace(params[corridor.ParamRecipients]) == "" {
+		return nil, fmt.Errorf("corridor key file missing recipients parameter")
+	}
+	if !txn.RekeyTo.IsZero() {
+		return corridorRekeyProofArg(txn)
+	}
+
+	var receiver types.Address
+	switch txn.Type {
+	case types.PaymentTx:
+		receiver = txn.Receiver
+	case types.AssetTransferTx:
+		receiver = txn.AssetReceiver
+	default:
+		return nil, fmt.Errorf("corridor only supports pay and axfer targets, got %s", txn.Type)
+	}
+	if receiver == txn.Sender {
+		return nil, nil
+	}
+	return merklewhitelist.ProofForAddressParam(params[corridor.ParamRecipients], receiver)
+}
+
+func corridorRekeyProofArg(txn types.Transaction) ([]byte, error) {
+	if txn.Type != types.PaymentTx {
+		return nil, fmt.Errorf("corridor rekey targets must be payment transactions")
+	}
+	if txn.Amount != 0 {
+		return nil, fmt.Errorf("corridor rekey targets must transfer 0 microalgos")
+	}
+	if txn.Receiver != txn.Sender {
+		return nil, fmt.Errorf("corridor rekey targets must be self-payments")
+	}
+	if !txn.CloseRemainderTo.IsZero() {
+		return nil, fmt.Errorf("corridor rekey targets must not close remainder")
+	}
+	return nil, nil
 }
 
 func validateGuardedPassthrough(ctx context.Context, passthrough signerapi.GuardedPassthroughItem, entry canonical.Txn, session componentKeyGetter) (string, *ServiceError) {

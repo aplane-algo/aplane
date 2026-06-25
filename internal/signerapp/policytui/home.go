@@ -148,7 +148,7 @@ func signerPolicyFields() []field {
 
 func sentryPolicyFields() []field {
 	return []field{
-		boolField("reject_rekey", "Reject rekey", true, func(c *policy.StoredConfig) **bool {
+		boolField("reject_rekey", "Reject rekey", false, func(c *policy.StoredConfig) **bool {
 			return &c.RejectRekey
 		}),
 		boolField("reject_close_remainder", "Reject close remainder", false, func(c *policy.StoredConfig) **bool {
@@ -170,6 +170,18 @@ func sentryPolicyFields() []field {
 			source: func(c *policy.StoredConfig) string {
 				if c == nil || c.MaxFeeMicroAlgos == nil {
 					return "default"
+				}
+				return "explicit"
+			},
+		},
+		{
+			key:   "rekey_policy",
+			label: "Rekey policy",
+			kind:  fieldReadonly,
+			value: rekeyPolicySummary,
+			source: func(c *policy.StoredConfig) string {
+				if c == nil || c.RekeyPolicy == nil {
+					return "absent"
 				}
 				return "explicit"
 			},
@@ -228,4 +240,11 @@ func transferPolicySummary(c *policy.StoredConfig) string {
 		enabled = fmt.Sprintf("%t", *c.TransferPolicy.Enabled)
 	}
 	return fmt.Sprintf("enabled=%s routes=%d", enabled, len(c.TransferPolicy.Routes))
+}
+
+func rekeyPolicySummary(c *policy.StoredConfig) string {
+	if c == nil || c.RekeyPolicy == nil {
+		return "allowed=0"
+	}
+	return fmt.Sprintf("allowed=%d", len(c.RekeyPolicy.Allowed))
 }

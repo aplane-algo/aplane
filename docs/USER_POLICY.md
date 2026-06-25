@@ -122,7 +122,8 @@ applied.
 | Field | Meaning |
 |-------|---------|
 | `reject_foreign_rekey` | Signer-domain only. Reject txns whose non-zero `RekeyTo` target is not held by this signer identity. Defaults to `true`. |
-| `reject_rekey` | Sentry-domain only. Reject any txn with non-zero `RekeyTo`. Defaults to `true`. |
+| `reject_rekey` | Sentry-domain only. Coarse deny-all switch for txns with non-zero `RekeyTo`. Defaults to `false`; missing `rekey_policy` still denies rekeys. |
+| `rekey_policy` | Sentry-domain only. Allow-list for pure 0 ALGO self-payment rekeys by sender and target. YAML-only. |
 | `reject_close_remainder` | Reject payment txns with non-zero `CloseRemainderTo`. Defaults to `false`. |
 | `reject_asset_close` | Reject ASA transfer txns with non-zero `AssetCloseTo`. Defaults to `false`. |
 | `reject_clawback` | Reject ASA clawback txns using `AssetSender`. Defaults to `false`. |
@@ -144,6 +145,28 @@ Clawback controls are YAML-only in the guided policy editor. `reject_clawback`,
 `asset_sources` / `clawback.allow` remain valid in `policy.yaml`, but the
 `apadmin` / `appolicy` TUI does not expose controls to change them. Existing
 YAML-authored clawback settings are preserved by unrelated guided edits.
+
+Sentry rekey authorization is YAML-only. Set `reject_rekey: true` for a coarse
+deny-all policy. To authorize a controlled rekey, omit `reject_rekey` or set it
+to `false`, and add `rekey_policy.allowed` entries:
+
+```yaml
+rekey_policy:
+  allowed:
+    - sender: "SENDERADDR..."
+      targets: ["TARGETADDR..."]
+```
+
+Each `sender` and `targets` item may be an Algorand address or a flat
+`transfer_policy.address_sets` reference such as `@corridor_accounts`.
+Network-specific address sets are not accepted for rekey policy. The target
+transaction must be a pure 0 ALGO self-payment with non-zero `RekeyTo` and no
+close remainder.
+
+For `aplane.corridor.v1`, ordinary transfers remain bounded on-chain by the
+compiled recipient corridor. Rekey targets are not checked against that
+corridor; they rely on sentry key secrecy and the effective
+`rekey_policy.allowed` edges.
 
 ## Basic Example
 

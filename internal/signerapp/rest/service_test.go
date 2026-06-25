@@ -34,6 +34,7 @@ import (
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 
@@ -583,6 +584,7 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 		keytypes.SentryComponentEd25519V1,
 		keytypes.GuardedFalcon1024SentryEd25519V1,
 		keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		keytypes.CorridorV1,
 	}, nil)
 	byType := make(map[string]signerapi.KeyTypeInfo, len(infos))
 	for _, info := range infos {
@@ -592,6 +594,7 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	guarded := map[string]string{
 		keytypes.GuardedFalcon1024SentryEd25519V1:    keytypes.SentryComponentEd25519V1,
 		keytypes.GuardedFalcon1024SentryFalcon1024V1: keytypes.SentryComponentFalcon1024V1,
+		keytypes.CorridorV1:                          keytypes.SentryComponentFalcon1024V1,
 	}
 	for keyType, wantComponent := range guarded {
 		info, ok := byType[keyType]
@@ -616,7 +619,7 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 func TestGuardedAccountParametersProjection(t *testing.T) {
 	const sentryPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
 
-	got := guardedAccountParameters(map[string]string{
+	got := guardedAccountParameters(keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
 		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 		"unrelated":                       "not-projected",
 	})
@@ -628,14 +631,22 @@ func TestGuardedAccountParametersProjection(t *testing.T) {
 	}
 
 	got[keytypes.ParameterSentryPublicKey] = "mutated"
-	again := guardedAccountParameters(map[string]string{
+	again := guardedAccountParameters(keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
 		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 	})
 	if again[keytypes.ParameterSentryPublicKey] != sentryPublicKey {
 		t.Fatalf("guardedAccountParameters() reused mutable map: %#v", again)
 	}
 
-	if empty := guardedAccountParameters(nil); empty != nil {
+	corridor := guardedAccountParameters(keytypes.CorridorV1, map[string]string{
+		keytypes.ParameterSentryPublicKey: sentryPublicKey,
+		"recipients":                      "RECIPIENT",
+	})
+	if corridor["recipients"] != "RECIPIENT" {
+		t.Fatalf("guardedAccountParameters(corridor) = %#v, want recipients projected", corridor)
+	}
+
+	if empty := guardedAccountParameters(keytypes.GuardedFalcon1024SentryEd25519V1, nil); empty != nil {
 		t.Fatalf("guardedAccountParameters(nil) = %#v, want nil", empty)
 	}
 }
@@ -771,6 +782,61 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	}
 	if len(params[0].Options) != 1 || params[0].Options[0] != componentKey || params[0].Default != componentKey {
 		t.Fatalf("sentry options/default = %#v/%q, want Sentry Key ID %s", params[0].Options, params[0].Default, componentKey)
+	}
+}
+
+func TestServiceKeyTypesForIdentityKeepsCorridorRecipientsWithSentryReference(t *testing.T) {
+	ir := setupIdentityRuntime(t, false)
+	publicKey := strings.Repeat("ab", falconfamily.PublicKeySize)
+	publicKeyBytes, err := hex.DecodeString(publicKey)
+	if err != nil {
+		t.Fatalf("DecodeString() error = %v", err)
+	}
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKeyBytes)
+	if err != nil {
+		t.Fatalf("ComponentKeySelector() error = %v", err)
+	}
+	env, err := sentryrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentFalcon1024V1, publicKey)
+	if err != nil {
+		t.Fatalf("NewExportEnvelope() error = %v", err)
+	}
+	data, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "falcon-sentry", data); err != nil {
+		t.Fatalf("Import() error = %v", err)
+	}
+	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+		KeyType: keytypes.CorridorV1,
+		Source:  keytypestate.SourceCompiled,
+		State:   keytypestate.StateEnabled,
+	}); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+
+	resp, svcErr := Service{}.KeyTypesForIdentity(ir)
+	if svcErr != nil {
+		t.Fatalf("KeyTypesForIdentity() error = %v", svcErr)
+	}
+	var params []signerapi.CreationParamInfo
+	for _, info := range resp.KeyTypes {
+		if info.KeyType == keytypes.CorridorV1 {
+			params = info.CreationParams
+			break
+		}
+	}
+	if len(params) != 2 {
+		t.Fatalf("CreationParams = %#v, want recipients plus sentry selector", params)
+	}
+	if params[0].Name != "recipients" || params[0].Type != "address[]" {
+		t.Fatalf("first corridor param = %#v, want recipients address[]", params[0])
+	}
+	if params[1].Name != sentryrefs.ParamSentryName || params[1].Type != "select" {
+		t.Fatalf("second corridor param = %#v, want select sentry", params[1])
+	}
+	if len(params[1].Options) != 1 || params[1].Options[0] != componentKey || params[1].Default != componentKey {
+		t.Fatalf("sentry options/default = %#v/%q, want Sentry Key ID %s", params[1].Options, params[1].Default, componentKey)
 	}
 }
 

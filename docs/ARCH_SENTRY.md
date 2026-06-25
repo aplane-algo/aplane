@@ -78,11 +78,29 @@ Current guarded account key types:
 
 - `aplane.falcon1024-sentry-ed25519.v1`
 - `aplane.falcon1024-sentry-falcon1024.v1`
+- `aplane.corridor.v1`
 
 A guarded account key file stores the resolved sentry public key and embeds
 that same public key in its LogicSig bytecode. Generation may accept a public
 Sentry reference by Sentry Key ID, but the durable guarded key stores the
 resolved public key.
+
+`aplane.corridor.v1` is always Falcon-1024 for both the user component key and
+the sentry component key. In addition to `sentry_public_key`, its key file
+stores `recipients`, an `address[]` creation parameter compiled into a Merkle
+root in the LogicSig. During `/sign/assemble`, the signer appends the recipient
+Merkle proof as LogicSig arg 2 for non-self `pay` and `axfer` targets. Pure
+0 ALGO self-payment rekeys use no proof; they are authorized by sentry
+`rekey_policy` before the sentry component signature is issued.
+
+This is an intentional split in enforcement boundaries. Corridor transfers
+have an on-chain floor: even if both the user component key and sentry component
+key are compromised, value can move only to recipients in the compiled Merkle
+root. Corridor rekeys are different: the LogicSig enforces only the pure rekey
+transaction shape, while the allowed rekey target is authorized off-chain by
+the sentry key plus sentry `rekey_policy`. A compromised sentry key with a
+matching user component signature can therefore authorize any target that the
+effective sentry policy permits.
 
 Guarded account identity is the guarded account `key_type`, not the base
 signing primitive. The stored `base_key_type` names the private signing
@@ -229,6 +247,8 @@ Assembly is the main server-side backstop for guarded signing. It verifies:
 - the sentry component signature verifies for role `sentry` and the target
   txid against the sentry public key embedded in the guarded account key,
 - packed LogicSig arguments match the guarded template's expected layout,
+- provider-generated LogicSig arguments, such as corridor Merkle proofs, match
+  the guarded account key type and target transaction,
 - the resulting LogicSig address equals the guarded account,
 - passthrough signed bytes match the canonical transaction IDs,
 - when `txn.Sender != guarded_account`, the signed transaction carries
@@ -257,6 +277,13 @@ mechanism produced the user component signature.
 Sentry transfer policy is a positive authorization surface. Supported target
 movements include direct transfers that policy routing can evaluate. Target
 shapes that cannot be represented as supported sentry movements fail closed.
+For rekeys, `reject_rekey:true` remains a coarse deny-all switch. If it is not
+set, a non-zero `RekeyTo` is authorized only when the transaction is a pure
+0 ALGO self-payment and `rekey_policy.allowed` contains a matching
+sender-to-target edge. Missing `rekey_policy` still fails closed.
+Unlike corridor transfer destinations, rekey targets are not constrained by the
+on-chain recipient Merkle root; they rest on sentry key secrecy and the
+sentry-domain `rekey_policy`.
 
 See [ARCH_POLICY.md](ARCH_POLICY.md) for the rule inventory, domain-specific
 schema constraints, route behavior, and reject/review/approve mapping.

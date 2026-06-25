@@ -26,6 +26,9 @@ func TestSentryKeyTypeClassifiers(t *testing.T) {
 	if !IsGuardedAccountKeyType(GuardedFalcon1024SentryFalcon1024V1) {
 		t.Fatal("Falcon-guarded Falcon account key type was not classified as guarded")
 	}
+	if !IsGuardedAccountKeyType(CorridorV1) {
+		t.Fatal("corridor account key type was not classified as guarded")
+	}
 	if IsSentryKeyType("aplane.falcon1024.v1") {
 		t.Fatal("ordinary Falcon key type classified as sentry key type")
 	}
@@ -42,6 +45,7 @@ func TestSentryComponentKeyTypeForGuardedAccount(t *testing.T) {
 	}{
 		{GuardedFalcon1024SentryEd25519V1, SentryComponentEd25519V1, true},
 		{GuardedFalcon1024SentryFalcon1024V1, SentryComponentFalcon1024V1, true},
+		{CorridorV1, SentryComponentFalcon1024V1, true},
 		{SentryComponentEd25519V1, "", false},
 	}
 	for _, tt := range tests {

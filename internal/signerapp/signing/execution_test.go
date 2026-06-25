@@ -199,6 +199,7 @@ func TestExecutorRejectsSentryKeyTypesBeforeSessionLoad(t *testing.T) {
 	}{
 		{name: "falcon guarded ed25519 sentry", keyType: keytypes.GuardedFalcon1024SentryEd25519V1},
 		{name: "falcon guarded falcon sentry", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1},
+		{name: "corridor", keyType: keytypes.CorridorV1},
 	}
 
 	for _, tt := range tests {
@@ -242,6 +243,7 @@ func TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup(t *testi
 		{name: "falcon component", keyType: keytypes.SentryComponentFalcon1024V1, want: sentryComponentSignRejectMessage},
 		{name: "guarded ed25519 sentry", keyType: keytypes.GuardedFalcon1024SentryEd25519V1, want: guardedAccountSignRejectMessage},
 		{name: "guarded falcon sentry", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1, want: guardedAccountSignRejectMessage},
+		{name: "corridor", keyType: keytypes.CorridorV1, want: guardedAccountSignRejectMessage},
 	}
 
 	for _, tt := range tests {

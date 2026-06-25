@@ -96,6 +96,10 @@ Enable a library-visible compiled provider:
 apstore -d $APSIGNER_DATA keytype enable aplane.falcon1024_ed25519.v1
 ```
 
+Other library-visible compiled providers include the guarded account key types
+`aplane.falcon1024-sentry-ed25519.v1`,
+`aplane.falcon1024-sentry-falcon1024.v1`, and `aplane.corridor.v1`.
+
 Enabling writes or updates:
 
 ```text
