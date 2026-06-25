@@ -118,6 +118,13 @@ func CompatibilityFingerprintOf(p LSigProvider) (string, bool) {
 	return fingerprinter.CompatibilityFingerprint(), true
 }
 
+// RoutingFamily is the RESOLVE axis of key-type resolution (see
+// docs/ARCH_KEYTYPE_AXES.md): it maps a key type to the registry key used to find
+// its implementation. Route by this declared family, NOT by BaseKeyType — a
+// guarded account's BaseKeyType is its component-signing primitive, not its
+// routing authority, so BaseKeyType cannot express the delegate-vs-self
+// distinction that this does.
+//
 // RoutingFamily returns the provider-declared ROUTING family for a key type —
 // the family under which the key type's keygen/signing/mnemonic/metadata ops are
 // registered, which is how the family-keyed registries are indexed. For a

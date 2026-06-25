@@ -27,6 +27,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
+// ComponentPacker and AssemblyExtraArgsProvider are BEHAVE-axis capability hooks
+// (see docs/ARCH_KEYTYPE_AXES.md): assembly resolves the provider for a key type,
+// then type-asserts these to ask it to behave — no switch on key type. A provider
+// that does not implement AssemblyExtraArgsProvider simply appends no extra args.
 type ComponentPacker interface {
 	PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error)
 }

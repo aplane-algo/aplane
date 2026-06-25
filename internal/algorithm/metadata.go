@@ -98,6 +98,10 @@ func RegisterMetadata(metadata SignatureMetadata) {
 // GetMetadata retrieves metadata for a key type, resolving via the key type's
 // routing family (e.g. "aplane.falcon1024.v1" -> "aplane.falcon1024"). If that
 // fails it falls back to a best-effort prefix match (see hasFamilyPrefix).
+//
+// This rides the RESOLVE axis (docs/ARCH_KEYTYPE_AXES.md); the hasFamilyPrefix
+// fallback below is a display-only best-effort, not a separate resolution
+// mechanism.
 func GetMetadata(keyType string) (SignatureMetadata, error) {
 	if metadata, ok := logicsigdsa.ResolveByKeyType(keyType, metadataRegistry.Get); ok {
 		return metadata, nil

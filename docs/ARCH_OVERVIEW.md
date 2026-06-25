@@ -374,7 +374,7 @@ See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for headless configurati
 | New command | UI | ARCH_REPL.md (REPL/CLI) and ARCH_MCP.md (MCP) |
 | New shell workflow | Shell App | ARCH_SPEC.md and ARCH_ENGINE.md |
 | Reusable transaction/client mechanic | Engine | ARCH_ENGINE.md |
-| New key type or algorithm | Provider | DEV_KEYTYPES.md and ARCH_CRYPTO.md |
+| New key type or algorithm | Provider | DEV_KEYTYPES.md, ARCH_KEYTYPE_AXES.md, and ARCH_CRYPTO.md |
 | New KeyType Library template | Provider / Template Library | DEV_KEYTYPES.md |
 | New config option | Config | USER_CONFIG.md |
 

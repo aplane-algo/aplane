@@ -88,12 +88,13 @@ func RoutingFamily(keyType string) string {
 	return lsigprovider.RoutingFamily(keyType)
 }
 
-// ResolveByKeyType resolves a value for keyType from a registry keyed by routing
-// family, using the standard two-step lookup the family-keyed registries share:
-// an exact key-type match first (native and per-key-type registrations), then
-// the key type's RoutingFamily. get reads the caller's registry (it runs under
-// whatever lock the caller holds). It returns the zero value and false when
-// neither matches.
+// ResolveByKeyType is the shared lookup for the RESOLVE axis of key-type
+// resolution (see docs/ARCH_KEYTYPE_AXES.md): it resolves a value for keyType
+// from a registry keyed by routing family, using the standard two-step lookup the
+// family-keyed registries share: an exact key-type match first (native and
+// per-key-type registrations), then the key type's RoutingFamily. get reads the
+// caller's registry (it runs under whatever lock the caller holds). It returns
+// the zero value and false when neither matches.
 //
 // Note: keygen deliberately does NOT use this — it must reject sentry key types
 // between the exact and family steps, so its lookup is spelled out inline.

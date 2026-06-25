@@ -245,6 +245,16 @@ Compiled providers use state records rather than moving provider code:
 
 Choose exactly one primary category.
 
+> **Three resolution axes — don't collapse them.** Wiring a key type touches three
+> separate mechanisms: **Resolve** (key type → implementation, via family-keyed
+> registries), **Classify** (category facts, via string switches in the neutral
+> `internal/sentry/keytypes` leaf), and **Behave** (the operation, via
+> provider-capability interfaces). They are deliberately distinct because each is
+> called from a place with different availability (registry? provider instance?
+> neither?). Read [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md) before routing by
+> `BaseKeyType` or moving classification onto provider interfaces — both have been
+> tried and are wrong.
+
 ### A. Native Signing Key
 
 Examples:

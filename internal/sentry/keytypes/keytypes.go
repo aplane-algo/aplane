@@ -3,6 +3,15 @@
 
 // Package keytypes defines the sentry key-type vocabulary and pure Sentry Key
 // ID construction.
+//
+// This package owns the CLASSIFY axis of key-type resolution (see
+// docs/ARCH_KEYTYPE_AXES.md): it answers category questions about a key type
+// (is it a guarded account? a sentry component? what key size?) from the key-type
+// string alone. It therefore imports no registry, provider, or algorithm-family
+// package — only the standard library — so classification is identical in every
+// binary and works with no provider registered (the client config, keystore, and
+// cache all rely on this). Keep it that way; do not route classification through
+// the provider registry.
 package keytypes
 
 import (

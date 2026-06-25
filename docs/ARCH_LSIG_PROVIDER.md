@@ -590,5 +590,6 @@ yields a template key type that signs with Ed25519 inside a LogicSig.
 
 ## Related Documentation
 
+- [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md) - The three key-type resolution axes (Resolve / Classify / Behave); this document is the Resolve-axis detail
 - [ARCH_CRYPTO.md](ARCH_CRYPTO.md) - Full cryptographic subsystem documentation
 - [DEV_KEYTYPES.md](DEV_KEYTYPES.md) - Unified guide for adding key types and LogicSig templates
