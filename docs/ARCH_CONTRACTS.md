@@ -90,12 +90,20 @@ Terminology:
   of one key type or template policy, for example `aplane.whitelist.v1` and
   `aplane.whitelist.v2`.
 - `base_key_type` is the field composed DSA templates use to point at their
-  signing provider. For example, `base_key_type: aplane.falcon1024.v1` means
-  the template signs with Falcon-1024, while its own identity is named by its
-  `family` segment (e.g. `family: falcon1024-whitelist`).
-- `Family` / `FamilyName` on Go provider types are display metadata. The
-  authoritative identifier for storage, routing, and migration is the full
-  canonical `key_type`.
+  private signing primitive. For example,
+  `base_key_type: aplane.falcon1024.v1` means the template's DSA signature is
+  produced and packed with Falcon-1024, while the account/template identity is
+  still named by its own `key_type` and `family` segment (e.g.
+  `family: falcon1024-whitelist`).
+- `base_key_type` is not a universal owner or routing key. Account semantics,
+  creation parameters, TEAL bytecode, metadata, and guarded assembly remain
+  owned by the full `key_type` unless a specific contract says otherwise.
+  Guarded account key types are the important example: their signing primitive
+  is Falcon-1024, but their account semantics and sentry assembly are guarded
+  account semantics.
+- `Family` / `FamilyName` on Go provider types are registry/display metadata.
+  Current family-keyed registry fallback is an implementation detail, not a
+  replacement for canonical `key_type` identity.
 
 ## HTTP API Contract
 
@@ -840,8 +848,10 @@ This document uses **v1 signing-metadata keys** for key files that carry
   order, represented internally by `internal/signingargs.Info`; absent and
   empty are equivalent and mean the key takes no runtime args
 - `base_key_type` — required for composed DSA keys, pointing to the signer-side
-  base algorithm used for private-key signing and signature arg packing; v1
-  signing-metadata DSA keys also persist it when it equals `key_type`
+  private signing primitive used for key-material signing and signature arg
+  packing; v1 signing-metadata DSA keys also persist it when it equals
+  `key_type`. This field does not say which provider owns account metadata,
+  creation parameters, TEAL, or guarded assembly.
 - `template_fingerprint` — optional; the semantic compatibility fingerprint of
   the template/provider definition that created or was bundled with the key,
   when known
@@ -853,7 +863,7 @@ signing:
   args using stored `signing_args`
 - DSA-backed LogicSig signing reads bytecode and stored `signing_args`, signs
   with the stored key material, and uses `base_key_type` to find the signer-side
-  base provider that packs the cryptographic signature args
+  private signing primitive that packs the cryptographic signature args
 - the generic/composed template registered under `key_type` is not consulted
   to assemble args at sign time
 
@@ -939,10 +949,12 @@ consulted to reconstruct missing signing metadata.
   signing-time argument contract captured at generation.
 - Generic LogicSig keys store bytecode, the `salt_counter` that selected the
   off-curve address, and runtime argument schema.
-- DSA-backed LogicSig keys additionally store `base_key_type`; the base
-  cryptographic provider must be available because the signer must produce and
-  pack the DSA signature. The composed template/provider for that `key_type` is
-  not required to sign an already-created key.
+- DSA-backed LogicSig keys additionally store `base_key_type`; that private
+  signing primitive must be available because the signer must produce and pack
+  the DSA signature. The field is not a claim that the base provider owns the
+  account's metadata, creation params, or LogicSig assembly. The composed
+  template/provider for that `key_type` is not required to sign an
+  already-created key.
 - A LogicSig key file that contains bytecode but is not a v1 signing-metadata
   key is rejected for restore and signing.
 

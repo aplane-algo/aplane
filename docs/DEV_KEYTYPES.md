@@ -56,10 +56,16 @@ Terminology:
   it is the declared `family` field. A composed template has its own `family`
   (e.g. `family: falcon1024-whitelist`) — that names the template's own
   version line, separate from whatever it signs with.
-- `base_key_type` is how a composed template names its signing provider, e.g.
-  `base_key_type: aplane.falcon1024.v1` to sign with Falcon-1024.
-- `Family()` / `FamilyName` on Go provider types are display metadata used by
-  registry plumbing; persistent identity is always the full `key_type`.
+- `base_key_type` is how a composed template names its private signing
+  primitive, e.g. `base_key_type: aplane.falcon1024.v1` to produce and pack
+  Falcon-1024 signatures.
+- `base_key_type` is not the account owner or a universal route for metadata,
+  key generation, mnemonic import, TEAL, or guarded assembly. The full
+  `key_type` owns those semantics unless a narrower contract explicitly
+  delegates one operation.
+- `Family()` / `FamilyName` on Go provider types are registry/display metadata
+  used by current registry plumbing; persistent identity is always the full
+  `key_type`.
 
 Templates are generation/catalog definitions. The stored signing metadata
 referenced above is `signing_metadata_version`, `salt_counter`, `base_key_type`
@@ -356,6 +362,11 @@ family: falcon1024-constraint
 version: 1
 ```
 
+In composed templates, `base_key_type` selects the signing primitive only. It
+does not rename the template, collapse its metadata into the base provider, or
+make the base provider responsible for the template's TEAL, creation params, or
+runtime args.
+
 Files in the top-level `library/templates/` directory are install sources, not
 active key types by presence alone. Installing one of these YAML entries through
 new signer-store initialization, `apstore template import`, or the
@@ -508,7 +519,7 @@ schema. The core fields are:
 schema_version: 1
 derivation_version: 2
 template_type: <type>        # generic | composed; optional for generic templates
-base_key_type: <key_type>    # required for composed, omitted for generic templates
+base_key_type: <key_type>    # composed signing primitive; omitted for generic templates
 template_mode: <mode>        # strict | generated
 publisher: <namespace>       # lowercase namespace owner, for example aplane
 family: <name>              # lowercase, no spaces

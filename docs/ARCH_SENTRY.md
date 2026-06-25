@@ -84,6 +84,13 @@ that same public key in its LogicSig bytecode. Generation may accept a public
 Sentry reference by Sentry Key ID, but the durable guarded key stores the
 resolved public key.
 
+Guarded account identity is the guarded account `key_type`, not the base
+signing primitive. The stored `base_key_type` names the private signing
+primitive used for the user component key material and signature packing. It
+does not make the base provider responsible for guarded metadata, creation
+parameters, TEAL, sentry reference resolution, or final LogicSig argument
+assembly.
+
 Guarded accounts and sentry keys are never signed through raw
 `/sign`:
 
