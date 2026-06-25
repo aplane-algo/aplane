@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -18,6 +19,8 @@ import (
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	"github.com/aplane-algo/aplane/lsig/sentryaccount"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 const (
@@ -368,8 +371,62 @@ func PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, err
 	return componentCodec.Pack(userSignature, sentrySignature)
 }
 
+func (p *Provider) PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error) {
+	return PackComponentSignatures(userSignature, sentrySignature)
+}
+
 func UnpackComponentSignatures(signature []byte) ([]byte, []byte, error) {
 	return componentCodec.Unpack(signature)
+}
+
+func (p *Provider) AssemblyExtraArgs(txn types.Transaction, params map[string]string) ([][]byte, error) {
+	proof, err := corridorProofArg(txn, params)
+	if err != nil {
+		return nil, fmt.Errorf("corridor proof generation failed: %w", err)
+	}
+	if len(proof) == 0 {
+		return nil, nil
+	}
+	return [][]byte{proof}, nil
+}
+
+func corridorProofArg(txn types.Transaction, params map[string]string) ([]byte, error) {
+	if params == nil || strings.TrimSpace(params[ParamRecipients]) == "" {
+		return nil, fmt.Errorf("corridor key file missing recipients parameter")
+	}
+	if !txn.RekeyTo.IsZero() {
+		return corridorRekeyProofArg(txn)
+	}
+
+	var receiver types.Address
+	switch txn.Type {
+	case types.PaymentTx:
+		receiver = txn.Receiver
+	case types.AssetTransferTx:
+		receiver = txn.AssetReceiver
+	default:
+		return nil, fmt.Errorf("corridor only supports pay and axfer targets, got %s", txn.Type)
+	}
+	if receiver == txn.Sender {
+		return nil, nil
+	}
+	return merklewhitelist.ProofForAddressParam(params[ParamRecipients], receiver)
+}
+
+func corridorRekeyProofArg(txn types.Transaction) ([]byte, error) {
+	if txn.Type != types.PaymentTx {
+		return nil, fmt.Errorf("corridor rekey targets must be payment transactions")
+	}
+	if txn.Amount != 0 {
+		return nil, fmt.Errorf("corridor rekey targets must transfer 0 microalgos")
+	}
+	if txn.Receiver != txn.Sender {
+		return nil, fmt.Errorf("corridor rekey targets must be self-payments")
+	}
+	if !txn.CloseRemainderTo.IsZero() {
+		return nil, fmt.Errorf("corridor rekey targets must not close remainder")
+	}
+	return nil, nil
 }
 
 var (

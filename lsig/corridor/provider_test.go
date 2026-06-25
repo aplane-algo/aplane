@@ -148,3 +148,67 @@ func TestBuildArgsRejectsMalformedSignatureBlob(t *testing.T) {
 		t.Fatalf("BuildArgs(runtime args) error = %v, want unknown arg", err)
 	}
 }
+
+func TestAssemblyExtraArgsBuildsCorridorProof(t *testing.T) {
+	p := NewProviderV1()
+	sender := types.Address{1}
+	recipient := types.Address{2}
+	recipients := strings.Join([]string{recipient.String(), types.Address{3}.String()}, ",")
+	root, err := merklewhitelist.RootFromRecipientsParam(recipients)
+	if err != nil {
+		t.Fatalf("RootFromRecipientsParam() error = %v", err)
+	}
+
+	args, err := p.AssemblyExtraArgs(types.Transaction{
+		Type:   types.PaymentTx,
+		Header: types.Header{Sender: sender},
+		PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: recipient,
+		},
+	}, map[string]string{ParamRecipients: recipients})
+	if err != nil {
+		t.Fatalf("AssemblyExtraArgs() error = %v", err)
+	}
+	if len(args) != 1 {
+		t.Fatalf("AssemblyExtraArgs() len = %d, want 1", len(args))
+	}
+	if !merklewhitelist.Verify(recipient, args[0], root) {
+		t.Fatal("AssemblyExtraArgs() returned proof that does not verify")
+	}
+}
+
+func TestAssemblyExtraArgsRejectsNonMember(t *testing.T) {
+	p := NewProviderV1()
+	sender := types.Address{1}
+	recipient := types.Address{2}
+
+	_, err := p.AssemblyExtraArgs(types.Transaction{
+		Type:   types.PaymentTx,
+		Header: types.Header{Sender: sender},
+		PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: recipient,
+		},
+	}, map[string]string{ParamRecipients: types.Address{3}.String()})
+	if err == nil || !strings.Contains(err.Error(), "corridor proof generation failed") || !strings.Contains(err.Error(), "not in whitelist") {
+		t.Fatalf("AssemblyExtraArgs(non-member) error = %v, want corridor whitelist error", err)
+	}
+}
+
+func TestAssemblyExtraArgsSkipsSelfTransfer(t *testing.T) {
+	p := NewProviderV1()
+	sender := types.Address{1}
+
+	args, err := p.AssemblyExtraArgs(types.Transaction{
+		Type:   types.PaymentTx,
+		Header: types.Header{Sender: sender},
+		PaymentTxnFields: types.PaymentTxnFields{
+			Receiver: sender,
+		},
+	}, map[string]string{ParamRecipients: sender.String()})
+	if err != nil {
+		t.Fatalf("AssemblyExtraArgs(self) error = %v", err)
+	}
+	if args != nil {
+		t.Fatalf("AssemblyExtraArgs(self) = %#v, want nil", args)
+	}
+}

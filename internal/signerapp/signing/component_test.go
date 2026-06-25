@@ -40,6 +40,12 @@ func init() {
 	corridor.RegisterClient()
 }
 
+var (
+	_ ComponentPacker           = (*corridor.Provider)(nil)
+	_ AssemblyExtraArgsProvider = (*corridor.Provider)(nil)
+	_ ComponentPacker           = (*falcon1024guarded.Provider)(nil)
+)
+
 func TestPrepareComponentSigningCanonicalizesTargetsAndMessages(t *testing.T) {
 	sender := types.Address{1}.String()
 	receiver := types.Address{2}.String()

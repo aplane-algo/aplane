@@ -301,6 +301,10 @@ func PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, err
 	return PackComponentSignaturesForKeyType(KeyTypeV1, userSignature, sentrySignature)
 }
 
+func (p *Provider) PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error) {
+	return PackComponentSignaturesForKeyType(p.keyType, userSignature, sentrySignature)
+}
+
 func PackComponentSignaturesForKeyType(keyType string, userSignature, sentrySignature []byte) ([]byte, error) {
 	if len(userSignature) == 0 || len(userSignature) > family.MaxSignatureSize {
 		return nil, fmt.Errorf("user Falcon signature length %d invalid (expected 1..%d bytes)", len(userSignature), family.MaxSignatureSize)
