@@ -6,12 +6,8 @@ package corridor
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"strings"
-	"sync"
 
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -21,8 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
-
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/aplane-algo/aplane/lsig/sentryaccount"
 )
 
 const (
@@ -41,35 +36,25 @@ const (
 // by an embedded recipient Merkle root; rekeys are handled by the sentry policy
 // before the sentry signature is produced.
 type Provider struct {
-	algodClient *algod.Client
-	algodMu     sync.RWMutex
+	sentryaccount.Meta
+	sentryaccount.AlgodHolder
 }
 
 func NewProviderV1() *Provider {
-	return &Provider{}
+	return &Provider{
+		Meta: sentryaccount.Meta{
+			KeyTypeName:            KeyTypeV1,
+			BaseKeyTypeName:        BaseKeyType,
+			FamilyName:             FamilyName,
+			DisplayNameText:        "Corridor",
+			DescriptionText:        "Falcon-1024 sentry account with recipient corridor and rekey policy",
+			Color:                  family.DisplayColor,
+			SignatureSizeBytes:     SignatureSize,
+			MnemonicSchemeName:     family.MnemonicScheme,
+			MnemonicWordCountValue: family.MnemonicWordCount,
+		},
+	}
 }
-
-func (p *Provider) SetAlgodClient(client *algod.Client) {
-	p.algodMu.Lock()
-	defer p.algodMu.Unlock()
-	p.algodClient = client
-}
-
-func (p *Provider) KeyType() string     { return KeyTypeV1 }
-func (p *Provider) BaseKeyType() string { return BaseKeyType }
-func (p *Provider) Family() string      { return FamilyName }
-func (p *Provider) Version() int        { return 1 }
-func (p *Provider) Category() string    { return lsigprovider.CategoryDSALsig }
-func (p *Provider) DisplayName() string { return "Corridor" }
-func (p *Provider) Description() string {
-	return "Falcon-1024 sentry account with recipient corridor and rekey policy"
-}
-func (p *Provider) DisplayColor() string                      { return family.DisplayColor }
-func (p *Provider) CryptoSignatureSize() int                  { return SignatureSize }
-func (p *Provider) MnemonicScheme() string                    { return family.MnemonicScheme }
-func (p *Provider) MnemonicWordCount() int                    { return family.MnemonicWordCount }
-func (p *Provider) SupportsMnemonicImport() bool              { return false }
-func (p *Provider) RuntimeArgs() []lsigprovider.RuntimeArgDef { return nil }
 
 func (p *Provider) CreationParams() []lsigprovider.ParameterDef {
 	return []lsigprovider.ParameterDef{
@@ -83,15 +68,10 @@ func (p *Provider) CreationParams() []lsigprovider.ParameterDef {
 			MaxItems:    merklewhitelist.MaxItems,
 			Placeholder: "Comma-separated Algorand addresses",
 		},
-		{
-			Name:        ParamSentryPublicKey,
-			Label:       "Sentry public key",
-			Description: "Hex-encoded Falcon-1024 sentry public key embedded in the corridor account",
-			Type:        "bytes",
-			Required:    true,
-			MaxLength:   family.PublicKeySize * 2,
-			Example:     strings.Repeat("00", family.PublicKeySize),
-		},
+		sentryaccount.SentryPublicKeyParam(
+			"Hex-encoded Falcon-1024 sentry public key embedded in the corridor account",
+			family.PublicKeySize,
+		),
 	}
 }
 
@@ -106,7 +86,7 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 	if _, err := merklewhitelist.RootFromRecipientsParam(normalized[ParamRecipients]); err != nil {
 		return fmt.Errorf("%s: %w", ParamRecipients, err)
 	}
-	_, err = decodeSentryPublicKey(normalized[ParamSentryPublicKey])
+	_, err = sentryaccount.DecodeSentryPublicKey(normalized[ParamSentryPublicKey], family.PublicKeySize)
 	return err
 }
 
@@ -118,7 +98,7 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 // /sign/assemble appends the generated Merkle proof as arg 2 when the target
 // transaction spends to a non-self recipient.
 func (p *Provider) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
-	if err := rejectRuntimeArgs(runtimeArgs); err != nil {
+	if err := sentryaccount.RejectRuntimeArgs(runtimeArgs); err != nil {
 		return nil, err
 	}
 	userSig, sentrySig, err := UnpackComponentSignatures(signature)
@@ -137,33 +117,15 @@ func (p *Provider) DeriveLsig(ctx context.Context, publicKey []byte, params map[
 }
 
 func (p *Provider) DeriveLsigWithSalt(ctx context.Context, publicKey []byte, params map[string]string) (lsigsalt.FindResult, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	p.algodMu.RLock()
-	client := p.algodClient
-	p.algodMu.RUnlock()
-	if client == nil {
-		return lsigsalt.FindResult{}, fmt.Errorf("algod client not set: configure algod.<network>.server in config.yaml")
-	}
-
 	teal, err := p.GenerateTEAL(publicKey, params)
 	if err != nil {
 		return lsigsalt.FindResult{}, err
 	}
-	result, err := client.TealCompile([]byte(teal)).Do(ctx)
+	client, err := p.AlgodClient()
 	if err != nil {
-		return lsigsalt.FindResult{}, fmt.Errorf("TEAL compilation failed: %w", err)
+		return lsigsalt.FindResult{}, err
 	}
-	bytecode, err := base64.StdEncoding.DecodeString(result.Result)
-	if err != nil {
-		return lsigsalt.FindResult{}, fmt.Errorf("failed to decode compiled bytecode: %w", err)
-	}
-	salted, err := lsigsalt.FindOffCurve(bytecode, lsigsalt.PushbytesMarkerLocator)
-	if err != nil {
-		return lsigsalt.FindResult{}, fmt.Errorf("failed to derive off-curve LogicSig address: %w", err)
-	}
-	return salted, nil
+	return sentryaccount.CompileSalted(ctx, client, teal)
 }
 
 func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (string, error) {
@@ -177,7 +139,7 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 	if err := p.ValidateCreationParams(normalized); err != nil {
 		return "", err
 	}
-	sentryPublicKey, err := decodeSentryPublicKey(normalized[ParamSentryPublicKey])
+	sentryPublicKey, err := sentryaccount.DecodeSentryPublicKey(normalized[ParamSentryPublicKey], family.PublicKeySize)
 	if err != nil {
 		return "", err
 	}
@@ -394,65 +356,20 @@ func (p *Provider) CompatibilityFingerprint() string {
 	})
 }
 
+var componentCodec = sentryaccount.ComponentCodec{
+	UserLabel:   "user Falcon",
+	UserMaxSize: family.MaxSignatureSize,
+	SentryLabel: "sentry Falcon",
+	SentrySize:  sentryaccount.VariableSentrySize(family.MaxSignatureSize),
+	BlobLabel:   "corridor",
+}
+
 func PackComponentSignatures(userSignature, sentrySignature []byte) ([]byte, error) {
-	if len(userSignature) == 0 || len(userSignature) > family.MaxSignatureSize {
-		return nil, fmt.Errorf("user Falcon signature length %d invalid (expected 1..%d bytes)", len(userSignature), family.MaxSignatureSize)
-	}
-	if len(sentrySignature) == 0 || len(sentrySignature) > family.MaxSignatureSize {
-		return nil, fmt.Errorf("sentry Falcon signature length %d invalid (expected 1..%d bytes)", len(sentrySignature), family.MaxSignatureSize)
-	}
-	out := make([]byte, 4+len(userSignature)+len(sentrySignature))
-	binary.BigEndian.PutUint16(out[:2], uint16(len(userSignature)))
-	copy(out[2:], userSignature)
-	offset := 2 + len(userSignature)
-	binary.BigEndian.PutUint16(out[offset:offset+2], uint16(len(sentrySignature)))
-	copy(out[offset+2:], sentrySignature)
-	return out, nil
+	return componentCodec.Pack(userSignature, sentrySignature)
 }
 
 func UnpackComponentSignatures(signature []byte) ([]byte, []byte, error) {
-	if len(signature) < 4 {
-		return nil, nil, fmt.Errorf("corridor signature blob is too short")
-	}
-	userLen := int(binary.BigEndian.Uint16(signature[:2]))
-	if userLen <= 0 || userLen > family.MaxSignatureSize {
-		return nil, nil, fmt.Errorf("user Falcon signature length %d invalid (expected 1..%d bytes)", userLen, family.MaxSignatureSize)
-	}
-	if len(signature) < 2+userLen+2 {
-		return nil, nil, fmt.Errorf("corridor signature blob is too short")
-	}
-	sentryOffset := 2 + userLen
-	sentryLen := int(binary.BigEndian.Uint16(signature[sentryOffset : sentryOffset+2]))
-	if sentryLen <= 0 || sentryLen > family.MaxSignatureSize {
-		return nil, nil, fmt.Errorf("sentry Falcon signature length %d invalid (expected 1..%d bytes)", sentryLen, family.MaxSignatureSize)
-	}
-	if len(signature) != sentryOffset+2+sentryLen {
-		return nil, nil, fmt.Errorf("invalid corridor signature blob length")
-	}
-	return signature[2:sentryOffset], signature[sentryOffset+2:], nil
-}
-
-func decodeSentryPublicKey(value string) ([]byte, error) {
-	value = strings.TrimSpace(value)
-	value = strings.TrimPrefix(strings.TrimPrefix(value, "0x"), "0X")
-	decoded, err := hex.DecodeString(value)
-	if err != nil {
-		return nil, fmt.Errorf("sentry_public_key must be hex: %w", err)
-	}
-	if len(decoded) != family.PublicKeySize {
-		return nil, fmt.Errorf("sentry_public_key length %d invalid (expected %d bytes)", len(decoded), family.PublicKeySize)
-	}
-	return decoded, nil
-}
-
-func rejectRuntimeArgs(runtimeArgs map[string][]byte) error {
-	if len(runtimeArgs) == 0 {
-		return nil
-	}
-	for name := range runtimeArgs {
-		return fmt.Errorf("unknown arg: %s", name)
-	}
-	return nil
+	return componentCodec.Unpack(signature)
 }
 
 var (
