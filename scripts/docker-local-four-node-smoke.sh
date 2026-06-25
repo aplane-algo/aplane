@@ -7,10 +7,10 @@
 #
 # The test keeps the existing docker-local behavior surface focused on install,
 # SSH token provisioning, client reachability, shared LocalNet wiring, sentry
-# endpoint enrollment, sentry-key discovery, and one guarded
-# transaction-signing flow. It also installs the local Python SDK source into
-# the client container and validates the guarded account with SDK intent prep
-# plus SDK guarded component signing.
+# endpoint enrollment, sentry-key discovery, guarded transaction-signing flows,
+# and corridor whitelist enforcement. It also installs the local Python SDK
+# source into the client container and validates the guarded account with SDK
+# intent prep plus SDK guarded component signing.
 
 set -euo pipefail
 
@@ -40,6 +40,9 @@ LOCALNET_GENESIS_HASH=""
 FALCON_ADDRESS=""
 SENTRY_COMPONENT_KEY=""
 GUARDED_ADDRESS=""
+CORRIDOR_ADDRESS=""
+CORRIDOR_ALLOWED_ADDRESS=""
+CORRIDOR_BLOCKED_ADDRESS=""
 SDK_REPO="${APLANE_SDKS_REPO:-${APLANE_SDK_REPO:-}}"
 SDK_SOURCE_DIR=""
 SDK_CONTAINER_DIR="/home/$TEST_USER/src/aplanesdk-python"
@@ -66,9 +69,9 @@ the Docker network. All APlane nodes use the shared LocalNet algod endpoint.
 The client runs a client-only install plus apadmin, points endpoints.yaml at the
 signer container DNS name, adds the sentry endpoint through apshell, requests
 API tokens for both nodes, generates a sentry key through the sentry
-endpoint, syncs the sentry key to the signer, enables a guarded Falcon/Falcon
-sentry account key type, and verifies apshell can create, fund, and validate
-both guarded and plain Falcon accounts against the shared LocalNet. It then
+endpoint, syncs the sentry key to the signer, enables guarded Falcon/Falcon and
+corridor key types, and verifies apshell can create, fund, and validate guarded,
+corridor, and plain Falcon accounts against the shared LocalNet. It then
 installs the Python SDK from the local aplanesdk repo and submits the same
 guarded 0 ALGO self-send with SDK preparation and guarded signing helpers.
 EOF
@@ -925,6 +928,16 @@ enable_guarded_keytype() {
     printf '%s\n' "$out"
 }
 
+enable_corridor_keytype() {
+    local out
+    if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
+        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore keytype enable aplane.corridor.v1 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to enable corridor key type on signer"
+    fi
+    printf '%s\n' "$out"
+}
+
 generate_guarded_key() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
 
@@ -940,8 +953,28 @@ generate_guarded_key() {
     [ -n "$GUARDED_ADDRESS" ] || die "could not parse generated guarded address"
 }
 
+generate_corridor_key() {
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
+    CORRIDOR_ALLOWED_ADDRESS="$(localnet_account_address 1)"
+    CORRIDOR_BLOCKED_ADDRESS="$(localnet_account_address 2)"
+    [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "could not find corridor allowed LocalNet account"
+    [ -n "$CORRIDOR_BLOCKED_ADDRESS" ] || die "could not find corridor blocked LocalNet account"
+    [ "$CORRIDOR_ALLOWED_ADDRESS" != "$CORRIDOR_BLOCKED_ADDRESS" ] || die "corridor allowed and blocked addresses resolved to the same account"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.corridor.v1 sentry=%s recipients=%s\n' '$SENTRY_COMPONENT_KEY' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/generate-corridor.script"
+    local out
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/generate-corridor.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "failed to generate corridor account through client/signer flow"
+    fi
+    printf '%s\n' "$out"
+    CORRIDOR_ADDRESS="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
+    [ -n "$CORRIDOR_ADDRESS" ] || die "could not parse generated corridor address"
+}
+
 generate_falcon_key() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate falcon1024.v1\n' > /tmp/generate-falcon.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024.v1\n' > /tmp/generate-falcon.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-falcon.script 2>&1")"; then
@@ -953,13 +986,18 @@ generate_falcon_key() {
     [ -n "$FALCON_ADDRESS" ] || die "could not parse generated Falcon address"
 }
 
+localnet_account_address() {
+    local row="$1"
+    docker_exec "$ALGOD_CONTAINER" sh -lc "/node/bin/goal account list -d /algod/data | awk -v row='$row' 'NR == row { print \$2; exit }'"
+}
+
 fund_account_from_localnet() {
     local address="$1"
     local label="$2"
     [ -n "$address" ] || die "$label address is not set"
 
     local funding_address
-    funding_address="$(docker_exec "$ALGOD_CONTAINER" sh -lc "/node/bin/goal account list -d /algod/data | awk 'NR == 1 { print \$2; exit }'")"
+    funding_address="$(localnet_account_address 1)"
     [ -n "$funding_address" ] || die "could not find a LocalNet funding account"
 
     local out
@@ -1010,6 +1048,14 @@ verify_guarded_funded() {
     verify_account_funded "$GUARDED_ADDRESS" "guarded"
 }
 
+fund_corridor_key_from_localnet() {
+    fund_account_from_localnet "$CORRIDOR_ADDRESS" "corridor"
+}
+
+verify_corridor_funded() {
+    verify_account_funded "$CORRIDOR_ADDRESS" "corridor"
+}
+
 validate_falcon_self_send() {
     [ -n "$FALCON_ADDRESS" ] || die "Falcon address is not set"
 
@@ -1038,6 +1084,46 @@ validate_guarded_self_send() {
     printf '%s\n' "$out"
     printf '%s\n' "$out" | grep -q 'Validated successfully' \
         || die "guarded validation output did not include success marker"
+}
+
+validate_corridor_allowed_send() {
+    [ -n "$CORRIDOR_ADDRESS" ] || die "corridor address is not set"
+    [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "corridor allowed address is not set"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nsend 0 algo from %s to %s note=corridor-allow\n' '$CORRIDOR_ADDRESS' '$CORRIDOR_ALLOWED_ADDRESS' > /tmp/send-corridor-allow.script"
+    local out
+    if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/send-corridor-allow.script 2>&1")"; then
+        printf '%s\n' "$out" >&2
+        die "corridor whitelisted send command failed"
+    fi
+    printf '%s\n' "$out"
+    if printf '%s\n' "$out" | grep -q 'Failed:'; then
+        die "corridor whitelisted send reported failure"
+    fi
+    printf '%s\n' "$out" | grep -q 'Transaction submitted:' \
+        || die "corridor whitelisted send did not submit a transaction"
+    printf '%s\n' "$out" | grep -q 'Confirmed: sent' \
+        || die "corridor whitelisted send did not confirm"
+}
+
+validate_corridor_blocked_send_fails() {
+    [ -n "$CORRIDOR_ADDRESS" ] || die "corridor address is not set"
+    [ -n "$CORRIDOR_BLOCKED_ADDRESS" ] || die "corridor blocked address is not set"
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\nsend 0 algo from %s to %s note=corridor-deny\n' '$CORRIDOR_ADDRESS' '$CORRIDOR_BLOCKED_ADDRESS' > /tmp/send-corridor-deny.script"
+    local out
+    out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
+        apshell -script /tmp/send-corridor-deny.script 2>&1" || true)"
+    printf '%s\n' "$out"
+    if printf '%s\n' "$out" | grep -q 'Transaction submitted:'; then
+        die "corridor blocked send unexpectedly submitted a transaction"
+    fi
+    if printf '%s\n' "$out" | grep -q 'Confirmed: sent'; then
+        die "corridor blocked send unexpectedly confirmed"
+    fi
+    printf '%s\n' "$out" | grep -q 'not in whitelist' \
+        || die "corridor blocked send did not report whitelist rejection"
 }
 
 delete_sentry_component_key() {
@@ -1183,6 +1269,9 @@ main() {
     log "Enabling guarded Falcon/Falcon sentry key type on signer"
     enable_guarded_keytype
 
+    log "Enabling corridor key type on signer"
+    enable_corridor_keytype
+
     log "Starting signer-side approver for token bootstrap"
     start_signer_apapprover
 
@@ -1219,6 +1308,19 @@ main() {
 
     log "Validating generated guarded account through Python SDK"
     run_python_sdk_guarded_validate
+
+    log "Generating corridor account through client/signer flow"
+    generate_corridor_key
+
+    log "Funding generated corridor account from shared LocalNet"
+    fund_corridor_key_from_localnet
+    verify_corridor_funded
+
+    log "Verifying corridor whitelisted recipient succeeds"
+    validate_corridor_allowed_send
+
+    log "Verifying corridor non-whitelisted recipient fails"
+    validate_corridor_blocked_send_fails
 
     log "Generating Falcon key through client/signer flow"
     generate_falcon_key

@@ -1474,8 +1474,8 @@ guards:
 - `make docker-local-test` runs `scripts/docker-local-four-node-smoke.sh`
   against signer, sentry, client/admin, and LocalNet algod containers on one
   Docker network. It verifies local install layout, shared LocalNet
-  reachability, SSH token provisioning, and client signer reachability across
-  the Docker network.
+  reachability, SSH token provisioning, client signer reachability, guarded
+  signing, and corridor whitelist enforcement across the Docker network.
 
 The integration harness behavior is part of the effective repository contract:
 

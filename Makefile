@@ -489,7 +489,8 @@ docker-systemd-test:
 # End-to-end local install test. Builds a release tarball, boots signer, sentry,
 # client/admin, and LocalNet algod containers on one Docker network, then
 # verifies SSH token provisioning, shared LocalNet reachability, guarded signing,
-# and local Python SDK guarded signing across the Docker network.
+# corridor whitelist enforcement, and local Python SDK guarded signing across
+# the Docker network.
 # Requires docker and a local aplanesdk checkout. Pass extra flags via ARGS.
 docker-local-test:
 	@./scripts/docker-local-four-node-smoke.sh $(ARGS)
