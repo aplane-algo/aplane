@@ -73,7 +73,7 @@ func (p *LogicSigProvider) LoadKeysFromData(data []byte) (*KeyMaterial, error) {
 	if signingKeyType == "" {
 		signingKeyType = keyPair.KeyType
 	}
-	if logicsigdsa.GetFamily(signingKeyType) != p.family {
+	if logicsigdsa.RoutingFamily(signingKeyType) != p.family {
 		return nil, fmt.Errorf("key type %q does not belong to family %q", signingKeyType, p.family)
 	}
 
@@ -109,7 +109,7 @@ func (p *LogicSigProvider) SignMessage(key *KeyMaterial, message []byte) ([]byte
 	if signingKeyType == "" {
 		signingKeyType = key.Type
 	}
-	if logicsigdsa.GetFamily(signingKeyType) != p.family {
+	if logicsigdsa.RoutingFamily(signingKeyType) != p.family {
 		return nil, fmt.Errorf("key type %q does not belong to family %q", signingKeyType, p.family)
 	}
 
@@ -167,5 +167,5 @@ func (p *LogicSigProvider) DetectKeyType(keyData []byte, passphrase string) bool
 	if signingKeyType == "" {
 		signingKeyType = keyType
 	}
-	return logicsigdsa.GetFamily(signingKeyType) == p.family
+	return logicsigdsa.RoutingFamily(signingKeyType) == p.family
 }

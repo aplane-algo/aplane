@@ -69,23 +69,17 @@ func Register(handler Handler) {
 	registry.handlers[family] = handler
 }
 
-// GetHandler retrieves a mnemonic handler by key type.
-// Versioned types like "aplane.falcon1024.v1" are normalized to their family type.
+// GetHandler retrieves a mnemonic handler by key type, resolving via the key
+// type's routing family (e.g. "aplane.falcon1024.v1" -> "aplane.falcon1024").
 func GetHandler(keyType string) (Handler, error) {
 	registry.mu.RLock()
 	defer registry.mu.RUnlock()
 
-	// Try direct lookup first
-	if handler, exists := registry.handlers[keyType]; exists {
+	if handler, ok := logicsigdsa.ResolveByKeyType(keyType, func(k string) (Handler, bool) {
+		h, ok := registry.handlers[k]
+		return h, ok
+	}); ok {
 		return handler, nil
-	}
-
-	// Try family name (e.g., "aplane.falcon1024.v1" -> "falcon1024")
-	family := logicsigdsa.GetFamily(keyType)
-	if family != keyType {
-		if handler, exists := registry.handlers[family]; exists {
-			return handler, nil
-		}
 	}
 
 	return nil, fmt.Errorf("no mnemonic handler registered for key type: %s", keyType)

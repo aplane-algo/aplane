@@ -118,11 +118,20 @@ func CompatibilityFingerprintOf(p LSigProvider) (string, bool) {
 	return fingerprinter.CompatibilityFingerprint(), true
 }
 
-// GetFamily returns the family name for a versioned key type.
-// For example: "aplane.falcon1024.v1" -> "falcon1024"
-// Input is normalized to lowercase.
-// If the key type is not registered, returns the normalized input unchanged.
-func GetFamily(keyType string) string {
+// RoutingFamily returns the provider-declared ROUTING family for a key type —
+// the family under which the key type's keygen/signing/mnemonic/metadata ops are
+// registered, which is how the family-keyed registries are indexed. For a
+// self-handling DSA this is its own family; for a composed template that
+// delegates to a base it is the base's family (e.g.
+// "aplane.falcon1024-whitelist.v1" -> "aplane.falcon1024").
+//
+// It is NOT the key type's own display label. The routing family of a composed
+// template is intentionally its base's family, not the template's own — so do
+// not use this where you want the key type's own "publisher.family".
+//
+// Input is normalized to lowercase. If the key type is not registered, the
+// normalized input is returned unchanged.
+func RoutingFamily(keyType string) string {
 	normalized := normalize(keyType)
 	if p, ok := providers.Get(normalized); ok {
 		return strings.ToLower(p.Family())

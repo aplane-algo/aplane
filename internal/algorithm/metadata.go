@@ -95,27 +95,26 @@ func RegisterMetadata(metadata SignatureMetadata) {
 	metadataRegistry.Set(metadata.Family(), metadata)
 }
 
-// GetMetadata retrieves metadata for a key type.
-// Versioned types like "aplane.falcon1024.v1" are normalized to their family type.
-// For unregistered providers (e.g., keystore templates not loaded locally),
-// falls back to prefix matching against registered families.
+// GetMetadata retrieves metadata for a key type, resolving via the key type's
+// routing family (e.g. "aplane.falcon1024.v1" -> "aplane.falcon1024"). If that
+// fails it falls back to a best-effort prefix match (see hasFamilyPrefix).
 func GetMetadata(keyType string) (SignatureMetadata, error) {
-	// Try direct lookup first
-	if metadata, ok := metadataRegistry.Get(keyType); ok {
+	if metadata, ok := logicsigdsa.ResolveByKeyType(keyType, metadataRegistry.Get); ok {
 		return metadata, nil
 	}
 
-	// Try family name via provider registry (e.g., "aplane.falcon1024.v1" -> "falcon1024")
-	family := logicsigdsa.GetFamily(keyType)
-	if family != keyType {
-		if metadata, ok := metadataRegistry.Get(family); ok {
-			return metadata, nil
-		}
-	}
-
-	// Fallback: prefix match against registered families.
-	// This handles keystore template types (e.g., "aplane.falcon1024-hashlock.v1")
-	// that aren't registered locally but belong to a known family ("falcon1024").
+	// Best-effort fallback for an UNREGISTERED template whose routing family is
+	// not resolvable from a registered provider — e.g. a keystore template not
+	// loaded in this process, queried on the client side for display. The base
+	// is not derivable from the key-type string alone, so this substring-matches
+	// the key type against registered families ("aplane.falcon1024-hashlock.v1"
+	// -> the "aplane.falcon1024" family's metadata).
+	//
+	// This path is display-only: keygen and signing never reach it because they
+	// always have a registered provider or a stored base key type in the key
+	// file. Removing it cleanly would require threading that stored base through
+	// the display-color callback (addressdisplay.ColorFormatter), a cross-layer
+	// API change not worth it for a cosmetic fallback.
 	for _, registeredFamily := range metadataRegistry.Keys() {
 		if hasFamilyPrefix(keyType, registeredFamily) {
 			if metadata, ok := metadataRegistry.Get(registeredFamily); ok {

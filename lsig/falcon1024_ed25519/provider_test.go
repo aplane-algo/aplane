@@ -87,7 +87,7 @@ func TestRegisterClient(t *testing.T) {
 	if provider := lsigprovider.Get(KeyTypeV1); provider == nil {
 		t.Fatalf("lsigprovider.Get(%q) = nil", KeyTypeV1)
 	}
-	if got := logicsigdsa.GetFamily(KeyTypeV1); got != FamilyName {
-		t.Fatalf("GetFamily(%q) = %q, want %q", KeyTypeV1, got, FamilyName)
+	if got := logicsigdsa.RoutingFamily(KeyTypeV1); got != FamilyName {
+		t.Fatalf("RoutingFamily(%q) = %q, want %q", KeyTypeV1, got, FamilyName)
 	}
 }

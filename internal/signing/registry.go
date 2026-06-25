@@ -20,22 +20,12 @@ func Register(provider Provider) {
 	}
 }
 
-// GetProvider retrieves a provider by key type.
-// Versioned types like "aplane.falcon1024.v1" are normalized to their family type.
+// GetProvider retrieves a provider by key type, resolving via the key type's
+// routing family (e.g. "aplane.falcon1024.v1" / a falcon-based template ->
+// "aplane.falcon1024"). Returns nil if none is registered.
 func GetProvider(keyType string) Provider {
-	// Try direct lookup first
-	if provider, ok := providers.Get(keyType); ok {
-		return provider
-	}
-
-	// Try family name (e.g., "aplane.falcon1024.v1" -> "falcon1024")
-	family := logicsigdsa.GetFamily(keyType)
-	if family != keyType {
-		provider, _ := providers.Get(family)
-		return provider
-	}
-
-	return nil
+	provider, _ := logicsigdsa.ResolveByKeyType(keyType, providers.Get)
+	return provider
 }
 
 // GetRegisteredFamilies returns a sorted list of all registered provider families.

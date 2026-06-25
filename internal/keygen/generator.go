@@ -90,7 +90,7 @@ func GetGenerator(keyType string) (Generator, error) {
 	}
 
 	// Try family name (e.g., "aplane.falcon1024.v1" -> "falcon1024")
-	family := logicsigdsa.GetFamily(keyType)
+	family := logicsigdsa.RoutingFamily(keyType)
 	if family != keyType {
 		if generator, exists := registry.generators[family]; exists {
 			return generator, nil

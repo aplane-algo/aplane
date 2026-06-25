@@ -79,10 +79,35 @@ func IsRegistered(keyType string) bool {
 	return Get(keyType) != nil
 }
 
-// GetFamily returns the family name for a versioned key type.
-// Delegates to lsigprovider.GetFamily.
-func GetFamily(keyType string) string {
-	return lsigprovider.GetFamily(keyType)
+// RoutingFamily returns a key type's provider-declared ROUTING family — the
+// family the keygen/signing/mnemonic/metadata registries are indexed by (the
+// key type's own family for a self-handling DSA, or the base's family for a
+// composed template that delegates). It is not the key type's own display
+// label. Delegates to lsigprovider.RoutingFamily.
+func RoutingFamily(keyType string) string {
+	return lsigprovider.RoutingFamily(keyType)
+}
+
+// ResolveByKeyType resolves a value for keyType from a registry keyed by routing
+// family, using the standard two-step lookup the family-keyed registries share:
+// an exact key-type match first (native and per-key-type registrations), then
+// the key type's RoutingFamily. get reads the caller's registry (it runs under
+// whatever lock the caller holds). It returns the zero value and false when
+// neither matches.
+//
+// Note: keygen deliberately does NOT use this — it must reject sentry key types
+// between the exact and family steps, so its lookup is spelled out inline.
+func ResolveByKeyType[T any](keyType string, get func(string) (T, bool)) (T, bool) {
+	if v, ok := get(keyType); ok {
+		return v, true
+	}
+	if family := RoutingFamily(keyType); family != keyType {
+		if v, ok := get(family); ok {
+			return v, true
+		}
+	}
+	var zero T
+	return zero, false
 }
 
 // IsLogicSigType checks if a key type uses LogicSig-based signatures.

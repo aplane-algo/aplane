@@ -41,9 +41,9 @@ const (
 func TestNativeEd25519AndLogicSigBaseCoexist(t *testing.T) {
 	registerAll()
 
-	// GetFamily routing keeps them in separate registry slots.
-	if got := logicsigdsa.GetFamily(lsigEd25519); got != lsigEd25519Family {
-		t.Fatalf("GetFamily(%q) = %q, want %q", lsigEd25519, got, lsigEd25519Family)
+	// RoutingFamily keeps them in separate registry slots.
+	if got := logicsigdsa.RoutingFamily(lsigEd25519); got != lsigEd25519Family {
+		t.Fatalf("RoutingFamily(%q) = %q, want %q", lsigEd25519, got, lsigEd25519Family)
 	}
 
 	// Key generators resolve, and to different families (no collision).

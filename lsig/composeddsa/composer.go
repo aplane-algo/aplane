@@ -144,7 +144,7 @@ func (c *ComposedDSA) BaseKeyType() string {
 
 // Family returns the qualified registry family ("publisher.family"). For a
 // composed template this is the base DSA's family (set from the base
-// registration), so keygen/signing/metadata lookups via GetFamily route to the
+// registration), so keygen/signing/metadata lookups via RoutingFamily route to the
 // base provider's ops. For a DSA that owns its key generation (e.g.
 // falcon1024_ed25519) it is that provider's own qualified family.
 func (c *ComposedDSA) Family() string {
