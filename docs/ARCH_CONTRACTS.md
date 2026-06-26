@@ -109,6 +109,8 @@ Terminology:
 ## HTTP API Contract
 
 See [ARCH_HTTP_API.md](ARCH_HTTP_API.md) for the HTTP request/response wire shapes, status codes, identity routing, and cancellation semantics.
+The DTO and error-code source of truth is `pkg/signerapi`; `internal/signerapi`
+contains aliases for in-repo callers, not an independent schema.
 
 ### Sentry Component Message Contract
 
@@ -2019,9 +2021,10 @@ targets also run the SDK live signer integration suites through
 to a non-directory path, the make target fails before running SDK tests.
 
 Committed JSON golden fixtures for signer API contract tests live under
-`test/contracts/signerapi/`. These fixtures are compatibility source material
-for this repository and the external SDK repository: update them intentionally
-with any wire-contract change, not as generated test runtime state.
+`test/contracts/signerapi/` and round-trip through the public DTO structs in
+`pkg/signerapi`. These fixtures are compatibility source material for this
+repository and the external SDK repository: update them intentionally with any
+wire-contract change, not as generated test runtime state.
 Cross-language SDK prep parity fixtures are owned in the external SDK
 repository because they exercise SDK transaction builders rather than signer
 HTTP DTOs; update them when SDK prep request-shape behavior intentionally
