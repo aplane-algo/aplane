@@ -901,7 +901,7 @@ Plugins receive these environment variables when started:
 | `APSHELL_INDEXER_URL` | Indexer URL |
 | `APSHELL_PLUGIN` | Set to "1" to indicate plugin context |
 
-Algod settings are read from the `algod.<network>` section of `config.yaml`. If algod is not configured for the current network, plugins receive empty strings and must handle this gracefully.
+Algod settings are read from the `networks.<network>.algod` section of `config.yaml`. If algod is not configured for the current network, plugins receive empty strings and must handle this gracefully.
 
 ### Development Guidelines
 

@@ -561,8 +561,8 @@ For the impatient — build from source and install at `/var/lib/apsigner` as th
 ### Locked-start mode (default)
 
 ```bash
-# Build runtime binaries plus applugin-checksum
-make all applugin-checksum
+# Build runtime binaries, bundled plugins, and applugin-checksum
+make all
 
 # Install binaries
 sudo cp bin/apsigner bin/apadmin bin/apconsole bin/apapprover bin/apstore bin/appolicy bin/appass bin/aplocalnet \
@@ -653,9 +653,9 @@ This produces statically linked binaries in `bin/`:
 | `approbe` | Installer/helper liveness probe for signer IPC reachability |
 | `apshell` | Transaction shell (client) |
 
-`applugin-checksum` is built by `make applugin-checksum` and is included in release
-tarballs. Build it explicitly if you are following the manual copy commands
-below.
+`applugin-checksum` is built by `make all` through the bundled-plugin build
+path and is included in release tarballs. Use `make applugin-checksum` only when
+you need to rebuild that helper by itself.
 
 ---
 

@@ -448,8 +448,8 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 - An endpoint URL can be `ssh://host[:port]` for tunneled signer access
 - Endpoint records carry the SSH identity file, `known_hosts` path, and token
   file; relative paths resolve against the client data directory
-- Server SSH listener settings still live in the signer `config.yaml` `ssh:`
-  block
+- Server SSH listener settings live in signer `config.yaml` under
+  `endpoint.ssh:`
 - `request-token` also uses SSH for token provisioning and writes the selected
   endpoint's token file
 

@@ -251,7 +251,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Plugin manifest | authoritative plugin metadata | `plugins.available/<name>/plugin.json` | plugin registry entry | `internal/plugin` | Manifest format is separate from JSON-RPC protocol version. |
+| Plugin manifest | authoritative plugin metadata | `plugins.available/<name>/manifest.json` | plugin registry entry | `internal/plugin` | Manifest format is separate from JSON-RPC protocol version. |
 | Plugin checksum | integrity metadata | `checksums.sha256` and package files | validation result | `internal/plugin`, `cmd/applugin-checksum` | Invalid checksum prevents plugin execution. |
 | Plugin execution context | wire/runtime projection | shell/engine state | JSON-RPC context payload | `internal/plugin`, `internal/apshellcli` | Structured `assets` list is canonical; no lossy `assetMap`. |
 | Plugin local signer payload | typed wire payload | plugin request | typed signer request data | `internal/plugin`, `internal/engine` | Secret-bearing data is not passed through untyped maps. |

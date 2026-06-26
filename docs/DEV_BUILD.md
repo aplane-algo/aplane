@@ -129,6 +129,7 @@ make apadmin
 make apconsole
 make apapprover
 make apstore
+make appolicy
 make appass
 make aplocalnet
 make appass-file
