@@ -42,7 +42,7 @@ func TestSyntheticComposedDSACompatibilityFingerprint(t *testing.T) {
 	})
 
 	got := dsa.CompatibilityFingerprint()
-	const want = "a6bf18b5910214a6ab5af779d46f606f1dd7732acf7e2a12b3daf0a501125007"
+	const want = "1:093ba3ca5b1b555ede42b1c1e7d8e549750b3d2dcd234a7a37494f4b774c2a73"
 	if got != want {
 		t.Fatalf("CompatibilityFingerprint() = %q, want %q", got, want)
 	}

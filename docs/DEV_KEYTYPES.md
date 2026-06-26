@@ -99,10 +99,33 @@ preamble. User template TEAL cannot choose salt style, must remain relocatable,
 and must not depend on absolute constant-block layout or numeric `bytec`/`intc`
 indexes.
 
-Key files may also store `template_fingerprint`, the semantic compatibility
-fingerprint of the template or composed provider that created the key, when
-known. This is provenance for inventory warnings only; it is not signing
-authority and must not override stored bytecode/signing metadata.
+Key files may also store `template_fingerprint`, the behavior-only, versioned
+compatibility fingerprint of the template or composed provider that created the
+key, when known. This is provenance for inventory warnings only; it is not
+signing authority and must not override stored bytecode/signing metadata.
+
+Fingerprint authoring rules:
+
+- The fingerprint hashes only behavior-bearing definition fields (TEAL /
+  `teal_suffix`, `salt_style`, the base primitive token, `template_mode`,
+  `template_variables`, `parameters`, `runtime_args`). Identity, routing, and
+  display fields (`key_type`, `family`, `version`, `publisher`, `display_name`,
+  `description`, `display_color`, labels/examples) are forbidden from the hash,
+  so an identifier or display rename never changes the fingerprint.
+- Base key types are projected to a frozen `base_primitive` token namespace
+  (`FingerprintBasePrimitive`): add rows, never rename tokens. A base-identifier
+  rename adds a new raw->token row pointing at the existing token, so the hash
+  stays the same.
+- Bump `CompatibilityFingerprintVersion` only on a fingerprint-formula change
+  (the canonical field set or hashing/projection rules), and update the goldens
+  with it; a rename is not a formula change and must never bump the version. The
+  stored form is `"<version>:<sha256hex>"`, and comparisons are version-aware: a
+  cross-version or malformed fingerprint is "not comparable" (benign), while only
+  a same-version, different-hash pair is a conflict.
+- A base-key-type or provider-identifier rename is a separate compatibility
+  event from the fingerprint: existing keys store the old raw `base_key_type`, so
+  the rename needs a retained registry alias or those keys can no longer sign.
+  The `base_primitive` projection stabilizes the fingerprint, not signing.
 
 Backups may bundle template YAML with a key. `apstore backup import` treats that
 bundle as a provenance claim: when bundled generic or composed YAML is present,

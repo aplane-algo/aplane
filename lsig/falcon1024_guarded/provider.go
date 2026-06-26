@@ -273,24 +273,22 @@ falcon_verify
 	}
 }
 
+// CompatibilityFingerprint returns the behavior-only compatibility fingerprint
+// for this guarded provider. Identity/display strings (key_type, family,
+// version) are excluded; the renameable base key type is projected to a stable
+// base_primitive token. Provenance only — never read on the signing path.
 func (p *Provider) CompatibilityFingerprint() string {
 	type canonicalSpec struct {
-		KeyType     string `json:"key_type"`
-		BaseKeyType string `json:"base_key_type"`
-		Family      string `json:"family"`
-		Version     int    `json:"version"`
-		SaltStyle   string `json:"salt_style"`
-		Arg0        string `json:"arg0"`
-		Arg1        string `json:"arg1"`
+		BasePrimitive string `json:"base_primitive"`
+		SaltStyle     string `json:"salt_style"`
+		Arg0          string `json:"arg0"`
+		Arg1          string `json:"arg1"`
 	}
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
-		KeyType:     p.KeyType(),
-		BaseKeyType: p.BaseKeyType(),
-		Family:      p.RoutingFamily(),
-		Version:     p.Version(),
-		SaltStyle:   string(lsigsalt.StylePushbytes),
-		Arg0:        "user_falcon1024_component_signature",
-		Arg1:        p.sentrySignatureArg,
+		BasePrimitive: lsigprovider.FingerprintBasePrimitive(p.BaseKeyType()),
+		SaltStyle:     string(lsigsalt.StylePushbytes),
+		Arg0:          "user_falcon1024_component_signature",
+		Arg1:          p.sentrySignatureArg,
 	})
 }
 

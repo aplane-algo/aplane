@@ -332,30 +332,30 @@ retsub
 		hex.EncodeToString(root[:])), nil
 }
 
+// CompatibilityFingerprint returns the behavior-only compatibility fingerprint
+// for this corridor provider. Identity/display strings (key_type, family,
+// version) are excluded; the renameable base key type is projected to a stable
+// base_primitive token. The Merkle proof layout, rekey policy, salt style, and
+// component argument layout remain hashed. Provenance only — never read on the
+// signing path.
 func (p *Provider) CompatibilityFingerprint() string {
 	type canonicalSpec struct {
-		KeyType     string `json:"key_type"`
-		BaseKeyType string `json:"base_key_type"`
-		Family      string `json:"family"`
-		Version     int    `json:"version"`
-		SaltStyle   string `json:"salt_style"`
-		MerkleDepth int    `json:"merkle_depth"`
-		MerkleArg   string `json:"merkle_arg"`
-		RekeyPolicy string `json:"rekey_policy"`
-		Arg0        string `json:"arg0"`
-		Arg1        string `json:"arg1"`
+		BasePrimitive string `json:"base_primitive"`
+		SaltStyle     string `json:"salt_style"`
+		MerkleDepth   int    `json:"merkle_depth"`
+		MerkleArg     string `json:"merkle_arg"`
+		RekeyPolicy   string `json:"rekey_policy"`
+		Arg0          string `json:"arg0"`
+		Arg1          string `json:"arg1"`
 	}
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
-		KeyType:     p.KeyType(),
-		BaseKeyType: p.BaseKeyType(),
-		Family:      p.RoutingFamily(),
-		Version:     p.Version(),
-		SaltStyle:   string(lsigsalt.StylePushbytes),
-		MerkleDepth: merklewhitelist.Depth,
-		MerkleArg:   "arg2",
-		RekeyPolicy: "sentry_policy.rekey_policy",
-		Arg0:        "user_falcon1024_component_signature",
-		Arg1:        "sentry_falcon1024_component_signature",
+		BasePrimitive: lsigprovider.FingerprintBasePrimitive(p.BaseKeyType()),
+		SaltStyle:     string(lsigsalt.StylePushbytes),
+		MerkleDepth:   merklewhitelist.Depth,
+		MerkleArg:     "arg2",
+		RekeyPolicy:   "sentry_policy.rekey_policy",
+		Arg0:          "user_falcon1024_component_signature",
+		Arg1:          "sentry_falcon1024_component_signature",
 	})
 }
 

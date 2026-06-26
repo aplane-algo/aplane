@@ -15,9 +15,9 @@ func TestBundledGenericTemplateCompatibilityFingerprints(t *testing.T) {
 		file string
 		want string
 	}{
-		{name: "whitelist", file: "aplane.whitelist.v1.yaml", want: "14c861e957dafe5a1a72fcbd7d0b0657bd6304fd5b1a4f57385d58bd8d7bde0b"},
-		{name: "timed-whitelist", file: "aplane.timed-whitelist.v1.yaml", want: "62317fdafa6912adee04d389c9cdb8a5bce9f252811db7eda91daeaa10fe3bab"},
-		{name: "htlc", file: "aplane.htlc.v1.yaml", want: "ac4c919578f4605ee39348216a2b03dd18f4dd1d16244640101a98227561ba93"},
+		{name: "whitelist", file: "aplane.whitelist.v1.yaml", want: "1:05e39d25800f4c477741ab5be96a955b420fc7cce95388711efea608fc82894e"},
+		{name: "timed-whitelist", file: "aplane.timed-whitelist.v1.yaml", want: "1:9f736a3345249d1b67f71f6848e35655ef1fed291f893361522cf1fafbc8843b"},
+		{name: "htlc", file: "aplane.htlc.v1.yaml", want: "1:d0fb70ab0540fc66d3aac6b7ef804f6cabf301fbcacbd2b2f983e5a1cb53ffce"},
 	}
 
 	for _, tc := range tests {
@@ -103,7 +103,7 @@ teal: |
 	if err != nil {
 		t.Fatalf("SemanticFingerprint(synthetic) error = %v", err)
 	}
-	const want = "0800b8fc0ad3b98b74c8f71f5690df4686195e271ad3f9f6af39d828e38be19c"
+	const want = "1:328eede0d895c241594ca3809dd9209e418b30e0e1bd87dc5b2900369d6f8322"
 	if got != want {
 		t.Fatalf("SemanticFingerprint(synthetic) = %q, want %q", got, want)
 	}

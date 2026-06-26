@@ -392,6 +392,9 @@ func TestCanGenerateLifecycleMatrix(t *testing.T) {
 }
 
 func TestCompareForReload(t *testing.T) {
+	fp := "1:" + strings.Repeat("a", 64)
+	other := "1:" + strings.Repeat("b", 64)
+	fpV2 := "2:" + strings.Repeat("a", 64)
 	tests := []struct {
 		name                string
 		rec                 Record
@@ -402,45 +405,58 @@ func TestCompareForReload(t *testing.T) {
 		{
 			name:            "empty record fingerprint registers",
 			rec:             Record{Source: SourceYAMLGeneric},
-			fileFingerprint: "file",
+			fileFingerprint: fp,
 			want:            OutcomeRegister,
 		},
 		{
 			name:            "record matches file and empty registry registers",
-			rec:             Record{Source: SourceYAMLGeneric, Fingerprint: "fp"},
-			fileFingerprint: "fp",
+			rec:             Record{Source: SourceYAMLGeneric, Fingerprint: fp},
+			fileFingerprint: fp,
 			want:            OutcomeRegister,
 		},
 		{
 			name:                "all fingerprints match idempotent",
-			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: "fp"},
-			fileFingerprint:     "fp",
-			registryFingerprint: "fp",
+			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: fp},
+			fileFingerprint:     fp,
+			registryFingerprint: fp,
 			want:                OutcomeIdempotent,
 		},
 		{
 			name:                "registry differs conflicts",
-			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: "fp"},
-			fileFingerprint:     "fp",
-			registryFingerprint: "other",
+			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: fp},
+			fileFingerprint:     fp,
+			registryFingerprint: other,
 			want:                OutcomeConflict,
 		},
 		{
 			name:                "file differs external edit",
-			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: "fp"},
-			fileFingerprint:     "other",
-			registryFingerprint: "fp",
+			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: fp},
+			fileFingerprint:     other,
+			registryFingerprint: fp,
 			want:                OutcomeExternalEdit,
 		},
 		{
 			name: "missing yaml file orphaned",
-			rec:  Record{Source: SourceYAMLComposed, Fingerprint: "fp"},
+			rec:  Record{Source: SourceYAMLComposed, Fingerprint: fp},
 			want: OutcomeOrphanedRecord,
 		},
 		{
 			name:                "compiled skips file column",
-			rec:                 Record{Source: SourceCompiled, Fingerprint: "fp"},
-			registryFingerprint: "fp",
+			rec:                 Record{Source: SourceCompiled, Fingerprint: fp},
+			registryFingerprint: fp,
+			want:                OutcomeIdempotent,
+		},
+		{
+			name:                "cross-version registry not a conflict",
+			rec:                 Record{Source: SourceCompiled, Fingerprint: fp},
+			registryFingerprint: fpV2,
+			want:                OutcomeRegister,
+		},
+		{
+			name:                "cross-version file is not an external edit",
+			rec:                 Record{Source: SourceYAMLGeneric, Fingerprint: fp},
+			fileFingerprint:     fpV2,
+			registryFingerprint: fp,
 			want:                OutcomeIdempotent,
 		},
 	}

@@ -714,11 +714,12 @@ func PrepareKeystoreTemplateRegistration(keyType string, data []byte) (templatep
 	}, nil
 }
 
+// compatibilityFingerprintForSpec returns the behavior-only compatibility
+// fingerprint for a generic YAML template. Identity/display metadata
+// (key_type, family, version, publisher/display fields) are excluded; generic
+// templates have no base, so there is no base_primitive.
 func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 	type canonicalSpec struct {
-		KeyType           string                             `json:"key_type"`
-		Family            string                             `json:"family"`
-		Version           int                                `json:"version"`
 		DerivationVersion int                                `json:"derivation_version,omitempty"`
 		TemplateMode      string                             `json:"template_mode,omitempty"`
 		TemplateVariables []tealtemplate.TemplateVariable    `json:"template_variables,omitempty"`
@@ -753,9 +754,6 @@ func compatibilityFingerprintForSpec(spec *TemplateSpec) string {
 	}
 
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
-		KeyType:           spec.KeyType(),
-		Family:            spec.Family,
-		Version:           spec.Version,
 		DerivationVersion: fingerprintDerivationVersion(spec),
 		TemplateMode:      EffectiveTemplateMode(spec),
 		TemplateVariables: spec.TemplateVariables,

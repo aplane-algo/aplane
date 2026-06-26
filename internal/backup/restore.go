@@ -682,7 +682,7 @@ func (r Restorer) buildTemplateRestorePlan(templateYAML []byte, keyType, tmplTyp
 		if err != nil {
 			return restorePlan{}, fmt.Errorf("failed to fingerprint authoritative local template: %w", err)
 		}
-		if authFingerprint != incomingFingerprint {
+		if templateFingerprintsConflict(authFingerprint, incomingFingerprint) {
 			if standaloneSigningMetadata {
 				r.warnSkippedTemplate(keyType, "backup template conflicts with authoritative local definition")
 				return restorePlan{}, nil
@@ -703,7 +703,7 @@ func (r Restorer) buildTemplateRestorePlan(templateYAML []byte, keyType, tmplTyp
 			if err != nil {
 				return restorePlan{}, fmt.Errorf("failed to fingerprint existing keystore template: %w", err)
 			}
-			if existingFingerprint != authFingerprint {
+			if templateFingerprintsConflict(existingFingerprint, authFingerprint) {
 				if standaloneSigningMetadata {
 					r.warnSkippedTemplate(keyType, "existing keystore template conflicts with authoritative local definition")
 					return restorePlan{}, nil
@@ -732,7 +732,7 @@ func (r Restorer) buildTemplateRestorePlan(templateYAML []byte, keyType, tmplTyp
 		if err != nil {
 			return restorePlan{}, fmt.Errorf("failed to fingerprint existing keystore template: %w", err)
 		}
-		if existingFingerprint != incomingFingerprint {
+		if templateFingerprintsConflict(existingFingerprint, incomingFingerprint) {
 			if standaloneSigningMetadata {
 				r.warnSkippedTemplate(keyType, "backup template conflicts with existing keystore definition")
 				return restorePlan{}, nil
@@ -926,11 +926,11 @@ func (r Restorer) activateCompiledProviderPlan(keyType string, masterKey []byte)
 		}
 		if priorOK && prior.Source == keytypestate.SourceCompiled &&
 			prior.State == keytypestate.StateEnabled &&
-			prior.Fingerprint == rec.Fingerprint {
+			templateFingerprintsEquivalent(prior.Fingerprint, rec.Fingerprint) {
 			r.logf("key type already active: %s", keyType)
 			return nil, nil
 		}
-		if priorOK && (prior.Source != keytypestate.SourceCompiled || prior.Fingerprint != rec.Fingerprint) {
+		if priorOK && (prior.Source != keytypestate.SourceCompiled || !templateFingerprintsEquivalent(prior.Fingerprint, rec.Fingerprint)) {
 			if err := keytypestate.RequireUnused(r.Paths, r.IdentityID, keyType, masterKey); err != nil {
 				return nil, err
 			}
@@ -977,6 +977,25 @@ func removeTemplateFile(paths storepaths.Paths, identityID, keyType string, temp
 		return fmt.Errorf("failed to remove restored template: %w", err)
 	}
 	return nil
+}
+
+// templateFingerprintsConflict reports a real template-provenance conflict:
+// two fingerprints that are comparable (same format version) yet hash
+// differently. A cross-version or unparseable pair is "not comparable" and is
+// never reported as a conflict, so a future fingerprint-formula bump cannot
+// spuriously fail a restore. The bundled-template bytecode-reproduction check in
+// verify.go remains the real safety gate for bundled template claims.
+func templateFingerprintsConflict(a, b string) bool {
+	match, comparable := lsigprovider.FingerprintsMatch(a, b)
+	return comparable && !match
+}
+
+// templateFingerprintsEquivalent reports that two fingerprints are comparable
+// (same format version) and hash identically. A cross-version or unparseable
+// pair is not equivalent (forcing a benign re-pin rather than a false match).
+func templateFingerprintsEquivalent(a, b string) bool {
+	match, _ := lsigprovider.FingerprintsMatch(a, b)
+	return match
 }
 
 func templateCompatibilityFingerprint(templateType templatestore.TemplateType, templateYAML []byte) (string, error) {

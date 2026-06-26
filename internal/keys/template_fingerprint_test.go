@@ -4,6 +4,7 @@
 package keys
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -31,20 +32,39 @@ func (p fingerprintTestProvider) CompatibilityFingerprint() string { return p.fi
 
 func TestTemplateFingerprintComparison(t *testing.T) {
 	keyType := "fingerprint-test-v1"
-	lsigprovider.Register(fingerprintTestProvider{keyType: keyType, fingerprint: "semantic-a"})
+	fpA := "1:" + strings.Repeat("a", 64)
+	fpB := "1:" + strings.Repeat("b", 64)
+	lsigprovider.Register(fingerprintTestProvider{keyType: keyType, fingerprint: fpA})
 
-	if got := TemplateFingerprintForKeyType(keyType); got != "semantic-a" {
-		t.Fatalf("TemplateFingerprintForKeyType() = %q, want semantic-a", got)
+	if got := TemplateFingerprintForKeyType(keyType); got != fpA {
+		t.Fatalf("TemplateFingerprintForKeyType() = %q, want %q", got, fpA)
 	}
-	if status, note := CompareTemplateFingerprint(keyType, "semantic-a"); status != "" || note != "" {
+	if status, note := CompareTemplateFingerprint(keyType, fpA); status != "" || note != "" {
 		t.Fatalf("CompareTemplateFingerprint(match) = (%q, %q), want empty", status, note)
 	}
-	status, note := CompareTemplateFingerprint(keyType, "semantic-b")
+	status, note := CompareTemplateFingerprint(keyType, fpB)
 	if status != TemplateProvenanceStatusConflict {
 		t.Fatalf("CompareTemplateFingerprint(conflict) status = %q, want %q", status, TemplateProvenanceStatusConflict)
 	}
 	if note == "" {
 		t.Fatal("CompareTemplateFingerprint(conflict) note is empty")
+	}
+}
+
+// TestTemplateFingerprintCrossVersionIsBenign pins the forward-format guard:
+// a stored fingerprint from a different (future) formula version must read as
+// unavailable, never as a conflict, so a formula bump cannot false-flag keys.
+func TestTemplateFingerprintCrossVersionIsBenign(t *testing.T) {
+	keyType := "fingerprint-test-crossversion-v1"
+	fpA := "1:" + strings.Repeat("a", 64)
+	lsigprovider.Register(fingerprintTestProvider{keyType: keyType, fingerprint: fpA})
+
+	status, note := CompareTemplateFingerprint(keyType, "2:"+strings.Repeat("a", 64))
+	if status != TemplateProvenanceStatusUnavailable {
+		t.Fatalf("CompareTemplateFingerprint(cross-version) status = %q, want %q", status, TemplateProvenanceStatusUnavailable)
+	}
+	if note == "" {
+		t.Fatal("CompareTemplateFingerprint(cross-version) note is empty")
 	}
 }
 

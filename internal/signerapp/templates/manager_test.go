@@ -91,13 +91,15 @@ func TestRegisterKeystoreTemplatesReportsCompiledFingerprintConflict(t *testing.
 	keyType := "templates-compiled-conflict-v1"
 	lsigprovider.RegisterIfAbsent(templatesTestProvider{
 		keyType:     keyType,
-		fingerprint: "new-fingerprint",
+		fingerprint: "1:" + strings.Repeat("a", 64),
 	})
 	if err := keytypestate.Put(paths, "default", keytypestate.Record{
-		KeyType:     keyType,
-		Source:      keytypestate.SourceCompiled,
-		State:       keytypestate.StateEnabled,
-		Fingerprint: "old-fingerprint",
+		KeyType: keyType,
+		Source:  keytypestate.SourceCompiled,
+		State:   keytypestate.StateEnabled,
+		// Same fingerprint version, different (valid 64-hex) hash → a real
+		// same-version conflict.
+		Fingerprint: "1:" + strings.Repeat("b", 64),
 	}); err != nil {
 		t.Fatalf("Put() error = %v", err)
 	}

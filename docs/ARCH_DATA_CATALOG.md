@@ -114,7 +114,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Signing args | signing authority | key payload `signing_args` | `internal/signingargs.Info`, `/keys` `signing_args` | `internal/signingargs`, `internal/keys` | Per-key snapshot; distinct from `/keytypes` runtime args. |
 | Salt counter | signing authority metadata | key payload `salt_counter` | stored bytecode derivation record | `internal/lsigsalt`, `internal/keys` | Required for LogicSig keys; missing rejects scan/restore/signing. |
 | Base key type | signing authority metadata | key payload `base_key_type` | base provider lookup for DSA keys | `internal/keys`, `internal/signerapp/signing` | Required for composed/DSA signing that needs base provider ops. |
-| Template fingerprint | provenance | key payload `template_fingerprint` | inventory provenance status/note | `internal/lsigprovider`, `internal/keys` | Informational only; conflicts do not block signing. |
+| Template fingerprint | provenance | key payload `template_fingerprint` | inventory provenance status/note | `internal/lsigprovider`, `internal/keys` | Behavior-only and versioned (`<n>:` prefix); identifier-independent (base key types projected to stable `base_primitive` tokens); provenance only, conflicts do not block signing; cross-version or malformed comparisons are "not comparable" (benign, not a conflict). |
 | Offline key inventory | local decrypted projection | encrypted key files plus passphrase | `apstore keys list` output | `cmd/apstore`, `internal/keys` | Does not print private key, mnemonic, or raw sentry public key by default. |
 
 ## Key Type And Template Catalog

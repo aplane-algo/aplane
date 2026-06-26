@@ -669,7 +669,10 @@ SDK surface.
 Key inventory projections may include `template_provenance_status` and
 `template_provenance_note`. These are informational comparisons between a key
 file's stored template fingerprint and the currently registered local
-definition. They do not change signing behavior.
+definition. The fingerprint is behavior-only, versioned (`<n>:` prefix), and
+identifier-independent, and the comparison is version-aware: only a same-version,
+different-hash pair is a conflict, while a different-version or malformed stored
+fingerprint is "not comparable" and benign. They do not change signing behavior.
 
 ### Plugin Protocol
 

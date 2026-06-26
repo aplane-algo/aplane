@@ -92,7 +92,14 @@ func CompareTemplateFingerprint(keyType, storedFingerprint string) (status, note
 	if !ok {
 		return TemplateProvenanceStatusUnavailable, "registered key type does not expose a template fingerprint"
 	}
-	if liveFingerprint != storedFingerprint {
+	match, comparable := lsigprovider.FingerprintsMatch(storedFingerprint, liveFingerprint)
+	if !comparable {
+		// Different fingerprint formats (a future formula version, or an
+		// unparseable/legacy value) are not a behavior conflict — provenance
+		// simply cannot be established across formats.
+		return TemplateProvenanceStatusUnavailable, "stored template fingerprint uses an incompatible format and cannot be compared to the currently registered definition"
+	}
+	if !match {
 		return TemplateProvenanceStatusConflict, "creation template fingerprint differs from the currently registered definition"
 	}
 	return "", ""

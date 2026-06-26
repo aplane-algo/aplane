@@ -658,9 +658,16 @@ fsync the parent directory, so the durability contract is the same as other
 small signer metadata files in this store.
 
 Records are intentionally plaintext because they contain no key material. The
-fingerprint is a semantic compatibility digest of the provider/template
-definition, useful for conflict detection and backup provenance checks; it is
-not a signing secret and is not an authorization token.
+fingerprint is a behavior-only compatibility digest of the provider/template
+definition: it hashes only behavior-bearing fields and excludes all user-facing
+identifiers and display strings, so no identifier rename changes it; base key
+types are projected to a stable `base_primitive` token, so a base-identifier
+rename is identifier-independent too. It is versioned (`<n>:<sha256hex>`) and
+compared version-aware: only a same-version, different-hash pair is a conflict,
+while a different-version or malformed fingerprint is "not comparable" (benign,
+never a conflict). It is provenance only — useful for conflict detection and
+backup provenance checks, never read on the signing path, and not a signing
+secret or authorization token.
 
 ### KeyType Library And Template Files
 
@@ -861,9 +868,11 @@ This document uses **v1 signing-metadata keys** for key files that carry
   packing; v1 signing-metadata DSA keys also persist it when it equals
   `key_type`. This field does not say which provider owns account metadata,
   creation parameters, TEAL, or guarded assembly.
-- `template_fingerprint` — optional; the semantic compatibility fingerprint of
-  the template/provider definition that created or was bundled with the key,
-  when known
+- `template_fingerprint` — optional; the behavior-only, versioned (`<n>:`
+  prefix) compatibility fingerprint of the template/provider definition that
+  created or was bundled with the key, when known. It depends on no user-facing
+  identifier (base key types are projected to a stable `base_primitive` token)
+  and is provenance only, never signing authority
 
 Stored LogicSig bytecode and stored signing metadata are authoritative for
 signing:
@@ -944,10 +953,13 @@ LogicSig salting is a generation-time contract:
   signing authority.
 
 Templates are the source for generation, discovery, and new key creation;
-they are not consulted at sign time. `template_fingerprint` is provenance only.
-Key inventory surfaces may compare it with the registered local
-definition and report a template conflict or unavailable template, but those
-notices do not invalidate a key.
+they are not consulted at sign time. `template_fingerprint` is provenance only:
+behavior-only, versioned (`<n>:` prefix), and identifier-independent. Key
+inventory surfaces may compare it with the registered local definition and
+report a template conflict or unavailable template, but those notices do not
+invalidate a key. The comparison is version-aware: only a same-version,
+different-hash pair is a conflict; a different-version or malformed fingerprint
+is "not comparable" and benign.
 
 #### Signing Authority
 
@@ -974,9 +986,11 @@ explicit template restore, backup import provenance validation (a bundled
 template is recompiled with the bundled key's stored creation parameters and
 must reproduce the key's stored LogicSig bytecode), and live provenance
 comparison through `template_fingerprint`. `template_fingerprint` is
-informational provenance only: inventory surfaces may report a template
-conflict or unavailable template, but that status does not invalidate the key
-or alter signing behavior.
+informational provenance only — behavior-only, versioned (`<n>:` prefix), and
+identifier-independent — and the comparison is version-aware (a different-version
+or malformed fingerprint is "not comparable" and benign, never a conflict).
+Inventory surfaces may report a template conflict or unavailable template, but
+that status does not invalidate the key or alter signing behavior.
 
 #### Offline Identity Key Inventory
 
@@ -1881,7 +1895,8 @@ Restore:
   supported by the binary
 - if a bundled template fingerprint can be computed and the key lacks
   `template_fingerprint`, restore annotates the restored key with that
-  provenance before encrypting it into the destination keystore
+  behavior-only, versioned provenance fingerprint before encrypting it into the
+  destination keystore
 - if an installed identity-local template exists but is disabled, explicit template restore can re-enable it; key restore does
   not require enabling a template for signing
 - single-key restore is transactional at the key level: restore-required template installs and compiled-provider activations are rolled

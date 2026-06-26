@@ -183,6 +183,15 @@ subject to the node role gate above.
 | Binary upgrade with changed compiled fingerprint | Existing state record fingerprint no longer matches provider. | Reload ignores the conflicting activation. | Generation is hidden until re-enabled; valid existing keys are not rewritten. |
 | Manual file edit or copy | Operator changes state/template files outside supported paths. | Reload validates and fails closed for invalid records/templates. | Repair through supported install/enable paths. |
 
+Fingerprint comparisons are version-aware. The compatibility fingerprint is
+behavior-only and identifier-independent (it hashes behavior-bearing fields, not
+`key_type`/`family`/display or a renamed base key type) and is stored versioned
+(`<n>:` prefix). A real conflict is only a same-version, different-hash pair; a
+cross-version or malformed stored fingerprint is "not comparable" and benign —
+the activation is re-pinned/registered, not flagged as a conflict. So the
+"changed compiled fingerprint" row above triggers only on a genuine same-version
+behavior change, not on a formula-version bump.
+
 The unused-key guard on disable/remove protects operators from accidentally
 hiding the normal generation source for a key type still in use. It is not a
 sign-time dependency rule; a valid existing key file remains the signing
@@ -347,6 +356,10 @@ is not published as valid runtime inventory.
     `key_type`.
 15. Template/provider fingerprint conflicts are generation/provenance
     problems, not automatic invalidation of otherwise valid key files.
+    Comparisons are version-aware: the fingerprint is behavior-only and
+    identifier-independent, and only a same-version, different-hash pair is a
+    conflict — a cross-version or malformed stored fingerprint is "not
+    comparable" and benign.
 
 ## Source Of Truth
 

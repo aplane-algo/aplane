@@ -552,7 +552,7 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 	keyType := "test.keyadmin-provenance-warning.v1"
 	lsigprovider.RegisterIfAbsent(keyadminFingerprintProvider{
 		keyType:     keyType,
-		fingerprint: "live-fingerprint",
+		fingerprint: "1:" + strings.Repeat("a", 64),
 	})
 
 	ir := setupIdentityRuntime(t)
@@ -566,7 +566,7 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 		BytecodeHex:            hex.EncodeToString(bytecode),
 		SaltCounter:            5,
 		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
-		TemplateFingerprint:    "stored-fingerprint",
+		TemplateFingerprint:    "1:" + strings.Repeat("b", 64),
 	})
 	if err != nil {
 		t.Fatalf("json.Marshal(LSigFile) error = %v", err)

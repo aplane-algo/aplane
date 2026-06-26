@@ -85,6 +85,22 @@ Every custom template needs a unique versioned key type:
 Use unique versioned names for optional template entries and test fixtures.
 For user output, choose a name tied to the user's actual policy.
 
+## Fingerprint Rules
+
+The template compatibility fingerprint is provenance only (never signing
+authority), behavior-only, and versioned (`<n>:` prefix). When touching key-type
+definitions or the fingerprint formula:
+
+- The fingerprint hashes only behavior-bearing fields; identity, routing, and
+  display fields (`key_type`, `family`, `version`, `publisher`, display strings)
+  are forbidden — never add them to the hash.
+- `base_primitive` tokens are a frozen namespace: add rows, never rename a token.
+- Bump `CompatibilityFingerprintVersion` only on a fingerprint-formula change
+  (field set / hashing rules), never on a rename; update the goldens with it.
+- A base-key-type or provider-identifier rename is a separate compatibility
+  event: add a retained registry alias so existing keys keep signing — the
+  `base_primitive` projection does not make a rename safe for signing.
+
 ## Explicit Safety Decisions
 
 Every template design must make safety-relevant behavior explicit. Do not

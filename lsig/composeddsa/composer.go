@@ -241,18 +241,21 @@ func (c *ComposedDSA) BuildArgs(signature []byte, runtimeArgs map[string][]byte)
 
 // CompatibilityFingerprint returns a stable semantic fingerprint for the
 // behavior-bearing parts of this composed provider definition.
+// CompatibilityFingerprint returns a stable, behavior-only compatibility
+// fingerprint for this composed provider definition. It hashes only
+// behavior-bearing fields: identity/display strings (key_type, family, version)
+// are excluded, and the renameable base_key_type is projected to a stable
+// base_primitive token so the fingerprint survives a pure base rename. It is
+// provenance only and is never read on the signing path.
 func (c *ComposedDSA) CompatibilityFingerprint() string {
 	type canonicalSpec struct {
-		KeyType      string                             `json:"key_type"`
-		BaseKeyType  string                             `json:"base_key_type,omitempty"`
-		Family       string                             `json:"family"`
-		Version      int                                `json:"version"`
-		TEALSuffix   string                             `json:"teal_suffix"`
-		SaltStyle    string                             `json:"salt_style"`
-		TemplateMode string                             `json:"template_mode,omitempty"`
-		TemplateVars []tealtemplate.TemplateVariable    `json:"template_variables,omitempty"`
-		Parameters   []lsigprovider.CanonicalParameter  `json:"parameters,omitempty"`
-		RuntimeArgs  []lsigprovider.CanonicalRuntimeArg `json:"runtime_args,omitempty"`
+		BasePrimitive string                             `json:"base_primitive,omitempty"`
+		TEALSuffix    string                             `json:"teal_suffix"`
+		SaltStyle     string                             `json:"salt_style"`
+		TemplateMode  string                             `json:"template_mode,omitempty"`
+		TemplateVars  []tealtemplate.TemplateVariable    `json:"template_variables,omitempty"`
+		Parameters    []lsigprovider.CanonicalParameter  `json:"parameters,omitempty"`
+		RuntimeArgs   []lsigprovider.CanonicalRuntimeArg `json:"runtime_args,omitempty"`
 	}
 
 	params := make([]lsigprovider.CanonicalParameter, len(c.params))
@@ -266,16 +269,13 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 	}
 
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
-		KeyType:      c.keyType,
-		BaseKeyType:  c.baseKeyType,
-		Family:       c.familyName,
-		Version:      c.version,
-		TEALSuffix:   strings.TrimSpace(c.tealSuffix),
-		SaltStyle:    c.fingerprintSaltStyle(),
-		TemplateMode: c.effectiveTemplateMode(),
-		TemplateVars: c.templateVars,
-		Parameters:   params,
-		RuntimeArgs:  runtimeArgs,
+		BasePrimitive: lsigprovider.FingerprintBasePrimitive(c.baseKeyType),
+		TEALSuffix:    strings.TrimSpace(c.tealSuffix),
+		SaltStyle:     c.fingerprintSaltStyle(),
+		TemplateMode:  c.effectiveTemplateMode(),
+		TemplateVars:  c.templateVars,
+		Parameters:    params,
+		RuntimeArgs:   runtimeArgs,
 	})
 }
 
