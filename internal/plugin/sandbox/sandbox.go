@@ -22,6 +22,11 @@ type Config struct {
 	// PluginDir is the plugin's directory (read-only access granted)
 	PluginDir string
 
+	// StateDir is the plugin's private persistent state directory. When set, it is
+	// mounted read-write inside the sandbox. It must live outside PluginDir (and
+	// outside the checksummed payload), since it is mutable by design.
+	StateDir string
+
 	// ExecPath is the path to the plugin executable
 	ExecPath string
 
@@ -97,6 +102,11 @@ func buildLinuxCommand(cfg Config) (*exec.Cmd, error) {
 
 	// Plugin directory (read-only)
 	args = append(args, "--ro-bind", cfg.PluginDir, cfg.PluginDir)
+
+	// Plugin private state directory (read-write), if configured.
+	if cfg.StateDir != "" {
+		args = append(args, "--bind", cfg.StateDir, cfg.StateDir)
+	}
 
 	// Temp space (read-write)
 	args = append(args, "--tmpfs", "/tmp")
@@ -200,6 +210,12 @@ func generateSeatbeltProfile(cfg Config) string {
 	// Plugin directory (read-only)
 	sb.WriteString("; Plugin directory\n")
 	sb.WriteString(fmt.Sprintf("(allow file-read* (subpath %s))\n\n", seatbeltStringLiteral(cfg.PluginDir)))
+
+	// Plugin private state directory (read-write)
+	if cfg.StateDir != "" {
+		sb.WriteString("; Plugin state directory\n")
+		sb.WriteString(fmt.Sprintf("(allow file-read* file-write* (subpath %s))\n\n", seatbeltStringLiteral(cfg.StateDir)))
+	}
 
 	// Temp directory (read-write)
 	sb.WriteString("; Temp directory\n")

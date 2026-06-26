@@ -10,10 +10,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	"github.com/aplane-algo/aplane/internal/plugin/sandbox"
@@ -49,6 +52,10 @@ type Manager struct {
 	algodToken string
 	indexerURL string
 
+	// dataDir is the apshell data dir; per-plugin state directories live under
+	// dataDir/plugin-state/<name>. Empty disables persistent plugin state.
+	dataDir string
+
 	stderrWriter io.Writer
 
 	startPluginInstanceHook func(*discovery.Plugin, runtimeConfig) (*Instance, error)
@@ -77,14 +84,46 @@ func NewManager() *Manager {
 // NewManagerWithDataDir creates a new plugin manager scoped to an apshell data dir.
 func NewManagerWithDataDir(dataDir string) *Manager {
 	discoverer := discovery.New()
+	resolvedDataDir := config.GetClientDataDir("")
 	if dataDir != "" {
 		discoverer = discovery.NewWithDataDir(dataDir)
+		resolvedDataDir = dataDir
 	}
 	return &Manager{
 		discoverer:   discoverer,
 		instances:    make(map[string]*Instance),
 		stderrWriter: os.Stderr,
+		dataDir:      resolvedDataDir,
 	}
+}
+
+// pluginStateDir returns (creating if needed) the private, writable, persistent
+// state directory for a plugin, mounted read-write in the sandbox. It lives under
+// dataDir/plugin-state/<name>, outside the read-only checksummed payload. Returns
+// an empty path when no data dir is configured (persistent state disabled).
+func (m *Manager) pluginStateDir(name string) (string, error) {
+	if m.dataDir == "" {
+		return "", nil
+	}
+	if !validPluginStateName(name) {
+		return "", fmt.Errorf("invalid plugin name for state directory: %q", name)
+	}
+	dir := filepath.Join(m.dataDir, "plugin-state", name)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("failed to create plugin state directory: %w", err)
+	}
+	return dir, nil
+}
+
+// validPluginStateName rejects names that could escape the plugin-state directory.
+func validPluginStateName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	if strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
+		return false
+	}
+	return name == filepath.Base(name)
 }
 
 // SetStderrWriter overrides the destination for plugin stderr output and the
@@ -332,6 +371,11 @@ func (m *Manager) StartPlugin(pluginName string) (*Instance, error) {
 func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfig) (*Instance, error) {
 	execPath := plugin.Manifest.GetExecutablePath(plugin.Dir)
 
+	stateDir, err := m.pluginStateDir(plugin.Manifest.Name)
+	if err != nil {
+		return nil, err
+	}
+
 	// Build environment
 	env := append(os.Environ(),
 		fmt.Sprintf("APSHELL_NETWORK=%s", cfg.network),
@@ -340,10 +384,14 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		fmt.Sprintf("APSHELL_INDEXER_URL=%s", cfg.indexerURL),
 		"APSHELL_PLUGIN=1",
 	)
+	if stateDir != "" {
+		env = append(env, fmt.Sprintf("APSHELL_PLUGIN_STATE_DIR=%s", stateDir))
+	}
 
 	// Build sandboxed command
 	sandboxCfg := sandbox.Config{
 		PluginDir:    plugin.Dir,
+		StateDir:     stateDir,
 		ExecPath:     execPath,
 		Args:         plugin.Manifest.Args,
 		Env:          env,
