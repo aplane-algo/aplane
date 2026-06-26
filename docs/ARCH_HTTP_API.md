@@ -322,15 +322,20 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
   guarded account `key_type`. SDK consumers must treat this as signer-owned
   metadata, not as proof of remote sentry endpoint ownership.
 - optional `template_provenance_status`, `template_provenance_note`; these are
-  informational comparisons between stored key template provenance and the
-  registered local definition, not signing gates
+  informational, version-aware comparisons between stored key template
+  provenance and the registered local definition, not signing gates. The
+  fingerprint is behavior-only and versioned (`<n>:` prefix), so renaming a
+  `key_type`, family, or base key type does not by itself produce a conflict
 
 `template_provenance_status` values:
 
-- `conflict`: the stored `template_fingerprint` differs from the
-  registered local provider/template fingerprint for `key_type`
-- `unavailable`: the key has stored template provenance but no
-  provider/template fingerprint can be resolved for `key_type`
+- `conflict`: the stored `template_fingerprint` and the registered local
+  provider/template fingerprint for `key_type` are the **same fingerprint
+  version** but differ — a genuine behavior difference
+- `unavailable`: no provider/template fingerprint can be resolved for
+  `key_type`, **or** the stored and registered fingerprints are a different
+  version or malformed (not comparable). A different-version or malformed
+  comparison is benign and is never reported as a `conflict`
 
 Absence of `template_provenance_status` means no provenance note is known or no
 stored provenance was available. These fields do not change `/sign` behavior.

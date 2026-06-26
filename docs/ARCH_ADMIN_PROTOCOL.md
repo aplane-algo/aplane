@@ -223,7 +223,7 @@ unlock/reload after passphrase verification through
 - `import_key`: `key_type`, `mnemonic`, optional `parameters` -> `import_result`: `success`, optional `address`, `key_type`, `code`, `error`; accepted only over local IPC because it carries recovery material
 - `get_key_details`: `address` -> `key_details`: `success`, optional `address`, `key_type`, `parameters`, `display_teal`, `code`, `error`
 - `key_details.parameters` for guarded account keys projects the embedded sentry verifier as `Sentry: <Sentry Key ID>` and does not expose the raw `sentry_public_key` parameter
-- `key_details` may include optional `template_provenance_status` and `template_provenance_note`; these are informational comparisons between the key's stored template fingerprint provenance and the registered local definition, and do not gate signing
+- `key_details` may include optional `template_provenance_status` and `template_provenance_note`; these are informational, version-aware comparisons between the key's stored template fingerprint provenance and the registered local definition, and do not gate signing. The fingerprint is behavior-only and versioned, so only a same-version, different-hash pair is a `conflict`; a different-version or malformed comparison is `unavailable` (benign), never a `conflict`
 - `keys_list`: `keys`, where each key has `address`, `key_type`, optional `name`, optional `template_provenance_status`, optional `template_provenance_note`
 - `keys_changed`: `key_count`
 

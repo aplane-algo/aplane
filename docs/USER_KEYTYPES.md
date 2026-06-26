@@ -113,7 +113,7 @@ with:
   "key_type": "aplane.falcon1024_ed25519.v1",
   "source": "compiled",
   "state": "enabled",
-  "fingerprint": "<current provider fingerprint>",
+  "fingerprint": "1:<behavior-only sha256 hex>",
   "activated_at": "..."
 }
 ```
@@ -222,10 +222,12 @@ Example:
 conflicting compiled key type records ignored on reload: [aplane.falcon1024_ed25519.v1]
 ```
 
-This means the identity has an enabled compiled-provider state record, but the
-stored fingerprint does not match the current provider fingerprint in the
-binary. This can happen after a development migration or provider-definition
-change.
+This means the identity has an enabled compiled-provider state record whose
+stored fingerprint and the current provider fingerprint are the same fingerprint
+version but differ — a genuine provider-definition (behavior) change. The
+fingerprint is behavior-only and versioned, so a pure rename of a key type,
+family, or base key type does not trigger this, and a different-version stored
+fingerprint is treated as benign (re-pinned), not a conflict.
 
 Refresh the enablement record:
 
@@ -238,8 +240,9 @@ files.
 
 ### Invalid or externally edited YAML template
 
-Reload rejects templates whose encrypted YAML no longer matches the fingerprint
-stored in the state record.
+Reload rejects templates whose encrypted YAML no longer matches the
+same-version fingerprint stored in the state record (a behavior change); a
+different-version stored fingerprint is treated as benign, not an external edit.
 
 Recovery is to reinstall through the supported import path:
 
