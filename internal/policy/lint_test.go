@@ -238,6 +238,17 @@ key_overrides:
 	}
 }
 
+func TestStoredConfigApplyRejectsInvalidNilKeyOverrideSelector(t *testing.T) {
+	stored := &StoredConfig{
+		KeyOverrides: map[string]*StoredConfig{
+			"ed25519": nil,
+		},
+	}
+	if _, err := stored.Apply(DefaultConfig()); err == nil {
+		t.Fatal("Apply() error = nil, want invalid nil key override selector")
+	}
+}
+
 func TestStoredConfigApplySentryAcceptsSentryKeyIDOverride(t *testing.T) {
 	const sentryKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
 

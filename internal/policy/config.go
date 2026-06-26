@@ -362,9 +362,10 @@ func (c *Config) ForKey(key string) *Config {
 	return c
 }
 
-// NormalizeKeyOverrideKey validates and canonicalizes a policy key_overrides
-// selector. Signing-account selectors are Algorand addresses. Sentry
-// Key IDs are txid-shaped selectors.
+// NormalizeKeyOverrideKey canonicalizes a runtime key-override lookup selector.
+// It accepts both signer auth addresses and Sentry Key IDs because Config.ForKey
+// is shared by signer and sentry effective policy snapshots. Policy document
+// validation must use the role-specific normalizers below instead.
 func NormalizeKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
@@ -915,12 +916,12 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 		overrideBase.KeyOverrides = nil
 		effective.KeyOverrides = make(map[string]*Config, len(c.KeyOverrides))
 		for key, overrideStored := range c.KeyOverrides {
-			if overrideStored == nil {
-				continue
-			}
 			canonicalKey, normalizeErr := NormalizeSigningKeyOverrideKey(key)
 			if normalizeErr != nil {
 				return nil, fmt.Errorf("key_overrides for %q: %w", key, normalizeErr)
+			}
+			if overrideStored == nil {
+				continue
 			}
 			if _, exists := effective.KeyOverrides[canonicalKey]; exists {
 				return nil, fmt.Errorf("key_overrides for %q: duplicate canonical selector %q", key, canonicalKey)
