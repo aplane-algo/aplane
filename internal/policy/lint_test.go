@@ -210,15 +210,55 @@ key_type_overrides:
 }
 
 func TestStoredConfigApplyRejectsKeyTypeAsKeyOverrideSelector(t *testing.T) {
-	stored, err := ParseStoredConfig([]byte(`
+	_, err := ParseStoredConfig([]byte(`
 key_overrides:
   ed25519: {}
 `))
-	if err != nil {
-		t.Fatalf("ParseStoredConfig() error = %v", err)
+	if err == nil {
+		t.Fatal("ParseStoredConfig() error = nil, want invalid key override selector")
 	}
-	if _, err := stored.Apply(DefaultConfig()); err == nil {
-		t.Fatal("Apply() error = nil, want invalid key override selector")
+}
+
+func TestStoredConfigApplyRejectsSentryKeyIDAsSigningKeyOverrideSelector(t *testing.T) {
+	const sentryKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+
+	_, err := ParseStoredConfig([]byte(`
+key_overrides:
+  MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ:
+    max_fee_microalgos: 1000
+`))
+	if err == nil {
+		t.Fatal("ParseStoredConfig() error = nil, want invalid signer key override selector")
+	}
+	if !strings.Contains(err.Error(), "not a Sentry Key ID") {
+		t.Fatalf("ParseStoredConfig() error = %v, want Sentry Key ID rejection", err)
+	}
+	if _, err := NormalizeSentryKeyOverrideKey(sentryKeyID); err != nil {
+		t.Fatalf("test Sentry Key ID is invalid: %v", err)
+	}
+}
+
+func TestStoredConfigApplySentryAcceptsSentryKeyIDOverride(t *testing.T) {
+	const sentryKeyID = "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ"
+
+	rejectClawback := true
+	stored := &StoredConfig{
+		KeyOverrides: map[string]*StoredConfig{
+			sentryKeyID: {
+				StoredPolicyCore: StoredPolicyCore{RejectClawback: &rejectClawback},
+			},
+		},
+	}
+	cfg, err := stored.ApplySentry(DefaultConfig())
+	if err != nil {
+		t.Fatalf("ApplySentry() error = %v", err)
+	}
+	override := cfg.ForKey(sentryKeyID)
+	if override == cfg {
+		t.Fatal("ForKey did not return the sentry override config")
+	}
+	if !override.RejectClawback {
+		t.Fatal("sentry override RejectClawback = false, want true")
 	}
 }
 

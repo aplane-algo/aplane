@@ -383,6 +383,24 @@ func NormalizeKeyOverrideKey(key string) (string, error) {
 	return addr.String(), nil
 }
 
+// NormalizeSigningKeyOverrideKey validates and canonicalizes a signer-domain
+// policy key_overrides selector. Signer overrides are keyed by Algorand auth
+// address; Sentry Key IDs are valid only in sentry-domain policy.
+func NormalizeSigningKeyOverrideKey(key string) (string, error) {
+	raw := strings.TrimSpace(key)
+	if raw == "" {
+		return "", fmt.Errorf("signer key override selector is required")
+	}
+	if _, err := keytypes.NormalizeComponentKeySelector(raw); err == nil {
+		return "", fmt.Errorf("signer key override selector must be an Algorand auth address, not a Sentry Key ID")
+	}
+	addr, err := types.DecodeAddress(strings.ToUpper(raw))
+	if err != nil {
+		return "", fmt.Errorf("signer key override selector must be an Algorand auth address")
+	}
+	return addr.String(), nil
+}
+
 // NormalizeSentryKeyOverrideKey validates and canonicalizes a sentry
 // policy key_overrides selector. Sentry overrides are always keyed by
 // Sentry Key ID, not spending-account address.
@@ -692,6 +710,9 @@ func validateSigningDocument(c *StoredConfig) error {
 		return fmt.Errorf("signer policy sentry is not supported; use sentry policy")
 	}
 	for key, override := range c.KeyOverrides {
+		if _, err := NormalizeSigningKeyOverrideKey(key); err != nil {
+			return fmt.Errorf("key_overrides for %q: %w", key, err)
+		}
 		if override == nil {
 			continue
 		}
@@ -897,7 +918,7 @@ func (c *StoredConfig) Apply(defaults *Config) (*Config, error) {
 			if overrideStored == nil {
 				continue
 			}
-			canonicalKey, normalizeErr := NormalizeKeyOverrideKey(key)
+			canonicalKey, normalizeErr := NormalizeSigningKeyOverrideKey(key)
 			if normalizeErr != nil {
 				return nil, fmt.Errorf("key_overrides for %q: %w", key, normalizeErr)
 			}
