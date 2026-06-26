@@ -6,11 +6,14 @@ package apshellcli
 // External plugin execution and transaction intent processing
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/discovery"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	pluginmanager "github.com/aplane-algo/aplane/internal/plugin/manager"
@@ -119,6 +122,10 @@ func executeExternalPlugin(r *REPLState, cmd Command) error {
 }
 
 func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
+	if result.GroupMode == jsonrpc.GroupModePregroupedSigned {
+		return reviewPregroupedSigned(r, result)
+	}
+
 	r.printf("\nPlugin generated %d transaction(s):\n", len(result.Transactions))
 	for i, txn := range result.Transactions {
 		r.printf("  [%d] %s transaction\n", i+1, txn.Type)
@@ -138,4 +145,72 @@ func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (bool
 		return true, nil
 	}
 	return false, nil
+}
+
+// reviewPregroupedSigned is the mandatory client-side review for a fully
+// plugin-signed, pre-grouped group. This path bypasses apsigner entirely, so this
+// local review is the ONLY human-acceptance step: plugin-provided RequiresApproval
+// is ignored, and non-interactive surfaces (AutoConfirm) fail closed rather than
+// broadcast a group the user never saw — mirroring apsigner refusing to sign with
+// no operator present.
+func reviewPregroupedSigned(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
+	encoded := make([]string, len(result.Transactions))
+	for i, txn := range result.Transactions {
+		encoded[i] = txn.Encoded
+	}
+	group, err := engine.DecodePregroupedSigned(encoded)
+	if err != nil {
+		return false, fmt.Errorf("pregrouped-signed: %w", err)
+	}
+
+	renderPregroupedSignedGroup(r, group.Transactions())
+
+	if r.AutoConfirm {
+		return false, fmt.Errorf("pregrouped-signed groups require interactive review and cannot be submitted in non-interactive (auto-confirm) mode")
+	}
+
+	r.println()
+	response, err := r.readApprovalResponse()
+	if err != nil {
+		return false, err
+	}
+	if response != "y" && response != "yes" {
+		r.println("Transaction cancelled by user")
+		return true, nil
+	}
+	return false, nil
+}
+
+// renderPregroupedSignedGroup prints an honest review of an opaque, plugin-signed
+// group: it labels the group as foreign (apsigner not involved) and shows the
+// decodable per-slot fields, marking anything APlane cannot interpret as opaque
+// rather than rendering it as harmless.
+func renderPregroupedSignedGroup(r *REPLState, stxns []types.SignedTxn) {
+	r.printf("\nLOCAL REVIEW — plugin-signed group (apsigner NOT involved; submitted verbatim)\n")
+	if len(stxns) > 0 {
+		r.printf("Group ID: %s\n", base64.StdEncoding.EncodeToString(stxns[0].Txn.Group[:]))
+	}
+	r.printf("%d transaction(s):\n", len(stxns))
+	for i, st := range stxns {
+		txn := st.Txn
+		r.printf("  [%d] %s  sender=%s  fee=%d\n", i+1, txnTypeLabel(txn.Type), txn.Sender.String(), txn.Fee)
+		switch txn.Type {
+		case types.PaymentTx:
+			r.printf("        pay %d microAlgo -> %s\n", txn.Amount, txn.Receiver.String())
+			if (txn.CloseRemainderTo != types.Address{}) {
+				r.printf("        close remainder -> %s\n", txn.CloseRemainderTo.String())
+			}
+		case types.ApplicationCallTx:
+			r.printf("        appl id=%d (args/proof opaque to APlane)\n", txn.ApplicationID)
+		default:
+			r.printf("        (details opaque to APlane)\n")
+		}
+	}
+}
+
+func txnTypeLabel(t types.TxType) string {
+	if t == "" {
+		return "unknown"
+	}
+	return string(t)
 }

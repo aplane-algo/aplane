@@ -58,6 +58,15 @@ func (a *App) signTransactions(ctx context.Context, txns []types.Transaction, wa
 
 // SubmitPluginTransactions processes plugin transaction intents and submits them via the appropriate signing path.
 func (a *App) SubmitPluginTransactions(ctx context.Context, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
+	switch result.GroupMode {
+	case "":
+		// Legacy unsigned / localSigners path (handled below).
+	case jsonrpc.GroupModePregroupedSigned:
+		return a.submitPregroupedSigned(ctx, result, lsigArgs)
+	default:
+		return nil, fmt.Errorf("unsupported plugin groupMode %q", result.GroupMode)
+	}
+
 	if !a.eng.IsConnected() {
 		return nil, fmt.Errorf("not connected to signer")
 	}
@@ -102,6 +111,48 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, result *jsonrpc.Exec
 		submit.Output,
 		warningsFromTransactionWriteNotices(submit.WriteNotices),
 	), nil
+}
+
+// submitPregroupedSigned handles a complete, already-signed, already-grouped
+// plugin atomic group: it validates the group is self-consistent and submits the
+// exact signed bytes verbatim. apsigner is not involved, so — unlike the other
+// plugin paths — it does NOT require a signer connection, only an algod client
+// (checked downstream in SubmitPregroupedSigned). It fails closed if the result
+// mixes in any APlane-managed signing.
+func (a *App) submitPregroupedSigned(ctx context.Context, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
+	if len(result.LocalSigners) > 0 {
+		return nil, fmt.Errorf("groupMode %q does not allow localSigners", jsonrpc.GroupModePregroupedSigned)
+	}
+	if len(lsigArgs) > 0 {
+		return nil, fmt.Errorf("groupMode %q does not allow lsig args", jsonrpc.GroupModePregroupedSigned)
+	}
+	if len(result.Transactions) == 0 {
+		return nil, fmt.Errorf("groupMode %q requires transactions", jsonrpc.GroupModePregroupedSigned)
+	}
+
+	encoded := make([]string, len(result.Transactions))
+	for i, intent := range result.Transactions {
+		if intent.Type != jsonrpc.TransactionIntentSigned {
+			return nil, fmt.Errorf("groupMode %q requires every transaction to be type %q; transaction %d is %q",
+				jsonrpc.GroupModePregroupedSigned, jsonrpc.TransactionIntentSigned, i+1, intent.Type)
+		}
+		encoded[i] = intent.Encoded
+	}
+
+	group, err := engine.DecodePregroupedSigned(encoded)
+	if err != nil {
+		return nil, err
+	}
+
+	confirmed := !a.eng.GetSimulate()
+	submit, err := a.eng.SubmitPregroupedSigned(ctx, group)
+	if err != nil {
+		if submit != nil {
+			return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), err
+		}
+		return nil, err
+	}
+	return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), nil
 }
 
 func perTxnLsigArgs(lsigArgs map[string][]byte, count int) []map[string][]byte {

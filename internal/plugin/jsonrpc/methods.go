@@ -82,7 +82,21 @@ type ExecuteResult struct {
 	RequiresApproval bool                `json:"requiresApproval,omitempty"`
 	Continuation     *Continuation       `json:"continuation,omitempty"` // For multi-step workflows
 	LocalSigners     []LocalSigner       `json:"localSigners,omitempty"`
+
+	// GroupMode selects how APlane handles Transactions. Empty (the default) is
+	// the legacy unsigned/localSigners path. GroupModePregroupedSigned means the
+	// plugin supplied a complete, already-signed, already-grouped atomic group
+	// that APlane validates and submits verbatim (no apsigner, no /plan).
+	GroupMode string `json:"groupMode,omitempty"`
 }
+
+// Group modes for ExecuteResult.GroupMode.
+const (
+	// GroupModePregroupedSigned: Transactions are all Type:"signed", form one
+	// complete signed atomic group, and are submitted verbatim. Incompatible with
+	// LocalSigners or any APlane-managed signing.
+	GroupModePregroupedSigned = "pregrouped-signed"
+)
 
 // Presentation is optional plugin-supplied display metadata for human-oriented shell output.
 // Data remains the canonical machine-readable payload; presentation is a rendering hint.
@@ -121,11 +135,22 @@ type Continuation struct {
 	Message string                 `json:"message,omitempty"` // Optional message to display before next step
 }
 
-// TransactionIntent represents a transaction the plugin wants to create
+// TransactionIntent represents a transaction the plugin wants to create.
+//
+// Type "raw": Encoded is a base64 unsigned transaction msgpack; APlane plans,
+// signs, and submits it (legacy path). Type "signed": Encoded is a base64 signed
+// transaction msgpack; valid only when ExecuteResult.GroupMode is
+// GroupModePregroupedSigned, where APlane submits it verbatim.
 type TransactionIntent struct {
-	Type    string `json:"type"`    // raw
-	Encoded string `json:"encoded"` // Base64-encoded raw unsigned transaction
+	Type    string `json:"type"`    // "raw" (unsigned) or "signed" (pregrouped-signed only)
+	Encoded string `json:"encoded"` // Base64-encoded transaction msgpack (unsigned for raw, signed for signed)
 }
+
+// Transaction intent types.
+const (
+	TransactionIntentRaw    = "raw"
+	TransactionIntentSigned = "signed"
+)
 
 // LocalSigner is a plugin-controlled ephemeral signer supplied in an execute result.
 type LocalSigner struct {

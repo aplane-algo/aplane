@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/apshellapp"
+	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 	pluginmanager "github.com/aplane-algo/aplane/internal/plugin/manager"
 )
 
@@ -102,8 +103,9 @@ func (p *PluginExecutorAdapter) ExecutePlugin(pluginName string, args []string) 
 		return false, "Transaction cancelled by user", nil, nil, nil
 	}
 
-	// Handle transactions - check if signer is connected
-	if !p.repl.app().IsConnected() {
+	// Handle transactions - check if signer is connected. Pregrouped-signed groups
+	// are fully plugin-signed and bypass apsigner, so they need no signer connection.
+	if result.GroupMode != jsonrpc.GroupModePregroupedSigned && !p.repl.app().IsConnected() {
 		return false, "", nil, nil, fmt.Errorf("not connected to signer - use connect() first to sign transactions")
 	}
 
