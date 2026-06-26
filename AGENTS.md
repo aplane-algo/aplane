@@ -245,11 +245,12 @@ make applugin-checksums         # Generate checksums.sha256 for all example plug
 - Falcon-1024 for post-quantum signatures
 
 ### Key File Format
-Key files (`.key`) use two-layer versioning:
+Key files (`.key`) use layered versioning:
 - `envelope_version`: Encryption envelope format (AES-GCM parameters, salt/nonce encoding)
 - `format_version`: Decrypted payload schema (key fields, structure)
+- `signing_metadata_version` (LogicSig keys only): durable LogicSig signing-metadata schema; `>= 1` marks a v1 signing-metadata key
 
-This allows independent evolution of encryption and key schema.
+This allows independent evolution of the encryption envelope, the payload schema, and LogicSig signing metadata.
 
 ### Input Validation
 - Validate all user input

@@ -238,7 +238,7 @@ unlock/reload after passphrase verification through
 - `remove_installed_template`: `key_type` -> `remove_installed_template_result`: `success`, optional `key_type`, `template_type`, `removed`, `code`, `error`; local IPC only
 - `activate_key_type`: `key_type` -> `activate_key_type_result`: `success`, optional `key_type`, `already_exists`, `code`, `error`; this wire message activates compiled providers and enables installed YAML templates. The `apstore` CLI exposes this as `keytype enable`. For installed YAML templates, `already_exists:true` means the template was already enabled.
 - `deactivate_key_type`: `key_type` -> `deactivate_key_type_result`: `success`, optional `key_type`, `removed`, `code`, `error`; this wire message deactivates compiled providers and disables installed YAML templates. The `apstore` CLI exposes this as `keytype disable`. `removed:true` means the enabled/disabled state changed, and in-use rejection returns `code:"key_type_in_use"` when installed-template disable or compiled-provider disable is blocked.
-- `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries match the HTTP `/keytypes` schema
+- `list_key_types` -> `key_types`: `key_types[]`, optional `code`, `error`; entries mirror most of the HTTP `/keytypes` schema but omit the guarded-routing fields `signing_flow` and `sentry_component_key_type` (admin clients are not guarded-send routers)
 
 ### Signing Approval and Tokens
 
@@ -260,14 +260,14 @@ unlock/reload after passphrase verification through
 
 ### Admin and Policy Settings
 
-- `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, `mode`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
+- `admin_settings`: `user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `passphrase_method`, optional `node_role`, `ssh_enabled`, optional `ssh_listen_address`, optional `ssh_port`, `ssh_fingerprint`, `ssh_clients`, `signer_port`, `teal_compile_network`, optional `endpoint_advertise_url`, optional `endpoint_display_url`, `theme`
 - `update_admin_setting`: `key`, `value` (string-typed on wire)
 - `update_admin_setting_result`: `success`, `key`, optional `value`, `code`, `error`
 - `policy_settings`: `reject_foreign_rekey`, `reject_close_remainder`, `reject_asset_close`, `reject_clawback`, `always_review_warnings`, `auto_approve_self_noop_transfer`, `max_fee_microalgos`, `review_algo_payments`, `max_algo_payments`, `policy_networks`, `review_asa_amounts`, `max_asa_amounts`, optional `policy_asa_metadata`; compatibility fields `max_asa_amounts_mainnet`, `max_asa_amounts_testnet`, and `max_asa_amounts_betanet` may also be present; `reject_clawback` is reported for visibility but is YAML-only for mutation; `key_overrides` is not projected over admin IPC
 - `get_policy_snapshot`: optional `target` (`signer` or `sentry`, omitted means `signer`); requests the active signer-owned stored policy projection for display/editing
 - `policy_snapshot`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, `policy_yaml` is canonical YAML for the active stored policy and `policy_sha256` is the SHA-256 of those emitted bytes
 - `validate_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`; parses and runtime-validates the submitted YAML in the selected policy domain without writing it
-- `validate_policy_result`: `success`, optional `target`, optional `canonical`, optional `policy_sha256`, optional `code`, optional `error`; on success, `canonical` is true when the submitted bytes are already the canonical YAML representation and `policy_sha256` is the SHA-256 of the submitted bytes
+- `validate_policy_result`: `success`, optional `target`, optional `identity_id`, optional `code`, optional `error`
 - `replace_policy`: optional `target` (`signer` or `sentry`, omitted means `signer`), `policy_yaml`, optional `expected_current_sha256`; requests wholesale replacement of the selected policy document with exact submitted YAML bytes. `expected_current_sha256`, when present, must match the active canonical snapshot SHA-256 or the server returns `policy_snapshot_changed`.
 - `replace_policy_result`: `success`, optional `target`, optional `identity_id`, optional `policy_yaml`, optional `policy_sha256`, optional `canonical`, optional `code`, optional `error`; on success, the response is the resulting active canonical snapshot, not necessarily the exact uploaded bytes
 - `update_policy_setting`: `key`, `value` (string-typed on wire)

@@ -504,8 +504,11 @@ Routing's shape is deliberately conservative:
 - It coexists with legacy close/clawback reject booleans. Route-level
   `close.allow:true` and `clawback.allow:true` permit matching movements only
   within routing; they do not override `reject_close_remainder`,
-  `reject_asset_close`, or `reject_clawback`. Stored-policy advisory checks
-  flag this overlap as a warning rather than rejecting the policy.
+  `reject_asset_close`, or `reject_clawback`. This overlap is permitted rather
+  than rejected: the reject booleans always win, so a route allow flag cannot
+  weaken them. (An advisory check for this overlap exists in
+  `internal/policy/advisory.go` but is not currently wired into the policy load
+  or apply path, so no operator-facing warning is emitted today.)
 - It rejects mixed-unit limits. ALGO microAlgos and ASA raw units are not
   comparable, so a route with amount limits must resolve to one asset unit per
   network.
@@ -795,7 +798,11 @@ validate and commit successful edits into the in-memory draft as each field
 editor closes; applying the draft to production remains a separate `a` action.
 
 A normal transfer guard is a UI projection of adjacent stored routes with the
-same derived guard name and network/source/destination/close shape. Group-level
+same derived guard name and network/source/destination/close shape. Note that
+this appolicy "transfer guard" (a grouping of `transfer_policy.routes`) is a
+different concept from the legacy `max_*`/`review_*` "transfer guard"
+amount-threshold maps described earlier in this document. The UI "Guards" screen
+edits routes, not those maps; the two share a name but not a model. Group-level
 fields edit the shared shape: guard name, description, enabled, networks,
 sources, destinations, and close allowance. The route row table edits one real
 route per asset row: asset term and optional review/reject thresholds. Appolicy

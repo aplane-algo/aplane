@@ -132,7 +132,7 @@ DTOs and contract fixtures.
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/config.ServerConfig` snapshot | Admin settings subset | `internal/config`, `cmd/apsigner` |
 | Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/<identity>/node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | signer startup, identity load, keyadmin, restore, signing dispatch |
 | Signing identity | Signer identity | `identities/<identity>/` | `identity.Runtime` | HTTP identity routing, admin session target | `internal/signerapp/identity` |
-| Identity config | Signer identity | `identities/<identity>/config.yaml` | `identity.EffectiveConfig`, excluding key-class role | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
+| Identity config | Signer identity | `identities/<identity>/config.yaml` (parsed as `identity.StoredConfig`) | `identity.EffectiveConfig` (resolved, excluding key-class role) | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
 | Unlock config | Signer identity | `identities/<identity>/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/identity`, `cmd/appass` |
 | Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
 | Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
@@ -302,11 +302,14 @@ guarded flow: user `/sign/component`, sentry `/sign/component`, user
 52-character txid-shaped Sentry Key ID and are not Algorand spending accounts.
 
 Decrypted key payload metadata is parsed through
-`internal/keys.ParseKeyPayloadMetadata`. That parser owns compatibility aliases:
-`parameters`/`params` normalize to one creation-parameter map, and
-`lsig_bytecode`/`bytecode_hex` normalize to one bytecode field. If both aliases
-are present with different values, the payload is rejected instead of relying on
-reader-specific precedence.
+`internal/keys.ParseKeyPayloadMetadata`. That parser reconciles equivalent field
+names emitted by different current writers: DSA-backed LogicSig keys
+(`keys.KeyPair`) write `lsig_bytecode`/`params`, while generic LogicSig keys
+(`keys.LSigFile`) write `bytecode_hex`/`parameters`. `parameters`/`params`
+normalize to one creation-parameter map, and `lsig_bytecode`/`bytecode_hex`
+normalize to one bytecode field. If both aliases are present with different
+values, the payload is rejected instead of relying on reader-specific
+precedence.
 
 The key file is the source of truth for signing existing keys. A live template
 or library source may explain provenance or enable new key creation, but it must
@@ -328,11 +331,17 @@ and `/keytypes` generation metadata still uses `runtime_args`.
 
 ### Key Types And Templates
 
-Key type discovery is assembled from three sources:
+Key type discovery draws from three source classes:
 
 1. default-enabled compiled providers,
 2. library-visible compiled providers enabled by identity state records,
 3. installed YAML templates that are enabled for the identity.
+
+These classes are not assembled by a single function. Compiled and
+composed-template providers surface through the key generation / DSA registries
+(`internal/keymgmt`), while generic YAML templates are added by the REST
+inventory layer (`internal/signerapp/rest`). `internal/keytypecatalog` holds
+visibility metadata, not the assembled list.
 
 Default-enabled compiled providers include signer account providers
 (`ed25519`, `aplane.falcon1024.v1`) and sentry component providers
@@ -623,6 +632,8 @@ Primary projections:
 - `KeysResponse`,
 - `KeyTypesResponse`,
 - `StatusResponse`,
+- `HealthResponse`,
+- `CancelSignRequest`, `CancelSignResponse`,
 - admin generate/delete DTOs,
 - admin sentry reference sync DTOs,
 - `ErrorResponse`.

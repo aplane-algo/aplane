@@ -299,6 +299,11 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
 - `count`
 - `keys[]` with `address`, `public_key_hex`, `key_type`
+- optional `signing_flow`: guarded signing choreography label (e.g. `sentry1`);
+  empty means plain `/sign`. Clients route guarded sends on this label and treat
+  labels they do not implement as fail-fast.
+- optional `sentry_component_key_type`: the sentry component key type used by
+  this key's `signing_flow` (e.g. for `sentry1`)
 - optional `lsig_size`
 - optional `is_generic_lsig`
 - optional `is_component_key` and `is_spending_account`: sentry-key rows use
@@ -348,7 +353,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/keytypes` response:
 
-- `key_types[]` with `key_type`, `family`, `display_name`, `description`, `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, `creation_params[]`, `runtime_args[]`
+- `key_types[]` with `key_type`, `family`, `display_name`, `description`, `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `sentry_component_key_type`, `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
 - each `runtime_args` entry includes `name`, `label`, `description`, `type`, `required`, and optional `byte_length`

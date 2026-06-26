@@ -828,17 +828,23 @@ Categories:
 
 - native signing keys,
 - DSA-backed LogicSig keys,
-- generic LogicSig template instances.
+- generic LogicSig template instances,
+- sentry component keys (durable category `component`; used only through
+  sentry-role `/sign/component`).
 
 Generic LogicSig entries contain salted bytecode, `salt_counter`, and
 parameters rather than a private signing key.
 
-Key payload readers normalize legacy/cosmetic field aliases in one parser
-boundary (`internal/keys.ParseKeyPayloadMetadata`). `parameters` and `params`
-are treated as the same creation-parameter map, and `lsig_bytecode` and
-`bytecode_hex` are treated as the same stored bytecode field. A payload that
-contains both aliases with different values is rejected as an incompatible key
-format instead of choosing one by precedence.
+Key payload readers normalize equivalent field aliases produced by different
+current writers in one parser boundary
+(`internal/keys.ParseKeyPayloadMetadata`). These are not legacy artifacts:
+DSA-backed LogicSig keys (`keys.KeyPair`) persist `lsig_bytecode` and `params`,
+while generic LogicSig keys (`keys.LSigFile`) persist `bytecode_hex` and
+`parameters`. The parser treats `parameters` and `params` as the same
+creation-parameter map, and `lsig_bytecode` and `bytecode_hex` as the same
+stored bytecode field. A payload that contains both aliases with different
+values is rejected as an incompatible key format instead of choosing one by
+precedence.
 
 This document uses **v1 signing-metadata keys** for key files that carry
 `signing_metadata_version >= 1`. LogicSig key payloads in that form include:
@@ -1077,19 +1083,22 @@ provider-specific creation parameters remain exposed normally.
 
 ### Template Files (`.template`)
 
-Encrypted YAML using master-key encryption. `BaseTemplateSpec` contains:
+Encrypted YAML using master-key encryption. The parsed template spec
+(`generictemplate.TemplateSpec`, which embeds `templatestore.BaseTemplateSpec`)
+contains:
 
 - `schema_version`
 - `derivation_version` (optional; omitted means no generated salting)
 - `template_type` (`generic` or `composed`)
 - `base_key_type` (required for `composed`, rejected for `generic`)
-- `template_mode` (`strict` or `generated`)
 - `publisher`
 - `family`
 - `version`
 - `display_name`
 - `description`
 - `display_color`
+- `template_mode` (`legacy`, `strict`, or `generated`) — carried on
+  `TemplateSpec`, not on the embedded `BaseTemplateSpec`
 
 Template capability notes:
 
@@ -1572,8 +1581,10 @@ Callbacks into apshell:
 - `algodUrl`
 - `algodToken`
 - optional `indexerUrl`
-- plugin runtime/protocol version (`version`, `"1.0"`, not the
-  apshell build version)
+- a `version` field (currently a hardcoded `"1.0"`). In code this is the
+  apshell-side version placeholder; it is distinct from the JSON-RPC protocol
+  version (`"2.0"`) and from `manifest_format` (`"1.0"`), and it is not the
+  apshell build version
 
 `execute` carries:
 
