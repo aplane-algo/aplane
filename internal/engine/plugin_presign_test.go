@@ -25,7 +25,7 @@ func presignTestTxn(t *testing.T, sender, note string) types.Transaction {
 	return txn
 }
 
-func TestAssertPluginSlotPreserved(t *testing.T) {
+func TestAssertSlotArtifactFieldsPreserved(t *testing.T) {
 	acct := crypto.GenerateAccount()
 	draft := presignTestTxn(t, acct.Address.String(), "deposit")
 
@@ -33,7 +33,7 @@ func TestAssertPluginSlotPreserved(t *testing.T) {
 		canonical := draft
 		canonical.Group = types.Digest{1, 2, 3}
 		canonical.Fee = 5000
-		if err := assertPluginSlotPreserved(draft, canonical); err != nil {
+		if err := assertSlotArtifactFieldsPreserved(draft, canonical); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -54,7 +54,7 @@ func TestAssertPluginSlotPreserved(t *testing.T) {
 			canonical.Group = types.Digest{1}
 			canonical.Fee = 5000
 			tc.mutate(&canonical)
-			if err := assertPluginSlotPreserved(draft, canonical); err == nil {
+			if err := assertSlotArtifactFieldsPreserved(draft, canonical); err == nil {
 				t.Fatalf("expected error when %s changed", tc.name)
 			}
 		})

@@ -103,12 +103,21 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		canonicalTxns[i] = txn
 	}
 
-	// --- Guardrail: /plan must preserve each plugin slot's artifact-bound fields ---
+	// --- Guardrail: /plan must preserve EVERY original slot's artifact-bound fields ---
+	// Only the group id and fee may change. For plugin-owned slots this protects the
+	// plugin's HPKE envelope/proof. For APlane-managed slots it matters just as much:
+	// a Falcon-funded Mithras deposit's funder payment + app-call carry HPKE-bound
+	// fields (sender/firstValid/lastValid/lease/appId), so a re-stamp here would
+	// silently mint an unspendable UTXO. The planner is not supposed to touch these
+	// (it only pools fees and appends budget dummies), but enforce it rather than
+	// trust an emergent property — a future planner change must not break deposits.
 	for i := 0; i < originalCount; i++ {
-		if _, owned := pluginSignerRefs[txns[i].Sender.String()]; owned {
-			if err := assertPluginSlotPreserved(txns[i], canonicalTxns[i]); err != nil {
-				return nil, fmt.Errorf("plan modified plugin slot %d: %w", i, err)
+		if err := assertSlotArtifactFieldsPreserved(txns[i], canonicalTxns[i]); err != nil {
+			owner := "managed"
+			if _, owned := pluginSignerRefs[txns[i].Sender.String()]; owned {
+				owner = "plugin"
 			}
+			return nil, fmt.Errorf("plan modified %s slot %d: %w", owner, i, err)
 		}
 	}
 
@@ -243,11 +252,13 @@ func assertPluginSignersMatched(txns []types.Transaction, refs map[string]string
 	return nil
 }
 
-// assertPluginSlotPreserved verifies /plan changed nothing on a plugin slot except
+// assertSlotArtifactFieldsPreserved verifies /plan changed nothing on a slot except
 // the group ID and fee. Any other change (sender, validity window, lease, genesis,
-// amount, app id, args) could silently break the plugin's HPKE envelope or proof,
-// so it is rejected.
-func assertPluginSlotPreserved(draft, canonical types.Transaction) error {
+// amount, app id, args) could silently break a plugin slot's HPKE envelope or proof,
+// or a managed funder slot's HPKE binding, so it is rejected. Applies to both
+// plugin-owned and APlane-managed slots — only fee pooling and the group id are
+// legitimate planning mutations.
+func assertSlotArtifactFieldsPreserved(draft, canonical types.Transaction) error {
 	d, c := draft, canonical
 	d.Group, c.Group = types.Digest{}, types.Digest{}
 	d.Fee, c.Fee = 0, 0

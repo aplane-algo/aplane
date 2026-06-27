@@ -71,11 +71,15 @@ func TestPresignPlanPreservesPluginSlotFields(t *testing.T) {
 	}
 	const burnAddr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 
-	// Managed Falcon slot (unsigned, sign-mode).
+	// Managed Falcon slot (unsigned, sign-mode). A distinctive lease lets us detect
+	// any /plan mutation of the managed slot — a Falcon-funded Mithras deposit's
+	// funder slots carry HPKE-bound fields (sender/validity/lease), so the planner
+	// must change only fee and group id here too.
 	managedTxn, err := transaction.MakePaymentTxn(falconAddr, burnAddr, 0, []byte("managed"), "", sp)
 	if err != nil {
 		t.Fatalf("make managed txn: %v", err)
 	}
+	managedTxn.Lease = [32]byte{0x11, 0x22, 0x33, 0x44, 0x55}
 
 	// Foreign/plugin slot (unsigned) with a distinctive lease to detect mutation.
 	plugin := crypto.GenerateAccount()
@@ -144,5 +148,20 @@ func TestPresignPlanPreservesPluginSlotFields(t *testing.T) {
 	d.Fee, c.Fee = 0, 0
 	if !bytes.Equal(msgpack.Encode(d), msgpack.Encode(c)) {
 		t.Fatalf("/plan changed an artifact-bound field of the plugin slot\n draft=%+v\n canon=%+v", d, c)
+	}
+
+	// (c) The MANAGED Falcon slot's artifact-bound fields are preserved too. The
+	// original slots keep their indices [0, originalCount); dummies are appended, so
+	// the managed slot is canonical[0]. (Searching by sender would also match the
+	// Falcon budget dummies, which share the funder's address.) Its fee changes from
+	// budget pooling, so allow only fee + group to differ.
+	if canonical[0].Sender.String() != falconAddr {
+		t.Fatalf("expected the managed Falcon slot at canonical index 0, got sender %s", canonical[0].Sender)
+	}
+	md, mc := managedTxn, canonical[0]
+	md.Group, mc.Group = types.Digest{}, types.Digest{}
+	md.Fee, mc.Fee = 0, 0
+	if !bytes.Equal(msgpack.Encode(md), msgpack.Encode(mc)) {
+		t.Fatalf("/plan changed an artifact-bound field of the managed slot\n draft=%+v\n canon=%+v", md, mc)
 	}
 }
