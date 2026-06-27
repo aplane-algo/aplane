@@ -67,7 +67,7 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 				return fmt.Errorf("transaction cancelled by user")
 			}
 
-			submit, err := submitPluginTransactions(r, result, lsigArgs)
+			submit, err := submitPluginTransactions(r, plugin.Manifest.Name, result, lsigArgs)
 			if err != nil {
 				if submit != nil {
 					r.renderSubmissionOutput(submit.Output)
@@ -100,8 +100,8 @@ func processPluginResultStructured(r *REPLState, pr *PluginResult, result *jsonr
 }
 
 // submitPluginTransactions processes and submits plugin transactions without UI output.
-func submitPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*apshellapp.GroupSubmitSummary, error) {
-	return r.app().SubmitPluginTransactions(r.commandContext(), result, lsigArgs)
+func submitPluginTransactions(r *REPLState, pluginName string, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*apshellapp.GroupSubmitSummary, error) {
+	return r.app().SubmitPluginTransactions(r.commandContext(), pluginName, result, lsigArgs)
 }
 
 // executeExternalPlugin tries to execute a command as an external plugin

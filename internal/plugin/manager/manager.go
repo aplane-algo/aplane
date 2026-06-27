@@ -534,6 +534,29 @@ func (m *Manager) ExecuteCommand(pluginName, command string, args []string, cont
 	return &result, nil
 }
 
+// SignTransactions asks a running plugin to sign the canonical bytes for the slots
+// it owns (declared via ExecuteResult.PluginSigners), as part of the pre-sign
+// planning flow. It reuses the instance left running after ExecuteCommand, so the
+// plugin's signing material is never exported to APlane.
+func (m *Manager) SignTransactions(pluginName string, params jsonrpc.SignTransactionsParams) (*jsonrpc.SignTransactionsResult, error) {
+	instance, err := m.StartPlugin(pluginName)
+	if err != nil {
+		return nil, err
+	}
+
+	var result jsonrpc.SignTransactionsResult
+	timeout := time.Duration(instance.Plugin.Manifest.Timeout) * time.Second
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+
+	if err := instance.Client.CallWithTimeout(jsonrpc.MethodSignTransactions, params, &result, timeout); err != nil {
+		m.discardInstance(pluginName, instance)
+		return nil, fmt.Errorf("plugin signTransactions failed: %w", err)
+	}
+	return &result, nil
+}
+
 func (m *Manager) discardInstance(pluginName string, instance *Instance) {
 	m.mu.Lock()
 	current, ok := m.instances[pluginName]

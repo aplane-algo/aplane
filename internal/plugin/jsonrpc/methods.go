@@ -16,6 +16,15 @@ const (
 	MethodShutdown   = "shutdown"
 )
 
+// Optional methods a plugin may implement.
+const (
+	// MethodSignTransactions is a host->plugin call used in the pre-sign planning
+	// flow: after APlane canonicalizes the group, it asks the plugin to sign the
+	// slots it owns (declared via ExecuteResult.PluginSigners) over the canonical
+	// bytes, so the plugin's signing material is never exported to APlane.
+	MethodSignTransactions = "signTransactions"
+)
+
 // InitializeParams sent when initializing a plugin
 type InitializeParams struct {
 	Network    string `json:"network"`    // Network context token
@@ -83,6 +92,12 @@ type ExecuteResult struct {
 	Continuation     *Continuation       `json:"continuation,omitempty"` // For multi-step workflows
 	LocalSigners     []LocalSigner       `json:"localSigners,omitempty"`
 
+	// PluginSigners declares slots the plugin owns but will sign itself, by
+	// reference, in the pre-sign planning flow (GroupModePresignPlan). APlane never
+	// receives the signing material; it calls MethodSignTransactions to have the
+	// plugin sign these slots over the canonical group.
+	PluginSigners []PluginSigner `json:"pluginSigners,omitempty"`
+
 	// GroupMode selects how APlane handles Transactions. Empty (the default) is
 	// the legacy unsigned/localSigners path. GroupModePregroupedSigned means the
 	// plugin supplied a complete, already-signed, already-grouped atomic group
@@ -96,6 +111,13 @@ const (
 	// complete signed atomic group, and are submitted verbatim. Incompatible with
 	// LocalSigners or any APlane-managed signing.
 	GroupModePregroupedSigned = "pregrouped-signed"
+
+	// GroupModePresignPlan: Transactions are unsigned; APlane canonicalizes the
+	// group (budget txns, fees, group ID) preserving the plugin slots' fields, then
+	// calls MethodSignTransactions for PluginSigners-owned slots and signs any
+	// APlane-managed slots itself. Used for plugin-owned non-exportable signers
+	// (e.g. a Falcon-funded Mithras deposit).
+	GroupModePresignPlan = "presign-plan"
 )
 
 // Presentation is optional plugin-supplied display metadata for human-oriented shell output.
@@ -156,6 +178,46 @@ const (
 type LocalSigner struct {
 	Address   string `json:"address"`
 	SecretKey string `json:"secretKey"` // Base64-encoded 64-byte Ed25519 secret key.
+}
+
+// PluginSigner declares, by reference, a slot the plugin will sign itself during
+// pre-sign planning. No signing material is exported; SignerRef is opaque to APlane
+// and is echoed back in the MethodSignTransactions request so the plugin can locate
+// its key (e.g. a Mithras stealth account or UTXO id).
+type PluginSigner struct {
+	Address   string `json:"address"`
+	Kind      string `json:"kind"`      // e.g. "plugin-callback"
+	SignerRef string `json:"signerRef"` // opaque plugin-owned identifier
+}
+
+// PluginSignerKind values.
+const (
+	PluginSignerKindCallback = "plugin-callback"
+)
+
+// SignTransactionsParams is the host->plugin request asking the plugin to sign the
+// canonical (post-/plan) bytes for the slots it owns.
+type SignTransactionsParams struct {
+	Requests []SignTransactionRequest `json:"requests"`
+}
+
+// SignTransactionRequest identifies one slot the plugin must sign.
+type SignTransactionRequest struct {
+	Index     int    `json:"index"`     // position in the canonical group
+	Address   string `json:"address"`   // sender of the slot
+	SignerRef string `json:"signerRef"` // echoed from the PluginSigner declaration
+	Encoded   string `json:"encoded"`   // base64 canonical unsigned transaction msgpack
+}
+
+// SignTransactionsResult returns the plugin's signed blobs, by index.
+type SignTransactionsResult struct {
+	Signed []SignedTxnEntry `json:"signed"`
+}
+
+// SignedTxnEntry is one plugin-signed transaction.
+type SignedTxnEntry struct {
+	Index   int    `json:"index"`   // matches the request index
+	Encoded string `json:"encoded"` // base64 signed transaction msgpack
 }
 
 // GetInfoParams (empty for now, may extend later)

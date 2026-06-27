@@ -58,7 +58,7 @@ func TestSubmitPluginTransactionsRequiresConnection(t *testing.T) {
 	}
 
 	app := New(eng, config.DefaultConfig(), t.TempDir())
-	_, err = app.SubmitPluginTransactions(context.Background(), &jsonrpc.ExecuteResult{}, nil)
+	_, err = app.SubmitPluginTransactions(context.Background(), "plugin", &jsonrpc.ExecuteResult{}, nil)
 	if err == nil || err.Error() != "not connected to signer" {
 		t.Fatalf("SubmitPluginTransactions() error = %v, want not connected", err)
 	}

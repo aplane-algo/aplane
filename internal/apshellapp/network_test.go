@@ -54,6 +54,10 @@ func (f *fakePluginRuntime) ExecuteCommand(string, string, []string, jsonrpc.Con
 	return nil, nil
 }
 
+func (f *fakePluginRuntime) SignTransactions(string, jsonrpc.SignTransactionsParams) (*jsonrpc.SignTransactionsResult, error) {
+	return nil, nil
+}
+
 func TestSwitchNetworkUpdatesEngineAndPlugins(t *testing.T) {
 	cache.InitLogger()
 

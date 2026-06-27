@@ -18,6 +18,7 @@ type PluginRuntime interface {
 	FindByName(name string) (*discovery.Plugin, error)
 	ListCommands() ([]string, error)
 	ExecuteCommand(pluginName, command string, args []string, context jsonrpc.Context) (*jsonrpc.ExecuteResult, error)
+	SignTransactions(pluginName string, params jsonrpc.SignTransactionsParams) (*jsonrpc.SignTransactionsResult, error)
 	StopAll()
 }
 
