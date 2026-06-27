@@ -5,12 +5,14 @@ package apshellapp
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/algo"
 	"github.com/aplane-algo/aplane/internal/engine"
 	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 
+	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -65,6 +67,8 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, r
 		return a.submitPregroupedSigned(ctx, result, lsigArgs)
 	case jsonrpc.GroupModePresignPlan:
 		return a.submitPresignPlan(ctx, pluginName, result, lsigArgs)
+	case jsonrpc.GroupModePregroupedMixed:
+		return a.submitPregroupedMixed(ctx, result, lsigArgs)
 	default:
 		return nil, fmt.Errorf("unsupported plugin groupMode %q", result.GroupMode)
 	}
@@ -221,6 +225,62 @@ func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *
 	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
 	confirmed := !a.eng.GetSimulate()
 	submit, err := a.eng.SignAndSubmitWithPluginSigners(ctx, txns, refs, signSlots, lsigArgsSlice)
+	if err != nil {
+		if submit != nil {
+			return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), err
+		}
+		return nil, err
+	}
+	return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), nil
+}
+
+// submitPregroupedMixed handles an immutable plugin-built group that mixes
+// already-plugin-signed passthrough slots (type "signed") with unsigned
+// APlane-managed slots (type "raw", signer "aplane"). APlane validates the group is
+// self-consistent and has apsigner sign only the managed slots over the plugin-set
+// group ID — no /plan, no mutation. Requires a signer connection.
+func (a *App) submitPregroupedMixed(ctx context.Context, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
+	if len(result.LocalSigners) > 0 || len(result.PluginSigners) > 0 {
+		return nil, fmt.Errorf("groupMode %q does not allow localSigners or pluginSigners", jsonrpc.GroupModePregroupedMixed)
+	}
+	if len(result.Transactions) == 0 {
+		return nil, fmt.Errorf("groupMode %q requires transactions", jsonrpc.GroupModePregroupedMixed)
+	}
+
+	slots := make([]engine.PregroupedMixedSlot, len(result.Transactions))
+	for i, intent := range result.Transactions {
+		raw, err := base64.StdEncoding.DecodeString(intent.Encoded)
+		if err != nil {
+			return nil, fmt.Errorf("transaction %d: failed to decode base64: %w", i+1, err)
+		}
+		switch intent.Type {
+		case jsonrpc.TransactionIntentSigned:
+			var st types.SignedTxn
+			if err := msgpack.Decode(raw, &st); err != nil {
+				return nil, fmt.Errorf("transaction %d: failed to decode signed transaction: %w", i+1, err)
+			}
+			slots[i] = engine.PregroupedMixedSlot{Txn: st.Txn, SignedRaw: raw}
+		case jsonrpc.TransactionIntentRaw:
+			if intent.Signer != jsonrpc.TransactionSignerAplane {
+				return nil, fmt.Errorf("transaction %d: raw slot must declare signer %q", i+1, jsonrpc.TransactionSignerAplane)
+			}
+			var txn types.Transaction
+			if err := msgpack.Decode(raw, &txn); err != nil {
+				return nil, fmt.Errorf("transaction %d: failed to decode raw transaction: %w", i+1, err)
+			}
+			slots[i] = engine.PregroupedMixedSlot{Managed: true, Txn: txn}
+		default:
+			return nil, fmt.Errorf("transaction %d: unsupported type %q", i+1, intent.Type)
+		}
+	}
+
+	if !a.eng.IsConnected() {
+		return nil, fmt.Errorf("not connected to signer")
+	}
+
+	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
+	confirmed := !a.eng.GetSimulate()
+	submit, err := a.eng.SignAndSubmitPregroupedMixed(ctx, slots, lsigArgsSlice)
 	if err != nil {
 		if submit != nil {
 			return newGroupSubmitSummary(submit.TxIDs, confirmed, submit.Output, nil), err

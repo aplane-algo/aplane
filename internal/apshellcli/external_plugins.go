@@ -6,11 +6,9 @@ package apshellcli
 // External plugin execution and transaction intent processing
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 
-	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/appresult"
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/engine"
@@ -122,8 +120,11 @@ func executeExternalPlugin(r *REPLState, cmd Command) error {
 }
 
 func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
-	if result.GroupMode == jsonrpc.GroupModePregroupedSigned {
+	switch result.GroupMode {
+	case jsonrpc.GroupModePregroupedSigned:
 		return reviewPregroupedSigned(r, result)
+	case jsonrpc.GroupModePregroupedMixed:
+		return reviewPregroupedMixed(r, result)
 	}
 
 	r.printf("\nPlugin generated %d transaction(s):\n", len(result.Transactions))
@@ -181,36 +182,28 @@ func reviewPregroupedSigned(r *REPLState, result *jsonrpc.ExecuteResult) (bool, 
 	return false, nil
 }
 
-// renderPregroupedSignedGroup prints an honest review of an opaque, plugin-signed
-// group: it labels the group as foreign (apsigner not involved) and shows the
-// decodable per-slot fields, marking anything APlane cannot interpret as opaque
-// rather than rendering it as harmless.
-func renderPregroupedSignedGroup(r *REPLState, stxns []types.SignedTxn) {
-	r.printf("\nLOCAL REVIEW — plugin-signed group (apsigner NOT involved; submitted verbatim)\n")
-	if len(stxns) > 0 {
-		r.printf("Group ID: %s\n", base64.StdEncoding.EncodeToString(stxns[0].Txn.Group[:]))
+// reviewPregroupedMixed renders the honest mixed group (managed vs plugin-signed
+// slots, fee attribution) and prompts. apsigner's /sign approval is the
+// authoritative gate for the managed slots, so this client review is a confirm on
+// top: it prompts interactively and otherwise proceeds to apsigner.
+func reviewPregroupedMixed(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
+	slots, err := decodeMixedReviewSlots(result.Transactions)
+	if err != nil {
+		return false, fmt.Errorf("pregrouped-mixed: %w", err)
 	}
-	r.printf("%d transaction(s):\n", len(stxns))
-	for i, st := range stxns {
-		txn := st.Txn
-		r.printf("  [%d] %s  sender=%s  fee=%d\n", i+1, txnTypeLabel(txn.Type), txn.Sender.String(), txn.Fee)
-		switch txn.Type {
-		case types.PaymentTx:
-			r.printf("        pay %d microAlgo -> %s\n", txn.Amount, txn.Receiver.String())
-			if (txn.CloseRemainderTo != types.Address{}) {
-				r.printf("        close remainder -> %s\n", txn.CloseRemainderTo.String())
-			}
-		case types.ApplicationCallTx:
-			r.printf("        appl id=%d (args/proof opaque to APlane)\n", txn.ApplicationID)
-		default:
-			r.printf("        (details opaque to APlane)\n")
-		}
-	}
-}
+	renderPluginGroupReview(r, "REVIEW — plugin group; apsigner signs the APlane-managed slots", slots)
 
-func txnTypeLabel(t types.TxType) string {
-	if t == "" {
-		return "unknown"
+	if r.AutoConfirm {
+		return false, nil
 	}
-	return string(t)
+	r.println()
+	response, err := r.readApprovalResponse()
+	if err != nil {
+		return false, err
+	}
+	if response != "y" && response != "yes" {
+		r.println("Transaction cancelled by user")
+		return true, nil
+	}
+	return false, nil
 }
