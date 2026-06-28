@@ -12,6 +12,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
+	"github.com/aplane-algo/aplane/internal/plugin/jsonrpc"
 )
 
 func TestPluginAppCallInfo(t *testing.T) {
@@ -43,6 +44,34 @@ func TestZeroLocalSignerKeys(t *testing.T) {
 		if b != 0 {
 			t.Fatalf("secretB[%d] = %d, want 0", i, b)
 		}
+	}
+}
+
+func TestBuildPluginAccountInfosReportsSigningScheme(t *testing.T) {
+	const ed = "ED25519ACCOUNTADDRESSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	const falcon = "FALCONACCOUNTADDRESSBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+
+	signerCache := cache.NewSignerCache()
+	signerCache.AddAddress(ed, "ed25519")
+	signerCache.AddAddress(falcon, "aplane.falcon1024.v1")
+	signerCache.SetLsigSize(falcon, 3085)
+
+	eng, err := NewEngine("testnet", WithSignerCache(signerCache))
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+
+	infos := eng.buildPluginAccountInfos([]string{ed, falcon})
+	byAddr := make(map[string]jsonrpc.ContextAccount, len(infos))
+	for _, info := range infos {
+		byAddr[info.Address] = info
+	}
+
+	if got := byAddr[ed]; got.KeyType != "ed25519" || got.LsigSize != 0 || got.IsLSig {
+		t.Fatalf("ed25519 account = %+v, want keyType ed25519, lsigSize 0, isLsig false", got)
+	}
+	if got := byAddr[falcon]; got.KeyType != "aplane.falcon1024.v1" || got.LsigSize != 3085 || !got.IsLSig {
+		t.Fatalf("falcon account = %+v, want keyType aplane.falcon1024.v1, lsigSize 3085, isLsig true", got)
 	}
 }
 

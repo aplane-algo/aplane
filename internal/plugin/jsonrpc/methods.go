@@ -53,6 +53,11 @@ type Context struct {
 	// Available accounts (addresses that can sign transactions)
 	Accounts []string `json:"accounts"`
 
+	// AccountInfos carries the signing scheme of each available account so plugins
+	// can pick a group mode (e.g. a LogicSig-authorized funder like Falcon needs
+	// presign-plan rather than pregrouped-mixed). Parallel to Accounts.
+	AccountInfos []ContextAccount `json:"accountInfos,omitempty"`
+
 	// Assets is the structured asset context for known ASAs.
 	Assets []ContextAsset `json:"assets,omitempty"`
 
@@ -71,6 +76,19 @@ type Context struct {
 
 	// Continuation context (for multi-step workflows)
 	Continuation map[string]interface{} `json:"continuation,omitempty"`
+}
+
+// ContextAccount is the signing scheme of an available account, exposed to plugins.
+type ContextAccount struct {
+	Address string `json:"address"`
+	// KeyType is the account's key type, e.g. "ed25519" or "aplane.falcon1024.v1".
+	KeyType string `json:"keyType,omitempty"`
+	// LsigSize is the authorizing LogicSig's program size in bytes (0 for ed25519).
+	// A non-zero value means the signer needs in-group opcode budget, so an
+	// immutable pregrouped-mixed group cannot carry it — use presign-plan.
+	LsigSize int `json:"lsigSize"`
+	// IsLSig is true when the account is authorized by a LogicSig (LsigSize > 0).
+	IsLSig bool `json:"isLsig"`
 }
 
 // ContextAsset is structured ASA metadata exposed to plugins.
