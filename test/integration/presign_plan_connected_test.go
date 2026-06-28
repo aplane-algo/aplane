@@ -140,7 +140,7 @@ func TestPresignPlanConnectedEngineSubmit(t *testing.T) {
 		return out, nil
 	}
 
-	res, err := eng.SignAndSubmitWithPluginSigners(ctx, []types.Transaction{managedTxn, pluginTxn}, refs, signSlots, nil)
+	res, err := eng.SignAndSubmitWithPluginSigners(ctx, []types.Transaction{managedTxn, pluginTxn}, refs, nil, signSlots, nil)
 	if err != nil {
 		out := ""
 		if res != nil {

@@ -220,6 +220,13 @@ type PluginSigner struct {
 	Address   string `json:"address"`
 	Kind      string `json:"kind"`      // e.g. "plugin-callback"
 	SignerRef string `json:"signerRef"` // opaque plugin-owned identifier
+	// LsigSize is the byte size of the LogicSig (program + args) the plugin will
+	// attach to this slot during the signTransactions callback. APlane can't know
+	// it (the slot is unsigned at /plan time and the program is plugin-private), so
+	// the plugin declares it; the signer counts it toward the group's pooled
+	// LogicSig byte budget and adds budget dummies accordingly. 0 (omitted) means
+	// the slot carries no LogicSig or the plugin doesn't report a size.
+	LsigSize int `json:"lsigSize,omitempty"`
 }
 
 // PluginSignerKind values.
