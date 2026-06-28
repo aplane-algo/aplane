@@ -187,12 +187,12 @@ The third module is [formal/composition.tla](formal/composition.tla),
 described in
 [FORMAL_TLA_COMPOSITION_MODEL.md](FORMAL_TLA_COMPOSITION_MODEL.md).
 It joins the first two modules: the verdict that sign-boundary
-previously treated as a free oracle is here derived by running
+treats as a free oracle is here derived by running
 policy-precedence on rule matches and operator default, and the joint
 Init feeds that derived outcome into sign-boundary's output
 computation. The bridge invariant `PolicyOutcomeBindsOutput` ties
 policy decisions to signing output; `HardDenyProducesNoOutput`
-promotes sign-boundary's previously-by-construction
+promotes sign-boundary's by-construction
 `DenyOutputSuppression` into a derived consequence of running real
 policy precedence. TLC checked under `MaxRequestEntries = 3` and
 `MaxDummies = 2`; the recorded run generated 84,096 distinct initial

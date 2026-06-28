@@ -182,7 +182,7 @@ aplane/
 │   ├── appresult/                 # Shared shell/MCP structured results
 │   ├── shellrepl/                 # Human shell syntax, parsing, and completion
 │   ├── cmdspec/, command/         # Shared command specs and registry helpers
-│   ├── signertui/                 # Shared signer administration TUI package
+│   ├── signerapp/signertui/       # Shared signer administration TUI package
 │   ├── engine/                    # Reusable client mechanics and transaction operations
 │   ├── engine/connect/            # Remote signer connection and signer-facing HTTP
 │   ├── clientstate/               # Client-side alias/set/cache mutation ownership

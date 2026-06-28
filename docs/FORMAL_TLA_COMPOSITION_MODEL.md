@@ -8,7 +8,7 @@ This is the third machine-checkable artifact under the M4 milestone in
 [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md). It joins
 [formal/sign_boundary.tla](formal/sign_boundary.tla) and
 [formal/policy_precedence.tla](formal/policy_precedence.tla): the verdict
-that `sign_boundary` previously treated as a free oracle is here
+that `sign_boundary` treats as a free oracle is here
 derived by running `policy_precedence` on rule matches and operator
 default, and the joint Init feeds that derived outcome into
 `sign_boundary`'s output computation.
@@ -44,8 +44,8 @@ regression guards rather than because new behavior is being verified.)
 
 `HardDenyProducesNoOutput` is the most consequential of the seam
 properties. In `sign_boundary.tla` the analogous
-`DenyOutputSuppression` predicate was true by construction of `Init`
-(output was computed from a free oracle verdict). Here the verdict is
+`DenyOutputSuppression` predicate is true by construction of `Init`
+(output is computed from a free oracle verdict). Here the verdict is
 derived from rule matches through `policy_precedence`, so the
 deny-to-no-output property is a real derived consequence rather than
 a tautology.
@@ -100,7 +100,7 @@ output = IF policy_outcome = "signed"
          ELSE <<>>
 ```
 
-`sign_boundary.tla` used:
+`sign_boundary.tla` uses:
 
 ```text
 output = IF verdict = "approve" THEN SignOutput(...) ELSE <<>>
@@ -174,10 +174,10 @@ stutters.
 ## Linking back
 
 - [FORMAL_TLA_SIGN_BOUNDARY_MODEL.md](FORMAL_TLA_SIGN_BOUNDARY_MODEL.md)
-  is the first module. Its extension plan listed this composition step.
+  is the first module. Its extension plan covers this composition step.
 - [FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md](FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md)
-  is the second module. Its extension plan also listed this composition
-  step as a future direction.
+  is the second module. Its extension plan also covers this composition
+  step.
 - [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) Machine-Checkable
   Coverage section records the run state count, depth, and result for
   this module.

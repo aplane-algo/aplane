@@ -357,8 +357,8 @@ networks:
 
 `mainnet`, `testnet`, and `betanet` are reserved. Custom mappings cannot reuse
 those tokens or override their built-in genesis hashes. Use the grouped
-`networks` form; top-level `algod` and `genesis_hash_networks` are no longer
-part of the current config schema.
+`networks` form; top-level `algod` and `genesis_hash_networks` are not part of
+the config schema.
 
 Each custom network token has one configured genesis hash. If you recreate an
 AlgoKit LocalNet or switch to another private network with a different genesis

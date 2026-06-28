@@ -26,8 +26,8 @@ The spec lives at [formal/policy_precedence.tla](formal/policy_precedence.tla).
 | Approval resolution table | (this module) | `ApprovalResolution` |
 
 The I9 check is the centerpiece. The sign-boundary module's
-`DenyOutputSuppression` predicate was true by construction of `Init`
-(output was computed from a free-oracle verdict). Here `verdict` is
+`DenyOutputSuppression` predicate is true by construction of `Init`
+(output is computed from a free-oracle verdict). Here `verdict` is
 derived from rule matches and `outcome` from `verdict` plus approval
 input, so the claim "matches.deny ⇒ outcome = rejected, regardless of
 approval or user_auto_approve" becomes a real property that TLC
@@ -183,12 +183,12 @@ Already shipped:
 
 - **Composition with `sign_boundary.tla`.**
   [formal/composition.tla](formal/composition.tla) joins the two
-  modules. The verdict that `sign_boundary` previously treated as a
+  modules. The verdict that `sign_boundary` treats as a
   free oracle is here derived through `policy_precedence`, and the
   joint Init feeds that derived outcome into sign-boundary's output
   computation. The bridge invariant `PolicyOutcomeBindsOutput` ties
   policy outcome to signing output; sign-boundary's
-  `DenyOutputSuppression` is now a derived consequence of running
+  `DenyOutputSuppression` is a derived consequence of running
   real precedence on rule matches. See
   [FORMAL_TLA_COMPOSITION_MODEL.md](FORMAL_TLA_COMPOSITION_MODEL.md).
 

@@ -222,8 +222,7 @@ matches the longest interleaving sequence (admin's 5-step lifecycle
 - [FORMAL_TLA_SIGN_BOUNDARY_MODEL.md](FORMAL_TLA_SIGN_BOUNDARY_MODEL.md),
   [FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md](FORMAL_TLA_POLICY_PRECEDENCE_MODEL.md),
   and [FORMAL_TLA_COMPOSITION_MODEL.md](FORMAL_TLA_COMPOSITION_MODEL.md)
-  are the prior modules; their extension plans previously listed
-  lifecycle as next-up.
+  are the prior modules; this module adds the lifecycle slice.
 
 ## Extension plan
 

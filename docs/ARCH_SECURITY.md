@@ -434,7 +434,7 @@ All apshell connections to the signer use SSH tunneling, regardless of whether t
 **Why uniform SSH:**
 - Every client has a unique SSH key identity, even on localhost
 - The signer can distinguish between clients (e.g., for audit logging)
-- Token-only clients were indistinguishable ("token holder")
+- Token-only access cannot distinguish between clients ("token holder")
 - Consistent security model regardless of network topology
 
 **Connection properties:**

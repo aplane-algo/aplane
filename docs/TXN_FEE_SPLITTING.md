@@ -212,9 +212,12 @@ Client-side verbose signing output may also summarize the mutation report:
 Fee adjustment: +5000 µAlgos across group
 ```
 
-## Comparison: Before vs After
+## Fee Distribution: First-Sender-Pays vs Even Split
 
-### Before (First Sender Pays All)
+aplane splits the group's dummy-fee budget evenly across the paying senders
+rather than letting the first sender absorb all of it.
+
+### First sender pays all (naive)
 
 ```
 Transaction Group:
@@ -226,7 +229,7 @@ Total: 7000 microAlgos
 Fairness: JUNK2 pays 6× more for equal participation
 ```
 
-### After (Fair Split)
+### Even split (aplane)
 
 ```
 Transaction Group:
@@ -235,7 +238,7 @@ Transaction Group:
   [2-6] 5 Dummies: Fee = 0 each (split evenly)
 
 Total: 7000 microAlgos
-Fairness: Each sender pays proportional share
+Fairness: Each sender pays a proportional share
 ```
 
 ## Edge Cases

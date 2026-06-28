@@ -179,7 +179,7 @@ reached depth 1, and found no counterexamples for `Safety`.
 | Approval resolution table | `ApprovalResolution` |
 
 P4-P7 follow by construction from the short-circuit decision procedure,
-which TLC now confirms over every input combination. I9 is the
+which TLC confirms over every input combination. I9 is the
 centerpiece: it could not be machine-checked in the sign-boundary
 module because verdict was a free oracle; here verdict is derived from
 rule application, so I9 becomes a real property TLC verifies.
@@ -189,7 +189,7 @@ rule application, so I9 becomes a real property TLC verifies.
 [formal/composition.tla](formal/composition.tla) (see
 [FORMAL_TLA_COMPOSITION_MODEL.md](FORMAL_TLA_COMPOSITION_MODEL.md))
 joins the two component modules. The verdict that sign_boundary
-previously treated as a free oracle is here derived by running
+treats as a free oracle is here derived by running
 policy_precedence on rule matches and operator default. The joint
 Init feeds that derived outcome into sign_boundary's output
 computation. TLC checked under `MaxRequestEntries = 3` and

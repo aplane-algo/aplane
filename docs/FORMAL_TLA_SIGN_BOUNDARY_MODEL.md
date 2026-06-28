@@ -28,9 +28,9 @@ The module also defines `DenyOutputSuppression` (verdict = "deny" =>
 output = <<>>), but this is *not* a check of I9 (Hard Deny Dominance).
 In the current spec `verdict` is a free oracle and `output` is
 computed from it directly, so `DenyOutputSuppression` is true by
-construction of `Init`. Verifying real I9 requires a future module
-that derives verdicts from policy rule tiers; see the Extension plan
-below.
+construction of `Init`. Verifying real I9 requires a separate module
+that derives verdicts from policy rule tiers; the `policy_precedence`
+and `composition` modules do this (see the Extension plan below).
 
 ## What it deliberately does not cover
 
