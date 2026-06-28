@@ -105,7 +105,11 @@ type ExecuteResult struct {
 	GroupMode string `json:"groupMode,omitempty"`
 }
 
-// Group modes for ExecuteResult.GroupMode.
+// Group modes for ExecuteResult.GroupMode. These are the general extension point that
+// lets a plugin take part in building/signing atomic groups involving cryptography
+// APlane does not hold (a LogicSig, an HSM/MPC key, a counterparty's signature) — the
+// substrate for external-custody, smart-signature, counterparty/relayer, and privacy
+// plugins. See docs/ARCH_PLUGINS.md "Plugin Transaction Flows".
 const (
 	// GroupModePregroupedSigned: Transactions are all Type:"signed", form one
 	// complete signed atomic group, and are submitted verbatim. Incompatible with

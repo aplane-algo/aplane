@@ -644,15 +644,17 @@ should not depend on those values unless the runtime explicitly populates them.
 ### Transaction Intents
 
 Plugins propose transactions by returning transaction intents in the execute response.
-Only `raw` unsigned transactions are accepted. Other intent types are not part
-of the active plugin contract until builders exist.
+A `raw` (unsigned) intent is the default: APlane plans, signs, and submits it. A
+`signed` intent carries an already-signed transaction and is valid only inside a plugin
+group flow (`groupMode: "pregrouped-signed"`); see
+[Plugin Transaction Flows](#plugin-transaction-flows-group-modes) below.
 
 **TransactionIntent Fields:**
 
 ```go
 type TransactionIntent struct {
-    Type    string `json:"type"`    // raw
-    Encoded string `json:"encoded"` // Base64-encoded raw unsigned transaction
+    Type    string `json:"type"`    // "raw" (unsigned) or "signed" (pregrouped-signed)
+    Encoded string `json:"encoded"` // Base64-encoded transaction msgpack
 }
 ```
 
@@ -661,6 +663,7 @@ type TransactionIntent struct {
 | Type | Description | Required Fields |
 |------|-------------|-----------------|
 | `raw` | Fully formed unsigned transaction msgpack, base64-encoded | `encoded` |
+| `signed` | Already-signed transaction msgpack, base64-encoded (only under `groupMode: "pregrouped-signed"`) | `encoded` |
 
 ### Multi-Step Workflows (Continuations)
 
@@ -755,6 +758,81 @@ When `localSigners` is present, apshell runs the cooperative signing protocol wi
 - DEX protocols with ephemeral swap accounts
 - Multi-step workflows where intermediate accounts are created and used
 
+### Plugin Transaction Flows (Group Modes)
+
+The intent and local-signer mechanisms above cover plugins that propose transactions
+for APlane-managed or plugin-supplied ephemeral keys. Some protocols, however, need to
+take part in **building and signing atomic groups that involve cryptography or signing
+material APlane does not hold** — a LogicSig the plugin compiled, a key in an HSM, a
+threshold quorum, or a counterparty's signature. The `ExecuteResult.groupMode` field
+selects the flow:
+
+| `groupMode` | Who signs each slot | APlane's role |
+|---|---|---|
+| _(empty)_ | apsigner / `localSigners` | plan, sign, and submit (the default path above) |
+| `pregrouped-signed` | the plugin (every slot) | validate self-consistency and **submit verbatim**; apsigner signs nothing |
+| `presign-plan` | plugin-owned slots **and** APlane-managed slots | canonicalize the group, call the plugin back to sign its slots, sign the managed slots, submit |
+
+This gives plugins two general capabilities.
+
+**1. Submit-verbatim (`pregrouped-signed`).** The plugin returns a complete,
+already-signed atomic group (every intent `type: "signed"`). APlane checks the group is
+internally consistent and submits it without modification — apsigner is never involved.
+Because no APlane key signs, a **mandatory client-side review** is the human-acceptance
+gate, and it **fails closed** when run non-interactively (it will not broadcast a group
+the operator never saw).
+
+**2. Co-sign with managed accounts (`presign-plan`).** The plugin returns an *unsigned*
+draft (every intent `type: "raw"`) plus a `pluginSigners` list declaring the slots it
+will sign itself — each with an address, an opaque `signerRef`, and the byte size
+(`lsigSize`) of the LogicSig it will attach. APlane canonicalizes the group: it pools
+fees, recomputes the group ID, and adds LogicSig opcode-budget transactions **sized from
+the declared `lsigSize` values**, while a guard asserts every original slot's
+transaction fields are preserved (only the group ID and fee may change). APlane then
+calls the plugin's `signTransactions` method to sign its owned slots over the *canonical*
+bytes, and apsigner signs the APlane-managed slots under its normal policy and approval.
+**The plugin's signing keys are never exported** — it signs by reference, via the
+callback.
+
+Supporting machinery: a **per-plugin state directory** (`APSHELL_PLUGIN_STATE_DIR`) for
+persisting keys, cursors, or watermarks across invocations, and a role-aware review
+renderer that shows, per slot, which party signs it and which fees APlane-managed
+accounts pay.
+
+**Trust boundary.** In `presign-plan`, apsigner still owns its slots — it applies its
+full policy and approval to the managed transactions, exactly as for a direct `/sign`.
+A plugin can *add* signers to a group; it cannot bypass apsigner's authority over
+apsigner's keys.
+
+#### What these flows enable
+
+Together they turn APlane from *"can sign with the keys apsigner holds"* into *"can
+compose Algorand groups that include keys held anywhere — a plugin, an HSM, an MPC
+quorum, a counterparty, or a LogicSig — while apsigner keeps full control of its own
+slots."* That is a general extension point, not a one-off; it is the substrate for whole
+classes of plugin:
+
+| Plugin class | Examples | Mode used |
+|---|---|---|
+| **External / non-exportable custody** | HSM/KMS bridge, MPC or threshold-signature coordinator, hardware-wallet bridge | `presign-plan` (plugin signs its slot via the callback) |
+| **Smart-signature / composed-LogicSig auth** | multisig, whitelist, hashlock/HTLC escrows, atomic swaps, fee sponsors (paymaster: managed account pays, plugin LogicSig authorizes) | `presign-plan` (budget sized from `lsigSize`) |
+| **Counterparty / relayer flows** | RFQ or order-book fills (maker pre-signs, taker submits), gasless meta-transactions, signed-voucher redemption | `pregrouped-signed` (submit the counterparty-signed group verbatim) |
+| **Privacy / shielded pools** | mixers, confidential transfers, private voting | `presign-plan` (fund a shielded deposit) + `pregrouped-signed` (self-authorizing spend) |
+
+The common thread is a plugin that **brings its own cryptography or signing material and
+composes it into transaction groups**, with apsigner retaining authority over its own
+slots. Notably, the `presign-plan` budget mechanism keys on each slot's *LogicSig size*,
+not on any key-type label — so it serves the entire composed-LogicSig family uniformly,
+including schemes that already exist as APlane key types (Falcon multisig, whitelist,
+guarded, composed DSAs), with no per-scheme code. If a plain key type later gains a
+native on-chain signature (so it no longer needs a LogicSig), it simply drops out of the
+budget-sizing path automatically; the flow does not change.
+
+For the signer-side substrate beneath these flows — the `/plan` and `/sign` pipeline, the
+LogicSig pool-capacity formula, and the passthrough/foreign signing modes — see
+[ARCH_COOPERATIVE_SIGNING.md](ARCH_COOPERATIVE_SIGNING.md) and
+[TXN_MIXED_GROUPS.md](TXN_MIXED_GROUPS.md).
+
 ### Error Codes
 
 **Standard JSON-RPC Error Codes:**
@@ -780,15 +858,19 @@ When `localSigners` is present, apshell runs the cooperative signing protocol wi
 
 ### Transaction Processing Flow
 
+The default (`groupMode` empty) flow:
+
 1. Plugin returns transaction intents in execute response
 2. APlane Shell processes intents:
    - Decodes `raw` unsigned transactions from base64 → msgpack
    - Validates transaction structure
-   - Rejects non-raw intent types until builders for those schemas are implemented
 3. User approval (if `requiresApproval: true`)
-4. APlane Shell signs transactions via Signer
+4. APlane Shell signs transactions via Signer (and any `localSigners`)
 5. APlane Shell submits transactions to network
 6. Transaction IDs displayed to user
+
+When the result sets `groupMode`, APlane Shell dispatches to the corresponding plugin
+group flow instead — see [Plugin Transaction Flows](#plugin-transaction-flows-group-modes).
 
 ### Creating an External Plugin
 
@@ -1215,6 +1297,9 @@ Always test your plugin on multiple networks:
 
 ## See Also
 
+- [Plugin Transaction Flows](#plugin-transaction-flows-group-modes) - The `pregrouped-signed` / `presign-plan` group modes and the plugin classes they enable
+- [ARCH_COOPERATIVE_SIGNING.md](ARCH_COOPERATIVE_SIGNING.md) - The `/plan` + `/sign` cooperative signing protocol beneath the group flows
+- [TXN_MIXED_GROUPS.md](TXN_MIXED_GROUPS.md) - LogicSig pool capacity and mixed-group signing on the signer side
 - [plugins/README.md](../plugins/README.md) - Bundled production plugins
 - [examples/external_plugins/README.md](../examples/external_plugins/README.md) - Plugin examples
 - [Makefile](../Makefile) - All available build targets
