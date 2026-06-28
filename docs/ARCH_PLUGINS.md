@@ -607,12 +607,82 @@ Notifies the plugin to exit gracefully.
 }
 ```
 
-The supported JSON-RPC surface is:
+#### signTransactions
+
+A host→plugin callback used in the `presign-plan` group flow (see
+[Plugin Transaction Flows](#plugin-transaction-flows-group-modes)). After APlane
+canonicalizes the group, it calls this method to have the plugin sign the slots it
+declared in `pluginSigners`, over the canonical bytes. The plugin's signing material is
+never exported to APlane: the plugin locates each key from the opaque `signerRef` it
+supplied and signs by reference. A plugin that never returns `groupMode: "presign-plan"`
+does not handle this method.
+
+**Request:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "signTransactions",
+  "params": {
+    "requests": [
+      {
+        "index": 0,
+        "address": "PLUGIN_OWNED_ADDR...",
+        "signerRef": "opaque-plugin-key-id",
+        "encoded": "base64-canonical-unsigned-txn-msgpack"
+      }
+    ]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "result": {
+    "signed": [
+      {
+        "index": 0,
+        "encoded": "base64-signed-txn-msgpack"
+      }
+    ]
+  }
+}
+```
+
+**Request fields** (`requests[]`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `index` | int | Position of the slot in the canonical group |
+| `address` | string | Sender of the slot |
+| `signerRef` | string | Opaque identifier echoed from the slot's `pluginSigners` entry; the plugin uses it to locate its key |
+| `encoded` | string | Base64 canonical unsigned transaction msgpack — the exact bytes the plugin signs |
+
+**Response fields** (`signed[]`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `index` | int | Matches the request `index` |
+| `encoded` | string | Base64 signed transaction msgpack for that slot |
+
+The plugin returns one `signed` entry per request and signs the bytes exactly as
+received. APlane submits the group as the union of these plugin-signed slots and its own
+apsigner-signed slots; altering a slot's fields would break the shared group ID.
+
+The core JSON-RPC surface every plugin handles (host→plugin) is:
 
 - `initialize`
 - `execute`
 - `getInfo`
 - `shutdown`
+
+Plugins that use the `presign-plan` group flow also handle one additional host→plugin
+method:
+
+- `signTransactions`
 
 ### Execution Context
 
@@ -794,6 +864,43 @@ bytes, and apsigner signs the APlane-managed slots under its normal policy and a
 **The plugin's signing keys are never exported** — it signs by reference, via the
 callback.
 
+The plugin declares its owned slots via a top-level `pluginSigners` array in the execute
+result, alongside the unsigned `raw` intents:
+
+```json
+{
+  "success": true,
+  "message": "Shielded deposit",
+  "groupMode": "presign-plan",
+  "transactions": [
+    {"type": "raw", "encoded": "..."},
+    {"type": "raw", "encoded": "..."}
+  ],
+  "requiresApproval": true,
+  "pluginSigners": [
+    {
+      "address": "PLUGIN_OWNED_ADDR...",
+      "kind": "plugin-callback",
+      "signerRef": "opaque-plugin-key-id",
+      "lsigSize": 2048
+    }
+  ]
+}
+```
+
+**`pluginSigners` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `address` | string | Sender of the slot the plugin signs |
+| `kind` | string | Signer kind; `plugin-callback` |
+| `signerRef` | string | Opaque plugin-owned identifier echoed back in the `signTransactions` request so the plugin can locate its key |
+| `lsigSize` | int | Byte size of the LogicSig (program + args) the plugin attaches to this slot. APlane counts it toward the group's pooled LogicSig budget. Omit or `0` when the slot carries no LogicSig |
+
+The `groupMode` field is the top-level selector for the flow; `presign-plan` requires a
+`pluginSigners` entry for every plugin-owned slot, and `pregrouped-signed` uses neither
+`pluginSigners` nor `localSigners`.
+
 Supporting machinery: a **per-plugin state directory** (`APSHELL_PLUGIN_STATE_DIR`) for
 persisting keys, cursors, or watermarks across invocations, and a role-aware review
 renderer that shows, per slot, which party signs it and which fees APlane-managed
@@ -878,7 +985,7 @@ group flow instead — see [Plugin Transaction Flows](#plugin-transaction-flows-
 
 2. **Implement the JSON-RPC Server:** Listen for JSON-RPC requests on stdin and send responses to stdout.
 
-3. **Implement Required Methods:** `initialize`, `execute`, `getInfo`, `shutdown`
+3. **Implement Required Methods:** `initialize`, `execute`, `getInfo`, `shutdown` (and `signTransactions` if the plugin uses the `presign-plan` group flow)
 
 4. **Create a Manifest:** Write a `manifest.json` file.
 
