@@ -81,32 +81,34 @@ func renderPregroupedSignedGroup(r *REPLState, stxns []types.SignedTxn) {
 	renderPluginGroupReview(r, "LOCAL REVIEW — plugin-signed group (apsigner NOT involved; submitted verbatim)", slots)
 }
 
-// decodeMixedReviewSlots decodes pregrouped-mixed intents into review slots, tagging
-// each with its signing role (plugin-signed passthrough vs APlane-managed). It is
-// display-only; the engine performs authoritative validation.
-func decodeMixedReviewSlots(intents []jsonrpc.TransactionIntent) ([]pluginReviewSlot, error) {
+// decodePresignReviewSlots decodes a presign-plan draft (every slot Type:"raw",
+// unsigned) into review slots, tagging each by signing role: a slot whose sender is
+// declared in pluginSigners is plugin-signed; every other slot is APlane-managed
+// (apsigner signs it). Display-only; the engine performs authoritative validation,
+// and apsigner's /sign approval is the authoritative gate for the managed slots.
+func decodePresignReviewSlots(intents []jsonrpc.TransactionIntent, pluginSigners []jsonrpc.PluginSigner) ([]pluginReviewSlot, error) {
+	owned := make(map[string]bool, len(pluginSigners))
+	for _, ps := range pluginSigners {
+		owned[ps.Address] = true
+	}
 	slots := make([]pluginReviewSlot, len(intents))
 	for i, intent := range intents {
+		if intent.Type != jsonrpc.TransactionIntentRaw {
+			return nil, fmt.Errorf("transaction %d: presign-plan slots must be type %q, got %q", i+1, jsonrpc.TransactionIntentRaw, intent.Type)
+		}
 		raw, err := base64.StdEncoding.DecodeString(intent.Encoded)
 		if err != nil {
 			return nil, fmt.Errorf("transaction %d: decode base64: %w", i+1, err)
 		}
-		switch intent.Type {
-		case jsonrpc.TransactionIntentSigned:
-			var st types.SignedTxn
-			if err := msgpack.Decode(raw, &st); err != nil {
-				return nil, fmt.Errorf("transaction %d: decode signed: %w", i+1, err)
-			}
-			slots[i] = pluginReviewSlot{txn: st.Txn, role: slotRolePluginSigned}
-		case jsonrpc.TransactionIntentRaw:
-			var txn types.Transaction
-			if err := msgpack.Decode(raw, &txn); err != nil {
-				return nil, fmt.Errorf("transaction %d: decode raw: %w", i+1, err)
-			}
-			slots[i] = pluginReviewSlot{txn: txn, role: slotRoleManaged}
-		default:
-			return nil, fmt.Errorf("transaction %d: unsupported type %q", i+1, intent.Type)
+		var txn types.Transaction
+		if err := msgpack.Decode(raw, &txn); err != nil {
+			return nil, fmt.Errorf("transaction %d: decode raw: %w", i+1, err)
 		}
+		role := slotRoleManaged
+		if owned[txn.Sender.String()] {
+			role = slotRolePluginSigned
+		}
+		slots[i] = pluginReviewSlot{txn: txn, role: role}
 	}
 	return slots, nil
 }

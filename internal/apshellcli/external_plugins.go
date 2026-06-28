@@ -123,8 +123,8 @@ func reviewPluginTransactions(r *REPLState, result *jsonrpc.ExecuteResult) (bool
 	switch result.GroupMode {
 	case jsonrpc.GroupModePregroupedSigned:
 		return reviewPregroupedSigned(r, result)
-	case jsonrpc.GroupModePregroupedMixed:
-		return reviewPregroupedMixed(r, result)
+	case jsonrpc.GroupModePresignPlan:
+		return reviewPresignPlan(r, result)
 	}
 
 	r.printf("\nPlugin generated %d transaction(s):\n", len(result.Transactions))
@@ -182,14 +182,14 @@ func reviewPregroupedSigned(r *REPLState, result *jsonrpc.ExecuteResult) (bool, 
 	return false, nil
 }
 
-// reviewPregroupedMixed renders the honest mixed group (managed vs plugin-signed
-// slots, fee attribution) and prompts. apsigner's /sign approval is the
-// authoritative gate for the managed slots, so this client review is a confirm on
-// top: it prompts interactively and otherwise proceeds to apsigner.
-func reviewPregroupedMixed(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
-	slots, err := decodeMixedReviewSlots(result.Transactions)
+// reviewPresignPlan renders the honest presign-plan draft (managed vs plugin-signed
+// slots, fee attribution) and prompts. APlane canonicalizes this group and apsigner's
+// /sign approval is the authoritative gate for the managed slots, so this client
+// review is a confirm on top: it prompts interactively and otherwise proceeds.
+func reviewPresignPlan(r *REPLState, result *jsonrpc.ExecuteResult) (bool, error) {
+	slots, err := decodePresignReviewSlots(result.Transactions, result.PluginSigners)
 	if err != nil {
-		return false, fmt.Errorf("pregrouped-mixed: %w", err)
+		return false, fmt.Errorf("presign-plan: %w", err)
 	}
 	renderPluginGroupReview(r, "REVIEW — plugin group; apsigner signs the APlane-managed slots", slots)
 

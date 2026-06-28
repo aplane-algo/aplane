@@ -314,31 +314,11 @@ func (e *Engine) BuildPluginContext() (jsonrpc.Context, error) {
 	accounts := e.signerCacheAddresses()
 
 	return jsonrpc.Context{
-		Network:      e.Network,
-		Accounts:     accounts,
-		AccountInfos: e.buildPluginAccountInfos(accounts),
-		Assets:       assets,
-		AddressMap:   addressMap,
+		Network:    e.Network,
+		Accounts:   accounts,
+		Assets:     assets,
+		AddressMap: addressMap,
 	}, nil
-}
-
-// buildPluginAccountInfos surfaces each account's signing scheme so plugins can pick
-// a group mode: a LogicSig-authorized funder (LsigSize > 0, e.g. Falcon) needs
-// presign-plan, not pregrouped-mixed. signerLsigSize is the same predicate the
-// pregrouped-mixed path rejects on, and includes the auth-address fallback for
-// rekeyed accounts.
-func (e *Engine) buildPluginAccountInfos(accounts []string) []jsonrpc.ContextAccount {
-	infos := make([]jsonrpc.ContextAccount, 0, len(accounts))
-	for _, addr := range accounts {
-		size := e.signerLsigSize(addr)
-		infos = append(infos, jsonrpc.ContextAccount{
-			Address:  addr,
-			KeyType:  e.signerCacheKeyType(addr),
-			LsigSize: size,
-			IsLSig:   size > 0,
-		})
-	}
-	return infos
 }
 
 func buildPluginAssetContext(cacheAssets map[uint64]cache.ASAInfo) []jsonrpc.ContextAsset {

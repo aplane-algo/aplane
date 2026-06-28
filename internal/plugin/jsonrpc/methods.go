@@ -53,11 +53,6 @@ type Context struct {
 	// Available accounts (addresses that can sign transactions)
 	Accounts []string `json:"accounts"`
 
-	// AccountInfos carries the signing scheme of each available account so plugins
-	// can pick a group mode (e.g. a LogicSig-authorized funder like Falcon needs
-	// presign-plan rather than pregrouped-mixed). Parallel to Accounts.
-	AccountInfos []ContextAccount `json:"accountInfos,omitempty"`
-
 	// Assets is the structured asset context for known ASAs.
 	Assets []ContextAsset `json:"assets,omitempty"`
 
@@ -76,19 +71,6 @@ type Context struct {
 
 	// Continuation context (for multi-step workflows)
 	Continuation map[string]interface{} `json:"continuation,omitempty"`
-}
-
-// ContextAccount is the signing scheme of an available account, exposed to plugins.
-type ContextAccount struct {
-	Address string `json:"address"`
-	// KeyType is the account's key type, e.g. "ed25519" or "aplane.falcon1024.v1".
-	KeyType string `json:"keyType,omitempty"`
-	// LsigSize is the authorizing LogicSig's program size in bytes (0 for ed25519).
-	// A non-zero value means the signer needs in-group opcode budget, so an
-	// immutable pregrouped-mixed group cannot carry it — use presign-plan.
-	LsigSize int `json:"lsigSize"`
-	// IsLSig is true when the account is authorized by a LogicSig (LsigSize > 0).
-	IsLSig bool `json:"isLsig"`
 }
 
 // ContextAsset is structured ASA metadata exposed to plugins.
@@ -133,17 +115,9 @@ const (
 	// GroupModePresignPlan: Transactions are unsigned; APlane canonicalizes the
 	// group (budget txns, fees, group ID) preserving the plugin slots' fields, then
 	// calls MethodSignTransactions for PluginSigners-owned slots and signs any
-	// APlane-managed slots itself. Used for plugin-owned non-exportable signers
-	// (e.g. a Falcon-funded Mithras deposit).
+	// APlane-managed slots itself. Used for a group that mixes plugin-owned
+	// non-exportable signers with APlane-managed funders (e.g. a Mithras deposit).
 	GroupModePresignPlan = "presign-plan"
-
-	// GroupModePregroupedMixed: the plugin supplies a complete, immutable group
-	// (final group ID already set on every slot) mixing Type:"signed" passthrough
-	// slots and Type:"raw" Signer:"aplane" managed slots. APlane validates the group
-	// is self-consistent and has apsigner sign only the managed slots over the fixed
-	// group ID — no /plan, no mutation. Only for managed keys needing no extra group
-	// budget (ed25519); a Falcon managed key requires presign-plan instead.
-	GroupModePregroupedMixed = "pregrouped-mixed"
 )
 
 // Presentation is optional plugin-supplied display metadata for human-oriented shell output.
@@ -190,20 +164,14 @@ type Continuation struct {
 // transaction msgpack; valid only when ExecuteResult.GroupMode is
 // GroupModePregroupedSigned, where APlane submits it verbatim.
 type TransactionIntent struct {
-	Type    string `json:"type"`             // "raw" (unsigned) or "signed" (pregrouped modes)
-	Encoded string `json:"encoded"`          // Base64-encoded transaction msgpack (unsigned for raw, signed for signed)
-	Signer  string `json:"signer,omitempty"` // pregrouped-mixed: "aplane" marks an APlane-managed slot
+	Type    string `json:"type"`    // "raw" (unsigned) or "signed" (pregrouped-signed)
+	Encoded string `json:"encoded"` // Base64-encoded transaction msgpack (unsigned for raw, signed for signed)
 }
 
 // Transaction intent types.
 const (
 	TransactionIntentRaw    = "raw"
 	TransactionIntentSigned = "signed"
-)
-
-// TransactionSigner values for TransactionIntent.Signer (pregrouped-mixed).
-const (
-	TransactionSignerAplane = "aplane" // APlane-managed slot, signed by apsigner
 )
 
 // LocalSigner is a plugin-controlled ephemeral signer supplied in an execute result.
