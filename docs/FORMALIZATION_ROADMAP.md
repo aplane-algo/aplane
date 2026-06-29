@@ -87,7 +87,9 @@ Initial models should not include:
   plugin group-mode flows `presign-plan` (a plugin signs its own slots by
   callback; the signer plans them as foreign slots) and `pregrouped-signed`
   (the plugin submits a complete signed group, bypassing the signer),
-- approval coordinator cancellation/timeout state machines,
+- approval coordinator cancellation/timeout state machines (picked up as the M3
+  companion [FORMAL_APPROVAL_COORDINATOR_MODEL.md](FORMAL_APPROVAL_COORDINATOR_MODEL.md);
+  excluded only from the first-wave models),
 - LogicSig budget computation internals,
 - LogicSig template and bytecode-generation semantics,
 - future registration, witness, compliance-signer, or profile-trust concepts
@@ -148,7 +150,9 @@ Add precise English models for surfaces that are important but intentionally
 outside M1:
 
 - approval coordinator state, including manual approval, cancellation, timeout,
-  and decommission failure,
+  and decommission failure — **delivered** as
+  [FORMAL_APPROVAL_COORDINATOR_MODEL.md](FORMAL_APPROVAL_COORDINATOR_MODEL.md);
+  its TLA+ module is Track B2,
 - cooperative signing, including the `localSigners` `/plan`-to-local-signing-to-`/sign`
   passthrough flow, the `presign-plan` plugin-callback flow (the plugin signs
   its own slots, which the signer plans as foreign slots), and the
@@ -296,6 +300,13 @@ sentry transfer policy, endpoint routing as non-trust metadata, local
 assembly verification against stored key-file anchors, passthrough binding,
 endpoint sync behavior, and node role gates.
 
+[FORMAL_APPROVAL_COORDINATOR_MODEL.md](FORMAL_APPROVAL_COORDINATOR_MODEL.md)
+captures the runtime approval coordinator (the first M3 companion model): the
+per-request approval lifecycle, single-delivery-turn serialization, the
+operator approve/reject/timeout/cancel/fail-all outcomes, the fail-all mechanism
+behind lifecycle L8, and how those outcomes refine the four-valued `approval`
+input that `policy_precedence.tla` currently treats as a free oracle.
+
 ## Handoff Notes
 
 This section exists so a team picking up the formalization track later can
@@ -333,7 +344,7 @@ S/A-series) are unchanged.
 |---|---|---|
 | M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
-| M3: Deferred Companion English Models | Not started | Approval coordinator, cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
+| M3: Deferred Companion English Models | In progress | Approval coordinator delivered (`FORMAL_APPROVAL_COORDINATOR_MODEL.md`). Cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
 | M4: Machine-Checkable Model | First wave complete | Four TLA+ modules shipped. ~14 of 65 numbered invariants are machine-checked. |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
@@ -347,7 +358,8 @@ Machine-checked invariants by module:
 | `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency | 48 | 10 |
 
 Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A15
-(guarded signing), I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L8-L11.
+(guarded signing), AP1-AP6 (approval coordinator), I4-I6, IS1-IS6, P1-P3,
+P8-P10, L1-L3, L8-L11.
 
 ### Verification methodology by module
 
