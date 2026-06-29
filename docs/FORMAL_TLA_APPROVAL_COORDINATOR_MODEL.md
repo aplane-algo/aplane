@@ -153,11 +153,13 @@ responsibility, anchored by the Go tests in the traceability AP rows.
 
 ## Extension plan
 
-- **Approval-aware composition (Track B3).** Join this module with
-  `policy_precedence.tla`, replacing its free `approval` oracle with the outcome
-  derived here, and re-check that hard deny still dominates and that decommission
-  yields no signed output end to end. This mirrors how `composition.tla` derived
-  `policy_precedence`'s verdict from rule application, and carries the same
-  temporal-vs-one-shot reconciliation noted for lifecycle-aware composition.
+- **Approval-aware composition (Track B3) — shipped** as
+  [formal/approval_composition.tla](formal/approval_composition.tla)
+  ([FORMAL_TLA_APPROVAL_COMPOSITION_MODEL.md](FORMAL_TLA_APPROVAL_COMPOSITION_MODEL.md)).
+  It joins this module's outcome with `policy_precedence.tla`, replacing the free
+  `approval` oracle with the value derived here, and machine-checks that hard deny
+  still dominates and that a fail-all (disconnect / decommission) yields no signed
+  output end to end. It stays one-shot by consuming only the terminal outcome,
+  which is why this module's temporal invariants live here.
 - **Liveness.** Add weak fairness on `Deliver` and the terminal actions and
   verify every queued request eventually resolves.

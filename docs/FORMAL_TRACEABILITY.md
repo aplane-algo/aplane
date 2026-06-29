@@ -288,6 +288,30 @@ AP1 (single resolution), AP2 (only approve permits a signature), and AP3
 (response ID binding) are modeled by construction — absorbing terminal states and
 per-request action identity — not as separate predicates.
 
+### Approval composition module
+
+[formal/approval_composition.tla](formal/approval_composition.tla) (see
+[FORMAL_TLA_APPROVAL_COMPOSITION_MODEL.md](FORMAL_TLA_APPROVAL_COMPOSITION_MODEL.md))
+joins the coordinator's terminal outcome with the policy pipeline: it replaces
+`policy_precedence.tla`'s free four-valued `approval` oracle with the value
+derived from the coordinator outcome and feeds it end to end into signing output.
+Like `composition.tla` it is one-shot; TLC checked under `MaxRequestEntries = 3`,
+`MaxDummies = 2`, generating 47,304 distinct states, depth 1, no counterexamples.
+These are cross-module seam claims rather than new numbered invariants.
+
+| Claim | TLA+ predicate |
+|---|---|
+| `approval` derived from coordinator outcome | `ApprovalDerivedFromCoordinator` |
+| Coordinator consulted iff review-class verdict | `ConsultedIffReview` |
+| Review-class signs only if coordinator approved (AP2) | `CoordinatorApproveRequiredToSign` |
+| Every non-approve coordinator outcome rejects | `NonApproveCoordinatorRejects` |
+| Fail-all yields no signed output, end to end (L8) | `FailAllProducesNoSignedOutput` |
+| Hard deny dominates the coordinator (I9) | `HardDenyDominatesCoordinator` |
+| Policy outcome binds signing output | `PolicyOutcomeBindsOutput` |
+
+Validated by mutation test: mapping the `Failed` (fail-all) outcome to `approve`
+produces a counterexample where a fail-all'd review-class request signs.
+
 ### Unmodeled invariants
 
 The following invariants have no TLA+ representation yet:

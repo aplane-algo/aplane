@@ -324,9 +324,9 @@ If the repository has moved since the guarded signing update, run `git log --one
 from the relevant formalization commit to see what changed.
 
 **Drift review (2026-06-29, HEAD `0568e343`).** A re-sync confirmed the models
-still track the code after ~360 commits of movement: all five TLA+ modules
+still track the code after ~360 commits of movement: all six TLA+ modules
 re-check green under TLC at the recorded state counts (2,628 / 64 / 84,096 /
-48 / 196); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
+48 / 196 / 47,304); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
 re-validated across all 65 invariants (six stale code/line anchors corrected,
 no invariant lost its test); and two code changes since the snapshot were
 reconciled — the third guarded account key type `aplane.corridor.v1` (now named
@@ -345,7 +345,7 @@ S/A-series) are unchanged.
 | M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
 | M3: Deferred Companion English Models | In progress | Approval coordinator delivered (`FORMAL_APPROVAL_COORDINATOR_MODEL.md`). Cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
-| M4: Machine-Checkable Model | First wave complete | Five TLA+ modules shipped. ~18 of 71 numbered invariants are machine-checked. |
+| M4: Machine-Checkable Model | First wave complete | Six TLA+ modules shipped. ~18 of 71 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam. |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
 Machine-checked invariants by module:
@@ -357,6 +357,7 @@ Machine-checked invariants by module:
 | `composition.tla` | 3 seam claims + 2 sign-boundary rechecks under derived verdict | 84,096 | 1 |
 | `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency | 48 | 10 |
 | `approval_coordinator.tla` | AP4, AP5, AP6, L8, turn/state consistency | 196 | 11 |
+| `approval_composition.tla` | approval-seam claims (AP2 / L8 / I9 end to end) | 47,304 | 1 |
 
 Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A15
 (guarded signing), AP1-AP3 (approval coordinator; modeled by construction),
@@ -364,11 +365,11 @@ I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L9-L11.
 
 ### Verification methodology by module
 
-The five shipped modules are not all the same kind of check, and the
+The six shipped modules are not all the same kind of check, and the
 distinction matters when judging what TLC has and has not done:
 
-- **`sign_boundary.tla`, `policy_precedence.tla`, `composition.tla`** are
-  one-shot specs: `Init` enumerates every valid input combination and
+- **`sign_boundary.tla`, `policy_precedence.tla`, `composition.tla`, and
+  `approval_composition.tla`** are one-shot specs: `Init` enumerates every valid input combination and
   `Next == UNCHANGED vars`. TLC's recorded depth of 1 reflects this — no
   temporal transitions are explored, because none are defined. What TLC
   verifies is that every invariant in `Safety` holds across the full
@@ -466,7 +467,7 @@ Tools used during the first iteration:
 Convention used during this work: the jar lives at `~/tla/tla2tools.jar`.
 Adjust paths if you put it elsewhere.
 
-Run all five modules in sequence from the repo root:
+Run all six modules in sequence from the repo root:
 
 ```sh
 java -jar ~/tla/tla2tools.jar -config docs/formal/sign_boundary.cfg        docs/formal/sign_boundary.tla
@@ -474,6 +475,7 @@ java -jar ~/tla/tla2tools.jar -config docs/formal/policy_precedence.cfg    docs/
 java -jar ~/tla/tla2tools.jar -config docs/formal/composition.cfg          docs/formal/composition.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle.cfg            docs/formal/lifecycle.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/approval_coordinator.cfg docs/formal/approval_coordinator.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/approval_composition.cfg docs/formal/approval_composition.tla
 ```
 
 Expected results match the table above. Each module reports "Model
@@ -506,25 +508,18 @@ the M3 deliverables list as part of the same change.
 
 ### How to pick up next
 
-The approval coordinator companion model (`approval_coordinator.tla`,
-Track B2) has shipped and machine-checked L8. If you want to extend the
+The approval-coordinator track is complete: `approval_coordinator.tla`
+(Track B2) machine-checked L8 and the AP invariants, and
+`approval_composition.tla` (Track B3) derived the operator `approval` input
+from the coordinator's outcome end to end. If you want to extend the
 machine-checked surface area further, the highest-value next slices are:
-
-- **Approval-aware composition (Track B3).** Replace the free four-valued
-  `approval` oracle in `policy_precedence.tla` / `composition.tla` with the
-  outcome derived in `approval_coordinator.tla`, re-checking hard-deny
-  dominance and an end-to-end "decommission yields no signed output" claim.
-  Mirrors how `composition.tla` derived the policy verdict, with the same
-  temporal-vs-one-shot reconciliation as lifecycle-aware composition.
-
-Alternatives, in rough order of value:
 
 - **Lifecycle-aware composition.** Joins `lifecycle.tla` (temporal) with
   the existing one-shot composition module. Non-trivial because it
   requires reconciling temporal-transition state with one-shot Init state,
   but unlocks an end-to-end machine-checked claim about "lifecycle
   unavailability implies empty signer output."
-- **Signing-authority TLA+ module.** A fifth TLA+ artifact covering S*
+- **Signing-authority TLA+ module.** A new TLA+ artifact covering S*
   invariants — canonical filename binding, key-selection-from-`auth_address`,
   the deferred S13 fallback path. Would close the largest remaining
   unmodeled surface.
@@ -533,6 +528,6 @@ Alternatives, in rough order of value:
   property class.
 
 The previous operational cleanup is complete: `docs/formal/states/` is ignored,
-and the Formal Models CI job runs all five shipped TLC modules through
+and the Formal Models CI job runs all six shipped TLC modules through
 `make formal-test`. If you only have time for one new formalization piece, start
-with approval-aware composition (Track B3).
+with lifecycle-aware composition.

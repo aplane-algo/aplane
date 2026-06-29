@@ -1462,9 +1462,9 @@ The repo uses:
   `approval_wait_seconds` for sizing `/sign` deadlines.
 - machine-checkable TLA+ models under `docs/formal/`, run locally with
   `make formal-test` and in CI by the Formal Models job. The target checks the
-  `sign_boundary`, `policy_precedence`, `composition`, `lifecycle`, and
-  `approval_coordinator` TLC modules and requires `tla2tools.jar` through
-  `TLA2TOOLS_JAR` or one of the
+  `sign_boundary`, `policy_precedence`, `composition`, `lifecycle`,
+  `approval_coordinator`, and `approval_composition` TLC modules and requires
+  `tla2tools.jar` through `TLA2TOOLS_JAR` or one of the
   Makefile's default jar search paths.
 
 `make integrity-check` is the broad verification target. It chains formatting,
