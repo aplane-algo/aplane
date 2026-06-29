@@ -8,9 +8,10 @@
 # The test keeps the existing docker-local behavior surface focused on install,
 # SSH token provisioning, client reachability, shared LocalNet wiring, sentry
 # endpoint enrollment, sentry-key discovery, guarded transaction-signing flows,
-# and corridor whitelist enforcement. It also installs the local Python SDK
-# source into the client container and validates the guarded account with SDK
-# intent prep plus SDK guarded component signing.
+# and corridor whitelist enforcement. It also validates the guarded account
+# with SDK intent prep plus SDK guarded component signing. Local mode uses the
+# local Python SDK checkout; release mode uses the Python package from PyPI and
+# the TypeScript package from npm.
 
 set -euo pipefail
 
@@ -20,6 +21,9 @@ DIST_DIR=""
 VERSION="docker-smoke"
 TARBALL=""
 SKIP_BUILD=0
+RELEASE_INSTALL=0
+APLANE_RELEASE_VERSION="${APLANE_RELEASE_VERSION:-latest}"
+SDK_VERSION="${APLANE_SDK_VERSION:-}"
 KEEP_CONTAINER=0
 IMAGE_NAME=""
 RUN_ID="$$"
@@ -47,6 +51,7 @@ SDK_REPO="${APLANE_SDKS_REPO:-${APLANE_SDK_REPO:-}}"
 SDK_SOURCE_DIR=""
 SDK_CONTAINER_DIR="/home/$TEST_USER/src/aplanesdk-python"
 SDK_VENV="/home/$TEST_USER/aplane/apclient/python-sdk-venv"
+TS_SDK_DIR="/home/$TEST_USER/aplane/apclient/typescript-sdk"
 
 usage() {
     cat <<'EOF'
@@ -57,6 +62,9 @@ Options:
   --version <version>   Archive label for locally built tarball (default: docker-smoke)
   --arch <amd64|arm64>  Architecture to package/test (default: host arch)
   --skip-build          Reuse existing bin/<arch> binaries when building the tarball
+  --release-install     Install APlane from GitHub release assets instead of a local tarball
+  --aplane-version <v>  APlane release tag/version for --release-install (default: latest)
+  --sdk-version <v>     Install SDK packages at this version from PyPI/npm (default: latest)
   --sdk-repo <path>     Path to aplanesdk repo or its python/ dir
                         (default: APLANE_SDKS_REPO, APLANE_SDK_REPO, ../aplanesdk, ~/aplanesdk)
   --keep-container      Leave containers and network running for debugging
@@ -72,8 +80,9 @@ API tokens for both nodes, generates a sentry key through the sentry
 endpoint, syncs the sentry key to the signer, enables guarded Falcon/Falcon and
 corridor key types, and verifies apshell can create, fund, and validate guarded,
 corridor, and plain Falcon accounts against the shared LocalNet. It then
-installs the Python SDK from the local aplanesdk repo and submits the same
-guarded 0 ALGO self-send with SDK preparation and guarded signing helpers.
+submits the same guarded 0 ALGO self-send with SDK preparation and guarded
+signing helpers. By default the Python SDK comes from the local aplanesdk repo;
+with --release-install, Python comes from PyPI and TypeScript comes from npm.
 EOF
 }
 
@@ -122,6 +131,20 @@ parse_args() {
             --skip-build)
                 SKIP_BUILD=1
                 shift
+                ;;
+            --release-install)
+                RELEASE_INSTALL=1
+                shift
+                ;;
+            --aplane-version)
+                [ $# -ge 2 ] || die "--aplane-version requires a value"
+                APLANE_RELEASE_VERSION="$2"
+                shift 2
+                ;;
+            --sdk-version)
+                [ $# -ge 2 ] || die "--sdk-version requires a value"
+                SDK_VERSION="$2"
+                shift 2
                 ;;
             --sdk-repo)
                 [ $# -ge 2 ] || die "--sdk-repo requires a value"
@@ -187,7 +210,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      bash ca-certificates curl expect gzip openssh-client passwd procps python3 python3-pip python3-venv sudo tar && \
+      bash ca-certificates curl expect gzip nodejs npm openssh-client passwd procps python3 python3-pip python3-venv sudo tar && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 CMD ["sleep", "infinity"]
 DOCKERFILE
@@ -233,6 +256,19 @@ resolve_sdk_repo() {
 }
 
 build_or_resolve_tarball() {
+    if [ "$RELEASE_INSTALL" = "1" ]; then
+        if [ -n "$TARBALL" ]; then
+            die "--tarball cannot be used with --release-install"
+        fi
+        if [ "$SKIP_BUILD" = "1" ]; then
+            die "--skip-build cannot be used with --release-install"
+        fi
+        if [ -z "$ARCH" ]; then
+            ARCH="$(detect_arch)"
+        fi
+        return
+    fi
+
     if [ -n "$TARBALL" ]; then
         TARBALL="$(cd "$(dirname "$TARBALL")" && pwd)/$(basename "$TARBALL")"
         [ -f "$TARBALL" ] || die "tarball not found: $TARBALL"
@@ -361,6 +397,29 @@ create_test_user() {
 
 stage_release() {
     local container="$1"
+    if [ "$RELEASE_INSTALL" = "1" ]; then
+        [ -n "$ARCH" ] || die "release architecture is not set"
+        docker_exec_as_tester "$container" "set -e
+            tag='$APLANE_RELEASE_VERSION'
+            if [ \"\$tag\" = latest ]; then
+                tag=\$(curl -fsSL -H 'Accept: application/vnd.github+json' https://api.github.com/repos/aplane-algo/aplane/releases/latest | sed -n 's/.*\"tag_name\":[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -n 1)
+                [ -n \"\$tag\" ] || { echo 'failed to resolve latest APlane release tag' >&2; exit 1; }
+            fi
+            case \"\$tag\" in v*) ;; *) tag=\"v\$tag\" ;; esac
+            version=\"\${tag#v}\"
+            base_url=\"https://github.com/aplane-algo/aplane/releases/download/\$tag\"
+            archive=\"aplane_\${version}_linux_$ARCH.tar.gz\"
+            mkdir -p /home/$TEST_USER/src /tmp/aplane-release
+            curl -fsSL \"\$base_url/\$archive\" -o /tmp/aplane-release/aplane.tar.gz
+            curl -fsSL \"\$base_url/checksums.txt\" -o /tmp/aplane-release/checksums.txt
+            expected=\$(awk -v f=\"\$archive\" '\$2 == f { print \$1; exit }' /tmp/aplane-release/checksums.txt)
+            [ -n \"\$expected\" ] || { echo \"missing checksum for \$archive\" >&2; exit 1; }
+            actual=\$(sha256sum /tmp/aplane-release/aplane.tar.gz | awk '{ print \$1 }')
+            [ \"\$expected\" = \"\$actual\" ] || { echo \"checksum mismatch for \$archive\" >&2; exit 1; }
+            tar -xzf /tmp/aplane-release/aplane.tar.gz -C /home/$TEST_USER/src"
+        return
+    fi
+
     docker cp "$TARBALL" "$container:/tmp/aplane.tar.gz"
     docker_exec "$container" chmod 644 /tmp/aplane.tar.gz
     docker_exec_as_tester "$container" "mkdir -p /home/$TEST_USER/src && tar -xzf /tmp/aplane.tar.gz -C /home/$TEST_USER/src"
@@ -735,9 +794,22 @@ request_sentry_token() {
 }
 
 install_python_sdk_client() {
+    docker_exec "$CLIENT_CONTAINER" rm -rf /tmp/aplanesdk-python "$SDK_CONTAINER_DIR" "$SDK_VENV"
+
+    if [ "$RELEASE_INSTALL" = "1" ]; then
+        local package="aplanesdk"
+        if [ -n "$SDK_VERSION" ]; then
+            package="aplanesdk==$SDK_VERSION"
+        fi
+        docker_exec_as_tester "$CLIENT_CONTAINER" "python3 -m venv '$SDK_VENV' && \
+            . '$SDK_VENV/bin/activate' && \
+            python -m pip install --no-input --upgrade pip && \
+            python -m pip install --no-input '$package'"
+        return
+    fi
+
     [ -n "$SDK_SOURCE_DIR" ] || die "SDK source directory is not set"
 
-    docker_exec "$CLIENT_CONTAINER" rm -rf /tmp/aplanesdk-python "$SDK_CONTAINER_DIR" "$SDK_VENV"
     docker_exec "$CLIENT_CONTAINER" mkdir -p /tmp/aplanesdk-python
     docker cp "$SDK_SOURCE_DIR/." "$CLIENT_CONTAINER:/tmp/aplanesdk-python"
     docker_exec "$CLIENT_CONTAINER" chown -R "$TEST_USER:$TEST_USER" /tmp/aplanesdk-python
@@ -746,6 +818,21 @@ install_python_sdk_client() {
         python3 -m venv '$SDK_VENV' && \
         . '$SDK_VENV/bin/activate' && \
         python -m pip install --no-input -e '$SDK_CONTAINER_DIR'"
+}
+
+install_typescript_sdk_client() {
+    [ "$RELEASE_INSTALL" = "1" ] || return 0
+
+    local package="aplanesdk"
+    if [ -n "$SDK_VERSION" ]; then
+        package="aplanesdk@$SDK_VERSION"
+    fi
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "rm -rf '$TS_SDK_DIR' && \
+        mkdir -p '$TS_SDK_DIR' && \
+        cd '$TS_SDK_DIR' && \
+        npm init -y >/dev/null && \
+        npm install --no-audit --no-fund '$package' algosdk@^3.0.0"
 }
 
 write_sdk_data_dir() {
@@ -886,6 +973,91 @@ PY
         APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
         PYTHONUNBUFFERED=1 \
         python /tmp/sdk-guarded-validate.py"
+}
+
+run_typescript_sdk_guarded_validate() {
+    [ "$RELEASE_INSTALL" = "1" ] || return 0
+    [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
+
+    local js_file
+    js_file="$(mktemp)"
+    cat > "$js_file" <<'JS'
+import algosdk from "algosdk";
+import {
+  SignerClient,
+  concatenateSignedTxns,
+  sendRawTransaction,
+  signPreparedGuardedGroup,
+} from "aplanesdk";
+
+const MIN_TXN_FEE = 1000;
+
+function requireEnv(name) {
+  const value = String(process.env[name] || "").trim();
+  if (!value) {
+    throw new Error(`${name} is required`);
+  }
+  return value;
+}
+
+async function main() {
+  const primaryData = requireEnv("APCLIENT_DATA");
+  const sentryData = requireEnv("APLANE_SENTRY_DATA");
+  const guardedAddress = requireEnv("APLANE_GUARDED_ADDRESS");
+  const sentryComponentKey = requireEnv("APLANE_SENTRY_COMPONENT_KEY");
+  const algodUrl = requireEnv("APLANE_ALGOD_URL");
+  const algodToken = requireEnv("APLANE_ALGOD_TOKEN");
+
+  const algodClient = new algosdk.Algodv2(algodToken, algodUrl, "");
+  const userClient = await SignerClient.fromEnv({ dataDir: primaryData, timeout: 180 });
+  const sentryClient = await SignerClient.fromEnv({ dataDir: sentryData, timeout: 180 });
+  try {
+    const prepared = await userClient.preparePayment(algodClient, {
+      sender: guardedAddress,
+      receiver: guardedAddress,
+      amount: 0,
+      note: new TextEncoder().encode("aplane typescript sdk guarded validate"),
+      fee: MIN_TXN_FEE,
+      useFlatFee: true,
+    });
+    const result = await signPreparedGuardedGroup({
+      userClient,
+      sentryClient,
+      sentryComponentKey,
+      preparedGroup: { transactions: [prepared] },
+    });
+    if (!result.signedGroup || result.signedGroup.length === 0) {
+      throw new Error("SDK guarded signing returned an empty signed group");
+    }
+    console.log(`TypeScript SDK guarded validation group size: ${result.signedGroup.length}`);
+
+    const txid = await sendRawTransaction(algodClient, concatenateSignedTxns(result.signedGroup));
+    await algosdk.waitForConfirmation(algodClient, txid, 10);
+    console.log(`TypeScript SDK guarded validation submitted: ${txid}`);
+  } finally {
+    await sentryClient.close();
+    await userClient.close();
+  }
+}
+
+main().catch((err) => {
+  console.error(err && err.stack ? err.stack : err);
+  process.exit(1);
+});
+JS
+    docker cp "$js_file" "$CLIENT_CONTAINER:/tmp/sdk-guarded-validate.mjs"
+    rm -f "$js_file"
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sdk-guarded-validate.mjs
+
+    docker_exec_as_tester "$CLIENT_CONTAINER" "cd '$TS_SDK_DIR' && \
+        APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
+        APLANE_SENTRY_DATA=/home/$TEST_USER/aplane/apclient-sdk-sentry \
+        APLANE_GUARDED_ADDRESS='$GUARDED_ADDRESS' \
+        APLANE_SENTRY_COMPONENT_KEY='$SENTRY_COMPONENT_KEY' \
+        APLANE_ALGOD_URL='$ALGOD_URL' \
+        APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
+        node /tmp/sdk-guarded-validate.mjs"
 }
 
 generate_sentry_component_key() {
@@ -1200,10 +1372,16 @@ shutdown_nodes() {
 main() {
     parse_args "$@"
     command -v docker >/dev/null 2>&1 || die "docker not found"
-    resolve_sdk_repo
+    if [ "$RELEASE_INSTALL" != "1" ]; then
+        resolve_sdk_repo
+    fi
     trap cleanup EXIT
 
-    log "Building local release tarball"
+    if [ "$RELEASE_INSTALL" = "1" ]; then
+        log "Using APlane GitHub release assets ($APLANE_RELEASE_VERSION)"
+    else
+        log "Building local release tarball"
+    fi
     build_or_resolve_tarball
 
     log "Building Ubuntu test image"
@@ -1284,8 +1462,24 @@ main() {
     log "Requesting sentry API token from client container"
     request_sentry_token
 
-    log "Installing Python SDK from $SDK_SOURCE_DIR"
+    if [ "$RELEASE_INSTALL" = "1" ]; then
+        if [ -n "$SDK_VERSION" ]; then
+            log "Installing Python SDK from PyPI (aplanesdk==$SDK_VERSION)"
+        else
+            log "Installing Python SDK from PyPI (latest)"
+        fi
+    else
+        log "Installing Python SDK from $SDK_SOURCE_DIR"
+    fi
     install_python_sdk_client
+    if [ "$RELEASE_INSTALL" = "1" ]; then
+        if [ -n "$SDK_VERSION" ]; then
+            log "Installing TypeScript SDK from npm (aplanesdk@$SDK_VERSION)"
+        else
+            log "Installing TypeScript SDK from npm (latest)"
+        fi
+        install_typescript_sdk_client
+    fi
 
     log "Configuring Python SDK client data directories"
     configure_python_sdk_client_data
@@ -1308,6 +1502,10 @@ main() {
 
     log "Validating generated guarded account through Python SDK"
     run_python_sdk_guarded_validate
+    if [ "$RELEASE_INSTALL" = "1" ]; then
+        log "Validating generated guarded account through TypeScript SDK"
+        run_typescript_sdk_guarded_validate
+    fi
 
     log "Generating corridor account through client/signer flow"
     generate_corridor_key

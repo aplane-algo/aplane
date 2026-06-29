@@ -1,4 +1,4 @@
-.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -495,6 +495,14 @@ docker-systemd-test:
 docker-local-test:
 	@./scripts/docker-local-four-node-smoke.sh $(ARGS)
 
+# Same topology and assertions as docker-local-test, but installs APlane from
+# GitHub release assets and installs the Python SDK from PyPI and TypeScript SDK
+# from npm. Pin versions with
+# ARGS, e.g.:
+#   make docker-local-release-test ARGS="--aplane-version v0.30.0 --sdk-version 0.30.0"
+docker-local-release-test:
+	@./scripts/docker-local-four-node-smoke.sh --release-install $(ARGS)
+
 # Smoke test: exercise init paths of each built binary. Binaries that support
 # --version get it; the rest get invoked in a way that prints a usage error
 # after init (we just care they start without a panic / link failure).
@@ -931,6 +939,7 @@ help:
 	@echo "  make apshell-command-coverage-localnet - Run broad LocalNet apshell command coverage"
 	@echo "  make docker-systemd-test - End-to-end systemd install+uninstall in a fresh Ubuntu systemd container (requires docker)"
 	@echo "  make docker-local-test - End-to-end local Docker install smoke test with shared LocalNet and local Python SDK checkout (requires docker)"
+	@echo "  make docker-local-release-test - Same Docker smoke test using GitHub APlane release assets plus PyPI/npm SDKs (requires docker)"
 	@echo ""
 	@echo "External Plugins:"
 	@echo "  make install-example-plugins - Install npm dependencies for all example plugins"
