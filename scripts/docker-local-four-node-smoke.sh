@@ -410,12 +410,15 @@ stage_release() {
             base_url=\"https://github.com/aplane-algo/aplane/releases/download/\$tag\"
             archive=\"aplane_\${version}_linux_$ARCH.tar.gz\"
             mkdir -p /home/$TEST_USER/src /tmp/aplane-release
+            echo \"Downloading APlane release archive \$archive from \$base_url/\$archive\"
             curl -fsSL \"\$base_url/\$archive\" -o /tmp/aplane-release/aplane.tar.gz
+            echo \"Downloading APlane release checksums from \$base_url/checksums.txt\"
             curl -fsSL \"\$base_url/checksums.txt\" -o /tmp/aplane-release/checksums.txt
             expected=\$(awk -v f=\"\$archive\" '\$2 == f { print \$1; exit }' /tmp/aplane-release/checksums.txt)
             [ -n \"\$expected\" ] || { echo \"missing checksum for \$archive\" >&2; exit 1; }
             actual=\$(sha256sum /tmp/aplane-release/aplane.tar.gz | awk '{ print \$1 }')
             [ \"\$expected\" = \"\$actual\" ] || { echo \"checksum mismatch for \$archive\" >&2; exit 1; }
+            echo \"Verified checksum for \$archive\"
             tar -xzf /tmp/aplane-release/aplane.tar.gz -C /home/$TEST_USER/src"
         return
     fi
