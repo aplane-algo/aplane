@@ -843,16 +843,23 @@ selects the flow:
 | `pregrouped-signed` | the plugin (every slot) | validate self-consistency and **submit verbatim**; apsigner signs nothing |
 | `presign-plan` | plugin-owned slots **and** APlane-managed slots | canonicalize the group, call the plugin back to sign its slots, sign the managed slots, submit |
 
-This gives plugins two general capabilities.
+A plugin runs as an external process that holds its own keys; it can already build, sign,
+and — unless it is network-sandboxed (`--unshare-net`) — submit its own groups. These
+flows therefore add two things, and it is worth being precise about which is which.
 
-**1. Submit-verbatim (`pregrouped-signed`).** The plugin returns a complete,
-already-signed atomic group (every intent `type: "signed"`). APlane checks the group is
-internally consistent and submits it without modification — apsigner is never involved.
-Because no APlane key signs, a **mandatory client-side review** is the human-acceptance
-gate, and it **fails closed** when run non-interactively (it will not broadcast a group
-the operator never saw).
+**1. A governed submission path (`pregrouped-signed`) — not a new capability.** The plugin
+returns a complete, already-signed atomic group (every intent `type: "signed"`). APlane
+checks the group is internally consistent and submits it without modification — apsigner is
+never involved. The plugin could have signed and broadcast these exact bytes itself; what
+APlane adds is governance, not signing power: a **mandatory client-side review** is the
+human-acceptance gate, it **fails closed** when run non-interactively (it will not
+broadcast a group the operator never saw), and for a network-sandboxed plugin APlane is
+also the only path to algod.
 
-**2. Co-sign with managed accounts (`presign-plan`).** The plugin returns an *unsigned*
+**2. Co-signing with managed accounts (`presign-plan`) — the one genuinely new capability.**
+Only apsigner can produce a signature for an apsigner-held account, so atomically combining
+the plugin's own signatures with apsigner's — under apsigner's policy and approval — is the
+single thing a plugin cannot do on its own. The plugin returns an *unsigned*
 draft (every intent `type: "raw"`) plus a `pluginSigners` list declaring the slots it
 will sign itself — each with an address, an opaque `signerRef`, and the byte size
 (`lsigSize`) of the LogicSig it will attach. APlane canonicalizes the group: it pools
@@ -913,10 +920,13 @@ apsigner's keys.
 
 #### What these flows enable
 
-Together they turn APlane from *"can sign with the keys apsigner holds"* into *"can
-compose Algorand groups that include keys held anywhere — a plugin, an HSM, an MPC
-quorum, a counterparty, or a LogicSig — while apsigner keeps full control of its own
-slots."* That is a general extension point, not a one-off; it is the substrate for whole
+A plugin could always compose groups with keys held anywhere — its own LogicSig, an HSM
+key, an MPC quorum, a counterparty's signature — and submit them itself. What these flows
+add is narrower and more precise: the ability to **atomically include apsigner's
+managed-key signatures in such a group, under apsigner's policy and approval**, plus a
+**uniform operator conduit** — honest review, approval, audit, and (when the plugin is
+network-sandboxed) the only egress — over plugin-built groups, including ones APlane never
+signs. That is a general extension point, not a one-off; it is the substrate for whole
 classes of plugin:
 
 | Plugin class | Examples | Mode used |
