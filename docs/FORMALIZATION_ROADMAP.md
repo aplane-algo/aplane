@@ -238,9 +238,9 @@ Next likely modules:
    model with the existing one-shot sign-boundary, policy-precedence,
    and composition modules. Requires reconciling temporal-transition
    state with one-shot Init state — non-trivial but valuable.
-4. **Approval coordinator state machine.** State machine for pending
-   approvals, timeouts, cancellations, and mid-flight decommission.
-   Would compose with this lifecycle module to verify L8.
+4. **Approval coordinator state machine.** *Shipped* as
+   `approval_coordinator.tla` (Track B2): pending approvals, timeouts,
+   cancellations, and mid-flight decommission, machine-checking L8.
 5. **Liveness on lifecycle.** Add weak fairness on
    `AdminAcquireWrite` and `AdminMarkDecommissioned`; verify
    `Decommission` eventually completes given fair admin progress.
@@ -324,9 +324,9 @@ If the repository has moved since the guarded signing update, run `git log --one
 from the relevant formalization commit to see what changed.
 
 **Drift review (2026-06-29, HEAD `0568e343`).** A re-sync confirmed the models
-still track the code after ~360 commits of movement: all four TLA+ modules
+still track the code after ~360 commits of movement: all five TLA+ modules
 re-check green under TLC at the recorded state counts (2,628 / 64 / 84,096 /
-48); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
+48 / 196); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
 re-validated across all 65 invariants (six stale code/line anchors corrected,
 no invariant lost its test); and two code changes since the snapshot were
 reconciled — the third guarded account key type `aplane.corridor.v1` (now named
@@ -345,7 +345,7 @@ S/A-series) are unchanged.
 | M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
 | M3: Deferred Companion English Models | In progress | Approval coordinator delivered (`FORMAL_APPROVAL_COORDINATOR_MODEL.md`). Cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
-| M4: Machine-Checkable Model | First wave complete | Four TLA+ modules shipped. ~14 of 65 numbered invariants are machine-checked. |
+| M4: Machine-Checkable Model | First wave complete | Five TLA+ modules shipped. ~18 of 71 numbered invariants are machine-checked. |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
 Machine-checked invariants by module:
@@ -356,14 +356,15 @@ Machine-checked invariants by module:
 | `policy_precedence.tla` | P4, P5, P6, P7, I9, ApprovalResolution | 64 | 1 |
 | `composition.tla` | 3 seam claims + 2 sign-boundary rechecks under derived verdict | 84,096 | 1 |
 | `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency | 48 | 10 |
+| `approval_coordinator.tla` | AP4, AP5, AP6, L8, turn/state consistency | 196 | 11 |
 
 Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A15
-(guarded signing), AP1-AP6 (approval coordinator), I4-I6, IS1-IS6, P1-P3,
-P8-P10, L1-L3, L8-L11.
+(guarded signing), AP1-AP3 (approval coordinator; modeled by construction),
+I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L9-L11.
 
 ### Verification methodology by module
 
-The four shipped modules are not all the same kind of check, and the
+The five shipped modules are not all the same kind of check, and the
 distinction matters when judging what TLC has and has not done:
 
 - **`sign_boundary.tla`, `policy_precedence.tla`, `composition.tla`** are
@@ -378,21 +379,25 @@ distinction matters when judging what TLC has and has not done:
   output-binding seam would surface as a counterexample — but it does
   not exercise concurrency, interleaving, or temporal properties.
 
-- **`lifecycle.tla`** is a temporal-transition spec: two signer
-  processes and one admin process race over a writer-priority RWMutex
-  via a real `Next` relation. TLC's recorded depth of 10 reflects
-  genuine state-space exploration across action interleavings. This is
-  **true model checking** — invariants are evaluated at every reachable
-  state in the transition graph, and the L5 mutation test (removing the
-  `readers = {}` guard from `AdminAcquireWrite`) confirms the model
-  would catch a regression in the lock-ordering logic.
+- **`lifecycle.tla` and `approval_coordinator.tla`** are
+  temporal-transition specs with real `Next` relations and genuine
+  state-space exploration across action interleavings. `lifecycle.tla`
+  races two signer processes and one admin over a writer-priority RWMutex
+  (depth 10); its L5 mutation test (removing the `readers = {}` guard from
+  `AdminAcquireWrite`) confirms it would catch a lock-ordering regression.
+  `approval_coordinator.tla` interleaves several approval requests over a
+  shared single-delivery turn through to a terminal outcome (depth 11);
+  its mutation test (removing the `~decommissioned` guard from `Deliver`)
+  confirms it would catch an approval granted after decommission (L8).
+  Both are **true model checking** — invariants are evaluated at every
+  reachable state in the transition graph.
 
 Why call this out: TLA+ tooling does not distinguish the two styles, so
 a state-count or depth number alone does not tell a reader which kind
 of evidence the module provides. Treat the one-shot specs as machine-
 checked case analysis over finite input domains; treat the lifecycle
-spec as a concurrency model check. Both are useful; they answer
-different questions.
+and approval-coordinator specs as concurrency model checks. Both kinds
+are useful; they answer different questions.
 
 ### Decisions taken during the first iteration
 
@@ -432,12 +437,13 @@ maintainers should know they exist before changing related code or specs.
    writer-priority semantics via a `WriterPending` predicate; the Go test
    `TestDecommissionWaitingBlocksNewOperation` pins the assumption.
 
-5. **L8 (Pending Approvals Fail On Successful Decommission) is deferred to
-   the approval-coordinator companion model.** It crosses the
-   lifecycle/approval boundary and cannot be machine-checked meaningfully
-   without modeling the pending-approval state machine. The Go test
-   `TestDecommissionFailsPendingApprovals` covers the implementation; the
-   TLA+ check is deferred, not abandoned.
+5. **L8 (Pending Approvals Fail On Successful Decommission) was deferred to
+   the approval-coordinator companion model, now shipped.** It crosses the
+   lifecycle/approval boundary and could not be machine-checked without
+   modeling the pending-approval state machine; `approval_coordinator.tla`
+   (Track B2) supplies that state machine and machine-checks L8 via the
+   `badApproveAfterDecommission` history flag. The Go test
+   `TestDecommissionFailsPendingApprovals` covers the implementation.
 
 6. **The traceability table was promoted from a deferred milestone to an
    active M1 deliverable** after the S13 incident demonstrated that
@@ -460,13 +466,14 @@ Tools used during the first iteration:
 Convention used during this work: the jar lives at `~/tla/tla2tools.jar`.
 Adjust paths if you put it elsewhere.
 
-Run all four modules in sequence from the repo root:
+Run all five modules in sequence from the repo root:
 
 ```sh
-java -jar ~/tla/tla2tools.jar -config docs/formal/sign_boundary.cfg     docs/formal/sign_boundary.tla
-java -jar ~/tla/tla2tools.jar -config docs/formal/policy_precedence.cfg docs/formal/policy_precedence.tla
-java -jar ~/tla/tla2tools.jar -config docs/formal/composition.cfg       docs/formal/composition.tla
-java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle.cfg         docs/formal/lifecycle.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/sign_boundary.cfg        docs/formal/sign_boundary.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/policy_precedence.cfg    docs/formal/policy_precedence.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/composition.cfg          docs/formal/composition.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle.cfg            docs/formal/lifecycle.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/approval_coordinator.cfg docs/formal/approval_coordinator.tla
 ```
 
 Expected results match the table above. Each module reports "Model
@@ -499,13 +506,16 @@ the M3 deliverables list as part of the same change.
 
 ### How to pick up next
 
-If you want to extend the machine-checked surface area, the highest-value
-next slice is:
+The approval coordinator companion model (`approval_coordinator.tla`,
+Track B2) has shipped and machine-checked L8. If you want to extend the
+machine-checked surface area further, the highest-value next slices are:
 
-- **Approval coordinator companion model (M3).** Closes L8's
-  machine-checked gap and refines the four-valued `approval` input used by
-  `policy_precedence.tla` and `composition.tla`. Probably the
-  highest-leverage single piece of remaining work.
+- **Approval-aware composition (Track B3).** Replace the free four-valued
+  `approval` oracle in `policy_precedence.tla` / `composition.tla` with the
+  outcome derived in `approval_coordinator.tla`, re-checking hard-deny
+  dominance and an end-to-end "decommission yields no signed output" claim.
+  Mirrors how `composition.tla` derived the policy verdict, with the same
+  temporal-vs-one-shot reconciliation as lifecycle-aware composition.
 
 Alternatives, in rough order of value:
 
@@ -523,6 +533,6 @@ Alternatives, in rough order of value:
   property class.
 
 The previous operational cleanup is complete: `docs/formal/states/` is ignored,
-and the Formal Models CI job runs all four shipped TLC modules through
+and the Formal Models CI job runs all five shipped TLC modules through
 `make formal-test`. If you only have time for one new formalization piece, start
-with the approval coordinator companion model.
+with approval-aware composition (Track B3).

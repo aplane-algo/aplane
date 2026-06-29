@@ -82,7 +82,7 @@ Source: [FORMAL_LIFECYCLE_MODEL.md](FORMAL_LIFECYCLE_MODEL.md)
 | L5 | implemented | L5 | RWMutex write side; documented in `runtime.go` lock-ordering comment | `internal/signerapp/identity/identity_test.go::TestDecommissionWaitsForActiveOperation`; `::TestDecommissionWaitingBlocksNewOperation` | Machine-checked via `lifecycle.tla::L5_DecommissionWaitsForHeldLease` (validated by mutation test). The second test pins the writer-pending behavior the TLA model assumes from Go's `sync.RWMutex`. |
 | L6 | implemented | L6 | `BeginOperation` returns ErrDecommissioned when lifecycle flag set | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanUserAutoApproveDecommissionBeforeExecute` | Machine-checked via `lifecycle.tla::L6_NoAcquireAfterDecommission`. |
 | L7 | implemented | Registry Separation; L7 | Registry vs runtime lifecycle separation in `identity/runtime.go` | `internal/signerapp/identity/identity_test.go::TestRegistryRemoveDoesNotDecommissionHeldRuntime` | Machine-checked via `lifecycle.tla::L7_RegistryRemoveDoesNotPreventCompletion`. |
-| L8 | implemented | L8 | `Decommission` step 6: fail pending approvals | `internal/signerapp/identity/identity_test.go::TestDecommissionFailsPendingApprovals` | Mechanism and its own invariants are modeled in the Approval Coordinator Model (AP6); TLA+ check is Track B2. |
+| L8 | implemented | L8 | `Decommission` step 6: fail pending approvals | `internal/signerapp/identity/identity_test.go::TestDecommissionFailsPendingApprovals` | Mechanism and its own invariants are modeled in the Approval Coordinator Model (AP6) and machine-checked in `approval_coordinator.tla` (`L8_NoApproveAfterDecommission`). |
 | L9 | implemented | L9 | `Decommission` calls `StopKeyWatcher` (step 8), which clears `watcherCancel` at `runtime.go:911-913` | `internal/signerapp/identity/identity_test.go::TestDecommissionStopsKeyWatcher` observes the watcher context cancellation and asserts it cannot restart after decommission. | |
 | L10 | implemented | Startup Rules; L10 | `internal/signerapp/startup` consults stored config | `internal/signerapp/daemon/identity_startup_test.go::TestStartupIdentityIDsSkipsDecommissionedIdentities` | |
 | L11 | implemented | Watcher and Reload Rules; L11 | `Reload` step ordering in `internal/signerapp/identity/runtime.go` and `internal/signerapp/templates/reload.go` | `internal/signerapp/templates/reload_test.go::TestReloadRunsBeforeKeyScanHookBeforeTemplatesAndScan` (direct sequence assertion); mutation-lock leg via `identity_test.go::TestWatcherReloadUsesMutationLock` | |
@@ -257,10 +257,36 @@ reasoning over `SignerCompleteAndRelease`.
 
 L1, L2, L3, L9-L11 are not modeled here. They are sequential
 properties already covered by Go tests; not concurrency claims. L8
-(Pending Approvals Fail On Successful Decommission) is deferred to a
-future approval-coordinator model — it crosses the lifecycle/approval
-boundary and needs the pending-approval state machine to model
-meaningfully.
+(Pending Approvals Fail On Successful Decommission) is machine-checked
+in the approval coordinator module below, which supplies the
+pending-approval state machine that L8 needs.
+
+### Approval coordinator module
+
+[formal/approval_coordinator.tla](formal/approval_coordinator.tla) (see
+[FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md](FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md))
+models the per-request approval state machine. Like `lifecycle.tla` it has real
+transitions in `Next`: requests interleave over a shared single-delivery turn
+with operator decisions, timeout, cancellation, operator-client disconnect, and
+decommission. TLC checked under `Requests = {r1, r2, r3}` with symmetry; the
+recorded run generated 196 distinct states, reached depth 11, and found no
+counterexamples for `Safety`.
+
+| Invariant | TLA+ predicate |
+|---|---|
+| AP4 (Single Delivery In Flight) | `AP4_SingleDelivery` |
+| AP5 (Cancellation Always Enabled) | `AP5_CancelAlwaysEnabled` |
+| AP6 (Decommission Leaves No Pending) | `AP6_DecommissionLeavesNoPending` |
+| L8 (No Approval After Decommission) | `L8_NoApproveAfterDecommission` |
+| turn/state consistency | `TypeOK` |
+
+L8 is the headline: it was the only `deferred` invariant, held back because it
+crosses the lifecycle/approval boundary. It is checked via the
+`badApproveAfterDecommission` history flag and validated by mutation test
+(removing the `~decommissioned` guard from `Deliver` produces a counterexample).
+AP1 (single resolution), AP2 (only approve permits a signature), and AP3
+(response ID binding) are modeled by construction — absorbing terminal states and
+per-request action identity — not as separate predicates.
 
 ### Unmodeled invariants
 
@@ -268,14 +294,13 @@ The following invariants have no TLA+ representation yet:
 - Most of I4-I6, IS1-IS6 (planning details, simulate boundary).
 - P1, P2, P3, P8, P9, P10 (snapshot semantics, slot scope, routing,
   key overrides).
-- L1, L2, L3, L9-L11 (lifecycle non-concurrency claims), plus L8
-  (pending-approval cascade, deferred to a future approval-coordinator
-  model).
+- L1, L2, L3, L9-L11 (lifecycle non-concurrency claims). L8 is now
+  machine-checked in `approval_coordinator.tla`.
 - All of S1-S13 (signing authority).
 - All of A1-A15 (guarded signing, assembly, endpoint routing, and identity
   mode).
-- All of AP1-AP6 (approval coordinator). English model and Go tests exist; the
-  TLA+ module is Track B2.
+- AP1-AP3 (approval coordinator) are modeled by construction rather than as
+  predicates; AP4-AP6 and L8 are machine-checked in `approval_coordinator.tla`.
 
 Lifecycle-aware composition (joining the temporal lifecycle model
 with the existing one-shot sign-boundary/policy-precedence/composition
