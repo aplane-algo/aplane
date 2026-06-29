@@ -138,7 +138,7 @@ All under `cmd/`:
 | `apstore` | Local keystore management client: local `initialize`, policy integrity check/verify/sign, public endpoint export, public sentry reference import/export/list, local `verify`, and local `rebuild` rescue flows; daemon-owned backup, restore, template, key type, and changepass operations use the admin protocol |
 | `appolicy` | Offline policy checker/editor TUI that auto-targets the `policy.yaml` domain from the node role, plus scriptable save/check/export and signing-to-sentry-policy conversion while holding the store mutation lock |
 | `appass` | Passphrase auto-unlock setup TUI |
-| `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, apclient default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
+| `aplocalnet` | LocalNet setup TUI/CLI for algod reachability, client (`apshell`) default-network config, signer genesis config, bundled plugin activation, and KMD plugin-env persistence |
 | `compile_teal` | Dev/build helper that compiles TEAL source to generated Go bytecode via algod |
 | `configdoc` | Config documentation generator |
 | `appass-file` | Dev passphrase helper |
@@ -329,7 +329,8 @@ The Go, TypeScript, and Python SDKs live in the separate MIT-licensed
 `aplane-algo/aplanesdk` repository. This repo owns the signer HTTP API DTOs in
 `pkg/signerapi` and the golden fixtures in `test/contracts/signerapi/` that the
 SDK repo consumes for compatibility testing. `internal/signerapi` is an
-in-repo alias layer over the public DTO package, not a separate schema source.
+in-repo alias layer over the public DTO types in `pkg/signerapi` (not error
+codes); `pkg/signerapi/error_codes.go` remains the sole error-code source.
 The SDK shape is native-client first: `SignerClient` wrappers expose APlane's
 HTTP signing, planning, simulation, inventory, status, and cancellation APIs
 directly, and the SDK-native prep layer mirrors apshell's core client-side
@@ -369,6 +370,7 @@ bundled plugin targets), `.github/workflows/release.yml`,
 `scripts/package-bootstrap-release.sh`,
 `scripts/build-algokit-localnet-plugin-target.sh`,
 `scripts/stage-bundled-plugins.sh`,
+`scripts/install-example-plugins.sh`,
 `scripts/docker-systemd-smoke.sh`,
 `scripts/docker-local-four-node-smoke.sh`,
 `plugins/algokit-localnet/`, `bootstrap-install.sh`, `install.sh`,
@@ -1627,7 +1629,7 @@ Product-level boundaries:
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/service.go`, `internal/signerapp/backupadmin/limiter.go`, `internal/backup/*.go` |
-| LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/lsig/wrapper.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_ed25519/provider.go`, `lsig/falcon1024_ed25519/register.go`, `lsig/falcon1024_ed25519/signerops/ops.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/ecdsak1/register.go`, `lsig/ecdsak1/signerops/ops.go`, `lsig/ecdsak1/v1/standard.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `internal/merklewhitelist/whitelist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
+| LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/lsig/wrapper.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_ed25519/provider.go`, `lsig/falcon1024_ed25519/register.go`, `lsig/falcon1024_ed25519/signerops/ops.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/ecdsak1/register.go`, `lsig/ecdsak1/signerops/ops.go`, `lsig/ecdsak1/v1/standard.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/corridor/provider.go`, `lsig/corridor/register.go`, `lsig/corridor/signerreg/register.go`, `lsig/sentryaccount/sentryaccount.go`, `internal/merklewhitelist/whitelist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
 | LocalNet Setup | `cmd/aplocalnet/main.go`, `internal/aplocalnet/setup.go`, `plugins/algokit-localnet/algokit-localnet.go`, `plugins/algokit-localnet/manifest.json` |
