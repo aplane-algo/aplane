@@ -318,9 +318,10 @@ See [USER_CONFIG_REFERENCE.md](USER_CONFIG_REFERENCE.md) for field-level referen
 
 The top-level `config.yaml` provides defaults for `user_auto_approve`,
 `lock_on_disconnect`, `passphrase_timeout`, and `approval_wait`. When you
-change one of these settings through admin IPC, the signer writes it as an
-identity-scoped override at `identities/<identity>/config.yaml`. `approval_wait`
-is YAML-only.
+change `user_auto_approve`, `lock_on_disconnect`, or `passphrase_timeout`
+through admin IPC, the signer writes it as an identity-scoped override at
+`identities/<identity>/config.yaml`. `approval_wait` is process/YAML-only; it is
+not part of the admin settings payload and cannot be changed through admin IPC.
 
 Node role is stored separately in the signer data root `node.yaml`. Standard
 installations initialize as signer nodes; identity config does not carry a role
@@ -679,12 +680,18 @@ transfer_policy:
   schema_version: 1
   enabled: true
   on_no_route: reject
+  close_on_no_route: reject
+  clawback_on_no_route: reject
 
   blocked_destinations: []
   address_sets: {}
   asset_sets: {}
   routes: []
 ```
+
+`close_on_no_route` and `clawback_on_no_route` are optional top-level keys that
+control close-out and clawback movements matching no route; both default to
+`reject` when omitted and accept the same values as `on_no_route`.
 
 The `on_no_route` value controls in-scope transfer movements that match no
 route:
@@ -1073,12 +1080,16 @@ Use this when a token may be compromised or to rotate credentials.
 | Endpoint | Authentication |
 |----------|----------------|
 | `POST /sign` | Required |
+| `POST /sign/component` | Required |
+| `POST /sign/assemble` | Required |
+| `POST /sign/cancel` | Required |
 | `POST /plan` | Required |
 | `POST /simulate` | Required |
 | `GET /status` | Required |
 | `GET /keys` | Required |
 | `GET /keytypes` | Required |
 | `POST /admin/generate` | Required |
+| `POST /admin/sentries/sync` | Required |
 | `DELETE /admin/keys` | Required |
 | `GET /health` | Not required (public health check) |
 

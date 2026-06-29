@@ -28,7 +28,7 @@ Signer and sentry endpoint routing lives here, not in `config.yaml`.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `schema_version` | int | `1` | Endpoint registry schema version |
-| `default` | string | `primary` | Default signer endpoint alias |
+| `default` | string | `(operator-chosen)` | Default signer endpoint alias |
 | `endpoints.<alias>.role` | string | `(none)` | Endpoint role: `signer` or `sentry` |
 | `endpoints.<alias>.url` | string | `(none)` | Endpoint URL: `ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported |
 | `endpoints.<alias>.signer_port` | int | `11270` | Remote apsigner REST port for `ssh://` endpoints |
@@ -78,6 +78,10 @@ only. Node role is stored separately in root `node.yaml`.
 | `APCLIENT_DATA` | Data directory for apshell (config, plugin catalog, and scripts) | apshell, aplocalnet |
 | `APSIGNER_DATA` | Data directory for apsigner (config, keys, IPC socket) | apsigner, apadmin, apapprover, apstore, appass, aplocalnet |
 | `APCONSOLE_CONFIG` | Optional explicit apconsole.yaml path for the unified console; explicit path/env/flag values must agree | apconsole |
+| `APLANE_INSTALL_ROOT` | Installer default install root / operator-root used when the path argument is omitted | install.sh, bootstrap-install.sh |
+| `APLANE_BINDIR` | Installer default systemd bindir used when --bindir is omitted | install.sh, bootstrap-install.sh |
+| `APLANE_SKIP_LOCALNET_SETUP` | Set to 1 to skip LocalNet setup during install | install.sh |
+| `APLANE_SYSTEMD_MANAGED` | Set to 1 to mark the signer instance as systemd-managed (manual startup blocked unless overridden) | apsigner |
 | `APLANE_LOCALNET_ALGOD_URL` | Optional AlgoKit LocalNet algod override | aplocalnet, algokit-localnet plugin |
 | `APLANE_LOCALNET_KMD_URL` | Optional AlgoKit LocalNet KMD override | aplocalnet, algokit-localnet plugin |
 | `APLANE_LOCALNET_TOKEN` | Optional AlgoKit LocalNet algod/KMD token override | aplocalnet, algokit-localnet plugin |

@@ -95,7 +95,10 @@ means unsalted, explicit `derivation_version: 1` means generated marker,
 explicit `derivation_version: 2` means trailing dead-code `bytecblock`,
 `aplane.falcon1024.v1` uses the Algorand Foundation reference-compatible fixed
 `bytecblock` preamble, and `aplane.ecdsak1.v1` uses a fixed `bytecblock`
-preamble. User template TEAL cannot choose salt style, must remain relocatable,
+preamble, while the guarded sentry and corridor providers
+(`aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`,
+`aplane.corridor.v1`) use the stack-neutral `pushbytes` marker preamble
+(`lsigsalt.StylePushbytes`). User template TEAL cannot choose salt style, must remain relocatable,
 and must not depend on absolute constant-block layout or numeric `bytec`/`intc`
 indexes.
 
@@ -916,6 +919,7 @@ Common paths:
 Common paths:
 - `lsig/<family>/register.go`
 - `lsig/<family>/keys/register.go`
+- `lsig/<family>/signerreg/register.go`
 - `lsig/all.go`
 
 ### Composed DSA Template

@@ -58,7 +58,7 @@ at `http://localhost:4002`. If your LocalNet uses alternate ports, run
 aplocalnet --algod-url http://localhost:<algod-port> --kmd-url http://localhost:<kmd-port>
 ```
 
-Press `Enter` when the TUI shows `enter setup` to apply configuration. This:
+Select the `apply` action in the TUI to apply the configuration. This:
 
 - Points apshell at the LocalNet algod and sets `localnet` as the default network
 - Updates `apsigner` `config.yaml` with the LocalNet genesis hash
@@ -163,8 +163,8 @@ with your new key.
 
 ## Further Exploration
 
-By default, APlane exposes only the `ed25519` and Falcon-1024
-(`aplane.falcon1024.v1`) key types. To try additional LogicSig templates from
+By default, APlane exposes the `ed25519`, `aplane.falcon1024.v1`, and
+`aplane.falcon1024-whitelist.v1` key types. To try additional LogicSig templates from
 the bundled library, open the signer admin pane, press `s` for settings, then
 press `k` for key types. The KeyType Library lets you enable additional
 compiled providers and templates for the current identity.

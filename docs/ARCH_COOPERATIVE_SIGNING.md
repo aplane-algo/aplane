@@ -160,7 +160,7 @@ The `/sign` request must include one entry per canonical group position, in grou
 
 ## Key Files
 
-- `internal/engine/plugin_signing.go` — `SignAndSubmitWithLocalSigners()` orchestrates the 3-step flow and `SignAndSubmitAllLocalWithContext()` handles the all-plugin fallback
+- `internal/engine/plugin_signing.go` — `SignAndSubmitWithLocalSigners()` orchestrates the 3-step flow and `SignAndSubmitAllLocal()` handles the all-plugin fallback
 - `internal/apshellapp/submission.go` — parses plugin `localSigners` from execute results and hands mixed-signing requests to the engine
 - `pkg/signerapi/types.go` — public `/plan` and `/sign` request/response payloads, including sign, foreign, and passthrough modes
 - `internal/signerclient/client.go` — `RequestGroupPlan()` / `RequestGroupPlanWithContext()` and `RequestGroupSign()` / `RequestGroupSignWithContext()` client methods

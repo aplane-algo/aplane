@@ -184,8 +184,9 @@ must be applied but no LSig index was identified.
 **Triggered by:**
 - The signer group planner when dummy transactions are needed for LSig budget pooling
 - `/sign` and `/plan` flows that build or mutate a transaction group
-- Foreign unsigned LogicSig entries with `lsig_size`, which contribute to both
-  dummy calculation and fee sharing but are not signed by this signer
+- Foreign unsigned LogicSig entries with `lsig_size`, which contribute to the
+  dummy budget calculation only (they raise the budget but are never charged a
+  fee share) and are not signed by this signer
 
 **NOT used for:**
 - Pure Ed25519 groups (no dummies needed)

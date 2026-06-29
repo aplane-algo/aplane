@@ -144,14 +144,16 @@ parsing formatted output.
 
 | Type | Commands | Text Output | JSON Output |
 |------|----------|-------------|-------------|
-| `KeysResult` | `keys` | Numbered list with aliases | `[{address, key_type}, ...]` |
+| `KeysResult` | `keys` | Numbered list with aliases | `[{address, key_type, template_provenance_status, template_provenance_note}, ...]` |
 | `ToggleResult` | `verbose`, `write` | `Verbose mode: on/off` | `{name, enabled}` |
 | `JSONResult` | JSON-native helper responses | Pretty JSON | Compact JSON |
-| `PluginResult` | External plugins | Message + transaction IDs | `{plugin, success, message, txids, data, steps}` |
+| `PluginResult` | External plugins | Message + transaction IDs | `{plugin, success, message, txids, data, presentation, steps}` |
 
 `simulate` has the same app-level toggle shape but the shell command also
 supports one-shot transaction simulation (`simulate send ...`) and uses
-command-specific text rendering.
+command-specific text rendering. It is not part of the MCP structured switch,
+so `simulate` is not a structured (JSON) execute path — MCP captures its text
+output instead.
 
 `PluginResult.RenderJSON()` filters `localSigners` from `Data` before
 serialization to prevent ephemeral key material from appearing in MCP

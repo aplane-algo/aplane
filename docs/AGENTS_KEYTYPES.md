@@ -26,7 +26,11 @@ Do not edit shipped library templates or Go providers just to satisfy a user's
 custom policy. Shipped templates, compiled providers, and installed template key
 types are compatibility boundaries. Changing the behavior of an existing key
 type such as `aplane.whitelist.v1`, `aplane.falcon1024-whitelist.v1`, or
-`aplane.htlc.v1` can break existing keys and backups.
+`aplane.htlc.v1` can break existing keys and backups. The guarded sentry and
+corridor providers (`aplane.falcon1024-sentry-ed25519.v1`,
+`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`) are Go-defined
+compiled providers, not authorable as YAML; the bundled
+`aplane.falcon1024-whitelist.v2` Merkle whitelist is likewise a built-in.
 
 Installing a user-loaded template with `apstore template import` requires the
 identity master passphrase through the local daemon IPC session. An AI
@@ -242,8 +246,9 @@ After installing:
 
 Do not tell the user that editing top-level `library/templates/` installs a template.
 Files under top-level `library/templates/` are library entries, not active
-runtime definitions by presence alone. Default templates are installed during
-new signer-store initialization; other templates become installed only after
+runtime definitions by presence alone. The default template
+(`aplane.falcon1024-whitelist.v1`) is installed during new signer-store
+initialization; other templates become installed only after
 `apstore template import`.
 
 For the full disable/remove mechanics (state record transitions, archive

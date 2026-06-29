@@ -100,6 +100,7 @@ Built-in key types:
 - `falcon1024`
 - `falcon1024_ed25519`
 - `ecdsak1`
+- guarded sentry accounts `aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`, and `aplane.corridor.v1`
 - hidden Ed25519 LogicSig base provider `aplane.ed25519.v1` for composed templates
 - optional generic templates like `aplane.timed-whitelist.v1`, `aplane.whitelist.v1`, and `aplane.htlc.v1`
 - composed DSA templates such as default-installed `aplane.falcon1024-whitelist.v1`, plus optional `aplane.ed25519-whitelist.v1`, `aplane.falcon1024-hashlock.v1`, and `aplane.falcon1024-timelock.v1`
@@ -135,6 +136,7 @@ Built-in LogicSig DSA providers live under `lsig/`. The compiled providers are:
 | `aplane.falcon1024-sentry-falcon1024.v1` | `falcon1024-sentry-falcon1024` | library-visible |
 | `aplane.falcon1024_ed25519.v1` | `falcon1024_ed25519` | library-visible |
 | `aplane.ecdsak1.v1` | `ecdsak1` | library-visible |
+| `aplane.corridor.v1` | `corridor` | library-visible |
 
 These providers implement the unified `internal/lsigprovider.SigningProvider`
 surface. `internal/logicsigdsa` is the DSA-oriented filtered view over
@@ -221,7 +223,8 @@ Identity-scoped key type enable/disable metadata is owned by
 `identities/<identity>/keytypes/<key_type>.json` via
 `internal/storepaths.Paths.KeyTypeRecord()`. They make compiled
 library-visible providers such as `aplane.falcon1024-sentry-ed25519.v1`,
-`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, and
+`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`,
+`aplane.falcon1024_ed25519.v1`, and
 `aplane.ecdsak1.v1` available to that identity for key type discovery and
 generation when `source:"compiled"` and `state:"enabled"`. Mnemonic import is
 gated separately by the provider's explicit mnemonic-import capability.

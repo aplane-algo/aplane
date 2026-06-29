@@ -40,6 +40,7 @@ included as normal user-account operations.
 | `aplane.falcon1024-timelock.v1` | C | C | C | C | C | C | C | C | C | C | C |
 | `aplane.falcon1024-sentry-ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-sentry-falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| `aplane.corridor.v1` | C | C | C | Y | C | N | N | N | N | N | C |
 | `aplane.whitelist.v1` | C | C | C | C | C | N | N | N | N | N | N |
 | `aplane.timed-whitelist.v1` | C | C | C | C | C | N | N | N | N | N | N |
 | `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
@@ -91,6 +92,18 @@ included as normal user-account operations.
   sentry component signature is separate from this table: current sentry
   authorization is transfer-route based, rejects non-transfer sentry targets,
   and rejects rekey by default.
+- `aplane.corridor.v1` also requires guarded signing assembly, but unlike the
+  plain guarded providers its on-chain LogicSig restricts spending to a
+  recipient corridor. After both the user and sentry component signatures
+  verify, `pay` and `axfer` are allowed only when the receiver is self or a
+  recipient proven with a signer-generated 512-byte fixed-depth Merkle proof
+  against the root derived from the key-file recipient list; close destinations
+  must be zero or the just-validated receiver. Clawback-shaped `axfer`
+  (non-zero `AssetSender`) is denied, and non-transfer transaction types are
+  rejected. Rekey is allowed only as a pure 0-ALGO self-payment carrying the
+  rekey, and the sentry's off-chain rekey policy decides whether a specific
+  sender → rekey-target edge is authorized before issuing the sentry component
+  signature.
 - `aplane.whitelist.v1` allows `pay` and normal `axfer` only to configured
   whitelisted recipients. Close destinations must be zero or whitelisted. ASA
   opt-in is allowed only for configured `allowed_optin_assets`.

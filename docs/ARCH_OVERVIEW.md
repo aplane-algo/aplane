@@ -58,7 +58,7 @@ a key.
 | **apstore** | Keystore management client for local initialize, policy integrity, endpoint export, public sentry references, backup import admission, verification, and rebuild rescue flows; live backup, restore, template, key type, and passphrase operations use the admin protocol | Providers (KeyGen) + Crypto + Store Mutation + admin protocol |
 | **appolicy** | Offline policy checker/editor for the node-role policy document (`policy.yaml` for signer nodes, sentry-domain `policy.yaml` for sentry nodes), plus signing-to-sentry conversion | UI (TUI) + Policy + Store Mutation |
 | **appass** | Passphrase auto-unlock configuration TUI | UI (TUI) + Crypto |
-| **aplocalnet** | LocalNet setup TUI/CLI for apclient default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
+| **aplocalnet** | LocalNet setup TUI/CLI for client (`apshell`) default-network config, signer genesis config, plugin activation, and KMD plugin-env persistence | UI (TUI/CLI) + config + plugin catalog |
 | **approbe** | Installer-facing liveness probe for signer IPC reachability before replacing local binaries | Installer helper + admin protocol probe |
 
 ## Identity Model
@@ -217,10 +217,13 @@ aplane/
 │   ├── lsigprovider/              # Unified LogicSig provider registry
 │   ├── logicsigdsa/               # LogicSig DSA interface and registry
 │   ├── lsigsalt/                  # Shared off-curve LogicSig salting
+│   ├── sentry/                    # Sentry/guarded component protocol (keytypes, messages, canonical hashing, verification)
 │   ├── mnemonic/                  # Mnemonic handlers
 │   ├── jsapi/, scripting/         # JavaScript bindings and Goja runtime
 │   ├── plugin/                    # Plugin discovery, manifest, RPC, integrity, sandbox
 │   ├── config/                    # Client and server config loading
+│   ├── serverconfig/              # apsigner server configuration loading and validation
+│   ├── noderole/, keyclass/       # Durable signer node role and key-type classification gates
 │   ├── policy/, approvalpolicy/   # Signer policy config and approval warnings
 │   ├── appinput/, appspec/        # App command parsing and ABI spec handling
 │   └── fsutil/, theme/, tokenfile/, cmdlog/, ...   # Focused support packages
@@ -231,9 +234,14 @@ aplane/
 │   │   ├── derivation/, family/, keygen/, keys/, signing/
 │   │   └── v1/                    # v1 standard provider, ops, composer, templates
 │   ├── falcon1024_ed25519/        # Dual Falcon-1024 / Ed25519 DSA provider
+│   ├── falcon1024_guarded/        # Guarded Falcon-1024 (user + sentry) LogicSig provider
+│   ├── corridor/                  # Always-sentry corridor LogicSig provider
+│   ├── sentryaccount/             # Shared client-safe guarded/sentry account helpers
 │   ├── ed25519lsig/               # Ed25519 LogicSig DSA base for composed templates
 │   ├── ecdsak1/                   # ECDSA secp256k1 LogicSig DSA provider
 │   ├── composeddsa/               # Generic ComposedDSA composer
+│   ├── dsafamily/                 # Client-safe DSA family registration descriptors
+│   ├── signerreg/                 # Built-in signer-side LogicSig provider registration
 │   └── generictemplate/           # YAML-backed generic template provider
 │
 ├── library/templates/             # Optional plaintext KeyType Library YAML sources

@@ -580,8 +580,9 @@ each MCP server instance uses its own:
 - **Pre-grouped + insufficient LogicSig budget → rejected.** Submit ungrouped.
 - **All-foreign sign/plan requests are rejected.**
 - **After `rekey`, run `rekey refresh`.**
-- **`request-token`, `js`, `jssave`, `jslist`, `quit` are not available via the
-  `execute` tool** — use the dedicated tools or a terminal.
+- **`request-token`, `js`, `jssave`, `jslist`, `quit`, `exit`, and `keyreg`
+  (no args) are not available via the `execute` tool** — use the dedicated
+  tools or a terminal.
 - **Amounts: human units in the shell, microAlgos in JS** (`algo()` /
   `microalgos()`).
 - **Asset names resolve per network.** `simulate` before anything irreversible.

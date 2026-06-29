@@ -37,6 +37,7 @@ Each line is a JSON object with the following fields:
 | `txid` | string | Transaction ID (after signing) |
 | `remote_addr` | string | Client IP address (for auth failures, sessions) |
 | `reason` | string | Event-specific detail such as rejection reason, key type, deleted filename, or SSH fingerprint |
+| `policy_rule_id` | string | Policy rule that forced manual review before the operator decision |
 | `key_count` | int | Number of keys (for reload/start events) |
 
 Fields are omitted when empty.

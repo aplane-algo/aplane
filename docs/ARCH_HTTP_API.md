@@ -79,8 +79,8 @@ Timeout behavior:
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
   mutations including `/admin/sentries/sync` 60 seconds, `/plan` 60 seconds,
-  `/simulate` 60 seconds, `/sign/component` 60 seconds, `/sign/assemble` 60
-  seconds, and `/sign` based on approval wait.
+  `/simulate` 60 seconds, `/sign/component` 2 minutes, `/sign/assemble` 2
+  minutes, and `/sign` based on approval wait.
 - caller-provided contexts with earlier deadlines are preserved.
 - before `/sign`, `internal/signerclient` attempts `/status` discovery; when
   `approval_wait_seconds` is known and valid, the `/sign` deadline is
@@ -343,6 +343,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 `/status` response:
 
 - `identity_id`: authenticated identity ID resolved from the `aplane` token
+- `node_role`: optional signer node role (`signer` or `sentry`); omitted when unset
 - `state`: lock state (`locked`, `unlocked`, or `unknown`)
 - `signer_locked`
 - `ready_for_signing`

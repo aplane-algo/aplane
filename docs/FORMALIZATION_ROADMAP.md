@@ -314,7 +314,7 @@ from the relevant formalization commit to see what changed.
 | M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
 | M3: Deferred Companion English Models | Not started | Approval coordinator, cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
-| M4: Machine-Checkable Model | First wave complete | Four TLA+ modules shipped. ~14 of 63 numbered invariants are machine-checked. |
+| M4: Machine-Checkable Model | First wave complete | Four TLA+ modules shipped. ~14 of 65 numbered invariants are machine-checked. |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
 Machine-checked invariants by module:
@@ -326,7 +326,7 @@ Machine-checked invariants by module:
 | `composition.tla` | 3 seam claims + 2 sign-boundary rechecks under derived verdict | 84,096 | 1 |
 | `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency | 48 | 10 |
 
-Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A13
+Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A15
 (guarded signing), I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L8-L11.
 
 ### Verification methodology by module
@@ -417,9 +417,13 @@ maintainers should know they exist before changing related code or specs.
 
 Tools used during the first iteration:
 
-- **TLC**: version 2.19 of 8 August 2024 (`tla2tools.jar`), downloaded from
-  https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar.
-- **Java**: OpenJDK 17 (any Java 11+ should work).
+- **TLC**: TLA+ tools release v1.8.0 (`tla2tools.jar`, TLC version 2.19 of
+  8 August 2024). The Formal Models CI job pins this release, downloading
+  https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+  into `.tools/tla2tools.jar`; the first iteration fetched the `releases/latest`
+  jar instead.
+- **Java**: CI runs the modules under Java 21 (Temurin); the first iteration
+  used OpenJDK 17 (any Java 11+ should work).
 
 Convention used during this work: the jar lives at `~/tla/tla2tools.jar`.
 Adjust paths if you put it elsewhere.

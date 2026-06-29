@@ -72,6 +72,8 @@ Every slice must check whether these apply:
 
 ### Slice 1: IPC Passphrase Safety
 
+Status: implemented.
+
 Convert remaining admin protocol passphrase fields from `string` to
 `protocol.SensitiveBytes` while preserving JSON string compatibility.
 

@@ -4,8 +4,8 @@
 
 > **TL;DR**
 > - The LogicSigs bundled with APlane (Falcon hashlock, Falcon timelock,
->   Falcon whitelist, Ed25519 whitelist, and the signer-gated DSA providers)
->   are safe to fund and use as documented.
+>   Falcon whitelist, Falcon Merkle whitelist, Ed25519 whitelist, and the
+>   signer-gated DSA providers) are safe to fund and use as documented.
 > - Anything you compile yourself — your own TEAL, your own YAML template, or
 >   an externally-supplied LogicSig — needs to pass the full review checklist
 >   below before you fund the account.
@@ -691,9 +691,9 @@ When designing or reviewing a LogicSig TEAL policy:
 ## Bundled LogicSigs In APlane
 
 APlane bundles both signer-gated LogicSig providers and template library
-entries. New signer stores install the Falcon whitelist v1 and Ed25519
-whitelist v1 templates by default; users should understand the security model
-of each one before funding or relying on it.
+entries. New signer stores install the Falcon whitelist v1 template by default;
+the Ed25519 whitelist v1 is an optional import. Users should understand the
+security model of each one before funding or relying on it.
 
 ### Signer-Gated Compiled Providers
 
@@ -730,6 +730,19 @@ signer-side policy boundary for transaction controls.
 This provider verifies an ECDSA secp256k1 signature over the transaction. Like
 the other signer-gated compiled providers, transaction policy is expected to
 live primarily in signer approval and local signer policy.
+
+#### Guarded Sentry Providers
+
+APlane also ships Go-defined, library-visible guarded sentry account providers:
+`aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`,
+and `aplane.corridor.v1`. These require the guarded signing assembly flow (a
+user component signature plus a sentry component signature). For the two plain
+guarded providers, the on-chain LogicSig does not restrict transaction shape
+once both signatures verify, so the sentry policy is the spending boundary.
+`aplane.corridor.v1` additionally embeds a recipient-corridor whitelist and a
+sentry-authorized rekey path in its LogicSig. See
+[KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for the per-operation matrix
+and [ARCH_SENTRY.md](ARCH_SENTRY.md) for the guarded-signing model.
 
 ### Template Library
 

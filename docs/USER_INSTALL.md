@@ -109,7 +109,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 
 ### Ports
 
-Each local install selects **random available ports** in the dynamic range (49152–65535) for both the signer REST API and the SSH tunnel. This allows multiple independent APlane instances on the same machine without port conflicts. The selected ports are written into `apsigner/config.yaml` and the primary signer record in `apclient/endpoints.yaml`.
+Each local install selects **random available ports** in the dynamic range (49152–65534) for both the signer REST API and the SSH tunnel. This allows multiple independent APlane instances on the same machine without port conflicts. The selected ports are written into `apsigner/config.yaml` and the primary signer record in `apclient/endpoints.yaml`.
 
 For `--role sentry`, the selected ports are written into `apsigner/config.yaml`
 and an `apclient/endpoints.yaml` `local-sentry` endpoint. The generated
@@ -593,6 +593,12 @@ sudo systemctl start apsigner
 # Unlock via apadmin, or use apconsole for the unified secure-machine console
 sudo -u aplane apadmin -d /var/lib/apsigner
 ```
+
+> **Note:** This manual Quick Start calls `systemd-setup.sh` without
+> `--memory-lock`, so unlike the automated `install.sh --systemd` installer it
+> does not enable enforced memory locking. To match the automated installer,
+> pass `--memory-lock` to `systemd-setup.sh` and add
+> `require_memory_protection: true` to `config.yaml`.
 
 ### Auto-unlock setup after install (requires systemd 250+)
 

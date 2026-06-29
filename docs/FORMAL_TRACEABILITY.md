@@ -44,13 +44,13 @@ Source: [FORMAL_TXN_PLANNING_MODEL.md](FORMAL_TXN_PLANNING_MODEL.md)
 | I7 | implemented | Signing Output Rules; I7 | `internal/signerapp/signing/execution.go` (foreign slot -> "") | `internal/signerapp/daemon/plan_sign_parity_test.go::TestPlanAllowsMixedSignAndForeignGroupAndPreservesCanonicalTransactions` asserts the signer-owned output is populated and the foreign output is `""` after `/sign`. | |
 | I8 | implemented | Signing Output Rules; I8 | `internal/signerapp/signing/execution.go` passes through `signed_txn_hex` | `test/integration/passthrough_test.go:212` asserts `groupResp.Signed[1] == stxnBHex` after `/sign`; `:447` confirms preservation through resign | Direct byte-equality assertion exists. |
 | I9 | implemented | Hard Deny Dominance | `internal/signerapp/signing/service.go::signGroupWithPlanContext` (auto-rejection before approval) | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanUserAutoApproveStillRejectsPolicyViolation` | Machine-checked via `policy_precedence.tla::I9_HardDenyDominance` and end-to-end via `composition.tla::HardDenyProducesNoOutput`. |
-| I10 | implemented | Network Hash Authority | `internal/policy/lint.go:179`, `internal/signerapp/signing/planner.go:318`, `internal/signerapp/signing/simulation.go:61` all use `NetworkForGenesisHashBytes`; `GenesisID` references in `approval.go:354` and `planner_runtime.go:201` are consistency/propagation, not network selection | `internal/signerapp/signing/planner_test.go::TestValidateKnownNetwork_*`; `internal/signerapp/daemon/genesis_hash_test.go` | Verified: no policy code path reads `GenesisID` for selection. |
+| I10 | implemented | Network Hash Authority | `internal/policy/lint.go:179`, `internal/signerapp/signing/planner.go:364`, `internal/signerapp/signing/simulation.go:62` all use `NetworkForGenesisHashBytes`; `GenesisID` references in `approval.go:354` and `planner_runtime.go:235` are consistency/propagation, not network selection | `internal/signerapp/signing/planner_test.go::TestValidateKnownNetwork_*`; `internal/signerapp/daemon/genesis_hash_test.go` | Verified: no policy code path reads `GenesisID` for selection. |
 | IS1 | implemented | Simulate Plans Like Sign | `internal/signerapp/signing/service.go::SignGroupForSimulationWithContext` reuses `PlanGroup` | `internal/signerapp/daemon/plan_sign_parity_test.go::TestPlanAndSimulateProduceMatchingCanonicalTransactionsForEd25519` | |
 | IS2 | implemented | Simulate Enforces Hard Policy | `internal/signerapp/signing/service.go::signGroupWithPlanContext` runs `EvaluateAutoRejectionRules` even in simulation mode | `internal/signerapp/signing/service_test.go::TestSignGroupForSimulationRejectsHardPolicyBeforeExecution` targets the simulation entry point and asserts hard policy rejects before execution. | |
 | IS3 | implemented | Simulate Does Not Wait For Operator Approval | `internal/signerapp/signing/service.go::signGroupWithPlanContext` skips approval requests when `simulation=true` | `internal/signerapp/signing/service_test.go::TestSignGroupWithPlanSimulationSkipsApproval` | |
 | IS4 | implemented | Simulate Never Exposes Signed Bytes | `internal/signerapp/rest/simulate.go` returns `Transactions` only | `internal/signerapp/rest/service_test.go::TestServiceSimulateSignsInternallyAndOmitsSignedBytes` | |
 | IS5 | implemented | Simulate Rejects Unresolved Foreign Slots | `internal/signerapp/rest/simulate.go` (ForeignCount > 0 reject) | `internal/signerapp/rest/service_test.go::TestServiceSimulateRejectsForeignPlaceholders` | |
-| IS6 | implemented | Simulate Honors Lifecycle And Unlock State | `internal/signerapp/rest/simulate.go:26-31` (IsDecommissioned, IsUnlocked rejection) | `internal/signerapp/rest/service_test.go::TestServiceSimulateRejectsDecommissionedRuntime`; `*RejectsLockedRuntime` | |
+| IS6 | implemented | Simulate Honors Lifecycle And Unlock State | `internal/signerapp/rest/preconditions.go::ensureSignable:24-29` (IsDecommissioned, IsUnlocked rejection; `simulate.go` calls it) | `internal/signerapp/rest/service_test.go::TestServiceSimulateRejectsDecommissionedRuntime`; `*RejectsLockedRuntime` | |
 
 ## Policy Model
 
@@ -259,7 +259,7 @@ The following invariants have no TLA+ representation yet:
   (pending-approval cascade, deferred to a future approval-coordinator
   model).
 - All of S1-S13 (signing authority).
-- All of A1-A13 (guarded signing, assembly, endpoint routing, and identity
+- All of A1-A15 (guarded signing, assembly, endpoint routing, and identity
   mode).
 
 Lifecycle-aware composition (joining the temporal lifecycle model

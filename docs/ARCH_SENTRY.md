@@ -377,13 +377,18 @@ Primary packages and files:
 - `internal/signerapp/signing`: component request planning, sentry policy
   evaluation, user/sentry component signing, assembly, and `/sign` rejection
   gates.
-- `internal/signerapp/rest`: HTTP projection for `/sign/component`,
+- `internal/signerapp/rest`: REST service methods backing `/sign/component`,
   `/sign/assemble`, `/keys`, `/keytypes`, and `/admin/sentries/sync`.
+- `internal/signerapp/daemon`: HTTP runtime (`http_runtime.go`) that registers
+  these routes on the signer mux and dispatches them to the `rest` service
+  methods.
 - `internal/engine`: guarded transaction orchestration and sentry endpoint
   resolution.
 - `internal/config`: endpoint registry parsing and derived sentry endpoint map.
 - `internal/apshellapp`: endpoint commands and sentry discovery workflows.
 - `lsig/falcon1024_guarded`: guarded LogicSig provider and template behavior.
+- `lsig/corridor`: always-sentry corridor LogicSig provider requiring both a
+  user component signature and a Falcon-1024 sentry signature.
 - `cmd/apstore/sentry.go`: public sentry export/import/list/show/remove.
 - `cmd/appolicy`: signer-to-sentry policy conversion and offline validation.
 

@@ -961,6 +961,7 @@ CI runs automatically on all pushes and PRs to master/main branches via GitHub A
 | **Lint** | gofmt, go vet, staticcheck, golangci-lint | Every push/PR |
 | **Test** | Unit tests with race detector and coverage | After lint passes |
 | **Contract** | Signer API contract fixtures | After lint passes |
+| **Formal Models** | TLC model checking (tla2tools v1.8.0) via `make formal-test` | After lint passes |
 | **Build** | Compile all packages | After lint passes |
 | **Security** | keyzero, keylog, insecurerand, seedphrase analyzers | After lint passes |
 

@@ -130,13 +130,18 @@ internal/engine/
 ├── connect/               # Signer HTTP client and SSH tunnel lifecycle state
 ├── connection.go          # Signer connection (direct and SSH tunnel)
 ├── group.go               # PreparedGroup, grouped preparation and execution
+├── guarded_submit.go      # Guarded-account sign/assemble submission flow
 ├── init.go                # Package initialization
 ├── keymgmt.go             # Key management operations
 ├── keyreg.go              # Key registration (online/offline)
+├── output_error.go        # Output/error formatting helpers for results
 ├── payment.go             # Payment preparation
+├── plugin_pregrouped.go   # Pre-grouped plugin transaction submission
+├── plugin_presign.go      # Plugin pre-sign planning flow (mixed managed/plugin groups)
 ├── plugin_signing.go      # Cooperative signing with plugin local signers
 ├── plugin_transactions.go # Plugin transaction processing
 ├── rekey.go               # Rekey/unrekey operations
+├── sentry_endpoint.go     # Sentry endpoint resolution for guarded signing
 ├── signer_cache.go        # Signer cache helpers and guarded metadata access
 ├── signing.go             # SigningContext, auth address handling
 ├── status_sync.go         # /status keyset-revision synchronization
@@ -455,6 +460,9 @@ result, err := engine.SignAndSubmit(ctx, prep, true) // wait for confirmation
 | `SignAndSubmit` | Sign and submit single transaction |
 | `SignAndSubmitAtomic` | Sign and submit atomic group |
 | `SignAndSubmitTransactions` | Sign pre-built transactions |
+| `SignAndSubmitWithPluginSigners` | Run the pre-sign planning flow for mixed plugin/managed groups |
+| `SignAndSubmitWithLocalSigners` | Sign and submit a group with plugin-supplied local signers |
+| `SignAndSubmitAllLocal` | Build, sign, and submit an all-local group with no server-managed slots |
 | `ValidateAtomicPayments` | Validate atomic ALGO payments |
 | `ValidateAtomicASATransfers` | Validate atomic ASA transfers |
 | `WaitForConfirmation` | Wait for transaction confirmation |

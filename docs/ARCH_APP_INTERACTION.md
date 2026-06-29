@@ -128,11 +128,11 @@ the shell-app to engine to signer path.
 ## App State Reads
 
 App interaction provides five engine read operations:
-- `ReadAppInfoWithContext(ctx, appID)`
-- `ReadAppGlobalStateWithContext(ctx, appID)`
-- `ReadAppLocalStateWithContext(ctx, address, appID)`
-- `ReadAppBoxWithContext(ctx, appID, name)`
-- `ListAppBoxesWithContext(ctx, appID)`
+- `ReadAppInfo(ctx, appID)`
+- `ReadAppGlobalState(ctx, appID)`
+- `ReadAppLocalState(ctx, address, appID)`
+- `ReadAppBox(ctx, appID, name)`
+- `ListAppBoxes(ctx, appID)`
 
 The CLI exposes these as:
 - `app read info <app-id>`
