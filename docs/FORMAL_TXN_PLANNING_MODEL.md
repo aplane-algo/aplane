@@ -243,6 +243,13 @@ For accepted ungrouped requests:
 Single ungrouped requests with no large LogicSig budget requirement may remain
 ungrouped, matching the current transaction-flow contract.
 
+A `presign-plan` plugin group reaches the signer as exactly this foreign-entry
+case: the plugin-owned slots arrive as `foreign` entries carrying `lsig_size`,
+so they raise the LogicSig budget above but are never signed by this signer (see
+Signing Output Rules). The plugin's own signing of those slots, and the fully
+`pregrouped-signed` all-plugin path that bypasses the signer entirely, are out
+of scope (see [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md) Non-Goals).
+
 ## Policy and Approval Boundary
 
 Planning precedes policy and approval for `/sign` and `/simulate`.

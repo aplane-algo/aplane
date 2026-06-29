@@ -83,7 +83,10 @@ Initial models should not include:
 - terminal UI behavior,
 - operator behavior,
 - algod consensus correctness,
-- cooperative signing and all-plugin signer-bypass behavior,
+- cooperative signing and all-plugin signer-bypass behavior, including the
+  plugin group-mode flows `presign-plan` (a plugin signs its own slots by
+  callback; the signer plans them as foreign slots) and `pregrouped-signed`
+  (the plugin submits a complete signed group, bypassing the signer),
 - approval coordinator cancellation/timeout state machines,
 - LogicSig budget computation internals,
 - LogicSig template and bytecode-generation semantics,
@@ -146,8 +149,10 @@ outside M1:
 
 - approval coordinator state, including manual approval, cancellation, timeout,
   and decommission failure,
-- cooperative signing, including `/plan` to local plugin signing to `/sign`
-  passthrough flow and all-plugin server bypass,
+- cooperative signing, including the `localSigners` `/plan`-to-local-signing-to-`/sign`
+  passthrough flow, the `presign-plan` plugin-callback flow (the plugin signs
+  its own slots, which the signer plans as foreign slots), and the
+  `pregrouped-signed` all-plugin server-bypass flow,
 - LogicSig budget computation,
 - LogicSig template and bytecode generation.
 
@@ -306,6 +311,21 @@ The first-wave formalization snapshot corresponded to commit
 The current roadmap has since been extended for the guarded signing system.
 If the repository has moved since the guarded signing update, run `git log --oneline`
 from the relevant formalization commit to see what changed.
+
+**Drift review (2026-06-29, HEAD `0568e343`).** A re-sync confirmed the models
+still track the code after ~360 commits of movement: all four TLA+ modules
+re-check green under TLC at the recorded state counts (2,628 / 64 / 84,096 /
+48); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
+re-validated across all 65 invariants (six stale code/line anchors corrected,
+no invariant lost its test); and two code changes since the snapshot were
+reconciled — the third guarded account key type `aplane.corridor.v1` (now named
+in [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md), with its
+recipient-corridor and rekey restrictions scoped out as LogicSig-program/sentry-
+policy semantics) and the plugin `presign-plan` / `pregrouped-signed` group-mode
+flows (named in Non-Goals; `presign-plan` plugin slots are modeled as foreign
+slots in [FORMAL_TXN_PLANNING_MODEL.md](FORMAL_TXN_PLANNING_MODEL.md)). No
+invariant changed; coverage milestones (M3 companion models, the unmodeled
+S/A-series) are unchanged.
 
 ### Milestone status
 

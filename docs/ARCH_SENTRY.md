@@ -115,7 +115,7 @@ Guarded accounts and sentry keys are never signed through raw
 - guarded account keys use `/sign/component` with role `user`, then
   `/sign/assemble`,
 - sentry keys use `/sign/component` with role `sentry`,
-- ordinary `/sign` rejects both guarded account key types and sentry key types.
+- ordinary `/sign` rejects all guarded account key types and sentry key types.
 
 This preserves the two-party invariant: a guarded account requires both a user
 component signature and a sentry component signature.
