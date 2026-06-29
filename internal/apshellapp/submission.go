@@ -163,10 +163,10 @@ func (a *App) submitPregroupedSigned(ctx context.Context, result *jsonrpc.Execut
 // to sign its slots over the canonical bytes, and submits with apsigner signing the
 // managed slots. Requires a signer connection (apsigner signs managed slots).
 //
-// Review: the managed slots go through apsigner /sign, so apsigner's policy +
-// approval (which renders the full group to the operator) is the authoritative
-// human-acceptance gate for this mode. The client-side review uses the default
-// path; richer client-side honest mixed-group display is a later slice (#6).
+// Review: the CLI renders a role-aware client-side view of the plugin draft
+// before this call. The managed slots then go through apsigner /sign, so
+// apsigner's policy + approval over the canonical group remains the
+// authoritative human-acceptance gate for signer-owned keys.
 func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
 	if len(result.PluginSigners) == 0 {
 		return nil, fmt.Errorf("groupMode %q requires pluginSigners", jsonrpc.GroupModePresignPlan)

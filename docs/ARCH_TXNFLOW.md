@@ -16,7 +16,15 @@ APlane supports three fundamentally different authorization mechanisms:
 
 For standard transactions, the client sends transactions to `/sign` and receives a finalized group representation. Each request entry uses one of three modes — **sign**, **passthrough**, or **foreign**; `/plan` uses the same request grammar but stops before approval and signing. See [Mode Selection](#mode-selection) below for the trichotomy.
 
-**Plugin transactions**: When external plugins provide `localSigners` (ephemeral keys), apshell uses a cooperative signing flow: `/plan` to get the canonical group, local signing for plugin-owned and dummy transactions, then `/sign` with passthrough for locally-signed entries. If all transactions are plugin-owned, the server is bypassed entirely. See [Cooperative Signing (Plugin Transactions)](#cooperative-signing-plugin-transactions) below.
+**Plugin transactions**: external plugins can participate in transaction flow in
+three ways. The legacy `localSigners` path uses `/plan`, local signing for
+ephemeral plugin keys, and `/sign` passthrough. `groupMode:"presign-plan"`
+uses `/plan` with plugin-owned slots as foreign entries, then calls the plugin
+back with canonical bytes through `signTransactions` before `/sign` signs the
+managed slots. `groupMode:"pregrouped-signed"` is fully plugin-signed and
+bypasses apsigner entirely after local client review. See
+[Cooperative Signing (Plugin Transactions)](#cooperative-signing-plugin-transactions)
+below and [ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the plugin protocol.
 
 **Group immutability rule**: Pre-grouped transactions (group ID already set) are always immutable. The server will not add dummies, adjust fees, or recompute the group ID. If a pre-grouped group has insufficient LogicSig budget, the request is rejected. Clients that need server-side canonicalization must submit ungrouped transactions.
 
@@ -479,7 +487,24 @@ When external plugins return `localSigners` (ephemeral Ed25519 keys), `handleSig
 
 The all-plugin case bypasses apsigner entirely (apshell assigns the group ID locally and signs everything), avoiding the all-foreign rejection at planner entry.
 
-See [ARCH_COOPERATIVE_SIGNING.md](ARCH_COOPERATIVE_SIGNING.md) for the full protocol — the `/plan` → local-sign → `/sign` orchestration, the all-plugin fallback, security properties, and trust boundary. See [ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the plugin-side `localSigners` contract.
+`groupMode:"presign-plan"` generalizes the mixed-signing shape for plugin-owned
+signers whose key material cannot be exported. The plugin emits an unsigned
+draft plus `pluginSigners`; apshell sends plugin-owned slots to `/plan` as
+foreign entries with optional `lsig_size` hints, verifies `/plan` preserved all
+original fields except `Group` and `Fee`, calls the plugin's `signTransactions`
+callback over the canonical bytes, then submits a `/sign` request with
+plugin-signed slots as passthrough and managed slots in sign mode. This is the
+path used when plugin LogicSigs need pooled opcode/byte budget.
+
+`groupMode:"pregrouped-signed"` is the all-plugin signed case. The plugin
+returns already-signed, already-grouped bytes; apshell validates the embedded
+group ID is self-consistent and submits the exact bytes verbatim. apsigner does
+not plan, approve, or sign that group, so local client review is the human gate.
+
+See [ARCH_COOPERATIVE_SIGNING.md](ARCH_COOPERATIVE_SIGNING.md) for the original
+`localSigners` `/plan` -> local-sign -> `/sign` orchestration and
+[ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the current plugin group-mode wire
+contract.
 
 ---
 
