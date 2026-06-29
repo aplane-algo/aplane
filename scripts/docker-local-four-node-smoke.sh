@@ -1009,7 +1009,10 @@ async function main() {
   const algodUrl = requireEnv("APLANE_ALGOD_URL");
   const algodToken = requireEnv("APLANE_ALGOD_TOKEN");
 
-  const algodClient = new algosdk.Algodv2(algodToken, algodUrl, "");
+  const algodEndpoint = new URL(algodUrl);
+  const algodServer = `${algodEndpoint.protocol}//${algodEndpoint.hostname}`;
+  const algodPort = algodEndpoint.port || (algodEndpoint.protocol === "https:" ? "443" : "80");
+  const algodClient = new algosdk.Algodv2(algodToken, algodServer, algodPort);
   const userClient = await SignerClient.fromEnv({ dataDir: primaryData, timeout: 180 });
   const sentryClient = await SignerClient.fromEnv({ dataDir: sentryData, timeout: 180 });
   try {
@@ -1043,12 +1046,15 @@ async function main() {
 
 main().catch((err) => {
   console.error(err && err.stack ? err.stack : err);
+  if (err && err.cause) {
+    console.error("Cause:", err.cause);
+  }
   process.exit(1);
 });
 JS
-    docker cp "$js_file" "$CLIENT_CONTAINER:/tmp/sdk-guarded-validate.mjs"
+    docker cp "$js_file" "$CLIENT_CONTAINER:$TS_SDK_DIR/sdk-guarded-validate.mjs"
     rm -f "$js_file"
-    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" /tmp/sdk-guarded-validate.mjs
+    docker_exec "$CLIENT_CONTAINER" chown "$TEST_USER:$TEST_USER" "$TS_SDK_DIR/sdk-guarded-validate.mjs"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "cd '$TS_SDK_DIR' && \
         APCLIENT_DATA=/home/$TEST_USER/aplane/apclient-sdk-primary \
@@ -1057,7 +1063,8 @@ JS
         APLANE_SENTRY_COMPONENT_KEY='$SENTRY_COMPONENT_KEY' \
         APLANE_ALGOD_URL='$ALGOD_URL' \
         APLANE_ALGOD_TOKEN='$ALGOD_TOKEN' \
-        node /tmp/sdk-guarded-validate.mjs"
+        NODE_OPTIONS='--dns-result-order=ipv4first' \
+        node ./sdk-guarded-validate.mjs"
 }
 
 generate_sentry_component_key() {
