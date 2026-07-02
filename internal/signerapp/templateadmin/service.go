@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
@@ -38,7 +39,7 @@ func (s Service) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibra
 	items, err := templatelibrary.List(s.Deps.KeyPaths(), ir.ID())
 	if err != nil {
 		return adminproto.ListLibraryTemplatesResult{
-			Code:  "list_failed",
+			Code:  protocol.ResultCodeListFailed,
 			Error: err.Error(),
 		}
 	}
@@ -70,7 +71,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 			Success:      false,
 			KeyType:      keyType,
 			TemplateType: req.TemplateType,
-			Code:         "invalid_template_type",
+			Code:         protocol.ResultCodeInvalidTemplateType,
 			Error:        fmt.Sprintf("unsupported template type: %s", req.TemplateType),
 		}
 	}
@@ -88,7 +89,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 				Success:      false,
 				KeyType:      keyType,
 				TemplateType: req.TemplateType,
-				Code:         "install_failed",
+				Code:         protocol.ResultCodeInstallFailed,
 				Error:        err.Error(),
 			}
 			return nil
@@ -102,7 +103,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 				KeyType:       installResult.KeyType,
 				TemplateType:  string(installResult.TemplateType),
 				AlreadyExists: installResult.AlreadyExists,
-				Code:          "reload_failed",
+				Code:          protocol.ResultCodeReloadFailed,
 				Error:         reloadErr.Error(),
 			}
 			return nil
@@ -116,7 +117,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 				KeyType:       installResult.KeyType,
 				TemplateType:  string(installResult.TemplateType),
 				AlreadyExists: installResult.AlreadyExists,
-				Code:          "activation_failed",
+				Code:          protocol.ResultCodeActivationFailed,
 				Error:         err.Error(),
 			}
 			return nil
@@ -129,7 +130,7 @@ func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.Ins
 			Success:      false,
 			KeyType:      keyType,
 			TemplateType: req.TemplateType,
-			Code:         "install_failed",
+			Code:         protocol.ResultCodeInstallFailed,
 			Error:        err.Error(),
 		}
 	}
@@ -152,7 +153,7 @@ func (s Service) ListInstalledTemplates(ir *identity.Runtime) adminproto.ListIns
 		files, err := templatestore.ScanTemplateDirectoryForPaths(s.Deps.KeyPaths(), ir.ID(), templateType)
 		if err != nil {
 			return adminproto.ListInstalledTemplatesResult{
-				Code:  "list_failed",
+				Code:  protocol.ResultCodeListFailed,
 				Error: err.Error(),
 			}
 		}
@@ -184,7 +185,7 @@ func (s Service) ShowLibraryTemplate(ir *identity.Runtime, req adminproto.ShowLi
 	if keyType == "" {
 		return adminproto.ShowLibraryTemplateResult{
 			Success: false,
-			Code:    "invalid_request",
+			Code:    protocol.ErrCodeInvalidRequest,
 			Error:   "key_type is required",
 		}
 	}
@@ -193,16 +194,16 @@ func (s Service) ShowLibraryTemplate(ir *identity.Runtime, req adminproto.ShowLi
 			Success:      false,
 			KeyType:      keyType,
 			TemplateType: req.TemplateType,
-			Code:         "invalid_template_type",
+			Code:         protocol.ResultCodeInvalidTemplateType,
 			Error:        fmt.Sprintf("library YAML view does not apply to template type %q (only generic and composed have YAML)", req.TemplateType),
 		}
 	}
 
 	yaml, sourcePath, err := templatelibrary.FindLibraryYAML(s.Deps.KeyPaths(), templatelibrary.TemplateRef{KeyType: keyType, TemplateType: templateType})
 	if err != nil {
-		code := "library_read_failed"
+		code := protocol.ResultCodeLibraryReadFailed
 		if errors.Is(err, os.ErrNotExist) {
-			code = "library_entry_not_found"
+			code = protocol.ResultCodeLibraryEntryNotFound
 		}
 		return adminproto.ShowLibraryTemplateResult{
 			Success:      false,
@@ -235,7 +236,7 @@ func (s Service) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.Show
 		return adminproto.ShowInstalledTemplateResult{
 			Success: false,
 			KeyType: keyType,
-			Code:    "template_state_failed",
+			Code:    protocol.ResultCodeTemplateStateFailed,
 			Error:   err.Error(),
 		}
 	}
@@ -243,7 +244,7 @@ func (s Service) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.Show
 		return adminproto.ShowInstalledTemplateResult{
 			Success: false,
 			KeyType: keyType,
-			Code:    "template_not_found",
+			Code:    protocol.ResultCodeTemplateNotFound,
 			Error:   fmt.Sprintf("template %s not found", req.KeyType),
 		}
 	}
@@ -260,7 +261,7 @@ func (s Service) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.Show
 			Success:      false,
 			KeyType:      keyType,
 			TemplateType: installedWireTemplateType(templateType),
-			Code:         "decrypt_failed",
+			Code:         protocol.ResultCodeDecryptFailed,
 			Error:        err.Error(),
 		}
 	}
@@ -276,7 +277,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 	if err := templatelibrary.ValidateImportableSchema(req.TemplateYAML); err != nil {
 		return adminproto.ImportInstalledTemplateResult{
 			Success: false,
-			Code:    "invalid_template",
+			Code:    protocol.ResultCodeInvalidTemplate,
 			Error:   err.Error(),
 		}
 	}
@@ -285,7 +286,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 	if err != nil {
 		return adminproto.ImportInstalledTemplateResult{
 			Success: false,
-			Code:    "invalid_template",
+			Code:    protocol.ResultCodeInvalidTemplate,
 			Error:   err.Error(),
 		}
 	}
@@ -302,7 +303,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 				Success:      false,
 				KeyType:      parsed.KeyType,
 				TemplateType: string(parsed.TemplateType),
-				Code:         "import_failed",
+				Code:         protocol.ResultCodeImportFailed,
 				Error:        err.Error(),
 			}
 			return nil
@@ -316,7 +317,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 				KeyType:       installResult.KeyType,
 				TemplateType:  string(installResult.TemplateType),
 				AlreadyExists: installResult.AlreadyExists,
-				Code:          "reload_failed",
+				Code:          protocol.ResultCodeReloadFailed,
 				Error:         reloadErr.Error(),
 			}
 			return nil
@@ -330,7 +331,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 				KeyType:       installResult.KeyType,
 				TemplateType:  string(installResult.TemplateType),
 				AlreadyExists: installResult.AlreadyExists,
-				Code:          "activation_failed",
+				Code:          protocol.ResultCodeActivationFailed,
 				Error:         err.Error(),
 			}
 			return nil
@@ -343,7 +344,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 			Success:      false,
 			KeyType:      parsed.KeyType,
 			TemplateType: string(parsed.TemplateType),
-			Code:         "import_failed",
+			Code:         protocol.ResultCodeImportFailed,
 			Error:        err.Error(),
 		}
 	}
@@ -367,7 +368,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 		return adminproto.RemoveInstalledTemplateResult{
 			Success: false,
 			KeyType: keyType,
-			Code:    "template_state_failed",
+			Code:    protocol.ResultCodeTemplateStateFailed,
 			Error:   stateErr.Error(),
 		}
 	}
@@ -375,7 +376,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 		return adminproto.RemoveInstalledTemplateResult{
 			Success: false,
 			KeyType: keyType,
-			Code:    "template_not_found",
+			Code:    protocol.ResultCodeTemplateNotFound,
 			Error:   fmt.Sprintf("template %s not found", req.KeyType),
 		}
 	}
@@ -401,7 +402,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 					KeyType:      removeResult.KeyType,
 					TemplateType: string(removeResult.TemplateType),
 					Removed:      true,
-					Code:         "reload_failed",
+					Code:         protocol.ResultCodeReloadFailed,
 					Error:        err.Error(),
 				}
 			}
@@ -409,9 +410,9 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 		return nil
 	})
 	if err != nil {
-		code := "remove_failed"
+		code := protocol.ResultCodeRemoveFailed
 		if errors.Is(err, keytypestate.ErrKeyTypeInUse) {
-			code = "key_type_in_use"
+			code = protocol.ResultCodeKeyTypeInUse
 		}
 		return adminproto.RemoveInstalledTemplateResult{
 			Success:      false,
@@ -442,7 +443,7 @@ func (s Service) ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKe
 			out = adminproto.ActivateKeyTypeResult{
 				Success: false,
 				KeyType: keyType,
-				Code:    "template_state_failed",
+				Code:    protocol.ResultCodeTemplateStateFailed,
 				Error:   stateErr.Error(),
 			}
 			return nil
@@ -458,7 +459,7 @@ func (s Service) ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKe
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
 			KeyType: keyType,
-			Code:    "activation_failed",
+			Code:    protocol.ResultCodeActivationFailed,
 			Error:   err.Error(),
 		}
 	}
@@ -471,7 +472,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyT
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
 			KeyType: keyType,
-			Code:    "activation_failed",
+			Code:    protocol.ResultCodeActivationFailed,
 			Error:   err.Error(),
 		}
 	}
@@ -485,7 +486,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyT
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
 			KeyType: installResult.KeyType,
-			Code:    "reload_failed",
+			Code:    protocol.ResultCodeReloadFailed,
 			Error:   reloadErr.Error(),
 		}
 	}
@@ -499,7 +500,7 @@ func (s Service) enableInstalledTemplateKeyTypeLocked(ir *identity.Runtime, keyT
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
 			KeyType: installResult.KeyType,
-			Code:    "activation_failed",
+			Code:    protocol.ResultCodeActivationFailed,
 			Error:   err.Error(),
 		}
 	}
@@ -517,7 +518,7 @@ func (s Service) activateCompiledProviderKeyTypeLocked(ir *identity.Runtime, key
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
 			KeyType: keyType,
-			Code:    "activation_failed",
+			Code:    protocol.ResultCodeActivationFailed,
 			Error:   err.Error(),
 		}
 	}
@@ -525,7 +526,7 @@ func (s Service) activateCompiledProviderKeyTypeLocked(ir *identity.Runtime, key
 		return adminproto.ActivateKeyTypeResult{
 			Success: false,
 			KeyType: installResult.KeyType,
-			Code:    "reload_failed",
+			Code:    protocol.ResultCodeReloadFailed,
 			Error:   err.Error(),
 		}
 	}
@@ -562,16 +563,16 @@ func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.Deactiva
 				Success: false,
 				KeyType: removeResult.KeyType,
 				Removed: removeResult.Removed,
-				Code:    "reload_failed",
+				Code:    protocol.ResultCodeReloadFailed,
 				Error:   err.Error(),
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		code := "deactivation_failed"
+		code := protocol.ResultCodeDeactivationFailed
 		if errors.Is(err, keytypestate.ErrKeyTypeInUse) {
-			code = "key_type_in_use"
+			code = protocol.ResultCodeKeyTypeInUse
 		}
 		return adminproto.DeactivateKeyTypeResult{
 			Success: false,

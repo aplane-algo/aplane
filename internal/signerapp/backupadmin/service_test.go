@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -72,8 +73,8 @@ func TestPreviewRestoreRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 		ExportPassphrase: []byte("export-passphrase"),
 	})
 
-	if result.Code != "restore_preview_failed" {
-		t.Fatalf("PreviewRestore().Code = %q, want restore_preview_failed", result.Code)
+	if result.Code != protocol.ResultCodeRestorePreviewFailed {
+		t.Fatalf("PreviewRestore().Code = %q, want %s", result.Code, protocol.ResultCodeRestorePreviewFailed)
 	}
 	if retryAfter := limiter.RetryAfter(auth.DefaultIdentityID, archivePath); retryAfter == 0 {
 		t.Fatal("RetryAfter() = 0, want malformed preview to record limiter failure")
@@ -83,8 +84,8 @@ func TestPreviewRestoreRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
 	})
-	if limited.Code != "restore_rate_limited" {
-		t.Fatalf("second PreviewRestore().Code = %q, want restore_rate_limited", limited.Code)
+	if limited.Code != protocol.ResultCodeRestoreRateLimited {
+		t.Fatalf("second PreviewRestore().Code = %q, want %s", limited.Code, protocol.ResultCodeRestoreRateLimited)
 	}
 }
 
@@ -105,8 +106,8 @@ func TestRestoreBackupRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 		ExportPassphrase: []byte("export-passphrase"),
 	})
 
-	if result.Code != "prepare_restore_failed" {
-		t.Fatalf("RestoreBackup().Code = %q, want prepare_restore_failed", result.Code)
+	if result.Code != protocol.ResultCodePrepareRestoreFailed {
+		t.Fatalf("RestoreBackup().Code = %q, want %s", result.Code, protocol.ResultCodePrepareRestoreFailed)
 	}
 	if retryAfter := limiter.RetryAfter(auth.DefaultIdentityID, archivePath); retryAfter == 0 {
 		t.Fatal("RetryAfter() = 0, want malformed restore to record limiter failure")
@@ -116,8 +117,8 @@ func TestRestoreBackupRecordsLimiterFailureForMalformedArchive(t *testing.T) {
 		ArchivePath:      archivePath,
 		ExportPassphrase: []byte("export-passphrase"),
 	})
-	if limited.Code != "restore_rate_limited" {
-		t.Fatalf("second RestoreBackup().Code = %q, want restore_rate_limited", limited.Code)
+	if limited.Code != protocol.ResultCodeRestoreRateLimited {
+		t.Fatalf("second RestoreBackup().Code = %q, want %s", limited.Code, protocol.ResultCodeRestoreRateLimited)
 	}
 }
 

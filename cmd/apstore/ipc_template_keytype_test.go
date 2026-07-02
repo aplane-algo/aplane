@@ -160,7 +160,7 @@ func TestCmdTemplateImportReportsIPCFailure(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		importTemplateResult: protocol.ImportInstalledTemplateResultMessage{
 			Success: false,
-			Code:    "invalid_template",
+			Code:    protocol.ResultCodeInvalidTemplate,
 			Error:   "missing template_type",
 		},
 	}

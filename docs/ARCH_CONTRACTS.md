@@ -179,9 +179,13 @@ Consumers should branch on message `type` and `code` first, and use `error` for 
 
 Specific admin result messages may define additional stable result-local codes,
 including `key_type_in_use` for template disable/removal or compiled-provider disable and
-`restore_rate_limited` for managed restore preview/restore throttling. See the
-corresponding payload sections and contract tests before treating the central
-protocol list as exhaustive.
+`restore_rate_limited` for managed restore preview/restore throttling. The Go
+source of truth for these result-local codes is `internal/protocol`; producers
+and CLI consumers must share those constants instead of maintaining parallel
+string lists. See the corresponding payload sections and contract tests before
+treating the central protocol list as exhaustive. Consumers should dispatch on
+`code` when present and treat prose `error` as display text or legacy fallback,
+not as an authoritative result-code source.
 
 IPC failure semantics:
 

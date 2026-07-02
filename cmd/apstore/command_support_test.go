@@ -19,12 +19,12 @@ func TestExitCodeForStructuredResultCodes(t *testing.T) {
 	}{
 		{
 			name: "rate limited",
-			err:  resultError("restore failed", "restore_rate_limited", "too many restores"),
+			err:  resultError("restore failed", protocol.ResultCodeRestoreRateLimited, "too many restores"),
 			want: apstoreExitRateLimited,
 		},
 		{
-			name: "template conflict",
-			err:  resultError("template import failed", "template_conflict", "definition mismatch"),
+			name: "key type in use",
+			err:  resultError("template import failed", protocol.ResultCodeKeyTypeInUse, "key(s) still use it"),
 			want: apstoreExitConflict,
 		},
 		{
@@ -44,6 +44,13 @@ func TestExitCodeForStructuredResultCodes(t *testing.T) {
 				t.Fatalf("exitCodeForError(%v) = %d, want %d", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExitCodeDoesNotClassifyResultCodesFromProse(t *testing.T) {
+	err := fmt.Errorf("remote result included restore_rate_limited in message text but no code")
+	if got := exitCodeForError(err); got != apstoreExitFailure {
+		t.Fatalf("exitCodeForError(%v) = %d, want generic failure", err, got)
 	}
 }
 

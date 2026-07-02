@@ -40,7 +40,7 @@ func TestCmdBackupCreateAddressReportsMissingKey(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		backupResult: protocol.BackupResultMessage{
 			Success: false,
-			Code:    "backup_failed",
+			Code:    protocol.ResultCodeBackupFailed,
 			Error:   "failed to export ADDR: key file not found",
 		},
 	}

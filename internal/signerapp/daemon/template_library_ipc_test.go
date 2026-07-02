@@ -203,8 +203,8 @@ func TestShowLibraryTemplateMissingEntryReturnsNotFound(t *testing.T) {
 	if result.Success {
 		t.Fatalf("ShowLibraryTemplate() unexpectedly succeeded: %+v", result)
 	}
-	if result.Code != "library_entry_not_found" {
-		t.Fatalf("ShowLibraryTemplate() Code = %q, want library_entry_not_found", result.Code)
+	if result.Code != protocol.ResultCodeLibraryEntryNotFound {
+		t.Fatalf("ShowLibraryTemplate() Code = %q, want %s", result.Code, protocol.ResultCodeLibraryEntryNotFound)
 	}
 }
 
@@ -220,8 +220,8 @@ func TestShowLibraryTemplateRejectsCompiledProvider(t *testing.T) {
 	if result.Success {
 		t.Fatalf("ShowLibraryTemplate() unexpectedly succeeded: %+v", result)
 	}
-	if result.Code != "invalid_template_type" {
-		t.Fatalf("ShowLibraryTemplate() Code = %q, want invalid_template_type", result.Code)
+	if result.Code != protocol.ResultCodeInvalidTemplateType {
+		t.Fatalf("ShowLibraryTemplate() Code = %q, want %s", result.Code, protocol.ResultCodeInvalidTemplateType)
 	}
 }
 
@@ -233,8 +233,8 @@ func TestImportInstalledTemplateRejectsMalformedYAML(t *testing.T) {
 	result := server.adminServices().ImportInstalledTemplate(ir, adminproto.ImportInstalledTemplateRequest{
 		TemplateYAML: []byte("schema_version: 1\ntemplate_type: generic\nfamily:"),
 	})
-	if result.Success || result.Code != "invalid_template" {
-		t.Fatalf("ImportInstalledTemplate() = %+v, want invalid_template failure", result)
+	if result.Success || result.Code != protocol.ResultCodeInvalidTemplate {
+		t.Fatalf("ImportInstalledTemplate() = %+v, want %s failure", result, protocol.ResultCodeInvalidTemplate)
 	}
 	if result.Error == "" {
 		t.Fatalf("ImportInstalledTemplate() error is empty, want parse context")
@@ -257,8 +257,8 @@ teal: |
   int 1
 `),
 	})
-	if result.Success || result.Code != "invalid_template" {
-		t.Fatalf("ImportInstalledTemplate() = %+v, want invalid_template failure", result)
+	if result.Success || result.Code != protocol.ResultCodeInvalidTemplate {
+		t.Fatalf("ImportInstalledTemplate() = %+v, want %s failure", result, protocol.ResultCodeInvalidTemplate)
 	}
 	if !strings.Contains(result.Error, "template_mode is required") {
 		t.Fatalf("ImportInstalledTemplate() error = %q, want missing template_mode rejection", result.Error)
@@ -471,7 +471,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 		"type":    protocol.MsgTypeDeactivateKeyTypeResult,
 		"id":      "deactivate-keytype-in-use",
 		"success": false,
-		"code":    "key_type_in_use",
+		"code":    protocol.ResultCodeKeyTypeInUse,
 	}) {
 		t.Fatalf("deactivation rejection response mismatch: %#v", msgs[0])
 	}
@@ -500,8 +500,8 @@ func TestInstallLibraryTemplateReloadFailureRollsBackEncryptedFile(t *testing.T)
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
-	if result.Success || result.Code != "reload_failed" {
-		t.Fatalf("InstallLibraryTemplate result = %+v, want reload_failed", result)
+	if result.Success || result.Code != protocol.ResultCodeReloadFailed {
+		t.Fatalf("InstallLibraryTemplate result = %+v, want %s", result, protocol.ResultCodeReloadFailed)
 	}
 	assertInstalledTemplateRemoved(t, server, keyType, templatestore.TemplateTypeGeneric)
 }
@@ -534,8 +534,8 @@ func TestInstallLibraryTemplateReloadFailureDoesNotRemoveExistingInstall(t *test
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
-	if again.Success || again.Code != "reload_failed" || !again.AlreadyExists {
-		t.Fatalf("second InstallLibraryTemplate result = %+v, want reload_failed already_exists", again)
+	if again.Success || again.Code != protocol.ResultCodeReloadFailed || !again.AlreadyExists {
+		t.Fatalf("second InstallLibraryTemplate result = %+v, want %s already_exists", again, protocol.ResultCodeReloadFailed)
 	}
 	if _, err := os.Stat(installedPath); err != nil {
 		t.Fatalf("existing installed template was removed: %v", err)
@@ -559,8 +559,8 @@ func TestInstallLibraryTemplateActivationFailureRollsBackEncryptedFile(t *testin
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
-	if result.Success || result.Code != "activation_failed" {
-		t.Fatalf("InstallLibraryTemplate result = %+v, want activation_failed", result)
+	if result.Success || result.Code != protocol.ResultCodeActivationFailed {
+		t.Fatalf("InstallLibraryTemplate result = %+v, want %s", result, protocol.ResultCodeActivationFailed)
 	}
 	assertInstalledTemplateRemoved(t, server, keyType, templatestore.TemplateTypeGeneric)
 }
@@ -602,8 +602,8 @@ func TestInstallLibraryTemplateActivationVerificationUsesReloadReport(t *testing
 		KeyType:      keyType,
 		TemplateType: string(templatestore.TemplateTypeGeneric),
 	})
-	if result.Success || result.Code != "activation_failed" || !result.AlreadyExists {
-		t.Fatalf("InstallLibraryTemplate result = %+v, want activation_failed already_exists", result)
+	if result.Success || result.Code != protocol.ResultCodeActivationFailed || !result.AlreadyExists {
+		t.Fatalf("InstallLibraryTemplate result = %+v, want %s already_exists", result, protocol.ResultCodeActivationFailed)
 	}
 	if _, err := os.Stat(installedPath); err != nil {
 		t.Fatalf("existing installed template was removed: %v", err)

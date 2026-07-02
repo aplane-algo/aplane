@@ -68,6 +68,41 @@ const (
 	ErrCodeInternal             = "internal_error"
 )
 
+// Stable machine-readable result codes carried by admin result messages.
+//
+// These codes are result-local: they are not the central IPC error taxonomy
+// above, but producers and CLI consumers still share them through this package
+// so the lists cannot drift independently.
+const (
+	ResultCodeBackupFailed             = "backup_failed"
+	ResultCodeListBackupsFailed        = "list_backups_failed"
+	ResultCodeDeleteBackupFailed       = "delete_backup_failed"
+	ResultCodeRestorePreviewFailed     = "restore_preview_failed"
+	ResultCodeRestoreRateLimited       = "restore_rate_limited"
+	ResultCodeInvalidBackupArchive     = "invalid_backup_archive"
+	ResultCodeBackupArchiveNotFound    = "backup_archive_not_found"
+	ResultCodeBackupArchiveUnavailable = "backup_archive_unavailable"
+	ResultCodePrepareRestoreFailed     = "prepare_restore_failed"
+	ResultCodeScanBackupFailed         = "scan_backup_failed"
+	ResultCodeEmptyBackup              = "empty_backup"
+
+	ResultCodeListFailed           = "list_failed"
+	ResultCodeInvalidTemplateType  = "invalid_template_type"
+	ResultCodeInstallFailed        = "install_failed"
+	ResultCodeReloadFailed         = "reload_failed"
+	ResultCodeActivationFailed     = "activation_failed"
+	ResultCodeLibraryReadFailed    = "library_read_failed"
+	ResultCodeLibraryEntryNotFound = "library_entry_not_found"
+	ResultCodeTemplateStateFailed  = "template_state_failed"
+	ResultCodeTemplateNotFound     = "template_not_found"
+	ResultCodeDecryptFailed        = "decrypt_failed"
+	ResultCodeInvalidTemplate      = "invalid_template"
+	ResultCodeImportFailed         = "import_failed"
+	ResultCodeRemoveFailed         = "remove_failed"
+	ResultCodeKeyTypeInUse         = "key_type_in_use"
+	ResultCodeDeactivationFailed   = "deactivation_failed"
+)
+
 // IPCErrorCode derives a stable machine-readable code from an existing
 // human-readable protocol/admin error string.
 func IPCErrorCode(errMsg string) string {

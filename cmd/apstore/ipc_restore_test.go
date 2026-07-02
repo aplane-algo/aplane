@@ -211,7 +211,7 @@ func TestCmdRestoreApplyManagedPreviewsBeforeApply(t *testing.T) {
 func TestCmdRestoreApplyManagedStopsWhenPreviewFails(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		previewResult: protocol.RestorePreviewMessage{
-			Code:  "restore_preview_failed",
+			Code:  protocol.ResultCodeRestorePreviewFailed,
 			Error: "bad backup",
 		},
 	}

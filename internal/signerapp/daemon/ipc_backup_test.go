@@ -400,7 +400,7 @@ func TestIPCRestorePreviewRateLimitsFailures(t *testing.T) {
 		"kind": string(protocol.MessageKindResponse),
 		"type": protocol.MsgTypeRestorePreview,
 		"id":   "preview-rate-limited",
-		"code": "restore_rate_limited",
+		"code": protocol.ResultCodeRestoreRateLimited,
 	}) {
 		t.Fatalf("second preview response mismatch: %#v", secondMsgs[0])
 	}

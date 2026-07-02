@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 
@@ -160,8 +161,8 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 	if err != nil {
 		t.Fatalf("failed to send in-use deactivate IPC message: %v", err)
 	}
-	if inUseDisable.Success || inUseDisable.Code != "key_type_in_use" {
-		t.Fatalf("in-use deactivate result = %+v, want key_type_in_use failure", inUseDisable)
+	if inUseDisable.Success || inUseDisable.Code != protocol.ResultCodeKeyTypeInUse {
+		t.Fatalf("in-use deactivate result = %+v, want %s failure", inUseDisable, protocol.ResultCodeKeyTypeInUse)
 	}
 
 	output, err := apstore.RunWithInput("y\n", "template", "remove", keyType)
@@ -276,8 +277,8 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to send in-use composed deactivate IPC message: %v", err)
 	}
-	if inUseDisable.Success || inUseDisable.Code != "key_type_in_use" {
-		t.Fatalf("in-use composed deactivate result = %+v, want key_type_in_use failure", inUseDisable)
+	if inUseDisable.Success || inUseDisable.Code != protocol.ResultCodeKeyTypeInUse {
+		t.Fatalf("in-use composed deactivate result = %+v, want %s failure", inUseDisable, protocol.ResultCodeKeyTypeInUse)
 	}
 
 	output, err := apstore.RunWithInput("y\n", "template", "remove", keyType)

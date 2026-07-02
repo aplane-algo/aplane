@@ -76,13 +76,8 @@ func exitCodeForError(err error) int {
 		strings.Contains(msg, "signer is locked"),
 		strings.Contains(msg, "could not unlock"):
 		return apstoreExitUnavailable
-	case strings.Contains(msg, "rate_limited"):
-		return apstoreExitRateLimited
-	case strings.Contains(msg, "template_conflict"),
-		strings.Contains(msg, "key_already_exists"),
-		strings.Contains(msg, "provider collision"),
+	case strings.Contains(msg, "provider collision"),
 		strings.Contains(msg, "already registered as a built-in provider"),
-		strings.Contains(msg, "key_type_in_use"),
 		strings.Contains(msg, "key(s) still use it"):
 		return apstoreExitConflict
 	case strings.Contains(msg, "unsupported backup"),
@@ -112,22 +107,18 @@ func exitCodeForResultCode(code string) int {
 		protocol.ErrCodeSignerLocked,
 		protocol.ErrCodeNoIdentityBound:
 		return apstoreExitUnavailable
-	case "restore_rate_limited":
+	case protocol.ResultCodeRestoreRateLimited:
 		return apstoreExitRateLimited
-	case "template_conflict",
-		"key_already_exists",
-		"provider_collision",
-		"key_type_in_use",
-		"activation_failed",
-		"deactivation_failed",
-		"remove_failed":
+	case protocol.ResultCodeKeyTypeInUse,
+		protocol.ResultCodeActivationFailed,
+		protocol.ResultCodeDeactivationFailed,
+		protocol.ResultCodeRemoveFailed:
 		return apstoreExitConflict
 	case "verification_failed",
 		"invalid_backup",
 		"corrupt_archive",
 		"bad_export_passphrase",
-		"unsupported_backup_format",
-		"decrypt_failed":
+		"unsupported_backup_format":
 		return apstoreExitArchive
 	case protocol.ErrCodeInvalidMessageFormat,
 		protocol.ErrCodeInvalidAuthMessage,

@@ -11,6 +11,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
@@ -44,7 +45,7 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 	if err != nil {
 		return adminproto.BackupIdentityResult{
 			Success: false,
-			Code:    "backup_failed",
+			Code:    protocol.ResultCodeBackupFailed,
 			Error:   err.Error(),
 		}
 	}
@@ -69,7 +70,7 @@ func (s Service) ListBackups(ir *identity.Runtime) adminproto.ListBackupsResult 
 	items, err := backup.ListManagedBackups(s.Deps.KeyPaths(), ir.ID())
 	if err != nil {
 		return adminproto.ListBackupsResult{
-			Code:  "list_backups_failed",
+			Code:  protocol.ResultCodeListBackupsFailed,
 			Error: err.Error(),
 		}
 	}
@@ -94,7 +95,7 @@ func (s Service) DeleteBackup(ir *identity.Runtime, req adminproto.DeleteBackupR
 	if err != nil {
 		return adminproto.DeleteBackupResult{
 			Success: false,
-			Code:    "delete_backup_failed",
+			Code:    protocol.ResultCodeDeleteBackupFailed,
 			Error:   err.Error(),
 		}
 	}
@@ -109,7 +110,7 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 	archivePath, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), req.ArchivePath)
 	if err != nil {
 		return adminproto.RestorePreviewResult{
-			Code:  "restore_preview_failed",
+			Code:  protocol.ResultCodeRestorePreviewFailed,
 			Error: err.Error(),
 		}
 	}
@@ -117,7 +118,7 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 	if retryAfter := limiter.RetryAfter(ir.ID(), archivePath); retryAfter > 0 {
 		return adminproto.RestorePreviewResult{
 			ArchivePath: archivePath,
-			Code:        "restore_rate_limited",
+			Code:        protocol.ResultCodeRestoreRateLimited,
 			Error:       RestoreRateLimitedError(retryAfter),
 		}
 	}
@@ -126,7 +127,7 @@ func (s Service) PreviewRestore(ir *identity.Runtime, req adminproto.PreviewRest
 	if err != nil {
 		limiter.RecordFailure(ir.ID(), archivePath)
 		return adminproto.RestorePreviewResult{
-			Code:  "restore_preview_failed",
+			Code:  protocol.ResultCodeRestorePreviewFailed,
 			Error: err.Error(),
 		}
 	}
@@ -149,7 +150,7 @@ func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBacku
 	archivePath, err := backup.ResolveManagedBackupPath(s.Deps.KeyPaths(), ir.ID(), req.ArchivePath)
 	if err != nil {
 		return adminproto.RestoreBackupResult{
-			Code:  "invalid_backup_archive",
+			Code:  protocol.ResultCodeInvalidBackupArchive,
 			Error: err.Error(),
 		}
 	}
@@ -157,13 +158,13 @@ func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBacku
 		if os.IsNotExist(err) {
 			return adminproto.RestoreBackupResult{
 				ArchivePath: archivePath,
-				Code:        "backup_archive_not_found",
+				Code:        protocol.ResultCodeBackupArchiveNotFound,
 				Error:       fmt.Sprintf("backup archive not found: %s", archivePath),
 			}
 		}
 		return adminproto.RestoreBackupResult{
 			ArchivePath: archivePath,
-			Code:        "backup_archive_unavailable",
+			Code:        protocol.ResultCodeBackupArchiveUnavailable,
 			Error:       err.Error(),
 		}
 	}
@@ -171,7 +172,7 @@ func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBacku
 	if retryAfter := limiter.RetryAfter(ir.ID(), archivePath); retryAfter > 0 {
 		return adminproto.RestoreBackupResult{
 			ArchivePath: archivePath,
-			Code:        "restore_rate_limited",
+			Code:        protocol.ResultCodeRestoreRateLimited,
 			Error:       RestoreRateLimitedError(retryAfter),
 		}
 	}
@@ -181,7 +182,7 @@ func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBacku
 		limiter.RecordFailure(ir.ID(), archivePath)
 		return adminproto.RestoreBackupResult{
 			ArchivePath: archivePath,
-			Code:        "prepare_restore_failed",
+			Code:        protocol.ResultCodePrepareRestoreFailed,
 			Error:       err.Error(),
 		}
 	}
@@ -195,7 +196,7 @@ func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBacku
 			limiter.RecordFailure(ir.ID(), archivePath)
 			return adminproto.RestoreBackupResult{
 				ArchivePath: archivePath,
-				Code:        "scan_backup_failed",
+				Code:        protocol.ResultCodeScanBackupFailed,
 				Error:       err.Error(),
 			}
 		}
@@ -204,7 +205,7 @@ func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBacku
 		limiter.RecordFailure(ir.ID(), archivePath)
 		return adminproto.RestoreBackupResult{
 			ArchivePath: archivePath,
-			Code:        "empty_backup",
+			Code:        protocol.ResultCodeEmptyBackup,
 			Error:       fmt.Sprintf("no .apb files found in backup: %s", archivePath),
 		}
 	}
