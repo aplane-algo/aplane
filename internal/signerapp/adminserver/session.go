@@ -6,9 +6,11 @@ package adminserver
 import (
 	"context"
 	"encoding/json"
-	"github.com/aplane-algo/aplane/internal/adminproto"
+	"fmt"
+	"log/slog"
 	"sync"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -140,7 +142,8 @@ func (s *Session) Authenticate() bool {
 // connection authenticated, failed, or handled a one-shot bootstrap request.
 func (s *Session) AuthenticateOutcome() AuthOutcome {
 	authReq := protocol.AuthRequiredMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAuthRequired},
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuthRequired},
+		ProtocolVersion: protocol.CurrentAdminProtocolVersion(),
 	}
 	if err := s.WriteJSON(authReq); err != nil {
 		return AuthOutcomeFailed
@@ -168,6 +171,11 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		var authMsg protocol.AuthMessage
 		if err := json.Unmarshal(raw, &authMsg); err != nil {
 			s.sendAuthResult(false, protocol.ErrCodeInvalidAuthMessage, "invalid auth message format")
+			return AuthOutcomeFailed
+		}
+		if ok, errMsg := validateAdminProtocolVersion(authMsg.ProtocolVersion); !ok {
+			authMsg.Passphrase.Zero()
+			s.sendAuthResult(false, protocol.ErrCodeInvalidAuthMessage, errMsg)
 			return AuthOutcomeFailed
 		}
 
@@ -385,6 +393,22 @@ func (s *Session) SetPreboundIdentityID(identityID string) {
 	if identityID != "" {
 		s.context.TargetIdentityID = identityID
 	}
+}
+
+func validateAdminProtocolVersion(clientVersion *protocol.ProtocolVersion) (bool, string) {
+	if clientVersion == nil {
+		return true, ""
+	}
+	if clientVersion.Major != protocol.AdminProtocolVersionMajor {
+		return false, fmt.Sprintf("admin protocol major version mismatch: client=%d server=%d",
+			clientVersion.Major, protocol.AdminProtocolVersionMajor)
+	}
+	if clientVersion.Minor != protocol.AdminProtocolVersionMinor {
+		slog.Warn("admin protocol minor version mismatch",
+			"client_minor", clientVersion.Minor,
+			"server_minor", protocol.AdminProtocolVersionMinor)
+	}
+	return true, ""
 }
 
 func (s *Session) reconcileAuthIdentity(authIdentityID string) (string, bool) {

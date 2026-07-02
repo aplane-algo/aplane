@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
+	"github.com/aplane-algo/aplane/internal/version"
 )
 
 func (s Service) Health(ir *identity.Runtime, sshEnabled, ipcEnabled bool) *signerapi.HealthResponse {
@@ -24,6 +25,8 @@ func (s Service) Health(ir *identity.Runtime, sshEnabled, ipcEnabled bool) *sign
 	return &signerapi.HealthResponse{
 		Status:          status,
 		Service:         "Signer",
+		ProtocolVersion: signerapi.CurrentProtocolVersion(),
+		BuildVersion:    version.String(),
 		SignerLocked:    locked,
 		ReadyForSigning: readyForSigning,
 		SSHEnabled:      sshEnabled,
@@ -55,6 +58,8 @@ func (s Service) Status(ir *identity.Runtime) *signerapi.StatusResponse {
 	return &signerapi.StatusResponse{
 		IdentityID:          identityID,
 		NodeRole:            nodeRole,
+		ProtocolVersion:     signerapi.CurrentProtocolVersion(),
+		BuildVersion:        version.String(),
 		State:               state,
 		SignerLocked:        locked,
 		ReadyForSigning:     readyForSigning,

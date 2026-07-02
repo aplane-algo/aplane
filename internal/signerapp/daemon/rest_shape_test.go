@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/aplane-algo/aplane/internal/version"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -30,6 +31,8 @@ func TestReadEndpointJSONShapes(t *testing.T) {
 			want: map[string]any{
 				"status":            "healthy",
 				"service":           "Signer",
+				"protocol_version":  map[string]any{"major": float64(1), "minor": float64(0)},
+				"build_version":     version.String(),
 				"signer_locked":     false,
 				"ready_for_signing": true,
 				"ssh_enabled":       false,
@@ -45,6 +48,8 @@ func TestReadEndpointJSONShapes(t *testing.T) {
 			want: map[string]any{
 				"identity_id":           "default",
 				"node_role":             "signer",
+				"protocol_version":      map[string]any{"major": float64(1), "minor": float64(0)},
+				"build_version":         version.String(),
 				"state":                 "unlocked",
 				"signer_locked":         false,
 				"ready_for_signing":     true,

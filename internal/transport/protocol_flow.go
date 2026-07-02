@@ -78,8 +78,9 @@ func authenticate(conn adminProtocolConn, passphrase string, timeout time.Durati
 	}
 
 	authMsg := protocol.AuthMessage{
-		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeAuth},
-		Passphrase:  protocol.NewSensitiveBytes(passphrase),
+		BaseMessage:     protocol.BaseMessage{Type: protocol.MsgTypeAuth},
+		Passphrase:      protocol.NewSensitiveBytes(passphrase),
+		ProtocolVersion: ptrProtocolVersion(protocol.CurrentAdminProtocolVersion()),
 	}
 	if err := conn.WriteJSON(authMsg); err != nil {
 		return fmt.Errorf("failed to send auth message: %w", err)
@@ -111,6 +112,10 @@ func authenticate(conn adminProtocolConn, passphrase string, timeout time.Durati
 	}
 
 	return nil
+}
+
+func ptrProtocolVersion(v protocol.ProtocolVersion) *protocol.ProtocolVersion {
+	return &v
 }
 
 func unlockWithDispatcher(dispatcher *dispatcher, passphrase string, timeout time.Duration) (*protocol.UnlockResultMessage, error) {

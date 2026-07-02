@@ -7,10 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/aplane-algo/aplane/internal/adminproto"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
@@ -417,6 +418,9 @@ func TestSessionAuthenticateSuccess(t *testing.T) {
 	if authReq.Type != protocol.MsgTypeAuthRequired {
 		t.Fatalf("first write type = %q, want %q", authReq.Type, protocol.MsgTypeAuthRequired)
 	}
+	if authReq.ProtocolVersion != protocol.CurrentAdminProtocolVersion() {
+		t.Fatalf("auth_required protocol_version = %+v, want %+v", authReq.ProtocolVersion, protocol.CurrentAdminProtocolVersion())
+	}
 
 	var result protocol.AuthResultMessage
 	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
@@ -748,6 +752,39 @@ func TestSessionAuthenticateResolveIdentityFailureIsGeneric(t *testing.T) {
 	}
 	if result.Success || result.Error != "authentication failed" || result.Code != protocol.ErrCodeAuthenticationFailed {
 		t.Fatalf("auth result = %+v, want generic authentication failure", result)
+	}
+}
+
+func TestSessionAuthenticateRejectsAdminProtocolMajorMismatch(t *testing.T) {
+	clientVersion := protocol.ProtocolVersion{Major: protocol.AdminProtocolVersionMajor + 1}
+	authMsg, err := json.Marshal(protocol.AuthMessage{
+		BaseMessage:     protocol.BaseMessage{Kind: protocol.MessageKindRequest, Type: protocol.MsgTypeAuth},
+		Passphrase:      protocol.NewSensitiveBytes("secret"),
+		ProtocolVersion: &clientVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn := &queueConn{reads: [][]byte{authMsg}}
+	session := NewSession(conn, stubServices{}.deps())
+
+	if session.Authenticate() {
+		t.Fatal("Authenticate() = true, want false")
+	}
+	if len(conn.writes) != 2 {
+		t.Fatalf("write count = %d, want 2", len(conn.writes))
+	}
+
+	var result protocol.AuthResultMessage
+	if err := json.Unmarshal(conn.writes[1], &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || result.Code != protocol.ErrCodeInvalidAuthMessage {
+		t.Fatalf("auth result = %+v, want invalid auth protocol failure", result)
+	}
+	if !strings.Contains(result.Error, "admin protocol major version mismatch") {
+		t.Fatalf("auth result error = %q, want major version mismatch", result.Error)
 	}
 }
 

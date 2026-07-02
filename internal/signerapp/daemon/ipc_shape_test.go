@@ -7,11 +7,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +20,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
 
@@ -43,8 +44,9 @@ func TestAuthenticateClientRejectsMissingKind(t *testing.T) {
 		t.Fatalf("message count = %d, want 2", len(msgs))
 	}
 	if !reflectJSONSubset(msgs[0], map[string]any{
-		"kind": string(protocol.MessageKindNotification),
-		"type": protocol.MsgTypeAuthRequired,
+		"kind":             string(protocol.MessageKindNotification),
+		"type":             protocol.MsgTypeAuthRequired,
+		"protocol_version": map[string]any{"major": float64(1), "minor": float64(0)},
 	}) {
 		t.Fatalf("auth_required shape mismatch: %#v", msgs[0])
 	}
@@ -89,9 +91,10 @@ func TestAuthenticateClientEmitsAuthHandshakeMessages(t *testing.T) {
 	}
 
 	if !reflectJSONSubset(msgs[0], map[string]any{
-		"kind": string(protocol.MessageKindNotification),
-		"type": protocol.MsgTypeAuthRequired,
-		"id":   "",
+		"kind":             string(protocol.MessageKindNotification),
+		"type":             protocol.MsgTypeAuthRequired,
+		"id":               "",
+		"protocol_version": map[string]any{"major": float64(1), "minor": float64(0)},
 	}) {
 		t.Fatalf("auth_required shape mismatch: %#v", msgs[0])
 	}
@@ -428,7 +431,7 @@ func (c *ipcJSONRecorderConn) messages(t *testing.T) []map[string]any {
 
 func reflectJSONSubset(got map[string]any, want map[string]any) bool {
 	for k, v := range want {
-		if got[k] != v {
+		if !reflect.DeepEqual(got[k], v) {
 			return false
 		}
 	}

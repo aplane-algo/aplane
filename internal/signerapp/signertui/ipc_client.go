@@ -133,12 +133,14 @@ func (c *IPCClient) Disconnect() {
 
 // SendAuth sends an authentication request
 func (c *IPCClient) SendAuth(passphrase string) error {
+	protocolVersion := CurrentAdminProtocolVersion()
 	msg := AuthMessage{
 		BaseMessage: BaseMessage{
 			Type: MsgTypeAuth,
 			ID:   fmt.Sprintf("auth-%d", time.Now().UnixNano()),
 		},
-		Passphrase: SensitiveBytes([]byte(passphrase)),
+		Passphrase:      SensitiveBytes([]byte(passphrase)),
+		ProtocolVersion: &protocolVersion,
 	}
 	return c.sendMessage(msg)
 }

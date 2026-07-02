@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -225,6 +226,10 @@ func TestIPCAuthenticateHappyPath(t *testing.T) {
 		}
 		if auth.Type != protocol.MsgTypeAuth || auth.Kind != protocol.MessageKindRequest || string(auth.Passphrase) != "secret" {
 			errCh <- errors.New("unexpected auth request payload")
+			return
+		}
+		if auth.ProtocolVersion == nil || *auth.ProtocolVersion != protocol.CurrentAdminProtocolVersion() {
+			errCh <- fmt.Errorf("auth protocol_version = %+v, want %+v", auth.ProtocolVersion, protocol.CurrentAdminProtocolVersion())
 			return
 		}
 

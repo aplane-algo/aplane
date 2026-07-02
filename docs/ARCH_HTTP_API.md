@@ -344,6 +344,9 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 - `identity_id`: authenticated identity ID resolved from the `aplane` token
 - `node_role`: optional signer node role (`signer` or `sentry`); omitted when unset
+- `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
+  is diagnostic surfacing, not capability negotiation
+- `build_version`: apsigner build string for skew diagnosis
 - `state`: lock state (`locked`, `unlocked`, or `unknown`)
 - `signer_locked`
 - `ready_for_signing`
@@ -413,6 +416,9 @@ rather than creating key material.
 
 - `status` (`healthy` or `degraded`)
 - `service`
+- `protocol_version`: signer HTTP API protocol version `{major, minor}`; this
+  is diagnostic surfacing, not capability negotiation
+- `build_version`: apsigner build string for skew diagnosis
 - `signer_locked`
 - `ready_for_signing`
 - `ssh_enabled`

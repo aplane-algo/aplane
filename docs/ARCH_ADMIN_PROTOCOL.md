@@ -42,6 +42,11 @@ only the bound identity.
 Transport notes:
 
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
+- `auth_required` carries the server admin protocol version as
+  `protocol_version:{major,minor}`; clients should send their version in
+  `auth.protocol_version`, omitted versions are accepted as legacy/unknown,
+  explicit major-version mismatches are rejected, and minor-version mismatches
+  are logged for skew diagnosis,
 - post-auth admin connections use one dispatcher-owned reader in `internal/transport`,
 - the dispatcher routes by envelope semantics (`kind` + `id`) rather than message-type allowlists,
 - the generic client helpers in `internal/transport` expect `auth_required` for
@@ -193,7 +198,7 @@ Server to Client:
 
 ### Session and Identity
 
-- `auth`: `passphrase`, optional `identity_id`
+- `auth`: `passphrase`, optional `identity_id`, optional `protocol_version`
 - `auth_result`: `success`, optional `code`, optional `error`
 - `unlock` / `unlock_result`: `passphrase` -> `success`, optional `key_count`, `code`, `error`
 - `lock_identity`: optional `reason` -> `lock_identity_result`: `success`, optional `code`, `error`; authorizes `identity.lock`, calls the server-side lock path, and normal `signer_locked` notifications remain the state-change signal

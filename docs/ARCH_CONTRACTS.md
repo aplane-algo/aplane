@@ -1985,8 +1985,9 @@ Cross-SDK compatibility-bearing behavior:
   dummy/passthrough slots locally, and then using `/sign/component` plus
   `/sign/assemble`. Final guarded assembly remains signer-owned.
 - SDKs expose the authenticated `/status` DTO, including
-  `keyset_revision` and `approval_wait_seconds`, and include the matching
-  signer API fixture in their contract suites.
+  `protocol_version`, `build_version`, `keyset_revision`, and
+  `approval_wait_seconds`, and include the matching signer API fixture in their
+  contract suites.
 - SDKs decode non-2xx HTTP bodies as `signerapi.ErrorResponse` with top-level
   `error` plus a stable machine-readable `code`
   (`pkg/signerapi/error_codes.go`). Clients classify failures by `code`

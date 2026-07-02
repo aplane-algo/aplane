@@ -15,6 +15,22 @@ const (
 	MessageKindNotification MessageKind = "notification"
 )
 
+const (
+	AdminProtocolVersionMajor = 1
+	AdminProtocolVersionMinor = 0
+)
+
+// ProtocolVersion is the admin IPC/SSH protocol version shape surfaced during
+// the auth hello. It is diagnostic; only explicit major mismatches are rejected.
+type ProtocolVersion struct {
+	Major int `json:"major"`
+	Minor int `json:"minor"`
+}
+
+func CurrentAdminProtocolVersion() ProtocolVersion {
+	return ProtocolVersion{Major: AdminProtocolVersionMajor, Minor: AdminProtocolVersionMinor}
+}
+
 // Admin protocol message type constants
 const (
 	// Authentication message types (sent before any other messages)
@@ -134,6 +150,7 @@ type BaseMessage struct {
 // Client must respond with AuthMessage before any other operations
 type AuthRequiredMessage struct {
 	BaseMessage
+	ProtocolVersion ProtocolVersion `json:"protocol_version"`
 }
 
 // AuthMessage is sent by apadmin to authenticate the IPC session.
@@ -141,8 +158,9 @@ type AuthRequiredMessage struct {
 // the current product identity (backward compatible with older clients).
 type AuthMessage struct {
 	BaseMessage
-	Passphrase SensitiveBytes `json:"passphrase"`
-	IdentityID string         `json:"identity_id,omitempty"`
+	Passphrase      SensitiveBytes   `json:"passphrase"`
+	IdentityID      string           `json:"identity_id,omitempty"`
+	ProtocolVersion *ProtocolVersion `json:"protocol_version,omitempty"`
 }
 
 // Sign-request cancellation reasons carried on SignRequestCanceled

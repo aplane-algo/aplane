@@ -22,6 +22,7 @@ type GroupSignResponse = pub.GroupSignResponse
 type GroupPlanResponse = pub.GroupPlanResponse
 type GroupSimulateResponse = pub.GroupSimulateResponse
 type ErrorResponse = pub.ErrorResponse
+type ProtocolVersion = pub.ProtocolVersion
 type ComponentSignRole = pub.ComponentSignRole
 type ComponentSignRequest = pub.ComponentSignRequest
 type ComponentSignature = pub.ComponentSignature
@@ -57,6 +58,10 @@ type AdminSyncSentryReferencesRequest = pub.AdminSyncSentryReferencesRequest
 type SyncedSentryReferenceInfo = pub.SyncedSentryReferenceInfo
 type AdminSyncSentryReferencesResponse = pub.AdminSyncSentryReferencesResponse
 
+func CurrentProtocolVersion() ProtocolVersion {
+	return pub.CurrentProtocolVersion()
+}
+
 const (
 	RequestModeSign         = pub.RequestModeSign
 	RequestModePassthrough  = pub.RequestModePassthrough
@@ -66,6 +71,8 @@ const (
 	ComponentSignRoleUser   = pub.ComponentSignRoleUser
 	ComponentSignRoleSentry = pub.ComponentSignRoleSentry
 	SigningFlowSentry1      = pub.SigningFlowSentry1
+	ProtocolVersionMajor    = pub.ProtocolVersionMajor
+	ProtocolVersionMinor    = pub.ProtocolVersionMinor
 
 	ErrCodeBadRequest        = pub.ErrCodeBadRequest
 	ErrCodeUnauthorized      = pub.ErrCodeUnauthorized
