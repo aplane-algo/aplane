@@ -253,15 +253,16 @@ type ShutdownResult struct {
 	Message string `json:"message,omitempty"`
 }
 
-// Callbacks that plugins can make to apshell
+// Callback method names reserved for plugin-initiated requests. The production
+// manager currently installs no handler, so inbound requests fail closed with
+// method-not-found unless a host explicitly wires one.
 const (
-	CallbackGetAccount      = "getAccount"
-	CallbackListAccounts    = "listAccounts"
-	CallbackGetBalance      = "getBalance"
-	CallbackGetAssetInfo    = "getAssetInfo"
-	CallbackGetAppInfo      = "getAppInfo"
-	CallbackSignTransaction = "signTransaction"
-	CallbackLog             = "log"
+	CallbackGetAccount   = "getAccount"
+	CallbackListAccounts = "listAccounts"
+	CallbackGetBalance   = "getBalance"
+	CallbackGetAssetInfo = "getAssetInfo"
+	CallbackGetAppInfo   = "getAppInfo"
+	CallbackLog          = "log"
 )
 
 // GetAccountParams for account info callback
@@ -332,17 +333,6 @@ type GetAppInfoResult struct {
 	AppID       uint64                 `json:"appId"`
 	Creator     string                 `json:"creator,omitempty"`
 	GlobalState map[string]interface{} `json:"globalState,omitempty"`
-}
-
-// SignTransactionParams asks the host to sign one base64-encoded unsigned transaction.
-type SignTransactionParams struct {
-	Encoded     string `json:"encoded"`
-	Description string `json:"description,omitempty"`
-}
-
-// SignTransactionResult returns one base64-encoded signed transaction.
-type SignTransactionResult struct {
-	Signed string `json:"signed"`
 }
 
 // LogParams for logging callback

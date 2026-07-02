@@ -411,16 +411,6 @@ func TestCallbackPayloadJSONShapes(t *testing.T) {
 			in:   GetAppInfoResult{AppID: 1234, Creator: "ADDR"},
 			want: `{"appId":1234,"creator":"ADDR"}`,
 		},
-		{
-			name: "sign transaction params",
-			in:   SignTransactionParams{Encoded: "TXN", Description: "Sign one transaction"},
-			want: `{"encoded":"TXN","description":"Sign one transaction"}`,
-		},
-		{
-			name: "sign transaction result",
-			in:   SignTransactionResult{Signed: "SIGNED"},
-			want: `{"signed":"SIGNED"}`,
-		},
 	}
 
 	for _, tt := range tests {

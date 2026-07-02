@@ -234,6 +234,38 @@ func TestReadLoopDoesNotTreatInboundRequestAsPendingResponse(t *testing.T) {
 	}
 }
 
+func TestInboundSignTransactionCallbackFailsClosedWithoutHandler(t *testing.T) {
+	serverToClientReader, serverToClientWriter := io.Pipe()
+	clientToServerReader, clientToServerWriter := io.Pipe()
+	defer func() { _ = serverToClientReader.Close() }()
+	defer func() { _ = clientToServerReader.Close() }()
+
+	client := NewClient(serverToClientReader, clientToServerWriter)
+	client.Start()
+
+	_, _ = serverToClientWriter.Write([]byte(`{"jsonrpc":"2.0","method":"signTransaction","params":{"encoded":"TXN"},"id":99}` + "\n"))
+
+	var response struct {
+		Error *Error  `json:"error"`
+		ID    float64 `json:"id"`
+	}
+	if err := json.NewDecoder(clientToServerReader).Decode(&response); err != nil {
+		t.Fatalf("callback response decode error: %v", err)
+	}
+	if response.ID != 99 {
+		t.Fatalf("callback response id = %v, want 99", response.ID)
+	}
+	if response.Error == nil {
+		t.Fatal("callback response error = nil, want method-not-found")
+	}
+	if response.Error.Code != MethodNotFound {
+		t.Fatalf("callback response code = %d, want %d", response.Error.Code, MethodNotFound)
+	}
+	if !strings.Contains(response.Error.Message, "signTransaction") {
+		t.Fatalf("callback response message = %q, want method name", response.Error.Message)
+	}
+}
+
 func TestNotifyWritesSingleJSONLineFrame(t *testing.T) {
 	writer := &recordingWriter{}
 	client := NewClient(&bytes.Buffer{}, writer)

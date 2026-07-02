@@ -684,6 +684,16 @@ method:
 
 - `signTransactions`
 
+There is intentionally no plugin→host signing callback. In particular,
+`signTransaction` is not a supported method: a plugin may not ask apshell to
+sign arbitrary bytes on its behalf. Plugins that own signing material use
+`groupMode:"presign-plan"` and implement the host→plugin `signTransactions`
+method above; plugins that need fully self-signed groups use
+`groupMode:"pregrouped-signed"` with the mandatory decoded review path. Any
+future plugin→host signing mechanism must be designed around mandatory decoded
+review and fail-closed non-interactive behavior before it is added to the wire
+protocol.
+
 ### Execution Context
 
 APlane Shell provides execution context to plugins via the `context` field. The
