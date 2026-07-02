@@ -627,7 +627,11 @@ unit-test: compile-docassets
 contract-test:
 	@echo "Running signer API contract tests..."
 	@echo "== Go signer API =="
-	go test -v -run 'TestSignerAPIContract(FixturesRoundTrip|FixtureManifest)' ./pkg/signerapi
+	go test -v -run 'TestSignerAPIContract' ./pkg/signerapi
+
+contract-sync-check:
+	@echo "Checking signer API contract fixtures against aplanesdk..."
+	@scripts/check-signerapi-contracts-sync.sh
 
 # Integration test package and go test flags. Override for focused runs, e.g.:
 #   APLANE_INTEGRATION_NETWORK=localnet make integration-test INTEGRATION_GO_ARGS='-count=1 -timeout 25m -v -run TestName'
