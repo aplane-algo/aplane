@@ -193,7 +193,7 @@ func New(cfg Config) *Runtime {
 		persistDecommission: cfg.PersistDecommission,
 	}
 
-	rt.SetOnLock(ir.performLock)
+	rt.SetOnLock(ir.performLockCleanup)
 	return ir
 }
 
@@ -373,7 +373,9 @@ func (ir *Runtime) SetUnlocked() {
 
 // Lock transitions this identity to the locked state.
 func (ir *Runtime) Lock() {
-	ir.lockRuntime.Lock()
+	if ir.lockRuntime.Lock() {
+		ir.notifyLocked()
+	}
 }
 
 // TryUnlock attempts to unlock with the given passphrase.
@@ -384,7 +386,11 @@ func (ir *Runtime) TryUnlock(passphrase []byte, onUnlocked func()) (bool, int, s
 	if ir.decommissioned.Load() {
 		return false, 0, ErrDecommissioned.Error()
 	}
-	return ir.lockRuntime.TryUnlock(ir.performUnlock(passphrase), onUnlocked)
+	ok, keyCount, errMsg := ir.lockRuntime.TryUnlock(ir.performUnlock(passphrase), onUnlocked)
+	if !ok && errMsg == signerruntime.LockedDuringUnlockMessage {
+		ir.notifyLocked()
+	}
+	return ok, keyCount, errMsg
 }
 
 // --- Approval ---
@@ -527,22 +533,28 @@ func (ir *Runtime) BeginOperation() (func(), error) {
 // pending approvals are left untouched.
 func (ir *Runtime) Decommission() error {
 	ir.lifecycleMu.Lock()
-	defer ir.lifecycleMu.Unlock()
 
 	if ir.decommissioned.Load() {
+		ir.lifecycleMu.Unlock()
 		return nil
 	}
 	if ir.persistDecommission != nil {
 		if err := ir.persistDecommission(ir.id); err != nil {
+			ir.lifecycleMu.Unlock()
 			return err
 		}
 	}
 	ir.decommissioned.Store(true)
 	ir.FailAllPendingApprovals("identity decommissioned")
+	notifyLocked := false
 	if ir.IsUnlocked() {
-		ir.Lock()
+		notifyLocked = ir.lockRuntime.Lock()
 	}
 	ir.StopKeyWatcher()
+	ir.lifecycleMu.Unlock()
+	if notifyLocked {
+		ir.notifyLocked()
+	}
 	return nil
 }
 
@@ -935,7 +947,7 @@ func (ir *Runtime) Destroy() {
 
 // --- Internal ---
 
-func (ir *Runtime) performLock() {
+func (ir *Runtime) performLockCleanup() {
 	// Watcher stays running — it will mark dirty instead of reloading while locked.
 	// StopKeyWatcher is only called on shutdown via Destroy().
 
@@ -961,7 +973,9 @@ func (ir *Runtime) performLock() {
 	ir.keysLock.Unlock()
 
 	fmt.Println("🔒 Signer locked - sensitive data cleared from memory")
+}
 
+func (ir *Runtime) notifyLocked() {
 	if ir.onLocked != nil {
 		ir.onLocked()
 	}

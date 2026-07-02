@@ -15,6 +15,8 @@ const (
 	SignerStateUnlocked
 )
 
+const LockedDuringUnlockMessage = "signer locked during unlock"
+
 func (s SignerState) String() string {
 	switch s {
 	case SignerStateLocked:
@@ -72,8 +74,10 @@ func (r *Runtime) SetUnlocked() {
 	r.stateMu.Unlock()
 }
 
-// Lock transitions the runtime to locked and invokes the configured lock callback once.
-func (r *Runtime) Lock() {
+// Lock transitions the runtime to locked and invokes the configured lock
+// callback once. It reports whether this call performed an unlocked->locked
+// transition.
+func (r *Runtime) Lock() bool {
 	r.stateMu.Lock()
 	wasUnlocked := r.state == SignerStateUnlocked
 	r.state = SignerStateLocked
@@ -82,12 +86,13 @@ func (r *Runtime) Lock() {
 	r.stateMu.Unlock()
 
 	if !wasUnlocked {
-		return
+		return false
 	}
 
 	if onLock != nil {
 		onLock()
 	}
+	return true
 }
 
 // TryUnlock runs the supplied unlock function and, on success, transitions to
@@ -111,7 +116,7 @@ func (r *Runtime) TryUnlock(unlockFn func() (int, error), onUnlocked func()) (bo
 		if onLock != nil {
 			onLock()
 		}
-		return false, 0, "signer locked during unlock"
+		return false, 0, LockedDuringUnlockMessage
 	}
 	r.state = SignerStateUnlocked
 	r.stateMu.Unlock()

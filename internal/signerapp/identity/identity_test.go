@@ -364,6 +364,46 @@ func TestDecommission(t *testing.T) {
 	}
 }
 
+func TestDecommissionNotifiesLockedAfterLifecycleUnlock(t *testing.T) {
+	notifyErr := make(chan error, 1)
+	var ir *Runtime
+	ir = New(Config{
+		ID:            "test",
+		Authenticator: auth.NewTokenAuthenticator("tok"),
+		OnLocked: func() {
+			release, err := ir.BeginOperation()
+			if release != nil {
+				release()
+			}
+			notifyErr <- err
+		},
+	})
+	ir.SetUnlocked()
+
+	decommissionDone := make(chan error, 1)
+	go func() {
+		decommissionDone <- ir.Decommission()
+	}()
+
+	select {
+	case err := <-decommissionDone:
+		if err != nil {
+			t.Fatalf("Decommission() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Decommission() did not return; locked notification may be running under lifecycleMu")
+	}
+
+	select {
+	case err := <-notifyErr:
+		if err != ErrDecommissioned {
+			t.Fatalf("BeginOperation() from locked notification error = %v, want ErrDecommissioned", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("locked notification did not run")
+	}
+}
+
 func TestDecommissionPersistErrorLeavesRuntimeActive(t *testing.T) {
 	injected := errors.New("persist failed")
 	ir := New(Config{

@@ -6,9 +6,13 @@ package signing
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 )
+
+const algodResponseHeaderTimeout = 30 * time.Second
 
 // GetMinFeeFromAlgod fetches the current minimum fee from an algod node.
 // Returns DefaultMinFee (1000) if the client is nil or the request fails.
@@ -37,10 +41,20 @@ func CreateAlgodClient(algodURL, algodToken string) (*algod.Client, error) {
 		return nil, nil
 	}
 
-	client, err := algod.MakeClient(algodURL, algodToken)
+	client, err := algod.MakeClientWithTransport(algodURL, algodToken, nil, algodHTTPTransport())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create algod client: %w", err)
 	}
 
 	return client, nil
+}
+
+func algodHTTPTransport() http.RoundTripper {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultTransport
+	}
+	cloned := transport.Clone()
+	cloned.ResponseHeaderTimeout = algodResponseHeaderTimeout
+	return cloned
 }
