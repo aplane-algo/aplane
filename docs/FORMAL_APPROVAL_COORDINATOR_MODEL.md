@@ -225,10 +225,10 @@ signing and token request to not-approved with `reason`, clearing the pending
 maps atomically; requests that already terminated keep their outcome. This is the
 mechanism behind lifecycle invariant
 [L8](FORMAL_LIFECYCLE_MODEL.md): on successful decommission the runtime marks
-itself decommissioned (after which new approval requests are rejected up front,
-per L3) and then fails the pending set, so no approval pending at the mark point
-can still resolve `approved`. The same event also fires on operator-client
-disconnect.
+itself decommissioned, new approval requests are rejected up front, queued
+requests recheck the mark before delivery, and then-pending requests are failed,
+so no approval pending at the mark point can still resolve `approved`. The same
+event also fires on operator-client disconnect.
 
 ## Approval Input Refinement
 
@@ -261,10 +261,11 @@ derived value — is the composition step deferred to Track B3.
 - At most one operator client is connected at a time (single-operator product);
   `has_client` is a boolean and the model does not represent multiple competing
   approvers.
-- The runtime rejects new approval requests once decommissioned (lifecycle L3 and
-  the `decommissioned` check in
-  `Runtime.RequestSigningApprovalResponseContext`), so fail-all on decommission
-  races no new arrivals after the mark.
+- The runtime rejects new approval requests once decommissioned (lifecycle L3),
+  and the coordinator receives the runtime decommission predicate at
+  construction. It checks before entering the delivery queue and again after
+  acquiring the delivery turn, so queued requests cannot be delivered after the
+  mark.
 - Channel delivery is non-blocking and at-most-once: the send helper delivers one
   value and closes the channel, so a late operator response after a terminal
   outcome is discarded rather than blocking or double-resolving.
@@ -288,7 +289,7 @@ derived value — is the composition step deferred to Track B3.
 | AP3 | `internal/signerapp/approval/coordinator.go::HandleSignResponse` (keyed by `msg.ID`) | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorMismatchedResponseIDDoesNotSatisfyActiveRequest` |
 | AP4 | `internal/signerapp/approval/coordinator.go::acquireDeliveryTurnContext`; `::releaseDeliveryTurn` (`deliveryInFlight`, `deliveryQueue`) | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorSerializesSigningRequests`; `::TestCoordinatorSerializesAcrossApprovalTypes` |
 | AP5 | `internal/signerapp/approval/coordinator.go::CancelSignRequest`; `::BeginSignRequest`; `::consumeCanceledSignRequest` | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorCancelSignRequestBeforeApprovalIsPending`; `::TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn`; `::TestCoordinatorCancelSignRequestCancelsConcurrentSameIDRequests`; `::TestCoordinatorCancelSignRequestUnknownIsNotFound` |
-| AP6 | `internal/signerapp/approval/coordinator.go::FailAllPendingRequests`; raised by `internal/signerapp/identity/runtime.go::Decommission` (`runtime.go:536`) and `internal/signerapp/daemon/ipc.go:163` | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorFailAllClearsPendingMaps`; `::TestCoordinatorFailAllUnblocksPendingRequest`; `internal/signerapp/daemon/hub_test.go::TestFailAllPendingRequests`; `internal/signerapp/identity/identity_test.go::TestDecommissionFailsPendingApprovals` |
+| AP6 | `internal/signerapp/approval/coordinator.go::NewWithDecommission`; `::RequestSigningApprovalResponseContext` and `::RequestTokenProvisioningContext` decommission rechecks; `::FailAllPendingRequests`; raised by `internal/signerapp/identity/runtime.go::Decommission` (`runtime.go:536`) and `internal/signerapp/daemon/ipc.go:163` | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorFailAllClearsPendingMaps`; `::TestCoordinatorFailAllUnblocksPendingRequest`; `::TestCoordinatorQueuedSigningApprovalFailsAfterDecommission`; `internal/signerapp/daemon/hub_test.go::TestFailAllPendingRequests`; `internal/signerapp/identity/identity_test.go::TestDecommissionFailsPendingApprovals` |
 
 ## Machine-Checkable Successor
 

@@ -203,12 +203,15 @@ func BuildIdentityRuntime(reg *identity.Registry, opts IdentityBuildOptions, hoo
 // identity runtime using the process hooks.
 func WireApprovalCoordinator(ir *identity.Runtime, hooks IdentityBuildHooks) {
 	identityID := ir.ID()
-	coordinator := approval.New(
+	coordinator := approval.NewWithDecommission(
 		func() bool {
 			if hooks.HasAdminClient == nil {
 				return false
 			}
 			return hooks.HasAdminClient(identityID)
+		},
+		func() bool {
+			return ir.IsDecommissioned()
 		},
 		func(msg *approval.SignRequest) bool {
 			if hooks.SendSignRequest == nil {

@@ -6,7 +6,9 @@ package approval
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -203,6 +205,103 @@ func TestCoordinatorCancelSignRequestUnknownIsNotFound(t *testing.T) {
 
 	if got := c.CancelSignRequest("sign-missing", SignRequestCancelReasonClientCanceled); got.State != SignRequestCancelStateNotFound {
 		t.Fatalf("CancelSignRequest() state = %q, want not_found", got.State)
+	}
+}
+
+func TestCoordinatorRememberedCancelEvictsOldest(t *testing.T) {
+	c := New(
+		func() bool { return true },
+		func(req *SignRequest) bool { return true },
+		nil,
+		nil,
+	)
+
+	c.pendingRequestsLock.Lock()
+	defer c.pendingRequestsLock.Unlock()
+	for i := 0; i < maxRememberedCanceledSignRequests+1; i++ {
+		c.rememberCanceledSignRequestLocked(fmt.Sprintf("sign-%04d", i), SignRequestCancelReasonClientCanceled)
+	}
+	if len(c.canceledRequests) != maxRememberedCanceledSignRequests {
+		t.Fatalf("remembered cancellations = %d, want %d", len(c.canceledRequests), maxRememberedCanceledSignRequests)
+	}
+	if _, exists := c.canceledRequests["sign-0000"]; exists {
+		t.Fatal("oldest cancellation was not evicted")
+	}
+	if _, exists := c.canceledRequests["sign-0001"]; !exists {
+		t.Fatal("second-oldest cancellation was evicted")
+	}
+	if _, exists := c.canceledRequests["sign-1024"]; !exists {
+		t.Fatal("newest cancellation was not remembered")
+	}
+}
+
+func TestCoordinatorQueuedSigningApprovalFailsAfterDecommission(t *testing.T) {
+	var decommissioned atomic.Bool
+	delivered := make(chan string, 2)
+	c := NewWithDecommission(
+		func() bool { return true },
+		func() bool { return decommissioned.Load() },
+		func(req *SignRequest) bool {
+			delivered <- req.ID
+			return true
+		},
+		nil,
+		nil,
+	)
+
+	type approvalResult struct {
+		approved bool
+		err      error
+	}
+	first := make(chan approvalResult, 1)
+	second := make(chan approvalResult, 1)
+	go func() {
+		approved, err := c.RequestSigningApproval("sign-1", "A", "A", "first", 0, 0, nil, time.Minute)
+		first <- approvalResult{approved: approved, err: err}
+	}()
+	if got := <-delivered; got != "sign-1" {
+		t.Fatalf("first delivered request = %q, want sign-1", got)
+	}
+
+	go func() {
+		approved, err := c.RequestSigningApproval("sign-2", "B", "B", "second", 0, 0, nil, time.Minute)
+		second <- approvalResult{approved: approved, err: err}
+	}()
+	select {
+	case got := <-delivered:
+		t.Fatalf("queued request delivered before first resolved: %s", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	decommissioned.Store(true)
+	c.FailAllPendingRequests("identity decommissioned")
+
+	select {
+	case got := <-first:
+		if got.err != nil {
+			t.Fatalf("first RequestSigningApproval() error = %v, want nil rejection", got.err)
+		}
+		if got.approved {
+			t.Fatal("first RequestSigningApproval() approved = true, want false")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first RequestSigningApproval() did not finish after decommission")
+	}
+	select {
+	case got := <-second:
+		if !errors.Is(got.err, ErrApprovalDecommissioned) {
+			t.Fatalf("second RequestSigningApproval() error = %v, want ErrApprovalDecommissioned", got.err)
+		}
+		if got.approved {
+			t.Fatal("second RequestSigningApproval() approved = true, want false")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("queued RequestSigningApproval() did not fail after decommission")
+	}
+	select {
+	case got := <-delivered:
+		t.Fatalf("queued request was delivered after decommission: %s", got)
+	default:
 	}
 }
 
