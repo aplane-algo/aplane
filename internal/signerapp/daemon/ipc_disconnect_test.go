@@ -96,6 +96,72 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 	}
 }
 
+func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
+	signer, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	ir := signer.registry.Get(auth.DefaultIdentityID)
+	ir.Lock()
+	ir.Config().SetLockOnDisconnect(true)
+
+	ipcServer := &IPCServer{
+		signer:  signer,
+		manager: adminserver.NewSessionManager(),
+	}
+	signer.ipcServer = ipcServer
+
+	blocker := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
+	if !ipcServer.manager.RegisterPending(auth.DefaultIdentityID, blocker) {
+		t.Fatal("RegisterPending(blocker) = false, want true")
+	}
+
+	serverConn, clientConn := net.Pipe()
+	defer func() { _ = clientConn.Close() }()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ipcServer.acceptAdminSession(
+			adminproto.NewUnixAdminConn(serverConn, nil),
+			adminserver.TransportIPC,
+			"ipc-passphrase",
+			"",
+		)
+	}()
+
+	reader := bufio.NewReader(clientConn)
+	readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthRequired)
+	writeAdminMessage(t, clientConn, protocol.AuthMessage{
+		BaseMessage: protocol.BaseMessage{
+			Kind: protocol.MessageKindRequest,
+			Type: protocol.MsgTypeAuth,
+		},
+		Passphrase: protocol.NewSensitiveBytes(string(testPassphrase)),
+	})
+
+	rawAuth := readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthResult)
+	var authResult protocol.AuthResultMessage
+	if err := json.Unmarshal(rawAuth, &authResult); err != nil {
+		t.Fatalf("decode auth_result: %v", err)
+	}
+	if !authResult.Success {
+		t.Fatalf("auth_result success = false: %+v", authResult)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for admin session cleanup")
+	}
+
+	if ir.IsUnlocked() {
+		t.Fatal("identity remained unlocked after authenticated session failed promotion")
+	}
+	if ipcServer.sessionManager().HasClient(auth.DefaultIdentityID) {
+		t.Fatal("identity unexpectedly has an active admin client")
+	}
+}
+
 func readAdminMessageType(t *testing.T, conn net.Conn, reader *bufio.Reader, wantType string) []byte {
 	t.Helper()
 	for i := 0; i < 5; i++ {

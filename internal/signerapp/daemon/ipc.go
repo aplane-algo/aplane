@@ -91,10 +91,10 @@ func (s *IPCServer) acceptLoop() {
 // displacementTimeout is the maximum time to wait for a displacement confirmation.
 const displacementTimeout = 30 * time.Second
 
-func (s *IPCServer) offerDisplacementSession(identityID string, active *adminserver.Session, newConn adminproto.AdminConn) bool {
-	confirmed, displaced := adminserver.OfferDisplacement(identityID, s.sessionManager(), active, newConn, displacementTimeout)
+func (s *IPCServer) offerDisplacementSession(active *adminserver.Session, newConn adminproto.AdminConn) bool {
+	confirmed, displaced := adminserver.OfferDisplacement(active, newConn, displacementTimeout)
 	if displaced {
-		logWarnf("existing apadmin client displaced by new connection")
+		logWarnf("existing apadmin client accepted displacement by new connection")
 	}
 	return confirmed
 }
@@ -126,7 +126,7 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport
 		return
 	}
 	if active != nil {
-		if !s.offerDisplacementSession(pendingIdentityID, active, adminConn) {
+		if !s.offerDisplacementSession(active, adminConn) {
 			s.clearPendingSession(preboundIdentityID, session)
 			_ = session.Close()
 			return
@@ -136,7 +136,9 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport
 }
 
 func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transport, preboundIdentityID string) {
-	// Track whether we successfully authenticated (for cleanup logic)
+	// If auth unlocks an identity for this session, either the session becomes
+	// the active owner or cleanup must leave the identity locked (when
+	// lock_on_disconnect is set) with no pending approvals stranded.
 	authenticated := false
 	adminConn := session.Conn()
 
@@ -151,25 +153,23 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 		wasActiveClient := s.sessionManager().ClearActive(boundIdentityID, session)
 		_ = session.Close() // Best-effort cleanup
 
-		// Only do disconnect cleanup if we were the active authenticated client.
-		// Displaced clients should not fail pending requests or lock the signer,
-		// because the new client is taking over.
-		if authenticated && wasActiveClient {
+		// Run owner cleanup whenever this authenticated session exits and no
+		// active owner remains. Displaced clients skip cleanup because the
+		// replacement is already active before they are notified and closed.
+		if authenticated && boundIR != nil && (wasActiveClient || !s.sessionManager().HasClient(boundIdentityID)) {
 			// Route disconnect cleanup through the bound identity
-			if boundIR != nil {
-				if s.signer != nil {
-					s.signer.adminServices().LogSessionDisconnectedContext(session.SessionContext())
-				}
-				boundIR.FailAllPendingApprovals("apadmin disconnected")
+			if wasActiveClient && s.signer != nil {
+				s.signer.adminServices().LogSessionDisconnectedContext(session.SessionContext())
+			}
+			boundIR.FailAllPendingApprovals("apadmin disconnected")
 
-				// Lock behavior is driven by the live identity runtime config,
-				// which should already reflect any stored overrides.
-				if boundIR.Config().LockOnDisconnect() {
-					boundIR.Lock()
-					logWarnf("apadmin client disconnected - signer locked")
-				} else {
-					logWarnf("apadmin disconnected - signer remains unlocked")
-				}
+			// Lock behavior is driven by the live identity runtime config,
+			// which should already reflect any stored overrides.
+			if boundIR.Config().LockOnDisconnect() {
+				boundIR.Lock()
+				logWarnf("apadmin client disconnected - signer locked")
+			} else {
+				logWarnf("apadmin disconnected - signer remains unlocked")
 			}
 		}
 	}()
@@ -178,6 +178,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 	// can also handle one local initialize request before passphrase auth exists.
 	switch session.AuthenticateOutcome() {
 	case adminserver.AuthOutcomeAuthenticated:
+		authenticated = true
 	case adminserver.AuthOutcomeBootstrapHandled:
 		return
 	default:
@@ -199,13 +200,19 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 		return
 	}
 	if active != nil && active != session {
-		if !s.offerDisplacementSession(identityID, active, adminConn) {
+		if !s.offerDisplacementSession(active, adminConn) {
 			s.sessionManager().ClearPending(identityID, session)
 			return
 		}
 	}
-	s.sessionManager().PromoteToActive(identityID, session)
-	authenticated = true
+	replaced, ok := s.sessionManager().PromoteToActive(identityID, session)
+	if !ok {
+		logWarnf("%s client could not promote session for identity %q", strings.ToUpper(transport), identityID)
+		return
+	}
+	if replaced != nil && replaced != session {
+		adminserver.DisplaceSession(replaced)
+	}
 
 	if s.signer != nil {
 		s.signer.adminServices().LogSessionConnectedContext(session.SessionContext())

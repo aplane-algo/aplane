@@ -11,8 +11,10 @@ import (
 )
 
 // OfferDisplacement sends a client_exists message to newConn and waits for a
-// displace_confirm response. If confirmed, it clears and closes active.
-func OfferDisplacement(identityID string, manager *SessionManager, active *Session, newConn adminproto.AdminConn, timeout time.Duration) (confirmed bool, displaced bool) {
+// displace_confirm response. Confirmation only authorizes replacement; the
+// old active session remains the owner until the caller promotes the new
+// session and then calls DisplaceSession.
+func OfferDisplacement(active *Session, newConn adminproto.AdminConn, timeout time.Duration) (confirmed bool, displaced bool) {
 	reject := func() (bool, bool) {
 		_ = newConn.Close()
 		return false, false
@@ -54,20 +56,28 @@ func OfferDisplacement(identityID string, manager *SessionManager, active *Sessi
 		return reject()
 	}
 
-	if active != nil {
-		if manager != nil {
-			_ = manager.ClearActive(identityID, active)
-		}
-		displacedMsg := protocol.DisplacedMessage{
-			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeDisplaced},
-			Reason:      "Displaced by another apadmin client",
-		}
-		_ = active.WriteJSON(displacedMsg)
-		_ = active.Close()
-		return true, true
-	}
+	return true, active != nil
+}
 
-	return true, false
+// DisplaceSession notifies and closes a session after its replacement has
+// already become active. This ordering preserves the invariant that an
+// unlocked identity always has an owner session whose disconnect can clean up.
+func DisplaceSession(active *Session) {
+	if active == nil {
+		return
+	}
+	active.mu.Lock()
+	if active.state != StateClosed {
+		active.state = StateDisplacing
+	}
+	active.mu.Unlock()
+
+	displacedMsg := protocol.DisplacedMessage{
+		BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeDisplaced},
+		Reason:      "Displaced by another apadmin client",
+	}
+	_ = active.WriteJSON(displacedMsg)
+	_ = active.Close()
 }
 
 func writeJSONMessage(conn adminproto.AdminConn, v interface{}) error {

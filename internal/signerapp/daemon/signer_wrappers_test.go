@@ -65,7 +65,7 @@ func (fs *Signer) newApprovalServiceForIdentity(ir *identity.Runtime) *signersig
 // call offerDisplacementSession with an explicit identity.
 func (s *IPCServer) offerDisplacement(newConn net.Conn) bool {
 	identityID := auth.CurrentProductIdentityID()
-	return s.offerDisplacementSession(identityID, s.activeIdentitySession(identityID), adminproto.NewUnixAdminConn(newConn, nil))
+	return s.offerDisplacementSession(s.activeIdentitySession(identityID), adminproto.NewUnixAdminConn(newConn, nil))
 }
 
 // handleClient handles a single IPC client connection.

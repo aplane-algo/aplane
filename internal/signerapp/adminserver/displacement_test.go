@@ -72,7 +72,7 @@ func (c *displacementTestConn) writeCount() int {
 func TestOfferDisplacementTimeoutClosesNewConnection(t *testing.T) {
 	conn := newDisplacementTestConn()
 
-	confirmed, displaced := OfferDisplacement("alice", nil, nil, conn, 10*time.Millisecond)
+	confirmed, displaced := OfferDisplacement(nil, conn, 10*time.Millisecond)
 	if confirmed || displaced {
 		t.Fatalf("OfferDisplacement() = (%v, %v), want false, false", confirmed, displaced)
 	}
@@ -97,7 +97,7 @@ func TestOfferDisplacementConfirmWithoutActiveKeepsConnectionOpen(t *testing.T) 
 	}
 	conn.reads <- displacementTestRead{line: confirm}
 
-	confirmed, displaced := OfferDisplacement("alice", nil, nil, conn, time.Second)
+	confirmed, displaced := OfferDisplacement(nil, conn, time.Second)
 	if !confirmed || displaced {
 		t.Fatalf("OfferDisplacement() = (%v, %v), want true, false", confirmed, displaced)
 	}

@@ -16,10 +16,15 @@ import (
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
-func TestOfferDisplacementDisplacesExistingClientOnConfirm(t *testing.T) {
+func TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted(t *testing.T) {
 	oldServer, oldClient := net.Pipe()
 	defer func() { _ = oldClient.Close() }()
-	server := newIPCServerWithActiveConn(oldServer)
+	server := &IPCServer{
+		manager: adminserver.NewSessionManager(),
+	}
+	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer, nil), adminserver.SessionDeps{})
+	_ = server.manager.RegisterPending(auth.CurrentProductIdentityID(), oldSession)
+	_, _ = server.manager.PromoteToActive(auth.CurrentProductIdentityID(), oldSession)
 
 	newServer, newClient := net.Pipe()
 	defer func() { _ = newClient.Close() }()
@@ -59,6 +64,22 @@ func TestOfferDisplacementDisplacesExistingClientOnConfirm(t *testing.T) {
 	if !ok {
 		t.Fatal("offerDisplacement() = false, want true")
 	}
+	if server.activeSession() != oldSession {
+		t.Fatal("active session changed before replacement promotion")
+	}
+
+	newSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), adminserver.SessionDeps{})
+	if !server.manager.RegisterPending(auth.CurrentProductIdentityID(), newSession) {
+		t.Fatal("RegisterPending(newSession) = false, want true")
+	}
+	replaced, ok := server.manager.PromoteToActive(auth.CurrentProductIdentityID(), newSession)
+	if !ok {
+		t.Fatal("PromoteToActive(newSession) = false, want true")
+	}
+	if replaced != oldSession {
+		t.Fatal("PromoteToActive did not return old active session")
+	}
+	adminserver.DisplaceSession(replaced)
 
 	select {
 	case err := <-oldErrCh:
@@ -78,8 +99,8 @@ func TestOfferDisplacementDisplacesExistingClientOnConfirm(t *testing.T) {
 		t.Fatal("timed out waiting for displaced message payload")
 	}
 
-	if server.activeSession() != nil {
-		t.Fatal("active session should be cleared after displacement")
+	if server.activeSession() != newSession {
+		t.Fatal("replacement session should be active after displacement")
 	}
 }
 
@@ -128,5 +149,79 @@ func TestPreboundAdminSessionDoesNotDisplaceDifferentIdentity(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for admin session to exit")
+	}
+}
+
+func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
+	signer, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	ir := signer.registry.Get(auth.DefaultIdentityID)
+	ir.Config().SetLockOnDisconnect(true)
+
+	ipcServer := &IPCServer{
+		signer:  signer,
+		manager: adminserver.NewSessionManager(),
+	}
+	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(&hubStubConn{}, nil), signer.adminSessionDeps())
+	if !ipcServer.manager.RegisterPending(auth.DefaultIdentityID, oldSession) {
+		t.Fatal("RegisterPending(oldSession) = false, want true")
+	}
+	if _, ok := ipcServer.manager.PromoteToActive(auth.DefaultIdentityID, oldSession); !ok {
+		t.Fatal("PromoteToActive(oldSession) = false, want true")
+	}
+
+	serverConn, clientConn := net.Pipe()
+	defer func() { _ = clientConn.Close() }()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ipcServer.acceptAdminSession(
+			adminproto.NewUnixAdminConn(serverConn, nil),
+			adminserver.TransportIPC,
+			"ipc-passphrase",
+			"",
+		)
+	}()
+
+	reader := bufio.NewReader(clientConn)
+	readAdminMessageType(t, clientConn, reader, protocol.MsgTypeClientExists)
+	writeAdminMessage(t, clientConn, protocol.DisplaceConfirmMessage{
+		BaseMessage: protocol.BaseMessage{
+			Kind: protocol.MessageKindRequest,
+			Type: protocol.MsgTypeDisplaceConfirm,
+		},
+	})
+	readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthRequired)
+	writeAdminMessage(t, clientConn, protocol.AuthMessage{
+		BaseMessage: protocol.BaseMessage{
+			Kind: protocol.MessageKindRequest,
+			Type: protocol.MsgTypeAuth,
+		},
+		Passphrase: protocol.NewSensitiveBytes("wrong-passphrase"),
+	})
+
+	rawAuth := readAdminMessageType(t, clientConn, reader, protocol.MsgTypeAuthResult)
+	var authResult protocol.AuthResultMessage
+	if err := json.Unmarshal(rawAuth, &authResult); err != nil {
+		t.Fatalf("decode auth_result: %v", err)
+	}
+	if authResult.Success {
+		t.Fatal("auth_result success = true, want false")
+	}
+
+	_ = clientConn.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for failed replacement session cleanup")
+	}
+
+	if ipcServer.activeIdentitySession(auth.DefaultIdentityID) != oldSession {
+		t.Fatal("old active session was not retained after replacement auth failure")
+	}
+	if !ir.IsUnlocked() {
+		t.Fatal("identity locked even though old active owner remained connected")
 	}
 }
