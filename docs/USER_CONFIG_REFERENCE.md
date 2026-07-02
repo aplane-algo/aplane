@@ -10,6 +10,7 @@ File: `config.yaml` in apshell data directory (`-d` or `APCLIENT_DATA`)
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `schema_version` | int | `1` | Client config schema version |
 | `network` | string | `testnet` | Default network context token |
 | `networks_allowed` | []string | `[]` | Restrict allowed networks (empty = all) |
 | `theme` | string | `auto` | Local client UI theme: auto, dark, or light (auto detects terminal) |
@@ -44,6 +45,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `schema_version` | int | `1` | Signer config schema version |
 | `endpoint` | object | default endpoint settings | Signer endpoint exposure settings |
 | `endpoint.advertise_url` | string | `(none)` | Client-reachable public endpoint URL used by apstore endpoint export when --host/--url are omitted |
 | `endpoint.signer_port` | int | `11270` | Loopback REST API port behind the endpoint |

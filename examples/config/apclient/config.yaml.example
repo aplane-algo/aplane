@@ -2,6 +2,9 @@
 # Copy to $APCLIENT_DATA/config.yaml and customize as needed.
 # See docs/USER_CONFIG.md for full documentation.
 
+# Config schema version. Omit means v1 for existing configs.
+schema_version: 1
+
 # Algorand network context token (mainnet, testnet, betanet, localnet, etc.)
 network: testnet
 

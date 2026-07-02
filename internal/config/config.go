@@ -46,6 +46,7 @@ type SentryEndpointConfigs map[string]SentryEndpointConfig
 
 // Config holds apshell configuration settings
 type Config struct {
+	SchemaVersion    int      `yaml:"schema_version,omitempty" description:"Client config schema version" default:"1"`
 	Network          string   `yaml:"network" description:"Default network context token" default:"testnet"`
 	NetworksAllowed  []string `yaml:"networks_allowed" description:"Restrict allowed networks (empty = all)" default:"[]"`
 	LegacySignerPort int      `yaml:"signer_port" configdoc:"skip" description:"Compatibility fallback for legacy client routing; current endpoint signer_port lives in endpoints.yaml" default:"11270"`
@@ -79,6 +80,7 @@ type Config struct {
 // SSH is nil by default; normal routing is loaded from endpoints.yaml.
 func DefaultConfig() Config {
 	return Config{
+		SchemaVersion:            ConfigSchemaVersion,
 		Network:                  "testnet",
 		NetworksAllowed:          []string{}, // Empty = all networks allowed
 		LegacySignerPort:         DefaultRESTPort,
@@ -167,7 +169,11 @@ func LoadConfigFromPath(path string) (Config, error) {
 
 	// Start with defaults, then overlay config file values
 	config := DefaultConfig()
-	if err := UnmarshalKnownFields(data, &config); err != nil {
+	if err := UnmarshalKnownConfigFields(data, &config); err != nil {
+		return Config{}, fmt.Errorf("failed to parse config file: %w", err)
+	}
+	config.SchemaVersion = NormalizeConfigSchemaVersion(config.SchemaVersion)
+	if err := ValidateConfigSchemaVersion("client config", config.SchemaVersion); err != nil {
 		return Config{}, fmt.Errorf("failed to parse config file: %w", err)
 	}
 	if config.Algod, err = mergeClientNetworkAlgodConfig(nil, config.Networks); err != nil {

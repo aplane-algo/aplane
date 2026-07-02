@@ -1,6 +1,9 @@
 # Auto-unlocked apsigner configuration
 # See docs/USER_CONFIG.md for full documentation.
 
+# Config schema version. Omit means v1 for existing configs.
+schema_version: 1
+
 # INSECURE / DEV ONLY: Auto-unlock by reading passphrase from a file via appass-file helper.
 # Set argv[0] to the absolute path of your installed appass-file helper.
 # In production, use a secrets manager (macOS Keychain, TPM, Vault, etc.)

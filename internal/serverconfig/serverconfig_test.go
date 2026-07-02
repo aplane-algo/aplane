@@ -161,6 +161,53 @@ func TestLoadServerConfigRejectsInvalidApprovalWait(t *testing.T) {
 	}
 }
 
+func TestLoadServerConfigSchemaVersion(t *testing.T) {
+	t.Parallel()
+
+	t.Run("explicit v1 accepted", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("schema_version: 1\napproval_wait: 60s\n"), 0o640); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		cfg, err := LoadServerConfig(dir)
+		if err != nil {
+			t.Fatalf("LoadServerConfig: %v", err)
+		}
+		if cfg.SchemaVersion != apconfig.ConfigSchemaVersion {
+			t.Fatalf("SchemaVersion = %d, want %d", cfg.SchemaVersion, apconfig.ConfigSchemaVersion)
+		}
+	})
+
+	t.Run("absent means v1", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := DefaultServerConfig()
+		if cfg.SchemaVersion != apconfig.ConfigSchemaVersion {
+			t.Fatalf("DefaultServerConfig().SchemaVersion = %d, want %d", cfg.SchemaVersion, apconfig.ConfigSchemaVersion)
+		}
+	})
+
+	t.Run("newer version rejected", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("schema_version: 2\n"), 0o640); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		_, err := LoadServerConfig(dir)
+		if err == nil {
+			t.Fatal("LoadServerConfig error = nil, want schema_version rejection")
+		}
+		if !strings.Contains(err.Error(), "schema_version = 2, want 1") {
+			t.Fatalf("LoadServerConfig error = %q, want schema_version mismatch", err)
+		}
+	})
+}
+
 func TestLoadServerConfigRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 
@@ -175,6 +222,9 @@ func TestLoadServerConfigRejectsUnknownFields(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "field surprise not found") {
 		t.Fatalf("LoadServerConfig error = %q, want surprise", err)
+	}
+	if !strings.Contains(err.Error(), "newer version") {
+		t.Fatalf("LoadServerConfig error = %q, want newer-version guidance", err)
 	}
 }
 

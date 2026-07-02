@@ -41,6 +41,55 @@ networks:
 	}
 }
 
+func TestLoadConfigSchemaVersion(t *testing.T) {
+	t.Run("explicit v1 accepted", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(`
+schema_version: 1
+network: testnet
+networks:
+  testnet:
+    algod:
+      server: http://localhost:4001
+`), 0o600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+
+		cfg, err := LoadConfigFromPath(path)
+		if err != nil {
+			t.Fatalf("LoadConfigFromPath: %v", err)
+		}
+		if cfg.SchemaVersion != ConfigSchemaVersion {
+			t.Fatalf("SchemaVersion = %d, want %d", cfg.SchemaVersion, ConfigSchemaVersion)
+		}
+	})
+
+	t.Run("absent means v1", func(t *testing.T) {
+		cfg := DefaultConfig()
+		if cfg.SchemaVersion != ConfigSchemaVersion {
+			t.Fatalf("DefaultConfig().SchemaVersion = %d, want %d", cfg.SchemaVersion, ConfigSchemaVersion)
+		}
+	})
+
+	t.Run("newer version rejected", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(`
+schema_version: 2
+network: testnet
+`), 0o600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+
+		_, err := LoadConfigFromPath(path)
+		if err == nil {
+			t.Fatal("LoadConfigFromPath error = nil, want schema_version rejection")
+		}
+		if !strings.Contains(err.Error(), "schema_version = 2, want 1") {
+			t.Fatalf("LoadConfigFromPath error = %q, want schema_version mismatch", err)
+		}
+	})
+}
+
 func TestLoadConfigSignerStatusPollIntervalDisabled(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(`
@@ -100,6 +149,9 @@ unknown_setting: true
 	}
 	if !strings.Contains(err.Error(), "field unknown_setting not found") {
 		t.Fatalf("LoadConfigFromPath error = %q, want unknown_setting", err)
+	}
+	if !strings.Contains(err.Error(), "newer version") {
+		t.Fatalf("LoadConfigFromPath error = %q, want newer-version guidance", err)
 	}
 }
 

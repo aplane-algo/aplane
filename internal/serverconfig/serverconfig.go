@@ -42,6 +42,7 @@ const (
 
 // ServerConfig represents the Signer configuration file
 type ServerConfig struct {
+	SchemaVersion         int                  `yaml:"schema_version,omitempty" description:"Signer config schema version" default:"1"`
 	Endpoint              ServerEndpointConfig `yaml:"endpoint" description:"Signer endpoint exposure settings" default:"default endpoint settings"`
 	PassphraseTimeout     string               `yaml:"passphrase_timeout" description:"Admin idle disconnect timeout (0=never)" default:"15m"`
 	ApprovalWait          string               `yaml:"approval_wait" description:"Maximum time to wait for operator approval of a signing request" default:"60s"`
@@ -189,6 +190,7 @@ func ValidateSSHListenAddress(value string) error {
 // Relative paths in config are resolved relative to the data directory ($APSIGNER_DATA).
 func DefaultServerConfig() ServerConfig {
 	return ServerConfig{
+		SchemaVersion:      apconfig.ConfigSchemaVersion,
 		Endpoint:           DefaultServerEndpointConfig(),
 		PassphraseTimeout:  "15m", // 15 minute admin idle timeout (use "0" to disable)
 		ApprovalWait:       DefaultApprovalWaitString,
@@ -236,10 +238,14 @@ func LoadServerConfig(dataDir string) (ServerConfig, error) {
 
 	// Parse YAML
 	configFile := serverConfigFile{ServerConfig: defaults}
-	if err := apconfig.UnmarshalKnownFields(data, &configFile); err != nil {
+	if err := apconfig.UnmarshalKnownConfigFields(data, &configFile); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 	config := configFile.ServerConfig
+	config.SchemaVersion = apconfig.NormalizeConfigSchemaVersion(config.SchemaVersion)
+	if err := apconfig.ValidateConfigSchemaVersion("server config", config.SchemaVersion); err != nil {
+		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
+	}
 	if err := applyLegacyManualApproval(data, configFile.ManualApproval, &config); err != nil {
 		return ServerConfig{}, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}

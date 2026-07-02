@@ -1,6 +1,9 @@
 # apsigner configuration with user auto-approve disabled
 # See docs/USER_CONFIG.md for full documentation.
 
+# Config schema version. Omit means v1 for existing configs.
+schema_version: 1
+
 # Signer endpoint exposure settings.
 endpoint:
   # Optional client-reachable URL used by "apstore endpoint export" when --host/--url are omitted.
