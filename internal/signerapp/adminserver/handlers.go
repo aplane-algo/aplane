@@ -168,8 +168,8 @@ func (s *Session) HandleUnlock(msg *protocol.UnlockMessage) {
 	passphraseBytes := msg.Passphrase.Clone()
 	defer zeroBytes(passphraseBytes)
 
-	success, keyCount, errStr := s.identityServices.UnlockIdentity(ir, passphraseBytes)
-	_ = s.WriteJSON(ProtocolUnlockResultMessage(msg.ID, success, keyCount, errStr))
+	success, keyCount, errStr, code := s.identityServices.UnlockIdentity(ir, passphraseBytes)
+	_ = s.WriteJSON(ProtocolUnlockResultMessage(msg.ID, success, keyCount, errStr, code))
 }
 
 func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {

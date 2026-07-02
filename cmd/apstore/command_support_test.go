@@ -37,6 +37,16 @@ func TestExitCodeForStructuredResultCodes(t *testing.T) {
 			err:  codedError{code: protocol.ErrCodeAuthenticationFailed, message: "authentication failed"},
 			want: apstoreExitUnavailable,
 		},
+		{
+			name: "transport coded auth failure",
+			err:  protocol.WithCode(protocol.ErrCodeAuthenticationFailed, fmt.Errorf("authentication failed: invalid passphrase")),
+			want: apstoreExitUnavailable,
+		},
+		{
+			name: "local ipc unavailable",
+			err:  codedError{code: apstoreCodeIPCUnavailable, message: "failed to connect to IPC socket: missing"},
+			want: apstoreExitUnavailable,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -51,6 +61,23 @@ func TestExitCodeDoesNotClassifyResultCodesFromProse(t *testing.T) {
 	err := fmt.Errorf("remote result included restore_rate_limited in message text but no code")
 	if got := exitCodeForError(err); got != apstoreExitFailure {
 		t.Fatalf("exitCodeForError(%v) = %d, want generic failure", err, got)
+	}
+}
+
+func TestExitCodeDoesNotClassifyRemoteOutcomesFromProse(t *testing.T) {
+	tests := []error{
+		fmt.Errorf("authentication failed: invalid passphrase"),
+		fmt.Errorf("authorization denied"),
+		fmt.Errorf("signer is locked"),
+		fmt.Errorf("provider collision"),
+		fmt.Errorf("key(s) still use it"),
+		fmt.Errorf("checksum mismatch"),
+	}
+
+	for _, err := range tests {
+		if got := exitCodeForError(err); got != apstoreExitFailure {
+			t.Fatalf("exitCodeForError(%v) = %d, want generic failure", err, got)
+		}
 	}
 }
 

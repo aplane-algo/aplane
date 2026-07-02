@@ -32,7 +32,7 @@ type AuditLogger interface {
 	LogPassphraseChangeFailed(identityID, reason string)
 }
 
-type UnlockIdentityFunc func(ir *identity.Runtime, passphrase []byte) (bool, int, string)
+type UnlockIdentityFunc func(ir *identity.Runtime, passphrase []byte) (bool, int, string, string)
 
 type Service struct {
 	Deps           Deps
@@ -84,7 +84,7 @@ func (s Service) InitializeStore(ir *identity.Runtime, req adminproto.Initialize
 				helperWarning = fmt.Sprintf("could not store passphrase via passphrase command helper: %v", err)
 			}
 		}
-		success, _, errMsg := s.UnlockIdentity(ir, req.Passphrase)
+		success, _, errMsg, _ := s.UnlockIdentity(ir, req.Passphrase)
 		if !success {
 			return fmt.Errorf("store initialized but signer unlock failed: %s", errMsg)
 		}

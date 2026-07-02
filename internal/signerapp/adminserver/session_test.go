@@ -46,6 +46,7 @@ type stubServices struct {
 	verifyErrs   []error
 	unlockOK     bool
 	unlockErrMsg string
+	unlockCode   string
 	resolveErr   error
 	newIdentity  *auth.Identity
 	resolveIDs   []string
@@ -133,9 +134,9 @@ func (s *stubServices) VerifyPassphrase(ir *identity.Runtime, passphrase []byte)
 	s.verifyErrs = s.verifyErrs[1:]
 	return err
 }
-func (s *stubServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string) {
+func (s *stubServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string) {
 	s.unlockCalls++
-	return s.unlockOK, 0, s.unlockErrMsg
+	return s.unlockOK, 0, s.unlockErrMsg, s.unlockCode
 }
 func (s *stubServices) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {
 	s.lastInitializeStore = adminproto.InitializeStoreRequest{

@@ -208,10 +208,13 @@ func (s *Session) AuthenticateOutcome() AuthOutcome {
 		}
 
 		if !ir.IsUnlocked() {
-			success, _, errMsg := s.identityServices.UnlockIdentity(ir, passphraseBytes)
+			success, _, errMsg, code := s.identityServices.UnlockIdentity(ir, passphraseBytes)
 			zeroBytes(passphraseBytes)
 			if !success {
-				s.sendAuthResult(false, protocol.ErrCodeUnlockFailed, "auth ok but unlock failed: "+errMsg)
+				if code == "" {
+					code = protocol.ErrCodeUnlockFailed
+				}
+				s.sendAuthResult(false, code, "auth ok but unlock failed: "+errMsg)
 				return AuthOutcomeFailed
 			}
 		} else {

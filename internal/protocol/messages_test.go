@@ -5,6 +5,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -1337,15 +1338,11 @@ func TestIPCErrorCodeMapsStableConditions(t *testing.T) {
 		{errMsg: "invalid auth message format", want: ErrCodeInvalidAuthMessage},
 		{errMsg: "authentication failed", want: ErrCodeAuthenticationFailed},
 		{errMsg: "invalid passphrase", want: ErrCodeInvalidPassphrase},
-		{errMsg: "auth ok but unlock failed: signer is locked", want: ErrCodeUnlockFailed},
-		{errMsg: "failed to load keys: policy integrity mismatch", want: ErrCodeUnlockFailed},
 		{errMsg: "invalid export key message", want: ErrCodeInvalidRequest},
 		{errMsg: "invalid whale song", want: ErrCodeInternal},
-		{errMsg: "unknown message type: wat", want: ErrCodeUnknownMessageType},
 		{errMsg: "no identity bound to session", want: ErrCodeNoIdentityBound},
 		{errMsg: "authorization denied", want: ErrCodeAuthorizationDenied},
 		{errMsg: "Signer is locked", want: ErrCodeSignerLocked},
-		{errMsg: "Key not found: ADDR", want: ErrCodeKeyNotFound},
 		{errMsg: "some internal error", want: ErrCodeInternal},
 	}
 
@@ -1353,5 +1350,33 @@ func TestIPCErrorCodeMapsStableConditions(t *testing.T) {
 		if got := IPCErrorCode(tt.errMsg); got != tt.want {
 			t.Fatalf("IPCErrorCode(%q) = %q, want %q", tt.errMsg, got, tt.want)
 		}
+	}
+}
+
+func TestIPCErrorCodeDoesNotClassifyDynamicProse(t *testing.T) {
+	tests := []string{
+		"auth ok but unlock failed: signer is locked",
+		"failed to load keys: policy integrity mismatch",
+		"unknown message type: wat",
+		"unknown or read-only setting: admin.foo",
+		"Key not found: ADDR",
+	}
+
+	for _, errMsg := range tests {
+		if got := IPCErrorCode(errMsg); got != ErrCodeInternal {
+			t.Fatalf("IPCErrorCode(%q) = %q, want %q", errMsg, got, ErrCodeInternal)
+		}
+	}
+}
+
+func TestCodeForErrorPrefersAttachedCode(t *testing.T) {
+	err := WithCode(ErrCodeKeyNotFound, fmt.Errorf("reworded operator-facing message"))
+	if got := CodeForError(err); got != ErrCodeKeyNotFound {
+		t.Fatalf("CodeForError(coded) = %q, want %q", got, ErrCodeKeyNotFound)
+	}
+
+	err = fmt.Errorf("Key not found: ADDR")
+	if got := CodeForError(err); got != ErrCodeInternal {
+		t.Fatalf("CodeForError(uncoded prose) = %q, want %q", got, ErrCodeInternal)
 	}
 }

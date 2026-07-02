@@ -62,10 +62,14 @@ func authenticate(conn adminProtocolConn, passphrase string, timeout time.Durati
 			if err := json.Unmarshal(message, &errMsg); err != nil {
 				return fmt.Errorf("server rejected auth handshake")
 			}
-			if errMsg.Error != "" {
-				return fmt.Errorf("server rejected auth handshake: %s", errMsg.Error)
+			code := errMsg.Code
+			if code == "" {
+				code = protocol.IPCErrorCode(errMsg.Error)
 			}
-			return fmt.Errorf("server rejected auth handshake")
+			if errMsg.Error != "" {
+				return protocol.WithCode(code, fmt.Errorf("server rejected auth handshake: %s", errMsg.Error))
+			}
+			return protocol.WithCode(code, fmt.Errorf("server rejected auth handshake"))
 		}
 		if base.Type != protocol.MsgTypeAuthRequired {
 			return fmt.Errorf("expected auth_required message, got: %s", base.Type)
@@ -99,7 +103,11 @@ func authenticate(conn adminProtocolConn, passphrase string, timeout time.Durati
 		return fmt.Errorf("failed to parse auth_result: %w", err)
 	}
 	if !authResult.Success {
-		return fmt.Errorf("authentication failed: %s", authResult.Error)
+		code := authResult.Code
+		if code == "" {
+			code = protocol.IPCErrorCode(authResult.Error)
+		}
+		return protocol.WithCode(code, fmt.Errorf("authentication failed: %s", authResult.Error))
 	}
 
 	return nil

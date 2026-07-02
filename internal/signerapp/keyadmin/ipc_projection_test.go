@@ -126,8 +126,8 @@ func TestProjectKeyDetailsIPC(t *testing.T) {
 		t.Fatalf("Code = %q, want %q", notFound.Code, protocol.ErrCodeKeyNotFound)
 	}
 	internal := ProjectKeyDetailsIPC(nil, &Error{Kind: ErrorInternal, Message: "signer is locked"})
-	if internal.Code != protocol.ErrCodeSignerLocked {
-		t.Fatalf("Code = %q, want %q", internal.Code, protocol.ErrCodeSignerLocked)
+	if internal.Code != protocol.ErrCodeInternal {
+		t.Fatalf("Code = %q, want %q", internal.Code, protocol.ErrCodeInternal)
 	}
 }
 
@@ -137,7 +137,7 @@ func TestProjectImportIPC(t *testing.T) {
 		t.Fatalf("result = %#v", ok)
 	}
 
-	bad := ProjectImportIPC(nil, &Error{Kind: ErrorInvalidInput, Message: "invalid import key message"})
+	bad := ProjectImportIPC(nil, &Error{Kind: ErrorInvalidInput, Message: "bad import request"})
 	if bad.Success {
 		t.Fatal("Success = true, want false")
 	}

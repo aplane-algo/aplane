@@ -79,17 +79,14 @@ func ProjectKeyDetailsIPC(result *KeyDetailsResult, err *Error) adminproto.GetKe
 }
 
 func keyDetailsIPCCode(err *Error) string {
-	if err.Kind == ErrorNotFound {
-		return protocol.ErrCodeKeyNotFound
-	}
-	return protocol.IPCErrorCode(err.Message)
+	return ipcCodeForErrorKind(err)
 }
 
 func ProjectImportIPC(result *keymgmt.ImportResult, err *Error) adminproto.ImportKeyResult {
 	if err != nil {
 		return adminproto.ImportKeyResult{
 			Success: false,
-			Code:    protocol.IPCErrorCode(err.Message),
+			Code:    ipcCodeForErrorKind(err),
 			Error:   err.Message,
 		}
 	}
@@ -114,6 +111,10 @@ func generateIPCCode(err *Error) string {
 }
 
 func deleteIPCCode(err *Error) string {
+	return ipcCodeForErrorKind(err)
+}
+
+func ipcCodeForErrorKind(err *Error) string {
 	switch err.Kind {
 	case ErrorInvalidInput:
 		return protocol.ErrCodeInvalidRequest

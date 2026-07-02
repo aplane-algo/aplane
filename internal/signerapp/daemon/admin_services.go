@@ -6,6 +6,8 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/authz"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/protocol"
 	signeradmin "github.com/aplane-algo/aplane/internal/signerapp/admin"
 	"github.com/aplane-algo/aplane/internal/signerapp/backupadmin"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
@@ -76,10 +79,24 @@ func (s signerAdminServices) VerifyPassphrase(ir *identity.Runtime, passphrase [
 	return crypto.VerifyPassphraseWithMetadata(passphrase, ir.KeyPaths().KeystoreMetadataDir(ir.ID()))
 }
 
-func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string) {
-	return ir.TryUnlock(passphrase, func() {
+func (s signerAdminServices) UnlockIdentity(ir *identity.Runtime, passphrase []byte) (bool, int, string, string) {
+	success, keyCount, errMsg := ir.TryUnlock(passphrase, func() {
 		ir.EnsureKeyWatcher(startKeyWatcherForDir)
 	})
+	return success, keyCount, errMsg, unlockFailureCode(errMsg)
+}
+
+func unlockFailureCode(errMsg string) string {
+	switch {
+	case errMsg == "":
+		return ""
+	case errMsg == "invalid passphrase":
+		return protocol.ErrCodeInvalidPassphrase
+	case strings.HasPrefix(errMsg, "failed to load keys:"):
+		return protocol.ErrCodeUnlockFailed
+	default:
+		return protocol.ErrCodeUnlockFailed
+	}
 }
 
 func (s signerAdminServices) InitializeStore(req adminproto.InitializeStoreRequest) adminproto.InitializeStoreResult {

@@ -27,6 +27,8 @@ const (
 // old substring fallback misrouted these errors to.
 const policyIntegrityFailedCode = "policy_integrity_failed"
 
+const apstoreCodeIPCUnavailable = "ipc_unavailable"
+
 type codedError struct {
 	prefix  string
 	code    string
@@ -58,48 +60,24 @@ func exitCodeForError(err error) int {
 	if errors.As(err, &coded) {
 		return exitCodeForResultCode(coded.code)
 	}
+	var protocolCoded *protocol.CodedError
+	if errors.As(err, &protocolCoded) {
+		return exitCodeForResultCode(protocolCoded.Code)
+	}
 
 	msg := strings.ToLower(err.Error())
-	switch {
-	case strings.HasPrefix(msg, "usage:"),
-		strings.Contains(msg, "invalid arguments"),
-		strings.Contains(msg, "invalid config"),
-		strings.Contains(msg, "destination directory unavailable"),
-		strings.Contains(msg, "destination parent is not a directory"),
-		strings.Contains(msg, "destination is not a directory"),
-		strings.Contains(msg, "source must"),
-		strings.Contains(msg, "destination must"):
+	if strings.HasPrefix(msg, "usage:") {
 		return apstoreExitUsage
-	case strings.Contains(msg, "failed to connect to ipc socket"),
-		strings.Contains(msg, "authentication failed"),
-		strings.Contains(msg, "authorization denied"),
-		strings.Contains(msg, "signer is locked"),
-		strings.Contains(msg, "could not unlock"):
-		return apstoreExitUnavailable
-	case strings.Contains(msg, "provider collision"),
-		strings.Contains(msg, "already registered as a built-in provider"),
-		strings.Contains(msg, "key(s) still use it"):
-		return apstoreExitConflict
-	case strings.Contains(msg, "unsupported backup"),
-		strings.Contains(msg, "corrupt archive"),
-		strings.Contains(msg, "checksum mismatch"),
-		strings.Contains(msg, "size mismatch"):
-		// Archive flows attach explicit codedError codes at their producing
-		// sites; these narrow markers remain only for backup-library errors
-		// that surface without a code. The broad "verification failed" /
-		// "failed to validate" / "failed to decrypt" patterns were removed
-		// because unrelated subsystems (policy integrity, known_hosts
-		// validation, signature verification) produce matching text.
-		return apstoreExitArchive
-	default:
-		return apstoreExitFailure
 	}
+	return apstoreExitFailure
 }
 
 func exitCodeForResultCode(code string) int {
 	switch strings.ToLower(strings.TrimSpace(code)) {
 	case "":
 		return apstoreExitFailure
+	case apstoreCodeIPCUnavailable:
+		return apstoreExitUnavailable
 	case protocol.ErrCodeAuthenticationFailed,
 		protocol.ErrCodeInvalidPassphrase,
 		protocol.ErrCodeUnlockFailed,

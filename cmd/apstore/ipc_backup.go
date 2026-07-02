@@ -56,7 +56,7 @@ func newBackupImportTemplateValidationClient() (*algod.Client, error) {
 func newApstoreAdminClient() (*apstoreAdminClient, error) {
 	conn := transport.NewIPC(config.IPCPath)
 	if err := conn.Dial(); err != nil {
-		return nil, err
+		return nil, codedError{code: apstoreCodeIPCUnavailable, message: err.Error()}
 	}
 	client := &apstoreAdminClient{conn: conn}
 	if err := client.authenticateAndUnlock(); err != nil {
@@ -69,7 +69,7 @@ func newApstoreAdminClient() (*apstoreAdminClient, error) {
 func newApstoreAdminClientWithPassphrase(passphrase []byte) (*apstoreAdminClient, error) {
 	conn := transport.NewIPC(config.IPCPath)
 	if err := conn.Dial(); err != nil {
-		return nil, err
+		return nil, codedError{code: apstoreCodeIPCUnavailable, message: err.Error()}
 	}
 	client := &apstoreAdminClient{conn: conn}
 	if err := client.authenticateAndUnlockWithPassphrase(passphrase); err != nil {
@@ -122,13 +122,17 @@ func (c *apstoreAdminClient) authenticateAndUnlockString(passphrase string) erro
 	}
 	result, err := c.conn.Unlock(passphrase, apstoreIPCTimeout)
 	if err != nil {
-		return fmt.Errorf("signer is locked and could not unlock: %w", err)
+		return protocol.WithCode(protocol.ErrCodeUnlockFailed, fmt.Errorf("signer is locked and could not unlock: %w", err))
 	}
 	if !result.Success {
-		if result.Error != "" {
-			return fmt.Errorf("signer is locked and could not unlock: %s", result.Error)
+		code := result.Code
+		if code == "" {
+			code = protocol.ErrCodeUnlockFailed
 		}
-		return fmt.Errorf("signer is locked and could not unlock")
+		if result.Error != "" {
+			return protocol.WithCode(code, fmt.Errorf("signer is locked and could not unlock: %s", result.Error))
+		}
+		return protocol.WithCode(code, fmt.Errorf("signer is locked and could not unlock"))
 	}
 	return nil
 }

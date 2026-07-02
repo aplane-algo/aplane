@@ -105,7 +105,10 @@ func ProtocolUpdatePolicyASAAmountsResultMessage(id string, err error) protocol.
 	return result
 }
 
-func ProtocolUnlockResultMessage(id string, success bool, keyCount int, errMsg string) protocol.UnlockResultMessage {
+func ProtocolUnlockResultMessage(id string, success bool, keyCount int, errMsg string, code string) protocol.UnlockResultMessage {
+	if code == "" && errMsg != "" {
+		code = protocol.IPCErrorCode(errMsg)
+	}
 	return protocol.UnlockResultMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeUnlockResult,
@@ -113,7 +116,7 @@ func ProtocolUnlockResultMessage(id string, success bool, keyCount int, errMsg s
 		},
 		Success:  success,
 		KeyCount: keyCount,
-		Code:     protocol.IPCErrorCode(errMsg),
+		Code:     code,
 		Error:    errMsg,
 	}
 }

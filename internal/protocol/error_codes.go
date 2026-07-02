@@ -39,7 +39,7 @@ func WithCode(code string, err error) error {
 }
 
 // CodeForError returns the code attached at the error origin when present,
-// falling back to deriving one from the message text for legacy paths.
+// falling back to exact legacy message strings for old codeless peers.
 func CodeForError(err error) string {
 	if err == nil {
 		return ""
@@ -103,8 +103,10 @@ const (
 	ResultCodeDeactivationFailed   = "deactivation_failed"
 )
 
-// IPCErrorCode derives a stable machine-readable code from an existing
-// human-readable protocol/admin error string.
+// IPCErrorCode maps the small set of legacy codeless protocol/admin messages
+// whose exact text shipped before the wire carried explicit codes. New code
+// must attach codes at the source with WithCode instead of adding message-text
+// patterns here.
 func IPCErrorCode(errMsg string) string {
 	errMsg = strings.TrimSpace(errMsg)
 	if errMsg == "" {
@@ -112,39 +114,31 @@ func IPCErrorCode(errMsg string) string {
 	}
 
 	lower := strings.ToLower(errMsg)
-	switch {
-	case lower == "invalid message format":
+	switch lower {
+	case "invalid message format":
 		return ErrCodeInvalidMessageFormat
-	case lower == "expected auth message":
+	case "expected auth message":
 		return ErrCodeExpectedAuthMessage
-	case lower == "invalid auth message format":
+	case "invalid auth message format":
 		return ErrCodeInvalidAuthMessage
-	case lower == "authentication failed":
+	case "authentication failed":
 		return ErrCodeAuthenticationFailed
-	case lower == "invalid passphrase", lower == "incorrect passphrase":
+	case "invalid passphrase", "incorrect passphrase":
 		return ErrCodeInvalidPassphrase
-	case strings.HasPrefix(lower, "auth ok but unlock failed:"),
-		strings.HasPrefix(lower, "failed to load keys:"):
-		return ErrCodeUnlockFailed
-	case lower == "invalid generate key message",
-		lower == "invalid import key message",
-		lower == "invalid export key message",
-		lower == "invalid delete key message",
-		lower == "invalid list keys message",
-		lower == "invalid unlock message",
-		lower == "invalid key details message",
-		strings.HasPrefix(lower, "unknown or read-only setting:"):
+	case "invalid generate key message",
+		"invalid import key message",
+		"invalid export key message",
+		"invalid delete key message",
+		"invalid list keys message",
+		"invalid unlock message",
+		"invalid key details message":
 		return ErrCodeInvalidRequest
-	case strings.HasPrefix(lower, "unknown message type:"):
-		return ErrCodeUnknownMessageType
-	case lower == "no identity bound to session":
+	case "no identity bound to session":
 		return ErrCodeNoIdentityBound
-	case lower == "authorization denied":
+	case "authorization denied":
 		return ErrCodeAuthorizationDenied
-	case lower == "signer is locked":
+	case "signer is locked":
 		return ErrCodeSignerLocked
-	case strings.HasPrefix(lower, "key not found:"):
-		return ErrCodeKeyNotFound
 	default:
 		return ErrCodeInternal
 	}
