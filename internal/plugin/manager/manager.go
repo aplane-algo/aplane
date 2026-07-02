@@ -25,6 +25,7 @@ import (
 var (
 	ErrNoPluginForCommand     = errors.New("no plugin provides command")
 	ErrDuplicatePluginCommand = errors.New("multiple plugins provide command")
+	ErrPluginStateInUse       = errors.New("plugin state directory in use")
 )
 
 // Instance represents a running plugin instance
@@ -34,9 +35,10 @@ type Instance struct {
 	Client  *jsonrpc.Client
 	Started time.Time
 
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
-	stderr io.ReadCloser
+	stdin     io.WriteCloser
+	stdout    io.ReadCloser
+	stderr    io.ReadCloser
+	stateLock *pluginStateLock
 }
 
 // Manager manages external plugin instances
@@ -375,6 +377,15 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 	if err != nil {
 		return nil, err
 	}
+	stateLock, err := lockPluginStateDir(stateDir)
+	if err != nil {
+		return nil, err
+	}
+	cleanupStateLock := func() {
+		if stateLock != nil {
+			stateLock.Release()
+		}
+	}
 
 	// Build environment
 	env := append(os.Environ(),
@@ -400,6 +411,7 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 
 	cmd, err := sandbox.BuildCommand(sandboxCfg)
 	if err != nil {
+		cleanupStateLock()
 		return nil, fmt.Errorf("failed to start plugin: %w", err)
 	}
 
@@ -408,12 +420,14 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 	// Create pipes
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		cleanupStateLock()
 		return nil, fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
+		cleanupStateLock()
 		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
@@ -421,6 +435,7 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 	if err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
+		cleanupStateLock()
 		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
@@ -429,6 +444,7 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 		_ = stdin.Close()
 		_ = stdout.Close()
 		_ = stderr.Close()
+		cleanupStateLock()
 		return nil, fmt.Errorf("failed to start plugin: %w", err)
 	}
 
@@ -437,13 +453,14 @@ func (m *Manager) startPluginInstance(plugin *discovery.Plugin, cfg runtimeConfi
 	client.Start()
 
 	instance := &Instance{
-		Plugin:  plugin,
-		Process: cmd,
-		Client:  client,
-		Started: time.Now(),
-		stdin:   stdin,
-		stdout:  stdout,
-		stderr:  stderr,
+		Plugin:    plugin,
+		Process:   cmd,
+		Client:    client,
+		Started:   time.Now(),
+		stdin:     stdin,
+		stdout:    stdout,
+		stderr:    stderr,
+		stateLock: stateLock,
 	}
 
 	// Monitor stderr in background
@@ -622,6 +639,11 @@ func stopInstance(instance *Instance) {
 
 // Stop terminates a plugin instance
 func (i *Instance) Stop() {
+	defer func() {
+		if i.stateLock != nil {
+			i.stateLock.Release()
+		}
+	}()
 	if i.Process == nil {
 		return
 	}

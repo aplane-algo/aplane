@@ -1077,8 +1077,18 @@ Plugins receive these environment variables when started:
 | `APSHELL_ALGOD_TOKEN` | Algod API token from `config.yaml` (empty for public nodes) |
 | `APSHELL_INDEXER_URL` | Indexer URL |
 | `APSHELL_PLUGIN` | Set to "1" to indicate plugin context |
+| `APSHELL_PLUGIN_STATE_DIR` | Private persistent state directory for this plugin, under `$APCLIENT_DATA/plugin-state/<name>` |
 
 Algod settings are read from the `networks.<network>.algod` section of `config.yaml`. If algod is not configured for the current network, plugins receive empty strings and must handle this gracefully.
+
+`APSHELL_PLUGIN_STATE_DIR` is writable by the plugin and is preserved by
+default. APlane takes a non-blocking advisory lock on a lockfile in that
+directory before starting the plugin; if another shell already has the same
+plugin state open, startup fails clearly instead of allowing concurrent
+mutation. The state directory may contain plugin-owned signing material or
+protocol state. Removing a plugin from `plugins.yaml` or deleting its executable
+directory does not purge this state. To purge it intentionally, stop all shells
+using the plugin and delete `$APCLIENT_DATA/plugin-state/<name>` manually.
 
 ### Development Guidelines
 
@@ -1199,6 +1209,7 @@ External plugins run in OS-level sandboxes that restrict filesystem access. This
 - `/etc/ssl`, `/etc/ca-certificates` (read-only) - TLS certificates
 - `/etc/resolv.conf`, `/etc/hosts`, `/etc/nsswitch.conf` (read-only) - DNS resolution
 - Plugin directory (read-only) - the plugin's own files
+- Plugin state directory (read-write), when `APSHELL_PLUGIN_STATE_DIR` is set
 - `/tmp` and platform temporary directories (read-write) - temporary files
 - Network - enabled for all external plugins for algod, KMD, or indexer API calls
 

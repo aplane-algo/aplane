@@ -4,9 +4,15 @@
 package manager
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/plugin/discovery"
+	"github.com/aplane-algo/aplane/internal/plugin/manifest"
 )
 
 func TestPluginStateDir(t *testing.T) {
@@ -62,4 +68,56 @@ func TestValidPluginStateName(t *testing.T) {
 			t.Errorf("%q should be invalid", n)
 		}
 	}
+}
+
+func TestPluginStateLockRejectsConcurrentManagerStart(t *testing.T) {
+	tmp := t.TempDir()
+	m1 := &Manager{dataDir: tmp}
+	stateDir, err := m1.pluginStateDir("swap-tools")
+	if err != nil {
+		t.Fatalf("pluginStateDir: %v", err)
+	}
+	lock, err := lockPluginStateDir(stateDir)
+	if err != nil {
+		t.Fatalf("lockPluginStateDir(first): %v", err)
+	}
+	defer lock.Release()
+
+	m2 := &Manager{dataDir: tmp, stderrWriter: io.Discard}
+	plugin := &discovery.Plugin{
+		Dir: tmp,
+		Manifest: &manifest.Manifest{
+			Name:       "swap-tools",
+			Executable: "missing-plugin-binary",
+		},
+	}
+	_, err = m2.startPluginInstance(plugin, runtimeConfig{})
+	if !errors.Is(err, ErrPluginStateInUse) {
+		t.Fatalf("startPluginInstance(second) error = %v, want ErrPluginStateInUse", err)
+	}
+	if !strings.Contains(err.Error(), "by another shell") {
+		t.Fatalf("startPluginInstance(second) error = %q, want clear contention message", err.Error())
+	}
+}
+
+func TestPluginStateLockReleasedByInstanceStop(t *testing.T) {
+	tmp := t.TempDir()
+	m := &Manager{dataDir: tmp}
+	stateDir, err := m.pluginStateDir("swap-tools")
+	if err != nil {
+		t.Fatalf("pluginStateDir: %v", err)
+	}
+	lock, err := lockPluginStateDir(stateDir)
+	if err != nil {
+		t.Fatalf("lockPluginStateDir(first): %v", err)
+	}
+
+	instance := &Instance{stateLock: lock}
+	instance.Stop()
+
+	lock2, err := lockPluginStateDir(stateDir)
+	if err != nil {
+		t.Fatalf("lockPluginStateDir(after stop): %v", err)
+	}
+	lock2.Release()
 }
