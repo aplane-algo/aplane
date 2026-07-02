@@ -63,7 +63,8 @@ requires `readers = {}`) cannot proceed while a signer is mid-sign — preservin
 ### Copied operators
 
 The lifecycle lock operators are copied from `lifecycle.tla`, not imported. Keeping
-the copies in sync is a code-review responsibility, not a machine-checked property.
+the copies in sync is handled by `make formal-copy-sync-check`, which also runs
+before TLC in `make formal-test`.
 
 ## How to check
 
@@ -90,7 +91,7 @@ decommissioned runtime admits no new signer output. It does not re-prove the
 policy/approval derivation (that is `composition.tla` / `approval_composition.tla`,
 consumed here as `policySigned`) and it does not add liveness (that a signer
 eventually completes). The lock operators are kept in sync with `lifecycle.tla` by
-code review, not by TLC.
+the copied-operator sync check before TLC runs.
 
 ## Linking back
 

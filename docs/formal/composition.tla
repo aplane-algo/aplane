@@ -32,10 +32,11 @@ domains, this module must be updated by hand to match. TLC cannot
 detect this kind of drift: the three modules are independent specs,
 and a stale copy here may still pass against its own (stale)
 definitions while the component modules pass against the new ones.
-Keeping the three in sync is a code-review responsibility, not a
-machine-checked property. If mechanical linkage becomes important,
-the right move is to extract shared operators into a fourth module
-and have all three modules INSTANCE-import from it.
+Copy drift is checked by scripts/check-formal-copied-operators.py
+(`make formal-copy-sync-check`, also run by `make formal-test`). If
+deeper mechanical linkage becomes important, the right move is to
+extract shared operators into a fourth module and have all three
+modules INSTANCE-import from it.
 
 See FORMAL_TLA_COMPOSITION_MODEL.md for the prose companion.
 *)

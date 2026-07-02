@@ -79,16 +79,16 @@ small and the operators are pure functions (`Plan`, `SignOutput`,
 them keeps this module self-contained and readable.
 
 If `sign_boundary.tla` or `policy_precedence.tla` changes its
-operators or domains, this module must be updated by hand to match.
-TLC cannot detect this kind of drift: the three modules are
-independent specs, and a stale copy here can still pass against its
-own (stale) definitions while the component modules pass against the
-new ones. Running all three through TLC catches *internal*
-inconsistency within each module, not divergence between modules.
-Keeping the three in sync is a code-review responsibility, not a
-machine-checked property. If mechanical linkage becomes important,
-the right move is to extract the shared operators into a fourth
-module and have all three modules `INSTANCE`-import from it.
+operators or domains, this module must be updated to match. TLC
+cannot detect this kind of drift: the three modules are independent
+specs, and a stale copy here can still pass against its own (stale)
+definitions while the component modules pass against the new ones.
+Running all three through TLC catches *internal* inconsistency within
+each module, not divergence between modules. Copy drift is checked by
+`make formal-copy-sync-check`, which also runs before TLC in
+`make formal-test`. If deeper mechanical linkage becomes important,
+the right move is to extract the shared operators into a fourth module
+and have all three modules `INSTANCE`-import from it.
 
 ### The bridge
 

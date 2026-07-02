@@ -64,8 +64,8 @@ is consulted only when the verdict requires operator input.
 
 Like `composition.tla`, the sign_boundary and policy_precedence operators are
 copied, not imported, because the component modules declare colliding variable
-names. Keeping the copies in sync is a code-review responsibility, not a
-machine-checked property.
+names. Copy drift is checked by `make formal-copy-sync-check`, which also runs
+before TLC in `make formal-test`.
 
 ## How to check
 
@@ -91,8 +91,8 @@ through the coordinator signs a review-class request, and a fail-all
 (disconnect/decommission) never yields a signed output. It does not re-prove the
 coordinator's temporal invariants (those are in `approval_coordinator.tla`) or
 the per-slot output rules (in `sign_boundary.tla` / `composition.tla`). As with
-the other composed modules, the operator copies are kept in sync by code review,
-not by TLC.
+the other composed modules, operator-copy drift is checked before TLC by
+`make formal-test`.
 
 ## Linking back
 

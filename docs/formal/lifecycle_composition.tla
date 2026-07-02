@@ -32,8 +32,9 @@ New seam invariants:
     "lifecycle unavailability implies no new signer output."
 
 It also re-checks the carried lifecycle invariants L4-L7 under the extended
-model. As with the other composed modules, operators copied from lifecycle.tla
-are kept in sync by code review, not by TLC.
+model. As with the other composed modules, copy drift for operators copied from
+lifecycle.tla is checked by scripts/check-formal-copied-operators.py (`make
+formal-copy-sync-check`, also run by `make formal-test`).
 
 See FORMAL_TLA_LIFECYCLE_MODEL.md for the lock model and
 FORMAL_TLA_COMPOSITION_MODEL.md for the policy -> output pipeline.

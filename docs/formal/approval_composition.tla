@@ -40,8 +40,9 @@ sign_boundary.tla and composition.tla; they are not re-stated here.
 Operators are copied from sign_boundary.tla, policy_precedence.tla, and
 composition.tla rather than imported, for the same reason composition.tla
 copies them (both component modules declare colliding variable names under
-EXTENDS/INSTANCE). Keeping the copies in sync with the component modules is
-a code-review responsibility, not a machine-checked property.
+EXTENDS/INSTANCE). Copy drift is checked by
+scripts/check-formal-copied-operators.py (`make formal-copy-sync-check`, also
+run by `make formal-test`).
 
 See FORMAL_APPROVAL_COORDINATOR_MODEL.md and
 FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md (Extension plan) for context.
