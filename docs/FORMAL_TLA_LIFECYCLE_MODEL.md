@@ -230,11 +230,11 @@ Already shipped: this module.
 
 Next likely modules, in order of value:
 
-1. **Lifecycle-aware composition.** Compose this module with the
-   existing composition module so that lifecycle unavailability
-   (admin `Finished` and `decommissioned`) forces empty signer
-   output. Requires reconciling temporal-transition state with
-   one-shot Init state — non-trivial but valuable.
+1. **Lifecycle-aware composition** — *shipped* as
+   [formal/lifecycle_composition.tla](formal/lifecycle_composition.tla)
+   ([FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md](FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md)):
+   it adds a lease-gated signing step to this module's race and checks that
+   lifecycle unavailability (decommission) admits no new signer output.
 2. **Approval coordinator state machine (M3 prerequisite).** Models
    pending approvals, timeouts, cancellations, and mid-flight
    decommission. Would compose with this lifecycle module to verify

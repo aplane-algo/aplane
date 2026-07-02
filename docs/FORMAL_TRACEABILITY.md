@@ -312,6 +312,27 @@ These are cross-module seam claims rather than new numbered invariants.
 Validated by mutation test: mapping the `Failed` (fail-all) outcome to `approve`
 produces a counterexample where a fail-all'd review-class request signs.
 
+### Lifecycle composition module
+
+[formal/lifecycle_composition.tla](formal/lifecycle_composition.tla) (see
+[FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md](FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md))
+joins the temporal lifecycle lock race with a lease-gated signing step, checking
+end to end that a signer produces output only while holding a lease acquired before
+decommission. Like `lifecycle.tla` it is a temporal-transition spec; TLC checked
+under `SignerProcs = {s1, s2}` with symmetry, generating 226 distinct states, depth
+12, no counterexamples. It re-checks lifecycle L4-L7 under the extended model and
+adds two seam claims; the policy decision is consumed as the boolean `policySigned`
+(its derivation is in `composition.tla` / `approval_composition.tla`).
+
+| Claim | TLA+ predicate |
+|---|---|
+| L4-L7 (carried) | `L4_LeaseGatesSigning` .. `L7_RegistryRemoveDoesNotPreventCompletion` |
+| Output requires a held lease + signing policy | `LifecycleGatesOutput` |
+| Rejected (post-decommission) signer produces no output | `RejectedProducesNoOutput` |
+
+Validated by mutation test: making the signing step ignore `policySigned` (always
+producing output) yields a counterexample.
+
 ### Unmodeled invariants
 
 The following invariants have no TLA+ representation yet:
@@ -326,10 +347,9 @@ The following invariants have no TLA+ representation yet:
 - AP1-AP3 (approval coordinator) are modeled by construction rather than as
   predicates; AP4-AP6 and L8 are machine-checked in `approval_coordinator.tla`.
 
-Lifecycle-aware composition (joining the temporal lifecycle model
-with the existing one-shot sign-boundary/policy-precedence/composition
-modules) is the next likely module per the extension plans in the
-formal prose companion docs.
+Lifecycle-aware composition has shipped as
+[formal/lifecycle_composition.tla](formal/lifecycle_composition.tla) (above);
+the next likely module is a signing-authority spec covering the S* surface.
 
 ## Update Workflow
 

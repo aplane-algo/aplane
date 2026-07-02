@@ -198,10 +198,12 @@ Already shipped:
 
 Next likely TLA+ modules, in order of value:
 
-1. **Lifecycle-aware composition.** Compose the temporal lifecycle
-   model with this one-shot composition spec so that lifecycle
-   unavailability forces empty signer output. Requires reconciling
-   temporal-transition state with one-shot Init state.
+1. **Lifecycle-aware composition** — *shipped* as
+   [formal/lifecycle_composition.tla](formal/lifecycle_composition.tla)
+   ([FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md](FORMAL_TLA_LIFECYCLE_COMPOSITION_MODEL.md)):
+   a lease-gated signing step on the lifecycle race that checks lifecycle
+   unavailability admits no new signer output, consuming the policy decision
+   as a boolean rather than merging the one-shot pipeline.
 2. **Approval coordinator state machine (M3 prerequisite).** State
    machine for pending approvals, including timeout and cancellation.
    Would refine the four-valued `approval` input here into a proper

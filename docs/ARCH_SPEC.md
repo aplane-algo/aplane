@@ -1463,8 +1463,8 @@ The repo uses:
 - machine-checkable TLA+ models under `docs/formal/`, run locally with
   `make formal-test` and in CI by the Formal Models job. The target checks the
   `sign_boundary`, `policy_precedence`, `composition`, `lifecycle`,
-  `approval_coordinator`, and `approval_composition` TLC modules and requires
-  `tla2tools.jar` through `TLA2TOOLS_JAR` or one of the
+  `approval_coordinator`, `approval_composition`, and `lifecycle_composition`
+  TLC modules and requires `tla2tools.jar` through `TLA2TOOLS_JAR` or one of the
   Makefile's default jar search paths.
 
 `make integrity-check` is the broad verification target. It chains formatting,

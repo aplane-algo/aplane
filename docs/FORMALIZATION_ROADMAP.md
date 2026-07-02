@@ -234,10 +234,12 @@ Next likely modules:
    the guarded module becomes too large: explicit mismatch hard-fails, self
    fallback is only available when no explicit route exists, and hard discovery
    failures do not partially rewrite routing state.
-3. **Lifecycle-aware composition.** Compose the temporal lifecycle
-   model with the existing one-shot sign-boundary, policy-precedence,
-   and composition modules. Requires reconciling temporal-transition
-   state with one-shot Init state — non-trivial but valuable.
+3. **Lifecycle-aware composition.** *Shipped* as
+   `lifecycle_composition.tla`: a lease-gated signing step on the lifecycle
+   race, machine-checking that lifecycle unavailability (decommission) admits
+   no new signer output. The temporal-vs-one-shot reconciliation was resolved
+   by consuming the policy decision as a boolean rather than merging the
+   one-shot pipeline transition-by-transition.
 4. **Approval coordinator state machine.** *Shipped* as
    `approval_coordinator.tla` (Track B2): pending approvals, timeouts,
    cancellations, and mid-flight decommission, machine-checking L8.
@@ -324,9 +326,9 @@ If the repository has moved since the guarded signing update, run `git log --one
 from the relevant formalization commit to see what changed.
 
 **Drift review (2026-06-29, HEAD `0568e343`).** A re-sync confirmed the models
-still track the code after ~360 commits of movement: all six TLA+ modules
+still track the code after ~360 commits of movement: all seven TLA+ modules
 re-check green under TLC at the recorded state counts (2,628 / 64 / 84,096 /
-48 / 196 / 47,304); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
+48 / 196 / 47,304 / 226); the [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) anchors were
 re-validated across all 65 invariants (six stale code/line anchors corrected,
 no invariant lost its test); and two code changes since the snapshot were
 reconciled — the third guarded account key type `aplane.corridor.v1` (now named
@@ -345,7 +347,7 @@ S/A-series) are unchanged.
 | M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
 | M3: Deferred Companion English Models | In progress | Approval coordinator delivered (`FORMAL_APPROVAL_COORDINATOR_MODEL.md`). Cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
-| M4: Machine-Checkable Model | First wave complete | Six TLA+ modules shipped. ~18 of 71 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam. |
+| M4: Machine-Checkable Model | First wave complete | Seven TLA+ modules shipped. ~18 of 71 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam and `lifecycle_composition.tla` the end-to-end lifecycle gate. |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
 Machine-checked invariants by module:
@@ -358,6 +360,7 @@ Machine-checked invariants by module:
 | `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency | 48 | 10 |
 | `approval_coordinator.tla` | AP4, AP5, AP6, L8, turn/state consistency | 196 | 11 |
 | `approval_composition.tla` | approval-seam claims (AP2 / L8 / I9 end to end) | 47,304 | 1 |
+| `lifecycle_composition.tla` | L4-L7 + lifecycle-output seam (decommission => no output) | 226 | 12 |
 
 Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A15
 (guarded signing), AP1-AP3 (approval coordinator; modeled by construction),
@@ -365,7 +368,7 @@ I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L9-L11.
 
 ### Verification methodology by module
 
-The six shipped modules are not all the same kind of check, and the
+The seven shipped modules are not all the same kind of check, and the
 distinction matters when judging what TLC has and has not done:
 
 - **`sign_boundary.tla`, `policy_precedence.tla`, `composition.tla`, and
@@ -380,18 +383,21 @@ distinction matters when judging what TLC has and has not done:
   output-binding seam would surface as a counterexample — but it does
   not exercise concurrency, interleaving, or temporal properties.
 
-- **`lifecycle.tla` and `approval_coordinator.tla`** are
-  temporal-transition specs with real `Next` relations and genuine
-  state-space exploration across action interleavings. `lifecycle.tla`
-  races two signer processes and one admin over a writer-priority RWMutex
-  (depth 10); its L5 mutation test (removing the `readers = {}` guard from
-  `AdminAcquireWrite`) confirms it would catch a lock-ordering regression.
-  `approval_coordinator.tla` interleaves several approval requests over a
-  shared single-delivery turn through to a terminal outcome (depth 11);
-  its mutation test (removing the `~decommissioned` guard from `Deliver`)
-  confirms it would catch an approval granted after decommission (L8).
-  Both are **true model checking** — invariants are evaluated at every
-  reachable state in the transition graph.
+- **`lifecycle.tla`, `approval_coordinator.tla`, and
+  `lifecycle_composition.tla`** are temporal-transition specs with real
+  `Next` relations and genuine state-space exploration across action
+  interleavings. `lifecycle.tla` races two signer processes and one admin
+  over a writer-priority RWMutex (depth 10); its L5 mutation test (removing
+  the `readers = {}` guard from `AdminAcquireWrite`) confirms it would catch
+  a lock-ordering regression. `approval_coordinator.tla` interleaves several
+  approval requests over a shared single-delivery turn through to a terminal
+  outcome (depth 11); its mutation test (removing the `~decommissioned` guard
+  from `Deliver`) confirms it would catch an approval granted after
+  decommission (L8). `lifecycle_composition.tla` adds a lease-gated signing
+  step to the lifecycle race (depth 12); its mutation test (signing
+  regardless of the policy decision) confirms it would catch output produced
+  without a signing policy. All three are **true model checking** —
+  invariants are evaluated at every reachable state in the transition graph.
 
 Why call this out: TLA+ tooling does not distinguish the two styles, so
 a state-count or depth number alone does not tell a reader which kind
@@ -467,7 +473,7 @@ Tools used during the first iteration:
 Convention used during this work: the jar lives at `~/tla/tla2tools.jar`.
 Adjust paths if you put it elsewhere.
 
-Run all six modules in sequence from the repo root:
+Run all seven modules in sequence from the repo root:
 
 ```sh
 java -jar ~/tla/tla2tools.jar -config docs/formal/sign_boundary.cfg        docs/formal/sign_boundary.tla
@@ -476,6 +482,7 @@ java -jar ~/tla/tla2tools.jar -config docs/formal/composition.cfg          docs/
 java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle.cfg            docs/formal/lifecycle.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/approval_coordinator.cfg docs/formal/approval_coordinator.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/approval_composition.cfg docs/formal/approval_composition.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle_composition.cfg docs/formal/lifecycle_composition.tla
 ```
 
 Expected results match the table above. Each module reports "Model
@@ -508,17 +515,13 @@ the M3 deliverables list as part of the same change.
 
 ### How to pick up next
 
-The approval-coordinator track is complete: `approval_coordinator.tla`
-(Track B2) machine-checked L8 and the AP invariants, and
-`approval_composition.tla` (Track B3) derived the operator `approval` input
-from the coordinator's outcome end to end. If you want to extend the
-machine-checked surface area further, the highest-value next slices are:
+The approval-coordinator track is complete (`approval_coordinator.tla` +
+`approval_composition.tla`, Tracks B2/B3), and lifecycle-aware composition has
+shipped as `lifecycle_composition.tla` — an end-to-end machine-checked claim
+that lifecycle unavailability (decommission) admits no new signer output. If
+you want to extend the machine-checked surface area further, the highest-value
+next slices are:
 
-- **Lifecycle-aware composition.** Joins `lifecycle.tla` (temporal) with
-  the existing one-shot composition module. Non-trivial because it
-  requires reconciling temporal-transition state with one-shot Init state,
-  but unlocks an end-to-end machine-checked claim about "lifecycle
-  unavailability implies empty signer output."
 - **Signing-authority TLA+ module.** A new TLA+ artifact covering S*
   invariants — canonical filename binding, key-selection-from-`auth_address`,
   the deferred S13 fallback path. Would close the largest remaining
@@ -528,6 +531,6 @@ machine-checked surface area further, the highest-value next slices are:
   property class.
 
 The previous operational cleanup is complete: `docs/formal/states/` is ignored,
-and the Formal Models CI job runs all six shipped TLC modules through
+and the Formal Models CI job runs all seven shipped TLC modules through
 `make formal-test`. If you only have time for one new formalization piece, start
-with lifecycle-aware composition.
+with the signing-authority TLA+ module.
