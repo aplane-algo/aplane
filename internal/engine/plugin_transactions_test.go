@@ -5,7 +5,6 @@ package engine
 
 import (
 	"encoding/base64"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -98,54 +97,6 @@ func TestProcessTransactionIntentsRejectsBadInputs(t *testing.T) {
 				t.Fatalf("error = %q, want substring %q", err.Error(), tt.errContains)
 			}
 		})
-	}
-}
-
-func TestParseExecuteResultLocalSigners(t *testing.T) {
-	result := &jsonrpc.ExecuteResult{
-		LocalSigners: []jsonrpc.LocalSigner{
-			{
-				Address:   "ADDR1",
-				SecretKey: base64.StdEncoding.EncodeToString([]byte{1, 2, 3}),
-			},
-		},
-		Data: map[string]interface{}{
-			"localSigners": []interface{}{
-				map[string]interface{}{
-					"address":   "ADDR2",
-					"secretKey": base64.StdEncoding.EncodeToString([]byte{4, 5, 6}),
-				},
-			},
-		},
-	}
-
-	got, err := ParseExecuteResultLocalSigners(result)
-	if err != nil {
-		t.Fatalf("ParseExecuteResultLocalSigners() error = %v", err)
-	}
-	if len(got) != 1 || got[0].Address != "ADDR1" || !reflect.DeepEqual(got[0].SecretKey, []byte{1, 2, 3}) {
-		t.Fatalf("got = %#v, want canonical top-level signer", got)
-	}
-}
-
-func TestParseExecuteResultLocalSignersIgnoresDataShape(t *testing.T) {
-	result := &jsonrpc.ExecuteResult{
-		Data: map[string]interface{}{
-			"localSigners": []interface{}{
-				map[string]interface{}{
-					"address":   "ADDR1",
-					"secretKey": base64.StdEncoding.EncodeToString([]byte{1, 2, 3}),
-				},
-			},
-		},
-	}
-
-	got, err := ParseExecuteResultLocalSigners(result)
-	if err != nil {
-		t.Fatalf("ParseExecuteResultLocalSigners() error = %v", err)
-	}
-	if got != nil {
-		t.Fatalf("got = %#v, want nil because data.localSigners is not a contract field", got)
 	}
 }
 

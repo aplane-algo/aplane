@@ -58,9 +58,14 @@ func (a *App) signTransactions(ctx context.Context, txns []types.Transaction, wa
 
 // SubmitPluginTransactions processes plugin transaction intents and submits them via the appropriate signing path.
 func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
+	if result != nil && len(result.LocalSigners) > 0 {
+		return nil, fmt.Errorf("plugin localSigners are not supported; use groupMode %q or %q",
+			jsonrpc.GroupModePresignPlan, jsonrpc.GroupModePregroupedSigned)
+	}
+
 	switch result.GroupMode {
 	case "":
-		// Legacy unsigned / localSigners path (handled below).
+		// Default unsigned path: APlane-managed slots only.
 	case jsonrpc.GroupModePregroupedSigned:
 		return a.submitPregroupedSigned(ctx, result, lsigArgs)
 	case jsonrpc.GroupModePresignPlan:
@@ -78,23 +83,7 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, r
 		return nil, err
 	}
 
-	localSigners, err := engine.ParseExecuteResultLocalSigners(result)
-	if err != nil {
-		return nil, err
-	}
-	localSignerSet := localSignerSetFromEngine(localSigners)
-
 	lsigArgsSlice := perTxnLsigArgs(lsigArgs, len(result.Transactions))
-	if localSignerSet != nil {
-		submit, err := a.eng.SignAndSubmitWithLocalSigners(ctx, txns, localSignerSet.engineSigners, lsigArgsSlice)
-		if err != nil {
-			if submit != nil {
-				return newGroupSubmitSummary(submit.TxIDs, !a.eng.GetSimulate(), submit.Output, nil), err
-			}
-			return nil, err
-		}
-		return newGroupSubmitSummary(submit.TxIDs, !a.eng.GetSimulate(), submit.Output, nil), nil
-	}
 	submit, err := a.eng.SignAndSubmitGroup(ctx, txns, lsigArgsSlice)
 	if err != nil {
 		if submit != nil {
@@ -122,9 +111,6 @@ func (a *App) SubmitPluginTransactions(ctx context.Context, pluginName string, r
 // (checked downstream in SubmitPregroupedSigned). It fails closed if the result
 // mixes in any APlane-managed signing.
 func (a *App) submitPregroupedSigned(ctx context.Context, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
-	if len(result.LocalSigners) > 0 {
-		return nil, fmt.Errorf("groupMode %q does not allow localSigners", jsonrpc.GroupModePregroupedSigned)
-	}
 	if len(lsigArgs) > 0 {
 		return nil, fmt.Errorf("groupMode %q does not allow lsig args", jsonrpc.GroupModePregroupedSigned)
 	}
@@ -170,9 +156,6 @@ func (a *App) submitPregroupedSigned(ctx context.Context, result *jsonrpc.Execut
 func (a *App) submitPresignPlan(ctx context.Context, pluginName string, result *jsonrpc.ExecuteResult, lsigArgs map[string][]byte) (*GroupSubmitSummary, error) {
 	if len(result.PluginSigners) == 0 {
 		return nil, fmt.Errorf("groupMode %q requires pluginSigners", jsonrpc.GroupModePresignPlan)
-	}
-	if len(result.LocalSigners) > 0 {
-		return nil, fmt.Errorf("groupMode %q does not allow localSigners", jsonrpc.GroupModePresignPlan)
 	}
 
 	refs := make(map[string]string, len(result.PluginSigners))

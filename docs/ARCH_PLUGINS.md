@@ -781,65 +781,34 @@ Continuation argument normalization follows the same manifest-driven rules as th
 If a continuation command is not declared in the plugin manifest, APlane Shell has no `arg_specs`
 metadata for it and will pass continuation args through unchanged.
 
-### Local Signers (Plugin-Controlled Keys)
+### Unsupported `localSigners`
 
-Some DeFi protocols require plugins to control ephemeral accounts or escrow keys that aren't managed by the user's apsigner keystore. For example, a lending protocol might create a temporary escrow account for each deposit operation.
+Top-level `localSigners` is intentionally unsupported. APlane does not accept
+plugin-supplied secret keys, even for ephemeral accounts. If a plugin returns
+`localSigners`, apshell rejects the result and tells the plugin author to use
+one of the audited group modes below.
 
-In these cases, plugins can return top-level `localSigners` in the execute
-result to indicate which accounts should be signed locally by apshell rather
-than sent to apsigner.
+Plugins that need to sign accounts or LogicSigs outside apsigner custody must
+either:
 
-**Format:**
-```json
-{
-  "success": true,
-  "message": "Deposit into lending pool",
-  "transactions": [...],
-  "requiresApproval": true,
-  "localSigners": [
-    {
-      "address": "ESCROW_ADDRESS_1...",
-      "secretKey": "base64-encoded-64-byte-ed25519-secret-key"
-    },
-    {
-      "address": "ESCROW_ADDRESS_2...",
-      "secretKey": "base64-encoded-64-byte-ed25519-secret-key"
-    }
-  ],
-  "data": {
-    "amount": 10.5
-  }
-}
-```
-
-**Plugin contract:**
-
-- The `localSigners` array entries each contain `address` (Algorand address string) and `secretKey` (base64-encoded 64-byte Ed25519 secret key).
-- Local signer keys are ephemeral and protocol-specific (e.g., deposit escrows); apshell holds them in memory only during transaction signing.
-- The canonical top-level `localSigners` field is not rendered as user data.
-
-When `localSigners` is present, apshell runs the cooperative signing protocol with apsigner. See [ARCH_COOPERATIVE_SIGNING.md](ARCH_COOPERATIVE_SIGNING.md) for the protocol, the all-plugin fallback, and the security properties.
-
-**Trust boundary:** Keys supplied by plugins are **not trusted, audited, policy-enforced, or protected by APlane**. Transactions signed with plugin-supplied keys are **outside APlane's security guarantees** and are executed entirely at the plugin/operator's risk.
-
-**Use Cases:**
-
-- Lending protocols with per-user escrow accounts
-- DEX protocols with ephemeral swap accounts
-- Multi-step workflows where intermediate accounts are created and used
+- return a complete, already-signed group with `groupMode:"pregrouped-signed"`,
+  or
+- use `groupMode:"presign-plan"` plus `pluginSigners`, so APlane can
+  canonicalize the group and ask the plugin to sign only its declared slots over
+  canonical bytes.
 
 ### Plugin Transaction Flows (Group Modes)
 
-The intent and local-signer mechanisms above cover plugins that propose transactions
-for APlane-managed or plugin-supplied ephemeral keys. Some protocols, however, need to
-take part in **building and signing atomic groups that involve cryptography or signing
+The default transaction intent flow covers plugins that propose transactions for
+APlane-managed keys. Some protocols, however, need to take part in **building
+and signing atomic groups that involve cryptography or signing
 material APlane does not hold** — a LogicSig the plugin compiled, a key in an HSM, a
 threshold quorum, or a counterparty's signature. The `ExecuteResult.groupMode` field
 selects the flow:
 
 | `groupMode` | Who signs each slot | APlane's role |
 |---|---|---|
-| _(empty)_ | apsigner / `localSigners` | plan, sign, and submit (the default path above) |
+| _(empty)_ | apsigner | sign and submit APlane-managed raw transaction intents |
 | `pregrouped-signed` | the plugin (every slot) | validate self-consistency and **submit verbatim**; apsigner signs nothing |
 | `presign-plan` | plugin-owned slots **and** APlane-managed slots | canonicalize the group, call the plugin back to sign its slots, sign the managed slots, submit |
 
@@ -905,8 +874,8 @@ result, alongside the unsigned `raw` intents:
 | `lsigSize` | int | Byte size of the LogicSig (program + args) the plugin attaches to this slot. APlane counts it toward the group's pooled LogicSig budget. Omit or `0` when the slot carries no LogicSig |
 
 The `groupMode` field is the top-level selector for the flow; `presign-plan` requires a
-`pluginSigners` entry for every plugin-owned slot, and `pregrouped-signed` uses neither
-`pluginSigners` nor `localSigners`.
+`pluginSigners` entry for every plugin-owned slot, and `pregrouped-signed` uses no
+`pluginSigners`.
 
 Supporting machinery: a **per-plugin state directory** (`APSHELL_PLUGIN_STATE_DIR`) for
 persisting keys, cursors, or watermarks across invocations, and a role-aware review
@@ -947,7 +916,6 @@ budget-sizing path automatically; the flow does not change.
 
 For the signer-side substrate beneath these flows — the `/plan` and `/sign` pipeline, the
 LogicSig pool-capacity formula, and the passthrough/foreign signing modes — see
-[ARCH_COOPERATIVE_SIGNING.md](ARCH_COOPERATIVE_SIGNING.md) and
 [TXN_MIXED_GROUPS.md](TXN_MIXED_GROUPS.md).
 
 ### Error Codes
@@ -982,7 +950,7 @@ The default (`groupMode` empty) flow:
    - Decodes `raw` unsigned transactions from base64 → msgpack
    - Validates transaction structure
 3. User approval (if `requiresApproval: true`)
-4. APlane Shell signs transactions via Signer (and any `localSigners`)
+4. APlane Shell signs transactions via Signer
 5. APlane Shell submits transactions to network
 6. Transaction IDs displayed to user
 
@@ -1278,7 +1246,9 @@ or
 - Plugins cannot sign transactions
 - Only propose transaction intents
 - APlane Shell/Signer performs all signing
-- **Exception:** When a plugin returns `localSigners`, apshell signs plugin-owned transactions locally. If signer-managed keys also participate, apshell uses the cooperative signing protocol so apsigner retains full-group visibility (see [Local Signers](#local-signers-plugin-controlled-keys) and [ARCH_COOPERATIVE_SIGNING](ARCH_COOPERATIVE_SIGNING.md))
+- Plugins that need to bring their own signing material must use
+  `pregrouped-signed` or `presign-plan`; apshell never accepts plugin-supplied
+  secret keys.
 
 **User Approval:**
 - Transactions with `requiresApproval: true` require user confirmation
@@ -1415,7 +1385,6 @@ Always test your plugin on multiple networks:
 ## See Also
 
 - [Plugin Transaction Flows](#plugin-transaction-flows-group-modes) - The `pregrouped-signed` / `presign-plan` group modes and the plugin classes they enable
-- [ARCH_COOPERATIVE_SIGNING.md](ARCH_COOPERATIVE_SIGNING.md) - The `/plan` + `/sign` cooperative signing protocol beneath the group flows
 - [TXN_MIXED_GROUPS.md](TXN_MIXED_GROUPS.md) - LogicSig pool capacity and mixed-group signing on the signer side
 - [plugins/README.md](../plugins/README.md) - Bundled production plugins
 - [examples/external_plugins/README.md](../examples/external_plugins/README.md) - Plugin examples

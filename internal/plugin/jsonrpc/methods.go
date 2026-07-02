@@ -5,6 +5,8 @@
 package jsonrpc
 
 import (
+	"encoding/json"
+
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
@@ -90,7 +92,10 @@ type ExecuteResult struct {
 	Presentation     *Presentation       `json:"presentation,omitempty"`
 	RequiresApproval bool                `json:"requiresApproval,omitempty"`
 	Continuation     *Continuation       `json:"continuation,omitempty"` // For multi-step workflows
-	LocalSigners     []LocalSigner       `json:"localSigners,omitempty"`
+	// LocalSigners is an unsupported secret-bearing field from a removed plugin
+	// signing design. It is retained only so hosts can fail closed when a plugin
+	// returns the field instead of silently ignoring secret-bearing input.
+	LocalSigners []json.RawMessage `json:"localSigners,omitempty"`
 
 	// PluginSigners declares slots the plugin owns but will sign itself, by
 	// reference, in the pre-sign planning flow (GroupModePresignPlan). APlane never
@@ -98,9 +103,9 @@ type ExecuteResult struct {
 	// plugin sign these slots over the canonical group.
 	PluginSigners []PluginSigner `json:"pluginSigners,omitempty"`
 
-	// GroupMode selects how APlane handles Transactions. Empty (the default) is
-	// the legacy unsigned/localSigners path. GroupModePregroupedSigned means the
-	// plugin supplied a complete, already-signed, already-grouped atomic group
+	// GroupMode selects how APlane handles Transactions. Empty (the default)
+	// means APlane-managed unsigned transactions. GroupModePregroupedSigned means
+	// the plugin supplied a complete, already-signed, already-grouped atomic group
 	// that APlane validates and submits verbatim (no apsigner, no /plan).
 	GroupMode string `json:"groupMode,omitempty"`
 }
@@ -113,7 +118,7 @@ type ExecuteResult struct {
 const (
 	// GroupModePregroupedSigned: Transactions are all Type:"signed", form one
 	// complete signed atomic group, and are submitted verbatim. Incompatible with
-	// LocalSigners or any APlane-managed signing.
+	// any APlane-managed signing.
 	GroupModePregroupedSigned = "pregrouped-signed"
 
 	// GroupModePresignPlan: Transactions are unsigned; APlane canonicalizes the
@@ -163,9 +168,9 @@ type Continuation struct {
 
 // TransactionIntent represents a transaction the plugin wants to create.
 //
-// Type "raw": Encoded is a base64 unsigned transaction msgpack; APlane plans,
-// signs, and submits it (legacy path). Type "signed": Encoded is a base64 signed
-// transaction msgpack; valid only when ExecuteResult.GroupMode is
+// Type "raw": Encoded is a base64 unsigned transaction msgpack; APlane signs
+// and submits it. Type "signed": Encoded is a base64 signed transaction msgpack;
+// valid only when ExecuteResult.GroupMode is
 // GroupModePregroupedSigned, where APlane submits it verbatim.
 type TransactionIntent struct {
 	Type    string `json:"type"`    // "raw" (unsigned) or "signed" (pregrouped-signed)
@@ -177,12 +182,6 @@ const (
 	TransactionIntentRaw    = "raw"
 	TransactionIntentSigned = "signed"
 )
-
-// LocalSigner is a plugin-controlled ephemeral signer supplied in an execute result.
-type LocalSigner struct {
-	Address   string `json:"address"`
-	SecretKey string `json:"secretKey"` // Base64-encoded 64-byte Ed25519 secret key.
-}
 
 // PluginSigner declares, by reference, a slot the plugin will sign itself during
 // pre-sign planning. No signing material is exported; SignerRef is opaque to APlane

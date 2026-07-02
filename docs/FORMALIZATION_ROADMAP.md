@@ -83,8 +83,7 @@ Initial models should not include:
 - terminal UI behavior,
 - operator behavior,
 - algod consensus correctness,
-- cooperative signing and all-plugin signer-bypass behavior, including the
-  plugin group-mode flows `presign-plan` (a plugin signs its own slots by
+- plugin group-mode flows `presign-plan` (a plugin signs its own slots by
   callback; the signer plans them as foreign slots) and `pregrouped-signed`
   (the plugin submits a complete signed group, bypassing the signer),
 - approval coordinator cancellation/timeout state machines (picked up as the M3
@@ -153,9 +152,8 @@ outside M1:
   and decommission failure — **delivered** as
   [FORMAL_APPROVAL_COORDINATOR_MODEL.md](FORMAL_APPROVAL_COORDINATOR_MODEL.md);
   its TLA+ module is Track B2,
-- cooperative signing, including the `localSigners` `/plan`-to-local-signing-to-`/sign`
-  passthrough flow, the `presign-plan` plugin-callback flow (the plugin signs
-  its own slots, which the signer plans as foreign slots), and the
+- plugin group modes, including the `presign-plan` plugin-callback flow (the
+  plugin signs its own slots, which the signer plans as foreign slots), and the
   `pregrouped-signed` all-plugin server-bypass flow,
 - LogicSig budget computation,
 - LogicSig template and bytecode generation.
@@ -495,11 +493,10 @@ tracked in git and is regenerated on each invocation.
 
 ### Non-Goals vs M3
 
-The Non-Goals section above lists several items ("cooperative signing and
-all-plugin signer-bypass behavior," "approval coordinator
-cancellation/timeout state machines," "LogicSig budget computation
-internals," "LogicSig template and bytecode-generation semantics") that
-also appear as M3 companion-model targets. The distinction is intentional:
+The Non-Goals section above lists several items ("plugin group-mode flows,"
+"approval coordinator cancellation/timeout state machines," "LogicSig budget
+computation internals," "LogicSig template and bytecode-generation semantics")
+that also appear as M3 companion-model targets. The distinction is intentional:
 
 - **In Non-Goals**: these are excluded from the *initial* English models
   (M1) and from the first wave of machine-checkable work (M4 first slice).

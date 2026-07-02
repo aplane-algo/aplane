@@ -5,6 +5,7 @@ package apshellapp
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -16,6 +17,16 @@ func TestSubmitPluginTransactionsUnsupportedGroupMode(t *testing.T) {
 	_, err := app.SubmitPluginTransactions(context.Background(), "plugin", &jsonrpc.ExecuteResult{GroupMode: "bogus"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "unsupported plugin groupMode") {
 		t.Fatalf("want unsupported groupMode error, got %v", err)
+	}
+}
+
+func TestSubmitPluginTransactionsRejectsLocalSigners(t *testing.T) {
+	app := &App{}
+	_, err := app.SubmitPluginTransactions(context.Background(), "plugin", &jsonrpc.ExecuteResult{
+		LocalSigners: []json.RawMessage{json.RawMessage(`{"address":"A","secretKey":"k"}`)},
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "localSigners are not supported") {
+		t.Fatalf("want localSigners unsupported error, got %v", err)
 	}
 }
 
@@ -34,15 +45,6 @@ func TestSubmitPregroupedSignedRejections(t *testing.T) {
 		lsig    map[string][]byte
 		wantSub string
 	}{
-		{
-			name: "localSigners rejected",
-			result: &jsonrpc.ExecuteResult{
-				GroupMode:    jsonrpc.GroupModePregroupedSigned,
-				Transactions: []jsonrpc.TransactionIntent{signed, signed},
-				LocalSigners: []jsonrpc.LocalSigner{{Address: "X", SecretKey: "Y"}},
-			},
-			wantSub: "does not allow localSigners",
-		},
 		{
 			name: "lsig args rejected",
 			result: &jsonrpc.ExecuteResult{
@@ -85,19 +87,12 @@ func TestSubmitPresignPlanRejections(t *testing.T) {
 	tests := []struct {
 		name    string
 		signers []jsonrpc.PluginSigner
-		local   []jsonrpc.LocalSigner
 		wantSub string
 	}{
 		{
 			name:    "no pluginSigners",
 			signers: nil,
 			wantSub: "requires pluginSigners",
-		},
-		{
-			name:    "localSigners rejected",
-			signers: []jsonrpc.PluginSigner{{Address: "A", Kind: jsonrpc.PluginSignerKindCallback, SignerRef: "r"}},
-			local:   []jsonrpc.LocalSigner{{Address: "A", SecretKey: "k"}},
-			wantSub: "does not allow localSigners",
 		},
 		{
 			name:    "unsupported kind",
@@ -120,7 +115,7 @@ func TestSubmitPresignPlanRejections(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := &jsonrpc.ExecuteResult{GroupMode: jsonrpc.GroupModePresignPlan, PluginSigners: tc.signers, LocalSigners: tc.local}
+			result := &jsonrpc.ExecuteResult{GroupMode: jsonrpc.GroupModePresignPlan, PluginSigners: tc.signers}
 			_, err := app.SubmitPluginTransactions(ctx, "plugin", result, nil)
 			if err == nil || !strings.Contains(err.Error(), tc.wantSub) {
 				t.Fatalf("want error containing %q, got %v", tc.wantSub, err)

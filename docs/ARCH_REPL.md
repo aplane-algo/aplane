@@ -155,9 +155,9 @@ command-specific text rendering. It is not part of the MCP structured switch,
 so `simulate` is not a structured (JSON) execute path — MCP captures its text
 output instead.
 
-`PluginResult.RenderJSON()` filters `localSigners` from `Data` before
-serialization to prevent ephemeral key material from appearing in MCP
-responses.
+`PluginResult.RenderJSON()` defensively filters the reserved `localSigners` key
+from `Data` before serialization. Top-level `localSigners` is unsupported and
+rejected before transaction submission.
 
 ### Pattern Usage
 

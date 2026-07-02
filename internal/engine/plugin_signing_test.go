@@ -25,27 +25,6 @@ func TestPluginAppCallInfo(t *testing.T) {
 	}
 }
 
-func TestZeroLocalSignerKeys(t *testing.T) {
-	secretA := []byte{1, 2, 3}
-	secretB := []byte{4, 5, 6}
-
-	zeroLocalSignerKeys(map[string][]byte{
-		"A": secretA,
-		"B": secretB,
-	})
-
-	for i, b := range secretA {
-		if b != 0 {
-			t.Fatalf("secretA[%d] = %d, want 0", i, b)
-		}
-	}
-	for i, b := range secretB {
-		if b != 0 {
-			t.Fatalf("secretB[%d] = %d, want 0", i, b)
-		}
-	}
-}
-
 func TestBuildPluginAssetContextStructuredAssets(t *testing.T) {
 	assets := buildPluginAssetContext(map[uint64]cache.ASAInfo{
 		20: {Name: "Second Token", UnitName: "DUP", Decimals: 6},

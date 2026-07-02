@@ -254,7 +254,6 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Plugin manifest | authoritative plugin metadata | `plugins.available/<name>/manifest.json` | plugin registry entry | `internal/plugin` | Manifest format is separate from JSON-RPC protocol version. |
 | Plugin checksum | integrity metadata | `checksums.sha256` and package files | validation result | `internal/plugin`, `cmd/applugin-checksum` | Invalid checksum prevents plugin execution. |
 | Plugin execution context | wire/runtime projection | shell/engine state | JSON-RPC context payload | `internal/plugin`, `internal/apshellcli` | Structured `assets` list is canonical; no lossy `assetMap`. |
-| Plugin local signer payload | typed wire payload | plugin request | typed signer request data | `internal/plugin`, `internal/engine` | Secret-bearing data is not passed through untyped maps. |
 | JavaScript runtime state | runtime-only | loaded script plus engine state | Goja runner | `internal/scripting`, `internal/jsapi` | Per-run runtime state; saved scripts are durable user state. |
 | MCP structured result | wire projection | shell app result objects | MCP tool result payload | `internal/apshellcli`, `internal/appresult` | Projection of shell runtime, not a separate backend model. |
 

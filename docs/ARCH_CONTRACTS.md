@@ -1610,11 +1610,15 @@ Plugins return:
 
 - optional `message`
 - `transactions` using raw unsigned msgpack transaction intents only
-- optional top-level `localSigners` for plugin-controlled ephemeral keys
 - optional `data`
 - optional `presentation`
 - optional `requiresApproval`
 - optional `continuation`
+- optional `groupMode` with `pregrouped-signed` or `presign-plan` for
+  plugin-owned signing material
+
+Top-level `localSigners` is intentionally unsupported. If present, apshell
+rejects the plugin result instead of accepting plugin-supplied secret keys.
 
 `data` is the canonical machine-readable payload.
 `presentation` is optional human-oriented display metadata for apshell text rendering.

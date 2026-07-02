@@ -16,15 +16,15 @@ APlane supports three fundamentally different authorization mechanisms:
 
 For standard transactions, the client sends transactions to `/sign` and receives a finalized group representation. Each request entry uses one of three modes — **sign**, **passthrough**, or **foreign**; `/plan` uses the same request grammar but stops before approval and signing. See [Mode Selection](#mode-selection) below for the trichotomy.
 
-**Plugin transactions**: external plugins can participate in transaction flow in
-three ways. The legacy `localSigners` path uses `/plan`, local signing for
-ephemeral plugin keys, and `/sign` passthrough. `groupMode:"presign-plan"`
-uses `/plan` with plugin-owned slots as foreign entries, then calls the plugin
-back with canonical bytes through `signTransactions` before `/sign` signs the
-managed slots. `groupMode:"pregrouped-signed"` is fully plugin-signed and
-bypasses apsigner entirely after local client review. See
-[Cooperative Signing (Plugin Transactions)](#cooperative-signing-plugin-transactions)
-below and [ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the plugin protocol.
+**Plugin transactions**: external plugins can participate in transaction flow
+through the default unsigned-intent path or one of the explicit group modes.
+`groupMode:"presign-plan"` uses `/plan` with plugin-owned slots as foreign
+entries, then calls the plugin back with canonical bytes through
+`signTransactions` before `/sign` signs the managed slots.
+`groupMode:"pregrouped-signed"` is fully plugin-signed and bypasses apsigner
+entirely after local client review. Top-level `localSigners` is unsupported and
+rejected. See [Plugin Group Modes](#plugin-group-modes) below and
+[ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the plugin protocol.
 
 **Group immutability rule**: Pre-grouped transactions (group ID already set) are always immutable. The server will not add dummies, adjust fees, or recompute the group ID. If a pre-grouped group has insufficient LogicSig budget, the request is rejected. Clients that need server-side canonicalization must submit ungrouped transactions.
 
@@ -298,7 +298,7 @@ When apsigner receives a grouped `/sign` request, it processes the group in this
 The `/plan` endpoint provides group building without signing. It performs all the same processing as `/sign` (decoding, dummy calculation, fee pooling, group ID computation) but stops before approval and signing. The signer must be unlocked (key metadata is needed for dummy calculation).
 
 **Use cases:**
-- Build finalized canonical groups for cooperative signing (plugin `localSigners` flow)
+- Build finalized canonical groups for plugin `presign-plan` and multi-party signing workflows
 - Preview how the server will modify a group (dummies, fees) before committing
 - Build finalized groups for multi-party signing workflows
 
@@ -481,11 +481,11 @@ budgeted.
 
 ---
 
-## Cooperative Signing (Plugin Transactions)
+## Plugin Group Modes
 
-When external plugins return `localSigners` (ephemeral Ed25519 keys), `handleSign` does not see plugin-owned transactions as sign-mode entries — they arrive as passthrough (already locally signed) inside a pre-grouped request shape produced by an earlier `/plan` call. From the server's perspective, this is just the passthrough + sign-mode path through the pipeline: canonical group is preserved, signer-controlled slots are policy-linted and signed, passthrough slots are carried through unchanged.
-
-The all-plugin case bypasses apsigner entirely (apshell assigns the group ID locally and signs everything), avoiding the all-foreign rejection at planner entry.
+Top-level `localSigners` is not a supported plugin signing mechanism. If a
+plugin returns it, apshell rejects the result before planning, approval, or
+submission. APlane never signs with plugin-supplied secret keys.
 
 `groupMode:"presign-plan"` generalizes the mixed-signing shape for plugin-owned
 signers whose key material cannot be exported. The plugin emits an unsigned
@@ -501,10 +501,7 @@ returns already-signed, already-grouped bytes; apshell validates the embedded
 group ID is self-consistent and submits the exact bytes verbatim. apsigner does
 not plan, approve, or sign that group, so local client review is the human gate.
 
-See [ARCH_COOPERATIVE_SIGNING.md](ARCH_COOPERATIVE_SIGNING.md) for the original
-`localSigners` `/plan` -> local-sign -> `/sign` orchestration and
-[ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the current plugin group-mode wire
-contract.
+See [ARCH_PLUGINS.md](ARCH_PLUGINS.md) for the plugin group-mode wire contract.
 
 ---
 

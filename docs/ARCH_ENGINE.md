@@ -138,7 +138,7 @@ internal/engine/
 ├── payment.go             # Payment preparation
 ├── plugin_pregrouped.go   # Pre-grouped plugin transaction submission
 ├── plugin_presign.go      # Plugin pre-sign planning flow (mixed managed/plugin groups)
-├── plugin_signing.go      # Cooperative signing with plugin local signers
+├── plugin_signing.go      # Shared helpers for plugin transaction submission
 ├── plugin_transactions.go # Plugin transaction processing
 ├── rekey.go               # Rekey/unrekey operations
 ├── sentry_endpoint.go     # Sentry endpoint resolution for guarded signing
@@ -461,8 +461,6 @@ result, err := engine.SignAndSubmit(ctx, prep, true) // wait for confirmation
 | `SignAndSubmitAtomic` | Sign and submit atomic group |
 | `SignAndSubmitTransactions` | Sign pre-built transactions |
 | `SignAndSubmitWithPluginSigners` | Run the pre-sign planning flow for mixed plugin/managed groups |
-| `SignAndSubmitWithLocalSigners` | Sign and submit a group with plugin-supplied local signers |
-| `SignAndSubmitAllLocal` | Build, sign, and submit an all-local group with no server-managed slots |
 | `ValidateAtomicPayments` | Validate atomic ALGO payments |
 | `ValidateAtomicASATransfers` | Validate atomic ASA transfers |
 | `WaitForConfirmation` | Wait for transaction confirmation |

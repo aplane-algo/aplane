@@ -40,11 +40,6 @@ type PreparedMethodCall struct {
 	MethodSignature string
 }
 
-// LocalSignerSet is the app-owned handle for parsed local signers.
-type LocalSignerSet struct {
-	engineSigners []engine.LocalSigner
-}
-
 func preparedTxnFromEngine(prep *engine.TransactionPrepResult) *PreparedTxn {
 	if prep == nil {
 		return nil
@@ -86,13 +81,6 @@ func prepareTxnGroup(preps ...*PreparedTxn) (*PreparedTxnGroup, error) {
 		return nil, err
 	}
 	return &PreparedTxnGroup{engineGroup: group}, nil
-}
-
-func localSignerSetFromEngine(signers []engine.LocalSigner) *LocalSignerSet {
-	if len(signers) == 0 {
-		return nil
-	}
-	return &LocalSignerSet{engineSigners: signers}
 }
 
 // BalanceCheckDetails is the app-owned transaction validation view.

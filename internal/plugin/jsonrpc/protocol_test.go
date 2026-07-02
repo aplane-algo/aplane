@@ -453,12 +453,10 @@ func TestPluginExecutionContextOmitsReservedZeroFields(t *testing.T) {
 	}
 }
 
-func TestExecuteResultLocalSignersJSONShape(t *testing.T) {
+func TestExecuteResultUnsupportedLocalSignersJSONShape(t *testing.T) {
 	result := ExecuteResult{
-		Success: true,
-		LocalSigners: []LocalSigner{
-			{Address: "ADDR1", SecretKey: "SECRET"},
-		},
+		Success:      true,
+		LocalSigners: []json.RawMessage{json.RawMessage(`{"address":"ADDR1","secretKey":"SECRET"}`)},
 	}
 	data, err := json.Marshal(result)
 	if err != nil {

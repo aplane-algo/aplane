@@ -3,7 +3,7 @@
 
 package engine
 
-// Plugin transaction processing: intent decoding and local signer parsing.
+// Plugin transaction processing: intent decoding.
 
 import (
 	"encoding/base64"
@@ -46,38 +46,4 @@ func ProcessTransactionIntents(intents []jsonrpc.TransactionIntent) ([]types.Tra
 	}
 
 	return txns, nil
-}
-
-// ParseExecuteResultLocalSigners extracts canonical top-level local signers.
-func ParseExecuteResultLocalSigners(result *jsonrpc.ExecuteResult) ([]LocalSigner, error) {
-	if result == nil {
-		return nil, nil
-	}
-	return decodeLocalSignerPayloads(result.LocalSigners)
-}
-
-func decodeLocalSignerPayloads(payloads []jsonrpc.LocalSigner) ([]LocalSigner, error) {
-	if len(payloads) == 0 {
-		return nil, nil
-	}
-	result := make([]LocalSigner, 0, len(payloads))
-	for i, signer := range payloads {
-		if signer.Address == "" {
-			return nil, fmt.Errorf("localSigners[%d]: missing address", i)
-		}
-		if signer.SecretKey == "" {
-			return nil, fmt.Errorf("localSigners[%d]: missing secretKey", i)
-		}
-
-		secretKey, err := base64.StdEncoding.DecodeString(signer.SecretKey)
-		if err != nil {
-			return nil, fmt.Errorf("localSigners[%d]: failed to decode secretKey: %w", i, err)
-		}
-
-		result = append(result, LocalSigner{
-			Address:   signer.Address,
-			SecretKey: secretKey,
-		})
-	}
-	return result, nil
 }

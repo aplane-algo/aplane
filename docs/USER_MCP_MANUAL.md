@@ -406,8 +406,7 @@ it never holds keys:
   fails **closed** before submission.
 
 > Full detail: [ARCH_POLICY.md](ARCH_POLICY.md), [USER_POLICY.md](USER_POLICY.md),
-> [ARCH_SENTRY.md](ARCH_SENTRY.md),
-> [ARCH_COOPERATIVE_SIGNING.md](ARCH_COOPERATIVE_SIGNING.md).
+> [ARCH_SENTRY.md](ARCH_SENTRY.md).
 
 ---
 
@@ -469,7 +468,8 @@ Invoke from JS with `plugin(name, ...args)`, which returns:
 ```
 
 (Always check `success`.) Ephemeral plugin signing keys (`localSigners`) are
-filtered out of MCP responses.
+unsupported; if a plugin returns `localSigners`, APlane rejects the plugin
+result before submission.
 
 **`algokit-localnet`** is the bundled LocalNet plugin (active when listed in
 `plugins.yaml`). It talks directly to LocalNet's algod/KMD APIs and provides the
@@ -598,7 +598,7 @@ each MCP server instance uses its own:
 - [ARCH_OVERVIEW.md](ARCH_OVERVIEW.md) — system architecture and identity model
 - [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) — transaction/group/signing flow
 - [ARCH_POLICY.md](ARCH_POLICY.md) / [USER_POLICY.md](USER_POLICY.md) — policy and approval
-- [ARCH_SENTRY.md](ARCH_SENTRY.md) / [ARCH_COOPERATIVE_SIGNING.md](ARCH_COOPERATIVE_SIGNING.md) — guarded signing
+- [ARCH_SENTRY.md](ARCH_SENTRY.md) — guarded signing
 - [USER_KEYTYPES.md](USER_KEYTYPES.md) / [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) — key types
 - [WP_CORRIDORS.md](WP_CORRIDORS.md) — corridors (constrained-transfer graphs)
 - [ARCH_PLUGINS.md](ARCH_PLUGINS.md) — plugins

@@ -265,12 +265,13 @@ Status: mostly implemented. Callback params/results are typed for the existing
 callback constants, and plugin manifests use `manifest_format` only. The legacy
 manifest `protocol_version` alias is rejected.
 
-### Slice 9b: Plugin Execution Context And LocalSigner Cleanup
+### Slice 9b: Plugin Execution Context And Unsupported localSigners Cleanup
 
 Status: implemented for the active plugin contract. Unpopulated context fields
-use `omitempty`, local signers are typed top-level payloads, legacy
-`data.localSigners` is not accepted for signing, and `TransactionIntent` only
-contains the supported `raw` fields.
+use `omitempty`, top-level `localSigners` is unsupported and rejected,
+`data.localSigners` is defensively scrubbed from structured output and not
+accepted for signing, and `TransactionIntent` only contains the supported `raw`
+fields.
 
 ### Slice 10a: Config Strictness And Ownership
 

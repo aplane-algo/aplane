@@ -344,15 +344,6 @@ The `data` field in responses is for passing metadata that APlane Shell needs fo
 return {
   success: true,
   transactions: [...],
-  // Local signers: plugin-controlled accounts to sign locally
-  // Use this when the plugin generates ephemeral keys (e.g., escrows)
-  localSigners: [
-    {
-      address: "ESCROW_ADDRESS...",
-      secretKey: "base64-encoded-64-byte-ed25519-key"
-    }
-  ],
-
   data: {
     // Custom metadata for display:
     amount: 1.5,
@@ -362,10 +353,10 @@ return {
 };
 ```
 
-**Local Signers**: When your plugin creates ephemeral accounts (like deposit escrows), include their keys in top-level `localSigners`. APlane Shell will:
-- Sign transactions from these addresses locally
-- Send all other transactions to apsigner for user key signing
-- Handle group orchestration (dummies, fees, group ID)
+Do not return top-level `localSigners`. APlane Shell rejects plugin-supplied
+secret keys. Plugins that need to sign their own accounts should use
+`groupMode:"presign-plan"` with `pluginSigners`, or return a complete signed
+group with `groupMode:"pregrouped-signed"`.
 
 Use `echo-plugin` as the minimal in-repo reference implementation and `reti`
 as a protocol example for a real DeFi integration whose runtime payload is

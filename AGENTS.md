@@ -315,7 +315,6 @@ See `docs/ARCH_CONTRACTS.md` for the full on-disk layout and compatibility detai
 - `ARCH_NETWORKS.md`: Network context token and genesis-hash mapping architecture
 - `ARCH_SENTRY.md`: Guarded signing and sentry node architecture
 - `ARCH_APP_INTERACTION.md`: App interaction, app-local vs signer-managed action boundaries, and token/caller model
-- `ARCH_COOPERATIVE_SIGNING.md`: Cooperative signing and split-authorization architecture
 - `ARCH_LSIG_PROVIDER.md`: LogicSig provider, template, salting, and registration architecture
 - `ARCH_PLUGINS.md`: Plugin system architecture
 - `ARCH_CRYPTO.md`: Cryptographic design

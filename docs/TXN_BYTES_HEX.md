@@ -67,7 +67,7 @@ Plan response semantics:
 - `/plan` returns `GroupPlanResponse.transactions`
 - each entry is a TX-prefixed hex-encoded unsigned transaction in final group order
 - server-added dummy transactions, fee pooling, and group-ID assignment are reflected in the returned transactions
-- clients that need local/cooperative signing or simulate-without-signing should consume `/plan` output instead of `/sign` output
+- clients that need multi-party planning or simulate-without-signing should consume `/plan` output instead of `/sign` output
 
 ## How It Works
 
