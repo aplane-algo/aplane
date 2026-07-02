@@ -178,6 +178,11 @@ Your plugin must handle these methods:
 - **getInfo** - Returns plugin information
 - **shutdown** - Clean shutdown request
 
+JSON-RPC frames use `jsonrpc: "2.0"`. `manifest_format` is the manifest schema
+version. The `initialize.params.version` field is the APlane plugin protocol
+version; return the same value in `initialize.result.version`. Your plugin's
+semantic package version stays in `manifest.json` and `getInfo`.
+
 ### 3. Communication Protocol
 
 Plugins communicate via:

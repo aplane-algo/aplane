@@ -200,13 +200,15 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 		if attempt == 1 {
 			inst = newClosedClientPluginInstance(t)
 		} else {
-			inst = newResponsivePluginInstance(t, func(method string, id interface{}) map[string]interface{} {
+			inst = newResponsivePluginInstance(t, func(req map[string]interface{}) map[string]interface{} {
+				id := req["id"]
 				return map[string]interface{}{
 					"jsonrpc": jsonrpc.Version,
 					"id":      id,
 					"result": map[string]interface{}{
 						"success": true,
 						"message": "ok",
+						"version": jsonrpc.PluginProtocolVersion,
 					},
 				}
 			})
@@ -239,6 +241,56 @@ func TestExecuteCommandProtocolFailureDoesNotPoisonSubsequentRetry(t *testing.T)
 
 	if err := m.StopPlugin("plugin-a"); err != nil {
 		t.Fatalf("StopPlugin() error = %v", err)
+	}
+}
+
+func TestInitializePluginRequiresProtocolVersionEcho(t *testing.T) {
+	tests := []struct {
+		name        string
+		echoVersion string
+		wantErr     string
+	}{
+		{name: "supported", echoVersion: jsonrpc.PluginProtocolVersion},
+		{name: "missing", echoVersion: "", wantErr: `unsupported plugin protocol version ""`},
+		{name: "mismatch", echoVersion: "2.0", wantErr: `unsupported plugin protocol version "2.0"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seenVersion := make(chan string, 1)
+			inst := newResponsivePluginInstance(t, func(req map[string]interface{}) map[string]interface{} {
+				params, _ := req["params"].(map[string]interface{})
+				version, _ := params["version"].(string)
+				seenVersion <- version
+				result := map[string]interface{}{
+					"success": true,
+					"message": "ok",
+				}
+				if tt.echoVersion != "" {
+					result["version"] = tt.echoVersion
+				}
+				return map[string]interface{}{
+					"jsonrpc": jsonrpc.Version,
+					"id":      req["id"],
+					"result":  result,
+				}
+			})
+			defer inst.Stop()
+
+			err := NewManager().initializePlugin(inst, runtimeConfig{network: "testnet"})
+			if got := <-seenVersion; got != jsonrpc.PluginProtocolVersion {
+				t.Fatalf("initialize version = %q, want %q", got, jsonrpc.PluginProtocolVersion)
+			}
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("initializePlugin() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !bytes.Contains([]byte(err.Error()), []byte(tt.wantErr)) {
+				t.Fatalf("initializePlugin() error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -291,7 +343,7 @@ func newClosedClientPluginInstance(t *testing.T) *Instance {
 	return inst
 }
 
-func newResponsivePluginInstance(t *testing.T, respond func(method string, id interface{}) map[string]interface{}) *Instance {
+func newResponsivePluginInstance(t *testing.T, respond func(req map[string]interface{}) map[string]interface{}) *Instance {
 	t.Helper()
 
 	inst := newTestPluginInstance(t)
@@ -311,8 +363,7 @@ func newResponsivePluginInstance(t *testing.T, respond func(method string, id in
 				_ = serverToClientWriter.Close()
 				return
 			}
-			method, _ := req["method"].(string)
-			resp := respond(method, req["id"])
+			resp := respond(req)
 			if err := enc.Encode(resp); err != nil {
 				return
 			}

@@ -1589,15 +1589,12 @@ JSON-RPC methods:
 - `getInfo`
 - `shutdown`
 
-Callbacks into apshell:
-
-- `getAccount`
-- `listAccounts`
-- `getBalance`
-- `getAssetInfo`
-- `getAppInfo`
-- `signTransaction`
-- `log`
+Plugin-initiated requests back into apshell are reserved but not installed in
+production. The JSON-RPC client keeps typed request plumbing for future
+reviewed callbacks such as account/balance/app metadata lookup, but absent a
+production handler inbound plugin requests fail closed with `method not found`.
+There is intentionally no `signTransaction` callback: plugins cannot ask
+apshell to sign arbitrary bytes on their behalf.
 
 `initialize` carries network/algo context including:
 
@@ -1605,10 +1602,11 @@ Callbacks into apshell:
 - `algodUrl`
 - `algodToken`
 - optional `indexerUrl`
-- a `version` field (currently a hardcoded `"1.0"`). In code this is the
-  apshell-side version placeholder; it is distinct from the JSON-RPC protocol
-  version (`"2.0"`) and from `manifest_format` (`"1.0"`), and it is not the
-  apshell build version
+- a `version` field containing the current APlane plugin protocol version
+  (`"1.0"`). It is distinct from the JSON-RPC protocol version (`"2.0"`), from
+  `manifest_format` (`"1.0"`), and from the plugin's semantic package version.
+  The plugin must echo the same value in `initialize.result.version`; mismatches
+  fail plugin startup.
 
 `execute` carries:
 

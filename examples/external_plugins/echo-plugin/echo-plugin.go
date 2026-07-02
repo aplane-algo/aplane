@@ -39,13 +39,13 @@ type InitializeParams struct {
 	AlgodURL   string `json:"algodUrl"`
 	AlgodToken string `json:"algodToken"`
 	IndexerURL string `json:"indexerUrl"`
-	Version    string `json:"version"`
+	Version    string `json:"version"` // APlane plugin protocol version
 }
 
 type InitializeResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,omitempty"`
-	Version string `json:"version"`
+	Version string `json:"version"` // APlane plugin protocol version
 }
 
 type ExecuteParams struct {
@@ -156,7 +156,7 @@ func handleInitialize(req *Request) *Response {
 	result := InitializeResult{
 		Success: true,
 		Message: fmt.Sprintf("Echo plugin initialized on %s", network),
-		Version: "1.0.0",
+		Version: params.Version,
 	}
 
 	return successResponse(req.ID, result)

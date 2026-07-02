@@ -190,7 +190,7 @@ async function handleInitialize(params) {
     return {
         success: true,
         message: `Reti plugin initialized on ${pluginState.network} (${appIdMessage})`,
-        version: '1.0.0',
+        version: params.version,
     };
 }
 async function ensureContextNetwork(context) {

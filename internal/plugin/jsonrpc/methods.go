@@ -18,6 +18,11 @@ const (
 	MethodShutdown   = "shutdown"
 )
 
+// PluginProtocolVersion is the APlane plugin protocol version used in the
+// initialize handshake. It is distinct from the JSON-RPC envelope version and
+// from the plugin package's semantic version in its manifest/getInfo response.
+const PluginProtocolVersion = "1.0"
+
 // Optional methods a plugin may implement.
 const (
 	// MethodSignTransactions is a host->plugin call used in the pre-sign planning
@@ -33,14 +38,14 @@ type InitializeParams struct {
 	AlgodURL   string `json:"algodUrl"`   // Algorand node API URL
 	AlgodToken string `json:"algodToken"` // Algod API token (empty for public nodes)
 	IndexerURL string `json:"indexerUrl"` // Indexer URL if available
-	Version    string `json:"version"`    // apshell version
+	Version    string `json:"version"`    // APlane plugin protocol version
 }
 
 // InitializeResult returned from plugin initialization
 type InitializeResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,omitempty"`
-	Version string `json:"version"` // Plugin version
+	Version string `json:"version"` // APlane plugin protocol version echoed by plugin
 }
 
 // ExecuteParams sent when executing a command

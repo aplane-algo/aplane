@@ -323,7 +323,7 @@ async function handleInitialize(params: any): Promise<any> {
   return {
     success: true,
     message: `Reti plugin initialized on ${pluginState.network} (${appIdMessage})`,
-    version: '1.0.0',
+    version: params.version,
   }
 }
 

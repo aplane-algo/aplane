@@ -143,7 +143,8 @@ This file is the entry point for any external plugin.
 
 `manifest_format` describes the manifest file schema. It is separate from the
 JSON-RPC envelope version, which is always the `jsonrpc: "2.0"` field in
-runtime request and response frames.
+runtime request and response frames, and from the APlane plugin protocol
+version exchanged in the `initialize` method.
 
 **Note:** The `executable` field can reference:
 - A local file: `"./plugin-binary"` or `"./dist/plugin.js"`
@@ -424,6 +425,13 @@ available for direct command-line use.
 ### JSON-RPC Protocol
 
 Plugins communicate with APlane Shell using JSON-RPC 2.0 over stdin/stdout.
+The JSON-RPC envelope version (`jsonrpc: "2.0"`), the plugin manifest schema
+version (`manifest_format`), and the APlane plugin protocol version are
+separate contracts. The host sends the current APlane plugin protocol version
+in `initialize.params.version`; the plugin must echo the same value in
+`initialize.result.version`, or startup fails closed. A plugin's semantic
+package version lives in its manifest `version` field and in `getInfo`, not in
+the initialize handshake.
 
 #### initialize
 
@@ -453,7 +461,7 @@ Called once after the plugin starts.
   "result": {
     "success": true,
     "message": "Plugin initialized",
-    "version": "1.0.0"
+    "version": "1.0"
   }
 }
 ```
