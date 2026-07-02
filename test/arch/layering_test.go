@@ -140,6 +140,38 @@ func TestSharedPackagesDoNotImportDSAFamilies(t *testing.T) {
 	}
 }
 
+// TestFamilyImportExceptionsStayCurrent fails when a tracked concrete-family
+// import disappears, so the allowlist shrinks as family-neutral registries land.
+func TestFamilyImportExceptionsStayCurrent(t *testing.T) {
+	cmd := exec.Command("go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...")
+	cmd.Dir = "../.."
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+
+	stillImports := make(map[string]bool, len(familyImportExceptions))
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if _, ok := familyImportExceptions[fields[0]]; !ok {
+			continue
+		}
+		for _, imp := range fields[1:] {
+			if strings.HasPrefix(imp, modulePrefix+"/lsig/") && !templateInfraPackages[imp] {
+				stillImports[fields[0]] = true
+			}
+		}
+	}
+	for pkg := range familyImportExceptions {
+		if !stillImports[pkg] {
+			t.Errorf("%s no longer imports concrete DSA-family packages; remove its exception", pkg)
+		}
+	}
+}
+
 func policed(pkg string) bool {
 	switch {
 	case strings.HasPrefix(pkg, modulePrefix+"/internal/signerapp"):

@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnutil"
 	"github.com/aplane-algo/aplane/lsig/corridor"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
+	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 
@@ -1274,6 +1275,8 @@ func TestSignPreparedSentryComponentsSignsEd25519Messages(t *testing.T) {
 }
 
 func TestSignPreparedSentryComponentsSignsFalcon1024Messages(t *testing.T) {
+	falconkeygen.RegisterSentryComponents()
+
 	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x43}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error = %v", err)

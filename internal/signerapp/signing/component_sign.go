@@ -4,7 +4,6 @@
 package signing
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
@@ -16,7 +15,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
-	"github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -242,25 +240,8 @@ func signSentryComponentMessage(keyType string, privateKey, msg []byte) ([]byte,
 }
 
 func validateLoadedSentryComponentPair(keyType string, publicKey, privateKey []byte) error {
-	switch keyType {
-	case keytypes.SentryComponentEd25519V1:
-		derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
-		if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
-			return fmt.Errorf("loaded sentry key public key does not match private key")
-		}
-		return nil
-	case keytypes.SentryComponentFalcon1024V1:
-		const probe = "APLANE_COMPONENT_KEY_LOAD_V1"
-		signature, err := signerops.New(nil).Sign(privateKey, []byte(probe))
-		if err != nil {
-			return fmt.Errorf("loaded Falcon sentry key validation failed: %w", err)
-		}
-		defer crypto.ZeroBytes(signature)
-		if err := verify.VerifyFalcon1024(publicKey, []byte(probe), signature); err != nil {
-			return fmt.Errorf("loaded sentry key public key does not match private key")
-		}
-		return nil
-	default:
-		return fmt.Errorf("loaded key type %q is not a sentry key", keyType)
+	if err := keytypes.ValidateComponentPair(keyType, publicKey, privateKey); err != nil {
+		return fmt.Errorf("loaded sentry key validation failed: %w", err)
 	}
+	return nil
 }
