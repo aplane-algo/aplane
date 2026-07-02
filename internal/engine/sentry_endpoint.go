@@ -230,6 +230,9 @@ func classifySentryDiscoveryQueryError(err error) error {
 
 	var statusErr *signerclient.HTTPStatusError
 	if errors.As(err, &statusErr) {
+		if classified := classifySentryDiscoveryQueryCode(statusErr.Code, err); classified != nil {
+			return classified
+		}
 		switch {
 		case statusErr.StatusCode == http.StatusUnauthorized || statusErr.StatusCode == http.StatusForbidden:
 			return fmt.Errorf("%w: %w", ErrSentryDiscoveryAuth, err)
@@ -246,6 +249,23 @@ func classifySentryDiscoveryQueryError(err error) error {
 		return fmt.Errorf("%w: %w", ErrSentryDiscoveryUnavailable, err)
 	}
 	return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
+}
+
+func classifySentryDiscoveryQueryCode(code string, err error) error {
+	switch code {
+	case "":
+		return nil
+	case signerapi.ErrCodeLocked:
+		return fmt.Errorf("%w: %w", ErrSentryDiscoveryLocked, err)
+	case signerapi.ErrCodeUnauthorized, signerapi.ErrCodeForbidden, signerapi.ErrCodeInvalidPassphrase:
+		return fmt.Errorf("%w: %w", ErrSentryDiscoveryAuth, err)
+	case signerapi.ErrCodeUnavailable, signerapi.ErrCodeCacheRefresh, signerapi.ErrCodeInternal:
+		return fmt.Errorf("%w: %w", ErrSentryDiscoveryUnavailable, err)
+	case signerapi.ErrCodeBadRequest, signerapi.ErrCodeNotFound:
+		return fmt.Errorf("%w: %w", ErrSentryDiscoveryConfig, err)
+	default:
+		return nil
+	}
 }
 
 func isNetworkUnavailableError(err error) bool {
