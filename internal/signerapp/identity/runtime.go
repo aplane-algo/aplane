@@ -46,6 +46,7 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	lifecycleMu  ->  keysLock
 //	lifecycleMu  ->  watcherMu
 //	reloadLock() ->  passphraseLock  ->  keysLock
+//	reloadLock() ->  templateProviderOwners.mu  ->  lsigprovider.registerMu
 //
 // Per-lock scope:
 //
@@ -63,6 +64,10 @@ type WatcherStartFunc func(dirs []string, ctx context.Context, reloadFn func() e
 //	                and returns the RUnlock as the release; Decommission takes
 //	                the write Lock and so waits for all in-flight leases. It is
 //	                the outer lock when Decommission calls Lock and StopKeyWatcher.
+//	templateProviderOwners.mu guards identity ownership counts for process-global
+//	                installed-template LogicSig providers. It is acquired only
+//	                after the identity mutation lock in production paths and may
+//	                call into lsigprovider.registerMu.
 //
 // Atomics:
 //

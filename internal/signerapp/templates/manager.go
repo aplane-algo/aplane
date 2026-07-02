@@ -248,6 +248,7 @@ func registerTemplateRecord(paths storepaths.Paths, identityID string, masterKey
 		outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
 		return outcome
 	case keytypestate.OutcomeIdempotent:
+		recordProviderOwner(identityID, rec.KeyType)
 		outcome.IdempotentKeyTypes = append(outcome.IdempotentKeyTypes, rec.KeyType)
 		return outcome
 	}
@@ -259,6 +260,7 @@ func registerTemplateRecord(paths storepaths.Paths, identityID string, masterKey
 		// through the shared helper keeps it consistent and future-proof if
 		// either side is ever sourced from durable storage.
 		if match, comparable := lsigprovider.FingerprintsMatch(existingFingerprint, incomingFingerprint); ok && comparable && match {
+			recordProviderOwner(identityID, rec.KeyType)
 			outcome.IdempotentKeyTypes = append(outcome.IdempotentKeyTypes, rec.KeyType)
 		} else {
 			outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
@@ -266,7 +268,7 @@ func registerTemplateRecord(paths storepaths.Paths, identityID string, masterKey
 		return outcome
 	}
 
-	if !prepared.Register() {
+	if !registerProviderForOwner(identityID, rec.KeyType, prepared.Register) {
 		outcome.ConflictingKeyTypes = append(outcome.ConflictingKeyTypes, rec.KeyType)
 		return outcome
 	}

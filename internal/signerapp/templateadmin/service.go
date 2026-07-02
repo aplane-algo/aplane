@@ -392,10 +392,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 			return err
 		}
 		if removeResult.Removed {
-			// Release the process-global key-type name; without this the
-			// removed template's provider stays registered until restart and
-			// a corrected template cannot be installed under the same name.
-			lsigprovider.Unregister(removeResult.KeyType)
+			signertemplates.ReleaseProviderOwner(ir.ID(), removeResult.KeyType)
 			if _, err := ir.Reload(); err != nil {
 				out = adminproto.RemoveInstalledTemplateResult{
 					Success:      false,
@@ -558,6 +555,9 @@ func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.Deactiva
 		}); err != nil {
 			return err
 		}
+		if disabledTemplate && removeResult.Removed {
+			signertemplates.ReleaseProviderOwner(ir.ID(), removeResult.KeyType)
+		}
 		if _, err := ir.Reload(); err != nil {
 			out = adminproto.DeactivateKeyTypeResult{
 				Success: false,
@@ -641,9 +641,7 @@ func rollbackFailedTemplateInstall(paths storepaths.Paths, identityID string, re
 	var rollbackErr error
 	if !result.AlreadyExists {
 		rollbackErr = templatelibrary.RollbackInstalledTemplateFile(paths, identityID, result.KeyType, result.TemplateType)
-		// If the failed install's reload already registered the provider,
-		// release the key-type name along with the rolled-back files.
-		lsigprovider.Unregister(result.KeyType)
+		signertemplates.ReleaseProviderOwner(identityID, result.KeyType)
 	}
 	if result.StateChanged {
 		if err := templatelibrary.RollbackTemplateStateChange(paths, identityID, result); err != nil {

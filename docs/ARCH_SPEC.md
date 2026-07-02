@@ -730,6 +730,7 @@ The key indexes are authoritative runtime indexes of what the server believes is
 | `Signer.configMutationMu` | Process-owned `config.yaml` write serialization |
 | `Signer.storeMutationMu` | Map of per-identity mutation locks |
 | `Signer.storeMutationLocks[identityID]` | Identity-owned key/template/config/policy mutation serialization |
+| `signerapp/templates.templateProviderOwners.mu` | Identity ownership counts for process-global installed-template LogicSig providers |
 | `Signer.restoreAttemptMu` | Lazy initialization of the per-identity/archive restore backoff limiter |
 | `identity.Runtime.keysLock` | `keys`, `keyTypes`, `keyLsigSizes` |
 | `identity.Runtime.passphraseLock` | `keySession`, `reloadFn`, unlock-sensitive ops |
@@ -783,6 +784,12 @@ Watcher-triggered reloads acquire the same per-identity mutation lock used by
 admin template/key/config mutations. Admin mutation paths that already hold the
 lock call `Reload` directly; watcher paths use the watcher reload entrypoint so
 they do not re-enter the same lock.
+
+Installed-template provider reconciliation follows
+`Signer.storeMutationLocks[identityID]` -> `signerapp/templates.templateProviderOwners.mu`
+-> `internal/lsigprovider.registerMu`. The provider-owner lock never acquires
+identity mutation locks and only mutates in-memory owner counts plus the
+process-global provider registry.
 
 Runtime decommission is logical disablement, not data deletion. `Registry.Remove`
 prevents future lookup only; an in-flight request may still hold a runtime

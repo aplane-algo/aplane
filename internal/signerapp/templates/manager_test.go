@@ -172,6 +172,71 @@ func TestRegisterKeystoreTemplatesRegistersGenericAndComposedProviders(t *testin
 	}
 }
 
+func TestTemplateProviderOwnersKeepSharedProviderUntilLastIdentityRelease(t *testing.T) {
+	resetTemplateProviderOwnersForTest()
+	paths := storepaths.NewPaths(t.TempDir())
+	masterKey := testTemplateMasterKey()
+	keyType := "test.manager-shared-owner.v1"
+	fingerprint := "1:" + strings.Repeat("a", 64)
+	lsigprovider.Unregister(keyType)
+	t.Cleanup(func() {
+		resetTemplateProviderOwnersForTest()
+		lsigprovider.Unregister(keyType)
+	})
+
+	saveTemplateRecordForIdentity(t, paths, "alice", keyType, templatestore.TemplateTypeGeneric, masterKey)
+	saveTemplateRecordForIdentity(t, paths, "bob", keyType, templatestore.TemplateTypeGeneric, masterKey)
+	manager := &Manager{
+		Paths: paths,
+		Registrars: []TemplateRegistrar{
+			{
+				Name:         "generic",
+				Source:       keytypestate.SourceYAMLGeneric,
+				TemplateType: templatestore.TemplateTypeGeneric,
+				Prepare: func(keyType string, _ []byte) (templatepolicy.PreparedTemplateRegistration, error) {
+					return templatepolicy.PreparedTemplateRegistration{
+						Fingerprint: fingerprint,
+						Register: func() bool {
+							return lsigprovider.RegisterIfAbsent(templatesTestProvider{
+								keyType:     keyType,
+								fingerprint: fingerprint,
+							})
+						},
+					}, nil
+				},
+			},
+		},
+	}
+
+	aliceReport, err := manager.RegisterKeystoreTemplates("alice", masterKey)
+	if err != nil {
+		t.Fatalf("RegisterKeystoreTemplates(alice) error = %v", err)
+	}
+	if !containsString(aliceReport.GenericActivatedKeyTypes, keyType) {
+		t.Fatalf("alice GenericActivatedKeyTypes = %#v, want %s", aliceReport.GenericActivatedKeyTypes, keyType)
+	}
+	bobReport, err := manager.RegisterKeystoreTemplates("bob", masterKey)
+	if err != nil {
+		t.Fatalf("RegisterKeystoreTemplates(bob) error = %v", err)
+	}
+	if !containsString(bobReport.GenericIdempotentKeyTypes, keyType) {
+		t.Fatalf("bob GenericIdempotentKeyTypes = %#v, want %s", bobReport.GenericIdempotentKeyTypes, keyType)
+	}
+
+	if unregistered := ReleaseProviderOwner("alice", keyType); unregistered {
+		t.Fatalf("ReleaseProviderOwner(alice) unregistered shared provider")
+	}
+	if lsigprovider.Get(keyType) == nil {
+		t.Fatalf("provider %s was removed while bob still owns it", keyType)
+	}
+	if unregistered := ReleaseProviderOwner("bob", keyType); !unregistered {
+		t.Fatalf("ReleaseProviderOwner(bob) did not unregister final owner")
+	}
+	if lsigprovider.Get(keyType) != nil {
+		t.Fatalf("provider %s remained registered after final owner release", keyType)
+	}
+}
+
 func TestRegisterKeystoreTemplatesSkipsDisabledComposedTemplate(t *testing.T) {
 	registerManagerTestBase("test.manager-disabled-base.v1")
 	paths := storepaths.NewPaths(t.TempDir())
@@ -460,10 +525,15 @@ func testTemplateMasterKey() []byte {
 
 func saveTemplateRecord(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, masterKey []byte) {
 	t.Helper()
-	if _, err := templatestore.SaveTemplateForPaths(paths, "default", []byte("ignored"), keyType, templateType, masterKey); err != nil {
+	saveTemplateRecordForIdentity(t, paths, "default", keyType, templateType, masterKey)
+}
+
+func saveTemplateRecordForIdentity(t *testing.T, paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType, masterKey []byte) {
+	t.Helper()
+	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, []byte("ignored"), keyType, templateType, masterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths(%s) error = %v", keyType, err)
 	}
-	writeTemplateStateForTest(t, paths, keyType, templateType, keytypestate.StateEnabled)
+	writeTemplateStateForIdentityTest(t, paths, identityID, keyType, templateType, keytypestate.StateEnabled)
 }
 
 func saveTemplateYAML(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, yamlData []byte, masterKey []byte) {
@@ -476,6 +546,11 @@ func saveTemplateYAML(t *testing.T, paths storepaths.Paths, keyType string, temp
 
 func writeTemplateStateForTest(t *testing.T, paths storepaths.Paths, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
 	t.Helper()
+	writeTemplateStateForIdentityTest(t, paths, "default", keyType, templateType, state)
+}
+
+func writeTemplateStateForIdentityTest(t *testing.T, paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {
+	t.Helper()
 	var source keytypestate.Source
 	switch templateType {
 	case templatestore.TemplateTypeGeneric:
@@ -485,7 +560,7 @@ func writeTemplateStateForTest(t *testing.T, paths storepaths.Paths, keyType str
 	default:
 		t.Fatalf("unsupported template type in test: %q", templateType)
 	}
-	if err := keytypestate.Put(paths, "default", keytypestate.Record{
+	if err := keytypestate.Put(paths, identityID, keytypestate.Record{
 		KeyType: keyType,
 		Source:  source,
 		State:   state,
@@ -553,6 +628,12 @@ func containsString(items []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func resetTemplateProviderOwnersForTest() {
+	templateProviderOwners.mu.Lock()
+	defer templateProviderOwners.mu.Unlock()
+	templateProviderOwners.ownersByKeyType = make(map[string]map[string]struct{})
 }
 
 func registerManagerTestBase(keyType string) {
