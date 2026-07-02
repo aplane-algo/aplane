@@ -6,6 +6,7 @@ package daemon
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"testing"
@@ -223,5 +224,103 @@ func TestDisplacementReplacementAuthFailureKeepsOldOwner(t *testing.T) {
 	}
 	if !ir.IsUnlocked() {
 		t.Fatal("identity locked even though old active owner remained connected")
+	}
+}
+
+func TestDisplacementFailsDeliveredApprovalPrompt(t *testing.T) {
+	signer, cleanup := setupTestSigner(t)
+	defer cleanup()
+
+	ir := signer.registry.Get(auth.DefaultIdentityID)
+	ipcServer := &IPCServer{
+		signer:  signer,
+		manager: adminserver.NewSessionManager(),
+	}
+	signer.ipcServer = ipcServer
+
+	oldServer, oldClient := net.Pipe()
+	defer func() { _ = oldClient.Close() }()
+	oldSession := adminserver.NewSession(adminproto.NewUnixAdminConn(oldServer, nil), signer.adminSessionDeps())
+	oldSession.Bind(auth.NewDefaultIdentity("test"), ir)
+	if !ipcServer.manager.RegisterPending(auth.DefaultIdentityID, oldSession) {
+		t.Fatal("RegisterPending(oldSession) = false, want true")
+	}
+	if _, ok := ipcServer.manager.PromoteToActive(auth.DefaultIdentityID, oldSession); !ok {
+		t.Fatal("PromoteToActive(oldSession) = false, want true")
+	}
+
+	approvalResult := make(chan error, 1)
+	go func() {
+		response, err := ir.RequestSigningApprovalResponse("displaced-prompt", "A", "A", "desc", 0, 0, nil, time.Minute)
+		if err != nil {
+			approvalResult <- err
+			return
+		}
+		if response.Approved || response.Reason != "apadmin displaced" {
+			approvalResult <- fmt.Errorf("response = %+v, want rejected apadmin displaced response", response)
+			return
+		}
+		approvalResult <- nil
+	}()
+
+	oldReader := bufio.NewReader(oldClient)
+	readAdminMessageType(t, oldClient, oldReader, protocol.MsgTypeSignRequest)
+
+	newServer, newClient := net.Pipe()
+	defer func() { _ = newClient.Close() }()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ipcServer.acceptAdminSession(
+			adminproto.NewUnixAdminConn(newServer, nil),
+			adminserver.TransportIPC,
+			"ipc-passphrase",
+			"",
+		)
+	}()
+
+	newReader := bufio.NewReader(newClient)
+	readAdminMessageType(t, newClient, newReader, protocol.MsgTypeClientExists)
+	writeAdminMessage(t, newClient, protocol.DisplaceConfirmMessage{
+		BaseMessage: protocol.BaseMessage{
+			Kind: protocol.MessageKindRequest,
+			Type: protocol.MsgTypeDisplaceConfirm,
+		},
+	})
+	readAdminMessageType(t, newClient, newReader, protocol.MsgTypeAuthRequired)
+	writeAdminMessage(t, newClient, protocol.AuthMessage{
+		BaseMessage: protocol.BaseMessage{
+			Kind: protocol.MessageKindRequest,
+			Type: protocol.MsgTypeAuth,
+		},
+		Passphrase: protocol.NewSensitiveBytes(string(testPassphrase)),
+	})
+
+	rawAuth := readAdminMessageType(t, newClient, newReader, protocol.MsgTypeAuthResult)
+	var authResult protocol.AuthResultMessage
+	if err := json.Unmarshal(rawAuth, &authResult); err != nil {
+		t.Fatalf("decode auth_result: %v", err)
+	}
+	if !authResult.Success {
+		t.Fatalf("auth_result success = false: %+v", authResult)
+	}
+	readAdminMessageType(t, oldClient, oldReader, protocol.MsgTypeDisplaced)
+	readAdminMessageType(t, newClient, newReader, protocol.MsgTypeStatus)
+
+	select {
+	case err := <-approvalResult:
+		if err != nil {
+			t.Fatalf("approval result error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending approval did not finish after displacement")
+	}
+
+	_ = newClient.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for replacement session cleanup")
 	}
 }

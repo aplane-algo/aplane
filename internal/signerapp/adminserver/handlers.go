@@ -207,6 +207,7 @@ func (s *Session) HandleLockIdentity(msg *protocol.LockIdentityMessage) {
 		return
 	}
 
+	ir.FailAllPendingApprovals("identity locked")
 	ir.Lock()
 	if audit, ok := s.audit.(interface {
 		LogIdentityLockedContext(SessionContext, string)

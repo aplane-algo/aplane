@@ -5,10 +5,13 @@ package adminserver
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
 
@@ -77,6 +80,62 @@ func TestHandleLockIdentityAuthorizesLocksAndAudits(t *testing.T) {
 	}
 	if result.Type != protocol.MsgTypeLockIdentityResult || result.ID != "lock-1" || !result.Success {
 		t.Fatalf("lock result = %+v, want successful lock_identity_result", result)
+	}
+}
+
+func TestHandleLockIdentityFailsPendingApprovals(t *testing.T) {
+	ir := identity.New(identity.Config{
+		ID:            auth.DefaultIdentityID,
+		Authenticator: auth.NewTokenAuthenticator("token"),
+	})
+	ir.SetUnlocked()
+
+	delivered := make(chan struct{}, 1)
+	ir.SetApprovalCoordinator(signerapproval.New(
+		func() bool { return true },
+		func(req *signerapproval.SignRequest) bool {
+			delivered <- struct{}{}
+			return true
+		},
+		nil,
+		nil,
+	))
+
+	result := make(chan error, 1)
+	go func() {
+		response, err := ir.RequestSigningApprovalResponse("lock-pending", "A", "A", "desc", 0, 0, nil, time.Minute)
+		if err != nil {
+			result <- err
+			return
+		}
+		if response.Approved || response.Reason != "identity locked" {
+			result <- fmt.Errorf("response = %+v, want rejected identity locked response", response)
+			return
+		}
+		result <- nil
+	}()
+
+	select {
+	case <-delivered:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for approval delivery")
+	}
+
+	conn := &queueConn{}
+	session := NewSession(conn, SessionDeps{})
+	session.Bind(&auth.Identity{ID: "admin-principal", Type: "human", Method: "test"}, ir)
+	session.HandleLockIdentity(&protocol.LockIdentityMessage{
+		BaseMessage: protocol.BaseMessage{ID: "lock-1"},
+		Reason:      "apadmin manual lock",
+	})
+
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("approval result error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending approval did not finish after lock")
 	}
 }
 

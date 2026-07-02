@@ -107,6 +107,7 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport
 
 	pendingIdentityID := preboundIdentityID
 	var active *adminserver.Session
+	var displacementConfirmedFor *adminserver.Session
 	var ok bool
 	if pendingIdentityID != "" {
 		ok = s.sessionManager().RegisterPending(pendingIdentityID, session)
@@ -131,11 +132,12 @@ func (s *IPCServer) acceptAdminSession(adminConn adminproto.AdminConn, transport
 			_ = session.Close()
 			return
 		}
+		displacementConfirmedFor = active
 	}
-	s.handleRegisteredClient(session, transport, preboundIdentityID)
+	s.handleRegisteredClient(session, transport, preboundIdentityID, displacementConfirmedFor)
 }
 
-func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transport, preboundIdentityID string) {
+func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transport, preboundIdentityID string, displacementConfirmedFor *adminserver.Session) {
 	// If auth unlocks an identity for this session, either the session becomes
 	// the active owner or cleanup must leave the identity locked (when
 	// lock_on_disconnect is set) with no pending approvals stranded.
@@ -199,7 +201,7 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 		logWarnf("%s client could not bind pending session to identity %q", strings.ToUpper(transport), identityID)
 		return
 	}
-	if active != nil && active != session {
+	if active != nil && active != session && active != displacementConfirmedFor {
 		if !s.offerDisplacementSession(active, adminConn) {
 			s.sessionManager().ClearPending(identityID, session)
 			return
@@ -211,6 +213,9 @@ func (s *IPCServer) handleRegisteredClient(session *adminserver.Session, transpo
 		return
 	}
 	if replaced != nil && replaced != session {
+		if replacedIR := replaced.BoundRuntime(); replacedIR != nil {
+			replacedIR.FailAllPendingApprovals("apadmin displaced")
+		}
 		adminserver.DisplaceSession(replaced)
 	}
 
