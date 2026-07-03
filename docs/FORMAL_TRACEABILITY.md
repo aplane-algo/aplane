@@ -339,6 +339,29 @@ adds two seam claims; the policy decision is consumed as the boolean `policySign
 Validated by mutation test: making the signing step ignore `policySigned` (always
 producing output) yields a counterexample.
 
+### Session ownership module
+
+[formal/session_ownership.tla](formal/session_ownership.tla) (see
+[FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md](FORMAL_TLA_SESSION_OWNERSHIP_MODEL.md))
+models admin-session ownership against one identity: authentication unlocks the
+identity before ownership is established, so the invariant is that no failure
+between unlock and promotion strands the identity unlocked with no live
+authenticated session responsible for re-locking (`lock_on_disconnect`). It is
+a temporal-transition spec; TLC checked under `Sessions = {a1, a2, a3}` with
+symmetry, generating 90 distinct states, depth 8, no counterexamples.
+
+| Invariant | TLA+ predicate | Code anchor | Test anchor |
+|---|---|---|---|
+| SO1 (single active owner) | `SO1_SingleActiveOwner` | `internal/signerapp/adminserver/manager.go::PromoteToActive` (atomic swap under the manager mutex); `::ClearActive` | `internal/signerapp/daemon/ipc_displacement_test.go::TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted` |
+| SO2 (no stranded unlock) | `SO2_UnlockedHasOwner` | `internal/signerapp/daemon/ipc.go::handleRegisteredClient` disconnect defer (`authenticated && (wasActiveClient \|\| !HasClient)`); `internal/signerapp/adminserver/displacement.go::OfferDisplacement` / `::DisplaceSession` (replacement promoted before the old owner is closed) | `internal/signerapp/daemon/ipc_disconnect_test.go::TestAdminAuthPromotionFailureCleansUnlockedIdentity`; `::TestAdminDisconnectAppliesLockOnDisconnect`; `internal/signerapp/daemon/ipc_displacement_test.go::TestDisplacementReplacementAuthFailureKeepsOldOwner` |
+
+Validated by mutation tests: reverting the cleanup condition to the pre-fix
+`authenticated && wasActiveClient` violates SO2 in three states (the
+stranded-unlock audit finding); the pre-fix displacement ordering (owner
+cleared at confirm time) under the fixed condition still satisfies SO2 but
+over-locks the identity under the incoming replacement, which is why the fix
+changed both the condition and the ordering.
+
 ### Unmodeled invariants
 
 The following invariants have no TLA+ representation yet:

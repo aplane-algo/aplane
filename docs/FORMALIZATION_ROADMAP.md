@@ -345,7 +345,7 @@ S/A-series) are unchanged.
 | M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
 | M3: Deferred Companion English Models | In progress | Approval coordinator delivered (`FORMAL_APPROVAL_COORDINATOR_MODEL.md`). Cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
-| M4: Machine-Checkable Model | First wave complete | Seven TLA+ modules shipped. ~19 of 72 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam, `lifecycle_composition.tla` the end-to-end lifecycle gate, and `approval_coordinator.tla` carries the first liveness check (`Progress` under fairness). |
+| M4: Machine-Checkable Model | First wave complete | Eight TLA+ modules shipped. ~21 of 74 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam, `lifecycle_composition.tla` the end-to-end lifecycle gate, `approval_coordinator.tla` carries the first liveness check (`Progress` under fairness), and `session_ownership.tla` guards the admin unlock-ownership invariant. |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
 Machine-checked invariants by module:
@@ -359,6 +359,7 @@ Machine-checked invariants by module:
 | `approval_coordinator.tla` | AP4, AP5, AP6, AP7, L8, turn/state consistency; Progress (liveness, separate no-symmetry config: 833 states) | 196 | 11 |
 | `approval_composition.tla` | approval-seam claims (AP2 / L8 / I9 end to end) | 47,304 | 1 |
 | `lifecycle_composition.tla` | L4-L7 + lifecycle-output seam (decommission => no output) | 226 | 12 |
+| `session_ownership.tla` | SO1, SO2 (admin unlock ownership: no stranded unlock), state consistency | 90 | 8 |
 
 Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A15
 (guarded signing), AP1-AP3 (approval coordinator; modeled by construction),
@@ -366,7 +367,7 @@ I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L9-L11.
 
 ### Verification methodology by module
 
-The seven shipped modules are not all the same kind of check, and the
+The eight shipped modules are not all the same kind of check, and the
 distinction matters when judging what TLC has and has not done:
 
 - **`sign_boundary.tla`, `policy_precedence.tla`, `composition.tla`, and
@@ -381,8 +382,8 @@ distinction matters when judging what TLC has and has not done:
   output-binding seam would surface as a counterexample — but it does
   not exercise concurrency, interleaving, or temporal properties.
 
-- **`lifecycle.tla`, `approval_coordinator.tla`, and
-  `lifecycle_composition.tla`** are temporal-transition specs with real
+- **`lifecycle.tla`, `approval_coordinator.tla`, `lifecycle_composition.tla`,
+  and `session_ownership.tla`** are temporal-transition specs with real
   `Next` relations and genuine state-space exploration across action
   interleavings. `lifecycle.tla` races two signer processes and one admin
   over a writer-priority RWMutex (depth 10); its L5 mutation test (removing
@@ -404,8 +405,15 @@ distinction matters when judging what TLC has and has not done:
   checking. `lifecycle_composition.tla` adds a lease-gated signing
   step to the lifecycle race (depth 12); its mutation test (signing
   regardless of the policy decision) confirms it would catch output produced
-  without a signing policy. All three are **true model checking** —
-  invariants are evaluated at every reachable state in the transition graph.
+  without a signing policy. `session_ownership.tla` interleaves admin
+  sessions (authenticate-unlocks-first, atomic owner swap, uniform
+  disconnect-defer exit) against one identity (depth 8); its mutation test
+  (reverting the cleanup condition to the pre-fix
+  `authenticated && wasActiveClient`) reproduces the stranded-unlock audit
+  finding as a three-state SO2 violation, and the pre-fix displacement
+  ordering under the fixed condition shows the over-lock the atomic swap
+  avoids. All four are **true model checking** — invariants are evaluated at
+  every reachable state in the transition graph.
 
 Why call this out: TLA+ tooling does not distinguish the two styles, so
 a state-count or depth number alone does not tell a reader which kind
@@ -481,7 +489,8 @@ Tools used during the first iteration:
 Convention used during this work: the jar lives at `~/tla/tla2tools.jar`.
 Adjust paths if you put it elsewhere.
 
-Run all seven modules in sequence from the repo root:
+Run all modules (and the coordinator liveness config) in sequence from the
+repo root — this is what `make formal-test` does:
 
 ```sh
 java -jar ~/tla/tla2tools.jar -config docs/formal/sign_boundary.cfg        docs/formal/sign_boundary.tla
@@ -491,6 +500,8 @@ java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle.cfg            docs/
 java -jar ~/tla/tla2tools.jar -config docs/formal/approval_coordinator.cfg docs/formal/approval_coordinator.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/approval_composition.cfg docs/formal/approval_composition.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle_composition.cfg docs/formal/lifecycle_composition.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/session_ownership.cfg    docs/formal/session_ownership.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/approval_coordinator_liveness.cfg docs/formal/approval_coordinator.tla
 ```
 
 Expected results match the table above. Each module reports "Model
@@ -538,6 +549,7 @@ next slices are:
   property class.
 
 The previous operational cleanup is complete: `docs/formal/states/` is ignored,
-and the Formal Models CI job runs all seven shipped TLC modules through
-`make formal-test`. If you only have time for one new formalization piece, start
-with the signing-authority TLA+ module.
+and the Formal Models CI job runs all eight shipped TLC modules (plus the
+approval-coordinator liveness config) through `make formal-test`. If you only
+have time for one new formalization piece, start with the signing-authority
+TLA+ module.
