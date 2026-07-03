@@ -154,7 +154,9 @@ outside M1:
   its TLA+ module is Track B2,
 - plugin group modes, including the `presign-plan` plugin-callback flow (the
   plugin signs its own slots, which the signer plans as foreign slots), and the
-  `pregrouped-signed` all-plugin server-bypass flow,
+  `pregrouped-signed` all-plugin server-bypass flow — **delivered** as
+  [FORMAL_PLUGIN_SIGNING_MODEL.md](FORMAL_PLUGIN_SIGNING_MODEL.md);
+  machine-checked subset in `plugin_signing.tla`,
 - LogicSig budget computation,
 - LogicSig template and bytecode generation.
 
@@ -344,8 +346,8 @@ S/A-series) are unchanged.
 |---|---|---|
 | M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
-| M3: Deferred Companion English Models | In progress | Approval coordinator delivered (`FORMAL_APPROVAL_COORDINATOR_MODEL.md`). Cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
-| M4: Machine-Checkable Model | First wave complete | Eight TLA+ modules shipped. ~21 of 74 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam, `lifecycle_composition.tla` the end-to-end lifecycle gate, `approval_coordinator.tla` carries the first liveness check (`Progress` under fairness), and `session_ownership.tla` guards the admin unlock-ownership invariant. |
+| M3: Deferred Companion English Models | In progress | Approval coordinator and cooperative/plugin signing delivered (`FORMAL_APPROVAL_COORDINATOR_MODEL.md`, `FORMAL_PLUGIN_SIGNING_MODEL.md`). LogicSig budget and template/bytecode generation models still pending. |
+| M4: Machine-Checkable Model | First wave complete | Ten TLA+ modules shipped. ~32 of 81 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam, `lifecycle_composition.tla` the end-to-end lifecycle gate, `approval_coordinator.tla` carries the first liveness check (`Progress` under fairness), `session_ownership.tla` guards the admin unlock-ownership invariant, `guarded_assembly.tla` the component-assembly checks (A1/A6/A7/A8/A14), and `plugin_signing.tla` the plugin trust boundary (PS2-PS7). The signing-authority S-series is unmodeled **by decision** (see FORMAL_TRACEABILITY.md "Unmodeled invariants"). |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
 Machine-checked invariants by module:
@@ -360,6 +362,8 @@ Machine-checked invariants by module:
 | `approval_composition.tla` | approval-seam claims (AP2 / L8 / I9 end to end) | 47,304 | 1 |
 | `lifecycle_composition.tla` | L4-L7 + lifecycle-output seam (decommission => no output) | 226 | 12 |
 | `session_ownership.tla` | SO1, SO2 (admin unlock ownership: no stranded unlock), state consistency | 90 | 8 |
+| `guarded_assembly.tla` | A1, A6, A7, A8, A14, no-partial-output (component assembly verification) | 270,920 | 1 |
+| `plugin_signing.tla` | PS2-PS7 (plugin trust boundary: digest, review fail-closed, plan preservation, byte match, approval gates) | 3,852 | 1 |
 
 Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A15
 (guarded signing), AP1-AP3 (approval coordinator; modeled by construction),
@@ -367,20 +371,26 @@ I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L9-L11.
 
 ### Verification methodology by module
 
-The eight shipped modules are not all the same kind of check, and the
+The ten shipped modules are not all the same kind of check, and the
 distinction matters when judging what TLC has and has not done:
 
-- **`sign_boundary.tla`, `policy_precedence.tla`, `composition.tla`, and
-  `approval_composition.tla`** are one-shot specs: `Init` enumerates every valid input combination and
+- **`sign_boundary.tla`, `policy_precedence.tla`, `composition.tla`,
+  `approval_composition.tla`, `guarded_assembly.tla`, and
+  `plugin_signing.tla`** are one-shot specs: `Init` enumerates every valid input combination and
   `Next == UNCHANGED vars`. TLC's recorded depth of 1 reflects this — no
   temporal transitions are explored, because none are defined. What TLC
   verifies is that every invariant in `Safety` holds across the full
-  finite product of input domains (bounded by `MaxRequestEntries` and
-  `MaxDummies` where applicable). This is **exhaustive enumeration over
-  bounded finite domains**, expressed in TLA+ notation. It is a real
-  check — a missed case in `Decide`, `ApplyApproval`, or the
-  output-binding seam would surface as a counterexample — but it does
-  not exercise concurrency, interleaving, or temporal properties.
+  finite product of input domains (bounded by `MaxRequestEntries`,
+  `MaxDummies`, `MaxEntries`, or `MaxSlots` where applicable). This is
+  **exhaustive enumeration over bounded finite domains**, expressed in
+  TLA+ notation. It is a real check — a missed case in `Decide`,
+  `ApplyApproval`, the output-binding seam, `Assemble`'s signature/txid
+  checks, or `Submitted`'s gate conjuncts would surface as a
+  counterexample (the guarded-assembly mutations drop the role check and
+  the passthrough txid comparison; the plugin-signing mutations drop the
+  digest and review conjuncts — all four produce initial-state
+  violations) — but it does not exercise concurrency, interleaving, or
+  temporal properties.
 
 - **`lifecycle.tla`, `approval_coordinator.tla`, `lifecycle_composition.tla`,
   and `session_ownership.tla`** are temporal-transition specs with real
@@ -501,6 +511,8 @@ java -jar ~/tla/tla2tools.jar -config docs/formal/approval_coordinator.cfg docs/
 java -jar ~/tla/tla2tools.jar -config docs/formal/approval_composition.cfg docs/formal/approval_composition.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle_composition.cfg docs/formal/lifecycle_composition.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/session_ownership.cfg    docs/formal/session_ownership.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/guarded_assembly.cfg     docs/formal/guarded_assembly.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/plugin_signing.cfg       docs/formal/plugin_signing.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/approval_coordinator_liveness.cfg docs/formal/approval_coordinator.tla
 ```
 
@@ -549,7 +561,10 @@ next slices are:
   property class.
 
 The previous operational cleanup is complete: `docs/formal/states/` is ignored,
-and the Formal Models CI job runs all eight shipped TLC modules (plus the
-approval-coordinator liveness config) through `make formal-test`. If you only
-have time for one new formalization piece, start with the signing-authority
-TLA+ module.
+and the Formal Models CI job runs all ten shipped TLC modules (plus the
+approval-coordinator liveness config) through `make formal-test`. The
+signing-authority TLA+ module was evaluated and **declined by decision**
+(2026-07-03; rationale in FORMAL_TRACEABILITY.md "Unmodeled invariants" —
+S13 is the sole revisit-candidate). If you only have time for one new
+formalization piece, the remaining M3 English models (LogicSig budget,
+template/bytecode generation) are the open front.

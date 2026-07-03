@@ -11,7 +11,7 @@ BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 # Version ldflags (injected into all binaries)
 VERSION_PKG = github.com/aplane-algo/aplane/internal/version
 VERSION_LDFLAGS = -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).GitCommit=$(GIT_COMMIT) -X $(VERSION_PKG).BuildTime=$(BUILD_TIME)
-TLA_SPECS = sign_boundary policy_precedence composition lifecycle approval_coordinator approval_composition lifecycle_composition session_ownership
+TLA_SPECS = sign_boundary policy_precedence composition lifecycle approval_coordinator approval_composition lifecycle_composition session_ownership guarded_assembly plugin_signing
 # Specs with an additional liveness configuration (<spec>_liveness.cfg).
 # Liveness runs use a separate config because TLC's liveness checking is
 # unsound under SYMMETRY, which the safety configs use.

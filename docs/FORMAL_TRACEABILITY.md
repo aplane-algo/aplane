@@ -113,20 +113,20 @@ Source: [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md)
 
 | ID | Status | Source § | Code anchor | Test anchor | Notes |
 |---|---|---|---|---|---|
-| A1 | implemented | A1 | `internal/sentry/message/message.go`; `internal/signerapp/signing/component.go::PrepareComponentSigning` | `internal/signerapp/signing/component_test.go::TestPrepareComponentSigningUsesSentryRoleDomain`; `::TestAssembleDecodedGuardedRejectsWrongUserSignature` | Role byte separates user and sentry signatures for the same target txid. |
+| A1 | implemented | A1 | `internal/sentry/message/message.go`; `internal/signerapp/signing/component.go::PrepareComponentSigning` | `internal/signerapp/signing/component_test.go::TestPrepareComponentSigningUsesSentryRoleDomain`; `::TestAssembleDecodedGuardedRejectsWrongUserSignature` | Role byte separates user and sentry signatures for the same target txid. Machine-checked in `guarded_assembly.tla` (`A1_RoleDomainSeparation`). |
 | A2 | implemented | A2 | `internal/signerapp/signing/sentry_gate.go`; `internal/signerapp/signing/execution.go` | `internal/signerapp/signing/execution_test.go::TestExecutorRejectsSentryKeyTypesBeforeSessionLoad`; `::TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup` | Covers both sentry key types and all three guarded account key types (incl. `aplane.corridor.v1`). |
 | A3 | implemented | A3 | `internal/signerapp/signing/component_sign.go::signPreparedUserComponents`; `::loadGuardedAccountSigningKey` | `internal/signerapp/signing/component_test.go::TestSignPreparedUserComponentsSignsGuardedAccountMessages`; `::TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages` | User component signing proves `component_key` is a local guarded account key; sender may differ and is bound by assembly. |
 | A4 | implemented | A4 | `internal/signerapp/signing/service.go::SignComponentWithContext`; `internal/signerapp/signing/sentry_policy.go`; `internal/policy` | `internal/signerapp/signing/component_test.go::TestSignComponentSentryRequiresPolicyBeforeKeyLoad`; `::TestSignComponentSentryRejectsNonTransferBeforeKeyLoad`; `::TestSignComponentSentryRejectsRouteMissBeforeKeyLoad`; `::TestSignComponentSentryRejectsInheritedReviewRouteMissBeforeKeyLoad`; `::TestSignComponentSentryRejectsRekeyBeforeKeyLoad` | Sentry policy is deterministic: no review and no operator default. |
 | A5 | implemented | A5 | `internal/signerapp/signing/component_sign.go::loadSentryComponentKey`; `internal/sentry/keytypes/keytypes.go` | `internal/signerapp/signing/component_test.go::TestSignPreparedSentryComponentsRejectsWrongKeyType`; `::TestLoadSentryComponentKeyRejectsMismatchedPublicPrivateKey`; `::TestSignPreparedSentryComponentsSignsEd25519Messages`; `::TestSignPreparedSentryComponentsSignsFalcon1024Messages` | Selector, category, key type, and public/private pair must agree. |
-| A6 | implemented | A6 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsWrongUserSignature`; `::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | User signature is checked against the user public key stored in the local guarded account key. |
-| A7 | implemented | A7 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsWrongSentrySignature`; `::TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup` | Sentry signature is checked against the sentry public key embedded in local key metadata/bytecode, not endpoint metadata. |
-| A8 | implemented | A8 | `internal/signerapp/signing/component_assemble.go::validateGuardedPassthrough` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsMismatchedPassthrough`; `::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | Passthrough bytes are preserved only when their decoded txid matches the canonical group entry. |
+| A6 | implemented | A6 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsWrongUserSignature`; `::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | User signature is checked against the user public key stored in the local guarded account key. Machine-checked in `guarded_assembly.tla` (`A6_UserSignatureVerified`). |
+| A7 | implemented | A7 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsWrongSentrySignature`; `::TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup` | Sentry signature is checked against the sentry public key embedded in local key metadata/bytecode, not endpoint metadata. Machine-checked in `guarded_assembly.tla` (`A7_SentrySignatureVerified`). |
+| A8 | implemented | A8 | `internal/signerapp/signing/component_assemble.go::validateGuardedPassthrough` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedRejectsMismatchedPassthrough`; `::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | Passthrough bytes are preserved only when their decoded txid matches the canonical group entry. Machine-checked in `guarded_assembly.tla` (`A8_PassthroughTxidBound`). |
 | A9 | implemented | A9 | `internal/engine/sentry_endpoint.go::resolveSentryEndpoint`; `::verifySentryEndpointAdvertises` | `internal/engine/guarded_submit_test.go::TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback`; `::TestRequestSentryComponentSignaturesFallsBackToCurrentSigner` | `/keys` is an ergonomic precheck only; explicit mismatch prevents silent self fallback. |
 | A10 | implemented | A10 | `internal/engine/guarded_submit.go::requestOneSentryComponentSignatureSet`; `internal/sentry/canonical` | `cmd/apshell/deps_test.go::TestClientDoesNotLinkFalcon` | Client collects and forwards component signatures without cryptographic verification; the deps test pins the client binary to exclude `internal/sentry/verify` and the Falcon libraries. |
 | A11 | implemented | A11 | `internal/engine/guarded_submit.go::collectComponentSignatures`; `pkg/signerapi/sentry.go` | `internal/engine/guarded_submit_test.go::TestCollectComponentSignaturesRejectsMalformedResponses` (`collectComponentSignatures` enforces exact coverage + scheme directly) | Client requires exact response coverage and expected scheme before forwarding signatures to assembly. |
 | A12 | implemented | A12 | `internal/engine/sentry_endpoint.go`; `internal/config/client_endpoint_writes.go`; `internal/apshellapp/endpoints.go` | `internal/apshellapp/endpoints_test.go::TestEndpointDiscoverSentriesPreservesUnreachableEndpointInventory`; `::TestEndpointDiscoverSentriesPreservesLockedEndpointInventory`; `::TestEndpointDiscoverSentriesRejectsAuthFailure`; `::TestEndpointDiscoverSentriesRejectsInvalidEndpointMetadata`; `internal/config/client_endpoint_writes_test.go::TestRebuildStoredClientEndpointPublishedSentriesRejectsDuplicatePublicKey` | Unavailable/locked endpoints preserve previous inventory; hard failures write nothing. |
 | A13 | implemented | A13 | `internal/keyclass/keyclass.go`; `internal/signerapp/keyadmin/service.go`; `internal/signerapp/templates/reload.go`; `internal/signerapp/rest/role.go` | `internal/keyclass/keyclass_test.go::TestNodeRoleAllowsKeyType`; `::TestValidateKeyTypesAllowedForNodeRoleReportsConflicts`; `internal/signerapp/keyadmin/service_test.go::TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole`; `::TestServiceImportKeyRejectsKeyTypeDisallowedByNodeRole`; `internal/signerapp/templates/reload_test.go::TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish`; `internal/signerapp/rest/service_test.go::TestServiceNodeRoleGatesEndpointRoles` | Node role gates generation/import, REST role dispatch, and reload-time publication. |
-| A14 | implemented | A14 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget`; `::validateAssembledGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | Assembly verifies the assembled signed txn matches the canonical txid and carries `AuthAddr == guarded_account` when sender differs. |
+| A14 | implemented | A14 | `internal/signerapp/signing/component_assemble.go::assembleGuardedTarget`; `::validateAssembledGuardedTarget` | `internal/signerapp/signing/component_test.go::TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup` | Assembly verifies the assembled signed txn matches the canonical txid and carries `AuthAddr == guarded_account` when sender differs. Machine-checked in `guarded_assembly.tla` (`A14_AssembledTxnBound`). |
 | A15 | implemented | A15 | `internal/signerapp/rest/inventory.go::BuildKeyInfoList`; `::buildKeyTypes`; `internal/engine/guarded_submit.go::hasGuardedEffectiveSigner`; `::guardedTargets` | `internal/signerapp/rest/service_test.go::TestBuildKeyTypesServesSigningFlowMetadata`; `internal/engine/guarded_submit_test.go::TestGuardedTargetsRejectUnsupportedSigningFlow`; `test/arch/signingflow_test.go::TestClientPackagesRouteOnSigningFlow` | Daemon serves `signing_flow`/`sentry_component_key_type` in inventory; clients route on the flow label, fail fast on unknown flows, and the arch test pins client packages off compiled guarded key-type switches. |
 
 ## Approval Coordinator Model
@@ -142,6 +142,20 @@ Source: [FORMAL_APPROVAL_COORDINATOR_MODEL.md](FORMAL_APPROVAL_COORDINATOR_MODEL
 | AP5 | implemented | AP5 | `internal/signerapp/approval/coordinator.go::CancelSignRequest`; `::BeginSignRequest`; `::consumeCanceledSignRequest` | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorCancelSignRequestBeforeApprovalIsPending`; `::TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn`; `::TestCoordinatorCancelSignRequestCancelsConcurrentSameIDRequests`; `::TestCoordinatorCancelSignRequestUnknownIsNotFound` | Cancellation reaches queued, delivered, and not-yet-waiting requests; unknown ID is `not_found`. |
 | AP6 | implemented | AP6 | `internal/signerapp/approval/coordinator.go::NewWithDecommission`; `::RequestSigningApprovalResponseContext` and `::RequestTokenProvisioningContext` decommission rechecks; `::FailAllPendingRequests`; raised by `internal/signerapp/identity/runtime.go::Decommission` (`FailAllPendingApprovals`, `runtime.go:536`) and `internal/signerapp/daemon/ipc.go:163` (operator-client disconnect) | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorFailAllClearsPendingMaps`; `::TestCoordinatorFailAllUnblocksPendingRequest`; `::TestCoordinatorQueuedSigningApprovalFailsAfterDecommission`; `internal/signerapp/daemon/hub_test.go::TestFailAllPendingRequests`; `internal/signerapp/identity/identity_test.go::TestDecommissionFailsPendingApprovals` | Fail-all terminates every then-pending request not-approved; coordinator decommission rechecks prevent queued requests from being delivered after the mark; mechanism behind lifecycle L8. |
 | AP7 | implemented | AP7 | `internal/signerapp/daemon/ipc.go` displacement path (`FailAllPendingApprovals("apadmin displaced")` before `adminserver.DisplaceSession`); `internal/signerapp/adminserver/displacement.go::OfferDisplacement` / `::DisplaceSession` (old session remains owner until the replacement is promoted) | `internal/signerapp/daemon/ipc_displacement_test.go::TestDisplacementFailsDeliveredApprovalPrompt`; `::TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted`; `::TestDisplacementReplacementAuthFailureKeepsOldOwner` | A delivered prompt was shown to the old client only, so it is failed in the same step the client is replaced; otherwise the orphaned prompt holds the delivery turn and head-of-line-blocks every later approval until the `ApprovalWait` timer frees it. Machine-checked in `approval_coordinator.tla` (`AP7_NoOrphanedDelivery` history flag on the `Displace` action); the coordinator liveness check (`Progress` under `LiveSpec`) documents that the timer is the only guaranteed exit from Delivered, which is why the orphan mattered. |
+
+## Plugin Signing Model
+
+Source: [FORMAL_PLUGIN_SIGNING_MODEL.md](FORMAL_PLUGIN_SIGNING_MODEL.md)
+
+| ID | Status | Source § | Code anchor | Test anchor | Notes |
+|---|---|---|---|---|---|
+| PS1 | implemented | PS1 | `internal/engine/plugin_pregrouped.go` (unexported `stxns`/`raw`, sole constructor `DecodePregroupedSigned`, byte-verbatim submit via `g.raw`) | `internal/engine/plugin_pregrouped_test.go::TestDecodePregroupedSigned`; `::TestValidatePregroupedSigned` | Structural: decode provenance binds the displayed decode to the submitted bytes; deliberately not restated as a TLC predicate. |
+| PS2 | implemented | PS2 | `internal/engine/plugin_pregrouped.go` (size, uniform group field, `ComputeGroupID` comparison); `internal/signerapp/signing/planner.go` (pre-grouped claimed-group-ID recompute) | `internal/engine/plugin_pregrouped_test.go::TestValidatePregroupedSigned` | Machine-checked in `plugin_signing.tla` (`PS2_GroupDigestVerified`). A self-consistent malicious group passes by design — PS3/PS6 are the gates for that. |
+| PS3 | implemented | PS3 | `internal/apshellcli/external_plugins.go::reviewPregroupedSigned` (mandatory review, `RequiresApproval` ignored, AutoConfirm fail-closed); `internal/apshellcli/plugin_group_review.go` (decoded rendering, opaque marking) | `internal/apshellcli/plugin_pregrouped_review_test.go::TestReviewPregroupedSignedFailsClosedWhenAutoConfirm`; `::TestReviewPregroupedSignedIgnoresRequiresApprovalFalse`; `::TestReviewPregroupedSignedRendersDecodedGroupAndApproves` | Machine-checked in `plugin_signing.tla` (`PS3_MandatoryReviewFailClosed`). The fail-closed path had no Go test until the model was anchored; tests added in the same change. |
+| PS4 | implemented | PS4 | `internal/engine/plugin_presign.go::assertSlotArtifactFieldsPreserved` (draft vs canonical, Group+Fee zeroed, msgpack byte equality, both slot classes) | `internal/engine/plugin_presign_test.go::TestAssertSlotArtifactFieldsPreserved` | Machine-checked in `plugin_signing.tla` (`PS4_PlanPreserved`). Fee exemption is by design (/plan exists to set fees). |
+| PS5 | implemented | PS5 | `internal/engine/plugin_presign.go::validatePluginSignedSlot` (msgpack of `stxn.Txn` = canonical); count/duplicate/unexpected-index checks; `::assertPluginSignersMatched` | `internal/engine/plugin_presign_test.go::TestValidatePluginSignedSlot`; `::TestAssertPluginSignersMatched` | Machine-checked in `plugin_signing.tla` (`PS5_SignedSlotByteMatch`). Signature bytes are not locally verified (the chain validates). |
+| PS6 | implemented | PS6 | `internal/engine/plugin_presign.go` (managed slots sign-mode, plugin/dummy slots passthrough in one `/sign` request); `internal/signerapp/signing/approval.go:275` (auto-approval disabled for passthrough/foreign/pre-grouped groups; mixed-mode display); `always_review.go` (dangerous-field forced review) | `internal/signerapp/signing/always_review_test.go::TestEvaluateAlwaysReviewRulesForcesReviewOnDangerousPassthrough`; `test/integration/passthrough_test.go` (PassthroughMixedGroup end to end) | Machine-checked in `plugin_signing.tla` (`PS6_ManagedApprovalGated`). The approval pipeline's own invariants are the AP rows. |
+| PS7 | implemented | PS7 | Mode dispatch `internal/apshellcli/external_plugins.go`; `internal/engine/plugin_transactions.go::ProcessTransactionIntents` (raw-only); `internal/apshellapp/submission.go` (localSigners rejection) | `internal/apshellapp/submission_pregrouped_test.go::TestSubmitPluginTransactionsRejectsLocalSigners`; `internal/engine/plugin_pregrouped_test.go::TestProcessSignedTransactionIntents` | Machine-checked in `plugin_signing.tla` (`PS7_NoUngatedSubmission`). The removed `localSigners` path was the violation of this invariant. |
 
 ## Open Cross-Cutting Gaps
 
@@ -362,6 +376,55 @@ cleared at confirm time) under the fixed condition still satisfies SO2 but
 over-locks the identity under the incoming replacement, which is why the fix
 changed both the condition and the ordering.
 
+### Guarded assembly module
+
+[formal/guarded_assembly.tla](formal/guarded_assembly.tla) (see
+[FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md](FORMAL_TLA_GUARDED_ASSEMBLY_MODEL.md))
+machine-checks the assembly-verification core of the guarded signing model:
+a one-shot enumeration (sign_boundary style) over presented component
+signatures (right/wrong key, role domain, txid binding) and passthrough
+bytes, with the decision procedure transcribing
+`internal/signerapp/signing/component_assemble.go`. TLC checked under
+`MaxEntries = 2`, generating 270,920 distinct states, depth 1, no
+counterexamples.
+
+| Invariant | TLA+ predicate |
+|---|---|
+| A1 (role domain separation) | `A1_RoleDomainSeparation` |
+| A6 (user signature verified) | `A6_UserSignatureVerified` |
+| A7 (sentry signature verified) | `A7_SentrySignatureVerified` |
+| A8 (passthrough txid binding) | `A8_PassthroughTxidBound` |
+| A14 (assembled txn binding) | `A14_AssembledTxnBound` |
+| abort-on-first-failure | `NoPartialOutput` |
+
+Validated by mutation tests: dropping the role check from `Verifies`
+(cross-role replay) and dropping the passthrough txid comparison each
+violate `Safety` in an initial state.
+
+### Plugin signing module
+
+[formal/plugin_signing.tla](formal/plugin_signing.tla) (see
+[FORMAL_TLA_PLUGIN_SIGNING_MODEL.md](FORMAL_TLA_PLUGIN_SIGNING_MODEL.md))
+machine-checks the plugin signing trust boundary's decision procedure: a
+one-shot enumeration over both surviving group modes (pregrouped-signed,
+presign-plan), per-slot validation outcomes, and gate decisions. TLC checked
+under `MaxSlots = 3`, generating 3,852 distinct states, depth 1, no
+counterexamples. PS1 is structural (Go type construction) and deliberately
+has no TLC predicate.
+
+| Invariant | TLA+ predicate |
+|---|---|
+| PS2 (group digest integrity) | `PS2_GroupDigestVerified` |
+| PS3 (mandatory review, fail-closed) | `PS3_MandatoryReviewFailClosed` |
+| PS4 (plan preservation) | `PS4_PlanPreserved` |
+| PS5 (byte match + index discipline) | `PS5_SignedSlotByteMatch` |
+| PS6 (managed approval gate) | `PS6_ManagedApprovalGated` |
+| PS7 (no ungated submission) | `PS7_NoUngatedSubmission` |
+
+Validated by mutation tests: dropping the digest conjunct violates PS2;
+dropping the review conjunct violates PS3/PS7 (the removed-`localSigners`
+bypass class, machine-reproduced).
+
 ### Unmodeled invariants
 
 The following invariants have no TLA+ representation yet:
@@ -370,15 +433,27 @@ The following invariants have no TLA+ representation yet:
   key overrides).
 - L1, L2, L3, L9-L11 (lifecycle non-concurrency claims). L8 is now
   machine-checked in `approval_coordinator.tla`.
-- All of S1-S13 (signing authority).
-- All of A1-A15 (guarded signing, assembly, endpoint routing, and identity
-  mode).
+- All of S1-S13 (signing authority) — **by decision, not omission** (2026-07-03
+  review): S1/S3-S5/S8/S11/S12 are structural or definitional (a module would
+  verify its own encoding), S2/S6/S7/S9 are single-guard checks whose only
+  nontrivial content (cryptography, cross-path enforcement) is exactly what
+  TLC must abstract away, and S10's snapshot-copy design holds by
+  construction (pinned by `TestPlannerUsesSingleIdentitySnapshot`). S13
+  (filename↔address binding with collision fallback) is the sole
+  revisit-candidate, and only if the key-file scan ever gains a
+  winner-picking rule instead of skip-and-warn.
+- A2-A5, A9-A13, A15 (guarded signing: component-sign-time checks, endpoint
+  routing, client shape checks, identity mode). A1/A6/A7/A8/A14 are
+  machine-checked in `guarded_assembly.tla`.
 - AP1-AP3 (approval coordinator) are modeled by construction rather than as
-  predicates; AP4-AP6 and L8 are machine-checked in `approval_coordinator.tla`.
+  predicates; AP4-AP7 and L8 are machine-checked in `approval_coordinator.tla`.
 
 Lifecycle-aware composition has shipped as
-[formal/lifecycle_composition.tla](formal/lifecycle_composition.tla) (above);
-the next likely module is a signing-authority spec covering the S* surface.
+[formal/lifecycle_composition.tla](formal/lifecycle_composition.tla) (above).
+With the signing-authority surface resolved by decision, the remaining
+candidates are the M3 backlog English models (LogicSig budget,
+template/bytecode generation) and a sentry component-sign-time module
+(A3-A5) if one is ever needed.
 
 ## Update Workflow
 
