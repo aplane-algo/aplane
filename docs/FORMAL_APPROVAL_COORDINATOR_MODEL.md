@@ -230,6 +230,25 @@ requests recheck the mark before delivery, and then-pending requests are failed,
 so no approval pending at the mark point can still resolve `approved`. The same
 event also fires on operator-client disconnect.
 
+### AP7: No Orphaned Delivery On Displacement
+
+When a new apadmin client displaces the active one, the delivered prompt (if
+any) is failed (`FailAllPendingApprovals("apadmin displaced")`) in the same
+step the client is replaced. A delivered prompt was rendered on the old
+client only — the replacement has no way to show or answer it — so a prompt
+that survived displacement would be orphaned: it would keep the delivery turn
+(AP4's single-delivery token) while invisible to the operator, and every
+later approval would queue behind it until the `ApprovalWait` timer freed the
+turn. Displacement ordering preserves ownership: the old session remains the
+cleanup owner until the replacement has authenticated and been promoted
+(`adminserver/displacement.go`), and the fail-all runs before
+`DisplaceSession` closes the old client. Machine-checked in
+[formal/approval_coordinator.tla](formal/approval_coordinator.tla) via the
+`Displace` action and the `orphanedDelivery` history flag
+(`AP7_NoOrphanedDelivery`); the companion liveness check (`Progress` under
+`LiveSpec`) documents that the timer is the only guaranteed exit from
+`Delivered`, which is why the orphan mattered.
+
 ## Approval Input Refinement
 
 This model derives the `approval` input that
@@ -290,6 +309,7 @@ derived value — is the composition step deferred to Track B3.
 | AP4 | `internal/signerapp/approval/coordinator.go::acquireDeliveryTurnContext`; `::releaseDeliveryTurn` (`deliveryInFlight`, `deliveryQueue`) | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorSerializesSigningRequests`; `::TestCoordinatorSerializesAcrossApprovalTypes` |
 | AP5 | `internal/signerapp/approval/coordinator.go::CancelSignRequest`; `::BeginSignRequest`; `::consumeCanceledSignRequest` | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorCancelSignRequestBeforeApprovalIsPending`; `::TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn`; `::TestCoordinatorCancelSignRequestCancelsConcurrentSameIDRequests`; `::TestCoordinatorCancelSignRequestUnknownIsNotFound` |
 | AP6 | `internal/signerapp/approval/coordinator.go::NewWithDecommission`; `::RequestSigningApprovalResponseContext` and `::RequestTokenProvisioningContext` decommission rechecks; `::FailAllPendingRequests`; raised by `internal/signerapp/identity/runtime.go::Decommission` (`runtime.go:536`) and `internal/signerapp/daemon/ipc.go:163` | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorFailAllClearsPendingMaps`; `::TestCoordinatorFailAllUnblocksPendingRequest`; `::TestCoordinatorQueuedSigningApprovalFailsAfterDecommission`; `internal/signerapp/daemon/hub_test.go::TestFailAllPendingRequests`; `internal/signerapp/identity/identity_test.go::TestDecommissionFailsPendingApprovals` |
+| AP7 | `internal/signerapp/daemon/ipc.go` displacement path (`FailAllPendingApprovals("apadmin displaced")` before `adminserver.DisplaceSession`); `internal/signerapp/adminserver/displacement.go::OfferDisplacement` / `::DisplaceSession` | `internal/signerapp/daemon/ipc_displacement_test.go::TestDisplacementFailsDeliveredApprovalPrompt`; `::TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted`; `::TestDisplacementReplacementAuthFailureKeepsOldOwner` |
 
 ## Machine-Checkable Successor
 

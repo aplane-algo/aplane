@@ -1,8 +1,11 @@
 # Approval Coordinator Machine-Checkable Model
 
-> Status: TLC checked with `Requests = {r1, r2, r3}` and symmetry over the
-> request set; the recorded run generated 196 distinct reachable states,
-> reached depth 11, and found no counterexamples for `Safety`.
+> Status: TLC checked with `Requests = {r1, r2, r3}`. The safety run (with
+> symmetry over the request set) generated 196 distinct reachable states at
+> depth 11 with no counterexamples for `Safety`. The liveness run
+> (`approval_coordinator_liveness.cfg`, no symmetry — TLC's liveness checking
+> is unsound under symmetry reduction) generated 833 distinct states at depth
+> 11 and verified the `Progress` temporal property under `LiveSpec`.
 
 This is the fifth machine-checkable artifact under the M4 milestone in
 [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md), and the machine-checked
@@ -22,6 +25,8 @@ The spec lives at [formal/approval_coordinator.tla](formal/approval_coordinator.
 | AP5: Cancellation Always Enabled | FORMAL_APPROVAL_COORDINATOR_MODEL.md | `AP5_CancelAlwaysEnabled` |
 | AP6: Decommission Leaves No Pending | FORMAL_APPROVAL_COORDINATOR_MODEL.md | `AP6_DecommissionLeavesNoPending` |
 | L8: No Approval After Decommission | FORMAL_LIFECYCLE_MODEL.md (L8) | `L8_NoApproveAfterDecommission` |
+| AP7: No Orphaned Delivery On Displacement | FORMAL_APPROVAL_COORDINATOR_MODEL.md | `AP7_NoOrphanedDelivery` |
+| Progress (liveness): every queued/delivered request terminates | FORMAL_APPROVAL_COORDINATOR_MODEL.md | `Progress` under `LiveSpec` |
 | turn/state consistency | (TypeOK) | `TypeOK` |
 
 **L8 is the headline win.** It was the only `deferred` invariant in
@@ -37,10 +42,31 @@ AP6 is a direct state predicate (`decommissioned => DeliveredSet = {}`). AP5
 uses `ENABLED`-style reasoning over the `Cancel` action. AP4 bounds the
 delivered set, with the turn token tied to that set in `TypeOK`.
 
-The L8/AP6 invariants are validated by mutation testing: removing the
-`~decommissioned` guard from the `Deliver` action lets a request be delivered
-(and then approved) after the decommission mark, which produces a TLC
-counterexample. The restored spec passes.
+**AP7 is the displacement regression guard.** The daemon fails the pending
+approval (`FailAllPendingApprovals("apadmin displaced")`) before replacing the
+active apadmin session, because a delivered prompt was shown to the old client
+only — the replacement has no way to render or answer it. The `Displace`
+action models that fixed semantics; the `orphanedDelivery` history flag flips
+if a future edit lets a delivered request survive client replacement (the
+pre-fix orphan, which head-of-line-blocked every later approval until the
+`ApprovalWait` timer freed the turn).
+
+The invariants and the liveness property are validated by mutation testing:
+
+- **L8/AP6**: removing the `~decommissioned` guard from `Deliver` lets a
+  request be delivered (and then approved) after the decommission mark — TLC
+  counterexample.
+- **AP7**: changing `Displace` to the pre-fix semantics (client replaced,
+  delivered request left in place) flips `orphanedDelivery` in the very next
+  state — TLC reports the safety violation with a four-step trace.
+- **Progress**: dropping the `WF_vars(\E r : Timeout(r))` fairness conjunct
+  produces a lasso counterexample where a delivered request never resolves —
+  the model's way of saying the timer is the only *guaranteed* exit from
+  `Delivered` (operator decisions are choices). The displacement fix matters
+  precisely because a prompt whose operator is gone would otherwise sit on
+  that timer.
+
+The restored spec passes all runs.
 
 ## Modeled by construction (not separate predicates)
 
@@ -59,7 +85,8 @@ counterexample. The restored spec passes.
 ## What it deliberately does not cover
 
 - **FIFO fairness of the delivery queue.** The single turn is a boolean token;
-  which queued request is granted next is a liveness/fairness concern, deferred.
+  `Progress` asserts that every queued request eventually terminates, not that
+  requests are granted in arrival order.
 - **Real timer durations.** `Timeout` is a nondeterministic event, not
   wall-clock time.
 - **Token-provisioning issuance policy.** Token requests share the same delivery
@@ -98,14 +125,27 @@ away because the safety invariants depend only on mutual exclusion, not order.
 under the correct guards and flips if a future edit weakens them. This makes L8
 a concrete, falsifiable property rather than a structural observation.
 
-### Decommission and disconnect both fail-all
+### Decommission, disconnect, and displacement all fail-all
 
-The coordinator's `FailAllPendingRequests` has two triggers in the code:
-successful decommission (`Runtime.Decommission`) and operator-client disconnect
-(`daemon/ipc.go`). The model includes both: `Decommission` (mark + fail-all,
-fires once, blocks further delivery) and `OperatorDisconnect` (fail-all without
-decommission, recoverable). Both move the delivered request to `Failed` and
-release the turn.
+The coordinator's `FailAllPendingRequests` has three triggers in the code:
+successful decommission (`Runtime.Decommission`), operator-client disconnect,
+and client displacement (both in `daemon/ipc.go`; explicit lock also calls it,
+via `adminserver/handlers.go`, and behaves like `OperatorDisconnect` here).
+The model includes them as `Decommission` (mark + fail-all, fires once, blocks
+further delivery), `OperatorDisconnect` (fail-all without decommission,
+recoverable), and `Displace` (fail-all plus the AP7 `orphanedDelivery` guard,
+recoverable — the new client takes over). All move the delivered request to
+`Failed` and release the turn.
+
+### History-flag assignments must parenthesize their disjunction
+
+In TLA+, `=` binds tighter than `\/`, so `flag' = flag \/ P` parses as
+`(flag' = flag) \/ P` — a *disjunction of actions*, not an assignment. When
+`P` is true, TLC can satisfy the second disjunct without assigning `flag'`
+and fails with "successor state is not completely specified" instead of
+flipping the flag. Both guard flags are therefore written
+`flag' = (flag \/ P)`. This was found when the AP7 mutation made the bad
+state reachable; the L8 flag had the same latent form and was fixed alongside.
 
 ### Symmetry and deadlock
 
@@ -113,6 +153,21 @@ Requests are interchangeable for the safety invariants, so `SYMMETRY
 RequestSymmetry` (`Permutations(Requests)`) prunes the state space. The workflow
 terminates (all requests terminal, or `New` under decommission), so
 `CHECK_DEADLOCK FALSE` keeps TLC from flagging the terminal state.
+
+The liveness config drops `SYMMETRY`: TLC's liveness checking is unsound under
+symmetry reduction. The safety config keeps the symmetric fast path; the
+liveness run explores the full permutation space (833 distinct states — still
+sub-second).
+
+### Fairness only where the code guarantees progress
+
+`LiveSpec` adds weak fairness on `Deliver` (the delivery loop always retries
+while a queued request exists and the turn is free), `Timeout` (the
+`ApprovalWait` timer always eventually fires on a delivered request), and
+`FailQueuedWhileDecommissioned` (the decommission drain completes). Operator
+`Approve`/`Reject` and client `Cancel` carry no fairness — they are choices,
+not guarantees — and `Request` carries none either, which is why `Progress`
+is scoped to requests that reached `Queued`.
 
 ## How to check
 
@@ -125,21 +180,29 @@ or directly:
 ```sh
 java -jar tla2tools.jar -config docs/formal/approval_coordinator.cfg \
     docs/formal/approval_coordinator.tla
+java -jar tla2tools.jar -config docs/formal/approval_coordinator_liveness.cfg \
+    docs/formal/approval_coordinator.tla
 ```
 
-Expected: `Model checking completed. No error has been found.`, 196 distinct
-states, depth 11. Sub-second runtime.
+Expected: `Model checking completed. No error has been found.` for both — the
+safety run at 196 distinct states, the liveness run at 833 (no symmetry),
+both depth 11, sub-second runtime. `make formal-test` runs both (the liveness
+config is listed in the Makefile's `TLA_LIVENESS_SPECS`).
 
 ## What this proves vs. doesn't
 
 It proves that, over every interleaving of up to three requests, the modeled
 coordinator never delivers two requests to the operator at once (AP4), always
 admits cancellation of a non-terminal request (AP5), never leaves a pending
-request after decommission (AP6), and never approves a request once
-decommissioned (L8). It does not prove liveness (that a queued request
-eventually delivers), and — like the other one-shot/temporal modules — the
-mapping from this abstract state machine to the Go coordinator is a code-review
-responsibility, anchored by the Go tests in the traceability AP rows.
+request after decommission (AP6), never approves a request once decommissioned
+(L8), never leaves a delivered prompt orphaned by client displacement (AP7),
+and — under the stated fairness assumptions — resolves every request that
+reaches the coordinator (`Progress`). The fairness assumptions are themselves
+claims about the code (the delivery loop retries; the `ApprovalWait` timer
+fires; the decommission drain completes); they are not checked by TLC, and —
+like the other modules — the mapping from this abstract state machine to the
+Go coordinator is a code-review responsibility, anchored by the Go tests in
+the traceability AP rows.
 
 ## Linking back
 
@@ -161,5 +224,8 @@ responsibility, anchored by the Go tests in the traceability AP rows.
   still dominates and that a fail-all (disconnect / decommission) yields no signed
   output end to end. It stays one-shot by consuming only the terminal outcome,
   which is why this module's temporal invariants live here.
-- **Liveness.** Add weak fairness on `Deliver` and the terminal actions and
-  verify every queued request eventually resolves.
+- **Liveness — shipped.** `LiveSpec` (weak fairness on `Deliver`, `Timeout`,
+  and `FailQueuedWhileDecommissioned`) verifies `Progress`: every request that
+  reaches the coordinator eventually resolves. Checked by
+  [formal/approval_coordinator_liveness.cfg](formal/approval_coordinator_liveness.cfg)
+  in `make formal-test`.

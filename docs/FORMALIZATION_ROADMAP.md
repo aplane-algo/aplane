@@ -345,7 +345,7 @@ S/A-series) are unchanged.
 | M1: Precise English Models | Complete and active | Five `FORMAL_*_MODEL.md` docs now cover the original signing boundary plus guarded signing. |
 | M2: Implementation Test Alignment | Complete and active | All numbered invariants `implemented`, `derived`, or `assumption`. `FORMAL_TEST_GAPS.md` reports no actionable gaps. |
 | M3: Deferred Companion English Models | In progress | Approval coordinator delivered (`FORMAL_APPROVAL_COORDINATOR_MODEL.md`). Cooperative/plugin signing, LogicSig budget, and template/bytecode generation models still pending. |
-| M4: Machine-Checkable Model | First wave complete | Seven TLA+ modules shipped. ~18 of 71 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam and `lifecycle_composition.tla` the end-to-end lifecycle gate. |
+| M4: Machine-Checkable Model | First wave complete | Seven TLA+ modules shipped. ~19 of 72 numbered invariants are machine-checked; `approval_composition.tla` adds the end-to-end approval seam, `lifecycle_composition.tla` the end-to-end lifecycle gate, and `approval_coordinator.tla` carries the first liveness check (`Progress` under fairness). |
 | M5: Traceability | Complete and active | `FORMAL_TRACEABILITY.md` is the durable home for invariant status. |
 
 Machine-checked invariants by module:
@@ -356,7 +356,7 @@ Machine-checked invariants by module:
 | `policy_precedence.tla` | P4, P5, P6, P7, I9, ApprovalResolution | 64 | 1 |
 | `composition.tla` | 3 seam claims + 2 sign-boundary rechecks under derived verdict | 84,096 | 1 |
 | `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency | 48 | 10 |
-| `approval_coordinator.tla` | AP4, AP5, AP6, L8, turn/state consistency | 196 | 11 |
+| `approval_coordinator.tla` | AP4, AP5, AP6, AP7, L8, turn/state consistency; Progress (liveness, separate no-symmetry config: 833 states) | 196 | 11 |
 | `approval_composition.tla` | approval-seam claims (AP2 / L8 / I9 end to end) | 47,304 | 1 |
 | `lifecycle_composition.tla` | L4-L7 + lifecycle-output seam (decommission => no output) | 226 | 12 |
 
@@ -389,9 +389,19 @@ distinction matters when judging what TLC has and has not done:
   the `readers = {}` guard from `AdminAcquireWrite`) confirms it would catch
   a lock-ordering regression. `approval_coordinator.tla` interleaves several
   approval requests over a shared single-delivery turn through to a terminal
-  outcome (depth 11); its mutation test (removing the `~decommissioned` guard
-  from `Deliver`) confirms it would catch an approval granted after
-  decommission (L8). `lifecycle_composition.tla` adds a lease-gated signing
+  outcome (depth 11); its mutation tests confirm it would catch an approval
+  granted after decommission (removing the `~decommissioned` guard from
+  `Deliver` violates L8), a delivered prompt orphaned by client displacement
+  (reverting `Displace` to the pre-fix leave-it-in-place semantics violates
+  AP7), and a delivered request with no guaranteed exit (dropping the
+  `Timeout` fairness conjunct violates the `Progress` liveness property with
+  a lasso counterexample). It is also the one module with a **liveness
+  check**: `approval_coordinator_liveness.cfg` runs `LiveSpec` (weak fairness
+  on `Deliver`, `Timeout`, and the decommission drain — guarantees the code
+  makes; operator decisions carry no fairness) and verifies `Progress`: every
+  request that reaches the coordinator eventually terminates. Liveness runs
+  use a separate config without `SYMMETRY`, which is unsound for TLC liveness
+  checking. `lifecycle_composition.tla` adds a lease-gated signing
   step to the lifecycle race (depth 12); its mutation test (signing
   regardless of the policy decision) confirms it would catch output produced
   without a signing policy. All three are **true model checking** —

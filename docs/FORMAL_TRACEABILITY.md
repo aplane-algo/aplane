@@ -141,6 +141,7 @@ Source: [FORMAL_APPROVAL_COORDINATOR_MODEL.md](FORMAL_APPROVAL_COORDINATOR_MODEL
 | AP4 | implemented | AP4 | `internal/signerapp/approval/coordinator.go::acquireDeliveryTurnContext`; `::releaseDeliveryTurn` (`deliveryInFlight`, `deliveryQueue`) | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorSerializesSigningRequests`; `::TestCoordinatorSerializesAcrossApprovalTypes` | One request delivered at a time; FIFO across signing and token-provisioning requests. |
 | AP5 | implemented | AP5 | `internal/signerapp/approval/coordinator.go::CancelSignRequest`; `::BeginSignRequest`; `::consumeCanceledSignRequest` | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorCancelSignRequestBeforeApprovalIsPending`; `::TestCoordinatorQueuedSigningApprovalContextCancelReturnsBeforeDeliveryTurn`; `::TestCoordinatorCancelSignRequestCancelsConcurrentSameIDRequests`; `::TestCoordinatorCancelSignRequestUnknownIsNotFound` | Cancellation reaches queued, delivered, and not-yet-waiting requests; unknown ID is `not_found`. |
 | AP6 | implemented | AP6 | `internal/signerapp/approval/coordinator.go::NewWithDecommission`; `::RequestSigningApprovalResponseContext` and `::RequestTokenProvisioningContext` decommission rechecks; `::FailAllPendingRequests`; raised by `internal/signerapp/identity/runtime.go::Decommission` (`FailAllPendingApprovals`, `runtime.go:536`) and `internal/signerapp/daemon/ipc.go:163` (operator-client disconnect) | `internal/signerapp/approval/coordinator_test.go::TestCoordinatorFailAllClearsPendingMaps`; `::TestCoordinatorFailAllUnblocksPendingRequest`; `::TestCoordinatorQueuedSigningApprovalFailsAfterDecommission`; `internal/signerapp/daemon/hub_test.go::TestFailAllPendingRequests`; `internal/signerapp/identity/identity_test.go::TestDecommissionFailsPendingApprovals` | Fail-all terminates every then-pending request not-approved; coordinator decommission rechecks prevent queued requests from being delivered after the mark; mechanism behind lifecycle L8. |
+| AP7 | implemented | AP7 | `internal/signerapp/daemon/ipc.go` displacement path (`FailAllPendingApprovals("apadmin displaced")` before `adminserver.DisplaceSession`); `internal/signerapp/adminserver/displacement.go::OfferDisplacement` / `::DisplaceSession` (old session remains owner until the replacement is promoted) | `internal/signerapp/daemon/ipc_displacement_test.go::TestDisplacementFailsDeliveredApprovalPrompt`; `::TestOfferDisplacementKeepsExistingClientUntilReplacementPromoted`; `::TestDisplacementReplacementAuthFailureKeepsOldOwner` | A delivered prompt was shown to the old client only, so it is failed in the same step the client is replaced; otherwise the orphaned prompt holds the delivery turn and head-of-line-blocks every later approval until the `ApprovalWait` timer frees it. Machine-checked in `approval_coordinator.tla` (`AP7_NoOrphanedDelivery` history flag on the `Displace` action); the coordinator liveness check (`Progress` under `LiveSpec`) documents that the timer is the only guaranteed exit from Delivered, which is why the orphan mattered. |
 
 ## Open Cross-Cutting Gaps
 
@@ -267,17 +268,22 @@ pending-approval state machine that L8 needs.
 [FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md](FORMAL_TLA_APPROVAL_COORDINATOR_MODEL.md))
 models the per-request approval state machine. Like `lifecycle.tla` it has real
 transitions in `Next`: requests interleave over a shared single-delivery turn
-with operator decisions, timeout, cancellation, operator-client disconnect, and
-decommission. TLC checked under `Requests = {r1, r2, r3}` with symmetry; the
-recorded run generated 196 distinct states, reached depth 11, and found no
-counterexamples for `Safety`.
+with operator decisions, timeout, cancellation, operator-client disconnect,
+client displacement, and decommission. TLC checked under
+`Requests = {r1, r2, r3}`: the safety run (with symmetry) generated 196
+distinct states at depth 11 with no counterexamples for `Safety`; the liveness
+run (`approval_coordinator_liveness.cfg`, no symmetry — TLC liveness checking
+is unsound under symmetry) generated 833 distinct states and verified
+`Progress` under `LiveSpec`.
 
 | Invariant | TLA+ predicate |
 |---|---|
 | AP4 (Single Delivery In Flight) | `AP4_SingleDelivery` |
 | AP5 (Cancellation Always Enabled) | `AP5_CancelAlwaysEnabled` |
 | AP6 (Decommission Leaves No Pending) | `AP6_DecommissionLeavesNoPending` |
+| AP7 (No Orphaned Delivery On Displacement) | `AP7_NoOrphanedDelivery` |
 | L8 (No Approval After Decommission) | `L8_NoApproveAfterDecommission` |
+| Progress (queued/delivered requests terminate; liveness) | `Progress` under `LiveSpec` |
 | turn/state consistency | `TypeOK` |
 
 L8 is the headline: it was the only `deferred` invariant, held back because it

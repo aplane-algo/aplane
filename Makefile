@@ -12,6 +12,10 @@ BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 VERSION_PKG = github.com/aplane-algo/aplane/internal/version
 VERSION_LDFLAGS = -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).GitCommit=$(GIT_COMMIT) -X $(VERSION_PKG).BuildTime=$(BUILD_TIME)
 TLA_SPECS = sign_boundary policy_precedence composition lifecycle approval_coordinator approval_composition lifecycle_composition
+# Specs with an additional liveness configuration (<spec>_liveness.cfg).
+# Liveness runs use a separate config because TLC's liveness checking is
+# unsound under SYMMETRY, which the safety configs use.
+TLA_LIVENESS_SPECS = approval_coordinator
 
 # OS-specific build configuration
 # Linux: use musl-gcc for static linking (secure, portable)
@@ -409,6 +413,13 @@ formal-test: formal-copy-sync-check
 		java -cp "$$jar" tlc2.TLC \
 			-cleanup \
 			-config "docs/formal/$$spec.cfg" \
+			"docs/formal/$$spec.tla"; \
+	done; \
+	for spec in $(TLA_LIVENESS_SPECS); do \
+		echo "Running TLC liveness for $$spec"; \
+		java -cp "$$jar" tlc2.TLC \
+			-cleanup \
+			-config "docs/formal/$${spec}_liveness.cfg" \
 			"docs/formal/$$spec.tla"; \
 	done
 
