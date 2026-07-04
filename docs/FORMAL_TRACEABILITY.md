@@ -254,7 +254,12 @@ one admin process race over a writer-priority RWMutex. TLC checked
 under `SignerProcs = {s1, s2}`, `admin = a`, `NONE = none`, with
 symmetry over signers; the recorded run generated 48 distinct
 reachable states, reached depth 10, and found no counterexamples for
-`Safety`.
+`Safety`. A separate liveness run (`lifecycle_liveness.cfg`, no symmetry —
+unsound for TLC liveness) adds `SignerRestart` (recurring signing
+operations) and verifies `Progress` under `LiveSpec`: writer-priority
+starvation freedom (a queued decommission finishes; every held lease
+releases), 150 distinct states, depth 14. Mutation: removing
+`~WriterPending` from `SignerAcquire` yields a starvation lasso.
 
 | Invariant | TLA+ predicate |
 |---|---|
@@ -340,7 +345,12 @@ joins the temporal lifecycle lock race with a lease-gated signing step, checking
 end to end that a signer produces output only while holding a lease acquired before
 decommission. Like `lifecycle.tla` it is a temporal-transition spec; TLC checked
 under `SignerProcs = {s1, s2}` with symmetry, generating 226 distinct states, depth
-12, no counterexamples. It re-checks lifecycle L4-L7 under the extended model and
+12, no counterexamples. A separate liveness run
+(`lifecycle_composition_liveness.cfg`, no symmetry) verifies `Progress` under
+`LiveSpec`: every held lease eventually completes (no request left forever
+neither signed nor rejected) and a queued decommission finishes — 392 distinct
+states, depth 12; mutation: dropping the `SignerSign` fairness conjunct yields
+a lasso. It re-checks lifecycle L4-L7 under the extended model and
 adds two seam claims; the policy decision is consumed as the boolean `policySigned`
 (its derivation is in `composition.tla` / `approval_composition.tla`).
 

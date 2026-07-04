@@ -1,0 +1,68 @@
+[
+  {
+    "spec": "sign_boundary",
+    "cfg": "sign_boundary_deep",
+    "distinct_states": 22944,
+    "depth": 1
+  },
+  {
+    "spec": "composition",
+    "cfg": "composition_deep",
+    "distinct_states": 734208,
+    "depth": 1
+  },
+  {
+    "spec": "lifecycle",
+    "cfg": "lifecycle_deep",
+    "distinct_states": 76,
+    "depth": 12
+  },
+  {
+    "spec": "approval_coordinator",
+    "cfg": "approval_coordinator_deep",
+    "distinct_states": 504,
+    "depth": 14
+  },
+  {
+    "spec": "approval_composition",
+    "cfg": "approval_composition_deep",
+    "distinct_states": 412992,
+    "depth": 1
+  },
+  {
+    "spec": "lifecycle_composition",
+    "cfg": "lifecycle_composition_deep",
+    "distinct_states": 672,
+    "depth": 15
+  },
+  {
+    "spec": "session_ownership",
+    "cfg": "session_ownership_deep",
+    "distinct_states": 200,
+    "depth": 10
+  },
+  {
+    "spec": "plugin_signing",
+    "cfg": "plugin_signing_deep",
+    "distinct_states": 28428,
+    "depth": 1
+  },
+  {
+    "spec": "approval_coordinator",
+    "cfg": "approval_coordinator_liveness_deep",
+    "distinct_states": 6174,
+    "depth": 14
+  },
+  {
+    "spec": "lifecycle",
+    "cfg": "lifecycle_liveness_deep",
+    "distinct_states": 614,
+    "depth": 18
+  },
+  {
+    "spec": "lifecycle_composition",
+    "cfg": "lifecycle_composition_liveness_deep",
+    "distinct_states": 2736,
+    "depth": 15
+  }
+]

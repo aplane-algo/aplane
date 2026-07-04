@@ -3,7 +3,26 @@
 > Status: TLC checked with `SignerProcs = {s1, s2}`, `admin = a`,
 > `NONE = none`, and symmetry over the signer set; the recorded run
 > generated 48 distinct reachable states, reached depth 10, and found
-> no counterexamples for `Safety`.
+> no counterexamples for `Safety`. The liveness run
+> (`lifecycle_liveness.cfg`, no symmetry — TLC liveness checking is
+> unsound under symmetry reduction) generated 150 distinct states at
+> depth 14 and verified the `Progress` temporal property under
+> `LiveSpec`.
+>
+> **Liveness world (`LiveSpec`).** The safety model's signers are
+> one-shot (Idle → Holding → Done), which makes writer starvation
+> unfalsifiable — finite one-shot readers always drain. The liveness
+> relation adds `SignerRestart` (Done → Idle; the daemon's signing
+> operations recur), with weak fairness on each signer's
+> `SignerCompleteAndRelease` and on the admin's
+> AcquireWrite/Mark/ReleaseWrite steps (guarantees the code makes;
+> starting an operation or a decommission carries no fairness).
+> `Progress` states writer-priority starvation freedom — a queued
+> decommission eventually finishes, and every held lease is eventually
+> released. The documented mutation removes the `~WriterPending` guard
+> from `SignerAcquire`; TLC then reports a lasso where restarted-reader
+> churn starves the admin forever — the starvation Go's writer-priority
+> RWMutex exists to prevent.
 
 This is the fourth machine-checkable artifact under the M4 milestone
 in [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md). It models the

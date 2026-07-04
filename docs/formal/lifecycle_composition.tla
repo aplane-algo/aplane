@@ -261,4 +261,32 @@ Safety ==
     /\ LifecycleGatesOutput
     /\ RejectedProducesNoOutput
 
+----------------------------------------------------------------------------
+(* Liveness (checked by lifecycle_composition_liveness.cfg under LiveSpec) *)
+
+\* Fairness matches the code's guarantees: a signer that acquired the lease
+\* signs and releases (per-signer -- one signer's progress must not excuse
+\* another's hang), and the admin decommission procedure runs to completion
+\* once started. No fairness on SignerAcquire or AdminBeginDecommission
+\* (starting is a choice). The writer-starvation dimension is exercised in
+\* lifecycle_liveness.cfg (via SignerRestart); this module's Progress is the
+\* pipeline claim: no accepted request is left forever neither signed nor
+\* rejected, and a queued decommission completes.
+Fairness ==
+    /\ \A s \in SignerProcs : WF_vars(SignerSign(s))
+    /\ \A s \in SignerProcs : WF_vars(SignerRelease(s))
+    /\ WF_vars(AdminAcquireWrite)
+    /\ WF_vars(AdminMarkDecommissioned)
+    /\ WF_vars(AdminReleaseWrite)
+
+LiveSpec == Spec /\ Fairness
+
+\* Progress: every held lease eventually completes (its output -- signed or
+\* empty per the policy decision -- was recorded at the Sign step), and a
+\* queued decommission eventually finishes.
+Progress ==
+    /\ (procState[admin] = "Waiting") ~> (procState[admin] = "Finished")
+    /\ \A s \in SignerProcs :
+           (procState[s] = "Holding") ~> (procState[s] = "Done")
+
 ============================================================================

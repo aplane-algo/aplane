@@ -2,7 +2,16 @@
 
 > Status: TLC checked with `SignerProcs = {s1, s2}`, `admin = a`, `NONE = none`,
 > and symmetry over the signers; the recorded run generated 226 distinct states,
-> reached depth 12, and found no counterexamples for `Safety`.
+> reached depth 12, and found no counterexamples for `Safety`. The liveness run
+> (`lifecycle_composition_liveness.cfg`, no symmetry — TLC liveness checking is
+> unsound under symmetry reduction) generated 392 distinct states at depth 12
+> and verified the `Progress` temporal property under `LiveSpec` (weak fairness
+> per signer on `SignerSign` and `SignerRelease` and on the admin decommission
+> steps): every held lease eventually completes — no accepted request is left
+> forever neither signed nor rejected — and a queued decommission finishes.
+> Mutation: dropping the `SignerSign` fairness conjunct (a holding signer that
+> never signs) produces a lasso counterexample. The writer-starvation dimension
+> is exercised in `lifecycle_liveness.cfg`, not duplicated here.
 
 This is the seventh machine-checkable artifact under the M4 milestone in
 [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md). It joins the temporal

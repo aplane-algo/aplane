@@ -1,4 +1,4 @@
-.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -11,11 +11,9 @@ BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 # Version ldflags (injected into all binaries)
 VERSION_PKG = github.com/aplane-algo/aplane/internal/version
 VERSION_LDFLAGS = -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).GitCommit=$(GIT_COMMIT) -X $(VERSION_PKG).BuildTime=$(BUILD_TIME)
-TLA_SPECS = sign_boundary policy_precedence composition lifecycle approval_coordinator approval_composition lifecycle_composition session_ownership guarded_assembly plugin_signing
-# Specs with an additional liveness configuration (<spec>_liveness.cfg).
-# Liveness runs use a separate config because TLC's liveness checking is
-# unsound under SYMMETRY, which the safety configs use.
-TLA_LIVENESS_SPECS = approval_coordinator
+# The formal-model run list lives in docs/formal/metrics.json (see the
+# formal-test target); liveness runs use separate no-SYMMETRY configs
+# because TLC's liveness checking is unsound under symmetry reduction.
 
 # OS-specific build configuration
 # Linux: use musl-gcc for static linking (secure, portable)
@@ -396,32 +394,16 @@ check: test contract-test
 formal-copy-sync-check:
 	@scripts/check-formal-copied-operators.py
 
+# The (spec, cfg) list and the expected state counts/depths live in
+# docs/formal/metrics.json (metrics_deep.json for the -deep variant) —
+# adding a module means adding a metrics entry, and a spec edit that
+# changes the state space fails until the recorded metrics are updated.
 formal-test: formal-copy-sync-check
-	@set -e; \
-	jar="$(TLA2TOOLS_JAR)"; \
-	if [ -z "$$jar" ]; then \
-		for candidate in .tools/tla2tools.jar tla2tools.jar "$$HOME/tla/tla2tools.jar"; do \
-			if [ -f "$$candidate" ]; then jar="$$candidate"; break; fi; \
-		done; \
-	fi; \
-	if [ -z "$$jar" ] || [ ! -f "$$jar" ]; then \
-		echo "Error: tla2tools.jar not found. Set TLA2TOOLS_JAR=/path/to/tla2tools.jar."; \
-		exit 1; \
-	fi; \
-	for spec in $(TLA_SPECS); do \
-		echo "Running TLC for $$spec"; \
-		java -cp "$$jar" tlc2.TLC \
-			-cleanup \
-			-config "docs/formal/$$spec.cfg" \
-			"docs/formal/$$spec.tla"; \
-	done; \
-	for spec in $(TLA_LIVENESS_SPECS); do \
-		echo "Running TLC liveness for $$spec"; \
-		java -cp "$$jar" tlc2.TLC \
-			-cleanup \
-			-config "docs/formal/$${spec}_liveness.cfg" \
-			"docs/formal/$$spec.tla"; \
-	done
+	@TLA2TOOLS_JAR="$(TLA2TOOLS_JAR)" scripts/run-formal-tests.py
+
+# Larger bounds for pre-release / scheduled runs; not part of CI push.
+formal-test-deep: formal-copy-sync-check
+	@TLA2TOOLS_JAR="$(TLA2TOOLS_JAR)" scripts/run-formal-tests.py --deep
 
 # ---- Integrity check building blocks ----
 
@@ -944,7 +926,8 @@ help:
 	@echo "Testing:"
 	@echo "  make test            - Run unit tests (excludes integration tests)"
 	@echo "  make check           - Run Go unit tests plus signer API contract tests"
-	@echo "  make formal-test     - Run TLC over docs/formal/*.tla specs"
+	@echo "  make formal-test     - Run TLC over docs/formal specs, verify recorded metrics"
+	@echo "  make formal-test-deep - Run TLC with larger bounds (pre-release; not in CI push)"
 	@echo "  make formal-copy-sync-check - Verify copied TLA operators are in sync"
 	@echo "  make race-test       - Run tests with race detector (slower, catches data races)"
 	@echo "  make unit-test       - Run unit tests only (excludes integration tests)"

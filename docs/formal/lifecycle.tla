@@ -275,4 +275,52 @@ Safety ==
     /\ L6_NoAcquireAfterDecommission
     /\ L7_RegistryRemoveDoesNotPreventCompletion
 
+----------------------------------------------------------------------------
+(* Liveness (checked by lifecycle_liveness.cfg under LiveSpec) *)
+
+\* The safety model's signers are one-shot (Idle -> Holding -> Done), which
+\* makes writer starvation unfalsifiable: finite one-shot readers always
+\* drain. The daemon's reality is recurring signing operations, so the
+\* liveness world adds SignerRestart (Done -> Idle) — a signer may begin a
+\* new operation after finishing one. Under writer-priority semantics
+\* (~WriterPending in SignerAcquire), a waiting admin still drains the
+\* readers: restarted signers cannot re-acquire past a queued writer. The
+\* documented mutation removes ~WriterPending from SignerAcquire, and TLC
+\* then reports a lasso where reader churn starves the admin forever — the
+\* starvation Go's writer-priority RWMutex exists to prevent.
+SignerRestart(s) ==
+    /\ s \in SignerProcs
+    /\ procState[s] = "Done"
+    /\ procState' = [procState EXCEPT ![s] = "Idle"]
+    /\ UNCHANGED <<readers, writer, decommissioned, registry_member,
+                   heldEver, badAcquireAfterDecommission>>
+
+LiveNext ==
+    \/ Next
+    \/ \E s \in SignerProcs : SignerRestart(s)
+
+\* Fairness assumptions, matching what the code guarantees:
+\*  - per-signer SignerCompleteAndRelease: in-flight signing work completes
+\*    and releases the read side (per-signer, not existential — with
+\*    recurring signers, one signer's completions must not excuse
+\*    another's hang);
+\*  - the admin decommission procedure runs to completion once started
+\*    (AcquireWrite / Mark / ReleaseWrite).
+\* No fairness on SignerAcquire, SignerRestart, or AdminBeginDecommission:
+\* starting an operation or a decommission is a choice, not a guarantee.
+Fairness ==
+    /\ \A s \in SignerProcs : WF_vars(SignerCompleteAndRelease(s))
+    /\ WF_vars(AdminAcquireWrite)
+    /\ WF_vars(AdminMarkDecommissioned)
+    /\ WF_vars(AdminReleaseWrite)
+
+LiveSpec == Init /\ [][LiveNext]_vars /\ Fairness
+
+\* Progress: a queued decommission eventually completes (writer-priority
+\* starvation freedom), and every held lease is eventually released.
+Progress ==
+    /\ (procState[admin] = "Waiting") ~> (procState[admin] = "Finished")
+    /\ \A s \in SignerProcs :
+           (procState[s] = "Holding") ~> (procState[s] = "Done")
+
 ============================================================================

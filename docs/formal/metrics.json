@@ -1,0 +1,70 @@
+[
+  {
+    "spec": "sign_boundary",
+    "distinct_states": 2628,
+    "depth": 1
+  },
+  {
+    "spec": "policy_precedence",
+    "distinct_states": 64,
+    "depth": 1
+  },
+  {
+    "spec": "composition",
+    "distinct_states": 84096,
+    "depth": 1
+  },
+  {
+    "spec": "lifecycle",
+    "distinct_states": 48,
+    "depth": 10
+  },
+  {
+    "spec": "approval_coordinator",
+    "distinct_states": 196,
+    "depth": 11
+  },
+  {
+    "spec": "approval_composition",
+    "distinct_states": 47304,
+    "depth": 1
+  },
+  {
+    "spec": "lifecycle_composition",
+    "distinct_states": 226,
+    "depth": 12
+  },
+  {
+    "spec": "session_ownership",
+    "distinct_states": 90,
+    "depth": 8
+  },
+  {
+    "spec": "guarded_assembly",
+    "distinct_states": 270920,
+    "depth": 1
+  },
+  {
+    "spec": "plugin_signing",
+    "distinct_states": 3852,
+    "depth": 1
+  },
+  {
+    "spec": "approval_coordinator",
+    "cfg": "approval_coordinator_liveness",
+    "distinct_states": 833,
+    "depth": 11
+  },
+  {
+    "spec": "lifecycle",
+    "cfg": "lifecycle_liveness",
+    "distinct_states": 150,
+    "depth": 14
+  },
+  {
+    "spec": "lifecycle_composition",
+    "cfg": "lifecycle_composition_liveness",
+    "distinct_states": 392,
+    "depth": 12
+  }
+]

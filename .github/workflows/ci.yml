@@ -88,6 +88,14 @@ jobs:
     name: Formal Models
     needs: lint
     runs-on: ubuntu-latest
+    env:
+      # sha256 of the tla2tools.jar asset on the v1.8.0 release page.
+      # NOTE: upstream re-publishes this asset under the same tag (it is a
+      # rolling artifact, not an immutable release), so a hash mismatch
+      # means the content changed. To update: download the jar, run
+      # `make formal-test TLA2TOOLS_JAR=<jar>` locally to confirm all
+      # recorded metrics still pass, then update this hash.
+      TLA2TOOLS_SHA256: 237332bdcc79a35c7d26efa7b82c77c85c2744591c5598673a8a45085ff2a4fb
     steps:
       - uses: actions/checkout@v4
 
@@ -97,11 +105,26 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Cache tla2tools
+        id: tla-cache
+        uses: actions/cache@v4
+        with:
+          path: .tools/tla2tools.jar
+          key: tla2tools-${{ env.TLA2TOOLS_SHA256 }}
+
       - name: Download tla2tools
+        if: steps.tla-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p .tools
           curl -fsSL -o .tools/tla2tools.jar \
             https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+
+      - name: Verify tla2tools checksum
+        run: |
+          echo "${TLA2TOOLS_SHA256}  .tools/tla2tools.jar" | sha256sum -c - || {
+            echo "::error::tla2tools.jar hash mismatch. The v1.8.0 release asset is re-published upstream; re-verify the new jar locally (make formal-test TLA2TOOLS_JAR=...) and update TLA2TOOLS_SHA256 in this workflow.";
+            exit 1;
+          }
 
       - name: Run TLC
         run: make formal-test TLA2TOOLS_JAR=.tools/tla2tools.jar

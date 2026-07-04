@@ -357,10 +357,10 @@ Machine-checked invariants by module:
 | `sign_boundary.tla` | I1, I2, I3, I7, I8, output alignment, M4 target | 2,628 | 1 |
 | `policy_precedence.tla` | P4, P5, P6, P7, I9, ApprovalResolution | 64 | 1 |
 | `composition.tla` | 3 seam claims + 2 sign-boundary rechecks under derived verdict | 84,096 | 1 |
-| `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency | 48 | 10 |
+| `lifecycle.tla` | L4, L5, L6, L7, RWMutex exclusion, state consistency; Progress (liveness, no-symmetry config with SignerRestart: 150 states) | 48 | 10 |
 | `approval_coordinator.tla` | AP4, AP5, AP6, AP7, L8, turn/state consistency; Progress (liveness, separate no-symmetry config: 833 states) | 196 | 11 |
 | `approval_composition.tla` | approval-seam claims (AP2 / L8 / I9 end to end) | 47,304 | 1 |
-| `lifecycle_composition.tla` | L4-L7 + lifecycle-output seam (decommission => no output) | 226 | 12 |
+| `lifecycle_composition.tla` | L4-L7 + lifecycle-output seam (decommission => no output); Progress (liveness, no-symmetry config: 392 states) | 226 | 12 |
 | `session_ownership.tla` | SO1, SO2 (admin unlock ownership: no stranded unlock), state consistency | 90 | 8 |
 | `guarded_assembly.tla` | A1, A6, A7, A8, A14, no-partial-output (component assembly verification) | 270,920 | 1 |
 | `plugin_signing.tla` | PS2-PS7 (plugin trust boundary: digest, review fail-closed, plan preservation, byte match, approval gates) | 3,852 | 1 |
@@ -406,13 +406,21 @@ distinction matters when judging what TLC has and has not done:
   (reverting `Displace` to the pre-fix leave-it-in-place semantics violates
   AP7), and a delivered request with no guaranteed exit (dropping the
   `Timeout` fairness conjunct violates the `Progress` liveness property with
-  a lasso counterexample). It is also the one module with a **liveness
-  check**: `approval_coordinator_liveness.cfg` runs `LiveSpec` (weak fairness
-  on `Deliver`, `Timeout`, and the decommission drain — guarantees the code
-  makes; operator decisions carry no fairness) and verifies `Progress`: every
-  request that reaches the coordinator eventually terminates. Liveness runs
-  use a separate config without `SYMMETRY`, which is unsound for TLC liveness
-  checking. `lifecycle_composition.tla` adds a lease-gated signing
+  a lasso counterexample). Three temporal modules carry **liveness
+  checks** in separate no-`SYMMETRY` configs (symmetry reduction is unsound
+  for TLC liveness): `approval_coordinator_liveness.cfg` runs `LiveSpec`
+  (weak fairness on `Deliver`, `Timeout`, and the decommission drain —
+  guarantees the code makes; operator decisions carry no fairness) and
+  verifies `Progress`: every request that reaches the coordinator eventually
+  terminates. `lifecycle_liveness.cfg` adds `SignerRestart` (recurring
+  signing operations — one-shot signers make writer starvation
+  unfalsifiable) and verifies writer-priority starvation freedom; its
+  mutation (removing `~WriterPending` from `SignerAcquire`) produces a lasso
+  where reader churn starves a queued decommission forever.
+  `lifecycle_composition_liveness.cfg` verifies every held lease eventually
+  completes (no request left forever neither signed nor rejected); its
+  mutation drops the `SignerSign` fairness conjunct.
+  `lifecycle_composition.tla` adds a lease-gated signing
   step to the lifecycle race (depth 12); its mutation test (signing
   regardless of the policy decision) confirms it would catch output produced
   without a signing policy. `session_ownership.tla` interleaves admin
@@ -499,8 +507,16 @@ Tools used during the first iteration:
 Convention used during this work: the jar lives at `~/tla/tla2tools.jar`.
 Adjust paths if you put it elsewhere.
 
-Run all modules (and the coordinator liveness config) in sequence from the
-repo root — this is what `make formal-test` does:
+The authoritative run list (spec, config, and expected state counts/depths)
+is `docs/formal/metrics.json` — `make formal-test` runs it via
+`scripts/run-formal-tests.py` and fails on any metric drift, so a spec edit
+that changes the state space must consciously update the recorded metrics
+and this document's module table. `make formal-test-deep` does the same
+with larger bounds (`docs/formal/metrics_deep.json`, `*_deep.cfg`) for
+pre-release or scheduled runs; `guarded_assembly` has no deep variant
+(its per-entry checks are independent and `MaxEntries = 3` exceeds TLC's
+set-enumeration limit — nothing new is exercised beyond `MaxEntries = 2`).
+The equivalent manual commands:
 
 ```sh
 java -jar ~/tla/tla2tools.jar -config docs/formal/sign_boundary.cfg        docs/formal/sign_boundary.tla
@@ -514,6 +530,8 @@ java -jar ~/tla/tla2tools.jar -config docs/formal/session_ownership.cfg    docs/
 java -jar ~/tla/tla2tools.jar -config docs/formal/guarded_assembly.cfg     docs/formal/guarded_assembly.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/plugin_signing.cfg       docs/formal/plugin_signing.tla
 java -jar ~/tla/tla2tools.jar -config docs/formal/approval_coordinator_liveness.cfg docs/formal/approval_coordinator.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle_liveness.cfg    docs/formal/lifecycle.tla
+java -jar ~/tla/tla2tools.jar -config docs/formal/lifecycle_composition_liveness.cfg docs/formal/lifecycle_composition.tla
 ```
 
 Expected results match the table above. Each module reports "Model
@@ -561,8 +579,13 @@ next slices are:
   property class.
 
 The previous operational cleanup is complete: `docs/formal/states/` is ignored,
-and the Formal Models CI job runs all ten shipped TLC modules (plus the
-approval-coordinator liveness config) through `make formal-test`. The
+and the Formal Models CI job runs all ten shipped TLC modules (plus three
+liveness configs) through `make formal-test`, which also verifies the
+recorded state counts/depths against `docs/formal/metrics.json`. The CI job
+verifies the tla2tools.jar download against a pinned sha256 (the upstream
+v1.8.0 release asset is re-published under the same tag, so a hash change
+means the content changed — re-verify locally and update the pin in
+`.github/workflows/ci.yml`) and caches the jar by hash. The
 signing-authority TLA+ module was evaluated and **declined by decision**
 (2026-07-03; rationale in FORMAL_TRACEABILITY.md "Unmodeled invariants" —
 S13 is the sole revisit-candidate). If you only have time for one new

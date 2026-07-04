@@ -187,7 +187,7 @@ java -jar tla2tools.jar -config docs/formal/approval_coordinator_liveness.cfg \
 Expected: `Model checking completed. No error has been found.` for both — the
 safety run at 196 distinct states, the liveness run at 833 (no symmetry),
 both depth 11, sub-second runtime. `make formal-test` runs both (the liveness
-config is listed in the Makefile's `TLA_LIVENESS_SPECS`).
+config is an entry in `docs/formal/metrics.json`, the authoritative run list).
 
 ## What this proves vs. doesn't
 
