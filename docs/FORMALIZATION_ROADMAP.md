@@ -581,11 +581,14 @@ next slices are:
 The previous operational cleanup is complete: `docs/formal/states/` is ignored,
 and the Formal Models CI job runs all ten shipped TLC modules (plus three
 liveness configs) through `make formal-test`, which also verifies the
-recorded state counts/depths against `docs/formal/metrics.json`. The CI job
-verifies the tla2tools.jar download against a pinned sha256 (the upstream
-v1.8.0 release asset is re-published under the same tag, so a hash change
-means the content changed — re-verify locally and update the pin in
-`.github/workflows/ci.yml`) and caches the jar by hash. The
+recorded state counts/depths against `docs/formal/metrics.json`. The TLC jar
+is vendored at `.tools/tla2tools.jar` (provenance and update procedure in
+`.tools/README.md`): the upstream v1.8.0 release asset is re-published under
+the same tag on every upstream build, so neither its URL nor a pinned
+checksum of it is stable — a hash pin broke CI within a day. The vendored
+jar is immutable, used by CI and local `make formal-test` alike (the
+Makefile's jar lookup prefers `.tools/`), and updates land as reviewed
+commits. The
 signing-authority TLA+ module was evaluated and **declined by decision**
 (2026-07-03; rationale in FORMAL_TRACEABILITY.md "Unmodeled invariants" —
 S13 is the sole revisit-candidate). If you only have time for one new
