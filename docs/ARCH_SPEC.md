@@ -216,6 +216,18 @@ It owns:
 - application call argument parsing and ABI method resolution,
 - state transitions that should not depend on a particular UI.
 
+Internally, `internal/engine` is split into a shared infrastructure type and the
+domain command operations built on it. `engine.Core` (`internal/engine/core.go`)
+owns the cross-cutting infrastructure — client-scoped caches and network state,
+the remote signer connection lifecycle, the signer key cache, address and
+signability resolution, and the client-data lock. `engine.Engine` embeds `*Core`
+and adds the domain command methods (payments, assets, apps, key management,
+guarded signing). This keeps the shared infrastructure in one place rather than
+interleaved with domain logic on a single flat facade.
+
+Engine code must not depend on UI parsing or formatting packages; this is
+enforced by `test/arch/client_layering_test.go` (see Architectural Invariants).
+
 `apsigner` does not use `internal/engine`; it has its own server-side orchestration.
 
 ### Provider Layer
@@ -1455,9 +1467,10 @@ The repo uses:
 
 - package-level unit tests beside source,
 - integration tests in `test/integration`,
-- architecture guard tests in `test/arch` that pin signer/client layering,
-  family-agnostic core-package imports, and guarded signing route selection on
-  runtime `signing_flow` metadata,
+- architecture guard tests in `test/arch` that pin signer/client layering
+  (including `client_layering_test.go`, which keeps the client engine core free
+  of UI parsing/formatting imports), family-agnostic core-package imports, and
+  guarded signing route selection on runtime `signing_flow` metadata,
 - dedicated test harness packages,
 - analysis tools for security properties,
 - signer API and SDK contract tests backed by JSON fixtures in `test/contracts/signerapi/`.
@@ -1577,7 +1590,7 @@ Architecturally:
 
 1. Signer-managed private keys never leave `apsigner`.
 2. Unlock state = master-key availability + active session state.
-3. Engine code is independent of UI parsing/formatting.
+3. Engine code is independent of UI parsing/formatting. Pinned by `test/arch/client_layering_test.go`: `internal/engine` (and subpackages) must not import UI parsing/formatting packages (`cmdspec`, `shellrepl`, `apshellcli`, `apshellapp`, `keytypefmt`, `theme`, `addressdisplay`).
 4. Provider registration is explicit at startup via `RegisterProviders()` / `lsig.RegisterClient()` / `lsig/signerreg.RegisterSigner()`.
 5. Versioned key types are stable identifiers across storage, UI, and protocol.
 6. IPC messages are line-delimited JSON with typed message contracts.
@@ -1611,7 +1624,13 @@ Strong existing seams:
 Weaker or more coupled areas:
 
 - `cmd/apsigner` owns some operational glue, final transport adaptation, and startup/operator logging,
-- `internal/engine` contains some direct cache/result shaping concerns,
+- `internal/engine` now separates shared infrastructure (`engine.Core`) from the
+  domain command methods on `Engine`, and no longer imports UI parsing/formatting
+  (enforced by `test/arch`). Remaining follow-up: the guarded-signing flow
+  (`guarded_submit.go`, `sentry_endpoint.go`) is still in-package rather than an
+  import-isolated `internal/engine/guarded` package, and the client-data lock
+  helper plus the last signer-cache `*Locked` split still live on the engine side
+  rather than being fully owned by `internal/clientstate`,
 - plugin manifests carry dual-surface complexity because typed function metadata exists alongside a command-first runtime contract,
 - shell command handling mixes structured results and stdout capture fallback,
 - the runtime core is identity-owned, but the operator/control-plane surface is single-identity/single-operator in product mode, even though that product admin workflow may arrive over IPC or the SSH `aplane-admin` subsystem.
