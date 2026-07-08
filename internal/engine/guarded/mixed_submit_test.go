@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package engine
+package guarded
 
 import (
 	"context"
@@ -19,7 +19,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientsign"
-	guardedpkg "github.com/aplane-algo/aplane/internal/engine/guarded"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
@@ -40,7 +39,7 @@ func TestPlanGuardedGroupSizesBudgetAcrossAllLogicSigs(t *testing.T) {
 	nonGuardedFalcon := testAddress(3).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
-	eng := newMixedGuardedTestEngine(t, func(c *cache.SignerCache) {
+	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
 		c.SetLsigSize(guarded, 800)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
@@ -49,10 +48,10 @@ func TestPlanGuardedGroupSizesBudgetAcrossAllLogicSigs(t *testing.T) {
 	})
 
 	txns := []types.Transaction{
-		testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction,
-		testPreparedTxn(t, testAddress(3), testAddress(2), "falcon", nil).Transaction,
+		testPaymentTxn(t, testAddress(1), testAddress(2), "guarded"),
+		testPaymentTxn(t, testAddress(3), testAddress(2), "falcon"),
 	}
-	targets := []guardedpkg.Target{{
+	targets := []guardedTarget{{
 		Index:                  0,
 		Sender:                 guarded,
 		Account:                guarded,
@@ -60,7 +59,7 @@ func TestPlanGuardedGroupSizesBudgetAcrossAllLogicSigs(t *testing.T) {
 		SentryPublicKey:        sentryHex,
 	}}
 
-	planned, dummies, err := eng.guardedSigner().PlanGuardedGroup(txns, targets, nil)
+	planned, dummies, err := s.planGuardedGroup(txns, targets, nil)
 	if err != nil {
 		t.Fatalf("planGuardedGroup() error = %v", err)
 	}
@@ -93,7 +92,7 @@ func TestPlanGuardedGroupBudgetsNonGuardedByEffectiveSigner(t *testing.T) {
 	authFalcon := testAddress(4).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
-	eng := newMixedGuardedTestEngine(t, func(c *cache.SignerCache) {
+	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
 		c.SetLsigSize(guarded, 800)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
@@ -102,13 +101,13 @@ func TestPlanGuardedGroupBudgetsNonGuardedByEffectiveSigner(t *testing.T) {
 		c.AddAddress(authFalcon, nonGuardedFalconKeyType)
 		c.SetLsigSize(authFalcon, 1500)
 	})
-	eng.AuthCache.AuthAddresses = map[string]string{rekeyedSender: authFalcon}
+	s.authCache.AuthAddresses = map[string]string{rekeyedSender: authFalcon}
 
 	txns := []types.Transaction{
-		testPreparedTxn(t, testAddress(1), testAddress(5), "guarded", nil).Transaction,
-		testPreparedTxn(t, testAddress(2), testAddress(5), "rekeyed", nil).Transaction,
+		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(2), testAddress(5), "rekeyed"),
 	}
-	targets := []guardedpkg.Target{{
+	targets := []guardedTarget{{
 		Index:                  0,
 		Sender:                 guarded,
 		Account:                guarded,
@@ -116,7 +115,7 @@ func TestPlanGuardedGroupBudgetsNonGuardedByEffectiveSigner(t *testing.T) {
 		SentryPublicKey:        sentryHex,
 	}}
 
-	planned, dummies, err := eng.guardedSigner().PlanGuardedGroup(txns, targets, nil)
+	planned, dummies, err := s.planGuardedGroup(txns, targets, nil)
 	if err != nil {
 		t.Fatalf("planGuardedGroup() error = %v", err)
 	}
@@ -135,17 +134,17 @@ func TestPlanGuardedGroupBudgetsGuardedAuthorizerByEffectiveSigner(t *testing.T)
 	guardedAuthorizer := testAddress(1).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
-	eng := newMixedGuardedTestEngine(t, func(c *cache.SignerCache) {
+	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guardedAuthorizer, keytypes.GuardedFalcon1024SentryEd25519V1)
 		c.SetLsigSize(guardedAuthorizer, 2500)
 		c.SetSentryPublicKeyForAddress(guardedAuthorizer, sentryHex)
 	})
-	eng.AuthCache.AuthAddresses = map[string]string{sender: guardedAuthorizer}
+	s.authCache.AuthAddresses = map[string]string{sender: guardedAuthorizer}
 
 	txns := []types.Transaction{
-		testPreparedTxn(t, testAddress(2), testAddress(5), "guarded-authorizer", nil).Transaction,
+		testPaymentTxn(t, testAddress(2), testAddress(5), "guarded-authorizer"),
 	}
-	targets := []guardedpkg.Target{{
+	targets := []guardedTarget{{
 		Index:                  0,
 		Sender:                 sender,
 		Account:                guardedAuthorizer,
@@ -153,7 +152,7 @@ func TestPlanGuardedGroupBudgetsGuardedAuthorizerByEffectiveSigner(t *testing.T)
 		SentryPublicKey:        sentryHex,
 	}}
 
-	planned, dummies, err := eng.guardedSigner().PlanGuardedGroup(txns, targets, nil)
+	planned, dummies, err := s.planGuardedGroup(txns, targets, nil)
 	if err != nil {
 		t.Fatalf("planGuardedGroup() error = %v", err)
 	}
@@ -176,7 +175,7 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	nonGuarded := testAddress(2).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
-	eng := newMixedGuardedTestEngine(t, func(c *cache.SignerCache) {
+	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
 		c.SetLsigSize(guarded, 1500)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
@@ -184,20 +183,20 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	})
 
 	plannedTxns := []types.Transaction{
-		testPreparedTxn(t, testAddress(1), testAddress(5), "guarded", nil).Transaction,
-		testPreparedTxn(t, testAddress(2), testAddress(5), "ordinary", nil).Transaction,
-		testPreparedTxn(t, testAddress(9), testAddress(5), "dummy", nil).Transaction,
+		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(2), testAddress(5), "ordinary"),
+		testPaymentTxn(t, testAddress(9), testAddress(5), "dummy"),
 	}
-	groupBytesHex := guardedpkg.EncodeGroupHex(plannedTxns)
+	groupBytesHex := encodeGroupHex(plannedTxns)
 
 	captured := &capturedSignRequest{}
 	server := newUserSignerSignTestServer(t, captured)
 	defer server.Close()
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
 
-	signed, err := eng.guardedSigner().RequestNonGuardedSignatures(
+	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
-		map[int]guardedpkg.Target{0: ed25519GuardedTarget(guarded, sentryHex)},
+		map[int]guardedTarget{0: ed25519GuardedTarget(guarded, sentryHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
@@ -247,7 +246,7 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerLsigSize(t *testing.T) 
 	nonGuarded := testAddress(2).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
-	eng := newMixedGuardedTestEngine(t, func(c *cache.SignerCache) {
+	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guardedAuthorizer, keytypes.GuardedFalcon1024SentryEd25519V1)
 		c.SetLsigSize(guardedAuthorizer, 1500)
 		c.SetSentryPublicKeyForAddress(guardedAuthorizer, sentryHex)
@@ -255,19 +254,19 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerLsigSize(t *testing.T) 
 	})
 
 	plannedTxns := []types.Transaction{
-		testPreparedTxn(t, testAddress(4), testAddress(5), "guarded-authorizer", nil).Transaction,
-		testPreparedTxn(t, testAddress(2), testAddress(5), "ordinary", nil).Transaction,
+		testPaymentTxn(t, testAddress(4), testAddress(5), "guarded-authorizer"),
+		testPaymentTxn(t, testAddress(2), testAddress(5), "ordinary"),
 	}
-	groupBytesHex := guardedpkg.EncodeGroupHex(plannedTxns)
+	groupBytesHex := encodeGroupHex(plannedTxns)
 
 	captured := &capturedSignRequest{}
 	server := newUserSignerSignTestServer(t, captured)
 	defer server.Close()
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
 
-	signed, err := eng.guardedSigner().RequestNonGuardedSignatures(
+	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
-		map[int]guardedpkg.Target{0: {
+		map[int]guardedTarget{0: {
 			Index:                  0,
 			Sender:                 sender,
 			Account:                guardedAuthorizer,
@@ -302,26 +301,26 @@ func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 	guarded := testAddress(1).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
-	eng := newMixedGuardedTestEngine(t, func(c *cache.SignerCache) {
+	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
 		c.SetLsigSize(guarded, 1500)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
 	})
 
 	plannedTxns := []types.Transaction{
-		testPreparedTxn(t, testAddress(1), testAddress(5), "guarded", nil).Transaction,
-		testPreparedTxn(t, testAddress(9), testAddress(5), "dummy", nil).Transaction,
+		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(9), testAddress(5), "dummy"),
 	}
-	groupBytesHex := guardedpkg.EncodeGroupHex(plannedTxns)
+	groupBytesHex := encodeGroupHex(plannedTxns)
 
 	captured := &capturedSignRequest{}
 	server := newUserSignerSignTestServer(t, captured)
 	defer server.Close()
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
 
-	signed, err := eng.guardedSigner().RequestNonGuardedSignatures(
+	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 1,
-		map[int]guardedpkg.Target{0: ed25519GuardedTarget(guarded, sentryHex)},
+		map[int]guardedTarget{0: ed25519GuardedTarget(guarded, sentryHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
@@ -343,7 +342,7 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 	nonGuarded := testAddress(2).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
-	eng := newMixedGuardedTestEngine(t, func(c *cache.SignerCache) {
+	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
 		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
 		c.SetLsigSize(guarded, 1500)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
@@ -351,19 +350,19 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 	})
 
 	plannedTxns := []types.Transaction{
-		testPreparedTxn(t, testAddress(1), testAddress(5), "guarded", nil).Transaction,
-		testPreparedTxn(t, testAddress(2), testAddress(5), "ordinary", nil).Transaction,
+		testPaymentTxn(t, testAddress(1), testAddress(5), "guarded"),
+		testPaymentTxn(t, testAddress(2), testAddress(5), "ordinary"),
 	}
-	groupBytesHex := guardedpkg.EncodeGroupHex(plannedTxns)
+	groupBytesHex := encodeGroupHex(plannedTxns)
 
 	captured := &capturedSignRequest{emptyAll: true}
 	server := newUserSignerSignTestServer(t, captured)
 	defer server.Close()
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
 
-	_, err := eng.guardedSigner().RequestNonGuardedSignatures(
+	_, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
-		map[int]guardedpkg.Target{0: ed25519GuardedTarget(guarded, sentryHex)},
+		map[int]guardedTarget{0: ed25519GuardedTarget(guarded, sentryHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "no signature for non-guarded position 2") {
@@ -371,18 +370,10 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 	}
 }
 
-func newMixedGuardedTestEngine(t *testing.T, build func(c *cache.SignerCache)) *Engine {
+func newMixedTestSigner(t *testing.T, build func(c *cache.SignerCache)) *Signer {
 	t.Helper()
-	signerCache := cache.NewSignerCache()
-	build(&signerCache)
-	eng, err := NewEngine("testnet",
-		WithCacheStore(cache.NewStore(t.TempDir())),
-		WithSignerCache(signerCache),
-	)
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-	return eng
+	s, _ := newTestSigner(t, build)
+	return s
 }
 
 // capturedSignRequest records the GroupSignRequest a mock user signer received.

@@ -86,7 +86,7 @@ func (r *resolvedSentryEndpoint) close() {
 	}
 }
 
-func (s *Signer) resolveSentryEndpoint(ctx context.Context, sentryKey SentryRequestKey) (*resolvedSentryEndpoint, error) {
+func (s *Signer) resolveSentryEndpoint(ctx context.Context, sentryKey sentryRequestKey) (*resolvedSentryEndpoint, error) {
 	if endpoint, ok := s.sentryEndpoints[sentryKey.PublicKey]; ok {
 		if endpoint.URL == "self" {
 			if err := verifySentryEndpointAdvertises(ctx, s.conn, sentryKey, "configured self sentry endpoint"); err != nil {
@@ -96,7 +96,7 @@ func (s *Signer) resolveSentryEndpoint(ctx context.Context, sentryKey SentryRequ
 		}
 		client, cleanup, source, err := s.connectConfiguredSentryEndpoint(ctx, endpoint)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect sentry endpoint for %s: %w", SentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
+			return nil, fmt.Errorf("failed to connect sentry endpoint for %s: %w", sentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
 		}
 		resolved := &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
 		if err := verifySentryEndpointAdvertises(ctx, client, sentryKey, source); err != nil {
@@ -107,7 +107,7 @@ func (s *Signer) resolveSentryEndpoint(ctx context.Context, sentryKey SentryRequ
 	}
 
 	if err := verifySentryEndpointAdvertises(ctx, s.conn, sentryKey, "current signer"); err != nil {
-		return nil, fmt.Errorf("no sentry endpoint configured for %s and current signer does not advertise a matching sentry component: %w", SentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
+		return nil, fmt.Errorf("no sentry endpoint configured for %s and current signer does not advertise a matching sentry component: %w", sentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
 	}
 	return &resolvedSentryEndpoint{client: s.conn, source: "current signer"}, nil
 }
@@ -297,14 +297,14 @@ func discoverSentryComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredSentryCo
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
 		if err != nil {
-			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Sentry Key ID %q: %v", ErrSentryDiscoveryInvalidMetadata, SentryComponentLabel(key.KeyType, publicKey), key.Address, err)
+			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Sentry Key ID %q: %v", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), key.Address, err)
 		}
-		expectedSelector, err := SentryComponentSelector(key.KeyType, publicKey)
+		expectedSelector, err := sentryComponentSelector(key.KeyType, publicKey)
 		if err != nil {
 			return nil, fmt.Errorf("%w: failed to derive Sentry Key ID for sentry public key %s: %v", ErrSentryDiscoveryInvalidMetadata, shortSentryPublicKeyHex(publicKey), err)
 		}
 		if selector != expectedSelector {
-			return nil, fmt.Errorf("%w: sentry component %s advertised selector %s, want %s", ErrSentryDiscoveryInvalidMetadata, SentryComponentLabel(key.KeyType, publicKey), selector, expectedSelector)
+			return nil, fmt.Errorf("%w: sentry component %s advertised selector %s, want %s", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), selector, expectedSelector)
 		}
 		if _, ok := seen[publicKey]; ok {
 			continue
@@ -334,12 +334,12 @@ func (s *Signer) signerProgressWriter() io.Writer {
 	return s.conn.SignerProgressOut
 }
 
-func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentClient, sentryKey SentryRequestKey, source string) error {
+func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentClient, sentryKey sentryRequestKey, source string) error {
 	expectedPublicKey, err := normalizeSentryPublicKeyHex(sentryKey.PublicKey)
 	if err != nil {
 		return fmt.Errorf("invalid expected sentry public key: %w", err)
 	}
-	expectedSelector, err := SentryComponentSelector(sentryKey.ComponentKeyType, expectedPublicKey)
+	expectedSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, expectedPublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to derive expected Sentry Key ID: %w", err)
 	}

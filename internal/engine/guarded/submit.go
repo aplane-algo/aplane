@@ -23,7 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/txnutil"
 )
 
-type Target struct {
+type guardedTarget struct {
 	Index                  int
 	Sender                 string
 	Account                string
@@ -31,7 +31,7 @@ type Target struct {
 	SentryPublicKey        string
 }
 
-type SentryRequestKey struct {
+type sentryRequestKey struct {
 	ComponentKeyType string
 	PublicKey        string
 }
@@ -65,23 +65,23 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 		w = os.Stdout
 	}
 
-	targets, err := s.GuardedTargets(txns)
+	targets, err := s.guardedTargets(txns)
 	if err != nil {
 		return nil, nil, err
 	}
 	if len(targets) == 0 {
 		return nil, nil, fmt.Errorf("guarded signing selected with no guarded effective signers")
 	}
-	guardedTargetsByIndex := make(map[int]Target, len(targets))
+	guardedTargetsByIndex := make(map[int]guardedTarget, len(targets))
 	for _, target := range targets {
 		guardedTargetsByIndex[target.Index] = target
 	}
 
-	plannedTxns, dummyTxns, err := s.PlanGuardedGroup(txns, targets, w)
+	plannedTxns, dummyTxns, err := s.planGuardedGroup(txns, targets, w)
 	if err != nil {
 		return nil, nil, err
 	}
-	groupBytesHex := EncodeGroupHex(plannedTxns)
+	groupBytesHex := encodeGroupHex(plannedTxns)
 	if _, err := canonical.DecodeGroupHex(groupBytesHex); err != nil {
 		return nil, nil, fmt.Errorf("failed to build canonical guarded group: %w", err)
 	}
@@ -95,7 +95,7 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	if err != nil {
 		return nil, nil, err
 	}
-	sentrySignatures, sentryRequestIDs, err := s.RequestSentryComponentSignatures(opts.Ctx, groupBytesHex, targets)
+	sentrySignatures, sentryRequestIDs, err := s.requestSentryComponentSignatures(opts.Ctx, groupBytesHex, targets)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -103,7 +103,7 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	if nonGuardedCount := len(txns) - len(targets); nonGuardedCount > 0 {
 		_, _ = fmt.Fprintf(w, "[GUARDED] Mixed group: signing %d non-guarded position(s) over canonical bytes\n", nonGuardedCount)
 	}
-	nonGuardedSignedHex, err := s.RequestNonGuardedSignatures(opts.Ctx, plannedTxns, groupBytesHex, len(txns), guardedTargetsByIndex, opts)
+	nonGuardedSignedHex, err := s.requestNonGuardedSignatures(opts.Ctx, plannedTxns, groupBytesHex, len(txns), guardedTargetsByIndex, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -148,11 +148,11 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	if err != nil {
 		return nil, nil, err
 	}
-	signedBytes, signedObjects, submittedTxns, err := DecodeGuardedSignedGroup(assemblyResp.SignedGroup)
+	signedBytes, signedObjects, submittedTxns, err := decodeGuardedSignedGroup(assemblyResp.SignedGroup)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := VerifyAssembledAgainstFrozen(groupBytesHex, submittedTxns); err != nil {
+	if err := verifyAssembledAgainstFrozen(groupBytesHex, submittedTxns); err != nil {
 		return nil, nil, err
 	}
 
@@ -170,14 +170,14 @@ func (s *Signer) SignAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	return txIDs, submittedTxns, nil
 }
 
-// VerifyAssembledAgainstFrozen pins the client's frozen-bytes invariant at the
+// verifyAssembledAgainstFrozen pins the client's frozen-bytes invariant at the
 // last step: the signer's assembled group must have one signed transaction per
 // frozen canonical entry, and each assembled transaction must re-encode to
 // exactly the bytes the client signed over. The signer already enforces this on
 // its side and the network would reject a mismatch, but re-checking here keeps
 // the client from submitting (and recording in its TxnWriter) bytes it never
 // committed to.
-func VerifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Transaction) error {
+func verifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Transaction) error {
 	if len(assembled) != len(groupBytesHex) {
 		return fmt.Errorf("assembled group has %d transaction(s), want %d", len(assembled), len(groupBytesHex))
 	}
@@ -198,7 +198,7 @@ func VerifyAssembledAgainstFrozen(groupBytesHex []string, assembled []types.Tran
 // assembled later via /sign/assemble. Returns signed-transaction hex keyed by
 // group index. When there are no non-guarded originals (the all-guarded case)
 // it makes no signer call.
-func (s *Signer) RequestNonGuardedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]Target, opts clientsign.SubmitOptions) (map[int]string, error) {
+func (s *Signer) requestNonGuardedSignatures(ctx context.Context, plannedTxns []types.Transaction, groupBytesHex []string, originalCount int, guardedTargets map[int]guardedTarget, opts clientsign.SubmitOptions) (map[int]string, error) {
 	signRequests := make([]signerapi.SignRequest, len(plannedTxns))
 	nonGuarded := make([]int, 0, originalCount)
 	for i := range plannedTxns {
@@ -264,8 +264,8 @@ func (s *Signer) RequestNonGuardedSignatures(ctx context.Context, plannedTxns []
 	return signed, nil
 }
 
-func (s *Signer) GuardedTargets(txns []types.Transaction) ([]Target, error) {
-	targets := make([]Target, 0, len(txns))
+func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, error) {
+	targets := make([]guardedTarget, 0, len(txns))
 	for i, txn := range txns {
 		sender := txn.Sender.String()
 		account := s.authCache.ResolveEffectiveSigner(sender)
@@ -288,7 +288,7 @@ func (s *Signer) GuardedTargets(txns []types.Transaction) ([]Target, error) {
 		if err != nil {
 			return nil, fmt.Errorf("guarded account %s has invalid sentry_public_key metadata: %w", account, err)
 		}
-		targets = append(targets, Target{
+		targets = append(targets, guardedTarget{
 			Index:                  i,
 			Sender:                 sender,
 			Account:                account,
@@ -299,8 +299,8 @@ func (s *Signer) GuardedTargets(txns []types.Transaction) ([]Target, error) {
 	return targets, nil
 }
 
-func (t Target) requestKey() SentryRequestKey {
-	return SentryRequestKey{
+func (t guardedTarget) requestKey() sentryRequestKey {
+	return sentryRequestKey{
 		ComponentKeyType: t.SentryComponentKeyType,
 		PublicKey:        t.SentryPublicKey,
 	}
@@ -327,7 +327,7 @@ func normalizeSentryPublicKeyHex(raw string) (string, error) {
 	return hex.EncodeToString(publicKey), nil
 }
 
-func SentryComponentSelector(componentKeyType string, sentryPublicKey string) (string, error) {
+func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (string, error) {
 	if componentKeyType == "" {
 		return "", fmt.Errorf("sentry component key type is required")
 	}
@@ -342,8 +342,8 @@ func SentryComponentSelector(componentKeyType string, sentryPublicKey string) (s
 	return keytypes.DeriveComponentKeySelector(componentKeyType, publicKey), nil
 }
 
-func SentryComponentLabel(componentKeyType, sentryPublicKey string) string {
-	selector, err := SentryComponentSelector(componentKeyType, sentryPublicKey)
+func sentryComponentLabel(componentKeyType, sentryPublicKey string) string {
+	selector, err := sentryComponentSelector(componentKeyType, sentryPublicKey)
 	if err == nil {
 		return fmt.Sprintf("Sentry Key ID %s (%s)", selector, componentKeyType)
 	}
@@ -359,10 +359,10 @@ func shortSentryPublicKeyHex(publicKeyHex string) string {
 	return trimmed[:12] + "..." + trimmed[len(trimmed)-12:]
 }
 
-func (s *Signer) PlanGuardedGroup(txns []types.Transaction, targets []Target, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
+func (s *Signer) planGuardedGroup(txns []types.Transaction, targets []guardedTarget, w io.Writer) ([]types.Transaction, []types.Transaction, error) {
 	originalCount := len(txns)
 	planned := append([]types.Transaction(nil), txns...)
-	guardedTargets := make(map[int]Target, len(targets))
+	guardedTargets := make(map[int]guardedTarget, len(targets))
 	for _, target := range targets {
 		guardedTargets[target.Index] = target
 	}
@@ -454,7 +454,7 @@ func (s *Signer) PlanGuardedGroup(txns []types.Transaction, targets []Target, w 
 	return planned, dummyTxns, nil
 }
 
-func missingGuardedLsigSizeMessage(target Target) error {
+func missingGuardedLsigSizeMessage(target guardedTarget) error {
 	if target.Sender == target.Account {
 		return fmt.Errorf("guarded account %s is missing LogicSig size metadata; run keys refresh", target.Account)
 	}
@@ -472,7 +472,7 @@ func suggestedParamsFromTxn(txn types.Transaction) types.SuggestedParams {
 	}
 }
 
-func EncodeGroupHex(txns []types.Transaction) []string {
+func encodeGroupHex(txns []types.Transaction) []string {
 	groupHex := make([]string, len(txns))
 	for i, txn := range txns {
 		groupHex[i] = txnutil.EncodeWithPrefixHex(txn)
@@ -492,7 +492,7 @@ func signGuardedDummies(dummyTxns []types.Transaction) ([]string, error) {
 	return signedHex, nil
 }
 
-func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesHex []string, targets []Target) (map[int]string, map[string]string, error) {
+func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesHex []string, targets []guardedTarget) (map[int]string, map[string]string, error) {
 	byAccount := make(map[string][]int)
 	for _, target := range targets {
 		byAccount[target.Account] = append(byAccount[target.Account], target.Index)
@@ -509,7 +509,7 @@ func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesH
 		if err != nil {
 			return nil, nil, fmt.Errorf("user component signing failed for %s: %w", account, err)
 		}
-		if err := CollectComponentSignatures(resp, indices, "", signatures); err != nil {
+		if err := collectComponentSignatures(resp, indices, "", signatures); err != nil {
 			return nil, nil, fmt.Errorf("user component signing failed for %s: %w", account, err)
 		}
 		requestIDs[account] = resp.RequestID
@@ -517,14 +517,14 @@ func (s *Signer) requestUserComponentSignatures(ctx context.Context, groupBytesH
 	return signatures, requestIDs, nil
 }
 
-func (s *Signer) RequestSentryComponentSignatures(ctx context.Context, groupBytesHex []string, targets []Target) (map[int]string, map[SentryRequestKey]string, error) {
-	bySentry := make(map[SentryRequestKey][]int)
+func (s *Signer) requestSentryComponentSignatures(ctx context.Context, groupBytesHex []string, targets []guardedTarget) (map[int]string, map[sentryRequestKey]string, error) {
+	bySentry := make(map[sentryRequestKey][]int)
 	for _, target := range targets {
 		key := target.requestKey()
 		bySentry[key] = append(bySentry[key], target.Index)
 	}
 	signatures := make(map[int]string, len(targets))
-	requestIDs := make(map[SentryRequestKey]string, len(bySentry))
+	requestIDs := make(map[sentryRequestKey]string, len(bySentry))
 	for sentryKey, indices := range bySentry {
 		requestID, err := s.requestOneSentryComponentSignatureSet(ctx, groupBytesHex, sentryKey, indices, signatures)
 		if err != nil {
@@ -540,14 +540,14 @@ func (s *Signer) RequestSentryComponentSignatures(ctx context.Context, groupByte
 // component signatures as opaque material. Invalid signatures are rejected by
 // the signer during guarded assembly and, authoritatively, by the guarded
 // LogicSig on-chain.
-func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, groupBytesHex []string, sentryKey SentryRequestKey, indices []int, signatures map[int]string) (string, error) {
+func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, groupBytesHex []string, sentryKey sentryRequestKey, indices []int, signatures map[int]string) (string, error) {
 	endpoint, err := s.resolveSentryEndpoint(ctx, sentryKey)
 	if err != nil {
 		return "", err
 	}
 	defer endpoint.close()
 
-	componentSelector, err := SentryComponentSelector(sentryKey.ComponentKeyType, sentryKey.PublicKey)
+	componentSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, sentryKey.PublicKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to derive Sentry Key ID for sentry public key %s: %w", shortSentryPublicKeyHex(sentryKey.PublicKey), err)
 	}
@@ -562,13 +562,13 @@ func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, grou
 	if err != nil {
 		return "", fmt.Errorf("sentry component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
 	}
-	if err := CollectComponentSignatures(resp, indices, sentryKey.ComponentKeyType, signatures); err != nil {
+	if err := collectComponentSignatures(resp, indices, sentryKey.ComponentKeyType, signatures); err != nil {
 		return "", fmt.Errorf("sentry component signing failed for %s via %s: %w", componentLabel, endpoint.source, err)
 	}
 	return resp.RequestID, nil
 }
 
-func CollectComponentSignatures(resp *signerapi.ComponentSignResponse, expected []int, expectedScheme string, dst map[int]string) error {
+func collectComponentSignatures(resp *signerapi.ComponentSignResponse, expected []int, expectedScheme string, dst map[int]string) error {
 	if resp == nil {
 		return fmt.Errorf("empty component sign response")
 	}
@@ -598,7 +598,7 @@ func CollectComponentSignatures(resp *signerapi.ComponentSignResponse, expected 
 	return nil
 }
 
-func DecodeGuardedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {
+func decodeGuardedSignedGroup(signedHex []string) ([][]byte, []types.SignedTxn, []types.Transaction, error) {
 	signedBytes := make([][]byte, len(signedHex))
 	signedObjects := make([]types.SignedTxn, len(signedHex))
 	txns := make([]types.Transaction, len(signedHex))

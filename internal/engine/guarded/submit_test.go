@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package engine
+package guarded
 
 import (
 	"context"
@@ -18,13 +18,13 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/common/models"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
+	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/config"
-	guardedpkg "github.com/aplane-algo/aplane/internal/engine/guarded"
+	"github.com/aplane-algo/aplane/internal/engine/connect"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
@@ -36,14 +36,14 @@ import (
 func TestGuardedTargetsNormalizeSentryPublicKey(t *testing.T) {
 	sender := testAddress(1).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
-	eng := newGuardedSubmitTestEngine(t, sender, 1500, "0X"+strings.ToUpper(sentryHex))
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
+	s, _ := newGuardedTestSigner(t, sender, 1500, "0X"+strings.ToUpper(sentryHex))
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
-	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
+	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
 		t.Fatal("hasGuardedEffectiveSigner() = false, want true")
 	}
 
-	targets, err := eng.guardedSigner().GuardedTargets([]types.Transaction{txn})
+	targets, err := s.guardedTargets([]types.Transaction{txn})
 	if err != nil {
 		t.Fatalf("guardedTargets() error = %v", err)
 	}
@@ -65,15 +65,15 @@ func TestGuardedTargetsUseEffectiveSigner(t *testing.T) {
 	sender := testAddress(1).String()
 	guarded := testAddress(3).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
-	eng := newGuardedSubmitTestEngine(t, guarded, 1500, sentryHex)
-	eng.AuthCache.AuthAddresses = map[string]string{sender: guarded}
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded-authorizer", nil).Transaction
+	s, _ := newGuardedTestSigner(t, guarded, 1500, sentryHex)
+	s.authCache.AuthAddresses = map[string]string{sender: guarded}
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded-authorizer")
 
-	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
+	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
 		t.Fatal("hasGuardedEffectiveSigner() = false, want true")
 	}
 
-	targets, err := eng.guardedSigner().GuardedTargets([]types.Transaction{txn})
+	targets, err := s.guardedTargets([]types.Transaction{txn})
 	if err != nil {
 		t.Fatalf("guardedTargets() error = %v", err)
 	}
@@ -88,190 +88,17 @@ func TestGuardedTargetsUseEffectiveSigner(t *testing.T) {
 	}
 }
 
-func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
-	sender := testAddress(1).String()
-	guarded := testAddress(3).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
-
-	transport := newAccountMockTransport(t)
-	transport.addAccountFull(models.Account{
-		Address:    sender,
-		Amount:     1_000_000,
-		MinBalance: 100_000,
-		AuthAddr:   guarded,
-		Status:     "Offline",
-	})
-	transport.addAccount(guarded, 1_000_000)
-
-	staleSignerCache := cache.NewSignerCache()
-	staleSignerCache.AddAddress(sender, "ed25519")
-	staleSignerCache.AddAddress(guarded, "ed25519")
-	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, staleSignerCache, func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodGet || req.URL.Path != "/keys" {
-			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
-		}
-		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-			Count: 2,
-			Keys: []signerapi.KeyInfo{{
-				Address: sender,
-				KeyType: "ed25519",
-			}, {
-				Address:                guarded,
-				KeyType:                keytypes.GuardedFalcon1024SentryEd25519V1,
-				SigningFlow:            signerapi.SigningFlowSentry1,
-				SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
-				LsigSize:               1500,
-				Parameters: map[string]string{
-					keytypes.ParameterSentryPublicKey: sentryHex,
-				},
-			}},
-		}, req), nil
-	})
-	eng.AlgodClient = newAccountMockAlgodClient(t, transport)
-	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
-
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded-authorizer", nil).Transaction
-	if got := eng.signerCacheKeyType(guarded); got != "ed25519" {
-		t.Fatalf("precondition signer cache key type for guarded authorizer = %q, want stale ed25519", got)
-	}
-	if eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() before refresh = true, want false with stale caches")
-	}
-
-	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
-		t.Fatalf("refreshSubmitSigningState() error = %v", err)
-	}
-
-	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != guarded {
-		t.Fatalf("auth cache for sender = %q/%v, want %s/true", auth, ok, guarded)
-	}
-	if got := eng.signerCacheKeyType(guarded); got != keytypes.GuardedFalcon1024SentryEd25519V1 {
-		t.Fatalf("signer cache key type for guarded authorizer = %q, want guarded", got)
-	}
-	if got, ok := eng.signerCacheSentryPublicKey(guarded); !ok || got != sentryHex {
-		t.Fatalf("sentry public key for guarded authorizer = %q/%v, want %s/true", got, ok, sentryHex)
-	}
-	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
-	}
-	targets, err := eng.guardedSigner().GuardedTargets([]types.Transaction{txn})
-	if err != nil {
-		t.Fatalf("guardedTargets() error = %v", err)
-	}
-	if len(targets) != 1 || targets[0].Sender != sender || targets[0].Account != guarded {
-		t.Fatalf("guardedTargets() = %+v, want sender %s account %s", targets, sender, guarded)
-	}
-}
-
-func TestRefreshSubmitSigningStateRefreshesGuardedKeyMissingFlowMetadata(t *testing.T) {
-	sender := testAddress(1).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
-
-	staleSignerCache := cache.NewSignerCache()
-	staleSignerCache.AddAddress(sender, keytypes.GuardedFalcon1024SentryEd25519V1)
-	staleSignerCache.SetLsigSize(sender, 1500)
-
-	refreshes := 0
-	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, staleSignerCache, func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodGet || req.URL.Path != "/keys" {
-			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
-		}
-		refreshes++
-		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-			Count: 1,
-			Keys: []signerapi.KeyInfo{{
-				Address:                sender,
-				KeyType:                keytypes.GuardedFalcon1024SentryEd25519V1,
-				SigningFlow:            signerapi.SigningFlowSentry1,
-				SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
-				LsigSize:               1500,
-				Parameters: map[string]string{
-					keytypes.ParameterSentryPublicKey: sentryHex,
-				},
-			}},
-		}, req), nil
-	})
-	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
-	eng.AuthCache.AuthAddresses[sender] = ""
-
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
-	if eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() before refresh = true, want false with missing flow metadata")
-	}
-
-	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
-		t.Fatalf("refreshSubmitSigningState() error = %v", err)
-	}
-
-	if refreshes != 1 {
-		t.Fatalf("/keys refreshes = %d, want 1", refreshes)
-	}
-	if got := eng.signerCacheSigningFlow(sender); got != signerapi.SigningFlowSentry1 {
-		t.Fatalf("signing flow = %q, want %q", got, signerapi.SigningFlowSentry1)
-	}
-	if got, ok := eng.signerCacheSentryPublicKey(sender); !ok || got != sentryHex {
-		t.Fatalf("sentry public key = %q/%v, want %s/true", got, ok, sentryHex)
-	}
-	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
-	}
-}
-
-func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) {
-	sender := testAddress(1).String()
-	guarded := testAddress(3).String()
-	sentryHex := testSentryPublicKeyHex(0xd6)
-
-	transport := newAccountMockTransport(t)
-	eng := newConnectedEngineForKeyMgmtTestWithSignerCache(t, cache.NewSignerCache(), func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodGet || req.URL.Path != "/keys" {
-			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
-		}
-		return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
-			Count: 2,
-			Keys: []signerapi.KeyInfo{{
-				Address: sender,
-				KeyType: "ed25519",
-			}, {
-				Address:                guarded,
-				KeyType:                keytypes.GuardedFalcon1024SentryEd25519V1,
-				SigningFlow:            signerapi.SigningFlowSentry1,
-				SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
-				LsigSize:               1500,
-				Parameters: map[string]string{
-					keytypes.ParameterSentryPublicKey: sentryHex,
-				},
-			}},
-		}, req), nil
-	})
-	eng.AlgodClient = newAccountMockAlgodClient(t, transport)
-	eng.AuthCache = cache.NewAuthAddressCacheForStore(eng.CacheStore)
-	eng.AuthCache.AuthAddresses[sender] = guarded
-
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded-authorizer", nil).Transaction
-	if err := eng.refreshSubmitSigningState(context.Background(), []types.Transaction{txn}); err != nil {
-		t.Fatalf("refreshSubmitSigningState() error = %v", err)
-	}
-
-	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != guarded {
-		t.Fatalf("auth cache for sender = %q/%v, want cached %s/true", auth, ok, guarded)
-	}
-	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
-		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
-	}
-}
-
 func TestGuardedTargetsNormalizeFalconSentryPublicKey(t *testing.T) {
 	sender := testAddress(1).String()
 	sentryHex := testFalconSentryPublicKeyHex(0xd6)
-	eng := newGuardedSubmitTestEngineForKeyType(t, sender, keytypes.GuardedFalcon1024SentryFalcon1024V1, 1500, "0X"+strings.ToUpper(sentryHex))
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
+	s, _ := newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024SentryFalcon1024V1, 1500, "0X"+strings.ToUpper(sentryHex))
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
-	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
+	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
 		t.Fatal("hasGuardedEffectiveSigner() = false, want true")
 	}
 
-	targets, err := eng.guardedSigner().GuardedTargets([]types.Transaction{txn})
+	targets, err := s.guardedTargets([]types.Transaction{txn})
 	if err != nil {
 		t.Fatalf("guardedTargets() error = %v", err)
 	}
@@ -288,10 +115,10 @@ func TestGuardedTargetsNormalizeFalconSentryPublicKey(t *testing.T) {
 
 func TestGuardedTargetsRequireSentryMetadata(t *testing.T) {
 	sender := testAddress(1).String()
-	eng := newGuardedSubmitTestEngine(t, sender, 1500, "")
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
+	s, _ := newGuardedTestSigner(t, sender, 1500, "")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
-	_, err := eng.guardedSigner().GuardedTargets([]types.Transaction{txn})
+	_, err := s.guardedTargets([]types.Transaction{txn})
 	if err == nil || !strings.Contains(err.Error(), "missing sentry_public_key") {
 		t.Fatalf("guardedTargets() error = %v, want missing sentry_public_key", err)
 	}
@@ -300,14 +127,14 @@ func TestGuardedTargetsRequireSentryMetadata(t *testing.T) {
 func TestGuardedTargetsRejectUnsupportedSigningFlow(t *testing.T) {
 	sender := testAddress(1).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
-	eng := newGuardedSubmitTestEngine(t, sender, 1500, sentryHex)
-	eng.SignerCache.SetSigningFlowForAddress(sender, "sentry2")
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
+	s, sc := newGuardedTestSigner(t, sender, 1500, sentryHex)
+	sc.SetSigningFlowForAddress(sender, "sentry2")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
-	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
+	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
 		t.Fatal("hasGuardedEffectiveSigner() = false, want true for unknown flow (must not fall through to /sign)")
 	}
-	_, err := eng.guardedSigner().GuardedTargets([]types.Transaction{txn})
+	_, err := s.guardedTargets([]types.Transaction{txn})
 	if err == nil || !strings.Contains(err.Error(), `signing flow "sentry2"`) {
 		t.Fatalf("guardedTargets() error = %v, want unsupported signing flow rejection", err)
 	}
@@ -316,11 +143,11 @@ func TestGuardedTargetsRejectUnsupportedSigningFlow(t *testing.T) {
 func TestGuardedTargetsRequireSentryComponentKeyTypeMetadata(t *testing.T) {
 	sender := testAddress(1).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
-	eng := newGuardedSubmitTestEngine(t, sender, 1500, sentryHex)
-	eng.SignerCache.SetSentryComponentKeyTypeForAddress(sender, "")
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
+	s, sc := newGuardedTestSigner(t, sender, 1500, sentryHex)
+	sc.SetSentryComponentKeyTypeForAddress(sender, "")
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
-	_, err := eng.guardedSigner().GuardedTargets([]types.Transaction{txn})
+	_, err := s.guardedTargets([]types.Transaction{txn})
 	if err == nil || !strings.Contains(err.Error(), "missing sentry_component_key_type") {
 		t.Fatalf("guardedTargets() error = %v, want missing sentry_component_key_type", err)
 	}
@@ -329,9 +156,9 @@ func TestGuardedTargetsRequireSentryComponentKeyTypeMetadata(t *testing.T) {
 func TestPlanGuardedGroupReturnsGroupedDummies(t *testing.T) {
 	sender := testAddress(1).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
-	eng := newGuardedSubmitTestEngine(t, sender, 2500, sentryHex)
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
-	targets := []guardedpkg.Target{{
+	s, _ := newGuardedTestSigner(t, sender, 2500, sentryHex)
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	targets := []guardedTarget{{
 		Index:                  0,
 		Sender:                 sender,
 		Account:                sender,
@@ -339,7 +166,7 @@ func TestPlanGuardedGroupReturnsGroupedDummies(t *testing.T) {
 		SentryPublicKey:        sentryHex,
 	}}
 
-	planned, dummies, err := eng.guardedSigner().PlanGuardedGroup([]types.Transaction{txn}, targets, nil)
+	planned, dummies, err := s.planGuardedGroup([]types.Transaction{txn}, targets, nil)
 	if err != nil {
 		t.Fatalf("planGuardedGroup() error = %v", err)
 	}
@@ -430,17 +257,17 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dst := map[int]string{}
-			err := guardedpkg.CollectComponentSignatures(
+			err := collectComponentSignatures(
 				tt.resp,
 				[]int{0, 1},
 				keytypes.SentryComponentEd25519V1,
 				dst,
 			)
 			if err == nil {
-				t.Fatal("guardedpkg.CollectComponentSignatures() error = nil, want malformed response rejection")
+				t.Fatal("collectComponentSignatures() error = nil, want malformed response rejection")
 			}
 			if !strings.Contains(err.Error(), tt.wantMessage) {
-				t.Fatalf("guardedpkg.CollectComponentSignatures() error = %q, want %q", err, tt.wantMessage)
+				t.Fatalf("collectComponentSignatures() error = %q, want %q", err, tt.wantMessage)
 			}
 		})
 	}
@@ -452,20 +279,20 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
 	sentryHex := hex.EncodeToString(publicKey)
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
-	groupBytesHex := guardedpkg.EncodeGroupHex([]types.Transaction{txn})
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
 	server := newSentryEndpointTestServer(t, sentryHex, privateKey, "sentry-token", nil)
 	defer server.Close()
 	tokenFile := writeSentryTokenFile(t, "sentry-token")
-	eng := newGuardedSubmitTestEngine(t, txn.Sender.String(), 1500, sentryHex)
-	eng.SentryEndpoints = config.SentryEndpointConfigs{
+	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
+	s.sentryEndpoints = config.SentryEndpointConfigs{
 		sentryHex: {URL: server.URL, TokenFile: tokenFile},
 	}
 
-	signatures, requestIDs, err := eng.guardedSigner().RequestSentryComponentSignatures(
+	signatures, requestIDs, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		[]guardedpkg.Target{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
+		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
 	)
 	if err != nil {
 		t.Fatalf("requestSentryComponentSignatures() error = %v", err)
@@ -489,8 +316,8 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 	}
 	sentryHex := hex.EncodeToString(publicKey)
 	wrongHex := hex.EncodeToString(wrongPublicKey)
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
-	groupBytesHex := guardedpkg.EncodeGroupHex([]types.Transaction{txn})
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
 
 	selfServer := newSentryEndpointTestServer(t, sentryHex, privateKey, "", nil)
 	defer selfServer.Close()
@@ -499,23 +326,23 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 	defer wrongServer.Close()
 	tokenFile := writeSentryTokenFile(t, "sentry-token")
 
-	eng := newGuardedSubmitTestEngine(t, txn.Sender.String(), 1500, sentryHex)
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(selfServer.URL, "")
-	eng.SentryEndpoints = config.SentryEndpointConfigs{
+	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(selfServer.URL, "")
+	s.sentryEndpoints = config.SentryEndpointConfigs{
 		sentryHex: {URL: wrongServer.URL, TokenFile: tokenFile},
 	}
 
-	_, _, err = eng.guardedSigner().RequestSentryComponentSignatures(
+	_, _, err = s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		[]guardedpkg.Target{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
+		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
 	)
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want explicit endpoint mismatch")
 	}
-	componentSelector, selectorErr := guardedpkg.SentryComponentSelector(keytypes.SentryComponentEd25519V1, sentryHex)
+	componentSelector, selectorErr := sentryComponentSelector(keytypes.SentryComponentEd25519V1, sentryHex)
 	if selectorErr != nil {
-		t.Fatalf("guardedpkg.SentryComponentSelector() error = %v", selectorErr)
+		t.Fatalf("sentryComponentSelector() error = %v", selectorErr)
 	}
 	errText := err.Error()
 	if !strings.Contains(errText, "did not advertise Sentry Key ID") || !strings.Contains(errText, componentSelector) {
@@ -535,8 +362,8 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
 	sentryHex := hex.EncodeToString(publicKey)
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
-	groupBytesHex := guardedpkg.EncodeGroupHex([]types.Transaction{txn})
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
@@ -546,15 +373,15 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 	defer server.Close()
 	tokenFile := writeSentryTokenFile(t, "sentry-token")
 
-	eng := newGuardedSubmitTestEngine(t, txn.Sender.String(), 1500, sentryHex)
-	eng.SentryEndpoints = config.SentryEndpointConfigs{
+	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
+	s.sentryEndpoints = config.SentryEndpointConfigs{
 		sentryHex: {URL: server.URL, TokenFile: tokenFile},
 	}
 
-	_, _, err = eng.guardedSigner().RequestSentryComponentSignatures(
+	_, _, err = s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		[]guardedpkg.Target{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
+		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
 	)
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want locked endpoint")
@@ -576,17 +403,17 @@ func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) 
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
 	sentryHex := hex.EncodeToString(publicKey)
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
-	groupBytesHex := guardedpkg.EncodeGroupHex([]types.Transaction{txn})
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
 	server := newSentryEndpointTestServer(t, sentryHex, privateKey, "", nil)
 	defer server.Close()
-	eng := newGuardedSubmitTestEngine(t, txn.Sender.String(), 1500, sentryHex)
-	eng.Connection.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
+	s, _ := newGuardedTestSigner(t, txn.Sender.String(), 1500, sentryHex)
+	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
 
-	signatures, _, err := eng.guardedSigner().RequestSentryComponentSignatures(
+	signatures, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		[]guardedpkg.Target{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
+		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
 	)
 	if err != nil {
 		t.Fatalf("requestSentryComponentSignatures() error = %v", err)
@@ -597,12 +424,12 @@ func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) 
 }
 
 func TestDecodeGuardedSignedGroupReturnsSignedObjects(t *testing.T) {
-	txn := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 	signedHex := []string{hex.EncodeToString(msgpack.Encode(types.SignedTxn{Txn: txn}))}
 
-	signedBytes, signedObjects, txns, err := guardedpkg.DecodeGuardedSignedGroup(signedHex)
+	signedBytes, signedObjects, txns, err := decodeGuardedSignedGroup(signedHex)
 	if err != nil {
-		t.Fatalf("guardedpkg.DecodeGuardedSignedGroup() error = %v", err)
+		t.Fatalf("decodeGuardedSignedGroup() error = %v", err)
 	}
 	if len(signedBytes) != 1 || len(signedObjects) != 1 || len(txns) != 1 {
 		t.Fatalf("decoded lengths = %d/%d/%d, want 1/1/1", len(signedBytes), len(signedObjects), len(txns))
@@ -612,34 +439,85 @@ func TestDecodeGuardedSignedGroupReturnsSignedObjects(t *testing.T) {
 	}
 }
 
-func newGuardedSubmitTestEngine(t *testing.T, sender string, lsigSize int, sentryPublicKey string) *Engine {
-	t.Helper()
-	return newGuardedSubmitTestEngineForKeyType(t, sender, keytypes.GuardedFalcon1024SentryEd25519V1, lsigSize, sentryPublicKey)
-}
+// testCacheView adapts a cache.SignerCache to SignerCacheView for tests.
+type testCacheView struct{ c *cache.SignerCache }
 
-func newGuardedSubmitTestEngineForKeyType(t *testing.T, sender, keyType string, lsigSize int, sentryPublicKey string) *Engine {
+func (v testCacheView) SigningFlow(address string) string { return v.c.SigningFlowForAddress(address) }
+func (v testCacheView) SentryComponentKeyType(address string) (string, bool) {
+	return v.c.SentryComponentKeyTypeForAddress(address)
+}
+func (v testCacheView) SentryPublicKey(address string) (string, bool) {
+	return v.c.SentryPublicKeyForAddress(address)
+}
+func (v testCacheView) LsigSize(address string) int { return v.c.GetLsigSize(address) }
+
+// newTestSigner builds a Signer over a populated signer cache, a fresh
+// in-memory auth cache, and an unconnected connection state. Tests reach the
+// auth cache, connection, and sentry endpoints directly through the Signer's
+// fields (same package), and the returned cache for post-construction
+// metadata edits.
+func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *cache.SignerCache) {
 	t.Helper()
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(sender, keyType)
-	// Mirror the signing-flow metadata the daemon serves for guarded keys.
-	if componentType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType); ok {
-		signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowSentry1)
-		signerCache.SetSentryComponentKeyTypeForAddress(sender, componentType)
+	if build != nil {
+		build(&signerCache)
 	}
-	if lsigSize > 0 {
-		signerCache.SetLsigSize(sender, lsigSize)
+	authCache := cache.NewAuthAddressCache()
+	s := New(Deps{
+		Conn:      connect.NewState(),
+		AuthCache: &authCache,
+		Cache:     testCacheView{&signerCache},
+	})
+	return s, &signerCache
+}
+
+func newGuardedTestSigner(t *testing.T, sender string, lsigSize int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
+	t.Helper()
+	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024SentryEd25519V1, lsigSize, sentryPublicKey)
+}
+
+func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, lsigSize int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
+	t.Helper()
+	return newTestSigner(t, func(signerCache *cache.SignerCache) {
+		signerCache.AddAddress(sender, keyType)
+		// Mirror the signing-flow metadata the daemon serves for guarded keys.
+		if componentType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType); ok {
+			signerCache.SetSigningFlowForAddress(sender, signerapi.SigningFlowSentry1)
+			signerCache.SetSentryComponentKeyTypeForAddress(sender, componentType)
+		}
+		if lsigSize > 0 {
+			signerCache.SetLsigSize(sender, lsigSize)
+		}
+		if sentryPublicKey != "" {
+			signerCache.SetSentryPublicKeyForAddress(sender, sentryPublicKey)
+		}
+	})
+}
+
+func testAddress(index int) types.Address {
+	var addr types.Address
+	addr[0] = byte(index)
+	addr[1] = byte(index >> 8)
+	return addr
+}
+
+// testPaymentTxn builds a minimal payment transaction for guarded planning
+// and component-signing tests.
+func testPaymentTxn(t *testing.T, from, to types.Address, note string) types.Transaction {
+	t.Helper()
+	sp := types.SuggestedParams{
+		Fee:             1000,
+		FlatFee:         true,
+		FirstRoundValid: 1,
+		LastRoundValid:  100,
+		GenesisID:       "testnet-v1.0",
+		GenesisHash:     []byte("12345678901234567890123456789012"),
 	}
-	if sentryPublicKey != "" {
-		signerCache.SetSentryPublicKeyForAddress(sender, sentryPublicKey)
-	}
-	eng, err := NewEngine("testnet",
-		WithCacheStore(cache.NewStore(t.TempDir())),
-		WithSignerCache(signerCache),
-	)
+	txn, err := transaction.MakePaymentTxn(from.String(), to.String(), 1234, []byte(note), "", sp)
 	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
+		t.Fatalf("MakePaymentTxn() error = %v", err)
 	}
-	return eng
+	return txn
 }
 
 func testSentryPublicKeyHex(prefix byte) string {
@@ -654,8 +532,8 @@ func testFalconSentryPublicKeyHex(prefix byte) string {
 	return hex.EncodeToString(publicKey)
 }
 
-func ed25519GuardedTarget(account, sentryHex string) guardedpkg.Target {
-	return guardedpkg.Target{
+func ed25519GuardedTarget(account, sentryHex string) guardedTarget {
+	return guardedTarget{
 		Index:                  0,
 		Sender:                 account,
 		Account:                account,
@@ -664,8 +542,8 @@ func ed25519GuardedTarget(account, sentryHex string) guardedpkg.Target {
 	}
 }
 
-func ed25519SentryRequestKey(sentryHex string) guardedpkg.SentryRequestKey {
-	return guardedpkg.SentryRequestKey{
+func ed25519SentryRequestKey(sentryHex string) sentryRequestKey {
+	return sentryRequestKey{
 		ComponentKeyType: keytypes.SentryComponentEd25519V1,
 		PublicKey:        sentryHex,
 	}
@@ -673,17 +551,17 @@ func ed25519SentryRequestKey(sentryHex string) guardedpkg.SentryRequestKey {
 
 func TestSentryComponentLabelUsesFalconSentryKeyID(t *testing.T) {
 	sentryHex := testFalconSentryPublicKeyHex(0x0a)
-	componentSelector, err := guardedpkg.SentryComponentSelector(keytypes.SentryComponentFalcon1024V1, sentryHex)
+	componentSelector, err := sentryComponentSelector(keytypes.SentryComponentFalcon1024V1, sentryHex)
 	if err != nil {
-		t.Fatalf("guardedpkg.SentryComponentSelector() error = %v", err)
+		t.Fatalf("sentryComponentSelector() error = %v", err)
 	}
 
-	label := guardedpkg.SentryComponentLabel(keytypes.SentryComponentFalcon1024V1, sentryHex)
+	label := sentryComponentLabel(keytypes.SentryComponentFalcon1024V1, sentryHex)
 	if !strings.Contains(label, componentSelector) || !strings.Contains(label, keytypes.SentryComponentFalcon1024V1) {
-		t.Fatalf("guardedpkg.SentryComponentLabel() = %q, want Sentry Key ID %s and key type", label, componentSelector)
+		t.Fatalf("sentryComponentLabel() = %q, want Sentry Key ID %s and key type", label, componentSelector)
 	}
 	if strings.Contains(label, sentryHex) {
-		t.Fatalf("guardedpkg.SentryComponentLabel() exposed raw Falcon sentry public key: %q", label)
+		t.Fatalf("sentryComponentLabel() exposed raw Falcon sentry public key: %q", label)
 	}
 }
 
@@ -763,17 +641,17 @@ func writeSentryTokenFile(t *testing.T, token string) string {
 }
 
 func TestVerifyAssembledAgainstFrozen(t *testing.T) {
-	txnA := testPreparedTxn(t, testAddress(1), testAddress(2), "guarded", nil).Transaction
-	txnB := testPreparedTxn(t, testAddress(3), testAddress(4), "guarded", nil).Transaction
-	frozen := guardedpkg.EncodeGroupHex([]types.Transaction{txnA, txnB})
+	txnA := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
+	txnB := testPaymentTxn(t, testAddress(3), testAddress(4), "guarded")
+	frozen := encodeGroupHex([]types.Transaction{txnA, txnB})
 
-	if err := guardedpkg.VerifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA, txnB}); err != nil {
+	if err := verifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA, txnB}); err != nil {
 		t.Fatalf("matching group: unexpected error %v", err)
 	}
-	if err := guardedpkg.VerifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA}); err == nil {
+	if err := verifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA}); err == nil {
 		t.Fatal("wrong length: expected error, got nil")
 	}
-	if err := guardedpkg.VerifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA, txnA}); err == nil {
+	if err := verifyAssembledAgainstFrozen(frozen, []types.Transaction{txnA, txnA}); err == nil {
 		t.Fatal("substituted transaction: expected error, got nil")
 	}
 }

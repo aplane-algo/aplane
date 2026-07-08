@@ -1321,7 +1321,11 @@ Primary implementation ownership:
   component-signature collection, and sentry endpoint resolution/discovery,
   isolated from the engine facade (it depends on the engine only through a
   narrow `SignerCacheView` and injected connection/caches; `internal/engine`
-  wires it and re-exports the discovery types). Import isolation is pinned by
+  wires it and re-exports the discovery types). Its exported surface is only
+  the sanctioned entry points (`New`/`Deps`, `HasGuardedEffectiveSigner`,
+  `SignAndSubmitGroup`, `DiscoverSentryComponentKeys`, discovery types and
+  error sentinels); the choreography internals are unexported and tested
+  in-package. Import isolation is pinned by
   `test/arch/client_layering_test.go`.
 - `internal/config` and `internal/endpointrefs`: endpoint registry and public
   endpoint envelope handling.
