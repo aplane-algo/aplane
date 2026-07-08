@@ -102,8 +102,8 @@ func (e *Engine) signAndSubmitGroup(txns []types.Transaction, opts clientsign.Su
 	if err := e.refreshSubmitSigningState(opts.Ctx, txns); err != nil {
 		return nil, nil, err
 	}
-	if e.hasGuardedEffectiveSigner(txns) {
-		return e.signAndSubmitGuardedGroup(txns, opts)
+	if gs := e.guardedSigner(); gs.HasGuardedEffectiveSigner(txns) {
+		return gs.SignAndSubmitGroup(txns, opts)
 	}
 	return e.Connection.SignAndSubmitGroup(txns, &e.AuthCache, e.AlgodClient, opts)
 }
