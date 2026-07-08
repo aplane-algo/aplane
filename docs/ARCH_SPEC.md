@@ -1317,8 +1317,12 @@ Primary implementation ownership:
   evaluation, and assembly.
 - `internal/signerapp/rest`: HTTP handlers for `/sign/component` and
   `/sign/assemble`.
-- `internal/engine`: client guarded-send orchestration and endpoint
-  resolution.
+- `internal/engine/guarded`: client guarded-send orchestration, sentry
+  component-signature collection, and sentry endpoint resolution/discovery,
+  isolated from the engine facade (it depends on the engine only through a
+  narrow `SignerCacheView` and injected connection/caches; `internal/engine`
+  wires it and re-exports the discovery types). Import isolation is pinned by
+  `test/arch/client_layering_test.go`.
 - `internal/config` and `internal/endpointrefs`: endpoint registry and public
   endpoint envelope handling.
 - `internal/sentry/sentryrefs`: public sentry reference catalog used by
@@ -1625,12 +1629,12 @@ Weaker or more coupled areas:
 
 - `cmd/apsigner` owns some operational glue, final transport adaptation, and startup/operator logging,
 - `internal/engine` now separates shared infrastructure (`engine.Core`) from the
-  domain command methods on `Engine`, and no longer imports UI parsing/formatting
-  (enforced by `test/arch`). Remaining follow-up: the guarded-signing flow
-  (`guarded_submit.go`, `sentry_endpoint.go`) is still in-package rather than an
-  import-isolated `internal/engine/guarded` package, and the client-data lock
-  helper plus the last signer-cache `*Locked` split still live on the engine side
-  rather than being fully owned by `internal/clientstate`,
+  domain command methods on `Engine`, no longer imports UI parsing/formatting,
+  and the guarded-signing flow lives in the import-isolated
+  `internal/engine/guarded` package — all enforced by `test/arch`. Remaining
+  follow-up: the client-data lock helper plus the last signer-cache `*Locked`
+  split still live on the engine side rather than being fully owned by
+  `internal/clientstate`,
 - plugin manifests carry dual-surface complexity because typed function metadata exists alongside a command-first runtime contract,
 - shell command handling mixes structured results and stdout capture fallback,
 - the runtime core is identity-owned, but the operator/control-plane surface is single-identity/single-operator in product mode, even though that product admin workflow may arrive over IPC or the SSH `aplane-admin` subsystem.
