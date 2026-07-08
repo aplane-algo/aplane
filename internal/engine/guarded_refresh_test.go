@@ -90,6 +90,12 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	if got, ok := eng.signerCacheSentryPublicKey(guarded); !ok || got != sentryHex {
 		t.Fatalf("sentry public key for guarded authorizer = %q/%v, want %s/true", got, ok, sentryHex)
 	}
+	if got, ok := eng.signerCacheSentryComponentKeyType(guarded); !ok || got != keytypes.SentryComponentEd25519V1 {
+		t.Fatalf("sentry component key type for guarded authorizer = %q/%v, want %s/true", got, ok, keytypes.SentryComponentEd25519V1)
+	}
+	if got := eng.signerCacheLsigSize(guarded); got != 1500 {
+		t.Fatalf("lsig size for guarded authorizer = %d, want 1500", got)
+	}
 	if !eng.guardedSigner().HasGuardedEffectiveSigner([]types.Transaction{txn}) {
 		t.Fatal("hasGuardedEffectiveSigner() after refresh = false, want true")
 	}

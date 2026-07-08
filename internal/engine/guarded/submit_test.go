@@ -300,7 +300,7 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	if signatures[0] == "" {
 		t.Fatal("signature for target 0 is empty")
 	}
-	if requestIDs[ed25519SentryRequestKey(sentryHex)] == "" {
+	if requestIDs[sentryRequestKey{ComponentKeyType: keytypes.SentryComponentEd25519V1, PublicKey: sentryHex}] == "" {
 		t.Fatal("request ID for sentry is empty")
 	}
 }
@@ -539,13 +539,6 @@ func ed25519GuardedTarget(account, sentryHex string) guardedTarget {
 		Account:                account,
 		SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
 		SentryPublicKey:        sentryHex,
-	}
-}
-
-func ed25519SentryRequestKey(sentryHex string) sentryRequestKey {
-	return sentryRequestKey{
-		ComponentKeyType: keytypes.SentryComponentEd25519V1,
-		PublicKey:        sentryHex,
 	}
 }
 
