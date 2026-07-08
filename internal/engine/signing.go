@@ -8,25 +8,18 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/cache"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 )
 
-// SigningContext encapsulates all information needed to sign transactions
+// SigningContext encapsulates all information needed to sign transactions.
+// It carries the raw key type; presentation of a human-readable label is the
+// UI layer's concern, not the engine's.
 type SigningContext struct {
 	Address     string // Resolved address (the account)
 	SigningAddr string // Auth address (may differ if rekeyed)
 	KeyType     string // e.g., "ed25519", "aplane.falcon1024.v1", "aplane.timed-whitelist.v1"
 	SigSize     int    // Crypto signature size (for fee calculation), 0 for ed25519 and generic lsigs
 	IsLSig      bool   // true for LSig-based accounts (DSA or generic)
-}
-
-// DisplayKeyType returns human-readable key type
-func (sc *SigningContext) DisplayKeyType() string {
-	if sc.IsLSig {
-		return keytypefmt.Display(sc.KeyType) + " lsig"
-	}
-	return "Ed25519 key"
 }
 
 // BuildSigningContext builds a complete signing context using the

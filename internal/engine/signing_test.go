@@ -187,25 +187,6 @@ func TestBuildSigningContext_ViaAlias(t *testing.T) {
 	}
 }
 
-func TestDisplayKeyType(t *testing.T) {
-	tests := []struct {
-		name string
-		sc   SigningContext
-		want string
-	}{
-		{"ed25519", SigningContext{KeyType: "ed25519", IsLSig: false}, "Ed25519 key"},
-		{"falcon lsig", SigningContext{KeyType: "aplane.falcon1024.v1", IsLSig: true}, "aplane.falcon1024.v1 lsig"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := tc.sc.DisplayKeyType()
-			if got != tc.want {
-				t.Errorf("DisplayKeyType() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestIsRekeyed(t *testing.T) {
 	addr := testAddr(1)
 	authAddr := testAddr(2)
