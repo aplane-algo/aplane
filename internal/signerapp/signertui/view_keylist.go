@@ -365,7 +365,7 @@ func (m Model) renderKeyDetails() string {
 		sb.WriteString("\n")
 	}
 	if m.details.templateProvenanceNote != "" {
-		sb.WriteString(warningStyle.Render("Template provenance: " + m.details.templateProvenanceNote))
+		sb.WriteString(warningStyle.Render("Template mismatch: " + m.details.templateProvenanceNote))
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")

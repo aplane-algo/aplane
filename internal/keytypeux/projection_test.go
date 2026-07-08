@@ -23,8 +23,8 @@ func TestTemplateProvenanceLabel(t *testing.T) {
 		status string
 		want   string
 	}{
-		{status: keys.TemplateProvenanceStatusConflict, want: TemplateProvenance},
-		{status: keys.TemplateProvenanceStatusUnavailable, want: TemplateProvenance},
+		{status: keys.TemplateProvenanceStatusConflict, want: TemplateMismatch},
+		{status: keys.TemplateProvenanceStatusUnavailable, want: TemplateMismatch},
 		{status: "", want: ""},
 		{status: "ok", want: ""},
 	}

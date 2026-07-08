@@ -8,7 +8,7 @@ import "github.com/aplane-algo/aplane/internal/keys"
 const (
 	AvailableToCreate    = "Enabled"
 	NotAvailableToCreate = "Disabled"
-	TemplateProvenance   = "template provenance"
+	TemplateMismatch     = "template mismatch"
 )
 
 func AvailabilityForCreation(enabled bool) string {
@@ -21,7 +21,7 @@ func AvailabilityForCreation(enabled bool) string {
 func TemplateProvenanceLabel(templateProvenanceStatus string) string {
 	switch templateProvenanceStatus {
 	case keys.TemplateProvenanceStatusConflict, keys.TemplateProvenanceStatusUnavailable:
-		return TemplateProvenance
+		return TemplateMismatch
 	default:
 		return ""
 	}

@@ -38,9 +38,9 @@ new keys of this type right now?
 |---|---|
 | Enabled | The identity can discover this key type and generate new keys. |
 | Disabled | The key type needs to be enabled, imported, or repaired before new keys can be generated. |
-| Template provenance | An existing key has an informational template-provenance note, such as a missing or changed creation template. The precise reason is shown in details. |
+| Template mismatch | An existing key has an informational template-provenance note, such as a missing or changed creation template. The precise reason is shown in details. |
 
-Existing keys remain signable from their stored key metadata. A template provenance note
+Existing keys remain signable from their stored key metadata. A template mismatch note
 does not mean the key has stopped working; it means the original creation
 template should be reviewed before relying on provenance or creating more keys
 of that type.

@@ -48,7 +48,7 @@ func TestKeysResultRenderTextOmitsCounterAndIndent(t *testing.T) {
 	}
 	if !strings.Contains(got, "ADDRONE [aplane.falcon1024.v1]\n") ||
 		!strings.Contains(got, "ADDRTWO [ed25519]\n") ||
-		!strings.Contains(got, "ADDRTHREE [mytemplate-v1] [template provenance]\n") {
+		!strings.Contains(got, "ADDRTHREE [mytemplate-v1] [template mismatch]\n") {
 		t.Fatalf("RenderText() missing key rows:\n%s", got)
 	}
 }

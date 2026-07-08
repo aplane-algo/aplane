@@ -128,8 +128,8 @@ func TestRenderKeyListViewShowsTemplateConflictStatus(t *testing.T) {
 	}
 
 	rendered := stripANSI(m.renderKeyListView())
-	if !strings.Contains(rendered, "[mytemplate-v1] [template provenance]") {
-		t.Fatalf("renderKeyListView() missing template provenance status:\n%s", rendered)
+	if !strings.Contains(rendered, "[mytemplate-v1] [template mismatch]") {
+		t.Fatalf("renderKeyListView() missing template mismatch status:\n%s", rendered)
 	}
 }
 
@@ -272,11 +272,11 @@ func TestSelectKeyByAddressSwitchesToSentryTab(t *testing.T) {
 func TestRenderKeyDetailsShowsPreciseTemplateProvenanceNote(t *testing.T) {
 	rendered := stripANSI(Model{details: keyDetailsState{address: "ADDR", keyType: "mytemplate-v1", templateProvenanceStatus: "conflict", templateProvenanceNote: "creation template fingerprint differs"}, height: 30}.renderKeyDetails())
 
-	if !strings.Contains(rendered, "Type:    [mytemplate-v1] [template provenance]") {
-		t.Fatalf("renderKeyDetails() missing projected template provenance label:\n%s", rendered)
+	if !strings.Contains(rendered, "Type:    [mytemplate-v1] [template mismatch]") {
+		t.Fatalf("renderKeyDetails() missing projected template mismatch label:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "Template provenance: creation template fingerprint differs") {
-		t.Fatalf("renderKeyDetails() missing precise template provenance detail:\n%s", rendered)
+	if !strings.Contains(rendered, "Template mismatch: creation template fingerprint differs") {
+		t.Fatalf("renderKeyDetails() missing precise template mismatch detail:\n%s", rendered)
 	}
 }
 
