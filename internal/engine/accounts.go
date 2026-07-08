@@ -204,7 +204,7 @@ func (e *Engine) RefreshKeys(ctx context.Context) ([]KeyInfo, error) {
 // - Signer addresses that are NOT rekeyed away
 // - Alias addresses that ARE rekeyed TO a signer we control
 // Returns a map of address -> key type (e.g., "ed25519", "aplane.falcon1024.v1").
-func (e *Engine) listSignersCached() map[string]string {
+func (e *Core) listSignersCached() map[string]string {
 	result := make(map[string]string)
 
 	addressSet := e.collectAllAddresses()
@@ -393,12 +393,12 @@ func (e *Engine) ResolveAddress(addressOrAlias string) (address, alias string, e
 }
 
 // isSignable checks if an address can be signed for
-func (e *Engine) isSignable(address string) bool {
+func (e *Core) isSignable(address string) bool {
 	return e.isAccountSignable(address)
 }
 
 // getAlgorithm returns the signing algorithm for an address
-func (e *Engine) getAlgorithm(address string) string {
+func (e *Core) getAlgorithm(address string) string {
 	authAddr, authExists := e.AuthCache.GetAuthAddress(address)
 
 	e.signerCacheMu.RLock()

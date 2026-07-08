@@ -14,26 +14,26 @@ import (
 )
 
 // HasAlias checks if a name is a defined alias.
-func (e *Engine) HasAlias(name string) bool {
+func (e *Core) HasAlias(name string) bool {
 	name = refname.NormalizeAlias(name)
 	return e.AliasCache.HasAlias(name)
 }
 
 // GetAliasForAddress returns the alias for a given address, or "" if none.
-func (e *Engine) GetAliasForAddress(addr string) string {
+func (e *Core) GetAliasForAddress(addr string) string {
 	return e.AliasCache.GetAliasForAddress(addr)
 }
 
 // GetAuthAddress returns the cached auth address for an address.
-func (e *Engine) GetAuthAddress(addr string) (string, bool) {
+func (e *Core) GetAuthAddress(addr string) (string, bool) {
 	return e.AuthCache.GetAuthAddress(addr)
 }
 
-func (e *Engine) withClientDataLock(fn func() error) error {
+func (e *Core) withClientDataLock(fn func() error) error {
 	return e.WithExclusiveLock(fn)
 }
 
-func (e *Engine) RefreshAuthAddressWithContext(ctx context.Context, addr string) (string, error) {
+func (e *Core) RefreshAuthAddressWithContext(ctx context.Context, addr string) (string, error) {
 	if e.AlgodClient == nil {
 		return "", ErrNoAlgodClient
 	}
@@ -42,18 +42,18 @@ func (e *Engine) RefreshAuthAddressWithContext(ctx context.Context, addr string)
 
 // GetKeyType returns the signing algorithm for an address.
 // Handles rekeyed aliases by looking up the auth address's key type.
-func (e *Engine) GetKeyType(addr string) string {
+func (e *Core) GetKeyType(addr string) string {
 	return e.getAlgorithm(addr)
 }
 
 // SignerKeyCount returns the number of keys in the signer cache.
-func (e *Engine) SignerKeyCount() int {
+func (e *Core) SignerKeyCount() int {
 	return e.signerCacheCount()
 }
 
 // ListRekeyedAccounts returns all rekeyed accounts from cache.
 // Returns a list of (address, authAddress) pairs for accounts that are rekeyed.
-func (e *Engine) ListRekeyedAccounts() []RekeyInfo {
+func (e *Core) ListRekeyedAccounts() []RekeyInfo {
 	addressSet := e.collectAllAddresses()
 
 	var result []RekeyInfo
@@ -92,7 +92,7 @@ type AliasListResult struct {
 }
 
 // ListAliases returns all defined aliases with their signability status.
-func (e *Engine) ListAliases() *AliasListResult {
+func (e *Core) ListAliases() *AliasListResult {
 	result := &AliasListResult{
 		Aliases: make([]AliasInfo, 0),
 	}
@@ -129,7 +129,7 @@ func (e *Engine) ListAliases() *AliasListResult {
 
 // GetAlias returns information about a specific alias.
 // Returns nil if the alias doesn't exist.
-func (e *Engine) GetAlias(name string) *AliasInfo {
+func (e *Core) GetAlias(name string) *AliasInfo {
 	name = refname.NormalizeAlias(name)
 	if e.AliasCache.Aliases == nil {
 		return nil
@@ -164,7 +164,7 @@ type AddAliasResult struct {
 	KeyType    string
 }
 
-func (e *Engine) AddAliasWithContext(ctx context.Context, name, address string) (*AddAliasResult, error) {
+func (e *Core) AddAliasWithContext(ctx context.Context, name, address string) (*AddAliasResult, error) {
 	name = refname.NormalizeAlias(name)
 	mutation, err := e.State.AddAliasWithContext(ctx, name, address)
 	if err != nil {
@@ -187,7 +187,7 @@ func (e *Engine) AddAliasWithContext(ctx context.Context, name, address string) 
 
 // RemoveAlias removes an alias.
 // Returns the address that was associated with the alias.
-func (e *Engine) RemoveAlias(name string) (string, error) {
+func (e *Core) RemoveAlias(name string) (string, error) {
 	name = refname.NormalizeAlias(name)
 	address, found, err := e.State.RemoveAlias(name)
 	if err != nil {
@@ -213,7 +213,7 @@ type SetListResult struct {
 }
 
 // ListSets returns all defined sets.
-func (e *Engine) ListSets() *SetListResult {
+func (e *Core) ListSets() *SetListResult {
 	result := &SetListResult{
 		Sets: make([]SetInfo, 0),
 	}
@@ -243,7 +243,7 @@ func (e *Engine) ListSets() *SetListResult {
 
 // GetSet returns information about a specific set.
 // Returns nil if the set doesn't exist.
-func (e *Engine) GetSet(name string) *SetInfo {
+func (e *Core) GetSet(name string) *SetInfo {
 	if e.SetCache.Sets == nil {
 		return nil
 	}
@@ -276,7 +276,7 @@ type AddSetResult struct {
 
 // AddSet creates or replaces a set with the given addresses.
 // Addresses can be aliases or raw addresses - they will be resolved.
-func (e *Engine) AddSet(name string, addressesOrAliases []string) (*AddSetResult, error) {
+func (e *Core) AddSet(name string, addressesOrAliases []string) (*AddSetResult, error) {
 	// Strip @ prefix if present
 	if len(name) > 0 && name[0] == '@' {
 		name = name[1:]
@@ -297,7 +297,7 @@ func (e *Engine) AddSet(name string, addressesOrAliases []string) (*AddSetResult
 
 // RemoveSet removes a set.
 // Returns the number of addresses that were in the set.
-func (e *Engine) RemoveSet(name string) (int, error) {
+func (e *Core) RemoveSet(name string) (int, error) {
 	// Strip @ prefix if present
 	if len(name) > 0 && name[0] == '@' {
 		name = name[1:]
@@ -316,7 +316,7 @@ func (e *Engine) RemoveSet(name string) (int, error) {
 }
 
 // AddToSet adds addresses to an existing set (or creates it if it doesn't exist).
-func (e *Engine) AddToSet(name string, addressesOrAliases []string) (*AddSetResult, error) {
+func (e *Core) AddToSet(name string, addressesOrAliases []string) (*AddSetResult, error) {
 	// Strip @ prefix if present
 	if len(name) > 0 && name[0] == '@' {
 		name = name[1:]
@@ -336,7 +336,7 @@ func (e *Engine) AddToSet(name string, addressesOrAliases []string) (*AddSetResu
 }
 
 // RemoveFromSet removes addresses from a set.
-func (e *Engine) RemoveFromSet(name string, addressesOrAliases []string) (*AddSetResult, error) {
+func (e *Core) RemoveFromSet(name string, addressesOrAliases []string) (*AddSetResult, error) {
 	// Strip @ prefix if present
 	if len(name) > 0 && name[0] == '@' {
 		name = name[1:]

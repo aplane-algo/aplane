@@ -64,7 +64,7 @@ func (e *Engine) SyncSignerStatus(ctx context.Context) (*SignerStatusSyncResult,
 	return result, nil
 }
 
-func (e *Engine) resetSignerStatusRevision() {
+func (e *Core) resetSignerStatusRevision() {
 	e.signerStatusMu.Lock()
 	e.signerStatusRevisionSeen = false
 	e.signerStatusKeysetRevSeen = 0
