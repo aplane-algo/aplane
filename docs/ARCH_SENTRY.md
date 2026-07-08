@@ -398,7 +398,7 @@ Representative tests:
 - `internal/policy/role_domains_test.go`
 - `internal/policy/sentry_convert_test.go`
 - `internal/policy/transfer_routing_eval_test.go`
-- `internal/engine/guarded_submit_test.go`
+- `internal/engine/guarded/submit_test.go`
 - `internal/apshellapp/endpoints_test.go`
 - `cmd/apstore/sentry_test.go`
 - `scripts/docker-local-four-node-smoke.sh`

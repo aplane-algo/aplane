@@ -428,8 +428,8 @@ Implementation areas that should remain aligned with this model:
 - `internal/signerapp/signing/component_sign.go`
 - `internal/signerapp/signing/component_assemble.go`
 - `internal/signerapp/signing/sentry_gate.go`
-- `internal/engine/guarded_submit.go`
-- `internal/engine/sentry_endpoint.go`
+- `internal/engine/guarded/submit.go`
+- `internal/engine/guarded/discovery.go`
 - `internal/config/client_endpoints.go`
 - `internal/apshellapp/endpoints.go`
 - `internal/policy`
