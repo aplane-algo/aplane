@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package ed25519lsig registers the hidden Ed25519 LogicSig DSA family.
+// Package ed25519lsig registers the Ed25519 LogicSig DSA family.
 package ed25519lsig
 
 import (

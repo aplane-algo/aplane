@@ -31,6 +31,7 @@ included as normal user-account operations.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | `ed25519` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| `aplane.ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024_ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.ecdsak1.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-whitelist.v1` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
@@ -63,9 +64,10 @@ included as normal user-account operations.
 
 ## Condition Notes
 
-- `ed25519`, `aplane.falcon1024.v1`, `aplane.falcon1024_ed25519.v1`, and
-  `aplane.ecdsak1.v1` do not restrict transaction type or special transaction
-  fields at the key-type layer. Local signer policy remains the safety boundary.
+- `ed25519`, `aplane.falcon1024.v1`, `aplane.ed25519.v1`,
+  `aplane.falcon1024_ed25519.v1`, and `aplane.ecdsak1.v1` do not restrict
+  transaction type or special transaction fields at the key-type layer. Local
+  signer policy remains the safety boundary.
 - `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1`
   restrict only `pay` and `axfer`
   destination fields. Payment receivers and asset receivers must be self or

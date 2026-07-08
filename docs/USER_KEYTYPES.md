@@ -94,11 +94,15 @@ Enable a library-visible compiled provider:
 
 ```bash
 apstore -d $APSIGNER_DATA keytype enable aplane.falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
 ```
 
-Other library-visible compiled providers include the guarded account key types
-`aplane.falcon1024-sentry-ed25519.v1`,
+Other library-visible compiled providers include `aplane.ecdsak1.v1` and the
+guarded account key types `aplane.falcon1024-sentry-ed25519.v1`,
 `aplane.falcon1024-sentry-falcon1024.v1`, and `aplane.corridor.v1`.
+`aplane.ed25519.v1` is the LogicSig-wrapped Ed25519 provider; native
+`ed25519` remains default-enabled and does not need this activation step.
+After activation, `aplane.ed25519.v1` also supports mnemonic import.
 
 Enabling writes or updates:
 
@@ -278,6 +282,7 @@ For example:
 
 ```text
 aplane.falcon1024.v1
+aplane.ed25519.v1
 aplane.whitelist.v1
 ```
 

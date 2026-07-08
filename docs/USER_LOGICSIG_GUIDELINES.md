@@ -710,6 +710,20 @@ and compiled through algod at derivation time.
 This provider verifies a Falcon signature over the transaction. Transaction
 policy is expected to live primarily in signer approval and local signer policy.
 
+#### `aplane.ed25519.v1`
+
+- Ed25519 LogicSig DSA
+- library-visible and signer-gated
+- best understood as a LogicSig signing primitive rather than a full TEAL
+  spending policy
+
+This provider verifies an Ed25519 signature over the transaction inside a
+LogicSig. It is distinct from the native `ed25519` key type: native `ed25519`
+signs as a normal Algorand account, while `aplane.ed25519.v1` derives an
+off-curve LogicSig account whose program performs Ed25519 verification.
+Transaction policy is expected to live primarily in signer approval and local
+signer policy.
+
 #### `aplane.falcon1024_ed25519.v1`
 
 - dual Falcon-1024 plus Ed25519 LogicSig DSA

@@ -8,28 +8,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 )
 
-func TestRegisterClientRegistersHiddenEd25519LogicSigBase(t *testing.T) {
+func TestRegisterClientRegistersEd25519LogicSigBase(t *testing.T) {
 	RegisterClient()
 
 	if !composeddsa.IsBaseRegistered(KeyTypeV1) {
 		t.Fatalf("composed base %q is not registered", KeyTypeV1)
 	}
-	if _, ok := keytypecatalog.Get(KeyTypeV1); ok {
-		t.Fatalf("keytypecatalog.Get(%q) returned ok=true; hidden base must not be catalog-visible", KeyTypeV1)
-	}
-	if keytypecatalog.IsDefaultEnabled(KeyTypeV1) {
-		t.Fatalf("%q must not be default-enabled", KeyTypeV1)
-	}
-	if keytypecatalog.IsLibraryVisible(KeyTypeV1) {
-		t.Fatalf("%q must not be library-visible", KeyTypeV1)
-	}
-
 	if dsa := logicsigdsa.Get(KeyTypeV1); dsa == nil {
 		t.Fatalf("logicsigdsa.Get(%q) = nil", KeyTypeV1)
 	}

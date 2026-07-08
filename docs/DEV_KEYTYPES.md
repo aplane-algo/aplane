@@ -155,7 +155,7 @@ Go-defined key types:
 | `aplane.corridor.v1` | Guarded-account DSA LogicSig provider with recipient corridor and sentry-authorized rekey path | Go-defined | library-visible | `lsig/corridor` |
 | `aplane.falcon1024_ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_ed25519` |
 | `aplane.ecdsak1.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ecdsak1` |
-| `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | hidden base for composed templates | `lsig/ed25519lsig` |
+| `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ed25519lsig` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
@@ -163,18 +163,23 @@ default-visible for generation. Visibility is recorded in
 `aplane.sentry-ed25519.v1`, and `aplane.sentry-falcon1024.v1` are
 default-enabled, while `aplane.falcon1024-sentry-ed25519.v1`,
 `aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`,
-`aplane.falcon1024_ed25519.v1`, and `aplane.ecdsak1.v1` are library-visible and
-hidden from generation until the current identity enables them from the
-library. `aplane.ed25519.v1` is a
-registered hidden base provider for Ed25519-backed composed templates such as
-`aplane.ed25519-whitelist.v1`; it is not catalog-visible on its own.
+`aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, and
+`aplane.ed25519.v1` are library-visible and not available for generation until
+the current identity enables them from the library. `aplane.ed25519.v1` is the
+Ed25519 LogicSig DSA provider, distinct from the native `ed25519` signing key;
+it also remains the base provider for Ed25519-backed composed templates such as
+`aplane.ed25519-whitelist.v1`.
 Opt-in state records are plaintext identity-scoped metadata under
 `identities/<identity>/keytypes/<key_type>.json`; they affect discovery and key
 creation, not the ability to sign with keys that already exist. Mnemonic import
 is additionally gated by the provider's explicit mnemonic-import capability.
-Only `ed25519` and `aplane.falcon1024.v1` allow user-entered mnemonic import;
-YAML templates and library-visible compiled providers do not. `apstore restore` creates or enables this state record
-idempotently when restoring a key for a library-visible compiled provider.
+The default-enabled `ed25519` and `aplane.falcon1024.v1` providers allow
+user-entered mnemonic import without identity-local activation; the
+library-visible `aplane.ed25519.v1` provider allows mnemonic import after it is
+enabled for the identity. YAML templates and the other library-visible compiled
+providers do not allow user-entered mnemonic import. `apstore restore` creates
+or enables this state record idempotently when restoring a key for a
+library-visible compiled provider.
 
 Installed YAML templates use the same state-record model. The encrypted
 `.template` file under `identities/<identity>/keytypes/<key_type>.template` is
@@ -316,6 +321,7 @@ Reference implementations: `library/templates/aplane.timed-whitelist.v1.yaml`, `
 
 Examples:
 - `aplane.falcon1024.v1`
+- `aplane.ed25519.v1`
 - `aplane.falcon1024_ed25519.v1`
 - `aplane.ecdsak1.v1`
 

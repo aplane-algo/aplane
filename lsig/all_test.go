@@ -15,6 +15,7 @@ import (
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/corridor"
 	"github.com/aplane-algo/aplane/lsig/ecdsak1"
+	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024ed25519 "github.com/aplane-algo/aplane/lsig/falcon1024_ed25519"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
@@ -52,6 +53,7 @@ func TestRegisterClientMarksLibraryVisible(t *testing.T) {
 		corridor.KeyTypeV1,
 		falcon1024ed25519.KeyTypeV1,
 		ecdsak1.KeyTypeV1,
+		ed25519lsig.KeyTypeV1,
 	}
 
 	for _, keyType := range libraryGatedKeyTypes {

@@ -78,7 +78,11 @@ func RegisterClient() {
 			Family:       ecdsak1family.Name,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, ecdsak1.RegisterClient)
-		ed25519lsig.RegisterClient()
+		registerCompiledProvider(keytypecatalog.Entry{
+			KeyType:      ed25519lsig.KeyTypeV1,
+			Family:       ed25519lsig.FamilyName,
+			Availability: keytypecatalog.AvailabilityLibrary,
+		}, ed25519lsig.RegisterClient)
 	})
 }
 
