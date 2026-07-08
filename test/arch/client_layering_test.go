@@ -119,6 +119,23 @@ func TestGuardedPackageStaysIsolated(t *testing.T) {
 	}
 }
 
+// TestGuardedAllowedImportsStayCurrent fails when an allowlist entry is no
+// longer imported by the guarded package, so the pinned dependency surface
+// stays exact instead of accumulating pre-authorized-but-unused entries that
+// could be silently re-introduced later without review.
+func TestGuardedAllowedImportsStayCurrent(t *testing.T) {
+	imports := moduleImports(t)
+	current := make(map[string]bool)
+	for _, imp := range imports[modulePrefix+"/internal/engine/guarded"] {
+		current[imp] = true
+	}
+	for allowed := range guardedAllowedImports {
+		if !current[allowed] {
+			t.Errorf("internal/engine/guarded no longer imports %s; remove it from guardedAllowedImports", allowed)
+		}
+	}
+}
+
 var (
 	moduleImportsOnce sync.Once
 	moduleImportsMap  map[string][]string
