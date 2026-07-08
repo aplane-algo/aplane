@@ -36,7 +36,7 @@ func (e *Engine) GenerateKey(ctx context.Context, keyType string, params map[str
 		if err != nil {
 			return nil, err
 		}
-		params, err = ExpandGenerateAddressListParams(keyType, params, keyTypes, e.NewAddressResolver())
+		params, err = expandGenerateAddressListParams(keyType, params, keyTypes, e.NewAddressResolver())
 		if err != nil {
 			return nil, err
 		}

@@ -8,7 +8,6 @@
 package arch_test
 
 import (
-	"os/exec"
 	"strings"
 	"testing"
 )
@@ -27,26 +26,16 @@ var signerappExceptions = map[string]string{}
 // packages live under internal/signerapp/ instead (storemut, approvalpolicy,
 // policyeditor, policytui, and signertui moved there for exactly this reason).
 func TestSharedPackagesDoNotImportSignerapp(t *testing.T) {
-	cmd := exec.Command("go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...")
-	cmd.Dir = "../.."
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("go list: %v", err)
-	}
+	imports := moduleImports(t)
 
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		pkg := fields[0]
+	for pkg, imps := range imports {
 		if !policed(pkg) {
 			continue
 		}
 		if _, ok := signerappExceptions[pkg]; ok {
 			continue
 		}
-		for _, imp := range fields[1:] {
+		for _, imp := range imps {
 			if strings.HasPrefix(imp, modulePrefix+"/internal/signerapp") {
 				t.Errorf("%s imports %s: shared packages must not depend on signer-daemon internals; move the package under internal/signerapp/ or hoist the shared type into a neutral leaf package", pkg, imp)
 			}
@@ -58,25 +47,16 @@ func TestSharedPackagesDoNotImportSignerapp(t *testing.T) {
 // imports signerapp, so the allowlist shrinks as the remaining layering work
 // lands instead of rotting.
 func TestSignerappExceptionsStayCurrent(t *testing.T) {
-	cmd := exec.Command("go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...")
-	cmd.Dir = "../.."
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("go list: %v", err)
-	}
+	imports := moduleImports(t)
 
 	stillImports := make(map[string]bool, len(signerappExceptions))
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
+	for pkg, imps := range imports {
+		if _, ok := signerappExceptions[pkg]; !ok {
 			continue
 		}
-		if _, ok := signerappExceptions[fields[0]]; !ok {
-			continue
-		}
-		for _, imp := range fields[1:] {
+		for _, imp := range imps {
 			if strings.HasPrefix(imp, modulePrefix+"/internal/signerapp") {
-				stillImports[fields[0]] = true
+				stillImports[pkg] = true
 			}
 		}
 	}
@@ -113,26 +93,16 @@ var familyImportExceptions = map[string]string{
 // literals with test-only cross-checks are the sanctioned pattern for
 // vocabulary packages (see internal/sentry/keytypes).
 func TestSharedPackagesDoNotImportDSAFamilies(t *testing.T) {
-	cmd := exec.Command("go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...")
-	cmd.Dir = "../.."
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("go list: %v", err)
-	}
+	imports := moduleImports(t)
 
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		pkg := fields[0]
+	for pkg, imps := range imports {
 		if !strings.HasPrefix(pkg, modulePrefix+"/internal/") && !strings.HasPrefix(pkg, modulePrefix+"/pkg") {
 			continue
 		}
 		if _, ok := familyImportExceptions[pkg]; ok {
 			continue
 		}
-		for _, imp := range fields[1:] {
+		for _, imp := range imps {
 			if strings.HasPrefix(imp, modulePrefix+"/lsig/") && !templateInfraPackages[imp] {
 				t.Errorf("%s imports %s: core packages must stay algorithm-family-agnostic; register family behavior through the core registries instead", pkg, imp)
 			}
@@ -143,25 +113,16 @@ func TestSharedPackagesDoNotImportDSAFamilies(t *testing.T) {
 // TestFamilyImportExceptionsStayCurrent fails when a tracked concrete-family
 // import disappears, so the allowlist shrinks as family-neutral registries land.
 func TestFamilyImportExceptionsStayCurrent(t *testing.T) {
-	cmd := exec.Command("go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...")
-	cmd.Dir = "../.."
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("go list: %v", err)
-	}
+	imports := moduleImports(t)
 
 	stillImports := make(map[string]bool, len(familyImportExceptions))
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
+	for pkg, imps := range imports {
+		if _, ok := familyImportExceptions[pkg]; !ok {
 			continue
 		}
-		if _, ok := familyImportExceptions[fields[0]]; !ok {
-			continue
-		}
-		for _, imp := range fields[1:] {
+		for _, imp := range imps {
 			if strings.HasPrefix(imp, modulePrefix+"/lsig/") && !templateInfraPackages[imp] {
-				stillImports[fields[0]] = true
+				stillImports[pkg] = true
 			}
 		}
 	}

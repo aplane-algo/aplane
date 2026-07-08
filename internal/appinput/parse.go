@@ -4,12 +4,13 @@
 package appinput
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/aplane-algo/aplane/internal/cmdspec"
 )
 
 // ProgramSource describes an application program path parsed from user input.
@@ -18,9 +19,41 @@ type ProgramSource struct {
 	Compiled bool
 }
 
-// ParseByteValue parses string inputs with hex:/b64:/text: prefixes.
+// ParseByteValue parses a byte-oriented value token.
+// Supported forms:
+// - hex:...
+// - b64:...
+// - text:...
+// - 0x... (hex compatibility form)
+// - bare text otherwise
+//
+// This is the shared semantic grammar for byte values; UI layers (cmdspec)
+// consume it from here so engine-layer code never depends on UI parsing.
 func ParseByteValue(raw string) ([]byte, error) {
-	return cmdspec.ParseByteValue(raw, true)
+	switch {
+	case strings.HasPrefix(raw, "hex:"):
+		value, err := hex.DecodeString(strings.TrimSpace(strings.TrimPrefix(raw, "hex:")))
+		if err != nil {
+			return nil, fmt.Errorf("invalid hex value: %w", err)
+		}
+		return value, nil
+	case strings.HasPrefix(raw, "b64:"):
+		value, err := base64.StdEncoding.DecodeString(strings.TrimSpace(strings.TrimPrefix(raw, "b64:")))
+		if err != nil {
+			return nil, fmt.Errorf("invalid base64 value: %w", err)
+		}
+		return value, nil
+	case strings.HasPrefix(raw, "text:"):
+		return []byte(strings.TrimPrefix(raw, "text:")), nil
+	case strings.HasPrefix(raw, "0x"):
+		value, err := hex.DecodeString(raw[2:])
+		if err != nil {
+			return nil, fmt.Errorf("invalid hex value: %w", err)
+		}
+		return value, nil
+	default:
+		return []byte(raw), nil
+	}
 }
 
 // ParseOnCompletion parses supported application on-completion values.

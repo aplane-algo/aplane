@@ -6,10 +6,12 @@ package cmdspec
 import (
 	"fmt"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/appinput"
 )
 
 // ParseLsigArg parses an "arg:name=value" token.
-// The value side is decoded via ParseByteValue with bare text enabled.
+// The value side is decoded via the shared byte-value grammar in appinput.
 func ParseLsigArg(token string) (string, []byte, error) {
 	argPart := strings.TrimPrefix(token, "arg:")
 	eqIdx := strings.Index(argPart, "=")
@@ -19,7 +21,7 @@ func ParseLsigArg(token string) (string, []byte, error) {
 	argName := argPart[:eqIdx]
 	argValueRaw := argPart[eqIdx+1:]
 
-	argValue, err := ParseByteValue(argValueRaw, true)
+	argValue, err := appinput.ParseByteValue(argValueRaw)
 	if err != nil {
 		return "", nil, fmt.Errorf("invalid arg:%s: %w", argName, err)
 	}

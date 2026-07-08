@@ -4,8 +4,11 @@
 package arch_test
 
 import (
+	"errors"
 	"os/exec"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -26,40 +29,49 @@ var uiLayerPackages = []string{
 	modulePrefix + "/internal/addressdisplay",
 }
 
-// TestEngineDoesNotImportUILayer pins the client-side engine boundary: the
-// business-logic core (internal/engine and its subpackages) must not import UI
-// parsing or formatting packages. Engine inputs are resolved application
-// values and its outputs are structured data; rendering and command syntax
-// live above it. The check is on direct imports, matching the daemon-side
-// layering guards.
-func TestEngineDoesNotImportUILayer(t *testing.T) {
-	imports := directImports(t)
-	for pkg, imps := range imports {
-		if !strings.HasPrefix(pkg, modulePrefix+"/internal/engine") {
-			continue
-		}
-		for _, imp := range imps {
-			for _, forbidden := range uiLayerPackages {
-				if imp == forbidden {
-					t.Errorf("%s imports %s: the engine core must not depend on UI parsing/formatting; keep resolved values in and structured results out, and move presentation to the UI layer", pkg, imp)
-				}
-			}
+// TestEngineIsTransitivelyUIFree pins the client-side engine boundary: the
+// business-logic core (internal/engine and its subpackages) must not depend on
+// UI parsing or formatting packages, directly or through any chain of
+// module-internal intermediaries (e.g. engine -> appspec -> appinput must never
+// reach cmdspec). Engine inputs are resolved application values and its
+// outputs are structured data; rendering and command syntax live above it.
+// There are no exceptions: a new UI dependency anywhere in the closure means
+// either the helper belongs in a lower semantic package, or the dependency is
+// pointed the wrong way.
+func TestEngineIsTransitivelyUIFree(t *testing.T) {
+	imports := moduleImports(t)
+
+	forbidden := make(map[string]bool, len(uiLayerPackages))
+	for _, pkg := range uiLayerPackages {
+		forbidden[pkg] = true
+	}
+
+	// BFS over module-internal edges from every internal/engine package; a
+	// violation is reported at the specific edge that reaches a UI package, so
+	// the offending link is named even when the chain is long.
+	seen := make(map[string]bool)
+	var queue []string
+	for pkg := range imports {
+		if pkg == modulePrefix+"/internal/engine" || strings.HasPrefix(pkg, modulePrefix+"/internal/engine/") {
+			queue = append(queue, pkg)
+			seen[pkg] = true
 		}
 	}
-}
-
-// TestClientStateDoesNotImportUILayer pins the same boundary for the
-// cache-backed client state layer. addressdisplay is a deliberate exception:
-// clientstate.FormatAddressWithAuth composes the shared address display helper,
-// which is the one presentation concern that layer legitimately owns.
-func TestClientStateDoesNotImportUILayer(t *testing.T) {
-	allowed := map[string]bool{modulePrefix + "/internal/addressdisplay": true}
-	imports := directImports(t)
-	imps := imports[modulePrefix+"/internal/clientstate"]
-	for _, imp := range imps {
-		for _, forbidden := range uiLayerPackages {
-			if imp == forbidden && !allowed[imp] {
-				t.Errorf("internal/clientstate imports %s: cache-backed client state must not depend on UI parsing/formatting", imp)
+	sort.Strings(queue)
+	for len(queue) > 0 {
+		pkg := queue[0]
+		queue = queue[1:]
+		for _, imp := range imports[pkg] {
+			if !strings.HasPrefix(imp, modulePrefix+"/") {
+				continue
+			}
+			if forbidden[imp] {
+				t.Errorf("%s imports %s: the engine core must stay transitively free of UI parsing/formatting; move the needed helper into a semantic leaf package or invert the dependency", pkg, imp)
+				continue
+			}
+			if !seen[imp] {
+				seen[imp] = true
+				queue = append(queue, imp)
 			}
 		}
 	}
@@ -91,7 +103,7 @@ var guardedAllowedImports = map[string]bool{
 // allowlist. This keeps the safety-critical guarded orchestration auditable in
 // isolation.
 func TestGuardedPackageStaysIsolated(t *testing.T) {
-	imports := directImports(t)
+	imports := moduleImports(t)
 	imps, ok := imports[modulePrefix+"/internal/engine/guarded"]
 	if !ok {
 		t.Fatal("internal/engine/guarded not found in module package list")
@@ -107,22 +119,43 @@ func TestGuardedPackageStaysIsolated(t *testing.T) {
 	}
 }
 
-// directImports returns each module package's direct import list.
-func directImports(t *testing.T) map[string][]string {
+var (
+	moduleImportsOnce sync.Once
+	moduleImportsMap  map[string][]string
+	moduleImportsErr  error
+)
+
+// moduleImports returns each module package's direct import list. The
+// underlying `go list ./...` walk is run once per test binary and shared by
+// every arch test; on failure the go tool's stderr is included so a broken
+// package is diagnosable from the test output.
+func moduleImports(t *testing.T) map[string][]string {
 	t.Helper()
-	cmd := exec.Command("go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...")
-	cmd.Dir = "../.."
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("go list: %v", err)
-	}
-	result := make(map[string][]string)
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
+	moduleImportsOnce.Do(func() {
+		cmd := exec.Command("go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./...")
+		cmd.Dir = "../.."
+		out, err := cmd.Output()
+		if err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+				moduleImportsErr = errors.New(err.Error() + "\n" + string(exitErr.Stderr))
+			} else {
+				moduleImportsErr = err
+			}
+			return
 		}
-		result[fields[0]] = fields[1:]
+		result := make(map[string][]string)
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) == 0 {
+				continue
+			}
+			result[fields[0]] = fields[1:]
+		}
+		moduleImportsMap = result
+	})
+	if moduleImportsErr != nil {
+		t.Fatalf("go list: %v", moduleImportsErr)
 	}
-	return result
+	return moduleImportsMap
 }

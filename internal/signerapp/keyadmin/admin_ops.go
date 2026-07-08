@@ -12,7 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
@@ -125,7 +125,7 @@ func sentryComponentSelectorForDetails(keyType, publicKeyHex string) (string, er
 }
 
 func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {
-	keyType = keytypefmt.Canonicalize(keyType)
+	keyType = keytypecatalog.Canonicalize(keyType)
 	if ir == nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "identity runtime is nil"}
 	}

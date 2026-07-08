@@ -65,7 +65,7 @@ func (e *Engine) GetASAInfoWithContext(ctx context.Context, assetID uint64, forc
 }
 
 // ASAResolver returns a shared ASA metadata/reference resolver for the engine's current network.
-func (e *Engine) ASAResolver() asa.Resolver {
+func (e *Core) ASAResolver() asa.Resolver {
 	return asa.NewResolver(e.Network, &e.AsaCache, e.AlgodClient)
 }
 
@@ -149,7 +149,7 @@ func (e *Engine) ListCachedASAs() []ASAInfo {
 }
 
 // ResolveASAReference resolves an ASA reference (ID or unit name) to an ID
-func (e *Engine) ResolveASAReference(asaRef string) (uint64, error) {
+func (e *Core) ResolveASAReference(asaRef string) (uint64, error) {
 	return e.ASAResolver().ResolveID(asaRef)
 }
 
