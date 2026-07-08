@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -64,7 +64,7 @@ func (s Service) ListLibraryTemplates(ir *identity.Runtime) adminproto.ListLibra
 }
 
 func (s Service) InstallLibraryTemplate(ir *identity.Runtime, req adminproto.InstallLibraryTemplateRequest) adminproto.InstallLibraryTemplateResult {
-	keyType := keytypefmt.Canonicalize(req.KeyType)
+	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	templateType := templatestore.TemplateType(req.TemplateType)
 	if templateType != templatestore.TemplateTypeGeneric && templateType != templatestore.TemplateTypeComposed {
 		return adminproto.InstallLibraryTemplateResult{
@@ -180,7 +180,7 @@ func (s Service) ListInstalledTemplates(ir *identity.Runtime) adminproto.ListIns
 }
 
 func (s Service) ShowLibraryTemplate(ir *identity.Runtime, req adminproto.ShowLibraryTemplateRequest) adminproto.ShowLibraryTemplateResult {
-	keyType := keytypefmt.Canonicalize(req.KeyType)
+	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	templateType := templatestore.TemplateType(strings.ToLower(strings.TrimSpace(req.TemplateType)))
 	if keyType == "" {
 		return adminproto.ShowLibraryTemplateResult{
@@ -230,7 +230,7 @@ func (s Service) ShowLibraryTemplate(ir *identity.Runtime, req adminproto.ShowLi
 }
 
 func (s Service) ShowInstalledTemplate(ir *identity.Runtime, req adminproto.ShowInstalledTemplateRequest) adminproto.ShowInstalledTemplateResult {
-	keyType := keytypefmt.Canonicalize(req.KeyType)
+	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	templateType, rec, ok, err := installedTemplateFromRecord(s.Deps.KeyPaths(), ir.ID(), keyType)
 	if err != nil {
 		return adminproto.ShowInstalledTemplateResult{
@@ -362,7 +362,7 @@ func (s Service) ImportInstalledTemplate(ir *identity.Runtime, req adminproto.Im
 }
 
 func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.RemoveInstalledTemplateRequest) adminproto.RemoveInstalledTemplateResult {
-	keyType := keytypefmt.Canonicalize(req.KeyType)
+	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	templateType, rec, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), ir.ID(), keyType)
 	if stateErr != nil {
 		return adminproto.RemoveInstalledTemplateResult{
@@ -433,7 +433,7 @@ func (s Service) RemoveInstalledTemplate(ir *identity.Runtime, req adminproto.Re
 }
 
 func (s Service) ActivateKeyType(ir *identity.Runtime, req adminproto.ActivateKeyTypeRequest) adminproto.ActivateKeyTypeResult {
-	keyType := keytypefmt.Canonicalize(req.KeyType)
+	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	var out adminproto.ActivateKeyTypeResult
 	err := s.Deps.WithIdentityMutation(ir.ID(), func() error {
 		if templateType, _, ok, stateErr := installedTemplateFromRecord(s.Deps.KeyPaths(), ir.ID(), keyType); stateErr != nil {
@@ -536,7 +536,7 @@ func (s Service) activateCompiledProviderKeyTypeLocked(ir *identity.Runtime, key
 }
 
 func (s Service) DeactivateKeyType(ir *identity.Runtime, req adminproto.DeactivateKeyTypeRequest) adminproto.DeactivateKeyTypeResult {
-	keyType := keytypefmt.Canonicalize(req.KeyType)
+	keyType := keytypecatalog.Canonicalize(req.KeyType)
 	var removeResult templatelibrary.RemoveResult
 	var disabledTemplate bool
 	var out adminproto.DeactivateKeyTypeResult

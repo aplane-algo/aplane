@@ -20,6 +20,7 @@ func TestParseByteValue(t *testing.T) {
 		{name: "base64", input: "b64:aGk=", want: "hi"},
 		{name: "base64 whitespace", input: "b64: aGk=", want: "hi"},
 		{name: "text", input: "text:hi", want: "hi"},
+		{name: "0x compatibility", input: "0x6869", want: "hi"},
 		{name: "plain", input: "hi", want: "hi"},
 	}
 
@@ -33,6 +34,14 @@ func TestParseByteValue(t *testing.T) {
 				t.Fatalf("ParseByteValue() = %q, want %q", string(got), tt.want)
 			}
 		})
+	}
+}
+
+func TestParseByteValueRejectsMalformedEncodings(t *testing.T) {
+	for _, input := range []string{"hex:xyz", "b64:???", "0xzz"} {
+		if _, err := ParseByteValue(input); err == nil {
+			t.Fatalf("ParseByteValue(%q) error = nil, want decode error", input)
+		}
 	}
 }
 

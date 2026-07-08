@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -117,7 +118,7 @@ func (c *testModeClient) GenerateKey(keyType string) (string, error) {
 
 // GenerateKeyWithParams generates a new key with creation parameters.
 func (c *testModeClient) GenerateKeyWithParams(keyType string, params map[string]string) (string, error) {
-	keyType = keytypefmt.Canonicalize(keyType)
+	keyType = keytypecatalog.Canonicalize(keyType)
 	msg := protocol.GenerateKeyMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeGenerateKey,
@@ -146,7 +147,7 @@ func (c *testModeClient) GenerateKeyWithParams(keyType string, params map[string
 
 // ImportKeyWithParams imports a key from mnemonic with creation parameters.
 func (c *testModeClient) ImportKeyWithParams(keyType, mnemonic string, params map[string]string) (string, error) {
-	keyType = keytypefmt.Canonicalize(keyType)
+	keyType = keytypecatalog.Canonicalize(keyType)
 	msg := protocol.ImportKeyMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeImportKey,
@@ -325,7 +326,7 @@ func runTestGenerate(client *testModeClient, args []string) {
 		os.Exit(1)
 	}
 
-	keyType := keytypefmt.Canonicalize(args[0])
+	keyType := keytypecatalog.Canonicalize(args[0])
 	address, err := client.GenerateKey(keyType)
 	if err != nil {
 		logErrorf("%v", err)
@@ -342,7 +343,7 @@ func runTestImport(client *testModeClient, args []string) {
 		os.Exit(1)
 	}
 
-	keyType := keytypefmt.Canonicalize(args[0])
+	keyType := keytypecatalog.Canonicalize(args[0])
 	remaining := args[1:]
 
 	// Split remaining args into params (key=value) and mnemonic words

@@ -102,7 +102,7 @@ func (e *Engine) GetBalance(ctx context.Context, addressOrAlias string) (*Balanc
 	return result, nil
 }
 
-func (e *Engine) GetAccountBalanceRaw(ctx context.Context, address string) (*BalanceResult, error) {
+func (e *Core) GetAccountBalanceRaw(ctx context.Context, address string) (*BalanceResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}
@@ -289,7 +289,7 @@ type HoldersResult struct {
 
 // GetHolders returns addresses with non-zero balance of the specified asset.
 // assetRef can be "algo", an ASA ID, or an ASA unit name.
-func (e *Engine) GetHolders(ctx context.Context, assetRef string) (*HoldersResult, error) {
+func (e *Core) GetHolders(ctx context.Context, assetRef string) (*HoldersResult, error) {
 	if e.AlgodClient == nil {
 		return nil, ErrNoAlgodClient
 	}

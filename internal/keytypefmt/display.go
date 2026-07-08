@@ -6,22 +6,12 @@ package keytypefmt
 import (
 	"strings"
 	"unicode"
-
-	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 )
 
 // Display returns the presentation form of a key type. Key types are displayed
 // canonically; publisher namespaces are not elided.
 func Display(keyType string) string {
 	return keyType
-}
-
-// Canonicalize resolves a user-supplied key type to its canonical
-// text form. It normalizes whitespace and case, but does not infer a publisher
-// namespace from an unqualified value. The normalization is owned by
-// keytypecatalog so client and signer agree on the canonical string.
-func Canonicalize(keyType string) string {
-	return keytypecatalog.Canonicalize(keyType)
 }
 
 // Publisher returns the publisher segment of a canonical key type.

@@ -37,14 +37,14 @@ func TestExpandGenerateAddressListParams_ExpandsSetForAddressListParam(t *testin
 		result: []string{"ADDR1", "ADDR2", "ADDR3"},
 	}
 
-	got, err := ExpandGenerateAddressListParams(
+	got, err := expandGenerateAddressListParams(
 		"aplane.whitelist.v1",
 		map[string]string{"recipients": "@friends"},
 		keyTypes,
 		resolver,
 	)
 	if err != nil {
-		t.Fatalf("ExpandGenerateAddressListParams returned error: %v", err)
+		t.Fatalf("expandGenerateAddressListParams returned error: %v", err)
 	}
 	if !reflect.DeepEqual(resolver.inputs, []string{"@friends"}) {
 		t.Fatalf("ResolveList inputs = %v, want [@friends]", resolver.inputs)
@@ -67,9 +67,9 @@ func TestExpandGenerateAddressListParams_ResolvesMixedAddressList(t *testing.T) 
 	resolver := &stubAddressListResolver{result: []string{"ADDR1", "ADDR2", "ADDR3"}}
 	input := map[string]string{"recipients": "ADDR1, @friends, alice"}
 
-	got, err := ExpandGenerateAddressListParams("aplane.whitelist.v1", input, keyTypes, resolver)
+	got, err := expandGenerateAddressListParams("aplane.whitelist.v1", input, keyTypes, resolver)
 	if err != nil {
-		t.Fatalf("ExpandGenerateAddressListParams returned error: %v", err)
+		t.Fatalf("expandGenerateAddressListParams returned error: %v", err)
 	}
 	if !reflect.DeepEqual(resolver.inputs, []string{"ADDR1", "@friends", "alice"}) {
 		t.Fatalf("ResolveList inputs = %v, want [ADDR1 @friends alice]", resolver.inputs)
@@ -91,14 +91,14 @@ func TestExpandGenerateAddressListParams_SortsAddressListByDefault(t *testing.T)
 	}
 	resolver := &stubAddressListResolver{result: []string{"ADDR2", "ADDR1", "ADDR3"}}
 
-	got, err := ExpandGenerateAddressListParams(
+	got, err := expandGenerateAddressListParams(
 		"aplane.whitelist.v1",
 		map[string]string{"recipients": "@friends"},
 		keyTypes,
 		resolver,
 	)
 	if err != nil {
-		t.Fatalf("ExpandGenerateAddressListParams returned error: %v", err)
+		t.Fatalf("expandGenerateAddressListParams returned error: %v", err)
 	}
 	want := map[string]string{"recipients": "ADDR1,ADDR2,ADDR3"}
 	if !reflect.DeepEqual(got, want) {
@@ -118,9 +118,9 @@ func TestExpandGenerateAddressListParams_LeavesNonAddressListParamsUnchanged(t *
 	resolver := &stubAddressListResolver{}
 	input := map[string]string{"expiry": "@notaset"}
 
-	got, err := ExpandGenerateAddressListParams("aplane.timed-whitelist.v1", input, keyTypes, resolver)
+	got, err := expandGenerateAddressListParams("aplane.timed-whitelist.v1", input, keyTypes, resolver)
 	if err != nil {
-		t.Fatalf("ExpandGenerateAddressListParams returned error: %v", err)
+		t.Fatalf("expandGenerateAddressListParams returned error: %v", err)
 	}
 	if resolver.inputs != nil {
 		t.Fatalf("ResolveList should not have been called, got %v", resolver.inputs)
@@ -131,7 +131,7 @@ func TestExpandGenerateAddressListParams_LeavesNonAddressListParamsUnchanged(t *
 }
 
 func TestExpandGenerateAddressListParams_UnknownKeyType(t *testing.T) {
-	_, err := ExpandGenerateAddressListParams(
+	_, err := expandGenerateAddressListParams(
 		"missing-v1",
 		map[string]string{"recipients": "@friends"},
 		nil,

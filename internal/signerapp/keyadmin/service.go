@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
@@ -99,7 +99,7 @@ type Service struct {
 type GenerateGenericLSigFunc func(context.Context, *identity.Runtime, string, map[string]string) (string, error)
 
 func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
-	keyType = keytypefmt.Canonicalize(keyType)
+	keyType = keytypecatalog.Canonicalize(keyType)
 	if ctx == nil {
 		ctx = context.Background()
 	}

@@ -9,7 +9,6 @@ package keytypecatalog
 import (
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 )
 
@@ -65,7 +64,7 @@ func Get(keyType string) (Entry, bool) {
 	mu.RLock()
 	defer mu.RUnlock()
 
-	entry, ok := entries[normalize(keyType)]
+	entry, ok := entries[Canonicalize(keyType)]
 	return entry, ok
 }
 
@@ -112,8 +111,8 @@ func filter(include func(Entry) bool) []Entry {
 }
 
 func normalizeEntry(entry Entry) (Entry, error) {
-	entry.KeyType = normalize(entry.KeyType)
-	entry.Family = normalize(entry.Family)
+	entry.KeyType = Canonicalize(entry.KeyType)
+	entry.Family = Canonicalize(entry.Family)
 	if entry.KeyType == "" {
 		return Entry{}, fmt.Errorf("key type catalog entry has empty key type")
 	}
@@ -126,10 +125,6 @@ func normalizeEntry(entry Entry) (Entry, error) {
 	default:
 		return Entry{}, fmt.Errorf("key type catalog entry %s has invalid availability %q", entry.KeyType, entry.Availability)
 	}
-}
-
-func normalize(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
 }
 
 func sortEntries(items []Entry) {

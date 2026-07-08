@@ -9,8 +9,6 @@ import (
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 
-	"github.com/aplane-algo/aplane/internal/addressdisplay"
-	"github.com/aplane-algo/aplane/internal/algorithm"
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/clientdata"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
@@ -219,9 +217,4 @@ func (s *State) SaveSignerCacheLocked() error {
 	}
 	s.SignerCache.BindStore(s.CacheStore)
 	return s.SignerCache.SaveCacheLocked()
-}
-
-// FormatAddressWithAuth formats an address for display, including alias and auth info.
-func (s *State) FormatAddressWithAuth(address string, authAddress string) string {
-	return addressdisplay.FormatAddress(address, &s.AliasCache, &s.SignerCache, &s.AuthCache, authAddress, algorithm.GetDisplayColor)
 }

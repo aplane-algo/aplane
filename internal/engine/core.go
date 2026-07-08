@@ -4,7 +4,6 @@
 package engine
 
 import (
-	"context"
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/clientstate"
@@ -14,10 +13,11 @@ import (
 
 // Core is the shared client infrastructure the Engine and its domain operations
 // are built on: client-scoped caches and network state, remote signer
-// connection lifecycle, the signer key cache, address/signability resolution,
-// and the client-data lock. Domain command methods (payments, assets, apps,
-// key management, guarded signing) live on Engine and reach this infrastructure
-// through the embedded *Core.
+// connection lifecycle, the signer key cache, address/signability/asset
+// resolution (including the read-only balance/holders queries the address
+// resolver needs), and the client-data lock. Domain command methods (payments,
+// asset transfers, apps, key management, guarded signing) live on Engine and
+// reach this infrastructure through the embedded *Core.
 type Core struct {
 	*clientstate.State
 	Connection *connect.ConnectionState
@@ -39,11 +39,4 @@ type Core struct {
 	Verbose         bool // Controls detailed signing output (default: false)
 	Simulate        bool // Simulate mode: transactions are simulated instead of submitted (default: false)
 	SentryEndpoints config.SentryEndpointConfigs
-
-	// holdersProvider resolves the @holders dynamic set for the address
-	// resolver. It is wired by NewEngine to the Engine's GetHolders domain
-	// method, breaking the resolver's dependency on domain code. It may be nil
-	// when a Core is constructed directly (e.g. in tests); the resolver
-	// tolerates that.
-	holdersProvider func(ctx context.Context, assetRef string) (*HoldersResult, error)
 }

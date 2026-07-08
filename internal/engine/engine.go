@@ -46,9 +46,6 @@ func NewEngine(network string, opts ...EngineOption) (*Engine, error) {
 			WriteMode:  false,
 		},
 	}
-	// Wire the @holders resolution provider so Core's address resolver can reach
-	// the Engine's GetHolders domain method without Core depending on domain code.
-	e.holdersProvider = e.GetHolders
 
 	// Apply options
 	for _, opt := range opts {
@@ -253,12 +250,9 @@ func (e *Core) NewAddressResolver() *addressbook.Resolver {
 	}).WithAllProvider(func() []string {
 		return e.listAllAddressesCached()
 	}).WithHoldersProvider(func(assetRef string) ([]string, error) {
-		if e.holdersProvider == nil {
-			return nil, ErrNoAlgodClient
-		}
 		// The resolver interface carries no context; resolution happens on the
 		// interactive command path where cancellation is not yet plumbed.
-		result, err := e.holdersProvider(context.Background(), assetRef)
+		result, err := e.GetHolders(context.Background(), assetRef)
 		if result == nil {
 			return nil, err
 		}
