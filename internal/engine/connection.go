@@ -16,7 +16,7 @@ import (
 // ConnectWithTunnel establishes an SSH tunnel connection using 2FA: API token + public key.
 // This method handles the tunnel setup and returns the result.
 // hostKeyApproval is called for TOFU when connecting to an unknown server (can be nil to reject unknown hosts).
-func (e *Engine) ConnectWithTunnel(target string, host string, sshPort int, localPort int, signerPort int, token string, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectionResult, error) {
+func (e *Core) ConnectWithTunnel(target string, host string, sshPort int, localPort int, signerPort int, token string, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onDisconnect func()) (*ConnectionResult, error) {
 	result, err := e.Connection.ConnectWithTunnel(
 		target, host, sshPort, localPort, signerPort, token, identityFile, knownHostsPath, hostKeyApproval,
 		e.populateSignerCache,
@@ -48,27 +48,27 @@ func (e *Engine) ConnectWithTunnel(target string, host string, sshPort int, loca
 }
 
 // Disconnect closes the connection to Signer
-func (e *Engine) Disconnect() error {
+func (e *Core) Disconnect() error {
 	return e.Connection.Disconnect(e.handleConnectionClosed(nil))
 }
 
 // IsConnected returns the current connection status
-func (e *Engine) IsConnected() bool {
+func (e *Core) IsConnected() bool {
 	return e.Connection.IsConnected()
 }
 
 // IsTunnelConnected returns whether connected via SSH tunnel
-func (e *Engine) IsTunnelConnected() bool {
+func (e *Core) IsTunnelConnected() bool {
 	return e.Connection.IsTunnelConnected()
 }
 
 // GetConnectionTarget returns the current connection target
-func (e *Engine) GetConnectionTarget() string {
+func (e *Core) GetConnectionTarget() string {
 	return e.Connection.GetConnectionTarget()
 }
 
 // RequestTokenWithContext connects to the SSH server and requests a token provisioning.
-func (e *Engine) RequestTokenWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStart func()) (string, error) {
+func (e *Core) RequestTokenWithContext(ctx context.Context, host string, sshPort int, identityFile string, knownHostsPath string, hostKeyApproval sshtunnel.HostKeyApprovalHandler, onProvisioningStart func()) (string, error) {
 	// Disconnect if currently connected (old token will be invalid after provisioning)
 	if e.IsTunnelConnected() {
 		_ = e.Disconnect()
@@ -76,43 +76,43 @@ func (e *Engine) RequestTokenWithContext(ctx context.Context, host string, sshPo
 	return e.Connection.RequestTokenWithContext(ctx, host, sshPort, identityFile, knownHostsPath, hostKeyApproval, onProvisioningStart)
 }
 
-func (e *Engine) GetKeysWithContext(ctx context.Context) (*signerapi.KeysResult, error) {
+func (e *Core) GetKeysWithContext(ctx context.Context) (*signerapi.KeysResult, error) {
 	return e.Connection.GetKeysWithContext(ctx)
 }
 
-func (e *Engine) GetKeyTypesWithContext(ctx context.Context) (*signerapi.KeyTypesResponse, error) {
+func (e *Core) GetKeyTypesWithContext(ctx context.Context) (*signerapi.KeyTypesResponse, error) {
 	return e.Connection.GetKeyTypesWithContext(ctx)
 }
 
-func (e *Engine) GetSignerStatusWithContext(ctx context.Context) (*signerapi.StatusResponse, error) {
+func (e *Core) GetSignerStatusWithContext(ctx context.Context) (*signerapi.StatusResponse, error) {
 	return e.Connection.GetSignerStatusWithContext(ctx)
 }
 
-func (e *Engine) AdminGenerateWithContext(ctx context.Context, keyType string, params map[string]string) (*signerapi.AdminGenerateResponse, error) {
+func (e *Core) AdminGenerateWithContext(ctx context.Context, keyType string, params map[string]string) (*signerapi.AdminGenerateResponse, error) {
 	return e.Connection.AdminGenerateWithContext(ctx, keyType, params)
 }
 
-func (e *Engine) AdminDeleteKeyWithContext(ctx context.Context, address string) (*signerapi.AdminDeleteResponse, error) {
+func (e *Core) AdminDeleteKeyWithContext(ctx context.Context, address string) (*signerapi.AdminDeleteResponse, error) {
 	return e.Connection.AdminDeleteKeyWithContext(ctx, address)
 }
 
-func (e *Engine) AdminSyncSentryReferencesWithContext(ctx context.Context, candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
+func (e *Core) AdminSyncSentryReferencesWithContext(ctx context.Context, candidates []signerapi.SentryReferenceCandidate) (*signerapi.AdminSyncSentryReferencesResponse, error) {
 	return e.Connection.AdminSyncSentryReferencesWithContext(ctx, candidates)
 }
 
-func (e *Engine) RequestGroupPlanWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
+func (e *Core) RequestGroupPlanWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupPlanResponse, error) {
 	return e.Connection.RequestGroupPlanWithContext(ctx, requests)
 }
 
-func (e *Engine) RequestGroupSimulateWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSimulateResponse, error) {
+func (e *Core) RequestGroupSimulateWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSimulateResponse, error) {
 	return e.Connection.RequestGroupSimulateWithContext(ctx, requests)
 }
 
-func (e *Engine) RequestGroupSignWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSignResponse, error) {
+func (e *Core) RequestGroupSignWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSignResponse, error) {
 	return e.Connection.RequestGroupSignWithContext(ctx, requests)
 }
 
-func (e *Engine) handleConnectionClosed(onDisconnect func()) func() {
+func (e *Core) handleConnectionClosed(onDisconnect func()) func() {
 	return func() {
 		e.resetSignerStatusRevision()
 		e.resetSignerCache(false)

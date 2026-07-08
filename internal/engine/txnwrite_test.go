@@ -14,7 +14,7 @@ import (
 )
 
 func TestWriteTransactionJSONDisabledReturnsEmpty(t *testing.T) {
-	eng := &Engine{}
+	eng := &Engine{Core: &Core{}}
 	filename, err := eng.WriteTransactionJSON(txnwriteTestPaymentTxn(1, 2), "TXID")
 	if err != nil {
 		t.Fatalf("WriteTransactionJSON() error = %v", err)
@@ -32,7 +32,7 @@ func TestWriteTransactionJSONWritesFormattedFileAndConvertsAddresses(t *testing.
 		t.Fatalf("Chdir() error = %v", err)
 	}
 
-	eng := &Engine{WriteMode: true}
+	eng := &Engine{Core: &Core{WriteMode: true}}
 	txn := txnwriteTestPaymentTxn(1, 2)
 	filename, err := eng.WriteTransactionJSON(txn, "TXID123")
 	if err != nil {
@@ -63,7 +63,7 @@ func TestWriteTransactionJSONUsesSimulateSuffix(t *testing.T) {
 		t.Fatalf("Chdir() error = %v", err)
 	}
 
-	eng := &Engine{WriteMode: true, Simulate: true}
+	eng := &Engine{Core: &Core{WriteMode: true, Simulate: true}}
 	filename, err := eng.WriteTransactionJSON(txnwriteTestPaymentTxn(1, 2), "SIMTX")
 	if err != nil {
 		t.Fatalf("WriteTransactionJSON() error = %v", err)
@@ -82,7 +82,7 @@ func TestWriteTxnCallbackReportsSuccessAndFailure(t *testing.T) {
 			t.Fatalf("Chdir() error = %v", err)
 		}
 
-		eng := &Engine{WriteMode: true}
+		eng := &Engine{Core: &Core{WriteMode: true}}
 		var notices []TransactionWriteNotice
 		cb := eng.WriteTxnCallback(&notices)
 		if cb == nil {
@@ -102,7 +102,7 @@ func TestWriteTxnCallbackReportsSuccessAndFailure(t *testing.T) {
 			t.Fatalf("Chdir() error = %v", err)
 		}
 
-		eng := &Engine{WriteMode: true}
+		eng := &Engine{Core: &Core{WriteMode: true}}
 		var notices []TransactionWriteNotice
 		cb := eng.WriteTxnCallback(&notices)
 		cb(txnwriteTestPaymentTxn(1, 2), "bad/path")
@@ -113,7 +113,7 @@ func TestWriteTxnCallbackReportsSuccessAndFailure(t *testing.T) {
 }
 
 func TestWriteTxnCallbackDisabledReturnsNil(t *testing.T) {
-	eng := &Engine{}
+	eng := &Engine{Core: &Core{}}
 	if cb := eng.WriteTxnCallback(nil); cb != nil {
 		t.Fatal("WriteTxnCallback() should be nil when write mode is disabled")
 	}
@@ -188,7 +188,7 @@ func TestWriteTransactionJSONConvertsNestedTransactionAddresses(t *testing.T) {
 	reserve := testAddrToAddress(11)
 	appAcct := testAddrToAddress(12)
 
-	eng := &Engine{WriteMode: true}
+	eng := &Engine{Core: &Core{WriteMode: true}}
 
 	assetTxn := types.Transaction{
 		Type: types.AssetConfigTx,

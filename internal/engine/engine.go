@@ -10,7 +10,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -24,33 +23,15 @@ import (
 
 // Engine is the client application facade for apshell-family frontends.
 // It combines:
-// - client-scoped caches and network state via clientstate.State
-// - remote signer connection lifecycle via engine/connect
-// - execution modes used during signing/submission
+//   - shared client infrastructure via the embedded *Core (caches, network
+//     state, signer connection lifecycle, signer key cache)
+//   - domain command operations (payments, assets, apps, key management,
+//     guarded signing) defined as Engine methods
 //
 // Callers should treat it as the single owner for apshell-side application
 // state, not as a transport-agnostic domain core.
 type Engine struct {
-	*clientstate.State
-	Connection *connect.ConnectionState
-	watcher    *clientstate.CacheWatcher
-
-	// signerCacheMu guards State.SignerCache, the only cache mutated off the
-	// command goroutine: the SSH-tunnel disconnect callback resets it from the
-	// tunnel's monitor goroutine (handleConnectionClosed -> resetSignerCache).
-	// All other State caches are command-goroutine-confined; see the
-	// concurrency contract on clientstate.State.
-	signerCacheMu             sync.RWMutex
-	signerStatusMu            sync.Mutex
-	signerStatusRevisionSeen  bool
-	signerStatusKeysetRevSeen uint64
-
-	// Remote Signing
-	// Configuration
-	WriteMode       bool
-	Verbose         bool // Controls detailed signing output (default: false)
-	Simulate        bool // Simulate mode: transactions are simulated instead of submitted (default: false)
-	SentryEndpoints config.SentryEndpointConfigs
+	*Core
 }
 
 // EngineOption is a functional option for configuring the Engine
@@ -59,10 +40,15 @@ type EngineOption func(*Engine) error
 // NewEngine creates a new Engine instance with the given network context token and options.
 func NewEngine(network string, opts ...EngineOption) (*Engine, error) {
 	e := &Engine{
-		State:      clientstate.New(network),
-		Connection: connect.NewState(),
-		WriteMode:  false,
+		Core: &Core{
+			State:      clientstate.New(network),
+			Connection: connect.NewState(),
+			WriteMode:  false,
+		},
 	}
+	// Wire the @holders resolution provider so Core's address resolver can reach
+	// the Engine's GetHolders domain method without Core depending on domain code.
+	e.holdersProvider = e.GetHolders
 
 	// Apply options
 	for _, opt := range opts {
@@ -147,38 +133,38 @@ func WithSetCache(cache cache.SetCache) EngineOption {
 }
 
 // SetWriteMode enables or disables transaction JSON file writing
-func (e *Engine) SetWriteMode(enabled bool) {
+func (e *Core) SetWriteMode(enabled bool) {
 	e.WriteMode = enabled
 }
 
 // GetWriteMode returns the current write mode state
-func (e *Engine) GetWriteMode() bool {
+func (e *Core) GetWriteMode() bool {
 	return e.WriteMode
 }
 
 // SetVerbose enables or disables detailed signing output
-func (e *Engine) SetVerbose(enabled bool) {
+func (e *Core) SetVerbose(enabled bool) {
 	e.Verbose = enabled
 }
 
 // GetVerbose returns the current verbose mode state
-func (e *Engine) GetVerbose() bool {
+func (e *Core) GetVerbose() bool {
 	return e.Verbose
 }
 
 // SetSimulate enables or disables transaction simulation mode
-func (e *Engine) SetSimulate(enabled bool) {
+func (e *Core) SetSimulate(enabled bool) {
 	e.Simulate = enabled
 }
 
 // GetSimulate returns the current simulate mode state
-func (e *Engine) GetSimulate() bool {
+func (e *Core) GetSimulate() bool {
 	return e.Simulate
 }
 
 // SetNetwork switches to a different Algorand network, updates the algod client,
 // and rebuilds the ASA and auth caches for the new network.
-func (e *Engine) SetNetwork(network string, algodClient *algod.Client) error {
+func (e *Core) SetNetwork(network string, algodClient *algod.Client) error {
 	if err := config.ValidateNetworkID(network); err != nil {
 		return fmt.Errorf("%w: %s", ErrInvalidNetwork, err)
 	}
@@ -197,12 +183,12 @@ func (e *Engine) SetNetwork(network string, algodClient *algod.Client) error {
 }
 
 // GetNetwork returns the current network
-func (e *Engine) GetNetwork() string {
+func (e *Core) GetNetwork() string {
 	return e.Network
 }
 
 // StartClientCacheWatcher begins passive tracking of shared APCLIENT_DATA cache changes.
-func (e *Engine) StartClientCacheWatcher() error {
+func (e *Core) StartClientCacheWatcher() error {
 	if e == nil || e.DataDir == "" || e.watcher != nil {
 		return nil
 	}
@@ -215,7 +201,7 @@ func (e *Engine) StartClientCacheWatcher() error {
 }
 
 // StopClientCacheWatcher stops passive APCLIENT_DATA cache tracking.
-func (e *Engine) StopClientCacheWatcher() {
+func (e *Core) StopClientCacheWatcher() {
 	if e == nil || e.watcher == nil {
 		return
 	}
@@ -224,7 +210,7 @@ func (e *Engine) StopClientCacheWatcher() {
 }
 
 // ApplyClientCacheUpdates reloads in-memory cache snapshots for files changed by another client.
-func (e *Engine) ApplyClientCacheUpdates() error {
+func (e *Core) ApplyClientCacheUpdates() error {
 	if e == nil || e.watcher == nil {
 		return nil
 	}
@@ -255,7 +241,7 @@ func (e *Engine) ApplyClientCacheUpdates() error {
 }
 
 // NewAddressResolver creates an AddressResolver with dynamic sets (@signers, @all, @holders) enabled.
-func (e *Engine) NewAddressResolver() *addressbook.Resolver {
+func (e *Core) NewAddressResolver() *addressbook.Resolver {
 	resolver := addressbook.NewResolver(&e.AliasCache, &e.SetCache)
 	return resolver.WithSignerProvider(func() []string {
 		signers := e.listSignersCached()
@@ -267,9 +253,12 @@ func (e *Engine) NewAddressResolver() *addressbook.Resolver {
 	}).WithAllProvider(func() []string {
 		return e.listAllAddressesCached()
 	}).WithHoldersProvider(func(assetRef string) ([]string, error) {
+		if e.holdersProvider == nil {
+			return nil, ErrNoAlgodClient
+		}
 		// The resolver interface carries no context; resolution happens on the
 		// interactive command path where cancellation is not yet plumbed.
-		result, err := e.GetHolders(context.Background(), assetRef)
+		result, err := e.holdersProvider(context.Background(), assetRef)
 		if result == nil {
 			return nil, err
 		}
@@ -279,7 +268,7 @@ func (e *Engine) NewAddressResolver() *addressbook.Resolver {
 
 // collectAllAddresses returns a deduplicated set of all known addresses
 // (from both the alias cache and the signer cache).
-func (e *Engine) collectAllAddresses() map[string]bool {
+func (e *Core) collectAllAddresses() map[string]bool {
 	addressSet := make(map[string]bool)
 	if e.AliasCache.Aliases != nil {
 		for _, addr := range e.AliasCache.Aliases {
@@ -292,7 +281,7 @@ func (e *Engine) collectAllAddresses() map[string]bool {
 	return addressSet
 }
 
-func (e *Engine) listAllAddressesCached() []string {
+func (e *Core) listAllAddressesCached() []string {
 	addressSet := e.collectAllAddresses()
 	addresses := make([]string, 0, len(addressSet))
 	for addr := range addressSet {
@@ -302,7 +291,7 @@ func (e *Engine) listAllAddressesCached() []string {
 }
 
 // ListAllAddresses returns all known addresses (aliases + signer keys).
-func (e *Engine) ListAllAddresses() ([]string, error) {
+func (e *Core) ListAllAddresses() ([]string, error) {
 	if err := e.EnsureSignerCache(context.Background()); err != nil {
 		return nil, err
 	}
@@ -311,7 +300,7 @@ func (e *Engine) ListAllAddresses() ([]string, error) {
 
 // EnsureSignerCache refreshes the signer cache from the connected
 // signer if the cache is empty, using ctx for the inventory request.
-func (e *Engine) EnsureSignerCache(ctx context.Context) error {
+func (e *Core) EnsureSignerCache(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -343,7 +332,7 @@ func (e *Engine) EnsureSignerCache(ctx context.Context) error {
 	return nil
 }
 
-func (e *Engine) getSuggestedParamsWithFee(ctx context.Context, fee uint64, useFlatFee bool) (types.SuggestedParams, error) {
+func (e *Core) getSuggestedParamsWithFee(ctx context.Context, fee uint64, useFlatFee bool) (types.SuggestedParams, error) {
 	sp, err := e.AlgodClient.SuggestedParams().Do(ctx)
 	if err != nil {
 		return types.SuggestedParams{}, fmt.Errorf("failed to get suggested params: %w", err)
