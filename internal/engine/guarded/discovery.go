@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package engine
+package guarded
 
 import (
 	"context"
@@ -86,17 +86,17 @@ func (r *resolvedSentryEndpoint) close() {
 	}
 }
 
-func (e *Engine) resolveSentryEndpoint(ctx context.Context, sentryKey sentryRequestKey) (*resolvedSentryEndpoint, error) {
-	if endpoint, ok := e.SentryEndpoints[sentryKey.PublicKey]; ok {
+func (s *Signer) resolveSentryEndpoint(ctx context.Context, sentryKey SentryRequestKey) (*resolvedSentryEndpoint, error) {
+	if endpoint, ok := s.sentryEndpoints[sentryKey.PublicKey]; ok {
 		if endpoint.URL == "self" {
-			if err := verifySentryEndpointAdvertises(ctx, e.Connection, sentryKey, "configured self sentry endpoint"); err != nil {
+			if err := verifySentryEndpointAdvertises(ctx, s.conn, sentryKey, "configured self sentry endpoint"); err != nil {
 				return nil, err
 			}
-			return &resolvedSentryEndpoint{client: e.Connection, source: "self"}, nil
+			return &resolvedSentryEndpoint{client: s.conn, source: "self"}, nil
 		}
-		client, cleanup, source, err := e.connectConfiguredSentryEndpoint(ctx, endpoint)
+		client, cleanup, source, err := s.connectConfiguredSentryEndpoint(ctx, endpoint)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect sentry endpoint for %s: %w", sentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
+			return nil, fmt.Errorf("failed to connect sentry endpoint for %s: %w", SentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
 		}
 		resolved := &resolvedSentryEndpoint{client: client, source: source, cleanup: cleanup}
 		if err := verifySentryEndpointAdvertises(ctx, client, sentryKey, source); err != nil {
@@ -106,13 +106,13 @@ func (e *Engine) resolveSentryEndpoint(ctx context.Context, sentryKey sentryRequ
 		return resolved, nil
 	}
 
-	if err := verifySentryEndpointAdvertises(ctx, e.Connection, sentryKey, "current signer"); err != nil {
-		return nil, fmt.Errorf("no sentry endpoint configured for %s and current signer does not advertise a matching sentry component: %w", sentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
+	if err := verifySentryEndpointAdvertises(ctx, s.conn, sentryKey, "current signer"); err != nil {
+		return nil, fmt.Errorf("no sentry endpoint configured for %s and current signer does not advertise a matching sentry component: %w", SentryComponentLabel(sentryKey.ComponentKeyType, sentryKey.PublicKey), err)
 	}
-	return &resolvedSentryEndpoint{client: e.Connection, source: "current signer"}, nil
+	return &resolvedSentryEndpoint{client: s.conn, source: "current signer"}, nil
 }
 
-func (e *Engine) connectConfiguredSentryEndpoint(ctx context.Context, endpoint config.SentryEndpointConfig) (*signerclient.Client, func(), string, error) {
+func (s *Signer) connectConfiguredSentryEndpoint(ctx context.Context, endpoint config.SentryEndpointConfig) (*signerclient.Client, func(), string, error) {
 	token, err := readSentryEndpointToken(endpoint.TokenFile)
 	if err != nil {
 		return nil, nil, "", err
@@ -138,7 +138,7 @@ func (e *Engine) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 		if signerPort == 0 {
 			signerPort = config.DefaultRESTPort
 		}
-		progressOut := e.signerProgressWriter()
+		progressOut := s.signerProgressWriter()
 		client, cleanup, err := connect.ConnectSentryWithTunnel(ctx, connect.SentryTunnelConfig{
 			Host:           parsed.Hostname(),
 			SSHPort:        sshPort,
@@ -160,11 +160,11 @@ func (e *Engine) connectConfiguredSentryEndpoint(ctx context.Context, endpoint c
 
 // DiscoverSentryComponentKeys queries one endpoint and returns
 // sentry component public keys that can be mapped for guarded signing.
-func (e *Engine) DiscoverSentryComponentKeys(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredSentryComponentKey, error) {
+func (s *Signer) DiscoverSentryComponentKeys(ctx context.Context, endpoint config.ClientEndpointConfig) ([]DiscoveredSentryComponentKey, error) {
 	var client sentryComponentClient
 	var cleanup func()
 	if endpoint.URL == "self" {
-		client = e.Connection
+		client = s.conn
 	} else {
 		resolved := config.SentryEndpointConfig{
 			URL:            endpoint.URL,
@@ -174,7 +174,7 @@ func (e *Engine) DiscoverSentryComponentKeys(ctx context.Context, endpoint confi
 			IdentityFile:   endpoint.IdentityFile,
 			KnownHostsPath: endpoint.KnownHostsPath,
 		}
-		c, closeFn, _, err := e.connectConfiguredSentryEndpoint(ctx, resolved)
+		c, closeFn, _, err := s.connectConfiguredSentryEndpoint(ctx, resolved)
 		if err != nil {
 			return nil, classifySentryDiscoveryConnectError(err)
 		}
@@ -297,14 +297,14 @@ func discoverSentryComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredSentryCo
 		}
 		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
 		if err != nil {
-			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Sentry Key ID %q: %v", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), key.Address, err)
+			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Sentry Key ID %q: %v", ErrSentryDiscoveryInvalidMetadata, SentryComponentLabel(key.KeyType, publicKey), key.Address, err)
 		}
-		expectedSelector, err := sentryComponentSelector(key.KeyType, publicKey)
+		expectedSelector, err := SentryComponentSelector(key.KeyType, publicKey)
 		if err != nil {
 			return nil, fmt.Errorf("%w: failed to derive Sentry Key ID for sentry public key %s: %v", ErrSentryDiscoveryInvalidMetadata, shortSentryPublicKeyHex(publicKey), err)
 		}
 		if selector != expectedSelector {
-			return nil, fmt.Errorf("%w: sentry component %s advertised selector %s, want %s", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), selector, expectedSelector)
+			return nil, fmt.Errorf("%w: sentry component %s advertised selector %s, want %s", ErrSentryDiscoveryInvalidMetadata, SentryComponentLabel(key.KeyType, publicKey), selector, expectedSelector)
 		}
 		if _, ok := seen[publicKey]; ok {
 			continue
@@ -325,21 +325,21 @@ func discoverSentryComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredSentryCo
 	return discovered, nil
 }
 
-func (e *Engine) signerProgressWriter() io.Writer {
-	if e == nil || e.Connection == nil {
+func (s *Signer) signerProgressWriter() io.Writer {
+	if s == nil || s.conn == nil {
 		return nil
 	}
-	e.Connection.Mu.Lock()
-	defer e.Connection.Mu.Unlock()
-	return e.Connection.SignerProgressOut
+	s.conn.Mu.Lock()
+	defer s.conn.Mu.Unlock()
+	return s.conn.SignerProgressOut
 }
 
-func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentClient, sentryKey sentryRequestKey, source string) error {
+func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentClient, sentryKey SentryRequestKey, source string) error {
 	expectedPublicKey, err := normalizeSentryPublicKeyHex(sentryKey.PublicKey)
 	if err != nil {
 		return fmt.Errorf("invalid expected sentry public key: %w", err)
 	}
-	expectedSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, expectedPublicKey)
+	expectedSelector, err := SentryComponentSelector(sentryKey.ComponentKeyType, expectedPublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to derive expected Sentry Key ID: %w", err)
 	}
