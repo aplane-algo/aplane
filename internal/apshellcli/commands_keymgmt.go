@@ -11,7 +11,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
-	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
 func (r *REPLState) cmdGenerate(args []string, _ interface{}) error {
@@ -39,15 +38,6 @@ func (r *REPLState) cmdGenerate(args []string, _ interface{}) error {
 	r.printf("Generated %s key: %s\n", keytypefmt.Display(result.KeyType), result.Address)
 
 	return nil
-}
-
-func expandGenerateAddressListParams(
-	keyType string,
-	params map[string]string,
-	keyTypes []signerapi.KeyTypeInfo,
-	resolver cmdspec.AddressListResolver,
-) (map[string]string, error) {
-	return cmdspec.ExpandGenerateAddressListParams(keyType, params, keyTypes, resolver)
 }
 
 func (r *REPLState) cmdDelete(args []string, _ interface{}) error {

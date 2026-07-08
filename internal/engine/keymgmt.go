@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/cmdspec"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
@@ -37,7 +36,7 @@ func (e *Engine) GenerateKey(ctx context.Context, keyType string, params map[str
 		if err != nil {
 			return nil, err
 		}
-		params, err = cmdspec.ExpandGenerateAddressListParams(keyType, params, keyTypes, e.NewAddressResolver())
+		params, err = ExpandGenerateAddressListParams(keyType, params, keyTypes, e.NewAddressResolver())
 		if err != nil {
 			return nil, err
 		}
