@@ -16,6 +16,7 @@ import (
 // to signer-side code, which owns the keys it reports on.
 var clientPackageDirs = []string{
 	"../../internal/engine",
+	"../../internal/engine/guarded",
 	"../../internal/apshellapp",
 	"../../internal/apshellcli",
 	"../../internal/clientsign",
