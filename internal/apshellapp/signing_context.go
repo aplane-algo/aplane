@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/aplane-algo/aplane/internal/engine"
+	"github.com/aplane-algo/aplane/internal/keytypefmt"
 )
 
 func signingContextDetailsFromEngine(signingCtx *engine.SigningContext) SigningContextDetails {
@@ -19,8 +20,17 @@ func signingContextDetailsFromEngine(signingCtx *engine.SigningContext) SigningC
 		KeyType:        signingCtx.KeyType,
 		SigSize:        signingCtx.SigSize,
 		IsLogicSig:     signingCtx.IsLSig,
-		DisplayKeyType: signingCtx.DisplayKeyType(),
+		DisplayKeyType: displaySigningKeyType(signingCtx.KeyType, signingCtx.IsLSig),
 	}
+}
+
+// displaySigningKeyType renders the human-readable signing key-type label.
+// Presentation lives here in the UI layer, not in the engine.
+func displaySigningKeyType(keyType string, isLogicSig bool) string {
+	if isLogicSig {
+		return keytypefmt.Display(keyType) + " lsig"
+	}
+	return "Ed25519 key"
 }
 
 // ResolveSigningContext resolves the signer-facing signing context for an address or alias.

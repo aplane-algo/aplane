@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/keytypefmt"
+	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
 
@@ -30,7 +30,7 @@ func (e *Engine) GenerateKey(ctx context.Context, keyType string, params map[str
 	// whitelist's "recipients") before handing off to the signer, which has no
 	// alias/set knowledge. Done here — not in the REPL layer — so REPL, JS, and
 	// MCP callers all behave identically.
-	keyType = keytypefmt.Canonicalize(keyType)
+	keyType = keytypecatalog.Canonicalize(keyType)
 	if len(params) > 0 {
 		keyTypes, err := e.ListKeyTypes(ctx)
 		if err != nil {
