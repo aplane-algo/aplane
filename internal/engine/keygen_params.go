@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package cmdspec
+package engine
 
 // Shared resolution of address-list creation parameters for `generate`.
-// Lives here (not in the REPL layer) so every caller — REPL, JS, MCP — that
-// generates a key through the engine gets identical behavior.
+// Lives in the engine (not the REPL/cmdspec UI layer) so every caller — REPL,
+// JS, MCP — that generates a key through the engine gets identical behavior,
+// and so the engine does not depend on UI parsing packages.
 
 import (
 	"fmt"
@@ -15,6 +16,11 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/signerapi"
 )
+
+// addressListResolver resolves alias/@set inputs to concrete addresses.
+type addressListResolver interface {
+	ResolveList(inputs []string) ([]string, error)
+}
 
 // ExpandGenerateAddressListParams resolves any address[]-typed creation params
 // (for example a whitelist LogicSig's "recipients") for the given key type:
@@ -26,7 +32,7 @@ func ExpandGenerateAddressListParams(
 	keyType string,
 	params map[string]string,
 	keyTypes []signerapi.KeyTypeInfo,
-	resolver AddressListResolver,
+	resolver addressListResolver,
 ) (map[string]string, error) {
 	if len(params) == 0 {
 		return params, nil
