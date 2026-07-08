@@ -168,7 +168,9 @@ default-enabled, while `aplane.falcon1024-sentry-ed25519.v1`,
 the current identity enables them from the library. `aplane.ed25519.v1` is the
 Ed25519 LogicSig DSA provider, distinct from the native `ed25519` signing key;
 it also remains the base provider for Ed25519-backed composed templates such as
-`aplane.ed25519-whitelist.v1`.
+`aplane.ed25519-whitelist.v1`. See `docs/ARCH_KEYTYPE_AXES.md` for the exact
+split between native `ed25519`, the `aplane.ed25519` LogicSig routing family,
+and the concrete `aplane.ed25519.v1` key type.
 Opt-in state records are plaintext identity-scoped metadata under
 `identities/<identity>/keytypes/<key_type>.json`; they affect discovery and key
 creation, not the ability to sign with keys that already exist. Mnemonic import

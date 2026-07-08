@@ -57,6 +57,21 @@ key type's own display label.
 > type's own label, not its routing key). The method is the only one that is the
 > registry routing key — and its name now says so.
 
+Ed25519 is the canonical example because the native key type and the LogicSig
+DSA family share the same cryptographic primitive but intentionally use different
+registry names:
+
+| String | What it is | Meaning |
+|---|---|---|
+| `ed25519` | Native key type and native routing family | Standard Algorand Ed25519 account signing. It does not use a LogicSig, is default-enabled, and in this legacy/native case the key type and family are the same string. |
+| `aplane.ed25519` | Qualified LogicSig DSA routing family | APlane's Ed25519-inside-LogicSig registry family. It is not a creatable key type; it is the family-keyed registry bucket for LogicSig metadata, keygen, signing, and mnemonic ops. The `aplane.` qualifier prevents collision with native `ed25519`. |
+| `aplane.ed25519.v1` | Versioned concrete LogicSig DSA key type | Version 1 of the APlane Ed25519 LogicSig DSA provider. Users can enable/create/import this key type; it signs with Ed25519, but verification happens inside TEAL via `ed25519verify_bare`. |
+
+For composed templates, the key type's own label and its routing key can differ
+again: `aplane.ed25519-whitelist.v1` names the whitelist template, while its
+`RoutingFamily()` is `aplane.ed25519` because private-key operations delegate to
+the Ed25519 LogicSig base.
+
 ---
 
 ## Classify — key type → category facts
