@@ -65,6 +65,48 @@ func TestClientStateDoesNotImportUILayer(t *testing.T) {
 	}
 }
 
+// guardedAllowedImports is the pinned dependency surface of the isolated
+// guarded (sentry) signing package. The guarded flow is the most
+// safety-critical client path, so its imports are kept small and reviewed:
+// adding an entry here should be a conscious decision, and the package must
+// never import internal/engine (the facade that embeds it).
+var guardedAllowedImports = map[string]bool{
+	modulePrefix + "/internal/cache":            true,
+	modulePrefix + "/internal/clientsign":       true,
+	modulePrefix + "/internal/config":           true,
+	modulePrefix + "/internal/engine/connect":   true,
+	modulePrefix + "/internal/lsig":             true,
+	modulePrefix + "/internal/sentry/canonical": true,
+	modulePrefix + "/internal/sentry/keytypes":  true,
+	modulePrefix + "/internal/signerapi":        true,
+	modulePrefix + "/internal/signerclient":     true,
+	modulePrefix + "/internal/signing":          true,
+	modulePrefix + "/internal/tokenfile":        true,
+	modulePrefix + "/internal/txnutil":          true,
+}
+
+// TestGuardedPackageStaysIsolated pins the guarded package's dependency
+// boundary: it must not import internal/engine (no cycle back into the facade
+// that embeds it), and every in-module import must be on the reviewed
+// allowlist. This keeps the safety-critical guarded orchestration auditable in
+// isolation.
+func TestGuardedPackageStaysIsolated(t *testing.T) {
+	imports := directImports(t)
+	imps, ok := imports[modulePrefix+"/internal/engine/guarded"]
+	if !ok {
+		t.Fatal("internal/engine/guarded not found in module package list")
+	}
+	for _, imp := range imps {
+		if imp == modulePrefix+"/internal/engine" {
+			t.Errorf("internal/engine/guarded imports internal/engine: the guarded package must stay isolated from the engine facade that embeds it")
+			continue
+		}
+		if strings.HasPrefix(imp, modulePrefix+"/") && !guardedAllowedImports[imp] {
+			t.Errorf("internal/engine/guarded imports %s, which is not on the reviewed guardedAllowedImports allowlist; add it there deliberately if the dependency is intended", imp)
+		}
+	}
+}
+
 // directImports returns each module package's direct import list.
 func directImports(t *testing.T) map[string][]string {
 	t.Helper()
