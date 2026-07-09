@@ -116,7 +116,8 @@ This separation ensures:
 
 ```
 internal/engine/
-├── engine.go              # Engine struct, NewEngine(), configuration options
+├── core.go                # Shared client infrastructure and runtime state
+├── engine.go              # Engine facade embedding *Core, constructor, options
 ├── errors.go              # Sentinel errors (ErrNoAlgodClient, ErrNotConnected, etc.)
 ├── results.go             # Result types (StatusResult, BalanceResult, etc.)
 ├── accounts.go            # Account queries, balance checks, participation status
@@ -127,11 +128,21 @@ internal/engine/
 ├── assets.go              # ASA info, resolver-backed metadata access
 ├── atomic.go              # Atomic transaction group helpers
 ├── cache.go               # Alias and set management
-├── connect/               # Signer HTTP client and SSH tunnel lifecycle state
-├── connection.go          # Signer connection (direct and SSH tunnel)
+├── connect/               # Signer HTTP requests and SSH tunnel lifecycle state
+│   ├── client.go          # Signer client construction and request helpers
+│   ├── lifecycle.go       # Connect/disconnect and tunnel lifecycle
+│   ├── sentry_endpoint.go # Sentry endpoint connection helpers
+│   ├── signing.go         # Signer-facing plan/simulate/sign requests
+│   └── state.go           # Mutex-protected ConnectionState
+├── connection.go          # Core-facing connection facade
 ├── group.go               # PreparedGroup, grouped preparation and execution
-├── guarded_submit.go      # Guarded-account sign/assemble submission flow
+├── guarded.go             # Guarded package wiring and public re-exports
+├── guarded/               # Isolated guarded-account client orchestration
+│   ├── discovery.go       # Sentry endpoint/key discovery
+│   ├── signer.go          # Narrow dependency surface and Signer type
+│   └── submit.go          # Component signing, assembly, and submission
 ├── init.go                # Package initialization
+├── keygen_params.go       # Key-generation parameter normalization
 ├── keymgmt.go             # Key management operations
 ├── keyreg.go              # Key registration (online/offline)
 ├── output_error.go        # Output/error formatting helpers for results
@@ -141,7 +152,6 @@ internal/engine/
 ├── plugin_signing.go      # Shared helpers for plugin transaction submission
 ├── plugin_transactions.go # Plugin transaction processing
 ├── rekey.go               # Rekey/unrekey operations
-├── sentry_endpoint.go     # Sentry endpoint resolution for guarded signing
 ├── signer_cache.go        # Signer cache helpers and guarded metadata access
 ├── signing.go             # SigningContext, auth address handling
 ├── status_sync.go         # /status keyset-revision synchronization
@@ -167,26 +177,37 @@ or ambiguous symbolic references fail instead of silently choosing an asset.
 
 ## Engine Structure
 
-### Core Type
+### Core Infrastructure and Engine Facade
 
 ```go
-// Engine contains all business logic and state, independent of any UI.
-type Engine struct {
-    // State owns APCLIENT_DATA, network, algod, and client-side caches.
+// Core owns infrastructure shared by Engine domain operations.
+type Core struct {
     *clientstate.State
-
-    // Connection owns signer HTTP client and SSH tunnel lifecycle.
     Connection *connect.ConnectionState
+    // cache watcher, signer-cache synchronization, execution flags,
+    // and sentry endpoint configuration
+}
 
-    // watcher owns disk-backed client cache refresh behavior.
-    watcher *clientstate.CacheWatcher
-
-    // Configuration
-    WriteMode bool
-    Verbose   bool // Controls detailed signing output (default: false)
-    Simulate  bool // Simulate mode (default: false)
+// Engine is the application facade. Domain operations are methods on Engine
+// and reach shared infrastructure through the embedded Core.
+type Engine struct {
+    *Core
 }
 ```
+
+`clientstate.State` owns the client data directory, selected network, algod
+client, and client-side caches. `connect.ConnectionState` owns signer HTTP and
+SSH tunnel lifecycle state. `Core` adds the client-data lock, cache watcher,
+signer-cache synchronization, and shared address/signability/asset resolution.
+Domain command operations such as payments, assets, apps, key management, and
+guarded signing remain methods on `Engine`.
+
+Guarded signing is intentionally isolated in `internal/engine/guarded`. It does
+not import `internal/engine`; the facade constructs a short-lived
+`guarded.Signer` from concrete connection/cache/algod dependencies plus a
+narrow read-only signer-cache view. `guarded.go` owns that wiring and re-exports
+the discovery types and error sentinels used by existing engine callers. The
+dependency and exported-surface boundaries are pinned by `test/arch`.
 
 Submission and confirmation diagnostics are returned on typed result values as
 `Output` strings and structured warnings. Shell rendering lives in

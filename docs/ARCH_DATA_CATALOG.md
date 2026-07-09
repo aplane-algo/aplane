@@ -64,13 +64,13 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Signer data root | authoritative root | `APSIGNER_DATA` | `storepaths.Paths` and startup path resolution | `internal/storepaths`, `cmd/apsigner`, installers | Required for signer startup; systemd-managed roots reject manual startup unless explicitly allowed. |
-| Process config | authoritative config | `APSIGNER_DATA/config.yaml` | `config.ServerConfig` snapshot | `internal/config`, `cmd/apsigner`, `internal/signerapp/admin` | Unknown fields reject; mutable writes use process config lock; tests in `internal/config` and admin settings tests. |
-| Network config | authoritative config section | `config.yaml` `networks.<token>` and `teal_compile_network` | algod map and genesis resolver | `internal/config`, `cmd/apsigner` | Token syntax and genesis hash collisions fail closed; see `docs/ARCH_NETWORKS.md`. |
+| Signer data root | authoritative root | `APSIGNER_DATA` | `storepaths.Paths` and startup path resolution | `internal/serverconfig`, `internal/bootstrap/signer`, `internal/storepaths`, installers | Required for signer startup; systemd-managed roots reject manual startup unless explicitly allowed. |
+| Process config | authoritative config | `APSIGNER_DATA/config.yaml` | `serverconfig.ServerConfig` snapshot | `internal/serverconfig`, `internal/bootstrap/signer`, `internal/signerapp/admin` | Unknown fields reject; mutable writes use process config lock; tests in `internal/serverconfig` and admin settings tests. |
+| Network config | authoritative config section | `config.yaml` `networks.<token>` and `teal_compile_network` | algod map and genesis resolver | `internal/serverconfig`, `internal/signerapp/daemon` | Token syntax and genesis hash collisions fail closed; see `docs/ARCH_NETWORKS.md`. |
 | SSH host key | secret server credential | `.ssh/ssh_host_key` | `sshtunnel.Server` host key | `internal/sshtunnel`, startup/install | Generated locally; clients pin through known-hosts flow. |
-| IPC socket path | runtime endpoint | default `<data_dir>/aplane.sock` or absolute `ipc_path` | local admin transport listener | `cmd/apsigner`, `internal/adminproto`, `internal/transport` | IPC path can live outside data root; local admin protocol requires passphrase auth. |
+| IPC socket path | runtime endpoint | default `<data_dir>/aplane.sock` or absolute `ipc_path` | local admin transport listener | `internal/signerapp/daemon`, `internal/signerapp/ipcbind`, `internal/adminproto`, `internal/transport` | IPC path can live outside data root; local admin protocol requires passphrase auth. |
 | Store mutation lock | runtime/durable coordination | `.apstore.lock` | cooperative store lock | `internal/storelock`, `internal/signerapp/storemut` | Serializes live signer and local `apstore` mutations. |
-| Audit log | authoritative audit trail | `audit.log` JSONL | append-only audit logger | `internal/signerapp/audit`, `cmd/apsigner` | Mode `0600`, rotated by size; not authority for signing or recovery. |
+| Audit log | authoritative audit trail | `audit.log` JSONL | append-only audit logger | `internal/signerapp/audit`, `internal/signerapp/daemon` | Mode `0600`, rotated by size; not authority for signing or recovery. |
 | Signer ASA cache key | cache secret | `cache/.cache_key` | HMAC verifier for signer ASA cache | `internal/cache`, `internal/signerapp/asametadata` | Tampered cache files reject and rebuild from seed where applicable. |
 | Signer ASA cache | cache/display | `cache/<network>_asa_cache.json` | per-operation ASA metadata lookup | `internal/signerapp/asametadata`, `internal/asa` | Signed cache; built-in registry seeds; not authority for policy enforcement. |
 | Managed backup locker | authoritative backup inventory | `backups/<identity>/*.tar.gz` | backup list/restore preview/apply plans | `internal/backup`, `internal/signerapp/backupadmin` | Imported archives are validated before publication; archive payloads are encrypted `.apb`. |
@@ -167,8 +167,8 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 |---|---|---|---|---|---|
 | Network context token | authoritative local namespace | config map key/string | selected client context and signer policy bucket | `internal/config`, `docs/ARCH_NETWORKS.md` | Filesystem-safe syntax; not cryptographic chain identity. |
 | Built-in genesis mapping | source-defined authority | `internal/config/genesishash.go` | genesis hash resolver | `internal/config` | Built-in Algorand mappings cannot be remapped. |
-| Custom genesis mapping | authoritative signer config | `server config networks.<token>.genesis_hash` | resolver entries | `internal/config`, `cmd/apsigner` | Duplicate or malformed hashes reject startup/config load. |
-| Algod endpoint config | authoritative endpoint config | client/signer `networks.<token>.algod` | algod client construction | `internal/config`, `internal/engine`, `cmd/apsigner` | Missing client algod server rejects shell startup for active network. |
+| Custom genesis mapping | authoritative signer config | `server config networks.<token>.genesis_hash` | resolver entries | `internal/config`, `internal/serverconfig` | Duplicate or malformed hashes reject startup/config load. |
+| Algod endpoint config | authoritative endpoint config | client/signer `networks.<token>.algod` | algod client construction | `internal/config`, `internal/serverconfig`, `internal/engine`, `internal/signerapp/daemon` | Missing client algod server rejects shell startup for active network. |
 | ASA built-in registry | source-defined metadata | `internal/asa/registry` | seed data and symbolic fallback | `internal/asa` | Cache-backed current-network entries take precedence; ambiguity rejects. |
 
 ## Policy Model
@@ -199,8 +199,8 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| HTTP error response | wire contract | `signerapi.ErrorResponse` | non-2xx JSON error | `pkg/signerapi`, `cmd/apsigner` | Contracted in `ARCH_HTTP_API.md`. |
-| Status response | wire projection | authenticated identity runtime state | `signerapi.StatusResponse` | `cmd/apsigner`, `internal/signerapp/rest` | `keyset_revision` is process-local, not durable. |
+| HTTP error response | wire contract | `signerapi.ErrorResponse` | non-2xx JSON error | `pkg/signerapi`, `internal/signerapp/daemon`, `internal/signerapp/svcerr` | Contracted in `ARCH_HTTP_API.md`. |
+| Status response | wire projection | authenticated identity runtime state | `signerapi.StatusResponse` | `internal/signerapp/daemon`, `internal/signerapp/rest`, `pkg/signerapi` | `keyset_revision` is process-local, not durable. |
 | Keys response | wire projection | loaded key snapshot | `signerapi.KeysResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Sentry-key rows use Sentry Key ID as `address`; guarded rows expose non-secret params. |
 | Key info row | wire projection | loaded key metadata | `signerapi.KeyInfo` | `internal/signerapp/rest` | `is_component_key`/`is_spending_account` disambiguate selectors from accounts. |
 | Key types response | wire projection | enabled providers/templates and sentry refs | `signerapi.KeyTypesResponse` | `internal/signerapp/rest` | Runtime args are generation metadata, not existing-key signing args. |
@@ -212,7 +212,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Mutation report | wire projection | canonicalization effects | `signerapi.MutationReport` | `internal/signerapp/signing` | Observability only, not durable authority. |
 | Cancel sign request/response | wire request/projection | live request registry lookup | `signerapi.CancelSign*` | `internal/signerapp/approval` | Only `/sign` request IDs are live cancel handles; component/assembly IDs are correlation only. |
 | Admin generate DTOs | wire request/projection | enabled key type plus parameters | `signerapi.AdminGenerate*` | `internal/signerapp/keyadmin` | No mnemonic in REST response. |
-| Admin delete DTO | wire request/projection | address query parameter | delete response or error | `cmd/apsigner`, `internal/signerapp/keyadmin` | Missing address 400; missing key 404. |
+| Admin delete DTO | wire request/projection | address query parameter | delete response or error | `internal/signerapp/daemon`, `internal/signerapp/keyadmin`, `pkg/signerapi` | Missing address 400; missing key 404. |
 | Component sign request | wire request | canonical group bytes and target indices | `signerapi.ComponentSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Role is `user` or `sentry`; `component_key` means guarded account for `user` and Sentry Key ID for `sentry`; omitted request IDs are generated. |
 | Component sign response | wire projection | per-target component signatures | `signerapi.ComponentSignResponse` | `internal/signerapp/signing` | Signature scheme is user key type or sentry key type. |
 | Guarded assembly request | wire request | group bytes plus user/sentry signatures | `signerapi.GuardedAssemblyRequest` | `internal/signerapp/signing` | Verifies sentry signature against embedded key in local account key. |

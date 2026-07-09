@@ -161,7 +161,7 @@ files and ownership boundaries, prefer [ARCH_SPEC.md](ARCH_SPEC.md).
 aplane/
 ├── cmd/                           # Application entry points
 │   ├── apshell/                   # Thin shell binary entrypoint
-│   ├── apsigner/                 # Signing server, HTTP/IPC/SSH adapters
+│   ├── apsigner/                 # Thin signer entrypoint: flags, providers, handoff
 │   ├── apadmin/                   # Admin TUI over IPC or SSH admin transport
 │   ├── apconsole/                 # Secure-machine console wrapper
 │   ├── apapprover/                # Approval-only IPC client
@@ -189,6 +189,7 @@ aplane/
 │   ├── cache/                     # Disk-backed client caches
 │   ├── addressbook/, refname/      # Address resolution and persisted alias/set name rules
 │   ├── signerapp/                 # Signer runtime packages
+│   │   ├── daemon/                # Process composition and HTTP/IPC/SSH runtime
 │   │   ├── startup/               # Startup validation and identity runtime assembly
 │   │   ├── identity/              # Identity runtime, registry, config, lifecycle
 │   │   ├── runtime/               # Lock state

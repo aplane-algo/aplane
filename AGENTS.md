@@ -28,7 +28,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 
 ### Binaries (`cmd/`)
 - `cmd/apshell/`: Interactive shell, scripting environment, plugin host, and MCP surface
-- `cmd/apsigner/`: Signing server, approval coordinator, HTTP API, IPC admin surface, and SSH tunnel server
+- `cmd/apsigner/`: Thin signing-daemon entrypoint for flags and provider registration; `internal/signerapp/daemon` owns the HTTP/IPC/SSH runtime
 - `cmd/apadmin/`: TUI and batch admin client over IPC
 - `cmd/apconsole/`: Secure-machine console wrapper for apshell/apadmin/apsigner panes
 - `cmd/apapprover/`: Approval-only admin client over IPC
@@ -38,6 +38,7 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `cmd/appass-file/`: Dev-only plaintext passphrase helper (insecure)
 - `cmd/appass-systemd-creds/`: Production passphrase helper using systemd-creds (TPM2/host key)
 - `cmd/approbe/`: Installer/helper liveness probe for signer IPC reachability
+- `cmd/aplocalnet/`: LocalNet setup TUI/CLI for algod reachability, client/signer network config, plugin activation, and KMD plugin environment
 - `cmd/compile_teal/`: Dev/build helper that compiles TEAL source to generated Go bytecode
 - `cmd/configdoc/`: Documentation generator for configuration
 - `cmd/applugin-checksum/`: Checksum generator for plugins

@@ -365,9 +365,10 @@ Machine-checked invariants by module:
 | `guarded_assembly.tla` | A1, A6, A7, A8, A14, no-partial-output (component assembly verification) | 270,920 | 1 |
 | `plugin_signing.tla` | PS2-PS7 (plugin trust boundary: digest, review fail-closed, plan preservation, byte match, approval gates) | 3,852 | 1 |
 
-Not yet machine-checked: S1-S13 (entire signing-authority surface), A1-A15
-(guarded signing), AP1-AP3 (approval coordinator; modeled by construction),
-I4-I6, IS1-IS6, P1-P3, P8-P10, L1-L3, L9-L11.
+Not yet machine-checked: S1-S13 (entire signing-authority surface), the guarded
+signing invariants not covered by `guarded_assembly.tla` (A2-A5, A9-A13, and
+A15), AP1-AP3 (approval coordinator; modeled by construction), I4-I6, IS1-IS6,
+P1-P3, P8-P10, L1-L3, L9-L11.
 
 ### Verification methodology by module
 
