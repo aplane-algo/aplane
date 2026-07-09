@@ -655,7 +655,18 @@ admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
 | Keystore paths | `internal/storepaths.Paths` value types (no process-global setters) |
 | Cache paths | `cache.Store` value types |
 
-`cmd/apsigner` is the HTTP/IPC adapter layer and wires subsystems together. Signer-side application failures use typed `ServiceError` values mapped to HTTP status at the adapter edge. Signer request lifecycle state is owned below the HTTP layer: `pkg/signerapi` defines the request/cancel DTOs, `cmd/apsigner` routes `/sign` and `/sign/cancel`, `internal/signerapp/rest` binds live `/sign` request IDs to identity runtimes, `internal/signerapp/approval` owns pending/canceled lifecycle state, and `internal/signerclient` is the repo-owned client that creates request IDs and sends explicit cancellation.
+`cmd/apsigner` is a thin binary adapter: it parses flags, registers the
+providers shipped in the binary, and hands off to `internal/signerapp/daemon`.
+The daemon package owns HTTP mux registration and handlers, IPC/SSH runtime
+wiring, and final transport adaptation. Signer-side application failures use
+typed `ServiceError` values mapped to HTTP status at that transport edge.
+Signer request lifecycle state is owned below the HTTP layer:
+`pkg/signerapi` defines the request/cancel DTOs,
+`internal/signerapp/daemon` routes `/sign` and `/sign/cancel`,
+`internal/signerapp/rest` binds live `/sign` request IDs to identity runtimes,
+`internal/signerapp/approval` owns pending/canceled lifecycle state, and
+`internal/signerclient` is the repo-owned client that creates request IDs and
+sends explicit cancellation.
 
 ### Server Responsibilities
 
@@ -815,7 +826,7 @@ decommission waits for release before completing.
 The server-side plan/sign boundary is split as follows:
 
 - startup option resolution, validation, identity assembly, and lifecycle entrypoint in `internal/signerapp/startup`,
-- transport adapters/builders for HTTP, IPC, and SSH in `cmd/apsigner`,
+- transport adapters/builders for HTTP, IPC, and SSH in `internal/signerapp/daemon`,
 - server-side admin protocol/session state machine in `internal/adminproto`,
 - process-root identity-targeted admin facade for server-originated admin traffic in `internal/adminproto.AdminHub` and `internal/signerapp/daemon/admin_hub.go`,
 - signer-backed admin protocol services in `internal/signerapp/daemon/admin_services.go`,
@@ -831,7 +842,9 @@ The server-side plan/sign boundary is split as follows:
 - template registration and reload lifecycle in `internal/signerapp/templates`,
 - template library, install, show, import, remove, activate, and deactivate workflows in `internal/signerapp/templateadmin`,
 - SSH token provisioning approval and audit service in `internal/signerapp/sshprovision`,
-- append-only audit logging in `internal/signerapp/audit`, with HTTP/request attribution and operational side effects wired from `cmd/apsigner`.
+- append-only audit logging in `internal/signerapp/audit`, with HTTP/request
+  attribution and operational side effects wired from
+  `internal/signerapp/daemon`.
 
 Transport adapters should not own:
 
@@ -1476,10 +1489,13 @@ The repo uses:
 
 - package-level unit tests beside source,
 - integration tests in `test/integration`,
-- architecture guard tests in `test/arch` that pin signer/client layering
-  (including `client_layering_test.go`, which keeps the client engine core free
-  of UI parsing/formatting imports), family-agnostic core-package imports, and
-  guarded signing route selection on runtime `signing_flow` metadata,
+- architecture guard tests in `test/arch`: `layering_test.go` pins shared/signer
+  dependency direction and family-agnostic core-package imports;
+  `client_layering_test.go` keeps the client engine core free of UI
+  parsing/formatting imports and isolates the guarded package;
+  `guarded_surface_test.go` pins the guarded package's sanctioned exported API;
+  and `signingflow_test.go` pins guarded client routing on runtime
+  `signing_flow` metadata,
 - dedicated test harness packages,
 - analysis tools for security properties,
 - signer API and SDK contract tests backed by JSON fixtures in `test/contracts/signerapi/`.
@@ -1490,15 +1506,23 @@ The repo uses:
   SDK-facing because clients use `keyset_revision` for refresh decisions and
   `approval_wait_seconds` for sizing `/sign` deadlines.
 - machine-checkable TLA+ models under `docs/formal/`, run locally with
-  `make formal-test` and in CI by the Formal Models job. The target checks the
-  `sign_boundary`, `policy_precedence`, `composition`, `lifecycle`,
-  `approval_coordinator`, `approval_composition`, and `lifecycle_composition`
-  TLC modules and requires `tla2tools.jar` through `TLA2TOOLS_JAR` or one of the
-  Makefile's default jar search paths.
+  `make formal-test` and in CI by the Formal Models job. The authoritative
+  `(spec, cfg)` run list and expected metrics live in
+  `docs/formal/metrics.json`. It covers `sign_boundary`,
+  `policy_precedence`, `composition`, `lifecycle`, `approval_coordinator`,
+  `approval_composition`, `lifecycle_composition`, `session_ownership`,
+  `guarded_assembly`, and `plugin_signing`, plus liveness configurations for
+  `approval_coordinator`, `lifecycle`, and `lifecycle_composition`.
+  `make formal-test-deep` uses `docs/formal/metrics_deep.json` for larger
+  pre-release or scheduled bounds. Both targets run
+  `formal-copy-sync-check` first and require `tla2tools.jar` through
+  `TLA2TOOLS_JAR` or one of the Makefile's default jar search paths.
 
 `make integrity-check` is the broad verification target. It chains formatting,
 vet, module-tidy, lint/dead-code/security checks, race tests, cross-builds,
 smoke tests, contract tests, integration tests, and a clean-tree check.
+Formal model checking remains a separate `make formal-test`/CI job and is not
+part of `integrity-check`.
 
 Docker-backed install and topology smoke targets are separate release workflow
 guards:
@@ -1510,9 +1534,19 @@ guards:
   Docker network. It verifies local install layout, shared LocalNet
   reachability, SSH token provisioning, client signer reachability, guarded
   signing, and corridor whitelist enforcement across the Docker network.
+- `make docker-local-release-test` runs the same topology and assertions using
+  published GitHub APlane release assets plus the PyPI and npm SDK packages.
+
+Additional opt-in verification targets include `make soak-test-localnet` for
+long-running LocalNet transaction coverage and
+`make apshell-command-coverage-localnet` for broad shell-command coverage.
 
 The integration harness behavior is part of the effective repository contract:
 
+- `make integration-test` requires
+  `APLANE_INTEGRATION_NETWORK=testnet|localnet`, and fails closed when the
+  profile is absent or invalid; `make integration-test-testnet` and
+  `make integration-test-localnet` are the convenience targets,
 - `make integration-test` regenerates the shared test fixture and `.env.test` before running the suite,
 - the shared fixture lives under `/tmp/aplane-test-env`,
 - the generated signer fixture uses a private runtime directory with `ipc_path: run/aplane.sock`,
@@ -1632,7 +1666,10 @@ Strong existing seams:
 
 Weaker or more coupled areas:
 
-- `cmd/apsigner` owns some operational glue, final transport adaptation, and startup/operator logging,
+- `internal/signerapp/daemon` owns the remaining operational glue, final
+  transport adaptation, and startup/operator logging; `cmd/apsigner` retains
+  only flag parsing, provider registration, manifest/version early exits, and
+  process handoff,
 - `internal/engine` now separates shared infrastructure (`engine.Core`) from the
   domain command methods on `Engine`, is transitively free of UI
   parsing/formatting imports, and the guarded-signing flow lives in the
@@ -1686,7 +1723,8 @@ import-time bundled template/key bytecode reproduction validation, LogicSig
 signing-metadata validation, compiled-provider activation, and per-key rollback
 if the final key-file write fails. Managed backup archives also carry a verified
 policy snapshot under `policy/`, but restore paths do not install that snapshot
-as active policy. `cmd/apsigner` owns the live daemon restore path for both
+as active policy. The apsigner process routes the live restore path through
+`internal/signerapp/daemon` and `internal/signerapp/backupadmin` for both
 `apadmin` and local-IPC `apstore` restore commands. `cmd/apstore` retains the
 local `initialize` path, local `backup import` admission check, `verify`
 inspection command, policy integrity check/sign/verify commands, and `rebuild`
