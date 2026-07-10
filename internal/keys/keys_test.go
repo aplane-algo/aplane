@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -130,30 +129,6 @@ func writeKeyFile(t *testing.T, paths storepaths.Paths, identityID, address stri
 		t.Fatalf("Failed to write key file: %v", err)
 	}
 	return filePath
-}
-
-func TestExtractPublicKeyHex(t *testing.T) {
-	keyJSON, _ := testEd25519Key(t)
-	payload, err := ParsePayload(keyJSON)
-	if err != nil {
-		t.Fatalf("ParsePayload() error = %v", err)
-	}
-	defer payload.ZeroSecrets()
-	if got, want := extractPublicKeyHex(keyJSON), fmt.Sprintf("%x", payload.PublicKey); got != want {
-		t.Fatalf("extractPublicKeyHex() = %q, want %q", got, want)
-	}
-}
-
-func TestExtractCreatedAt(t *testing.T) {
-	keyJSON, _ := testEd25519Key(t)
-	payload, err := ParsePayload(keyJSON)
-	if err != nil {
-		t.Fatalf("ParsePayload() error = %v", err)
-	}
-	defer payload.ZeroSecrets()
-	if got, want := extractCreatedAt(keyJSON), payload.CreatedAt.UTC().Format(time.RFC3339); got != want {
-		t.Fatalf("extractCreatedAt() = %q, want %q", got, want)
-	}
 }
 
 func TestReadAndDecryptFile(t *testing.T) {

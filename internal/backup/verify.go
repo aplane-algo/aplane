@@ -266,7 +266,7 @@ func verifyBundledTemplateMatchesKey(
 	case string(templatestore.TemplateTypeGeneric):
 		compiledBytecode, compiledAddress, err = compileBundledGenericTemplate(ctx, templateYAML, params, opts.AlgodClient)
 	case string(templatestore.TemplateTypeComposed):
-		compiledBytecode, compiledAddress, err = compileBundledComposedTemplate(ctx, templateYAML, fmt.Sprintf("%x", payload.PublicKey), params, opts.AlgodClient)
+		compiledBytecode, compiledAddress, err = compileBundledComposedTemplate(ctx, templateYAML, hex.EncodeToString(payload.PublicKey), params, opts.AlgodClient)
 	default:
 		return fmt.Errorf("backup bundle has unsupported template_type %q", templateType)
 	}

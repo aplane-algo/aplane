@@ -9,7 +9,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
@@ -410,16 +409,6 @@ func signerGeneratedDSAArgSizeForKey(keyType string) int {
 	}
 }
 
-// extractPublicKeyHex extracts the public key hex from key data.
-func extractPublicKeyHex(data []byte) string {
-	payload, err := ParsePayload(data)
-	if err != nil {
-		return ""
-	}
-	defer payload.ZeroSecrets()
-	return fmt.Sprintf("%x", payload.PublicKey)
-}
-
 // logicSigAddress computes the LogicSig address from bytecode.
 func logicSigAddress(bytecode []byte) (string, error) {
 	addr, err := logicSigAddressBytes(bytecode)
@@ -442,15 +431,4 @@ type SigningMetadata struct {
 	Parameters             map[string]string
 	SigningArgs            []StoredSigningArg
 	SigningMetadataVersion int
-}
-
-// extractCreatedAt extracts the created_at timestamp from key data.
-// Returns empty string if not present (legacy keys).
-func extractCreatedAt(data []byte) string {
-	payload, err := ParsePayload(data)
-	if err != nil {
-		return ""
-	}
-	defer payload.ZeroSecrets()
-	return payload.CreatedAt.UTC().Format(time.RFC3339)
 }

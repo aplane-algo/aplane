@@ -4,6 +4,7 @@
 package keys
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -84,7 +85,7 @@ func writeComponentPublicMetadataFromPayload(paths storepaths.Paths, identityID,
 	if err != nil {
 		return fmt.Errorf("invalid Sentry Key ID: %w", err)
 	}
-	env, err := sentryrefs.NewExportEnvelope(componentKey, payload.KeyType, fmt.Sprintf("%x", payload.PublicKey))
+	env, err := sentryrefs.NewExportEnvelope(componentKey, payload.KeyType, hex.EncodeToString(payload.PublicKey))
 	if err != nil {
 		return fmt.Errorf("failed to build component public metadata: %w", err)
 	}
