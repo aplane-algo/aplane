@@ -480,11 +480,60 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsSaltWarnings(t *testing.T) {
 	if warning.Code != KeyScanWarningLogicSigSaltInvalid {
 		t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningLogicSigSaltInvalid)
 	}
-	if !warning.IsLogicSigSaltMetadata() {
-		t.Fatal("warning should be classified as LogicSig salt metadata")
+	if !warning.IsLogicSigInvariantViolation() {
+		t.Fatal("warning should be classified as a LogicSig invariant violation")
 	}
 	if !contains(warning.Message(), "Failed to validate LogicSig salt metadata") {
 		t.Fatalf("warning message = %q", warning.Message())
+	}
+}
+
+// TestKeyPayloadScanWarningClassification pins the typed-error classification
+// chain from codec validation failures to scan warning codes and the audit
+// predicate. LogicSig invariant violations (salt, on-curve, bytecode) must
+// stay audit-visible; see auditRejectedLogicSigKeys in signerapp/templates.
+func TestKeyPayloadScanWarningClassification(t *testing.T) {
+	offCurve := canonicalOffCurveBytecode(t)
+
+	missingSalt := NewGenericLSigPayload("aplane.whitelist.v1", nil, offCurve, 0, "", nil, "")
+	missingSalt.SaltCounter = nil
+
+	onCurvePayload := NewGenericLSigPayload("aplane.whitelist.v1", nil, canonicalOnCurveBytecode(t), 0, "", nil, "")
+
+	missingBytecode := NewGenericLSigPayload("aplane.whitelist.v1", nil, offCurve, 0, "", nil, "")
+	missingBytecode.LogicSigBytecode = nil
+
+	wrongVersion := NewGenericLSigPayload("aplane.whitelist.v1", nil, offCurve, 0, "", nil, "")
+	wrongVersion.SigningMetadataVersion = CurrentSigningMetadataVersion + 1
+
+	_, badHexErr := ParsePayload([]byte(`{"format_version":1,"category":"generic_lsig","key_type":"aplane.whitelist.v1","lsig_bytecode":"zz","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T00:00:00Z"}`))
+
+	cases := []struct {
+		name    string
+		err     error
+		want    KeyScanWarningCode
+		audited bool
+	}{
+		{"missing salt counter", missingSalt.Validate(), KeyScanWarningLogicSigSaltInvalid, true},
+		{"on-curve address", onCurvePayload.Validate(), KeyScanWarningLogicSigAddressInvalid, true},
+		{"missing bytecode", missingBytecode.Validate(), KeyScanWarningParseLogicSigFailed, true},
+		{"undecodable bytecode hex", badHexErr, KeyScanWarningParseLogicSigFailed, true},
+		{"wrong signing metadata version", wrongVersion.Validate(), KeyScanWarningIncompatibleFormat, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.err == nil {
+				t.Fatal("expected a validation error")
+			}
+			got := keyPayloadScanWarningCode(tc.err)
+			if got != tc.want {
+				t.Fatalf("keyPayloadScanWarningCode(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+			warning := KeyScanWarning{Code: got, KeyFile: "test.key", Err: tc.err}
+			if warning.IsLogicSigInvariantViolation() != tc.audited {
+				t.Fatalf("IsLogicSigInvariantViolation() for %q = %v, want %v", got, !tc.audited, tc.audited)
+			}
+		})
 	}
 }
 

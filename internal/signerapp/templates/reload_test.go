@@ -541,6 +541,8 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 		lsigSizes: map[string]int{},
 		scanWarnings: []keys.KeyScanWarning{
 			{Code: keys.KeyScanWarningLogicSigSaltInvalid, KeyFile: "/tmp/BAD.key", Err: keys.ErrMissingLogicSigSaltCounter},
+			{Code: keys.KeyScanWarningLogicSigAddressInvalid, KeyFile: "/tmp/ONCURVE.key", Err: keys.ErrLogicSigAddressOnCurve},
+			{Code: keys.KeyScanWarningParseLogicSigFailed, KeyFile: "/tmp/BADCODE.key", Err: keys.ErrInvalidLogicSigBytecode},
 			{Code: keys.KeyScanWarningReadFailed, KeyFile: "/tmp/OTHER.key", Err: errors.New("read failed")},
 		},
 	}
@@ -562,8 +564,8 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 	if audit.reloads != 1 {
 		t.Fatalf("reload audit calls = %d, want 1", audit.reloads)
 	}
-	if len(audit.rejected) != 1 {
-		t.Fatalf("rejected audit calls = %#v, want one LogicSig salt warning", audit.rejected)
+	if len(audit.rejected) != 3 {
+		t.Fatalf("rejected audit calls = %#v, want the three LogicSig invariant warnings", audit.rejected)
 	}
 	got := audit.rejected[0]
 	if got.identityID != "default" || got.keyFile != "/tmp/BAD.key" {
@@ -571,6 +573,12 @@ func TestReloadAuditsLogicSigSaltScanWarnings(t *testing.T) {
 	}
 	if !strings.Contains(got.reason, string(keys.KeyScanWarningLogicSigSaltInvalid)) || !strings.Contains(got.reason, keys.ErrMissingLogicSigSaltCounter.Error()) {
 		t.Fatalf("rejected reason = %q", got.reason)
+	}
+	if audit.rejected[1].keyFile != "/tmp/ONCURVE.key" || !strings.Contains(audit.rejected[1].reason, string(keys.KeyScanWarningLogicSigAddressInvalid)) {
+		t.Fatalf("on-curve rejection not audited: %#v", audit.rejected[1])
+	}
+	if audit.rejected[2].keyFile != "/tmp/BADCODE.key" || !strings.Contains(audit.rejected[2].reason, string(keys.KeyScanWarningParseLogicSigFailed)) {
+		t.Fatalf("invalid-bytecode rejection not audited: %#v", audit.rejected[2])
 	}
 }
 

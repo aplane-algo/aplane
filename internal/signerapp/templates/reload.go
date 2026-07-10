@@ -193,7 +193,7 @@ func (s *ReloadService) auditRejectedLogicSigKeys(identityID string) {
 		return
 	}
 	for _, warning := range provider.GetScanWarnings() {
-		if !warning.IsLogicSigSaltMetadata() {
+		if !warning.IsLogicSigInvariantViolation() {
 			continue
 		}
 		s.AuditLog.LogKeyRejected(identityID, warning.KeyFile, string(warning.Code)+": "+warning.Reason())

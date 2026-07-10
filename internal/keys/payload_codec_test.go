@@ -335,6 +335,22 @@ func canonicalOffCurveBytecode(t *testing.T) []byte {
 	return nil
 }
 
+func canonicalOnCurveBytecode(t *testing.T) []byte {
+	t.Helper()
+	for counter := 0; counter < 256; counter++ {
+		bytecode := []byte{0x06, 0x81, 0x01, byte(counter)}
+		address, err := logicSigAddressBytes(bytecode)
+		if err != nil {
+			t.Fatalf("logicSigAddressBytes() error = %v", err)
+		}
+		if lsigsalt.IsOnCurve(address) {
+			return bytecode
+		}
+	}
+	t.Fatal("failed to find on-curve test LogicSig bytecode")
+	return nil
+}
+
 func zeroTestBytes(data []byte) {
 	for i := range data {
 		data[i] = 0

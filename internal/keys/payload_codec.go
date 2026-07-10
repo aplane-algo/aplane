@@ -341,7 +341,7 @@ func payloadFromWire(wire payloadWireV1) (*Payload, error) {
 	bytecode, err := decodeCanonicalHex("lsig_bytecode", wire.LogicSigBytecodeHex)
 	if err != nil {
 		crypto.ZeroBytes(privateKey)
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrInvalidLogicSigBytecode, err)
 	}
 	createdAt, err := time.Parse(time.RFC3339, wire.CreatedAt)
 	if err != nil || createdAt.Location() != time.UTC || createdAt.Format(time.RFC3339) != wire.CreatedAt {
@@ -426,7 +426,7 @@ func validateNoLogicSigFields(p *Payload) error {
 
 func validateLogicSigFields(p *Payload) error {
 	if len(p.LogicSigBytecode) == 0 {
-		return incompatibleKeyFormat("%s requires lsig_bytecode", p.Category)
+		return incompatibleKeyFormatErr(fmt.Errorf("%w: %s requires lsig_bytecode", ErrInvalidLogicSigBytecode, p.Category))
 	}
 	if p.SaltCounter == nil {
 		return ErrMissingLogicSigSaltCounter
@@ -436,10 +436,10 @@ func validateLogicSigFields(p *Payload) error {
 	}
 	address, err := logicSigAddressBytes(p.LogicSigBytecode)
 	if err != nil {
-		return incompatibleKeyFormat("failed to derive LogicSig address: %v", err)
+		return incompatibleKeyFormatErr(fmt.Errorf("%w: failed to derive LogicSig address: %v", ErrInvalidLogicSigBytecode, err))
 	}
 	if lsigsalt.IsOnCurve(address) {
-		return incompatibleKeyFormat("logic sig key file address is on-curve")
+		return incompatibleKeyFormatErr(ErrLogicSigAddressOnCurve)
 	}
 	return nil
 }

@@ -27,6 +27,14 @@ import (
 // off-curve address invariant and cannot be safely loaded.
 var ErrMissingLogicSigSaltCounter = errors.New("logic sig key file missing salt_counter")
 
+// ErrLogicSigAddressOnCurve indicates a stored LogicSig key file whose bytecode
+// derives an on-curve address, violating the off-curve salt invariant.
+var ErrLogicSigAddressOnCurve = errors.New("logic sig key file address is on-curve")
+
+// ErrInvalidLogicSigBytecode indicates a LogicSig key file whose stored
+// bytecode is missing, undecodable, or cannot derive an address.
+var ErrInvalidLogicSigBytecode = errors.New("logic sig key file bytecode is missing or invalid")
+
 // ErrIncompatibleKeyFormat indicates a key payload belongs to a state that this
 // runtime no longer loads directly.
 var ErrIncompatibleKeyFormat = errors.New("incompatible key file format")
@@ -80,24 +88,29 @@ func newAddressCollisionError(addressFiles map[string][]string) *AddressCollisio
 }
 
 func keyPayloadScanWarningCode(err error) KeyScanWarningCode {
-	if errors.Is(err, ErrMissingLogicSigSaltCounter) {
+	switch {
+	case errors.Is(err, ErrMissingLogicSigSaltCounter):
 		return KeyScanWarningLogicSigSaltInvalid
-	}
-	reason := strings.ToLower(err.Error())
-	if strings.Contains(reason, "on-curve") {
+	case errors.Is(err, ErrLogicSigAddressOnCurve):
 		return KeyScanWarningLogicSigAddressInvalid
-	}
-	if strings.Contains(reason, "lsig_bytecode") || strings.Contains(reason, "logic sig") {
+	case errors.Is(err, ErrInvalidLogicSigBytecode):
 		return KeyScanWarningParseLogicSigFailed
-	}
-	if errors.Is(err, ErrIncompatibleKeyFormat) {
+	case errors.Is(err, ErrIncompatibleKeyFormat):
 		return KeyScanWarningIncompatibleFormat
+	default:
+		return KeyScanWarningDetectKeyTypeFailed
 	}
-	return KeyScanWarningDetectKeyTypeFailed
 }
 
 func incompatibleKeyFormat(format string, args ...interface{}) error {
-	return fmt.Errorf("%w: %s; restore or regenerate the key file using the current key schema", ErrIncompatibleKeyFormat, fmt.Sprintf(format, args...))
+	return incompatibleKeyFormatErr(fmt.Errorf(format, args...))
+}
+
+// incompatibleKeyFormatErr wraps a payload validation failure so callers can
+// match both ErrIncompatibleKeyFormat and any classification sentinel inside
+// detail (e.g. ErrLogicSigAddressOnCurve).
+func incompatibleKeyFormatErr(detail error) error {
+	return fmt.Errorf("%w: %w; restore or regenerate the key file using the current key schema", ErrIncompatibleKeyFormat, detail)
 }
 
 // KeyScanInfo holds information about a scanned key file.
@@ -173,10 +186,19 @@ func (w KeyScanWarning) Message() string {
 	}
 }
 
-// IsLogicSigSaltMetadata reports whether this warning means a persisted
-// LogicSig key was rejected by the off-curve salt invariant.
-func (w KeyScanWarning) IsLogicSigSaltMetadata() bool {
-	return w.Code == KeyScanWarningLogicSigSaltInvalid
+// IsLogicSigInvariantViolation reports whether this warning means a persisted
+// LogicSig key was rejected by a LogicSig integrity invariant: missing salt
+// metadata, an on-curve address, or missing/undecodable bytecode. The signer
+// audit-logs these rejections because they can indicate key-file tampering.
+func (w KeyScanWarning) IsLogicSigInvariantViolation() bool {
+	switch w.Code {
+	case KeyScanWarningLogicSigSaltInvalid,
+		KeyScanWarningLogicSigAddressInvalid,
+		KeyScanWarningParseLogicSigFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 // KeyScanReport carries loaded keys plus recoverable warnings for skipped files.
