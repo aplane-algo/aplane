@@ -390,7 +390,7 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 
 	payload, err := keys.ParsePayload(keyJSON)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w; if this backup predates the current key schema, re-export it with current apstore or regenerate the key", err)
 	}
 	defer payload.ZeroSecrets()
 	derivedAddress, err := payload.Selector()
@@ -414,9 +414,6 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 		Parameters:             maps.Clone(payload.Parameters),
 		SigningArgs:            append([]keys.StoredSigningArg(nil), payload.SigningArgs...),
 		SigningMetadataVersion: payload.SigningMetadataVersion,
-	}
-	if hasLogicSigBytecode && signingMeta.SigningMetadataVersion == 0 {
-		return "", fmt.Errorf("logic sig key %s is missing signing metadata; re-export with current apstore or regenerate the key", keyType)
 	}
 	templateFingerprint := ""
 	if len(templateYAML) > 0 {
@@ -723,9 +720,8 @@ func (r Restorer) buildKeyTypeRestorePlan(keyType string, hasLogicSigBytecode bo
 	if !hasLogicSigBytecode {
 		return restorePlan{}, nil
 	}
-	if signingMeta.SigningMetadataVersion == 0 {
-		return restorePlan{}, fmt.Errorf("logic sig key %s is missing signing metadata; re-export with current apstore or regenerate the key", keyType)
-	}
+	// ParsePayload guarantees lsig payloads carry the current signing metadata
+	// version, so no missing-metadata branch is needed here.
 
 	if keytypecatalog.IsLibraryVisible(keyType) {
 		if !lsigprovider.Has(keyType) {
@@ -734,18 +730,15 @@ func (r Restorer) buildKeyTypeRestorePlan(keyType string, hasLogicSigBytecode bo
 		return r.activateCompiledProviderPlan(keyType, masterKey), nil
 	}
 
-	if signingMeta.SigningMetadataVersion > 0 {
-		if signingMeta.Category == keys.CategoryGenericLsig {
-			return restorePlan{}, nil
-		}
-		baseKeyType := signingMeta.BaseKeyType
-		if baseKeyType == "" {
-			baseKeyType = keyType
-		}
-		if !lsigprovider.Has(baseKeyType) {
-			return restorePlan{}, fmt.Errorf("base key type %s is not available for restored key type %s", baseKeyType, keyType)
-		}
+	if signingMeta.Category == keys.CategoryGenericLsig {
 		return restorePlan{}, nil
+	}
+	baseKeyType := signingMeta.BaseKeyType
+	if baseKeyType == "" {
+		baseKeyType = keyType
+	}
+	if !lsigprovider.Has(baseKeyType) {
+		return restorePlan{}, fmt.Errorf("base key type %s is not available for restored key type %s", baseKeyType, keyType)
 	}
 	return restorePlan{}, nil
 }
