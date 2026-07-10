@@ -54,7 +54,7 @@ type testNativeSigningProvider struct {
 }
 
 func (p *testNativeSigningProvider) RoutingFamily() string { return p.family }
-func (p *testNativeSigningProvider) LoadKeysFromData(data []byte) (*coresigning.KeyMaterial, error) {
+func (p *testNativeSigningProvider) LoadKeyMaterial(_ coresigning.ProviderKey) (*coresigning.KeyMaterial, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 func (p *testNativeSigningProvider) SignMessage(key *coresigning.KeyMaterial, message []byte) ([]byte, error) {

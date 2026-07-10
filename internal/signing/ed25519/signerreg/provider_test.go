@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
 	"testing"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -56,37 +54,38 @@ func generateValidEd25519Keys(t *testing.T) (publicKey, privateKey []byte) {
 	return pub, priv
 }
 
-// createKeyJSON creates the JSON format used for Ed25519 keys
-func createKeyJSON(t *testing.T, keyType, pubHex, privHex string) []byte {
-	t.Helper()
-
-	data := Ed25519Keys{
-		Type:          keyType,
-		PublicKeyHex:  pubHex,
-		PrivateKeyHex: privHex,
-	}
-
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		t.Fatalf("Failed to marshal key JSON: %v", err)
-	}
-	return jsonBytes
+// createEd25519Payload creates a canonical Ed25519 payload for provider tests.
+func createEd25519Payload(publicKey, privateKey []byte) *keys.Payload {
+	return keys.NewEd25519Payload(publicKey, privateKey)
 }
 
-// TestEd25519Provider_LoadKeysFromData_Valid tests loading a valid 64-byte key
-func TestEd25519Provider_LoadKeysFromData_Valid(t *testing.T) {
+func loadEd25519Material(t *testing.T, provider *Ed25519Provider, publicKey, privateKey []byte) *signing.KeyMaterial {
+	t.Helper()
+
+	payload := createEd25519Payload(publicKey, privateKey)
+	keyMaterial, err := provider.LoadKeyMaterial(providerKeyFromEd25519Payload(payload))
+	if err != nil {
+		t.Fatalf("LoadKeyMaterial failed: %v", err)
+	}
+	return keyMaterial
+}
+
+func providerKeyFromEd25519Payload(payload *keys.Payload) signing.ProviderKey {
+	return signing.ProviderKey{
+		Type:                   payload.KeyType,
+		Category:               payload.Category,
+		PublicKey:              payload.PublicKey,
+		PrivateKey:             payload.PrivateKey,
+		SigningMetadataVersion: payload.SigningMetadataVersion,
+	}
+}
+
+// TestEd25519Provider_LoadKeyMaterial_Valid tests loading a valid 64-byte key
+func TestEd25519Provider_LoadKeyMaterial_Valid(t *testing.T) {
 	provider := &Ed25519Provider{}
 	pubKey, privKey := generateValidEd25519Keys(t)
 
-	keyJSON := createKeyJSON(t, "ed25519",
-		hex.EncodeToString(pubKey),
-		hex.EncodeToString(privKey),
-	)
-
-	keyMaterial, err := provider.LoadKeysFromData(keyJSON)
-	if err != nil {
-		t.Fatalf("LoadKeysFromData failed: %v", err)
-	}
+	keyMaterial := loadEd25519Material(t, provider, pubKey, privKey)
 	defer provider.ZeroKey(keyMaterial)
 
 	// Verify key material
@@ -105,77 +104,22 @@ func TestEd25519Provider_LoadKeysFromData_Valid(t *testing.T) {
 	}
 }
 
-// TestEd25519Provider_LoadKeysFromData_InvalidJSON tests bad JSON handling
-func TestEd25519Provider_LoadKeysFromData_InvalidJSON(t *testing.T) {
+func TestEd25519Provider_LoadKeyMaterial_InvalidInput(t *testing.T) {
 	provider := &Ed25519Provider{}
 
-	tests := []struct {
-		name string
-		data []byte
-	}{
-		{
-			name: "invalid JSON syntax",
-			data: []byte("{invalid json"),
-		},
-		{
-			name: "empty object",
-			data: []byte("{}"),
-		},
-		{
-			name: "null",
-			data: []byte("null"),
-		},
-		{
-			name: "array instead of object",
-			data: []byte(`["not", "an", "object"]`),
-		},
+	_, err := provider.LoadKeyMaterial(signing.ProviderKey{})
+	if err == nil {
+		t.Fatal("LoadKeyMaterial(zero) error = nil, want error")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := provider.LoadKeysFromData(tt.data)
-			if err == nil {
-				t.Error("Expected error for invalid JSON")
-			}
-		})
+	_, err = provider.LoadKeyMaterial(signing.ProviderKey{Type: "generic.test", Category: "generic_lsig"})
+	if err == nil {
+		t.Fatal("LoadKeyMaterial(generic) error = nil, want error")
 	}
 }
 
-// TestEd25519Provider_LoadKeysFromData_InvalidHex tests bad hex handling
-func TestEd25519Provider_LoadKeysFromData_InvalidHex(t *testing.T) {
-	provider := &Ed25519Provider{}
-
-	tests := []struct {
-		name    string
-		privHex string
-	}{
-		{
-			name:    "invalid hex characters",
-			privHex: "not-valid-hex!!!",
-		},
-		{
-			name:    "odd length hex",
-			privHex: "abc",
-		},
-		{
-			name:    "empty hex",
-			privHex: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			keyJSON := createKeyJSON(t, "ed25519", "0000", tt.privHex)
-			_, err := provider.LoadKeysFromData(keyJSON)
-			if err == nil {
-				t.Error("Expected error for invalid hex")
-			}
-		})
-	}
-}
-
-// TestEd25519Provider_LoadKeysFromData_InvalidLength tests wrong key length
-func TestEd25519Provider_LoadKeysFromData_InvalidLength(t *testing.T) {
+// TestEd25519Provider_LoadKeyMaterial_InvalidLength tests wrong key length
+func TestEd25519Provider_LoadKeyMaterial_InvalidLength(t *testing.T) {
 	provider := &Ed25519Provider{}
 
 	tests := []struct {
@@ -210,16 +154,18 @@ func TestEd25519Provider_LoadKeysFromData_InvalidLength(t *testing.T) {
 			wrongKey := make([]byte, tt.keyLength)
 			_, _ = rand.Read(wrongKey)
 
-			keyJSON := createKeyJSON(t, "ed25519",
-				hex.EncodeToString(make([]byte, 32)),
-				hex.EncodeToString(wrongKey),
-			)
+			key := signing.ProviderKey{
+				Type:       "ed25519",
+				Category:   "ed25519",
+				PublicKey:  make([]byte, 32),
+				PrivateKey: wrongKey,
+			}
 
-			_, err := provider.LoadKeysFromData(keyJSON)
+			_, err := provider.LoadKeyMaterial(key)
 			if err == nil {
 				t.Errorf("Expected error for %d-byte key", tt.keyLength)
 			}
-			if err != nil && !contains(err.Error(), "invalid Ed25519 private key length") {
+			if err != nil && !contains(err.Error(), "invalid ed25519 private key length") {
 				t.Errorf("Error should mention invalid length: %v", err)
 			}
 		})
@@ -231,15 +177,7 @@ func TestEd25519Provider_SignMessage(t *testing.T) {
 	provider := &Ed25519Provider{}
 	pubKey, privKey := generateValidEd25519Keys(t)
 
-	keyJSON := createKeyJSON(t, "ed25519",
-		hex.EncodeToString(pubKey),
-		hex.EncodeToString(privKey),
-	)
-
-	keyMaterial, err := provider.LoadKeysFromData(keyJSON)
-	if err != nil {
-		t.Fatalf("LoadKeysFromData failed: %v", err)
-	}
+	keyMaterial := loadEd25519Material(t, provider, pubKey, privKey)
 	defer provider.ZeroKey(keyMaterial)
 
 	// Sign a message
@@ -265,15 +203,7 @@ func TestEd25519Provider_SignMessage_DifferentMessages(t *testing.T) {
 	provider := &Ed25519Provider{}
 	pubKey, privKey := generateValidEd25519Keys(t)
 
-	keyJSON := createKeyJSON(t, "ed25519",
-		hex.EncodeToString(pubKey),
-		hex.EncodeToString(privKey),
-	)
-
-	keyMaterial, err := provider.LoadKeysFromData(keyJSON)
-	if err != nil {
-		t.Fatalf("LoadKeysFromData failed: %v", err)
-	}
+	keyMaterial := loadEd25519Material(t, provider, pubKey, privKey)
 	defer provider.ZeroKey(keyMaterial)
 
 	message1 := []byte("first message")
@@ -308,15 +238,7 @@ func TestEd25519Provider_SignMessage_EmptyMessage(t *testing.T) {
 	provider := &Ed25519Provider{}
 	pubKey, privKey := generateValidEd25519Keys(t)
 
-	keyJSON := createKeyJSON(t, "ed25519",
-		hex.EncodeToString(pubKey),
-		hex.EncodeToString(privKey),
-	)
-
-	keyMaterial, err := provider.LoadKeysFromData(keyJSON)
-	if err != nil {
-		t.Fatalf("LoadKeysFromData failed: %v", err)
-	}
+	keyMaterial := loadEd25519Material(t, provider, pubKey, privKey)
 	defer provider.ZeroKey(keyMaterial)
 
 	// Empty message should still work
@@ -382,17 +304,9 @@ func TestEd25519Provider_SignMessage_WrongValueType(t *testing.T) {
 // TestEd25519Provider_ZeroKey verifies secure cleanup
 func TestEd25519Provider_ZeroKey(t *testing.T) {
 	provider := &Ed25519Provider{}
-	_, privKey := generateValidEd25519Keys(t)
+	pubKey, privKey := generateValidEd25519Keys(t)
 
-	keyJSON := createKeyJSON(t, "ed25519",
-		hex.EncodeToString(make([]byte, 32)),
-		hex.EncodeToString(privKey),
-	)
-
-	keyMaterial, err := provider.LoadKeysFromData(keyJSON)
-	if err != nil {
-		t.Fatalf("LoadKeysFromData failed: %v", err)
-	}
+	keyMaterial := loadEd25519Material(t, provider, pubKey, privKey)
 
 	account, ok := keyMaterial.Value.(algocrypto.Account)
 	if !ok {
@@ -517,15 +431,7 @@ func TestEd25519Provider_SignMessage_Deterministic(t *testing.T) {
 	provider := &Ed25519Provider{}
 	pubKey, privKey := generateValidEd25519Keys(t)
 
-	keyJSON := createKeyJSON(t, "ed25519",
-		hex.EncodeToString(pubKey),
-		hex.EncodeToString(privKey),
-	)
-
-	keyMaterial, err := provider.LoadKeysFromData(keyJSON)
-	if err != nil {
-		t.Fatalf("LoadKeysFromData failed: %v", err)
-	}
+	keyMaterial := loadEd25519Material(t, provider, pubKey, privKey)
 	defer provider.ZeroKey(keyMaterial)
 
 	message := []byte("deterministic test message")

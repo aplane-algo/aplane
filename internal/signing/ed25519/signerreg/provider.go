@@ -5,8 +5,6 @@ package signerreg
 
 import (
 	"crypto/ed25519"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -16,13 +14,6 @@ import (
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 )
 
-// Ed25519Keys represents an Ed25519 key pair stored on disk
-type Ed25519Keys struct {
-	Type          string `json:"type"`
-	PublicKeyHex  string `json:"public_key"`
-	PrivateKeyHex string `json:"private_key"`
-}
-
 // Ed25519Provider implements signing.Provider for Ed25519 signatures
 type Ed25519Provider struct{}
 
@@ -31,44 +22,25 @@ func (p *Ed25519Provider) RoutingFamily() string {
 	return "ed25519"
 }
 
-// LoadKeysFromData loads Ed25519 key pair from decrypted JSON data
-// SECURITY: This function zeroes all intermediate key material after use
-func (p *Ed25519Provider) LoadKeysFromData(data []byte) (*signing.KeyMaterial, error) {
-	var keypair Ed25519Keys
-
-	if err := json.Unmarshal(data, &keypair); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal keys: %w", err)
+// LoadKeyMaterial loads Ed25519 key material from typed provider input.
+func (p *Ed25519Provider) LoadKeyMaterial(key signing.ProviderKey) (*signing.KeyMaterial, error) {
+	if key.Category != "ed25519" || key.Type != p.RoutingFamily() {
+		return nil, fmt.Errorf("ed25519 provider cannot load category %q key type %q", key.Category, key.Type)
+	}
+	if len(key.PrivateKey) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("invalid ed25519 private key length: expected %d bytes, got %d", ed25519.PrivateKeySize, len(key.PrivateKey))
 	}
 
-	// Decode private key hex
-	privBytes, err := hex.DecodeString(keypair.PrivateKeyHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode private key hex: %w", err)
-	}
-	// Zero the hex-decoded private key bytes after copying
-	defer crypto.ZeroBytes(privBytes)
-
-	// Drop reference to the hex string so it becomes GC-eligible.
-	// Note: []byte(string) creates a copy — we can't zero the original
-	// string's backing memory since Go strings are immutable.
-	defer func() {
-		keypair.PrivateKeyHex = ""
-	}()
-
-	// Convert to crypto.Account
-	// Ed25519 private keys in Algorand SDK are 64 bytes (32-byte seed + 32-byte public key)
-	if len(privBytes) != 64 {
-		return nil, fmt.Errorf("invalid Ed25519 private key length: expected 64 bytes, got %d", len(privBytes))
-	}
-
-	account, err := algocrypto.AccountFromPrivateKey(privBytes)
+	account, err := algocrypto.AccountFromPrivateKey(key.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create account from private key: %w", err)
 	}
 
 	return &signing.KeyMaterial{
-		Type:  p.RoutingFamily(),
-		Value: account,
+		Type:      p.RoutingFamily(),
+		PublicKey: append([]byte(nil), key.PublicKey...),
+		Category:  key.Category,
+		Value:     account,
 	}, nil
 }
 

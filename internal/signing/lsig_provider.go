@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
 
 // LogicSigSignerOps defines signer-only operations for a versioned LogicSig key type.
@@ -51,32 +52,30 @@ func (p *LogicSigProvider) RoutingFamily() string {
 	return p.family
 }
 
-// LoadKeysFromData loads key material from decrypted key file JSON.
+// LoadKeyMaterial loads key material from typed provider input.
 // SECURITY: the private key copy is handed to the returned KeyMaterial, whose
 // owner is responsible for zeroing it.
-func (p *LogicSigProvider) LoadKeysFromData(data []byte) (*KeyMaterial, error) {
-	payload, err := keys.ParsePayload(data)
-	if err != nil {
-		return nil, err
+func (p *LogicSigProvider) LoadKeyMaterial(key ProviderKey) (*KeyMaterial, error) {
+	if key.Category != "dsa_lsig" {
+		return nil, fmt.Errorf("LogicSig signing provider cannot load category %q", key.Category)
 	}
-	defer payload.ZeroSecrets()
 
-	signingKeyType := payload.BaseKeyType
+	signingKeyType := key.BaseKeyType
 	if signingKeyType == "" {
-		signingKeyType = payload.KeyType
+		signingKeyType = key.Type
 	}
 	if logicsigdsa.RoutingFamily(signingKeyType) != p.family {
 		return nil, fmt.Errorf("key type %q does not belong to family %q", signingKeyType, p.family)
 	}
 
 	return &KeyMaterial{
-		Type:                   payload.KeyType,
-		Category:               payload.Category,
-		BaseKeyType:            payload.BaseKeyType,
-		SigningArgs:            keys.SigningArgDefs(payload.SigningArgs),
-		SigningMetadataVersion: payload.SigningMetadataVersion,
+		Type:                   key.Type,
+		Category:               key.Category,
+		BaseKeyType:            key.BaseKeyType,
+		SigningArgs:            append([]lsigprovider.RuntimeArgDef(nil), key.SigningArgs...),
+		SigningMetadataVersion: key.SigningMetadataVersion,
 		Value: &LsigKeyMaterial{
-			PrivateKey: append([]byte(nil), payload.PrivateKey...),
+			PrivateKey: append([]byte(nil), key.PrivateKey...),
 		},
 	}, nil
 }

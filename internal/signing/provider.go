@@ -46,6 +46,18 @@ type ComponentKeyMaterial struct {
 	PrivateKey   []byte
 }
 
+// ProviderKey is the typed, decoded key input passed to signing providers after
+// the storage payload has been parsed and validated by internal/keys.
+type ProviderKey struct {
+	Type                   string
+	Category               string
+	BaseKeyType            string
+	PublicKey              []byte
+	PrivateKey             []byte
+	SigningArgs            []lsigprovider.RuntimeArgDef
+	SigningMetadataVersion int
+}
+
 // Provider defines the interface for cryptographic signature providers
 // Each provider handles loading keys and signing messages for a specific algorithm
 type Provider interface {
@@ -53,9 +65,9 @@ type Provider interface {
 	// This is distinct from LogicSigDSA.KeyType() which returns versioned types like "aplane.falcon1024.v1"
 	RoutingFamily() string
 
-	// LoadKeysFromData loads key pair from decrypted JSON data
+	// LoadKeyMaterial loads key material from typed, decoded provider input.
 	// Returns the key wrapped in KeyMaterial for type safety
-	LoadKeysFromData(data []byte) (*KeyMaterial, error)
+	LoadKeyMaterial(key ProviderKey) (*KeyMaterial, error)
 
 	// SignMessage signs a message with the provided key
 	// The key must be a KeyMaterial with the correct type for this provider
@@ -68,10 +80,6 @@ type Provider interface {
 	// Returns true if this provider can handle the key
 	DetectKeyType(keyData []byte, passphrase string) bool
 }
-
-// KeyLoader is a function that loads keys from data
-// Used by the key session to abstract the loading process
-type KeyLoader func(data []byte) (*KeyMaterial, error)
 
 // ValidateKeyMaterial checks if KeyMaterial has the expected type
 // Returns an error if the type doesn't match

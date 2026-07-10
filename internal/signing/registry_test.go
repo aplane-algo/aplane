@@ -32,7 +32,7 @@ func (m *MockProvider) RoutingFamily() string {
 	return m.keyType
 }
 
-func (m *MockProvider) LoadKeysFromData(data []byte) (*signing.KeyMaterial, error) {
+func (m *MockProvider) LoadKeyMaterial(_ signing.ProviderKey) (*signing.KeyMaterial, error) {
 	return &signing.KeyMaterial{
 		Type:  m.keyType,
 		Value: "mock-key",

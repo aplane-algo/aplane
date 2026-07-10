@@ -273,7 +273,16 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 		return nil, fmt.Errorf("unsupported key type: %s", keyType)
 	}
 
-	km, err := provider.LoadKeysFromData(decryptedData)
+	providerKey := signing.ProviderKey{
+		Type:                   keyType,
+		Category:               signingMeta.Category,
+		BaseKeyType:            signingMeta.BaseKeyType,
+		PublicKey:              payload.PublicKey,
+		PrivateKey:             payload.PrivateKey,
+		SigningArgs:            keys.SigningArgDefs(signingMeta.SigningArgs),
+		SigningMetadataVersion: signingMeta.SigningMetadataVersion,
+	}
+	km, err := provider.LoadKeyMaterial(providerKey)
 	if err != nil {
 		return nil, err
 	}

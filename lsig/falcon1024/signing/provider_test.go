@@ -106,9 +106,8 @@ func newTestProvider() *signing.LogicSigProvider {
 	})
 }
 
-func canonicalFalconKeyJSONForTest(t *testing.T, keyType string, publicKey, privateKey []byte) []byte {
-	t.Helper()
-	payload := utilkeys.NewDSALSigPayload(
+func canonicalFalconPayloadForTest(keyType string, publicKey, privateKey []byte) *utilkeys.Payload {
+	return utilkeys.NewDSALSigPayload(
 		keyType,
 		keyType,
 		publicKey,
@@ -120,11 +119,27 @@ func canonicalFalconKeyJSONForTest(t *testing.T, keyType string, publicKey, priv
 		nil,
 		"",
 	)
-	data, err := utilkeys.MarshalPayload(payload)
+}
+
+func canonicalFalconKeyJSONForTest(t *testing.T, keyType string, publicKey, privateKey []byte) []byte {
+	t.Helper()
+	data, err := utilkeys.MarshalPayload(canonicalFalconPayloadForTest(keyType, publicKey, privateKey))
 	if err != nil {
 		t.Fatalf("MarshalPayload(falcon test key) error = %v", err)
 	}
 	return data
+}
+
+func providerKeyFromFalconPayload(payload *utilkeys.Payload) signing.ProviderKey {
+	return signing.ProviderKey{
+		Type:                   payload.KeyType,
+		Category:               payload.Category,
+		BaseKeyType:            payload.BaseKeyType,
+		PublicKey:              payload.PublicKey,
+		PrivateKey:             payload.PrivateKey,
+		SigningArgs:            utilkeys.SigningArgDefs(payload.SigningArgs),
+		SigningMetadataVersion: payload.SigningMetadataVersion,
+	}
 }
 
 func TestFalconProvider_Family(t *testing.T) {
@@ -134,7 +149,7 @@ func TestFalconProvider_Family(t *testing.T) {
 	}
 }
 
-func TestFalconProvider_LoadKeysFromData_Valid(t *testing.T) {
+func TestFalconProvider_LoadKeyMaterial_Valid(t *testing.T) {
 	p := newTestProvider()
 
 	// Generate a test key pair
@@ -148,47 +163,69 @@ func TestFalconProvider_LoadKeysFromData_Valid(t *testing.T) {
 		t.Fatalf("Failed to generate test key pair: %v", err)
 	}
 
-	jsonData := canonicalFalconKeyJSONForTest(t, "aplane.falcon1024.v1", kp.PublicKey[:], kp.PrivateKey[:])
+	payload := canonicalFalconPayloadForTest("aplane.falcon1024.v1", kp.PublicKey[:], kp.PrivateKey[:])
 
 	// Load keys
-	keyMaterial, err := p.LoadKeysFromData(jsonData)
+	keyMaterial, err := p.LoadKeyMaterial(providerKeyFromFalconPayload(payload))
 	if err != nil {
-		t.Fatalf("LoadKeysFromData() error = %v", err)
+		t.Fatalf("LoadKeyMaterial() error = %v", err)
 	}
 
 	if keyMaterial.Type != "aplane.falcon1024.v1" {
-		t.Errorf("LoadKeysFromData() Type = %v, want aplane.falcon1024.v1", keyMaterial.Type)
+		t.Errorf("LoadKeyMaterial() Type = %v, want aplane.falcon1024.v1", keyMaterial.Type)
 	}
 
 	// Verify the loaded key material has private key bytes
 	loadedKM, ok := keyMaterial.Value.(*signing.LsigKeyMaterial)
 	if !ok {
-		t.Fatal("LoadKeysFromData() Value is not a *signing.LsigKeyMaterial")
+		t.Fatal("LoadKeyMaterial() Value is not a *signing.LsigKeyMaterial")
 	}
 
 	// Verify private key was loaded (should match length of original)
 	if len(loadedKM.PrivateKey) != len(kp.PrivateKey) {
-		t.Errorf("LoadKeysFromData() private key length = %d, want %d", len(loadedKM.PrivateKey), len(kp.PrivateKey))
+		t.Errorf("LoadKeyMaterial() private key length = %d, want %d", len(loadedKM.PrivateKey), len(kp.PrivateKey))
 	}
 }
 
-func TestFalconProvider_LoadKeysFromData_InvalidJSON(t *testing.T) {
+func TestFalconProvider_LoadKeyMaterial_InvalidInput(t *testing.T) {
 	p := newTestProvider()
 
-	_, err := p.LoadKeysFromData([]byte("not json"))
+	_, err := p.LoadKeyMaterial(signing.ProviderKey{})
 	if err == nil {
-		t.Error("LoadKeysFromData() expected error for invalid JSON")
+		t.Fatal("LoadKeyMaterial(zero) error = nil, want error")
+	}
+
+	_, err = p.LoadKeyMaterial(signing.ProviderKey{Type: "ed25519", Category: "ed25519"})
+	if err == nil {
+		t.Fatal("LoadKeyMaterial(ed25519) error = nil, want error")
 	}
 }
 
-func TestFalconProvider_LoadKeysFromData_InvalidHex(t *testing.T) {
+func TestFalconProvider_LoadKeyMaterial_WrongFamily(t *testing.T) {
 	p := newTestProvider()
-
-	jsonData := []byte(`{"format_version":1,"category":"dsa_lsig","key_type":"aplane.falcon1024.v1","public_key":"not valid hex","private_key":"also not valid","lsig_bytecode":"260101058101","salt_counter":5,"signing_metadata_version":1,"base_key_type":"aplane.falcon1024.v1","created_at":"2026-07-10T00:00:00Z"}`)
-
-	_, err := p.LoadKeysFromData(jsonData)
+	seed := make([]byte, 64)
+	for i := range seed {
+		seed[i] = byte(i)
+	}
+	kp, err := falcongo.GenerateKeyPair(seed)
+	if err != nil {
+		t.Fatalf("Failed to generate test key pair: %v", err)
+	}
+	payload := utilkeys.NewDSALSigPayload(
+		"aplane.ecdsak1.v1",
+		"aplane.ecdsak1.v1",
+		kp.PublicKey[:],
+		kp.PrivateKey[:],
+		nil,
+		[]byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01},
+		5,
+		"",
+		nil,
+		"",
+	)
+	_, err = p.LoadKeyMaterial(providerKeyFromFalconPayload(payload))
 	if err == nil {
-		t.Error("LoadKeysFromData() expected error for invalid hex")
+		t.Fatal("LoadKeyMaterial(wrong family) error = nil, want error")
 	}
 }
 

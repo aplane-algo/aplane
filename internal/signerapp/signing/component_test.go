@@ -1562,7 +1562,7 @@ func (p *componentUserTestProvider) RoutingFamily() string {
 	return p.family
 }
 
-func (p *componentUserTestProvider) LoadKeysFromData(_ []byte) (*coresigning.KeyMaterial, error) {
+func (p *componentUserTestProvider) LoadKeyMaterial(_ coresigning.ProviderKey) (*coresigning.KeyMaterial, error) {
 	return nil, nil
 }
 
