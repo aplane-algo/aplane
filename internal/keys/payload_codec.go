@@ -1,0 +1,572 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package keys
+
+import (
+	"bytes"
+	"crypto/ed25519"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"maps"
+	"strings"
+	"time"
+
+	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
+)
+
+// Payload is the usable, decoded representation of the canonical decrypted
+// key payload. PrivateKey is owned by the payload and must be cleared with
+// ZeroSecrets when the payload is no longer needed.
+type Payload struct {
+	FormatVersion          int
+	Category               string
+	KeyType                string
+	PublicKey              []byte
+	PrivateKey             []byte
+	Parameters             map[string]string
+	LogicSigBytecode       []byte
+	SaltCounter            *byte
+	TEALSource             string
+	SigningMetadataVersion int
+	BaseKeyType            string
+	SigningArgs            []StoredSigningArg
+	TemplateFingerprint    string
+	CreatedAt              time.Time
+}
+
+// CanonicalPayloadMetadata is the non-secret projection of a canonical key
+// payload used by inventory, backup, and signing setup.
+type CanonicalPayloadMetadata struct {
+	FormatVersion          int
+	Category               string
+	KeyType                string
+	PublicKeyHex           string
+	Parameters             map[string]string
+	LogicSigBytecodeHex    string
+	SaltCounter            *byte
+	TEALSource             string
+	SigningMetadataVersion int
+	BaseKeyType            string
+	SigningArgs            []StoredSigningArg
+	TemplateFingerprint    string
+	CreatedAt              string
+}
+
+// payloadWireV1 is the sole canonical JSON DTO for decrypted key payloads.
+// It remains private so durable JSON field ownership stays in this package.
+type payloadWireV1 struct {
+	FormatVersion          *int               `json:"format_version"`
+	Category               string             `json:"category"`
+	KeyType                string             `json:"key_type"`
+	PublicKeyHex           string             `json:"public_key,omitempty"`
+	PrivateKeyHex          string             `json:"private_key,omitempty"`
+	Parameters             map[string]string  `json:"parameters,omitempty"`
+	LogicSigBytecodeHex    string             `json:"lsig_bytecode,omitempty"`
+	SaltCounter            *byte              `json:"salt_counter,omitempty"`
+	TEALSource             string             `json:"teal_source,omitempty"`
+	SigningMetadataVersion int                `json:"signing_metadata_version,omitempty"`
+	BaseKeyType            string             `json:"base_key_type,omitempty"`
+	SigningArgs            []StoredSigningArg `json:"signing_args,omitempty"`
+	TemplateFingerprint    string             `json:"template_fingerprint,omitempty"`
+	CreatedAt              string             `json:"created_at"`
+}
+
+// NewEd25519Payload constructs a canonical native Ed25519 key payload.
+func NewEd25519Payload(publicKey, privateKey []byte) *Payload {
+	return &Payload{
+		FormatVersion: CurrentKeyFormatVersion,
+		Category:      CategoryEd25519,
+		KeyType:       "ed25519",
+		PublicKey:     bytes.Clone(publicKey),
+		PrivateKey:    bytes.Clone(privateKey),
+		CreatedAt:     time.Now().UTC().Truncate(time.Second),
+	}
+}
+
+// NewComponentPayload constructs a canonical sentry component key payload.
+func NewComponentPayload(keyType string, publicKey, privateKey []byte) *Payload {
+	return &Payload{
+		FormatVersion: CurrentKeyFormatVersion,
+		Category:      CategoryComponent,
+		KeyType:       keyType,
+		PublicKey:     bytes.Clone(publicKey),
+		PrivateKey:    bytes.Clone(privateKey),
+		CreatedAt:     time.Now().UTC().Truncate(time.Second),
+	}
+}
+
+// NewDSALSigPayload constructs a canonical DSA-backed LogicSig key payload.
+func NewDSALSigPayload(
+	keyType string,
+	baseKeyType string,
+	publicKey []byte,
+	privateKey []byte,
+	parameters map[string]string,
+	bytecode []byte,
+	saltCounter byte,
+	tealSource string,
+	signingArgs []StoredSigningArg,
+	templateFingerprint string,
+) *Payload {
+	return &Payload{
+		FormatVersion:          CurrentKeyFormatVersion,
+		Category:               CategoryDSALsig,
+		KeyType:                keyType,
+		PublicKey:              bytes.Clone(publicKey),
+		PrivateKey:             bytes.Clone(privateKey),
+		Parameters:             maps.Clone(parameters),
+		LogicSigBytecode:       bytes.Clone(bytecode),
+		SaltCounter:            SaltCounterPtr(saltCounter),
+		TEALSource:             tealSource,
+		SigningMetadataVersion: CurrentSigningMetadataVersion,
+		BaseKeyType:            baseKeyType,
+		SigningArgs:            cloneStoredSigningArgs(signingArgs),
+		TemplateFingerprint:    templateFingerprint,
+		CreatedAt:              time.Now().UTC().Truncate(time.Second),
+	}
+}
+
+// NewGenericLSigPayload constructs a canonical TEAL-only LogicSig payload.
+func NewGenericLSigPayload(
+	keyType string,
+	parameters map[string]string,
+	bytecode []byte,
+	saltCounter byte,
+	tealSource string,
+	signingArgs []StoredSigningArg,
+	templateFingerprint string,
+) *Payload {
+	return &Payload{
+		FormatVersion:          CurrentKeyFormatVersion,
+		Category:               CategoryGenericLsig,
+		KeyType:                keyType,
+		Parameters:             maps.Clone(parameters),
+		LogicSigBytecode:       bytes.Clone(bytecode),
+		SaltCounter:            SaltCounterPtr(saltCounter),
+		TEALSource:             tealSource,
+		SigningMetadataVersion: CurrentSigningMetadataVersion,
+		SigningArgs:            cloneStoredSigningArgs(signingArgs),
+		TemplateFingerprint:    templateFingerprint,
+		CreatedAt:              time.Now().UTC().Truncate(time.Second),
+	}
+}
+
+// ParsePayload strictly decodes and validates canonical decrypted key JSON.
+func ParsePayload(data []byte) (*Payload, error) {
+	if err := validateCanonicalJSONObject(data); err != nil {
+		return nil, incompatibleKeyFormat("invalid canonical payload JSON: %v", err)
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var wire payloadWireV1
+	if err := decoder.Decode(&wire); err != nil {
+		return nil, incompatibleKeyFormat("failed to decode canonical payload: %v", err)
+	}
+	if err := requireJSONEOF(decoder); err != nil {
+		return nil, incompatibleKeyFormat("invalid canonical payload JSON: %v", err)
+	}
+
+	payload, err := payloadFromWire(wire)
+	if err != nil {
+		return nil, err
+	}
+	if err := payload.Validate(); err != nil {
+		payload.ZeroSecrets()
+		return nil, err
+	}
+	return payload, nil
+}
+
+// MarshalPayload validates and encodes a payload using the canonical JSON
+// vocabulary. The caller owns and must zero the returned plaintext buffer.
+func MarshalPayload(payload *Payload) ([]byte, error) {
+	if payload == nil {
+		return nil, incompatibleKeyFormat("key payload is nil")
+	}
+	if err := payload.Validate(); err != nil {
+		return nil, err
+	}
+	formatVersion := payload.FormatVersion
+	wire := payloadWireV1{
+		FormatVersion:          &formatVersion,
+		Category:               payload.Category,
+		KeyType:                payload.KeyType,
+		PublicKeyHex:           hex.EncodeToString(payload.PublicKey),
+		PrivateKeyHex:          hex.EncodeToString(payload.PrivateKey),
+		Parameters:             maps.Clone(payload.Parameters),
+		LogicSigBytecodeHex:    hex.EncodeToString(payload.LogicSigBytecode),
+		SaltCounter:            cloneBytePtr(payload.SaltCounter),
+		TEALSource:             payload.TEALSource,
+		SigningMetadataVersion: payload.SigningMetadataVersion,
+		BaseKeyType:            payload.BaseKeyType,
+		SigningArgs:            cloneStoredSigningArgs(payload.SigningArgs),
+		TemplateFingerprint:    payload.TemplateFingerprint,
+		CreatedAt:              payload.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	encoded, err := json.MarshalIndent(wire, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal canonical key payload: %w", err)
+	}
+	return encoded, nil
+}
+
+// Validate checks the canonical category shape and category-independent value
+// invariants. Provider-specific availability remains a load/sign concern.
+func (p *Payload) Validate() error {
+	if p == nil {
+		return incompatibleKeyFormat("key payload is nil")
+	}
+	if p.FormatVersion != CurrentKeyFormatVersion {
+		return incompatibleKeyFormat("format_version %d is not supported by this runtime; expected %d", p.FormatVersion, CurrentKeyFormatVersion)
+	}
+	if p.KeyType == "" || p.KeyType != strings.TrimSpace(p.KeyType) {
+		return incompatibleKeyFormat("key_type must be non-empty and canonical")
+	}
+	if p.CreatedAt.IsZero() || p.CreatedAt.Location() != time.UTC || !p.CreatedAt.Equal(p.CreatedAt.Truncate(time.Second)) {
+		return incompatibleKeyFormat("created_at must be a whole-second UTC timestamp")
+	}
+	if err := validateSigningArgs(p.SigningArgs); err != nil {
+		return incompatibleKeyFormat("invalid signing_args: %v", err)
+	}
+
+	switch p.Category {
+	case CategoryEd25519:
+		if p.KeyType != "ed25519" {
+			return incompatibleKeyFormat("ed25519 category requires key_type %q", "ed25519")
+		}
+		if err := validateEd25519Payload(p); err != nil {
+			return err
+		}
+		return validateNoLogicSigFields(p)
+	case CategoryComponent:
+		if !keytypes.IsSentryComponentKeyType(p.KeyType) {
+			return incompatibleKeyFormat("component category requires a sentry key type, got %q", p.KeyType)
+		}
+		if err := validateComponentPayload(p); err != nil {
+			return err
+		}
+		return validateNoLogicSigFields(p)
+	case CategoryDSALsig:
+		if len(p.PublicKey) == 0 || len(p.PrivateKey) == 0 {
+			return incompatibleKeyFormat("dsa_lsig requires public_key and private_key")
+		}
+		if p.BaseKeyType == "" || p.BaseKeyType != strings.TrimSpace(p.BaseKeyType) {
+			return incompatibleKeyFormat("dsa_lsig requires canonical base_key_type")
+		}
+		return validateLogicSigFields(p)
+	case CategoryGenericLsig:
+		if len(p.PublicKey) != 0 || len(p.PrivateKey) != 0 {
+			return incompatibleKeyFormat("generic_lsig forbids public_key and private_key")
+		}
+		if p.BaseKeyType != "" {
+			return incompatibleKeyFormat("generic_lsig forbids base_key_type")
+		}
+		return validateLogicSigFields(p)
+	default:
+		return incompatibleKeyFormat("unknown category %q", p.Category)
+	}
+}
+
+// Selector derives the canonical filename selector from authoritative key
+// material rather than payload metadata.
+func (p *Payload) Selector() (string, error) {
+	if err := p.Validate(); err != nil {
+		return "", err
+	}
+	switch p.Category {
+	case CategoryEd25519:
+		var address types.Address
+		copy(address[:], p.PublicKey)
+		return address.String(), nil
+	case CategoryComponent:
+		return keytypes.ComponentKeySelector(p.KeyType, p.PublicKey)
+	case CategoryDSALsig, CategoryGenericLsig:
+		return logicSigAddress(p.LogicSigBytecode)
+	default:
+		return "", incompatibleKeyFormat("unknown category %q", p.Category)
+	}
+}
+
+// Metadata returns a non-secret copy of the payload metadata.
+func (p *Payload) Metadata() CanonicalPayloadMetadata {
+	if p == nil {
+		return CanonicalPayloadMetadata{}
+	}
+	return CanonicalPayloadMetadata{
+		FormatVersion:          p.FormatVersion,
+		Category:               p.Category,
+		KeyType:                p.KeyType,
+		PublicKeyHex:           hex.EncodeToString(p.PublicKey),
+		Parameters:             maps.Clone(p.Parameters),
+		LogicSigBytecodeHex:    hex.EncodeToString(p.LogicSigBytecode),
+		SaltCounter:            cloneBytePtr(p.SaltCounter),
+		TEALSource:             p.TEALSource,
+		SigningMetadataVersion: p.SigningMetadataVersion,
+		BaseKeyType:            p.BaseKeyType,
+		SigningArgs:            cloneStoredSigningArgs(p.SigningArgs),
+		TemplateFingerprint:    p.TemplateFingerprint,
+		CreatedAt:              p.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+// ZeroSecrets clears private key material owned by the payload.
+func (p *Payload) ZeroSecrets() {
+	if p == nil {
+		return
+	}
+	crypto.ZeroBytes(p.PrivateKey)
+	p.PrivateKey = nil
+}
+
+func payloadFromWire(wire payloadWireV1) (*Payload, error) {
+	if wire.FormatVersion == nil {
+		return nil, incompatibleKeyFormat("missing format_version")
+	}
+	publicKey, err := decodeCanonicalHex("public_key", wire.PublicKeyHex)
+	if err != nil {
+		return nil, err
+	}
+	privateKey, err := decodeCanonicalHex("private_key", wire.PrivateKeyHex)
+	if err != nil {
+		return nil, err
+	}
+	bytecode, err := decodeCanonicalHex("lsig_bytecode", wire.LogicSigBytecodeHex)
+	if err != nil {
+		crypto.ZeroBytes(privateKey)
+		return nil, err
+	}
+	createdAt, err := time.Parse(time.RFC3339, wire.CreatedAt)
+	if err != nil || createdAt.Location() != time.UTC || createdAt.Format(time.RFC3339) != wire.CreatedAt {
+		crypto.ZeroBytes(privateKey)
+		return nil, incompatibleKeyFormat("created_at must be canonical RFC3339 UTC")
+	}
+	return &Payload{
+		FormatVersion:          *wire.FormatVersion,
+		Category:               wire.Category,
+		KeyType:                wire.KeyType,
+		PublicKey:              publicKey,
+		PrivateKey:             privateKey,
+		Parameters:             maps.Clone(wire.Parameters),
+		LogicSigBytecode:       bytecode,
+		SaltCounter:            cloneBytePtr(wire.SaltCounter),
+		TEALSource:             wire.TEALSource,
+		SigningMetadataVersion: wire.SigningMetadataVersion,
+		BaseKeyType:            wire.BaseKeyType,
+		SigningArgs:            cloneStoredSigningArgs(wire.SigningArgs),
+		TemplateFingerprint:    wire.TemplateFingerprint,
+		CreatedAt:              createdAt,
+	}, nil
+}
+
+func decodeCanonicalHex(field, value string) ([]byte, error) {
+	if value == "" {
+		return nil, nil
+	}
+	if value != strings.ToLower(value) {
+		return nil, incompatibleKeyFormat("%s must use lowercase hex", field)
+	}
+	decoded, err := hex.DecodeString(value)
+	if err != nil {
+		return nil, incompatibleKeyFormat("invalid %s hex: %v", field, err)
+	}
+	return decoded, nil
+}
+
+func validateEd25519Payload(p *Payload) error {
+	if len(p.PublicKey) != ed25519.PublicKeySize {
+		return incompatibleKeyFormat("ed25519 public key length %d invalid (expected %d bytes)", len(p.PublicKey), ed25519.PublicKeySize)
+	}
+	if len(p.PrivateKey) != ed25519.PrivateKeySize {
+		return incompatibleKeyFormat("ed25519 private key length %d invalid (expected %d bytes)", len(p.PrivateKey), ed25519.PrivateKeySize)
+	}
+	derived, ok := ed25519.PrivateKey(p.PrivateKey).Public().(ed25519.PublicKey)
+	if !ok || !bytes.Equal(derived, p.PublicKey) {
+		return incompatibleKeyFormat("ed25519 public key does not match private key")
+	}
+	return nil
+}
+
+func validateComponentPayload(p *Payload) error {
+	publicSize, ok := keytypes.ComponentPublicKeySize(p.KeyType)
+	if !ok {
+		return incompatibleKeyFormat("unsupported sentry key type %q", p.KeyType)
+	}
+	privateSize, ok := keytypes.ComponentPrivateKeySize(p.KeyType)
+	if !ok {
+		return incompatibleKeyFormat("unsupported sentry key type %q", p.KeyType)
+	}
+	if len(p.PublicKey) != publicSize {
+		return incompatibleKeyFormat("component public key length %d invalid (expected %d bytes)", len(p.PublicKey), publicSize)
+	}
+	if len(p.PrivateKey) != privateSize {
+		return incompatibleKeyFormat("component private key length %d invalid (expected %d bytes)", len(p.PrivateKey), privateSize)
+	}
+	if err := keytypes.ValidateComponentPair(p.KeyType, p.PublicKey, p.PrivateKey); err != nil {
+		return incompatibleKeyFormat("invalid component key pair: %v", err)
+	}
+	return nil
+}
+
+func validateNoLogicSigFields(p *Payload) error {
+	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.SaltCounter != nil ||
+		p.TEALSource != "" || p.SigningMetadataVersion != 0 || p.BaseKeyType != "" ||
+		len(p.SigningArgs) != 0 || p.TemplateFingerprint != "" {
+		return incompatibleKeyFormat("category %q forbids LogicSig fields", p.Category)
+	}
+	return nil
+}
+
+func validateLogicSigFields(p *Payload) error {
+	if len(p.LogicSigBytecode) == 0 {
+		return incompatibleKeyFormat("%s requires lsig_bytecode", p.Category)
+	}
+	if p.SaltCounter == nil {
+		return ErrMissingLogicSigSaltCounter
+	}
+	if p.SigningMetadataVersion != CurrentSigningMetadataVersion {
+		return incompatibleKeyFormat("%s requires signing_metadata_version %d", p.Category, CurrentSigningMetadataVersion)
+	}
+	address, err := logicSigAddressBytes(p.LogicSigBytecode)
+	if err != nil {
+		return incompatibleKeyFormat("failed to derive LogicSig address: %v", err)
+	}
+	if lsigsalt.IsOnCurve(address) {
+		return incompatibleKeyFormat("logic sig key file address is on-curve")
+	}
+	return nil
+}
+
+func validateSigningArgs(args []StoredSigningArg) error {
+	seen := make(map[string]struct{}, len(args))
+	for i, arg := range args {
+		if arg.Name == "" || arg.Name != strings.TrimSpace(arg.Name) {
+			return fmt.Errorf("entry %d has a missing or non-canonical name", i)
+		}
+		if _, exists := seen[arg.Name]; exists {
+			return fmt.Errorf("duplicate name %q", arg.Name)
+		}
+		seen[arg.Name] = struct{}{}
+		switch arg.Type {
+		case "bytes", "string", "uint64":
+		default:
+			return fmt.Errorf("entry %q has unsupported type %q", arg.Name, arg.Type)
+		}
+		if arg.ByteLength < 0 {
+			return fmt.Errorf("entry %q has negative byte_length", arg.Name)
+		}
+	}
+	return nil
+}
+
+func validateCanonicalJSONObject(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if token != json.Delim('{') {
+		return fmt.Errorf("top-level value must be an object")
+	}
+	if err := consumeJSONObject(decoder); err != nil {
+		return err
+	}
+	return requireJSONEOF(decoder)
+}
+
+func consumeJSONObject(decoder *json.Decoder) error {
+	seen := make(map[string]struct{})
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		name, ok := token.(string)
+		if !ok {
+			return fmt.Errorf("object member name is not a string")
+		}
+		if _, exists := seen[name]; exists {
+			return fmt.Errorf("duplicate object member %q", name)
+		}
+		seen[name] = struct{}{}
+		if err := consumeJSONValue(decoder); err != nil {
+			return err
+		}
+	}
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if token != json.Delim('}') {
+		return fmt.Errorf("unterminated object")
+	}
+	return nil
+}
+
+func consumeJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if token == nil {
+		return fmt.Errorf("null values are not canonical")
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delim {
+	case '{':
+		return consumeJSONObject(decoder)
+	case '[':
+		for decoder.More() {
+			if err := consumeJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		end, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if end != json.Delim(']') {
+			return fmt.Errorf("unterminated array")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unexpected delimiter %q", delim)
+	}
+}
+
+func requireJSONEOF(decoder *json.Decoder) error {
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("trailing JSON value")
+		}
+		return fmt.Errorf("trailing data: %w", err)
+	}
+	return nil
+}
+
+func cloneStoredSigningArgs(args []StoredSigningArg) []StoredSigningArg {
+	if len(args) == 0 {
+		return nil
+	}
+	return append([]StoredSigningArg(nil), args...)
+}
+
+func cloneBytePtr(value *byte) *byte {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
