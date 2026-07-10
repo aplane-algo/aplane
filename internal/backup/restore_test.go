@@ -4,7 +4,6 @@
 package backup
 
 import (
-	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
@@ -722,25 +722,5 @@ func writeManagedRestoreArchive(t *testing.T, paths storepaths.Paths, identityID
 
 func testSentryComponentBackupKeyJSON(t *testing.T) (string, []byte) {
 	t.Helper()
-
-	privateKey := ed25519.NewKeyFromSeed(bytesOfLen(ed25519.SeedSize, 0xcd))
-	publicKey := privateKey.Public().(ed25519.PublicKey)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
-	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
-	}
-	payload := apkeys.NewComponentPayload(keytypes.SentryComponentEd25519V1, publicKey, privateKey)
-	keyJSON, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload(component) error = %v", err)
-	}
-	return componentKey, keyJSON
-}
-
-func bytesOfLen(n int, fill byte) []byte {
-	out := make([]byte, n)
-	for i := range out {
-		out[i] = fill
-	}
-	return out
+	return keystest.SentryComponentEd25519KeyJSON(t, 0xcd)
 }

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -20,13 +20,7 @@ var testExportMasterKey = []byte("0123456789abcdef0123456789abcdef")
 
 func testKeyJSON(t *testing.T, keyType string) []byte {
 	t.Helper()
-
-	payload := apkeys.NewGenericLSigPayload(keyType, nil, saltedLogicSigBytecodeForTest(), saltCounterForTest, "", nil, "")
-	keyJSON, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload() error = %v", err)
-	}
-	return keyJSON
+	return keystest.GenericLSigKeyJSON(t, keyType, saltedLogicSigBytecodeForTest(), saltCounterForTest, nil, "")
 }
 
 func writeTemplateStateForBackupTest(t *testing.T, paths storepaths.Paths, identityID, keyType string, templateType templatestore.TemplateType, state keytypestate.State) {

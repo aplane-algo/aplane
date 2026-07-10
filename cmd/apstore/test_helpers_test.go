@@ -20,6 +20,7 @@ import (
 	apbackup "github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
@@ -30,14 +31,7 @@ import (
 
 func testEd25519KeyJSON(t *testing.T) (string, []byte) {
 	t.Helper()
-
-	account := sdkcrypto.GenerateAccount()
-	payload := apkeys.NewEd25519Payload(account.PrivateKey[32:], account.PrivateKey)
-	keyJSON, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload(ed25519) error = %v", err)
-	}
-	return account.Address.String(), keyJSON
+	return keystest.Ed25519KeyJSON(t)
 }
 
 func bytes32(fill byte) []byte {
@@ -336,33 +330,12 @@ func testWhitelistBackupBundle(t *testing.T, keyType string, templateYAML []byte
 
 func canonicalGenericKeyJSONForApstore(t *testing.T, keyType string, bytecode []byte) []byte {
 	t.Helper()
-	payload := apkeys.NewGenericLSigPayload(keyType, nil, bytecode, saltCounterForTest, "", nil, "")
-	keyJSON, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload(generic) error = %v", err)
-	}
-	return keyJSON
+	return keystest.GenericLSigKeyJSON(t, keyType, bytecode, saltCounterForTest, nil, "")
 }
 
 func canonicalDSALSigKeyJSONForApstore(t *testing.T, keyType, baseKeyType string, bytecode []byte) []byte {
 	t.Helper()
-	payload := apkeys.NewDSALSigPayload(
-		keyType,
-		baseKeyType,
-		[]byte{0x01},
-		[]byte{0x02},
-		nil,
-		bytecode,
-		saltCounterForTest,
-		"",
-		nil,
-		"",
-	)
-	keyJSON, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload(dsa_lsig) error = %v", err)
-	}
-	return keyJSON
+	return keystest.DSALSigKeyJSON(t, keyType, baseKeyType, []byte{0x01}, []byte{0x02}, bytecode, saltCounterForTest)
 }
 
 func canonicalGenericKeyWithoutSigningMetadataForApstore(t *testing.T, keyType string, bytecode []byte) []byte {

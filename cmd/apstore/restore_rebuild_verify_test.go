@@ -4,7 +4,6 @@
 package main
 
 import (
-	"crypto/ed25519"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,9 +13,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 )
@@ -775,17 +774,5 @@ func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 
 func testSentryComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
 	t.Helper()
-
-	privateKey := ed25519.NewKeyFromSeed(bytes32(0xcd))
-	publicKey := privateKey.Public().(ed25519.PublicKey)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
-	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
-	}
-	payload := apkeys.NewComponentPayload(keytypes.SentryComponentEd25519V1, publicKey, privateKey)
-	keyJSON, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload(component) error = %v", err)
-	}
-	return componentKey, keyJSON
+	return keystest.SentryComponentEd25519KeyJSON(t, 0xcd)
 }

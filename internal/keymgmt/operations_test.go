@@ -18,6 +18,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -405,12 +406,7 @@ func canonicalGenericKeyJSON(t *testing.T, keyType string, parameters map[string
 	if err != nil {
 		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
 	}
-	payload := apkeys.NewGenericLSigPayload(keyType, parameters, salted.Bytecode, salted.Counter, tealSource, nil, "")
-	encoded, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload() error = %v", err)
-	}
-	return encoded
+	return keystest.GenericLSigKeyJSON(t, keyType, salted.Bytecode, salted.Counter, parameters, tealSource)
 }
 
 func canonicalDSAKeyJSON(t *testing.T, keyType string, publicKey []byte) []byte {
@@ -419,13 +415,7 @@ func canonicalDSAKeyJSON(t *testing.T, keyType string, publicKey []byte) []byte 
 	if err != nil {
 		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
 	}
-	payload := apkeys.NewDSALSigPayload(keyType, "test.base.v1", publicKey, []byte{0x01}, nil, salted.Bytecode, salted.Counter, "", nil, "")
-	defer payload.ZeroSecrets()
-	encoded, err := apkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload() error = %v", err)
-	}
-	return encoded
+	return keystest.DSALSigKeyJSON(t, keyType, "test.base.v1", publicKey, []byte{0x01}, salted.Bytecode, salted.Counter)
 }
 
 func TestDetectKeyInfoFromFileWithMasterKeyEncrypted(t *testing.T) {

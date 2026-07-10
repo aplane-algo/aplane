@@ -18,6 +18,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	utilkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
@@ -431,25 +432,12 @@ func TestDeepVerifyBackupRejectsAddressMismatch(t *testing.T) {
 
 func testEd25519BackupKeyJSON(t *testing.T) (string, []byte) {
 	t.Helper()
-
-	account := sdkcrypto.GenerateAccount()
-	payload := utilkeys.NewEd25519Payload(account.PrivateKey[32:], account.PrivateKey)
-	keyJSON, err := utilkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload(ed25519) error = %v", err)
-	}
-	return account.Address.String(), keyJSON
+	return keystest.Ed25519KeyJSON(t)
 }
 
-func genericLSigKeyJSONForTest(t *testing.T, address, keyType string, bytecode []byte, params map[string]string) []byte {
+func genericLSigKeyJSONForTest(t *testing.T, _, keyType string, bytecode []byte, params map[string]string) []byte {
 	t.Helper()
-
-	payload := utilkeys.NewGenericLSigPayload(keyType, params, bytecode, saltCounterForTest, "", nil, "")
-	keyJSON, err := utilkeys.MarshalPayload(payload)
-	if err != nil {
-		t.Fatalf("MarshalPayload(generic) error = %v", err)
-	}
-	return keyJSON
+	return keystest.GenericLSigKeyJSON(t, keyType, bytecode, saltCounterForTest, params, "")
 }
 
 func backupBundleForTest(t *testing.T, keyJSON []byte, templateYAML []byte) []byte {
