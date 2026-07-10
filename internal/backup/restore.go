@@ -457,7 +457,7 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 
 	keyPayload := keyJSON
 	if templateFingerprint != "" {
-		annotated, changed, err := annotateMissingTemplateFingerprint(keyJSON, templateFingerprint)
+		annotated, changed, err := annotateMissingTemplateFingerprint(payload, templateFingerprint)
 		if err != nil {
 			return "", rollbackPlans(fmt.Errorf("failed to annotate template fingerprint for %s: %w", address, err))
 		}
@@ -510,14 +510,12 @@ func bundledTemplateFingerprint(templateYAML []byte, tmplType string) (string, e
 	return templateCompatibilityFingerprint(tt, templateYAML)
 }
 
-func annotateMissingTemplateFingerprint(keyJSON []byte, fingerprint string) ([]byte, bool, error) {
-	payload, err := keys.ParsePayload(keyJSON)
-	if err != nil {
-		return nil, false, err
-	}
-	defer payload.ZeroSecrets()
+// annotateMissingTemplateFingerprint stamps the bundled template fingerprint
+// onto the already-parsed restore payload when it lacks one and returns the
+// canonical re-encoding. changed=false means the original key JSON stands.
+func annotateMissingTemplateFingerprint(payload *keys.Payload, fingerprint string) ([]byte, bool, error) {
 	if payload.TemplateFingerprint != "" {
-		return keyJSON, false, nil
+		return nil, false, nil
 	}
 	payload.TemplateFingerprint = fingerprint
 	annotated, err := keys.MarshalPayload(payload)
