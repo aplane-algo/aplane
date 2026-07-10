@@ -5,8 +5,6 @@ package falcon
 
 import (
 	"context"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -108,6 +106,27 @@ func newTestProvider() *signing.LogicSigProvider {
 	})
 }
 
+func canonicalFalconKeyJSONForTest(t *testing.T, keyType string, publicKey, privateKey []byte) []byte {
+	t.Helper()
+	payload := utilkeys.NewDSALSigPayload(
+		keyType,
+		keyType,
+		publicKey,
+		privateKey,
+		nil,
+		[]byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01},
+		5,
+		"",
+		nil,
+		"",
+	)
+	data, err := utilkeys.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload(falcon test key) error = %v", err)
+	}
+	return data
+}
+
 func TestFalconProvider_Family(t *testing.T) {
 	p := newTestProvider()
 	if p.RoutingFamily() != "falcon1024" {
@@ -129,13 +148,7 @@ func TestFalconProvider_LoadKeysFromData_Valid(t *testing.T) {
 		t.Fatalf("Failed to generate test key pair: %v", err)
 	}
 
-	// Create key data JSON with versioned key type
-	keyData := utilkeys.KeyPair{
-		KeyType:       "aplane.falcon1024.v1",
-		PublicKeyHex:  hex.EncodeToString(kp.PublicKey[:]),
-		PrivateKeyHex: hex.EncodeToString(kp.PrivateKey[:]),
-	}
-	jsonData, _ := json.Marshal(keyData)
+	jsonData := canonicalFalconKeyJSONForTest(t, "aplane.falcon1024.v1", kp.PublicKey[:], kp.PrivateKey[:])
 
 	// Load keys
 	keyMaterial, err := p.LoadKeysFromData(jsonData)
@@ -171,11 +184,7 @@ func TestFalconProvider_LoadKeysFromData_InvalidJSON(t *testing.T) {
 func TestFalconProvider_LoadKeysFromData_InvalidHex(t *testing.T) {
 	p := newTestProvider()
 
-	keyData := utilkeys.KeyPair{
-		PublicKeyHex:  "not valid hex",
-		PrivateKeyHex: "also not valid",
-	}
-	jsonData, _ := json.Marshal(keyData)
+	jsonData := []byte(`{"format_version":1,"category":"dsa_lsig","key_type":"aplane.falcon1024.v1","public_key":"not valid hex","private_key":"also not valid","lsig_bytecode":"260101058101","salt_counter":5,"signing_metadata_version":1,"base_key_type":"aplane.falcon1024.v1","created_at":"2026-07-10T00:00:00Z"}`)
 
 	_, err := p.LoadKeysFromData(jsonData)
 	if err == nil {
@@ -307,13 +316,13 @@ func TestFalconProvider_DetectKeyType(t *testing.T) {
 		},
 		{
 			name:       "falcon1024 type",
-			keyData:    []byte(`{"key_type": "falcon1024"}`),
+			keyData:    canonicalFalconKeyJSONForTest(t, "falcon1024", []byte{0x01}, []byte{0x02}),
 			passphrase: "",
 			want:       true,
 		},
 		{
 			name:       "ed25519 type",
-			keyData:    []byte(`{"key_type": "ed25519"}`),
+			keyData:    canonicalFalconKeyJSONForTest(t, "ed25519", []byte{0x01}, []byte{0x02}),
 			passphrase: "",
 			want:       false,
 		},
@@ -327,13 +336,13 @@ func TestFalconProvider_DetectKeyType(t *testing.T) {
 			name:       "empty key_type field errors",
 			keyData:    []byte(`{"key_type": ""}`),
 			passphrase: "",
-			want:       false, // Empty key_type returns error from DetectKeyTypeFromData
+			want:       false,
 		},
 		{
 			name:       "missing key_type field",
 			keyData:    []byte(`{"public_key": "abc"}`),
 			passphrase: "",
-			want:       false, // Missing key_type returns error
+			want:       false,
 		},
 	}
 

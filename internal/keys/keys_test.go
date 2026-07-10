@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -133,245 +134,41 @@ func writeKeyFile(t *testing.T, paths storepaths.Paths, identityID, address stri
 }
 
 func TestDetectKeyTypeFromData(t *testing.T) {
-	tests := []struct {
-		name      string
-		data      string
-		want      string
-		wantError bool
-		errMsg    string
-	}{
-		{
-			name: "ed25519",
-			data: `{"key_type":"ed25519"}`,
-			want: "ed25519",
-		},
-		{
-			name: "aplane.falcon1024.v1",
-			data: `{"key_type":"aplane.falcon1024.v1"}`,
-			want: "aplane.falcon1024.v1",
-		},
-		{
-			name: "aplane.timed-whitelist.v1",
-			data: `{"key_type":"aplane.timed-whitelist.v1"}`,
-			want: "aplane.timed-whitelist.v1",
-		},
-		{
-			name:      "missing key_type",
-			data:      `{"public_key":"abc"}`,
-			wantError: true,
-			errMsg:    "missing required 'key_type'",
-		},
-		{
-			name:      "empty JSON",
-			data:      `{}`,
-			wantError: true,
-			errMsg:    "missing required 'key_type'",
-		},
-		{
-			name:      "invalid JSON",
-			data:      `not json`,
-			wantError: true,
-			errMsg:    "failed to unmarshal",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := DetectKeyTypeFromData([]byte(tc.data))
-			if tc.wantError {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tc.errMsg)
-				}
-				if !contains(err.Error(), tc.errMsg) {
-					t.Fatalf("error %q does not contain %q", err.Error(), tc.errMsg)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("got %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestExtractBytecode(t *testing.T) {
-	tests := []struct {
-		name string
-		data string
-		want string // hex of expected bytecode, or "" for nil
-	}{
-		{
-			name: "lsig_bytecode field",
-			data: `{"lsig_bytecode":"0102030405"}`,
-			want: "0102030405",
-		},
-		{
-			name: "bytecode_hex fallback",
-			data: `{"bytecode_hex":"aabbcc"}`,
-			want: "aabbcc",
-		},
-		{
-			name: "conflicting bytecode aliases reject",
-			data: `{"lsig_bytecode":"0102","bytecode_hex":"aabb"}`,
-			want: "",
-		},
-		{
-			name: "no bytecode fields",
-			data: `{"key_type":"ed25519"}`,
-			want: "",
-		},
-		{
-			name: "invalid hex",
-			data: `{"lsig_bytecode":"not-hex"}`,
-			want: "",
-		},
-		{
-			name: "invalid JSON",
-			data: `not json`,
-			want: "",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ExtractBytecode([]byte(tc.data))
-			if tc.want == "" {
-				if got != nil {
-					t.Errorf("expected nil, got %x", got)
-				}
-				return
-			}
-			expected, _ := hex.DecodeString(tc.want)
-			if hex.EncodeToString(got) != hex.EncodeToString(expected) {
-				t.Errorf("got %x, want %x", got, expected)
-			}
-		})
-	}
-}
-
-func TestParseKeyPayloadMetadataNormalizesAliases(t *testing.T) {
-	meta, err := ParseKeyPayloadMetadata([]byte(`{
-		"format_version":1,
-		"category":"dsa_lsig",
-		"key_type":"aplane.falcon1024.v1",
-		"params":{"network":"testnet"},
-		"lsig_bytecode":"0102",
-		"salt_counter":5
-	}`))
+	keyJSON, _ := testEd25519Key(t)
+	got, err := DetectKeyTypeFromData(keyJSON)
 	if err != nil {
-		t.Fatalf("ParseKeyPayloadMetadata() error = %v", err)
+		t.Fatalf("DetectKeyTypeFromData() error = %v", err)
 	}
-	if !meta.HasFormatVersion || meta.FormatVersion != CurrentKeyFormatVersion {
-		t.Fatalf("format version = (%d, %v), want current/present", meta.FormatVersion, meta.HasFormatVersion)
-	}
-	if meta.Parameters["network"] != "testnet" {
-		t.Fatalf("Parameters = %#v, want normalized params", meta.Parameters)
-	}
-	if meta.BytecodeHex != "0102" {
-		t.Fatalf("BytecodeHex = %q, want 0102", meta.BytecodeHex)
-	}
-	if meta.SaltCounter == nil || *meta.SaltCounter != 5 {
-		t.Fatalf("SaltCounter = %v, want 5", meta.SaltCounter)
-	}
-}
-
-func TestParseKeyPayloadMetadataRejectsConflictingAliases(t *testing.T) {
-	tests := []struct {
-		name string
-		data string
-	}{
-		{
-			name: "parameters conflict",
-			data: `{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"A"},"params":{"recipients":"B"}}`,
-		},
-		{
-			name: "bytecode conflict",
-			data: `{"key_type":"aplane.timed-whitelist.v1","lsig_bytecode":"0102","bytecode_hex":"0103"}`,
-		},
+	if got != "ed25519" {
+		t.Fatalf("DetectKeyTypeFromData() = %q, want ed25519", got)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseKeyPayloadMetadata([]byte(tt.data))
-			if !errors.Is(err, ErrIncompatibleKeyFormat) {
-				t.Fatalf("ParseKeyPayloadMetadata() error = %v, want %v", err, ErrIncompatibleKeyFormat)
-			}
-		})
-	}
-}
-
-func TestRequireLogicSigSaltCounter(t *testing.T) {
-	counter, err := RequireLogicSigSaltCounter([]byte(`{"lsig_bytecode":"260101058101","salt_counter":5}`))
-	if err != nil {
-		t.Fatalf("RequireLogicSigSaltCounter() error = %v", err)
-	}
-	if counter != 5 {
-		t.Fatalf("RequireLogicSigSaltCounter() = %d, want 5", counter)
-	}
-
-	if _, err := RequireLogicSigSaltCounter([]byte(`{"lsig_bytecode":"260101058101"}`)); !errors.Is(err, ErrMissingLogicSigSaltCounter) {
-		t.Fatalf("RequireLogicSigSaltCounter(missing) error = %v, want %v", err, ErrMissingLogicSigSaltCounter)
-	}
-}
-
-func TestLSigFileUnmarshalRequiresSaltCounter(t *testing.T) {
-	var lf LSigFile
-	err := json.Unmarshal([]byte(`{"category":"generic_lsig","key_type":"aplane.timed-whitelist.v1","bytecode_hex":"260101058101"}`), &lf)
-	if !errors.Is(err, ErrMissingLogicSigSaltCounter) {
-		t.Fatalf("json.Unmarshal(LSigFile without salt_counter) error = %v, want %v", err, ErrMissingLogicSigSaltCounter)
-	}
-}
-
-func TestValidateLogicSigSaltedBytecodeRejectsOnCurveAddress(t *testing.T) {
-	data := []byte(`{"lsig_bytecode":"0a810143","salt_counter":0}`)
-	bytecode := ExtractBytecode(data)
-	if _, err := ValidateLogicSigSaltedBytecode(data, bytecode); err == nil {
-		t.Fatal("ValidateLogicSigSaltedBytecode() error = nil, want on-curve rejection")
+	if _, err := DetectKeyTypeFromData([]byte(`{"key_type":"ed25519"}`)); !errors.Is(err, ErrIncompatibleKeyFormat) {
+		t.Fatalf("DetectKeyTypeFromData(non-canonical) error = %v, want %v", err, ErrIncompatibleKeyFormat)
 	}
 }
 
 func TestExtractPublicKeyHex(t *testing.T) {
-	tests := []struct {
-		name string
-		data string
-		want string
-	}{
-		{"present", `{"public_key":"abcdef0123"}`, "abcdef0123"},
-		{"missing", `{"key_type":"ed25519"}`, ""},
-		{"invalid JSON", `not json`, ""},
+	keyJSON, _ := testEd25519Key(t)
+	payload, err := ParsePayload(keyJSON)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := extractPublicKeyHex([]byte(tc.data))
-			if got != tc.want {
-				t.Errorf("got %q, want %q", got, tc.want)
-			}
-		})
+	defer payload.ZeroSecrets()
+	if got, want := extractPublicKeyHex(keyJSON), fmt.Sprintf("%x", payload.PublicKey); got != want {
+		t.Fatalf("extractPublicKeyHex() = %q, want %q", got, want)
 	}
 }
 
 func TestExtractCreatedAt(t *testing.T) {
-	tests := []struct {
-		name string
-		data string
-		want string
-	}{
-		{"present", `{"created_at":"2026-01-01T00:00:00Z"}`, "2026-01-01T00:00:00Z"},
-		{"missing", `{"key_type":"ed25519"}`, ""},
-		{"invalid JSON", `not json`, ""},
+	keyJSON, _ := testEd25519Key(t)
+	payload, err := ParsePayload(keyJSON)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := extractCreatedAt([]byte(tc.data))
-			if got != tc.want {
-				t.Errorf("got %q, want %q", got, tc.want)
-			}
-		})
+	defer payload.ZeroSecrets()
+	if got, want := extractCreatedAt(keyJSON), payload.CreatedAt.UTC().Format(time.RFC3339); got != want {
+		t.Fatalf("extractCreatedAt() = %q, want %q", got, want)
 	}
 }
 

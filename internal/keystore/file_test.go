@@ -486,14 +486,23 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	keyPair := &keys.KeyPair{
-		Category:      keys.CategoryComponent,
-		KeyType:       keytypes.SentryComponentEd25519V1,
-		PublicKeyHex:  hex.EncodeToString(publicKey),
-		PrivateKeyHex: hex.EncodeToString(privateKey),
+	keyJSON, err := json.Marshal(map[string]any{
+		"format_version": keys.CurrentKeyFormatVersion,
+		"category":       keys.CategoryComponent,
+		"key_type":       keytypes.SentryComponentEd25519V1,
+		"public_key":     hex.EncodeToString(publicKey),
+		"private_key":    hex.EncodeToString(privateKey),
+		"created_at":     "2026-07-10T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal(component key) error = %v", err)
 	}
-	if _, err := keys.SaveKeyFile(paths, keyPair, testIdentityID, componentKey, testMasterKey); err != nil {
-		t.Fatalf("SaveKeyFile() error = %v", err)
+	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, testMasterKey)
+	if err != nil {
+		t.Fatalf("EncryptWithMasterKey() error = %v", err)
+	}
+	if err := os.WriteFile(paths.KeyFilePath(testIdentityID, componentKey), encrypted, 0o600); err != nil {
+		t.Fatalf("WriteFile(component key) error = %v", err)
 	}
 
 	report, err := keys.ScanKeysDirectoryWithMasterKeyReport(paths, testIdentityID, testMasterKey)

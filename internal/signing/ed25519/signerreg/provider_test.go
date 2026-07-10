@@ -13,12 +13,26 @@ import (
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signing"
 )
 
 func init() {
 	// Register Ed25519 provider for tests
 	RegisterProvider()
+}
+
+func canonicalEd25519KeyJSONForTest(t *testing.T) []byte {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	keyJSON, err := keys.MarshalPayload(keys.NewEd25519Payload(publicKey, privateKey))
+	if err != nil {
+		t.Fatalf("MarshalPayload(ed25519) error = %v", err)
+	}
+	return keyJSON
 }
 
 // TestEd25519Provider_Family verifies it returns "ed25519"
@@ -451,7 +465,7 @@ func TestEd25519Provider_DetectKeyType(t *testing.T) {
 	}{
 		{
 			name:       "valid ed25519 unencrypted",
-			keyData:    []byte(`{"key_type":"ed25519","public_key":"0000","private_key":"0000"}`),
+			keyData:    canonicalEd25519KeyJSONForTest(t),
 			passphrase: "",
 			expected:   true,
 		},

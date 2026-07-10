@@ -4,8 +4,6 @@
 package signing
 
 import (
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
@@ -54,47 +52,31 @@ func (p *LogicSigProvider) RoutingFamily() string {
 }
 
 // LoadKeysFromData loads key material from decrypted key file JSON.
-// SECURITY: the decoded private key is handed to the returned KeyMaterial,
-// whose owner is responsible for zeroing it. The intermediate hex string is
-// immutable and cannot be zeroed; only its reference is dropped.
+// SECURITY: the private key copy is handed to the returned KeyMaterial, whose
+// owner is responsible for zeroing it.
 func (p *LogicSigProvider) LoadKeysFromData(data []byte) (*KeyMaterial, error) {
-	if bytecode := keys.ExtractBytecode(data); len(bytecode) > 0 {
-		if _, err := keys.ValidateLogicSigSaltedBytecode(data, bytecode); err != nil {
-			return nil, err
-		}
+	payload, err := keys.ParsePayload(data)
+	if err != nil {
+		return nil, err
 	}
+	defer payload.ZeroSecrets()
 
-	var keyPair keys.KeyPair
-	if err := json.Unmarshal(data, &keyPair); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal keys: %w", err)
-	}
-
-	signingKeyType := keyPair.BaseKeyType
+	signingKeyType := payload.BaseKeyType
 	if signingKeyType == "" {
-		signingKeyType = keyPair.KeyType
+		signingKeyType = payload.KeyType
 	}
 	if logicsigdsa.RoutingFamily(signingKeyType) != p.family {
 		return nil, fmt.Errorf("key type %q does not belong to family %q", signingKeyType, p.family)
 	}
 
-	privBytes, err := hex.DecodeString(keyPair.PrivateKeyHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode private key hex: %w", err)
-	}
-
-	// Drop reference to the hex string so it becomes GC-eligible.
-	defer func() {
-		keyPair.PrivateKeyHex = ""
-	}()
-
 	return &KeyMaterial{
-		Type:                   keyPair.KeyType,
-		Category:               keyPair.Category,
-		BaseKeyType:            keyPair.BaseKeyType,
-		SigningArgs:            keys.SigningArgDefs(keyPair.SigningArgs),
-		SigningMetadataVersion: keyPair.SigningMetadataVersion,
+		Type:                   payload.KeyType,
+		Category:               payload.Category,
+		BaseKeyType:            payload.BaseKeyType,
+		SigningArgs:            keys.SigningArgDefs(payload.SigningArgs),
+		SigningMetadataVersion: payload.SigningMetadataVersion,
 		Value: &LsigKeyMaterial{
-			PrivateKey: privBytes,
+			PrivateKey: append([]byte(nil), payload.PrivateKey...),
 		},
 	}, nil
 }
@@ -157,15 +139,15 @@ func (p *LogicSigProvider) DetectKeyType(keyData []byte, passphrase string) bool
 		return false
 	}
 
-	keyType, err := keys.DetectKeyTypeFromData(keyData)
+	payload, err := keys.ParsePayload(keyData)
 	if err != nil {
 		return false
 	}
+	defer payload.ZeroSecrets()
 
-	meta := keys.ExtractSigningMetadata(keyData)
-	signingKeyType := meta.BaseKeyType
+	signingKeyType := payload.BaseKeyType
 	if signingKeyType == "" {
-		signingKeyType = keyType
+		signingKeyType = payload.KeyType
 	}
 	return logicsigdsa.RoutingFamily(signingKeyType) == p.family
 }

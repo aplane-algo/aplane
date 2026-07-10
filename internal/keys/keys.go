@@ -4,19 +4,17 @@
 package keys
 
 import (
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
-	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/merklewhitelist"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -96,55 +94,6 @@ func keyPayloadScanWarningCode(err error) KeyScanWarningCode {
 		return KeyScanWarningIncompatibleFormat
 	}
 	return KeyScanWarningDetectKeyTypeFailed
-}
-
-// KeyPayloadHeader is the non-secret schema header required on current key files.
-type KeyPayloadHeader struct {
-	FormatVersion int
-	Category      string
-	KeyType       string
-}
-
-// ValidateCurrentKeyPayload verifies that decrypted key JSON uses the current
-// canonical schema. It does not validate cryptographic material; callers still
-// perform key-type-specific checks after this header check.
-func ValidateCurrentKeyPayload(data []byte) (KeyPayloadHeader, error) {
-	meta, err := ParseKeyPayloadMetadata(data)
-	if err != nil {
-		return KeyPayloadHeader{}, err
-	}
-	return validateCurrentKeyPayloadMetadata(meta)
-}
-
-func validateCurrentKeyPayloadMetadata(meta KeyPayloadMetadata) (KeyPayloadHeader, error) {
-	if !meta.HasFormatVersion {
-		return KeyPayloadHeader{}, incompatibleKeyFormat("missing format_version")
-	}
-	if meta.FormatVersion != CurrentKeyFormatVersion {
-		return KeyPayloadHeader{}, incompatibleKeyFormat("format_version %d is not supported by this runtime; expected %d", meta.FormatVersion, CurrentKeyFormatVersion)
-	}
-	if strings.TrimSpace(meta.Category) == "" {
-		return KeyPayloadHeader{}, incompatibleKeyFormat("missing category")
-	}
-	switch meta.Category {
-	case CategoryEd25519, CategoryDSALsig, CategoryGenericLsig, CategoryComponent:
-	default:
-		return KeyPayloadHeader{}, incompatibleKeyFormat("unknown category %q", meta.Category)
-	}
-	if strings.TrimSpace(meta.KeyType) == "" {
-		return KeyPayloadHeader{}, incompatibleKeyFormat("missing key_type")
-	}
-	if meta.Category == CategoryComponent && !keytypes.IsSentryComponentKeyType(meta.KeyType) {
-		return KeyPayloadHeader{}, incompatibleKeyFormat("component category requires a sentry key type, got %q", meta.KeyType)
-	}
-	if meta.HasRuntimeArgs {
-		return KeyPayloadHeader{}, incompatibleKeyFormat("legacy runtime_args field; use signing_args")
-	}
-	return KeyPayloadHeader{
-		FormatVersion: meta.FormatVersion,
-		Category:      meta.Category,
-		KeyType:       meta.KeyType,
-	}, nil
 }
 
 func incompatibleKeyFormat(format string, args ...interface{}) error {
@@ -446,92 +395,14 @@ func signerGeneratedDSAArgSizeForKey(keyType string) int {
 	}
 }
 
-// ExtractBytecode extracts the LogicSig bytecode from key data.
-// Returns nil if no bytecode is present (e.g., native Ed25519 keys).
-func ExtractBytecode(data []byte) []byte {
-	bytecode, err := extractBytecodeStrict(data)
-	if err != nil {
-		return nil
-	}
-	return bytecode
-}
-
-// DecodeKeyPayloadBytecode extracts and decodes normalized LogicSig bytecode
-// from key payload data, returning alias conflicts and invalid hex as errors.
-func DecodeKeyPayloadBytecode(data []byte) ([]byte, error) {
-	return extractBytecodeStrict(data)
-}
-
-func extractBytecodeStrict(data []byte) ([]byte, error) {
-	fields, err := parseKeyPayloadFields(data)
-	if err != nil {
-		return nil, err
-	}
-	bytecodeHex, err := normalizedBytecodeHexFields(fields)
-	if err != nil {
-		return nil, err
-	}
-	if bytecodeHex == "" {
-		return nil, nil
-	}
-
-	bytecode, err := hex.DecodeString(bytecodeHex)
-	if err != nil {
-		return nil, fmt.Errorf("invalid LogicSig bytecode hex: %w", err)
-	}
-	return bytecode, nil
-}
-
-// ExtractSaltCounter extracts the stored LogicSig salt counter from a key file
-// payload. The boolean reports whether the field was present; zero is a valid
-// counter value and must not be treated as absent.
-func ExtractSaltCounter(data []byte) (byte, bool) {
-	var meta struct {
-		SaltCounter *byte `json:"salt_counter"`
-	}
-	if err := json.Unmarshal(data, &meta); err != nil || meta.SaltCounter == nil {
-		return 0, false
-	}
-	return *meta.SaltCounter, true
-}
-
-// RequireLogicSigSaltCounter enforces that a LogicSig key file contains the
-// persisted salt counter required by the off-curve address invariant.
-func RequireLogicSigSaltCounter(data []byte) (byte, error) {
-	counter, ok := ExtractSaltCounter(data)
-	if !ok {
-		return 0, ErrMissingLogicSigSaltCounter
-	}
-	return counter, nil
-}
-
-// ValidateLogicSigSaltedBytecode enforces the persisted LogicSig off-curve
-// invariant for key-file payloads that contain bytecode.
-func ValidateLogicSigSaltedBytecode(data []byte, bytecode []byte) (byte, error) {
-	if len(bytecode) == 0 {
-		return 0, fmt.Errorf("logic sig key file missing or invalid bytecode")
-	}
-	counter, err := RequireLogicSigSaltCounter(data)
-	if err != nil {
-		return 0, err
-	}
-	addr, err := logicSigAddressBytes(bytecode)
-	if err != nil {
-		return 0, fmt.Errorf("failed to derive LogicSig address: %w", err)
-	}
-	if lsigsalt.IsOnCurve(addr) {
-		return 0, fmt.Errorf("logic sig key file address is on-curve")
-	}
-	return counter, nil
-}
-
 // extractPublicKeyHex extracts the public key hex from key data.
 func extractPublicKeyHex(data []byte) string {
-	meta, err := ParseKeyPayloadMetadata(data)
+	payload, err := ParsePayload(data)
 	if err != nil {
 		return ""
 	}
-	return meta.PublicKeyHex
+	defer payload.ZeroSecrets()
+	return fmt.Sprintf("%x", payload.PublicKey)
 }
 
 // logicSigAddress computes the LogicSig address from bytecode.
@@ -558,39 +429,22 @@ type SigningMetadata struct {
 	SigningMetadataVersion int
 }
 
-func ExtractSigningMetadata(data []byte) SigningMetadata {
-	meta, err := ParseKeyPayloadMetadata(data)
-	if err != nil {
-		return SigningMetadata{}
-	}
-	return SigningMetadata{
-		Category:               meta.Category,
-		BaseKeyType:            meta.BaseKeyType,
-		Parameters:             maps.Clone(meta.Parameters),
-		SigningArgs:            meta.SigningArgs,
-		SigningMetadataVersion: meta.SigningMetadataVersion,
-	}
-}
-
 // extractCreatedAt extracts the created_at timestamp from key data.
 // Returns empty string if not present (legacy keys).
 func extractCreatedAt(data []byte) string {
-	meta, err := ParseKeyPayloadMetadata(data)
+	payload, err := ParsePayload(data)
 	if err != nil {
 		return ""
 	}
-	return meta.CreatedAt
+	defer payload.ZeroSecrets()
+	return payload.CreatedAt.UTC().Format(time.RFC3339)
 }
 
 func DetectKeyTypeFromData(data []byte) (string, error) {
-	meta, err := ParseKeyPayloadMetadata(data)
+	payload, err := ParsePayload(data)
 	if err != nil {
 		return "", fmt.Errorf("failed to unmarshal key type: %w", err)
 	}
-
-	if meta.KeyType != "" {
-		return meta.KeyType, nil
-	}
-
-	return "", fmt.Errorf("key file missing required 'key_type' field")
+	defer payload.ZeroSecrets()
+	return payload.KeyType, nil
 }

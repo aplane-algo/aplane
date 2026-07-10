@@ -4,6 +4,7 @@
 package keys
 
 import (
+	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signingargs"
 )
@@ -36,32 +37,16 @@ const (
 // cannot change the behavior or usability of an existing key.
 type StoredSigningArg = signingargs.Info
 
-// KeyPair represents a cryptographic key pair (Ed25519 or post-quantum).
-type KeyPair struct {
-	FormatVersion   int    `json:"format_version"`
-	Category        string `json:"category"`
-	KeyType         string `json:"key_type"`
-	PublicKeyHex    string `json:"public_key"`
-	PrivateKeyHex   string `json:"private_key"`
-	EntropyHex      string `json:"entropy,omitempty"`
-	Derivation      string `json:"derivation,omitempty"`
-	LsigBytecodeHex string `json:"lsig_bytecode,omitempty"`
-	// SaltCounter is nil for non-LogicSig keys and required for DSA LogicSig
-	// key files; zero is a valid persisted counter and must stay non-nil.
-	SaltCounter            *byte              `json:"salt_counter,omitempty"`
-	Params                 map[string]string  `json:"params,omitempty"`
-	TEALSource             string             `json:"teal_source,omitempty"`
-	SigningMetadataVersion int                `json:"signing_metadata_version,omitempty"`
-	BaseKeyType            string             `json:"base_key_type,omitempty"`
-	SigningArgs            []StoredSigningArg `json:"signing_args,omitempty"`
-	TemplateFingerprint    string             `json:"template_fingerprint,omitempty"`
-	CreatedAt              string             `json:"created_at,omitempty"`
-}
-
 // SaltCounterPtr returns a pointer to counter for DSA LogicSig key files, where
 // zero is a valid persisted salt counter and must not be omitted.
 func SaltCounterPtr(counter byte) *byte {
 	return &counter
+}
+
+// IsGenericLSigType checks if a key type is a generic LogicSig (not DSA-based).
+// This delegates to the genericlsig registry for proper self-registration support.
+func IsGenericLSigType(keyType string) bool {
+	return genericlsig.IsGenericLSigType(keyType)
 }
 
 // TemplateFingerprintForKeyType returns the semantic compatibility fingerprint
