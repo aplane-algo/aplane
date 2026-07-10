@@ -852,16 +852,13 @@ Categories:
 Generic LogicSig entries contain salted bytecode, `salt_counter`, and
 parameters rather than a private signing key.
 
-Key payload readers normalize equivalent field aliases produced by different
-current writers in one parser boundary
-(`internal/keys.ParseKeyPayloadMetadata`). These are not legacy artifacts:
-DSA-backed LogicSig keys (`keys.KeyPair`) persist `lsig_bytecode` and `params`,
-while generic LogicSig keys (`keys.LSigFile`) persist `bytecode_hex` and
-`parameters`. The parser treats `parameters` and `params` as the same
-creation-parameter map, and `lsig_bytecode` and `bytecode_hex` as the same
-stored bytecode field. A payload that contains both aliases with different
-values is rejected as an incompatible key format instead of choosing one by
-precedence.
+Decrypted key payloads use one canonical v1 JSON schema owned by
+`internal/keys.ParsePayload` and `internal/keys.MarshalPayload`. Readers reject
+unknown fields, duplicate JSON object members, non-canonical timestamps, and
+obsolete payload aliases. Creation parameters are stored only in `parameters`;
+LogicSig bytecode is stored only in `lsig_bytecode`. The durable payload does
+not store a separately trusted address, template name, entropy, derivation
+record, or runtime-argument metadata under `runtime_args`.
 
 This document uses **v1 signing-metadata keys** for key files that carry
 `signing_metadata_version >= 1`. LogicSig key payloads in that form include:
@@ -1874,10 +1871,10 @@ Live signer-managed restore:
 
 Restore:
 
-- `ParseBackup()` detects plain `KeyPair` JSON or bundled `BackupBundle`;
-  `backup_bundle` is a sentinel, while `payload_version` is the bundle payload
-  schema version. Missing `payload_version` is treated as legacy v1; unknown
-  sentinels or payload versions are rejected.
+- `ParseBackup()` detects plain canonical key payload JSON or bundled
+  `BackupBundle`; `backup_bundle` is a sentinel, while `payload_version` is the
+  bundle payload schema version. Missing `payload_version` is treated as legacy
+  v1; unknown sentinels or payload versions are rejected.
 - restore `warnings[]` entries have optional `address`, optional `key_type`, and `warning`; warnings are informational and do
   not change restore success/failure
 - bundled templates are checked against the authoritative definition for their

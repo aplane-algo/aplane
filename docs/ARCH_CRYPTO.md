@@ -433,7 +433,7 @@ Start here when changing the subsystem:
 - `internal/keytypestate/state.go`
 - `internal/crypto/encryption.go`
 - `internal/keys/file_types.go`
-- `internal/keys/lsig_file.go`
+- `internal/keys/payload_codec.go`
 - `internal/keystore/file.go`
 - `internal/keystore/session.go`
 - `internal/signerapp/templates/reload.go`

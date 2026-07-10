@@ -301,15 +301,12 @@ guarded flow: user `/sign/component`, sentry `/sign/component`, user
 `/sign/assemble`, then algod submit. Sentry keys are selected by an uppercase,
 52-character txid-shaped Sentry Key ID and are not Algorand spending accounts.
 
-Decrypted key payload metadata is parsed through
-`internal/keys.ParseKeyPayloadMetadata`. That parser reconciles equivalent field
-names emitted by different current writers: DSA-backed LogicSig keys
-(`keys.KeyPair`) write `lsig_bytecode`/`params`, while generic LogicSig keys
-(`keys.LSigFile`) write `bytecode_hex`/`parameters`. `parameters`/`params`
-normalize to one creation-parameter map, and `lsig_bytecode`/`bytecode_hex`
-normalize to one bytecode field. If both aliases are present with different
-values, the payload is rejected instead of relying on reader-specific
-precedence.
+Decrypted key payloads are parsed through `internal/keys.ParsePayload` and
+written through `internal/keys.MarshalPayload`. The v1 payload vocabulary is
+canonical: creation parameters use `parameters`, LogicSig bytecode uses
+`lsig_bytecode`, and duplicate JSON object members or unknown fields are
+rejected. Obsolete cosmetic aliases such as `params` and `bytecode_hex` are not
+accepted in fresh-system stores.
 
 The key file is the source of truth for signing existing keys. A live template
 or library source may explain provenance or enable new key creation, but it must
@@ -317,8 +314,8 @@ not be used to reconstruct missing signing metadata.
 
 Address identity comes from key material rather than signing metadata: native
 keys derive from stored public/private key material, and LogicSig keys derive
-from stored bytecode. The generic LogicSig `address` field is persisted for
-inventory/lookup and key state repair can recover it from bytecode, but
+from stored bytecode. Payloads do not persist an address field; inventory and
+key state repair recover the selector from key material or bytecode.
 `signing_args`, `signing_metadata_version`, `base_key_type`,
 `template_fingerprint`, and `salt_counter` are not independent address
 derivation inputs.

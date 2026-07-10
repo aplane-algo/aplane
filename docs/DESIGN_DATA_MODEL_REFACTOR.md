@@ -58,7 +58,7 @@ Every slice must check whether these apply:
 |------|----------|
 | ASA identity and aliases | One canonical ASA registry/resolver should own built-ins, aliases, ambiguity handling, and metadata. JS and plugin helpers should project from it rather than maintain separate maps. |
 | Plugin asset context | Structured asset records are the canonical plugin context. The deprecated `assetMap` projection has been removed before external plugin compatibility became a constraint. |
-| Key payload parameters | Key payload readers should normalize legacy/cosmetic aliases such as `params`/`parameters` and `lsig_bytecode`/`bytecode_hex` at one parser boundary. Conflicting aliases should fail closed. |
+| Key payload schema | Key payload readers and writers use one canonical fresh-system payload schema. Obsolete cosmetic aliases such as `params` and `bytecode_hex` are rejected at the parser boundary. |
 | Template type ownership | `compiled_provider` is a library/admin projection, not a `templatestore.TemplateType`. Template storage should reject unknown template types instead of defaulting to generic. |
 | Transfer route IDs | Stored transfer route IDs are persistent audit identifiers. The UI may generate route IDs using the `<guardName>_<assetSuffix>` convention for new routes, but it must not silently rewrite existing IDs on no-op edits. |
 | Policy rule IDs | Stable policy rule IDs should be constants. Dynamic transfer rule IDs use the documented grammar `transfer_policy:<route_id>:<verdict>`. |
@@ -157,16 +157,15 @@ Build on Slice 3. Add structured plugin asset records:
 Plugins should resolve ASA identifiers from the structured `assets` list, with
 native ALGO handled out-of-band as asset ID 0.
 
-### Slice 5a: Key Payload Parameter Normalization
+### Slice 5a: Canonical Key Payload Schema
 
-Status: implemented for current key metadata readers.
+Status: superseded by the fresh-system canonical payload cutover.
 
-Add a canonical key payload metadata parser used by verify, restore, scan, and
-backup paths. Normalize `params`/`parameters` and
-`lsig_bytecode`/`bytecode_hex`; reject conflicting duplicates.
-
-Do not force full `KeyPair`/`LSigFile` unification unless a format bump is
-explicitly accepted.
+Add a canonical key payload parser/codec used by verify, restore, scan, backup,
+and key creation paths. Use `parameters` and `lsig_bytecode` as the only durable
+field names, reject duplicate object members and unknown fields, and remove the
+legacy `KeyPair`/`LSigFile` payload DTO split. This was accepted because the
+system has no released stores requiring migration compatibility.
 
 ### Slice 5b: Backup Bundle Parser And Test Fixture Cleanup
 
@@ -325,13 +324,14 @@ Deferred plan:
 Do this before v1 if the team wants a clean SDK boundary. Otherwise document it
 as post-v1 architecture debt.
 
-### Full KeyPair / LSigFile Unification
+### Full Key Payload DTO Unification
 
-Current issue: key payload concepts are duplicated across `KeyPair` and
-`LSigFile`.
+Status: implemented for durable key payload storage.
 
-Deferred plan: first land Slice 5a normalization. Only unify structs if a key
-format bump or broader key-payload migration is explicitly accepted.
+Current shape: `internal/keys.Payload` is the usable decoded representation and
+the JSON wire DTO is private to `internal/keys/payload_codec.go`. Provider
+boundary cleanup that passes typed material instead of decrypted JSON bytes is a
+separate follow-up refactor.
 
 ### Broad Schema Version Reservation
 

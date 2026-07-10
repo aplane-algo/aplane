@@ -4,6 +4,9 @@
 package storepass
 
 import (
+	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -67,6 +71,69 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	}
 	if _, err := noderole.LoadAndVerifyWithMasterKey(paths, identityID, oldMasterKey); err == nil {
 		t.Fatal("node role sidecar still verifies with old master key after rotation")
+	}
+}
+
+func TestRotatePreservesCanonicalKeyPayloadBytes(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	oldPassphrase := []byte("old-passphrase")
+	newPassphrase := []byte("new-passphrase")
+
+	_, oldMasterKey, err := crypto.CreateKeystoreMetadata(paths.KeystoreMetadataDir(identityID), oldPassphrase)
+	if err != nil {
+		t.Fatalf("CreateKeystoreMetadata() error = %v", err)
+	}
+	defer crypto.ZeroBytes(oldMasterKey)
+
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	payload := apkeys.NewEd25519Payload(publicKey, privateKey)
+	payload.CreatedAt = time.Unix(1700000000, 0).UTC()
+	defer payload.ZeroSecrets()
+
+	keyJSON, err := apkeys.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload() error = %v", err)
+	}
+	defer crypto.ZeroBytes(keyJSON)
+
+	selector, err := payload.Selector()
+	if err != nil {
+		t.Fatalf("Selector() error = %v", err)
+	}
+	keyPath := paths.KeyFilePath(identityID, selector)
+	writeEncryptedForRotateTest(t, keyPath, keyJSON, oldMasterKey)
+	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
+	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
+
+	result, err := Rotate(paths, identityID, oldPassphrase, newPassphrase, RotateOptions{})
+	if err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+	if result.KeysMigrated != 1 {
+		t.Fatalf("KeysMigrated = %d, want 1", result.KeysMigrated)
+	}
+
+	meta, err := crypto.LoadKeystoreMetadata(paths.KeystoreMetadataDir(identityID))
+	if err != nil {
+		t.Fatalf("LoadKeystoreMetadata() error = %v", err)
+	}
+	newMasterKey, err := meta.VerifyAndDeriveMasterKey(newPassphrase)
+	if err != nil {
+		t.Fatalf("new passphrase does not verify rotated metadata: %v", err)
+	}
+	defer crypto.ZeroBytes(newMasterKey)
+
+	rotatedPayload, err := decryptForRotateTest(keyPath, newMasterKey)
+	if err != nil {
+		t.Fatalf("decrypt rotated key payload: %v", err)
+	}
+	defer crypto.ZeroBytes(rotatedPayload)
+	if !bytes.Equal(rotatedPayload, keyJSON) {
+		t.Fatalf("rotated plaintext payload changed\nbefore:\n%s\nafter:\n%s", keyJSON, rotatedPayload)
 	}
 }
 
@@ -285,15 +352,19 @@ func assertNodeRoleVerifiesWithMasterKey(t *testing.T, paths storepaths.Paths, i
 
 func assertDecryptsWithMasterKey(t *testing.T, path string, masterKey []byte) {
 	t.Helper()
-	encrypted, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile(%s) error = %v", path, err)
-	}
-	plaintext, err := crypto.DecryptWithMasterKey(encrypted, masterKey)
+	plaintext, err := decryptForRotateTest(path, masterKey)
 	if err != nil {
 		t.Fatalf("DecryptWithMasterKey(%s) error = %v", path, err)
 	}
 	crypto.ZeroBytes(plaintext)
+}
+
+func decryptForRotateTest(path string, masterKey []byte) ([]byte, error) {
+	encrypted, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return crypto.DecryptWithMasterKey(encrypted, masterKey)
 }
 
 func assertMetadataAcceptsPassphrase(t *testing.T, paths storepaths.Paths, identityID string, passphrase []byte) {

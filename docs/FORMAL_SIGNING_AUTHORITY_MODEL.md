@@ -157,11 +157,11 @@ through `auth_address` for that reason.
 
 ### Payload Parsing
 
-1. Key payload parsing has one compatibility boundary.
-2. Cosmetic aliases such as `parameters`/`params` and
-   `lsig_bytecode`/`bytecode_hex` normalize to one semantic field.
-3. If both aliases are present with conflicting values, the key payload rejects
-   instead of selecting one by precedence.
+1. Key payload parsing has one canonical schema boundary.
+2. Canonical payloads store creation parameters in `parameters` and LogicSig
+   bytecode in `lsig_bytecode`.
+3. Duplicate JSON object members, unknown fields, and obsolete cosmetic aliases
+   reject instead of selecting a value by precedence.
 
 ### LogicSig v1 Metadata
 
