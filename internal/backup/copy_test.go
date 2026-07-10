@@ -5,10 +5,13 @@ package backup
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -333,4 +336,35 @@ func (p backupRegisteredTemplateProvider) ValidateCreationParams(map[string]stri
 func (p backupRegisteredTemplateProvider) RuntimeArgs() []lsigprovider.RuntimeArgDef      { return nil }
 func (p backupRegisteredTemplateProvider) BuildArgs([]byte, map[string][]byte) ([][]byte, error) {
 	return nil, nil
+}
+
+// TestIsCanonicalPayloadRejectionCoversEverySentinel pins the contract that
+// ExportAllKeys relies on: an ExportKey failure caused by canonical payload
+// validation is skippable (one bad key does not abort the all-keys backup),
+// while an infrastructure failure (read/decrypt/template/IO) must abort. Both
+// branches of the classifier are asserted, including the bare
+// ErrMissingLogicSigSaltCounter sentinel, which no end-to-end backup test
+// exercises. If a future validation adds a new bare sentinel that should be
+// skippable, it must be added here and to isCanonicalPayloadRejection.
+func TestIsCanonicalPayloadRejectionCoversEverySentinel(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"incompatible_format_bare", keys.ErrIncompatibleKeyFormat, true},
+		{"incompatible_format_wrapped", fmt.Errorf("failed to build export payload for X: %w", keys.ErrIncompatibleKeyFormat), true},
+		{"missing_salt_counter_bare", keys.ErrMissingLogicSigSaltCounter, true},
+		{"missing_salt_counter_wrapped", fmt.Errorf("failed to export X: %w", keys.ErrMissingLogicSigSaltCounter), true},
+		{"infra_io_error", io.ErrUnexpectedEOF, false},
+		{"infra_wrapped_decrypt", fmt.Errorf("failed to decrypt key: %w", io.ErrUnexpectedEOF), false},
+		{"nil_error", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isCanonicalPayloadRejection(tc.err); got != tc.want {
+				t.Fatalf("isCanonicalPayloadRejection(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
 }
