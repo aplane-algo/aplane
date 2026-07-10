@@ -371,17 +371,11 @@ func IsComponentKey(category string) bool {
 	return category == CategoryComponent
 }
 
-// IsGenericKey classifies a key payload from durable key-file metadata.
-// Current keys use category as authoritative; legacy keys without category
-// fall back to the generic LogicSig provider registry.
-func IsGenericKey(category, keyType string) bool {
-	if category == CategoryGenericLsig {
-		return true
-	}
-	if category != "" {
-		return false
-	}
-	return IsGenericLSigType(keyType)
+// IsGenericKey classifies a key payload as a generic (no private key)
+// LogicSig. Category is authoritative: every canonical payload records one,
+// so there is no key-type fallback.
+func IsGenericKey(category string) bool {
+	return category == CategoryGenericLsig
 }
 
 const falcon1024WhitelistV2KeyType = "aplane.falcon1024-whitelist.v2"

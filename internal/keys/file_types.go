@@ -4,7 +4,6 @@
 package keys
 
 import (
-	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/signingargs"
 )
@@ -41,12 +40,6 @@ type StoredSigningArg = signingargs.Info
 // zero is a valid persisted salt counter and must not be omitted.
 func SaltCounterPtr(counter byte) *byte {
 	return &counter
-}
-
-// IsGenericLSigType checks if a key type is a generic LogicSig (not DSA-based).
-// This delegates to the genericlsig registry for proper self-registration support.
-func IsGenericLSigType(keyType string) bool {
-	return genericlsig.IsGenericLSigType(keyType)
 }
 
 // TemplateFingerprintForKeyType returns the semantic compatibility fingerprint

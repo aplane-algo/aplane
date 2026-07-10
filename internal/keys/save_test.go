@@ -144,18 +144,6 @@ func TestSavePayloadDirectoryCreation(t *testing.T) {
 	}
 }
 
-func TestIsGenericLSigType(t *testing.T) {
-	if IsGenericLSigType("ed25519") {
-		t.Error("ed25519 should not be a generic LSig type")
-	}
-	if IsGenericLSigType("aplane.falcon1024.v1") {
-		t.Error("aplane.falcon1024.v1 should not be a generic LSig type")
-	}
-	if IsGenericLSigType("unknown-type") {
-		t.Error("unknown type should not be a generic LSig type")
-	}
-}
-
 func assertKeyFileMode(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
 	info, err := os.Stat(path)

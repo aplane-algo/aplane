@@ -250,7 +250,7 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 
 	// Generic lsig types (timelock, etc.) don't have signing providers
 	// They only need bytecode attachment, no cryptographic signing
-	if keys.IsGenericKey(signingMeta.Category, keyType) {
+	if keys.IsGenericKey(signingMeta.Category) {
 		return loadGenericLsigKeys(payload, keyType, signingMeta), nil
 	}
 

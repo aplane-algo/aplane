@@ -395,5 +395,5 @@ func isGenericKeyMaterial(keyMaterial *coresigning.KeyMaterial) bool {
 	if keyMaterial == nil {
 		return false
 	}
-	return keys.IsGenericKey(keyMaterial.Category, keyMaterial.Type)
+	return keys.IsGenericKey(keyMaterial.Category)
 }

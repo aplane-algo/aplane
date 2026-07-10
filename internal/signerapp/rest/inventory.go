@@ -40,7 +40,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 		keyType := keyTypesCopy[address]
 		summary := signingSummary[address]
 		category := summary.Category
-		isGeneric := category == keys.CategoryGenericLsig || (category == "" && keys.IsGenericLSigType(keyType))
+		isGeneric := keys.IsGenericKey(category)
 		isComponent := keys.IsComponentKey(category)
 
 		keyInfo := signerapi.KeyInfo{
