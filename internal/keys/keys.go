@@ -363,17 +363,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 				continue
 			}
 		} else if IsGenericKey(category, keyType) {
-			// For generic LogicSig files, address and bytecode are stored directly
-			var lsigFile LSigFile
-			if err := json.Unmarshal(data, &lsigFile); err != nil {
-				crypto.ZeroBytes(data)
-				code := KeyScanWarningParseLogicSigFailed
-				if errors.Is(err, ErrMissingLogicSigSaltCounter) {
-					code = KeyScanWarningLogicSigSaltInvalid
-				}
-				warn(code, keyFile, err)
-				continue
-			}
+			// Generic LogicSig addresses derive exclusively from stored bytecode.
 			bytecode, err := extractBytecodeStrict(data)
 			if err != nil {
 				crypto.ZeroBytes(data)
@@ -389,16 +379,6 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 			if err != nil {
 				crypto.ZeroBytes(data)
 				warn(KeyScanWarningLogicSigAddressInvalid, keyFile, err)
-				continue
-			}
-			if strings.TrimSpace(lsigFile.Address) == "" {
-				crypto.ZeroBytes(data)
-				warn(KeyScanWarningLogicSigAddressInvalid, keyFile, fmt.Errorf("stored LogicSig address is empty; bytecode derives %s", address))
-				continue
-			}
-			if lsigFile.Address != address {
-				crypto.ZeroBytes(data)
-				warn(KeyScanWarningLogicSigAddressInvalid, keyFile, fmt.Errorf("stored LogicSig address %s does not match bytecode-derived address %s", lsigFile.Address, address))
 				continue
 			}
 			// Generic LSigs have no crypto signature, just bytecode

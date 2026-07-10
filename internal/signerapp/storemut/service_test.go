@@ -5,7 +5,6 @@ package storemut
 
 import (
 	"context"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,6 +12,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -177,14 +179,15 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	defer cleanup()
 
 	svc := New("default", paths, nil, nil)
-	address := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
-	err := svc.SaveGenericLSig(
-		address,
+	salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00}, 3)
+	if err != nil {
+		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
+	}
+	err = svc.SaveGenericLSig(
 		"aplane.timed-whitelist.v1",
-		"timed-whitelist",
 		map[string]string{"unlock_round": "123"},
-		[]byte{0x01, 0x20, 0x01, 0x01, 0x22},
-		1,
+		salted.Bytecode,
+		salted.Counter,
 		"#pragma version 10\nint 1\nreturn",
 		nil,
 		masterKey,
@@ -193,9 +196,25 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		t.Fatalf("SaveGenericLSig() error = %v", err)
 	}
 
-	keyPath := paths.KeyFilePath("default", address)
+	keyPath := paths.KeyFilePath("default", salted.Address.String())
 	if _, err := os.Stat(keyPath); err != nil {
 		t.Fatalf("expected generic lsig file at %s: %v", keyPath, err)
+	}
+	encrypted, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	decrypted, err := crypto.DecryptWithMasterKey(encrypted, masterKey)
+	if err != nil {
+		t.Fatalf("DecryptWithMasterKey() error = %v", err)
+	}
+	defer crypto.ZeroBytes(decrypted)
+	payload, err := keys.ParsePayload(decrypted)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
+	}
+	if payload.Category != keys.CategoryGenericLsig || payload.KeyType != "aplane.timed-whitelist.v1" {
+		t.Fatalf("payload = (%q, %q), want canonical generic LogicSig", payload.Category, payload.KeyType)
 	}
 }
 

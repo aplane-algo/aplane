@@ -8,12 +8,12 @@ package storemut
 import (
 	"context"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"path/filepath"
 
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
@@ -91,8 +91,18 @@ func (s *Service) ImportKeyFromMnemonicWithActivatedContext(ctx context.Context,
 }
 
 // SaveGenericLSig persists a generated generic LogicSig key file.
-func (s *Service) SaveGenericLSig(address, keyType, template string, parameters map[string]string, bytecode []byte, saltCounter byte, tealSource string, signingArgs []keys.StoredSigningArg, masterKey []byte) error {
-	return keys.WriteLSigFile(s.keyPaths, s.identityID, address, keyType, template, parameters, bytecode, saltCounter, tealSource, signingArgs, masterKey)
+func (s *Service) SaveGenericLSig(keyType string, parameters map[string]string, bytecode []byte, saltCounter byte, tealSource string, signingArgs []keys.StoredSigningArg, masterKey []byte) error {
+	payload := keys.NewGenericLSigPayload(
+		keyType,
+		parameters,
+		bytecode,
+		saltCounter,
+		tealSource,
+		signingArgs,
+		keys.TemplateFingerprintForKeyType(keyType),
+	)
+	_, err := keys.SavePayload(s.keyPaths, s.identityID, payload, masterKey)
+	return err
 }
 
 // SaveServerSetting persists a single signer-owned config setting.

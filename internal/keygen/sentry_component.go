@@ -4,10 +4,10 @@
 package keygen
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 )
 
@@ -16,26 +16,17 @@ import (
 // sentry component generators (ed25519 here, families like Falcon-1024 in
 // their lsig packages).
 func SaveSentryComponentKey(paths storepaths.Paths, identityID, keyType string, publicKey, privateKey []byte, masterKey []byte) (*GenerationResult, error) {
-	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
-	if err != nil {
-		return nil, err
-	}
-
-	keyPair := &keys.KeyPair{
-		Category:      keys.CategoryComponent,
-		KeyType:       keyType,
-		PublicKeyHex:  fmt.Sprintf("%x", publicKey),
-		PrivateKeyHex: fmt.Sprintf("%x", privateKey),
-	}
-	keyFiles, err := keys.SaveKeyFile(paths, keyPair, identityID, componentKey, masterKey)
+	payload := keys.NewComponentPayload(keyType, publicKey, privateKey)
+	defer payload.ZeroSecrets()
+	keyFiles, err := keys.SavePayload(paths, identityID, payload, masterKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save sentry key: %w", err)
 	}
 
 	return &GenerationResult{
-		Address:      componentKey,
+		Address:      keyFiles.Address,
 		KeyType:      keyType,
-		PublicKeyHex: keyPair.PublicKeyHex,
+		PublicKeyHex: hex.EncodeToString(publicKey),
 		KeyFiles:     keyFiles,
 	}, nil
 }

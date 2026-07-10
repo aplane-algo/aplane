@@ -15,7 +15,6 @@ import (
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/mnemonic"
-	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 // Ed25519Generator implements Generator for Ed25519 keys
@@ -45,19 +44,14 @@ func (g *Ed25519Generator) GenerateFromSeed(ctx context.Context, paths storepath
 	defer securecrypto.ZeroBytes(privateKey)
 	publicKey := privateKey.Public().(ed25519.PublicKey)
 
-	// Convert to Algorand address
-	var algoPubKey types.Address
-	copy(algoPubKey[:], publicKey[:32])
-	address := algoPubKey.String()
-
 	// Save key files
-	keyFiles, err := saveEd25519Keys(paths, identityID, publicKey, privateKey, address, masterKey)
+	keyFiles, err := saveEd25519Keys(paths, identityID, publicKey, privateKey, masterKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save keys: %w", err)
 	}
 
 	return &GenerationResult{
-		Address:      address,
+		Address:      keyFiles.Address,
 		KeyType:      "ed25519",
 		PublicKeyHex: fmt.Sprintf("%x", publicKey),
 		Mnemonic:     "",
@@ -115,13 +109,13 @@ func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.
 	}
 
 	// Save key files
-	keyFiles, err := saveEd25519Keys(paths, identityID, account.PublicKey, account.PrivateKey, account.Address.String(), masterKey)
+	keyFiles, err := saveEd25519Keys(paths, identityID, account.PublicKey, account.PrivateKey, masterKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save keys: %w", err)
 	}
 
 	return &GenerationResult{
-		Address:      account.Address.String(),
+		Address:      keyFiles.Address,
 		KeyType:      "ed25519",
 		PublicKeyHex: fmt.Sprintf("%x", account.PublicKey),
 		Mnemonic:     mnemonicStr,
@@ -129,15 +123,11 @@ func (g *Ed25519Generator) GenerateRandom(ctx context.Context, paths storepaths.
 	}, nil
 }
 
-// saveEd25519Keys saves Ed25519 key files to disk using the shared SaveKeyFile helper
-func saveEd25519Keys(paths storepaths.Paths, identityID string, publicKey []byte, privateKey []byte, address string, masterKey []byte) (*keys.ImportKeyResult, error) {
-	keyPair := &keys.KeyPair{
-		Category:      keys.CategoryEd25519,
-		KeyType:       "ed25519",
-		PublicKeyHex:  fmt.Sprintf("%x", publicKey),
-		PrivateKeyHex: fmt.Sprintf("%x", privateKey),
-	}
-	return keys.SaveKeyFile(paths, keyPair, identityID, address, masterKey)
+// saveEd25519Keys saves an Ed25519 key under its payload-derived address.
+func saveEd25519Keys(paths storepaths.Paths, identityID string, publicKey []byte, privateKey []byte, masterKey []byte) (*keys.ImportKeyResult, error) {
+	payload := keys.NewEd25519Payload(publicKey, privateKey)
+	defer payload.ZeroSecrets()
+	return keys.SavePayload(paths, identityID, payload, masterKey)
 }
 
 var registerEd25519GeneratorOnce sync.Once

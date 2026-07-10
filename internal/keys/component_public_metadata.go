@@ -98,3 +98,27 @@ func writeComponentPublicMetadataIfNeeded(paths storepaths.Paths, identityID, ad
 	}
 	return nil
 }
+
+func writeComponentPublicMetadataFromPayload(paths storepaths.Paths, identityID, selector string, payload *Payload) error {
+	if payload == nil || payload.Category != CategoryComponent || !keytypes.IsSentryComponentKeyType(payload.KeyType) {
+		return nil
+	}
+	componentKey, err := keytypes.NormalizeComponentKeySelector(selector)
+	if err != nil {
+		return fmt.Errorf("invalid Sentry Key ID: %w", err)
+	}
+	env, err := sentryrefs.NewExportEnvelope(componentKey, payload.KeyType, fmt.Sprintf("%x", payload.PublicKey))
+	if err != nil {
+		return fmt.Errorf("failed to build component public metadata: %w", err)
+	}
+	data, err := json.MarshalIndent(env, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode component public metadata: %w", err)
+	}
+	data = append(data, '\n')
+	path := ComponentPublicMetadataPath(paths, identityID, componentKey)
+	if err := fsutil.WriteFile(path, data); err != nil {
+		return fmt.Errorf("failed to write component public metadata %s: %w", path, err)
+	}
+	return nil
+}

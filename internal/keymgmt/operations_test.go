@@ -7,7 +7,6 @@ import (
 	"context"
 	stded25519 "crypto/ed25519"
 	"encoding/base64"
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -262,32 +261,33 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 			}
 			defer crypto.ZeroBytes(decrypted)
 
-			var keyPair apkeys.KeyPair
-			if err := json.Unmarshal(decrypted, &keyPair); err != nil {
-				t.Fatalf("json.Unmarshal(KeyPair) error = %v", err)
+			payload, err := apkeys.ParsePayload(decrypted)
+			if err != nil {
+				t.Fatalf("ParsePayload() error = %v", err)
 			}
-			if keyPair.Category != apkeys.CategoryDSALsig {
-				t.Fatalf("Category = %q, want %s", keyPair.Category, apkeys.CategoryDSALsig)
+			defer payload.ZeroSecrets()
+			if payload.Category != apkeys.CategoryDSALsig {
+				t.Fatalf("Category = %q, want %s", payload.Category, apkeys.CategoryDSALsig)
 			}
-			if keyPair.KeyType != tt.keyType {
-				t.Fatalf("stored KeyType = %q, want %s", keyPair.KeyType, tt.keyType)
+			if payload.KeyType != tt.keyType {
+				t.Fatalf("stored KeyType = %q, want %s", payload.KeyType, tt.keyType)
 			}
-			if keyPair.BaseKeyType != falcon1024guarded.BaseKeyType {
-				t.Fatalf("BaseKeyType = %q, want %s", keyPair.BaseKeyType, falcon1024guarded.BaseKeyType)
+			if payload.BaseKeyType != falcon1024guarded.BaseKeyType {
+				t.Fatalf("BaseKeyType = %q, want %s", payload.BaseKeyType, falcon1024guarded.BaseKeyType)
 			}
-			if keyPair.Params[falcon1024guarded.ParamSentryPublicKey] != tt.sentryPublicKey {
-				t.Fatalf("sentry public key param = %q, want %q", keyPair.Params[falcon1024guarded.ParamSentryPublicKey], tt.sentryPublicKey)
+			if payload.Parameters[falcon1024guarded.ParamSentryPublicKey] != tt.sentryPublicKey {
+				t.Fatalf("sentry public key param = %q, want %q", payload.Parameters[falcon1024guarded.ParamSentryPublicKey], tt.sentryPublicKey)
 			}
-			if keyPair.LsigBytecodeHex == "" {
-				t.Fatal("LsigBytecodeHex is empty")
+			if len(payload.LogicSigBytecode) == 0 {
+				t.Fatal("LogicSigBytecode is empty")
 			}
-			if keyPair.SaltCounter == nil {
+			if payload.SaltCounter == nil {
 				t.Fatal("SaltCounter is nil")
 			}
-			if keyPair.SigningMetadataVersion != apkeys.CurrentSigningMetadataVersion {
-				t.Fatalf("SigningMetadataVersion = %d, want %d", keyPair.SigningMetadataVersion, apkeys.CurrentSigningMetadataVersion)
+			if payload.SigningMetadataVersion != apkeys.CurrentSigningMetadataVersion {
+				t.Fatalf("SigningMetadataVersion = %d, want %d", payload.SigningMetadataVersion, apkeys.CurrentSigningMetadataVersion)
 			}
-			if keyPair.TemplateFingerprint == "" {
+			if payload.TemplateFingerprint == "" {
 				t.Fatal("TemplateFingerprint is empty")
 			}
 		})

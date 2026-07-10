@@ -15,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	keygenreg "github.com/aplane-algo/aplane/internal/keygen"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -645,5 +646,29 @@ func TestMnemonicRoundTrip(t *testing.T) {
 	// Verify same public key
 	if result1.PublicKeyHex != result2.PublicKeyHex {
 		t.Error("Mnemonic should regenerate same public key")
+	}
+
+	data, err := os.ReadFile(result2.KeyFiles.PrivateFile)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	decrypted, err := crypto.DecryptWithMasterKey(data, testMasterKey)
+	if err != nil {
+		t.Fatalf("DecryptWithMasterKey() error = %v", err)
+	}
+	defer crypto.ZeroBytes(decrypted)
+	payload, err := apkeys.ParsePayload(decrypted)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
+	}
+	defer payload.ZeroSecrets()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(decrypted, &fields); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	for _, removed := range []string{"entropy", "derivation", "address", "template", "params", "bytecode_hex"} {
+		if _, exists := fields[removed]; exists {
+			t.Fatalf("mnemonic-backed key persisted removed field %q", removed)
+		}
 	}
 }

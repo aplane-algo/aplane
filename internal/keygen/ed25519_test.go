@@ -4,10 +4,10 @@
 package keygen
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -327,7 +327,6 @@ func TestSaveEd25519KeysWithEncryption(t *testing.T) {
 		testIdentityID,
 		account.PublicKey,
 		account.PrivateKey,
-		account.Address.String(),
 		masterKey,
 	)
 	if err != nil {
@@ -356,26 +355,25 @@ func TestSaveEd25519KeysWithEncryption(t *testing.T) {
 		t.Fatalf("Failed to decrypt key file: %v", err)
 	}
 
-	// Parse key pair
-	var keyPair apkeys.KeyPair
-	if err := json.Unmarshal(decrypted, &keyPair); err != nil {
+	// Parse canonical key payload.
+	payload, err := apkeys.ParsePayload(decrypted)
+	if err != nil {
 		t.Fatalf("Failed to parse decrypted key: %v", err)
 	}
+	defer payload.ZeroSecrets()
 
 	// Verify key type
-	if keyPair.KeyType != "ed25519" {
-		t.Errorf("Key type = %q, want %q", keyPair.KeyType, "ed25519")
+	if payload.KeyType != "ed25519" {
+		t.Errorf("Key type = %q, want %q", payload.KeyType, "ed25519")
 	}
 
 	// Verify public key matches
-	expectedPubKeyHex := hex.EncodeToString(account.PublicKey)
-	if keyPair.PublicKeyHex != expectedPubKeyHex {
+	if !bytes.Equal(payload.PublicKey, account.PublicKey) {
 		t.Error("Stored public key doesn't match original")
 	}
 
 	// Verify private key matches
-	expectedPrivKeyHex := hex.EncodeToString(account.PrivateKey)
-	if keyPair.PrivateKeyHex != expectedPrivKeyHex {
+	if !bytes.Equal(payload.PrivateKey, account.PrivateKey) {
 		t.Error("Stored private key doesn't match original")
 	}
 }
@@ -392,7 +390,6 @@ func TestSaveEd25519KeysRejectsEmptyMasterKey(t *testing.T) {
 		testIdentityID,
 		account.PublicKey,
 		account.PrivateKey,
-		account.Address.String(),
 		nil,
 	)
 	if keyFiles != nil {

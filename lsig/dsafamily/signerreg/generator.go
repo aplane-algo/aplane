@@ -6,7 +6,6 @@ package signerreg
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -63,12 +62,9 @@ func (g *LogicSigGenerator) RoutingFamily() string {
 	return g.family
 }
 
-// keygenOpts holds optional parameters for key generation.
-// These control whether entropy/mnemonic are stored and returned.
+// keygenOpts holds optional result data for key generation.
 type keygenOpts struct {
-	entropy    []byte // If set, stored in key file for mnemonic re-export
-	mnemonic   string // If set, returned in result
-	derivation string // If set (e.g., "bip39-standard"), stored in key file
+	mnemonic string
 }
 
 // generateKey is the internal helper that handles the common keygen logic:
@@ -130,38 +126,31 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 		tealSource, _ = tg.GenerateTEAL(pub, params)
 	}
 
-	// Build key file structure
-	keyPair := &keys.KeyPair{
-		Category:               keys.CategoryDSALsig,
-		KeyType:                keyType,
-		PublicKeyHex:           hex.EncodeToString(pub),
-		PrivateKeyHex:          hex.EncodeToString(priv),
-		LsigBytecodeHex:        hex.EncodeToString(lsigBytecode),
-		SaltCounter:            &saltCounter,
-		Params:                 params,
-		TEALSource:             tealSource,
-		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
-		BaseKeyType:            baseKeyType,
-		TemplateFingerprint:    keys.TemplateFingerprintForKeyType(keyType),
-	}
+	var signingArgs []keys.StoredSigningArg
 	if provider != nil {
-		keyPair.SigningArgs = keys.StoreSigningArgs(provider.RuntimeArgs())
+		signingArgs = keys.StoreSigningArgs(provider.RuntimeArgs())
 	}
-
-	// Add optional fields for mnemonic support
-	if opts != nil {
-		if len(opts.entropy) > 0 {
-			keyPair.EntropyHex = hex.EncodeToString(opts.entropy)
-		}
-		if opts.derivation != "" {
-			keyPair.Derivation = opts.derivation
-		}
-	}
+	payload := keys.NewDSALSigPayload(
+		keyType,
+		baseKeyType,
+		pub,
+		priv,
+		params,
+		lsigBytecode,
+		saltCounter,
+		tealSource,
+		signingArgs,
+		keys.TemplateFingerprintForKeyType(keyType),
+	)
+	defer payload.ZeroSecrets()
 
 	// Save key file
-	keyFiles, err := keys.SaveKeyFile(paths, keyPair, identityID, address, masterKey)
+	keyFiles, err := keys.SavePayload(paths, identityID, payload, masterKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save keys: %w", err)
+	}
+	if keyFiles.Address != address {
+		return nil, fmt.Errorf("derived LogicSig address mismatch: generated %s, persisted %s", address, keyFiles.Address)
 	}
 
 	// Build result
@@ -217,23 +206,8 @@ func (g *LogicSigGenerator) GenerateFromMnemonic(ctx context.Context, paths stor
 		return nil, fmt.Errorf("failed to derive seed from mnemonic: %w", err)
 	}
 
-	// Convert mnemonic back to entropy for storage (so it can be re-exported)
-	entropy, err := handler.MnemonicToEntropy(words)
-	if errors.Is(err, mnemonicreg.ErrEntropyUnsupported) {
-		entropy = nil
-	} else if err != nil {
-		return nil, fmt.Errorf("failed to derive entropy from mnemonic: %w", err)
-	}
-	defer crypto.ZeroBytes(entropy)
-
-	derivation := ""
-	if len(entropy) > 0 {
-		derivation = "bip39-standard"
-	}
 	return g.generateKey(ctx, paths, identityID, seed, masterKey, keyType, params, &keygenOpts{
-		entropy:    entropy,
-		mnemonic:   mnemonic,
-		derivation: derivation,
+		mnemonic: mnemonic,
 	})
 }
 
@@ -253,13 +227,7 @@ func (g *LogicSigGenerator) GenerateRandom(ctx context.Context, paths storepaths
 	}
 	defer crypto.ZeroBytes(entropy)
 
-	derivation := ""
-	if len(entropy) > 0 {
-		derivation = "bip39-standard"
-	}
 	return g.generateKey(ctx, paths, identityID, seed, masterKey, keyType, params, &keygenOpts{
-		entropy:    entropy,
-		mnemonic:   mnemonic,
-		derivation: derivation,
+		mnemonic: mnemonic,
 	})
 }

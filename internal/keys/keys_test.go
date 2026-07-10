@@ -671,9 +671,8 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsSaltWarnings(t *testing.T) {
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
-		"address": "GENERIC",
 		"key_type": "aplane.whitelist.v1",
-		"bytecode_hex": "260101058101",
+		"lsig_bytecode": "260101058101",
 		"signing_metadata_version": 1
 	}`)
 	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
@@ -713,9 +712,8 @@ func TestScanKeysDirectoryWithMasterKeyLoadsGenericUnderDerivedAddress(t *testin
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
-		"address": "` + address + `",
 		"key_type": "aplane.whitelist.v1",
-		"bytecode_hex": "` + hex.EncodeToString(bytecode) + `",
+		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"signing_metadata_version": 1
 	}`)
@@ -785,16 +783,15 @@ func TestSignerGeneratedDSAArgSizeIncludesCorridorProofBudget(t *testing.T) {
 	}
 }
 
-func TestScanKeysDirectoryWithMasterKeyRejectsGenericStoredAddressMismatch(t *testing.T) {
+func TestScanKeysDirectoryWithMasterKeyRejectsGenericFilenameAddressMismatch(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	_, bytecode, counter := saltedLogicSigForScanTest(t)
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
-		"address": "NOT_DERIVED",
 		"key_type": "aplane.whitelist.v1",
-		"bytecode_hex": "` + hex.EncodeToString(bytecode) + `",
+		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"signing_metadata_version": 1
 	}`)
@@ -812,11 +809,11 @@ func TestScanKeysDirectoryWithMasterKeyRejectsGenericStoredAddressMismatch(t *te
 		t.Fatalf("warnings = %#v, want one warning", report.Warnings)
 	}
 	warning := report.Warnings[0]
-	if warning.Code != KeyScanWarningLogicSigAddressInvalid {
-		t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningLogicSigAddressInvalid)
+	if warning.Code != KeyScanWarningFilenameAddressMismatch {
+		t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningFilenameAddressMismatch)
 	}
-	if !contains(warning.Reason(), "does not match bytecode-derived address") {
-		t.Fatalf("warning reason = %q, want address mismatch", warning.Reason())
+	if !contains(warning.Reason(), "does not match payload-derived address") {
+		t.Fatalf("warning reason = %q, want filename mismatch", warning.Reason())
 	}
 }
 
