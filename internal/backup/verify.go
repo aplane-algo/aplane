@@ -172,36 +172,17 @@ func verifyFileDeep(backupDir, address string, passphrase []byte, opts DeepVerif
 		return result
 	}
 
-	if len(payload.LogicSigBytecode) > 0 {
-		if opts.ValidateBundledTemplateBytecode && len(templateYAML) > 0 {
-			if err := verifyBundledTemplateMatchesKey(payload, templateYAML, templateType, payload.LogicSigBytecode, address, opts); err != nil {
-				result.Valid = false
-				result.Error = err.Error()
-				return result
-			}
-		}
-		derivedAddress, err := logicSigAddress(payload.LogicSigBytecode)
-		if err != nil {
+	if len(payload.LogicSigBytecode) > 0 && opts.ValidateBundledTemplateBytecode && len(templateYAML) > 0 {
+		if err := verifyBundledTemplateMatchesKey(payload, templateYAML, templateType, payload.LogicSigBytecode, address, opts); err != nil {
 			result.Valid = false
-			result.Error = fmt.Sprintf("failed to derive LogicSig address: %v", err)
+			result.Error = err.Error()
 			return result
 		}
-		if selector != derivedAddress {
-			result.Valid = false
-			result.Error = fmt.Sprintf("address mismatch: selector=%s, derived=%s", selector, derivedAddress)
-			return result
-		}
-		if derivedAddress != address {
-			result.Valid = false
-			result.Error = fmt.Sprintf("address mismatch: filename=%s, derived=%s", address, derivedAddress)
-			return result
-		}
-
-		result.Valid = true
-		result.KeyType = payload.KeyType
-		return result
 	}
 
+	// Selector() is the single address authority for every category (for lsig
+	// payloads it IS the bytecode-derived address), so the filename comparison
+	// below is the complete tamper check.
 	if selector != address {
 		result.Valid = false
 		result.Error = fmt.Sprintf("address mismatch: filename=%s, derived=%s", address, selector)
