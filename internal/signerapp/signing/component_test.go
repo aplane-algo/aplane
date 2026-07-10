@@ -1584,10 +1584,6 @@ func (p *componentUserTestProvider) ZeroKey(key *coresigning.KeyMaterial) {
 	key.Value = nil
 }
 
-func (p *componentUserTestProvider) DetectKeyType(_ []byte, _ string) bool {
-	return false
-}
-
 func TestLoadSentryComponentKeyMapsMissingKey(t *testing.T) {
 	session := &componentKeyTestSession{err: keystore.ErrKeyNotFound}
 	_, _, err := loadSentryComponentKey(context.Background(), session, testEd25519ComponentSelector(t, 0x22))

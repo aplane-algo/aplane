@@ -121,15 +121,6 @@ func canonicalFalconPayloadForTest(keyType string, publicKey, privateKey []byte)
 	)
 }
 
-func canonicalFalconKeyJSONForTest(t *testing.T, keyType string, publicKey, privateKey []byte) []byte {
-	t.Helper()
-	data, err := utilkeys.MarshalPayload(canonicalFalconPayloadForTest(keyType, publicKey, privateKey))
-	if err != nil {
-		t.Fatalf("MarshalPayload(falcon test key) error = %v", err)
-	}
-	return data
-}
-
 func providerKeyFromFalconPayload(payload *utilkeys.Payload) signing.ProviderKey {
 	return signing.ProviderKey{
 		Type:                   payload.KeyType,
@@ -334,63 +325,6 @@ func TestFalconProvider_ZeroKey_Nil(t *testing.T) {
 
 	// Should not panic
 	p.ZeroKey(nil)
-}
-
-func TestFalconProvider_DetectKeyType(t *testing.T) {
-	p := newTestProvider()
-
-	tests := []struct {
-		name       string
-		keyData    []byte
-		passphrase string
-		want       bool
-	}{
-		{
-			name:       "encrypted data with passphrase",
-			keyData:    []byte(`{"encrypted": true}`),
-			passphrase: "password",
-			want:       false, // Can't detect encrypted data
-		},
-		{
-			name:       "falcon1024 type",
-			keyData:    canonicalFalconKeyJSONForTest(t, "falcon1024", []byte{0x01}, []byte{0x02}),
-			passphrase: "",
-			want:       true,
-		},
-		{
-			name:       "ed25519 type",
-			keyData:    canonicalFalconKeyJSONForTest(t, "ed25519", []byte{0x01}, []byte{0x02}),
-			passphrase: "",
-			want:       false,
-		},
-		{
-			name:       "invalid json",
-			keyData:    []byte(`not json`),
-			passphrase: "",
-			want:       false,
-		},
-		{
-			name:       "empty key_type field errors",
-			keyData:    []byte(`{"key_type": ""}`),
-			passphrase: "",
-			want:       false,
-		},
-		{
-			name:       "missing key_type field",
-			keyData:    []byte(`{"public_key": "abc"}`),
-			passphrase: "",
-			want:       false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := p.DetectKeyType(tt.keyData, tt.passphrase)
-			if got != tt.want {
-				t.Errorf("DetectKeyType() = %v, want %v", got, tt.want)
-			}
-		})
-	}
 }
 
 func TestFalconProviderRegistration(t *testing.T) {

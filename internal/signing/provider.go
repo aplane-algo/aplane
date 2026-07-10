@@ -19,7 +19,6 @@ package signing
 import (
 	"fmt"
 
-	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
 
@@ -75,10 +74,6 @@ type Provider interface {
 
 	// ZeroKey securely zeros the private key material
 	ZeroKey(key *KeyMaterial)
-
-	// DetectKeyType checks if the provided data (possibly encrypted) is this provider's key type
-	// Returns true if this provider can handle the key
-	DetectKeyType(keyData []byte, passphrase string) bool
 }
 
 // ValidateKeyMaterial checks if KeyMaterial has the expected type
@@ -94,22 +89,4 @@ func ValidateKeyMaterial(key *KeyMaterial, expectedType string) error {
 		return fmt.Errorf("key value is nil for type %s", expectedType)
 	}
 	return nil
-}
-
-// DetectKeyTypeMatch is a helper for providers implementing DetectKeyType.
-// It checks if unencrypted key data matches the expected key type.
-// Returns false if passphrase is provided (encrypted data cannot be detected without decryption)
-// or if the key type doesn't match.
-func DetectKeyTypeMatch(keyData []byte, passphrase string, expectedKeyType string) bool {
-	// If passphrase is provided, assume data is encrypted - we can't detect without decrypting
-	if passphrase != "" {
-		return false
-	}
-
-	// For unencrypted data, check the type field
-	keyType, err := keys.DetectKeyTypeFromData(keyData)
-	if err != nil {
-		return false
-	}
-	return keyType == expectedKeyType
 }

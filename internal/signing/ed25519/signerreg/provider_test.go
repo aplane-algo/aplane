@@ -20,19 +20,6 @@ func init() {
 	RegisterProvider()
 }
 
-func canonicalEd25519KeyJSONForTest(t *testing.T) []byte {
-	t.Helper()
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
-	keyJSON, err := keys.MarshalPayload(keys.NewEd25519Payload(publicKey, privateKey))
-	if err != nil {
-		t.Fatalf("MarshalPayload(ed25519) error = %v", err)
-	}
-	return keyJSON
-}
-
 // TestEd25519Provider_Family verifies it returns "ed25519"
 func TestEd25519Provider_Family(t *testing.T) {
 	provider := &Ed25519Provider{}
@@ -364,52 +351,6 @@ func TestEd25519Provider_ZeroKey_WrongValueType(t *testing.T) {
 	// Should still clear the wrapper
 	if keyMaterial.Type != "" || keyMaterial.Value != nil {
 		t.Error("Wrapper should still be cleared")
-	}
-}
-
-// TestEd25519Provider_DetectKeyType tests key type detection
-func TestEd25519Provider_DetectKeyType(t *testing.T) {
-	provider := &Ed25519Provider{}
-
-	tests := []struct {
-		name       string
-		keyData    []byte
-		passphrase string
-		expected   bool
-	}{
-		{
-			name:       "valid ed25519 unencrypted",
-			keyData:    canonicalEd25519KeyJSONForTest(t),
-			passphrase: "",
-			expected:   true,
-		},
-		{
-			name:       "falcon key",
-			keyData:    []byte(`{"key_type":"falcon1024","public_key":"0000","private_key":"0000"}`),
-			passphrase: "",
-			expected:   false,
-		},
-		{
-			name:       "invalid JSON",
-			keyData:    []byte("{invalid"),
-			passphrase: "",
-			expected:   false,
-		},
-		{
-			name:       "encrypted data with passphrase",
-			keyData:    []byte(`{"key_type":"ed25519"}`),
-			passphrase: "some-passphrase",
-			expected:   false, // Detection returns false when passphrase is provided
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := provider.DetectKeyType(tt.keyData, tt.passphrase)
-			if result != tt.expected {
-				t.Errorf("DetectKeyType() = %v, want %v", result, tt.expected)
-			}
-		})
 	}
 }
 

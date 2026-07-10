@@ -79,11 +79,6 @@ func (p *Ed25519Provider) ZeroKey(key *signing.KeyMaterial) {
 	key.Value = nil
 }
 
-// DetectKeyType checks if the provided data contains Ed25519 keys
-func (p *Ed25519Provider) DetectKeyType(keyData []byte, passphrase string) bool {
-	return signing.DetectKeyTypeMatch(keyData, passphrase, "ed25519")
-}
-
 var registerProviderOnce sync.Once
 
 // RegisterProvider registers the Ed25519 signing provider with the signing registry.

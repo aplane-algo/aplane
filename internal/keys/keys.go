@@ -439,12 +439,3 @@ func extractCreatedAt(data []byte) string {
 	defer payload.ZeroSecrets()
 	return payload.CreatedAt.UTC().Format(time.RFC3339)
 }
-
-func DetectKeyTypeFromData(data []byte) (string, error) {
-	payload, err := ParsePayload(data)
-	if err != nil {
-		return "", fmt.Errorf("failed to unmarshal key type: %w", err)
-	}
-	defer payload.ZeroSecrets()
-	return payload.KeyType, nil
-}

@@ -72,9 +72,6 @@ func (p *testNativeSigningProvider) ZeroKey(key *coresigning.KeyMaterial) {
 	key.Type = ""
 	key.Value = nil
 }
-func (p *testNativeSigningProvider) DetectKeyType(keyData []byte, passphrase string) bool {
-	return false
-}
 
 var testApprovalProgram = []byte{0x06, 0x81, 0x01}
 

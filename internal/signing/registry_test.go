@@ -47,10 +47,6 @@ func (m *MockProvider) ZeroKey(key *signing.KeyMaterial) {
 	// No-op for mock
 }
 
-func (m *MockProvider) DetectKeyType(keyData []byte, passphrase string) bool {
-	return true
-}
-
 func TestRegistry(t *testing.T) {
 	// Create a mock provider for testing
 	mockProvider := &MockProvider{keyType: "test-algo"}

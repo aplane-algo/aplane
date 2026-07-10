@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
-	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
@@ -130,23 +129,4 @@ func (p *LogicSigProvider) ZeroKey(key *KeyMaterial) {
 
 	key.Type = ""
 	key.Value = nil
-}
-
-// DetectKeyType checks if unencrypted key data belongs to this provider's family.
-func (p *LogicSigProvider) DetectKeyType(keyData []byte, passphrase string) bool {
-	if passphrase != "" {
-		return false
-	}
-
-	payload, err := keys.ParsePayload(keyData)
-	if err != nil {
-		return false
-	}
-	defer payload.ZeroSecrets()
-
-	signingKeyType := payload.BaseKeyType
-	if signingKeyType == "" {
-		signingKeyType = payload.KeyType
-	}
-	return logicsigdsa.RoutingFamily(signingKeyType) == p.family
 }

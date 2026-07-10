@@ -9,7 +9,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -131,21 +130,6 @@ func writeKeyFile(t *testing.T, paths storepaths.Paths, identityID, address stri
 		t.Fatalf("Failed to write key file: %v", err)
 	}
 	return filePath
-}
-
-func TestDetectKeyTypeFromData(t *testing.T) {
-	keyJSON, _ := testEd25519Key(t)
-	got, err := DetectKeyTypeFromData(keyJSON)
-	if err != nil {
-		t.Fatalf("DetectKeyTypeFromData() error = %v", err)
-	}
-	if got != "ed25519" {
-		t.Fatalf("DetectKeyTypeFromData() = %q, want ed25519", got)
-	}
-
-	if _, err := DetectKeyTypeFromData([]byte(`{"key_type":"ed25519"}`)); !errors.Is(err, ErrIncompatibleKeyFormat) {
-		t.Fatalf("DetectKeyTypeFromData(non-canonical) error = %v, want %v", err, ErrIncompatibleKeyFormat)
-	}
 }
 
 func TestExtractPublicKeyHex(t *testing.T) {
