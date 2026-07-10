@@ -256,7 +256,7 @@ unlock/reload after passphrase verification through
 
 ### Backup and Restore
 
-- `backup`: `export_passphrase`, optional `addresses[]` -> `backup_result`: `success`, optional `archive_path`, `archive_checksum`, `archive_size`, `key_count`, `addresses[]`, `verified`, `code`, `error`
+- `backup`: `export_passphrase`, optional `addresses[]` -> `backup_result`: `success`, optional `archive_path`, `archive_checksum`, `archive_size`, `key_count`, `addresses[]`, `verified`, `skipped_keys`, `code`, `error`; an all-keys backup (no `addresses[]`) may succeed partially: key files whose decrypted payload fails canonical validation are excluded from the archive and reported in the optional `skipped_keys` map (address -> reason), and admin clients must surface these prominently. Explicitly selected addresses fail closed instead of being skipped, and a store where every key fails validation errors rather than producing an empty archive.
 - `list_backups` -> `backups_list`: `backups[]`, optional `code`, `error`; each backup has `path`, `file_name`, optional Unix `created_at`, optional `size`, optional `checksum`, optional `verified`
 - `delete_backup`: `archive_path` -> `delete_backup_result`: `success`, optional `code`, `error`
 - `preview_restore`: `archive_path`, `export_passphrase` -> `restore_preview`: optional resolved `archive_path`, `keys[]`, `errors[]`, `code`, `error`; each key has `address`, optional `key_type`, `already_exists`, `has_template`, `template_type`, `error`

@@ -326,12 +326,14 @@ as post-v1 architecture debt.
 
 ### Full Key Payload DTO Unification
 
-Status: implemented for durable key payload storage.
+Status: implemented, including the typed provider boundary.
 
 Current shape: `internal/keys.Payload` is the usable decoded representation and
-the JSON wire DTO is private to `internal/keys/payload_codec.go`. Provider
-boundary cleanup that passes typed material instead of decrypted JSON bytes is a
-separate follow-up refactor.
+the JSON wire DTO is private to `internal/keys/payload_codec.go`. Signing
+providers no longer parse decrypted JSON: the keystore parses and validates the
+payload once, passes providers the minimal typed `signing.ProviderKey` (routing
+identity plus private key material), and stamps the storage metadata envelope
+onto the returned `KeyMaterial` itself.
 
 ### Broad Schema Version Reservation
 

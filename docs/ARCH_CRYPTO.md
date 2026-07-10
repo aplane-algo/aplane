@@ -73,6 +73,18 @@ Client-only binaries can therefore render key-type and LogicSig metadata
 without importing Falcon CGO packages, Falcon mnemonic code, or secp256k1
 signer implementations.
 
+Signer-side key loading has one owner per concern. The keystore
+(`internal/keystore`) parses and validates the decrypted canonical payload via
+`internal/keys`, resolves the provider through
+`signing.GetProviderForKey(keyType, baseKeyType)`, and passes the minimal typed
+`signing.ProviderKey` (routing identity plus private key material) to
+`Provider.LoadKeyMaterial`. Providers never parse durable storage JSON and
+return only the key type and the cryptographic value; the keystore stamps the
+storage metadata envelope (category, base key type, public key, bytecode,
+parameters, signing args) onto the returned `KeyMaterial`. `ProviderKey` byte
+slices are valid only for the duration of the load call — the keystore zeroes
+them on return, so providers deep-copy anything they retain.
+
 Provider registries are process-global compatibility registries. Key type names
 are globally unique within one `apsigner` process. Identity isolation is
 enforced by identity-owned keystores plus identity-local key type state, not by
