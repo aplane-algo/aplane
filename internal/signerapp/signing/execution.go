@@ -202,10 +202,7 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 		return nil, keyType, err
 	}
 
-	provider := coresigning.GetProvider(keyType)
-	if provider == nil && keyMaterial.BaseKeyType != "" {
-		provider = coresigning.GetProvider(keyMaterial.BaseKeyType)
-	}
+	provider := coresigning.GetProviderForKey(keyType, keyMaterial.BaseKeyType)
 	defer zeroLoadedKeyMaterial(keyMaterial)
 	if provider == nil {
 		return nil, keyType, internal(fmt.Sprintf("unsupported key type: %s", keyType))
@@ -254,10 +251,7 @@ func zeroLoadedKeyMaterial(key *coresigning.KeyMaterial) {
 	if key == nil {
 		return
 	}
-	provider := coresigning.GetProvider(key.Type)
-	if provider == nil && key.BaseKeyType != "" {
-		provider = coresigning.GetProvider(key.BaseKeyType)
-	}
+	provider := coresigning.GetProviderForKey(key.Type, key.BaseKeyType)
 	if provider != nil {
 		provider.ZeroKey(key)
 	} else {

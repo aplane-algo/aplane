@@ -28,6 +28,20 @@ func GetProvider(keyType string) Provider {
 	return provider
 }
 
+// GetProviderForKey resolves the signing provider for a stored key: the
+// versioned key type first, then the durable base key type recorded in the
+// key file. This is the single owner of the route-by-base-key-type fallback.
+// Returns nil if neither resolves.
+func GetProviderForKey(keyType, baseKeyType string) Provider {
+	if provider := GetProvider(keyType); provider != nil {
+		return provider
+	}
+	if baseKeyType != "" {
+		return GetProvider(baseKeyType)
+	}
+	return nil
+}
+
 // GetRegisteredFamilies returns a sorted list of all registered provider families.
 // These are family names like "ed25519", "falcon1024", not versioned key types.
 // This is useful for startup logging and debugging.

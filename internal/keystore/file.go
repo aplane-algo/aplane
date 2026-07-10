@@ -259,10 +259,7 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	}
 
 	// Get provider and load keys (for ed25519, falcon, etc.)
-	provider := signing.GetProvider(keyType)
-	if provider == nil && signingMeta.BaseKeyType != "" {
-		provider = signing.GetProvider(signingMeta.BaseKeyType)
-	}
+	provider := signing.GetProviderForKey(keyType, signingMeta.BaseKeyType)
 	if provider == nil {
 		return nil, fmt.Errorf("unsupported key type: %s", keyType)
 	}
