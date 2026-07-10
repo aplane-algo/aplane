@@ -232,6 +232,16 @@ unlock/reload after passphrase verification through
 - `keys_list`: `keys`, where each key has `address`, `key_type`, optional `name`, optional `template_provenance_status`, optional `template_provenance_note`
 - `keys_changed`: `key_count`
 
+> **Boundary note — admin `keys_list` is not the HTTP key inventory.** The admin
+> transport entry is `protocol.AdminKeyInfo` (thin: address, key type, name,
+> template provenance), projected from the admin service DTO `adminproto.KeyInfo`.
+> It is deliberately *not* `pkg/signerapi.KeyInfo`, the richer HTTP `/keys` shape
+> that also carries `signing_flow`, `lsig_size`, `signing_args`, and capability
+> flags for SDK clients. The two are distinct wire surfaces that happen to share a
+> concept; do not add HTTP-only fields to the admin type, and do not assume a
+> client-facing field exists on the admin list. Extend the HTTP `KeyInfo` for
+> client needs and the admin `AdminKeyInfo`/`adminproto.KeyInfo` pair for TUI needs.
+
 ### Key Type Templates
 
 - `list_library_templates` -> `library_templates`: `templates[]`, optional `code`, `error`; each template has optional `key_type`, `template_type`, `display_name`, `description`, `source_path`, `file_name`, `parameters[]`, `runtime_args[]`, plus `installed`, optional `enabled`, optional `conflict`, optional `invalid`. In this catalog response, `runtime_args[]` is live template metadata for keys created in the future; key-file and `/keys` `signing_args[]` is the durable signing-argument schema captured when an existing key was created.

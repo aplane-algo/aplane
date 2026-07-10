@@ -695,7 +695,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			name: "keys_list",
 			msg: KeysListMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeKeysList, ID: "keys-1"},
-				Keys: []KeyInfo{{
+				Keys: []AdminKeyInfo{{
 					Address:                  "ADDR1",
 					KeyType:                  "ed25519",
 					Name:                     "treasury",

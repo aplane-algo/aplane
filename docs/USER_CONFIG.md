@@ -377,6 +377,12 @@ without local keyboard activity. When the timer fires, `apadmin` disconnects
 from `apsigner`. The signer does not maintain a separate activity timer based
 on admin input.
 
+> **Naming note:** despite the name, `passphrase_timeout` is not a time-to-live
+> on passphrase entry. It is the admin idle-session timeout — the runtime concept
+> is `SessionTimeout` (admin idle disconnect). The name is retained for config
+> stability; a future pre-`v1.0` schema may introduce `admin_idle_timeout` with a
+> dual-read window.
+
 In the default `prompt` passphrase mode, the signer effectively stays unlocked
 only while an admin client remains connected when `lock_on_disconnect: true`.
 With a nonzero `passphrase_timeout`, `apadmin` disconnects after local keyboard

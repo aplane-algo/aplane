@@ -683,13 +683,13 @@ func ProtocolKeyTypesMessage(id string, result adminproto.ListKeyTypesResult) pr
 	}
 }
 
-func ProtocolKeyInfos(keys []adminproto.KeyInfo) []protocol.KeyInfo {
+func ProtocolKeyInfos(keys []adminproto.KeyInfo) []protocol.AdminKeyInfo {
 	if len(keys) == 0 {
 		return nil
 	}
-	out := make([]protocol.KeyInfo, len(keys))
+	out := make([]protocol.AdminKeyInfo, len(keys))
 	for i, key := range keys {
-		out[i] = protocol.KeyInfo{
+		out[i] = protocol.AdminKeyInfo{
 			Address:                  key.Address,
 			KeyType:                  key.KeyType,
 			Name:                     key.Name,

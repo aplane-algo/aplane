@@ -132,7 +132,7 @@ func TestIPCSendAndReceiveInitializesDispatcher(t *testing.T) {
 		_ = json.Unmarshal(line[:len(line)-1], &req)
 		_, _ = serverConn.Write(mustJSONLine(t, protocol.KeysListMessage{
 			BaseMessage: protocol.BaseMessage{Type: protocol.MsgTypeKeysList, ID: req.ID},
-			Keys:        []protocol.KeyInfo{},
+			Keys:        []protocol.AdminKeyInfo{},
 		}))
 	}()
 

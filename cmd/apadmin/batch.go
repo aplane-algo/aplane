@@ -90,7 +90,7 @@ func (c *testModeClient) Unlock(passphrase string) error {
 }
 
 // ListKeys lists all keys.
-func (c *testModeClient) ListKeys() ([]protocol.KeyInfo, error) {
+func (c *testModeClient) ListKeys() ([]protocol.AdminKeyInfo, error) {
 	msg := protocol.ListKeysMessage{
 		BaseMessage: protocol.BaseMessage{
 			Type: protocol.MsgTypeListKeys,

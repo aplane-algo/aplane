@@ -424,7 +424,7 @@ func TestDispatcherRequestRejectsDuplicatePendingID(t *testing.T) {
 					Type: protocol.MsgTypeKeysList,
 					ID:   "keys-dup",
 				},
-				Keys: []protocol.KeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
+				Keys: []protocol.AdminKeyInfo{{Address: "ADDR1", KeyType: "ed25519"}},
 			}), nil
 		},
 	}
@@ -480,7 +480,7 @@ func TestDispatcherRequestWriteFailureClearsPending(t *testing.T) {
 			Type: protocol.MsgTypeKeysList,
 			ID:   "keys-write-fail",
 		},
-		Keys: []protocol.KeyInfo{},
+		Keys: []protocol.AdminKeyInfo{},
 	})}
 	conn.mu.Unlock()
 
@@ -505,7 +505,7 @@ func TestDispatcherRequestTimeoutClearsPending(t *testing.T) {
 					Type: protocol.MsgTypeKeysList,
 					ID:   "keys-timeout",
 				},
-				Keys: []protocol.KeyInfo{},
+				Keys: []protocol.AdminKeyInfo{},
 			}), nil
 		},
 	}

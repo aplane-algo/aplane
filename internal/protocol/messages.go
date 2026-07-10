@@ -442,8 +442,12 @@ type ListKeysMessage struct {
 	BaseMessage
 }
 
-// KeyInfo represents information about a single key in the wire protocol
-type KeyInfo struct {
+// AdminKeyInfo is the thin per-key entry in the admin transport wire protocol.
+// It is intentionally NOT pkg/signerapi.KeyInfo (the richer HTTP inventory shape
+// carrying signing_flow, lsig_size, signing_args, and flags): the admin TUI only
+// needs address, key type, name, and template provenance. Do not add HTTP-only
+// fields here; extend the HTTP KeyInfo instead. See docs/ARCH_ADMIN_PROTOCOL.md.
+type AdminKeyInfo struct {
 	Address                  string `json:"address"`
 	KeyType                  string `json:"key_type"` // Full versioned type: "ed25519", "aplane.falcon1024.v1", etc.
 	Name                     string `json:"name,omitempty"`
@@ -454,7 +458,7 @@ type KeyInfo struct {
 // KeysListMessage contains the list of keys from signer
 type KeysListMessage struct {
 	BaseMessage
-	Keys []KeyInfo `json:"keys"`
+	Keys []AdminKeyInfo `json:"keys"`
 }
 
 // GenerateKeyMessage requests generation of a new key
