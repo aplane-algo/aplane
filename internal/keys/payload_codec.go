@@ -277,18 +277,30 @@ func (p *Payload) Validate() error {
 
 // Selector derives the canonical filename selector from authoritative key
 // material rather than payload metadata.
+//
+// Selector assumes an already-validated payload: every production payload
+// comes from ParsePayload (which validates) or is validated by MarshalPayload
+// before anything is persisted. It keeps only the structural checks a correct
+// derivation needs, so it does not repeat the expensive per-category crypto
+// validation (component pair probes, ed25519 seed derivation, on-curve).
 func (p *Payload) Selector() (string, error) {
-	if err := p.Validate(); err != nil {
-		return "", err
+	if p == nil {
+		return "", incompatibleKeyFormat("key payload is nil")
 	}
 	switch p.Category {
 	case CategoryEd25519:
+		if len(p.PublicKey) != ed25519.PublicKeySize {
+			return "", incompatibleKeyFormat("ed25519 public key length %d invalid (expected %d bytes)", len(p.PublicKey), ed25519.PublicKeySize)
+		}
 		var address types.Address
 		copy(address[:], p.PublicKey)
 		return address.String(), nil
 	case CategoryComponent:
 		return keytypes.ComponentKeySelector(p.KeyType, p.PublicKey)
 	case CategoryDSALsig, CategoryGenericLsig:
+		if len(p.LogicSigBytecode) == 0 {
+			return "", incompatibleKeyFormatErr(fmt.Errorf("%w: %s requires lsig_bytecode", ErrInvalidLogicSigBytecode, p.Category))
+		}
 		return logicSigAddress(p.LogicSigBytecode)
 	default:
 		return "", incompatibleKeyFormat("unknown category %q", p.Category)

@@ -322,43 +322,13 @@ func loadGenericLsigKeys(payload *keys.Payload, keyType string, signingMeta keys
 	}
 }
 
+// loadComponentKeyMaterial projects an already-validated component payload
+// into KeyMaterial. ParsePayload enforced the sentry key type, key sizes, and
+// the public/private pair before Get reaches this point, so only cloning and
+// selector derivation remain.
 func loadComponentKeyMaterial(payload *keys.Payload, keyType string, signingMeta keys.SigningMetadata) (*signing.KeyMaterial, error) {
-	if signingMeta.Category != keys.CategoryComponent {
-		return nil, fmt.Errorf("sentry key has invalid category %q", signingMeta.Category)
-	}
-	if !keytypes.IsSentryComponentKeyType(keyType) {
-		return nil, fmt.Errorf("unsupported sentry key type: %s", keyType)
-	}
-
 	publicKey := bytes.Clone(payload.PublicKey)
-	publicKeySize, ok := keytypes.ComponentPublicKeySize(keyType)
-	if !ok {
-		crypto.ZeroBytes(publicKey)
-		return nil, fmt.Errorf("unsupported sentry key type: %s", keyType)
-	}
-	if len(publicKey) != publicKeySize {
-		crypto.ZeroBytes(publicKey)
-		return nil, fmt.Errorf("invalid sentry public key length: expected %d bytes, got %d", publicKeySize, len(publicKey))
-	}
-
 	privateKey := bytes.Clone(payload.PrivateKey)
-	privateKeySize, ok := keytypes.ComponentPrivateKeySize(keyType)
-	if !ok {
-		crypto.ZeroBytes(publicKey)
-		crypto.ZeroBytes(privateKey)
-		return nil, fmt.Errorf("unsupported sentry key type: %s", keyType)
-	}
-	if len(privateKey) != privateKeySize {
-		crypto.ZeroBytes(publicKey)
-		crypto.ZeroBytes(privateKey)
-		return nil, fmt.Errorf("invalid sentry private key length: expected %d bytes, got %d", privateKeySize, len(privateKey))
-	}
-
-	if err := keytypes.ValidateComponentPair(keyType, publicKey, privateKey); err != nil {
-		crypto.ZeroBytes(publicKey)
-		crypto.ZeroBytes(privateKey)
-		return nil, err
-	}
 
 	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
 	if err != nil {
