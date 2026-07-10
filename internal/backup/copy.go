@@ -24,7 +24,7 @@ const (
 
 // BackupBundle wraps a key and its associated template into a single JSON payload.
 // When backup_bundle is present, the decrypted content is a bundle; when absent,
-// the content is a plain KeyPair JSON (backward-compatible).
+// the content is a plain canonical key payload.
 type BackupBundle struct {
 	BackupBundle   int             `json:"backup_bundle"`
 	PayloadVersion int             `json:"payload_version,omitempty"`
@@ -35,8 +35,8 @@ type BackupBundle struct {
 
 // ParseBackup inspects decrypted backup JSON and extracts the key payload and
 // optional template. If the data is a BackupBundle, it returns the embedded key
-// JSON and template YAML separately. If it's a plain KeyPair, it returns the
-// data as-is with no template.
+// JSON and template YAML separately. If it's a plain canonical key payload, it
+// returns the data as-is with no template.
 func ParseBackup(decryptedJSON []byte) (keyJSON []byte, templateYAML []byte, templateType string, err error) {
 	// Quick check: does the JSON contain backup_bundle?
 	var probe struct {
@@ -47,7 +47,7 @@ func ParseBackup(decryptedJSON []byte) (keyJSON []byte, templateYAML []byte, tem
 	}
 
 	if probe.BackupBundle == 0 {
-		// Plain KeyPair — return as-is
+		// Plain canonical key payload — return as-is
 		return decryptedJSON, nil, "", nil
 	}
 	if probe.BackupBundle != BackupBundleSentinel {
@@ -142,13 +142,13 @@ func ExportKey(paths storepaths.Paths, identityID, srcDir, destDir, address stri
 // the key and the template YAML. Otherwise it returns the key JSON as-is.
 func buildExportPayload(paths storepaths.Paths, identityID string, keyJSON, masterKey []byte) ([]byte, error) {
 	// Parse key to get key type
-	var kp keys.KeyPair
-	if err := json.Unmarshal(keyJSON, &kp); err != nil {
-		// Can't parse — export key as-is
-		return append([]byte(nil), keyJSON...), nil
+	payload, err := keys.ParsePayload(keyJSON)
+	if err != nil {
+		return nil, err
 	}
+	defer payload.ZeroSecrets()
 
-	templateType, templatePlain, err := loadTemplateForExport(paths, identityID, kp.KeyType, masterKey)
+	templateType, templatePlain, err := loadTemplateForExport(paths, identityID, payload.KeyType, masterKey)
 	if err != nil {
 		return nil, err
 	}

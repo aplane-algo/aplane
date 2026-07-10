@@ -7,7 +7,6 @@ import (
 	"bytes"
 	stded25519 "crypto/ed25519"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -68,15 +67,10 @@ func TestDeepVerifyBackupValidComponentKeyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	keyJSON, err := json.Marshal(utilkeys.KeyPair{
-		FormatVersion: utilkeys.CurrentKeyFormatVersion,
-		Category:      utilkeys.CategoryComponent,
-		KeyType:       keytypes.SentryComponentEd25519V1,
-		PublicKeyHex:  hex.EncodeToString(publicKey),
-		PrivateKeyHex: hex.EncodeToString(privateKey),
-	})
+	payload := utilkeys.NewComponentPayload(keytypes.SentryComponentEd25519V1, publicKey, privateKey)
+	keyJSON, err := utilkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(KeyPair) error = %v", err)
+		t.Fatalf("MarshalPayload(component) error = %v", err)
 	}
 	if err := os.MkdirAll(keysDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -129,16 +123,10 @@ func TestDeepVerifyBackupValidGenericLogicSigFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LogicSig address derivation error = %v", err)
 	}
-	keyJSON, err := json.Marshal(utilkeys.LSigFile{
-		FormatVersion: utilkeys.CurrentKeyFormatVersion,
-		Category:      utilkeys.CategoryGenericLsig,
-		Address:       address.String(),
-		KeyType:       "unit-generic-v1",
-		BytecodeHex:   hex.EncodeToString(bytecode),
-		SaltCounter:   saltCounterForTest,
-	})
+	payload := utilkeys.NewGenericLSigPayload("unit-generic-v1", nil, bytecode, saltCounterForTest, "", nil, "")
+	keyJSON, err := utilkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(LSigFile) error = %v", err)
+		t.Fatalf("MarshalPayload(generic) error = %v", err)
 	}
 	if err := os.MkdirAll(keysDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -196,16 +184,10 @@ func TestDeepVerifyBackupRejectsInvalidKeyTypeInBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LogicSig address derivation error = %v", err)
 	}
-	keyJSON, err := json.Marshal(utilkeys.LSigFile{
-		FormatVersion: utilkeys.CurrentKeyFormatVersion,
-		Category:      utilkeys.CategoryGenericLsig,
-		Address:       address.String(),
-		KeyType:       invalidKeyType,
-		BytecodeHex:   hex.EncodeToString(bytecode),
-		SaltCounter:   saltCounterForTest,
-	})
+	payload := utilkeys.NewGenericLSigPayload(invalidKeyType, nil, bytecode, saltCounterForTest, "", nil, "")
+	keyJSON, err := utilkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(LSigFile) error = %v", err)
+		t.Fatalf("MarshalPayload(generic) error = %v", err)
 	}
 	bundleJSON := backupBundleForTest(t, keyJSON, genericTemplateYAMLForTest("bad type"))
 	if err := os.MkdirAll(keysDir, 0o755); err != nil {
@@ -293,15 +275,21 @@ func TestDeepVerifyBackupValidFalconLogicSigBytecodeFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LogicSig address derivation error = %v", err)
 	}
-	keyJSON, err := json.Marshal(utilkeys.KeyPair{
-		FormatVersion:   utilkeys.CurrentKeyFormatVersion,
-		Category:        utilkeys.CategoryDSALsig,
-		KeyType:         "falcon1024-unit-v1",
-		LsigBytecodeHex: hex.EncodeToString(bytecode),
-		SaltCounter:     utilkeys.SaltCounterPtr(saltCounterForTest),
-	})
+	payload := utilkeys.NewDSALSigPayload(
+		"falcon1024-unit-v1",
+		"falcon1024-unit-v1",
+		[]byte{0x01},
+		[]byte{0x02},
+		nil,
+		bytecode,
+		saltCounterForTest,
+		"",
+		nil,
+		"",
+	)
+	keyJSON, err := utilkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(KeyPair) error = %v", err)
+		t.Fatalf("MarshalPayload(dsa) error = %v", err)
 	}
 	if err := os.MkdirAll(keysDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -379,16 +367,10 @@ func TestDeepVerifyBackupRejectsMalformedBundledTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LogicSig address derivation error = %v", err)
 	}
-	keyJSON, err := json.Marshal(utilkeys.LSigFile{
-		FormatVersion: utilkeys.CurrentKeyFormatVersion,
-		Category:      utilkeys.CategoryGenericLsig,
-		Address:       address.String(),
-		KeyType:       "test.bad-template.v1",
-		BytecodeHex:   hex.EncodeToString(bytecode),
-		SaltCounter:   saltCounterForTest,
-	})
+	payload := utilkeys.NewGenericLSigPayload("test.bad-template.v1", nil, bytecode, saltCounterForTest, "", nil, "")
+	keyJSON, err := utilkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(LSigFile) error = %v", err)
+		t.Fatalf("MarshalPayload(generic) error = %v", err)
 	}
 	bundleJSON, err := json.Marshal(BackupBundle{
 		BackupBundle: 1,
@@ -451,15 +433,10 @@ func testEd25519BackupKeyJSON(t *testing.T) (string, []byte) {
 	t.Helper()
 
 	account := sdkcrypto.GenerateAccount()
-	keyJSON, err := json.Marshal(utilkeys.KeyPair{
-		FormatVersion: utilkeys.CurrentKeyFormatVersion,
-		Category:      utilkeys.CategoryEd25519,
-		KeyType:       "ed25519",
-		PublicKeyHex:  hex.EncodeToString(account.PrivateKey[32:]),
-		PrivateKeyHex: hex.EncodeToString(account.PrivateKey),
-	})
+	payload := utilkeys.NewEd25519Payload(account.PrivateKey[32:], account.PrivateKey)
+	keyJSON, err := utilkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(KeyPair) error = %v", err)
+		t.Fatalf("MarshalPayload(ed25519) error = %v", err)
 	}
 	return account.Address.String(), keyJSON
 }
@@ -467,17 +444,10 @@ func testEd25519BackupKeyJSON(t *testing.T) (string, []byte) {
 func genericLSigKeyJSONForTest(t *testing.T, address, keyType string, bytecode []byte, params map[string]string) []byte {
 	t.Helper()
 
-	keyJSON, err := json.Marshal(utilkeys.LSigFile{
-		FormatVersion: utilkeys.CurrentKeyFormatVersion,
-		Category:      utilkeys.CategoryGenericLsig,
-		Address:       address,
-		KeyType:       keyType,
-		Parameters:    params,
-		BytecodeHex:   hex.EncodeToString(bytecode),
-		SaltCounter:   saltCounterForTest,
-	})
+	payload := utilkeys.NewGenericLSigPayload(keyType, params, bytecode, saltCounterForTest, "", nil, "")
+	keyJSON, err := utilkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(LSigFile) error = %v", err)
+		t.Fatalf("MarshalPayload(generic) error = %v", err)
 	}
 	return keyJSON
 }

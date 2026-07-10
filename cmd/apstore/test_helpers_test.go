@@ -32,15 +32,10 @@ func testEd25519KeyJSON(t *testing.T) (string, []byte) {
 	t.Helper()
 
 	account := sdkcrypto.GenerateAccount()
-	keyJSON, err := json.Marshal(apkeys.KeyPair{
-		FormatVersion: apkeys.CurrentKeyFormatVersion,
-		Category:      apkeys.CategoryEd25519,
-		KeyType:       "ed25519",
-		PublicKeyHex:  hex.EncodeToString(account.PrivateKey[32:]),
-		PrivateKeyHex: hex.EncodeToString(account.PrivateKey),
-	})
+	payload := apkeys.NewEd25519Payload(account.PrivateKey[32:], account.PrivateKey)
+	keyJSON, err := apkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(KeyPair) error = %v", err)
+		t.Fatalf("MarshalPayload(ed25519) error = %v", err)
 	}
 	return account.Address.String(), keyJSON
 }
@@ -329,21 +324,57 @@ func testWhitelistBackupBundle(t *testing.T, keyType string, templateYAML []byte
 	keyJSON, err := json.Marshal(apbackup.BackupBundle{
 		BackupBundle:   apbackup.BackupBundleSentinel,
 		PayloadVersion: apbackup.CurrentBackupBundlePayloadVersion,
-		Key: json.RawMessage(mustMarshalJSON(t, apkeys.KeyPair{
-			FormatVersion:          apkeys.CurrentKeyFormatVersion,
-			Category:               apkeys.CategoryGenericLsig,
-			KeyType:                keyType,
-			LsigBytecodeHex:        hex.EncodeToString(bytecode),
-			SaltCounter:            apkeys.SaltCounterPtr(saltCounterForTest),
-			SigningMetadataVersion: apkeys.CurrentSigningMetadataVersion,
-		})),
-		TemplateYAML: string(templateYAML),
-		TemplateType: "generic",
+		Key:            json.RawMessage(canonicalGenericKeyJSONForApstore(t, keyType, bytecode)),
+		TemplateYAML:   string(templateYAML),
+		TemplateType:   "generic",
 	})
 	if err != nil {
 		t.Fatalf("json.Marshal(backup bundle) error = %v", err)
 	}
 	return address, keyJSON
+}
+
+func canonicalGenericKeyJSONForApstore(t *testing.T, keyType string, bytecode []byte) []byte {
+	t.Helper()
+	payload := apkeys.NewGenericLSigPayload(keyType, nil, bytecode, saltCounterForTest, "", nil, "")
+	keyJSON, err := apkeys.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload(generic) error = %v", err)
+	}
+	return keyJSON
+}
+
+func canonicalDSALSigKeyJSONForApstore(t *testing.T, keyType, baseKeyType string, bytecode []byte) []byte {
+	t.Helper()
+	payload := apkeys.NewDSALSigPayload(
+		keyType,
+		baseKeyType,
+		[]byte{0x01},
+		[]byte{0x02},
+		nil,
+		bytecode,
+		saltCounterForTest,
+		"",
+		nil,
+		"",
+	)
+	keyJSON, err := apkeys.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload(dsa_lsig) error = %v", err)
+	}
+	return keyJSON
+}
+
+func canonicalGenericKeyWithoutSigningMetadataForApstore(t *testing.T, keyType string, bytecode []byte) []byte {
+	t.Helper()
+	return mustMarshalJSON(t, map[string]any{
+		"format_version": apkeys.CurrentKeyFormatVersion,
+		"category":       apkeys.CategoryGenericLsig,
+		"key_type":       keyType,
+		"lsig_bytecode":  hex.EncodeToString(bytecode),
+		"salt_counter":   saltCounterForTest,
+		"created_at":     time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
+	})
 }
 
 func mustMarshalJSON(t *testing.T, v any) []byte {

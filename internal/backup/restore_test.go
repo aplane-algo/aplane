@@ -4,6 +4,7 @@
 package backup
 
 import (
+	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -416,10 +417,11 @@ func TestRestoreKeyWritesComponentPublicMetadataOnSentryNode(t *testing.T) {
 	if err := writeStandaloneBackupFile(filepath.Join(keysDir, componentKey+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
 	}
-	var keyPair apkeys.KeyPair
-	if err := json.Unmarshal(keyJSON, &keyPair); err != nil {
-		t.Fatalf("json.Unmarshal(sentry key) error = %v", err)
+	payload, err := apkeys.ParsePayload(keyJSON)
+	if err != nil {
+		t.Fatalf("ParsePayload(sentry key) error = %v", err)
 	}
+	defer payload.ZeroSecrets()
 
 	restorer := NewRestorer(paths, identityID).WithNodeRole(noderole.RoleSentry)
 	keyType, err := restorer.RestoreKey(keysDir, componentKey, testExportMasterKey, []byte("export-passphrase"))
@@ -443,8 +445,9 @@ func TestRestoreKeyWritesComponentPublicMetadataOnSentryNode(t *testing.T) {
 	if env.KeyType != keytypes.SentryComponentEd25519V1 {
 		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentEd25519V1)
 	}
-	if env.PublicKeyHex != keyPair.PublicKeyHex {
-		t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, keyPair.PublicKeyHex)
+	wantPublicKeyHex := fmt.Sprintf("%x", payload.PublicKey)
+	if env.PublicKeyHex != wantPublicKeyHex {
+		t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, wantPublicKeyHex)
 	}
 	assertFileMode(t, apkeys.ComponentPublicMetadataPath(paths, identityID, componentKey), fsutil.StoreFilePerm)
 }
@@ -505,16 +508,16 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 		t.Fatalf("LogicSig address error = %v", err)
 	}
 
-	keyJSON, err := json.Marshal(apkeys.LSigFile{
-		FormatVersion: apkeys.CurrentKeyFormatVersion,
-		Category:      apkeys.CategoryGenericLsig,
-		Address:       address.String(),
-		KeyType:       keyType,
-		BytecodeHex:   hex.EncodeToString(bytecode),
-		SaltCounter:   saltCounterForTest,
+	keyJSON, err := json.Marshal(map[string]any{
+		"format_version": apkeys.CurrentKeyFormatVersion,
+		"category":       apkeys.CategoryGenericLsig,
+		"key_type":       keyType,
+		"lsig_bytecode":  hex.EncodeToString(bytecode),
+		"salt_counter":   saltCounterForTest,
+		"created_at":     time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
 	})
 	if err != nil {
-		t.Fatalf("json.Marshal(LSigFile) error = %v", err)
+		t.Fatalf("json.Marshal(canonical key without signing metadata) error = %v", err)
 	}
 
 	templateYAML := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: test\nfamily: legacy-generic\nversion: 1\ndisplay_name: Legacy\nteal: |\n  int 1\n")
@@ -538,9 +541,9 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 
 	restorer := NewRestorer(paths, identityID)
 	if _, err := restorer.RestoreKey(keysDir, address.String(), testExportMasterKey, []byte("export-passphrase")); err == nil {
-		t.Fatal("RestoreKey() error = nil, want missing signing metadata rejection")
-	} else if !strings.Contains(err.Error(), "missing signing metadata") {
-		t.Fatalf("RestoreKey() error = %v, want missing signing metadata rejection", err)
+		t.Fatal("RestoreKey() error = nil, want signing metadata rejection")
+	} else if !strings.Contains(err.Error(), "signing_metadata_version") {
+		t.Fatalf("RestoreKey() error = %v, want signing metadata rejection", err)
 	}
 
 	if _, err := os.Stat(paths.KeyFilePath(identityID, address.String())); !os.IsNotExist(err) {
@@ -566,22 +569,14 @@ func TestRestoreKeyRejectsInvalidKeyTypeBeforeTemplatePathUse(t *testing.T) {
 		t.Fatalf("LogicSig address error = %v", err)
 	}
 
-	keyJSON, err := json.Marshal(apkeys.LSigFile{
-		FormatVersion:          apkeys.CurrentKeyFormatVersion,
-		Category:               apkeys.CategoryGenericLsig,
-		Address:                address.String(),
-		KeyType:                invalidKeyType,
-		BytecodeHex:            hex.EncodeToString(bytecode),
-		SaltCounter:            saltCounterForTest,
-		SigningMetadataVersion: apkeys.CurrentSigningMetadataVersion,
-		SigningArgs: []apkeys.StoredSigningArg{{
-			Name:     "secret",
-			Type:     "bytes",
-			Required: true,
-		}},
-	})
+	payload := apkeys.NewGenericLSigPayload(invalidKeyType, nil, bytecode, saltCounterForTest, "", []apkeys.StoredSigningArg{{
+		Name:     "secret",
+		Type:     "bytes",
+		Required: true,
+	}}, "")
+	keyJSON, err := apkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(LSigFile) error = %v", err)
+		t.Fatalf("MarshalPayload(generic) error = %v", err)
 	}
 
 	bundleJSON := backupBundleForTest(t, keyJSON, genericTemplateYAMLForTest("bad type"))
@@ -624,22 +619,14 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 		t.Fatalf("LogicSig address error = %v", err)
 	}
 
-	keyJSON, err := json.Marshal(apkeys.LSigFile{
-		FormatVersion:          apkeys.CurrentKeyFormatVersion,
-		Category:               apkeys.CategoryGenericLsig,
-		Address:                address.String(),
-		KeyType:                keyType,
-		BytecodeHex:            hex.EncodeToString(bytecode),
-		SaltCounter:            saltCounterForTest,
-		SigningMetadataVersion: apkeys.CurrentSigningMetadataVersion,
-		SigningArgs: []apkeys.StoredSigningArg{{
-			Name:     "secret",
-			Type:     "bytes",
-			Required: true,
-		}},
-	})
+	payload := apkeys.NewGenericLSigPayload(keyType, nil, bytecode, saltCounterForTest, "", []apkeys.StoredSigningArg{{
+		Name:     "secret",
+		Type:     "bytes",
+		Required: true,
+	}}, "")
+	keyJSON, err := apkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(LSigFile) error = %v", err)
+		t.Fatalf("MarshalPayload(generic) error = %v", err)
 	}
 
 	existingTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: test\nfamily: standalone-conflict\nversion: 1\ndisplay_name: Existing\nteal: |\n  int 1\n")
@@ -736,21 +723,16 @@ func writeManagedRestoreArchive(t *testing.T, paths storepaths.Paths, identityID
 func testSentryComponentBackupKeyJSON(t *testing.T) (string, []byte) {
 	t.Helper()
 
-	publicKey := bytesOfLen(32, 0xab)
-	privateKey := bytesOfLen(64, 0xcd)
+	privateKey := ed25519.NewKeyFromSeed(bytesOfLen(ed25519.SeedSize, 0xcd))
+	publicKey := privateKey.Public().(ed25519.PublicKey)
 	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	keyJSON, err := json.Marshal(apkeys.KeyPair{
-		FormatVersion: apkeys.CurrentKeyFormatVersion,
-		Category:      apkeys.CategoryComponent,
-		KeyType:       keytypes.SentryComponentEd25519V1,
-		PublicKeyHex:  hex.EncodeToString(publicKey),
-		PrivateKeyHex: hex.EncodeToString(privateKey),
-	})
+	payload := apkeys.NewComponentPayload(keytypes.SentryComponentEd25519V1, publicKey, privateKey)
+	keyJSON, err := apkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(component KeyPair) error = %v", err)
+		t.Fatalf("MarshalPayload(component) error = %v", err)
 	}
 	return componentKey, keyJSON
 }

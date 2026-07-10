@@ -21,9 +21,10 @@ var testExportMasterKey = []byte("0123456789abcdef0123456789abcdef")
 func testKeyJSON(t *testing.T, keyType string) []byte {
 	t.Helper()
 
-	keyJSON, err := json.Marshal(apkeys.KeyPair{KeyType: keyType})
+	payload := apkeys.NewGenericLSigPayload(keyType, nil, saltedLogicSigBytecodeForTest(), saltCounterForTest, "", nil, "")
+	keyJSON, err := apkeys.MarshalPayload(payload)
 	if err != nil {
-		t.Fatalf("json.Marshal(KeyPair) error = %v", err)
+		t.Fatalf("MarshalPayload() error = %v", err)
 	}
 	return keyJSON
 }
@@ -80,7 +81,9 @@ func TestBuildExportPayloadBundlesKeystoreTemplate(t *testing.T) {
 		t.Fatalf("ParseBackup() error = %v", err)
 	}
 	if string(gotKeyJSON) != string(keyJSON) {
-		t.Fatalf("embedded key JSON mismatch\n got: %s\nwant: %s", gotKeyJSON, keyJSON)
+		if !jsonEqualForBackupTest(t, gotKeyJSON, keyJSON) {
+			t.Fatalf("embedded key JSON mismatch\n got: %s\nwant: %s", gotKeyJSON, keyJSON)
+		}
 	}
 	if gotType != string(templatestore.TemplateTypeGeneric) {
 		t.Fatalf("template_type = %q, want %q", gotType, templatestore.TemplateTypeGeneric)
@@ -149,8 +152,29 @@ func TestParseBackupAcceptsLegacyBundleWithoutPayloadVersion(t *testing.T) {
 		t.Fatalf("ParseBackup() error = %v", err)
 	}
 	if string(gotKey) != string(keyJSON) {
-		t.Fatalf("key JSON = %s, want %s", gotKey, keyJSON)
+		if !jsonEqualForBackupTest(t, gotKey, keyJSON) {
+			t.Fatalf("key JSON = %s, want %s", gotKey, keyJSON)
+		}
 	}
+}
+
+func jsonEqualForBackupTest(t *testing.T, left, right []byte) bool {
+	t.Helper()
+	var leftValue any
+	var rightValue any
+	if err := json.Unmarshal(left, &leftValue); err != nil {
+		t.Fatalf("json.Unmarshal(left) error = %v", err)
+	}
+	if err := json.Unmarshal(right, &rightValue); err != nil {
+		t.Fatalf("json.Unmarshal(right) error = %v", err)
+	}
+	return jsonObjectsEqual(leftValue, rightValue)
+}
+
+func jsonObjectsEqual(left, right any) bool {
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && string(leftJSON) == string(rightJSON)
 }
 
 func TestBuildExportPayloadDoesNotBundleLibraryGenericTemplateWithoutKeystoreCopy(t *testing.T) {

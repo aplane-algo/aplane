@@ -5,7 +5,6 @@ package main
 
 import (
 	"crypto/ed25519"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -434,14 +433,7 @@ func TestRestoreKeyActivatesLibraryVisibleCompiledProvider(t *testing.T) {
 
 	registerRestoreLibraryProvider(keyType)
 
-	keyJSON := mustMarshalJSON(t, apkeys.KeyPair{
-		FormatVersion:          apkeys.CurrentKeyFormatVersion,
-		Category:               apkeys.CategoryDSALsig,
-		KeyType:                keyType,
-		LsigBytecodeHex:        hex.EncodeToString(bytecode),
-		SaltCounter:            apkeys.SaltCounterPtr(saltCounterForTest),
-		SigningMetadataVersion: apkeys.CurrentSigningMetadataVersion,
-	})
+	keyJSON := canonicalDSALSigKeyJSONForApstore(t, keyType, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
@@ -472,14 +464,7 @@ func TestRestoreKeyRollsBackCompiledProviderActivationOnKeyWriteFailure(t *testi
 
 	registerRestoreLibraryProvider(keyType)
 
-	keyJSON := mustMarshalJSON(t, apkeys.KeyPair{
-		FormatVersion:          apkeys.CurrentKeyFormatVersion,
-		Category:               apkeys.CategoryDSALsig,
-		KeyType:                keyType,
-		LsigBytecodeHex:        hex.EncodeToString(bytecode),
-		SaltCounter:            apkeys.SaltCounterPtr(saltCounterForTest),
-		SigningMetadataVersion: apkeys.CurrentSigningMetadataVersion,
-	})
+	keyJSON := canonicalDSALSigKeyJSONForApstore(t, keyType, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
@@ -519,15 +504,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	}
 	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
-	keyJSON := mustMarshalJSON(t, apkeys.LSigFile{
-		FormatVersion:          apkeys.CurrentKeyFormatVersion,
-		Category:               apkeys.CategoryGenericLsig,
-		Address:                address,
-		KeyType:                keyType,
-		BytecodeHex:            hex.EncodeToString(bytecode),
-		SaltCounter:            saltCounterForTest,
-		SigningMetadataVersion: apkeys.CurrentSigningMetadataVersion,
-	})
+	keyJSON := canonicalGenericKeyJSONForApstore(t, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
@@ -552,14 +529,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	bytecode := saltedLogicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
-	keyJSON := mustMarshalJSON(t, apkeys.LSigFile{
-		FormatVersion: apkeys.CurrentKeyFormatVersion,
-		Category:      apkeys.CategoryGenericLsig,
-		Address:       address,
-		KeyType:       keyType,
-		BytecodeHex:   hex.EncodeToString(bytecode),
-		SaltCounter:   saltCounterForTest,
-	})
+	keyJSON := canonicalGenericKeyWithoutSigningMetadataForApstore(t, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
@@ -571,8 +541,8 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	if restoredKeyType != "" {
 		t.Fatalf("restoreKey() keyType = %q, want empty on failure", restoredKeyType)
 	}
-	if !strings.Contains(err.Error(), "missing signing metadata") {
-		t.Fatalf("restoreKey() error = %v, want missing signing metadata context", err)
+	if !strings.Contains(err.Error(), "signing_metadata_version") {
+		t.Fatalf("restoreKey() error = %v, want signing metadata context", err)
 	}
 	if _, statErr := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), address)); !os.IsNotExist(statErr) {
 		t.Fatalf("expected no key file written after missing signing metadata, got stat err=%v", statErr)
@@ -598,15 +568,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryGenericTemplateWithoutBundle(t *t
 		t.Fatalf("WriteFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
 
-	keyJSON := mustMarshalJSON(t, apkeys.LSigFile{
-		FormatVersion:          apkeys.CurrentKeyFormatVersion,
-		Category:               apkeys.CategoryGenericLsig,
-		Address:                address,
-		KeyType:                keyType,
-		BytecodeHex:            hex.EncodeToString(bytecode),
-		SaltCounter:            saltCounterForTest,
-		SigningMetadataVersion: apkeys.CurrentSigningMetadataVersion,
-	})
+	keyJSON := canonicalGenericKeyJSONForApstore(t, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
@@ -644,15 +606,7 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 		t.Fatalf("WriteFile(aplane.falcon1024-hashlock.v1.yaml) error = %v", err)
 	}
 
-	keyJSON := mustMarshalJSON(t, apkeys.KeyPair{
-		FormatVersion:          apkeys.CurrentKeyFormatVersion,
-		Category:               apkeys.CategoryDSALsig,
-		KeyType:                keyType,
-		LsigBytecodeHex:        hex.EncodeToString(bytecode),
-		SaltCounter:            apkeys.SaltCounterPtr(saltCounterForTest),
-		BaseKeyType:            "aplane.falcon1024.v1",
-		SigningMetadataVersion: apkeys.CurrentSigningMetadataVersion,
-	})
+	keyJSON := canonicalDSALSigKeyJSONForApstore(t, keyType, "aplane.falcon1024.v1", bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
@@ -691,15 +645,7 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 		t.Fatalf("SetState() error = %v", err)
 	}
 
-	keyJSON := mustMarshalJSON(t, apkeys.LSigFile{
-		FormatVersion:          apkeys.CurrentKeyFormatVersion,
-		Category:               apkeys.CategoryGenericLsig,
-		Address:                address,
-		KeyType:                keyType,
-		BytecodeHex:            hex.EncodeToString(bytecode),
-		SaltCounter:            saltCounterForTest,
-		SigningMetadataVersion: apkeys.CurrentSigningMetadataVersion,
-	})
+	keyJSON := canonicalGenericKeyJSONForApstore(t, keyType, bytecode)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
@@ -810,14 +756,7 @@ func TestRestoreKeyRollsBackTemplateInstallOnKeyWriteFailure(t *testing.T) {
 
 func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 	bytecode := saltedLogicSigBytecodeForTest()
-	keyJSON := mustMarshalJSON(t, apkeys.LSigFile{
-		FormatVersion: apkeys.CurrentKeyFormatVersion,
-		Category:      apkeys.CategoryGenericLsig,
-		Address:       logicSigAddressForTestForBytes(t, bytecode),
-		KeyType:       "aplane.whitelist.v1",
-		BytecodeHex:   hex.EncodeToString(bytecode),
-		SaltCounter:   saltCounterForTest,
-	})
+	keyJSON := canonicalGenericKeyJSONForApstore(t, "aplane.whitelist.v1", bytecode)
 
 	keyType, address, hasLogicSigBytecode, err := restoreKeyMetadata(keyJSON)
 	if err != nil {
@@ -843,11 +782,10 @@ func testSentryComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	return componentKey, mustMarshalJSON(t, apkeys.KeyPair{
-		FormatVersion: apkeys.CurrentKeyFormatVersion,
-		Category:      apkeys.CategoryComponent,
-		KeyType:       keytypes.SentryComponentEd25519V1,
-		PublicKeyHex:  hex.EncodeToString(publicKey),
-		PrivateKeyHex: hex.EncodeToString(privateKey),
-	})
+	payload := apkeys.NewComponentPayload(keytypes.SentryComponentEd25519V1, publicKey, privateKey)
+	keyJSON, err := apkeys.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload(component) error = %v", err)
+	}
+	return componentKey, keyJSON
 }

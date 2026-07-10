@@ -4,16 +4,15 @@
 package backup
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keyclass"
@@ -22,15 +21,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
-
-	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 type RestoreLogger func(format string, args ...any)
@@ -384,7 +379,7 @@ func readBackupPayload(keysDir, address string, exportPassphrase []byte) (keyJSO
 // passphrase. Restored key files use master-key encryption.
 //
 // Backup files may contain a BackupBundle (key plus embedded template) or a
-// plain KeyPair payload.
+// plain canonical key payload.
 func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphrase []byte) (string, error) {
 	keyJSON, templateYAML, tmplType, err := readBackupPayload(keysDir, address, exportPassphrase)
 	if err != nil {
@@ -393,10 +388,17 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 	defer crypto.ZeroBytes(keyJSON)
 	defer crypto.ZeroBytes(templateYAML)
 
-	keyType, derivedAddress, hasLogicSigBytecode, err := RestoreKeyMetadata(keyJSON)
+	payload, err := keys.ParsePayload(keyJSON)
 	if err != nil {
 		return "", err
 	}
+	defer payload.ZeroSecrets()
+	derivedAddress, err := payload.Selector()
+	if err != nil {
+		return "", err
+	}
+	keyType := payload.KeyType
+	hasLogicSigBytecode := len(payload.LogicSigBytecode) > 0
 
 	if derivedAddress != address {
 		return "", fmt.Errorf("address mismatch: expected %s, got %s", address, derivedAddress)
@@ -406,7 +408,13 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 	}
 	destPath := r.Paths.KeyFilePath(r.IdentityID, address)
 
-	signingMeta := keys.ExtractSigningMetadata(keyJSON)
+	signingMeta := keys.SigningMetadata{
+		Category:               payload.Category,
+		BaseKeyType:            payload.BaseKeyType,
+		Parameters:             maps.Clone(payload.Parameters),
+		SigningArgs:            append([]keys.StoredSigningArg(nil), payload.SigningArgs...),
+		SigningMetadataVersion: payload.SigningMetadataVersion,
+	}
 	if hasLogicSigBytecode && signingMeta.SigningMetadataVersion == 0 {
 		return "", fmt.Errorf("logic sig key %s is missing signing metadata; re-export with current apstore or regenerate the key", keyType)
 	}
@@ -513,26 +521,16 @@ func bundledTemplateFingerprint(templateYAML []byte, tmplType string) (string, e
 }
 
 func annotateMissingTemplateFingerprint(keyJSON []byte, fingerprint string) ([]byte, bool, error) {
-	var probe struct {
-		TemplateFingerprint string `json:"template_fingerprint"`
-	}
-	if err := json.Unmarshal(keyJSON, &probe); err != nil {
-		return nil, false, err
-	}
-	if probe.TemplateFingerprint != "" {
-		return keyJSON, false, nil
-	}
-
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(keyJSON, &payload); err != nil {
-		return nil, false, err
-	}
-	value, err := json.Marshal(fingerprint)
+	payload, err := keys.ParsePayload(keyJSON)
 	if err != nil {
 		return nil, false, err
 	}
-	payload["template_fingerprint"] = value
-	annotated, err := json.MarshalIndent(payload, "", "  ")
+	defer payload.ZeroSecrets()
+	if payload.TemplateFingerprint != "" {
+		return keyJSON, false, nil
+	}
+	payload.TemplateFingerprint = fingerprint
+	annotated, err := keys.MarshalPayload(payload)
 	if err != nil {
 		return nil, false, err
 	}
@@ -541,58 +539,19 @@ func annotateMissingTemplateFingerprint(keyJSON []byte, fingerprint string) ([]b
 
 // RestoreKeyMetadata reads key metadata needed for restore validation.
 func RestoreKeyMetadata(keyJSON []byte) (keyType string, address string, hasLogicSigBytecode bool, err error) {
-	if _, err := keys.ValidateCurrentKeyPayload(keyJSON); err != nil {
-		return "", "", false, err
-	}
-
-	meta, err := keys.ParseKeyPayloadMetadata(keyJSON)
+	payload, err := keys.ParsePayload(keyJSON)
 	if err != nil {
 		return "", "", false, fmt.Errorf("failed to parse key file: %w", err)
 	}
-	if meta.KeyType == "" {
-		return "", "", false, fmt.Errorf("failed to parse key file: missing key_type")
-	}
-	if err := validateBackupKeyType(meta.KeyType); err != nil {
+	defer payload.ZeroSecrets()
+	if err := validateBackupKeyType(payload.KeyType); err != nil {
 		return "", "", false, err
 	}
-
-	if meta.BytecodeHex != "" {
-		bytecode, err := keys.DecodeKeyPayloadBytecode(keyJSON)
-		if err != nil {
-			return "", "", false, fmt.Errorf("failed to decode lsig bytecode: %w", err)
-		}
-		if _, err := keys.ValidateLogicSigSaltedBytecode(keyJSON, bytecode); err != nil {
-			return "", "", false, err
-		}
-		lsig := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
-		addr, err := lsig.Address()
-		if err != nil {
-			return "", "", false, fmt.Errorf("failed to derive address from bytecode: %w", err)
-		}
-		return meta.KeyType, addr.String(), true, nil
-	}
-
-	if keytypes.IsSentryComponentKeyType(meta.KeyType) {
-		publicKey, err := hex.DecodeString(meta.PublicKeyHex)
-		if err != nil {
-			return "", "", false, fmt.Errorf("failed to decode sentry public key: %w", err)
-		}
-		componentKey, err := keytypes.ComponentKeySelector(meta.KeyType, publicKey)
-		if err != nil {
-			return "", "", false, fmt.Errorf("failed to derive Sentry Key ID: %w", err)
-		}
-		return meta.KeyType, componentKey, false, nil
-	}
-
-	deriver, err := addressderive.Get(meta.KeyType)
+	selector, err := payload.Selector()
 	if err != nil {
-		return "", "", false, fmt.Errorf("unsupported key type: %s", meta.KeyType)
+		return "", "", false, err
 	}
-	derivedAddress, err := deriver.DeriveAddress(meta.PublicKeyHex, meta.Parameters)
-	if err != nil {
-		return "", "", false, fmt.Errorf("failed to derive address: %w", err)
-	}
-	return meta.KeyType, derivedAddress, false, nil
+	return payload.KeyType, selector, len(payload.LogicSigBytecode) > 0, nil
 }
 
 // RestoreTemplate saves a template extracted from a backup bundle to the

@@ -15,10 +15,8 @@ import (
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
@@ -149,63 +147,48 @@ func verifyFileDeep(backupDir, address string, passphrase []byte, opts DeepVerif
 		return result
 	}
 
-	keyMeta, err := keys.ParseKeyPayloadMetadata(keyJSON)
+	payload, err := keys.ParsePayload(keyJSON)
 	if err != nil {
 		result.Valid = false
 		result.Error = fmt.Sprintf("invalid key format: %v", err)
 		return result
 	}
-	if _, err := keys.ValidateCurrentKeyPayload(keyJSON); err != nil {
+	defer payload.ZeroSecrets()
+	selector, err := payload.Selector()
+	if err != nil {
 		result.Valid = false
 		result.Error = err.Error()
 		return result
 	}
 
-	// Validate required fields
-	if keyMeta.KeyType == "" {
-		result.Valid = false
-		result.Error = "missing key type"
-		return result
-	}
-	if err := validateBackupKeyType(keyMeta.KeyType); err != nil {
+	if err := validateBackupKeyType(payload.KeyType); err != nil {
 		result.Valid = false
 		result.Error = err.Error()
 		return result
 	}
-	if err := verifyBundledTemplate(templateYAML, templateType, keyMeta.KeyType); err != nil {
+	if err := verifyBundledTemplate(templateYAML, templateType, payload.KeyType); err != nil {
 		result.Valid = false
 		result.Error = err.Error()
 		return result
 	}
 
-	if keyMeta.BytecodeHex != "" {
-		bytecode, err := keys.DecodeKeyPayloadBytecode(keyJSON)
-		if err != nil {
-			result.Valid = false
-			result.Error = err.Error()
-			return result
-		}
-		if _, err := keys.ValidateLogicSigSaltedBytecode(keyJSON, bytecode); err != nil {
-			result.Valid = false
-			result.Error = err.Error()
-			return result
-		}
+	if len(payload.LogicSigBytecode) > 0 {
 		if opts.ValidateBundledTemplateBytecode && len(templateYAML) > 0 {
-			if err := verifyBundledTemplateMatchesKey(keyJSON, templateYAML, templateType, bytecode, address, opts); err != nil {
+			if err := verifyBundledTemplateMatchesKey(payload, templateYAML, templateType, payload.LogicSigBytecode, address, opts); err != nil {
 				result.Valid = false
 				result.Error = err.Error()
 				return result
 			}
 		}
-		derivedAddress, err := logicSigAddress(bytecode)
+		derivedAddress, err := logicSigAddress(payload.LogicSigBytecode)
 		if err != nil {
 			result.Valid = false
 			result.Error = fmt.Sprintf("failed to derive LogicSig address: %v", err)
 			return result
 		}
-		if keyMeta.Category == keys.CategoryGenericLsig && keyMeta.Address != "" && keyMeta.Address != derivedAddress {
+		if selector != derivedAddress {
 			result.Valid = false
-			result.Error = fmt.Sprintf("address mismatch: stored=%s, derived=%s", keyMeta.Address, derivedAddress)
+			result.Error = fmt.Sprintf("address mismatch: selector=%s, derived=%s", selector, derivedAddress)
 			return result
 		}
 		if derivedAddress != address {
@@ -215,62 +198,18 @@ func verifyFileDeep(backupDir, address string, passphrase []byte, opts DeepVerif
 		}
 
 		result.Valid = true
-		result.KeyType = keyMeta.KeyType
+		result.KeyType = payload.KeyType
 		return result
 	}
 
-	if keyMeta.PublicKeyHex == "" || keyMeta.PrivateKeyHex == "" {
+	if selector != address {
 		result.Valid = false
-		result.Error = "missing key data"
-		return result
-	}
-
-	if keyMeta.Category == keys.CategoryComponent {
-		publicKey, err := hex.DecodeString(keyMeta.PublicKeyHex)
-		if err != nil {
-			result.Valid = false
-			result.Error = fmt.Sprintf("failed to decode sentry public key: %v", err)
-			return result
-		}
-		componentKey, err := keytypes.ComponentKeySelector(keyMeta.KeyType, publicKey)
-		if err != nil {
-			result.Valid = false
-			result.Error = fmt.Sprintf("failed to derive Sentry Key ID: %v", err)
-			return result
-		}
-		if componentKey != address {
-			result.Valid = false
-			result.Error = fmt.Sprintf("Sentry Key ID mismatch: filename=%s, derived=%s", address, componentKey)
-			return result
-		}
-		result.Valid = true
-		result.KeyType = keyMeta.KeyType
-		return result
-	}
-
-	// Verify address matches filename (derive from public key)
-	deriver, err := addressderive.Get(keyMeta.KeyType)
-	if err != nil {
-		result.Valid = false
-		result.Error = fmt.Sprintf("unsupported key type: %s", keyMeta.KeyType)
-		return result
-	}
-
-	derivedAddress, err := deriver.DeriveAddress(keyMeta.PublicKeyHex, keyMeta.Parameters)
-	if err != nil {
-		result.Valid = false
-		result.Error = fmt.Sprintf("failed to derive address: %v", err)
-		return result
-	}
-
-	if derivedAddress != address {
-		result.Valid = false
-		result.Error = fmt.Sprintf("address mismatch: filename=%s, derived=%s", address, derivedAddress)
+		result.Error = fmt.Sprintf("address mismatch: filename=%s, derived=%s", address, selector)
 		return result
 	}
 
 	result.Valid = true
-	result.KeyType = keyMeta.KeyType
+	result.KeyType = payload.KeyType
 	return result
 }
 
@@ -319,7 +258,7 @@ func verifyBundledTemplate(templateYAML []byte, templateType, keyType string) er
 }
 
 func verifyBundledTemplateMatchesKey(
-	keyJSON []byte,
+	payload *keys.Payload,
 	templateYAML []byte,
 	templateType string,
 	storedBytecode []byte,
@@ -329,12 +268,7 @@ func verifyBundledTemplateMatchesKey(
 	if opts.AlgodClient == nil {
 		return fmt.Errorf("bundled template validation requires algod client")
 	}
-
-	keyMeta, err := keys.ParseKeyPayloadMetadata(keyJSON)
-	if err != nil {
-		return fmt.Errorf("invalid key format: %w", err)
-	}
-	params := keyMeta.Parameters
+	params := payload.Parameters
 	if params == nil {
 		params = map[string]string{}
 	}
@@ -346,11 +280,12 @@ func verifyBundledTemplateMatchesKey(
 
 	var compiledBytecode []byte
 	var compiledAddress string
+	var err error
 	switch templateType {
 	case string(templatestore.TemplateTypeGeneric):
 		compiledBytecode, compiledAddress, err = compileBundledGenericTemplate(ctx, templateYAML, params, opts.AlgodClient)
 	case string(templatestore.TemplateTypeComposed):
-		compiledBytecode, compiledAddress, err = compileBundledComposedTemplate(ctx, templateYAML, keyMeta.PublicKeyHex, params, opts.AlgodClient)
+		compiledBytecode, compiledAddress, err = compileBundledComposedTemplate(ctx, templateYAML, fmt.Sprintf("%x", payload.PublicKey), params, opts.AlgodClient)
 	default:
 		return fmt.Errorf("backup bundle has unsupported template_type %q", templateType)
 	}
@@ -358,7 +293,7 @@ func verifyBundledTemplateMatchesKey(
 		return err
 	}
 	if !bytes.Equal(compiledBytecode, storedBytecode) {
-		return fmt.Errorf("bundled template does not reproduce key bytecode for %s", keyMeta.KeyType)
+		return fmt.Errorf("bundled template does not reproduce key bytecode for %s", payload.KeyType)
 	}
 
 	derivedAddress, err := logicSigAddress(compiledBytecode)

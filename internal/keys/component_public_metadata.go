@@ -58,14 +58,15 @@ func ReadComponentPublicMetadata(paths storepaths.Paths, identityID, componentKe
 // WriteComponentPublicMetadataFromKeyJSON writes the public-only sidecar for a
 // restored sentry key payload. Non-component payloads are ignored.
 func WriteComponentPublicMetadataFromKeyJSON(paths storepaths.Paths, identityID, address string, keyJSON []byte) (string, bool, error) {
-	var keyPair KeyPair
-	if err := json.Unmarshal(keyJSON, &keyPair); err != nil {
+	payload, err := ParsePayload(keyJSON)
+	if err != nil {
 		return "", false, fmt.Errorf("failed to parse key payload for component public metadata: %w", err)
 	}
-	if keyPair.Category != CategoryComponent || !keytypes.IsSentryComponentKeyType(keyPair.KeyType) {
+	defer payload.ZeroSecrets()
+	if payload.Category != CategoryComponent || !keytypes.IsSentryComponentKeyType(payload.KeyType) {
 		return "", false, nil
 	}
-	if err := writeComponentPublicMetadataIfNeeded(paths, identityID, address, &keyPair); err != nil {
+	if err := writeComponentPublicMetadataFromPayload(paths, identityID, address, payload); err != nil {
 		return "", false, err
 	}
 	componentKey, err := keytypes.NormalizeComponentKeySelector(address)
