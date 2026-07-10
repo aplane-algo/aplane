@@ -45,8 +45,19 @@ func ValidateComponentPair(keyType string, publicKey, privateKey []byte) error {
 		if len(privateKey) != ed25519.PrivateKeySize {
 			return fmt.Errorf("sentry private key length %d invalid (expected %d bytes)", len(privateKey), ed25519.PrivateKeySize)
 		}
-		derivedPublicKey, ok := ed25519.PrivateKey(privateKey).Public().(ed25519.PublicKey)
-		if !ok || !bytes.Equal(derivedPublicKey, publicKey) {
+		// Re-derive from the seed rather than trusting the stored suffix:
+		// PrivateKey.Public() only copies priv[32:], so a mismatched
+		// seed/suffix pair would otherwise validate but sign unusably.
+		derived := ed25519.NewKeyFromSeed(privateKey[:ed25519.SeedSize])
+		defer func() {
+			for i := range derived {
+				derived[i] = 0
+			}
+		}()
+		if !bytes.Equal(derived, ed25519.PrivateKey(privateKey)) {
+			return fmt.Errorf("sentry private key suffix does not match its seed")
+		}
+		if !bytes.Equal([]byte(derived[ed25519.SeedSize:]), publicKey) {
 			return fmt.Errorf("sentry public key does not match private key")
 		}
 		return nil

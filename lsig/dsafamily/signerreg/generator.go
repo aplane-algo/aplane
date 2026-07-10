@@ -144,13 +144,20 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 	)
 	defer payload.ZeroSecrets()
 
+	// Cross-check the family derivation against the canonical payload selector
+	// BEFORE persisting, so a mismatch cannot orphan a live key file on disk.
+	selector, err := payload.Selector()
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive payload selector: %w", err)
+	}
+	if selector != address {
+		return nil, fmt.Errorf("derived LogicSig address mismatch: generated %s, payload derives %s", address, selector)
+	}
+
 	// Save key file
 	keyFiles, err := keys.SavePayload(paths, identityID, payload, masterKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save keys: %w", err)
-	}
-	if keyFiles.Address != address {
-		return nil, fmt.Errorf("derived LogicSig address mismatch: generated %s, persisted %s", address, keyFiles.Address)
 	}
 
 	// Build result

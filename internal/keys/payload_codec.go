@@ -387,8 +387,15 @@ func validateEd25519Payload(p *Payload) error {
 	if len(p.PrivateKey) != ed25519.PrivateKeySize {
 		return incompatibleKeyFormat("ed25519 private key length %d invalid (expected %d bytes)", len(p.PrivateKey), ed25519.PrivateKeySize)
 	}
-	derived, ok := ed25519.PrivateKey(p.PrivateKey).Public().(ed25519.PublicKey)
-	if !ok || !bytes.Equal(derived, p.PublicKey) {
+	// Re-derive from the seed rather than trusting the stored suffix:
+	// PrivateKey.Public() only copies priv[32:], so a payload with a
+	// mismatched seed/suffix would otherwise validate but sign unusably.
+	derived := ed25519.NewKeyFromSeed(p.PrivateKey[:ed25519.SeedSize])
+	defer crypto.ZeroBytes(derived)
+	if !bytes.Equal(derived, p.PrivateKey) {
+		return incompatibleKeyFormat("ed25519 private key suffix does not match its seed")
+	}
+	if !bytes.Equal([]byte(derived[ed25519.SeedSize:]), p.PublicKey) {
 		return incompatibleKeyFormat("ed25519 public key does not match private key")
 	}
 	return nil

@@ -4,6 +4,8 @@
 package keytypes
 
 import (
+	"bytes"
+	"crypto/ed25519"
 	"crypto/sha512"
 	"encoding/base32"
 	"strings"
@@ -159,4 +161,29 @@ func expectedComponentSelector(keyType string, publicKey []byte) string {
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write(publicKey)
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(h.Sum(nil))
+}
+
+// TestValidateComponentPairEd25519RejectsSeedSuffixMismatch pins that the
+// built-in Ed25519 pair validator re-derives from the seed: a private key
+// whose suffix and the presented public key agree with each other but not
+// with the seed must be rejected.
+func TestValidateComponentPairEd25519RejectsSeedSuffixMismatch(t *testing.T) {
+	privA := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{1}, ed25519.SeedSize))
+	privB := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{2}, ed25519.SeedSize))
+	pubB := []byte(privB[ed25519.SeedSize:])
+
+	forged := append(append([]byte(nil), privA[:ed25519.SeedSize]...), pubB...)
+	err := ValidateComponentPair(SentryComponentEd25519V1, pubB, forged)
+	if err == nil || !strings.Contains(err.Error(), "suffix does not match its seed") {
+		t.Fatalf("ValidateComponentPair(forged) error = %v, want seed/suffix mismatch rejection", err)
+	}
+
+	err = ValidateComponentPair(SentryComponentEd25519V1, pubB, append([]byte(nil), privA...))
+	if err == nil || !strings.Contains(err.Error(), "public key does not match private key") {
+		t.Fatalf("ValidateComponentPair(wrong public) error = %v, want public-key mismatch rejection", err)
+	}
+
+	if err := ValidateComponentPair(SentryComponentEd25519V1, pubB, append([]byte(nil), privB...)); err != nil {
+		t.Fatalf("ValidateComponentPair(consistent pair) error = %v", err)
+	}
 }

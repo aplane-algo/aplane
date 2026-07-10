@@ -47,6 +47,10 @@ type ComponentKeyMaterial struct {
 
 // ProviderKey is the typed, decoded key input passed to signing providers after
 // the storage payload has been parsed and validated by internal/keys.
+//
+// OWNERSHIP: the byte slices alias caller-owned buffers that are zeroed when
+// the key-load call returns. Providers must deep-copy any material they retain
+// beyond LoadKeyMaterial; retaining the slices themselves yields zeroed keys.
 type ProviderKey struct {
 	Type                   string
 	Category               string
@@ -65,6 +69,9 @@ type Provider interface {
 	RoutingFamily() string
 
 	// LoadKeyMaterial loads key material from typed, decoded provider input.
+	// The ProviderKey byte slices are valid only for the duration of the call
+	// (the caller zeroes them on return); implementations must copy anything
+	// they keep in the returned KeyMaterial.
 	// Returns the key wrapped in KeyMaterial for type safety
 	LoadKeyMaterial(key ProviderKey) (*KeyMaterial, error)
 

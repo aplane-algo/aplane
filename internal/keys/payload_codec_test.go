@@ -311,6 +311,30 @@ func TestParsePayloadRejectsUppercaseHex(t *testing.T) {
 	}
 }
 
+// TestValidateEd25519PayloadRejectsSeedSuffixMismatch pins that validation
+// re-derives from the seed: a payload whose private_key suffix and public_key
+// agree with each other but not with the seed (which PrivateKey.Public() alone
+// cannot detect) must be rejected instead of importing as an unusable key.
+func TestValidateEd25519PayloadRejectsSeedSuffixMismatch(t *testing.T) {
+	_, privA := canonicalEd25519Pair(t, 1)
+	pubB, privB := canonicalEd25519Pair(t, 2)
+
+	forged := append(append([]byte(nil), privA[:ed25519.SeedSize]...), pubB...)
+	p := NewEd25519Payload(pubB, forged)
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "suffix does not match its seed") {
+		t.Fatalf("Validate() error = %v, want seed/suffix mismatch rejection", err)
+	}
+
+	q := NewEd25519Payload(pubB, privA)
+	if err := q.Validate(); err == nil || !strings.Contains(err.Error(), "public key does not match private key") {
+		t.Fatalf("Validate() error = %v, want public-key mismatch rejection", err)
+	}
+
+	if err := NewEd25519Payload(pubB, privB).Validate(); err != nil {
+		t.Fatalf("Validate(consistent pair) error = %v", err)
+	}
+}
+
 func canonicalEd25519Pair(t *testing.T, fill byte) ([]byte, []byte) {
 	t.Helper()
 	seed := bytes.Repeat([]byte{fill}, ed25519.SeedSize)
