@@ -317,6 +317,21 @@ func (p *Payload) Metadata() CanonicalPayloadMetadata {
 	}
 }
 
+// SigningMetadata returns a non-secret copy of the durable signing-metadata
+// projection shared by scan, key load, and backup restore.
+func (p *Payload) SigningMetadata() SigningMetadata {
+	if p == nil {
+		return SigningMetadata{}
+	}
+	return SigningMetadata{
+		Category:               p.Category,
+		BaseKeyType:            p.BaseKeyType,
+		Parameters:             maps.Clone(p.Parameters),
+		SigningArgs:            cloneStoredSigningArgs(p.SigningArgs),
+		SigningMetadataVersion: p.SigningMetadataVersion,
+	}
+}
+
 // ZeroSecrets clears private key material owned by the payload.
 func (p *Payload) ZeroSecrets() {
 	if p == nil {

@@ -246,13 +246,7 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 
 	// Use key type from cache (already determined during scan)
 	keyType := info.KeyType
-	signingMeta := keys.SigningMetadata{
-		Category:               payload.Category,
-		BaseKeyType:            payload.BaseKeyType,
-		Parameters:             maps.Clone(payload.Parameters),
-		SigningArgs:            append([]keys.StoredSigningArg(nil), payload.SigningArgs...),
-		SigningMetadataVersion: payload.SigningMetadataVersion,
-	}
+	signingMeta := payload.SigningMetadata()
 
 	// Generic lsig types (timelock, etc.) don't have signing providers
 	// They only need bytecode attachment, no cryptographic signing

@@ -6,7 +6,6 @@ package backup
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -408,13 +407,7 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 	}
 	destPath := r.Paths.KeyFilePath(r.IdentityID, address)
 
-	signingMeta := keys.SigningMetadata{
-		Category:               payload.Category,
-		BaseKeyType:            payload.BaseKeyType,
-		Parameters:             maps.Clone(payload.Parameters),
-		SigningArgs:            append([]keys.StoredSigningArg(nil), payload.SigningArgs...),
-		SigningMetadataVersion: payload.SigningMetadataVersion,
-	}
+	signingMeta := payload.SigningMetadata()
 	templateFingerprint := ""
 	if len(templateYAML) > 0 {
 		templateFingerprint, _ = bundledTemplateFingerprint(templateYAML, tmplType)

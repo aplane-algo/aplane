@@ -6,7 +6,6 @@ package keys
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -319,13 +318,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 			continue
 		}
 		payloadMeta := payload.Metadata()
-		signingMeta := SigningMetadata{
-			Category:               payloadMeta.Category,
-			BaseKeyType:            payloadMeta.BaseKeyType,
-			Parameters:             maps.Clone(payloadMeta.Parameters),
-			SigningArgs:            payloadMeta.SigningArgs,
-			SigningMetadataVersion: payloadMeta.SigningMetadataVersion,
-		}
+		signingMeta := payload.SigningMetadata()
 		keyType := payloadMeta.KeyType
 		category := payloadMeta.Category
 		publicKeyHex := payloadMeta.PublicKeyHex
