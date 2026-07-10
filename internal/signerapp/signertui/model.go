@@ -148,6 +148,9 @@ type backupState struct {
 	confirmError      string
 	confirmFocus      int // 0 = export passphrase, 1 = confirm passphrase
 	archivePath       string
+	// skippedKeys maps address -> reason for keys the all-keys backup
+	// excluded because their payload failed canonical validation.
+	skippedKeys map[string]string
 }
 
 // restoreState is the backup browse/preview/restore flow.
@@ -480,6 +483,9 @@ type RevokeTokenResultMsg struct {
 type BackupResultMsg struct {
 	Success     bool
 	ArchivePath string
+	// SkippedKeys maps address -> reason for keys excluded from an all-keys
+	// backup because their payload failed canonical validation.
+	SkippedKeys map[string]string
 	Error       string
 }
 

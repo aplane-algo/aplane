@@ -408,6 +408,7 @@ func (c *IPCClient) forwardMessages(sessionID uint64, done <-chan struct{}, noti
 				c.emit(sessionID, BackupResultMsg{
 					Success:     backupResult.Success,
 					ArchivePath: backupResult.ArchivePath,
+					SkippedKeys: backupResult.SkippedKeys,
 					Error:       backupResult.Error,
 				})
 

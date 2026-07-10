@@ -7,6 +7,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -78,11 +79,28 @@ func (m Model) renderBackingUp() string {
 
 func (m Model) renderBackupDisplay() string {
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("Backup Created"))
+	if len(m.backup.skippedKeys) > 0 {
+		sb.WriteString(titleStyle.Render("Backup Created With Warnings"))
+	} else {
+		sb.WriteString(titleStyle.Render("Backup Created"))
+	}
 	sb.WriteString("\n\n")
 	sb.WriteString("Archive path:\n")
 	sb.WriteString(m.backup.archivePath)
 	sb.WriteString("\n")
+	if len(m.backup.skippedKeys) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(errorStyle.Render(fmt.Sprintf("WARNING: %d key(s) were NOT backed up:", len(m.backup.skippedKeys))))
+		sb.WriteString("\n")
+		addresses := make([]string, 0, len(m.backup.skippedKeys))
+		for address := range m.backup.skippedKeys {
+			addresses = append(addresses, address)
+		}
+		sort.Strings(addresses)
+		for _, address := range addresses {
+			sb.WriteString(fmt.Sprintf("  %s\n    %s\n", address, m.backup.skippedKeys[address]))
+		}
+	}
 	return m.renderPopup(90, sb.String())
 }
 
