@@ -59,11 +59,8 @@ func loadEd25519Material(t *testing.T, provider *Ed25519Provider, publicKey, pri
 
 func providerKeyFromEd25519Payload(payload *keys.Payload) signing.ProviderKey {
 	return signing.ProviderKey{
-		Type:                   payload.KeyType,
-		Category:               payload.Category,
-		PublicKey:              payload.PublicKey,
-		PrivateKey:             payload.PrivateKey,
-		SigningMetadataVersion: payload.SigningMetadataVersion,
+		Type:       payload.KeyType,
+		PrivateKey: payload.PrivateKey,
 	}
 }
 
@@ -99,9 +96,9 @@ func TestEd25519Provider_LoadKeyMaterial_InvalidInput(t *testing.T) {
 		t.Fatal("LoadKeyMaterial(zero) error = nil, want error")
 	}
 
-	_, err = provider.LoadKeyMaterial(signing.ProviderKey{Type: "generic.test", Category: "generic_lsig"})
+	_, err = provider.LoadKeyMaterial(signing.ProviderKey{Type: "generic.test"})
 	if err == nil {
-		t.Fatal("LoadKeyMaterial(generic) error = nil, want error")
+		t.Fatal("LoadKeyMaterial(non-ed25519 type) error = nil, want error")
 	}
 }
 
@@ -143,8 +140,6 @@ func TestEd25519Provider_LoadKeyMaterial_InvalidLength(t *testing.T) {
 
 			key := signing.ProviderKey{
 				Type:       "ed25519",
-				Category:   "ed25519",
-				PublicKey:  make([]byte, 32),
 				PrivateKey: wrongKey,
 			}
 

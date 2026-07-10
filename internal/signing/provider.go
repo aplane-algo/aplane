@@ -45,20 +45,19 @@ type ComponentKeyMaterial struct {
 	PrivateKey   []byte
 }
 
-// ProviderKey is the typed, decoded key input passed to signing providers after
-// the storage payload has been parsed and validated by internal/keys.
+// ProviderKey is the minimal typed key input passed to signing providers after
+// the storage payload has been parsed and validated by internal/keys: the
+// routing identity plus the private key material. Storage metadata (category,
+// public key, signing args, ...) is stamped onto the returned KeyMaterial by
+// the keystore, not routed through providers.
 //
-// OWNERSHIP: the byte slices alias caller-owned buffers that are zeroed when
-// the key-load call returns. Providers must deep-copy any material they retain
-// beyond LoadKeyMaterial; retaining the slices themselves yields zeroed keys.
+// OWNERSHIP: PrivateKey aliases a caller-owned buffer that is zeroed when the
+// key-load call returns. Providers must deep-copy any material they retain
+// beyond LoadKeyMaterial; retaining the slice itself yields a zeroed key.
 type ProviderKey struct {
-	Type                   string
-	Category               string
-	BaseKeyType            string
-	PublicKey              []byte
-	PrivateKey             []byte
-	SigningArgs            []lsigprovider.RuntimeArgDef
-	SigningMetadataVersion int
+	Type        string
+	BaseKeyType string
+	PrivateKey  []byte
 }
 
 // Provider defines the interface for cryptographic signature providers

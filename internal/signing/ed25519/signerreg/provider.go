@@ -24,8 +24,8 @@ func (p *Ed25519Provider) RoutingFamily() string {
 
 // LoadKeyMaterial loads Ed25519 key material from typed provider input.
 func (p *Ed25519Provider) LoadKeyMaterial(key signing.ProviderKey) (*signing.KeyMaterial, error) {
-	if key.Category != "ed25519" || key.Type != p.RoutingFamily() {
-		return nil, fmt.Errorf("ed25519 provider cannot load category %q key type %q", key.Category, key.Type)
+	if key.Type != p.RoutingFamily() {
+		return nil, fmt.Errorf("ed25519 provider cannot load key type %q", key.Type)
 	}
 	if len(key.PrivateKey) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("invalid ed25519 private key length: expected %d bytes, got %d", ed25519.PrivateKeySize, len(key.PrivateKey))

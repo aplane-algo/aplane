@@ -265,13 +265,9 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	}
 
 	providerKey := signing.ProviderKey{
-		Type:                   keyType,
-		Category:               signingMeta.Category,
-		BaseKeyType:            signingMeta.BaseKeyType,
-		PublicKey:              payload.PublicKey,
-		PrivateKey:             payload.PrivateKey,
-		SigningArgs:            keys.SigningArgDefs(signingMeta.SigningArgs),
-		SigningMetadataVersion: signingMeta.SigningMetadataVersion,
+		Type:        keyType,
+		BaseKeyType: signingMeta.BaseKeyType,
+		PrivateKey:  payload.PrivateKey,
 	}
 	km, err := provider.LoadKeyMaterial(providerKey)
 	if err != nil {

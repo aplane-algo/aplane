@@ -123,13 +123,9 @@ func canonicalFalconPayloadForTest(keyType string, publicKey, privateKey []byte)
 
 func providerKeyFromFalconPayload(payload *utilkeys.Payload) signing.ProviderKey {
 	return signing.ProviderKey{
-		Type:                   payload.KeyType,
-		Category:               payload.Category,
-		BaseKeyType:            payload.BaseKeyType,
-		PublicKey:              payload.PublicKey,
-		PrivateKey:             payload.PrivateKey,
-		SigningArgs:            utilkeys.SigningArgDefs(payload.SigningArgs),
-		SigningMetadataVersion: payload.SigningMetadataVersion,
+		Type:        payload.KeyType,
+		BaseKeyType: payload.BaseKeyType,
+		PrivateKey:  payload.PrivateKey,
 	}
 }
 
@@ -186,7 +182,7 @@ func TestFalconProvider_LoadKeyMaterial_InvalidInput(t *testing.T) {
 		t.Fatal("LoadKeyMaterial(zero) error = nil, want error")
 	}
 
-	_, err = p.LoadKeyMaterial(signing.ProviderKey{Type: "ed25519", Category: "ed25519"})
+	_, err = p.LoadKeyMaterial(signing.ProviderKey{Type: "ed25519"})
 	if err == nil {
 		t.Fatal("LoadKeyMaterial(ed25519) error = nil, want error")
 	}

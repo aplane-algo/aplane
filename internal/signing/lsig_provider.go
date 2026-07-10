@@ -54,10 +54,6 @@ func (p *LogicSigProvider) RoutingFamily() string {
 // SECURITY: the private key copy is handed to the returned KeyMaterial, whose
 // owner is responsible for zeroing it.
 func (p *LogicSigProvider) LoadKeyMaterial(key ProviderKey) (*KeyMaterial, error) {
-	if key.Category != "dsa_lsig" {
-		return nil, fmt.Errorf("LogicSig signing provider cannot load category %q", key.Category)
-	}
-
 	signingKeyType := key.BaseKeyType
 	if signingKeyType == "" {
 		signingKeyType = key.Type
