@@ -470,7 +470,7 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 	}
 }
 
-func TestFileKeyStore_GetRejectsComponentPublicPrivateMismatch(t *testing.T) {
+func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
@@ -496,18 +496,15 @@ func TestFileKeyStore_GetRejectsComponentPublicPrivateMismatch(t *testing.T) {
 		t.Fatalf("SaveKeyFile() error = %v", err)
 	}
 
-	store := NewFileKeyStoreForPaths(paths, testIdentityID)
-	store.masterKey = append([]byte(nil), testMasterKey...)
-	defer crypto.ZeroBytes(store.masterKey)
-	if err := store.Scan(nil); err != nil {
-		t.Fatalf("Scan() error = %v", err)
+	report, err := keys.ScanKeysDirectoryWithMasterKeyReport(paths, testIdentityID, testMasterKey)
+	if err != nil {
+		t.Fatalf("ScanKeysDirectoryWithMasterKeyReport() error = %v", err)
 	}
-	_, err = store.Get(context.Background(), componentKey)
-	if err == nil {
-		t.Fatal("Get() error = nil, want public/private mismatch")
+	if len(report.Keys) != 0 || len(report.Warnings) != 1 {
+		t.Fatalf("scan report = %#v, want one rejected key", report)
 	}
-	if !strings.Contains(err.Error(), "sentry public key does not match private key") {
-		t.Fatalf("Get() error = %v, want sentry key mismatch", err)
+	if !strings.Contains(report.Warnings[0].Reason(), "sentry public key does not match private key") {
+		t.Fatalf("scan warning = %v, want sentry key mismatch", report.Warnings[0])
 	}
 }
 

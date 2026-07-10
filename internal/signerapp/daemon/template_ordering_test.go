@@ -62,10 +62,15 @@ teal: |
 			Required:   true,
 			ByteLength: 32,
 		}}
-		return keys.WriteLSigFile(server.keyPaths, auth.DefaultIdentityID, address, keyType, family, nil, bytecode, 5, "#pragma version 6\nint 1", signingArgs, masterKey)
+		payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "#pragma version 6\nint 1", signingArgs, "")
+		result, saveErr := keys.SavePayload(server.keyPaths, auth.DefaultIdentityID, payload, masterKey)
+		if saveErr == nil && result.Address != address {
+			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
+		}
+		return saveErr
 	})
 	if err != nil {
-		t.Fatalf("WriteLSigFile() error = %v", err)
+		t.Fatalf("SavePayload() error = %v", err)
 	}
 
 	// Standalone key metadata lets key inventory classify and expose signing args

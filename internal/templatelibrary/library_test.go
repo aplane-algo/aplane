@@ -529,14 +529,11 @@ func TestDeactivateCompiledProviderRejectsKeyTypeInUse(t *testing.T) {
 	if _, err := ActivateCompiledProvider(paths, testIdentityID, keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
 	}
-	if _, err := apkeys.SaveKeyFile(paths, &apkeys.KeyPair{
-		FormatVersion:   apkeys.CurrentKeyFormatVersion,
-		Category:        apkeys.CategoryDSALsig,
-		KeyType:         keyType,
-		LsigBytecodeHex: "260101058101",
-		SaltCounter:     apkeys.SaltCounterPtr(5),
-	}, testIdentityID, logicSigAddressForTemplateTest(t, []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}), masterKey); err != nil {
-		t.Fatalf("SaveKeyFile() error = %v", err)
+	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
+	payload := apkeys.NewDSALSigPayload(keyType, keyType, []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
+	defer payload.ZeroSecrets()
+	if _, err := apkeys.SavePayload(paths, testIdentityID, payload, masterKey); err != nil {
+		t.Fatalf("SavePayload() error = %v", err)
 	}
 
 	_, err := DeactivateCompiledProvider(paths, testIdentityID, keyType, masterKey)
@@ -995,8 +992,9 @@ func writeTemplateKeyInUse(t *testing.T, paths storepaths.Paths, keyType string,
 	t.Helper()
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	address := logicSigAddressForTemplateTest(t, bytecode)
-	if err := apkeys.WriteLSigFile(paths, testIdentityID, address, keyType, keyType, map[string]string{"recipient": address}, bytecode, 5, "", nil, masterKey); err != nil {
-		t.Fatalf("WriteLSigFile() error = %v", err)
+	payload := apkeys.NewGenericLSigPayload(keyType, map[string]string{"recipient": address}, bytecode, 5, "", nil, "")
+	if _, err := apkeys.SavePayload(paths, testIdentityID, payload, masterKey); err != nil {
+		t.Fatalf("SavePayload() error = %v", err)
 	}
 }
 

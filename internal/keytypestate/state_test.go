@@ -11,8 +11,6 @@ import (
 	"sync"
 	"testing"
 
-	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/types"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -175,22 +173,13 @@ func TestRequireUnusedRejectsKeyTypeInUse(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	masterKey := []byte("01234567890123456789012345678901")
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
-	lsigAccount := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
-	address, err := lsigAccount.Address()
-	if err != nil {
-		t.Fatalf("LogicSig address error = %v", err)
-	}
-	if _, err := apkeys.SaveKeyFile(paths, &apkeys.KeyPair{
-		FormatVersion:   apkeys.CurrentKeyFormatVersion,
-		Category:        apkeys.CategoryDSALsig,
-		KeyType:         "custom-v1",
-		LsigBytecodeHex: "260101058101",
-		SaltCounter:     apkeys.SaltCounterPtr(5),
-	}, "default", address.String(), masterKey); err != nil {
-		t.Fatalf("SaveKeyFile() error = %v", err)
+	payload := apkeys.NewDSALSigPayload("custom-v1", "custom-v1", []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
+	defer payload.ZeroSecrets()
+	if _, err := apkeys.SavePayload(paths, "default", payload, masterKey); err != nil {
+		t.Fatalf("SavePayload() error = %v", err)
 	}
 
-	err = RequireUnused(paths, "default", "custom-v1", masterKey)
+	err := RequireUnused(paths, "default", "custom-v1", masterKey)
 	if err == nil {
 		t.Fatal("RequireUnused() error = nil, want in-use rejection")
 	}

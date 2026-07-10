@@ -8,15 +8,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
-	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
@@ -24,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
 	"github.com/aplane-algo/aplane/internal/templatelibrary"
 	"github.com/aplane-algo/aplane/internal/templatestore"
@@ -433,21 +431,12 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 	}
 	if err := ir.WithMasterKey(func(masterKey []byte) error {
 		bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
-		lsigAccount := sdkcrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: bytecode}}
-		address, addrErr := lsigAccount.Address()
-		if addrErr != nil {
-			return addrErr
-		}
-		_, saveErr := apkeys.SaveKeyFile(server.keyPaths, &apkeys.KeyPair{
-			FormatVersion:   apkeys.CurrentKeyFormatVersion,
-			Category:        apkeys.CategoryDSALsig,
-			KeyType:         keyType,
-			LsigBytecodeHex: hex.EncodeToString(bytecode),
-			SaltCounter:     apkeys.SaltCounterPtr(5),
-		}, ir.ID(), address.String(), masterKey)
+		payload := apkeys.NewDSALSigPayload(keyType, keyType, []byte{0x01}, []byte{0x02}, nil, bytecode, 5, "", nil, "")
+		defer payload.ZeroSecrets()
+		_, saveErr := apkeys.SavePayload(server.keyPaths, ir.ID(), payload, masterKey)
 		return saveErr
 	}); err != nil {
-		t.Fatalf("SaveKeyFile() error = %v", err)
+		t.Fatalf("SavePayload() error = %v", err)
 	}
 
 	recorder := &ipcJSONRecorderConn{}

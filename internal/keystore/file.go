@@ -4,6 +4,7 @@
 package keystore
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -227,50 +228,40 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	}
 	defer crypto.ZeroBytes(decryptedData)
 
-	if _, err := keys.ValidateCurrentKeyPayload(decryptedData); err != nil {
-		return nil, err
-	}
-
-	payloadMeta, err := keys.ParseKeyPayloadMetadata(decryptedData)
+	payload, err := keys.ParsePayload(decryptedData)
 	if err != nil {
 		return nil, err
 	}
-
-	// Extract bytecode if present (for LogicSig-based keys)
-	var bytecode []byte
-	if payloadMeta.BytecodeHex != "" {
-		bytecode, err = keys.DecodeKeyPayloadBytecode(decryptedData)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := keys.ValidateLogicSigSaltedBytecode(decryptedData, bytecode); err != nil {
-			return nil, err
-		}
+	defer payload.ZeroSecrets()
+	selector, err := payload.Selector()
+	if err != nil {
+		return nil, err
+	}
+	if selector != address {
+		return nil, fmt.Errorf("key payload selector %s does not match requested selector %s", selector, address)
+	}
+	if payload.KeyType != info.KeyType || payload.Category != info.Category {
+		return nil, fmt.Errorf("key payload identity changed after scan")
 	}
 
 	// Use key type from cache (already determined during scan)
 	keyType := info.KeyType
 	signingMeta := keys.SigningMetadata{
-		Category:               info.Category,
-		BaseKeyType:            info.BaseKeyType,
-		Parameters:             maps.Clone(info.Parameters),
-		SigningArgs:            info.SigningArgs,
-		SigningMetadataVersion: info.SigningMetadataVersion,
+		Category:               payload.Category,
+		BaseKeyType:            payload.BaseKeyType,
+		Parameters:             maps.Clone(payload.Parameters),
+		SigningArgs:            append([]keys.StoredSigningArg(nil), payload.SigningArgs...),
+		SigningMetadataVersion: payload.SigningMetadataVersion,
 	}
 
 	// Generic lsig types (timelock, etc.) don't have signing providers
 	// They only need bytecode attachment, no cryptographic signing
 	if keys.IsGenericKey(signingMeta.Category, keyType) {
-		km, err := loadGenericLsigKeys(decryptedData, keyType, signingMeta)
-		if err != nil {
-			return nil, err
-		}
-		km.Bytecode = bytecode
-		return km, nil
+		return loadGenericLsigKeys(payload, keyType, signingMeta), nil
 	}
 
 	if keys.IsComponentKey(signingMeta.Category) {
-		return loadComponentKeyMaterial(decryptedData, keyType, signingMeta)
+		return loadComponentKeyMaterial(payload, keyType, signingMeta)
 	}
 
 	// Get provider and load keys (for ed25519, falcon, etc.)
@@ -286,20 +277,15 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	if err != nil {
 		return nil, err
 	}
-	km.Bytecode = bytecode // Set bytecode (nil for native ed25519, populated for falcon LSig)
+	km.Bytecode = bytes.Clone(payload.LogicSigBytecode)
 	if km.Category == "" {
 		km.Category = signingMeta.Category
 	}
 	if km.BaseKeyType == "" {
 		km.BaseKeyType = signingMeta.BaseKeyType
 	}
-	if len(km.PublicKey) == 0 && payloadMeta.PublicKeyHex != "" {
-		publicKey, err := hex.DecodeString(payloadMeta.PublicKeyHex)
-		if err != nil {
-			zeroLoadedKeyMaterialForKeystore(km)
-			return nil, fmt.Errorf("failed to decode public key: %w", err)
-		}
-		km.PublicKey = publicKey
+	if len(km.PublicKey) == 0 && len(payload.PublicKey) != 0 {
+		km.PublicKey = bytes.Clone(payload.PublicKey)
 	}
 	if km.Parameters == nil {
 		km.Parameters = maps.Clone(signingMeta.Parameters)
@@ -321,34 +307,19 @@ type GenericLsigData struct {
 
 // loadGenericLsigKeys loads key material for generic lsig types (timelock, etc.)
 // These don't have cryptographic keys - just bytecode that gets attached to transactions.
-func loadGenericLsigKeys(decryptedData []byte, keyType string, signingMeta keys.SigningMetadata) (*signing.KeyMaterial, error) {
-	payloadMeta, err := keys.ParseKeyPayloadMetadata(decryptedData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse generic lsig key data: %w", err)
-	}
-	bytecode, err := keys.DecodeKeyPayloadBytecode(decryptedData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse generic lsig bytecode: %w", err)
-	}
-	if _, err := keys.ValidateLogicSigSaltedBytecode(decryptedData, bytecode); err != nil {
-		return nil, err
-	}
-
+func loadGenericLsigKeys(payload *keys.Payload, keyType string, signingMeta keys.SigningMetadata) *signing.KeyMaterial {
 	return &signing.KeyMaterial{
 		Type:                   keyType,
 		Category:               signingMeta.Category,
+		Bytecode:               bytes.Clone(payload.LogicSigBytecode),
 		Parameters:             maps.Clone(signingMeta.Parameters),
 		SigningArgs:            keys.SigningArgDefs(signingMeta.SigningArgs),
 		SigningMetadataVersion: signingMeta.SigningMetadataVersion,
-		Value:                  &GenericLsigData{BytecodeHex: payloadMeta.BytecodeHex},
-	}, nil
+		Value:                  &GenericLsigData{BytecodeHex: hex.EncodeToString(payload.LogicSigBytecode)},
+	}
 }
 
-func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta keys.SigningMetadata) (*signing.KeyMaterial, error) {
-	payloadMeta, err := keys.ParseKeyPayloadMetadata(decryptedData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse sentry key data: %w", err)
-	}
+func loadComponentKeyMaterial(payload *keys.Payload, keyType string, signingMeta keys.SigningMetadata) (*signing.KeyMaterial, error) {
 	if signingMeta.Category != keys.CategoryComponent {
 		return nil, fmt.Errorf("sentry key has invalid category %q", signingMeta.Category)
 	}
@@ -356,10 +327,7 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 		return nil, fmt.Errorf("unsupported sentry key type: %s", keyType)
 	}
 
-	publicKey, err := hex.DecodeString(payloadMeta.PublicKeyHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode sentry public key: %w", err)
-	}
+	publicKey := bytes.Clone(payload.PublicKey)
 	publicKeySize, ok := keytypes.ComponentPublicKeySize(keyType)
 	if !ok {
 		crypto.ZeroBytes(publicKey)
@@ -370,11 +338,7 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 		return nil, fmt.Errorf("invalid sentry public key length: expected %d bytes, got %d", publicKeySize, len(publicKey))
 	}
 
-	privateKey, err := hex.DecodeString(payloadMeta.PrivateKeyHex)
-	if err != nil {
-		crypto.ZeroBytes(publicKey)
-		return nil, fmt.Errorf("failed to decode sentry private key: %w", err)
-	}
+	privateKey := bytes.Clone(payload.PrivateKey)
 	privateKeySize, ok := keytypes.ComponentPrivateKeySize(keyType)
 	if !ok {
 		crypto.ZeroBytes(publicKey)
@@ -411,29 +375,6 @@ func loadComponentKeyMaterial(decryptedData []byte, keyType string, signingMeta 
 			PrivateKey:   privateKey,
 		},
 	}, nil
-}
-
-func zeroLoadedKeyMaterialForKeystore(key *signing.KeyMaterial) {
-	if key == nil {
-		return
-	}
-	provider := signing.GetProvider(key.Type)
-	if provider == nil && key.BaseKeyType != "" {
-		provider = signing.GetProvider(key.BaseKeyType)
-	}
-	if provider != nil {
-		provider.ZeroKey(key)
-	}
-	if key.Bytecode != nil {
-		crypto.ZeroBytes(key.Bytecode)
-		key.Bytecode = nil
-	}
-	if key.PublicKey != nil {
-		crypto.ZeroBytes(key.PublicKey)
-		key.PublicKey = nil
-	}
-	key.Parameters = nil
-	key.SigningArgs = nil
 }
 
 // GetMetadata returns metadata for a single key

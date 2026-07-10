@@ -7,13 +7,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -231,21 +230,17 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 		t.Fatalf("Failed to generate key: %v", err)
 	}
 
-	keyData := struct {
-		FormatVersion int    `json:"format_version"`
-		Category      string `json:"category"`
-		KeyType       string `json:"key_type"`
-		PublicKeyHex  string `json:"public_key"`
-		PrivateKeyHex string `json:"private_key"`
-	}{
-		FormatVersion: keys.CurrentKeyFormatVersion,
-		Category:      keys.CategoryEd25519,
-		KeyType:       "ed25519",
-		PublicKeyHex:  hex.EncodeToString(pubKey),
-		PrivateKeyHex: hex.EncodeToString(privKey),
+	payload := keys.NewEd25519Payload(pubKey, privKey)
+	defer payload.ZeroSecrets()
+	payload.CreatedAt = time.Date(2026, 7, 10, 12, 34, 56, 0, time.UTC)
+	testAddr, err := payload.Selector()
+	if err != nil {
+		t.Fatalf("Selector() error = %v", err)
 	}
-
-	keyJSON, _ := json.MarshalIndent(keyData, "", "  ")
+	keyJSON, err := keys.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload() error = %v", err)
+	}
 
 	// Encrypt with master key (v2 format)
 	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
@@ -254,8 +249,6 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 	}
 	crypto.ZeroBytes(keyJSON)
 
-	// Use a proper Algorand-style address for the filename
-	testAddr := "TESTINTEGRATION1234"
 	keyFile := filepath.Join(keysDir, testAddr+".key")
 	if err := os.WriteFile(keyFile, encrypted, 0600); err != nil {
 		t.Fatalf("Failed to write key file: %v", err)
@@ -263,7 +256,7 @@ func TestKeySession_IntegrationWithFileKeyStore(t *testing.T) {
 
 	// Create FileKeyStore and set up cache and master key
 	fileStore := NewFileKeyStoreForPaths(utilkeys.NewPaths(keystoreRoot), "default")
-	fileStore.cache[testAddr] = keys.KeyScanInfo{KeyFile: keyFile, KeyType: "ed25519"}
+	fileStore.cache[testAddr] = keys.KeyScanInfo{KeyFile: keyFile, KeyType: "ed25519", Category: keys.CategoryEd25519}
 	// Copy the master key (since it will be zeroed in the defer)
 	fileStore.masterKey = make([]byte, len(masterKey))
 	copy(fileStore.masterKey, masterKey)

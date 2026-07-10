@@ -9,8 +9,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -558,28 +558,13 @@ func TestServiceKeyInventoryReportsTemplateProvenanceWarningsOnly(t *testing.T) 
 	ir := setupIdentityRuntime(t)
 	bytecode := []byte{0x26, 0x01, 0x01, 0x05, 0x81, 0x01}
 	address := logicSigAddressString(t, bytecode)
-	keyJSON, err := json.Marshal(keys.LSigFile{
-		FormatVersion:          keys.CurrentKeyFormatVersion,
-		Category:               keys.CategoryGenericLsig,
-		Address:                address,
-		KeyType:                keyType,
-		BytecodeHex:            hex.EncodeToString(bytecode),
-		SaltCounter:            5,
-		SigningMetadataVersion: keys.CurrentSigningMetadataVersion,
-		TemplateFingerprint:    "1:" + strings.Repeat("b", 64),
-	})
-	if err != nil {
-		t.Fatalf("json.Marshal(LSigFile) error = %v", err)
-	}
+	payload := keys.NewGenericLSigPayload(keyType, nil, bytecode, 5, "", nil, "1:"+strings.Repeat("b", 64))
 	if err := ir.WithMasterKey(func(mk []byte) error {
-		encrypted, encErr := crypto.EncryptWithMasterKey(keyJSON, mk)
-		if encErr != nil {
-			return encErr
+		result, saveErr := keys.SavePayload(ir.KeyPaths(), ir.ID(), payload, mk)
+		if saveErr == nil && result.Address != address {
+			return fmt.Errorf("saved address %s does not match expected %s", result.Address, address)
 		}
-		if err := os.MkdirAll(ir.KeyPaths().KeysDir(ir.ID()), 0o750); err != nil {
-			return err
-		}
-		return os.WriteFile(ir.KeyPaths().KeyFilePath(ir.ID(), address), encrypted, 0o600)
+		return saveErr
 	}); err != nil {
 		t.Fatalf("write key file error = %v", err)
 	}

@@ -5,7 +5,6 @@ package keymgmt
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -305,21 +304,18 @@ func DetectKeyInfoFromFileWithMasterKey(keyFile string, masterKey []byte) (*KeyF
 
 // parseKeyFileInfo parses decrypted key file data and extracts type and parameters.
 func parseKeyFileInfo(data []byte) (*KeyFileInfo, error) {
-	keyData, err := keys.ParseKeyPayloadMetadata(data)
+	payload, err := keys.ParsePayload(data)
 	if err != nil {
 		return nil, err
 	}
-
-	if keyData.KeyType != "" {
-		return &KeyFileInfo{
-			Type:                keyData.KeyType,
-			PublicKeyHex:        keyData.PublicKeyHex,
-			Parameters:          keyData.Parameters,
-			TemplateFingerprint: keyData.TemplateFingerprint,
-		}, nil
-	}
-
-	return nil, fmt.Errorf("key file missing required 'key_type' field")
+	defer payload.ZeroSecrets()
+	meta := payload.Metadata()
+	return &KeyFileInfo{
+		Type:                meta.KeyType,
+		PublicKeyHex:        meta.PublicKeyHex,
+		Parameters:          meta.Parameters,
+		TemplateFingerprint: meta.TemplateFingerprint,
+	}, nil
 }
 
 // GetDisplayTEALWithMasterKey returns the TEAL source code for generic LogicSigs.
@@ -346,11 +342,10 @@ func GetDisplayTEALWithMasterKey(keyFile string, masterKey []byte) (string, erro
 // parseDisplayTEAL extracts TEAL source from decrypted key file data.
 // Returns the stored TEAL source if available, empty string otherwise.
 func parseDisplayTEAL(data []byte) (string, error) {
-	var keyData struct {
-		TEALSource string `json:"teal_source"`
-	}
-	if err := json.Unmarshal(data, &keyData); err != nil {
+	payload, err := keys.ParsePayload(data)
+	if err != nil {
 		return "", err
 	}
-	return keyData.TEALSource, nil
+	defer payload.ZeroSecrets()
+	return payload.TEALSource, nil
 }

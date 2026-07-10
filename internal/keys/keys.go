@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -80,6 +79,23 @@ func newAddressCollisionError(addressFiles map[string][]string) *AddressCollisio
 		return nil
 	}
 	return &AddressCollisionError{Collisions: collisions}
+}
+
+func keyPayloadScanWarningCode(err error) KeyScanWarningCode {
+	if errors.Is(err, ErrMissingLogicSigSaltCounter) {
+		return KeyScanWarningLogicSigSaltInvalid
+	}
+	reason := strings.ToLower(err.Error())
+	if strings.Contains(reason, "on-curve") {
+		return KeyScanWarningLogicSigAddressInvalid
+	}
+	if strings.Contains(reason, "lsig_bytecode") || strings.Contains(reason, "logic sig") {
+		return KeyScanWarningParseLogicSigFailed
+	}
+	if errors.Is(err, ErrIncompatibleKeyFormat) {
+		return KeyScanWarningIncompatibleFormat
+	}
+	return KeyScanWarningDetectKeyTypeFailed
 }
 
 // KeyPayloadHeader is the non-secret schema header required on current key files.
@@ -318,26 +334,20 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 			continue
 		}
 
-		payloadMeta, err := ParseKeyPayloadMetadata(data)
+		payload, err := ParsePayload(data)
 		if err != nil {
 			crypto.ZeroBytes(data)
-			code := KeyScanWarningDetectKeyTypeFailed
-			if errors.Is(err, ErrIncompatibleKeyFormat) {
-				code = KeyScanWarningIncompatibleFormat
-			}
-			warn(code, keyFile, err)
+			warn(keyPayloadScanWarningCode(err), keyFile, err)
 			continue
 		}
-		header, err := validateCurrentKeyPayloadMetadata(payloadMeta)
+		address, err := payload.Selector()
 		if err != nil {
+			payload.ZeroSecrets()
 			crypto.ZeroBytes(data)
-			code := KeyScanWarningDetectKeyTypeFailed
-			if errors.Is(err, ErrIncompatibleKeyFormat) {
-				code = KeyScanWarningIncompatibleFormat
-			}
-			warn(code, keyFile, err)
+			warn(KeyScanWarningAddressDerivationFailed, keyFile, err)
 			continue
 		}
+		payloadMeta := payload.Metadata()
 		signingMeta := SigningMetadata{
 			Category:               payloadMeta.Category,
 			BaseKeyType:            payloadMeta.BaseKeyType,
@@ -345,87 +355,20 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 			SigningArgs:            payloadMeta.SigningArgs,
 			SigningMetadataVersion: payloadMeta.SigningMetadataVersion,
 		}
-		keyType := header.KeyType
-		category := header.Category
-		signingMeta.Category = category
-		templateFingerprint := payloadMeta.TemplateFingerprint
-
-		// Extract address, public key, and bytecode based on key type
-		var address string
-		var publicKeyHex string
+		keyType := payloadMeta.KeyType
+		category := payloadMeta.Category
+		publicKeyHex := payloadMeta.PublicKeyHex
 		var lsigSize int
-
-		if IsComponentKey(category) {
-			address, publicKeyHex, err = componentAddressAndPublicKey(payloadMeta)
-			if err != nil {
-				crypto.ZeroBytes(data)
-				warn(KeyScanWarningAddressDerivationFailed, keyFile, err)
-				continue
-			}
-		} else if IsGenericKey(category, keyType) {
-			// Generic LogicSig addresses derive exclusively from stored bytecode.
-			bytecode, err := extractBytecodeStrict(data)
-			if err != nil {
-				crypto.ZeroBytes(data)
-				warn(KeyScanWarningLogicSigSaltInvalid, keyFile, err)
-				continue
-			}
-			if _, err := ValidateLogicSigSaltedBytecode(data, bytecode); err != nil {
-				crypto.ZeroBytes(data)
-				warn(KeyScanWarningLogicSigSaltInvalid, keyFile, err)
-				continue
-			}
-			address, err = logicSigAddress(bytecode)
-			if err != nil {
-				crypto.ZeroBytes(data)
-				warn(KeyScanWarningLogicSigAddressInvalid, keyFile, err)
-				continue
-			}
-			// Generic LSigs have no crypto signature, just bytecode
-			lsigSize = len(payloadMeta.BytecodeHex) / 2
-			// No public key for generic LSigs
-		} else {
-			// For DSA keys (Ed25519, Falcon-1024)
-			// Try to derive address from stored bytecode first (avoids algod round-trip)
-			bytecode, err := extractBytecodeStrict(data)
-			if err != nil {
-				crypto.ZeroBytes(data)
-				warn(KeyScanWarningLogicSigSaltInvalid, keyFile, err)
-				continue
-			}
-			if len(bytecode) > 0 {
-				if _, err := ValidateLogicSigSaltedBytecode(data, bytecode); err != nil {
-					crypto.ZeroBytes(data)
-					warn(KeyScanWarningLogicSigSaltInvalid, keyFile, err)
-					continue
-				}
-				// LSig key with stored bytecode — derive address locally
-				addr, addrErr := logicSigAddress(bytecode)
-				if addrErr != nil {
-					crypto.ZeroBytes(data)
-					warn(KeyScanWarningLogicSigAddressInvalid, keyFile, addrErr)
-					continue
-				}
-				address = addr
-				publicKeyHex = payloadMeta.PublicKeyHex
-				lsigSize = len(bytecode) + dsaLogicSigArgBudgetForKey(keyType, signingMeta.BaseKeyType)
-			} else {
-				if category == CategoryDSALsig {
-					crypto.ZeroBytes(data)
-					warn(KeyScanWarningLogicSigSaltInvalid, keyFile, fmt.Errorf("DSA LogicSig key file missing bytecode"))
-					continue
-				}
-				// Ed25519 native key (no bytecode) — derive from public key
-				address, publicKeyHex, err = deriveAddressAndPublicKeyFromData(data, keyType)
-				if err != nil {
-					crypto.ZeroBytes(data)
-					warn(KeyScanWarningAddressDerivationFailed, keyFile, err)
-					continue
-				}
-			}
+		switch category {
+		case CategoryGenericLsig:
+			publicKeyHex = ""
+			lsigSize = len(payload.LogicSigBytecode)
+		case CategoryDSALsig:
+			lsigSize = len(payload.LogicSigBytecode) + dsaLogicSigArgBudgetForKey(keyType, signingMeta.BaseKeyType)
 		}
 
 		createdAt := payloadMeta.CreatedAt
+		payload.ZeroSecrets()
 		crypto.ZeroBytes(data) // Zero after all processing complete
 		if filenameAddress != address {
 			warn(KeyScanWarningFilenameAddressMismatch, keyFile, fmt.Errorf("filename address %s does not match payload-derived address %s", filenameAddress, address))
@@ -448,7 +391,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 			Parameters:             signingMeta.Parameters,
 			SigningArgs:            signingMeta.SigningArgs,
 			SigningMetadataVersion: signingMeta.SigningMetadataVersion,
-			TemplateFingerprint:    templateFingerprint,
+			TemplateFingerprint:    payloadMeta.TemplateFingerprint,
 			CreatedAt:              createdAt,
 		}
 	}
@@ -501,63 +444,6 @@ func signerGeneratedDSAArgSizeForKey(keyType string) int {
 	default:
 		return 0
 	}
-}
-
-func componentAddressAndPublicKey(meta KeyPayloadMetadata) (string, string, error) {
-	publicKey, err := hex.DecodeString(meta.PublicKeyHex)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to decode sentry public key: %w", err)
-	}
-	wantSize, ok := keytypes.ComponentPublicKeySize(meta.KeyType)
-	if !ok {
-		return "", "", fmt.Errorf("unsupported sentry key type: %s", meta.KeyType)
-	}
-	if len(publicKey) != wantSize {
-		return "", "", fmt.Errorf("invalid sentry public key length: expected %d bytes, got %d", wantSize, len(publicKey))
-	}
-	componentKey, err := keytypes.ComponentKeySelector(meta.KeyType, publicKey)
-	if err != nil {
-		return "", "", err
-	}
-	return componentKey, strings.ToLower(meta.PublicKeyHex), nil
-}
-
-// deriveAddressAndPublicKeyFromData derives the Algorand address and extracts the public key
-// from already-decrypted key data. This avoids re-reading and re-decrypting the file.
-func deriveAddressAndPublicKeyFromData(data []byte, keyType string) (address string, publicKeyHex string, err error) {
-	keyData, err := ParseKeyPayloadMetadata(data)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to parse key metadata: %w", err)
-	}
-
-	publicKeyHex = keyData.PublicKeyHex
-
-	// Handle Ed25519 keys that might be missing public key
-	if keyType == "ed25519" && publicKeyHex == "" {
-		// For Ed25519, the public key is the last 32 bytes of the 64-byte private key
-		privBytes, err := hex.DecodeString(keyData.PrivateKeyHex)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to decode Ed25519 private key: %w", err)
-		}
-		defer crypto.ZeroBytes(privBytes)
-		if len(privBytes) != 64 {
-			return "", "", fmt.Errorf("invalid Ed25519 private key length: expected 64 bytes, got %d", len(privBytes))
-		}
-		publicKeyHex = hex.EncodeToString(privBytes[32:])
-	}
-
-	// Use the registry to get the appropriate address deriver
-	deriver, err := addressderive.Get(keyType)
-	if err != nil {
-		return "", "", fmt.Errorf("no address deriver for key type %s: %w", keyType, err)
-	}
-
-	address, err = deriver.DeriveAddress(publicKeyHex, keyData.Parameters)
-	if err != nil {
-		return "", "", err
-	}
-
-	return address, publicKeyHex, nil
 }
 
 // ExtractBytecode extracts the LogicSig bytecode from key data.

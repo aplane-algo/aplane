@@ -399,11 +399,40 @@ func compiledGuardedPushbytesSaltBytecode(counter byte) []byte {
 	return bytecode
 }
 
+func canonicalGenericKeyJSON(t *testing.T, keyType string, parameters map[string]string, tealSource string) []byte {
+	t.Helper()
+	salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00}, 3)
+	if err != nil {
+		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
+	}
+	payload := apkeys.NewGenericLSigPayload(keyType, parameters, salted.Bytecode, salted.Counter, tealSource, nil, "")
+	encoded, err := apkeys.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload() error = %v", err)
+	}
+	return encoded
+}
+
+func canonicalDSAKeyJSON(t *testing.T, keyType string, publicKey []byte) []byte {
+	t.Helper()
+	salted, err := lsigsalt.FindOffCurveAtOffset([]byte{0x06, 0x81, 0x01, 0x00}, 3)
+	if err != nil {
+		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
+	}
+	payload := apkeys.NewDSALSigPayload(keyType, "test.base.v1", publicKey, []byte{0x01}, nil, salted.Bytecode, salted.Counter, "", nil, "")
+	defer payload.ZeroSecrets()
+	encoded, err := apkeys.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload() error = %v", err)
+	}
+	return encoded
+}
+
 func TestDetectKeyInfoFromFileWithMasterKeyEncrypted(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "encrypted.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
-	plaintext := []byte(`{"key_type":"aplane.falcon1024.v1","params":{"network":"testnet"}}`)
+	plaintext := canonicalGenericKeyJSON(t, "aplane.falcon1024.v1", map[string]string{"network": "testnet"}, "")
 	encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey() error = %v", err)
@@ -553,7 +582,7 @@ func TestGetDisplayTEALWithMasterKeyEncrypted(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "display.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
-	plaintext := []byte(`{"teal_source":"#pragma version 8\nint 1"}`)
+	plaintext := canonicalGenericKeyJSON(t, "aplane.display.v1", nil, "#pragma version 8\nint 1")
 	encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey() error = %v", err)
@@ -608,31 +637,24 @@ func TestGetDisplayTEALWithMasterKeyInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestParseKeyFileInfoPrefersParametersAndFallsBackToParams(t *testing.T) {
+func TestParseKeyFileInfoReadsCanonicalParameters(t *testing.T) {
 	tests := []struct {
 		name       string
-		payload    string
+		payload    []byte
 		wantType   string
 		wantParamK string
 		wantParamV string
 	}{
 		{
 			name:       "uses parameters when present",
-			payload:    `{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"ADDR1"}}`,
+			payload:    canonicalGenericKeyJSON(t, "aplane.timed-whitelist.v1", map[string]string{"recipients": "ADDR1"}, ""),
 			wantType:   "aplane.timed-whitelist.v1",
 			wantParamK: "recipients",
 			wantParamV: "ADDR1",
 		},
 		{
-			name:       "allows duplicate aliases when equal",
-			payload:    `{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"ADDR1"},"params":{"recipients":"ADDR1"}}`,
-			wantType:   "aplane.timed-whitelist.v1",
-			wantParamK: "recipients",
-			wantParamV: "ADDR1",
-		},
-		{
-			name:       "falls back to params",
-			payload:    `{"key_type":"aplane.falcon1024.v1","params":{"network":"testnet"}}`,
+			name:       "reads another canonical parameter",
+			payload:    canonicalGenericKeyJSON(t, "aplane.falcon1024.v1", map[string]string{"network": "testnet"}, ""),
 			wantType:   "aplane.falcon1024.v1",
 			wantParamK: "network",
 			wantParamV: "testnet",
@@ -641,7 +663,7 @@ func TestParseKeyFileInfoPrefersParametersAndFallsBackToParams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			info, err := parseKeyFileInfo([]byte(tt.payload))
+			info, err := parseKeyFileInfo(tt.payload)
 			if err != nil {
 				t.Fatalf("parseKeyFileInfo() error = %v", err)
 			}
@@ -656,7 +678,7 @@ func TestParseKeyFileInfoPrefersParametersAndFallsBackToParams(t *testing.T) {
 }
 
 func TestParseKeyFileInfoIncludesPublicKey(t *testing.T) {
-	info, err := parseKeyFileInfo([]byte(`{"key_type":"aplane.sentry-ed25519.v1","public_key":"aabbccdd"}`))
+	info, err := parseKeyFileInfo(canonicalDSAKeyJSON(t, "test.dsa.v1", []byte{0xaa, 0xbb, 0xcc, 0xdd}))
 	if err != nil {
 		t.Fatalf("parseKeyFileInfo() error = %v", err)
 	}
@@ -665,22 +687,26 @@ func TestParseKeyFileInfoIncludesPublicKey(t *testing.T) {
 	}
 }
 
-func TestParseKeyFileInfoRejectsConflictingParameterAliases(t *testing.T) {
-	_, err := parseKeyFileInfo([]byte(`{"key_type":"aplane.timed-whitelist.v1","parameters":{"recipients":"ADDR1"},"params":{"recipients":"ADDR2"}}`))
+func TestParseKeyFileInfoRejectsParameterAlias(t *testing.T) {
+	canonical := canonicalGenericKeyJSON(t, "aplane.timed-whitelist.v1", map[string]string{"recipients": "ADDR1"}, "")
+	aliased := strings.Replace(string(canonical), `"parameters"`, `"params"`, 1)
+	_, err := parseKeyFileInfo([]byte(aliased))
 	if err == nil {
 		t.Fatal("expected conflict error, got nil")
 	}
-	if !strings.Contains(err.Error(), "conflicting") {
-		t.Fatalf("error = %q, want conflicting fields", err.Error())
+	if !strings.Contains(err.Error(), `unknown field "params"`) {
+		t.Fatalf("error = %q, want alias rejection", err.Error())
 	}
 }
 
 func TestParseKeyFileInfoMissingKeyType(t *testing.T) {
-	_, err := parseKeyFileInfo([]byte(`{"parameters":{"recipient":"ADDR"}}`))
+	canonical := canonicalGenericKeyJSON(t, "aplane.timed-whitelist.v1", nil, "")
+	missing := strings.Replace(string(canonical), `"key_type": "aplane.timed-whitelist.v1",`, "", 1)
+	_, err := parseKeyFileInfo([]byte(missing))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "missing required 'key_type' field") {
+	if !strings.Contains(err.Error(), "key_type must be non-empty") {
 		t.Fatalf("error = %q, want missing key_type", err.Error())
 	}
 }
@@ -693,7 +719,7 @@ func TestParseKeyFileInfoInvalidJSON(t *testing.T) {
 }
 
 func TestParseDisplayTEALMissingFieldReturnsEmpty(t *testing.T) {
-	teal, err := parseDisplayTEAL([]byte(`{"key_type":"aplane.timed-whitelist.v1"}`))
+	teal, err := parseDisplayTEAL(canonicalGenericKeyJSON(t, "aplane.timed-whitelist.v1", nil, ""))
 	if err != nil {
 		t.Fatalf("parseDisplayTEAL() error = %v", err)
 	}

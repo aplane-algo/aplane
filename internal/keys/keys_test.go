@@ -99,6 +99,7 @@ func testEd25519Key(t *testing.T) (keyJSON []byte, address string) {
 		"key_type":       "ed25519",
 		"public_key":     hex.EncodeToString(pub),
 		"private_key":    hex.EncodeToString(priv),
+		"created_at":     "2026-07-10T12:34:56Z",
 	}
 	keyJSON, err = json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -673,7 +674,8 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsSaltWarnings(t *testing.T) {
 		"category": "generic_lsig",
 		"key_type": "aplane.whitelist.v1",
 		"lsig_bytecode": "260101058101",
-		"signing_metadata_version": 1
+		"signing_metadata_version": 1,
+		"created_at": "2026-07-10T12:34:56Z"
 	}`)
 	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, masterKey)
 	if err != nil {
@@ -715,7 +717,8 @@ func TestScanKeysDirectoryWithMasterKeyLoadsGenericUnderDerivedAddress(t *testin
 		"key_type": "aplane.whitelist.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
-		"signing_metadata_version": 1
+		"signing_metadata_version": 1,
+		"created_at": "2026-07-10T12:34:56Z"
 	}`)
 
 	writeKeyFile(t, paths, "default", address, keyJSON, masterKey)
@@ -745,17 +748,17 @@ func TestScanKeysDirectoryWithMasterKeyIncludesWhitelistV2ProofBudget(t *testing
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "dsa_lsig",
-		"address": "` + address + `",
 		"key_type": "` + falcon1024WhitelistV2KeyType + `",
 		"public_key": "01020304",
 		"private_key": "05060708",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"base_key_type": "` + baseKeyType + `",
-		"params": {
+		"parameters": {
 			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 		},
-		"signing_metadata_version": 1
+		"signing_metadata_version": 1,
+		"created_at": "2026-07-10T12:34:56Z"
 	}`)
 
 	writeKeyFile(t, paths, "default", address, keyJSON, masterKey)
@@ -793,7 +796,8 @@ func TestScanKeysDirectoryWithMasterKeyRejectsGenericFilenameAddressMismatch(t *
 		"key_type": "aplane.whitelist.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
-		"signing_metadata_version": 1
+		"signing_metadata_version": 1,
+		"created_at": "2026-07-10T12:34:56Z"
 	}`)
 
 	writeKeyFile(t, paths, "default", "NOT_DERIVED", keyJSON, masterKey)
@@ -826,6 +830,9 @@ func TestScanKeysDirectoryWithMasterKeyRejectsDSALSigWithoutBytecode(t *testing.
 		t.Fatal(err)
 	}
 	fields["category"] = CategoryDSALsig
+	fields["base_key_type"] = "ed25519"
+	fields["salt_counter"] = float64(0)
+	fields["signing_metadata_version"] = float64(CurrentSigningMetadataVersion)
 	keyJSON, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -843,7 +850,7 @@ func TestScanKeysDirectoryWithMasterKeyRejectsDSALSigWithoutBytecode(t *testing.
 	if len(report.Warnings) != 1 {
 		t.Fatalf("warnings = %#v, want one warning", report.Warnings)
 	}
-	if !contains(report.Warnings[0].Reason(), "missing bytecode") {
+	if !contains(report.Warnings[0].Reason(), "requires lsig_bytecode") {
 		t.Fatalf("warning reason = %q, want missing bytecode", report.Warnings[0].Reason())
 	}
 }
@@ -857,8 +864,10 @@ func TestScanKeysDirectoryWithMasterKeyRejectsDSALSigInvalidBytecode(t *testing.
 		t.Fatal(err)
 	}
 	fields["category"] = CategoryDSALsig
+	fields["base_key_type"] = "ed25519"
 	fields["lsig_bytecode"] = "not-hex"
 	fields["salt_counter"] = float64(0)
+	fields["signing_metadata_version"] = float64(CurrentSigningMetadataVersion)
 	keyJSON, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -876,7 +885,7 @@ func TestScanKeysDirectoryWithMasterKeyRejectsDSALSigInvalidBytecode(t *testing.
 	if len(report.Warnings) != 1 {
 		t.Fatalf("warnings = %#v, want one warning", report.Warnings)
 	}
-	if !contains(report.Warnings[0].Reason(), "invalid LogicSig bytecode hex") {
+	if !contains(report.Warnings[0].Reason(), "invalid lsig_bytecode hex") {
 		t.Fatalf("warning reason = %q, want invalid bytecode", report.Warnings[0].Reason())
 	}
 }
@@ -932,9 +941,7 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsIncompatibleFormatWarnings(t
 	}
 }
 
-func TestScanKeysDirectoryWithMasterKey_Ed25519WithoutPublicKey(t *testing.T) {
-	// Ed25519 keys can have only private_key (no public_key field).
-	// deriveAddressAndPublicKeyFromData should derive the public key from the last 32 bytes.
+func TestScanKeysDirectoryWithMasterKeyRejectsEd25519WithoutPublicKey(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 
@@ -952,28 +959,24 @@ func TestScanKeysDirectoryWithMasterKey_Ed25519WithoutPublicKey(t *testing.T) {
 		"category":       CategoryEd25519,
 		"key_type":       "ed25519",
 		"private_key":    hex.EncodeToString(priv),
+		"created_at":     "2026-07-10T12:34:56Z",
 		// deliberately no "public_key"
 	}
 	keyJSON, _ := json.MarshalIndent(keyData, "", "  ")
 	writeKeyFile(t, paths, "default", address, keyJSON, masterKey)
 
-	result, err := ScanKeysDirectoryWithMasterKey(paths, "default", masterKey)
+	report, err := ScanKeysDirectoryWithMasterKeyReport(paths, "default", masterKey)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(result))
+	if len(report.Keys) != 0 {
+		t.Fatalf("loaded keys = %d, want 0", len(report.Keys))
 	}
-
-	info, ok := result[address]
-	if !ok {
-		t.Fatal("address not found in results")
+	if len(report.Warnings) != 1 {
+		t.Fatalf("warnings = %#v, want one", report.Warnings)
 	}
-	if info.PublicKeyHex == "" {
-		t.Error("public key should be derived from private key")
-	}
-	if info.PublicKeyHex != hex.EncodeToString(pub) {
-		t.Errorf("derived public key = %q, want %q", info.PublicKeyHex, hex.EncodeToString(pub))
+	if !contains(report.Warnings[0].Reason(), "public key length") {
+		t.Fatalf("warning reason = %q, want missing public key rejection", report.Warnings[0].Reason())
 	}
 }
 
