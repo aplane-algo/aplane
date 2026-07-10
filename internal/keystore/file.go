@@ -280,25 +280,16 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	if err != nil {
 		return nil, err
 	}
+	// The keystore owns the KeyMaterial envelope: storage metadata is stamped
+	// unconditionally from the validated payload, so providers only supply
+	// Type and the cryptographic Value.
+	km.Category = signingMeta.Category
+	km.BaseKeyType = signingMeta.BaseKeyType
 	km.Bytecode = bytes.Clone(payload.LogicSigBytecode)
-	if km.Category == "" {
-		km.Category = signingMeta.Category
-	}
-	if km.BaseKeyType == "" {
-		km.BaseKeyType = signingMeta.BaseKeyType
-	}
-	if len(km.PublicKey) == 0 && len(payload.PublicKey) != 0 {
-		km.PublicKey = bytes.Clone(payload.PublicKey)
-	}
-	if km.Parameters == nil {
-		km.Parameters = maps.Clone(signingMeta.Parameters)
-	}
-	if km.SigningMetadataVersion == 0 {
-		km.SigningMetadataVersion = signingMeta.SigningMetadataVersion
-	}
-	if km.SigningArgs == nil {
-		km.SigningArgs = keys.SigningArgDefs(signingMeta.SigningArgs)
-	}
+	km.PublicKey = bytes.Clone(payload.PublicKey)
+	km.Parameters = maps.Clone(signingMeta.Parameters)
+	km.SigningArgs = keys.SigningArgDefs(signingMeta.SigningArgs)
+	km.SigningMetadataVersion = signingMeta.SigningMetadataVersion
 	return km, nil
 }
 

@@ -36,11 +36,11 @@ func (p *Ed25519Provider) LoadKeyMaterial(key signing.ProviderKey) (*signing.Key
 		return nil, fmt.Errorf("failed to create account from private key: %w", err)
 	}
 
+	// Only Type and the crypto Value are the provider's to set; the keystore
+	// stamps the storage envelope onto the returned KeyMaterial.
 	return &signing.KeyMaterial{
-		Type:      p.RoutingFamily(),
-		PublicKey: append([]byte(nil), key.PublicKey...),
-		Category:  key.Category,
-		Value:     account,
+		Type:  p.RoutingFamily(),
+		Value: account,
 	}, nil
 }
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
-	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
 
 // LogicSigSignerOps defines signer-only operations for a versioned LogicSig key type.
@@ -67,12 +66,11 @@ func (p *LogicSigProvider) LoadKeyMaterial(key ProviderKey) (*KeyMaterial, error
 		return nil, fmt.Errorf("key type %q does not belong to family %q", signingKeyType, p.family)
 	}
 
+	// Only Type and the crypto Value are the provider's to set; the keystore
+	// stamps the storage envelope (Category, BaseKeyType, SigningArgs, ...)
+	// onto the returned KeyMaterial.
 	return &KeyMaterial{
-		Type:                   key.Type,
-		Category:               key.Category,
-		BaseKeyType:            key.BaseKeyType,
-		SigningArgs:            append([]lsigprovider.RuntimeArgDef(nil), key.SigningArgs...),
-		SigningMetadataVersion: key.SigningMetadataVersion,
+		Type: key.Type,
 		Value: &LsigKeyMaterial{
 			PrivateKey: append([]byte(nil), key.PrivateKey...),
 		},
