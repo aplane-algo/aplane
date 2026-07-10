@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -205,32 +206,54 @@ func findKeystoreTemplate(paths storepaths.Paths, identityID, keyType string) (t
 // Each file is decrypted with the store's master key and re-encrypted with the export
 // passphrase using standalone encryption (envelope_version 2).
 // No .keystore file is written — each backup file is self-contained.
-func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, masterKey, exportPassphrase []byte) (map[string]string, error) {
+//
+// A key file that decrypts but fails canonical payload validation is skipped
+// and reported in the returned skipped map (address -> reason) so a single
+// damaged key cannot block backing up the remaining healthy keys. All other
+// failures (read, decrypt, template, IO) still abort the export.
+func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, masterKey, exportPassphrase []byte) (checksums, skipped map[string]string, err error) {
 	// Scan source directory for .key files
 	addresses, err := ScanKeyFiles(srcDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if len(addresses) == 0 {
-		return nil, fmt.Errorf("no .key files found in %s", srcDir)
+		return nil, nil, fmt.Errorf("no .key files found in %s", srcDir)
 	}
 
 	// Create apb subdirectory in backup
 	keysDestDir := filepath.Join(destDir, "apb")
 	if err := os.MkdirAll(keysDestDir, 0750); err != nil {
-		return nil, fmt.Errorf("failed to create backup keys directory: %w", err)
+		return nil, nil, fmt.Errorf("failed to create backup keys directory: %w", err)
 	}
 
 	// Export each key to keys/ subdirectory
-	checksums := make(map[string]string)
+	checksums = make(map[string]string)
+	skipped = make(map[string]string)
 	for _, address := range addresses {
 		checksum, _, err := ExportKey(paths, identityID, srcDir, keysDestDir, address, masterKey, exportPassphrase)
 		if err != nil {
-			return nil, fmt.Errorf("failed to export %s: %w", address, err)
+			if isCanonicalPayloadRejection(err) {
+				skipped[address] = err.Error()
+				continue
+			}
+			return nil, nil, fmt.Errorf("failed to export %s: %w", address, err)
 		}
 		checksums[address] = checksum
 	}
 
-	return checksums, nil
+	if len(checksums) == 0 {
+		return nil, nil, fmt.Errorf("no exportable keys: all %d key file(s) failed canonical payload validation", len(skipped))
+	}
+
+	return checksums, skipped, nil
+}
+
+// isCanonicalPayloadRejection reports whether an export failure means the
+// decrypted key payload was rejected by the canonical codec, as opposed to an
+// infrastructure failure (read, decrypt, template, IO) that must abort.
+func isCanonicalPayloadRejection(err error) bool {
+	return errors.Is(err, keys.ErrIncompatibleKeyFormat) ||
+		errors.Is(err, keys.ErrMissingLogicSigSaltCounter)
 }

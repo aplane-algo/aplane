@@ -72,8 +72,11 @@ type BackupIdentityResult struct {
 	KeyCount        int
 	Addresses       []string
 	Verified        bool
-	Code            string
-	Error           string
+	// SkippedKeys maps address -> reason for keys excluded from an all-keys
+	// backup because their payload failed canonical validation.
+	SkippedKeys map[string]string
+	Code        string
+	Error       string
 }
 
 type BackupInfo struct {

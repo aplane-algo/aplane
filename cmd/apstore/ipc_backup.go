@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -250,6 +251,17 @@ func cmdBackupCreate(args []string) error {
 	}
 	if result.Verified {
 		logInfof("verified: yes")
+	}
+	if len(result.SkippedKeys) > 0 {
+		logWarnf("%d key(s) skipped (NOT backed up):", len(result.SkippedKeys))
+		skippedAddresses := make([]string, 0, len(result.SkippedKeys))
+		for address := range result.SkippedKeys {
+			skippedAddresses = append(skippedAddresses, address)
+		}
+		sort.Strings(skippedAddresses)
+		for _, address := range skippedAddresses {
+			logWarnf("  %s: %s", address, result.SkippedKeys[address])
+		}
 	}
 	return nil
 }

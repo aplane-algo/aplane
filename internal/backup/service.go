@@ -26,6 +26,10 @@ type ArchiveResult struct {
 	KeyCount        int
 	Addresses       []string
 	Verified        bool
+	// Skipped maps address -> reason for key files excluded from an all-keys
+	// backup because their decrypted payload failed canonical validation.
+	// Always empty for explicitly selected addresses, which fail closed.
+	Skipped map[string]string
 }
 
 // CreateKeysArchive exports selected active keys for identityID into a single
@@ -44,10 +48,11 @@ func CreateKeysArchive(paths storepaths.Paths, identityID, archivePath string, a
 
 	keysDestDir := filepath.Join(stageDir, "apb")
 	checksums := make(map[string]string)
+	skipped := make(map[string]string)
 	var exported []string
 	if len(addresses) == 0 {
 		var err error
-		checksums, err = ExportAllKeys(paths, identityID, paths.KeysDir(identityID), stageDir, masterKey, exportPassphrase)
+		checksums, skipped, err = ExportAllKeys(paths, identityID, paths.KeysDir(identityID), stageDir, masterKey, exportPassphrase)
 		if err != nil {
 			return nil, err
 		}
@@ -113,6 +118,7 @@ func CreateKeysArchive(paths storepaths.Paths, identityID, archivePath string, a
 		KeyCount:        len(exported),
 		Addresses:       exported,
 		Verified:        true,
+		Skipped:         skipped,
 	}, nil
 }
 

@@ -4,6 +4,8 @@
 package adminserver
 
 import (
+	"maps"
+
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapi"
@@ -149,6 +151,7 @@ func ProtocolBackupResultMessage(id string, result adminproto.BackupIdentityResu
 		KeyCount:        result.KeyCount,
 		Addresses:       append([]string(nil), result.Addresses...),
 		Verified:        result.Verified,
+		SkippedKeys:     maps.Clone(result.SkippedKeys),
 		Code:            result.Code,
 		Error:           result.Error,
 	}

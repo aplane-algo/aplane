@@ -5,7 +5,9 @@ package backupadmin
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
@@ -51,6 +53,9 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 	}
 
 	s.Deps.Logf("created managed backup via IPC: %s", result.ArchivePath)
+	for _, address := range sortedKeys(result.Skipped) {
+		s.Deps.Logf("WARNING: backup skipped invalid key %s: %s", address, result.Skipped[address])
+	}
 	return adminproto.BackupIdentityResult{
 		Success:         true,
 		ArchivePath:     result.ArchivePath,
@@ -59,7 +64,17 @@ func (s Service) BackupIdentity(ir *identity.Runtime, req adminproto.BackupIdent
 		KeyCount:        result.KeyCount,
 		Addresses:       append([]string(nil), result.Addresses...),
 		Verified:        result.Verified,
+		SkippedKeys:     maps.Clone(result.Skipped),
 	}
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func managedBackupTimestamp(t time.Time) string {

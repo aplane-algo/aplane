@@ -263,8 +263,11 @@ type BackupResultMessage struct {
 	KeyCount        int      `json:"key_count,omitempty"`
 	Addresses       []string `json:"addresses,omitempty"`
 	Verified        bool     `json:"verified,omitempty"`
-	Code            string   `json:"code,omitempty"`
-	Error           string   `json:"error,omitempty"`
+	// SkippedKeys maps address -> reason for keys excluded from an all-keys
+	// backup because their payload failed canonical validation.
+	SkippedKeys map[string]string `json:"skipped_keys,omitempty"`
+	Code        string            `json:"code,omitempty"`
+	Error       string            `json:"error,omitempty"`
 }
 
 // ListBackupsMessage requests managed backup archives for the bound identity.
