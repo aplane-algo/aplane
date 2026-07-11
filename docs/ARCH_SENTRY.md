@@ -14,7 +14,8 @@ fixtures, see [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) and
 Sentry is a first-class signing architecture, not a policy flag on ordinary
 signing. It creates a two-party LogicSig authorization path:
 
-- the user signer proves control of the guarded account key, and
+- the user signer proves control of the guarded account key and applies
+  signer-domain policy and operator approval, and
 - the sentry signer authorizes the transaction facts under sentry policy.
 
 The client orchestrates both parties but never holds private key material. The
@@ -118,7 +119,55 @@ Guarded accounts and sentry keys are never signed through raw
 - ordinary `/sign` rejects all guarded account key types and sentry key types.
 
 This preserves the two-party invariant: a guarded account requires both a user
-component signature and a sentry component signature.
+component signature and a sentry component signature. The endpoint split is
+also a contract statement: `/sign` returns only submittable signed
+transactions produced by keys this signer can complete alone, while the
+component/assembly surface handles partial, multi-party authorization.
+
+## Signer-Domain Gating Of User Components
+
+Guarded signing has two independent authorization gates, one per party:
+
+- the **user signer** gates user-role component signing with the same
+  signer-domain machinery as ordinary `/sign`: hard policy rejection,
+  always-review rules, and blocking operator approval. The guarded account is
+  the per-target policy key (`policy.yaml` key overrides apply), and every
+  non-target position in the canonical group is evaluated as a foreign leg, so
+  dangerous fields on co-signed legs (rekey, close, clawback) force operator
+  review exactly as they do on `/sign`.
+- the **sentry signer** gates sentry-role component signing with the
+  deterministic sentry policy domain: allow signs, everything else rejects,
+  and there is no operator prompt.
+
+The user component signature therefore expresses both proof of control and a
+signer-domain authorization decision; the sentry signature expresses the
+sentry-domain policy decision. Neither gate replaces the other: a permissive
+signer policy still cannot move funds the sentry policy refuses, and a
+compromised client credential cannot drive guarded sends past the signer's
+review rules or operator approval.
+
+In the submit flow, gate ordering is user-first: the sentry only evaluates
+requests the user side has already committed to, so submit-flow sentry audit
+records correspond to user-approved transactions, and sentry component
+signatures are not issued for submissions an operator later denies. Contained
+simulation is the documented exception: the client fetches sentry component
+signatures before the user signer's gates run, so simulation may produce
+sentry signatures and sentry audit approvals for transactions the user side
+never approves. Those signatures are inert on their own — the matching user
+component exists only inside the signer, and a later submit of the same
+transaction still passes the full user-side gate.
+
+The guarded key is validated against signer inventory metadata — no key
+decryption — before the gates run, so a rejected request or an operator prompt
+never triggers a private-key operation and approval never precedes a
+key-not-found rejection. The key is decrypted only after the gates pass, under
+the runtime operation lease (`BeginOperation`), so decommission cannot
+complete while component key material is in use. In a mixed group the
+operator may be prompted twice — once for the guarded component request and
+once for the ordinary `/sign` legs; both prompts render the full group
+context. The `auto_approve_self_no_op_transfer` rule never fires for guarded
+groups because they are always pre-grouped, matching `/sign` semantics for
+pre-grouped requests.
 
 ## Component Message
 
@@ -217,21 +266,51 @@ Supported guarded cases include:
   standard account and `AuthAddr` is the guarded account,
 - mixed groups containing guarded and non-guarded signer-controlled positions.
 
-The flow is:
+The submit flow is:
 
 1. Resolve effective signers.
 2. Classify guarded and non-guarded target positions.
 3. Build one canonical group: dummy transactions, fees, and group ID are fixed
    before any signature is requested.
 4. Request user-role component signatures from the primary signer for guarded
-   targets.
+   targets. This runs the signer-domain gates and may block on operator
+   approval.
 5. Request sentry-role component signatures from the routed sentry endpoint for
    guarded targets.
 6. If the group contains non-guarded signer positions, request ordinary
    signatures over the same canonical bytes.
 7. Call `/sign/assemble` on the user signer to verify components, pack LogicSig
    arguments, verify passthrough bytes, and return signed transaction bytes.
-8. Submit or simulate with algod.
+8. Submit with algod.
+
+## Contained Guarded Simulation
+
+Simulation does not follow the submit flow. A client-side simulation with real
+signatures would make "simulate" a client-claimed label that skips operator
+approval while yielding fully submittable bytes. Instead, guarded simulation
+is contained inside the user signer via `POST /simulate/guarded`, mirroring
+the `/simulate` containment model:
+
+1. The client builds the same frozen canonical group and signs dummies
+   locally.
+2. The client requests sentry-role component signatures as usual (the sentry
+   domain is deterministic and prompt-free).
+3. The client calls `/simulate/guarded` with the group, the sentry component
+   signatures, signed passthrough entries, and sign-mode entries for local
+   non-guarded legs.
+4. apsigner runs the signer-domain gates with simulation semantics — hard
+   policy rejection still applies; review and operator approval are skipped —
+   then produces the user component signatures in-process, signs local
+   non-guarded legs through the ordinary simulation path, assembles under the
+   full `/sign/assemble` invariants, and simulates against its own algod.
+5. Only transaction IDs, final unsigned transactions, and the simulation
+   report are returned. Assembled signed bytes and user component signatures
+   never leave the signer, so there is nothing to submit and nothing to
+   bypass.
+
+Simulation therefore exercises the real LogicSig programs, budgets, and
+assembly checks without prompting an operator, and a simulate request can
+never be laundered into a submittable transaction.
 
 All component signatures and ordinary signatures are over the same frozen
 group. This matters for mixed groups: guarded targets, non-guarded originals,
@@ -333,6 +412,12 @@ opaque algod evaluation failure.
 
 Sentry failures are fail-closed:
 
+- signer-domain policy rejection, always-review denial, operator denial, or a
+  missing admin client fail user-role component signing before any private-key
+  operation,
+- there is no client-declared simulate mode on `/sign/component`; simulation
+  skips prompts only inside `/simulate/guarded`, whose response carries no
+  signed bytes,
 - locked or unreachable sentry endpoints cannot produce component signatures,
 - endpoint authentication or host-trust failures block routing,
 - malformed or duplicate sentry inventory leaves endpoint files unchanged,
@@ -375,10 +460,13 @@ Primary packages and files:
   only).
 - `internal/sentry/sentryrefs`: public sentry reference catalog.
 - `internal/signerapp/signing`: component request planning, sentry policy
-  evaluation, user/sentry component signing, assembly, and `/sign` rejection
+  evaluation, signer-domain approval gates for user components (`gate.go`,
+  `component_gate.go`), user/sentry component signing, assembly, contained
+  guarded simulation assembly (`guarded_simulate.go`), and `/sign` rejection
   gates.
 - `internal/signerapp/rest`: REST service methods backing `/sign/component`,
-  `/sign/assemble`, `/keys`, `/keytypes`, and `/admin/sentries/sync`.
+  `/sign/assemble`, `/simulate/guarded`, `/keys`, `/keytypes`, and
+  `/admin/sentries/sync`.
 - `internal/signerapp/daemon`: HTTP runtime (`http_runtime.go`) that registers
   these routes on the signer mux and dispatches them to the `rest` service
   methods.

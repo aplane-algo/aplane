@@ -100,6 +100,7 @@ Clients receiving the token should:
 - `POST /sign/cancel` - Cancel a live synchronous signing request by request ID
 - `POST /plan` - Preview group building (dummies, fees, group ID) without signing
 - `POST /simulate` - Perform signer-managed signed preflight simulation without returning signed transaction bytes
+- `POST /simulate/guarded` - Perform contained guarded simulation; user component signatures are produced and consumed inside apsigner
 - `GET /status` - Return signer status, keyset revision, and approval timing metadata
 - `GET /keys` - List available signing keys
 - `GET /keytypes` - List available key types and creation parameters
@@ -109,8 +110,8 @@ Clients receiving the token should:
 
 **Request Size Limits:**
 - JSON POST endpoints (`/sign`, `/sign/component`, `/sign/assemble`,
-  `/sign/cancel`, `/plan`, `/simulate`, `/admin/generate`, and
-  `/admin/sentries/sync`) enforce a 5 MB request body limit
+  `/sign/cancel`, `/plan`, `/simulate`, `/simulate/guarded`,
+  `/admin/generate`, and `/admin/sentries/sync`) enforce a 5 MB request body limit
 - Oversized requests receive HTTP 413 (Payload Too Large)
 - All authentication error responses use JSON format (not text/plain)
 
@@ -600,6 +601,7 @@ mux.HandleFunc("/sign/assemble", server.requireAuth(auth.ActionSignAssemble, aut
 mux.HandleFunc("/sign/cancel", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSignCancel))
 mux.HandleFunc("/plan", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handlePlan))
 mux.HandleFunc("/simulate", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSimulate))
+mux.HandleFunc("/simulate/guarded", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSimulateGuarded))
 mux.HandleFunc("/status", server.requireAuth(auth.ActionIdentityView, auth.Resource{Type: "identity"}, server.handleStatus))
 mux.HandleFunc("/keys", server.requireAuth(auth.ActionKeysView, auth.Resource{Type: "keys"}, server.handleKeys))
 mux.HandleFunc("/keytypes", server.requireAuth(auth.ActionKeyTypesView, auth.Resource{Type: "keytypes"}, server.handleKeyTypes))

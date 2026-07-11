@@ -98,6 +98,14 @@ func (s *Service) SignGroupForSimulationWithContext(ctx context.Context, identit
 }
 
 func (s *Service) SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*ComponentSignResult, *ServiceError) {
+	var getter componentKeyGetter
+	if session != nil {
+		getter = session
+	}
+	return s.signComponentWithSession(ctx, identityID, req, getter)
+}
+
+func (s *Service) signComponentWithSession(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session componentKeyGetter) (*ComponentSignResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -117,7 +125,24 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 		if session == nil {
 			return nil, internal("key session is nil")
 		}
-		return signPreparedUserComponents(ctx, plan, session)
+		if err := s.preflightGuardedAccountKeyMetadata(identityID, plan.ComponentKey); err != nil {
+			return nil, err
+		}
+		reviewRuleID, gateErr := s.gateUserComponentSigning(ctx, identityID, plan, false)
+		if gateErr != nil {
+			return nil, gateErr
+		}
+		release, leaseErr := s.beforeExecute()
+		if leaseErr != nil {
+			return nil, leaseErr
+		}
+		defer release()
+		result, signErr := signPreparedUserComponents(ctx, plan, session)
+		if signErr != nil {
+			return nil, signErr
+		}
+		s.logUserComponentApproved(identityID, plan, reviewRuleID)
+		return result, nil
 	case signerapi.ComponentSignRoleSentry:
 		if err := s.evaluateSentryComponentPolicy(identityID, plan); err != nil {
 			return nil, err
@@ -125,6 +150,11 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 		if session == nil {
 			return nil, internal("key session is nil")
 		}
+		release, leaseErr := s.beforeExecute()
+		if leaseErr != nil {
+			return nil, leaseErr
+		}
+		defer release()
 		result, signErr := signPreparedSentryComponents(ctx, plan, session)
 		if signErr != nil {
 			return nil, signErr
@@ -157,6 +187,11 @@ func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID str
 	if session == nil {
 		return nil, internal("key session is nil")
 	}
+	release, leaseErr := s.beforeExecute()
+	if leaseErr != nil {
+		return nil, leaseErr
+	}
+	defer release()
 	return assembleDecodedGuarded(ctx, req, group, session)
 }
 
@@ -188,41 +223,32 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID strin
 	console.Println(groupDesc)
 	console.Sync()
 
-	knownAddresses := s.knownAddresses(identityID, plan)
-	routingExemptIndices := routingExemptIndicesForPlan(plan, allTxns)
-	authKeys := authPolicyKeysFromRequest(req, plan)
-	if err := EvaluateAutoRejectionRules(allTxns, len(req.Requests), plan.PassthroughIndices, plan.ForeignIndices, isGroup, s.Policy, authKeys, knownAddresses, routingExemptIndices, console); err != nil {
-		s.logPolicyRejections(identityID, req, plan, txns, err.Error())
-		return nil, err
-	}
-
-	alwaysReviewRuleID, alwaysReview := EvaluateAlwaysReviewRules(txns, len(req.Requests), plan.PassthroughIndices, plan.ForeignIndices, s.Policy, authKeys, knownAddresses, routingExemptIndices)
-	if simulation {
-		console.Println("[SIMULATE] Auto-approved inside Signer; signed bytes will not be returned")
-		console.Sync()
-	} else if alwaysReview {
-		if isGroup {
-			if err := s.Approval.requestGroupApprovalWithContext(ctx, identityID, req, plan, groupDesc, firstValid, lastValid, txns, alwaysReviewRuleID); err != nil {
-				return nil, err
+	alwaysReviewRuleID, gateErr := s.runApprovalGates(ctx, gateInput{
+		AllTxns:              allTxns,
+		EvalCount:            len(req.Requests),
+		PassthroughIndices:   plan.PassthroughIndices,
+		ForeignIndices:       plan.ForeignIndices,
+		IsGroup:              isGroup,
+		Simulation:           simulation,
+		AuthKeys:             authPolicyKeysFromRequest(req, plan),
+		KnownAddresses:       s.knownAddresses(identityID, plan),
+		RoutingExemptIndices: routingExemptIndicesForPlan(plan, allTxns),
+		AutoApprove: func() (string, bool) {
+			return EvaluateAutoApprovalRules(req, plan, allTxns, s.Policy)
+		},
+		LogRejection: func(reason string) {
+			s.logPolicyRejections(identityID, req, plan, txns, reason)
+		},
+		RequestOperatorApproval: func(ctx context.Context, forceReviewRuleID string) *ServiceError {
+			if isGroup {
+				return s.Approval.requestGroupApprovalWithContext(ctx, identityID, req, plan, groupDesc, firstValid, lastValid, txns, forceReviewRuleID)
 			}
-		} else {
-			if err := s.Approval.requestSingleTxnApprovalWithContext(ctx, identityID, req.RequestID, req.Requests[0], allTxns, txns, plan.DummiesNeeded, firstValid, lastValid, alwaysReviewRuleID); err != nil {
-				return nil, err
-			}
-		}
-	} else if ruleID, approved := EvaluateAutoApprovalRules(req, plan, allTxns, s.Policy); approved {
-		console.Printf("[POLICY] Txn auto-approved (%s)\n", ruleID)
-		console.Sync()
-	} else if isGroup {
-		if err := s.Approval.RequestGroupApprovalWithContext(ctx, identityID, req, plan, groupDesc, firstValid, lastValid, txns); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := s.Approval.requestSingleTxnApprovalWithContext(ctx, identityID, req.RequestID, req.Requests[0], allTxns, txns, plan.DummiesNeeded, firstValid, lastValid, ""); err != nil {
-			return nil, err
-		}
+			return s.Approval.requestSingleTxnApprovalWithContext(ctx, identityID, req.RequestID, req.Requests[0], allTxns, txns, plan.DummiesNeeded, firstValid, lastValid, forceReviewRuleID)
+		},
+	}, console)
+	if gateErr != nil {
+		return nil, gateErr
 	}
-	console.Sync()
 
 	if err := ctx.Err(); err != nil {
 		return nil, unavailable(fmt.Sprintf("sign request canceled: %v", err))

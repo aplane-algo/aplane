@@ -20,6 +20,7 @@ type SigningService interface {
 	SignGroupForSimulationWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession) (*signersigning.SignGroupResult, *signersigning.ServiceError)
 	SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*signersigning.ComponentSignResult, *signersigning.ServiceError)
 	AssembleGuardedWithContext(ctx context.Context, identityID string, req signerapi.GuardedAssemblyRequest, session *keystore.KeySession) (*signersigning.GuardedAssemblyResult, *signersigning.ServiceError)
+	AssembleGuardedForSimulationWithContext(ctx context.Context, identityID string, req signerapi.GuardedSimulateRequest, session *keystore.KeySession) (*signersigning.GuardedSimulateAssembly, *signersigning.ServiceError)
 }
 
 type SimulateSignedGroupFunc func(context.Context, []types.SignedTxn) ([]string, string, bool, *signersigning.ServiceError)

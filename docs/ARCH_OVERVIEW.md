@@ -305,6 +305,7 @@ The signer returns finalized group-shaped payloads rather than per-key-type comp
 - `POST /sign` returns `signed`, a list of hex-encoded signed transaction msgpack blobs
 - `POST /plan` returns `transactions`, a list of `TX`-prefixed hex-encoded unsigned canonical transactions
 - `POST /simulate` signs internally, calls algod simulate, and returns txids, diagnostics, and final unsigned transaction bytes without exposing reusable signed bytes
+- `POST /simulate/guarded` does the same for guarded groups: user component signatures are produced and consumed inside apsigner, and only simulation results are returned
 
 Clients may submit the returned signed bytes directly, or use `/plan` plus local signing / passthrough flows when they need explicit control over a multi-party workflow.
 
@@ -313,6 +314,7 @@ Clients may submit the returned signed bytes directly, or use `/plan` plus local
 - `POST /sign/cancel` — Cancel a pending manual approval prompt by `/sign` request ID
 - `POST /plan` — Preview group building (dummies, fees, group ID) without signing
 - `POST /simulate` — Perform signer-managed signed preflight simulation without returning signed transaction bytes
+- `POST /simulate/guarded` — Contained guarded simulation: sentry signatures in, simulation results out, user components never leave apsigner
 
 **Multi-party signing:** Transactions can be marked as **foreign** (`txn_bytes_hex` without `auth_address`) to include them in group building without signing. This works on both `/plan` and `/sign`: `/plan` returns canonical unsigned transactions, while `/sign` returns `""` in foreign positions and signed bytes only for signer-owned or passthrough positions. An optional `lsig_size` hint enables correct dummy calculation for the other party's key type. See [`ARCH_TXNFLOW.md`](ARCH_TXNFLOW.md) for details.
 

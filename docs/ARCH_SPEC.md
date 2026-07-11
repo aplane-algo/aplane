@@ -891,6 +891,17 @@ canonical bytes, then use `/simulate` with passthrough plugin signatures for
 the full real-signed preflight. All-plugin groups assign group IDs and sign
 locally before local algod simulation without contacting the signer.
 
+Guarded groups have the same boundary through `/simulate/guarded`: the client
+sends the frozen canonical group, sentry component signatures, signed
+dummy/foreign passthrough entries, and sign-mode entries for local non-guarded
+legs. apsigner produces the user component signatures internally with
+simulation gate semantics (hard policy rejection applies; review and operator
+approval are skipped), assembles under the full `/sign/assemble` invariants,
+simulates against its own algod, and returns only simulation results. User
+component signatures and assembled bytes never leave the signer, so a
+simulation request cannot be converted into a submittable guarded transaction.
+See [ARCH_SENTRY.md](ARCH_SENTRY.md).
+
 ## Client Ownership Model
 
 | Concern | Owner |
@@ -1207,9 +1218,12 @@ For guarded targets, the client obtains component signatures:
 2. sentry signer `/sign/component` with role `sentry`.
 
 The user-role component request proves the user signer controls the
-guarded effective signer. The sentry-role component request evaluates
-decoded target transaction facts against sentry-domain `policy.yaml` and returns
-sentry component signatures when allowed.
+guarded effective signer and runs the signer-domain approval gates (hard
+policy rejection, always-review rules, blocking operator approval) before any
+key operation, with the guarded account as the per-target policy key. The
+sentry-role component request evaluates decoded target transaction facts
+against sentry-domain `policy.yaml` and returns sentry component signatures
+when allowed.
 
 If the original group also has non-guarded positions, the client then calls the
 primary signer `/sign` over the full canonical group: non-guarded originals are

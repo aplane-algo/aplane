@@ -13,6 +13,13 @@ This document covers two domains:
   policy-as-authorization for `/sign/component`, no operator default, no
   review verdict.
 
+The client-signing domain applies to ordinary `/sign` requests and to
+user-role `/sign/component` requests: guarded user-component signing runs the
+same hard rejection, always-review, and operator approval sequence, with the
+guarded account as the per-target policy key and non-target group positions
+evaluated as foreign context. Sentry-role `/sign/component` requests use the
+sentry domain (see [ARCH_SENTRY.md](ARCH_SENTRY.md)).
+
 Both domains share one YAML grammar, one parser, one fixture corpus, and one
 verdict-model description. Fields that apply to only one domain are tagged
 inline.

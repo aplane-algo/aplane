@@ -97,6 +97,69 @@ func TestGuardedAssemblyRequestValidate(t *testing.T) {
 	}
 }
 
+func TestGuardedSimulateRequestValidate(t *testing.T) {
+	valid := GuardedSimulateRequest{
+		RequestID: "gsim-001",
+		Requests: []SignRequest{
+			{TxnBytesHex: "5458aa"},
+			{TxnBytesHex: "5458bb"},
+			{TxnBytesHex: "5458cc", AuthAddress: "LOCAL"},
+		},
+		Targets: []GuardedSimulateTarget{{
+			TargetIndex:     0,
+			GuardedAccount:  "ADDR",
+			SentrySignature: "bb",
+		}},
+		Passthrough: []GuardedPassthroughItem{{
+			TargetIndex:  1,
+			SignedTxnHex: "cc",
+		}},
+	}
+
+	tests := []struct {
+		name    string
+		request GuardedSimulateRequest
+		wantErr string
+	}{
+		{name: "valid", request: valid},
+		{name: "invalid request ID", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.RequestID = "bad id" }), wantErr: "request_id contains invalid character"},
+		{name: "no targets", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.Targets = nil }), wantErr: "targets is required"},
+		{name: "missing txn bytes", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.Requests[0].TxnBytesHex = "" }), wantErr: "txn_bytes_hex is required"},
+		{name: "signed txn hex in request", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.Requests[1].SignedTxnHex = "dd" }), wantErr: "use passthrough"},
+		{name: "missing coverage", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.Passthrough = nil }), wantErr: "not covered"},
+		{name: "duplicate coverage", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.Passthrough[0].TargetIndex = 0 }), wantErr: "duplicate"},
+		{name: "missing target account", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.Targets[0].GuardedAccount = "" }), wantErr: "guarded_account is required"},
+		{name: "missing sentry signature", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.Targets[0].SentrySignature = "" }), wantErr: "sentry_signature is required"},
+		{name: "target overlaps sign mode", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.Requests[0].AuthAddress = "X" }), wantErr: "must not also be a sign-mode request"},
+		{name: "passthrough overlaps sign mode", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.Requests[1].AuthAddress = "X" }), wantErr: "must not also be a sign-mode request"},
+		{name: "bad sentry source ID", request: withSimulateRequest(valid, func(r *GuardedSimulateRequest) { r.Targets[0].SentrySourceRequestID = "bad id" }), wantErr: "sentry_source_request_id"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.request.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func withSimulateRequest(base GuardedSimulateRequest, mutate func(*GuardedSimulateRequest)) GuardedSimulateRequest {
+	cp := base
+	cp.Requests = append([]SignRequest(nil), base.Requests...)
+	cp.Targets = append([]GuardedSimulateTarget(nil), base.Targets...)
+	cp.Passthrough = append([]GuardedPassthroughItem(nil), base.Passthrough...)
+	mutate(&cp)
+	return cp
+}
+
 func withComponentRequest(base ComponentSignRequest, mutate func(*ComponentSignRequest)) ComponentSignRequest {
 	cp := base
 	cp.GroupBytesHex = append([]string(nil), base.GroupBytesHex...)

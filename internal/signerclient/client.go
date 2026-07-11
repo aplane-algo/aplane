@@ -89,6 +89,7 @@ const (
 	groupSimulateTimeout      = 60 * time.Second
 	componentSignTimeout      = 2 * time.Minute
 	guardedAssemblyTimeout    = 2 * time.Minute
+	guardedSimulateTimeout    = 2 * time.Minute
 	signCancelTimeout         = 5 * time.Second
 	signApprovalSlack         = 30 * time.Second
 	defaultSignRequestTimeout = 6 * time.Minute
@@ -496,7 +497,19 @@ func (c *Client) RequestComponentSignWithContext(ctx context.Context, reqBody si
 		return nil, fmt.Errorf("invalid component sign request: %w", err)
 	}
 
-	componentResp, err := doJSON[signerapi.ComponentSignResponse](c, ctx, "POST", "/sign/component", reqBody, componentSignTimeout, "failed to make request to Signer")
+	// User-role component signing runs the signer-domain approval gates and can
+	// block on a manual approval decision, so it needs the same approval-aware
+	// deadline as /sign. Sentry-role requests are deterministic and keep the
+	// short component deadline.
+	timeout := componentSignTimeout
+	if reqBody.Role == signerapi.ComponentSignRoleUser {
+		c.discoverApprovalWait(ctx)
+		if signTimeout := c.signRequestTimeout(); signTimeout > timeout {
+			timeout = signTimeout
+		}
+	}
+
+	componentResp, err := doJSON[signerapi.ComponentSignResponse](c, ctx, "POST", "/sign/component", reqBody, timeout, "failed to make request to Signer")
 	if err != nil {
 		return nil, err
 	}
@@ -532,6 +545,31 @@ func (c *Client) RequestGuardedAssembleWithContext(ctx context.Context, reqBody 
 		return nil, fmt.Errorf("invalid guarded assembly response: %w", err)
 	}
 	return assemblyResp, nil
+}
+
+// RequestGuardedSimulateWithContext sends a contained guarded simulation
+// request to /simulate/guarded. The signer produces user component signatures
+// internally and returns only simulation results, never signed bytes.
+func (c *Client) RequestGuardedSimulateWithContext(ctx context.Context, reqBody signerapi.GuardedSimulateRequest) (*signerapi.GuardedSimulateResponse, error) {
+	if reqBody.RequestID == "" {
+		requestID, err := newSignRequestID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create guarded simulate request ID: %w", err)
+		}
+		reqBody.RequestID = requestID
+	}
+	if err := reqBody.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid guarded simulate request: %w", err)
+	}
+
+	simulateResp, err := doJSON[signerapi.GuardedSimulateResponse](c, ctx, "POST", "/simulate/guarded", reqBody, guardedSimulateTimeout, "failed to make request to Signer")
+	if err != nil {
+		return nil, err
+	}
+	if err := simulateResp.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid guarded simulate response: %w", err)
+	}
+	return simulateResp, nil
 }
 
 // CancelSignRequestWithContext asks apsigner to cancel a pending manual
