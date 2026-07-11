@@ -112,6 +112,24 @@ func (fs *Signer) handlePlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// handleSimulateGuarded handles the /simulate/guarded endpoint: contained
+// guarded simulation where user component signatures are produced and
+// consumed inside apsigner and only simulation results are returned.
+func (fs *Signer) handleSimulateGuarded(w http.ResponseWriter, r *http.Request) {
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.GuardedSimulateRequest](fs, w, r, http.MethodPost)
+	if !ok {
+		return
+	}
+
+	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).SimulateGuarded(r.Context(), ir, req)
+	if err != nil {
+		writeServiceErrorJSON(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 // handleSimulate handles the /simulate endpoint. Same input as /sign, but
 // signed bytes stay inside apsigner and are used only for algod simulation.
 func (fs *Signer) handleSimulate(w http.ResponseWriter, r *http.Request) {

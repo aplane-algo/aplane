@@ -89,6 +89,7 @@ const (
 	groupSimulateTimeout      = 60 * time.Second
 	componentSignTimeout      = 2 * time.Minute
 	guardedAssemblyTimeout    = 2 * time.Minute
+	guardedSimulateTimeout    = 2 * time.Minute
 	signCancelTimeout         = 5 * time.Second
 	signApprovalSlack         = 30 * time.Second
 	defaultSignRequestTimeout = 6 * time.Minute
@@ -532,6 +533,31 @@ func (c *Client) RequestGuardedAssembleWithContext(ctx context.Context, reqBody 
 		return nil, fmt.Errorf("invalid guarded assembly response: %w", err)
 	}
 	return assemblyResp, nil
+}
+
+// RequestGuardedSimulateWithContext sends a contained guarded simulation
+// request to /simulate/guarded. The signer produces user component signatures
+// internally and returns only simulation results, never signed bytes.
+func (c *Client) RequestGuardedSimulateWithContext(ctx context.Context, reqBody signerapi.GuardedSimulateRequest) (*signerapi.GuardedSimulateResponse, error) {
+	if reqBody.RequestID == "" {
+		requestID, err := newSignRequestID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create guarded simulate request ID: %w", err)
+		}
+		reqBody.RequestID = requestID
+	}
+	if err := reqBody.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid guarded simulate request: %w", err)
+	}
+
+	simulateResp, err := doJSON[signerapi.GuardedSimulateResponse](c, ctx, "POST", "/simulate/guarded", reqBody, guardedSimulateTimeout, "failed to make request to Signer")
+	if err != nil {
+		return nil, err
+	}
+	if err := simulateResp.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid guarded simulate response: %w", err)
+	}
+	return simulateResp, nil
 }
 
 // CancelSignRequestWithContext asks apsigner to cancel a pending manual

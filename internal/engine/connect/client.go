@@ -154,6 +154,16 @@ func (s *ConnectionState) RequestComponentSignWithContext(ctx context.Context, r
 	return client.RequestComponentSignWithContext(ctx, req)
 }
 
+// RequestGuardedSimulateWithContext sends a contained guarded simulation
+// request to Signer; only simulation results come back, never signed bytes.
+func (s *ConnectionState) RequestGuardedSimulateWithContext(ctx context.Context, req signerapi.GuardedSimulateRequest) (*signerapi.GuardedSimulateResponse, error) {
+	client, err := s.signerClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.RequestGuardedSimulateWithContext(ctx, req)
+}
+
 // RequestGuardedAssemble sends a guarded assembly request to Signer.
 func (s *ConnectionState) RequestGuardedAssemble(req signerapi.GuardedAssemblyRequest) (*signerapi.GuardedAssemblyResponse, error) {
 	return s.RequestGuardedAssembleWithContext(context.Background(), req)
