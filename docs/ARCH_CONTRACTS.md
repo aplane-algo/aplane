@@ -1980,7 +1980,18 @@ Cross-SDK compatibility-bearing behavior:
   guarded targets, sizing LogicSig-budget dummies from signer-advertised
   `lsig_size` program+args budgets, fixing fees and group ID, signing
   dummy/passthrough slots locally, and then using `/sign/component` plus
-  `/sign/assemble`. Final guarded assembly remains signer-owned.
+  `/sign/assemble`. Final guarded assembly remains signer-owned. User-role
+  `/sign/component` requests run the signer-domain approval gates and can
+  block on operator approval, so SDK deadlines for them follow the same
+  approval-aware rule as `/sign`, not the short sentry-role component
+  deadline.
+- Guarded simulation uses `/simulate/guarded` instead of the component +
+  assembly flow: the client sends the frozen group, sentry component
+  signatures, signed passthrough entries, and sign-mode entries for local
+  non-guarded legs; apsigner produces user components internally and returns
+  only txids, final unsigned transactions, and simulation diagnostics. SDKs
+  must not implement guarded simulation by requesting real user components and
+  simulating client-side.
 - SDKs expose the authenticated `/status` DTO, including
   `protocol_version`, `build_version`, `keyset_revision`, and
   `approval_wait_seconds`, and include the matching signer API fixture in their

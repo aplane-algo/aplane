@@ -26,6 +26,7 @@ coverage.
 | `POST` | `/sign/cancel` | yes | no |
 | `POST` | `/plan` | yes | yes |
 | `POST` | `/simulate` | yes | yes |
+| `POST` | `/simulate/guarded` | yes | yes |
 | `POST` | `/admin/generate` | yes | yes |
 | `POST` | `/admin/sentries/sync` | yes | no |
 | `DELETE` | `/admin/keys` | yes | yes |
@@ -33,8 +34,8 @@ coverage.
 Method enforcement:
 
 - `/sign`, `/sign/component`, `/sign/assemble`, `/sign/cancel`, `/plan`,
-  `/simulate`, `/status`, `/admin/generate`, `/admin/sentries/sync`, and
-  `/admin/keys` enforce their HTTP method.
+  `/simulate`, `/simulate/guarded`, `/status`, `/admin/generate`,
+  `/admin/sentries/sync`, and `/admin/keys` enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
 
 Transport behavior:
@@ -79,8 +80,11 @@ Timeout behavior:
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
   mutations including `/admin/sentries/sync` 60 seconds, `/plan` 60 seconds,
-  `/simulate` 60 seconds, `/sign/component` 2 minutes, `/sign/assemble` 2
-  minutes, and `/sign` based on approval wait.
+  `/simulate` 60 seconds, `/sign/component` 2 minutes for sentry-role
+  requests, `/sign/assemble` 2 minutes, `/simulate/guarded` 2 minutes, and
+  `/sign` based on approval wait. User-role `/sign/component` requests can
+  block on operator approval and use the same approval-aware deadline as
+  `/sign`.
 - caller-provided contexts with earlier deadlines are preserved.
 - before `/sign`, `internal/signerclient` attempts `/status` discovery; when
   `approval_wait_seconds` is known and valid, the `/sign` deadline is
@@ -144,6 +148,19 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
   passthrough signed transactions; unresolved foreign placeholders are rejected.
 - Client simulate mode must not call `/sign` for signer-managed simulation. It
   uses `/simulate` so reusable signed transaction bytes remain inside apsigner.
+- `/simulate/guarded` (`signerapi.GuardedSimulateRequest`) is the guarded
+  counterpart: the client sends the frozen canonical group (`requests[]`, same
+  per-entry shapes as `/sign`), guarded targets carrying sentry component
+  signatures, and signed passthrough entries for dummies and externally signed
+  legs. apsigner produces the user component signatures internally with
+  simulation gate semantics (hard policy rejection applies, no operator
+  prompts), signs local non-guarded legs through the ordinary simulation path,
+  assembles under the full `/sign/assemble` invariants, and simulates against
+  its own algod. The response (`signerapi.GuardedSimulateResponse`) carries
+  `tx_ids`, final unsigned `transactions`, `output`, and `failed` — never
+  signed bytes or component signatures. A simulate flag on `/sign/component`
+  would be a client-claimed approval bypass; containment lives in the endpoint
+  shape instead.
 - For plugin-generated groups, mixed signer/plugin simulation uses `/plan` to
   get canonical bytes, signs plugin-owned slots locally, then calls `/simulate`
   with those passthrough signatures so signer-owned slots are also real-signed
@@ -180,10 +197,16 @@ For `role:"user"`, `component_key` identifies the local guarded account key to
 use for user-role component signing. The target transaction sender may be the
 guarded account itself or another sender whose effective signer/AuthAddr is
 that guarded account; no separate sender field is supplied because the sender
-is decoded from `group_bytes_hex[]`. For `role:"sentry"`, `component_key`
-identifies the local Sentry Key ID. Each target index is signed
-independently using the role-separated sentry message derived from that
-target's TxID.
+is decoded from `group_bytes_hex[]`. User-role component signing runs the
+signer-domain approval gates before any key operation: hard policy rejection,
+always-review rules, and blocking operator approval, with the guarded account
+as the policy key for each target and non-target group positions evaluated as
+foreign context. The request can therefore block for a manual approval
+decision, exactly like `/sign`. For `role:"sentry"`, `component_key`
+identifies the local Sentry Key ID and the deterministic sentry policy domain
+applies instead (no operator approval; see
+[ARCH_POLICY.md](ARCH_POLICY.md)). Each target index is signed independently
+using the role-separated sentry message derived from that target's TxID.
 
 `/sign/component` response (`signerapi.ComponentSignResponse`):
 

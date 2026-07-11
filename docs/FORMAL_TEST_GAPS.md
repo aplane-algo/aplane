@@ -21,7 +21,26 @@ Order is by recommended write order for the remaining backlog.
 
 ## Pending Test Coverage
 
-No actionable test gaps remain. Per-invariant status lives in
+**Model drift: signer-domain gating of user components and contained guarded
+simulation.**
+[FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md) and the
+TLA+ sign-boundary/guarded-assembly models predate two behaviors that are now
+implemented and unit-tested but not yet modeled:
+
+- user-role `/sign/component` runs the signer-domain approval gates (hard
+  rejection, always-review, operator approval) before component signing
+  (`internal/signerapp/signing/component_gate.go`),
+- `/simulate/guarded` produces user component signatures in-process with
+  simulation gate semantics and never releases them or assembled bytes
+  (`internal/signerapp/signing/guarded_simulate.go`).
+
+The models remain sound for what they cover (assembly invariants, two-party
+signature requirements); they under-approximate the gate sequence. A future
+audit pass should extend the guarded signing model with the gate states and
+add the containment invariant: no submittable guarded bytes exit the signer
+unless the user gate approved a non-simulation request.
+
+Otherwise, no actionable test gaps remain. Per-invariant status lives in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The lifecycle L4-L7
 audit is closed by the explicit lease-release and writer-pending tests
 named in the L4 and L5 rows.

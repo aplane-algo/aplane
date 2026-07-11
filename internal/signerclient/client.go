@@ -497,7 +497,19 @@ func (c *Client) RequestComponentSignWithContext(ctx context.Context, reqBody si
 		return nil, fmt.Errorf("invalid component sign request: %w", err)
 	}
 
-	componentResp, err := doJSON[signerapi.ComponentSignResponse](c, ctx, "POST", "/sign/component", reqBody, componentSignTimeout, "failed to make request to Signer")
+	// User-role component signing runs the signer-domain approval gates and can
+	// block on a manual approval decision, so it needs the same approval-aware
+	// deadline as /sign. Sentry-role requests are deterministic and keep the
+	// short component deadline.
+	timeout := componentSignTimeout
+	if reqBody.Role == signerapi.ComponentSignRoleUser {
+		c.discoverApprovalWait(ctx)
+		if signTimeout := c.signRequestTimeout(); signTimeout > timeout {
+			timeout = signTimeout
+		}
+	}
+
+	componentResp, err := doJSON[signerapi.ComponentSignResponse](c, ctx, "POST", "/sign/component", reqBody, timeout, "failed to make request to Signer")
 	if err != nil {
 		return nil, err
 	}
