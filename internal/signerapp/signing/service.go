@@ -98,6 +98,14 @@ func (s *Service) SignGroupForSimulationWithContext(ctx context.Context, identit
 }
 
 func (s *Service) SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*ComponentSignResult, *ServiceError) {
+	var getter componentKeyGetter
+	if session != nil {
+		getter = session
+	}
+	return s.signComponentWithSession(ctx, identityID, req, getter)
+}
+
+func (s *Service) signComponentWithSession(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session componentKeyGetter) (*ComponentSignResult, *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -117,7 +125,19 @@ func (s *Service) SignComponentWithContext(ctx context.Context, identityID strin
 		if session == nil {
 			return nil, internal("key session is nil")
 		}
-		return signPreparedUserComponents(ctx, plan, session)
+		if err := preflightGuardedAccountKey(ctx, session, plan.ComponentKey); err != nil {
+			return nil, err
+		}
+		reviewRuleID, gateErr := s.gateUserComponentSigning(ctx, identityID, plan, false)
+		if gateErr != nil {
+			return nil, gateErr
+		}
+		result, signErr := signPreparedUserComponents(ctx, plan, session)
+		if signErr != nil {
+			return nil, signErr
+		}
+		s.logUserComponentApproved(identityID, plan, reviewRuleID)
+		return result, nil
 	case signerapi.ComponentSignRoleSentry:
 		if err := s.evaluateSentryComponentPolicy(identityID, plan); err != nil {
 			return nil, err
