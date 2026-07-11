@@ -188,41 +188,32 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID strin
 	console.Println(groupDesc)
 	console.Sync()
 
-	knownAddresses := s.knownAddresses(identityID, plan)
-	routingExemptIndices := routingExemptIndicesForPlan(plan, allTxns)
-	authKeys := authPolicyKeysFromRequest(req, plan)
-	if err := EvaluateAutoRejectionRules(allTxns, len(req.Requests), plan.PassthroughIndices, plan.ForeignIndices, isGroup, s.Policy, authKeys, knownAddresses, routingExemptIndices, console); err != nil {
-		s.logPolicyRejections(identityID, req, plan, txns, err.Error())
-		return nil, err
-	}
-
-	alwaysReviewRuleID, alwaysReview := EvaluateAlwaysReviewRules(txns, len(req.Requests), plan.PassthroughIndices, plan.ForeignIndices, s.Policy, authKeys, knownAddresses, routingExemptIndices)
-	if simulation {
-		console.Println("[SIMULATE] Auto-approved inside Signer; signed bytes will not be returned")
-		console.Sync()
-	} else if alwaysReview {
-		if isGroup {
-			if err := s.Approval.requestGroupApprovalWithContext(ctx, identityID, req, plan, groupDesc, firstValid, lastValid, txns, alwaysReviewRuleID); err != nil {
-				return nil, err
+	alwaysReviewRuleID, gateErr := s.runApprovalGates(ctx, gateInput{
+		AllTxns:              allTxns,
+		EvalCount:            len(req.Requests),
+		PassthroughIndices:   plan.PassthroughIndices,
+		ForeignIndices:       plan.ForeignIndices,
+		IsGroup:              isGroup,
+		Simulation:           simulation,
+		AuthKeys:             authPolicyKeysFromRequest(req, plan),
+		KnownAddresses:       s.knownAddresses(identityID, plan),
+		RoutingExemptIndices: routingExemptIndicesForPlan(plan, allTxns),
+		AutoApprove: func() (string, bool) {
+			return EvaluateAutoApprovalRules(req, plan, allTxns, s.Policy)
+		},
+		LogRejection: func(reason string) {
+			s.logPolicyRejections(identityID, req, plan, txns, reason)
+		},
+		RequestOperatorApproval: func(ctx context.Context, forceReviewRuleID string) *ServiceError {
+			if isGroup {
+				return s.Approval.requestGroupApprovalWithContext(ctx, identityID, req, plan, groupDesc, firstValid, lastValid, txns, forceReviewRuleID)
 			}
-		} else {
-			if err := s.Approval.requestSingleTxnApprovalWithContext(ctx, identityID, req.RequestID, req.Requests[0], allTxns, txns, plan.DummiesNeeded, firstValid, lastValid, alwaysReviewRuleID); err != nil {
-				return nil, err
-			}
-		}
-	} else if ruleID, approved := EvaluateAutoApprovalRules(req, plan, allTxns, s.Policy); approved {
-		console.Printf("[POLICY] Txn auto-approved (%s)\n", ruleID)
-		console.Sync()
-	} else if isGroup {
-		if err := s.Approval.RequestGroupApprovalWithContext(ctx, identityID, req, plan, groupDesc, firstValid, lastValid, txns); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := s.Approval.requestSingleTxnApprovalWithContext(ctx, identityID, req.RequestID, req.Requests[0], allTxns, txns, plan.DummiesNeeded, firstValid, lastValid, ""); err != nil {
-			return nil, err
-		}
+			return s.Approval.requestSingleTxnApprovalWithContext(ctx, identityID, req.RequestID, req.Requests[0], allTxns, txns, plan.DummiesNeeded, firstValid, lastValid, forceReviewRuleID)
+		},
+	}, console)
+	if gateErr != nil {
+		return nil, gateErr
 	}
-	console.Sync()
 
 	if err := ctx.Err(); err != nil {
 		return nil, unavailable(fmt.Sprintf("sign request canceled: %v", err))
