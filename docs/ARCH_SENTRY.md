@@ -146,13 +146,23 @@ signer policy still cannot move funds the sentry policy refuses, and a
 compromised client credential cannot drive guarded sends past the signer's
 review rules or operator approval.
 
-Gate ordering is user-first: the sentry only ever evaluates requests the user
-side has already committed to, so sentry audit records correspond to
-user-approved transactions, and sentry component signatures are not issued for
-transactions an operator later denies.
+In the submit flow, gate ordering is user-first: the sentry only evaluates
+requests the user side has already committed to, so submit-flow sentry audit
+records correspond to user-approved transactions, and sentry component
+signatures are not issued for submissions an operator later denies. Contained
+simulation is the documented exception: the client fetches sentry component
+signatures before the user signer's gates run, so simulation may produce
+sentry signatures and sentry audit approvals for transactions the user side
+never approves. Those signatures are inert on their own — the matching user
+component exists only inside the signer, and a later submit of the same
+transaction still passes the full user-side gate.
 
-The guarded key is validated to exist locally before the operator is prompted,
-so approval never precedes a key-not-found rejection. In a mixed group the
+The guarded key is validated against signer inventory metadata — no key
+decryption — before the gates run, so a rejected request or an operator prompt
+never triggers a private-key operation and approval never precedes a
+key-not-found rejection. The key is decrypted only after the gates pass, under
+the runtime operation lease (`BeginOperation`), so decommission cannot
+complete while component key material is in use. In a mixed group the
 operator may be prompted twice — once for the guarded component request and
 once for the ordinary `/sign` legs; both prompts render the full group
 context. The `auto_approve_self_no_op_transfer` rule never fires for guarded

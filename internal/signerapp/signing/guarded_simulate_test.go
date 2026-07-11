@@ -154,7 +154,8 @@ func TestAssembleGuardedForSimulationProducesSignedGroupInternally(t *testing.T)
 
 	audit := &testAuditLogger{}
 	prompt := &componentGatePrompt{approve: false}
-	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{})
+	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{}, fx.guardedAccount)
+	leaseAcquired, leaseReleased := countOperationLease(svc)
 	session := &cloningComponentSession{address: fx.guardedAccount, fresh: fx.freshKey}
 
 	result, err := svc.assembleGuardedForSimulation(context.Background(), "default", fx.request(), session, nil)
@@ -163,6 +164,9 @@ func TestAssembleGuardedForSimulationProducesSignedGroupInternally(t *testing.T)
 	}
 	if result.RequestID != "gsim-test" {
 		t.Fatalf("RequestID = %q, want gsim-test", result.RequestID)
+	}
+	if *leaseAcquired != 1 || *leaseReleased != 1 {
+		t.Fatalf("operation lease acquired/released = %d/%d, want one lease across component signing and assembly", *leaseAcquired, *leaseReleased)
 	}
 	if prompt.calls != 0 {
 		t.Fatalf("prompt calls = %d, want 0 for contained simulation", prompt.calls)
@@ -212,7 +216,7 @@ func TestAssembleGuardedForSimulationRejectsPolicyViolation(t *testing.T) {
 
 	audit := &testAuditLogger{}
 	prompt := &componentGatePrompt{approve: true}
-	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{MaxFeeMicroAlgos: 1})
+	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{MaxFeeMicroAlgos: 1}, fx.guardedAccount)
 	session := &cloningComponentSession{address: fx.guardedAccount, fresh: fx.freshKey}
 
 	_, err := svc.assembleGuardedForSimulation(context.Background(), "default", fx.request(), session, nil)
@@ -224,6 +228,9 @@ func TestAssembleGuardedForSimulationRejectsPolicyViolation(t *testing.T) {
 	}
 	if prompt.calls != 0 {
 		t.Fatalf("prompt calls = %d, want 0", prompt.calls)
+	}
+	if session.calls != 0 {
+		t.Fatalf("session calls = %d, want 0: rejected simulations must not decrypt key material", session.calls)
 	}
 	if len(audit.rejected) != 1 {
 		t.Fatalf("rejected audit entries = %#v, want 1", audit.rejected)
@@ -237,7 +244,7 @@ func TestAssembleGuardedForSimulationSignsLocalLegs(t *testing.T) {
 
 	audit := &testAuditLogger{}
 	prompt := &componentGatePrompt{approve: false}
-	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{})
+	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{}, fx.guardedAccount)
 	session := &cloningComponentSession{address: fx.guardedAccount, fresh: fx.freshKey}
 
 	req := fx.request()
@@ -272,7 +279,7 @@ func TestAssembleGuardedForSimulationRejectsUncoveredPosition(t *testing.T) {
 	coresigning.Register(provider)
 	fx := newGuardedSimulateFixture(t, provider.family)
 
-	svc := newComponentGateService(&testAuditLogger{}, (&componentGatePrompt{}).approvalService(&testAuditLogger{}), nil)
+	svc := newComponentGateService(&testAuditLogger{}, (&componentGatePrompt{}).approvalService(&testAuditLogger{}), nil, fx.guardedAccount)
 	session := &cloningComponentSession{address: fx.guardedAccount, fresh: fx.freshKey}
 
 	req := fx.request()

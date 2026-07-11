@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
@@ -78,15 +79,24 @@ func (s *Service) gateUserComponentSigning(ctx context.Context, identityID strin
 	}, console)
 }
 
-// preflightGuardedAccountKey verifies the requested guarded account key exists
-// and is a guarded account key before the operator is prompted, so approval
-// never precedes a key-not-found rejection.
-func preflightGuardedAccountKey(ctx context.Context, session componentKeyGetter, guardedAccount string) *ServiceError {
-	keyMaterial, err := loadGuardedAccountKeyMaterial(ctx, session, guardedAccount)
-	if err != nil {
-		return err
+// preflightGuardedAccountKeyMetadata verifies from signer inventory metadata
+// that the requested guarded account key exists locally and is a guarded
+// account key. It deliberately reads no private key material: it runs before
+// the approval gates, so rejected requests and operator prompts never trigger
+// key decryption. The key is decrypted only after the gates pass, under the
+// operation lease.
+func (s *Service) preflightGuardedAccountKeyMetadata(identityID, guardedAccount string) *ServiceError {
+	if s.Planner == nil || s.Planner.Snapshot == nil {
+		return internal("signing service planner is not configured")
 	}
-	zeroLoadedKeyMaterial(keyMaterial)
+	snapshot := s.Planner.Snapshot(identityID)
+	if _, ok := snapshot.KeyFiles[guardedAccount]; !ok {
+		return badRequest(fmt.Sprintf("guarded account key %q not found", guardedAccount))
+	}
+	keyType := snapshot.KeyTypes[guardedAccount]
+	if !keytypes.IsGuardedAccountKeyType(keyType) {
+		return badRequest(fmt.Sprintf("key %q is %s, not a guarded account key", guardedAccount, keyType))
+	}
 	return nil
 }
 

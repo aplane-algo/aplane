@@ -71,14 +71,31 @@ func (p *componentGatePrompt) approvalService(audit *testAuditLogger) *ApprovalS
 	}
 }
 
-func newComponentGateService(audit *testAuditLogger, approval *ApprovalService, cfg *policy.Config) *Service {
+func newComponentGateService(audit *testAuditLogger, approval *ApprovalService, cfg *policy.Config, guardedAccount string) *Service {
 	return &Service{
+		Planner: &Planner{Snapshot: func(string) PlannerIdentitySnapshot {
+			return PlannerIdentitySnapshot{
+				KeyFiles: map[string]string{guardedAccount: "guarded.key"},
+				KeyTypes: map[string]string{guardedAccount: keytypes.GuardedFalcon1024SentryEd25519V1},
+			}
+		}},
 		Approval:                      approval,
 		AuditLog:                      audit,
 		IsUnlocked:                    func() bool { return true },
 		GenerateTxnDescriptionFromTxn: func(txn types.Transaction) string { return "txn" },
 		Policy:                        cfg,
 	}
+}
+
+// countOperationLease wires a counting BeforeExecute onto svc and returns the
+// acquire/release counters.
+func countOperationLease(svc *Service) (acquired, released *int) {
+	acquired, released = new(int), new(int)
+	svc.BeforeExecute = func() (func(), *ServiceError) {
+		*acquired++
+		return func() { *released++ }, nil
+	}
+	return acquired, released
 }
 
 func userComponentGateRequest(t *testing.T, sender string, txns []types.Transaction, targetIndices []int) signerapi.ComponentSignRequest {
@@ -106,7 +123,7 @@ func TestSignComponentUserRoleRejectedBySignerPolicy(t *testing.T) {
 
 	audit := &testAuditLogger{}
 	prompt := &componentGatePrompt{approve: true}
-	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{MaxFeeMicroAlgos: 1})
+	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{MaxFeeMicroAlgos: 1}, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
 	_, err := svc.SignComponentWithContext(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), nil)
@@ -124,8 +141,8 @@ func TestSignComponentUserRoleRejectedBySignerPolicy(t *testing.T) {
 	if prompt.calls != 0 {
 		t.Fatalf("prompt calls = %d, want 0 for policy rejection", prompt.calls)
 	}
-	if session.calls != 1 {
-		t.Fatalf("session calls = %d, want preflight only", session.calls)
+	if session.calls != 0 {
+		t.Fatalf("session calls = %d, want 0: rejected requests must not decrypt key material", session.calls)
 	}
 	if len(audit.rejected) != 2 {
 		t.Fatalf("rejected audit entries = %#v, want 2", audit.rejected)
@@ -150,7 +167,8 @@ func TestSignComponentUserRoleOperatorApproves(t *testing.T) {
 
 	audit := &testAuditLogger{}
 	prompt := &componentGatePrompt{approve: true}
-	svc := newComponentGateService(audit, prompt.approvalService(audit), nil)
+	svc := newComponentGateService(audit, prompt.approvalService(audit), nil, sender)
+	leaseAcquired, leaseReleased := countOperationLease(svc)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
 	result, err := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
@@ -159,6 +177,12 @@ func TestSignComponentUserRoleOperatorApproves(t *testing.T) {
 	}
 	if len(result.Signatures) != 2 {
 		t.Fatalf("Signatures len = %d, want 2", len(result.Signatures))
+	}
+	if *leaseAcquired != 1 || *leaseReleased != 1 {
+		t.Fatalf("operation lease acquired/released = %d/%d, want 1/1", *leaseAcquired, *leaseReleased)
+	}
+	if session.calls != 1 {
+		t.Fatalf("session calls = %d, want single signing load", session.calls)
 	}
 	if prompt.calls != 1 {
 		t.Fatalf("prompt calls = %d, want 1", prompt.calls)
@@ -189,7 +213,7 @@ func TestSignComponentUserRoleOperatorDenies(t *testing.T) {
 
 	audit := &testAuditLogger{}
 	prompt := &componentGatePrompt{approve: false}
-	svc := newComponentGateService(audit, prompt.approvalService(audit), nil)
+	svc := newComponentGateService(audit, prompt.approvalService(audit), nil, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
 	_, err := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
@@ -199,8 +223,8 @@ func TestSignComponentUserRoleOperatorDenies(t *testing.T) {
 	if !strings.Contains(err.Message, "rejected by operator") {
 		t.Fatalf("SignComponent error = %q, want operator rejection", err.Message)
 	}
-	if session.calls != 1 {
-		t.Fatalf("session calls = %d, want preflight only", session.calls)
+	if session.calls != 0 {
+		t.Fatalf("session calls = %d, want 0: denied requests must not decrypt key material", session.calls)
 	}
 	if len(audit.rejected) != 2 {
 		t.Fatalf("rejected audit entries = %#v, want 2", audit.rejected)
@@ -227,7 +251,7 @@ func TestSignComponentUserRoleUserAutoApproveSkipsPrompt(t *testing.T) {
 	prompt := &componentGatePrompt{approve: false}
 	approval := prompt.approvalService(audit)
 	approval.UserAutoApprove = userAutoApproveDefault(true)
-	svc := newComponentGateService(audit, approval, nil)
+	svc := newComponentGateService(audit, approval, nil, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
 	result, err := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
@@ -264,7 +288,7 @@ func TestSignComponentUserRoleForeignRekeyLegForcesReview(t *testing.T) {
 	prompt := &componentGatePrompt{approve: true}
 	approval := prompt.approvalService(audit)
 	approval.UserAutoApprove = userAutoApproveDefault(true)
-	svc := newComponentGateService(audit, approval, &policy.Config{})
+	svc := newComponentGateService(audit, approval, &policy.Config{}, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial(provider.family)}
 
 	result, svcErr := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0}), session)
@@ -291,7 +315,7 @@ func TestSignComponentUserRoleWithoutAdminClientFailsClosed(t *testing.T) {
 	prompt := &componentGatePrompt{approve: true}
 	approval := prompt.approvalService(audit)
 	approval.HasClient = func(string) bool { return false }
-	svc := newComponentGateService(audit, approval, nil)
+	svc := newComponentGateService(audit, approval, nil, sender)
 	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial("test.component-gate-no-client.v1")}
 
 	_, err := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
@@ -313,8 +337,8 @@ func TestSignComponentUserRolePreflightRejectsUnknownKeyBeforePrompt(t *testing.
 
 	audit := &testAuditLogger{}
 	prompt := &componentGatePrompt{approve: true}
-	svc := newComponentGateService(audit, prompt.approvalService(audit), nil)
-	session := &cloningComponentSession{address: "other", fresh: guardedGateKeyMaterial("test.component-gate-preflight.v1")}
+	svc := newComponentGateService(audit, prompt.approvalService(audit), nil, receiver)
+	session := &cloningComponentSession{address: sender, fresh: guardedGateKeyMaterial("test.component-gate-preflight.v1")}
 
 	_, err := svc.signComponentWithSession(componentGateContext(), "default", userComponentGateRequest(t, sender, txns, []int{0, 1}), session)
 	if err == nil || err.Kind != ErrorBadRequest {
@@ -325,6 +349,9 @@ func TestSignComponentUserRolePreflightRejectsUnknownKeyBeforePrompt(t *testing.
 	}
 	if prompt.calls != 0 {
 		t.Fatalf("prompt calls = %d, want 0 when preflight fails", prompt.calls)
+	}
+	if session.calls != 0 {
+		t.Fatalf("session calls = %d, want 0: metadata preflight must not decrypt", session.calls)
 	}
 }
 
@@ -340,7 +367,7 @@ func TestGateUserComponentSigningSimulationSkipsPrompt(t *testing.T) {
 
 	audit := &testAuditLogger{}
 	prompt := &componentGatePrompt{approve: false}
-	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{})
+	svc := newComponentGateService(audit, prompt.approvalService(audit), &policy.Config{}, sender)
 
 	ruleID, gateErr := svc.gateUserComponentSigning(componentGateContext(), "default", plan, true)
 	if gateErr != nil {

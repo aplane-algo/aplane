@@ -125,13 +125,18 @@ func (s *Service) signComponentWithSession(ctx context.Context, identityID strin
 		if session == nil {
 			return nil, internal("key session is nil")
 		}
-		if err := preflightGuardedAccountKey(ctx, session, plan.ComponentKey); err != nil {
+		if err := s.preflightGuardedAccountKeyMetadata(identityID, plan.ComponentKey); err != nil {
 			return nil, err
 		}
 		reviewRuleID, gateErr := s.gateUserComponentSigning(ctx, identityID, plan, false)
 		if gateErr != nil {
 			return nil, gateErr
 		}
+		release, leaseErr := s.beforeExecute()
+		if leaseErr != nil {
+			return nil, leaseErr
+		}
+		defer release()
 		result, signErr := signPreparedUserComponents(ctx, plan, session)
 		if signErr != nil {
 			return nil, signErr
@@ -145,6 +150,11 @@ func (s *Service) signComponentWithSession(ctx context.Context, identityID strin
 		if session == nil {
 			return nil, internal("key session is nil")
 		}
+		release, leaseErr := s.beforeExecute()
+		if leaseErr != nil {
+			return nil, leaseErr
+		}
+		defer release()
 		result, signErr := signPreparedSentryComponents(ctx, plan, session)
 		if signErr != nil {
 			return nil, signErr
@@ -177,6 +187,11 @@ func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID str
 	if session == nil {
 		return nil, internal("key session is nil")
 	}
+	release, leaseErr := s.beforeExecute()
+	if leaseErr != nil {
+		return nil, leaseErr
+	}
+	defer release()
 	return assembleDecodedGuarded(ctx, req, group, session)
 }
 

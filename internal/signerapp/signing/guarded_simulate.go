@@ -75,11 +75,13 @@ func (s *Service) assembleGuardedForSimulation(ctx context.Context, identityID s
 		indicesByAccount[target.GuardedAccount] = append(indicesByAccount[target.GuardedAccount], target.TargetIndex)
 	}
 
-	// Gate every guarded account before any private-key operation. Simulation
-	// skips review and operator approval; hard policy rejection still applies.
+	// Gate every guarded account before any private-key access. The preflight
+	// reads inventory metadata only, so rejected simulations never decrypt key
+	// material. Simulation skips review and operator approval; hard policy
+	// rejection still applies.
 	plansByAccount := make(map[string]*ComponentSignPlan, len(accountOrder))
 	for _, account := range accountOrder {
-		if err := preflightGuardedAccountKey(ctx, session, account); err != nil {
+		if err := s.preflightGuardedAccountKeyMetadata(identityID, account); err != nil {
 			return nil, err
 		}
 		plan, err := PrepareComponentSigning(signerapi.ComponentSignRequest{
@@ -98,21 +100,11 @@ func (s *Service) assembleGuardedForSimulation(ctx context.Context, identityID s
 		plansByAccount[account] = plan
 	}
 
-	// Produce user component signatures in-process. They are packed into the
-	// assembled LogicSig below and never returned to the client.
-	userSignatures := make(map[int]string, len(req.Targets))
-	for _, account := range accountOrder {
-		result, signErr := signPreparedUserComponents(ctx, plansByAccount[account], session)
-		if signErr != nil {
-			return nil, signErr
-		}
-		for _, signature := range result.Signatures {
-			userSignatures[signature.TargetIndex] = signature.Signature
-		}
-	}
-
 	// Sign local non-guarded legs through the ordinary simulation path: same
 	// planner, policy, and budget backstop as /simulate, no operator prompts.
+	// This runs before the component lease because the group signing path
+	// acquires its own operation lease; nesting the shared lifecycle read lock
+	// could deadlock behind a queued decommission writer.
 	localIndices := make([]int, 0, len(req.Requests))
 	for i, request := range req.Requests {
 		if request.AuthAddress != "" {
@@ -139,6 +131,28 @@ func (s *Service) assembleGuardedForSimulation(ctx context.Context, identityID s
 				return nil, internal(fmt.Sprintf("local simulation signing returned no signature for position %d", i))
 			}
 			localSigned[i] = result.Signed[i]
+		}
+	}
+
+	// Hold one operation lease across component signing and assembly so
+	// decommission cannot complete while decrypted component material is in
+	// use (the BeginOperation/Decommission contract).
+	release, leaseErr := s.beforeExecute()
+	if leaseErr != nil {
+		return nil, leaseErr
+	}
+	defer release()
+
+	// Produce user component signatures in-process. They are packed into the
+	// assembled LogicSig below and never returned to the client.
+	userSignatures := make(map[int]string, len(req.Targets))
+	for _, account := range accountOrder {
+		result, signErr := signPreparedUserComponents(ctx, plansByAccount[account], session)
+		if signErr != nil {
+			return nil, signErr
+		}
+		for _, signature := range result.Signatures {
+			userSignatures[signature.TargetIndex] = signature.Signature
 		}
 	}
 
