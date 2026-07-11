@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 	"net"
 	"testing"
 	"time"
@@ -15,7 +14,13 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
+	"github.com/aplane-algo/aplane/internal/signerapp/adminserver"
 )
+
+// Admin authentication performs passphrase verification and may unlock and
+// reload an identity before replying. Leave enough headroom for those
+// operations under the race detector and concurrent CI package load.
+const ipcDisconnectTestTimeout = 5 * time.Second
 
 func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 	for _, tc := range []struct {
@@ -85,7 +90,7 @@ func TestAdminDisconnectAppliesLockOnDisconnect(t *testing.T) {
 			_ = clientConn.Close()
 			select {
 			case <-done:
-			case <-time.After(time.Second):
+			case <-time.After(ipcDisconnectTestTimeout):
 				t.Fatal("timed out waiting for admin session cleanup")
 			}
 
@@ -150,7 +155,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(time.Second):
+	case <-time.After(ipcDisconnectTestTimeout):
 		t.Fatal("timed out waiting for admin session cleanup")
 	}
 
@@ -165,7 +170,7 @@ func TestAdminAuthPromotionFailureCleansUnlockedIdentity(t *testing.T) {
 func readAdminMessageType(t *testing.T, conn net.Conn, reader *bufio.Reader, wantType string) []byte {
 	t.Helper()
 	for i := 0; i < 5; i++ {
-		if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		if err := conn.SetReadDeadline(time.Now().Add(ipcDisconnectTestTimeout)); err != nil {
 			t.Fatalf("SetReadDeadline: %v", err)
 		}
 		line, err := reader.ReadBytes('\n')
@@ -191,7 +196,7 @@ func writeAdminMessage(t *testing.T, conn net.Conn, msg interface{}) {
 	if err != nil {
 		t.Fatalf("MarshalAdminMessage: %v", err)
 	}
-	if err := conn.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+	if err := conn.SetWriteDeadline(time.Now().Add(ipcDisconnectTestTimeout)); err != nil {
 		t.Fatalf("SetWriteDeadline: %v", err)
 	}
 	if _, err := conn.Write(append(data, '\n')); err != nil {
