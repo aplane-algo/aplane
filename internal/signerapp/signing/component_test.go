@@ -15,7 +15,7 @@ import (
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
@@ -994,7 +994,7 @@ func TestAssembleDecodedGuardedBuildsCorridorProofArg(t *testing.T) {
 	guardedAccount := logicSigAddressForTest(t, bytecode)
 	recipient := types.Address{66}
 	recipients := strings.Join([]string{recipient.String(), types.Address{67}.String()}, ",")
-	root, err := merklewhitelist.RootFromRecipientsParam(recipients)
+	root, err := merkleallowlist.RootFromRecipientsParam(recipients)
 	if err != nil {
 		t.Fatalf("RootFromRecipientsParam() error = %v", err)
 	}
@@ -1064,7 +1064,7 @@ func TestAssembleDecodedGuardedBuildsCorridorProofArg(t *testing.T) {
 	if !bytes.Equal(signedTarget.Lsig.Args[1], sentrySignature) {
 		t.Fatalf("LogicSig arg 1 = %x, want sentry signature %x", signedTarget.Lsig.Args[1], sentrySignature)
 	}
-	if !merklewhitelist.Verify(recipient, signedTarget.Lsig.Args[2], root) {
+	if !merkleallowlist.Verify(recipient, signedTarget.Lsig.Args[2], root) {
 		t.Fatal("LogicSig arg 2 is not a valid Merkle proof for recipient")
 	}
 }

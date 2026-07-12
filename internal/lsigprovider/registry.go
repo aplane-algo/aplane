@@ -130,7 +130,7 @@ func CompatibilityFingerprintOf(p LSigProvider) (string, bool) {
 // registered, which is how the family-keyed registries are indexed. For a
 // self-handling DSA this is its own family; for a composed template that
 // delegates to a base it is the base's family (e.g.
-// "aplane.falcon1024-whitelist.v1" -> "aplane.falcon1024").
+// "aplane.falcon1024-allowlist.v1" -> "aplane.falcon1024").
 //
 // It is NOT the key type's own display label. The routing family of a composed
 // template is intentionally its base's family, not the template's own — so do

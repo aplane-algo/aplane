@@ -4,7 +4,7 @@
 // Package lsigprovider defines unified interfaces for all LogicSig providers.
 //
 // This package provides a single registry for both generic LogicSigs
-// (timed-whitelist, htlc) and DSA-based LogicSigs (falcon1024).
+// (timed-allowlist, htlc) and DSA-based LogicSigs (falcon1024).
 //
 // Interface hierarchy:
 //   - LSigProvider: Base interface for all providers (identity, display, parameters)
@@ -21,7 +21,7 @@ import "context"
 // This provides identity, display, and parameter metadata for any LSig type.
 type LSigProvider interface {
 	// Identity
-	KeyType() string       // Versioned identifier (e.g., "aplane.timed-whitelist.v1", "aplane.falcon1024.v1")
+	KeyType() string       // Versioned identifier (e.g., "aplane.timed-allowlist.v1", "aplane.falcon1024.v1")
 	RoutingFamily() string // Routing family / registry key (e.g., "aplane.falcon1024"); see docs/ARCH_KEYTYPE_AXES.md
 	Version() int          // Version number (e.g., 1)
 
@@ -78,7 +78,7 @@ type SigningProvider interface {
 	// DeriveLsig derives the LogicSig bytecode and address from a public key.
 	// The params argument allows passing additional parameters for hybrid schemes:
 	//   - Pure DSA (aplane.falcon1024.v1): params is empty or ignored
-	//   - Hybrid (falcon-aplane.timed-whitelist.v1): params contains unlock_round, recipients, etc.
+	//   - Hybrid (falcon-aplane.timed-allowlist.v1): params contains unlock_round, recipients, etc.
 	// Returns: (lsigBytecode, algorandAddress, error)
 	DeriveLsig(ctx context.Context, publicKey []byte, params map[string]string) (lsigBytecode []byte, address string, err error)
 }

@@ -310,7 +310,7 @@ func writeAdminTestMessage(w io.Writer, msg any) error {
 	return protocol.WriteJSONLine(w, data)
 }
 
-func testWhitelistBackupBundle(t *testing.T, keyType string, templateYAML []byte) (string, []byte) {
+func testAllowlistBackupBundle(t *testing.T, keyType string, templateYAML []byte) (string, []byte) {
 	t.Helper()
 
 	bytecode := saltedLogicSigBytecodeForTest()

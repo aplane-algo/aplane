@@ -27,7 +27,7 @@ func (s *stubAddressListResolver) ResolveList(inputs []string) ([]string, error)
 func TestExpandGenerateAddressListParams_ExpandsSetForAddressListParam(t *testing.T) {
 	keyTypes := []signerapi.KeyTypeInfo{
 		{
-			KeyType: "aplane.whitelist.v1",
+			KeyType: "aplane.allowlist.v1",
 			CreationParams: []signerapi.CreationParamInfo{
 				{Name: "recipients", Type: "address[]"},
 			},
@@ -38,7 +38,7 @@ func TestExpandGenerateAddressListParams_ExpandsSetForAddressListParam(t *testin
 	}
 
 	got, err := expandGenerateAddressListParams(
-		"aplane.whitelist.v1",
+		"aplane.allowlist.v1",
 		map[string]string{"recipients": "@friends"},
 		keyTypes,
 		resolver,
@@ -58,7 +58,7 @@ func TestExpandGenerateAddressListParams_ExpandsSetForAddressListParam(t *testin
 func TestExpandGenerateAddressListParams_ResolvesMixedAddressList(t *testing.T) {
 	keyTypes := []signerapi.KeyTypeInfo{
 		{
-			KeyType: "aplane.whitelist.v1",
+			KeyType: "aplane.allowlist.v1",
 			CreationParams: []signerapi.CreationParamInfo{
 				{Name: "recipients", Type: "address[]"},
 			},
@@ -67,7 +67,7 @@ func TestExpandGenerateAddressListParams_ResolvesMixedAddressList(t *testing.T) 
 	resolver := &stubAddressListResolver{result: []string{"ADDR1", "ADDR2", "ADDR3"}}
 	input := map[string]string{"recipients": "ADDR1, @friends, alice"}
 
-	got, err := expandGenerateAddressListParams("aplane.whitelist.v1", input, keyTypes, resolver)
+	got, err := expandGenerateAddressListParams("aplane.allowlist.v1", input, keyTypes, resolver)
 	if err != nil {
 		t.Fatalf("expandGenerateAddressListParams returned error: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestExpandGenerateAddressListParams_ResolvesMixedAddressList(t *testing.T) 
 func TestExpandGenerateAddressListParams_SortsAddressListByDefault(t *testing.T) {
 	keyTypes := []signerapi.KeyTypeInfo{
 		{
-			KeyType: "aplane.whitelist.v1",
+			KeyType: "aplane.allowlist.v1",
 			CreationParams: []signerapi.CreationParamInfo{
 				{Name: "recipients", Type: "address[]"},
 			},
@@ -92,7 +92,7 @@ func TestExpandGenerateAddressListParams_SortsAddressListByDefault(t *testing.T)
 	resolver := &stubAddressListResolver{result: []string{"ADDR2", "ADDR1", "ADDR3"}}
 
 	got, err := expandGenerateAddressListParams(
-		"aplane.whitelist.v1",
+		"aplane.allowlist.v1",
 		map[string]string{"recipients": "@friends"},
 		keyTypes,
 		resolver,
@@ -109,7 +109,7 @@ func TestExpandGenerateAddressListParams_SortsAddressListByDefault(t *testing.T)
 func TestExpandGenerateAddressListParams_LeavesNonAddressListParamsUnchanged(t *testing.T) {
 	keyTypes := []signerapi.KeyTypeInfo{
 		{
-			KeyType: "aplane.timed-whitelist.v1",
+			KeyType: "aplane.timed-allowlist.v1",
 			CreationParams: []signerapi.CreationParamInfo{
 				{Name: "expiry", Type: "uint64"},
 			},
@@ -118,7 +118,7 @@ func TestExpandGenerateAddressListParams_LeavesNonAddressListParamsUnchanged(t *
 	resolver := &stubAddressListResolver{}
 	input := map[string]string{"expiry": "@notaset"}
 
-	got, err := expandGenerateAddressListParams("aplane.timed-whitelist.v1", input, keyTypes, resolver)
+	got, err := expandGenerateAddressListParams("aplane.timed-allowlist.v1", input, keyTypes, resolver)
 	if err != nil {
 		t.Fatalf("expandGenerateAddressListParams returned error: %v", err)
 	}

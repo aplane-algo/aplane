@@ -107,9 +107,9 @@ func installHTLCTemplate(t *testing.T, signerDataDir string) {
 	installTemplateLibraryFile(t, signerDataDir, "aplane.htlc.v1.yaml", "HTLC")
 }
 
-func installWhitelistTemplate(t *testing.T, signerDataDir string) {
+func installAllowlistTemplate(t *testing.T, signerDataDir string) {
 	t.Helper()
-	installTemplateLibraryFile(t, signerDataDir, "aplane.whitelist.v1.yaml", "whitelist")
+	installTemplateLibraryFile(t, signerDataDir, "aplane.allowlist.v1.yaml", "allowlist")
 }
 
 func installFalconHashlockTemplate(t *testing.T, signerDataDir string) {
@@ -117,9 +117,9 @@ func installFalconHashlockTemplate(t *testing.T, signerDataDir string) {
 	installTemplateLibraryFile(t, signerDataDir, "aplane.falcon1024-hashlock.v1.yaml", "Falcon hashlock")
 }
 
-func installFalconWhitelistTemplate(t *testing.T, signerDataDir string) {
+func installFalconAllowlistTemplate(t *testing.T, signerDataDir string) {
 	t.Helper()
-	installTemplateLibraryFile(t, signerDataDir, "aplane.falcon1024-whitelist.v1.yaml", "Falcon whitelist")
+	installTemplateLibraryFile(t, signerDataDir, "aplane.falcon1024-allowlist.v1.yaml", "Falcon allowlist")
 }
 
 func TestSignerRejectsWhenLocked(t *testing.T) {

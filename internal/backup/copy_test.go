@@ -49,12 +49,12 @@ func writeTemplateStateForBackupTest(t *testing.T, paths storepaths.Paths, ident
 func TestBuildExportPayloadBundlesKeystoreTemplate(t *testing.T) {
 	const (
 		identityID = "default"
-		keyType    = "custom.whitelist.v1"
+		keyType    = "custom.allowlist.v1"
 	)
 
 	paths := storepaths.NewPaths(t.TempDir())
 	keyJSON := testKeyJSON(t, keyType)
-	wantTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: custom\nfamily: whitelist\nversion: 1\ndisplay_name: Override\nteal: |\n  int 1\n")
+	wantTemplate := []byte("schema_version: 1\ntemplate_type: generic\ntemplate_mode: generated\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Override\nteal: |\n  int 1\n")
 
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, wantTemplate, keyType, templatestore.TemplateTypeGeneric, testExportMasterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
@@ -177,7 +177,7 @@ func jsonObjectsEqual(left, right any) bool {
 func TestBuildExportPayloadDoesNotBundleLibraryGenericTemplateWithoutKeystoreCopy(t *testing.T) {
 	const (
 		identityID = "default"
-		keyType    = "aplane.whitelist.v1"
+		keyType    = "aplane.allowlist.v1"
 	)
 
 	payload, err := buildExportPayload(storepaths.NewPaths(t.TempDir()), identityID, testKeyJSON(t, keyType), testExportMasterKey)
@@ -200,12 +200,12 @@ func TestBuildExportPayloadDoesNotBundleLibraryGenericTemplateWithoutKeystoreCop
 func TestBuildExportPayloadBundlesLibraryGenericTemplateFromKeystore(t *testing.T) {
 	const (
 		identityID = "default"
-		keyType    = "aplane.whitelist.v1"
+		keyType    = "aplane.allowlist.v1"
 	)
 
-	wantTemplate, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.whitelist.v1.yaml"))
+	wantTemplate, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.allowlist.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.whitelist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.allowlist.v1.yaml) error = %v", err)
 	}
 
 	paths := storepaths.NewPaths(t.TempDir())
@@ -234,7 +234,7 @@ func TestBuildExportPayloadBundlesLibraryGenericTemplateFromKeystore(t *testing.
 func TestBuildExportPayloadDoesNotBundleLibraryComposedTemplateWithoutKeystoreCopy(t *testing.T) {
 	const (
 		identityID = "default"
-		keyType    = "aplane.falcon1024-whitelist.v1"
+		keyType    = "aplane.falcon1024-allowlist.v1"
 	)
 
 	payload, err := buildExportPayload(storepaths.NewPaths(t.TempDir()), identityID, testKeyJSON(t, keyType), testExportMasterKey)
@@ -257,12 +257,12 @@ func TestBuildExportPayloadDoesNotBundleLibraryComposedTemplateWithoutKeystoreCo
 func TestBuildExportPayloadBundlesLibraryComposedTemplateFromKeystore(t *testing.T) {
 	const (
 		identityID = "default"
-		keyType    = "aplane.falcon1024-whitelist.v1"
+		keyType    = "aplane.falcon1024-allowlist.v1"
 	)
 
-	wantTemplate, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-whitelist.v1.yaml"))
+	wantTemplate, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-allowlist.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.falcon1024-whitelist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v1.yaml) error = %v", err)
 	}
 
 	paths := storepaths.NewPaths(t.TempDir())

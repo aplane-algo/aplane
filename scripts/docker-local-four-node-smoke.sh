@@ -8,7 +8,7 @@
 # The test keeps the existing docker-local behavior surface focused on install,
 # SSH token provisioning, client reachability, shared LocalNet wiring, sentry
 # endpoint enrollment, sentry-key discovery, guarded transaction-signing flows,
-# and corridor whitelist enforcement. It also validates the guarded account
+# and corridor allowlist enforcement. It also validates the guarded account
 # with SDK intent prep plus SDK guarded component signing. Local mode uses the
 # local Python SDK checkout; release mode uses the Python package from PyPI and
 # the TypeScript package from npm.
@@ -1277,16 +1277,16 @@ validate_corridor_allowed_send() {
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/send-corridor-allow.script 2>&1")"; then
         printf '%s\n' "$out" >&2
-        die "corridor whitelisted send command failed"
+        die "corridor allowlisted send command failed"
     fi
     printf '%s\n' "$out"
     if printf '%s\n' "$out" | grep -q 'Failed:'; then
-        die "corridor whitelisted send reported failure"
+        die "corridor allowlisted send reported failure"
     fi
     printf '%s\n' "$out" | grep -q 'Transaction submitted:' \
-        || die "corridor whitelisted send did not submit a transaction"
+        || die "corridor allowlisted send did not submit a transaction"
     printf '%s\n' "$out" | grep -q 'Confirmed: sent' \
-        || die "corridor whitelisted send did not confirm"
+        || die "corridor allowlisted send did not confirm"
 }
 
 validate_corridor_blocked_send_fails() {
@@ -1304,8 +1304,8 @@ validate_corridor_blocked_send_fails() {
     if printf '%s\n' "$out" | grep -q 'Confirmed: sent'; then
         die "corridor blocked send unexpectedly confirmed"
     fi
-    printf '%s\n' "$out" | grep -q 'not in whitelist' \
-        || die "corridor blocked send did not report whitelist rejection"
+    printf '%s\n' "$out" | grep -q 'not in allowlist' \
+        || die "corridor blocked send did not report allowlist rejection"
 }
 
 delete_sentry_component_key() {
@@ -1524,10 +1524,10 @@ main() {
     fund_corridor_key_from_localnet
     verify_corridor_funded
 
-    log "Verifying corridor whitelisted recipient succeeds"
+    log "Verifying corridor allowlisted recipient succeeds"
     validate_corridor_allowed_send
 
-    log "Verifying corridor non-whitelisted recipient fails"
+    log "Verifying corridor non-allowlisted recipient fails"
     validate_corridor_blocked_send_fails
 
     log "Generating Falcon key through client/signer flow"

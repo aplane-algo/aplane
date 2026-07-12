@@ -9,7 +9,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 )
 
 // TestCorridorFingerprintShapeExcludesIdentity pins the behavior-only canonical
@@ -31,7 +31,7 @@ func TestCorridorFingerprintShapeExcludesIdentity(t *testing.T) {
 	want := lsigprovider.HashCompatibilitySpec(expectedSpec{
 		BasePrimitive: "falcon1024-v1",
 		SaltStyle:     string(lsigsalt.StylePushbytes),
-		MerkleDepth:   merklewhitelist.Depth,
+		MerkleDepth:   merkleallowlist.Depth,
 		MerkleArg:     "arg2",
 		RekeyPolicy:   "sentry_policy.rekey_policy",
 		Arg0:          "user_falcon1024_component_signature",

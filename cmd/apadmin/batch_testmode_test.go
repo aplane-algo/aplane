@@ -8,8 +8,8 @@ package main
 import "testing"
 
 func TestFormatBatchKeyTypeProjectsTemplateProvenanceNote(t *testing.T) {
-	got := formatBatchKeyType("aplane.timed-whitelist.v1", "unavailable")
-	want := "aplane.timed-whitelist.v1 [template provenance]"
+	got := formatBatchKeyType("aplane.timed-allowlist.v1", "unavailable")
+	want := "aplane.timed-allowlist.v1 [template provenance]"
 	if got != want {
 		t.Fatalf("formatBatchKeyType() = %q, want %q", got, want)
 	}

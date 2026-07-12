@@ -515,7 +515,7 @@ func TestBaseTemplateSpec_ValidateBase(t *testing.T) {
 			spec: BaseTemplateSpec{
 				SchemaVersion: 1,
 				Publisher:     "ap.lane",
-				Family:        "whitelist",
+				Family:        "allowlist",
 				Version:       1,
 				DisplayName:   "Test",
 			},

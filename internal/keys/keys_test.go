@@ -20,7 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
@@ -428,7 +428,7 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsSaltWarnings(t *testing.T) {
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
-		"key_type": "aplane.whitelist.v1",
+		"key_type": "aplane.allowlist.v1",
 		"lsig_bytecode": "260101058101",
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
@@ -470,18 +470,18 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsSaltWarnings(t *testing.T) {
 func TestKeyPayloadScanWarningClassification(t *testing.T) {
 	offCurve := canonicalOffCurveBytecode(t)
 
-	missingSalt := NewGenericLSigPayload("aplane.whitelist.v1", nil, offCurve, 0, "", nil, "")
+	missingSalt := NewGenericLSigPayload("aplane.allowlist.v1", nil, offCurve, 0, "", nil, "")
 	missingSalt.SaltCounter = nil
 
-	onCurvePayload := NewGenericLSigPayload("aplane.whitelist.v1", nil, canonicalOnCurveBytecode(t), 0, "", nil, "")
+	onCurvePayload := NewGenericLSigPayload("aplane.allowlist.v1", nil, canonicalOnCurveBytecode(t), 0, "", nil, "")
 
-	missingBytecode := NewGenericLSigPayload("aplane.whitelist.v1", nil, offCurve, 0, "", nil, "")
+	missingBytecode := NewGenericLSigPayload("aplane.allowlist.v1", nil, offCurve, 0, "", nil, "")
 	missingBytecode.LogicSigBytecode = nil
 
-	wrongVersion := NewGenericLSigPayload("aplane.whitelist.v1", nil, offCurve, 0, "", nil, "")
+	wrongVersion := NewGenericLSigPayload("aplane.allowlist.v1", nil, offCurve, 0, "", nil, "")
 	wrongVersion.SigningMetadataVersion = CurrentSigningMetadataVersion + 1
 
-	_, badHexErr := ParsePayload([]byte(`{"format_version":1,"category":"generic_lsig","key_type":"aplane.whitelist.v1","lsig_bytecode":"zz","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T00:00:00Z"}`))
+	_, badHexErr := ParsePayload([]byte(`{"format_version":1,"category":"generic_lsig","key_type":"aplane.allowlist.v1","lsig_bytecode":"zz","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T00:00:00Z"}`))
 
 	cases := []struct {
 		name    string
@@ -519,7 +519,7 @@ func TestScanKeysDirectoryWithMasterKeyLoadsGenericUnderDerivedAddress(t *testin
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
-		"key_type": "aplane.whitelist.v1",
+		"key_type": "aplane.allowlist.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"signing_metadata_version": 1,
@@ -540,7 +540,7 @@ func TestScanKeysDirectoryWithMasterKeyLoadsGenericUnderDerivedAddress(t *testin
 	}
 }
 
-func TestScanKeysDirectoryWithMasterKeyIncludesWhitelistV2ProofBudget(t *testing.T) {
+func TestScanKeysDirectoryWithMasterKeyIncludesAllowlistV2ProofBudget(t *testing.T) {
 	const (
 		baseKeyType = "test.scan-size-base.v1"
 		baseSigSize = 123
@@ -553,7 +553,7 @@ func TestScanKeysDirectoryWithMasterKeyIncludesWhitelistV2ProofBudget(t *testing
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "dsa_lsig",
-		"key_type": "` + falcon1024WhitelistV2KeyType + `",
+		"key_type": "` + falcon1024AllowlistV2KeyType + `",
 		"public_key": "01020304",
 		"private_key": "05060708",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
@@ -579,15 +579,15 @@ func TestScanKeysDirectoryWithMasterKeyIncludesWhitelistV2ProofBudget(t *testing
 	if !ok {
 		t.Fatalf("derived address %s not loaded", address)
 	}
-	want := len(bytecode) + baseSigSize + merklewhitelist.ProofSize
+	want := len(bytecode) + baseSigSize + merkleallowlist.ProofSize
 	if info.LsigSize != want {
 		t.Fatalf("LsigSize = %d, want %d", info.LsigSize, want)
 	}
 }
 
 func TestSignerGeneratedDSAArgSizeIncludesCorridorProofBudget(t *testing.T) {
-	if got := signerGeneratedDSAArgSizeForKey(keytypes.CorridorV1); got != merklewhitelist.ProofSize {
-		t.Fatalf("signerGeneratedDSAArgSizeForKey(corridor) = %d, want %d", got, merklewhitelist.ProofSize)
+	if got := signerGeneratedDSAArgSizeForKey(keytypes.CorridorV1); got != merkleallowlist.ProofSize {
+		t.Fatalf("signerGeneratedDSAArgSizeForKey(corridor) = %d, want %d", got, merkleallowlist.ProofSize)
 	}
 }
 
@@ -598,7 +598,7 @@ func TestScanKeysDirectoryWithMasterKeyRejectsGenericFilenameAddressMismatch(t *
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
-		"key_type": "aplane.whitelist.v1",
+		"key_type": "aplane.allowlist.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"signing_metadata_version": 1,

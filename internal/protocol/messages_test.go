@@ -420,8 +420,8 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				}},
 				Warnings: []RestoreWarning{{
 					Address: "ADDR1",
-					KeyType: "aplane.timed-whitelist.v1",
-					Warning: "skipped bundled template for aplane.timed-whitelist.v1: backup template conflicts with existing keystore definition",
+					KeyType: "aplane.timed-allowlist.v1",
+					Warning: "skipped bundled template for aplane.timed-allowlist.v1: backup template conflicts with existing keystore definition",
 				}},
 				KeyCount: 5,
 			},
@@ -439,8 +439,8 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"warnings": []any{
 					map[string]any{
 						"address":  "ADDR1",
-						"key_type": "aplane.timed-whitelist.v1",
-						"warning":  "skipped bundled template for aplane.timed-whitelist.v1: backup template conflicts with existing keystore definition",
+						"key_type": "aplane.timed-allowlist.v1",
+						"warning":  "skipped bundled template for aplane.timed-allowlist.v1: backup template conflicts with existing keystore definition",
 					},
 				},
 				"key_count": float64(5),
@@ -451,10 +451,10 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: LibraryTemplatesMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeLibraryTemplates, ID: "tmpl-list-1"},
 				Templates: []LibraryTemplateInfo{{
-					KeyType:      "aplane.timed-whitelist.v1",
+					KeyType:      "aplane.timed-allowlist.v1",
 					TemplateType: "generic",
-					DisplayName:  "Timed Whitelist",
-					FileName:     "aplane.timed-whitelist.v1.yaml",
+					DisplayName:  "Timed Allowlist",
+					FileName:     "aplane.timed-allowlist.v1.yaml",
 					Parameters: []TemplateParamInfo{{
 						Name:      "unlock_round",
 						Label:     "Unlock Round",
@@ -471,10 +471,10 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"id":   "tmpl-list-1",
 				"templates": []any{
 					map[string]any{
-						"key_type":      "aplane.timed-whitelist.v1",
+						"key_type":      "aplane.timed-allowlist.v1",
 						"template_type": "generic",
-						"display_name":  "Timed Whitelist",
-						"file_name":     "aplane.timed-whitelist.v1.yaml",
+						"display_name":  "Timed Allowlist",
+						"file_name":     "aplane.timed-allowlist.v1.yaml",
 						"parameters": []any{
 							map[string]any{
 								"name":       "unlock_round",
@@ -495,7 +495,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: InstallLibraryTemplateResultMessage{
 				BaseMessage:   BaseMessage{Type: MsgTypeInstallLibraryTemplateResult, ID: "tmpl-install-1"},
 				Success:       true,
-				KeyType:       "aplane.timed-whitelist.v1",
+				KeyType:       "aplane.timed-allowlist.v1",
 				TemplateType:  "generic",
 				AlreadyExists: true,
 			},
@@ -503,7 +503,7 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"type":           MsgTypeInstallLibraryTemplateResult,
 				"id":             "tmpl-install-1",
 				"success":        true,
-				"key_type":       "aplane.timed-whitelist.v1",
+				"key_type":       "aplane.timed-allowlist.v1",
 				"template_type":  "generic",
 				"already_exists": true,
 			},
@@ -647,9 +647,9 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: KeyTypesMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeKeyTypes, ID: "keytypes-1"},
 				KeyTypes: []KeyTypeInfo{{
-					KeyType:           "aplane.timed-whitelist.v1",
-					Family:            "timed-whitelist",
-					DisplayName:       "Timed Whitelist",
+					KeyType:           "aplane.timed-allowlist.v1",
+					Family:            "timed-allowlist",
+					DisplayName:       "Timed Allowlist",
 					Description:       "Lock until a round",
 					RequiresLogicSig:  true,
 					MnemonicWordCount: 0,
@@ -668,9 +668,9 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 				"id":   "keytypes-1",
 				"key_types": []any{
 					map[string]any{
-						"key_type":            "aplane.timed-whitelist.v1",
-						"family":              "timed-whitelist",
-						"display_name":        "Timed Whitelist",
+						"key_type":            "aplane.timed-allowlist.v1",
+						"family":              "timed-allowlist",
+						"display_name":        "Timed Allowlist",
 						"description":         "Lock until a round",
 						"requires_logicsig":   true,
 						"mnemonic_word_count": float64(0),

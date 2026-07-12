@@ -16,11 +16,11 @@ import (
 // the behavior-only compatibility fingerprint.
 func fingerprintBaseConfig() Config {
 	return Config{
-		KeyType:      "aplane.falcon1024-whitelist.v1",
+		KeyType:      "aplane.falcon1024-allowlist.v1",
 		BaseKeyType:  "aplane.falcon1024.v1",
 		FamilyName:   "aplane.falcon1024",
 		Version:      1,
-		DisplayName:  "Falcon Whitelist",
+		DisplayName:  "Falcon Allowlist",
 		Description:  "test",
 		Ops:          testOps{},
 		TemplateMode: "strict",
@@ -57,7 +57,7 @@ func TestComposedFingerprintIdentityRenameStable(t *testing.T) {
 	base := NewComposedDSA(fingerprintBaseConfig()).CompatibilityFingerprint()
 
 	renamed := fingerprintBaseConfig()
-	renamed.KeyType = "aplane.totally-renamed-whitelist.v9"
+	renamed.KeyType = "aplane.totally-renamed-allowlist.v9"
 	renamed.FamilyName = "aplane.renamed-family"
 	renamed.Version = 42
 	renamed.DisplayName = "A Different Display Name"

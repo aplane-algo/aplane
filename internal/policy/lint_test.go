@@ -139,10 +139,10 @@ func TestStoredConfigApplyRejectsReviewThresholdAboveDenyThreshold(t *testing.T)
 func TestStoredConfigApplyKeyOverridesInheritBase(t *testing.T) {
 	trueVal := true
 	falseVal := false
-	whitelistKey := types.Address{1}.String()
+	allowlistKey := types.Address{1}.String()
 	strictKey := types.Address{2}.String()
 	sp := &StoredConfig{StoredPolicyCore: StoredPolicyCore{RejectCloseRemainder: &falseVal}, KeyOverrides: map[string]*StoredConfig{
-		whitelistKey: {
+		allowlistKey: {
 			// Override only RejectForeignRekey; inherit the rest from the identity base.
 			StoredPolicyCore: StoredPolicyCore{RejectForeignRekey: &falseVal},
 		},
@@ -157,15 +157,15 @@ func TestStoredConfigApplyKeyOverridesInheritBase(t *testing.T) {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
-	whitelist := cfg.ForKey(whitelistKey)
-	if whitelist == cfg {
+	allowlist := cfg.ForKey(allowlistKey)
+	if allowlist == cfg {
 		t.Fatal("ForKey did not return the override config")
 	}
-	if whitelist.RejectForeignRekey {
-		t.Error("whitelist override RejectForeignRekey = true, want false (override applied)")
+	if allowlist.RejectForeignRekey {
+		t.Error("allowlist override RejectForeignRekey = true, want false (override applied)")
 	}
-	if whitelist.RejectCloseRemainder {
-		t.Error("whitelist override RejectCloseRemainder = true, want false (inherited from identity base)")
+	if allowlist.RejectCloseRemainder {
+		t.Error("allowlist override RejectCloseRemainder = true, want false (inherited from identity base)")
 	}
 
 	strict := cfg.ForKey(strictKey)

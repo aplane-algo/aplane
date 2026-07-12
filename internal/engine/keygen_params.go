@@ -23,7 +23,7 @@ type addressListResolver interface {
 }
 
 // expandGenerateAddressListParams resolves any address[]-typed creation params
-// (for example a whitelist LogicSig's "recipients") for the given key type:
+// (for example an allowlist LogicSig's "recipients") for the given key type:
 // each entry is resolved through the resolver — so aliases and @sets become
 // concrete addresses — and the result is sorted so the generated key is
 // independent of the order the caller supplied. Params that are not address[]

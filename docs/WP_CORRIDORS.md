@@ -140,7 +140,7 @@ chosen at generation time: its public key is embedded in the account's program
 and recorded alongside the holder's key material. Endpoint routing
 thereafter is mechanical and confers no authority. The ungated profile —
 a corridor and Falcon authorization only, with no gate predicate — is
-APlane's existing post-quantum whitelist account family.
+APlane's existing post-quantum allowlist account family.
 
 ### 2.3 Configuration
 
@@ -375,7 +375,7 @@ holder signature but **no gate**, restricted to a recovery corridor
 (typically a single treasury or successor address). The hatch bounds the
 worst case of permanent guard loss — value can always reach a safe address
 even if the guard is gone — without widening where account-controlled value
-may travel: the recovery corridor is itself a whitelist of one or a few
+may travel: the recovery corridor is itself an allowlist of one or a few
 fixed destinations.
 
 The hatch comes in two variants, chosen at construction:
@@ -398,7 +398,7 @@ The hatch comes in two variants, chosen at construction:
 
 The recovery corridor may be realized as a dedicated gate-free destination
 compiled into the account, or as a separate hatch side account — an ungated
-whitelist whose sole destination is the recovery address — that the account
+allowlist whose sole destination is the recovery address — that the account
 lists as a corridor destination. Accounts for which frozen-on-guard-loss is
 the desired posture simply omit the hatch.
 
@@ -423,8 +423,8 @@ one architectural element, and this document uses both consistently.
 
 | Term | Maps to | Definition |
 |---|---|---|
-| Corridor | The account's structural whitelist | The permitted transfer path compiled into an account's program: one origin (the account), one or more destinations. Each account has exactly one corridor; account-controlled value can move only through it, except for protocol fees and issuer-controlled clawback behavior on clawback-enabled assets. |
-| Destination | A whitelist entry | A single address in an account's corridor. Each destination is one directed edge A→B of the corridor map. |
+| Corridor | The account's structural allowlist | The permitted transfer path compiled into an account's program: one origin (the account), one or more destinations. Each account has exactly one corridor; account-controlled value can move only through it, except for protocol fees and issuer-controlled clawback behavior on clawback-enabled assets. |
+| Destination | An allowlist entry | A single address in an account's corridor. Each destination is one directed edge A→B of the corridor map. |
 | Wall | Absence of a destination | Any address not among the corridor's destinations. Impassable by every party, including all key holders. |
 | Construction | Governance rekey | Adding, removing, or reconfiguring corridor destinations by rekeying to a successor program. Deliberate, key-ceremonied, on-chain. |
 | Guard | Sentry | A separate sentry-role node holding a component key and deterministic gate policy. In v1, this is an internal control point operated by the same organization as the sending accounts, not third-party attestation. |

@@ -64,7 +64,7 @@ func (a *App) KeyTypes(ctx context.Context) (*KeyTypesCommandResult, error) {
 }
 
 // GenerateKey generates a signer key. Key-type canonicalization and address-list
-// creation-param resolution (e.g. a whitelist's "recipients") are performed by
+// creation-param resolution (e.g. an allowlist's "recipients") are performed by
 // the engine (engine.GenerateKey) so every entry point — REPL, JS, MCP —
 // behaves identically.
 func (a *App) GenerateKey(ctx context.Context, req GenerateKeyRequest) (*GenerateKeyCommandResult, error) {

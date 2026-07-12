@@ -19,7 +19,7 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-func TestGenericWhitelistTemplateAllowsSendAndCloseToFundingAccount(t *testing.T) {
+func TestGenericAllowlistTemplateAllowsSendAndCloseToFundingAccount(t *testing.T) {
 	if os.Getenv("TEST_FUNDING_MNEMONIC") == "" {
 		t.Skip("TEST_FUNDING_MNEMONIC not set, skipping funding-backed generic LSig test")
 	}
@@ -36,13 +36,13 @@ func TestGenericWhitelistTemplateAllowsSendAndCloseToFundingAccount(t *testing.T
 		t.Fatalf("failed to load funding account: %v", err)
 	}
 
-	family := fmt.Sprintf("integration-whitelist-%d", time.Now().UnixNano())
+	family := fmt.Sprintf("integration-allowlist-%d", time.Now().UnixNano())
 	keyType := integrationTemplateKeyType(family)
-	templatePath := writeGenericWhitelistTemplate(t, family)
+	templatePath := writeGenericAllowlistTemplate(t, family)
 
 	t.Setenv("APSIGNER_PASSPHRASE", mustReadPassphrase(t, env.SignerDataDir))
 	apstore := harness.NewApStoreHarness(t, env.SignerDataDir)
-	mustImportTemplateViaApstore(t, env.SignerDataDir, apstore, templatePath, "generic whitelist")
+	mustImportTemplateViaApstore(t, env.SignerDataDir, apstore, templatePath, "generic allowlist")
 
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
@@ -71,22 +71,22 @@ func TestGenericWhitelistTemplateAllowsSendAndCloseToFundingAccount(t *testing.T
 		t.Fatalf("failed to fund generic LSig account: %v", err)
 	}
 
-	assertGenericWhitelistRekeyRejected(t, apshell, testnet, lsigAddr, funder.GetAddress())
+	assertGenericAllowlistRekeyRejected(t, apshell, testnet, lsigAddr, funder.GetAddress())
 
 	sendTxID, err := apshell.SendTransaction(lsigAddr, funder.GetAddress(), 0.05)
 	if err != nil {
-		t.Fatalf("failed to send from generic whitelist LSig: %v", err)
+		t.Fatalf("failed to send from generic allowlist LSig: %v", err)
 	}
 	if _, err := testnet.WaitForConfirmation(sendTxID, 10); err != nil {
-		t.Fatalf("generic whitelist send transaction failed to confirm: %v", err)
+		t.Fatalf("generic allowlist send transaction failed to confirm: %v", err)
 	}
 
 	closeTxID, err := apshell.CloseAccount(lsigAddr, funder.GetAddress())
 	if err != nil {
-		t.Fatalf("failed to close generic whitelist LSig: %v", err)
+		t.Fatalf("failed to close generic allowlist LSig: %v", err)
 	}
 	if _, err := testnet.WaitForConfirmation(closeTxID, 10); err != nil {
-		t.Fatalf("generic whitelist close transaction failed to confirm: %v", err)
+		t.Fatalf("generic allowlist close transaction failed to confirm: %v", err)
 	}
 }
 
@@ -107,7 +107,7 @@ func TestGenericTemplateLifecycleRejectsDisableAndRemoveWhileKeyExists(t *testin
 		t.Fatalf("failed to load funding account: %v", err)
 	}
 
-	family := fmt.Sprintf("integration-lifecycle-whitelist-%d", time.Now().UnixNano())
+	family := fmt.Sprintf("integration-lifecycle-allowlist-%d", time.Now().UnixNano())
 	keyType := integrationTemplateKeyType(family)
 	templatePath := writeGenericFundingClosebackTemplate(t, family, funder.GetAddress())
 
@@ -330,10 +330,10 @@ func TestComposedDSATemplateLifecycleAllowsSignAndRemove(t *testing.T) {
 	}
 }
 
-func writeGenericWhitelistTemplate(t *testing.T, family string) string {
+func writeGenericAllowlistTemplate(t *testing.T, family string) string {
 	t.Helper()
 
-	templatePath := filepath.Join(t.TempDir(), "generic-whitelist.yaml")
+	templatePath := filepath.Join(t.TempDir(), "generic-allowlist.yaml")
 	templateYAML := fmt.Sprintf(`schema_version: 1
 derivation_version: 2
 template_type: generic
@@ -341,8 +341,8 @@ template_mode: generated
 publisher: %s
 family: %s
 version: 1
-display_name: "Integration Whitelist"
-description: "Integration test template that permits payments and close-out to whitelisted addresses"
+display_name: "Integration Allowlist"
+description: "Integration test template that permits payments and close-out to allowlisted addresses"
 
 parameters:
   - name: recipients
@@ -392,7 +392,7 @@ teal: |
       return
 `, integrationTemplatePublisher, family)
 	if err := os.WriteFile(templatePath, []byte(templateYAML), 0o600); err != nil {
-		t.Fatalf("failed to write generic whitelist template: %v", err)
+		t.Fatalf("failed to write generic allowlist template: %v", err)
 	}
 	return templatePath
 }
@@ -493,7 +493,7 @@ teal: |
 	return templatePath
 }
 
-func assertGenericWhitelistRekeyRejected(
+func assertGenericAllowlistRekeyRejected(
 	t *testing.T,
 	apshell *harness.ApshellHarness,
 	testnet *harness.TestnetConfig,
@@ -506,18 +506,18 @@ func assertGenericWhitelistRekeyRejected(
 	lowerOutput := strings.ToLower(output)
 	if !strings.Contains(lowerOutput, "rekey transaction failed") &&
 		!strings.Contains(lowerOutput, "rejected by logic") {
-		t.Fatalf("expected generic whitelist LSig rekey attempt to fail on chain: %v\noutput:\n%s", err, output)
+		t.Fatalf("expected generic allowlist LSig rekey attempt to fail on chain: %v\noutput:\n%s", err, output)
 	}
 	if strings.Contains(lowerOutput, "rekey transaction submitted:") {
-		t.Fatalf("expected generic whitelist LSig rekey not to be accepted, output:\n%s", output)
+		t.Fatalf("expected generic allowlist LSig rekey not to be accepted, output:\n%s", output)
 	}
 
 	accountInfo, err := testnet.Client.AccountInformation(lsigAddr).Do(context.Background())
 	if err != nil {
-		t.Fatalf("failed to inspect generic whitelist LSig account after rejected rekey: %v", err)
+		t.Fatalf("failed to inspect generic allowlist LSig account after rejected rekey: %v", err)
 	}
 	if accountInfo.AuthAddr != "" {
-		t.Fatalf("expected generic whitelist LSig account to remain unrekeyed, got auth address %s", accountInfo.AuthAddr)
+		t.Fatalf("expected generic allowlist LSig account to remain unrekeyed, got auth address %s", accountInfo.AuthAddr)
 	}
 }
 
@@ -527,13 +527,13 @@ func assertLogicSigSendRejected(t *testing.T, apshell *harness.ApshellHarness, f
 	output, err := apshell.RunWithInput(fmt.Sprintf("send 0.050000 algo from %s to %s\nquit\n", from, to))
 	lowerOutput := strings.ToLower(output)
 	if strings.Contains(lowerOutput, "transaction submitted:") || strings.Contains(lowerOutput, "transaction id:") {
-		t.Fatalf("expected generic whitelist send to %s not to be submitted, output:\n%s", to, output)
+		t.Fatalf("expected generic allowlist send to %s not to be submitted, output:\n%s", to, output)
 	}
 	if !strings.Contains(lowerOutput, "transaction failed") &&
 		!strings.Contains(lowerOutput, "rejected by logic") &&
 		!strings.Contains(lowerOutput, "logic eval") &&
 		!strings.Contains(lowerOutput, "rejected") {
-		t.Fatalf("expected generic whitelist send to fail on chain: %v\noutput:\n%s", err, output)
+		t.Fatalf("expected generic allowlist send to fail on chain: %v\noutput:\n%s", err, output)
 	}
 }
 
@@ -550,7 +550,7 @@ func apshellForSigner(t *testing.T, signerd *harness.SignerHarness) *harness.Aps
 func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 	lockOnDisconnect := false
 	env := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	installWhitelistTemplate(t, env.SignerDataDir)
+	installAllowlistTemplate(t, env.SignerDataDir)
 
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
@@ -572,15 +572,15 @@ func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 	}
 
 	// Generate the key
-	resp, err := signerClient.AdminGenerate("aplane.whitelist.v1", params)
+	resp, err := signerClient.AdminGenerate("aplane.allowlist.v1", params)
 	if err != nil {
-		t.Fatalf("failed to generate aplane.whitelist.v1: %v", err)
+		t.Fatalf("failed to generate aplane.allowlist.v1: %v", err)
 	}
 	if resp.Address == "" {
 		t.Fatal("admin generate returned empty address")
 	}
 	originalAddress := resp.Address
-	t.Logf("Generated aplane.whitelist.v1 address: %s", originalAddress)
+	t.Logf("Generated aplane.allowlist.v1 address: %s", originalAddress)
 
 	if !waitForKey(t, signerd.GetURL(), token, originalAddress, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", originalAddress)
@@ -593,14 +593,14 @@ func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 	t.Logf("Deleted key %s", originalAddress)
 
 	// Regenerate with the same params
-	resp2, err := signerClient.AdminGenerate("aplane.whitelist.v1", params)
+	resp2, err := signerClient.AdminGenerate("aplane.allowlist.v1", params)
 	if err != nil {
-		t.Fatalf("failed to regenerate aplane.whitelist.v1: %v", err)
+		t.Fatalf("failed to regenerate aplane.allowlist.v1: %v", err)
 	}
 	if resp2.Address == "" {
 		t.Fatal("admin regenerate returned empty address")
 	}
-	t.Logf("Regenerated aplane.whitelist.v1 address: %s", resp2.Address)
+	t.Logf("Regenerated aplane.allowlist.v1 address: %s", resp2.Address)
 
 	// Clean up the regenerated key
 	t.Cleanup(func() {
@@ -614,7 +614,7 @@ func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 	}
 }
 
-// TestFalconWhitelistRecoveryProducesSameAddress was previously an end-to-end
+// TestFalconAllowlistRecoveryProducesSameAddress was previously an end-to-end
 // round-trip exercising export of the generated mnemonic followed by re-import.
 // Mnemonic export is now disabled in the admin protocol so the test can no
 // longer be expressed end-to-end; recovery determinism for falcon1024 hybrids

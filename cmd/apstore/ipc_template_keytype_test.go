@@ -108,18 +108,18 @@ func TestCmdTemplateShowDoesNotInferPublisher(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		showTemplateResult: protocol.ShowInstalledTemplateResultMessage{
 			Success:      true,
-			KeyType:      "whitelist.v1",
+			KeyType:      "allowlist.v1",
 			TemplateType: "generic",
 			TemplateYAML: protocol.SensitiveBytes("schema_version: 1\n"),
 		},
 	}
 	withFakeApstoreAdminClient(t, fake)
 
-	if err := cmdTemplate([]string{"show", "whitelist.v1", "--show-sensitive-template"}); err != nil {
+	if err := cmdTemplate([]string{"show", "allowlist.v1", "--show-sensitive-template"}); err != nil {
 		t.Fatalf("cmdTemplate(show) error = %v", err)
 	}
-	if fake.showTemplateRequest.KeyType != "whitelist.v1" {
-		t.Fatalf("show key type = %q, want whitelist.v1", fake.showTemplateRequest.KeyType)
+	if fake.showTemplateRequest.KeyType != "allowlist.v1" {
+		t.Fatalf("show key type = %q, want allowlist.v1", fake.showTemplateRequest.KeyType)
 	}
 }
 
@@ -232,19 +232,19 @@ func TestCmdTemplateRemoveDoesNotInferPublisher(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		removeTemplateResult: protocol.RemoveInstalledTemplateResultMessage{
 			Success: true,
-			KeyType: "whitelist.v1",
+			KeyType: "allowlist.v1",
 			Removed: true,
 		},
 	}
 	withFakeApstoreAdminClient(t, fake)
 
 	if err := withTestStdin("y\n", func() error {
-		return cmdTemplate([]string{"remove", "whitelist.v1"})
+		return cmdTemplate([]string{"remove", "allowlist.v1"})
 	}); err != nil {
 		t.Fatalf("cmdTemplate(remove) error = %v", err)
 	}
-	if fake.removeTemplateRequest.KeyType != "whitelist.v1" {
-		t.Fatalf("remove key type = %q, want whitelist.v1", fake.removeTemplateRequest.KeyType)
+	if fake.removeTemplateRequest.KeyType != "allowlist.v1" {
+		t.Fatalf("remove key type = %q, want allowlist.v1", fake.removeTemplateRequest.KeyType)
 	}
 }
 

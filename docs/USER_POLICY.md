@@ -364,7 +364,7 @@ are rejected, except for routing-exempt self no-op shapes.
 add blocked destinations but cannot remove identity-wide blocked destinations.
 
 Use overrides when one key has materially different signing constraints, such
-as a LogicSig account whose TEAL enforces a separate whitelist. Avoid overrides
+as a LogicSig account whose TEAL enforces a separate allowlist. Avoid overrides
 when normal identity-wide routes can express the rule; simpler policy is easier
 to audit.
 

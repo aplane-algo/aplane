@@ -631,10 +631,10 @@ func (markerVerifierOps) TEALVersion() int                            { return 1
 func (markerVerifierOps) BuildSignatureArgs([]byte) ([][]byte, error) { return nil, nil }
 func (o markerVerifierOps) BuildVerifyTEAL([]byte) (string, error)    { return o.verifyTEAL, nil }
 
-func TestFalconWhitelistTemplateOnlyAddsDestinationPredicate(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-whitelist.v1.yaml"))
+func TestFalconAllowlistTemplateOnlyAddsDestinationPredicate(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-allowlist.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.falcon1024-whitelist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v1.yaml) error = %v", err)
 	}
 	spec, err := ParseTemplateSpec(data)
 	if err != nil {
@@ -642,13 +642,13 @@ func TestFalconWhitelistTemplateOnlyAddsDestinationPredicate(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"// Only pay/axfer have destination fields this whitelist constrains.",
+		"// Only pay/axfer have destination fields this allowlist constrains.",
 		"// Other transaction types keep the base Falcon authorization surface.",
 		"asset_path:",
 		"pay_path:",
 	} {
 		if !strings.Contains(spec.TEAL, want) {
-			t.Fatalf("falcon whitelist template missing %q:\n%s", want, spec.TEAL)
+			t.Fatalf("falcon allowlist template missing %q:\n%s", want, spec.TEAL)
 		}
 	}
 	normalized := strings.Join(strings.Fields(spec.TEAL), " ")
@@ -657,18 +657,18 @@ func TestFalconWhitelistTemplateOnlyAddsDestinationPredicate(t *testing.T) {
 		"txn TypeEnum int axfer == bnz asset_path",
 		"bnz asset_path b allow",
 		"txn AssetReceiver txn Sender == bnz allow_asset_receiver",
-		"txn AssetReceiver callsub is_whitelisted bnz allow_asset_receiver",
+		"txn AssetReceiver callsub is_allowlisted bnz allow_asset_receiver",
 		"txn AssetCloseTo global ZeroAddress == bnz allow_asset_close",
 		"txn AssetCloseTo txn Sender == bnz allow_asset_close",
-		"txn AssetCloseTo callsub is_whitelisted bnz allow_asset_close",
+		"txn AssetCloseTo callsub is_allowlisted bnz allow_asset_close",
 		"txn Receiver txn Sender == bnz allow_pay_receiver",
-		"txn Receiver callsub is_whitelisted bnz allow_pay_receiver",
+		"txn Receiver callsub is_allowlisted bnz allow_pay_receiver",
 		"txn CloseRemainderTo global ZeroAddress == bnz allow_pay_close",
 		"txn CloseRemainderTo txn Sender == bnz allow_pay_close",
-		"txn CloseRemainderTo callsub is_whitelisted bnz allow_pay_close",
+		"txn CloseRemainderTo callsub is_allowlisted bnz allow_pay_close",
 	} {
 		if !strings.Contains(normalized, want) {
-			t.Fatalf("falcon whitelist template missing normalized sequence %q:\n%s", want, spec.TEAL)
+			t.Fatalf("falcon allowlist template missing normalized sequence %q:\n%s", want, spec.TEAL)
 		}
 	}
 	for _, forbidden := range []string{
@@ -680,7 +680,7 @@ func TestFalconWhitelistTemplateOnlyAddsDestinationPredicate(t *testing.T) {
 		"txn AssetSender",
 	} {
 		if strings.Contains(normalized, forbidden) {
-			t.Fatalf("falcon whitelist template should not add extra Falcon restriction %q:\n%s", forbidden, spec.TEAL)
+			t.Fatalf("falcon allowlist template should not add extra Falcon restriction %q:\n%s", forbidden, spec.TEAL)
 		}
 	}
 }
@@ -751,7 +751,7 @@ func TestFalconHashlockAndTimelockOnlyAddGatingPredicate(t *testing.T) {
 	}
 }
 
-func TestFalconMerkleWhitelistTemplateRootProofContract(t *testing.T) {
+func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
 	RegisterBase(BaseRegistration{
 		BaseKeyType: "aplane.falcon1024.v1",
 		FamilyName:  "falcon1024",
@@ -762,9 +762,9 @@ func TestFalconMerkleWhitelistTemplateRootProofContract(t *testing.T) {
 		},
 	})
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-whitelist.v2.yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-allowlist.v2.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.falcon1024-whitelist.v2.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v2.yaml) error = %v", err)
 	}
 	spec, err := ParseTemplateSpec(data)
 	if err != nil {
@@ -790,22 +790,22 @@ func TestFalconMerkleWhitelistTemplateRootProofContract(t *testing.T) {
 		algocrypto.GenerateAccount().Address.String(),
 	}
 	outside := algocrypto.GenerateAccount().Address.String()
-	root, proofs := merkleWhitelistRootAndProofsForTest(t, accounts)
+	root, proofs := merkleAllowlistRootAndProofsForTest(t, accounts)
 
 	for _, addr := range accounts {
 		if got := len(proofs[addr]); got != 512 {
 			t.Fatalf("proof length for %s = %d, want 512", addr, got)
 		}
-		if !verifyMerkleWhitelistProofForTest(t, addr, proofs[addr], root) {
-			t.Fatalf("proof for whitelisted address %s did not verify", addr)
+		if !verifyMerkleAllowlistProofForTest(t, addr, proofs[addr], root) {
+			t.Fatalf("proof for allowlisted address %s did not verify", addr)
 		}
 	}
-	if verifyMerkleWhitelistProofForTest(t, outside, proofs[accounts[0]], root) {
+	if verifyMerkleAllowlistProofForTest(t, outside, proofs[accounts[0]], root) {
 		t.Fatalf("proof for %s verified for outsider %s", accounts[0], outside)
 	}
 	corrupt := append([]byte(nil), proofs[accounts[0]]...)
 	corrupt[17] ^= 0xff
-	if verifyMerkleWhitelistProofForTest(t, accounts[0], corrupt, root) {
+	if verifyMerkleAllowlistProofForTest(t, accounts[0], corrupt, root) {
 		t.Fatalf("corrupted proof for %s verified", accounts[0])
 	}
 
@@ -829,17 +829,17 @@ func TestFalconMerkleWhitelistTemplateRootProofContract(t *testing.T) {
 		"txn AssetCloseTo\ntxn AssetReceiver\n==",
 	} {
 		if !strings.Contains(teal, want) {
-			t.Fatalf("rendered Merkle whitelist TEAL missing %q:\n%s", want, teal)
+			t.Fatalf("rendered Merkle allowlist TEAL missing %q:\n%s", want, teal)
 		}
 	}
 	if got := strings.Count(teal, "extract3"); got != 16 {
-		t.Fatalf("rendered Merkle whitelist extract3 count = %d, want 16:\n%s", got, teal)
+		t.Fatalf("rendered Merkle allowlist extract3 count = %d, want 16:\n%s", got, teal)
 	}
 	if got := strings.Count(teal, "callsub combine"); got != 16 {
-		t.Fatalf("rendered Merkle whitelist combine count = %d, want 16:\n%s", got, teal)
+		t.Fatalf("rendered Merkle allowlist combine count = %d, want 16:\n%s", got, teal)
 	}
 	if strings.Contains(teal, "txn AssetSender") {
-		t.Fatalf("Merkle whitelist should leave AssetSender to base signer policy:\n%s", teal)
+		t.Fatalf("Merkle allowlist should leave AssetSender to base signer policy:\n%s", teal)
 	}
 
 	args, err := provider.BuildArgs([]byte{0xaa}, nil)
@@ -851,7 +851,7 @@ func TestFalconMerkleWhitelistTemplateRootProofContract(t *testing.T) {
 	}
 }
 
-func TestFalconWhitelistTemplateRendersMaxRecipientsWithinComposerBoundary(t *testing.T) {
+func TestFalconAllowlistTemplateRendersMaxRecipientsWithinComposerBoundary(t *testing.T) {
 	RegisterBase(BaseRegistration{
 		BaseKeyType: "aplane.falcon1024.v1",
 		FamilyName:  "falcon1024",
@@ -862,9 +862,9 @@ func TestFalconWhitelistTemplateRendersMaxRecipientsWithinComposerBoundary(t *te
 		},
 	})
 
-	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-whitelist.v1.yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-allowlist.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.falcon1024-whitelist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v1.yaml) error = %v", err)
 	}
 	spec, err := ParseTemplateSpec(data)
 	if err != nil {
@@ -877,7 +877,7 @@ func TestFalconWhitelistTemplateRendersMaxRecipientsWithinComposerBoundary(t *te
 
 	maxRecipients := spec.Parameters[0].MaxItems
 	if maxRecipients <= 0 {
-		t.Fatalf("falcon whitelist max_items = %d, want positive limit", maxRecipients)
+		t.Fatalf("falcon allowlist max_items = %d, want positive limit", maxRecipients)
 	}
 	recipients := make([]string, maxRecipients)
 	for i := range recipients {
@@ -948,21 +948,21 @@ func addressListProvider() *ComposedDSA {
 		Ops:          suffixTestOps{},
 		TemplateMode: "generated",
 		TEALSuffix: `txn Receiver
-callsub is_whitelisted
+callsub is_allowlisted
 assert
 
-is_whitelisted:
+is_allowlisted:
     {{range @recipients}}
     dup
     byte {{.}}
     ==
-    bnz whitelisted
+    bnz allowlisted
     {{end}}
     pop
     int 0
     retsub
 
-whitelisted:
+allowlisted:
     pop
     int 1
     retsub
@@ -977,11 +977,11 @@ whitelisted:
 	})
 }
 
-const merkleWhitelistDepthForTest = 16
+const merkleAllowlistDepthForTest = 16
 
-func merkleWhitelistRootAndProofsForTest(t *testing.T, addresses []string) ([]byte, map[string][]byte) {
+func merkleAllowlistRootAndProofsForTest(t *testing.T, addresses []string) ([]byte, map[string][]byte) {
 	t.Helper()
-	if len(addresses) > 1<<merkleWhitelistDepthForTest {
+	if len(addresses) > 1<<merkleAllowlistDepthForTest {
 		t.Fatalf("too many addresses: %d", len(addresses))
 	}
 
@@ -996,21 +996,21 @@ func merkleWhitelistRootAndProofsForTest(t *testing.T, addresses []string) ([]by
 	for _, address := range addresses {
 		pubkey := decodeAddressPubkeyForTest(t, address)
 		if _, ok := seen[pubkey]; ok {
-			t.Fatalf("duplicate whitelist address public key: %s", address)
+			t.Fatalf("duplicate allowlist address public key: %s", address)
 		}
 		seen[pubkey] = struct{}{}
 		entries = append(entries, entry{
 			address: address,
 			pubkey:  pubkey,
-			leaf:    merkleWhitelistLeafForTest(pubkey),
+			leaf:    merkleAllowlistLeafForTest(pubkey),
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return bytes.Compare(entries[i].pubkey[:], entries[j].pubkey[:]) < 0
 	})
 
-	leafCount := 1 << merkleWhitelistDepthForTest
-	emptyLeaf := merkleWhitelistEmptyLeafForTest()
+	leafCount := 1 << merkleAllowlistDepthForTest
+	emptyLeaf := merkleAllowlistEmptyLeafForTest()
 	level := make([][]byte, leafCount)
 	for i := range level {
 		level[i] = emptyLeaf
@@ -1022,7 +1022,7 @@ func merkleWhitelistRootAndProofsForTest(t *testing.T, addresses []string) ([]by
 		indices[entry.address] = i
 	}
 
-	for depth := 0; depth < merkleWhitelistDepthForTest; depth++ {
+	for depth := 0; depth < merkleAllowlistDepthForTest; depth++ {
 		for address, index := range indices {
 			proofParts[address] = append(proofParts[address], level[index^1])
 			indices[address] = index / 2
@@ -1030,7 +1030,7 @@ func merkleWhitelistRootAndProofsForTest(t *testing.T, addresses []string) ([]by
 
 		next := make([][]byte, len(level)/2)
 		for i := range next {
-			next[i] = merkleWhitelistNodeForTest(level[i*2], level[i*2+1])
+			next[i] = merkleAllowlistNodeForTest(level[i*2], level[i*2+1])
 		}
 		level = next
 	}
@@ -1040,7 +1040,7 @@ func merkleWhitelistRootAndProofsForTest(t *testing.T, addresses []string) ([]by
 
 	proofs := make(map[string][]byte, len(proofParts))
 	for address, parts := range proofParts {
-		proof := make([]byte, 0, merkleWhitelistDepthForTest*32)
+		proof := make([]byte, 0, merkleAllowlistDepthForTest*32)
 		for _, part := range parts {
 			proof = append(proof, part...)
 		}
@@ -1049,15 +1049,15 @@ func merkleWhitelistRootAndProofsForTest(t *testing.T, addresses []string) ([]by
 	return level[0], proofs
 }
 
-func verifyMerkleWhitelistProofForTest(t *testing.T, address string, proof, root []byte) bool {
+func verifyMerkleAllowlistProofForTest(t *testing.T, address string, proof, root []byte) bool {
 	t.Helper()
-	if len(root) != 32 || len(proof) != merkleWhitelistDepthForTest*32 {
+	if len(root) != 32 || len(proof) != merkleAllowlistDepthForTest*32 {
 		return false
 	}
 	pubkey := decodeAddressPubkeyForTest(t, address)
-	hash := merkleWhitelistLeafForTest(pubkey)
+	hash := merkleAllowlistLeafForTest(pubkey)
 	for offset := 0; offset < len(proof); offset += 32 {
-		hash = merkleWhitelistNodeForTest(hash, proof[offset:offset+32])
+		hash = merkleAllowlistNodeForTest(hash, proof[offset:offset+32])
 	}
 	return bytes.Equal(hash, root)
 }
@@ -1073,7 +1073,7 @@ func decodeAddressPubkeyForTest(t *testing.T, address string) [32]byte {
 	return out
 }
 
-func merkleWhitelistLeafForTest(pubkey [32]byte) []byte {
+func merkleAllowlistLeafForTest(pubkey [32]byte) []byte {
 	data := make([]byte, 0, 33)
 	data = append(data, 0x00)
 	data = append(data, pubkey[:]...)
@@ -1081,12 +1081,12 @@ func merkleWhitelistLeafForTest(pubkey [32]byte) []byte {
 	return sum[:]
 }
 
-func merkleWhitelistEmptyLeafForTest() []byte {
+func merkleAllowlistEmptyLeafForTest() []byte {
 	sum := sha256.Sum256([]byte{0x00})
 	return sum[:]
 }
 
-func merkleWhitelistNodeForTest(left, right []byte) []byte {
+func merkleAllowlistNodeForTest(left, right []byte) []byte {
 	if bytes.Compare(left, right) > 0 {
 		left, right = right, left
 	}

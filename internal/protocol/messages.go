@@ -464,9 +464,9 @@ type KeysListMessage struct {
 // GenerateKeyMessage requests generation of a new key
 type GenerateKeyMessage struct {
 	BaseMessage
-	KeyType    string            `json:"key_type"` // Versioned key type: "ed25519", "aplane.falcon1024.v1", "aplane.timed-whitelist.v1", etc.
+	KeyType    string            `json:"key_type"` // Versioned key type: "ed25519", "aplane.falcon1024.v1", "aplane.timed-allowlist.v1", etc.
 	Name       string            `json:"name,omitempty"`
-	Parameters map[string]string `json:"parameters,omitempty"` // Template parameters (for generic lsigs like timed-whitelist)
+	Parameters map[string]string `json:"parameters,omitempty"` // Template parameters (for generic lsigs like timed-allowlist)
 }
 
 // GenerateResultMessage contains the result of key generation

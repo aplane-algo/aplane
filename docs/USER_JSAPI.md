@@ -192,7 +192,7 @@ for (const kt of keyTypes()) {
   print(kt.keyType, " ", kt.displayName)
 }
 
-let generated = generateKey("aplane.whitelist.v1", {
+let generated = generateKey("aplane.allowlist.v1", {
   recipients: "ADDR1, ADDR2"
 })
 print(generated.address)

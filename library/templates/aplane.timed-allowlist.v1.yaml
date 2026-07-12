@@ -3,32 +3,42 @@ derivation_version: 2
 template_type: generic
 template_mode: generated
 publisher: aplane
-family: whitelist
+family: timed-allowlist
 version: 1
-display_name: "Whitelist"
-description: "Restrict outgoing transfers to a fixed set of recipient addresses"
+display_name: "Timed Allowlist"
+description: "Restrict funds (ALGO or ASA) to approved recipients after specified round"
 display_color: "35"
 
 parameters:
   - name: recipients
+    label: "Allowlisted Addresses"
+    description: "List of Algorand addresses that may receive funds from this LogicSig after unlock"
     type: address[]
     required: true
     min_items: 1
     max_items: 30
-    label: "Whitelisted Addresses"
-    description: "List of Algorand address that may receive funds from this LogicSig"
     placeholder: "ADDR1 ADDR2 ADDR3"
+
+  - name: unlock_round
+    label: "Unlock Round"
+    description: "Round number after which funds can be withdrawn"
+    type: uint64
+    required: true
+    max_length: 20
+    placeholder: "Enter unlock round number"
   - name: allowed_optin_assets
+    label: "Approved Opt-In Assets"
+    description: "Optional list of ASA IDs this LogicSig may opt into via zero-amount self-transfer"
     type: uint64[]
     required: false
     min_items: 1
     max_items: 16
-    label: "Approved Opt-In Assets"
-    description: "Optional list of ASA IDs this LogicSig may opt into via zero-amount self-transfer"
     placeholder: "10458941,31566704"
 
 teal: |
   #pragma version 10
+
+  // Timed allowlist: funds (ALGO or ASA) locked until round @unlock_round, then only to @recipients
 
   // Strict fee cap: public generic LogicSigs must not carry variable fee liability.
   // If higher total fees are ever needed, use explicit external sponsorship in a
@@ -38,7 +48,7 @@ teal: |
   ==
   assert
 
-  // Security: Prevent rekey attacks
+  // Security: Prevent RekeyTo takeover
   txn RekeyTo
   global ZeroAddress
   ==
@@ -52,6 +62,21 @@ teal: |
   int axfer
   ==
   ||
+  assert
+
+  // Approved ASA opt-in remains available before unlock so the escrow can be
+  // prepared to receive specific assets without weakening spend restrictions.
+  txn TypeEnum
+  int axfer
+  ==
+  bnz maybe_optin
+
+  continue_checks:
+  // Check 1: Transaction first valid round >= unlock round
+  // (Transaction cannot be submitted until network reaches this round)
+  txn FirstValid
+  int @unlock_round
+  >=
   assert
 
   // Branch on transaction type for field checks
@@ -101,6 +126,18 @@ teal: |
   return
 
   maybe_optin:
+  txn AssetSender
+  global ZeroAddress
+  ==
+  assert
+  txn AssetAmount
+  int 0
+  ==
+  txn AssetReceiver
+  txn Sender
+  ==
+  &&
+  bz continue_checks
   txn AssetCloseTo
   global ZeroAddress
   ==

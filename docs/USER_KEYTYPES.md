@@ -15,7 +15,7 @@ APlane has two optional key type paths:
 | Kind | Example | Where definition lives | How to enable |
 |---|---|---|---|
 | Compiled provider | `aplane.falcon1024_ed25519.v1` | Go code in the current binary | `apstore keytype enable` or apadmin KeyType Library |
-| YAML template | `aplane.whitelist.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apstore template import` or apadmin KeyType Library |
+| YAML template | `aplane.allowlist.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apstore template import` or apadmin KeyType Library |
 
 Default-enabled compiled providers, such as `ed25519` and
 `aplane.falcon1024.v1`, are available without extra steps.
@@ -25,7 +25,7 @@ them.
 
 YAML templates are different: a library YAML file is only an install source. It
 does not become an active key type until it is imported into an identity store.
-New signer stores are initialized with `aplane.falcon1024-whitelist.v1`
+New signer stores are initialized with `aplane.falcon1024-allowlist.v1`
 already installed and enabled from the bundled library source. Existing stores
 can import that template manually if they were created before this default.
 
@@ -59,8 +59,8 @@ Use `-d <path>` or `APSIGNER_DATA` to select the signer data directory:
 ```bash
 apstore -d $APSIGNER_DATA template list
 apstore -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
-apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.yaml
-apstore -d $APSIGNER_DATA template import library/templates/aplane.ed25519-whitelist.v1.yaml
+apstore -d $APSIGNER_DATA template import library/templates/aplane.allowlist.v1.yaml
+apstore -d $APSIGNER_DATA template import library/templates/aplane.ed25519-allowlist.v1.yaml
 apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
 apstore -d $APSIGNER_DATA keytype enable aplane.falcon1024_ed25519.v1
 apstore -d $APSIGNER_DATA keytype disable aplane.falcon1024_ed25519.v1
@@ -80,7 +80,7 @@ generate <key_type> [param=value ...]
 
 `keytypes` lists only key types currently exposed by the connected signer.
 Use the full canonical key type shown by `keytypes`, for example
-`aplane.timed-whitelist.v1` or `example.my_escrow.v1`. Files, IPC/HTTP
+`aplane.timed-allowlist.v1` or `example.my_escrow.v1`. Files, IPC/HTTP
 responses, and JSON fields use the same canonical `publisher.family.vN`
 identifier.
 
@@ -145,15 +145,15 @@ library/templates/*.yaml
 Import a YAML template:
 
 ```bash
-apstore -d $APSIGNER_DATA template import library/templates/aplane.whitelist.v1.yaml
+apstore -d $APSIGNER_DATA template import library/templates/aplane.allowlist.v1.yaml
 ```
 
 Import encrypts the YAML into the identity's keystore and enables the key type
 for that identity.
 
-Fresh signer identities already include `aplane.falcon1024-whitelist.v1`;
+Fresh signer identities already include `aplane.falcon1024-allowlist.v1`;
 `template import` remains the path for existing identities that do not have it
-and for the other bundled templates such as `aplane.ed25519-whitelist.v1`.
+and for the other bundled templates such as `aplane.ed25519-allowlist.v1`.
 
 Generated LogicSig keys store their salted bytecode and selected off-curve
 salt counter in the `.key` file. They also store the signing-argument schema
@@ -283,7 +283,7 @@ For example:
 ```text
 aplane.falcon1024.v1
 aplane.ed25519.v1
-aplane.whitelist.v1
+aplane.allowlist.v1
 ```
 
 Use the full canonical key type in command input. On disk, in backups, in

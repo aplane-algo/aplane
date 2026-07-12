@@ -46,7 +46,7 @@ resolver and the shared `ResolveByKeyType` two-step lookup.
 **Routing key = `RoutingFamily()`, not `BaseKeyType`.** A provider's
 `RoutingFamily()` is its declared routing family — the registry key. For a
 self-handling DSA that is its own family; for a composed template that delegates
-to a base it is the *base's* family (e.g. `aplane.falcon1024-whitelist.v1` →
+to a base it is the *base's* family (e.g. `aplane.falcon1024-allowlist.v1` →
 `aplane.falcon1024`). That base is a **registration fact**, not something
 derivable from the key-type string, and it is deliberately not the same as the
 key type's own display label.
@@ -68,7 +68,7 @@ registry names:
 | `aplane.ed25519.v1` | Versioned concrete LogicSig DSA key type | Version 1 of the APlane Ed25519 LogicSig DSA provider. Users can enable/create/import this key type; it signs with Ed25519, but verification happens inside TEAL via `ed25519verify_bare`. |
 
 For composed templates, the key type's own label and its routing key can differ
-again: `aplane.ed25519-whitelist.v1` names the whitelist template, while its
+again: `aplane.ed25519-allowlist.v1` names the allowlist template, while its
 `RoutingFamily()` is `aplane.ed25519` because private-key operations delegate to
 the Ed25519 LogicSig base.
 
