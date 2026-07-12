@@ -25,12 +25,12 @@ tree.
 Do not edit shipped library templates or Go providers just to satisfy a user's
 custom policy. Shipped templates, compiled providers, and installed template key
 types are compatibility boundaries. Changing the behavior of an existing key
-type such as `aplane.whitelist.v1`, `aplane.falcon1024-whitelist.v1`, or
+type such as `aplane.allowlist.v1`, `aplane.falcon1024-allowlist.v1`, or
 `aplane.htlc.v1` can break existing keys and backups. The guarded sentry and
 corridor providers (`aplane.falcon1024-sentry-ed25519.v1`,
 `aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`) are Go-defined
 compiled providers, not authorable as YAML; the bundled
-`aplane.falcon1024-whitelist.v2` Merkle whitelist is likewise a built-in.
+`aplane.falcon1024-allowlist.v2` Merkle allowlist is likewise a built-in.
 
 Installing a user-loaded template with `apstore template import` requires the
 identity master passphrase through the local daemon IPC session. An AI
@@ -47,7 +47,7 @@ Before writing code or YAML, classify the requested key type:
 
 | Request | Category | Normal output |
 |---|---|---|
-| TEAL-only escrow, whitelist, timelock, hashlock | Generic LogicSig template | YAML for `apstore template import` |
+| TEAL-only escrow, allowlist, timelock, hashlock | Generic LogicSig template | YAML for `apstore template import` |
 | Falcon signature plus additional TEAL checks | Composed DSA template | YAML for `apstore template import` |
 | New signing algorithm or key material format | DSA/native provider work | Go implementation and registry changes |
 
@@ -193,7 +193,7 @@ X" unless they say so. Ask or choose the stricter no-close policy.
 Use creation params for values that define the account address, such as:
 
 - recipient addresses
-- whitelist entries
+- allowlist entries
 - timeout rounds
 - stored hashes
 
@@ -247,7 +247,7 @@ After installing:
 Do not tell the user that editing top-level `library/templates/` installs a template.
 Files under top-level `library/templates/` are library entries, not active
 runtime definitions by presence alone. The default template
-(`aplane.falcon1024-whitelist.v1`) is installed during new signer-store
+(`aplane.falcon1024-allowlist.v1`) is installed during new signer-store
 initialization; other templates become installed only after
 `apstore template import`.
 
@@ -297,7 +297,7 @@ Ask the user before writing a template if any of these are unclear:
 
 - whether close-out should be allowed
 - whether ASA transfers are in scope
-- whether a whitelist applies to receiver, close address, or both
+- whether an allowlist applies to receiver, close address, or both
 - whether the template should be generic or Falcon-signed
 - whether runtime proof data is required
 - whether changing an existing key type is intended

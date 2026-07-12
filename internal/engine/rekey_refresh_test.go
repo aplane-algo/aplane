@@ -19,12 +19,12 @@ import (
 // subsequent transactions through the rekeyed-to LogicSig.
 func TestRefreshRekeyedSendersUpdatesStaleAuthEntry(t *testing.T) {
 	node := testAddress(40)
-	whitelist := testAddress(41)
+	allowlist := testAddress(41)
 
 	transport := newAccountMockTransport(t)
 	transport.addAccountFull(models.Account{
 		Address:                     node.String(),
-		AuthAddr:                    whitelist.String(), // on-chain: rekeyed to the whitelist lsig
+		AuthAddr:                    allowlist.String(), // on-chain: rekeyed to the allowlist lsig
 		Amount:                      1_000_000,
 		AmountWithoutPendingRewards: 1_000_000,
 		MinBalance:                  100_000,
@@ -38,15 +38,15 @@ func TestRefreshRekeyedSendersUpdatesStaleAuthEntry(t *testing.T) {
 
 	var rekeyTxn types.Transaction
 	rekeyTxn.Sender = node
-	rekeyTxn.RekeyTo = whitelist
+	rekeyTxn.RekeyTo = allowlist
 
 	if err := eng.refreshRekeyedSenders(context.Background(), []types.Transaction{rekeyTxn}); err != nil {
 		t.Fatalf("refreshRekeyedSenders() error = %v, want nil", err)
 	}
 
 	got, ok := eng.AuthCache.GetAuthAddress(node.String())
-	if !ok || got != whitelist.String() {
-		t.Fatalf("auth cache after rekey = %q (cached=%v); want %q", got, ok, whitelist.String())
+	if !ok || got != allowlist.String() {
+		t.Fatalf("auth cache after rekey = %q (cached=%v); want %q", got, ok, allowlist.String())
 	}
 }
 
@@ -86,7 +86,7 @@ func TestRefreshRekeyedSendersIgnoresNonRekeyTxns(t *testing.T) {
 func TestRefreshRekeyedSendersReportsRefreshFailure(t *testing.T) {
 	known := testAddress(44)
 	unknown := testAddress(45) // intentionally absent from the mock -> algod 404
-	whitelist := testAddress(46)
+	allowlist := testAddress(46)
 
 	transport := newAccountMockTransport(t)
 	transport.addAccount(known.String(), 1_000_000)
@@ -94,7 +94,7 @@ func TestRefreshRekeyedSendersReportsRefreshFailure(t *testing.T) {
 
 	var rekeyTxn types.Transaction
 	rekeyTxn.Sender = unknown
-	rekeyTxn.RekeyTo = whitelist
+	rekeyTxn.RekeyTo = allowlist
 
 	if err := eng.refreshRekeyedSenders(context.Background(), []types.Transaction{rekeyTxn}); err == nil {
 		t.Fatal("refreshRekeyedSenders() error = nil; want a non-nil refresh failure")

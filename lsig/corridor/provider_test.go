@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 
@@ -64,7 +64,7 @@ func TestGenerateTEALBuildsCorridorVerifier(t *testing.T) {
 	userPublicKey := bytes.Repeat([]byte{0xa1}, family.PublicKeySize)
 	sentryPublicKeyHex := strings.Repeat("b2", family.PublicKeySize)
 	recipients := strings.Join([]string{types.Address{1}.String(), types.Address{2}.String()}, ",")
-	root, err := merklewhitelist.RootFromRecipientsParam(recipients)
+	root, err := merkleallowlist.RootFromRecipientsParam(recipients)
 	if err != nil {
 		t.Fatalf("RootFromRecipientsParam() error = %v", err)
 	}
@@ -154,7 +154,7 @@ func TestAssemblyExtraArgsBuildsCorridorProof(t *testing.T) {
 	sender := types.Address{1}
 	recipient := types.Address{2}
 	recipients := strings.Join([]string{recipient.String(), types.Address{3}.String()}, ",")
-	root, err := merklewhitelist.RootFromRecipientsParam(recipients)
+	root, err := merkleallowlist.RootFromRecipientsParam(recipients)
 	if err != nil {
 		t.Fatalf("RootFromRecipientsParam() error = %v", err)
 	}
@@ -172,7 +172,7 @@ func TestAssemblyExtraArgsBuildsCorridorProof(t *testing.T) {
 	if len(args) != 1 {
 		t.Fatalf("AssemblyExtraArgs() len = %d, want 1", len(args))
 	}
-	if !merklewhitelist.Verify(recipient, args[0], root) {
+	if !merkleallowlist.Verify(recipient, args[0], root) {
 		t.Fatal("AssemblyExtraArgs() returned proof that does not verify")
 	}
 }
@@ -189,8 +189,8 @@ func TestAssemblyExtraArgsRejectsNonMember(t *testing.T) {
 			Receiver: recipient,
 		},
 	}, map[string]string{ParamRecipients: types.Address{3}.String()})
-	if err == nil || !strings.Contains(err.Error(), "corridor proof generation failed") || !strings.Contains(err.Error(), "not in whitelist") {
-		t.Fatalf("AssemblyExtraArgs(non-member) error = %v, want corridor whitelist error", err)
+	if err == nil || !strings.Contains(err.Error(), "corridor proof generation failed") || !strings.Contains(err.Error(), "not in allowlist") {
+		t.Fatalf("AssemblyExtraArgs(non-member) error = %v, want corridor allowlist error", err)
 	}
 }
 

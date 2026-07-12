@@ -932,7 +932,7 @@ key_overrides:
       blocked_destinations:
         - BLOCKEDFORFALCON...
       routes:
-        - id: falcon_whitelist_asa_route
+        - id: falcon_allowlist_asa_route
           networks: [mainnet]
           sources: ["@treasury"]
           assets: [31566704]

@@ -124,7 +124,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `lsig/composeddsa` | Generic runtime-compiled LogicSig composer used by Falcon, Ed25519, and ecdsak1 composed templates, and parser/provider builder for composed DSA YAML templates |
 | `lsig/falcon1024` | Falcon-1024 DSA base provider; `v1/composer.go` is the Falcon-specific wrapper over `lsig/composeddsa` |
 | `lsig/falcon1024_ed25519` | Dual Falcon-1024 / Ed25519 DSA provider |
-| `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider, also used by composed templates such as `aplane.ed25519-whitelist.v1` |
+| `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider, also used by composed templates such as `aplane.ed25519-allowlist.v1` |
 | `lsig/ecdsak1` | secp256k1 LogicSig DSA provider |
 | `lsig/falcon1024_guarded` | Falcon-1024 guarded-account DSA providers (`aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`) |
 | `lsig/corridor` | Always-sentry corridor DSA provider (`aplane.corridor.v1`): Falcon-1024 user + sentry signatures with recipient-corridor and rekey policy |
@@ -140,21 +140,21 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 
 | Category | Example Key Types | Has Keys | Signing |
 |----------|-------------------|----------|---------|
-| `generic_lsig` | `aplane.timed-whitelist.v1`, `aplane.whitelist.v1` after template import | No | TEAL-only authorization |
-| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, guarded `aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`; `aplane.falcon1024-whitelist.v1` after new-store default install, `aplane.ed25519-whitelist.v1` after template import | Yes | Cryptographic signature |
+| `generic_lsig` | `aplane.timed-allowlist.v1`, `aplane.allowlist.v1` after template import | No | TEAL-only authorization |
+| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, guarded `aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`; `aplane.falcon1024-allowlist.v1` after new-store default install, `aplane.ed25519-allowlist.v1` after template import | Yes | Cryptographic signature |
 
 ## Interface Hierarchy
 
 ```
 LSigProvider (base interface - ALL providers implement this)
 ├── Identity
-│   ├── KeyType() string        "aplane.falcon1024.v1", "aplane.timed-whitelist.v1"
+│   ├── KeyType() string        "aplane.falcon1024.v1", "aplane.timed-allowlist.v1"
 │   ├── RoutingFamily() string  "aplane.falcon1024" (registry routing key; see ARCH_KEYTYPE_AXES.md)
 │   └── Version() int           1, 2, etc.
 ├── Category
 │   └── Category() string       "generic_lsig" or "dsa_lsig"
 ├── Display
-│   ├── DisplayName() string    "Falcon-1024", "Timed Whitelist"
+│   ├── DisplayName() string    "Falcon-1024", "Timed Allowlist"
 │   ├── Description() string    Short description for UI
 │   └── DisplayColor() string   ANSI color code
 ├── Parameters
@@ -583,9 +583,9 @@ lsigprovider.ConfigureAlgodClient(client)
 For composed templates, `base_key_type` selects the signing provider while
 the YAML `family` field names the template's own version line. The two are
 independent: `base_key_type: aplane.falcon1024.v1` plus
-`family: falcon1024-whitelist` yields a `key_type` of
-`<publisher>.falcon1024-whitelist.vN` that signs with Falcon-1024, while
-`base_key_type: aplane.ed25519.v1` plus `family: ed25519-whitelist`
+`family: falcon1024-allowlist` yields a `key_type` of
+`<publisher>.falcon1024-allowlist.vN` that signs with Falcon-1024, while
+`base_key_type: aplane.ed25519.v1` plus `family: ed25519-allowlist`
 yields a template key type that signs with Ed25519 inside a LogicSig.
 
 ## Key Types Summary
@@ -599,11 +599,11 @@ yields a template key type that signs with Ed25519 inside a LogicSig.
 | `aplane.falcon1024-sentry-falcon1024.v1` | `aplane.falcon1024-sentry-falcon1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 sentry component signatures |
 | `aplane.corridor.v1` | `aplane.corridor` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + sentry signatures with recipient corridor and sentry-authorized rekey |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
-| `aplane.timed-whitelist.v1` | `timed-whitelist` | `generic_lsig` | Optional template library: timed recipient whitelist |
-| `aplane.whitelist.v1` | `whitelist` | `generic_lsig` | Optional template library: restrict outgoing transfers to fixed recipient addresses |
+| `aplane.timed-allowlist.v1` | `timed-allowlist` | `generic_lsig` | Optional template library: timed recipient allowlist |
+| `aplane.allowlist.v1` | `allowlist` | `generic_lsig` | Optional template library: restrict outgoing transfers to fixed recipient addresses |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
-| `aplane.ed25519-whitelist.v1` | `ed25519-whitelist` | `dsa_lsig` | Optional composed template library: Ed25519 + fixed receiver whitelist |
-| `aplane.falcon1024-whitelist.v1` | `falcon1024-whitelist` | `dsa_lsig` | Bundled composed template: installed/enabled for new signer identities; Falcon + fixed receiver whitelist |
+| `aplane.ed25519-allowlist.v1` | `ed25519-allowlist` | `dsa_lsig` | Optional composed template library: Ed25519 + fixed receiver allowlist |
+| `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled composed template: installed/enabled for new signer identities; Falcon + fixed receiver allowlist |
 | `aplane.falcon1024-hashlock.v1` | `falcon1024-hashlock` | `dsa_lsig` | Optional template library: Falcon + hashlock |
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional template library: Falcon + timelock |
 

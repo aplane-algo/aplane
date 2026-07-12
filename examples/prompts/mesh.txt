@@ -1,13 +1,13 @@
 Use APlane on Algorand testnet via MCP to build a 4-node contrained-transfer mesh protected by
-Falcon whitelist rails.
+Falcon allowlist rails.
 
 Topology:
 - Primary accounts: P1, P2, P3, P4.
 - Escape-hatch accounts: E1, E2, E3, E4.
 - Rail auth accounts: R1, R2, R3, R4.
 - Pi is a standard ed25519 account rekeyed to Ri.
-- Ri is a `aplane.falcon1024-whitelist.v1` LogicSig account.
-- Ei is a regular Falcon account, not a whitelist account.
+- Ri is a `aplane.falcon1024-allowlist.v1` LogicSig account.
+- Ei is a regular Falcon account, not an allowlist account.
 
 Security goal:
 - A compromised rail key must not be able to send ALGO or ASAs from Pi to an
@@ -24,24 +24,24 @@ Required rail recipient sets:
 - R4 recipients: P1, P2, P3, E4
 
 Design Points:
-- Use the exact key type `aplane.falcon1024-whitelist.v1`. This keytype supports the following constraints.
-- The whitelist rail rejects rekeying and allows only the template-approved
+- Use the exact key type `aplane.falcon1024-allowlist.v1`. This keytype supports the following constraints.
+- The allowlist rail rejects rekeying and allows only the template-approved
   transaction classes: ALGO payment, ASA transfer, ASA opt-in, and keyreg.
 - Payment and ASA transfer receivers must be in the rail recipient set.
 - Payment close remainder and ASA close-out are allowed only when zero or sent
-  to a whitelisted recipient.
+  to an allowlisted recipient.
 - Rails do not need initial funding.
 
 Build steps:
 0. First execute mcp command "mcp_reference" to read the aplane manual.
-1. Check to make sure aplane.falcon1024-whitelist.v1 exists as an available keytype. if it does not, stop.
+1. Check to make sure aplane.falcon1024-allowlist.v1 exists as an available keytype. if it does not, stop.
 2. Ensure apshell is on testnet.
 3. Confirm alias `funder` exists and has at least 5 ALGO and 2 USDC.
 4. Generate P1-P4 as ed25519 accounts. Assign stable aliases P1, P2, P3, P4.
 5. Generate E1-E4 as regular Falcon accounts. Assign aliases E1, E2, E3, E4.
 6. Fund each primary and escape hatch from `funder` with 0.5 ALGO.
 7. Opt in P1-P4 and E1-E4 to USDC. Then fund P1-P4 only with 0.1 USDC from funder.
-8. Generate R1-R4 as `aplane.falcon1024-whitelist.v1` accounts using the exact
+8. Generate R1-R4 as `aplane.falcon1024-allowlist.v1` accounts using the exact
    recipient sets above. Assign aliases R1, R2, R3, R4.
 9. Rekey P1 to R1, P2 to R2, P3 to R3, and P4 to R4.
 10. Confirm Pi is shown as rekeyed to its matching Ri.
@@ -50,7 +50,7 @@ Validation:
 Using 0.01 quantity transfers of ALGO and USDC (you can get the USDC from funder):
 - Confirm each Pi can send ALGO to each allowed peer primary.
 - Confirm each Pi can send ALGO to its own Ei.
-- Confirm each Pi cannot send ALGO to a non-whitelisted address.
+- Confirm each Pi cannot send ALGO to an address not on its allowlist.
 - Confirm each Pi cannot rekey again.
 - Confirm ASA transfers follow the same allowed-recipient rule.
 
@@ -77,9 +77,9 @@ Don't do this automatically , but if asked, you can tear the network down as fol
      - optout usdc from P3 to E3
      - optout usdc from P4 to E4
      The `to Ei` clause is required even when the primary's USDC balance is
-     zero: the whitelist TEAL requires both AssetReceiver and AssetCloseTo
-     to be whitelisted, and the primary itself is not in its own rail's
-     whitelist. Routing the opt-out through Ei satisfies both checks.
+     zero: the allowlist TEAL requires both AssetReceiver and AssetCloseTo
+     to be on the allowlist, and the primary itself is not in its own rail's
+     allowlist. Routing the opt-out through Ei satisfies both checks.
   2. Close each primary to its escape hatch (sends all remaining ALGO):
      - close P1 to E1
      - close P2 to E2

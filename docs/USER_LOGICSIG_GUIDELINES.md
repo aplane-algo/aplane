@@ -4,7 +4,7 @@
 
 > **TL;DR**
 > - The LogicSigs bundled with APlane (Falcon hashlock, Falcon timelock,
->   Falcon whitelist, Falcon Merkle whitelist, Ed25519 whitelist, and the
+>   Falcon allowlist, Falcon Merkle allowlist, Ed25519 allowlist, and the
 >   signer-gated DSA providers) are safe to fund and use as documented.
 > - Anything you compile yourself — your own TEAL, your own YAML template, or
 >   an externally-supplied LogicSig — needs to pass the full review checklist
@@ -96,7 +96,7 @@ about which rules are enforced in TEAL and which are enforced by signer policy.
 ### Composed DSA LogicSig
 
 A composed DSA LogicSig combines a DSA verification base with additional TEAL
-constraints such as whitelists, timelocks, or hashlocks.
+constraints such as allowlists, timelocks, or hashlocks.
 
 These policies should be reviewed both as cryptographic verification logic and
 as TEAL spending policy.
@@ -513,7 +513,7 @@ authorization boundary. The template should enforce:
 - signature verification over `txn TxID`
 - runtime argument validation
 - no early `return` in the TEAL suffix
-- complete TEAL coverage for any extra policy it claims, such as whitelist,
+- complete TEAL coverage for any extra policy it claims, such as allowlist,
   hashlock, or timelock behavior
 
 Fields intentionally left to signer policy should be listed explicitly:
@@ -565,7 +565,7 @@ global ZeroAddress
 assert
 ```
 
-Whitelist policies may instead allow zero, self, or the same approved
+Allowlist policies may instead allow zero, self, or the same approved
 destination set used for `Receiver`.
 
 ### Asset Close-Out
@@ -577,7 +577,7 @@ global ZeroAddress
 assert
 ```
 
-Whitelist policies may instead allow zero, self, or the same approved
+Allowlist policies may instead allow zero, self, or the same approved
 destination set used for `AssetReceiver`.
 
 ### Asset Sender / Clawback
@@ -691,8 +691,8 @@ When designing or reviewing a LogicSig TEAL policy:
 ## Bundled LogicSigs In APlane
 
 APlane bundles both signer-gated LogicSig providers and template library
-entries. New signer stores install the Falcon whitelist v1 template by default;
-the Ed25519 whitelist v1 is an optional import. Users should understand the
+entries. New signer stores install the Falcon allowlist v1 template by default;
+the Ed25519 allowlist v1 is an optional import. Users should understand the
 security model of each one before funding or relying on it.
 
 ### Signer-Gated Compiled Providers
@@ -753,7 +753,7 @@ and `aplane.corridor.v1`. These require the guarded signing assembly flow (a
 user component signature plus a sentry component signature). For the two plain
 guarded providers, the on-chain LogicSig does not restrict transaction shape
 once both signatures verify, so the sentry policy is the spending boundary.
-`aplane.corridor.v1` additionally embeds a recipient-corridor whitelist and a
+`aplane.corridor.v1` additionally embeds a recipient-corridor allowlist and a
 sentry-authorized rekey path in its LogicSig. See
 [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for the per-operation matrix
 and [ARCH_SENTRY.md](ARCH_SENTRY.md) for the guarded-signing model.
@@ -769,9 +769,9 @@ keystore before generation.
 These are signatureless once funded. If the TEAL permits a path, any network
 participant may be able to exercise it.
 
-##### `aplane.timed-whitelist.v1`
+##### `aplane.timed-allowlist.v1`
 
-- generic TEAL-only timed whitelist
+- generic TEAL-only timed allowlist
 - public once funded
 - strict fixed fee
 - no key registration path
@@ -782,11 +782,11 @@ path. It does not make the account ALGO-only: if the LogicSig account already
 holds an ASA, the normal asset-transfer path can send or close that ASA to one
 of the configured recipients after `unlock_round`. That distinction is
 intentional: third parties must not be able to opt the escrow into arbitrary new
-assets, but the timed whitelist applies to existing ASA holdings.
+assets, but the timed allowlist applies to existing ASA holdings.
 
-##### `aplane.whitelist.v1`
+##### `aplane.allowlist.v1`
 
-- generic receiver-whitelist style template
+- generic receiver-allowlist style template
 - public once funded
 - strict fixed fee
 - no key registration path
@@ -799,8 +799,8 @@ also be understood.
 Leaving `allowed_optin_assets` empty disables only the public ASA opt-in helper
 path. It does not make the account ALGO-only: if the LogicSig account already
 holds an ASA, the normal asset-transfer path can send or close that ASA to one
-of the whitelisted recipients. That distinction is intentional: third parties
-must not be able to opt the account into arbitrary new assets, but the whitelist
+of the allowlisted recipients. That distinction is intentional: third parties
+must not be able to opt the account into arbitrary new assets, but the allowlist
 applies to existing ASA holdings.
 
 ##### `aplane.htlc.v1`
@@ -859,12 +859,12 @@ restrict transaction type, recipient, amount, fee, rekey, ALGO close-out, ASA
 close-out, or clawback sender use. Treat it as an extra signer-gated condition
 unless additional TEAL is added for the intended spending policy.
 
-##### `aplane.falcon1024-whitelist.v2`
+##### `aplane.falcon1024-allowlist.v2`
 
-- Falcon signature-gated plus Merkle recipient whitelist condition
+- Falcon signature-gated plus Merkle recipient allowlist condition
 - more restrictive than a pure signer primitive, but signer-gated
 
-This template stores the public receiver whitelist in the encrypted key file
+This template stores the public receiver allowlist in the encrypted key file
 and commits the LogicSig to a fixed-depth Merkle root derived from that list.
 The root is built from unique address public keys sorted ascending, with leaves
 `sha256(0x00 || pubkey)`, padding to 65,536 leaves with `sha256(0x00)`, and
@@ -872,25 +872,25 @@ internal nodes `sha256(0x01 || min(left,right) || max(left,right))`. For a
 non-self destination, the signer generates the 512-byte proof and appends it to
 the LogicSig arguments; callers do not pass `arg:proof`.
 
-Its TEAL applies the whitelist proof only to destination-like fields on ALGO
+Its TEAL applies the allowlist proof only to destination-like fields on ALGO
 payments and ASA transfers. Payment and asset receivers may be the sender
 itself without a proof. Close destinations must be zero or the just-validated
 receiver. Other transaction types, and clawback source selection through
 `AssetSender`, remain governed by the base Falcon signature and signer policy.
 
-##### `aplane.falcon1024-whitelist.v1`
+##### `aplane.falcon1024-allowlist.v1`
 
-- Falcon signature-gated plus recipient whitelist condition
+- Falcon signature-gated plus recipient allowlist condition
 - more restrictive than a pure signer primitive, but signer-gated
 
 This template can be a good fit when users want both signer-side approval and
-an on-chain whitelist constraint. The bundled template accepts 1-30
-recipient addresses. Its TEAL applies the whitelist only to
+an on-chain allowlist constraint. The bundled template accepts 1-30
+recipient addresses. Its TEAL applies the allowlist only to
 destination-like fields on ALGO payments and ASA transfers: `Receiver` and
 `CloseRemainderTo` for payments, and `AssetReceiver` and `AssetCloseTo` for ASA
 transfers. The sender itself is also allowed as a destination. Other transaction
 types, and clawback source selection through `AssetSender`, remain governed by
-the base Falcon signature and signer policy rather than additional whitelist
+the base Falcon signature and signer policy rather than additional allowlist
 TEAL.
 
 #### Ed25519-Backed Composed Templates
@@ -899,20 +899,20 @@ These are signer-gated templates built by combining Algorand Ed25519 signature
 verification with a YAML-defined TEAL suffix. Their YAML uses
 `template_type: composed` and `base_key_type: aplane.ed25519.v1`.
 
-##### `aplane.ed25519-whitelist.v1`
+##### `aplane.ed25519-allowlist.v1`
 
-- Ed25519 signature-gated plus recipient whitelist condition
+- Ed25519 signature-gated plus recipient allowlist condition
 - bundled as an optional template; import to install and enable it for an identity
 - more restrictive than a pure signer primitive, but signer-gated
 
-This template is the Ed25519 counterpart to the fixed-list Falcon whitelist.
+This template is the Ed25519 counterpart to the fixed-list Falcon allowlist.
 The bundled template accepts 1-30 recipient addresses. Its TEAL applies the
-whitelist only to destination-like fields on ALGO payments and ASA transfers:
+allowlist only to destination-like fields on ALGO payments and ASA transfers:
 `Receiver` and `CloseRemainderTo` for payments, and `AssetReceiver` and
 `AssetCloseTo` for ASA transfers. The sender itself is also allowed as a
 destination. Other transaction types, and clawback source selection through
 `AssetSender`, remain governed by the base Ed25519 signature and signer policy
-rather than additional whitelist TEAL.
+rather than additional allowlist TEAL.
 
 ## How To Use Bundled LogicSigs Safely
 

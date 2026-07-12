@@ -14,7 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
@@ -359,16 +359,16 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 	return signedTxnBytes, keyType, nil
 }
 
-const falcon1024WhitelistV2KeyType = "aplane.falcon1024-whitelist.v2"
+const falcon1024AllowlistV2KeyType = "aplane.falcon1024-allowlist.v2"
 
 func signerGeneratedDSAArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial) ([][]byte, *ServiceError) {
-	if keyMaterial == nil || keyMaterial.Type != falcon1024WhitelistV2KeyType {
+	if keyMaterial == nil || keyMaterial.Type != falcon1024AllowlistV2KeyType {
 		return nil, nil
 	}
 
 	recipients := keyMaterial.Parameters["recipients"]
 	if recipients == "" {
-		return nil, internal("falcon1024-whitelist.v2 key file missing recipients parameter")
+		return nil, internal("falcon1024-allowlist.v2 key file missing recipients parameter")
 	}
 
 	var receiver types.Address
@@ -384,9 +384,9 @@ func signerGeneratedDSAArgs(txn types.Transaction, keyMaterial *coresigning.KeyM
 		return nil, nil
 	}
 
-	proof, err := merklewhitelist.ProofForAddressParam(recipients, receiver)
+	proof, err := merkleallowlist.ProofForAddressParam(recipients, receiver)
 	if err != nil {
-		return nil, badRequest(fmt.Sprintf("falcon1024-whitelist.v2 proof generation failed: %v", err))
+		return nil, badRequest(fmt.Sprintf("falcon1024-allowlist.v2 proof generation failed: %v", err))
 	}
 	return [][]byte{proof}, nil
 }

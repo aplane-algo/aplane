@@ -64,8 +64,8 @@ Canonical forms:
 - APlane-defined LogicSig, template, and compiled-provider key types use
   `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
   decimal version, for example `aplane.falcon1024.v1`,
-  `aplane.htlc.v1`, `aplane.falcon1024-whitelist.v1`, and
-  `aplane.ed25519-whitelist.v1`
+  `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, and
+  `aplane.ed25519-allowlist.v1`
 - sentry keys use the same canonical key-type identifier contract,
   for example `aplane.sentry-ed25519.v1` and
   `aplane.sentry-falcon1024.v1`; they are component-signing keys selected by
@@ -88,14 +88,14 @@ namespaces are not inferred or elided.
 Terminology:
 
 - `family` is the middle segment of `publisher.family.vN`. It groups versions
-  of one key type or template policy, for example `aplane.whitelist.v1` and
-  `aplane.whitelist.v2`.
+  of one key type or template policy, for example `aplane.allowlist.v1` and
+  `aplane.allowlist.v2`.
 - `base_key_type` is the field composed DSA templates use to point at their
   private signing primitive. For example,
   `base_key_type: aplane.falcon1024.v1` means the template's DSA signature is
   produced and packed with Falcon-1024, while the account/template identity is
   still named by its own `key_type` and `family` segment (e.g.
-  `family: falcon1024-whitelist`).
+  `family: falcon1024-allowlist`).
 - `base_key_type` is not a universal owner or routing key. Account semantics,
   creation parameters, TEAL bytecode, metadata, and guarded assembly remain
   owned by the full `key_type` unless a specific contract says otherwise.
@@ -690,7 +690,7 @@ The signer-data path is defined by `internal/storepaths.Paths.TemplateLibraryDir
 installer re-runs, and test setup flows may refresh this directory from the repository or packaged copy. Files in this
 directory are reference material and are not active key types by themselves.
 New signer-store initialization installs and enables
-`aplane.falcon1024-whitelist.v1` from the bundled library source into the
+`aplane.falcon1024-allowlist.v1` from the bundled library source into the
 identity-local encrypted template store; sentry-role initialization skips this
 signer account key type. Other bundled templates remain install sources until
 explicitly imported/enabled for an identity.
@@ -701,14 +701,14 @@ The bundled templates that ship under `library/templates/` are:
 |----------|---------|
 | `aplane.falcon1024-hashlock.v1` | Falcon-1024 signature with SHA256 hash verification |
 | `aplane.falcon1024-timelock.v1` | Falcon-1024 signature gated by round-based timelock |
-| `aplane.falcon1024-whitelist.v1` | Falcon-1024 signature restricted to a fixed set of receiver addresses (default-installed) |
-| `aplane.falcon1024-whitelist.v2` | Falcon-1024 whitelist using a fixed-depth Merkle root with signer-generated proofs |
-| `aplane.ed25519-whitelist.v1` | Ed25519 signature restricted to a fixed set of receiver addresses |
+| `aplane.falcon1024-allowlist.v1` | Falcon-1024 signature restricted to a fixed set of receiver addresses (default-installed) |
+| `aplane.falcon1024-allowlist.v2` | Falcon-1024 allowlist using a fixed-depth Merkle root with signer-generated proofs |
+| `aplane.ed25519-allowlist.v1` | Ed25519 signature restricted to a fixed set of receiver addresses |
 | `aplane.htlc.v1` | Hash time-locked contract |
-| `aplane.timed-whitelist.v1` | Restrict funds to approved recipients after a specified round |
-| `aplane.whitelist.v1` | Restrict outgoing transfers to a fixed set of recipient addresses |
+| `aplane.timed-allowlist.v1` | Restrict funds to approved recipients after a specified round |
+| `aplane.allowlist.v1` | Restrict outgoing transfers to a fixed set of recipient addresses |
 
-Only `aplane.falcon1024-whitelist.v1` is installed and enabled by default for
+Only `aplane.falcon1024-allowlist.v1` is installed and enabled by default for
 new signer stores; the rest are available to install from the library.
 
 `apadmin` presents this mixed source as the KeyType Library. It lists the signer-data library over the

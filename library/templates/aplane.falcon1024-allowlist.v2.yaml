@@ -4,14 +4,14 @@ template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
 publisher: aplane
-family: falcon1024-whitelist
+family: falcon1024-allowlist
 version: 2
-display_name: "Falcon-1024 Whitelist v2"
-description: "Whitelist implementation based on a fixed-depth Merkle root with signer-generated 512-byte proofs."
+display_name: "Falcon-1024 Allowlist v2"
+description: "Allowlist implementation based on a fixed-depth Merkle root with signer-generated 512-byte proofs."
 
 parameters:
   - name: recipients
-    label: "Whitelisted Addresses"
+    label: "Allowlisted Addresses"
     description: "Comma-separated Algorand addresses that may receive funds from this Falcon LogicSig. The signer stores this public list in the key file and generates Merkle proofs automatically when signing."
     type: address[]
     required: true
@@ -27,7 +27,7 @@ template_variables:
     constant: byte
 
 teal: |
-  // Falcon-1024 Whitelist v2 suffix (runs after base Falcon verification;
+  // Falcon-1024 Allowlist v2 suffix (runs after base Falcon verification;
   // arg 0 is the Falcon signature, arg 1 is the signer-generated Merkle
   // inclusion proof).
   //

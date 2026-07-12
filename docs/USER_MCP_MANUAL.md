@@ -179,12 +179,12 @@ Everything except `ed25519` is LogicSig-backed.
 | `aplane.falcon1024.v1` | dsa_lsig | **default-enabled** (post-quantum default) |
 | `aplane.falcon1024_ed25519.v1` | dsa_lsig (dual Falcon+Ed25519) | library-visible |
 | `aplane.ecdsak1.v1` | dsa_lsig (secp256k1) | library-visible |
-| `aplane.falcon1024-whitelist.v1` | dsa_lsig (composed) | bundled, installed+enabled on new identities |
-| `aplane.ed25519-whitelist.v1` | dsa_lsig (composed) | optional template |
+| `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | bundled, installed+enabled on new identities |
+| `aplane.ed25519-allowlist.v1` | dsa_lsig (composed) | optional template |
 | `aplane.falcon1024-hashlock.v1` | dsa_lsig (composed) | optional template |
 | `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | optional template |
-| `aplane.whitelist.v1` | generic_lsig | optional template |
-| `aplane.timed-whitelist.v1` | generic_lsig | optional template |
+| `aplane.allowlist.v1` | generic_lsig | optional template |
+| `aplane.timed-allowlist.v1` | generic_lsig | optional template |
 | `aplane.htlc.v1` | generic_lsig | optional template |
 | `aplane.sentry-ed25519.v1`, `aplane.sentry-falcon1024.v1` | sentry component keys | sentry nodes only |
 
@@ -209,7 +209,7 @@ never breaks an existing key's ability to sign.
 ### Creation params vs runtime args
 
 - **Creation params** are baked into the address at generation time (e.g. a
-  whitelist's `recipients`, a timelock's unlock round, a hashlock's hash). Pass
+  allowlist's `recipients`, a timelock's unlock round, a hashlock's hash). Pass
   them to `generate`/`generateKey`. Address-list and uint-list params are
   canonicalized (sorted) before the address is derived.
 - **Runtime args** are supplied per transaction at signing time (e.g. a hashlock
@@ -217,20 +217,20 @@ never breaks an existing key's ability to sign.
 
 ### Restricted variants (the safety is in the program)
 
-- `aplane.falcon1024-whitelist.v1` — pay/asset-transfer receivers must be self
-  or whitelisted; other transaction types keep the full Falcon surface.
-- `aplane.ed25519-whitelist.v1` — pay/asset-transfer receivers must be self or
-  whitelisted; other transaction types keep the base Ed25519 LogicSig surface.
-- `aplane.whitelist.v1` (generic) — pay/transfer only to whitelisted recipients;
+- `aplane.falcon1024-allowlist.v1` — pay/asset-transfer receivers must be self
+  or allowlisted; other transaction types keep the full Falcon surface.
+- `aplane.ed25519-allowlist.v1` — pay/asset-transfer receivers must be self or
+  allowlisted; other transaction types keep the base Ed25519 LogicSig surface.
+- `aplane.allowlist.v1` (generic) — pay/transfer only to allowlisted recipients;
   no clawback/config/freeze/app/keyreg/rekey.
-- `aplane.timed-whitelist.v1` — whitelist rules plus `FirstValid >= unlock_round`.
+- `aplane.timed-allowlist.v1` — allowlist rules plus `FirstValid >= unlock_round`.
 - `aplane.htlc.v1` — claim with preimage before timeout, refund after.
 - `*-hashlock` / `*-timelock` — base Falcon surface gated by a preimage / unlock
   round.
 
 ### Corridors
 
-A **corridor** is a whitelisted Falcon key: an `aplane.falcon1024-whitelist.v1`
+A **corridor** is an allowlisted Falcon key: an `aplane.falcon1024-allowlist.v1`
 LogicSig whose spends are restricted to a fixed, compiled set of destination
 addresses. Because each account's allowed destinations are just a list,
 corridors compose into **graphs** — a directed edge A→B exists wherever B is in
@@ -240,7 +240,7 @@ them.
 You create one by **applying a corridor LogicSig to a regular account**: rekey an
 ordinary account so the corridor program becomes its effective signer (then run
 `rekey refresh`). The address is unchanged; only its permitted transfer paths are
-now constrained — value can never leave except to a whitelisted destination, even
+now constrained — value can never leave except to an allowlisted destination, even
 if the spend key is stolen.
 
 > Full detail: [WP_CORRIDORS.md](WP_CORRIDORS.md).

@@ -86,7 +86,7 @@ func TestTemplateLibraryDescriptionIsSingleLineEllipsized(t *testing.T) {
 
 func TestDisabledInstalledTemplateStatusIsDisabled(t *testing.T) {
 	tmpl := protocol.LibraryTemplateInfo{
-		KeyType:      "aplane.falcon1024-whitelist.v1",
+		KeyType:      "aplane.falcon1024-allowlist.v1",
 		TemplateType: "falcon",
 		Installed:    true,
 		Enabled:      false,
@@ -130,9 +130,9 @@ func TestTemplateLibraryViewKeyOpensDetailsViewerForYAMLEntry(t *testing.T) {
 	m := Model{
 		viewState: ViewTemplateLibrary,
 		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.whitelist.v1",
+			KeyType:      "aplane.allowlist.v1",
 			TemplateType: "generic",
-			SourcePath:   "/tmp/keystore/library/templates/aplane.whitelist.v1.yaml",
+			SourcePath:   "/tmp/keystore/library/templates/aplane.allowlist.v1.yaml",
 		}}},
 	}
 
@@ -144,8 +144,8 @@ func TestTemplateLibraryViewKeyOpensDetailsViewerForYAMLEntry(t *testing.T) {
 	if !got.library.detailsLoading {
 		t.Fatal("libraryDetailsLoading = false after t on YAML entry, want true")
 	}
-	if got.library.detailsKeyType != "aplane.whitelist.v1" || got.library.detailsTemplateType != "generic" {
-		t.Fatalf("libraryDetailsKeyType/TemplateType = %q/%q, want aplane.whitelist.v1/generic", got.library.detailsKeyType, got.library.detailsTemplateType)
+	if got.library.detailsKeyType != "aplane.allowlist.v1" || got.library.detailsTemplateType != "generic" {
+		t.Fatalf("libraryDetailsKeyType/TemplateType = %q/%q, want aplane.allowlist.v1/generic", got.library.detailsKeyType, got.library.detailsTemplateType)
 	}
 	closed, _ := got.handleLibraryTemplateDetailsKeys(tea.KeyMsg{Type: tea.KeyEsc})
 	if closed.(Model).viewState != ViewTemplateLibrary {
@@ -210,14 +210,14 @@ func TestLibraryDetailsViewerRendersSourceIntegrityMetadata(t *testing.T) {
 		viewState: ViewLibraryTemplateDetails,
 		width:     100,
 		height:    30,
-		library:   libraryState{detailsLoading: true, detailsKeyType: "aplane.whitelist.v1", detailsTemplateType: "generic"},
+		library:   libraryState{detailsLoading: true, detailsKeyType: "aplane.allowlist.v1", detailsTemplateType: "generic"},
 	}
 
 	next, _ := m.Update(ShowLibraryTemplateResultMsg{
 		Success:       true,
-		KeyType:       "aplane.whitelist.v1",
+		KeyType:       "aplane.allowlist.v1",
 		TemplateType:  "generic",
-		SourcePath:    "/tmp/keystore/library/templates/aplane.whitelist.v1.yaml",
+		SourcePath:    "/tmp/keystore/library/templates/aplane.allowlist.v1.yaml",
 		SourceSHA256:  "0123456789abcdef",
 		SourceModTime: 1778600000,
 		TemplateYAML:  []byte("schema_version: 1\n"),
@@ -228,7 +228,7 @@ func TestLibraryDetailsViewerRendersSourceIntegrityMetadata(t *testing.T) {
 	}
 
 	rendered := got.renderLibraryTemplateDetails()
-	for _, want := range []string{"Library YAML: aplane.whitelist.v1", "Publisher: aplane", "SHA-256: 0123456789abcdef", "Modified: 2026-05-12 15:33:20 UTC"} {
+	for _, want := range []string{"Library YAML: aplane.allowlist.v1", "Publisher: aplane", "SHA-256: 0123456789abcdef", "Modified: 2026-05-12 15:33:20 UTC"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered details missing %q:\n%s", want, rendered)
 		}
@@ -281,7 +281,7 @@ func TestUninstalledTemplateOpensEnableConfirmation(t *testing.T) {
 	m := Model{
 		viewState: ViewTemplateLibrary,
 		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.timed-whitelist.v1",
+			KeyType:      "aplane.timed-allowlist.v1",
 			TemplateType: "generic",
 			Installed:    false,
 			Enabled:      false,
@@ -294,7 +294,7 @@ func TestUninstalledTemplateOpensEnableConfirmation(t *testing.T) {
 		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.library.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Enable Key Type", "Key type:  aplane.timed-whitelist.v1", "Publisher: aplane", "Source:    generic", "ENABLE"} {
+	for _, want := range []string{"Enable Key Type", "Key type:  aplane.timed-allowlist.v1", "Publisher: aplane", "Source:    generic", "ENABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -338,11 +338,11 @@ func TestTemplateInstallResultUsesEnabledStatus(t *testing.T) {
 
 	next, _ := m.Update(InstallLibraryTemplateResultMsg{
 		Success:      true,
-		KeyType:      "aplane.timed-whitelist.v1",
+		KeyType:      "aplane.timed-allowlist.v1",
 		TemplateType: "generic",
 	})
 	got := next.(Model)
-	if got.library.installStatus != "aplane.timed-whitelist.v1 Enabled" {
+	if got.library.installStatus != "aplane.timed-allowlist.v1 Enabled" {
 		t.Fatalf("templateInstallStatus = %q, want Enabled status", got.library.installStatus)
 	}
 }
@@ -389,7 +389,7 @@ func TestInstalledEnabledTemplateOpensDisableConfirmation(t *testing.T) {
 	m := Model{
 		viewState: ViewTemplateLibrary,
 		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.timed-whitelist.v1",
+			KeyType:      "aplane.timed-allowlist.v1",
 			TemplateType: "generic",
 			Installed:    true,
 			Enabled:      true,
@@ -402,7 +402,7 @@ func TestInstalledEnabledTemplateOpensDisableConfirmation(t *testing.T) {
 		t.Fatalf("enter moved to %v pending=%#v, want disable confirm", got.viewState, got.library.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Disable Key Type", "Key type:  aplane.timed-whitelist.v1", "Publisher: aplane", "Source:    generic", "DISABLE"} {
+	for _, want := range []string{"Disable Key Type", "Key type:  aplane.timed-allowlist.v1", "Publisher: aplane", "Source:    generic", "DISABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -413,7 +413,7 @@ func TestInstalledDisabledTemplateOpensEnableConfirmation(t *testing.T) {
 	m := Model{
 		viewState: ViewTemplateLibrary,
 		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.falcon1024-whitelist.v1",
+			KeyType:      "aplane.falcon1024-allowlist.v1",
 			TemplateType: "falcon",
 			Installed:    true,
 			Enabled:      false,
@@ -426,7 +426,7 @@ func TestInstalledDisabledTemplateOpensEnableConfirmation(t *testing.T) {
 		t.Fatalf("enter moved to %v pending=%#v, want enable confirm", got.viewState, got.library.pendingTemplate)
 	}
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Enable Key Type", "Key type:  aplane.falcon1024-whitelist.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {
+	for _, want := range []string{"Enable Key Type", "Key type:  aplane.falcon1024-allowlist.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}

@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/lsig"
 )
 
-func TestInstallForNewIdentityInstallsDefaultWhitelistTemplatesForSigner(t *testing.T) {
+func TestInstallForNewIdentityInstallsDefaultAllowlistTemplatesForSigner(t *testing.T) {
 	lsig.RegisterClient()
 
 	paths := storepaths.NewPaths(t.TempDir())
@@ -29,7 +29,7 @@ func TestInstallForNewIdentityInstallsDefaultWhitelistTemplatesForSigner(t *test
 		t.Fatalf("InstallForNewIdentity() error = %v", err)
 	}
 
-	for _, keyType := range []string{Falcon1024WhitelistKeyType} {
+	for _, keyType := range []string{Falcon1024AllowlistKeyType} {
 		rec, ok, err := keytypestate.Get(paths, identityID, keyType)
 		if err != nil {
 			t.Fatalf("keytypestate.Get(%s) error = %v", keyType, err)
@@ -63,15 +63,15 @@ func TestInstallForNewIdentityInstallsDefaultWhitelistTemplatesForSigner(t *test
 		}
 	}
 
-	// Ed25519 whitelist is a bundled but optional template (like the generic
+	// Ed25519 allowlist is a bundled but optional template (like the generic
 	// templates); it must not be auto-installed or enabled for new identities.
-	if _, ok, err := keytypestate.Get(paths, identityID, Ed25519WhitelistKeyType); err != nil {
-		t.Fatalf("keytypestate.Get(%s) error = %v", Ed25519WhitelistKeyType, err)
+	if _, ok, err := keytypestate.Get(paths, identityID, Ed25519AllowlistKeyType); err != nil {
+		t.Fatalf("keytypestate.Get(%s) error = %v", Ed25519AllowlistKeyType, err)
 	} else if ok {
-		t.Fatalf("optional key type %s must not be default-enabled", Ed25519WhitelistKeyType)
+		t.Fatalf("optional key type %s must not be default-enabled", Ed25519AllowlistKeyType)
 	}
-	if templatestore.TemplateExistsForPaths(paths, identityID, Ed25519WhitelistKeyType, templatestore.TemplateTypeComposed) {
-		t.Fatalf("optional template %s must not be auto-installed", Ed25519WhitelistKeyType)
+	if templatestore.TemplateExistsForPaths(paths, identityID, Ed25519AllowlistKeyType, templatestore.TemplateTypeComposed) {
+		t.Fatalf("optional template %s must not be auto-installed", Ed25519AllowlistKeyType)
 	}
 }
 
@@ -83,7 +83,7 @@ func TestInstallForNewIdentitySkipsSentryRole(t *testing.T) {
 	if err := InstallForNewIdentity(paths, "default", noderole.RoleSentry, masterKey, nil); err != nil {
 		t.Fatalf("InstallForNewIdentity() error = %v", err)
 	}
-	if rec, ok, err := keytypestate.Get(paths, "default", Falcon1024WhitelistKeyType); err != nil {
+	if rec, ok, err := keytypestate.Get(paths, "default", Falcon1024AllowlistKeyType); err != nil {
 		t.Fatalf("keytypestate.Get() error = %v", err)
 	} else if ok {
 		t.Fatalf("sentry role installed signer default key type: %+v", rec)
@@ -103,7 +103,7 @@ func TestInstallForNewIdentityIsIdempotent(t *testing.T) {
 	if err := InstallForNewIdentity(paths, "default", noderole.RoleSigner, masterKey, nil); err != nil {
 		t.Fatalf("second InstallForNewIdentity() error = %v", err)
 	}
-	rec, ok, err := keytypestate.Get(paths, "default", Falcon1024WhitelistKeyType)
+	rec, ok, err := keytypestate.Get(paths, "default", Falcon1024AllowlistKeyType)
 	if err != nil {
 		t.Fatalf("keytypestate.Get() error = %v", err)
 	}

@@ -17,8 +17,8 @@ import (
 func TestBuildDetailsParameterLinesFormatsAddressList(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "whitelist-test-v1",
-		DisplayName: "Whitelist Test",
+		KeyType:     "allowlist-test-v1",
+		DisplayName: "Allowlist Test",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:  "recipients",
 			Label: "Recipients",
@@ -26,7 +26,7 @@ func TestBuildDetailsParameterLinesFormatsAddressList(t *testing.T) {
 		}},
 	}})
 
-	got := buildDetailsParameterLines("whitelist-test-v1", map[string]string{
+	got := buildDetailsParameterLines("allowlist-test-v1", map[string]string{
 		"recipients": "ADDR1,ADDR2,ADDR3",
 	})
 	want := []string{"Recipients:", "  ADDR1", "  ADDR2", "  ADDR3"}
@@ -60,8 +60,8 @@ func TestBuildDetailsParameterLinesGuardedShowsSentrySelector(t *testing.T) {
 func TestRenderKeyDetailsShowsAddressListOnePerLine(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "whitelist-test-v1",
-		DisplayName: "Whitelist Test",
+		KeyType:     "allowlist-test-v1",
+		DisplayName: "Allowlist Test",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:  "recipients",
 			Label: "Recipients",
@@ -69,7 +69,7 @@ func TestRenderKeyDetailsShowsAddressListOnePerLine(t *testing.T) {
 		}},
 	}})
 
-	rendered := Model{details: keyDetailsState{keyType: "whitelist-test-v1", parameters: map[string]string{
+	rendered := Model{details: keyDetailsState{keyType: "allowlist-test-v1", parameters: map[string]string{
 		"recipients": "ADDR1,ADDR2",
 	}}, height: 30,
 	}.renderKeyDetails()

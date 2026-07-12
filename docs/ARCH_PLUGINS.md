@@ -919,7 +919,7 @@ classes of plugin:
 | Plugin class | Examples | Mode used |
 |---|---|---|
 | **External / non-exportable custody** | HSM/KMS bridge, MPC or threshold-signature coordinator, hardware-wallet bridge | `presign-plan` (plugin signs its slot via the callback) |
-| **Smart-signature / composed-LogicSig auth** | multisig, whitelist, hashlock/HTLC escrows, atomic swaps, fee sponsors (paymaster: managed account pays, plugin LogicSig authorizes) | `presign-plan` (budget sized from `lsigSize`) |
+| **Smart-signature / composed-LogicSig auth** | multisig, allowlist, hashlock/HTLC escrows, atomic swaps, fee sponsors (paymaster: managed account pays, plugin LogicSig authorizes) | `presign-plan` (budget sized from `lsigSize`) |
 | **Counterparty / relayer flows** | RFQ or order-book fills (maker pre-signs, taker submits), gasless meta-transactions, signed-voucher redemption | `pregrouped-signed` (submit the counterparty-signed group verbatim) |
 | **Privacy / shielded pools** | mixers, confidential transfers, private voting | `presign-plan` (fund a shielded deposit) + `pregrouped-signed` (self-authorizing spend) |
 
@@ -927,7 +927,7 @@ The common thread is a plugin that **brings its own cryptography or signing mate
 composes it into transaction groups**, with apsigner retaining authority over its own
 slots. Notably, the `presign-plan` budget mechanism keys on each slot's *LogicSig size*,
 not on any key-type label — so it serves the entire composed-LogicSig family uniformly,
-including schemes that already exist as APlane key types (Falcon multisig, whitelist,
+including schemes that already exist as APlane key types (Falcon multisig, allowlist,
 guarded, composed DSAs), with no per-scheme code. If a plain key type later gains a
 native on-chain signature (so it no longer needs a LogicSig), it simply drops out of the
 budget-sizing path automatically; the flow does not change.

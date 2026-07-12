@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -269,7 +269,7 @@ func encodeValue(value, valueType string) (string, error) {
 		}
 		return "0x" + hex.EncodeToString(addr[:]), nil
 	case "address[]":
-		rootHex, err := merklewhitelist.RootHexFromRecipientsParam(value)
+		rootHex, err := merkleallowlist.RootHexFromRecipientsParam(value)
 		if err != nil {
 			return "", err
 		}

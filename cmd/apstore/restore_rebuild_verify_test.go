@@ -312,9 +312,9 @@ func TestRestoreTemplateRejectsConflictingDestinationTemplate(t *testing.T) {
 	paths := keystorePaths()
 	identityID := productIdentityID()
 	masterKey := bytes32(0x77)
-	keyType := "custom.whitelist.v1"
-	existingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\npublisher: custom\nfamily: whitelist\nversion: 1\ndisplay_name: Existing\ntemplate_type: generic\nteal: |\n  int 1\n")
-	backupTemplate := []byte("schema_version: 1\ntemplate_mode: generated\npublisher: custom\nfamily: whitelist\nversion: 1\ndisplay_name: Backup\ntemplate_type: generic\nteal: |\n  int 0\n")
+	keyType := "custom.allowlist.v1"
+	existingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Existing\ntemplate_type: generic\nteal: |\n  int 1\n")
+	backupTemplate := []byte("schema_version: 1\ntemplate_mode: generated\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Backup\ntemplate_type: generic\nteal: |\n  int 0\n")
 
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths(existing) error = %v", err)
@@ -345,16 +345,16 @@ func TestRestoreTemplateSavesLibraryDefinitionWhenNotInstalled(t *testing.T) {
 	dataDirectory = t.TempDir()
 	masterKey := bytes32(0x79)
 
-	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.whitelist.v1.yaml"))
+	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.allowlist.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.whitelist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.allowlist.v1.yaml) error = %v", err)
 	}
 
-	if err := restoreTemplate(templateYAML, "aplane.whitelist.v1", "generic", masterKey); err != nil {
+	if err := restoreTemplate(templateYAML, "aplane.allowlist.v1", "generic", masterKey); err != nil {
 		t.Fatalf("restoreTemplate() error = %v", err)
 	}
 
-	if !templatestore.TemplateExistsForPaths(keystorePaths(), productIdentityID(), "aplane.whitelist.v1", templatestore.TemplateTypeGeneric) {
+	if !templatestore.TemplateExistsForPaths(keystorePaths(), productIdentityID(), "aplane.allowlist.v1", templatestore.TemplateTypeGeneric) {
 		t.Fatal("expected optional template restore to save the library definition")
 	}
 }
@@ -386,16 +386,16 @@ func TestRestoreKeySkipsTemplateConflictForStandaloneKey(t *testing.T) {
 	paths := keystorePaths()
 	identityID := productIdentityID()
 	masterKey := bytes32(0x89)
-	keyType := "custom.whitelist.v1"
-	existingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: custom\nfamily: whitelist\nversion: 1\ndisplay_name: Existing Override\nteal: |\n  #pragma version 8\n  int 1\n")
-	backupTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: custom\nfamily: whitelist\nversion: 1\ndisplay_name: Backup Override\nteal: |\n  #pragma version 8\n  int 0\n")
+	keyType := "custom.allowlist.v1"
+	existingTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Existing Override\nteal: |\n  #pragma version 8\n  int 1\n")
+	backupTemplate := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: custom\nfamily: allowlist\nversion: 1\ndisplay_name: Backup Override\nteal: |\n  #pragma version 8\n  int 0\n")
 
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, existingTemplate, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths(existing) error = %v", err)
 	}
 	writeTemplateStateForApstoreTest(t, paths, identityID, keyType, templatestore.TemplateTypeGeneric, keytypestate.StateEnabled)
 
-	address, keyJSON := testWhitelistBackupBundle(t, keyType, backupTemplate)
+	address, keyJSON := testAllowlistBackupBundle(t, keyType, backupTemplate)
 	if err := writeStandaloneBackup(backupDir, address, keyJSON, []byte("export-passphrase")); err != nil {
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
@@ -490,13 +490,13 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	paths := keystorePaths()
 	identityID := productIdentityID()
 	masterKey := bytes32(0x8b)
-	keyType := "aplane.whitelist.v1"
+	keyType := "aplane.allowlist.v1"
 	bytecode := saltedLogicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
-	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.whitelist.v1.yaml"))
+	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.allowlist.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.whitelist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.allowlist.v1.yaml) error = %v", err)
 	}
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
@@ -628,13 +628,13 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	paths := keystorePaths()
 	identityID := productIdentityID()
 	masterKey := bytes32(0x8f)
-	keyType := "aplane.whitelist.v1"
+	keyType := "aplane.allowlist.v1"
 	bytecode := saltedLogicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
-	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.whitelist.v1.yaml"))
+	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.allowlist.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.whitelist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.allowlist.v1.yaml) error = %v", err)
 	}
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
@@ -665,7 +665,7 @@ func TestRestoreKeyRollsBackDisabledTemplateStateOnKeyWriteFailure(t *testing.T)
 	masterKey := bytes32(0x91)
 	keyType := "test.rollback-disabled-template.v1"
 	templateYAML := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: test\nfamily: rollback-disabled-template\nversion: 1\ndisplay_name: Rollback Disabled Template\nteal: |\n  #pragma version 8\n  int 1\n")
-	address, keyJSON := testWhitelistBackupBundle(t, keyType, templateYAML)
+	address, keyJSON := testAllowlistBackupBundle(t, keyType, templateYAML)
 
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
@@ -728,7 +728,7 @@ func TestRestoreKeyRollsBackTemplateInstallOnKeyWriteFailure(t *testing.T) {
 	masterKey := bytes32(0x90)
 	keyType := "test.rollback-template.v1"
 	templateYAML := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: test\nfamily: rollback-template\nversion: 1\ndisplay_name: Rollback Template\nteal: |\n  #pragma version 8\n  int 1\n")
-	address, keyJSON := testWhitelistBackupBundle(t, keyType, templateYAML)
+	address, keyJSON := testAllowlistBackupBundle(t, keyType, templateYAML)
 
 	destPath := keystorePaths().KeyFilePath(productIdentityID(), address)
 	if err := os.MkdirAll(destPath, 0o755); err != nil {
@@ -755,14 +755,14 @@ func TestRestoreKeyRollsBackTemplateInstallOnKeyWriteFailure(t *testing.T) {
 
 func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 	bytecode := saltedLogicSigBytecodeForTest()
-	keyJSON := canonicalGenericKeyJSONForApstore(t, "aplane.whitelist.v1", bytecode)
+	keyJSON := canonicalGenericKeyJSONForApstore(t, "aplane.allowlist.v1", bytecode)
 
 	keyType, address, hasLogicSigBytecode, err := restoreKeyMetadata(keyJSON)
 	if err != nil {
 		t.Fatalf("restoreKeyMetadata() error = %v", err)
 	}
-	if keyType != "aplane.whitelist.v1" {
-		t.Fatalf("restoreKeyMetadata() keyType = %q, want aplane.whitelist.v1", keyType)
+	if keyType != "aplane.allowlist.v1" {
+		t.Fatalf("restoreKeyMetadata() keyType = %q, want aplane.allowlist.v1", keyType)
 	}
 	if address != logicSigAddressForTestForBytes(t, bytecode) {
 		t.Fatalf("restoreKeyMetadata() address = %q, want %q", address, logicSigAddressForTestForBytes(t, bytecode))

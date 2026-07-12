@@ -18,7 +18,7 @@ Legend:
 - `Y`: allowed by the key type shape.
 - `N`: denied by the key type shape.
 - `C`: conditionally allowed by key-type parameters, runtime arguments,
-  timelocks, whitelists, or sentry transfer policy.
+  timelocks, allowlists, or sentry transfer policy.
 
 Signer policy, sentry policy, operator approval, transaction validity, network
 rules, fees, and account state can still reject a transaction that is marked
@@ -34,16 +34,16 @@ included as normal user-account operations.
 | `aplane.ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024_ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.ecdsak1.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| `aplane.falcon1024-whitelist.v1` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
-| `aplane.falcon1024-whitelist.v2` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
-| `aplane.ed25519-whitelist.v1` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
+| `aplane.falcon1024-allowlist.v1` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
+| `aplane.falcon1024-allowlist.v2` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
+| `aplane.ed25519-allowlist.v1` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-hashlock.v1` | C | C | C | C | C | C | C | C | C | C | C |
 | `aplane.falcon1024-timelock.v1` | C | C | C | C | C | C | C | C | C | C | C |
 | `aplane.falcon1024-sentry-ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-sentry-falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.corridor.v1` | C | C | C | Y | C | N | N | N | N | N | C |
-| `aplane.whitelist.v1` | C | C | C | C | C | N | N | N | N | N | N |
-| `aplane.timed-whitelist.v1` | C | C | C | C | C | N | N | N | N | N | N |
+| `aplane.allowlist.v1` | C | C | C | C | C | N | N | N | N | N | N |
+| `aplane.timed-allowlist.v1` | C | C | C | C | C | N | N | N | N | N | N |
 | `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
 
 ## Capability Columns
@@ -68,10 +68,10 @@ included as normal user-account operations.
   `aplane.falcon1024_ed25519.v1`, and `aplane.ecdsak1.v1` do not restrict
   transaction type or special transaction fields at the key-type layer. Local
   signer policy remains the safety boundary.
-- `aplane.falcon1024-whitelist.v1` and `aplane.ed25519-whitelist.v1`
+- `aplane.falcon1024-allowlist.v1` and `aplane.ed25519-allowlist.v1`
   restrict only `pay` and `axfer`
   destination fields. Payment receivers and asset receivers must be self or
-  whitelisted. Close destinations must be zero, self, or whitelisted. Other
+  allowlisted. Close destinations must be zero, self, or allowlisted. Other
   transaction types keep the base signature authorization surface.
   `AssetSender` is not denied by these templates, so clawback-shaped `axfer` is
   possible when destination checks pass.
@@ -79,7 +79,7 @@ included as normal user-account operations.
   but additionally requires the configured SHA256 preimage.
 - `aplane.falcon1024-timelock.v1` keeps the base Falcon authorization surface
   but additionally requires `FirstValid >= unlock_round`.
-- `aplane.falcon1024-whitelist.v2` restricts only `pay` and `axfer`
+- `aplane.falcon1024-allowlist.v2` restricts only `pay` and `axfer`
   destination fields. Payment receivers and asset receivers must be self or
   proven with a signer-generated 512-byte fixed-depth Merkle proof against the
   root derived from the key-file recipient list. Close destinations must be
@@ -106,11 +106,11 @@ included as normal user-account operations.
   rekey, and the sentry's off-chain rekey policy decides whether a specific
   sender → rekey-target edge is authorized before issuing the sentry component
   signature.
-- `aplane.whitelist.v1` allows `pay` and normal `axfer` only to configured
-  whitelisted recipients. Close destinations must be zero or whitelisted. ASA
+- `aplane.allowlist.v1` allows `pay` and normal `axfer` only to configured
+  allowlisted recipients. Close destinations must be zero or allowlisted. ASA
   opt-in is allowed only for configured `allowed_optin_assets`.
-- `aplane.timed-whitelist.v1` has the same destination and opt-in rules as
-  `aplane.whitelist.v1`, but normal spend paths additionally require
+- `aplane.timed-allowlist.v1` has the same destination and opt-in rules as
+  `aplane.allowlist.v1`, but normal spend paths additionally require
   `FirstValid >= unlock_round`. Approved ASA opt-in can happen before unlock.
 - `aplane.htlc.v1` allows claim paths to the configured recipient before
   timeout with the configured preimage, refund paths to the configured refund

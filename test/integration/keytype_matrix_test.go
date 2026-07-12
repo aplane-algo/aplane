@@ -101,15 +101,15 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			},
 		},
 		{
-			keyType: "aplane.whitelist.v1",
+			keyType: "aplane.allowlist.v1",
 			params:  map[string]string{"recipients": funder.GetAddress()},
 			negative: includedKeyTypeNegative{
-				name:     "non-whitelisted receiver",
+				name:     "non-allowlisted receiver",
 				receiver: integrationBurnAddress,
 			},
 		},
 		{
-			keyType: "aplane.timed-whitelist.v1",
+			keyType: "aplane.timed-allowlist.v1",
 			params: map[string]string{
 				"recipients":   funder.GetAddress(),
 				"unlock_round": fmt.Sprintf("%d", timelockRound),
@@ -121,18 +121,18 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			},
 		},
 		{
-			keyType: "aplane.falcon1024-whitelist.v1",
+			keyType: "aplane.falcon1024-allowlist.v1",
 			params:  map[string]string{"recipients": funder.GetAddress()},
 			negative: includedKeyTypeNegative{
-				name:     "non-whitelisted receiver",
+				name:     "non-allowlisted receiver",
 				receiver: integrationBurnAddress,
 			},
 		},
 		{
-			keyType: "aplane.ed25519-whitelist.v1",
+			keyType: "aplane.ed25519-allowlist.v1",
 			params:  map[string]string{"recipients": funder.GetAddress()},
 			negative: includedKeyTypeNegative{
-				name:     "non-whitelisted receiver",
+				name:     "non-allowlisted receiver",
 				receiver: integrationBurnAddress,
 			},
 		},
@@ -415,11 +415,11 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 	apstore := harness.NewApStoreHarness(t, signerDataDir)
 	templateFiles := []string{
 		"aplane.htlc.v1.yaml",
-		"aplane.whitelist.v1.yaml",
-		"aplane.timed-whitelist.v1.yaml",
-		"aplane.ed25519-whitelist.v1.yaml",
-		"aplane.falcon1024-whitelist.v1.yaml",
-		"aplane.falcon1024-whitelist.v2.yaml",
+		"aplane.allowlist.v1.yaml",
+		"aplane.timed-allowlist.v1.yaml",
+		"aplane.ed25519-allowlist.v1.yaml",
+		"aplane.falcon1024-allowlist.v1.yaml",
+		"aplane.falcon1024-allowlist.v2.yaml",
 		"aplane.falcon1024-hashlock.v1.yaml",
 		"aplane.falcon1024-timelock.v1.yaml",
 	}

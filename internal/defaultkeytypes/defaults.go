@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	Falcon1024WhitelistKeyType = "aplane.falcon1024-whitelist.v1"
-	Ed25519WhitelistKeyType    = "aplane.ed25519-whitelist.v1"
+	Falcon1024AllowlistKeyType = "aplane.falcon1024-allowlist.v1"
+	Ed25519AllowlistKeyType    = "aplane.ed25519-allowlist.v1"
 )
 
 type bundledTemplate struct {
@@ -28,8 +28,8 @@ type bundledTemplate struct {
 
 var signerDefaultTemplates = []bundledTemplate{
 	{
-		fileName:     Falcon1024WhitelistKeyType + ".yaml",
-		keyType:      Falcon1024WhitelistKeyType,
+		fileName:     Falcon1024AllowlistKeyType + ".yaml",
+		keyType:      Falcon1024AllowlistKeyType,
 		templateType: templatestore.TemplateTypeComposed,
 	},
 }

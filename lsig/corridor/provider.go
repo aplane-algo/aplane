@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -68,7 +68,7 @@ func (p *Provider) CreationParams() []lsigprovider.ParameterDef {
 			Type:        "address[]",
 			Required:    true,
 			MinItems:    1,
-			MaxItems:    merklewhitelist.MaxItems,
+			MaxItems:    merkleallowlist.MaxItems,
 			Placeholder: "Comma-separated Algorand addresses",
 		},
 		sentryaccount.SentryPublicKeyParam(
@@ -86,7 +86,7 @@ func (p *Provider) ValidateCreationParams(params map[string]string) error {
 	if err := generictemplate.ValidateParameterValues(normalized, p.CreationParams()); err != nil {
 		return err
 	}
-	if _, err := merklewhitelist.RootFromRecipientsParam(normalized[ParamRecipients]); err != nil {
+	if _, err := merkleallowlist.RootFromRecipientsParam(normalized[ParamRecipients]); err != nil {
 		return fmt.Errorf("%s: %w", ParamRecipients, err)
 	}
 	_, err = sentryaccount.DecodeSentryPublicKey(normalized[ParamSentryPublicKey], family.PublicKeySize)
@@ -146,7 +146,7 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 	if err != nil {
 		return "", err
 	}
-	root, err := merklewhitelist.RootFromRecipientsParam(normalized[ParamRecipients])
+	root, err := merkleallowlist.RootFromRecipientsParam(normalized[ParamRecipients])
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", ParamRecipients, err)
 	}
@@ -351,7 +351,7 @@ func (p *Provider) CompatibilityFingerprint() string {
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
 		BasePrimitive: lsigprovider.FingerprintBasePrimitive(p.BaseKeyType()),
 		SaltStyle:     string(lsigsalt.StylePushbytes),
-		MerkleDepth:   merklewhitelist.Depth,
+		MerkleDepth:   merkleallowlist.Depth,
 		MerkleArg:     "arg2",
 		RekeyPolicy:   "sentry_policy.rekey_policy",
 		Arg0:          "user_falcon1024_component_signature",
@@ -410,7 +410,7 @@ func corridorProofArg(txn types.Transaction, params map[string]string) ([]byte, 
 	if receiver == txn.Sender {
 		return nil, nil
 	}
-	return merklewhitelist.ProofForAddressParam(params[ParamRecipients], receiver)
+	return merkleallowlist.ProofForAddressParam(params[ParamRecipients], receiver)
 }
 
 func corridorRekeyProofArg(txn types.Transaction) ([]byte, error) {

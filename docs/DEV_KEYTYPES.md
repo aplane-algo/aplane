@@ -54,7 +54,7 @@ Terminology:
 
 - `family` is the middle segment of `publisher.family.vN`; in YAML templates
   it is the declared `family` field. A composed template has its own `family`
-  (e.g. `family: falcon1024-whitelist`) — that names the template's own
+  (e.g. `family: falcon1024-allowlist`) — that names the template's own
   version line, separate from whatever it signs with.
 - `base_key_type` is how a composed template names its private signing
   primitive, e.g. `base_key_type: aplane.falcon1024.v1` to produce and pack
@@ -140,7 +140,7 @@ Shipped YAML template sources live under the top-level `library/templates/`
 directory and are installed into an identity before use. Source-tree YAML files
 are install sources only; the runtime form is the encrypted identity-local
 `.template` file plus key type state record. New signer identities install and
-enable `aplane.falcon1024-whitelist.v1` during initialization.
+enable `aplane.falcon1024-allowlist.v1` during initialization.
 
 Go-defined key types:
 
@@ -168,7 +168,7 @@ default-enabled, while `aplane.falcon1024-sentry-ed25519.v1`,
 the current identity enables them from the library. `aplane.ed25519.v1` is the
 Ed25519 LogicSig DSA provider, distinct from the native `ed25519` signing key;
 it also remains the base provider for Ed25519-backed composed templates such as
-`aplane.ed25519-whitelist.v1`. See `docs/ARCH_KEYTYPE_AXES.md` for the exact
+`aplane.ed25519-allowlist.v1`. See `docs/ARCH_KEYTYPE_AXES.md` for the exact
 split between native `ed25519`, the `aplane.ed25519` LogicSig routing family,
 and the concrete `aplane.ed25519.v1` key type.
 Opt-in state records are plaintext identity-scoped metadata under
@@ -215,19 +215,19 @@ Bundled YAML templates, if installed:
 
 | Library key type | Behavior category | Install command | Runtime storage |
 |---|---|---|---|
-| `aplane.timed-whitelist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.timed-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.timed-whitelist.v1.{json,template}` |
-| `aplane.whitelist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.whitelist.v1.{json,template}` |
+| `aplane.timed-allowlist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.timed-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.timed-allowlist.v1.{json,template}` |
+| `aplane.allowlist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.allowlist.v1.{json,template}` |
 | `aplane.htlc.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.htlc.v1.yaml` | `identities/<identity>/keytypes/aplane.htlc.v1.{json,template}` |
-| `aplane.ed25519-whitelist.v1` | Composed DSA template | `apstore template import library/templates/aplane.ed25519-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.ed25519-whitelist.v1.{json,template}` |
-| `aplane.falcon1024-whitelist.v1` | Composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-whitelist.v1.{json,template}` |
-| `aplane.falcon1024-whitelist.v2` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-whitelist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-whitelist.v2.{json,template}` |
+| `aplane.ed25519-allowlist.v1` | Composed DSA template | `apstore template import library/templates/aplane.ed25519-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.ed25519-allowlist.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v1` | Composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v2` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
 | `aplane.falcon1024-hashlock.v1` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-hashlock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-hashlock.v1.{json,template}` |
 | `aplane.falcon1024-timelock.v1` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
 
 These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed into
 the active signer identity, enabled for that identity, and loaded by
-`apsigner`. New signer identities start with `aplane.falcon1024-whitelist.v1`
+`apsigner`. New signer identities start with `aplane.falcon1024-allowlist.v1`
 already installed and enabled; sentry-role identities do not. The `apadmin`
 KeyType Library lists plaintext library entries and also reports installed
 identity templates that do not have a matching library YAML source; those
@@ -305,8 +305,8 @@ Typical code areas:
 ### B. Generic LogicSig Template
 
 Examples:
-- `aplane.timed-whitelist.v1`
-- `aplane.whitelist.v1`
+- `aplane.timed-allowlist.v1`
+- `aplane.allowlist.v1`
 
 Characteristics:
 - TEAL-only authorization
@@ -317,7 +317,7 @@ Typical code areas:
 - `library/templates/*.yaml`, installed with `apstore template import`, or
 - `lsig/<template>/template.go` only for a true product built-in
 
-Reference implementations: `library/templates/aplane.timed-whitelist.v1.yaml`, `library/templates/aplane.whitelist.v1.yaml`, and `library/templates/aplane.htlc.v1.yaml`.
+Reference implementations: `library/templates/aplane.timed-allowlist.v1.yaml`, `library/templates/aplane.allowlist.v1.yaml`, and `library/templates/aplane.htlc.v1.yaml`.
 
 ### C. DSA LogicSig Provider
 
@@ -342,7 +342,7 @@ Reference implementations: `lsig/falcon1024/`, `lsig/falcon1024_ed25519/`, and `
 ### D. Composed DSA Template
 
 Examples:
-- `aplane.falcon1024-whitelist.v1`
+- `aplane.falcon1024-allowlist.v1`
 
 Characteristics:
 - DSA base plus additional TEAL constraints
@@ -528,7 +528,7 @@ unique key generation or signing behavior. A **shared-ops fallback** is allowed
 only when multiple key types share the same private-key operation and only the
 LogicSig derivation/TEAL differs: in that case, multiple keys may resolve to one
 entry in the ops map instead of each registering its own. For example, Falcon
-composed templates such as `aplane.falcon1024-whitelist.v1` may resolve through
+composed templates such as `aplane.falcon1024-allowlist.v1` may resolve through
 the shared-ops fallback to the `aplane.falcon1024.v1` ops entry because they
 share key generation and signing with it; the template changes params and TEAL,
 not the private-key algorithm.
@@ -885,9 +885,9 @@ Use this checklist for every new key type.
 
 ## Naming Checklist
 
-- [ ] Key type is versioned, e.g. `aplane.whitelist.v1`.
+- [ ] Key type is versioned, e.g. `aplane.allowlist.v1`.
 - [ ] Publisher is a stable lowercase namespace owner, e.g. `aplane`.
-- [ ] Family is stable and lowercase, e.g. `whitelist`.
+- [ ] Family is stable and lowercase, e.g. `allowlist`.
 - [ ] Display name is concise and operator-readable.
 - [ ] Description is short and accurate.
 
@@ -981,7 +981,7 @@ Supported list types:
 ## List Expansion Checklist
 
 Use this only if the template needs repeated checks such as a receiver
-whitelist or approved ASA opt-in IDs.
+allowlist or approved ASA opt-in IDs.
 
 - [ ] Use `address[]` or `uint64[]` only
 - [ ] Use `{{range @name}} ... {{.}} ... {{end}}`

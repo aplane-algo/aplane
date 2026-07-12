@@ -13,7 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
-	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 
@@ -378,7 +378,7 @@ func IsGenericKey(category string) bool {
 	return category == CategoryGenericLsig
 }
 
-const falcon1024WhitelistV2KeyType = "aplane.falcon1024-whitelist.v2"
+const falcon1024AllowlistV2KeyType = "aplane.falcon1024-allowlist.v2"
 
 func dsaLogicSigArgBudgetForKey(keyType, baseKeyType string) int {
 	return cryptoSignatureSizeForKey(keyType, baseKeyType) + signerGeneratedDSAArgSizeForKey(keyType)
@@ -396,8 +396,8 @@ func cryptoSignatureSizeForKey(keyType, baseKeyType string) int {
 
 func signerGeneratedDSAArgSizeForKey(keyType string) int {
 	switch strings.ToLower(strings.TrimSpace(keyType)) {
-	case falcon1024WhitelistV2KeyType, keytypes.CorridorV1:
-		return merklewhitelist.ProofSize
+	case falcon1024AllowlistV2KeyType, keytypes.CorridorV1:
+		return merkleallowlist.ProofSize
 	default:
 		return 0
 	}

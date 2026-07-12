@@ -122,11 +122,11 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 			expectedTemplateType:  templatestore.TemplateTypeGeneric,
 			expectBundledTemplate: true,
 			prepareSource: func(t *testing.T, sourceDataDir string, _ *harness.ApStoreHarness) (string, map[string]string) {
-				installWhitelistTemplate(t, sourceDataDir)
-				return "aplane.whitelist.v1", map[string]string{"recipients": integrationBurnAddress}
+				installAllowlistTemplate(t, sourceDataDir)
+				return "aplane.allowlist.v1", map[string]string{"recipients": integrationBurnAddress}
 			},
 			prepareDestination: func(t *testing.T, destDataDir string) {
-				syncTemplateLibraryFile(t, destDataDir, "aplane.whitelist.v1.yaml")
+				syncTemplateLibraryFile(t, destDataDir, "aplane.allowlist.v1.yaml")
 			},
 			buildSignRequest: func(t *testing.T, address string) signerapi.SignRequest {
 				return signerapi.SignRequest{
@@ -146,11 +146,11 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 			expectedTemplateType:  templatestore.TemplateTypeComposed,
 			expectBundledTemplate: true,
 			prepareSource: func(t *testing.T, sourceDataDir string, _ *harness.ApStoreHarness) (string, map[string]string) {
-				installFalconWhitelistTemplate(t, sourceDataDir)
-				return "aplane.falcon1024-whitelist.v1", map[string]string{"recipients": integrationBurnAddress}
+				installFalconAllowlistTemplate(t, sourceDataDir)
+				return "aplane.falcon1024-allowlist.v1", map[string]string{"recipients": integrationBurnAddress}
 			},
 			prepareDestination: func(t *testing.T, destDataDir string) {
-				syncTemplateLibraryFile(t, destDataDir, "aplane.falcon1024-whitelist.v1.yaml")
+				syncTemplateLibraryFile(t, destDataDir, "aplane.falcon1024-allowlist.v1.yaml")
 			},
 			buildSignRequest: func(t *testing.T, address string) signerapi.SignRequest {
 				return signerapi.SignRequest{
@@ -172,7 +172,7 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 			prepareSource: func(t *testing.T, sourceDataDir string, apstore *harness.ApStoreHarness) (string, map[string]string) {
 				family := fmt.Sprintf("backup-portability-%d", time.Now().UnixNano())
 				keyType := integrationTemplateKeyType(family)
-				templatePath := filepath.Join(t.TempDir(), "custom-whitelist.yaml")
+				templatePath := filepath.Join(t.TempDir(), "custom-allowlist.yaml")
 				templateYAML := fmt.Sprintf(`schema_version: 1
 derivation_version: 2
 template_type: generic
@@ -180,8 +180,8 @@ template_mode: generated
 publisher: %s
 family: %s
 version: 1
-display_name: "Backup Portability Custom Whitelist"
-description: "Custom whitelist template used by backup portability integration tests"
+display_name: "Backup Portability Custom Allowlist"
+description: "Custom allowlist template used by backup portability integration tests"
 
 parameters:
   - name: recipients
@@ -189,7 +189,7 @@ parameters:
     required: true
     min_items: 1
     max_items: 30
-    label: "Whitelisted Addresses"
+    label: "Allowlisted Addresses"
     description: "Comma-separated Algorand addresses that may receive funds from this LogicSig"
 
 teal: |
@@ -258,7 +258,7 @@ teal: |
 			prepareSource: func(t *testing.T, sourceDataDir string, apstore *harness.ApStoreHarness) (string, map[string]string) {
 				family := fmt.Sprintf("falcon1024-backup-portability-%d", time.Now().UnixNano())
 				keyType := integrationTemplateKeyType(family)
-				templatePath := filepath.Join(t.TempDir(), "custom-composed-whitelist.yaml")
+				templatePath := filepath.Join(t.TempDir(), "custom-composed-allowlist.yaml")
 				templateYAML := fmt.Sprintf(`schema_version: 1
 derivation_version: 2
 template_type: composed
@@ -267,8 +267,8 @@ template_mode: generated
 publisher: %s
 family: %s
 version: 1
-display_name: "Backup Portability Custom Falcon Whitelist"
-description: "Custom Falcon whitelist template used by backup portability integration tests"
+display_name: "Backup Portability Custom Falcon Allowlist"
+description: "Custom Falcon allowlist template used by backup portability integration tests"
 
 parameters:
   - name: recipients
@@ -276,7 +276,7 @@ parameters:
     required: true
     min_items: 1
     max_items: 30
-    label: "Whitelisted Addresses"
+    label: "Allowlisted Addresses"
     description: "Comma-separated Algorand addresses that may receive funds from this Falcon LogicSig"
 
 teal: |
@@ -291,7 +291,7 @@ teal: |
   assert
 
   txn Receiver
-  callsub is_whitelisted
+  callsub is_allowlisted
   assert
 
   txn CloseRemainderTo
@@ -299,21 +299,21 @@ teal: |
   ==
   bnz end_checks
   txn CloseRemainderTo
-  callsub is_whitelisted
+  callsub is_allowlisted
   assert
 
-  is_whitelisted:
+  is_allowlisted:
       {{range @recipients}}
       dup
       byte {{.}}
       ==
-      bnz whitelisted
+      bnz allowlisted
       {{end}}
       pop
       int 0
       retsub
 
-  whitelisted:
+  allowlisted:
       pop
       int 1
       retsub
@@ -509,7 +509,7 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 	lockOnDisconnect := false
 	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-	installWhitelistTemplate(t, sourceClone.SignerDataDir)
+	installAllowlistTemplate(t, sourceClone.SignerDataDir)
 
 	sourceSigner := harness.NewSignerHarness(t)
 	if err := sourceSigner.Start(); err != nil {
@@ -525,22 +525,22 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 
 	sourceToken := readSignerToken(t, sourceSigner)
 	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
-	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.whitelist.v1", map[string]string{"recipients": integrationBurnAddress})
+	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.allowlist.v1", map[string]string{"recipients": integrationBurnAddress})
 
 	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
 	archivePath := mustCreateBackupArchive(t, sourceApstore, address, storePassphrase)
-	conflictingTemplatePath, err := filepath.Abs(filepath.Join("..", "..", "library", "templates", "aplane.whitelist.v1.yaml"))
+	conflictingTemplatePath, err := filepath.Abs(filepath.Join("..", "..", "library", "templates", "aplane.allowlist.v1.yaml"))
 	if err != nil {
-		t.Fatalf("failed to resolve whitelist template path: %v", err)
+		t.Fatalf("failed to resolve allowlist template path: %v", err)
 	}
 	conflictingTemplateYAML, err := os.ReadFile(conflictingTemplatePath)
 	if err != nil {
-		t.Fatalf("failed to read whitelist template: %v", err)
+		t.Fatalf("failed to read allowlist template: %v", err)
 	}
 	conflictingTemplateYAML = bytes.Replace(conflictingTemplateYAML, []byte("    max_items: 30"), []byte("    max_items: 29"), 1)
 	if !bytes.Contains(conflictingTemplateYAML, []byte("    max_items: 29")) {
-		t.Fatal("failed to create conflicting whitelist template fixture")
+		t.Fatal("failed to create conflicting allowlist template fixture")
 	}
 	tamperBackupBundleTemplateInArchive(t, archivePath, address, storePassphrase, func(bundle map[string]any) {
 		bundle["template_yaml"] = string(conflictingTemplateYAML)
@@ -548,7 +548,7 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 
 	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	installWhitelistTemplate(t, destClone.SignerDataDir)
+	installAllowlistTemplate(t, destClone.SignerDataDir)
 	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
 	if destStorePassphrase != storePassphrase {
 		t.Fatalf("test requires identical source/destination store passphrases, got %q vs %q", storePassphrase, destStorePassphrase)
@@ -567,7 +567,7 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 	if _, statErr := os.Stat(destPaths.KeyFilePath(auth.DefaultIdentityID, address)); statErr != nil {
 		t.Fatalf("expected restored key file despite template conflict, got stat err=%v", statErr)
 	}
-	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.whitelist.v1", templatestore.TemplateTypeGeneric) {
+	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.allowlist.v1", templatestore.TemplateTypeGeneric) {
 		t.Fatal("expected destination template file to remain after template conflict")
 	}
 }
@@ -810,21 +810,21 @@ teal: |
   assert
 
   txn Receiver
-  callsub is_whitelisted
+  callsub is_allowlisted
   assert
 
-  is_whitelisted:
+  is_allowlisted:
       {{range @recipients}}
       dup
       byte {{.}}
       ==
-      bnz whitelisted
+      bnz allowlisted
       {{end}}
       pop
       int 0
       retsub
 
-  whitelisted:
+  allowlisted:
       pop
       int 1
       retsub
@@ -1107,7 +1107,7 @@ func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
 	lockOnDisconnect := false
 	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-	installWhitelistTemplate(t, sourceClone.SignerDataDir)
+	installAllowlistTemplate(t, sourceClone.SignerDataDir)
 
 	sourceSigner := harness.NewSignerHarness(t)
 	if err := sourceSigner.Start(); err != nil {
@@ -1123,7 +1123,7 @@ func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
 
 	sourceToken := readSignerToken(t, sourceSigner)
 	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
-	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.whitelist.v1", map[string]string{"recipients": integrationBurnAddress})
+	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.allowlist.v1", map[string]string{"recipients": integrationBurnAddress})
 
 	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
@@ -1131,8 +1131,8 @@ func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
 
 	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	installWhitelistTemplate(t, destClone.SignerDataDir)
-	syncTemplateLibraryFile(t, destClone.SignerDataDir, "aplane.whitelist.v1.yaml")
+	installAllowlistTemplate(t, destClone.SignerDataDir)
+	syncTemplateLibraryFile(t, destClone.SignerDataDir, "aplane.allowlist.v1.yaml")
 	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
 
@@ -1144,12 +1144,12 @@ func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
 	if err := destApadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock destination signer: %v", err)
 	}
-	disableResult, err := destApadmin.DeactivateKeyType("aplane.whitelist.v1")
+	disableResult, err := destApadmin.DeactivateKeyType("aplane.allowlist.v1")
 	if err != nil {
-		t.Fatalf("failed to deactivate aplane.whitelist.v1: %v", err)
+		t.Fatalf("failed to deactivate aplane.allowlist.v1: %v", err)
 	}
 	if !disableResult.Success {
-		t.Fatalf("failed to deactivate aplane.whitelist.v1: %s", disableResult.Error)
+		t.Fatalf("failed to deactivate aplane.allowlist.v1: %s", disableResult.Error)
 	}
 	t.Cleanup(func() { _ = destSigner.Stop() })
 
@@ -1160,8 +1160,8 @@ func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
 
 	destToken := readSignerToken(t, destSigner)
 	destClient := signerclient.NewSignerClientWithToken(destSigner.GetURL(), destToken)
-	if !waitForKeyType(t, destClient, "aplane.whitelist.v1", 10*time.Second) {
-		t.Fatal("destination signer did not expose aplane.whitelist.v1 after restore-based re-enable")
+	if !waitForKeyType(t, destClient, "aplane.allowlist.v1", 10*time.Second) {
+		t.Fatal("destination signer did not expose aplane.allowlist.v1 after restore-based re-enable")
 	}
 }
 

@@ -39,9 +39,9 @@ template_type: composed
 base_key_type: test.template-base.v1
 template_mode: generated
 publisher: test
-family: template-base-whitelist
+family: template-base-allowlist
 version: 1
-display_name: "Template Base Whitelist"
+display_name: "Template Base Allowlist"
 parameters:
   - name: recipient
     type: address
@@ -62,8 +62,8 @@ teal: |
 	if err != nil {
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
-	if provider.KeyType() != "test.template-base-whitelist.v1" {
-		t.Fatalf("KeyType() = %q, want test.template-base-whitelist.v1", provider.KeyType())
+	if provider.KeyType() != "test.template-base-allowlist.v1" {
+		t.Fatalf("KeyType() = %q, want test.template-base-allowlist.v1", provider.KeyType())
 	}
 }
 
@@ -358,8 +358,8 @@ func TestBundledComposedTemplatesValidate(t *testing.T) {
 	paths := []string{
 		"library/templates/aplane.falcon1024-hashlock.v1.yaml",
 		"library/templates/aplane.falcon1024-timelock.v1.yaml",
-		"library/templates/aplane.falcon1024-whitelist.v1.yaml",
-		"library/templates/aplane.falcon1024-whitelist.v2.yaml",
+		"library/templates/aplane.falcon1024-allowlist.v1.yaml",
+		"library/templates/aplane.falcon1024-allowlist.v2.yaml",
 	}
 	for _, path := range paths {
 		t.Run(filepath.Base(path), func(t *testing.T) {

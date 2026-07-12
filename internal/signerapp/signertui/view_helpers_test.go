@@ -42,17 +42,17 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 			MnemonicImport:    true,
 		},
 		{
-			KeyType:           "aplane.timed-whitelist.v1",
-			DisplayName:       "Timed Whitelist",
-			Description:       "Generic timed whitelist LogicSig",
+			KeyType:           "aplane.timed-allowlist.v1",
+			DisplayName:       "Timed Allowlist",
+			Description:       "Generic timed allowlist LogicSig",
 			MnemonicWordCount: 0,
 			CreationParams: []protocol.TemplateParamInfo{
 				{Name: "unlock_round", Label: "Unlock Round", Type: "uint64", Required: true},
 			},
 		},
 		{
-			KeyType:           "aplane.falcon1024-whitelist.v1",
-			DisplayName:       "Falcon Whitelist",
+			KeyType:           "aplane.falcon1024-allowlist.v1",
+			DisplayName:       "Falcon Allowlist",
 			MnemonicWordCount: 24,
 			MnemonicImport:    false,
 			CreationParams: []protocol.TemplateParamInfo{
@@ -79,7 +79,7 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 	if got, want := getImportKeyTypeCount(), 2; got != want {
 		t.Fatalf("getImportKeyTypeCount() = %d, want %d", got, want)
 	}
-	if got, want := getKeyTypeByIndex(1), "aplane.timed-whitelist.v1"; got != want {
+	if got, want := getKeyTypeByIndex(1), "aplane.timed-allowlist.v1"; got != want {
 		t.Fatalf("generate key type index 1 = %q, want %q", got, want)
 	}
 	if got, want := getImportKeyTypeByIndex(1), "aplane.falcon1024.v1"; got != want {
@@ -89,7 +89,7 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 		t.Fatalf("import word count = %d, want %d", got, want)
 	}
 
-	spec := getParamSpecForKeyType("aplane.falcon1024-whitelist.v1")
+	spec := getParamSpecForKeyType("aplane.falcon1024-allowlist.v1")
 	if spec == nil {
 		t.Fatal("getParamSpecForKeyType() = nil, want server-backed params")
 		return
@@ -121,8 +121,8 @@ func TestGenerateFormDoesNotShowParameterCountSummary(t *testing.T) {
 	defer setServerKeyTypes(nil)
 
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-whitelist.v1",
-		DisplayName: "Falcon Whitelist",
+		KeyType:     "aplane.falcon1024-allowlist.v1",
+		DisplayName: "Falcon Allowlist",
 		Description: "Falcon-1024 signature restricted to a fixed set of receiver addresses",
 		CreationParams: []protocol.TemplateParamInfo{
 			{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 30},
@@ -130,10 +130,10 @@ func TestGenerateFormDoesNotShowParameterCountSummary(t *testing.T) {
 	}})
 
 	rendered := stripANSI(Model{width: 110, height: 30}.renderGenerateForm())
-	if strings.Contains(rendered, "(Falcon Whitelist)") {
+	if strings.Contains(rendered, "(Falcon Allowlist)") {
 		t.Fatalf("generate form rendered selected name in parentheses:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "Falcon Whitelist") {
+	if !strings.Contains(rendered, "Falcon Allowlist") {
 		t.Fatalf("generate form missing selected name footer:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "Falcon-1024 signature restricted to a fixed set of receiver addresses") {
@@ -212,8 +212,8 @@ func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 func TestParameterModalMarksOnlyOptionalParameters(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.whitelist.v1",
-		DisplayName: "Whitelist",
+		KeyType:     "aplane.allowlist.v1",
+		DisplayName: "Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{
 			{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true},
 			{Name: "allowed_optin_assets", Label: "Approved Opt-In Assets", Type: "uint64[]", Required: false},
@@ -234,7 +234,7 @@ func TestParameterModalMarksOnlyOptionalParameters(t *testing.T) {
 		},
 	}
 
-	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.whitelist.v1", "GENERATE", ""))
+	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.allowlist.v1", "GENERATE", ""))
 	if !strings.Contains(rendered, "Recipients:") {
 		t.Fatalf("required label missing:\n%s", rendered)
 	}
@@ -259,8 +259,8 @@ func TestParameterModalMultilineFieldBottomFitsShortPane(t *testing.T) {
 	defer setServerKeyTypes(nil)
 
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-whitelist.v1",
-		DisplayName: "Falcon Whitelist",
+		KeyType:     "aplane.falcon1024-allowlist.v1",
+		DisplayName: "Falcon Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{
 			{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 30},
 		},

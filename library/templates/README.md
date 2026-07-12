@@ -5,7 +5,7 @@ keystore with `apstore`.
 
 Templates in this directory are plaintext install sources. Presence here does
 not make a key type active by itself. New signer stores automatically install
-and enable `aplane.falcon1024-whitelist.v1`; existing stores and the other
+and enable `aplane.falcon1024-allowlist.v1`; existing stores and the other
 templates use the normal import flow. After importing a template, unlock or
 reload `apsigner` before using the new key type.
 
@@ -14,8 +14,8 @@ reload `apsigner` before using the new key type.
 Generic LogicSig templates are TEAL-only accounts with no private key:
 
 ```bash
-apstore template import library/templates/aplane.timed-whitelist.v1.yaml
-apstore template import library/templates/aplane.whitelist.v1.yaml
+apstore template import library/templates/aplane.timed-allowlist.v1.yaml
+apstore template import library/templates/aplane.allowlist.v1.yaml
 apstore template import library/templates/aplane.htlc.v1.yaml
 ```
 
@@ -24,35 +24,35 @@ Falcon-1024 composed templates combine a Falcon signature with additional TEAL c
 ```bash
 apstore template import library/templates/aplane.falcon1024-hashlock.v1.yaml
 apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml
-apstore template import library/templates/aplane.falcon1024-whitelist.v2.yaml
+apstore template import library/templates/aplane.falcon1024-allowlist.v2.yaml
 ```
 
 Ed25519 composed templates combine an Ed25519 signature with additional TEAL checks:
 
 ```bash
-apstore template import library/templates/aplane.ed25519-whitelist.v1.yaml
+apstore template import library/templates/aplane.ed25519-allowlist.v1.yaml
 ```
 
 For existing stores that were initialized before this default was added:
 
 ```bash
-apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
+apstore template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 ```
 
 ## Generic Templates
 
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
-| `aplane.timed-whitelist.v1` | `aplane.timed-whitelist.v1.yaml` | Allows ALGO or ASA transfers only to a fixed unordered recipient address set after `unlock_round`; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipients` (`address[]`), `unlock_round`, `allowed_optin_assets` (`uint64[]`, optional) | None |
-| `aplane.whitelist.v1` | `aplane.whitelist.v1.yaml` | Allows ALGO or ASA transfers only to a fixed unordered recipient address set; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipients` (`address[]`), `allowed_optin_assets` (`uint64[]`, optional) | None |
+| `aplane.timed-allowlist.v1` | `aplane.timed-allowlist.v1.yaml` | Allows ALGO or ASA transfers only to a fixed unordered recipient address set after `unlock_round`; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipients` (`address[]`), `unlock_round`, `allowed_optin_assets` (`uint64[]`, optional) | None |
+| `aplane.allowlist.v1` | `aplane.allowlist.v1.yaml` | Allows ALGO or ASA transfers only to a fixed unordered recipient address set; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipients` (`address[]`), `allowed_optin_assets` (`uint64[]`, optional) | None |
 | `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked contract for ALGO or ASA transfers: recipient can claim before timeout with a preimage; refund address can reclaim after timeout; optional parameterized ASA opt-in is available for approved asset IDs only. | `hash` (default input mode: preimage), `recipient`, `refund_address`, `timeout_round`, `allowed_optin_assets` (`uint64[]`, optional) | `preimage` |
 
 ## Falcon-1024 Composed Templates
 
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
-| `aplane.falcon1024-whitelist.v1` | `aplane.falcon1024-whitelist.v1.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to a fixed unordered recipient address set or the sender itself; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-30) | None |
-| `aplane.falcon1024-whitelist.v2` | `aplane.falcon1024-whitelist.v2.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to the sender itself or addresses proven against a fixed-depth Merkle tree built from key-file recipients; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-65536) | None; signer generates proofs |
+| `aplane.falcon1024-allowlist.v1` | `aplane.falcon1024-allowlist.v1.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to a fixed unordered recipient address set or the sender itself; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-30) | None |
+| `aplane.falcon1024-allowlist.v2` | `aplane.falcon1024-allowlist.v2.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to the sender itself or addresses proven against a fixed-depth Merkle tree built from key-file recipients; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-65536) | None; signer generates proofs |
 | `aplane.falcon1024-hashlock.v1` | `aplane.falcon1024-hashlock.v1.yaml` | Requires a Falcon signature plus a SHA256 preimage check. | `hash` (default input mode: preimage) | `preimage` |
 | `aplane.falcon1024-timelock.v1` | `aplane.falcon1024-timelock.v1.yaml` | Requires a Falcon signature and `FirstValid >= unlock_round`; after the unlock round, transaction policy matches the base Falcon key type. | `unlock_round` | None |
 
@@ -60,7 +60,7 @@ apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
 
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
-| `aplane.ed25519-whitelist.v1` | `aplane.ed25519-whitelist.v1.yaml` | Requires an Ed25519 signature and restricts ALGO/ASA transfer destination fields to a fixed unordered recipient address set or the sender itself; non-transfer transaction types keep the base Ed25519 authorization surface. | `recipients` (`address[]`, 1-30) | None |
+| `aplane.ed25519-allowlist.v1` | `aplane.ed25519-allowlist.v1.yaml` | Requires an Ed25519 signature and restricts ALGO/ASA transfer destination fields to a fixed unordered recipient address set or the sender itself; non-transfer transaction types keep the base Ed25519 authorization surface. | `recipients` (`address[]`, 1-30) | None |
 
 ## Notes
 
@@ -73,13 +73,13 @@ apstore template import library/templates/aplane.falcon1024-whitelist.v1.yaml
 - Imported templates are identity-scoped. Installing a template for one signer
   identity does not make it available to other identities.
 
-### Merkle whitelist proof format
+### Merkle allowlist proof format
 
-`aplane.falcon1024-whitelist.v2` stores the public recipient whitelist in the
+`aplane.falcon1024-allowlist.v2` stores the public recipient allowlist in the
 encrypted key file and commits the LogicSig TEAL to a fixed-depth 16 Merkle
 tree derived from that list:
 
-1. Decode each whitelisted Algorand address to its 32-byte public key.
+1. Decode each allowlisted Algorand address to its 32-byte public key.
 2. Reject duplicates, sort the unique public keys lexicographically ascending,
    and compute each real leaf as `sha256(0x00 || pubkey)`.
 3. Pad the leaf list to 65,536 entries with the empty leaf `sha256(0x00)`.
@@ -102,7 +102,7 @@ Templates fall into two classes with different obligations for blocking
 transactions purely on TEAL predicates with no signature-over-txid binding.
 A missing `RekeyTo` or `CloseRemainderTo` guard means an attacker who satisfies
 the template's predicate (knows the hashlock preimage, hits the timelock
-round, is on the whitelist) can also rekey the account away or drain it
+round, is on the allowlist) can also rekey the account away or drain it
 via close-remainder. Generic templates therefore **MUST** include both
 guards in their `teal:` block:
 
@@ -112,8 +112,8 @@ global ZeroAddress
 ==
 assert
 
-// for receiver-style templates (whitelist, htlc, timed-whitelist):
-//   apply the whitelist to CloseRemainderTo / AssetCloseTo too;
+// for receiver-style templates (allowlist, htlc, timed-allowlist):
+//   apply the allowlist to CloseRemainderTo / AssetCloseTo too;
 // for predicate-only templates with no receiver concept:
 //   txn CloseRemainderTo
 //   global ZeroAddress
@@ -121,7 +121,7 @@ assert
 //   assert
 ```
 
-This applies to `aplane.timed-whitelist.v1`, `aplane.whitelist.v1`,
+This applies to `aplane.timed-allowlist.v1`, `aplane.allowlist.v1`,
 `aplane.htlc.v1`, and any new generic template.
 
 **Composed templates** (`template_type: composed`, with `base_key_type` pointing
@@ -135,15 +135,15 @@ runs. Composed templates therefore do **NOT** need to include
 `txn RekeyTo == ZeroAddress` as defense in depth; doing so is redundant
 with the base signature binding.
 
-However, composed templates that implement *whitelist semantics* — i.e.
+However, composed templates that implement *allowlist semantics* — i.e.
 the predicate restricts which addresses can receive transfer value — still need
-to enforce the whitelist on destination-like fields explicitly. A user who
+to enforce the allowlist on destination-like fields explicitly. A user who
 intentionally signs a payment with `CloseRemainderTo = attacker` would bind the
-signature correctly, but the whitelist would be bypassed if the template only
-checked `Receiver`. The composed `aplane.falcon1024-whitelist.v1` and
-`aplane.ed25519-whitelist.v1` templates therefore check `Receiver` and
+signature correctly, but the allowlist would be bypassed if the template only
+checked `Receiver`. The composed `aplane.falcon1024-allowlist.v1` and
+`aplane.ed25519-allowlist.v1` templates therefore check `Receiver` and
 `CloseRemainderTo` for payments, and `AssetReceiver` and `AssetCloseTo` for ASA
-transfers. The Merkle whitelist template checks the same destination fields by
+transfers. The Merkle allowlist template checks the same destination fields by
 signer-generated proof against the root derived from the key-file recipient
 list; close-out is allowed only to zero or the just-validated receiver. The
 sender itself is allowed as a destination; non-`pay`/`axfer` transaction types
@@ -160,5 +160,5 @@ rekey-guard regression can ship.
 
 | Template class | `txn RekeyTo == 0` | `CloseRemainderTo` policy |
 |---|---|---|
-| Generic (`template_type: generic`) | Required | Required (zero, or whitelisted per template semantics) |
-| Composed (`template_type: composed`) | Not needed (bound via base signature over `txn TxID`) | Required when the template implements receiver-whitelist semantics; otherwise not needed |
+| Generic (`template_type: generic`) | Required | Required (zero, or allowlisted per template semantics) |
+| Composed (`template_type: composed`) | Not needed (bound via base signature over `txn TxID`) | Required when the template implements receiver-allowlist semantics; otherwise not needed |

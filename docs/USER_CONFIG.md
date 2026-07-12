@@ -938,7 +938,7 @@ key_overrides:
     # Generic keys have no LogicSig enforcement, so tighten further.
     reject_asset_close: true
   OTHERAUTHADDRESS...:
-    # Whitelist TEAL already constrains close-to addresses; identity-wide
+    # Allowlist TEAL already constrains close-to addresses; identity-wide
     # setting of false is fine, but we can still raise the fee ceiling for
     # this key if it needs more headroom.
     max_fee_microalgos: 5000

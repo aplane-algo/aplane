@@ -25,12 +25,12 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 	RegisterClient()
 
 	for _, keyType := range []string{
-		"aplane.timed-whitelist.v1",
-		"aplane.whitelist.v1",
+		"aplane.timed-allowlist.v1",
+		"aplane.allowlist.v1",
 		"aplane.htlc.v1",
-		"aplane.ed25519-whitelist.v1",
-		"aplane.falcon1024-whitelist.v1",
-		"aplane.falcon1024-whitelist.v2",
+		"aplane.ed25519-allowlist.v1",
+		"aplane.falcon1024-allowlist.v1",
+		"aplane.falcon1024-allowlist.v2",
 		"aplane.falcon1024-hashlock.v1",
 		"aplane.falcon1024-timelock.v1",
 	} {
@@ -107,9 +107,9 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 	}{
 		{"aplane.falcon1024-hashlock.v1.yaml", "sha256"},
 		{"aplane.falcon1024-timelock.v1.yaml", "FirstValid"},
-		{"aplane.falcon1024-whitelist.v1.yaml", "Only pay/axfer"},
-		{"aplane.falcon1024-whitelist.v2.yaml", "Whitelist v2"},
-		{"aplane.ed25519-whitelist.v1.yaml", "Only pay/axfer"},
+		{"aplane.falcon1024-allowlist.v1.yaml", "Only pay/axfer"},
+		{"aplane.falcon1024-allowlist.v2.yaml", "Allowlist v2"},
+		{"aplane.ed25519-allowlist.v1.yaml", "Only pay/axfer"},
 	}
 
 	for _, c := range cases {
@@ -164,7 +164,7 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 
 func bundledTemplateTestPublicKey(file string) []byte {
 	switch file {
-	case "aplane.ed25519-whitelist.v1.yaml":
+	case "aplane.ed25519-allowlist.v1.yaml":
 		return make([]byte, 32)
 	default:
 		return make([]byte, family.PublicKeySize)
@@ -173,7 +173,7 @@ func bundledTemplateTestPublicKey(file string) []byte {
 
 func bundledTemplateTestVerifyOp(file string) string {
 	switch file {
-	case "aplane.ed25519-whitelist.v1.yaml":
+	case "aplane.ed25519-allowlist.v1.yaml":
 		return "ed25519verify_bare"
 	default:
 		return "falcon_verify"
@@ -189,7 +189,7 @@ func bundledTemplateTestParams(file string) map[string]string {
 		return map[string]string{
 			"hash": strings.Repeat("00", 32),
 		}
-	case "aplane.falcon1024-whitelist.v2.yaml":
+	case "aplane.falcon1024-allowlist.v2.yaml":
 		return map[string]string{
 			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 		}
@@ -197,11 +197,11 @@ func bundledTemplateTestParams(file string) map[string]string {
 		return map[string]string{
 			"unlock_round": "1",
 		}
-	case "aplane.falcon1024-whitelist.v1.yaml":
+	case "aplane.falcon1024-allowlist.v1.yaml":
 		return map[string]string{
 			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 		}
-	case "aplane.ed25519-whitelist.v1.yaml":
+	case "aplane.ed25519-allowlist.v1.yaml":
 		return map[string]string{
 			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 		}

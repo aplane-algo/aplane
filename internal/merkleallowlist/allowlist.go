@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-package merklewhitelist
+package merkleallowlist
 
 import (
 	"bytes"
@@ -47,7 +47,7 @@ func ProofForAddressParam(recipients string, address types.Address) ([]byte, err
 		return nil, err
 	}
 	if proof == nil {
-		return nil, fmt.Errorf("address %s is not in whitelist", address.String())
+		return nil, fmt.Errorf("address %s is not in allowlist", address.String())
 	}
 	return proof, nil
 }
@@ -82,10 +82,10 @@ func canonicalEntries(recipients string) ([]entry, error) {
 		}
 		addr, err := types.DecodeAddress(item)
 		if err != nil {
-			return nil, fmt.Errorf("invalid whitelist address %q: %w", item, err)
+			return nil, fmt.Errorf("invalid allowlist address %q: %w", item, err)
 		}
 		if _, ok := seen[addr]; ok {
-			return nil, fmt.Errorf("duplicate whitelist address public key: %s", addr.String())
+			return nil, fmt.Errorf("duplicate allowlist address public key: %s", addr.String())
 		}
 		seen[addr] = struct{}{}
 		entries = append(entries, entry{

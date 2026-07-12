@@ -27,7 +27,7 @@ func (e *Engine) GenerateKey(ctx context.Context, keyType string, params map[str
 		return nil, ErrNotConnected
 	}
 	// Canonicalize the key type and resolve any address[] creation params (e.g. a
-	// whitelist's "recipients") before handing off to the signer, which has no
+	// allowlist's "recipients") before handing off to the signer, which has no
 	// alias/set knowledge. Done here — not in the REPL layer — so REPL, JS, and
 	// MCP callers all behave identically.
 	keyType = keytypecatalog.Canonicalize(keyType)

@@ -53,8 +53,8 @@ func TestBackupRestoreMessagesDispatchToBackupServices(t *testing.T) {
 			}},
 			Warnings: []adminproto.RestoreWarning{{
 				Address: "ADDR1",
-				KeyType: "aplane.timed-whitelist.v1",
-				Warning: "skipped bundled template for aplane.timed-whitelist.v1: backup template conflicts with existing keystore definition",
+				KeyType: "aplane.timed-allowlist.v1",
+				Warning: "skipped bundled template for aplane.timed-allowlist.v1: backup template conflicts with existing keystore definition",
 			}},
 			KeyCount: 1,
 		},
@@ -135,8 +135,8 @@ func TestBackupRestoreMessagesDispatchToBackupServices(t *testing.T) {
 	if !restoreResult.Success || restoreResult.KeyCount != 1 {
 		t.Fatalf("restore result = %+v, want success with key_count 1", restoreResult)
 	}
-	if len(restoreResult.Warnings) != 1 || restoreResult.Warnings[0].KeyType != "aplane.timed-whitelist.v1" {
-		t.Fatalf("restore warnings = %+v, want aplane.timed-whitelist.v1 warning", restoreResult.Warnings)
+	if len(restoreResult.Warnings) != 1 || restoreResult.Warnings[0].KeyType != "aplane.timed-allowlist.v1" {
+		t.Fatalf("restore warnings = %+v, want aplane.timed-allowlist.v1 warning", restoreResult.Warnings)
 	}
 }
 

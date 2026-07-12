@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	internallsig "github.com/aplane-algo/aplane/internal/lsig"
-	"github.com/aplane-algo/aplane/internal/merklewhitelist"
+	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/lsig/corridor"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
@@ -73,13 +73,13 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 		}, transferAccount.proofFor(t, funderAddress))
 	})
 
-	t.Run("payment to whitelisted recipient with proof succeeds", func(t *testing.T) {
+	t.Run("payment to allowlisted recipient with proof succeeds", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, allowed.String(), 0, "corridor-allow")
 		rawGroup, txid := transferAccount.signGroup(t, txn, transferAccount.proofFor(t, allowed), nil)
 		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
 	})
 
-	t.Run("payment to whitelisted recipient without proof fails", func(t *testing.T) {
+	t.Run("payment to allowlisted recipient without proof fails", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, allowed.String(), 0, "corridor-deny-missing-proof")
 		rawGroup, _ := transferAccount.signGroup(t, txn, nil, nil)
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
@@ -91,13 +91,13 @@ func TestCorridorLogicSigExecutionMatrixLocalnet(t *testing.T) {
 		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
 	})
 
-	t.Run("asset transfer to whitelisted recipient with proof succeeds", func(t *testing.T) {
+	t.Run("asset transfer to allowlisted recipient with proof succeeds", func(t *testing.T) {
 		txn := corridorAssetTransferTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, allowed.String(), 1, assetID, "corridor-asset-allow")
 		rawGroup, txid := transferAccount.signGroup(t, txn, transferAccount.proofFor(t, allowed), nil)
 		submitCorridorGroupExpectSuccess(t, testnet, rawGroup, txid)
 	})
 
-	t.Run("payment to non-whitelisted recipient fails", func(t *testing.T) {
+	t.Run("payment to non-allowlisted recipient fails", func(t *testing.T) {
 		txn := corridorPaymentTxn(t, mustSuggestedParams(t, testnet), transferAccount.address, outside.String(), 0, "corridor-deny-outside")
 		rawGroup, _ := transferAccount.signGroup(t, txn, transferAccount.proofFor(t, allowed), nil)
 		submitCorridorGroupExpectFailure(t, testnet, rawGroup)
@@ -202,7 +202,7 @@ func newCorridorExecutionAccount(t *testing.T, testnet *harness.TestnetConfig, r
 
 func (a corridorExecutionAccount) proofFor(t *testing.T, recipient types.Address) []byte {
 	t.Helper()
-	proof, err := merklewhitelist.ProofForAddressParam(a.recipientsParam, recipient)
+	proof, err := merkleallowlist.ProofForAddressParam(a.recipientsParam, recipient)
 	if err != nil {
 		t.Fatalf("failed to build corridor proof for %s: %v", recipient, err)
 	}

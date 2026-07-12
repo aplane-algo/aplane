@@ -164,7 +164,7 @@ with your new key.
 ## Further Exploration
 
 By default, APlane exposes the `ed25519`, `aplane.falcon1024.v1`, and
-`aplane.falcon1024-whitelist.v1` key types. To try additional LogicSig templates from
+`aplane.falcon1024-allowlist.v1` key types. To try additional LogicSig templates from
 the bundled library, open the signer admin pane, press `s` for settings, then
 press `k` for key types. The KeyType Library lets you enable additional
 compiled providers and templates for the current identity.

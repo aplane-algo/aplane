@@ -265,8 +265,8 @@ func TestHandleParamInput_AddressListCapsLineLength(t *testing.T) {
 func TestHandleParamInput_AddressListAutoScrollsAndPages(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "whitelist-test-v1",
-		DisplayName: "Whitelist Test",
+		KeyType:     "allowlist-test-v1",
+		DisplayName: "Allowlist Test",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "recipients",
 			Type: "address[]",
@@ -317,8 +317,8 @@ func TestHandleParamInput_AddressListAutoScrollsAndPages(t *testing.T) {
 func TestGenerateFormShowsTemplateShortcutLegend(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.whitelist.v1",
-		DisplayName: "Whitelist",
+		KeyType:     "aplane.allowlist.v1",
+		DisplayName: "Allowlist",
 		Description: "Template-backed key type",
 	}})
 
@@ -332,8 +332,8 @@ func TestGenerateFormShowsTemplateShortcutLegend(t *testing.T) {
 func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.whitelist.v1",
-		DisplayName: "Whitelist",
+		KeyType:     "aplane.allowlist.v1",
+		DisplayName: "Allowlist",
 		Description: "Template-backed key type",
 	}})
 
@@ -341,9 +341,9 @@ func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 		viewState: ViewGenerateForm,
 		forms:     formsState{generateKeyType: 0},
 		library: libraryState{templates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.whitelist.v1",
+			KeyType:      "aplane.allowlist.v1",
 			TemplateType: "generic",
-			SourcePath:   "/tmp/keystore/library/templates/aplane.whitelist.v1.yaml",
+			SourcePath:   "/tmp/keystore/library/templates/aplane.allowlist.v1.yaml",
 		}}},
 	}
 
@@ -352,7 +352,7 @@ func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 	if got.viewState != ViewLibraryTemplateDetails {
 		t.Fatalf("viewState after t = %v, want ViewLibraryTemplateDetails", got.viewState)
 	}
-	if !got.library.detailsLoading || got.library.detailsKeyType != "aplane.whitelist.v1" || got.library.detailsTemplateType != "generic" {
+	if !got.library.detailsLoading || got.library.detailsKeyType != "aplane.allowlist.v1" || got.library.detailsTemplateType != "generic" {
 		t.Fatalf("library details state = loading:%v key:%q type:%q", got.library.detailsLoading, got.library.detailsKeyType, got.library.detailsTemplateType)
 	}
 	if cmd == nil {
@@ -419,8 +419,8 @@ func TestGenerateFormTemplateShortcutReportsMissingTemplate(t *testing.T) {
 func TestHandleParamModalKeys_AddressListSpaceAndEnterStayInField(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "whitelist-test-v1",
-		DisplayName: "Whitelist Test",
+		KeyType:     "allowlist-test-v1",
+		DisplayName: "Allowlist Test",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name: "recipients",
 			Type: "address[]",

@@ -17,14 +17,14 @@ func TestDisplay(t *testing.T) {
 	}{
 		{name: "ed25519", keyType: "ed25519", want: "ed25519"},
 		{name: "aplane falcon unchanged", keyType: "aplane.falcon1024.v1", want: "aplane.falcon1024.v1"},
-		{name: "aplane template unchanged", keyType: "aplane.falcon1024-whitelist.v1", want: "aplane.falcon1024-whitelist.v1"},
-		{name: "other publisher unchanged", keyType: "custom.whitelist.v2", want: "custom.whitelist.v2"},
-		{name: "filename unchanged", keyType: "aplane.whitelist.v1.yaml", want: "aplane.whitelist.v1.yaml"},
+		{name: "aplane template unchanged", keyType: "aplane.falcon1024-allowlist.v1", want: "aplane.falcon1024-allowlist.v1"},
+		{name: "other publisher unchanged", keyType: "custom.allowlist.v2", want: "custom.allowlist.v2"},
+		{name: "filename unchanged", keyType: "aplane.allowlist.v1.yaml", want: "aplane.allowlist.v1.yaml"},
 		{name: "extra family dot unchanged", keyType: "aplane.white.list.v1", want: "aplane.white.list.v1"},
 		{name: "unsafe family unchanged", keyType: "aplane.white list.v1", want: "aplane.white list.v1"},
-		{name: "legacy unchanged", keyType: "whitelist-v1", want: "whitelist-v1"},
-		{name: "unqualified versioned unchanged", keyType: "whitelist.v1", want: "whitelist.v1"},
-		{name: "invalid version unchanged", keyType: "aplane.whitelist.version1", want: "aplane.whitelist.version1"},
+		{name: "legacy unchanged", keyType: "allowlist-v1", want: "allowlist-v1"},
+		{name: "unqualified versioned unchanged", keyType: "allowlist.v1", want: "allowlist.v1"},
+		{name: "invalid version unchanged", keyType: "aplane.allowlist.version1", want: "aplane.allowlist.version1"},
 	}
 
 	for _, tt := range tests {
@@ -39,7 +39,7 @@ func TestDisplay(t *testing.T) {
 func TestDisplayCanonicalizeRoundTrip(t *testing.T) {
 	canonical := []string{
 		"aplane.falcon1024.v1",
-		"aplane.falcon1024-whitelist.v1",
+		"aplane.falcon1024-allowlist.v1",
 		"aplane.falcon1024-timelock.v1",
 	}
 	for _, kt := range canonical {
@@ -57,9 +57,9 @@ func TestPublisher(t *testing.T) {
 	}{
 		{name: "ed25519", keyType: "ed25519", want: ""},
 		{name: "aplane falcon", keyType: "aplane.falcon1024.v1", want: "aplane"},
-		{name: "other publisher", keyType: "custom.whitelist.v2", want: "custom"},
-		{name: "filename unchanged", keyType: "aplane.whitelist.v1.yaml", want: ""},
-		{name: "missing publisher", keyType: "whitelist.v1", want: ""},
+		{name: "other publisher", keyType: "custom.allowlist.v2", want: "custom"},
+		{name: "filename unchanged", keyType: "aplane.allowlist.v1.yaml", want: ""},
+		{name: "missing publisher", keyType: "allowlist.v1", want: ""},
 	}
 
 	for _, tt := range tests {
@@ -77,12 +77,12 @@ func TestValidSegment(t *testing.T) {
 		want    bool
 	}{
 		{segment: "aplane", want: true},
-		{segment: "falcon1024-whitelist", want: true},
-		{segment: "falcon1024_whitelist", want: true},
+		{segment: "falcon1024-allowlist", want: true},
+		{segment: "falcon1024_allowlist", want: true},
 		{segment: "", want: false},
 		{segment: "white.list", want: false},
 		{segment: "white list", want: false},
-		{segment: "Whitelist", want: false},
+		{segment: "Allowlist", want: false},
 	}
 	for _, tt := range tests {
 		if got := ValidSegment(tt.segment); got != tt.want {

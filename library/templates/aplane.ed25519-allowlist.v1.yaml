@@ -4,9 +4,9 @@ template_type: composed
 base_key_type: aplane.ed25519.v1
 template_mode: generated
 publisher: aplane
-family: ed25519-whitelist
+family: ed25519-allowlist
 version: 1
-display_name: "Ed25519 Whitelist"
+display_name: "Ed25519 Allowlist"
 description: "Ed25519 signature restricted to a fixed set of receiver addresses"
 
 parameters:
@@ -15,12 +15,12 @@ parameters:
     required: true
     min_items: 1
     max_items: 30
-    label: "Whitelisted Addresses"
+    label: "Allowlisted Addresses"
     description: "Comma-separated Algorand addresses that may receive funds from this Ed25519 LogicSig"
     placeholder: "ADDR1, ADDR2, ADDR3"
 
 teal: |
-  // Only pay/axfer have destination fields this whitelist constrains.
+  // Only pay/axfer have destination fields this allowlist constrains.
   // Other transaction types keep the base Ed25519 authorization surface.
   txn TypeEnum
   int pay
@@ -39,7 +39,7 @@ teal: |
   ==
   bnz allow_asset_receiver
   txn AssetReceiver
-  callsub is_whitelisted
+  callsub is_allowlisted
   bnz allow_asset_receiver
   err
 
@@ -53,7 +53,7 @@ teal: |
   ==
   bnz allow_asset_close
   txn AssetCloseTo
-  callsub is_whitelisted
+  callsub is_allowlisted
   bnz allow_asset_close
   err
 
@@ -67,7 +67,7 @@ teal: |
       ==
       bnz allow_pay_receiver
       txn Receiver
-      callsub is_whitelisted
+      callsub is_allowlisted
       bnz allow_pay_receiver
       err
 
@@ -81,7 +81,7 @@ teal: |
       ==
       bnz allow_pay_close
       txn CloseRemainderTo
-      callsub is_whitelisted
+      callsub is_allowlisted
       bnz allow_pay_close
       err
 
@@ -91,18 +91,18 @@ teal: |
   allow:
       b end_checks
 
-  is_whitelisted:
+  is_allowlisted:
       {{range @recipients}}
       dup
       byte {{.}}
       ==
-      bnz whitelisted
+      bnz allowlisted
       {{end}}
       pop
       int 0
       retsub
 
-  whitelisted:
+  allowlisted:
       pop
       int 1
       retsub

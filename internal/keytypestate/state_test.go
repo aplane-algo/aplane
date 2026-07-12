@@ -20,7 +20,7 @@ func TestPutGetListAndListEnabled(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 
 	if err := Put(paths, "default", Record{
-		KeyType:     "APlane.Falcon1024_Whitelist.v1",
+		KeyType:     "APlane.Falcon1024_Allowlist.v1",
 		Source:      SourceYAMLComposed,
 		State:       StateEnabled,
 		Fingerprint: "fp1",
@@ -35,14 +35,14 @@ func TestPutGetListAndListEnabled(t *testing.T) {
 		t.Fatalf("Put(disabled) error = %v", err)
 	}
 
-	rec, ok, err := Get(paths, "default", "aplane.falcon1024_whitelist.v1")
+	rec, ok, err := Get(paths, "default", "aplane.falcon1024_allowlist.v1")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
 	if !ok {
 		t.Fatal("Get() ok = false, want true")
 	}
-	if rec.KeyType != "aplane.falcon1024_whitelist.v1" || rec.Source != SourceYAMLComposed || rec.State != StateEnabled || rec.Fingerprint != "fp1" {
+	if rec.KeyType != "aplane.falcon1024_allowlist.v1" || rec.Source != SourceYAMLComposed || rec.State != StateEnabled || rec.Fingerprint != "fp1" {
 		t.Fatalf("Get() = %+v, want normalized enabled composed record", rec)
 	}
 	if rec.ActivatedAt == "" {
@@ -53,7 +53,7 @@ func TestPutGetListAndListEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if got := keyTypesOf(records); strings.Join(got, ",") != "aplane.falcon1024_whitelist.v1,hidden-v1" {
+	if got := keyTypesOf(records); strings.Join(got, ",") != "aplane.falcon1024_allowlist.v1,hidden-v1" {
 		t.Fatalf("List() key types = %v, want sorted records", got)
 	}
 
@@ -61,7 +61,7 @@ func TestPutGetListAndListEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListEnabled() error = %v", err)
 	}
-	if len(enabled) != 1 || enabled[0] != "aplane.falcon1024_whitelist.v1" {
+	if len(enabled) != 1 || enabled[0] != "aplane.falcon1024_allowlist.v1" {
 		t.Fatalf("ListEnabled() = %v, want only enabled key type", enabled)
 	}
 }
