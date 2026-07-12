@@ -24,8 +24,12 @@ import (
 )
 
 const (
-	pluginName        = "algokit-localnet"
-	pluginVersion     = "0.1.0"
+	pluginName    = "algokit-localnet"
+	pluginVersion = "0.1.0"
+	// protocolVersion is the APlane plugin JSON-RPC protocol version this
+	// plugin speaks. It must match the host's jsonrpc.PluginProtocolVersion
+	// and is distinct from pluginVersion (this plugin's own release version).
+	protocolVersion   = "1.0"
 	defaultAlgodURL   = "http://localhost:4001"
 	defaultKMDURL     = "http://localhost:4002"
 	defaultToken      = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -227,7 +231,7 @@ func handleInitialize(req *Request) *Response {
 	return successResponse(req.ID, InitializeResult{
 		Success: true,
 		Message: fmt.Sprintf("%s initialized on %s", pluginName, cfg.network),
-		Version: pluginVersion,
+		Version: protocolVersion,
 	})
 }
 
