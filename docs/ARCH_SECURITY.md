@@ -305,6 +305,13 @@ fresh nonces differ.
 | Token revocation | Operator-initiated via apadmin; invalidates new HTTP requests and closes active SSH connections |
 | Transport encryption | SSH protocol (Ed25519 keys) |
 
+The token-confidentiality row applies to normal SSH authentication. Initial
+provisioning intentionally sends the approved token over the constrained,
+encrypted provisioning channel, and authenticated HTTP requests subsequently
+carry the bearer token inside the SSH tunnel. Fresh nonce/proof state is
+connection-local, is never reused, and is discarded after each authentication
+attempt; garbage-collected SDKs cannot guarantee memory zeroization.
+
 ### SSH Audit Logging
 
 All SSH connections are logged for audit purposes:

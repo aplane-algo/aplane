@@ -1286,6 +1286,20 @@ reports authentication success; this rejects a wrongly trusted endpoint that
 accepts the public key and skips token proof. The token itself is never sent in
 the SSH username, metadata, challenge, or response.
 
+That no-raw-token property applies to normal SSH authentication. The approved
+`request-token` exception intentionally delivers the token over its constrained,
+encrypted SSH provisioning channel. After normal authentication, HTTP requests
+continue to carry `Authorization: aplane <token>` over loopback and the
+authenticated SSH tunnel; the token remains a bearer credential at the HTTP
+boundary.
+
+Each authentication attempt generates fresh 32-byte client and server nonces
+from a cryptographically secure random source. Nonces and proof state must not
+be reused across attempts or reconnects. Clients discard proof-only state after
+the authentication attempt succeeds or fails; garbage-collected runtimes provide
+best-effort reference release rather than guaranteed memory zeroization. The
+client retains its separate bearer-token state for subsequent HTTP requests.
+
 `ssh.authorized_keys_path` is part of the server config surface; in product mode identity-scoped SSH authorization and enrollment are sourced from `identities/<identity>/.ssh/authorized_keys`.
 
 Unavailable or invalid client token proofs incur a 5-second delay.
