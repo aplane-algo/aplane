@@ -1311,29 +1311,18 @@ validate_corridor_blocked_send_fails() {
 delete_sentry_component_key() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
 
-    local sentry_ssh_port sentry_port
-    sentry_ssh_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" ssh_port)"
-    sentry_port="$(read_node_endpoint_field "$SENTRY_CONTAINER" signer_port)"
-    [ -n "$sentry_ssh_port" ] && [ -n "$sentry_port" ] || die "could not read sentry endpoint ports"
-
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -e
-        token=\$(cat /home/$TEST_USER/aplane/apclient/tokens/local-sentry.token)
-        control=/tmp/delete-sentry-key-ssh.ctl
-        local_port=48321
-        rm -f \"\$control\"
-        ssh -M -S \"\$control\" -f -N \
-            -o ExitOnForwardFailure=yes \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile=/home/$TEST_USER/aplane/apclient/.ssh/known_hosts \
-            -i /home/$TEST_USER/aplane/apclient/.ssh/id_ed25519 \
-            -p '$sentry_ssh_port' \
-            -L 127.0.0.1:\$local_port:127.0.0.1:$sentry_port \
-            -l \"\$token\" sentry
-        trap 'ssh -S /tmp/delete-sentry-key-ssh.ctl -O exit -p $sentry_ssh_port -l \"\$token\" sentry >/dev/null 2>&1 || true; rm -f /tmp/delete-sentry-key-ssh.ctl' EXIT
-        curl -fsS -X DELETE \
-            -H \"Authorization: aplane \$token\" \
-            \"http://127.0.0.1:\$local_port/admin/keys?address=$SENTRY_COMPONENT_KEY\" 2>&1")"; then
+        . '$SDK_VENV/bin/activate'
+        python - <<'PY'
+from aplanesdk import SignerClient
+
+with SignerClient.from_env(
+    data_dir='/home/$TEST_USER/aplane/apclient-sdk-sentry',
+) as client:
+    client.delete_key('$SENTRY_COMPONENT_KEY')
+print('{\"success\":true}')
+PY")"; then
         printf '%s\n' "$out" >&2
         die "failed to delete sentry key through sentry admin API"
     fi
