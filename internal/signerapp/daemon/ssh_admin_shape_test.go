@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 	"golang.org/x/crypto/ssh"
@@ -255,6 +256,7 @@ func setupSSHAdminTestPair(t *testing.T, server *Signer) (*sshtunnel.Server, *ss
 	})
 
 	client := sshtunnel.NewClient("127.0.0.1", port, 0, 0, identityPath, filepath.Join(tmpDir, "known_hosts"))
+	client.SetIdentityID(auth.CurrentProductIdentityID())
 	client.SetAPIToken("test-token")
 	client.SetHostKeyApprovalHandler(func(host, fingerprint string) (bool, error) {
 		return true, nil

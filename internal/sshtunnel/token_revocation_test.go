@@ -64,14 +64,8 @@ func TestUpdateTokenRevokesActiveConnections(t *testing.T) {
 		<-srv.closeChan
 	}()
 
-	clientConfig := &ssh.ClientConfig{
-		User: "test-token",
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(clientSigner),
-		},
-		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
-		Timeout:         5 * time.Second,
-	}
+	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, "default", "test-token")
+	clientConfig.Timeout = 5 * time.Second
 
 	clientConn, err := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)
 	if err != nil {
@@ -193,12 +187,11 @@ func TestTokenRotationDuringSSHAuthClosesOldGenerationAfterTrack(t *testing.T) {
 	srv, _ := testServer(t)
 	tokenAuth := auth.NewTokenAuthenticator("old-token")
 	srv.SetIdentityHooks(IdentityHooks{
-		ValidateToken: func(token string) (string, uint64, bool) {
-			generation, ok := tokenAuth.ValidateTokenGeneration(token)
-			if !ok {
-				return "", 0, false
+		ComputeTokenMACs: func(identityID string, serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
+			if identityID != "alice" {
+				return nil, nil, 0, false
 			}
-			return "alice", generation, true
+			return tokenAuth.ComputeHMACPair(serverInput, clientInput)
 		},
 		CheckKey: func(identityID string, key ssh.PublicKey) bool {
 			return identityID == "alice"
@@ -234,14 +227,8 @@ func TestTokenRotationDuringSSHAuthClosesOldGenerationAfterTrack(t *testing.T) {
 	}()
 
 	clientSigner, _ := generateClientKey(t)
-	clientConfig := &ssh.ClientConfig{
-		User: "old-token",
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(clientSigner),
-		},
-		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
-		Timeout:         5 * time.Second,
-	}
+	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, "alice", "old-token")
+	clientConfig.Timeout = 5 * time.Second
 
 	clientNetConn, err := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)
 	if err != nil {
@@ -356,14 +343,8 @@ func newActiveSSHTestConn(t *testing.T, srv *Server, identityID string) activeSS
 		<-releaseServer
 	}()
 
-	clientConfig := &ssh.ClientConfig{
-		User: "test-token",
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(clientSigner),
-		},
-		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
-		Timeout:         5 * time.Second,
-	}
+	clientConfig := tokenProofTestClientConfig(t, srv, clientSigner, identityID, "test-token")
+	clientConfig.Timeout = 5 * time.Second
 
 	clientNetConn, err := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)
 	if err != nil {

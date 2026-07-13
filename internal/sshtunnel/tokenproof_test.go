@@ -17,6 +17,23 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+func tokenProofTestClientConfig(t *testing.T, srv *Server, signer ssh.Signer, identityID, token string) *ssh.ClientConfig {
+	t.Helper()
+	authState := newTokenProofClientAuth(identityID, token)
+	if err := authState.captureHostKey(srv.hostKey.PublicKey()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(authState.clear)
+	return &ssh.ClientConfig{
+		User: identityID,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+			ssh.KeyboardInteractive(authState.challenge),
+		},
+		HostKeyCallback: ssh.FixedHostKey(srv.hostKey.PublicKey()),
+	}
+}
+
 func TestHashSSHHostKey(t *testing.T) {
 	publicKey, err := ssh.NewPublicKey(ed25519.PublicKey(bytes.Repeat([]byte{0x42}, ed25519.PublicKeySize)))
 	if err != nil {

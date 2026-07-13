@@ -107,6 +107,14 @@ func computeTokenProof(token, role string, transcript []byte) ([]byte, error) {
 	if token == "" {
 		return nil, fmt.Errorf("token is empty")
 	}
+	input, err := encodeTokenProofMACInput(role, transcript)
+	if err != nil {
+		return nil, err
+	}
+	return computeTokenProofMAC(token, input), nil
+}
+
+func encodeTokenProofMACInput(role string, transcript []byte) ([]byte, error) {
 	if role != tokenProofServerDomain && role != tokenProofClientDomain {
 		return nil, fmt.Errorf("unsupported token proof role %q", role)
 	}
@@ -114,10 +122,16 @@ func computeTokenProof(token, role string, transcript []byte) ([]byte, error) {
 		return nil, fmt.Errorf("token proof transcript is empty")
 	}
 
+	var encoded bytes.Buffer
+	writeTokenProofField(&encoded, []byte(role))
+	writeTokenProofField(&encoded, transcript)
+	return encoded.Bytes(), nil
+}
+
+func computeTokenProofMAC(token string, input []byte) []byte {
 	mac := hmac.New(sha256.New, []byte(token))
-	writeTokenProofField(mac, []byte(role))
-	writeTokenProofField(mac, transcript)
-	return mac.Sum(nil), nil
+	_, _ = mac.Write(input)
+	return mac.Sum(nil)
 }
 
 func writeTokenProofField(w io.Writer, field []byte) {

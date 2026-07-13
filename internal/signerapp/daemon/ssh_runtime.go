@@ -14,7 +14,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
-	"github.com/aplane-algo/aplane/internal/tokenfile"
 
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -26,7 +25,7 @@ type sshRuntime struct {
 	listenAddr string
 }
 
-func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath, authorizedKeysPath, tokenRoot, identityID string, auditLog *AuditLogger) (*sshRuntime, error) {
+func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath, authorizedKeysPath string, auditLog *AuditLogger) (*sshRuntime, error) {
 	sshCtx, sshCancel := context.WithCancel(context.Background())
 	provisioning := server.sshProvisioningService()
 
@@ -37,13 +36,7 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 	listenAddr := net.JoinHostPort(listenAddress, strconv.Itoa(port))
 	cfg := server.ConfigSnapshot()
 	targetAddr := httpBindAddr(cfg.Endpoint.SignerPort)
-	productToken, err := tokenfile.LoadAPlaneToken(tokenRoot, identityID)
-	if err != nil {
-		sshCancel()
-		return nil, fmt.Errorf("failed to load product identity API token: %w", err)
-	}
-
-	sshServer, err := sshtunnel.NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, productToken)
+	sshServer, err := sshtunnel.NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, "")
 	if err != nil {
 		sshCancel()
 		return nil, err
@@ -56,31 +49,16 @@ func startSSHRuntime(server *Signer, listenAddress string, port int, hostKeyPath
 	}
 
 	sshServer.SetIdentityHooks(sshtunnel.IdentityHooks{
-		ValidateToken: func(token string) (string, uint64, bool) {
-			var matchedID string
-			var matchedGeneration uint64
-			matchCount := 0
-			for _, rt := range server.registry.All() {
-				if rt == nil || rt.IsDecommissioned() {
-					continue
-				}
-				a := rt.Authenticator()
-				if ta, ok := a.(*auth.TokenAuthenticator); ok {
-					generation, valid := ta.ValidateTokenGeneration(token)
-					if !valid {
-						continue
-					}
-					matchCount++
-					if matchCount == 1 {
-						matchedID = rt.ID()
-						matchedGeneration = generation
-					}
-				}
+		ComputeTokenMACs: func(identityID string, serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
+			rt := server.registry.Get(identityID)
+			if rt == nil || rt.IsDecommissioned() {
+				return nil, nil, 0, false
 			}
-			if matchCount != 1 {
-				return "", 0, false
+			ta, ok := rt.Authenticator().(*auth.TokenAuthenticator)
+			if !ok {
+				return nil, nil, 0, false
 			}
-			return matchedID, matchedGeneration, true
+			return ta.ComputeHMACPair(serverInput, clientInput)
 		},
 		CheckKey: func(identityID string, key gossh.PublicKey) bool {
 			rt := server.registry.Get(identityID)

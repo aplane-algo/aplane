@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/binary"
 	"encoding/pem"
 	"errors"
@@ -68,9 +67,10 @@ type OperatorCheckCallback func(identityID string) bool
 // for the requested identity before SSH authentication succeeds.
 type ProvisioningIdentityCheckCallback func(identityID string) bool
 
-// TokenValidatorFunc validates a token and returns the matching identity ID.
-// Returns ("", false) if no identity matches.
-type TokenValidatorFunc func(token string) (identityID string, tokenGeneration uint64, valid bool)
+// TokenMACFunc computes the server and expected client token-proof MACs from
+// one identity token-generation snapshot. The raw token remains with the
+// identity authenticator.
+type TokenMACFunc func(identityID string, serverInput, clientInput []byte) (serverMAC, clientMAC []byte, tokenGeneration uint64, valid bool)
 
 // KeyCheckerFunc checks whether a public key is authorized for the given identity.
 type KeyCheckerFunc func(identityID string, key ssh.PublicKey) bool
@@ -85,9 +85,9 @@ type AdminChannelCallback func(channel ssh.Channel, remoteAddr, identityID strin
 // IdentityHooks configures identity-aware token validation and SSH key storage.
 // When set, these hooks replace the built-in single-token/single-keyfile behavior.
 type IdentityHooks struct {
-	ValidateToken TokenValidatorFunc
-	CheckKey      KeyCheckerFunc
-	EnrollKey     KeyEnrollerFunc
+	ComputeTokenMACs TokenMACFunc
+	CheckKey         KeyCheckerFunc
+	EnrollKey        KeyEnrollerFunc
 }
 
 // TokenProvisioningHooks configures the operator-approved request-token flow.
@@ -108,9 +108,10 @@ const (
 
 	initialAcceptErrorBackoff = 25 * time.Millisecond
 	maxAcceptErrorBackoff     = time.Second
+	invalidTokenProofDelay    = 5 * time.Second
 )
 
-// Server represents an SSH server with 2FA: public key + API token (passed as username).
+// Server represents an SSH server with mutual token proof and public-key auth.
 type Server struct {
 	listenAddr      string          // Address to listen on (e.g., "127.0.0.1:2222")
 	targetAddr      string          // Local address to forward connections to (e.g., "127.0.0.1:15283")
@@ -126,12 +127,12 @@ type Server struct {
 
 	// Authentication
 	tokenMu       sync.RWMutex
-	expectedToken string // API token (must match username) — used when tokenValidator is nil
+	expectedToken string // API token used when tokenMAC is nil
 
 	// Optional identity-aware callbacks (override built-in single-token/single-keyfile behavior)
-	tokenValidator TokenValidatorFunc // If set, replaces expectedToken comparison
-	keyChecker     KeyCheckerFunc     // If set, replaces authKeys lookup
-	keyEnroller    KeyEnrollerFunc    // If set, replaces registerAuthorizedKey
+	tokenMAC    TokenMACFunc    // If set, computes identity-scoped token proof MACs
+	keyChecker  KeyCheckerFunc  // If set, replaces authKeys lookup
+	keyEnroller KeyEnrollerFunc // If set, replaces registerAuthorizedKey
 
 	adminChannelCallback AdminChannelCallback
 
@@ -153,6 +154,7 @@ type Server struct {
 	revokedTokenGenerations  map[string]uint64               // Identity -> minimum accepted token generation
 	sshConnsMu               sync.Mutex                      // Protects sshConns and revokedTokenGenerations
 	testAfterAuthBeforeTrack func()                          // Test hook for auth/revocation race coverage
+	invalidTokenDelay        time.Duration                   // Tests may set this to zero to avoid the production rejection delay
 }
 
 type sshConnInfo struct {
@@ -257,27 +259,27 @@ func (s *Server) SetIdentityHooks(hooks IdentityHooks) {
 	if err := validateIdentityHooks(hooks); err != nil {
 		panic(err.Error())
 	}
-	s.tokenValidator = hooks.ValidateToken
+	s.tokenMAC = hooks.ComputeTokenMACs
 	s.keyChecker = hooks.CheckKey
 	s.keyEnroller = hooks.EnrollKey
 }
 
 func validateIdentityHooks(hooks IdentityHooks) error {
-	if !identityHooksConfigured(hooks.ValidateToken, hooks.CheckKey, hooks.EnrollKey) {
+	if !identityHooksConfigured(hooks.ComputeTokenMACs, hooks.CheckKey, hooks.EnrollKey) {
 		return nil
 	}
-	if !identityHooksComplete(hooks.ValidateToken, hooks.CheckKey, hooks.EnrollKey) {
-		return fmt.Errorf("identity SSH hooks require ValidateToken, CheckKey, and EnrollKey together")
+	if !identityHooksComplete(hooks.ComputeTokenMACs, hooks.CheckKey, hooks.EnrollKey) {
+		return fmt.Errorf("identity SSH hooks require ComputeTokenMACs, CheckKey, and EnrollKey together")
 	}
 	return nil
 }
 
-func identityHooksConfigured(tokenValidator TokenValidatorFunc, keyChecker KeyCheckerFunc, keyEnroller KeyEnrollerFunc) bool {
-	return tokenValidator != nil || keyChecker != nil || keyEnroller != nil
+func identityHooksConfigured(tokenMAC TokenMACFunc, keyChecker KeyCheckerFunc, keyEnroller KeyEnrollerFunc) bool {
+	return tokenMAC != nil || keyChecker != nil || keyEnroller != nil
 }
 
-func identityHooksComplete(tokenValidator TokenValidatorFunc, keyChecker KeyCheckerFunc, keyEnroller KeyEnrollerFunc) bool {
-	return tokenValidator != nil && keyChecker != nil && keyEnroller != nil
+func identityHooksComplete(tokenMAC TokenMACFunc, keyChecker KeyCheckerFunc, keyEnroller KeyEnrollerFunc) bool {
+	return tokenMAC != nil && keyChecker != nil && keyEnroller != nil
 }
 
 // SetAdminChannelCallback sets the callback used to handle remote admin
@@ -296,11 +298,11 @@ func (s *Server) assertNotStartedLocked(method string) {
 	}
 }
 
-// NewServer creates a new SSH server with 2FA: public key + API token.
+// NewServer creates an SSH server with public-key auth and mutual token proof.
 //
 // Authentication requires both:
 //   - Valid SSH public key (enrolled via request-token or manually added to authorized_keys)
-//   - Valid API token (passed as the SSH username)
+//   - Mutual proof of the identity API token
 func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expectedToken string) (*Server, error) {
 	hostKey, err := loadOrGenerateHostKey(hostKeyPath)
 	if err != nil {
@@ -322,12 +324,13 @@ func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expected
 		closeChan:               make(chan struct{}),
 		sshConns:                make(map[*ssh.ServerConn]sshConnInfo),
 		revokedTokenGenerations: make(map[string]uint64),
+		invalidTokenDelay:       invalidTokenProofDelay,
 	}
 
-	// Single-step authentication: public key + token (as username)
 	server.sshConfig = &ssh.ServerConfig{
-		PublicKeyCallback: server.handlePublicKeyAuth,
-		ServerVersion:     "SSH-2.0-APlane",
+		PublicKeyCallback:         server.handlePublicKeyAuth,
+		VerifiedPublicKeyCallback: server.handleVerifiedPublicKeyAuth,
+		ServerVersion:             "SSH-2.0-APlane",
 	}
 	server.sshConfig.AddHostKey(hostKey)
 
@@ -438,8 +441,9 @@ func loadAuthorizedKeys(path string) ([]ssh.PublicKey, error) {
 	return keys, nil
 }
 
-// handlePublicKeyAuth validates both the API token (passed as username) and public key.
-// Authentication requires both to succeed. Unknown keys are always rejected.
+// handlePublicKeyAuth validates identity/key eligibility. Normal authentication
+// remains incomplete until handleVerifiedPublicKeyAuth transitions to mutual
+// token proof after SSH verifies possession of the private key.
 //
 // Special mode: If username is "request-token:<identity>", this is a token provisioning
 // request. Only key authentication is required (no token). Fails fast if no operator connected.
@@ -453,38 +457,18 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 		return s.handleTokenProvisioningAuth(conn, key, username, remoteAddr, keyFingerprint)
 	}
 
-	// Normal mode: username is the API token
-	providedToken := username
-
-	// Validate token and resolve identity (use identity-aware callback if available)
-	var tokenMatch bool
-	var tokenIdentityID string
-	var tokenGeneration uint64
-	if s.tokenValidator != nil {
-		tokenIdentityID, tokenGeneration, tokenMatch = s.tokenValidator(providedToken)
-	} else {
-		s.tokenMu.RLock()
-		tokenMatch = subtle.ConstantTimeCompare([]byte(providedToken), []byte(s.expectedToken)) == 1
-		s.tokenMu.RUnlock()
-	}
-	if !tokenMatch {
-		fmt.Printf("[SSH] Invalid token from %s (key: %s)\n", remoteAddr, keyFingerprint)
-		time.Sleep(5 * time.Second) // Slow down brute force attempts
-		return nil, fmt.Errorf("invalid API token")
+	identityID := username
+	if identityID == "" || len(identityID) > tokenProofMaxIdentity {
+		return nil, fmt.Errorf("invalid SSH identity")
 	}
 
-	// Check if key is authorized for the same identity that owns the token
 	var authorized bool
-	if identityHooksConfigured(s.tokenValidator, s.keyChecker, s.keyEnroller) {
-		if !identityHooksComplete(s.tokenValidator, s.keyChecker, s.keyEnroller) {
+	if identityHooksConfigured(s.tokenMAC, s.keyChecker, s.keyEnroller) {
+		if !identityHooksComplete(s.tokenMAC, s.keyChecker, s.keyEnroller) {
 			fmt.Printf("[SSH] Identity-aware auth is not fully configured for %s (key: %s)\n", remoteAddr, keyFingerprint)
 			return nil, fmt.Errorf("identity-aware SSH authentication is not fully configured")
 		}
-		if tokenIdentityID == "" {
-			fmt.Printf("[SSH] Token matched without identity from %s (key: %s)\n", remoteAddr, keyFingerprint)
-			return nil, fmt.Errorf("API token did not resolve an identity")
-		}
-		authorized = s.keyChecker(tokenIdentityID, key)
+		authorized = s.keyChecker(identityID, key)
 	} else {
 		s.authKeysMu.RLock()
 		for _, allowedKey := range s.authKeys {
@@ -501,20 +485,130 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 		fmt.Printf("[SSH] Rejected unknown key from %s: %s\n", remoteAddr, keyFingerprint)
 		return nil, fmt.Errorf("unknown key %s; use request-token to enroll", keyFingerprint)
 	}
-	fmt.Printf("[SSH] Authenticated known key from %s: %s\n", remoteAddr, keyFingerprint)
+	return &ssh.Permissions{Extensions: map[string]string{
+		"auth_method":     "publickey_pending_token_proof",
+		"key_fingerprint": keyFingerprint,
+		"identity_id":     identityID,
+	}}, nil
+}
+
+func (s *Server) handleVerifiedPublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey, permissions *ssh.Permissions, _ string) (*ssh.Permissions, error) {
+	if permissions == nil || permissions.Extensions == nil {
+		return nil, fmt.Errorf("SSH public-key permissions are missing")
+	}
+	if permissions.Extensions["auth_method"] == "token_provisioning" {
+		return permissions, nil
+	}
+
+	identityID := permissions.Extensions["identity_id"]
+	keyFingerprint := permissions.Extensions["key_fingerprint"]
+	if identityID == "" || keyFingerprint == "" {
+		return nil, fmt.Errorf("SSH public-key identity binding is incomplete")
+	}
+	fmt.Printf("[SSH] Verified enrolled key from %s: %s\n", conn.RemoteAddr(), keyFingerprint)
+
+	return permissions, &ssh.PartialSuccessError{
+		Next: ssh.ServerAuthCallbacks{
+			KeyboardInteractiveCallback: func(nextConn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+				return s.handleTokenProofAuth(nextConn, challenge, identityID, keyFingerprint)
+			},
+		},
+	}
+}
+
+func (s *Server) handleTokenProofAuth(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge, identityID, keyFingerprint string) (*ssh.Permissions, error) {
+	clientNonceQuestion, err := marshalClientNonceQuestion()
+	if err != nil {
+		return nil, err
+	}
+	answers, err := challenge(tokenProofDomain, "", []string{clientNonceQuestion}, []bool{false})
+	if err != nil {
+		return nil, fmt.Errorf("request token proof client nonce: %w", err)
+	}
+	if len(answers) != 1 {
+		return s.rejectTokenProof(conn, keyFingerprint, "invalid client nonce response")
+	}
+	clientNonce, err := parseClientNonceAnswer(answers[0])
+	if err != nil {
+		return s.rejectTokenProof(conn, keyFingerprint, "invalid client nonce response")
+	}
+
+	serverNonce := make([]byte, tokenProofNonceSize)
+	if _, err := rand.Read(serverNonce); err != nil {
+		return nil, fmt.Errorf("generate token proof server nonce: %w", err)
+	}
+	hostKeyHash, err := hashSSHHostKey(s.hostKey.PublicKey())
+	if err != nil {
+		return nil, err
+	}
+	transcript, err := encodeTokenProofTranscript(tokenProofTranscript{
+		Identity:    identityID,
+		HostKeyHash: hostKeyHash,
+		ClientNonce: clientNonce,
+		ServerNonce: serverNonce,
+	})
+	if err != nil {
+		return nil, err
+	}
+	serverInput, err := encodeTokenProofMACInput(tokenProofServerDomain, transcript)
+	if err != nil {
+		return nil, err
+	}
+	clientInput, err := encodeTokenProofMACInput(tokenProofClientDomain, transcript)
+	if err != nil {
+		return nil, err
+	}
+
+	serverProof, expectedClientProof, tokenGeneration, valid := s.computeTokenMACs(identityID, serverInput, clientInput)
+	if !valid || len(serverProof) != tokenProofMACSize || len(expectedClientProof) != tokenProofMACSize {
+		return s.rejectTokenProof(conn, keyFingerprint, "token proof unavailable")
+	}
+	serverProofQuestion, err := marshalServerProofQuestion(serverNonce, serverProof)
+	if err != nil {
+		return nil, err
+	}
+	answers, err = challenge(tokenProofDomain, "", []string{serverProofQuestion}, []bool{false})
+	if err != nil {
+		return nil, fmt.Errorf("request token proof client proof: %w", err)
+	}
+	if len(answers) != 1 {
+		return s.rejectTokenProof(conn, keyFingerprint, "invalid client proof response")
+	}
+	clientProof, err := parseClientProofAnswer(answers[0])
+	if err != nil || !verifyTokenProof(expectedClientProof, clientProof) {
+		return s.rejectTokenProof(conn, keyFingerprint, "invalid client proof")
+	}
 
 	extensions := map[string]string{
-		"auth_method":     "publickey+token",
+		"auth_method":     "publickey+token-proof",
+		"identity_id":     identityID,
 		"key_fingerprint": keyFingerprint,
-	}
-	if tokenIdentityID != "" {
-		extensions["identity_id"] = tokenIdentityID
 	}
 	if tokenGeneration > 0 {
 		extensions["token_generation"] = strconv.FormatUint(tokenGeneration, 10)
 	}
-
 	return &ssh.Permissions{Extensions: extensions}, nil
+}
+
+func (s *Server) computeTokenMACs(identityID string, serverInput, clientInput []byte) (serverMAC, clientMAC []byte, generation uint64, valid bool) {
+	if s.tokenMAC != nil {
+		return s.tokenMAC(identityID, serverInput, clientInput)
+	}
+
+	s.tokenMu.RLock()
+	defer s.tokenMu.RUnlock()
+	if s.expectedToken == "" {
+		return nil, nil, 0, false
+	}
+	return computeTokenProofMAC(s.expectedToken, serverInput), computeTokenProofMAC(s.expectedToken, clientInput), 0, true
+}
+
+func (s *Server) rejectTokenProof(conn ssh.ConnMetadata, keyFingerprint, reason string) (*ssh.Permissions, error) {
+	fmt.Printf("[SSH] Token proof rejected from %s (key: %s)\n", conn.RemoteAddr(), keyFingerprint)
+	if s.invalidTokenDelay > 0 {
+		time.Sleep(s.invalidTokenDelay)
+	}
+	return nil, fmt.Errorf("token proof authentication failed: %s", reason)
 }
 
 // handleTokenProvisioningAuth handles SSH auth for token provisioning requests.
@@ -549,8 +643,8 @@ func (s *Server) handleTokenProvisioningAuth(conn ssh.ConnMetadata, key ssh.Publ
 // enrollKey enrolls a public key, using the identity-aware callback if set,
 // otherwise falling back to the built-in single-file registration.
 func (s *Server) enrollKey(identityID string, key ssh.PublicKey) error {
-	if identityHooksConfigured(s.tokenValidator, s.keyChecker, s.keyEnroller) {
-		if !identityHooksComplete(s.tokenValidator, s.keyChecker, s.keyEnroller) {
+	if identityHooksConfigured(s.tokenMAC, s.keyChecker, s.keyEnroller) {
+		if !identityHooksComplete(s.tokenMAC, s.keyChecker, s.keyEnroller) {
 			return fmt.Errorf("identity-aware SSH key enrollment is not fully configured")
 		}
 		return s.keyEnroller(identityID, key)
