@@ -5,6 +5,7 @@ package sshtunnel
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -42,6 +43,17 @@ func TestServerCallbackSettersBeforeStart(t *testing.T) {
 		srv.keyEnroller == nil ||
 		srv.adminChannelCallback == nil {
 		t.Fatal("expected all callback setters to apply before Start")
+	}
+}
+
+func TestSSHAuthLogOmitsUsernameAndErrorDetails(t *testing.T) {
+	const secret = "reusable-token-shaped-secret"
+	line := formatSSHAuthLog(testConnMetadata{user: secret}, "keyboard-interactive", fmt.Errorf("bad proof for %s", secret))
+	if strings.Contains(line, secret) {
+		t.Fatalf("auth log contains SSH username or error details: %q", line)
+	}
+	if !strings.Contains(line, "method=keyboard-interactive") || !strings.Contains(line, "outcome=rejected") {
+		t.Fatalf("auth log omits method or outcome: %q", line)
 	}
 }
 

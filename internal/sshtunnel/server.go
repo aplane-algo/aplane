@@ -330,11 +330,26 @@ func NewServer(listenAddr, targetAddr, hostKeyPath, authorizedKeysPath, expected
 	server.sshConfig = &ssh.ServerConfig{
 		PublicKeyCallback:         server.handlePublicKeyAuth,
 		VerifiedPublicKeyCallback: server.handleVerifiedPublicKeyAuth,
-		ServerVersion:             "SSH-2.0-APlane",
+		AuthLogCallback: func(conn ssh.ConnMetadata, method string, err error) {
+			fmt.Println(formatSSHAuthLog(conn, method, err))
+		},
+		ServerVersion: "SSH-2.0-APlane",
 	}
 	server.sshConfig.AddHostKey(hostKey)
 
 	return server, nil
+}
+
+func formatSSHAuthLog(conn ssh.ConnMetadata, method string, err error) string {
+	outcome := "accepted"
+	if err != nil {
+		outcome = "rejected"
+		var partial *ssh.PartialSuccessError
+		if errors.As(err, &partial) {
+			outcome = "partial"
+		}
+	}
+	return fmt.Sprintf("[SSH] Authentication from %s: method=%s outcome=%s", conn.RemoteAddr(), method, outcome)
 }
 
 // loadOrGenerateHostKey loads a host key from disk or generates and stores a new one.
