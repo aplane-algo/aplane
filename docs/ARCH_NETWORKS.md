@@ -29,6 +29,11 @@ configuration and state:
 - plugin execution context,
 - SDK config behavior.
 
+This network context token is unrelated to the identity-scoped API bearer
+token used for HTTP authentication and SSH mutual proof. SSH authentication
+completes before transaction network context is evaluated and does not bind a
+connection to one network token.
+
 Cryptographic chain identity comes from transaction `GenesisHash`. `GenesisID`
 is display and diagnostic data only in signer policy and planning paths.
 

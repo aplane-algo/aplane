@@ -227,34 +227,40 @@ When apshell connects to a remote apsigner, it uses an SSH tunnel with configura
 ### SSH Authentication Model
 
 SSH authentication requires **both** a valid API token and a valid public key (2FA).
-The API token is passed as the SSH username, enabling single-step authentication.
+The SSH username is the non-secret identity ID. The bearer token never appears
+in SSH metadata; the client proves possession through a programmatic,
+host-key-bound keyboard-interactive exchange after public-key authentication.
 
 **Authentication flow:**
 
 ```
-Client                                              Server
-  │                                                      │
-  │  1. SSH connect (username=API_TOKEN, pubkey=KEY)     │
-  │─────────────────────────────────────────────────────>│
-  │                                                      │
-  │  2. Server validates token (constant-time compare)   │
-  │     Invalid -> Reject                                │
-  │     Valid -> Check key                               │
-  │                                                      │
-  │  3. Server checks authorized_keys                    │
-  │     - Key found → Authenticate                       │
-  │     - Key not found → Reject                         │
-  │                                                      │
-  │  4. SSH session established                          │
-  │<─────────────────────────────────────────────────────│
+Client                                               Server
+  │                                                       │
+  │  1. SSH connect (username=identity, pubkey=KEY)       │
+  │──────────────────────────────────────────────────────>│
+  │                                                       │
+  │  2. Verify enrolled key possession; partial success  │
+  │<──────────────────────────────────────────────────────│
+  │                                                       │
+  │  3. Exchange fresh client/server nonces              │
+  │  4. Server proves token possession first             │
+  │<──────────────────────────────────────────────────────│
+  │  5. Client verifies server proof, then proves token   │
+  │──────────────────────────────────────────────────────>│
+  │                                                       │
+  │  6. Server verifies proof; SSH session established   │
+  │<──────────────────────────────────────────────────────│
 ```
 
 Keys are enrolled exclusively through the `request-token` operator-approved flow.
 
 **Key points:**
 - Token is always required for normal connections (no "key-only" mode); the `request-token` bootstrap flow is the sole exception
-- Token passed as SSH username (no keyboard-interactive prompts)
-- Token verification uses constant-time comparison (timing-attack safe)
+- The keyboard-interactive exchange is fully programmatic and never prompts a user
+- Proofs are HMAC-SHA256 values over the identity, accepted SSH host key, and two fresh nonces; server and client roles are domain-separated
+- The server proves token possession before the client emits its proof
+- Clients reject an SSH server that accepts the public key without completing mutual token proof
+- Proof comparison is constant-time
 
 ### Client-Side Host Key Verification (TOFU)
 
@@ -280,14 +286,22 @@ Client                                              Server
 - Client: `ssh.known_hosts_path` - where to store/verify server keys (default: `$APCLIENT_DATA/.ssh/known_hosts`)
 - Server: `ssh.host_key_path` - persistent host key (default: `$APSIGNER_DATA/.ssh/ssh_host_key`)
 
+With explicit TOFU enabled, a wrongly trusted first endpoint still cannot learn
+the bearer token: it cannot produce the server proof, and the client sends no
+client proof until that proof verifies. A proof observed on one connection is
+not reusable against the real signer because the accepted host-key hash and
+fresh nonces differ.
+
 ### SSH Security Properties
 
 | Property | Implementation |
 |----------|----------------|
-| Two-factor auth | API token (as username) + Ed25519 public key |
+| Two-factor auth | Enrolled SSH public key + mutual, host-key-bound API token proof |
 | Key enrollment | Operator-approved `request-token` flow only |
 | Host key verification | TOFU model with persistent known_hosts |
-| Token validation | Constant-time comparison (timing-attack safe) |
+| Token confidentiality | Token never appears in SSH username, metadata, challenge, or response |
+| Proof replay resistance | Fresh client/server nonces and accepted host-key hash bind each proof transcript |
+| Token validation | HMAC-SHA256 with constant-time proof comparison |
 | Token revocation | Operator-initiated via apadmin; invalidates new HTTP requests and closes active SSH connections |
 | Transport encryption | SSH protocol (Ed25519 keys) |
 
@@ -305,9 +319,9 @@ Logged information:
 - Key fingerprint (on registration)
 - Connect/disconnect events
 
-**Note:** The SSH username contains the API token, but audit callbacks receive
-the resolved identity rather than the raw username so the token is not written
-to the audit log.
+**Note:** The SSH username is the non-secret identity ID. The SSH auth-log
+callback records only remote address, authentication method, and outcome; it
+does not log the username, interactive responses, or authentication errors.
 
 ### SSH Configuration Reference
 
@@ -334,7 +348,7 @@ endpoint:
 **Important distinction:**
 - SSH tunnel provides **transport security** and **client authentication**
 - Application-level auth (`Authorization: aplane <token>`) is still required per HTTP request
-- SSH key verifies the tunnel client; HTTP token authorizes API operations
+- SSH key possession plus token proof authenticates the tunnel identity; the same token authorizes each HTTP request
 
 ### Token Provisioning via SSH
 
