@@ -1260,17 +1260,35 @@ SSH server uses Ed25519 host keys, auto-generated at `.ssh/ssh_host_key`.
 Authentication requires both factors in one handshake:
 
 - public key enrolled for the bound identity in `identities/<identity>/.ssh/authorized_keys`
-- API token as SSH username
+- mutual proof of the identity-scoped API token
 
-The API token is identity-scoped. In identity-aware mode the SSH server scans
-registered, non-decommissioned identity authenticators and accepts the token only
-when exactly one identity matches. The authenticated token identity is then used
-for the authorized-key check, connection tracking, and optional admin subsystem
-pre-binding.
+Normal clients send the non-secret identity ID as the SSH username. After SSH
+verifies possession of an enrolled public key, the server returns partial
+success and requires keyboard-interactive authentication. That exchange is
+programmatic and has two rounds:
+
+1. server asks `{"version":1,"step":"client_nonce"}` and the client returns a fresh 32-byte nonce as unpadded base64url
+2. server returns a fresh 32-byte nonce and its proof; the client verifies that proof before returning its own proof
+
+The v1 proof transcript is the concatenation of five uint32-big-endian
+length-prefixed fields: `aplane-ssh-token-proof-v1`, identity ID,
+SHA-256 of the canonical accepted SSH host-key blob, client nonce, and server
+nonce. Each HMAC input is the length-prefixed role (`server` or `client`)
+followed by the length-prefixed transcript. Proofs are HMAC-SHA256 keyed by the
+raw token. JSON messages reject unknown or duplicate fields, non-canonical
+base64url, wrong sizes, and trailing data. The shared conformance vector is
+`test/contracts/sshtunnel/token_proof_v1.json`.
+
+The server computes both role proofs under one token-authenticator read lock
+and records that token generation on the authenticated connection. Clients
+must verify that the server proof round completed even when the SSH library
+reports authentication success; this rejects a wrongly trusted endpoint that
+accepts the public key and skips token proof. The token itself is never sent in
+the SSH username, metadata, challenge, or response.
 
 `ssh.authorized_keys_path` is part of the server config surface; in product mode identity-scoped SSH authorization and enrollment are sourced from `identities/<identity>/.ssh/authorized_keys`.
 
-Invalid tokens incur a 5-second delay.
+Unavailable or invalid client token proofs incur a 5-second delay.
 
 Token provisioning flow:
 

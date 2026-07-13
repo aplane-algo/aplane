@@ -80,6 +80,7 @@ func (s *ConnectionState) ConnectWithTunnel(
 	}
 
 	client := sshtunnel.NewClient(host, sshPort, localPort, signerPort, identityFile, knownHostsPath)
+	client.SetIdentityID(auth.CurrentProductIdentityID())
 	client.SetAPIToken(token)
 	if hostKeyApproval != nil {
 		client.SetHostKeyApprovalHandler(hostKeyApproval)

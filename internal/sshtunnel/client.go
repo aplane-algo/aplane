@@ -107,7 +107,8 @@ func (s *keepaliveStopSignal) stop() {
 // It should display the host and fingerprint to the user and return true if trusted.
 type HostKeyApprovalHandler func(host string, fingerprint string) (bool, error)
 
-// Client represents an SSH tunnel client with public key authentication.
+// Client represents an SSH tunnel client with public-key authentication and
+// mutual token proof.
 type Client struct {
 	host       string // remote host
 	sshPort    int    // SSH port on remote host
@@ -123,8 +124,8 @@ type Client struct {
 	hostKeyApproval     HostKeyApprovalHandler // Callback for TOFU host key approval
 	onProvisioningStart func()
 
-	// Token for authenticating new key registration
-	apiToken string
+	identityID string
+	apiToken   string
 
 	mu        sync.Mutex
 	connected bool
@@ -180,16 +181,22 @@ func (c *Client) SetProvisioningStartCallback(callback func()) {
 	c.onProvisioningStart = callback
 }
 
-// SetAPIToken sets the API token used for authentication.
-// The token is passed as the SSH username for 2FA (token + public key).
+// SetIdentityID sets the non-secret product identity used as the SSH username.
+func (c *Client) SetIdentityID(identityID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.identityID = identityID
+}
+
+// SetAPIToken sets the API token used for mutual token proof.
 func (c *Client) SetAPIToken(token string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.apiToken = token
 }
 
-// ConnectWithKey establishes an SSH connection using 2FA: API token + public key.
-// The API token (set via SetAPIToken) is passed as the SSH username.
+// ConnectWithKey establishes an SSH connection using public-key auth and
+// mutual token proof.
 func (c *Client) ConnectWithKey(ctx context.Context) error {
 	c.mu.Lock()
 	if c.connected {
@@ -198,10 +205,14 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 	}
 	c.resetCloseSignalLocked()
 	token := c.apiToken
+	identityID := c.identityID
 	c.mu.Unlock()
 
 	if token == "" {
 		return fmt.Errorf("API token required (call SetAPIToken first)")
+	}
+	if identityID == "" {
+		return fmt.Errorf("identity ID required (call SetIdentityID first)")
 	}
 
 	authMethod, agentConn, err := c.authMethod()
@@ -216,12 +227,22 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 		}
 		return err
 	}
+	authState := newTokenProofClientAuth(identityID, token)
+	defer authState.clear()
+	verifiedHostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		if err := hostKeyCallback(hostname, remote, key); err != nil {
+			return err
+		}
+		return authState.captureHostKey(key)
+	}
 
-	// Single auth method: public key (token is passed as username)
 	config := &ssh.ClientConfig{
-		User:            token, // API token as username for 2FA
-		Auth:            []ssh.AuthMethod{authMethod},
-		HostKeyCallback: hostKeyCallback,
+		User: identityID,
+		Auth: []ssh.AuthMethod{
+			authMethod,
+			ssh.KeyboardInteractive(authState.challenge),
+		},
+		HostKeyCallback: verifiedHostKeyCallback,
 		Timeout:         30 * time.Second,
 	}
 
@@ -234,6 +255,13 @@ func (c *Client) ConnectWithKey(ctx context.Context) error {
 			_ = agentConn.Close()
 		}
 		return fmt.Errorf("SSH connection failed: %w", err)
+	}
+	if !authState.serverVerified() {
+		_ = sshClient.Close()
+		if agentConn != nil {
+			_ = agentConn.Close()
+		}
+		return fmt.Errorf("SSH connection failed: server did not complete mutual token proof")
 	}
 
 	c.mu.Lock()

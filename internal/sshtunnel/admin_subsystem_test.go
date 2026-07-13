@@ -52,6 +52,7 @@ func TestAdminSubsystemCarriesBytes(t *testing.T) {
 	}
 
 	client := NewClient(host, port, 0, 0, identityPath, knownHostsPath)
+	client.SetIdentityID("default")
 	client.SetAPIToken("test-token")
 	if err := client.ConnectWithKey(context.Background()); err != nil {
 		t.Fatalf("ConnectWithKey() error = %v", err)

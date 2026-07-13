@@ -62,7 +62,8 @@ endpoints:
 
 Note: endpoint SSH paths are relative to the data directory (installer default:
 `~/aplane/apclient`). The `.ssh/` subdirectory is created automatically when
-needed. SSH authentication uses 2FA (API token as username + public key).
+needed. SSH authentication uses an enrolled public key plus a programmatic,
+host-key-bound proof of the API token; the token is not sent as the SSH username.
 
 `signer_status_poll_interval` controls interactive apshell's background
 authenticated `/status` checks. The default is `"10s"`. Use a larger duration
@@ -441,7 +442,7 @@ Local IPC remains the default admin transport:
 
 Remote `apadmin` over SSH uses:
 - the default signer endpoint from the client data directory (`APCLIENT_DATA` or `--client-data`)
-- that endpoint's token file as the SSH username/token credential
+- that endpoint's token file for the SSH mutual proof
 - the same passphrase-based admin auth after the SSH stream is established
 - an already trusted signer host in the client `known_hosts` file
 

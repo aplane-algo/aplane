@@ -145,7 +145,7 @@ DTOs and contract fixtures.
 | Installed template | Signer identity | encrypted `keytypes/<key_type>.template` | registered generation provider after reload | admin installed template surface | `internal/templatestore`, `internal/signerapp/templates` |
 | Node-role policy | Signer identity | `policy.yaml` plus `policy.yaml.hmac` | client-signing or sentry component `policy.Config`, selected by node role | admin/appolicy policy editor flows | `internal/policy`, `internal/signerapp/policyruntime`, `internal/signerapp/admin`, `cmd/appolicy` |
 | Authorization principal/group/grant | Product bootstrap model | source-defined bootstrap records | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
-| API token | Signer identity and client | signer `identities/<identity>/aplane.token`, client `aplane.token` | token authenticator | HTTP auth, SSH username | `internal/tokenfile`, `internal/auth` |
+| API token | Signer identity and client | signer `identities/<identity>/aplane.token`, client `aplane.token` | token authenticator | HTTP auth, SSH mutual proof | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` |
 | SSH enrollment | Signer identity | `identities/<identity>/.ssh/authorized_keys` | identity SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
 | Admin session | Signer identity | none | `adminproto.SessionContext`, session manager | admin IPC/SSH JSON envelope | `internal/adminproto`, `internal/protocol` |
 | Sign request | Live signer runtime | none durable | approval coordinator pending request | `/sign`, `/sign/cancel`, admin `sign_request` | `internal/signerapp/approval`, `internal/signerapp/signing` |

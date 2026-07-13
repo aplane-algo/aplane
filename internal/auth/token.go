@@ -5,6 +5,8 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"net/http"
 	"strings"
 	"sync"
@@ -72,6 +74,31 @@ func (t *TokenAuthenticator) ValidateTokenGeneration(token string) (uint64, bool
 	generation := t.generation
 	t.mu.RUnlock()
 	return generation, valid
+}
+
+// ComputeHMACPair computes two SHA-256 HMACs from one token-generation
+// snapshot. SSH mutual authentication uses the pair for its independently
+// domain-separated server and client proofs without exposing the raw token.
+func (t *TokenAuthenticator) ComputeHMACPair(firstMessage, secondMessage []byte) (firstMAC, secondMAC []byte, generation uint64, ok bool) {
+	if len(firstMessage) == 0 || len(secondMessage) == 0 {
+		return nil, nil, 0, false
+	}
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.expectedToken == "" {
+		return nil, nil, 0, false
+	}
+
+	firstMAC = computeHMACSHA256(t.expectedToken, firstMessage)
+	secondMAC = computeHMACSHA256(t.expectedToken, secondMessage)
+	return firstMAC, secondMAC, t.generation, true
+}
+
+func computeHMACSHA256(token string, message []byte) []byte {
+	mac := hmac.New(sha256.New, []byte(token))
+	_, _ = mac.Write(message)
+	return mac.Sum(nil)
 }
 
 // UpdateToken replaces the expected token. Used for token revocation.

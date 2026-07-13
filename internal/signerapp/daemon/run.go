@@ -250,7 +250,7 @@ func Run(dataDir string) int {
 	httpServer := buildHTTPServer(server, port)
 	logHTTPStartup(keyCount, keysSnapshot, port)
 
-	sshRuntime, err := startSSHRuntime(server, config.Endpoint.SSH.ListenAddress, config.Endpoint.SSH.Port, config.Endpoint.SSH.HostKeyPath, config.Endpoint.SSH.AuthorizedKeysPath, startupOpts.Paths.Root(), identityID, auditLog)
+	sshRuntime, err := startSSHRuntime(server, config.Endpoint.SSH.ListenAddress, config.Endpoint.SSH.Port, config.Endpoint.SSH.HostKeyPath, config.Endpoint.SSH.AuthorizedKeysPath, auditLog)
 	if err != nil {
 		logErrorf("failed to start SSH server: %v", err)
 		return 1

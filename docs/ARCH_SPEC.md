@@ -1611,10 +1611,11 @@ Verification expectations remain:
 - IPC: passphrase auth. Product-mode local IPC binds to the product identity;
   explicit non-product identity selection is rejected unless the transport was
   pre-bound to that identity.
-- SSH: dual-factor for tunnel/admin connections — API token as SSH username plus
-  a public key enrolled for the token identity under
-  `identities/<identity>/.ssh/authorized_keys`. Token provisioning flow exists
-  for new client enrollment via admin approval.
+- SSH: dual-factor for tunnel/admin connections. The non-secret identity ID is
+  the SSH username. An enrolled public key is verified first, followed by a
+  programmatic mutual HMAC proof of the identity token bound to the accepted
+  SSH host key and fresh client/server nonces. Token provisioning remains a
+  key-only, operator-approved exception for new client enrollment.
 
 Decommissioned identities are rejected at all transport boundaries.
 
@@ -1627,7 +1628,8 @@ See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Approval and Policy Contracts) for t
 The SSH tunnel is implemented in `internal/sshtunnel`. It provides:
 
 - an SSH server embedded in `apsigner` that forwards TCP connections to the local REST API,
-- SSH clients in `apshell` and the external Go SDK that establish the tunnel.
+- SSH clients in `apshell`, remote `apadmin`, and the external Go, Python, and
+  TypeScript SDKs that establish the tunnel.
 
 Watcher, template reload, audit logging, token provisioning, token revocation, and backup/restore contracts are documented in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 

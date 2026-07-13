@@ -40,6 +40,14 @@ audit pass should extend the guarded signing model with the gate states and
 add the containment invariant: no submittable guarded bytes exit the signer
 unless the user gate approved a non-simulation request.
 
+**Model drift: SSH authentication boundary.**
+The runtime now authenticates normal SSH connections with verified public-key
+partial success followed by a mutual, host-key-and-nonce-bound token proof.
+Clients also enforce a postcondition that rejects servers which skip the proof
+stage. Existing formal models do not model SSH transport authentication, so no
+modeled invariant changed, but any future transport-boundary model must use
+this two-stage boundary rather than the former token-in-username assumption.
+
 Otherwise, no actionable test gaps remain. Per-invariant status lives in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The lifecycle L4-L7
 audit is closed by the explicit lease-release and writer-pending tests

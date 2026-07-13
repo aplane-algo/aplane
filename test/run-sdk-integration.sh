@@ -185,12 +185,15 @@ binary="temp/apsigner-sdk-integration"
 go build -o "$binary" ./cmd/apsigner
 binary_abs="$project_root/$binary"
 
-port="$(python3 - <<'PY'
+read -r port ssh_port < <(python3 - <<'PY'
 import os
 from pathlib import Path
 
 config = Path(os.environ["APSIGNER_DATA"]) / "config.yaml"
 in_endpoint = False
+in_ssh = False
+signer_port = None
+ssh_port = None
 for raw in config.read_text().splitlines():
     stripped = raw.strip()
     if not stripped or stripped.startswith("#"):
@@ -198,17 +201,30 @@ for raw in config.read_text().splitlines():
     indent = len(raw) - len(raw.lstrip(" "))
     if indent == 0:
         in_endpoint = stripped == "endpoint:"
+        in_ssh = False
         continue
-    if in_endpoint and indent == 2 and stripped.startswith("signer_port:"):
+    if not in_endpoint:
+        continue
+    if indent == 2:
+        in_ssh = stripped == "ssh:"
+    if indent == 2 and stripped.startswith("signer_port:"):
         value = stripped.split(":", 1)[1].split("#", 1)[0].strip()
         if not value.isdigit():
             raise SystemExit(f"endpoint.signer_port is not numeric in {config}")
-        print(value)
-        break
-else:
+        signer_port = value
+    if in_ssh and indent == 4 and stripped.startswith("port:"):
+        value = stripped.split(":", 1)[1].split("#", 1)[0].strip()
+        if not value.isdigit():
+            raise SystemExit(f"endpoint.ssh.port is not numeric in {config}")
+        ssh_port = value
+
+if signer_port is None:
     raise SystemExit("endpoint.signer_port not found in APSIGNER_DATA/config.yaml")
+if ssh_port is None:
+    raise SystemExit("endpoint.ssh.port not found in APSIGNER_DATA/config.yaml")
+print(signer_port, ssh_port)
 PY
-)"
+)
 
 log_file="${TMPDIR:-/tmp}/aplane-sdk-integration-apsigner.log"
 
@@ -248,6 +264,12 @@ echo "Running SDK integration tests from $APLANE_SDKS_REPO"
 (
   cd "$APLANE_SDKS_REPO"
   APLANE_SDK_INTEGRATION=1 \
+    APLANE_SDK_SSH_HOST=localhost \
+    APLANE_SDK_SSH_PORT="$ssh_port" \
+    APLANE_SDK_SIGNER_PORT="$port" \
+    APLANE_SDK_SSH_KEY_PATH="$APCLIENT_DATA/.ssh/id_ed25519" \
+    APLANE_SDK_KNOWN_HOSTS_PATH="$APCLIENT_DATA/.ssh/known_hosts" \
+    APLANE_SDK_TOKEN_FILE="$APCLIENT_DATA/aplane.token" \
     APSIGNER_DATA="$APSIGNER_DATA" \
     APCLIENT_DATA="$APCLIENT_DATA" \
     make --no-print-directory integration-test

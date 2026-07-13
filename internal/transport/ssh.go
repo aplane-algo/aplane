@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
@@ -52,6 +53,7 @@ func (c *SSHAdminClient) Dial() error {
 // subsystem using the caller's context for the SSH handshake.
 func (c *SSHAdminClient) DialWithContext(ctx context.Context) error {
 	client := sshtunnel.NewClient(c.host, c.port, 0, 0, c.identityFile, c.knownHostsPath)
+	client.SetIdentityID(auth.CurrentProductIdentityID())
 	client.SetAPIToken(c.token)
 	if err := client.ConnectWithKey(ctx); err != nil {
 		return fmt.Errorf("SSH connection failed: %w", err)

@@ -5,6 +5,7 @@ package sshtunnel
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -25,9 +26,9 @@ func TestServerCallbackSettersBeforeStart(t *testing.T) {
 		IdentityProvisioning: func(identityID string) bool { return true },
 	})
 	srv.SetIdentityHooks(IdentityHooks{
-		ValidateToken: func(token string) (string, uint64, bool) { return "default", 1, true },
-		CheckKey:      func(identityID string, key ssh.PublicKey) bool { return true },
-		EnrollKey:     func(identityID string, key ssh.PublicKey) error { return nil },
+		ComputeTokenMACs: testTokenMACs,
+		CheckKey:         func(identityID string, key ssh.PublicKey) bool { return true },
+		EnrollKey:        func(identityID string, key ssh.PublicKey) error { return nil },
 	})
 	srv.SetAdminChannelCallback(func(channel ssh.Channel, remoteAddr, identityID string) {})
 
@@ -37,11 +38,22 @@ func TestServerCallbackSettersBeforeStart(t *testing.T) {
 		srv.tokenAuditCallback == nil ||
 		srv.operatorCheckCallback == nil ||
 		srv.provisioningIdentityCheck == nil ||
-		srv.tokenValidator == nil ||
+		srv.tokenMAC == nil ||
 		srv.keyChecker == nil ||
 		srv.keyEnroller == nil ||
 		srv.adminChannelCallback == nil {
 		t.Fatal("expected all callback setters to apply before Start")
+	}
+}
+
+func TestSSHAuthLogOmitsUsernameAndErrorDetails(t *testing.T) {
+	const secret = "reusable-token-shaped-secret"
+	line := formatSSHAuthLog(testConnMetadata{user: secret}, "keyboard-interactive", fmt.Errorf("bad proof for %s", secret))
+	if strings.Contains(line, secret) {
+		t.Fatalf("auth log contains SSH username or error details: %q", line)
+	}
+	if !strings.Contains(line, "method=keyboard-interactive") || !strings.Contains(line, "outcome=rejected") {
+		t.Fatalf("auth log omits method or outcome: %q", line)
 	}
 }
 
@@ -51,16 +63,16 @@ func TestSetIdentityHooksRejectsPartialConfiguration(t *testing.T) {
 		hooks IdentityHooks
 	}{
 		{
-			name: "validator only",
+			name: "token MAC only",
 			hooks: IdentityHooks{
-				ValidateToken: func(token string) (string, uint64, bool) { return "default", 1, true },
+				ComputeTokenMACs: testTokenMACs,
 			},
 		},
 		{
 			name: "missing enroller",
 			hooks: IdentityHooks{
-				ValidateToken: func(token string) (string, uint64, bool) { return "default", 1, true },
-				CheckKey:      func(identityID string, key ssh.PublicKey) bool { return true },
+				ComputeTokenMACs: testTokenMACs,
+				CheckKey:         func(identityID string, key ssh.PublicKey) bool { return true },
 			},
 		},
 		{
@@ -80,7 +92,7 @@ func TestSetIdentityHooksRejectsPartialConfiguration(t *testing.T) {
 					t.Fatal("SetIdentityHooks did not panic for partial hooks")
 				}
 				msg, ok := r.(string)
-				if !ok || !strings.Contains(msg, "require ValidateToken, CheckKey, and EnrollKey together") {
+				if !ok || !strings.Contains(msg, "require ComputeTokenMACs, CheckKey, and EnrollKey together") {
 					t.Fatalf("panic = %#v, want partial identity hook assertion", r)
 				}
 			}()
@@ -95,11 +107,9 @@ func TestIdentityAwareAuthRejectsPartialHooksWithoutGlobalKeyFallback(t *testing
 	srv.authKeysMu.Lock()
 	srv.authKeys = append(srv.authKeys, pub)
 	srv.authKeysMu.Unlock()
-	srv.tokenValidator = func(token string) (string, uint64, bool) {
-		return "alice", 1, true
-	}
+	srv.tokenMAC = testTokenMACs
 
-	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "valid-token"}, pub)
+	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "alice"}, pub)
 	if perms != nil {
 		t.Fatalf("handlePublicKeyAuth() permissions = %#v, want nil", perms)
 	}
@@ -108,26 +118,23 @@ func TestIdentityAwareAuthRejectsPartialHooksWithoutGlobalKeyFallback(t *testing
 	}
 }
 
-func TestIdentityAwareAuthRejectsEmptyTokenIdentityWithoutGlobalKeyFallback(t *testing.T) {
+func TestIdentityAwareAuthBindsUsernameIdentityToKeyCheck(t *testing.T) {
 	srv, _ := testServer(t)
 	_, pub := generateClientKey(t)
-	srv.authKeysMu.Lock()
-	srv.authKeys = append(srv.authKeys, pub)
-	srv.authKeysMu.Unlock()
-	srv.tokenValidator = func(token string) (string, uint64, bool) {
-		return "", 1, true
-	}
+	srv.tokenMAC = testTokenMACs
+	var checkedIdentity string
 	srv.keyChecker = func(identityID string, key ssh.PublicKey) bool {
+		checkedIdentity = identityID
 		return true
 	}
 	srv.keyEnroller = func(identityID string, key ssh.PublicKey) error { return nil }
 
-	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "valid-token"}, pub)
-	if perms != nil {
-		t.Fatalf("handlePublicKeyAuth() permissions = %#v, want nil", perms)
+	perms, err := srv.handlePublicKeyAuth(testConnMetadata{user: "alice"}, pub)
+	if err != nil {
+		t.Fatalf("handlePublicKeyAuth() error = %v", err)
 	}
-	if err == nil || !strings.Contains(err.Error(), "did not resolve an identity") {
-		t.Fatalf("handlePublicKeyAuth() error = %v, want empty token identity rejection", err)
+	if checkedIdentity != "alice" || perms.Extensions["identity_id"] != "alice" {
+		t.Fatalf("identity binding = checked %q permissions %#v, want alice", checkedIdentity, perms)
 	}
 }
 
@@ -202,9 +209,9 @@ func TestServerCallbackSettersPanicAfterStart(t *testing.T) {
 			name: "SetIdentityHooks",
 			call: func() {
 				srv.SetIdentityHooks(IdentityHooks{
-					ValidateToken: func(token string) (string, uint64, bool) { return "default", 1, true },
-					CheckKey:      func(identityID string, key ssh.PublicKey) bool { return true },
-					EnrollKey:     func(identityID string, key ssh.PublicKey) error { return nil },
+					ComputeTokenMACs: testTokenMACs,
+					CheckKey:         func(identityID string, key ssh.PublicKey) bool { return true },
+					EnrollKey:        func(identityID string, key ssh.PublicKey) error { return nil },
 				})
 			},
 		},
@@ -233,6 +240,10 @@ func TestServerCallbackSettersPanicAfterStart(t *testing.T) {
 
 type testConnMetadata struct {
 	user string
+}
+
+func testTokenMACs(identityID string, serverInput, clientInput []byte) ([]byte, []byte, uint64, bool) {
+	return make([]byte, tokenProofMACSize), make([]byte, tokenProofMACSize), 1, identityID != ""
 }
 
 func (m testConnMetadata) User() string {
