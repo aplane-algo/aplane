@@ -99,6 +99,9 @@ func (m Model) parameterModalFooterText(keyType, verb string) string {
 		if isMultilineParamType(param.Type) {
 			return ""
 		}
+		if isWrappedSingleLineParam(param) {
+			return "Up/Down: Scroll | PgUp/PgDn: Page | Home/End: Ends | Tab: Next | Enter: " + verb + " | Esc: Back"
+		}
 	}
 	return "Tab: Next | </> Switch mode | Enter: " + verb + " | Esc: Back"
 }

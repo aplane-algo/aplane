@@ -36,6 +36,13 @@ provisioning approval, generate / import / export / delete forms, and managed
 backup restore. The `view.go` dispatcher selects the renderer by current
 `ViewState`; the `update.go` dispatcher selects the handler the same way.
 
+Popup panels use a shared overflow viewport instead of truncating content.
+`Ctrl+Up` / `Ctrl+Down` scroll that outer panel incrementally,
+`Ctrl+PgUp` / `Ctrl+PgDn` move by larger steps, and `Ctrl+Home` / `Ctrl+End`
+jump to its boundaries. The popup displays its visible line range whenever it
+overflows. Views with an existing purpose-built list, editor, or approval
+viewport retain that viewport so nested scroll handlers do not compete.
+
 ## View States
 
 `ViewState` (defined in `internal/signerapp/signertui/model.go`) is an enum that

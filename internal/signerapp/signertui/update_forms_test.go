@@ -240,6 +240,44 @@ func TestHandleParamInputBytesAcceptsDeclaredHexLength(t *testing.T) {
 	}
 }
 
+func TestHandleParamInputLongBytesPastesAndScrollsToEnd(t *testing.T) {
+	const falconPublicKeyHexLength = 1793 * 2
+	input := strings.Repeat("a", falconPublicKeyHexLength-20) + "0123456789ffffffffff"
+	params := []lsigprovider.ParameterDef{{
+		Name:      "governance_public_key",
+		Type:      "bytes",
+		MaxLength: falconPublicKeyHexLength,
+	}}
+	m := Model{
+		width:  100,
+		height: 40,
+		forms: formsState{
+			generateFocus:          0,
+			genericLSigParams:      map[string]string{"governance_public_key": ""},
+			genericLSigParamScroll: map[string]int{},
+		},
+	}
+
+	got := m.appendToCurrentParam(input, params)
+	if got.forms.genericLSigParams["governance_public_key"] != input {
+		t.Fatal("long bytes paste was not preserved")
+	}
+	lines, viewportHeight := got.wrappedParamScrollMetrics(params[0], input+"_", len(params))
+	wantOffset := len(lines) - viewportHeight
+	if offset := got.forms.genericLSigParamScroll["governance_public_key"]; offset != wantOffset {
+		t.Fatalf("paste scroll offset = %d, want %d", offset, wantOffset)
+	}
+
+	got = got.scrollCurrentParamInput(params, -2)
+	if offset := got.forms.genericLSigParamScroll["governance_public_key"]; offset != wantOffset-2 {
+		t.Fatalf("up scroll offset = %d, want %d", offset, wantOffset-2)
+	}
+	got = got.ensureCurrentParamInputVisible(params)
+	if offset := got.forms.genericLSigParamScroll["governance_public_key"]; offset != wantOffset {
+		t.Fatalf("end scroll offset = %d, want %d", offset, wantOffset)
+	}
+}
+
 func TestHandleParamInput_AddressListCapsLineLength(t *testing.T) {
 	m := Model{forms: formsState{genericLSigParams: map[string]string{}, genericLSigParamOrder: []string{"recipients"}, generateFocus: 0}}
 	params := []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]"}}

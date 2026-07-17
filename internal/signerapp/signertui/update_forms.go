@@ -410,7 +410,7 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "up":
-		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
+		if m.forms.generateFocus < len(params) && isVerticallyScrollableParam(params[m.forms.generateFocus]) {
 			m = m.scrollCurrentParamInput(params, -1)
 			return m, nil, ""
 		}
@@ -432,7 +432,7 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "down":
-		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
+		if m.forms.generateFocus < len(params) && isVerticallyScrollableParam(params[m.forms.generateFocus]) {
 			m = m.scrollCurrentParamInput(params, 1)
 			return m, nil, ""
 		}
@@ -517,24 +517,24 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "pgup", "pgdown":
-		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
+		if m.forms.generateFocus < len(params) && isVerticallyScrollableParam(params[m.forms.generateFocus]) {
 			paramDef := params[m.forms.generateFocus]
-			delta := -getFieldHeightForType(paramDef.Type)
+			delta := -m.parameterViewportHeight(paramDef, len(params))
 			if msg.String() == "pgdown" {
-				delta = getFieldHeightForType(paramDef.Type)
+				delta = -delta
 			}
 			m = m.scrollCurrentParamInput(params, delta)
 		}
 		return m, nil, ""
 
 	case "home":
-		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
+		if m.forms.generateFocus < len(params) {
 			m.setParamScroll(params[m.forms.generateFocus].Name, 0)
 		}
 		return m, nil, ""
 
 	case "end":
-		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
+		if m.forms.generateFocus < len(params) {
 			m = m.ensureCurrentParamInputVisible(params)
 		}
 		return m, nil, ""
@@ -723,9 +723,7 @@ func (m Model) appendToCurrentParam(input string, params []lsigprovider.Paramete
 	}
 
 	m.forms.genericLSigParams[paramDef.Name] = currentVal
-	if isMultilineParamType(effectiveType) {
-		m = m.ensureCurrentParamInputVisible(params)
-	}
+	m = m.ensureCurrentParamInputVisible(params)
 	return m
 }
 
@@ -772,15 +770,18 @@ func (m Model) ensureCurrentParamInputVisible(params []lsigprovider.ParameterDef
 		return m
 	}
 	paramDef := params[paramIdx]
-	if !isMultilineParamType(paramDef.Type) {
-		return m
-	}
 	value := ""
 	if m.forms.genericLSigParams != nil {
 		value = m.forms.genericLSigParams[paramDef.Name]
 	}
-	lines := paramInputLines(value)
-	maxOffset := maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
+	maxOffset := 0
+	if isMultilineParamType(paramDef.Type) {
+		lines := paramInputLines(value)
+		maxOffset = maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
+	} else if isWrappedSingleLineParam(paramDef) {
+		lines, height := m.wrappedParamScrollMetrics(paramDef, value+"_", len(params))
+		maxOffset = maxParamInputScrollOffset(lines, height)
+	}
 	m.setParamScroll(paramDef.Name, maxOffset)
 	return m
 }
@@ -791,9 +792,6 @@ func (m Model) scrollCurrentParamInput(params []lsigprovider.ParameterDef, delta
 		return m
 	}
 	paramDef := params[paramIdx]
-	if !isMultilineParamType(paramDef.Type) {
-		return m
-	}
 	current := 0
 	if m.forms.genericLSigParamScroll != nil {
 		current = m.forms.genericLSigParamScroll[paramDef.Name]
@@ -802,8 +800,16 @@ func (m Model) scrollCurrentParamInput(params []lsigprovider.ParameterDef, delta
 	if m.forms.genericLSigParams != nil {
 		value = m.forms.genericLSigParams[paramDef.Name]
 	}
-	lines := paramInputLines(value)
-	maxOffset := maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
+	maxOffset := 0
+	if isMultilineParamType(paramDef.Type) {
+		lines := paramInputLines(value)
+		maxOffset = maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
+	} else if isWrappedSingleLineParam(paramDef) {
+		lines, height := m.wrappedParamScrollMetrics(paramDef, value+"_", len(params))
+		maxOffset = maxParamInputScrollOffset(lines, height)
+	} else {
+		return m
+	}
 	next := current + delta
 	if next < 0 {
 		next = 0
@@ -813,6 +819,33 @@ func (m Model) scrollCurrentParamInput(params []lsigprovider.ParameterDef, delta
 	}
 	m.setParamScroll(paramDef.Name, next)
 	return m
+}
+
+func isVerticallyScrollableParam(paramDef lsigprovider.ParameterDef) bool {
+	return isMultilineParamType(paramDef.Type) || isWrappedSingleLineParam(paramDef)
+}
+
+func (m Model) parameterFieldWidth(paramDef lsigprovider.ParameterDef) int {
+	width := getFieldWidthForType(paramDef.Type, paramDef.MaxLength)
+	if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
+		modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
+		if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) && paramDef.InputModes[modeIdx].ByteLength > 0 {
+			width = paramDef.InputModes[modeIdx].ByteLength * 2
+		}
+	}
+	return m.constrainParameterFieldWidth(width)
+}
+
+func (m Model) parameterViewportHeight(paramDef lsigprovider.ParameterDef, paramCount int) int {
+	if isWrappedSingleLineParam(paramDef) {
+		return m.expandingParameterFieldHeight(paramCount)
+	}
+	return getFieldHeightForType(paramDef.Type)
+}
+
+func (m Model) wrappedParamScrollMetrics(paramDef lsigprovider.ParameterDef, value string, paramCount int) ([]string, int) {
+	contentWidth := wrappedParamContentWidth(m.parameterFieldWidth(paramDef))
+	return wrapSingleLineParam(value, contentWidth), m.parameterViewportHeight(paramDef, paramCount)
 }
 
 func (m *Model) setParamScroll(paramName string, offset int) {

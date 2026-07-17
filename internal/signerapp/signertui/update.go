@@ -634,6 +634,22 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" || (msg.String() == "q" && (m.viewState == ViewGenerating || m.viewState == ViewImporting || m.viewState == ViewDeleting || m.viewState == ViewTemplateInstalling || m.viewState == ViewRestoring)) {
 		return m, tea.Quit
 	}
+	if m.usesSharedPopupViewport() {
+		switch msg.String() {
+		case "ctrl+up":
+			return m.scrollSharedPopup(-25), nil
+		case "ctrl+down":
+			return m.scrollSharedPopup(25), nil
+		case "ctrl+pgup":
+			return m.scrollSharedPopup(-200), nil
+		case "ctrl+pgdown":
+			return m.scrollSharedPopup(200), nil
+		case "ctrl+home":
+			return m.setSharedPopupPosition(0), nil
+		case "ctrl+end":
+			return m.setSharedPopupPosition(panelScrollScale), nil
+		}
+	}
 
 	// Global reconnect handling when disconnected
 	if m.connectionState == ConnectionDisconnected && msg.String() == "c" {
@@ -715,11 +731,65 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) usesSharedPopupViewport() bool {
+	switch m.viewState {
+	case ViewAuth,
+		ViewUnlock,
+		ViewTokenProvisioningPopup,
+		ViewGenerateForm,
+		ViewGenerateParams,
+		ViewGenerating,
+		ViewGenerateDisplay,
+		ViewImportForm,
+		ViewImportParams,
+		ViewImporting,
+		ViewImportDisplay,
+		ViewBackupConfirm,
+		ViewBackingUp,
+		ViewBackupDisplay,
+		ViewRestorePassphrase,
+		ViewRestoring,
+		ViewDeleteConfirm,
+		ViewDeleting,
+		ViewRevokeTokenConfirm,
+		ViewLockConfirm,
+		ViewDisplaceConfirm,
+		ViewTemplateInstallConfirm,
+		ViewTemplateInstalling,
+		ViewError:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m Model) scrollSharedPopup(delta int) Model {
+	position := 0
+	if m.panelScrollView == m.viewState {
+		position = m.panelScrollPosition
+	}
+	return m.setSharedPopupPosition(position + delta)
+}
+
+func (m Model) setSharedPopupPosition(position int) Model {
+	if position < 0 {
+		position = 0
+	}
+	if position > panelScrollScale {
+		position = panelScrollScale
+	}
+	m.panelScrollView = m.viewState
+	m.panelScrollPosition = position
+	return m
+}
+
 func (m *Model) showSeriousErrorPopup(title, message string, returnView ViewState) {
 	m.errorPopup.title = title
 	m.errorPopup.message = message
 	m.errorPopup.returnView = returnView
 	m.viewState = ViewError
+	m.panelScrollView = ViewError
+	m.panelScrollPosition = 0
 }
 
 func (m Model) handleErrorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

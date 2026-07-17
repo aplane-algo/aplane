@@ -8,12 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
 func TestRenderPopupConstrainsToPanelWidthAndHeight(t *testing.T) {
-	m := Model{width: 42, height: 10}
+	m := Model{viewState: ViewGenerateDisplay, width: 42, height: 10}
 	bodyLines := make([]string, 0, 20)
 	for i := 0; i < 20; i++ {
 		bodyLines = append(bodyLines, fmt.Sprintf("line-%02d", i))
@@ -28,6 +30,21 @@ func TestRenderPopupConstrainsToPanelWidthAndHeight(t *testing.T) {
 	}
 	if lines := visibleLineCount(view); lines > m.height {
 		t.Fatalf("popup line count = %d, want <= %d\n%s", lines, m.height, stripANSI(view))
+	}
+	clean := stripANSI(view)
+	if !strings.Contains(clean, "line-00") || !strings.Contains(clean, "Panel lines") {
+		t.Fatalf("overflowing popup does not show its first page and scroll status:\n%s", clean)
+	}
+
+	next, _ := m.handleKeyPress(tea.KeyMsg{Type: tea.KeyCtrlEnd})
+	m = next.(Model)
+	view = m.renderPopup(80, strings.Join(bodyLines, "\n"))
+	clean = stripANSI(view)
+	if !strings.Contains(clean, "line-19") {
+		t.Fatalf("panel end does not show final content line:\n%s", clean)
+	}
+	if strings.Contains(clean, "line-00") {
+		t.Fatalf("panel end still shows first content line:\n%s", clean)
 	}
 }
 
@@ -221,8 +238,10 @@ func TestParameterModalMarksOnlyOptionalParameters(t *testing.T) {
 	}})
 
 	m := Model{
-		width:  100,
-		height: 40,
+		viewState:       ViewGenerateParams,
+		connectionState: ConnectionConnected,
+		width:           100,
+		height:          40,
 		forms: formsState{
 			generateFocus:         1,
 			genericLSigParams:     map[string]string{"recipients": "", "allowed_optin_assets": ""},
@@ -252,6 +271,109 @@ func TestBytesParameterFieldUsesDeclaredHexLength(t *testing.T) {
 	}
 	if got := getMaxInputLengthForType("bytes", 64); got != 64 {
 		t.Fatalf("bytes max input length = %d, want 64", got)
+	}
+}
+
+func TestParameterModalShowsEndOfLongBytesWithVerticalScrollbar(t *testing.T) {
+	defer setServerKeyTypes(nil)
+
+	const falconPublicKeyHexLength = 1793 * 2
+	const suffix = "0123456789ffffffffff"
+	value := strings.Repeat("a", falconPublicKeyHexLength-len(suffix)) + suffix
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType:     "aplane.governed-falcon.v1",
+		DisplayName: "Governed Falcon",
+		CreationParams: []protocol.TemplateParamInfo{{
+			Name:      "governance_public_key",
+			Label:     "Governance public key",
+			Type:      "bytes",
+			Required:  true,
+			MaxLength: falconPublicKeyHexLength,
+		}},
+	}})
+
+	m := Model{
+		viewState:       ViewGenerateParams,
+		connectionState: ConnectionConnected,
+		width:           100,
+		height:          40,
+		forms: formsState{
+			generateFocus:     0,
+			genericLSigParams: map[string]string{"governance_public_key": value},
+			genericLSigParamScroll: map[string]int{
+				"governance_public_key": falconPublicKeyHexLength,
+			},
+		},
+	}
+
+	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.governed-falcon.v1", "GENERATE", ""))
+	if !strings.Contains(rendered, suffix+"_") {
+		t.Fatalf("parameter modal does not show pasted key suffix:\n%s", rendered)
+	}
+	info, ok := findServerKeyType("aplane.governed-falcon.v1")
+	if !ok {
+		t.Fatal("governed Falcon key type not found")
+	}
+	contentWidth := wrappedParamContentWidth(m.parameterFieldWidth(protocolParamInfosToDefs(
+		info.CreationParams)[0]))
+	totalLines := len(wrapSingleLineParam(value+"_", contentWidth))
+	if !strings.Contains(rendered, fmt.Sprintf("/ %d", totalLines)) {
+		t.Fatalf("parameter modal does not show vertical scrollbar position:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, " #") || !strings.Contains(rendered, " |") {
+		t.Fatalf("parameter modal does not show a vertical scrollbar track and thumb:\n%s", rendered)
+	}
+	if !firstRoundedBoxHasBottomBorder(rendered) {
+		t.Fatalf("expanding parameter field clipped its bottom border:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "Panel lines") {
+		t.Fatalf("overflowing parameter modal does not expose panel scrolling:\n%s", rendered)
+	}
+
+	m = m.setSharedPopupPosition(panelScrollScale)
+	rendered = stripANSI(m.renderParameterModalForKeyType("aplane.governed-falcon.v1", "GENERATE", ""))
+	if !strings.Contains(rendered, "GENERATE GOVERNED FALCON") {
+		t.Fatalf("panel bottom does not expose the action button:\n%s", rendered)
+	}
+
+	m.height = 18
+	m = m.setSharedPopupPosition(0)
+	rendered = stripANSI(m.View())
+	if !firstRoundedBoxHasBottomBorder(rendered) {
+		t.Fatalf("short panel clipped the focused parameter border:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "Panel lines") {
+		t.Fatalf("short panel does not expose shared scrolling:\n%s", rendered)
+	}
+}
+
+func TestLongBytesParameterHeightExpandsWithPanel(t *testing.T) {
+	param := lsigprovider.ParameterDef{Type: "bytes", MaxLength: 1793 * 2}
+	short := Model{width: 100, height: 24}.parameterViewportHeight(param, 1)
+	tall := Model{width: 100, height: 48}.parameterViewportHeight(param, 1)
+	if tall <= short {
+		t.Fatalf("tall panel field height = %d, want greater than short panel height %d", tall, short)
+	}
+}
+
+func TestGovernancePublicKeyWrapsWithoutLengthMetadata(t *testing.T) {
+	governanceKey := lsigprovider.ParameterDef{
+		Name:  "governance_public_key",
+		Label: "Governanace Public Key",
+		Type:  "bytes",
+	}
+	if !isWrappedSingleLineParam(governanceKey) {
+		t.Fatal("governance public key should use the multiline viewport without length metadata")
+	}
+
+	ed25519Key := lsigprovider.ParameterDef{
+		Name:      "public_key",
+		Label:     "Public Key",
+		Type:      "bytes",
+		MaxLength: 64,
+	}
+	if isWrappedSingleLineParam(ed25519Key) {
+		t.Fatal("Ed25519 public key should remain a compact single-line field")
 	}
 }
 

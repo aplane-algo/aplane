@@ -172,12 +172,16 @@ func (m Model) renderPopup(maxWidth int, body string) string {
 }
 
 func (m Model) renderPopupWithinHeight(maxWidth int, body string, maxHeight int) string {
+	contentHeight := popupContentHeightForRenderedHeight(maxHeight)
+	bodyWidth := m.popupBodyWidth(maxWidth)
 	return popupStyle.Width(m.popupWidth(maxWidth)).Render(
-		constrainPopupBody(body, popupContentHeightForRenderedHeight(maxHeight)),
+		m.renderScrollablePopupBody(body, contentHeight, bodyWidth),
 	)
 }
 
-func constrainPopupBody(body string, maxLines int) string {
+const panelScrollScale = 1000
+
+func (m Model) renderScrollablePopupBody(body string, maxLines, maxWidth int) string {
 	if maxLines <= 0 {
 		return body
 	}
@@ -185,7 +189,38 @@ func constrainPopupBody(body string, maxLines int) string {
 	if len(lines) <= maxLines {
 		return strings.Join(lines, "\n")
 	}
-	return strings.Join(lines[:maxLines], "\n")
+	if !m.usesSharedPopupViewport() {
+		return strings.Join(lines[:maxLines], "\n")
+	}
+	if maxLines == 1 {
+		return fixedWidthFieldLine(lines[0], maxWidth)
+	}
+
+	viewportHeight := maxLines - 1 // reserve one row for position and controls
+	maxOffset := len(lines) - viewportHeight
+	position := 0
+	if m.panelScrollView == m.viewState {
+		position = m.panelScrollPosition
+	}
+	if position < 0 {
+		position = 0
+	}
+	if position > panelScrollScale {
+		position = panelScrollScale
+	}
+	offset := maxOffset * position / panelScrollScale
+	end := offset + viewportHeight
+	if end > len(lines) {
+		end = len(lines)
+	}
+
+	visible := append([]string(nil), lines[offset:end]...)
+	status := fmt.Sprintf("Panel lines %d-%d / %d  Ctrl+PgUp/PgDn", offset+1, end, len(lines))
+	if maxWidth > 0 {
+		status = ellipsize(status, maxWidth)
+	}
+	visible = append(visible, subtitleStyle.Render(status))
+	return strings.Join(visible, "\n")
 }
 
 // algorithmColor returns the theme-aware ANSI color code for a given key type.

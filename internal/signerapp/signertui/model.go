@@ -324,6 +324,11 @@ type Model struct {
 	width  int
 	height int
 
+	// Shared popup viewport state. Position is normalized to
+	// panelScrollScale so it remains valid when the panel is resized.
+	panelScrollView     ViewState
+	panelScrollPosition int
+
 	// standalone is true when apadmin is running directly in a terminal
 	// rather than embedded inside apconsole. It enables the role-specific
 	// admin header label and reserves a line of height for it.

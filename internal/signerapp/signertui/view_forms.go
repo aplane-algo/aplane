@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -328,8 +329,11 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 				}
 			}
 		}
-		fieldHeight := getFieldHeightForType(paramDef.Type)
 		fieldWidth = m.constrainParameterFieldWidth(fieldWidth)
+		fieldHeight := getFieldHeightForType(paramDef.Type)
+		if isWrappedSingleLineParam(paramDef) {
+			fieldHeight = m.expandingParameterFieldHeight(len(params))
+		}
 		fieldHeight = m.constrainParameterFieldHeight(fieldHeight, sb.String())
 
 		value := ""
@@ -354,6 +358,7 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 			lines = currentLines
 		}
 		aboveCount, belowCount := 0, 0
+		visibleStart, visibleEnd, totalWrappedLines := 0, 0, 0
 		if isMultilineParamType(paramDef.Type) {
 			offset := 0
 			maxOffset := maxParamInputScrollOffset(lines, fieldHeight)
@@ -373,6 +378,28 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 			}
 			belowCount = len(lines) - end
 			lines = append([]string(nil), lines[offset:end]...)
+		} else if isWrappedSingleLineParam(paramDef) {
+			contentWidth := wrappedParamContentWidth(fieldWidth)
+			lines = wrapSingleLineParam(lines[0], contentWidth)
+			totalWrappedLines = len(lines)
+			offset := 0
+			if m.forms.genericLSigParamScroll != nil {
+				offset = m.forms.genericLSigParamScroll[paramDef.Name]
+			}
+			maxOffset := maxParamInputScrollOffset(lines, fieldHeight)
+			if offset < 0 {
+				offset = 0
+			}
+			if offset > maxOffset {
+				offset = maxOffset
+			}
+			end := offset + fieldHeight
+			if end > len(lines) {
+				end = len(lines)
+			}
+			visibleStart, visibleEnd = offset, end
+			lines = append([]string(nil), lines[offset:end]...)
+			lines = addVerticalParamScrollbar(lines, fieldHeight, contentWidth, offset, totalWrappedLines)
 		}
 		if len(lines) < fieldHeight {
 			for len(lines) < fieldHeight {
@@ -395,6 +422,10 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 		sb.WriteString("\n\n")
 		if isMultilineParamType(paramDef.Type) && (aboveCount > 0 || belowCount > 0) {
 			sb.WriteString(subtitleStyle.Render(fmt.Sprintf("  %d above, %d below", aboveCount, belowCount)))
+			sb.WriteString("\n")
+		} else if totalWrappedLines > fieldHeight {
+			sb.WriteString(subtitleStyle.Render(fmt.Sprintf(
+				"  lines %d-%d / %d", visibleStart+1, visibleEnd, totalWrappedLines)))
 			sb.WriteString("\n")
 		}
 	}
@@ -420,6 +451,83 @@ func (m Model) renderParameterModalForKeyType(keyType, buttonVerb, errorMsg stri
 	}
 
 	return m.renderPopup(80, sb.String())
+}
+
+func isWrappedSingleLineParam(paramDef lsigprovider.ParameterDef) bool {
+	if len(paramDef.Options) > 0 {
+		return false
+	}
+	if paramDef.Type == "bytes" && paramDef.MaxLength > 256 {
+		return true
+	}
+	return isGovernancePublicKeyParam(paramDef)
+}
+
+func isGovernancePublicKeyParam(paramDef lsigprovider.ParameterDef) bool {
+	if paramDef.Type != "bytes" && paramDef.Type != "string" {
+		return false
+	}
+	identity := strings.ToLower(paramDef.Name + " " + paramDef.Label)
+	identity = strings.NewReplacer("_", "", "-", "", " ", "").Replace(identity)
+	return strings.Contains(identity, "governan") && strings.Contains(identity, "publickey")
+}
+
+func wrappedParamContentWidth(fieldWidth int) int {
+	width := fieldWidth - 2 // one spacer plus the vertical scrollbar
+	if width < 1 {
+		return 1
+	}
+	return width
+}
+
+func wrapSingleLineParam(value string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	runes := []rune(value)
+	if len(runes) == 0 {
+		return []string{""}
+	}
+	lines := make([]string, 0, (len(runes)+width-1)/width)
+	for len(runes) > 0 {
+		end := width
+		if end > len(runes) {
+			end = len(runes)
+		}
+		lines = append(lines, string(runes[:end]))
+		runes = runes[end:]
+	}
+	return lines
+}
+
+func addVerticalParamScrollbar(lines []string, fieldHeight, contentWidth, offset, totalLines int) []string {
+	if fieldHeight < 1 {
+		fieldHeight = 1
+	}
+	thumbHeight := fieldHeight
+	thumbStart := 0
+	if totalLines > fieldHeight {
+		thumbHeight = fieldHeight * fieldHeight / totalLines
+		if thumbHeight < 1 {
+			thumbHeight = 1
+		}
+		maxOffset := totalLines - fieldHeight
+		thumbStart = (fieldHeight - thumbHeight) * offset / maxOffset
+	}
+
+	out := make([]string, fieldHeight)
+	for i := 0; i < fieldHeight; i++ {
+		line := ""
+		if i < len(lines) {
+			line = lines[i]
+		}
+		marker := '|'
+		if i >= thumbStart && i < thumbStart+thumbHeight {
+			marker = '#'
+		}
+		out[i] = fixedWidthFieldLine(line, contentWidth) + " " + string(marker)
+	}
+	return out
 }
 
 func optionFieldWidth(options []string) int {
@@ -478,6 +586,9 @@ func (m Model) constrainParameterFieldHeight(height int, bodyBeforeField string)
 	if maxBodyLines <= 0 {
 		return height
 	}
+	if m.usesSharedPopupViewport() && maxBodyLines > 1 {
+		maxBodyLines-- // reserve the shared panel viewport status row
+	}
 	usedLines := renderedLinesBeforeAppend(bodyBeforeField)
 	maxRenderedFieldLines := maxBodyLines - usedLines
 	minRenderedFieldLines := inputActiveStyle.GetVerticalFrameSize() + 1
@@ -490,6 +601,25 @@ func (m Model) constrainParameterFieldHeight(height int, bodyBeforeField string)
 	}
 	if height > maxHeight {
 		return maxHeight
+	}
+	return height
+}
+
+func (m Model) expandingParameterFieldHeight(paramCount int) int {
+	if paramCount < 1 {
+		paramCount = 1
+	}
+	visibleParams := paramCount
+	if maxVisible := m.getMaxVisibleParams(); visibleParams > maxVisible {
+		visibleParams = maxVisible
+	}
+	available := m.popupContentHeight() - 12
+	if available < 4*visibleParams {
+		return 4
+	}
+	height := available / visibleParams
+	if height < 4 {
+		return 4
 	}
 	return height
 }
