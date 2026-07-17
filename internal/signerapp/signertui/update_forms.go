@@ -396,6 +396,9 @@ func (m Model) handleParamModalKeys(
 
 	params := spec.Params
 	maxFocus := len(params)
+	if m.forms.genericLSigPasteParam != "" {
+		return m.handlePasteOnlyParamInput(msg, params)
+	}
 
 	switch msg.String() {
 	case "esc":
@@ -410,7 +413,7 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "up":
-		if m.forms.generateFocus < len(params) && isVerticallyScrollableParam(params[m.forms.generateFocus]) {
+		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
 			m = m.scrollCurrentParamInput(params, -1)
 			return m, nil, ""
 		}
@@ -432,7 +435,7 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "down":
-		if m.forms.generateFocus < len(params) && isVerticallyScrollableParam(params[m.forms.generateFocus]) {
+		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
 			m = m.scrollCurrentParamInput(params, 1)
 			return m, nil, ""
 		}
@@ -478,6 +481,9 @@ func (m Model) handleParamModalKeys(
 
 	case "backspace":
 		if m.forms.generateFocus < len(params) {
+			if isPasteOnlyParam(params[m.forms.generateFocus]) {
+				return m, nil, ""
+			}
 			paramName := params[m.forms.generateFocus].Name
 			if m.forms.genericLSigParams != nil {
 				if val, ok := m.forms.genericLSigParams[paramName]; ok && len(val) > 0 {
@@ -489,6 +495,10 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "enter", " ":
+		if m.forms.generateFocus < len(params) && isPasteOnlyParam(params[m.forms.generateFocus]) {
+			m.forms.genericLSigPasteParam = params[m.forms.generateFocus].Name
+			return m, nil, ""
+		}
 		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
 			if msg.String() == "enter" {
 				m = m.appendToCurrentParam("\n", params)
@@ -517,11 +527,11 @@ func (m Model) handleParamModalKeys(
 		return m, nil, ""
 
 	case "pgup", "pgdown":
-		if m.forms.generateFocus < len(params) && isVerticallyScrollableParam(params[m.forms.generateFocus]) {
+		if m.forms.generateFocus < len(params) && isMultilineParamType(params[m.forms.generateFocus].Type) {
 			paramDef := params[m.forms.generateFocus]
-			delta := -m.parameterViewportHeight(paramDef, len(params))
+			delta := -getFieldHeightForType(paramDef.Type)
 			if msg.String() == "pgdown" {
-				delta = -delta
+				delta = getFieldHeightForType(paramDef.Type)
 			}
 			m = m.scrollCurrentParamInput(params, delta)
 		}
@@ -549,17 +559,74 @@ func (m Model) handleParamModalKeys(
 		}
 		return m, nil, ""
 
-	case "delete", "insert":
+	case "delete":
+		if m.forms.generateFocus < len(params) && isPasteOnlyParam(params[m.forms.generateFocus]) {
+			m.forms.genericLSigParams[params[m.forms.generateFocus].Name] = ""
+		}
+		return m, nil, ""
+
+	case "insert":
 		return m, nil, ""
 
 	default:
 		input := msg.String()
-		if len(input) > 0 && m.forms.generateFocus < len(params) {
+		if len(input) > 0 && m.forms.generateFocus < len(params) && !isPasteOnlyParam(params[m.forms.generateFocus]) {
 			m = m.appendToCurrentParam(input, params)
 		}
 	}
 
 	return m, nil, ""
+}
+
+func (m Model) handlePasteOnlyParamInput(msg tea.KeyMsg, params []lsigprovider.ParameterDef) (Model, tea.Cmd, string) {
+	paramIdx := m.forms.generateFocus
+	if paramIdx < 0 || paramIdx >= len(params) || params[paramIdx].Name != m.forms.genericLSigPasteParam {
+		m.forms.genericLSigPasteParam = ""
+		return m, nil, ""
+	}
+	if msg.String() == "esc" {
+		m.forms.genericLSigPasteParam = ""
+		return m, nil, ""
+	}
+	if !msg.Paste {
+		return m, nil, ""
+	}
+
+	value, err := normalizePastedParam(string(msg.Runes), params[paramIdx])
+	if err != nil {
+		return m, nil, err.Error()
+	}
+	m.forms.genericLSigParams[params[paramIdx].Name] = value
+	m.forms.genericLSigPasteParam = ""
+	return m, nil, ""
+}
+
+func normalizePastedParam(input string, paramDef lsigprovider.ParameterDef) (string, error) {
+	var value strings.Builder
+	for _, r := range strings.TrimSpace(input) {
+		if paramDef.Type == "bytes" {
+			if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
+				continue
+			}
+			if r >= 'A' && r <= 'F' {
+				r += 'a' - 'A'
+			}
+			if !((r >= 'a' && r <= 'f') || (r >= '0' && r <= '9')) {
+				return "", fmt.Errorf("pasted %s contains non-hexadecimal characters", paramDef.Label)
+			}
+		} else if r < 32 || r > 126 {
+			return "", fmt.Errorf("pasted %s contains unsupported characters", paramDef.Label)
+		}
+		value.WriteRune(r)
+	}
+	if value.Len() == 0 {
+		return "", fmt.Errorf("pasted %s is empty", paramDef.Label)
+	}
+	maxLen := getMaxInputLengthForType(paramDef.Type, paramDef.MaxLength)
+	if value.Len() > maxLen {
+		return "", fmt.Errorf("pasted %s exceeds the maximum length of %d characters", paramDef.Label, maxLen)
+	}
+	return value.String(), nil
 }
 
 // initGenericLSigParams initializes the parameter map for a generic LogicSig.
@@ -580,6 +647,7 @@ func (m Model) initGenericLSigParamsForKeyType(keyType string) Model {
 	m.forms.genericLSigParamOrder = make([]string, len(params))
 	m.forms.genericLSigParamModes = make(map[string]int)
 	m.forms.genericLSigParamScroll = make(map[string]int)
+	m.forms.genericLSigPasteParam = ""
 	for i, p := range params {
 		m.forms.genericLSigParamOrder[i] = p.Name
 		m.forms.genericLSigParams[p.Name] = defaultParamValue(p)
@@ -774,14 +842,11 @@ func (m Model) ensureCurrentParamInputVisible(params []lsigprovider.ParameterDef
 	if m.forms.genericLSigParams != nil {
 		value = m.forms.genericLSigParams[paramDef.Name]
 	}
-	maxOffset := 0
-	if isMultilineParamType(paramDef.Type) {
-		lines := paramInputLines(value)
-		maxOffset = maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
-	} else if isWrappedSingleLineParam(paramDef) {
-		lines, height := m.wrappedParamScrollMetrics(paramDef, value+"_", len(params))
-		maxOffset = maxParamInputScrollOffset(lines, height)
+	if !isMultilineParamType(paramDef.Type) {
+		return m
 	}
+	lines := paramInputLines(value)
+	maxOffset := maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
 	m.setParamScroll(paramDef.Name, maxOffset)
 	return m
 }
@@ -800,16 +865,11 @@ func (m Model) scrollCurrentParamInput(params []lsigprovider.ParameterDef, delta
 	if m.forms.genericLSigParams != nil {
 		value = m.forms.genericLSigParams[paramDef.Name]
 	}
-	maxOffset := 0
-	if isMultilineParamType(paramDef.Type) {
-		lines := paramInputLines(value)
-		maxOffset = maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
-	} else if isWrappedSingleLineParam(paramDef) {
-		lines, height := m.wrappedParamScrollMetrics(paramDef, value+"_", len(params))
-		maxOffset = maxParamInputScrollOffset(lines, height)
-	} else {
+	if !isMultilineParamType(paramDef.Type) {
 		return m
 	}
+	lines := paramInputLines(value)
+	maxOffset := maxParamInputScrollOffset(lines, getFieldHeightForType(paramDef.Type))
 	next := current + delta
 	if next < 0 {
 		next = 0
@@ -819,33 +879,6 @@ func (m Model) scrollCurrentParamInput(params []lsigprovider.ParameterDef, delta
 	}
 	m.setParamScroll(paramDef.Name, next)
 	return m
-}
-
-func isVerticallyScrollableParam(paramDef lsigprovider.ParameterDef) bool {
-	return isMultilineParamType(paramDef.Type) || isWrappedSingleLineParam(paramDef)
-}
-
-func (m Model) parameterFieldWidth(paramDef lsigprovider.ParameterDef) int {
-	width := getFieldWidthForType(paramDef.Type, paramDef.MaxLength)
-	if len(paramDef.InputModes) > 1 && m.forms.genericLSigParamModes != nil {
-		modeIdx := m.forms.genericLSigParamModes[paramDef.Name]
-		if modeIdx >= 0 && modeIdx < len(paramDef.InputModes) && paramDef.InputModes[modeIdx].ByteLength > 0 {
-			width = paramDef.InputModes[modeIdx].ByteLength * 2
-		}
-	}
-	return m.constrainParameterFieldWidth(width)
-}
-
-func (m Model) parameterViewportHeight(paramDef lsigprovider.ParameterDef, paramCount int) int {
-	if isWrappedSingleLineParam(paramDef) {
-		return m.expandingParameterFieldHeight(paramCount)
-	}
-	return getFieldHeightForType(paramDef.Type)
-}
-
-func (m Model) wrappedParamScrollMetrics(paramDef lsigprovider.ParameterDef, value string, paramCount int) ([]string, int) {
-	contentWidth := wrappedParamContentWidth(m.parameterFieldWidth(paramDef))
-	return wrapSingleLineParam(value, contentWidth), m.parameterViewportHeight(paramDef, paramCount)
 }
 
 func (m *Model) setParamScroll(paramName string, offset int) {

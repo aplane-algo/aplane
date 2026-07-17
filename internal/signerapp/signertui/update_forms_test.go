@@ -240,41 +240,78 @@ func TestHandleParamInputBytesAcceptsDeclaredHexLength(t *testing.T) {
 	}
 }
 
-func TestHandleParamInputLongBytesPastesAndScrollsToEnd(t *testing.T) {
+func TestHandleParamInputLongBytesUsesAtomicPaste(t *testing.T) {
+	defer setServerKeyTypes(nil)
 	const falconPublicKeyHexLength = 1793 * 2
-	input := strings.Repeat("a", falconPublicKeyHexLength-20) + "0123456789ffffffffff"
-	params := []lsigprovider.ParameterDef{{
-		Name:      "governance_public_key",
-		Type:      "bytes",
-		MaxLength: falconPublicKeyHexLength,
-	}}
+	input := strings.Repeat("A", falconPublicKeyHexLength-20) + "0123456789ABCDEFabcd"
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType:     "aplane.governed-falcon.v1",
+		DisplayName: "Governed Falcon",
+		CreationParams: []protocol.TemplateParamInfo{{
+			Name:      "governance_public_key",
+			Label:     "Governance public key",
+			Type:      "bytes",
+			MaxLength: falconPublicKeyHexLength,
+		}},
+	}})
 	m := Model{
-		width:  100,
-		height: 40,
+		viewState: ViewGenerateParams,
 		forms: formsState{
-			generateFocus:          0,
-			genericLSigParams:      map[string]string{"governance_public_key": ""},
-			genericLSigParamScroll: map[string]int{},
+			generateKeyType:       0,
+			generateFocus:         0,
+			genericLSigParams:     map[string]string{"governance_public_key": ""},
+			genericLSigParamModes: map[string]int{"governance_public_key": 0},
 		},
 	}
 
-	got := m.appendToCurrentParam(input, params)
-	if got.forms.genericLSigParams["governance_public_key"] != input {
-		t.Fatal("long bytes paste was not preserved")
-	}
-	lines, viewportHeight := got.wrappedParamScrollMetrics(params[0], input+"_", len(params))
-	wantOffset := len(lines) - viewportHeight
-	if offset := got.forms.genericLSigParamScroll["governance_public_key"]; offset != wantOffset {
-		t.Fatalf("paste scroll offset = %d, want %d", offset, wantOffset)
+	got := applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(input), Paste: true})
+	if got.forms.genericLSigParams["governance_public_key"] != "" {
+		t.Fatal("paste populated the field before paste capture was activated")
 	}
 
-	got = got.scrollCurrentParamInput(params, -2)
-	if offset := got.forms.genericLSigParamScroll["governance_public_key"]; offset != wantOffset-2 {
-		t.Fatalf("up scroll offset = %d, want %d", offset, wantOffset-2)
+	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyEnter})
+	if got.forms.genericLSigPasteParam != "governance_public_key" {
+		t.Fatalf("paste capture parameter = %q", got.forms.genericLSigPasteParam)
 	}
-	got = got.ensureCurrentParamInputVisible(params)
-	if offset := got.forms.genericLSigParamScroll["governance_public_key"]; offset != wantOffset {
-		t.Fatalf("end scroll offset = %d, want %d", offset, wantOffset)
+
+	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("typed text")})
+	if got.forms.genericLSigParams["governance_public_key"] != "" {
+		t.Fatal("ordinary typing populated a paste-only parameter")
+	}
+
+	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(input), Paste: true})
+	want := strings.ToLower(input)
+	if got.forms.genericLSigParams["governance_public_key"] != want {
+		t.Fatal("atomic paste did not preserve and normalize the complete key")
+	}
+	if got.forms.genericLSigPasteParam != "" {
+		t.Fatal("paste capture remained active after a successful paste")
+	}
+
+	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyBackspace})
+	if got.forms.genericLSigParams["governance_public_key"] != want {
+		t.Fatal("backspace modified a read-only pasted key")
+	}
+	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyDelete})
+	if got.forms.genericLSigParams["governance_public_key"] != "" {
+		t.Fatal("delete did not clear a pasted key")
+	}
+}
+
+func TestNormalizePastedBytes(t *testing.T) {
+	param := lsigprovider.ParameterDef{Label: "Governance public key", Type: "bytes", MaxLength: 8}
+	got, err := normalizePastedParam(" ABcd\n1234 ", param)
+	if err != nil {
+		t.Fatalf("normalizePastedParam returned error: %v", err)
+	}
+	if got != "abcd1234" {
+		t.Fatalf("normalized paste = %q, want %q", got, "abcd1234")
+	}
+	if _, err := normalizePastedParam("abcdxyz1", param); err == nil {
+		t.Fatal("non-hexadecimal paste was accepted")
+	}
+	if _, err := normalizePastedParam("abcd12345", param); err == nil {
+		t.Fatal("oversized paste was accepted")
 	}
 }
 

@@ -197,6 +197,7 @@ type formsState struct {
 	genericLSigParamOrder  []string
 	genericLSigParamModes  map[string]int
 	genericLSigParamScroll map[string]int
+	genericLSigPasteParam  string
 }
 
 // deleteConfirmState is the key-deletion confirmation dialog.

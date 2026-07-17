@@ -274,7 +274,7 @@ func TestBytesParameterFieldUsesDeclaredHexLength(t *testing.T) {
 	}
 }
 
-func TestParameterModalShowsEndOfLongBytesWithVerticalScrollbar(t *testing.T) {
+func TestParameterModalShowsCompactPastedKeyPreview(t *testing.T) {
 	defer setServerKeyTypes(nil)
 
 	const falconPublicKeyHexLength = 1793 * 2
@@ -300,70 +300,38 @@ func TestParameterModalShowsEndOfLongBytesWithVerticalScrollbar(t *testing.T) {
 		forms: formsState{
 			generateFocus:     0,
 			genericLSigParams: map[string]string{"governance_public_key": value},
-			genericLSigParamScroll: map[string]int{
-				"governance_public_key": falconPublicKeyHexLength,
-			},
 		},
 	}
 
 	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.governed-falcon.v1", "GENERATE", ""))
-	if !strings.Contains(rendered, suffix+"_") {
-		t.Fatalf("parameter modal does not show pasted key suffix:\n%s", rendered)
+	if !strings.Contains(rendered, "...") || !strings.Contains(rendered, suffix) {
+		t.Fatalf("parameter modal does not show a middle-elided key with its suffix:\n%s", rendered)
 	}
-	info, ok := findServerKeyType("aplane.governed-falcon.v1")
-	if !ok {
-		t.Fatal("governed Falcon key type not found")
+	if !strings.Contains(rendered, "REPLACE KEY") || !strings.Contains(rendered, "3586 characters") {
+		t.Fatalf("parameter modal does not show replace action and key length:\n%s", rendered)
 	}
-	contentWidth := wrappedParamContentWidth(m.parameterFieldWidth(protocolParamInfosToDefs(
-		info.CreationParams)[0]))
-	totalLines := len(wrapSingleLineParam(value+"_", contentWidth))
-	if !strings.Contains(rendered, fmt.Sprintf("/ %d", totalLines)) {
-		t.Fatalf("parameter modal does not show vertical scrollbar position:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, " #") || !strings.Contains(rendered, " |") {
-		t.Fatalf("parameter modal does not show a vertical scrollbar track and thumb:\n%s", rendered)
+	if strings.Contains(rendered, " #") || strings.Contains(rendered, " |") {
+		t.Fatalf("parameter modal still shows the removed scrollbar:\n%s", rendered)
 	}
 	if !firstRoundedBoxHasBottomBorder(rendered) {
-		t.Fatalf("expanding parameter field clipped its bottom border:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "Panel lines") {
-		t.Fatalf("overflowing parameter modal does not expose panel scrolling:\n%s", rendered)
+		t.Fatalf("read-only parameter field clipped its bottom border:\n%s", rendered)
 	}
 
-	m = m.setSharedPopupPosition(panelScrollScale)
+	m.forms.genericLSigPasteParam = "governance_public_key"
 	rendered = stripANSI(m.renderParameterModalForKeyType("aplane.governed-falcon.v1", "GENERATE", ""))
-	if !strings.Contains(rendered, "GENERATE GOVERNED FALCON") {
-		t.Fatalf("panel bottom does not expose the action button:\n%s", rendered)
-	}
-
-	m.height = 18
-	m = m.setSharedPopupPosition(0)
-	rendered = stripANSI(m.View())
-	if !firstRoundedBoxHasBottomBorder(rendered) {
-		t.Fatalf("short panel clipped the focused parameter border:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "Panel lines") {
-		t.Fatalf("short panel does not expose shared scrolling:\n%s", rendered)
+	if !strings.Contains(rendered, "Paste key now") || !strings.Contains(rendered, "WAITING FOR PASTE") {
+		t.Fatalf("paste capture state is not visible:\n%s", rendered)
 	}
 }
 
-func TestLongBytesParameterHeightExpandsWithPanel(t *testing.T) {
-	param := lsigprovider.ParameterDef{Type: "bytes", MaxLength: 1793 * 2}
-	short := Model{width: 100, height: 24}.parameterViewportHeight(param, 1)
-	tall := Model{width: 100, height: 48}.parameterViewportHeight(param, 1)
-	if tall <= short {
-		t.Fatalf("tall panel field height = %d, want greater than short panel height %d", tall, short)
-	}
-}
-
-func TestGovernancePublicKeyWrapsWithoutLengthMetadata(t *testing.T) {
+func TestGovernancePublicKeyUsesPasteControlWithoutLengthMetadata(t *testing.T) {
 	governanceKey := lsigprovider.ParameterDef{
 		Name:  "governance_public_key",
 		Label: "Governanace Public Key",
 		Type:  "bytes",
 	}
-	if !isWrappedSingleLineParam(governanceKey) {
-		t.Fatal("governance public key should use the multiline viewport without length metadata")
+	if !isPasteOnlyParam(governanceKey) {
+		t.Fatal("governance public key should use the paste control without length metadata")
 	}
 
 	ed25519Key := lsigprovider.ParameterDef{
@@ -372,7 +340,7 @@ func TestGovernancePublicKeyWrapsWithoutLengthMetadata(t *testing.T) {
 		Type:      "bytes",
 		MaxLength: 64,
 	}
-	if isWrappedSingleLineParam(ed25519Key) {
+	if isPasteOnlyParam(ed25519Key) {
 		t.Fatal("Ed25519 public key should remain a compact single-line field")
 	}
 }
