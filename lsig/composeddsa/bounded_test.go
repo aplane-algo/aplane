@@ -345,6 +345,42 @@ func TestBoundedBuildArgsEnforcesStaticLayout(t *testing.T) {
 	}
 }
 
+func TestBoundedBuildArgsPreservesDerivedSlotBeforeRuntimeArg(t *testing.T) {
+	provider := NewComposedDSA(Config{
+		KeyType:     "aplane.test-bounded-args.v1",
+		BaseKeyType: "aplane.falcon1024.v1",
+		FamilyName:  "aplane.test",
+		Version:     1,
+		Ops:         boundedTestOps{},
+		SaltStyle:   lsigsalt.StyleNone,
+		TEALSuffix:  "int 1\nassert",
+		Params: []lsigprovider.ParameterDef{{
+			Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: 30,
+		}},
+		RuntimeArgs: []lsigprovider.RuntimeArgDef{{
+			Name: "preimage", Type: "bytes", Required: true, MaxSize: 64,
+		}},
+		BoundedRuntimeArgs: []boundedmeta.RuntimeArg{{
+			Name: "preimage", Type: "bytes", Required: true, MaxSize: 64,
+		}},
+		DerivedArgs: []boundedmeta.DerivedArg{{
+			Name: "merkle_proof", Kind: boundedmeta.DerivedArgMerkleProof,
+			Parameter: "recipients", MaxSize: boundedmeta.MerkleProofSize,
+		}},
+		Bounded: &BoundedAuthorizationProfile{
+			Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		},
+	})
+
+	args, err := provider.BuildArgs([]byte{1, 2, 3, 4}, map[string][]byte{"preimage": {0xaa}})
+	if err != nil {
+		t.Fatalf("BuildArgs() error = %v", err)
+	}
+	if len(args) != 3 || !bytes.Equal(args[0], []byte{1, 2, 3, 4}) || len(args[1]) != 0 || !bytes.Equal(args[2], []byte{0xaa}) {
+		t.Fatalf("BuildArgs() = %#v, want [signature, empty derived slot, runtime arg]", args)
+	}
+}
+
 func TestBoundedAuthorizationMetadataSnapshotsAdminContract(t *testing.T) {
 	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
 		Contract:     BoundedContractV1,

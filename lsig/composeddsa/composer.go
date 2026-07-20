@@ -268,7 +268,7 @@ func (c *ComposedDSA) SignatureArgLayout() (SignatureArgLayout, bool) {
 	return cloneSignatureArgLayout(ops.SignatureArgLayout()), true
 }
 
-// BuildArgs assembles LogicSig Args as [signature args..., runtime args...].
+// BuildArgs assembles LogicSig Args in the provider's declared order.
 func (c *ComposedDSA) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
 	if signature == nil {
 		return nil, fmt.Errorf("signature is required for DSA LogicSig")
@@ -295,11 +295,78 @@ func (c *ComposedDSA) BuildArgs(signature []byte, runtimeArgs map[string][]byte)
 	if err != nil {
 		return nil, err
 	}
+	if c.bounded != nil {
+		return c.buildBoundedSpendArgs(sigArgs, runtimeArgBytes)
+	}
 
 	ordered := make([][]byte, 0, len(sigArgs)+len(runtimeArgBytes))
 	ordered = append(ordered, sigArgs...)
 	ordered = append(ordered, runtimeArgBytes...)
 	return ordered, nil
+}
+
+func (c *ComposedDSA) buildBoundedSpendArgs(signatureArgs, runtimeArgs [][]byte) ([][]byte, error) {
+	metadata, err := c.boundedAuthorizationMetadataBase()
+	if err != nil {
+		return nil, err
+	}
+	if metadata == nil {
+		return nil, fmt.Errorf("bounded argument assembly requires bounded metadata")
+	}
+
+	args := make([][]byte, len(metadata.ArgumentLayout))
+	baseIndex, runtimeIndex := 0, 0
+	for _, slot := range metadata.ArgumentLayout {
+		if slot.Index < 0 || slot.Index >= len(args) {
+			return nil, fmt.Errorf("bounded argument slot %q has invalid index %d", slot.Name, slot.Index)
+		}
+		value := []byte{}
+		switch slot.Source {
+		case boundedmeta.ArgSourceBaseSignature:
+			if baseIndex >= len(signatureArgs) {
+				return nil, fmt.Errorf("bounded base signature slot %q has no value", slot.Name)
+			}
+			value = signatureArgs[baseIndex]
+			baseIndex++
+		case boundedmeta.ArgSourceDerived, boundedmeta.ArgSourceAdmin:
+			// BuildArgs has no transaction context or external admin authority.
+			// Keep interior slots explicit so later runtime values retain their
+			// frozen indexes; unused trailing slots are trimmed below.
+		case boundedmeta.ArgSourceRuntime:
+			if runtimeIndex >= len(runtimeArgs) {
+				return nil, fmt.Errorf("bounded runtime slot %q has no value", slot.Name)
+			}
+			value = runtimeArgs[runtimeIndex]
+			runtimeIndex++
+		default:
+			return nil, fmt.Errorf("bounded argument slot %q has unsupported source %q", slot.Name, slot.Source)
+		}
+
+		switch slot.Paths.Spend {
+		case boundedmeta.ArgRequired:
+			if len(value) == 0 {
+				return nil, fmt.Errorf("required bounded spend argument slot %q is empty", slot.Name)
+			}
+		case boundedmeta.ArgOptional:
+		case boundedmeta.ArgForbidden:
+			if len(value) != 0 {
+				return nil, fmt.Errorf("forbidden bounded spend argument slot %q is populated", slot.Name)
+			}
+		default:
+			return nil, fmt.Errorf("bounded argument slot %q has invalid spend rule %q", slot.Name, slot.Paths.Spend)
+		}
+		if len(value) > slot.MaxSize {
+			return nil, fmt.Errorf("bounded argument slot %q exceeds maximum size %d", slot.Name, slot.MaxSize)
+		}
+		args[slot.Index] = value
+	}
+	if baseIndex != len(signatureArgs) || runtimeIndex != len(runtimeArgs) {
+		return nil, fmt.Errorf("bounded argument layout did not consume all provider arguments")
+	}
+	for len(args) > 0 && len(args[len(args)-1]) == 0 {
+		args = args[:len(args)-1]
+	}
+	return args, nil
 }
 
 // CompatibilityFingerprint returns a stable semantic fingerprint for the
