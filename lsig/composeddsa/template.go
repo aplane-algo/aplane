@@ -46,6 +46,11 @@ func ValidateTemplateSpec(spec *TemplateSpec) error {
 	if !IsBaseRegistered(spec.BaseKeyType) {
 		return fmt.Errorf("base_key_type %q is not registered as composable", spec.BaseKeyType)
 	}
+	for _, parameter := range spec.Parameters {
+		if parameter.Name == BoundedAdminPublicKeyParameter {
+			return fmt.Errorf("parameter %q is framework-injected and cannot be declared by the author", BoundedAdminPublicKeyParameter)
+		}
+	}
 	if spec.SchemaVersion < 2 {
 		if spec.Bounded != nil {
 			return fmt.Errorf("schema_version 1 does not support bounded")
@@ -53,11 +58,6 @@ func ValidateTemplateSpec(spec *TemplateSpec) error {
 	} else {
 		if spec.Bounded == nil {
 			return fmt.Errorf("composed schema_version 2 requires bounded")
-		}
-		for _, parameter := range spec.Parameters {
-			if parameter.Name == BoundedAdminPublicKeyParameter {
-				return fmt.Errorf("parameter %q is framework-injected and cannot be declared by the author", BoundedAdminPublicKeyParameter)
-			}
 		}
 		if _, err := boundedProfileFromTemplate(spec.Bounded); err != nil {
 			return err
