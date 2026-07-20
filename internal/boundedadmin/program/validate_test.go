@@ -227,6 +227,14 @@ func TestValidateAcceptsArg3AdminSlot(t *testing.T) {
 	}
 }
 
+func TestDecodeVariableVectorRejectsBranchOpcodes(t *testing.T) {
+	for _, opcode := range []byte{0x8d, 0x8e} {
+		if _, err := decodeVariableVector([]byte{opcode, 0}, 0, opcode); err == nil || !strings.Contains(err.Error(), "unsupported variable-vector opcode") {
+			t.Fatalf("decodeVariableVector(0x%02x) error = %v, want unsupported opcode", opcode, err)
+		}
+	}
+}
+
 func TestValidateRejectsLayer3ControlFlowEscapes(t *testing.T) {
 	tests := []struct {
 		name   string

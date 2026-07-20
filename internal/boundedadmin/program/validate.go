@@ -460,6 +460,9 @@ func decodePushInt(program []byte, pc int) (int, uint64, error) {
 }
 
 func decodeVariableVector(program []byte, pc int, opcode byte) (int, error) {
+	if opcode != 0x82 && opcode != 0x83 {
+		return 0, fmt.Errorf("unsupported variable-vector opcode 0x%02x at pc %d", opcode, pc)
+	}
 	count, used, err := readUvarint(program, pc+1)
 	if err != nil {
 		return 0, err
@@ -479,11 +482,6 @@ func decodeVariableVector(program []byte, pc int, opcode byte) (int, error) {
 				return 0, err
 			}
 			offset += n
-		case 0x8d, 0x8e:
-			if offset+2 > len(program) {
-				return 0, fmt.Errorf("invalid branch vector at pc %d", pc)
-			}
-			offset += 2
 		}
 	}
 	return offset - pc, nil
