@@ -165,7 +165,7 @@ Documentation notes:
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/signerapp/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
 | Engine | `internal/apshellapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
-| Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/boundedadmin/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/arch`, `test/integration`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
@@ -1127,6 +1127,19 @@ profile. External key generation and ceremonies are owned by
 artifacts. The normative field inventory, canonical encodings, vectors,
 schema, normal forms, and custody contract are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+
+Package ownership: `internal/boundedmeta` owns the durable non-secret bounded
+metadata vocabulary and canonical encodings; `lsig/composeddsa` owns profile
+compilation, TEAL rendering, and the program-instance binding;
+`internal/txeffects` owns the frozen effect-classification manifest and the
+single finalized-transaction `Classify`/`Inspect` boundary. Signer-side
+planning/execution live in `internal/signerapp/signing`, and online rekey
+submission in `internal/engine/bounded_admin.go`. The external contract-admin
+ceremony is owned by the `apbounded-admin`-only packages:
+`internal/boundedadmin/{authorization,program,protocol,message,helpersign,artifact}`
+(request validation, frozen-bytecode structural validation, ceremony wire
+format, admin transcript, Falcon signing ops, and encrypted key custody), with
+`internal/apboundedadminapp` composing the client application.
 
 ## Guarded Signing And Sentry Nodes
 

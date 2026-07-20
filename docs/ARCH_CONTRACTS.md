@@ -170,8 +170,7 @@ field("bounded1") ||
 u32(spend_effect_count) || field(each effect in pay,axfer,asset_opt_in order) ||
 u64(max_fee) ||
 u32(admin_operation_count) ||
-field(each operation kind) || field(each authorization) ||
-field(each policy gate in rekey order) ||
+field(kind) || field(authorization) || field(policy_gate) per admin operation in rekey order ||
 field(layer3_policy) ||
 u32(base_signature_arg_count) || u32(each base maximum) ||
 u32(derived_arg_count) || field/name/kind/parameter/maximum records ||
