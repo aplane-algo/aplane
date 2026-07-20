@@ -15,7 +15,26 @@ A "key type" (e.g. `aplane.falcon1024.v1`, `aplane.corridor.v1`,
 question, and each kind uses a different mechanism because each is callable from
 a different place.
 
-## DSA LogicSig policy terminology
+## Authorization object ontology
+
+The resolution mechanisms below are separate from the security ontology. The
+ontology first identifies what authorizes an account, then any LogicSig policy
+form, and finally any additional authority. These dimensions must not be
+collapsed into one flat key-type hierarchy.
+
+### Account authorization types
+
+| Type | Account authority | Signer representation |
+|---|---|---|
+| **Native** | A protocol-native account signature, currently Algorand Ed25519. | Encrypted signer `.key` with native private material. |
+| **DSA LogicSig** | A LogicSig verifies one or more digital signatures and may enforce additional transaction policy. | Encrypted signer `.key` with DSA private material, compiled bytecode, and signing metadata. |
+| **Generic LogicSig** | TEAL predicates alone authorize the account; there is no DSA private key. | Encrypted signer `.key` containing bytecode, parameters, salt, and signing metadata but no private signing material. |
+
+An account authorization type identifies the account-level mechanism. It does
+not by itself say whether the account is guarded or which transaction effects a
+LogicSig admits.
+
+### DSA LogicSig policy forms
 
 The schema-v2 composed-DSA contract uses **bounded DSA** for DSA-backed LogicSigs
 whose admitted transaction effects, maximum fee, argument layout, and optional
@@ -29,12 +48,43 @@ DSA LogicSig policy categories are:
 - **Bounded DSA**: schema-v2 composed policy with a closed framework-enforced
   effect and argument contract.
 - **Custom DSA policy**: schema-v1 composed policy authored directly as TEAL.
+- **Dedicated compiled policy**: provider-owned LogicSig policy outside the
+  composed-template schema, such as `aplane.corridor.v1`.
 
 Schema-v1 custom policy remains a fully supported expert mode. "Expert" is a
 documentation description, not a feature gate, warning requirement, or reduced
 execution mode. Generic LogicSig templates are a separate category. Guarded
 signing is an orthogonal authority axis and may be combined with a DSA account
 model without becoming a policy category itself.
+
+### Auxiliary authority types
+
+Auxiliary authority keys do not independently authorize an Algorand account.
+They participate in a specific account or operation contract:
+
+| Type | Custody and use | Signer key type? |
+|---|---|---|
+| **Sentry component key** | Stored by a sentry-role signer and used through `/sign/component`; its signature is assembled into a guarded-account LogicSig. | Yes. Durable category `component`; never accepted as a spending account by ordinary `/sign`. |
+| **External contract-admin key** | Normally cold, stored in an encrypted `.apbounded-admin-key` artifact, and used only for a declared bounded admin operation through `apbounded-admin`. | No. It is external authority material, not an `apstore` key, sentry component, or ordinary signer key type. |
+
+The current authority overlays are therefore **unguarded**, **sentry guarded**,
+and **contract-admin-authorized operation**. Contract-admin authority is
+operation-specific: the spending key still authenticates every bounded path,
+and the external admin key currently authorizes only a pure rekey.
+
+Examples of the composed ontology:
+
+| Key type | Account authorization | Policy form | Additional authority |
+|---|---|---|---|
+| `ed25519` | Native | n/a | none |
+| `aplane.falcon1024.v1` | DSA LogicSig | Plain DSA | none |
+| `aplane.falcon1024-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | none |
+| `aplane.falcon1024-admin-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external contract-admin key for rekey |
+| `aplane.falcon1024-sentry-ed25519.v1` | DSA LogicSig | dedicated compiled guarded verifier | Ed25519 sentry component key |
+| `aplane.corridor.v1` | DSA LogicSig | dedicated compiled corridor policy | Falcon sentry component key |
+| `aplane.allowlist.v1` | Generic LogicSig | generic TEAL policy | none |
+
+## Resolution, classification, and behavior
 
 | Axis | Question it answers | Mechanism | Owner package(s) |
 |---|---|---|---|

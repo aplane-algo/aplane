@@ -10,6 +10,34 @@ For the full architecture-level key/keytype state matrix, see
 
 ## Concepts
 
+### Authorization types
+
+APlane separates the account authorization mechanism from additional signing
+authorities:
+
+| Account authorization type | Meaning | Examples |
+|---|---|---|
+| **Native** | Standard protocol account signature without a LogicSig. | `ed25519` |
+| **DSA LogicSig** | A LogicSig verifies digital signatures and may add transaction policy. | `aplane.falcon1024.v1`, bounded allowlists, guarded accounts |
+| **Generic LogicSig** | TEAL-only account with no DSA private key. | `aplane.allowlist.v1`, `aplane.htlc.v1` |
+
+DSA LogicSigs may use a **plain** signature-only program, a **bounded1** policy,
+an expert-mode **custom** schema-v1 composed policy, or a dedicated compiled
+provider policy such as Corridor. Sentry guarding is an additional authority,
+not a DSA policy category.
+
+| Auxiliary authority type | Meaning |
+|---|---|
+| **Sentry component key** | A signer-managed, non-account key used through `/sign/component` and assembled into a guarded transaction. |
+| **External contract-admin key** | A normally cold key held in an `.apbounded-admin-key` artifact and used only for a bounded admin operation. It is not imported into the signer. |
+
+Sentry component keys appear in the sentry key-type inventory but cannot be
+used as spending accounts. External contract-admin keys do not appear in
+`keytypes`, `apstore`, or the signer keystore at all. A contract-admin key is
+not a sentry component key, and neither authority can substitute for the other.
+
+### Definition and availability
+
 APlane has two optional key type paths:
 
 | Kind | Example | Where definition lives | How to enable |
