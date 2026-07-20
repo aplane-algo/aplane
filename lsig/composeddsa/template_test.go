@@ -275,6 +275,43 @@ teal: |
 	}
 }
 
+func TestComposedSchemaV2RejectsAuthorDeclaredAdminPublicKey(t *testing.T) {
+	baseKeyType := "test.template-author-admin-key-base.v1"
+	registerTemplateTestBase(baseKeyType)
+	spec, err := ParseTemplateSpec([]byte(`
+schema_version: 2
+template_type: composed
+base_key_type: test.template-author-admin-key-base.v1
+template_mode: strict
+publisher: test
+family: author-admin-key
+version: 1
+display_name: Author Admin Key
+bounded:
+  contract: bounded1
+  spend_effects: [pay]
+  max_fee: 10000
+  admin_operations:
+    - kind: rekey
+      authorization: admin_key
+      policy_gate: none
+parameters:
+  - name: bounded_admin_public_key
+    type: bytes
+    required: true
+    max_length: 3586
+teal: |
+  int 1
+  assert
+`))
+	if err != nil {
+		t.Fatalf("ParseTemplateSpec() error = %v", err)
+	}
+	if err := ValidateTemplateSpec(spec); err == nil || !strings.Contains(err.Error(), "framework-injected") {
+		t.Fatalf("ValidateTemplateSpec() error = %v, want injected-parameter rejection", err)
+	}
+}
+
 func TestTemplateSchemaSelectionAndStrictDecoding(t *testing.T) {
 	registerTemplateTestBase("test.template-schema-selection-base.v1")
 	tests := []struct {

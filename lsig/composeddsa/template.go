@@ -54,6 +54,11 @@ func ValidateTemplateSpec(spec *TemplateSpec) error {
 		if spec.Bounded == nil {
 			return fmt.Errorf("composed schema_version 2 requires bounded")
 		}
+		for _, parameter := range spec.Parameters {
+			if parameter.Name == BoundedAdminPublicKeyParameter {
+				return fmt.Errorf("parameter %q is framework-injected and cannot be declared by the author", BoundedAdminPublicKeyParameter)
+			}
+		}
 		if _, err := boundedProfileFromTemplate(spec.Bounded); err != nil {
 			return err
 		}
