@@ -561,9 +561,13 @@ func canonicalBehaviorParameters(params map[string]string, defs []lsigprovider.P
 		if def.Name == BoundedAdminPublicKeyParameter {
 			continue
 		}
-		canonical, err := canonicalParameterValue(def, normalized[def.Name])
-		if err != nil {
-			return nil, fmt.Errorf("canonical parameter %s: %w", def.Name, err)
+		value, present := normalized[def.Name]
+		var canonical []byte
+		if def.Required || (present && value != "") {
+			canonical, err = canonicalParameterValue(def, value)
+			if err != nil {
+				return nil, fmt.Errorf("canonical parameter %s: %w", def.Name, err)
+			}
 		}
 		encoded = boundedmeta.AppendField(encoded, []byte(def.Name))
 		encoded = boundedmeta.AppendField(encoded, []byte(def.Type))

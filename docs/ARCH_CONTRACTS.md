@@ -189,7 +189,9 @@ field(name) || field(type) || field(canonical_value) || ...
 Values use parameter-definition order. Address is 32 raw bytes, bytes is raw,
 uint is `u64`, bool is one byte, string is UTF-8, and a list is
 `u32(count) || field(each canonical element)`. Only behavior-bearing creation
-values participate. The separately bound injected
+values participate. A missing or explicitly empty optional parameter uses a
+zero-length `canonical_value`, distinct from explicit zero, false, or an empty
+list. The separately bound injected
 `bounded_admin_public_key`, display/provenance data, paths, and per-request
 runtime values do not. Static runtime/derived declarations and path masks are
 part of the canonical profile above.

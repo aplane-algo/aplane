@@ -260,8 +260,10 @@ paths, runtime values, and policy provenance are excluded.
 
 Canonical scalar values are: address as raw 32 bytes; bytes as raw bytes;
 unsigned integer as `u64`; boolean as one byte `0x00` or `0x01`; and string as
-UTF-8. A list value is `u32(count) || field(element_0) || ...`. Nested or new
-parameter types require a new encoding rule before use by bounded.
+UTF-8. A missing or explicitly empty optional parameter has a zero-length
+`canonical_value`; this is distinct from an explicit numeric zero, false, or
+empty list. A list value is `u32(count) || field(element_0) || ...`. Nested or
+new parameter types require a new encoding rule before use by bounded.
 
 ## Contract Admin Identity and Transcript
 

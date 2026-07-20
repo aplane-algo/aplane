@@ -148,6 +148,54 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	}
 }
 
+func TestBundledFalconAdminAllowlistV1AllowsOmittedOptionalConstraints(t *testing.T) {
+	falcon1024.RegisterClient()
+	data, err := templates.ReadFile("aplane.falcon1024-admin-allowlist.v1.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := composeddsa.ParseTemplateSpec(data)
+	if err != nil {
+		t.Fatalf("ParseTemplateSpec() error = %v", err)
+	}
+	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
+	}
+
+	spendingKey := bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize)
+	adminKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
+	baseValues := map[string]string{
+		"recipients": types.Address{1}.String(),
+		composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),
+	}
+	for _, test := range []struct {
+		name   string
+		values map[string]string
+	}{
+		{name: "omitted", values: baseValues},
+		{name: "explicit empty", values: map[string]string{
+			"recipients": types.Address{1}.String(), "asset_ids": "",
+			"max_payment_amount": "", "max_asset_amount": "",
+			composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			teal, err := provider.GenerateTEAL(spendingKey, test.values)
+			if err != nil {
+				t.Fatalf("GenerateTEAL() error = %v", err)
+			}
+			metadata, err := provider.BuildBoundedAuthorizationMetadata(spendingKey, test.values, []byte(teal))
+			if err != nil {
+				t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
+			}
+			if metadata.ProgramBindingHex == "" || metadata.AdminKeyID == "" {
+				t.Fatalf("missing contract-admin identity metadata: %#v", metadata)
+			}
+		})
+	}
+}
+
 func TestBundledFalconAdminAllowlistV1MaximumBudget(t *testing.T) {
 	falcon1024.RegisterClient()
 	data, err := templates.ReadFile("aplane.falcon1024-admin-allowlist.v1.yaml")

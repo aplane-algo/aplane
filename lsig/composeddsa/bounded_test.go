@@ -112,6 +112,30 @@ func TestBoundedGoldenVector(t *testing.T) {
 	}
 }
 
+func TestCanonicalBoundedBehaviorParametersEncodesAbsentOptionalScalar(t *testing.T) {
+	def := lsigprovider.ParameterDef{Name: "limit", Type: "uint64"}
+	absent, err := CanonicalBoundedBehaviorParameters(nil, []lsigprovider.ParameterDef{def})
+	if err != nil {
+		t.Fatalf("CanonicalBoundedBehaviorParameters(absent) error = %v", err)
+	}
+	want := boundedmeta.AppendField(nil, []byte(boundedBehaviorParametersDomainV1))
+	want = boundedmeta.AppendUint32(want, 1)
+	want = boundedmeta.AppendField(want, []byte(def.Name))
+	want = boundedmeta.AppendField(want, []byte(def.Type))
+	want = boundedmeta.AppendField(want, nil)
+	if !bytes.Equal(absent, want) {
+		t.Fatalf("absent optional encoding = %x, want %x", absent, want)
+	}
+
+	zero, err := CanonicalBoundedBehaviorParameters(map[string]string{"limit": "0"}, []lsigprovider.ParameterDef{def})
+	if err != nil {
+		t.Fatalf("CanonicalBoundedBehaviorParameters(zero) error = %v", err)
+	}
+	if bytes.Equal(absent, zero) {
+		t.Fatal("absent optional value encoded identically to an explicit zero")
+	}
+}
+
 func TestBoundedComposerEmitsOrderedEnvelope(t *testing.T) {
 	provider := newBoundedTestProvider(&BoundedAuthorizationProfile{
 		Contract:     BoundedContractV1,
