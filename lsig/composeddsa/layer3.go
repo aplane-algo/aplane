@@ -96,6 +96,9 @@ func validateLayer3Policy(policy *Layer3Policy, params []lsigprovider.ParameterD
 
 	allowsPay := profileAllowsSpendEffect(profile, txeffects.SpendEffectPay)
 	allowsAxfer := profileAllowsSpendEffect(profile, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn)
+	if boundedRekeyUsesLayer3(profile) && !allowsPay {
+		return fmt.Errorf("fixed_allowlist Layer-3-gated rekey requires pay in spend_effects")
+	}
 	if !allowsPay && policy.MaxPaymentAmountParameter != "" {
 		return fmt.Errorf("max_payment_amount_parameter requires pay in spend_effects")
 	}

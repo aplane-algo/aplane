@@ -278,7 +278,9 @@ only `policy: fixed_allowlist`, with parameter references
 `max_payment_amount_parameter`, and optional
 `max_asset_amount_parameter`. A framework-owned policy rejects author `teal`.
 Its address and asset lists are inline, canonical, and independently capped at
-30 entries. Omitting `bounded.layer3` selects contained custom author TEAL.
+30 entries. A Layer-3-gated spending-key rekey requires `pay` in the fixed
+allowlist's `spend_effects`. Omitting `bounded.layer3` selects contained custom
+author TEAL.
 
 ### External Contract Admin Artifact Contract
 

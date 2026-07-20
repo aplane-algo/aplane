@@ -100,6 +100,25 @@ func TestFixedAllowlistPolicyRejectsUnsafeSchema(t *testing.T) {
 	}
 }
 
+func TestFixedAllowlistPolicyRejectsLayer3GatedRekeyWithoutPay(t *testing.T) {
+	profile := &BoundedAuthorizationProfile{
+		Contract:     BoundedContractV1,
+		SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer},
+		MaxFee:       10_000,
+		AdminOperations: []AdminOperationSpec{{
+			Kind: AdminOperationRekey, Authorization: AdminAuthorizationSpendingKey, PolicyGate: AdminPolicyGateLayer3,
+		}},
+	}
+	policy := &Layer3Policy{Policy: Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"}
+	params := []lsigprovider.ParameterDef{{
+		Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: BoundedInlineListMax,
+	}}
+	err := validateLayer3Policy(policy, params, profile)
+	if err == nil || !strings.Contains(err.Error(), "requires pay in spend_effects") {
+		t.Fatalf("validateLayer3Policy() error = %v, want pay requirement", err)
+	}
+}
+
 func TestLayer3SchemaRejectsUnknownNestedField(t *testing.T) {
 	_, err := ParseTemplateSpec([]byte(`schema_version: 2
 derivation_version: 2

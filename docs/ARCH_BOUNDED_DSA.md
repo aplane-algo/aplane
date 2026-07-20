@@ -422,6 +422,9 @@ optionally `XferAsset` and `AssetAmount`. The sender is always a legal
 self-recipient, but asset and amount limits still apply. Empty optional asset/amount values
 omit only that named constraint. Both list parameters are canonicalized and
 bounded to 30 entries. The policy uses no runtime proof or signer-derived arg.
+A spending-key rekey with `policy_gate: layer3` requires `pay` in
+`spend_effects`, because a pure rekey is payment-shaped and must enter the
+framework policy's payment branch.
 
 `bounded_admin_public_key` is injected by the framework and cannot be declared
 by the author. User parameters, variables, runtime args, and references using
