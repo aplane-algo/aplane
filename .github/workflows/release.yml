@@ -188,6 +188,7 @@ jobs:
               '' \
               'Files:' \
               '  bin/apshell       - General shell client' \
+              '  bin/apbounded-admin - External Falcon contract-admin helper' \
               '  config.yaml       - Configuration template (edit signer host/ports)' \
               '  .ssh/             - SSH keys and known_hosts (created/managed locally)' \
               '  installer/scripts/config-mcp.sh - Optional helper to write .mcp.json after extraction' \
@@ -222,7 +223,7 @@ jobs:
             archive="aplane_${VERSION}_linux_${arch}.tar.gz"
             rm -rf dist/staging
             mkdir -p dist/staging/aplane/{bin,installer/scripts,library/templates,plugins.available}
-            cp bin/${arch}/apshell bin/${arch}/apsigner bin/${arch}/apadmin \
+            cp bin/${arch}/apshell bin/${arch}/apbounded-admin bin/${arch}/apsigner bin/${arch}/apadmin \
                bin/${arch}/apconsole \
                bin/${arch}/apapprover bin/${arch}/apstore bin/${arch}/appolicy bin/${arch}/appass \
                bin/${arch}/aplocalnet \
@@ -248,7 +249,7 @@ jobs:
             archive="aplane-client_${VERSION}_linux_${arch}.tar.gz"
             rm -rf dist/staging
             mkdir -p dist/staging/aplane-client/{bin,.ssh,installer/scripts}
-            cp bin/${arch}/apshell dist/staging/aplane-client/bin/
+            cp bin/${arch}/apshell bin/${arch}/apbounded-admin dist/staging/aplane-client/bin/
             cp examples/config/apclient/config.yaml.example dist/staging/aplane-client/config.yaml
             cp installer/scripts/config-mcp.sh dist/staging/aplane-client/installer/scripts/
             write_client_readme
@@ -263,7 +264,7 @@ jobs:
             archive="aplane_${VERSION}_darwin_${arch}.tar.gz"
             rm -rf dist/staging
             mkdir -p dist/staging/aplane/{bin,installer/scripts,library/templates,plugins.available}
-            cp bin/darwin-${arch}/apshell bin/darwin-${arch}/apsigner \
+            cp bin/darwin-${arch}/apshell bin/darwin-${arch}/apbounded-admin bin/darwin-${arch}/apsigner \
                bin/darwin-${arch}/apadmin bin/darwin-${arch}/apconsole \
                bin/darwin-${arch}/apapprover \
                bin/darwin-${arch}/apstore bin/darwin-${arch}/appolicy bin/darwin-${arch}/appass \
@@ -285,7 +286,7 @@ jobs:
             archive="aplane-client_${VERSION}_darwin_${arch}.tar.gz"
             rm -rf dist/staging
             mkdir -p dist/staging/aplane-client/{bin,.ssh,installer/scripts}
-            cp bin/darwin-${arch}/apshell dist/staging/aplane-client/bin/
+            cp bin/darwin-${arch}/apshell bin/darwin-${arch}/apbounded-admin dist/staging/aplane-client/bin/
             cp examples/config/apclient/config.yaml.example dist/staging/aplane-client/config.yaml
             cp installer/scripts/config-mcp.sh dist/staging/aplane-client/installer/scripts/
             write_client_readme

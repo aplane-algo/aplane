@@ -1754,7 +1754,7 @@ abort_if_macos_install_processes_running() {
     install_root="${install_root%/}"
     local found=0
     local pid exe
-    for name in apsigner apadmin apconsole apshell apstore apapprover appass aplocalnet; do
+    for name in apsigner apadmin apconsole apshell apbounded-admin apstore apapprover appass aplocalnet; do
         while IFS= read -r pid; do
             [ -n "$pid" ] || continue
             exe="$(ps -p "$pid" -o comm= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)"
@@ -1880,8 +1880,8 @@ if [ "$CLIENT_MODE" = "1" ]; then
     fi
 
     # Verify client binaries exist in source
-    if [ ! -f "$BIN_SRC/apshell" ]; then
-        echo "Error: apshell binary not found at $BIN_SRC/apshell" >&2
+    if [ ! -f "$BIN_SRC/apshell" ] || [ ! -f "$BIN_SRC/apbounded-admin" ]; then
+        echo "Error: client binaries apshell and apbounded-admin were not found at $BIN_SRC" >&2
         exit 1
     fi
     if [ ${#POSITIONAL[@]} -gt 0 ]; then
@@ -1905,7 +1905,7 @@ if [ "$CLIENT_MODE" = "1" ]; then
     echo ""
     echo "  Source:    $SCRIPT_DIR"
     echo "  Root:      $CLIENT_PATH"
-    echo "  Binaries:  $APCLIENT_DIR/bin/apshell"
+    echo "  Binaries:  $APCLIENT_DIR/bin/apshell, $APCLIENT_DIR/bin/apbounded-admin"
     echo "  Config:    $APCLIENT_DIR/config.yaml"
     echo ""
 
@@ -1919,6 +1919,9 @@ if [ "$CLIENT_MODE" = "1" ]; then
     cp "$BIN_SRC/apshell" "$BINDIR/apshell"
     chmod 755 "$BINDIR/apshell"
     repair_macos_binary "$BINDIR/apshell"
+    cp "$BIN_SRC/apbounded-admin" "$BINDIR/apbounded-admin"
+    chmod 755 "$BINDIR/apbounded-admin"
+    repair_macos_binary "$BINDIR/apbounded-admin"
     if [ -f "$BIN_SRC/aplocalnet" ]; then
         cp "$BIN_SRC/aplocalnet" "$BINDIR/aplocalnet"
         chmod 755 "$BINDIR/aplocalnet"
@@ -2119,7 +2122,7 @@ if [ "$LOCAL_MODE" = "1" ]; then
             echo "  skipping obsolete $name"
             continue
         fi
-        if [ "$name" = "apshell" ] || [ "$name" = "aplocalnet" ]; then
+        if [ "$name" = "apshell" ] || [ "$name" = "apbounded-admin" ] || [ "$name" = "aplocalnet" ]; then
             cp "$bin" "$CLIENT_BINDIR/"
             chmod 755 "$CLIENT_BINDIR/$name"
             repair_macos_binary "$CLIENT_BINDIR/$name"

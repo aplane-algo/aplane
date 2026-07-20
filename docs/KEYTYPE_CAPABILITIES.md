@@ -34,11 +34,12 @@ included as normal user-account operations.
 | `aplane.ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024_ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.ecdsak1.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| `aplane.falcon1024-allowlist.v1` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
-| `aplane.falcon1024-allowlist.v2` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
-| `aplane.ed25519-allowlist.v1` | C | C | C | Y | C | C | Y | Y | Y | Y | Y |
-| `aplane.falcon1024-hashlock.v1` | C | C | C | C | C | C | C | C | C | C | C |
-| `aplane.falcon1024-timelock.v1` | C | C | C | C | C | C | C | C | C | C | C |
+| `aplane.falcon1024-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
+| `aplane.falcon1024-allowlist.v2` | C | N | C | Y | N | N | N | N | N | N | C |
+| `aplane.falcon1024-admin-allowlist.v1` | C | N | C | C | N | N | N | N | N | N | C |
+| `aplane.ed25519-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
+| `aplane.falcon1024-hashlock.v1` | C | N | C | C | N | N | N | N | N | N | C |
+| `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-sentry-ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-sentry-falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.corridor.v1` | C | C | C | Y | C | N | N | N | N | N | C |
@@ -68,24 +69,28 @@ included as normal user-account operations.
   `aplane.falcon1024_ed25519.v1`, and `aplane.ecdsak1.v1` do not restrict
   transaction type or special transaction fields at the key-type layer. Local
   signer policy remains the safety boundary.
-- `aplane.falcon1024-allowlist.v1` and `aplane.ed25519-allowlist.v1`
-  restrict only `pay` and `axfer`
-  destination fields. Payment receivers and asset receivers must be self or
-  allowlisted. Close destinations must be zero, self, or allowlisted. Other
-  transaction types keep the base signature authorization surface.
-  `AssetSender` is not denied by these templates, so clawback-shaped `axfer` is
-  possible when destination checks pass.
-- `aplane.falcon1024-hashlock.v1` keeps the base Falcon authorization surface
-  but additionally requires the configured SHA256 preimage.
-- `aplane.falcon1024-timelock.v1` keeps the base Falcon authorization surface
-  but additionally requires `FirstValid >= unlock_round`.
-- `aplane.falcon1024-allowlist.v2` restricts only `pay` and `axfer`
-  destination fields. Payment receivers and asset receivers must be self or
-  proven with a signer-generated 512-byte fixed-depth Merkle proof against the
-  root derived from the key-file recipient list. Close destinations must be
-  zero or the just-validated receiver. Other transaction types keep the base
-  Falcon authorization surface. `AssetSender` is not denied by this template,
-  so clawback-shaped `axfer` is possible when destination checks pass.
+- `aplane.falcon1024-allowlist.v1` and `aplane.ed25519-allowlist.v1` are
+  bounded1 templates. They admit only pure payments and pure asset transfers
+  to self or an inline allowlisted recipient, plus asset opt-in. They reject
+  close, clawback, and all non-transfer transaction types. Rekey is allowed
+  only as the bounded1 pure self-payment form authorized by the spending key;
+  the allowlist does not gate that rekey path.
+- `aplane.falcon1024-hashlock.v1` admits the same bounded transfer effects but
+  requires the configured SHA256 preimage for spending, asset opt-in, and pure
+  spending-key rekey. Close, clawback, and non-transfer types are rejected.
+- `aplane.falcon1024-timelock.v1` admits the same bounded transfer effects only
+  when `FirstValid >= unlock_round`; the round condition also gates pure
+  spending-key rekey. Close, clawback, and non-transfer types are rejected.
+- `aplane.falcon1024-allowlist.v2` is the bounded Merkle allowlist. Non-self
+  payment and asset-transfer destinations require a signer-generated 512-byte
+  fixed-depth proof against the root derived from the key-file recipient list.
+  Self-send, asset opt-in, and pure spending-key rekey require no proof. Close,
+  clawback, and non-transfer types are rejected.
+- `aplane.falcon1024-admin-allowlist.v1` admits only pure `pay` and `axfer`
+  spends to self or a compiled recipient. Optional asset-ID and amount limits
+  narrow that set. It rejects close, clawback, and every other transaction
+  type. Rekey is restricted to the pure payment normal form and additionally
+  requires the external Falcon contract-admin signature.
 - `aplane.falcon1024-sentry-ed25519.v1` and
   `aplane.falcon1024-sentry-falcon1024.v1` require guarded signing assembly.
   Once both the user and sentry component signatures verify, the on-chain

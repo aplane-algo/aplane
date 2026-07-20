@@ -22,12 +22,15 @@
 package generictemplate
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -56,9 +59,73 @@ const (
 type TemplateSpec struct {
 	templatestore.BaseTemplateSpec `yaml:",inline"`
 	TemplateMode                   string                          `yaml:"template_mode"`
+	Bounded                        *BoundedAuthorizationSpec       `yaml:"bounded"`
 	Parameters                     []ParameterSpec                 `yaml:"parameters"`
 	TemplateVariables              []tealtemplate.TemplateVariable `yaml:"template_variables"`
 	RuntimeArgs                    []RuntimeArgSpec                `yaml:"runtime_args"` // Arguments required at signing time
+	TEAL                           string                          `yaml:"teal"`
+}
+
+// BoundedAuthorizationSpec is the typed YAML form of the composed schema
+// v2 bounded-authorization profile. MaxFee is a pointer so omission cannot
+// be confused with an explicit zero ceiling.
+type BoundedAuthorizationSpec struct {
+	Contract        string                      `yaml:"contract"`
+	SpendEffects    []string                    `yaml:"spend_effects"`
+	MaxFee          *uint64                     `yaml:"max_fee"`
+	AdminOperations []TransactionAdminOperation `yaml:"admin_operations"`
+	Layer3          *TransactionLayer3Spec      `yaml:"layer3"`
+	RuntimeArgs     []BoundedRuntimeArgSpec     `yaml:"runtime_args"`
+	DerivedArgs     []BoundedDerivedArgSpec     `yaml:"derived_args"`
+}
+
+// BoundedRuntimeArgSpec declares caller-supplied data and every path on which
+// the bounded contract requires it.
+type BoundedRuntimeArgSpec struct {
+	Name        string   `yaml:"name"`
+	Label       string   `yaml:"label"`
+	Description string   `yaml:"description"`
+	Type        string   `yaml:"type"`
+	ByteLength  int      `yaml:"byte_length"`
+	MaxSize     int      `yaml:"max_size"`
+	RequiredOn  []string `yaml:"required_on"`
+}
+
+// BoundedDerivedArgSpec declares signer-generated Layer-3 data. Bounded1 has
+// one closed kind: a Merkle allowlist proof derived from an address parameter.
+type BoundedDerivedArgSpec struct {
+	Name      string `yaml:"name"`
+	Kind      string `yaml:"kind"`
+	Parameter string `yaml:"parameter"`
+	MaxSize   int    `yaml:"max_size"`
+}
+
+// TransactionLayer3Spec selects a framework-owned spending policy and binds
+// its typed options to creation parameters. A nil value means expert-authored
+// custom TEAL.
+type TransactionLayer3Spec struct {
+	Policy                    string `yaml:"policy"`
+	RecipientsParameter       string `yaml:"recipients_parameter"`
+	AssetIDsParameter         string `yaml:"asset_ids_parameter"`
+	MaxPaymentAmountParameter string `yaml:"max_payment_amount_parameter"`
+	MaxAssetAmountParameter   string `yaml:"max_asset_amount_parameter"`
+}
+
+// TransactionAdminOperation is one operation in a schema-v2 bounded profile.
+type TransactionAdminOperation struct {
+	Kind          string `yaml:"kind"`
+	Authorization string `yaml:"authorization"`
+	PolicyGate    string `yaml:"policy_gate"`
+}
+
+// templateSpecV1 deliberately has no bounded field. Keeping a separate typed
+// shape prevents schema-v1 documents from silently discarding v2 semantics.
+type templateSpecV1 struct {
+	templatestore.BaseTemplateSpec `yaml:",inline"`
+	TemplateMode                   string                          `yaml:"template_mode"`
+	Parameters                     []ParameterSpec                 `yaml:"parameters"`
+	TemplateVariables              []tealtemplate.TemplateVariable `yaml:"template_variables"`
+	RuntimeArgs                    []RuntimeArgSpec                `yaml:"runtime_args"`
 	TEAL                           string                          `yaml:"teal"`
 }
 
@@ -482,23 +549,129 @@ func ParseTemplateSpec(data []byte) (*TemplateSpec, error) {
 	if err := ValidateNoSaltStyleField(data); err != nil {
 		return nil, err
 	}
-	var spec TemplateSpec
-	if err := yaml.Unmarshal(data, &spec); err != nil {
-		return nil, fmt.Errorf("YAML parse error: %w", err)
+	schemaVersion, err := inspectTemplateSchema(data)
+	if err != nil {
+		return nil, err
 	}
-	return &spec, nil
+	switch schemaVersion {
+	case 1:
+		var v1 templateSpecV1
+		if err := decodeKnownTemplateFields(data, &v1); err != nil {
+			return nil, err
+		}
+		return &TemplateSpec{
+			BaseTemplateSpec:  v1.BaseTemplateSpec,
+			TemplateMode:      v1.TemplateMode,
+			Parameters:        v1.Parameters,
+			TemplateVariables: v1.TemplateVariables,
+			RuntimeArgs:       v1.RuntimeArgs,
+			TEAL:              v1.TEAL,
+		}, nil
+	case 2:
+		var spec TemplateSpec
+		if err := decodeKnownTemplateFields(data, &spec); err != nil {
+			return nil, err
+		}
+		return &spec, nil
+	default:
+		return nil, fmt.Errorf("schema_version %d is newer than supported version 2", schemaVersion)
+	}
+}
+
+func inspectTemplateSchema(data []byte) (int, error) {
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return 0, fmt.Errorf("YAML parse error: %w", err)
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return 0, fmt.Errorf("YAML parse error: template must be a mapping")
+	}
+	if err := validateUniqueYAMLKeys(document.Content[0]); err != nil {
+		return 0, fmt.Errorf("YAML parse error: %w", err)
+	}
+
+	schemaVersion := 1
+	root := document.Content[0]
+	for i := 0; i < len(root.Content); i += 2 {
+		key, value := root.Content[i], root.Content[i+1]
+		if key.Value != "schema_version" {
+			continue
+		}
+		if value.Kind != yaml.ScalarNode || value.Tag != "!!int" {
+			return 0, fmt.Errorf("YAML parse error: schema_version must be an integer scalar")
+		}
+		parsed, err := strconv.Atoi(value.Value)
+		if err != nil || parsed < 1 {
+			return 0, fmt.Errorf("YAML parse error: schema_version must be an integer >= 1")
+		}
+		schemaVersion = parsed
+	}
+	return schemaVersion, nil
+}
+
+func validateUniqueYAMLKeys(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.MappingNode:
+		seen := make(map[string]struct{}, len(node.Content)/2)
+		for i := 0; i < len(node.Content); i += 2 {
+			key, value := node.Content[i], node.Content[i+1]
+			if key.Kind != yaml.ScalarNode {
+				return fmt.Errorf("mapping key on line %d must be a scalar", key.Line)
+			}
+			if key.Value == "<<" {
+				return fmt.Errorf("YAML merge keys are not supported (line %d)", key.Line)
+			}
+			if _, exists := seen[key.Value]; exists {
+				return fmt.Errorf("duplicate field %q on line %d", key.Value, key.Line)
+			}
+			seen[key.Value] = struct{}{}
+			if err := validateUniqueYAMLKeys(value); err != nil {
+				return err
+			}
+		}
+	case yaml.SequenceNode:
+		for _, child := range node.Content {
+			if err := validateUniqueYAMLKeys(child); err != nil {
+				return err
+			}
+		}
+	case yaml.AliasNode:
+		return fmt.Errorf("YAML aliases are not supported (line %d)", node.Line)
+	}
+	return nil
+}
+
+func decodeKnownTemplateFields(data []byte, target any) error {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(target); err != nil {
+		return fmt.Errorf("YAML parse error: %w", err)
+	}
+	var trailing yaml.Node
+	if err := decoder.Decode(&trailing); err == nil {
+		return fmt.Errorf("YAML parse error: multiple YAML documents are not supported")
+	} else if err != io.EOF {
+		return fmt.Errorf("YAML parse error: %w", err)
+	}
+	return nil
 }
 
 // ValidateNoSaltStyleField rejects user-authored salt-style selection. Salt
 // style is an implementation detail owned by each provider family; generic and
 // composed YAML templates must remain relocatable.
 func ValidateNoSaltStyleField(data []byte) error {
-	var raw map[string]any
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
 		return fmt.Errorf("YAML parse error: %w", err)
 	}
-	if _, ok := raw["salt_style"]; ok {
-		return fmt.Errorf("salt_style is not supported in YAML templates; salt style is owned by APlane")
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return nil
+	}
+	root := document.Content[0]
+	for i := 0; i < len(root.Content); i += 2 {
+		if root.Content[i].Value == "salt_style" {
+			return fmt.Errorf("salt_style is not supported in YAML templates; salt style is owned by APlane")
+		}
 	}
 	return nil
 }
@@ -511,6 +684,9 @@ func ValidateSpec(spec *TemplateSpec) error {
 	}
 	if err := templatestore.ValidateBaseKeyType(templatestore.TemplateType(spec.TemplateType), spec.BaseKeyType); err != nil {
 		return err
+	}
+	if spec.Bounded != nil {
+		return fmt.Errorf("bounded is supported only by composed schema version 2 templates")
 	}
 
 	if spec.TEAL == "" {

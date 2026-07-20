@@ -1,0 +1,476 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package integration_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"testing"
+
+	internallsig "github.com/aplane-algo/aplane/internal/lsig"
+	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/lsigsalt"
+	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/lsig/composeddsa"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
+	falconv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
+	"github.com/aplane-algo/aplane/test/integration/harness"
+
+	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
+	"github.com/algorand/go-algorand-sdk/v2/transaction"
+	"github.com/algorand/go-algorand-sdk/v2/types"
+)
+
+const (
+	boundedIntegrationKeyType = "aplane.test-falcon1024-bounded.v1"
+	boundedExecutionGroupSize = 7
+)
+
+func TestBoundedComposerCompiledBudgetMatrix(t *testing.T) {
+	if os.Getenv("INTEGRATION") != "1" {
+		t.Skip("set INTEGRATION=1 to compile bounded composer contracts")
+	}
+	network, err := harness.NewTestnetConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name      string
+		profile   *composeddsa.BoundedAuthorizationProfile
+		bytecode  int
+		spendSize int
+		adminSize int
+		groupSize int
+		address   string
+	}{
+		{
+			name:     "rekey-disabled-pay",
+			profile:  boundedIntegrationProfile([]txeffects.SpendEffect{txeffects.SpendEffectPay}),
+			bytecode: 1909, spendSize: 3189, adminSize: 0, groupSize: 4,
+			address: "MMISSIHSHIWXOLHSH6KAGRFGUITWWW6YZELKTFG6VJKS66UDO4DUVWMFZA",
+		},
+		{
+			name: "spending-key-rekey-pay-axfer",
+			profile: boundedIntegrationProfile(
+				[]txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer},
+				composeddsa.AdminOperationSpec{Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationSpendingKey, PolicyGate: composeddsa.AdminPolicyGateNone},
+			),
+			bytecode: 1955, spendSize: 3235, adminSize: 0, groupSize: 4,
+			address: "QJLGVZHR7N4IXTBYVAEKHCZ4MRJ44UASVPLKPFGVTXFD7ET3IVKPPCLX6I",
+		},
+		{
+			name: "admin-key-rekey-pay-axfer",
+			profile: boundedIntegrationProfile(
+				[]txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer},
+				composeddsa.AdminOperationSpec{Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationAdminKey, PolicyGate: composeddsa.AdminPolicyGateNone},
+			),
+			bytecode: 3854, spendSize: 5134, adminSize: 6414, groupSize: 7,
+			address: "4HV46PEVAWHB4DTQFSSHBMTLNIWI7CCYM6RR32CIVA2C4SODR6JJQ5NITE",
+		},
+	}
+	spendingPublicKey := bytes.Repeat([]byte{0x21}, family.PublicKeySize)
+	adminPublicKey := bytes.Repeat([]byte{0x31}, composeddsa.BoundedAdminPublicKeySize)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := newBoundedIntegrationProvider(test.profile)
+			provider.SetAlgodClient(network.Client)
+			params := boundedIntegrationParams(test.profile, adminPublicKey)
+			result, err := provider.DeriveLsigWithSalt(context.Background(), spendingPublicKey, params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			spendSize := len(result.Bytecode) + family.MaxSignatureSize
+			adminSize := 0
+			maxSize := spendSize
+			if boundedProfileUsesAdminKey(test.profile) {
+				adminSize = spendSize + composeddsa.BoundedAdminSignatureMaxSize
+				maxSize = adminSize
+			}
+			groupSize := (maxSize + internallsig.TxLsigBudget - 1) / internallsig.TxLsigBudget
+			if len(result.Bytecode) != test.bytecode || spendSize != test.spendSize || adminSize != test.adminSize || groupSize != test.groupSize || result.Address.String() != test.address {
+				t.Fatalf("compiled matrix = bytecode=%d spend=%d admin=%d group=%d address=%s; want %d/%d/%d/%d/%s", len(result.Bytecode), spendSize, adminSize, groupSize, result.Address.String(), test.bytecode, test.spendSize, test.adminSize, test.groupSize, test.address)
+			}
+			if fee := uint64(groupSize) * 1_000; fee > test.profile.MaxFee {
+				t.Fatalf("required pooled fee %d exceeds compiled max_fee %d", fee, test.profile.MaxFee)
+			}
+		})
+	}
+}
+
+func TestBoundedComposerExecutionAgreementLocalnet(t *testing.T) {
+	if harness.IntegrationNetwork() != harness.IntegrationNetworkLocalnet {
+		t.Skip("bounded LogicSig execution agreement requires localnet")
+	}
+	network, err := harness.NewTestnetConfig()
+	if err != nil {
+		t.Fatalf("connect to localnet: %v", err)
+	}
+	funder, err := harness.NewFundTestAccount(network.Client)
+	if err != nil {
+		t.Fatalf("load funding account: %v", err)
+	}
+
+	account := newBoundedExecutionAccount(t, network, funder.GetAddress())
+	if err := funder.FundMicroAlgosAndWait(account.address, 2_000_000); err != nil {
+		t.Fatalf("fund bounded account %s: %v", account.address, err)
+	}
+
+	target := algocrypto.GenerateAccount()
+	other := algocrypto.GenerateAccount()
+	assetID := createCorridorTestAsset(t, network, funder)
+	baseTxn := func(note string) types.Transaction {
+		return boundedPaymentTxn(t, mustSuggestedParams(t, network), account.address, funder.GetAddress(), 1_000, note)
+	}
+	tests := []struct {
+		name         string
+		build        func() types.Transaction
+		mutate       func(*types.Transaction)
+		includeAdmin bool
+		wantShape    txeffects.Shape
+		wantAccept   bool
+	}{
+		{name: "pure payment spend", wantShape: txeffects.ShapePureSpend, wantAccept: true},
+		{name: "foreign payment receiver", mutate: func(txn *types.Transaction) { txn.Receiver = other.Address }, wantShape: txeffects.ShapePureSpend},
+		{
+			name: "pure asset opt-in spend", wantShape: txeffects.ShapePureSpend, wantAccept: true,
+			build: func() types.Transaction {
+				return corridorAssetTransferTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, assetID, "bounded-asset-opt-in")
+			},
+		},
+		{name: "fee at profile ceiling", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFeeV1) }, wantShape: txeffects.ShapePureSpend, wantAccept: true},
+		{name: "fee above profile", mutate: func(txn *types.Transaction) { txn.Fee = types.MicroAlgos(composeddsa.BoundedMaxFeeV1 + 1) }, wantShape: txeffects.ShapePureSpend},
+		{name: "close remainder", mutate: func(txn *types.Transaction) { txn.CloseRemainderTo = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
+		{name: "asset close", mutate: func(txn *types.Transaction) { txn.AssetCloseTo = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
+		{name: "clawback", mutate: func(txn *types.Transaction) { txn.AssetSender = other.Address }, wantShape: txeffects.ShapeDeniedEffect},
+		{name: "denied keyreg type", mutate: func(txn *types.Transaction) { txn.Type = types.KeyRegistrationTx }, wantShape: txeffects.ShapeDeniedType},
+		{name: "denied asset config type", mutate: func(txn *types.Transaction) { txn.Type = types.AssetConfigTx }, wantShape: txeffects.ShapeDeniedType},
+		{name: "denied asset freeze type", mutate: func(txn *types.Transaction) { txn.Type = types.AssetFreezeTx }, wantShape: txeffects.ShapeDeniedType},
+		{name: "denied application type", mutate: func(txn *types.Transaction) { txn.Type = types.ApplicationCallTx }, wantShape: txeffects.ShapeDeniedType},
+		{name: "denied state proof type", mutate: func(txn *types.Transaction) { txn.Type = types.StateProofTx }, wantShape: txeffects.ShapeDeniedType},
+		{name: "denied heartbeat type", mutate: func(txn *types.Transaction) { txn.Type = types.HeartbeatTx }, wantShape: txeffects.ShapeDeniedType},
+		{name: "unknown type", mutate: func(txn *types.Transaction) { txn.Type = "future" }, wantShape: txeffects.ShapeDeniedType},
+		{
+			name: "rekey plus amount", includeAdmin: true, wantShape: txeffects.ShapeHybrid,
+			mutate: func(txn *types.Transaction) {
+				txn.Receiver = mustAddress(t, account.address)
+				txn.RekeyTo = target.Address
+			},
+		},
+		{
+			name: "rekey plus foreign receiver", includeAdmin: true, wantShape: txeffects.ShapeHybrid,
+			mutate: func(txn *types.Transaction) { txn.Amount = 0; txn.RekeyTo = target.Address },
+		},
+		{
+			name: "rekey plus close", includeAdmin: true, wantShape: txeffects.ShapeHybrid,
+			mutate: func(txn *types.Transaction) {
+				txn.Amount = 0
+				txn.Receiver = mustAddress(t, account.address)
+				txn.RekeyTo = target.Address
+				txn.CloseRemainderTo = other.Address
+			},
+		},
+		{
+			name: "pure rekey without admin proof", wantShape: txeffects.ShapePureRekey,
+			mutate: func(txn *types.Transaction) {
+				txn.Amount = 0
+				txn.Receiver = mustAddress(t, account.address)
+				txn.RekeyTo = target.Address
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var txn types.Transaction
+			if test.build != nil {
+				txn = test.build()
+			} else {
+				txn = baseTxn("bounded-agreement-" + test.name)
+			}
+			if test.mutate != nil {
+				test.mutate(&txn)
+			}
+			classification := txeffects.Classify(txn)
+			if classification.Shape != test.wantShape {
+				t.Fatalf("classifier shape = %q, want %q", classification.Shape, test.wantShape)
+			}
+			classifierAccept := classification.Shape == txeffects.ShapePureSpend ||
+				(classification.Shape == txeffects.ShapePureRekey && test.includeAdmin)
+			classifierAccept = classifierAccept && uint64(txn.Fee) <= composeddsa.BoundedMaxFeeV1
+			if classification.Shape == txeffects.ShapePureSpend {
+				switch txn.Type {
+				case types.PaymentTx:
+					classifierAccept = classifierAccept && (txn.Receiver == txn.Sender || txn.Receiver.String() == funder.GetAddress())
+				case types.AssetTransferTx:
+					classifierAccept = classifierAccept && (txn.AssetReceiver == txn.Sender || txn.AssetReceiver.String() == funder.GetAddress())
+				}
+			}
+			if classifierAccept != test.wantAccept {
+				t.Fatalf("classifier/profile acceptance = %v, test expectation = %v", classifierAccept, test.wantAccept)
+			}
+			rawGroup, txid := account.signGroup(t, txn, test.includeAdmin)
+			if test.wantAccept {
+				submitCorridorGroupExpectSuccess(t, network, rawGroup, txid)
+			} else {
+				submitCorridorGroupExpectFailure(t, network, rawGroup)
+			}
+		})
+	}
+
+	t.Run("framework allowlist asset receivers", func(t *testing.T) {
+		sendAssetFromFunder(t, network, funder, account.address, assetID, 2)
+		allowedTxn := corridorAssetTransferTxn(t, mustSuggestedParams(t, network), account.address, funder.GetAddress(), 1, assetID, "bounded-asset-allowed")
+		rawGroup, txid := account.signGroup(t, allowedTxn, false)
+		submitCorridorGroupExpectSuccess(t, network, rawGroup, txid)
+
+		foreignTxn := corridorAssetTransferTxn(t, mustSuggestedParams(t, network), account.address, other.Address.String(), 1, assetID, "bounded-asset-foreign")
+		rawGroup, _ = account.signGroup(t, foreignTxn, false)
+		submitCorridorGroupExpectFailure(t, network, rawGroup)
+	})
+
+	t.Run("all danger-effect combinations", func(t *testing.T) {
+		for mask := 1; mask < 16; mask++ {
+			t.Run(fmt.Sprintf("mask-%04b", mask), func(t *testing.T) {
+				txn := boundedPaymentTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, fmt.Sprintf("bounded-effects-%04b", mask))
+				if mask&1 != 0 {
+					txn.RekeyTo = target.Address
+				}
+				if mask&2 != 0 {
+					txn.CloseRemainderTo = other.Address
+				}
+				if mask&4 != 0 {
+					txn.AssetCloseTo = other.Address
+				}
+				if mask&8 != 0 {
+					txn.AssetSender = other.Address
+				}
+				classification := txeffects.Classify(txn)
+				wantShape := txeffects.ShapeDeniedEffect
+				if mask == 1 {
+					wantShape = txeffects.ShapePureRekey
+				} else if mask&1 != 0 {
+					wantShape = txeffects.ShapeHybrid
+				}
+				if classification.Shape != wantShape {
+					t.Fatalf("classifier shape = %q, want %q", classification.Shape, wantShape)
+				}
+				rawGroup, _ := account.signGroup(t, txn, mask != 1)
+				submitCorridorGroupExpectFailure(t, network, rawGroup)
+			})
+		}
+	})
+
+	t.Run("pure rekey with admin proof", func(t *testing.T) {
+		txn := boundedPaymentTxn(t, mustSuggestedParams(t, network), account.address, account.address, 0, "bounded-pure-rekey")
+		txn.RekeyTo = target.Address
+		if got := txeffects.Classify(txn).Shape; got != txeffects.ShapePureRekey {
+			t.Fatalf("classifier shape = %q, want pure rekey", got)
+		}
+		rawGroup, txid := account.signGroup(t, txn, true)
+		submitCorridorGroupExpectSuccess(t, network, rawGroup, txid)
+		t.Cleanup(func() {
+			bestEffortCloseBoundedAsset(t, network, account.address, funder.GetAddress(), assetID, target.PrivateKey)
+			bestEffortCloseRekeyedAccount(t, network, account.address, funder.GetAddress(), target.PrivateKey)
+		})
+	})
+}
+
+type boundedExecutionAccount struct {
+	address            string
+	bytecode           []byte
+	spendingPublicKey  []byte
+	spendingPrivateKey []byte
+	adminPublicKey     []byte
+	adminPrivateKey    []byte
+	profile            *composeddsa.BoundedAuthorizationProfile
+	provider           *composeddsa.ComposedDSA
+	params             map[string]string
+}
+
+func newBoundedExecutionAccount(t *testing.T, network *harness.TestnetConfig, recipient string) boundedExecutionAccount {
+	t.Helper()
+	ops := signerops.New(nil)
+	spendingPublicKey, spendingPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
+	if err != nil {
+		t.Fatalf("generate bounded spending key: %v", err)
+	}
+	adminPublicKey, adminPrivateKey, err := ops.GenerateKeypair(randomFalconSeed(t))
+	if err != nil {
+		t.Fatalf("generate bounded admin key: %v", err)
+	}
+	profile := boundedIntegrationProfile(
+		[]txeffects.SpendEffect{txeffects.SpendEffectPay, txeffects.SpendEffectAxfer, txeffects.SpendEffectAssetOptIn},
+		composeddsa.AdminOperationSpec{Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationAdminKey, PolicyGate: composeddsa.AdminPolicyGateNone},
+	)
+	provider := newFixedAllowlistIntegrationProvider(profile)
+	provider.SetAlgodClient(network.Client)
+	params := boundedIntegrationParams(profile, adminPublicKey)
+	params["recipients"] = recipient
+	derived, err := provider.DeriveLsigWithSalt(context.Background(), spendingPublicKey, params)
+	if err != nil {
+		t.Fatalf("derive bounded LogicSig: %v", err)
+	}
+	return boundedExecutionAccount{
+		address: derived.Address.String(), bytecode: append([]byte(nil), derived.Bytecode...),
+		spendingPublicKey: append([]byte(nil), spendingPublicKey...), spendingPrivateKey: append([]byte(nil), spendingPrivateKey...),
+		adminPublicKey: append([]byte(nil), adminPublicKey...), adminPrivateKey: append([]byte(nil), adminPrivateKey...),
+		profile: profile, provider: provider,
+		params: params,
+	}
+}
+
+func (account boundedExecutionAccount) signGroup(t *testing.T, targetTxn types.Transaction, includeAdmin bool) ([]byte, string) {
+	t.Helper()
+	minFee := uint64(1_000)
+	if targetTxn.Fee > 0 && uint64(targetTxn.Fee) < composeddsa.BoundedMaxFeeV1+1 {
+		minFee = uint64(targetTxn.Fee)
+	}
+	minimumGroupFee := types.MicroAlgos(boundedExecutionGroupSize * 1_000)
+	if targetTxn.Fee < minimumGroupFee {
+		targetTxn.Fee = minimumGroupFee
+	}
+	dummySP := types.SuggestedParams{
+		Fee: types.MicroAlgos(minFee), GenesisID: targetTxn.GenesisID, GenesisHash: targetTxn.GenesisHash[:],
+		FirstRoundValid: targetTxn.FirstValid, LastRoundValid: targetTxn.LastValid, FlatFee: true,
+	}
+	dummies, err := internallsig.CreateDummyTransactions(boundedExecutionGroupSize-1, dummySP)
+	if err != nil {
+		t.Fatalf("build bounded budget dummies: %v", err)
+	}
+	allTxns := append([]types.Transaction{targetTxn}, dummies...)
+	groupID, err := algocrypto.ComputeGroupID(allTxns)
+	if err != nil {
+		t.Fatalf("compute bounded group ID: %v", err)
+	}
+	targetTxn.Group = groupID
+	for i := range dummies {
+		dummies[i].Group = groupID
+	}
+
+	txID := algocrypto.TransactionID(targetTxn)
+	spendingSignature, err := signerops.New(nil).Sign(account.spendingPrivateKey, txID)
+	if err != nil {
+		t.Fatalf("sign bounded spending proof: %v", err)
+	}
+	args, err := account.provider.BuildArgs(spendingSignature, nil)
+	if err != nil {
+		t.Fatalf("build bounded base args: %v", err)
+	}
+	if includeAdmin {
+		profileEncoding, err := composeddsa.CanonicalBoundedProfile(account.profile, account.provider.BoundedAuthorizationMetadata())
+		if err != nil {
+			t.Fatal(err)
+		}
+		behaviorEncoding, err := composeddsa.CanonicalBoundedBehaviorParameters(account.params, account.provider.CreationParams())
+		if err != nil {
+			t.Fatal(err)
+		}
+		binding := composeddsa.BoundedProgramBinding(boundedIntegrationKeyType, "aplane.falcon1024.v1", 12, account.spendingPublicKey, account.adminPublicKey, profileEncoding, behaviorEncoding)
+		message, err := composeddsa.BoundedAdminMessage(composeddsa.AdminOperationRekey, binding, txID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		adminSignature, err := signerops.New(nil).Sign(account.adminPrivateKey, message[:])
+		if err != nil {
+			t.Fatalf("sign bounded admin proof: %v", err)
+		}
+		args = append(args, adminSignature)
+	}
+	lsigAccount := algocrypto.LogicSigAccount{Lsig: types.LogicSig{Logic: append([]byte(nil), account.bytecode...), Args: args}}
+	_, signedTarget, err := algocrypto.SignLogicSigAccountTransaction(lsigAccount, targetTxn)
+	if err != nil {
+		t.Fatalf("sign bounded target transaction: %v", err)
+	}
+	signedDummies, err := internallsig.SignDummyTransactions(dummies)
+	if err != nil {
+		t.Fatalf("sign bounded dummies: %v", err)
+	}
+	rawGroup := append([]byte(nil), signedTarget...)
+	for _, signedDummy := range signedDummies {
+		rawGroup = append(rawGroup, signedDummy...)
+	}
+	return rawGroup, algocrypto.GetTxID(targetTxn)
+}
+
+func newBoundedIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {
+	return composeddsa.NewComposedDSA(composeddsa.Config{
+		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
+		Ops: falconv1.NewFalconOps(nil), SaltStyle: lsigsalt.StylePushbytes,
+		TEALSuffix: "// Controlled trivially true Layer-3 predicate.\nint 1\nassert", Bounded: profile,
+	})
+}
+
+func newFixedAllowlistIntegrationProvider(profile *composeddsa.BoundedAuthorizationProfile) *composeddsa.ComposedDSA {
+	return composeddsa.NewComposedDSA(composeddsa.Config{
+		KeyType: boundedIntegrationKeyType, BaseKeyType: "aplane.falcon1024.v1", FamilyName: "aplane.test-bounded", Version: 1,
+		Ops: falconv1.NewFalconOps(nil), SaltStyle: lsigsalt.StylePushbytes, TemplateMode: "generated", Bounded: profile,
+		Params: []lsigprovider.ParameterDef{{Name: "recipients", Type: "address[]", Required: true, MinItems: 1, MaxItems: composeddsa.BoundedInlineListMax}},
+		Layer3: &composeddsa.Layer3Policy{Policy: composeddsa.Layer3PolicyFixedAllowlist, RecipientsParameter: "recipients"},
+	})
+}
+
+func boundedIntegrationProfile(allowed []txeffects.SpendEffect, operations ...composeddsa.AdminOperationSpec) *composeddsa.BoundedAuthorizationProfile {
+	return &composeddsa.BoundedAuthorizationProfile{
+		Contract: composeddsa.BoundedContractV1, SpendEffects: allowed,
+		MaxFee: composeddsa.BoundedMaxFeeV1, AdminOperations: operations,
+	}
+}
+
+func boundedIntegrationParams(profile *composeddsa.BoundedAuthorizationProfile, adminPublicKey []byte) map[string]string {
+	if !boundedProfileUsesAdminKey(profile) {
+		return map[string]string{}
+	}
+	return map[string]string{composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminPublicKey)}
+}
+
+func boundedProfileUsesAdminKey(profile *composeddsa.BoundedAuthorizationProfile) bool {
+	for _, operation := range profile.AdminOperations {
+		if operation.Authorization == composeddsa.AdminAuthorizationAdminKey {
+			return true
+		}
+	}
+	return false
+}
+
+func boundedPaymentTxn(t *testing.T, sp types.SuggestedParams, from, to string, amount uint64, note string) types.Transaction {
+	t.Helper()
+	txn, err := transaction.MakePaymentTxn(from, to, amount, []byte(note), "", sp)
+	if err != nil {
+		t.Fatalf("build bounded payment: %v", err)
+	}
+	return txn
+}
+
+func mustAddress(t *testing.T, encoded string) types.Address {
+	t.Helper()
+	address, err := types.DecodeAddress(encoded)
+	if err != nil {
+		t.Fatalf("decode address %s: %v", encoded, err)
+	}
+	return address
+}
+
+func bestEffortCloseBoundedAsset(t *testing.T, network *harness.TestnetConfig, account, destination string, assetID uint64, authPrivateKey []byte) {
+	t.Helper()
+	txn := corridorAssetTransferTxn(t, mustSuggestedParams(t, network), account, account, 0, assetID, "bounded-cleanup-asset")
+	txn.AssetCloseTo = mustAddress(t, destination)
+	_, signed, err := algocrypto.SignTransaction(authPrivateKey, txn)
+	if err != nil {
+		t.Logf("cleanup: failed to sign bounded asset close: %v", err)
+		return
+	}
+	txid, err := network.Client.SendRawTransaction(signed).Do(context.Background())
+	if err != nil {
+		t.Logf("cleanup: bounded asset close submit failed: %v", err)
+		return
+	}
+	if _, err := network.WaitForConfirmation(txid, 10); err != nil {
+		t.Logf("cleanup: bounded asset close confirmation failed: %v", err)
+	}
+}

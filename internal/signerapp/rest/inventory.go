@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
@@ -31,6 +32,8 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 		return []signerapi.KeyInfo{}
 	}
 
+	// KeySnapshot skips the per-key metadata deep-clone; the metadata this
+	// listing needs comes from GetSigningSummary below.
 	keysCopy, keyTypesCopy, lsigSizesCopy := ir.KeySnapshot()
 	publicKeyHexMap := ks.GetPublicKeyHexMap()
 	signingSummary := ks.GetSigningSummary()
@@ -59,6 +62,10 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 			keyInfo.SigningFlow = signerapi.SigningFlowSentry1
 			keyInfo.SentryComponentKeyType, _ = keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 			keyInfo.Parameters = guardedAccountParameters(keyType, summary.Parameters)
+		}
+		if summary.BoundedAuthorization != nil {
+			keyInfo.SigningFlow = signerapi.SigningFlowBounded1
+			keyInfo.BoundedAuthorization = boundedInfo(summary.BoundedAuthorization)
 		}
 		keyInfo.TemplateProvenanceStatus, keyInfo.TemplateProvenanceNote = keys.CompareTemplateFingerprint(keyType, summary.TemplateFingerprint)
 
@@ -116,6 +123,7 @@ func signingArgInfos(args []lsigprovider.RuntimeArgDef) []signerapi.SigningArgIn
 			Type:        arg.Type,
 			Required:    arg.Required,
 			ByteLength:  arg.ByteLength,
+			MaxSize:     arg.MaxSize,
 		}
 	}
 	return out
@@ -195,6 +203,12 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 		if provider := lsigprovider.Get(keyType); provider != nil {
 			info.DisplayName = provider.DisplayName()
 			info.Description = provider.Description()
+			if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
+				if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil {
+					info.SigningFlow = signerapi.SigningFlowBounded1
+					info.BoundedAuthorization = boundedInfo(metadata)
+				}
+			}
 
 			for _, p := range provider.CreationParams() {
 				info.CreationParams = append(info.CreationParams, signerapi.CreationParamInfo{
@@ -224,6 +238,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 					Type:        a.Type,
 					Required:    a.Required,
 					ByteLength:  a.ByteLength,
+					MaxSize:     a.MaxSize,
 				})
 			}
 		} else {
@@ -281,6 +296,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 				Type:        a.Type,
 				Required:    a.Required,
 				ByteLength:  a.ByteLength,
+				MaxSize:     a.MaxSize,
 			})
 		}
 
@@ -288,6 +304,66 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 	}
 
 	return keyTypes
+}
+
+type boundedInventoryProvider interface {
+	BoundedAuthorizationMetadata() *boundedmeta.Metadata
+}
+
+func boundedInfo(metadata *boundedmeta.Metadata) *signerapi.BoundedAuthorizationInfo {
+	if metadata == nil {
+		return nil
+	}
+	info := &signerapi.BoundedAuthorizationInfo{
+		Contract: metadata.Contract,
+		BaseSignatureArgLayout: signerapi.BoundedSignatureArgLayout{
+			Count:    metadata.BaseSignatureArgLayout.Count,
+			MaxSizes: append([]int(nil), metadata.BaseSignatureArgLayout.MaxSizes...),
+		},
+		SpendEffects:            append([]string(nil), metadata.SpendEffects...),
+		MaxFee:                  metadata.MaxFee,
+		Layer3Policy:            metadata.Layer3Policy,
+		AdminKeyID:              metadata.AdminKeyID,
+		ProgramBindingHex:       metadata.ProgramBindingHex,
+		PostSigningLogicSigSize: metadata.PostSigningLogicSigSize,
+	}
+	for _, arg := range metadata.DerivedArgs {
+		info.DerivedArgs = append(info.DerivedArgs, signerapi.BoundedDerivedArgInfo{
+			Name: arg.Name, Kind: arg.Kind, Parameter: arg.Parameter, MaxSize: arg.MaxSize,
+		})
+	}
+	for _, arg := range metadata.RuntimeArgs {
+		info.RuntimeArgs = append(info.RuntimeArgs, signerapi.RuntimeArgInfo{
+			Name: arg.Name, Label: arg.Label, Description: arg.Description, Type: arg.Type,
+			Required: arg.Required, ByteLength: arg.ByteLength, MaxSize: arg.MaxSize,
+		})
+	}
+	for _, slot := range metadata.ArgumentLayout {
+		info.ArgumentLayout = append(info.ArgumentLayout, signerapi.BoundedArgumentSlotInfo{
+			Index: slot.Index, Name: slot.Name, Source: slot.Source, MaxSize: slot.MaxSize,
+			Paths: signerapi.BoundedArgumentPathMask{
+				Spend: slot.Paths.Spend, SpendingRekey: slot.Paths.SpendingRekey, AdminRekey: slot.Paths.AdminRekey,
+			},
+		})
+	}
+	if info.DerivedArgs == nil {
+		info.DerivedArgs = []signerapi.BoundedDerivedArgInfo{}
+	}
+	if info.RuntimeArgs == nil {
+		info.RuntimeArgs = []signerapi.RuntimeArgInfo{}
+	}
+	if info.ArgumentLayout == nil {
+		info.ArgumentLayout = []signerapi.BoundedArgumentSlotInfo{}
+	}
+	for _, operation := range metadata.AdminOperations {
+		info.AdminOperations = append(info.AdminOperations, signerapi.BoundedAdminOperationInfo{
+			Kind: operation.Kind, Authorization: operation.Authorization, PolicyGate: operation.PolicyGate,
+		})
+	}
+	if info.AdminOperations == nil {
+		info.AdminOperations = []signerapi.BoundedAdminOperationInfo{}
+	}
+	return info
 }
 
 func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeInfo) {

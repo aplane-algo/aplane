@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-
 	"github.com/aplane-algo/aplane/internal/crypto"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
@@ -69,6 +68,7 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		{keyType: falcon1024guarded.KeyTypeFalcon1024V1, want: false},
 		{keyType: keytypes.SentryComponentEd25519V1, want: false},
 		{keyType: keytypes.SentryComponentFalcon1024V1, want: false},
+		{keyType: "aplane.governance-ed25519.v1", want: false},
 		{keyType: "aplane.ecdsak1.v1", want: false},
 		{keyType: "aplane.falcon1024_ed25519.v1", want: false},
 		{keyType: "aplane.falcon1024-allowlist.v1", want: false},
@@ -168,6 +168,20 @@ func TestValidKeyTypesIncludeSentryComponentKey(t *testing.T) {
 	}
 	if !IsValidKeyType(keytypes.SentryComponentFalcon1024V1) {
 		t.Fatalf("IsValidKeyType() rejected %s", keytypes.SentryComponentFalcon1024V1)
+	}
+}
+
+func TestValidKeyTypesExcludeExternalGovernancePrivateKeys(t *testing.T) {
+	for _, keyType := range []string{
+		"aplane.governance-ed25519.v1",
+		"aplane.governance-falcon1024.v1",
+	} {
+		if containsKeyType(GetValidKeyTypes(), keyType) {
+			t.Fatalf("GetValidKeyTypes() exposed signer-local governance key %s", keyType)
+		}
+		if IsValidKeyType(keyType) {
+			t.Fatalf("IsValidKeyType() accepted signer-local governance key %s", keyType)
+		}
 	}
 }
 

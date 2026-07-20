@@ -105,6 +105,7 @@ copy_required_binaries() {
     local dest_dir="$2"
     local binaries=(
         apshell
+        apbounded-admin
         apsigner
         apadmin
         apconsole

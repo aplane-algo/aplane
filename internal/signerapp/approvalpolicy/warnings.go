@@ -14,6 +14,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/asa"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
+	"github.com/aplane-algo/aplane/internal/txeffects"
 )
 
 // Default policy thresholds.
@@ -57,8 +58,9 @@ func CheckGroupWarnings(txns []types.Transaction, knownAddresses map[string]bool
 // same-package tests.
 func CheckDecodedTxnWarnings(txn types.Transaction, knownAddresses map[string]bool) []signerapproval.Violation {
 	var violations []signerapproval.Violation
+	facts := txeffects.Inspect(txn)
 
-	if !txn.RekeyTo.IsZero() {
+	if facts.Has(txeffects.EffectRekey) {
 		rekeyTarget := txn.RekeyTo.String()
 		msg := "This transaction will transfer signing authority to another address."
 		if knownAddresses[rekeyTarget] {
@@ -74,7 +76,7 @@ func CheckDecodedTxnWarnings(txn types.Transaction, knownAddresses map[string]bo
 		})
 	}
 
-	if !txn.CloseRemainderTo.IsZero() {
+	if facts.Has(txeffects.EffectClose) {
 		violations = append(violations, signerapproval.Violation{
 			Field:    "CloseRemainderTo",
 			Value:    txn.CloseRemainderTo.String(),
@@ -83,7 +85,7 @@ func CheckDecodedTxnWarnings(txn types.Transaction, knownAddresses map[string]bo
 		})
 	}
 
-	if !txn.AssetCloseTo.IsZero() {
+	if facts.Has(txeffects.EffectAssetClose) {
 		violations = append(violations, signerapproval.Violation{
 			Field:    "AssetCloseTo",
 			Value:    txn.AssetCloseTo.String(),
@@ -92,7 +94,7 @@ func CheckDecodedTxnWarnings(txn types.Transaction, knownAddresses map[string]bo
 		})
 	}
 
-	if !txn.AssetSender.IsZero() && txn.AssetSender != txn.Sender {
+	if facts.Has(txeffects.EffectClawback) && txn.AssetSender != txn.Sender {
 		violations = append(violations, signerapproval.Violation{
 			Field:    "AssetSender",
 			Value:    txn.AssetSender.String(),

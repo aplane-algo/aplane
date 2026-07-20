@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	algocrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
@@ -90,7 +91,7 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 		}
 		signedBytes, keyType, signErr := e.signSingleTransaction(
 			allTxns[i], req.Requests[i].AuthAddress, txnSender,
-			req.Requests[i].LsigArgs, session, identityID, ctx,
+			req.Requests[i].LsigArgs, planBoundedItem(plan, i), session, identityID, ctx,
 		)
 		if signErr != nil {
 			// Forbidden and locked describe the whole request, not one slot,
@@ -121,14 +122,14 @@ func (e *Executor) ExecuteGroupSigning(ctx context.Context, plan *PlanResult, re
 	return &ExecuteResult{SignedTxns: signedTxns}, nil
 }
 
-func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, session *keystore.KeySession, identityID string, ctx context.Context) (signedBytes []byte, keyType string, err *ServiceError) {
+func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, session *keystore.KeySession, identityID string, ctx context.Context) (signedBytes []byte, keyType string, err *ServiceError) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, "", canceledSignRequest(err)
 	}
-	keyMaterial, loadErr := session.GetKey(authAddr)
+	keyMaterial, loadErr := session.GetKeyWithContext(ctx, authAddr)
 	if loadErr != nil {
 		if e.AuditLog != nil {
 			e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("failed to load key: %v", loadErr))
@@ -147,12 +148,53 @@ func (e *Executor) signSingleTransaction(txn types.Transaction, authAddr, txnSen
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, keyType, err
 	}
+	if err := verifyBoundedPlanIntegrity(boundedItem, keyMaterial); err != nil {
+		keyType := keyMaterial.Type
+		zeroLoadedKeyMaterial(keyMaterial)
+		return nil, keyType, err
+	}
 
 	if isGenericKeyMaterial(keyMaterial) {
 		return e.signGenericLSig(txn, authAddr, txnSender, lsigArgs, keyMaterial, identityID)
 	}
 
-	return e.signCryptoKey(txn, authAddr, txnSender, lsigArgs, keyMaterial, identityID)
+	return e.signCryptoKey(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial, identityID)
+}
+
+// planBoundedItem returns the planner's bounded classification for request slot
+// i, or nil for non-bounded slots.
+func planBoundedItem(plan *PlanResult, i int) *boundedPlanItem {
+	if plan == nil || i < 0 || i >= len(plan.BoundedItems) {
+		return nil
+	}
+	return plan.BoundedItems[i]
+}
+
+// verifyBoundedPlanIntegrity is the executor's single bounded recheck. The
+// authoritative classification ran once at the plan boundary against snapshot
+// metadata and the finalized transactions; the executor signs those same
+// transaction objects, so the only state that can drift before signing is the
+// key file reloaded here. Requiring the loaded metadata to equal the planned
+// metadata makes re-deriving the classification unnecessary: equal inputs
+// give an equal path.
+func verifyBoundedPlanIntegrity(item *boundedPlanItem, keyMaterial *coresigning.KeyMaterial) *ServiceError {
+	metadata := keyMaterial.BoundedAuthorization
+	if item == nil {
+		if metadata != nil {
+			return internal("key gained bounded metadata after planning; retry the request")
+		}
+		return nil
+	}
+	if metadata == nil {
+		return internal("key lost bounded metadata after planning; retry the request")
+	}
+	if keyMaterial.SigningMetadataVersion != keys.BoundedSigningMetadataVersion {
+		return internal(fmt.Sprintf("bounded1 key requires signing metadata version %d", keys.BoundedSigningMetadataVersion))
+	}
+	if !item.Metadata.Equal(metadata) {
+		return internal("bounded metadata changed after planning; retry the request")
+	}
+	return nil
 }
 
 func canceledSignRequest(err error) *ServiceError {
@@ -194,12 +236,18 @@ func (e *Executor) signGenericLSig(txn types.Transaction, authAddr, txnSender st
 	return signedTxnBytes, keyType, nil
 }
 
-func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, keyMaterial *coresigning.KeyMaterial, identityID string) ([]byte, string, *ServiceError) {
+func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, identityID string) ([]byte, string, *ServiceError) {
 	keyType := keyMaterial.Type
 
 	if err := rejectSentrySignKeyType(keyType); err != nil {
 		defer zeroLoadedKeyMaterial(keyMaterial)
 		return nil, keyType, err
+	}
+	// Plan integrity was verified by the caller; the plan item's path is the
+	// authoritative classification. Admin-key rekeys never sign here.
+	if boundedItem != nil && boundedItem.Path == boundedPathAdminKeyRekey {
+		defer zeroLoadedKeyMaterial(keyMaterial)
+		return nil, keyType, boundedAdminRequired()
 	}
 
 	provider := coresigning.GetProviderForKey(keyType, keyMaterial.BaseKeyType)
@@ -225,7 +273,7 @@ func (e *Executor) signCryptoKey(txn types.Transaction, authAddr, txnSender stri
 	}
 
 	if keyMaterial.Bytecode != nil {
-		return e.assembleDSALogicSig(txn, authAddr, txnSender, lsigArgs, keyMaterial, sig, keyType, identityID)
+		return e.assembleDSALogicSig(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial, sig, keyType, identityID)
 	}
 
 	var sigArr types.Signature
@@ -267,6 +315,13 @@ func zeroLoadedKeyMaterial(key *coresigning.KeyMaterial) {
 	}
 	key.Parameters = nil
 	key.SigningArgs = nil
+	key.BoundedAuthorization = nil
+}
+
+func zeroGeneratedArgs(args [][]byte) {
+	for _, arg := range args {
+		algocrypto.ZeroBytes(arg)
+	}
 }
 
 func zeroKeyMaterialFallback(key *coresigning.KeyMaterial) {
@@ -296,27 +351,22 @@ func zeroKeyMaterialFallback(key *coresigning.KeyMaterial) {
 	key.Value = nil
 }
 
-func (e *Executor) assembleDSALogicSig(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, keyMaterial *coresigning.KeyMaterial, sig []byte, keyType, identityID string) ([]byte, string, *ServiceError) {
+func (e *Executor) assembleDSALogicSig(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, sig []byte, keyType, identityID string) ([]byte, string, *ServiceError) {
 	if keyMaterial.SigningMetadataVersion == 0 {
 		return nil, keyType, missingLogicSigSigningMetadata(keyType)
 	}
 
-	return e.assembleDSALogicSigFromKeyMetadata(txn, authAddr, txnSender, lsigArgs, keyMaterial, sig, keyType, identityID)
+	return e.assembleDSALogicSigFromKeyMetadata(txn, authAddr, txnSender, lsigArgs, boundedItem, keyMaterial, sig, keyType, identityID)
 }
 
 func missingLogicSigSigningMetadata(keyType string) *ServiceError {
 	return internal(fmt.Sprintf("logic sig key %s is missing signing metadata; regenerate the key or restore from a current-format backup", keyType))
 }
 
-func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, keyMaterial *coresigning.KeyMaterial, sig []byte, keyType, identityID string) ([]byte, string, *ServiceError) {
+func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, authAddr, txnSender string, lsigArgs map[string]string, boundedItem *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, sig []byte, keyType, identityID string) ([]byte, string, *ServiceError) {
 	baseKeyType := keyMaterial.BaseKeyType
 	if baseKeyType == "" {
 		baseKeyType = keyType
-	}
-
-	decodedArgs, err := e.DecodeRuntimeArgs(lsigArgs)
-	if err != nil {
-		return nil, keyType, badRequest(err.Error())
 	}
 
 	signatureProvider := lsigprovider.Get(baseKeyType)
@@ -328,18 +378,21 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 	if err != nil {
 		return nil, keyType, badRequest(err.Error())
 	}
-	providerArgs, signArgErr := signerGeneratedDSAArgs(txn, keyMaterial)
-	if signArgErr != nil {
-		return nil, keyType, signArgErr
+	if keyMaterial.BoundedAuthorization != nil {
+		return e.assembleBoundedLogicSig(txn, authAddr, txnSender, boundedItem, keyMaterial, signatureArgs, keyType, identityID)
+	}
+
+	decodedArgs, err := e.DecodeRuntimeArgs(lsigArgs)
+	if err != nil {
+		return nil, keyType, badRequest(err.Error())
 	}
 	runtimeArgs, err := lsigprovider.ValidateAndOrderArgs(keyMaterial.SigningArgs, decodedArgs)
 	if err != nil {
 		return nil, keyType, badRequest(err.Error())
 	}
 
-	lsigArgBytes := make([][]byte, 0, len(signatureArgs)+len(providerArgs)+len(runtimeArgs))
+	lsigArgBytes := make([][]byte, 0, len(signatureArgs)+len(runtimeArgs))
 	lsigArgBytes = append(lsigArgBytes, signatureArgs...)
-	lsigArgBytes = append(lsigArgBytes, providerArgs...)
 	lsigArgBytes = append(lsigArgBytes, runtimeArgs...)
 
 	lsigAcct := crypto.LogicSigAccount{
@@ -359,36 +412,132 @@ func (e *Executor) assembleDSALogicSigFromKeyMetadata(txn types.Transaction, aut
 	return signedTxnBytes, keyType, nil
 }
 
-const falcon1024AllowlistV2KeyType = "aplane.falcon1024-allowlist.v2"
-
-func signerGeneratedDSAArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial) ([][]byte, *ServiceError) {
-	if keyMaterial == nil || keyMaterial.Type != falcon1024AllowlistV2KeyType {
-		return nil, nil
+// assembleBoundedLogicSig assembles the spend-path bounded LogicSig. Policy
+// checks (classification, fee ceiling, caller-args validation, admin-path
+// routing) ran at the plan boundary and were rechecked against the loaded key
+// via verifyBoundedPlanIntegrity; only assembly-shape enforcement remains here.
+func (e *Executor) assembleBoundedLogicSig(txn types.Transaction, authAddr, txnSender string, item *boundedPlanItem, keyMaterial *coresigning.KeyMaterial, signatureArgs [][]byte, keyType, identityID string) ([]byte, string, *ServiceError) {
+	metadata := keyMaterial.BoundedAuthorization
+	if item == nil {
+		return nil, keyType, internal("bounded LogicSig assembly is missing its planned path")
+	}
+	layout := metadata.BaseSignatureArgLayout
+	if len(signatureArgs) != layout.Count {
+		return nil, keyType, internal(fmt.Sprintf("base provider emitted %d signature args, stored bounded layout requires %d", len(signatureArgs), layout.Count))
+	}
+	for i, arg := range signatureArgs {
+		if len(arg) == 0 || len(arg) > layout.MaxSizes[i] {
+			return nil, keyType, internal(fmt.Sprintf("base signature arg %d length %d violates stored bounded maximum %d", i, len(arg), layout.MaxSizes[i]))
+		}
 	}
 
-	recipients := keyMaterial.Parameters["recipients"]
-	if recipients == "" {
-		return nil, internal("falcon1024-allowlist.v2 key file missing recipients parameter")
+	derivedArgs, deriveErr := boundedDerivedArgs(txn, keyMaterial, metadata, item.Path)
+	if deriveErr != nil {
+		return nil, keyType, deriveErr
+	}
+	defer zeroGeneratedArgs(derivedArgs)
+	args, assemblyErr := assembleBoundedArgs(metadata, item, signatureArgs, derivedArgs)
+	if assemblyErr != nil {
+		return nil, keyType, assemblyErr
 	}
 
-	var receiver types.Address
-	switch txn.Type {
-	case types.PaymentTx:
-		receiver = txn.Receiver
-	case types.AssetTransferTx:
-		receiver = txn.AssetReceiver
-	default:
-		return nil, nil
+	lsigAcct := crypto.LogicSigAccount{
+		Lsig: types.LogicSig{Logic: keyMaterial.Bytecode, Args: args},
 	}
-	if receiver == txn.Sender {
-		return nil, nil
-	}
-
-	proof, err := merkleallowlist.ProofForAddressParam(recipients, receiver)
+	_, signedTxnBytes, err := crypto.SignLogicSigAccountTransaction(lsigAcct, txn)
 	if err != nil {
-		return nil, badRequest(fmt.Sprintf("falcon1024-allowlist.v2 proof generation failed: %v", err))
+		if e.AuditLog != nil {
+			e.AuditLog.LogSignFailed(identityID, authAddr, txnSender, fmt.Sprintf("bounded lsig assembly failed: %v", err))
+		}
+		return nil, keyType, internal(fmt.Sprintf("failed to assemble bounded lsig txn: %v", err))
 	}
-	return [][]byte{proof}, nil
+	return signedTxnBytes, keyType, nil
+}
+
+func boundedDerivedArgs(txn types.Transaction, keyMaterial *coresigning.KeyMaterial, metadata *boundedmeta.Metadata, path boundedPath) ([][]byte, *ServiceError) {
+	values := make([][]byte, len(metadata.DerivedArgs))
+	if path != boundedPathPureSpend {
+		return values, nil
+	}
+	for i, arg := range metadata.DerivedArgs {
+		if arg.Kind != boundedmeta.DerivedArgMerkleProof {
+			return nil, internal(fmt.Sprintf("unsupported bounded derived argument kind %q", arg.Kind))
+		}
+		var receiver types.Address
+		switch txn.Type {
+		case types.PaymentTx:
+			receiver = txn.Receiver
+		case types.AssetTransferTx:
+			receiver = txn.AssetReceiver
+		default:
+			return nil, internal(fmt.Sprintf("bounded Merkle proof requested for transaction type %q", txn.Type))
+		}
+		if receiver == txn.Sender {
+			continue
+		}
+		recipients := keyMaterial.Parameters[arg.Parameter]
+		if recipients == "" {
+			return nil, internal(fmt.Sprintf("bounded key file is missing derived argument parameter %q", arg.Parameter))
+		}
+		proof, err := merkleallowlist.ProofForAddressParam(recipients, receiver)
+		if err != nil {
+			return nil, badRequest(fmt.Sprintf("bounded Merkle proof generation failed: %v", err))
+		}
+		values[i] = proof
+	}
+	return values, nil
+}
+
+func assembleBoundedArgs(metadata *boundedmeta.Metadata, item *boundedPlanItem, baseArgs, derivedArgs [][]byte) ([][]byte, *ServiceError) {
+	args := make([][]byte, len(metadata.ArgumentLayout))
+	baseIndex, derivedIndex := 0, 0
+	for _, slot := range metadata.ArgumentLayout {
+		var value []byte
+		switch slot.Source {
+		case boundedmeta.ArgSourceBaseSignature:
+			if baseIndex >= len(baseArgs) {
+				return nil, internal("bounded base signature slot count changed during assembly")
+			}
+			value = baseArgs[baseIndex]
+			baseIndex++
+		case boundedmeta.ArgSourceDerived:
+			if derivedIndex >= len(derivedArgs) {
+				return nil, internal("bounded derived slot count changed during assembly")
+			}
+			value = derivedArgs[derivedIndex]
+			derivedIndex++
+		case boundedmeta.ArgSourceRuntime:
+			value = item.RuntimeArgs[slot.Name]
+		case boundedmeta.ArgSourceAdmin:
+			value = nil
+		default:
+			return nil, internal(fmt.Sprintf("unsupported bounded argument source %q", slot.Source))
+		}
+		rule := boundedSlotRule(slot, item.Path)
+		if rule == boundedmeta.ArgRequired && len(value) == 0 {
+			return nil, internal(fmt.Sprintf("required bounded argument slot %q is empty during assembly", slot.Name))
+		}
+		if rule == boundedmeta.ArgForbidden && len(value) != 0 {
+			return nil, internal(fmt.Sprintf("forbidden bounded argument slot %q is populated during assembly", slot.Name))
+		}
+		if len(value) > slot.MaxSize {
+			return nil, internal(fmt.Sprintf("bounded argument slot %q exceeds its stored maximum", slot.Name))
+		}
+		if value == nil {
+			value = []byte{}
+		}
+		args[slot.Index] = value
+	}
+	if baseIndex != len(baseArgs) {
+		return nil, internal("bounded base signature arguments were not fully consumed during assembly")
+	}
+	if derivedIndex != len(derivedArgs) {
+		return nil, internal("bounded derived arguments were not fully consumed during assembly")
+	}
+	for len(args) > 0 && len(args[len(args)-1]) == 0 {
+		args = args[:len(args)-1]
+	}
+	return args, nil
 }
 
 func isGenericKeyMaterial(keyMaterial *coresigning.KeyMaterial) bool {

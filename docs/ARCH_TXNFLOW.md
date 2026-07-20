@@ -857,6 +857,30 @@ This design achieves **true client key-type agnosticism**: clients never need to
 
 ---
 
+## Bounded Contract-Admin Rekey Flow
+
+An admin-key bounded profile keeps pure spending on `/sign`, but routes a pure
+rekey through a typed partial flow:
+
+1. The client constructs a pure zero-amount self-payment rekey.
+2. `POST /sign/bounded-admin` performs canonical planning, policy, forced review,
+   approval, dummy/fee/group finalization, and Falcon spending signing.
+3. Apsigner verifies the spending signature and returns finalized unsigned
+   transactions plus one aligned partial LogicSig. It never returns the partial
+   in `signed[]` and never handles contract-admin private material.
+4. `apbounded-admin sign` independently decodes the finalized group, verifies
+   the pure rekey shape, bounded profile, program binding, Contract Admin Key ID,
+   transaction ID, and spending signature, then confirms and adds the external
+   Falcon signature.
+5. Completion verifies both signatures, preserves every unsigned byte and group
+   ID, rechecks authorization/network/validity state, and submits directly to
+   Algod without replanning.
+
+Online `apbounded-admin rekey` performs these stages directly. The separated
+ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
+`sign`, and `complete` using `.apbounded-admin-request` and
+`.apbounded-admin-signature` files.
+
 ## Summary Table
 
 | Aspect | Ed25519 | LogicSig DSA | Generic LogicSig |
@@ -866,6 +890,11 @@ This design achieves **true client key-type agnosticism**: clients never need to
 | **Needs dummies** | No | Yes (if sig > 1000 bytes) | No |
 | **Runtime args** | No | Optional for composed DSA | Optional |
 | **Authorization** | Signature verification | TEAL verifies sig | TEAL logic only |
+
+Bounded LogicSig DSA is the transaction-aware case: pure spends and
+spending-key rekeys use their declared base, derived, and runtime argument
+slots, while an admin-key rekey uses a signer partial plus an externally
+completed Falcon contract-admin slot.
 
 ---
 

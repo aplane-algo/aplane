@@ -5,12 +5,12 @@ package daemon
 
 import (
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/serverconfig"
 )
 
 const signerHTTPWriteTimeout = serverconfig.MaxApprovalWait + 2*time.Minute
@@ -18,6 +18,7 @@ const signerHTTPWriteTimeout = serverconfig.MaxApprovalWait + 2*time.Minute
 func buildHTTPServer(server *Signer, port int) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sign", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSign))
+	mux.HandleFunc("/sign/bounded-admin", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleBoundedAdmin))
 	mux.HandleFunc("/sign/component", server.requireAuth(auth.ActionSignComponent, auth.Resource{Type: "transaction"}, server.handleSignComponent))
 	mux.HandleFunc("/sign/assemble", server.requireAuth(auth.ActionSignAssemble, auth.Resource{Type: "transaction"}, server.handleSignAssemble))
 	mux.HandleFunc("/sign/cancel", server.requireAuth(auth.ActionSignRequest, auth.Resource{Type: "transaction"}, server.handleSignCancel))
@@ -56,6 +57,7 @@ func logHTTPStartup(keyCount int, keysSnapshot map[string]string, port int) {
 	}
 	logInfof("Endpoints:")
 	logInfof("  POST   /sign                    - Sign transactions (handles groups, dummies, fee pooling)")
+	logInfof("  POST   /sign/bounded-admin       - Prepare an external contract-admin partial")
 	logInfof("  POST   /sign/component          - Produce sentry MVP component signatures")
 	logInfof("  POST   /sign/assemble           - Assemble guarded-account signed groups")
 	logInfof("  POST   /sign/cancel             - Cancel a pending sign approval request")

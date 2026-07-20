@@ -68,4 +68,8 @@ func (o *ECDSAK1Ops) BuildSignatureArgs(signature []byte) ([][]byte, error) {
 	return [][]byte{r, s}, nil
 }
 
-var _ composeddsa.DSAOps = (*ECDSAK1Ops)(nil)
+func (o *ECDSAK1Ops) SignatureArgLayout() composeddsa.SignatureArgLayout {
+	return composeddsa.SignatureArgLayout{Count: 2, MaxSizes: []int{32, 32}}
+}
+
+var _ composeddsa.BoundedCapableDSAOps = (*ECDSAK1Ops)(nil)

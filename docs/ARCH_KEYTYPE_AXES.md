@@ -15,6 +15,27 @@ A "key type" (e.g. `aplane.falcon1024.v1`, `aplane.corridor.v1`,
 question, and each kind uses a different mechanism because each is callable from
 a different place.
 
+## DSA LogicSig policy terminology
+
+The schema-v2 composed-DSA contract uses **bounded DSA** for DSA-backed LogicSigs
+whose admitted transaction effects, maximum fee, argument layout, and optional
+contract-admin operations are represented by canonical signer metadata and
+enforced in both planning and TEAL. Its machine names are `bounded` and
+`bounded1`.
+
+DSA LogicSig policy categories are:
+
+- **Plain DSA**: only the DSA verification program, with no composed policy.
+- **Bounded DSA**: schema-v2 composed policy with a closed framework-enforced
+  effect and argument contract.
+- **Custom DSA policy**: schema-v1 composed policy authored directly as TEAL.
+
+Schema-v1 custom policy remains a fully supported expert mode. "Expert" is a
+documentation description, not a feature gate, warning requirement, or reduced
+execution mode. Generic LogicSig templates are a separate category. Guarded
+signing is an orthogonal authority axis and may be combined with a DSA account
+model without becoming a policy category itself.
+
 | Axis | Question it answers | Mechanism | Owner package(s) |
 |---|---|---|---|
 | **Resolve** | key type → its implementation | family-keyed registries + a `RoutingFamily` resolver | `internal/lsigprovider`, `internal/logicsigdsa` |

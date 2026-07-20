@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 )
@@ -215,6 +216,224 @@ teal: |
 	}
 }
 
+func TestComposedSchemaV2BuildsBoundedProvider(t *testing.T) {
+	baseKeyType := "test.template-bounded-base.v1"
+	RegisterBase(BaseRegistration{
+		BaseKeyType:       baseKeyType,
+		FamilyName:        "template-bounded-base",
+		Version:           1,
+		Ops:               boundedTestOps{},
+		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+	})
+
+	spec, err := ParseTemplateSpec([]byte(`
+schema_version: 2
+template_type: composed
+base_key_type: test.template-bounded-base.v1
+template_mode: strict
+publisher: test
+family: template-bounded
+version: 1
+display_name: Template Bounded
+bounded:
+  contract: bounded1
+  spend_effects: [axfer, pay]
+  max_fee: 10000
+  admin_operations:
+    - kind: rekey
+      authorization: admin_key
+      policy_gate: none
+  runtime_args:
+    - name: preimage
+      type: bytes
+      max_size: 64
+      required_on: [spend]
+teal: |
+  int 1
+  assert
+`))
+	if err != nil {
+		t.Fatalf("ParseTemplateSpec() error = %v", err)
+	}
+	provider, err := NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
+	}
+	profile := provider.BoundedAuthorizationProfile()
+	if profile == nil || profile.Contract != BoundedContractV1 || profile.MaxFee != 10_000 {
+		t.Fatalf("BoundedAuthorizationProfile() = %#v", profile)
+	}
+	if got := provider.CreationParams(); len(got) != 1 || got[0].Name != BoundedAdminPublicKeyParameter {
+		t.Fatalf("CreationParams() = %#v, want injected contract-admin public key", got)
+	}
+	if got := provider.RuntimeArgs(); len(got) != 1 || got[0].Name != "preimage" || got[0].MaxSize != 64 || !got[0].Required {
+		t.Fatalf("RuntimeArgs() = %#v, want bounded preimage", got)
+	}
+	metadata := provider.BoundedAuthorizationMetadata()
+	if metadata == nil || len(metadata.ArgumentLayout) != 3 || metadata.ArgumentLayout[1].Source != boundedmeta.ArgSourceRuntime || metadata.ArgumentLayout[2].Source != boundedmeta.ArgSourceAdmin {
+		t.Fatalf("BoundedAuthorizationMetadata() = %#v, want base/runtime/admin layout", metadata)
+	}
+}
+
+func TestTemplateSchemaSelectionAndStrictDecoding(t *testing.T) {
+	registerTemplateTestBase("test.template-schema-selection-base.v1")
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "v1 bounded rejected",
+			yaml: "schema_version: 1\nbounded: {}\n",
+			want: "field bounded not found",
+		},
+		{
+			name: "v2 bounded required",
+			yaml: `schema_version: 2
+template_type: composed
+base_key_type: test.template-schema-selection-base.v1
+publisher: test
+family: missing-bounded
+version: 1
+display_name: Missing Bounded
+teal: int 1
+`,
+			want: "requires bounded",
+		},
+		{
+			name: "unknown nested bounded field",
+			yaml: "schema_version: 2\nbounded:\n  contract: bounded1\n  mystery: true\n",
+			want: "field mystery not found",
+		},
+		{
+			name: "unknown nested admin field",
+			yaml: "schema_version: 2\nbounded:\n  admin_operations:\n    - kind: rekey\n      mystery: true\n",
+			want: "field mystery not found",
+		},
+		{
+			name: "duplicate nested field",
+			yaml: "schema_version: 2\nbounded:\n  contract: bounded1\n  contract: bounded1\n",
+			want: "duplicate field",
+		},
+		{
+			name: "duplicate schema selector",
+			yaml: "schema_version: 1\nschema_version: 2\n",
+			want: "duplicate field",
+		},
+		{
+			name: "non integer schema selector",
+			yaml: "schema_version: two\n",
+			want: "integer scalar",
+		},
+		{
+			name: "merge key rejected",
+			yaml: "schema_version: 2\nbounded:\n  <<: {contract: bounded1}\n",
+			want: "merge keys are not supported",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, err := ParseTemplateSpec([]byte(tt.yaml))
+			if err == nil && tt.name == "v2 bounded required" {
+				err = ValidateTemplateSpec(spec)
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestComposedSchemaV2RejectsInvalidBoundedArgumentContracts(t *testing.T) {
+	baseKeyType := "test.template-bounded-args-base.v1"
+	registerTemplateTestBase(baseKeyType)
+	tests := []struct {
+		name       string
+		bounded    string
+		topLevel   string
+		parameters string
+		want       string
+	}{
+		{
+			name:     "top-level runtime args",
+			bounded:  "  runtime_args: []\n",
+			topLevel: "runtime_args:\n  - name: preimage\n    type: bytes\n    required: true\n",
+			want:     "must be declared inside bounded",
+		},
+		{
+			name:    "runtime rekey mask mismatch",
+			bounded: "  admin_operations:\n    - kind: rekey\n      authorization: spending_key\n      policy_gate: layer3\n  runtime_args:\n    - name: preimage\n      type: bytes\n      max_size: 64\n      required_on: [spend]\n",
+			want:    "rekey requirement does not match",
+		},
+		{
+			name:       "derived source type",
+			bounded:    "  derived_args:\n    - name: proof\n      kind: merkle_allowlist_proof\n      parameter: recipients\n      max_size: 512\n",
+			parameters: "parameters:\n  - name: recipients\n    type: bytes\n    required: true\n",
+			want:       "requires address[] parameter",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec, err := ParseTemplateSpec([]byte(fmt.Sprintf(`schema_version: 2
+template_type: composed
+base_key_type: %s
+template_mode: strict
+publisher: test
+family: bounded-args
+version: 1
+display_name: Bounded Args
+bounded:
+  contract: bounded1
+  spend_effects: [pay]
+  max_fee: 10000
+%s%s%s
+teal: |
+  int 1
+  assert
+`, baseKeyType, tt.bounded, tt.parameters, tt.topLevel)))
+			if err == nil {
+				err = ValidateTemplateSpec(spec)
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestComposedSchemaV2RequiresExplicitMaxFee(t *testing.T) {
+	baseKeyType := "test.template-missing-max-fee-base.v1"
+	RegisterBase(BaseRegistration{
+		BaseKeyType:       baseKeyType,
+		FamilyName:        "template-missing-max-fee-base",
+		Version:           1,
+		Ops:               boundedTestOps{},
+		NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+	})
+	spec, err := ParseTemplateSpec([]byte(`
+schema_version: 2
+template_type: composed
+base_key_type: test.template-missing-max-fee-base.v1
+template_mode: strict
+publisher: test
+family: missing-max-fee
+version: 1
+display_name: Missing Max Fee
+bounded:
+  contract: bounded1
+  spend_effects: [pay]
+  admin_operations: []
+teal: int 1
+`))
+	if err != nil {
+		t.Fatalf("ParseTemplateSpec() error = %v", err)
+	}
+	if err := ValidateTemplateSpec(spec); err == nil || !strings.Contains(err.Error(), "bounded.max_fee is required") {
+		t.Fatalf("ValidateTemplateSpec() error = %v, want explicit max_fee rejection", err)
+	}
+}
+
 func TestValidateTemplateSpecRejectsNonRelocatableTEAL(t *testing.T) {
 	registerTemplateTestBase("test.relocatable-base.v1")
 
@@ -354,8 +573,11 @@ teal: |
 
 func TestBundledComposedTemplatesValidate(t *testing.T) {
 	registerTemplateTestBase("aplane.falcon1024.v1")
+	registerTemplateTestBase("aplane.ed25519.v1")
 
 	paths := []string{
+		"library/templates/aplane.ed25519-allowlist.v1.yaml",
+		"library/templates/aplane.falcon1024-admin-allowlist.v1.yaml",
 		"library/templates/aplane.falcon1024-hashlock.v1.yaml",
 		"library/templates/aplane.falcon1024-timelock.v1.yaml",
 		"library/templates/aplane.falcon1024-allowlist.v1.yaml",
@@ -373,6 +595,9 @@ func TestBundledComposedTemplatesValidate(t *testing.T) {
 			}
 			if err := ValidateTemplateSpec(spec); err != nil {
 				t.Fatalf("ValidateTemplateSpec(%s) error = %v", path, err)
+			}
+			if spec.SchemaVersion != CurrentTemplateSchemaVersion || spec.Bounded == nil {
+				t.Fatalf("%s must remain a schema-v%d bounded template", path, CurrentTemplateSchemaVersion)
 			}
 		})
 	}

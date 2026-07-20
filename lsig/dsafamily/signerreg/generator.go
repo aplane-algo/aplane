@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keys"
@@ -25,6 +26,10 @@ type LogicSigKeygenOps interface {
 
 type baseKeyTypeProvider interface {
 	BaseKeyType() string
+}
+
+type boundedAuthorizationMetadataProvider interface {
+	BuildBoundedAuthorizationMetadata(publicKey []byte, params map[string]string, bytecode []byte) (*boundedmeta.Metadata, error)
 }
 
 // LogicSigGenerator implements keygen.Generator for LogicSig-backed DSA
@@ -143,6 +148,17 @@ func (g *LogicSigGenerator) generateKey(ctx context.Context, paths storepaths.Pa
 		keys.TemplateFingerprintForKeyType(keyType),
 	)
 	defer payload.ZeroSecrets()
+	if boundedProvider, ok := dsa.(boundedAuthorizationMetadataProvider); ok {
+		metadata, err := boundedProvider.BuildBoundedAuthorizationMetadata(pub, params, lsigBytecode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to capture bounded authorization metadata: %w", err)
+		}
+		if metadata != nil {
+			if err := payload.SetBoundedAuthorization(metadata); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	// Cross-check the family derivation against the canonical payload selector
 	// BEFORE persisting, so a mismatch cannot orphan a live key file on disk.

@@ -8,6 +8,7 @@
 > For the current signer policy verdict model, see [ARCH_POLICY.md](ARCH_POLICY.md).
 > For network context tokens and transaction genesis-hash mapping, see [ARCH_NETWORKS.md](ARCH_NETWORKS.md).
 > For guarded signing and sentry node architecture, see [ARCH_SENTRY.md](ARCH_SENTRY.md).
+> For bounded authorization contracts and external contract-admin custody, see [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 
 ## Table of Contents
 
@@ -23,6 +24,7 @@
 - [Server Ownership Model](#server-ownership-model)
 - [Client Ownership Model](#client-ownership-model)
 - [Transaction Processing](#transaction-processing)
+- [Bounded Authorization Contracts](#bounded-authorization-contracts)
 - [Guarded Signing And Sentry Nodes](#guarded-signing-and-sentry-nodes)
 - [Provider and Algorithm Model](#provider-and-algorithm-model)
 - [Keystore and Key Lifecycle](#keystore-and-key-lifecycle)
@@ -110,6 +112,10 @@ guarded account generation, sentry keys, guarded transaction
 orchestration, endpoint-discovered sentries, or `/sign/component` /
 `/sign/assemble` behavior.
 
+Read [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before changing composer-owned transaction
+authorization, Falcon contract-admin custody, bounded schema v2, effect
+classification, or the `bounded1` signing flow.
+
 Read [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md) and the applicable
 `FORMAL_*_MODEL.md` document before changing behavior that has formalized
 state, transition, or invariant semantics.
@@ -131,6 +137,7 @@ All under `cmd/`:
 | Binary | Role |
 |--------|------|
 | `apshell` | Client shell: REPL, script runner, JS runtime (Goja), MCP server, plugin host |
+| `apbounded-admin` | Dedicated client for generating, inspecting, verifying, and using external Falcon bounded contract-admin credentials; `rekey`/`unrekey` own online orchestration and `prepare-*`/`sign`/`complete` own separated ceremonies |
 | `apsigner` | Signing daemon: HTTP API, admin protocol over IPC and SSH subsystem, key management, approval coordination, SSH tunnel server, audit logging |
 | `apadmin` | TUI admin client over IPC or SSH admin transport |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
@@ -156,10 +163,10 @@ Documentation notes:
 | Layer | Packages |
 |-------|----------|
 | UI | `cmd/apshell`, `cmd/apconsole`, `internal/apshellcli`, `internal/shellrepl`, `internal/signerapp/signertui`, `cmd/appass`, `cmd/appolicy`, `internal/signerapp/policytui`, `internal/policyview`, `cmd/aplocalnet`, `internal/aplocalnet`, `cmd/apapprover`, `internal/command`, `internal/cmdspec`, `internal/cmdlog`, `internal/theme`, `internal/addressdisplay`, `internal/keytypeux` |
-| Engine | `internal/apshellapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
+| Engine | `internal/apshellapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
-| Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
-| Storage/Crypto | `internal/crypto`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
+| Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
+| Storage/Crypto | `internal/crypto`, `internal/boundedadmin/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/arch`, `test/integration`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
@@ -718,9 +725,10 @@ LogicSig key files without `salt_counter`, or whose stored bytecode derives an
 on-curve address, are rejected during key scan. LogicSig key files without
 `signing_metadata_version` are rejected when signing or restore would need
 durable signing metadata. Key files with `signing_metadata_version >= 1` are
-**v1 signing-metadata keys**; DSA LogicSig files in that form persist
-`base_key_type` even when it equals `key_type`. The stored bytecode must derive
-an off-curve LogicSig address.
+**versioned signing-metadata keys**; non-bounded keys use version 1 and bounded
+keys require version 2 plus durable `bounded_authorization`. DSA LogicSig
+files persist `base_key_type` even when it equals `key_type`. The stored
+bytecode must derive an off-curve LogicSig address.
 
 ### Server Primary In-Memory State
 
@@ -1092,6 +1100,34 @@ Canonicalization rules live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). HTTP requ
 
 See [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) (Key Files / Signing Authority) for the signing authority contract.
 
+## Bounded Authorization Contracts
+
+`bounded1` moves the pure-spend/admin-operation envelope into
+`lsig/composeddsa`, admits only `pay`/`axfer` pure spends plus configured pure
+rekey, and compiles a 10,000 microAlgo fee ceiling. Layer 3 is reachable only
+for an admitted spend or for a spending-key rekey whose profile explicitly
+declares `policy_gate: layer3`; it can narrow but never broaden the envelope.
+
+The one bounded1 contract admin primitive is Falcon-1024. The signer retains the
+spending key and public contract-admin metadata; the private contract admin key
+remains external and normally cold. Admin-key rekey uses the explicit
+`signing_flow: bounded1` and `POST /sign/bounded-admin`, never ordinary caller
+runtime args or sentry assembly. Spending-key rekey remains possible only when
+the profile explicitly selects it and always receives forced operator review.
+Planning owns the single finalized-transaction classification boundary after
+fee pooling. The executor checks the selected path and loaded durable metadata
+against the immutable plan without maintaining a second classifier. Pure
+spends and spending-key rekeys assemble the path-specific durable base,
+derived, and runtime argument slots; undeclared caller arguments and hybrid
+effects fail closed.
+
+`aplane.falcon1024-admin-allowlist.v1` is the framework-owned fixed-list
+profile. External key generation and ceremonies are owned by
+`apbounded-admin`; apshell and apconsole do not handle private contract-admin
+artifacts. The normative field inventory, canonical encodings, vectors,
+schema, normal forms, and custody contract are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+
 ## Guarded Signing And Sentry Nodes
 
 This section is the system-map summary. The detailed subsystem architecture,
@@ -1207,10 +1243,14 @@ guarded authorizer, and ordinary signer-managed senders.
 The client first builds one canonical group. It sizes LogicSig-budget dummies
 across every LogicSig position from signer-advertised `lsig_size`, including
 non-guarded positions budgeted by effective signer/AuthAddr, then fixes fees
-and group ID. `lsig_size` is the expected post-signing LogicSig program plus
-args budget: bytecode plus cryptographic signature args and any runtime or
-signer-generated args such as proof material. All downstream component and
-non-guarded signatures are over those frozen bytes.
+and group ID. `lsig_size` is the expected spend-path post-signing LogicSig
+program plus args budget: bytecode plus cryptographic signature args and any
+runtime or signer-generated args used by that path. For bounded1 accounts it
+excludes the contract-admin signature slot, which only
+`/sign/bounded-admin` attaches; the signer's planner adds that slot when it
+classifies an admin-key rekey. The stored bounded
+`post_signing_lsig_size` remains admin-inclusive. All downstream component and
+non-guarded signatures are over the frozen transaction bytes.
 
 For guarded targets, the client obtains component signatures:
 
@@ -1662,7 +1702,7 @@ Architecturally:
 12. Registry lookup does not own runtime lifecycle; runtime decommission is the stop signal for in-flight work.
 13. File mutations and watcher reloads for one identity share the same per-identity mutation lock.
 14. Pure shell binaries register only client-safe providers; binaries that own admin, store mutation, or local signer composition (`apsigner`, `apconsole`, `apadmin`, `apstore`) additionally register the signer-side keygen, sign, and mnemonic registries through `lsig/signerreg.RegisterSigner()` and `internal/signing/ed25519.RegisterSigner()`.
-15. LogicSig key files are the signing authority: every signable LogicSig key file is a v1 signing-metadata key. Signing and restore reject files without `signing_metadata_version`; templates and live providers are not consulted to reconstruct missing signing metadata.
+15. LogicSig key files are the signing authority: every signable LogicSig key file has versioned signing metadata (version 1 for non-bounded, version 2 for bounded). Signing and restore reject files without `signing_metadata_version` or with a metadata version/shape mismatch; templates and live providers are not consulted to reconstruct missing signing metadata.
 16. Every persisted LogicSig key file has an off-curve address. LogicSig key files without `salt_counter`, or whose stored bytecode derives an on-curve LogicSig address, are rejected on load.
 
 ## Architectural Seams
@@ -1719,7 +1759,7 @@ Product-level boundaries:
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/service.go`, `internal/signerapp/backupadmin/limiter.go`, `internal/backup/*.go` |
-| LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/lsig/wrapper.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_ed25519/provider.go`, `lsig/falcon1024_ed25519/register.go`, `lsig/falcon1024_ed25519/signerops/ops.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/ecdsak1/register.go`, `lsig/ecdsak1/signerops/ops.go`, `lsig/ecdsak1/v1/standard.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/corridor/provider.go`, `lsig/corridor/register.go`, `lsig/corridor/signerreg/register.go`, `lsig/sentryaccount/sentryaccount.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
+| LSig Providers | `lsig/all.go`, `lsig/signerreg/register.go`, `internal/lsig/wrapper.go`, `internal/lsigprovider/provider.go`, `internal/signingargs/types.go`, `internal/lsigsalt/salt.go`, `lsig/falcon1024/v1/standard.go`, `lsig/falcon1024_ed25519/provider.go`, `lsig/falcon1024_ed25519/register.go`, `lsig/falcon1024_ed25519/signerops/ops.go`, `lsig/falcon1024_guarded/provider.go`, `lsig/falcon1024_guarded/register.go`, `lsig/ed25519lsig/register.go`, `lsig/ed25519lsig/signerreg/register.go`, `lsig/ecdsak1/register.go`, `lsig/ecdsak1/signerops/ops.go`, `lsig/ecdsak1/v1/standard.go`, `lsig/falcon1024/signerops/ops.go`, `lsig/dsafamily/register.go`, `lsig/generictemplate/provider.go`, `lsig/composeddsa/composer.go`, `lsig/corridor/provider.go`, `lsig/corridor/register.go`, `lsig/corridor/signerreg/register.go`, `lsig/sentryaccount/sentryaccount.go`, `internal/boundedadmin/message/message.go`, `internal/boundedmeta/metadata.go`, `internal/merkleallowlist/allowlist.go`, `internal/tealtemplate/legacy_list.go`, `internal/tealtemplate/template.go` |
 | Protocol | `internal/protocol/messages.go`, `internal/signerapp/svcerr/svcerr.go`, `internal/signerapp/adminserver/dispatch.go`, `internal/signerapp/adminserver/displacement.go`, `internal/adminproto/stream_conn.go` |
 | Config | `internal/config/config.go`, `internal/serverconfig/serverconfig.go`, `internal/config/networkid.go`, `internal/config/genesishash.go` |
 | LocalNet Setup | `cmd/aplocalnet/main.go`, `internal/aplocalnet/setup.go`, `plugins/algokit-localnet/algokit-localnet.go`, `plugins/algokit-localnet/manifest.json` |

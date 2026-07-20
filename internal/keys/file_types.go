@@ -26,6 +26,10 @@ const (
 
 const CurrentSigningMetadataVersion = 1
 
+// BoundedSigningMetadataVersion adds the complete durable bounded signing
+// contract. Version 1 remains valid only for non-bounded LogicSig keys.
+const BoundedSigningMetadataVersion = 2
+
 const (
 	TemplateProvenanceStatusConflict    = "conflict"
 	TemplateProvenanceStatusUnavailable = "unavailable"

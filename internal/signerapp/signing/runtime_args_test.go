@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 
@@ -61,7 +62,7 @@ func TestDecodeHexRuntimeArgsReportsArgumentName(t *testing.T) {
 	}
 }
 
-func TestSignerGeneratedDSAArgsFalconAllowlistV2Proof(t *testing.T) {
+func TestBoundedDerivedArgsMerkleProof(t *testing.T) {
 	sender := types.Address{1}
 	receiver := types.Address{2}
 	secondReceiver := types.Address{3}
@@ -71,9 +72,9 @@ func TestSignerGeneratedDSAArgsFalconAllowlistV2Proof(t *testing.T) {
 		t.Fatalf("RootFromRecipientsParam() error = %v", err)
 	}
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:       falcon1024AllowlistV2KeyType,
 		Parameters: map[string]string{"recipients": recipients},
 	}
+	metadata := merkleDerivedMetadata()
 
 	for _, tc := range []struct {
 		name string
@@ -101,12 +102,12 @@ func TestSignerGeneratedDSAArgsFalconAllowlistV2Proof(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			args, signErr := signerGeneratedDSAArgs(tc.txn, keyMaterial)
+			args, signErr := boundedDerivedArgs(tc.txn, keyMaterial, metadata, boundedPathPureSpend)
 			if signErr != nil {
-				t.Fatalf("signerGeneratedDSAArgs() error = %v", signErr)
+				t.Fatalf("boundedDerivedArgs() error = %v", signErr)
 			}
 			if len(args) != 1 {
-				t.Fatalf("signerGeneratedDSAArgs() len = %d, want 1", len(args))
+				t.Fatalf("boundedDerivedArgs() len = %d, want 1", len(args))
 			}
 			if len(args[0]) != merkleallowlist.ProofSize {
 				t.Fatalf("proof length = %d, want %d", len(args[0]), merkleallowlist.ProofSize)
@@ -118,43 +119,41 @@ func TestSignerGeneratedDSAArgsFalconAllowlistV2Proof(t *testing.T) {
 	}
 }
 
-func TestSignerGeneratedDSAArgsFalconAllowlistV2SkipsSelfTransfer(t *testing.T) {
+func TestBoundedDerivedArgsMerkleProofSkipsSelfTransfer(t *testing.T) {
 	sender := types.Address{1}
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:       falcon1024AllowlistV2KeyType,
 		Parameters: map[string]string{"recipients": sender.String()},
 	}
-	args, signErr := signerGeneratedDSAArgs(types.Transaction{
+	args, signErr := boundedDerivedArgs(types.Transaction{
 		Type:   types.PaymentTx,
 		Header: types.Header{Sender: sender},
 		PaymentTxnFields: types.PaymentTxnFields{
 			Receiver: sender,
 		},
-	}, keyMaterial)
+	}, keyMaterial, merkleDerivedMetadata(), boundedPathPureSpend)
 	if signErr != nil {
-		t.Fatalf("signerGeneratedDSAArgs() error = %v", signErr)
+		t.Fatalf("boundedDerivedArgs() error = %v", signErr)
 	}
-	if args != nil {
-		t.Fatalf("signerGeneratedDSAArgs() = %#v, want nil", args)
+	if len(args) != 1 || args[0] != nil {
+		t.Fatalf("boundedDerivedArgs() = %#v, want one empty derived slot", args)
 	}
 }
 
-func TestSignerGeneratedDSAArgsFalconAllowlistV2RejectsNonMember(t *testing.T) {
+func TestBoundedDerivedArgsMerkleProofRejectsNonMember(t *testing.T) {
 	sender := types.Address{1}
 	receiver := types.Address{2}
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:       falcon1024AllowlistV2KeyType,
 		Parameters: map[string]string{"recipients": types.Address{3}.String()},
 	}
-	_, signErr := signerGeneratedDSAArgs(types.Transaction{
+	_, signErr := boundedDerivedArgs(types.Transaction{
 		Type:   types.PaymentTx,
 		Header: types.Header{Sender: sender},
 		PaymentTxnFields: types.PaymentTxnFields{
 			Receiver: receiver,
 		},
-	}, keyMaterial)
+	}, keyMaterial, merkleDerivedMetadata(), boundedPathPureSpend)
 	if signErr == nil {
-		t.Fatal("signerGeneratedDSAArgs() error = nil, want rejection")
+		t.Fatal("boundedDerivedArgs() error = nil, want rejection")
 	}
 	if signErr.Kind != ErrorBadRequest {
 		t.Fatalf("error kind = %q, want %q", signErr.Kind, ErrorBadRequest)
@@ -162,4 +161,21 @@ func TestSignerGeneratedDSAArgsFalconAllowlistV2RejectsNonMember(t *testing.T) {
 	if !strings.Contains(signErr.Message, "not in allowlist") {
 		t.Fatalf("error message = %q, want allowlist context", signErr.Message)
 	}
+}
+
+func TestBoundedDerivedArgsMerkleProofForbiddenOnRekey(t *testing.T) {
+	args, err := boundedDerivedArgs(types.Transaction{}, &coresigning.KeyMaterial{}, merkleDerivedMetadata(), boundedPathSpendingKeyRekey)
+	if err != nil {
+		t.Fatalf("boundedDerivedArgs() error = %v", err)
+	}
+	if len(args) != 1 || args[0] != nil {
+		t.Fatalf("boundedDerivedArgs() = %#v, want one empty derived slot", args)
+	}
+}
+
+func merkleDerivedMetadata() *boundedmeta.Metadata {
+	return &boundedmeta.Metadata{DerivedArgs: []boundedmeta.DerivedArg{{
+		Name: "merkle_proof", Kind: boundedmeta.DerivedArgMerkleProof,
+		Parameter: "recipients", MaxSize: boundedmeta.MerkleProofSize,
+	}}}
 }

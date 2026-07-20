@@ -217,16 +217,16 @@ never breaks an existing key's ability to sign.
 
 ### Restricted variants (the safety is in the program)
 
-- `aplane.falcon1024-allowlist.v1` — pay/asset-transfer receivers must be self
-  or allowlisted; other transaction types keep the full Falcon surface.
-- `aplane.ed25519-allowlist.v1` — pay/asset-transfer receivers must be self or
-  allowlisted; other transaction types keep the base Ed25519 LogicSig surface.
+- `aplane.falcon1024-allowlist.v1` — bounded pay/asset-transfer receivers must
+  be self or allowlisted; close, clawback, and non-transfer types are rejected.
+- `aplane.ed25519-allowlist.v1` — the same bounded inline allowlist using an
+  Ed25519 LogicSig DSA base.
 - `aplane.allowlist.v1` (generic) — pay/transfer only to allowlisted recipients;
   no clawback/config/freeze/app/keyreg/rekey.
 - `aplane.timed-allowlist.v1` — allowlist rules plus `FirstValid >= unlock_round`.
 - `aplane.htlc.v1` — claim with preimage before timeout, refund after.
-- `*-hashlock` / `*-timelock` — base Falcon surface gated by a preimage / unlock
-  round.
+- `*-hashlock` / `*-timelock` — bounded Falcon transfer and pure-rekey paths
+  gated by a preimage / unlock round.
 
 ### Corridors
 

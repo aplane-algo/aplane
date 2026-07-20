@@ -209,7 +209,6 @@ func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult,
 	if err != nil {
 		return nil, &Error{Kind: ErrorNotFound, Message: "key not found: " + address}
 	}
-
 	delResult, err := storemut.New(ir.ID(), ir.KeyPaths(), nil, nil).DeleteKey(address, keyFile)
 	if err != nil {
 		return nil, &Error{Kind: ErrorInternal, Message: "key deletion failed"}

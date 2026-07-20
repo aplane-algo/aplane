@@ -193,6 +193,7 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 					Type:        arg.Type,
 					Required:    arg.Required,
 					ByteLength:  arg.ByteLength,
+					MaxSize:     arg.MaxSize,
 				}
 			}
 			s.SignerCache.SetSigningArgs(keyInfo.Address, signingArgs)

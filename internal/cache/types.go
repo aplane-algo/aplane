@@ -31,10 +31,12 @@ type AliasCache struct {
 // SignerCache stores addresses that Signer has private keys for (can sign remotely)
 // Maps: address -> key type ("aplane.falcon1024.v1" or "ed25519")
 type SignerCache struct {
-	SchemaVersion           int                         `json:"schema_version,omitempty"`
-	Keys                    map[string]string           `json:"keys"`                                 // address -> key type
-	GenericLsigs            map[string]bool             `json:"generic_lsigs"`                        // address -> true if generic lsig (no signature needed)
-	LsigSizes               map[string]int              `json:"lsig_sizes"`                           // address -> total LSig size (bytecode + crypto sig) for budget calculation
+	SchemaVersion int               `json:"schema_version,omitempty"`
+	Keys          map[string]string `json:"keys"`          // address -> key type
+	GenericLsigs  map[string]bool   `json:"generic_lsigs"` // address -> true if generic lsig (no signature needed)
+	// LsigSizes is the address -> spend-path LogicSig size used for budgeting.
+	// Bounded admin-signature bytes are added by the signer's admin-path planner.
+	LsigSizes               map[string]int              `json:"lsig_sizes"`
 	SigningArgs             map[string][]SigningArgInfo `json:"signing_args"`                         // address -> key-file signing arg schema for LogicSigs
 	SigningFlows            map[string]string           `json:"signing_flows,omitempty"`              // address -> signing choreography label (e.g. "sentry1"); empty = plain /sign
 	SentryComponentKeyTypes map[string]string           `json:"sentry_component_key_types,omitempty"` // address -> sentry component key type for signing_flow "sentry1"

@@ -32,6 +32,9 @@ type gateInput struct {
 	AuthKeys             []string
 	KnownAddresses       map[string]bool
 	RoutingExemptIndices map[int]bool
+	// ForcedReviewRuleID is a signer-owned unconditional review gate evaluated
+	// before every autoapproval path. It does not depend on policy settings.
+	ForcedReviewRuleID string
 	// AutoApprove evaluates surface-specific auto-approval rules after review
 	// rules pass. Nil means the surface has no auto-approval path.
 	AutoApprove func() (ruleID string, approved bool)
@@ -61,6 +64,10 @@ func (s *Service) runApprovalGates(ctx context.Context, in gateInput, console Co
 	}
 	txns := in.AllTxns[:limit]
 	alwaysReviewRuleID, alwaysReview := EvaluateAlwaysReviewRules(txns, in.EvalCount, in.PassthroughIndices, in.ForeignIndices, s.Policy, in.AuthKeys, in.KnownAddresses, in.RoutingExemptIndices)
+	if in.ForcedReviewRuleID != "" {
+		alwaysReviewRuleID = in.ForcedReviewRuleID
+		alwaysReview = true
+	}
 
 	switch {
 	case in.Simulation:

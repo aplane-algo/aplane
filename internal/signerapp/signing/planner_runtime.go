@@ -6,6 +6,7 @@ package signing
 import (
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apconfig "github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/lsig"
@@ -18,10 +19,20 @@ import (
 
 // PlannerIdentitySnapshot captures the identity-scoped signer metadata needed for planning.
 type PlannerIdentitySnapshot struct {
-	Revision  uint64
-	KeyFiles  map[string]string
-	KeyTypes  map[string]string
-	LSigSizes map[string]int
+	Revision    uint64
+	KeyFiles    map[string]string
+	KeyTypes    map[string]string
+	LSigSizes   map[string]int
+	KeyMetadata map[string]PlannerKeyMetadata
+}
+
+// PlannerKeyMetadata is public scan-time metadata used for dependency
+// preflight. It never contains decrypted private material.
+type PlannerKeyMetadata struct {
+	Category             string
+	PublicKeyHex         string
+	Parameters           map[string]string
+	BoundedAuthorization *boundedmeta.Metadata
 }
 
 // PlannerDeps supplies process-specific data needed by the package-owned planner.
@@ -48,8 +59,8 @@ func NewPlanner(deps PlannerDeps, opts PlannerOptions) *Planner {
 		VerifySignableKeys: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (int, *ServiceError) {
 			return verifySignableKeys(opts.Console, snapshot, identityID, requests, passthroughIndices, foreignIndices)
 		},
-		CalculateDummies: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool, hasPassthrough, isPreGrouped bool) (int, []int, *ServiceError) {
-			return calculateDummies(opts.Console, snapshot, identityID, requests, txns, passthroughIndices, foreignIndices, hasPassthrough, isPreGrouped)
+		CalculateDummies: func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, hasPassthrough, isPreGrouped bool) (int, []int, *ServiceError) {
+			return calculateDummies(opts.Console, snapshot, identityID, requests, txns, boundedItems, passthroughIndices, foreignIndices, hasPassthrough, isPreGrouped)
 		},
 		BuildFinalGroup: func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) ([]types.Transaction, []types.Transaction, DummyFeeInfo, bool, *ServiceError) {
 			return buildFinalGroup(deps, opts.Console, txns, dummiesNeeded, lsigIndices, isPreGrouped)
@@ -91,7 +102,7 @@ func verifySignableKeys(console Console, snapshot PlannerIdentitySnapshot, ident
 	return signableCount, nil
 }
 
-func calculateDummies(console Console, snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool, hasPassthrough, isPreGrouped bool) (dummiesNeeded int, lsigIndices []int, err *ServiceError) {
+func calculateDummies(console Console, snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, hasPassthrough, isPreGrouped bool) (dummiesNeeded int, lsigIndices []int, err *ServiceError) {
 	lsigSizes := snapshot.LSigSizes
 
 	if hasPassthrough {
@@ -117,7 +128,7 @@ func calculateDummies(console Console, snapshot PlannerIdentitySnapshot, identit
 			}
 			continue
 		}
-		if size, ok := lsigSizes[txReq.AuthAddress]; ok {
+		if size, ok := plannedLogicSigSize(lsigSizes, txReq.AuthAddress, boundedItems, i); ok {
 			var addErr *ServiceError
 			totalLsigBytes, addErr = addLsigBytes(totalLsigBytes, size, i+1, "stored LogicSig size")
 			if addErr != nil {
@@ -161,7 +172,7 @@ func calculateDummies(console Console, snapshot PlannerIdentitySnapshot, identit
 		if foreignIndices[i] {
 			continue
 		}
-		if size, ok := lsigSizes[txReq.AuthAddress]; ok && size > 0 {
+		if size, ok := plannedLogicSigSize(lsigSizes, txReq.AuthAddress, boundedItems, i); ok && size > 0 {
 			lsigIndices = append(lsigIndices, i)
 		}
 	}
@@ -184,6 +195,16 @@ func calculateDummies(console Console, snapshot PlannerIdentitySnapshot, identit
 	}
 
 	return dummiesNeeded, lsigIndices, nil
+}
+
+func plannedLogicSigSize(stored map[string]int, authAddress string, boundedItems []*boundedPlanItem, index int) (int, bool) {
+	if index < len(boundedItems) && boundedItems[index] != nil {
+		item := boundedItems[index]
+		size := item.Metadata.LogicSigSizeForPath(boundedMetadataPath(item.Path))
+		return size, size > 0
+	}
+	size, ok := stored[authAddress]
+	return size, ok
 }
 
 func addLsigBytes(total, size, txnIndex int, label string) (int, *ServiceError) {

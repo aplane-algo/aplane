@@ -444,6 +444,37 @@ sets team [ alice bob charlie ]
 
 ## Rekeying Commands
 
+The apshell commands below handle ordinary rekey workflows. Admin-key bounded
+accounts are intentionally not completed in apshell or apconsole; use the
+dedicated contract-admin client:
+
+```bash
+apbounded-admin rekey --key <key.apbounded-admin-key> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account> to <new-authorizer>
+apbounded-admin unrekey --key <key.apbounded-admin-key> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
+```
+
+`APCLIENT_DATA` is used when `--client-data` is omitted. The command connects
+to the configured default signer, obtains its approved spending partial, then
+opens a separate confirmation and artifact-passphrase prompt. It submits only
+after validating and assembling both signatures. Apshell has no private
+contract-admin artifact syntax.
+
+For a separate ceremony machine, prepare online, sign offline, then complete
+online without contacting the signer again:
+
+```bash
+apbounded-admin prepare-rekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account> to <new-authorizer>
+apbounded-admin prepare-unrekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account>
+apbounded-admin sign --key <key.apbounded-admin-key> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>
+apbounded-admin complete [--client-data <dir>] [--network <name>] [--nowait] <request.apbounded-admin-request> with <response.apbounded-admin-signature>
+```
+
+The request and response files are non-secret, but they authorize one exact,
+short-lived finalized transaction. Transfer them through an operator-controlled
+channel and retain them as ceremony records. `complete` rejects stale validity
+rounds, changed account authority, wrong network/genesis, or a mismatched
+response; it does not replan or request a fresh signer approval.
+
 ### rekey
 
 Query rekeying status or rekey an account to a new signing authority.

@@ -87,6 +87,13 @@ func (o *Ops) BuildSignatureArgs(signature []byte) ([][]byte, error) {
 	return [][]byte{falconSig, edSig}, nil
 }
 
+func (o *Ops) SignatureArgLayout() composeddsa.SignatureArgLayout {
+	return composeddsa.SignatureArgLayout{
+		Count:    2,
+		MaxSizes: []int{family.MaxSignatureSize, ed25519SignatureSize},
+	}
+}
+
 func NewProviderV1() *composeddsa.ComposedDSA {
 	ops := NewOps()
 	return composeddsa.NewComposedDSA(composeddsa.Config{
@@ -106,4 +113,4 @@ func splitPublicKey(publicKey []byte) (falconPub, edPub []byte, err error) {
 	return publicKey[:family.PublicKeySize], publicKey[family.PublicKeySize:], nil
 }
 
-var _ composeddsa.DSAOps = (*Ops)(nil)
+var _ composeddsa.BoundedCapableDSAOps = (*Ops)(nil)

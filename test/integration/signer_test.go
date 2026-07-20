@@ -2016,7 +2016,7 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 		if status != http.StatusBadRequest {
 			t.Fatalf("expected 400 for missing required arg, got %d: %s", status, string(body))
 		}
-		if !strings.Contains(string(body), "missing required arg: preimage") {
+		if !strings.Contains(string(body), `missing required bounded1 runtime argument \"preimage\"`) {
 			t.Fatalf("expected missing required preimage error, got %s", string(body))
 		}
 	})

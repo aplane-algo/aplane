@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -23,6 +24,7 @@ import (
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	falconsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024/signerreg"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -552,6 +554,72 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	templatePath := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
 	if _, err := os.Stat(templatePath); !os.IsNotExist(err) {
 		t.Fatalf("restored template stat error = %v, want not exist", err)
+	}
+}
+
+func TestRestoreKeyPreservesBoundedSigningMetadata(t *testing.T) {
+	falconsignerreg.RegisterSigner()
+	const (
+		identityID = "default"
+		keyType    = "test.backup-bounded.v1"
+	)
+	paths := storepaths.NewPaths(t.TempDir())
+	bytecode := saltedLogicSigBytecodeForTest()
+	payload := apkeys.NewDSALSigPayload(
+		keyType, "aplane.falcon1024.v1", []byte{0x01}, []byte{0x02}, nil,
+		bytecode, saltCounterForTest, "", nil, "1:bounded",
+	)
+	defer payload.ZeroSecrets()
+	metadata := &boundedmeta.Metadata{
+		Contract:                boundedmeta.ContractV1,
+		BaseSignatureArgLayout:  boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{64}},
+		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{64}}, false),
+		SpendEffects:            []string{"pay"},
+		MaxFee:                  1_000,
+		AdminOperations:         []boundedmeta.AdminOperation{},
+		RuntimeArgs:             []boundedmeta.RuntimeArg{},
+		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
+		PostSigningLogicSigSize: len(bytecode) + 64,
+	}
+	if err := payload.SetBoundedAuthorization(metadata); err != nil {
+		t.Fatalf("SetBoundedAuthorization() error = %v", err)
+	}
+	keyJSON, err := apkeys.MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload() error = %v", err)
+	}
+	defer apcrypto.ZeroBytes(keyJSON)
+	address, err := payload.Selector()
+	if err != nil {
+		t.Fatalf("Selector() error = %v", err)
+	}
+
+	keysDir := filepath.Join(t.TempDir(), "apb")
+	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll(apb) error = %v", err)
+	}
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+		t.Fatalf("writeStandaloneBackupFile() error = %v", err)
+	}
+	restorer := NewRestorer(paths, identityID)
+	if _, err := restorer.RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); err != nil {
+		t.Fatalf("RestoreKey() error = %v", err)
+	}
+	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(paths.KeyFilePath(identityID, address), testExportMasterKey)
+	if err != nil {
+		t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
+	}
+	defer apcrypto.ZeroBytes(restoredJSON)
+	restored, err := apkeys.ParsePayload(restoredJSON)
+	if err != nil {
+		t.Fatalf("ParsePayload(restored) error = %v", err)
+	}
+	defer restored.ZeroSecrets()
+	if restored.SigningMetadataVersion != apkeys.BoundedSigningMetadataVersion || restored.BoundedAuthorization == nil {
+		t.Fatalf("restored bounded metadata = %#v", restored.BoundedAuthorization)
+	}
+	if restored.BoundedAuthorization.PostSigningLogicSigSize != len(bytecode)+64 {
+		t.Fatalf("post-signing size = %d", restored.BoundedAuthorization.PostSigningLogicSigSize)
 	}
 }
 

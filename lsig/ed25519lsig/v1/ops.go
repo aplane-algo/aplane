@@ -44,4 +44,8 @@ func (o *Ops) BuildSignatureArgs(signature []byte) ([][]byte, error) {
 	return [][]byte{signature}, nil
 }
 
-var _ composeddsa.DSAOps = (*Ops)(nil)
+func (o *Ops) SignatureArgLayout() composeddsa.SignatureArgLayout {
+	return composeddsa.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}
+}
+
+var _ composeddsa.BoundedCapableDSAOps = (*Ops)(nil)

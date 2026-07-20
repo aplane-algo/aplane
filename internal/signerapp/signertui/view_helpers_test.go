@@ -281,11 +281,11 @@ func TestParameterModalShowsCompactPastedKeyPreview(t *testing.T) {
 	const suffix = "0123456789ffffffffff"
 	value := strings.Repeat("a", falconPublicKeyHexLength-len(suffix)) + suffix
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.governed-falcon.v1",
-		DisplayName: "Governed Falcon",
+		KeyType:     "aplane.falcon1024-admin-allowlist.v1",
+		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
-			Name:      "governance_public_key",
-			Label:     "Governance public key",
+			Name:      "bounded_admin_public_key",
+			Label:     "Contract Admin Public Key",
 			Type:      "bytes",
 			Required:  true,
 			MaxLength: falconPublicKeyHexLength,
@@ -299,11 +299,11 @@ func TestParameterModalShowsCompactPastedKeyPreview(t *testing.T) {
 		height:          40,
 		forms: formsState{
 			generateFocus:     0,
-			genericLSigParams: map[string]string{"governance_public_key": value},
+			genericLSigParams: map[string]string{"bounded_admin_public_key": value},
 		},
 	}
 
-	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.governed-falcon.v1", "GENERATE", ""))
+	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-admin-allowlist.v1", "GENERATE", ""))
 	if !strings.Contains(rendered, "...") || !strings.Contains(rendered, suffix) {
 		t.Fatalf("parameter modal does not show a middle-elided key with its suffix:\n%s", rendered)
 	}
@@ -317,31 +317,10 @@ func TestParameterModalShowsCompactPastedKeyPreview(t *testing.T) {
 		t.Fatalf("read-only parameter field clipped its bottom border:\n%s", rendered)
 	}
 
-	m.forms.genericLSigPasteParam = "governance_public_key"
-	rendered = stripANSI(m.renderParameterModalForKeyType("aplane.governed-falcon.v1", "GENERATE", ""))
+	m.forms.genericLSigPasteParam = "bounded_admin_public_key"
+	rendered = stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-admin-allowlist.v1", "GENERATE", ""))
 	if !strings.Contains(rendered, "Paste key now") || !strings.Contains(rendered, "WAITING FOR PASTE") {
 		t.Fatalf("paste capture state is not visible:\n%s", rendered)
-	}
-}
-
-func TestGovernancePublicKeyUsesPasteControlWithoutLengthMetadata(t *testing.T) {
-	governanceKey := lsigprovider.ParameterDef{
-		Name:  "governance_public_key",
-		Label: "Governanace Public Key",
-		Type:  "bytes",
-	}
-	if !isPasteOnlyParam(governanceKey) {
-		t.Fatal("governance public key should use the paste control without length metadata")
-	}
-
-	ed25519Key := lsigprovider.ParameterDef{
-		Name:      "public_key",
-		Label:     "Public Key",
-		Type:      "bytes",
-		MaxLength: 64,
-	}
-	if isPasteOnlyParam(ed25519Key) {
-		t.Fatal("Ed25519 public key should remain a compact single-line field")
 	}
 }
 

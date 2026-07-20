@@ -18,7 +18,7 @@ stateful application state is necessary, resulting in a smaller attack surface. 
 The canonical Falcon implementation on Algorand currently uses LogicSigs.
 
 A LogicSig is a cryptographic mechanism that allows
-an account's transaction authorization to be determined by a small
+an account's bounded authorization to be determined by a small
 TEAL program rather than a standard Algorand private key. In the case of
 Falcon accounts, the TEAL verifies that a transaction's Falcon signature sidecar
 was indeed produced by the account's authorized private key.

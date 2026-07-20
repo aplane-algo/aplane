@@ -12,10 +12,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
@@ -34,6 +36,8 @@ import (
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
@@ -78,12 +82,14 @@ func init() {
 type stubSigningService struct {
 	gotIdentityID      string
 	gotReq             signerapi.GroupSignRequest
+	gotBoundedAdmin    signerapi.BoundedAdminRequest
 	gotComponent       signerapi.ComponentSignRequest
 	gotAssembly        signerapi.GuardedAssemblyRequest
 	gotGuardedSimulate signerapi.GuardedSimulateRequest
 	gotSession         *keystore.KeySession
 	gotCtx             context.Context
 	result             *signersigning.SignGroupResult
+	boundedAdmin       *signersigning.BoundedAdminResult
 	component          *signersigning.ComponentSignResult
 	assembly           *signersigning.GuardedAssemblyResult
 	guardedSimulate    *signersigning.GuardedSimulateAssembly
@@ -91,6 +97,14 @@ type stubSigningService struct {
 	componentErr       *signersigning.ServiceError
 	assemblyErr        *signersigning.ServiceError
 	guardedSimulateErr *signersigning.ServiceError
+}
+
+func (s *stubSigningService) PrepareBoundedAdminWithContext(ctx context.Context, identityID string, req signerapi.BoundedAdminRequest, session *keystore.KeySession) (*signersigning.BoundedAdminResult, *signersigning.ServiceError) {
+	s.gotCtx = ctx
+	s.gotIdentityID = identityID
+	s.gotBoundedAdmin = req
+	s.gotSession = session
+	return s.boundedAdmin, s.err
 }
 
 type testContextKey string
@@ -243,6 +257,35 @@ func TestServiceSignGroupDelegates(t *testing.T) {
 	}
 	if stub.gotCtx != ctx {
 		t.Fatal("SignGroup() did not pass caller context to signing service")
+	}
+}
+
+func TestServicePrepareBoundedAdminDelegatesTypedPartial(t *testing.T) {
+	ir := setupIdentityRuntime(t, true)
+	stub := &stubSigningService{boundedAdmin: &signersigning.BoundedAdminResult{
+		Operation:     signerapi.BoundedAdminOperationRekey,
+		Transactions:  []string{"TXfinal", "TXdummy"},
+		PartialSigned: []string{"partial", ""},
+		TargetIndex:   0,
+		Authorization: signerapi.BoundedAdminMetadata{
+			ContractAdminKeyID: "ADMIN",
+		},
+	}}
+	svc := Service{Deps: Dependencies{NewSigningService: func(*identity.Runtime) SigningService { return stub }}}
+	req := signerapi.BoundedAdminRequest{
+		RequestID: "bounded-admin-1",
+		Operation: signerapi.BoundedAdminOperationRekey,
+		Requests:  []signerapi.SignRequest{{AuthAddress: "GOVERNED", TxnBytesHex: "5458"}},
+	}
+	resp, err := svc.PrepareBoundedAdmin(t.Context(), ir, req)
+	if err != nil {
+		t.Fatalf("PrepareBoundedAdmin() error = %v", err)
+	}
+	if stub.gotBoundedAdmin.RequestID != req.RequestID || stub.gotSession == nil {
+		t.Fatalf("delegated request/session = (%#v, %p)", stub.gotBoundedAdmin, stub.gotSession)
+	}
+	if resp.Schema != signerapi.BoundedAdminPartialSchemaV1 || len(resp.PartialSigned) != 2 || resp.PartialSigned[1] != "" {
+		t.Fatalf("response = %#v", resp)
 	}
 }
 
@@ -700,6 +743,59 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 		if info.SigningFlow != "" || info.SentryComponentKeyType != "" {
 			t.Fatalf("%s signing flow metadata = %q/%q, want empty", keyType, info.SigningFlow, info.SentryComponentKeyType)
 		}
+	}
+}
+
+func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
+	const keyType = "test.rest-runtime-bounded.v1"
+	lsigprovider.Register(restTestDSAProvider{
+		keyType: keyType,
+		bounded: &composeddsa.BoundedAuthorizationProfile{
+			Contract:     composeddsa.BoundedContractV1,
+			SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectAxfer, txeffects.SpendEffectPay},
+			MaxFee:       2_000,
+			AdminOperations: []composeddsa.AdminOperationSpec{{
+				Kind: composeddsa.AdminOperationRekey, Authorization: composeddsa.AdminAuthorizationAdminKey, PolicyGate: composeddsa.AdminPolicyGateNone,
+			}},
+		},
+	})
+
+	infos := Service{}.buildKeyTypes([]string{keyType}, nil)
+	if len(infos) != 1 {
+		t.Fatalf("buildKeyTypes() returned %d rows", len(infos))
+	}
+	info := infos[0]
+	if info.SigningFlow != signerapi.SigningFlowBounded1 || info.BoundedAuthorization == nil {
+		t.Fatalf("bounded inventory = %#v", info)
+	}
+	bounded := info.BoundedAuthorization
+	if bounded.Contract != composeddsa.BoundedContractV1 || bounded.MaxFee != 2_000 || len(bounded.DerivedArgs) != 0 || bounded.Layer3Policy != boundedmeta.Layer3PolicyCustom {
+		t.Fatalf("bounded_authorization = %#v", bounded)
+	}
+	if got := strings.Join(bounded.SpendEffects, ","); got != "pay,axfer" {
+		t.Fatalf("spend_effects = %q", got)
+	}
+	if len(bounded.AdminOperations) != 1 || bounded.AdminOperations[0].Authorization != string(composeddsa.AdminAuthorizationAdminKey) {
+		t.Fatalf("admin_operations = %#v", bounded.AdminOperations)
+	}
+}
+
+func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
+	metadata := &boundedmeta.Metadata{
+		Contract:                boundedmeta.ContractV1,
+		BaseSignatureArgLayout:  boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, true),
+		SpendEffects:            []string{"pay"},
+		MaxFee:                  1_000,
+		AdminOperations:         []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationAdmin, PolicyGate: boundedmeta.PolicyGateNone}},
+		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
+		AdminKeyID:              "ADMIN",
+		ProgramBindingHex:       strings.Repeat("ab", 32),
+		PostSigningLogicSigSize: 4_096,
+	}
+	info := boundedInfo(metadata)
+	if info.AdminKeyID != "ADMIN" || info.ProgramBindingHex != metadata.ProgramBindingHex || info.PostSigningLogicSigSize != 4_096 || info.Layer3Policy != boundedmeta.Layer3PolicyCustom {
+		t.Fatalf("boundedInfo() = %#v", info)
 	}
 }
 
@@ -1289,6 +1385,7 @@ teal: |
 
 type restTestDSAProvider struct {
 	keyType string
+	bounded *composeddsa.BoundedAuthorizationProfile
 }
 
 func (p restTestDSAProvider) KeyType() string { return p.keyType }
@@ -1313,6 +1410,30 @@ func (p restTestDSAProvider) MnemonicScheme() string   { return "bip39" }
 func (p restTestDSAProvider) MnemonicWordCount() int   { return 24 }
 func (p restTestDSAProvider) DeriveLsig(context.Context, []byte, map[string]string) ([]byte, string, error) {
 	return nil, "", nil
+}
+func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadata {
+	if p.bounded == nil {
+		return nil
+	}
+	metadata := &boundedmeta.Metadata{
+		Contract:               p.bounded.Contract,
+		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, false),
+		MaxFee:                 p.bounded.MaxFee,
+		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
+	}
+	for _, spendType := range p.bounded.SpendEffects {
+		metadata.SpendEffects = append(metadata.SpendEffects, string(spendType))
+	}
+	sort.Slice(metadata.SpendEffects, func(i, j int) bool {
+		return metadata.SpendEffects[i] == string(txeffects.SpendEffectPay)
+	})
+	for _, operation := range p.bounded.AdminOperations {
+		metadata.AdminOperations = append(metadata.AdminOperations, boundedmeta.AdminOperation{
+			Kind: string(operation.Kind), Authorization: string(operation.Authorization), PolicyGate: string(operation.PolicyGate),
+		})
+	}
+	return metadata
 }
 
 func TestServiceHealthShapesRuntimeState(t *testing.T) {

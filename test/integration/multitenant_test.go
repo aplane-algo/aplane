@@ -42,7 +42,7 @@ func TestMultitenantHTTPRoutesByAuthenticatedIdentity(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = signerd.Stop() })
 
-	aliceAdmin := unlockIdentityOverSSHAdmin(t, aliceToken)
+	aliceAdmin := unlockIdentityOverSSHAdmin(t, "alice", aliceToken)
 	t.Cleanup(aliceAdmin.Close)
 
 	defaultToken := readSignerToken(t, signerd)
@@ -174,11 +174,11 @@ func createIntegrationIdentityWithTemplate(t *testing.T, env *harness.TestEnvClo
 	return token, keyType
 }
 
-func unlockIdentityOverSSHAdmin(t *testing.T, token string) *transport.SSHAdminClient {
+func unlockIdentityOverSSHAdmin(t *testing.T, identityID, token string) *transport.SSHAdminClient {
 	t.Helper()
 
 	sshCfg := mustLoadClientSSHConfig(t)
-	client := transport.NewSSHAdmin(sshCfg.Host, sshCfg.Port, token, sshCfg.IdentityFile, sshCfg.KnownHostsPath)
+	client := transport.NewSSHAdminForIdentity(sshCfg.Host, sshCfg.Port, identityID, token, sshCfg.IdentityFile, sshCfg.KnownHostsPath)
 	if err := client.Dial(); err != nil {
 		t.Fatalf("failed to connect SSH admin session: %v", err)
 	}

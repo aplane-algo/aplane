@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
+	"github.com/aplane-algo/aplane/internal/txeffects"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -62,8 +63,9 @@ func CheckTxnPolicyLintsWithKnownAddresses(txn types.Transaction, sender string,
 	}
 
 	var violations []LintViolation
+	facts := txeffects.Inspect(txn)
 
-	if cfg.RejectForeignRekey && !txn.RekeyTo.IsZero() && !knownAddresses[txn.RekeyTo.String()] {
+	if cfg.RejectForeignRekey && facts.Has(txeffects.EffectRekey) && !knownAddresses[txn.RekeyTo.String()] {
 		violations = append(violations, LintViolation{
 			RuleID:   RejectForeignRekeyRuleID,
 			Scope:    "txn",
@@ -72,7 +74,7 @@ func CheckTxnPolicyLintsWithKnownAddresses(txn types.Transaction, sender string,
 		})
 	}
 
-	if cfg.RejectCloseRemainder && !txn.CloseRemainderTo.IsZero() {
+	if cfg.RejectCloseRemainder && facts.Has(txeffects.EffectClose) {
 		violations = append(violations, LintViolation{
 			RuleID:   RejectCloseRemainderRuleID,
 			Scope:    "txn",
@@ -81,7 +83,7 @@ func CheckTxnPolicyLintsWithKnownAddresses(txn types.Transaction, sender string,
 		})
 	}
 
-	if cfg.RejectAssetClose && !txn.AssetCloseTo.IsZero() {
+	if cfg.RejectAssetClose && facts.Has(txeffects.EffectAssetClose) {
 		violations = append(violations, LintViolation{
 			RuleID:   RejectAssetCloseRuleID,
 			Scope:    "txn",
@@ -90,7 +92,7 @@ func CheckTxnPolicyLintsWithKnownAddresses(txn types.Transaction, sender string,
 		})
 	}
 
-	if cfg.RejectClawback && !txn.AssetSender.IsZero() && txn.AssetSender != txn.Sender {
+	if cfg.RejectClawback && facts.Has(txeffects.EffectClawback) && txn.AssetSender != txn.Sender {
 		violations = append(violations, LintViolation{
 			RuleID:   RejectClawbackRuleID,
 			Scope:    "txn",

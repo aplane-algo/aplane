@@ -79,6 +79,9 @@ func (s *Service) SignGroupWithContext(ctx context.Context, identityID string, r
 	if err != nil {
 		return nil, err
 	}
+	if planHasBoundedAdminKeyOperation(plan) {
+		return nil, boundedAdminRequired()
+	}
 	return s.signGroupWithPlanContext(ctx, identityID, req, session, plan, false)
 }
 
@@ -94,7 +97,45 @@ func (s *Service) SignGroupForSimulationWithContext(ctx context.Context, identit
 	if err != nil {
 		return nil, err
 	}
+	if planHasBoundedAdminKeyOperation(plan) {
+		return nil, boundedAdminRequired()
+	}
 	return s.signGroupWithPlanContext(ctx, identityID, req, session, plan, true)
+}
+
+func (s *Service) PrepareBoundedAdminWithContext(ctx context.Context, identityID string, request signerapi.BoundedAdminRequest, session *keystore.KeySession) (*BoundedAdminResult, *ServiceError) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if s.Planner == nil || s.Approval == nil || s.Executor == nil {
+		return nil, internal("signing service not fully configured")
+	}
+	req := request.GroupSignRequest()
+	plan, err := s.Planner.PlanGroup(identityID, req)
+	if err != nil {
+		return nil, err
+	}
+	targetIndex, item, validationErr := validateBoundedAdminPlan(request, plan)
+	if validationErr != nil {
+		return nil, validationErr
+	}
+	policyRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, req, plan, false)
+	if gateErr != nil {
+		return nil, gateErr
+	}
+	defer release()
+
+	partials, signErr := s.Executor.ExecuteBoundedAdminPartial(ctx, plan, req, identityID, session, targetIndex, item)
+	if signErr != nil {
+		return nil, signErr
+	}
+	result, buildErr := buildBoundedAdminResult(plan, len(req.Requests), targetIndex, item, partials)
+	if buildErr != nil {
+		return nil, buildErr
+	}
+	consoleOf(s.Console).Printf("[GROUP] Prepared bounded-admin spending partial; external contract-admin signature required\n")
+	s.logBoundedAdminPartialApproved(identityID, req, plan.AllTxns[targetIndex], targetIndex, policyRuleID)
+	return result, nil
 }
 
 func (s *Service) SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*ComponentSignResult, *ServiceError) {
@@ -198,9 +239,35 @@ func (s *Service) AssembleGuardedWithContext(ctx context.Context, identityID str
 func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession, plan *PlanResult, simulation bool) (*SignGroupResult, *ServiceError) {
 	allTxns := plan.AllTxns
 	txns := allTxns[:len(req.Requests)]
+	alwaysReviewRuleID, release, gateErr := s.approveGroupWithPlanContext(ctx, identityID, req, plan, simulation)
+	if gateErr != nil {
+		return nil, gateErr
+	}
+	defer release()
+
+	execResult, err := s.Executor.ExecuteGroupSigning(ctx, plan, req, identityID, session)
+	if err != nil {
+		return nil, err
+	}
+
+	console := consoleOf(s.Console)
+	s.logSummary(req, plan, execResult.SignedTxns, console)
+	if !simulation {
+		s.logSuccessfulSignatures(identityID, req, plan, txns, alwaysReviewRuleID)
+	}
+
+	return &SignGroupResult{
+		Signed:    execResult.SignedTxns,
+		Mutations: BuildMutationReport(plan, len(req.Requests)),
+	}, nil
+}
+
+func (s *Service) approveGroupWithPlanContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, plan *PlanResult, simulation bool) (string, func(), *ServiceError) {
+	allTxns := plan.AllTxns
+	txns := allTxns[:len(req.Requests)]
 
 	if s.IsUnlocked != nil && !s.IsUnlocked() {
-		return nil, lockedError()
+		return "", nil, lockedError()
 	}
 
 	groupDesc, firstValid, lastValid := BuildApprovalDescription(req, plan, allTxns, s.GenerateTxnDescriptionFromTxn)
@@ -233,6 +300,12 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID strin
 		AuthKeys:             authPolicyKeysFromRequest(req, plan),
 		KnownAddresses:       s.knownAddresses(identityID, plan),
 		RoutingExemptIndices: routingExemptIndicesForPlan(plan, allTxns),
+		ForcedReviewRuleID: func() string {
+			if planHasBoundedAdminOperation(plan) {
+				return policy.BoundedAdminOperationRequiresReviewRuleID
+			}
+			return ""
+		}(),
 		AutoApprove: func() (string, bool) {
 			return EvaluateAutoApprovalRules(req, plan, allTxns, s.Policy)
 		},
@@ -247,32 +320,17 @@ func (s *Service) signGroupWithPlanContext(ctx context.Context, identityID strin
 		},
 	}, console)
 	if gateErr != nil {
-		return nil, gateErr
+		return "", nil, gateErr
 	}
 
 	if err := ctx.Err(); err != nil {
-		return nil, unavailable(fmt.Sprintf("sign request canceled: %v", err))
+		return "", nil, unavailable(fmt.Sprintf("sign request canceled: %v", err))
 	}
 	release, err := s.beforeExecute()
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	defer release()
-
-	execResult, err := s.Executor.ExecuteGroupSigning(ctx, plan, req, identityID, session)
-	if err != nil {
-		return nil, err
-	}
-
-	s.logSummary(req, plan, execResult.SignedTxns, console)
-	if !simulation {
-		s.logSuccessfulSignatures(identityID, req, plan, txns, alwaysReviewRuleID)
-	}
-
-	return &SignGroupResult{
-		Signed:    execResult.SignedTxns,
-		Mutations: BuildMutationReport(plan, len(req.Requests)),
-	}, nil
+	return alwaysReviewRuleID, release, nil
 }
 
 func (s *Service) knownAddresses(identityID string, plan *PlanResult) map[string]bool {
@@ -356,6 +414,21 @@ func (s *Service) logSuccessfulSignatures(identityID string, req signerapi.Group
 		}
 		s.AuditLog.LogSignApproved(identityID, txReq.AuthAddress, txns[i].Sender.String(), details)
 	}
+}
+
+func (s *Service) logBoundedAdminPartialApproved(identityID string, req signerapi.GroupSignRequest, txn types.Transaction, targetIndex int, policyRuleID string) {
+	if s.AuditLog == nil || targetIndex < 0 || targetIndex >= len(req.Requests) {
+		return
+	}
+	txReq := req.Requests[targetIndex]
+	const details = "bounded-admin spending partial prepared; external contract-admin signature required"
+	if policyRuleID != "" {
+		if ruleLogger, ok := s.AuditLog.(AuditApprovePolicyRuleLogger); ok && ruleLogger != nil {
+			ruleLogger.LogSignApprovedWithPolicyRule(identityID, txReq.AuthAddress, txn.Sender.String(), details, policyRuleID)
+			return
+		}
+	}
+	s.AuditLog.LogSignApproved(identityID, txReq.AuthAddress, txn.Sender.String(), details)
 }
 
 func (s *Service) logPolicyRejections(identityID string, req signerapi.GroupSignRequest, plan *PlanResult, txns []types.Transaction, reason string) {

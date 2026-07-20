@@ -141,6 +141,15 @@ func (s *ConnectionState) RequestGroupSignWithContext(ctx context.Context, reque
 	return client.RequestGroupSignWithContext(ctx, requests)
 }
 
+// RequestBoundedAdmin sends one external contract-admin partial-signing request.
+func (s *ConnectionState) RequestBoundedAdminWithContext(ctx context.Context, operation string, requests []signerapi.SignRequest) (*signerapi.BoundedAdminPartialResponse, error) {
+	client, err := s.signerClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.RequestBoundedAdminWithContext(ctx, operation, requests)
+}
+
 // RequestComponentSign sends a component-signing request to Signer.
 func (s *ConnectionState) RequestComponentSign(req signerapi.ComponentSignRequest) (*signerapi.ComponentSignResponse, error) {
 	return s.RequestComponentSignWithContext(context.Background(), req)

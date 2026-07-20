@@ -36,17 +36,42 @@ type sentryRequestKey struct {
 	PublicKey        string
 }
 
+// flowRoute is the client-side route a signing_flow label takes. Every flow
+// label is classified in exactly one place, routeForSigningFlow, so the
+// guarded pre-check and target assembly cannot disagree about a label.
+type flowRoute int
+
+const (
+	// flowRoutePlain signs through the ordinary client path. Bounded1 belongs
+	// here: it has its own transaction-aware server-side path behind /sign.
+	flowRoutePlain flowRoute = iota
+	// flowRouteGuarded routes through sentry component orchestration.
+	flowRouteGuarded
+	// flowRouteUnknown fails closed: the client must be upgraded. Unknown
+	// labels still enter guarded routing so guardedTargets rejects them
+	// explicitly instead of silently falling through to ordinary signing.
+	flowRouteUnknown
+)
+
+func routeForSigningFlow(flow string) flowRoute {
+	switch flow {
+	case "", signerapi.SigningFlowBounded1:
+		return flowRoutePlain
+	case signerapi.SigningFlowSentry1:
+		return flowRouteGuarded
+	default:
+		return flowRouteUnknown
+	}
+}
+
 // hasGuardedEffectiveSigner reports whether any transaction's effective
 // signer declares a component signing flow (signing_flow in signer
-// inventory). Any non-empty flow routes through guarded orchestration, which
-// rejects flow labels this client does not implement; routing on the flow
-// label rather than the key type keeps the client forward-compatible with
-// new guarded key families.
+// inventory).
 func (s *Signer) HasGuardedEffectiveSigner(txns []types.Transaction) bool {
 	for _, txn := range txns {
 		sender := txn.Sender.String()
 		effectiveSigner := s.authCache.ResolveEffectiveSigner(sender)
-		if s.cache.SigningFlow(effectiveSigner) != "" {
+		if routeForSigningFlow(s.cache.SigningFlow(effectiveSigner)) != flowRoutePlain {
 			return true
 		}
 	}
@@ -334,10 +359,11 @@ func (s *Signer) guardedTargets(txns []types.Transaction) ([]guardedTarget, erro
 		sender := txn.Sender.String()
 		account := s.authCache.ResolveEffectiveSigner(sender)
 		flow := s.cache.SigningFlow(account)
-		if flow == "" {
+		switch routeForSigningFlow(flow) {
+		case flowRoutePlain:
 			continue
-		}
-		if flow != signerapi.SigningFlowSentry1 {
+		case flowRouteGuarded:
+		default:
 			return nil, fmt.Errorf("account %s requires signing flow %q, which this client does not support; upgrade the client", account, flow)
 		}
 		sentryComponentKeyType, ok := s.cache.SentryComponentKeyType(account)

@@ -30,4 +30,7 @@ const (
 	ErrCodeCacheRefresh = "cache_refresh"
 	// ErrCodeInternal covers unexpected server-side failures.
 	ErrCodeInternal = "internal"
+	// ErrCodeBoundedAdminRequired directs contract-admin operations to the
+	// external bounded-admin completion flow.
+	ErrCodeBoundedAdminRequired = "bounded_admin_required"
 )

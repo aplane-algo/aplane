@@ -4,6 +4,7 @@
 package lsigprovider
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -62,7 +63,7 @@ type ParameterDef struct {
 	Min *uint64 // Minimum allowed value (nil = no minimum)
 	Max *uint64 // Maximum allowed value (nil = no maximum)
 
-	// Default value (applied if user provides empty input for optional params)
+	// Default value (applied if an optional parameter is missing or empty)
 	Default string
 }
 
@@ -83,13 +84,13 @@ func (p ParameterDef) ElementType() string {
 // NormalizeCreationParams returns a copy of params with canonical formatting for
 // parameters whose definitions require it. address[] and uint64[] values are
 // unordered by definition and are sorted before validation or TEAL generation.
-// Nil params remain nil to preserve caller intent.
+// bytes values accept 0x-prefixed and uppercase hex for input convenience but
+// are stored canonically (lowercase, no prefix), the only form persisted key
+// payloads accept. Defaults are materialized for missing or empty optional
+// parameters and pass through the same canonicalization as explicit values.
+// Nil params remain nil when no defaults are defined.
 func NormalizeCreationParams(params map[string]string, defs []ParameterDef) (map[string]string, error) {
-	if params == nil {
-		return nil, nil
-	}
-
-	normalized := make(map[string]string, len(params))
+	normalized := make(map[string]string, len(params)+len(defs))
 	for name, value := range params {
 		normalized[name] = value
 	}
@@ -97,7 +98,11 @@ func NormalizeCreationParams(params map[string]string, defs []ParameterDef) (map
 	for _, def := range defs {
 		value, ok := normalized[def.Name]
 		if !ok || value == "" {
-			continue
+			if def.Required || def.Default == "" {
+				continue
+			}
+			value = def.Default
+			normalized[def.Name] = value
 		}
 		switch def.Type {
 		case "address[]":
@@ -116,10 +121,33 @@ func NormalizeCreationParams(params map[string]string, defs []ParameterDef) (map
 				return nil, fmt.Errorf("invalid %s: %w", def.Name, err)
 			}
 			normalized[def.Name] = strings.Join(items, ",")
+		case "bytes":
+			canonical, err := canonicalHexString(value)
+			if err != nil {
+				return nil, fmt.Errorf("invalid %s: %w", def.Name, err)
+			}
+			normalized[def.Name] = canonical
 		}
 	}
 
+	if params == nil && len(normalized) == 0 {
+		return nil, nil
+	}
 	return normalized, nil
+}
+
+func canonicalHexString(value string) (string, error) {
+	v := strings.TrimSpace(value)
+	if len(v) >= 2 && (v[:2] == "0x" || v[:2] == "0X") {
+		v = v[2:]
+	}
+	if v == "" {
+		return "", fmt.Errorf("value cannot be empty")
+	}
+	if _, err := hex.DecodeString(v); err != nil {
+		return "", fmt.Errorf("invalid hex: %w", err)
+	}
+	return strings.ToLower(v), nil
 }
 
 func splitListParam(value string) ([]string, error) {
@@ -161,6 +189,7 @@ type RuntimeArgDef struct {
 	Type        string // "bytes" (hex-encoded), "string", "uint64"
 	Required    bool   // If true, transaction will fail without this arg
 	ByteLength  int    // Expected byte length (0 = variable)
+	MaxSize     int    // Maximum encoded byte length (0 = legacy/unbounded contract)
 }
 
 // ValidateAndOrderArgs validates runtime args against their definitions and returns
@@ -197,6 +226,9 @@ func ValidateAndOrderArgs(argDefs []RuntimeArgDef, runtimeArgs map[string][]byte
 		}
 		if argDef.ByteLength > 0 && len(val) != argDef.ByteLength {
 			return nil, fmt.Errorf("arg %s: expected %d bytes, got %d", argDef.Name, argDef.ByteLength, len(val))
+		}
+		if argDef.MaxSize > 0 && len(val) > argDef.MaxSize {
+			return nil, fmt.Errorf("arg %s: maximum %d bytes, got %d", argDef.Name, argDef.MaxSize, len(val))
 		}
 		args = append(args, val)
 	}

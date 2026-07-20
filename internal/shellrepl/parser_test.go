@@ -702,6 +702,12 @@ func TestParseRekeyCommand(t *testing.T) {
 			},
 		},
 		{
+			name:      "rekey rejects contract-admin artifact syntax",
+			args:      []string{"alice", "to", "bob", "using", "contract-admin", "/keys/cold.apbounded-admin-key"},
+			isUnrekey: false,
+			wantErr:   true,
+		},
+		{
 			name:      "rekey with lsig arg",
 			args:      []string{"alice", "to", "bob", "arg:rekey_preimage=text:secret"},
 			isUnrekey: false,

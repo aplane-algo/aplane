@@ -36,6 +36,10 @@ const (
 	// auto-approve a single 0-value self-transfer request.
 	AutoApproveSelfNoOpTransferRuleID = "auto_approve_self_noop_transfer"
 
+	// BoundedAdminOperationRequiresReviewRuleID identifies the unconditional
+	// operator-review gate for every bounded administrative operation.
+	BoundedAdminOperationRequiresReviewRuleID = "bounded_admin_operation_requires_review"
+
 	TransferRoutingBlockedDestinationRuleID = "transfer_policy:blocked_destination"
 	TransferRoutingRouteMissRuleID          = "transfer_policy:route_miss"
 	TransferRoutingUnknownGenesisRuleID     = "transfer_policy:unknown_genesis_hash"

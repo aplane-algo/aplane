@@ -49,12 +49,22 @@ func (d signerPlannerDeps) Snapshot(identityID string) signersigning.PlannerIden
 	if ir == nil {
 		return signersigning.PlannerIdentitySnapshot{}
 	}
+	// KeyIndexSnapshot deep-clones per call, so the snapshot (including its
+	// Parameters maps and bounded metadata) is owned by this request.
 	snapshot := ir.KeyIndexSnapshot()
+	keyMetadata := make(map[string]signersigning.PlannerKeyMetadata, len(snapshot.KeyMetadata))
+	for selector, metadata := range snapshot.KeyMetadata {
+		keyMetadata[selector] = signersigning.PlannerKeyMetadata{
+			Category: metadata.Category, PublicKeyHex: metadata.PublicKeyHex, Parameters: metadata.Parameters,
+			BoundedAuthorization: metadata.BoundedAuthorization,
+		}
+	}
 	return signersigning.PlannerIdentitySnapshot{
-		Revision:  snapshot.Revision,
-		KeyFiles:  snapshot.KeyFiles,
-		KeyTypes:  snapshot.KeyTypes,
-		LSigSizes: snapshot.LSigSizes,
+		Revision:    snapshot.Revision,
+		KeyFiles:    snapshot.KeyFiles,
+		KeyTypes:    snapshot.KeyTypes,
+		LSigSizes:   snapshot.LSigSizes,
+		KeyMetadata: keyMetadata,
 	}
 }
 

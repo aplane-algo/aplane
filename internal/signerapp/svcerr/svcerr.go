@@ -17,21 +17,22 @@ import (
 type Kind string
 
 const (
-	KindBadRequest        Kind = signerapi.ErrCodeBadRequest
-	KindUnauthorized      Kind = signerapi.ErrCodeUnauthorized
-	KindForbidden         Kind = signerapi.ErrCodeForbidden
-	KindLocked            Kind = signerapi.ErrCodeLocked
-	KindNotFound          Kind = signerapi.ErrCodeNotFound
-	KindInvalidPassphrase Kind = signerapi.ErrCodeInvalidPassphrase
-	KindUnavailable       Kind = signerapi.ErrCodeUnavailable
-	KindCacheRefresh      Kind = signerapi.ErrCodeCacheRefresh
-	KindInternal          Kind = signerapi.ErrCodeInternal
+	KindBadRequest           Kind = signerapi.ErrCodeBadRequest
+	KindUnauthorized         Kind = signerapi.ErrCodeUnauthorized
+	KindForbidden            Kind = signerapi.ErrCodeForbidden
+	KindLocked               Kind = signerapi.ErrCodeLocked
+	KindNotFound             Kind = signerapi.ErrCodeNotFound
+	KindInvalidPassphrase    Kind = signerapi.ErrCodeInvalidPassphrase
+	KindUnavailable          Kind = signerapi.ErrCodeUnavailable
+	KindCacheRefresh         Kind = signerapi.ErrCodeCacheRefresh
+	KindInternal             Kind = signerapi.ErrCodeInternal
+	KindBoundedAdminRequired Kind = signerapi.ErrCodeBoundedAdminRequired
 )
 
 // HTTPStatus maps a kind to its HTTP status. Unknown kinds map to 500.
 func (k Kind) HTTPStatus() int {
 	switch k {
-	case KindBadRequest:
+	case KindBadRequest, KindBoundedAdminRequired:
 		return http.StatusBadRequest
 	case KindUnauthorized:
 		return http.StatusUnauthorized

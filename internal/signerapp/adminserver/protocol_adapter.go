@@ -803,6 +803,7 @@ func protocolRuntimeArgs(args []signerapi.RuntimeArgInfo) []protocol.TemplateArg
 			Type:        a.Type,
 			Required:    a.Required,
 			ByteLength:  a.ByteLength,
+			MaxSize:     a.MaxSize,
 		}
 	}
 	return out

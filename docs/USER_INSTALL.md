@@ -359,9 +359,12 @@ is missing, unreadable, or older than the installer's supported upgrade floor.
 
 ---
 
-## Client-Only Install (apshell)
+## Client-Only Install (apshell and apbounded-admin)
 
-If you only need the transaction shell (apshell) and will connect to a remote signer, use `--client`. This installs apshell under `~/aplane/apclient/` by default — no root, no systemd, no signer binaries.
+If you only need client tools and will connect to a remote signer, use
+`--client`. On Linux and macOS this installs `apshell` and the external
+contract-admin helper `apbounded-admin` under `~/aplane/apclient/` by default, with no root,
+systemd, or signer binaries.
 
 **Works on both Linux and macOS.** The bootstrap script auto-detects the OS and downloads the correct tarball. Windows users should use the `aplane-client_<version>_windows_amd64.zip` release archive, which contains `bin\apshell.exe`, `config.yaml`, `.ssh\`, and `README.txt`.
 
@@ -378,6 +381,7 @@ Or from an extracted release tarball:
 
 This installs:
 - `~/aplane/apclient/bin/apshell` — the transaction shell binary
+- `~/aplane/apclient/bin/apbounded-admin` — external Falcon contract-admin artifact and bounded ceremony client (Linux and macOS)
 - `~/aplane/apclient/config.yaml` — client configuration (network and UI defaults)
 - `~/aplane/apclient/endpoints.yaml` — client endpoint registry; new installs start with a `primary` signer endpoint
 - `~/aplane/apclient/.mcp.json` — MCP client configuration for `apshell --mcp`

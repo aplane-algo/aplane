@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -43,6 +44,7 @@ type SigningSummary struct {
 	Category               string
 	Parameters             map[string]string
 	SigningArgs            []lsigprovider.RuntimeArgDef
+	BoundedAuthorization   *boundedmeta.Metadata
 	SigningMetadataVersion int
 	TemplateFingerprint    string
 }
@@ -282,6 +284,7 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 	km.PublicKey = bytes.Clone(payload.PublicKey)
 	km.Parameters = maps.Clone(signingMeta.Parameters)
 	km.SigningArgs = keys.SigningArgDefs(signingMeta.SigningArgs)
+	km.BoundedAuthorization = boundedmeta.Clone(signingMeta.BoundedAuthorization)
 	km.SigningMetadataVersion = signingMeta.SigningMetadataVersion
 	return km, nil
 }
@@ -301,6 +304,7 @@ func loadGenericLsigKeys(payload *keys.Payload, keyType string, signingMeta keys
 		Bytecode:               bytes.Clone(payload.LogicSigBytecode),
 		Parameters:             maps.Clone(signingMeta.Parameters),
 		SigningArgs:            keys.SigningArgDefs(signingMeta.SigningArgs),
+		BoundedAuthorization:   boundedmeta.Clone(signingMeta.BoundedAuthorization),
 		SigningMetadataVersion: signingMeta.SigningMetadataVersion,
 		Value:                  &GenericLsigData{BytecodeHex: hex.EncodeToString(payload.LogicSigBytecode)},
 	}
@@ -440,7 +444,10 @@ func (f *FileKeyStore) GetKeyTypes() map[string]string {
 	return result
 }
 
-// GetSigningSummary returns one scan-time snapshot of address -> non-sensitive signing metadata.
+// GetSigningSummary returns one scan-time snapshot of address -> non-sensitive
+// signing metadata. The returned map, its Parameters maps, and its
+// BoundedAuthorization records are freshly built per call and owned by the
+// caller — no further defensive cloning is required.
 func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 	f.cacheLock.RLock()
 	defer f.cacheLock.RUnlock()
@@ -451,6 +458,7 @@ func (f *FileKeyStore) GetSigningSummary() map[string]SigningSummary {
 			Category:               v.Category,
 			Parameters:             maps.Clone(v.Parameters),
 			SigningMetadataVersion: v.SigningMetadataVersion,
+			BoundedAuthorization:   boundedmeta.Clone(v.BoundedAuthorization),
 			TemplateFingerprint:    v.TemplateFingerprint,
 		}
 		if v.SigningMetadataVersion > 0 && len(v.SigningArgs) > 0 {

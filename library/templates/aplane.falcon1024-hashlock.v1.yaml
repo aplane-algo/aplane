@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 derivation_version: 2
 template_type: composed
 base_key_type: aplane.falcon1024.v1
@@ -8,6 +8,22 @@ family: falcon1024-hashlock
 version: 1
 display_name: "Falcon-1024 Hashlock"
 description: "Falcon-1024 signature with SHA256 hash verification"
+
+bounded:
+  contract: bounded1
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  admin_operations:
+    - kind: rekey
+      authorization: spending_key
+      policy_gate: layer3
+  runtime_args:
+    - name: preimage
+      label: "Secret Preimage"
+      description: "The secret value whose SHA256 hash matches the stored hash"
+      type: bytes
+      max_size: 64
+      required_on: [spend, rekey]
 
 parameters:
   - name: hash
@@ -32,13 +48,6 @@ template_variables:
     parameter: hash
     type: bytes
     constant: byte
-
-runtime_args:
-  - name: preimage
-    label: "Secret Preimage"
-    description: "The secret value whose SHA256 hash matches the stored hash"
-    type: bytes
-    required: true
 
 teal: |
   // Hash verification: sha256(arg 1) == stored hash

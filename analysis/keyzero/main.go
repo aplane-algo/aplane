@@ -21,6 +21,7 @@ var keyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)privatekey`),
 	regexp.MustCompile(`(?i)privkey`),
 	regexp.MustCompile(`(?i)secretkey`),
+	regexp.MustCompile(`(?i)privatematerial`),
 	regexp.MustCompile(`(?i)\.PrivateKey`),
 }
 
@@ -29,6 +30,7 @@ var zeroPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`ZeroBytes`),
 	regexp.MustCompile(`ZeroKey`),
 	regexp.MustCompile(`util\.Zero`),
+	regexp.MustCompile(`\.Zero\(\)`),
 }
 
 // Directories to scan (relative to repo root)
@@ -51,15 +53,18 @@ var skipPatterns = []string{
 // - PrivateKeySize/etc: size constants, not actual key material
 // - Sign (wrapper): delegates to implementation that handles zeroing
 var exemptFunctions = map[string]string{
-	"SignMessage":     "key passed as parameter - caller owns lifecycle via ZeroKey()",
-	"GenerateKeypair": "returns keys to caller - caller responsible for zeroing",
-	"GenerateKey":     "returns keys to caller - caller responsible for zeroing",
-	"LoadKeyMaterial": "returns keys to caller - caller responsible for zeroing via ZeroKey()",
-	"SignWithRawKey":  "key passed as parameter - caller owns lifecycle",
-	"PrivateKeySize":  "returns size constant, not actual key material",
-	"Sign":            "wrapper delegates to implementation with proper zeroing",
-	"splitPrivateKey": "returns slices of caller-owned buffer, no new allocation to zero",
-	"splitPublicKey":  "returns slices of caller-owned buffer, no key material",
+	"SignMessage":            "key passed as parameter - caller owns lifecycle via ZeroKey()",
+	"GenerateKeypair":        "returns keys to caller - caller responsible for zeroing",
+	"GenerateKey":            "returns keys to caller - caller responsible for zeroing",
+	"LoadKeyMaterial":        "returns keys to caller - caller responsible for zeroing via ZeroKey()",
+	"SignWithRawKey":         "key passed as parameter - caller owns lifecycle",
+	"PrivateKeySize":         "returns size constant, not actual key material",
+	"Sign":                   "wrapper delegates to implementation with proper zeroing",
+	"splitPrivateKey":        "returns slices of caller-owned buffer, no new allocation to zero",
+	"splitPublicKey":         "returns slices of caller-owned buffer, no key material",
+	"ValidateKeyPair":        "validates caller-owned key material without retaining it",
+	"validateExactPayload":   "validates caller-owned payload material without retaining it",
+	"validateRegisteredPair": "delegates validation of caller-owned key material",
 }
 
 type finding struct {

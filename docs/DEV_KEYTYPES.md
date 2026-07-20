@@ -28,6 +28,15 @@ provenance, not to reconstruct missing signing metadata. Template provenance
 conflicts or absence may warn in inventory but do not by themselves invalidate
 a current-format key.
 
+Bounded1 is the framework-enforced execution contract used by every bundled
+composed DSA template. Read [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) before
+changing schema-v2 composed templates, transaction-effect classification,
+argument slots, Falcon contract-admin signing, or `signing_flow: bounded1`.
+Admin-capable account files contain the spending key and immutable public
+contract-admin metadata; private admin material exists only in the external
+`.apbounded-admin-key` artifact. Never copy that private key into account
+parameters, signer storage, or caller-supplied runtime arguments.
+
 ## Key Type Source Model
 
 A key type has two separate classifications:
@@ -69,7 +78,11 @@ Terminology:
 
 Templates are generation/catalog definitions. The stored signing metadata
 referenced above is `signing_metadata_version`, `salt_counter`, `base_key_type`
-for DSA LogicSig keys, and optional `signing_args`. Key files lacking
+for DSA LogicSig keys, and optional `signing_args`. Non-bounded LogicSig keys
+use signing-metadata version 1. Bounded keys use version 2 and persist the full
+typed `bounded_authorization` contract, including the static base, derived,
+runtime, and optional admin argument layout; path masks; profile; public admin
+metadata/binding; and maximum signed size. Key files lacking
 `salt_counter`, or whose stored bytecode derives an on-curve LogicSig address,
 are rejected during key scan. Key files lacking `signing_metadata_version` are
 rejected when signing or restore would otherwise depend on missing durable
@@ -162,12 +175,13 @@ default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: `ed25519`, `aplane.falcon1024.v1`,
 `aplane.sentry-ed25519.v1`, and `aplane.sentry-falcon1024.v1` are
 default-enabled, while `aplane.falcon1024-sentry-ed25519.v1`,
-`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`,
-`aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, and
-`aplane.ed25519.v1` are library-visible and not available for generation until
-the current identity enables them from the library. `aplane.ed25519.v1` is the
-Ed25519 LogicSig DSA provider, distinct from the native `ed25519` signing key;
-it also remains the base provider for Ed25519-backed composed templates such as
+`aplane.falcon1024-sentry-falcon1024.v1`,
+`aplane.corridor.v1`,
+`aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, and `aplane.ed25519.v1`
+are library-visible and not available for generation until the current
+identity enables them from the library. `aplane.ed25519.v1` is the Ed25519
+LogicSig DSA provider, distinct from the native `ed25519` signing key; it also
+remains the base provider for Ed25519-backed composed templates such as
 `aplane.ed25519-allowlist.v1`. See `docs/ARCH_KEYTYPE_AXES.md` for the exact
 split between native `ed25519`, the `aplane.ed25519` LogicSig routing family,
 and the concrete `aplane.ed25519.v1` key type.
@@ -218,11 +232,12 @@ Bundled YAML templates, if installed:
 | `aplane.timed-allowlist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.timed-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.timed-allowlist.v1.{json,template}` |
 | `aplane.allowlist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.allowlist.v1.{json,template}` |
 | `aplane.htlc.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.htlc.v1.yaml` | `identities/<identity>/keytypes/aplane.htlc.v1.{json,template}` |
-| `aplane.ed25519-allowlist.v1` | Composed DSA template | `apstore template import library/templates/aplane.ed25519-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.ed25519-allowlist.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v1` | Composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
-| `aplane.falcon1024-allowlist.v2` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
-| `aplane.falcon1024-hashlock.v1` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-hashlock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-hashlock.v1.{json,template}` |
-| `aplane.falcon1024-timelock.v1` | Composed DSA template | `apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
+| `aplane.ed25519-allowlist.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.ed25519-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.ed25519-allowlist.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
+| `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
+| `aplane.falcon1024-admin-allowlist.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-admin-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-admin-allowlist.v1.{json,template}` |
+| `aplane.falcon1024-hashlock.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-hashlock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-hashlock.v1.{json,template}` |
+| `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
 
 These template files are install sources, not product built-ins. They do not
 appear in `apshell keytypes` or the `apadmin` generate view until installed into

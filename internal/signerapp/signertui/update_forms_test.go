@@ -245,11 +245,11 @@ func TestHandleParamInputLongBytesUsesAtomicPaste(t *testing.T) {
 	const falconPublicKeyHexLength = 1793 * 2
 	input := strings.Repeat("A", falconPublicKeyHexLength-20) + "0123456789ABCDEFabcd"
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.governed-falcon.v1",
-		DisplayName: "Governed Falcon",
+		KeyType:     "aplane.falcon1024-admin-allowlist.v1",
+		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
-			Name:      "governance_public_key",
-			Label:     "Governance public key",
+			Name:      "bounded_admin_public_key",
+			Label:     "Contract Admin Public Key",
 			Type:      "bytes",
 			MaxLength: falconPublicKeyHexLength,
 		}},
@@ -259,29 +259,29 @@ func TestHandleParamInputLongBytesUsesAtomicPaste(t *testing.T) {
 		forms: formsState{
 			generateKeyType:       0,
 			generateFocus:         0,
-			genericLSigParams:     map[string]string{"governance_public_key": ""},
-			genericLSigParamModes: map[string]int{"governance_public_key": 0},
+			genericLSigParams:     map[string]string{"bounded_admin_public_key": ""},
+			genericLSigParamModes: map[string]int{"bounded_admin_public_key": 0},
 		},
 	}
 
 	got := applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(input), Paste: true})
-	if got.forms.genericLSigParams["governance_public_key"] != "" {
+	if got.forms.genericLSigParams["bounded_admin_public_key"] != "" {
 		t.Fatal("paste populated the field before paste capture was activated")
 	}
 
 	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyEnter})
-	if got.forms.genericLSigPasteParam != "governance_public_key" {
+	if got.forms.genericLSigPasteParam != "bounded_admin_public_key" {
 		t.Fatalf("paste capture parameter = %q", got.forms.genericLSigPasteParam)
 	}
 
 	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("typed text")})
-	if got.forms.genericLSigParams["governance_public_key"] != "" {
+	if got.forms.genericLSigParams["bounded_admin_public_key"] != "" {
 		t.Fatal("ordinary typing populated a paste-only parameter")
 	}
 
 	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(input), Paste: true})
 	want := strings.ToLower(input)
-	if got.forms.genericLSigParams["governance_public_key"] != want {
+	if got.forms.genericLSigParams["bounded_admin_public_key"] != want {
 		t.Fatal("atomic paste did not preserve and normalize the complete key")
 	}
 	if got.forms.genericLSigPasteParam != "" {
@@ -289,17 +289,17 @@ func TestHandleParamInputLongBytesUsesAtomicPaste(t *testing.T) {
 	}
 
 	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyBackspace})
-	if got.forms.genericLSigParams["governance_public_key"] != want {
+	if got.forms.genericLSigParams["bounded_admin_public_key"] != want {
 		t.Fatal("backspace modified a read-only pasted key")
 	}
 	got = applyParamKey(t, got, tea.KeyMsg{Type: tea.KeyDelete})
-	if got.forms.genericLSigParams["governance_public_key"] != "" {
+	if got.forms.genericLSigParams["bounded_admin_public_key"] != "" {
 		t.Fatal("delete did not clear a pasted key")
 	}
 }
 
 func TestNormalizePastedBytes(t *testing.T) {
-	param := lsigprovider.ParameterDef{Label: "Governance public key", Type: "bytes", MaxLength: 8}
+	param := lsigprovider.ParameterDef{Label: "Contract Admin Public Key", Type: "bytes", MaxLength: 8}
 	got, err := normalizePastedParam(" ABcd\n1234 ", param)
 	if err != nil {
 		t.Fatalf("normalizePastedParam returned error: %v", err)
@@ -544,6 +544,41 @@ func TestHandleParamModalKeys_AddressListSpaceAndEnterStayInField(t *testing.T) 
 	}
 	if got, want := updated.forms.genericLSigParams["recipients"], "alice\nbob\n"; got != want {
 		t.Fatalf("recipients after enter = %q, want %q", got, want)
+	}
+}
+
+func TestHandleParamModalKeys_ControlledPasteUsesRawRunes(t *testing.T) {
+	defer setServerKeyTypes(nil)
+	setServerKeyTypes([]protocol.KeyTypeInfo{{
+		KeyType:     "aplane.falcon1024-admin-allowlist.v1",
+		DisplayName: "Falcon Bounded Allowlist",
+		CreationParams: []protocol.TemplateParamInfo{{
+			Name:      "bounded_admin_public_key",
+			Type:      "bytes",
+			MaxLength: 1793 * 2,
+		}},
+	}})
+
+	m := Model{forms: formsState{
+		generateKeyType: 0,
+		generateFocus:   0,
+		genericLSigParams: map[string]string{
+			"bounded_admin_public_key": "",
+		},
+		genericLSigParamModes: map[string]int{
+			"bounded_admin_public_key": 0,
+		},
+	}}
+	publicKeyHex := "973e3df2ce6615e2064578020e014e7e1ad6bcad2a0166a622d829d0af7006e7"
+	updated := applyParamKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	updated = applyParamKey(t, updated, tea.KeyMsg{
+		Type:  tea.KeyRunes,
+		Runes: []rune(publicKeyHex),
+		Paste: true,
+	})
+
+	if got := updated.forms.genericLSigParams["bounded_admin_public_key"]; got != publicKeyHex {
+		t.Fatalf("bounded_admin_public_key after paste = %q, want %q", got, publicKeyHex)
 	}
 }
 
