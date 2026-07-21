@@ -107,7 +107,7 @@ func writeSpendEffectDecision(b *strings.Builder, allowed bool) {
 }
 
 func (c *ComposedDSA) renderAdminKeyAuthorization(publicKey []byte, params map[string]string, profileEncoding []byte, adminArgIndex int) (string, error) {
-	adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
+	adminPublicKey, err := c.validatedAdminPublicKey(publicKey, params)
 	if err != nil {
 		return "", err
 	}

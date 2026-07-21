@@ -17,7 +17,7 @@ func ConvertSigningPolicyToSentry(stored *StoredConfig) (*StoredConfig, error) {
 		return nil, err
 	}
 	if len(stored.KeyOverrides) > 0 {
-		return nil, fmt.Errorf("key_overrides cannot be converted automatically; signing overrides are keyed by account, sentry overrides are keyed by Sentry Key ID")
+		return nil, fmt.Errorf("key_overrides cannot be converted automatically; signing overrides are keyed by account, sentry overrides are keyed by Witness Key ID")
 	}
 
 	effective := stored.Clone()

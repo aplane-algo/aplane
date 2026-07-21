@@ -4,8 +4,9 @@
 package adminserver
 
 import (
-	"github.com/aplane-algo/aplane/internal/adminproto"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/adminproto"
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
@@ -14,7 +15,7 @@ func TestProtocolKeyDetailsMessageIncludesPublicKey(t *testing.T) {
 	msg := ProtocolKeyDetailsMessage("details-1", adminproto.GetKeyDetailsResult{
 		Success:      true,
 		Address:      "ADDR",
-		KeyType:      "aplane.sentry-falcon1024.v1",
+		KeyType:      "aplane.witness-falcon1024.v1",
 		PublicKeyHex: "aabbccdd",
 	})
 

@@ -5,6 +5,7 @@ package keymgmt
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/algorithm"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/keygen"
@@ -23,6 +25,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 // GetValidKeyTypes returns all valid key types that can be generated.
@@ -186,6 +189,9 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 	if resolveErr != nil {
 		return nil, fmt.Errorf("%w: sentry reference resolution failed: %v", keygen.ErrInvalidParams, resolveErr)
 	}
+	if err := validateKnownWitnessRoleExclusivity(paths, identityID, keyType, params, masterKey); err != nil {
+		return nil, fmt.Errorf("%w: %v", keygen.ErrInvalidParams, err)
+	}
 
 	generator, err := keygen.GetGenerator(keyType)
 	if err != nil {
@@ -204,12 +210,76 @@ func GenerateKeyWithActivatedContext(ctx context.Context, paths storepaths.Paths
 		Mnemonic:     genResult.Mnemonic,
 		KeyFile:      genResult.KeyFiles.PrivateFile,
 	}
-	if keytypes.IsSentryComponentKeyType(genResult.KeyType) {
+	if witness.IsKeyType(genResult.KeyType) {
 		spending := false
-		result.IsComponentKey = true
+		result.IsWitnessKey = true
 		result.IsSpendingAccount = &spending
 	}
 	return result, nil
+}
+
+func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, identityID, keyType string, params map[string]string, masterKey []byte) error {
+	if adminPublicKeyHex := strings.ToLower(strings.TrimSpace(params[boundedmeta.AdminPublicKeyParameter])); adminPublicKeyHex != "" {
+		if _, err := boundedmeta.ParseAdminPublicKey(adminPublicKeyHex); err != nil {
+			return nil // The provider owns the detailed parameter error.
+		}
+		references, err := sentryrefs.List(paths, identityID)
+		if err != nil {
+			return fmt.Errorf("check sentry witness references: %w", err)
+		}
+		scanned, err := keys.ScanKeysDirectoryWithMasterKey(paths, identityID, masterKey)
+		if err != nil {
+			return fmt.Errorf("check local sentry witness keys: %w", err)
+		}
+		if err := rejectAdminWitnessKnownAsSentry(adminPublicKeyHex, references, scanned); err != nil {
+			return err
+		}
+	}
+
+	if !keytypes.IsGuardedAccountKeyType(keyType) {
+		return nil
+	}
+	sentryPublicKeyHex := strings.ToLower(strings.TrimSpace(params[keytypes.ParameterSentryPublicKey]))
+	if sentryPublicKeyHex == "" {
+		return nil // The guarded provider reports the missing required parameter.
+	}
+	publicKey, err := hex.DecodeString(sentryPublicKeyHex)
+	if err != nil {
+		return nil // The guarded provider owns the detailed parameter error.
+	}
+	sentryWitnessID, err := witness.ID(witness.Falcon1024V1, publicKey)
+	if err != nil {
+		return nil // The guarded provider owns the detailed parameter error.
+	}
+	scanned, err := keys.ScanKeysDirectoryWithMasterKey(paths, identityID, masterKey)
+	if err != nil {
+		return fmt.Errorf("check existing contract-admin enrollments: %w", err)
+	}
+	return rejectSentryWitnessKnownAsAdmin(sentryPublicKeyHex, sentryWitnessID, scanned)
+}
+
+func rejectAdminWitnessKnownAsSentry(adminPublicKeyHex string, references []sentryrefs.Record, scanned map[string]keys.KeyScanInfo) error {
+	for _, reference := range references {
+		if strings.EqualFold(reference.PublicKeyHex, adminPublicKeyHex) {
+			return fmt.Errorf("witness key %s is already known in the sentry role and cannot be enrolled as a contract admin", reference.ComponentKey)
+		}
+	}
+	for witnessKeyID, info := range scanned {
+		if witness.IsKeyType(info.KeyType) && strings.EqualFold(info.PublicKeyHex, adminPublicKeyHex) {
+			return fmt.Errorf("witness key %s is already stored in sentry custody and cannot be enrolled as a contract admin", witnessKeyID)
+		}
+	}
+	return nil
+}
+
+func rejectSentryWitnessKnownAsAdmin(sentryPublicKeyHex, sentryWitnessID string, scanned map[string]keys.KeyScanInfo) error {
+	for _, info := range scanned {
+		metadata := info.BoundedAuthorization
+		if metadata != nil && strings.EqualFold(metadata.AdminPublicKeyHex, sentryPublicKeyHex) {
+			return fmt.Errorf("witness key %s is already enrolled as a contract admin and cannot be enrolled as a sentry", sentryWitnessID)
+		}
+	}
+	return nil
 }
 
 // ImportKey imports a key from a mnemonic phrase.

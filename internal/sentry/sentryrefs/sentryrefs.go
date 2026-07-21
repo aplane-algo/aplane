@@ -20,10 +20,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const (
-	ExportSchema          = "aplane.sentry-public-key.v1"
+	ExportSchema          = witness.PublicReferenceSchema
 	RecordSchema          = "aplane.sentry-public-key-ref.v1"
 	SourceManual          = "manual"
 	SourceClientDiscovery = "client_discovery"
@@ -35,15 +36,7 @@ const (
 
 var nameShape = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
 
-type ExportEnvelope struct {
-	Schema            string `json:"schema"`
-	ComponentKey      string `json:"component_key"`
-	KeyType           string `json:"key_type"`
-	PublicKeyEncoding string `json:"public_key_encoding"`
-	PublicKeyHex      string `json:"public_key_hex"`
-	PublicKeySize     int    `json:"public_key_size"`
-	PublicKeySHA256   string `json:"public_key_sha256"`
-}
+type ExportEnvelope = witness.PublicReference
 
 type Record struct {
 	Schema            string `json:"schema"`
@@ -94,7 +87,7 @@ func NormalizeName(name string) (string, error) {
 }
 
 func SyncedReferenceName(endpointAlias, componentKey string) (string, error) {
-	componentKey, err := keytypes.NormalizeComponentKeySelector(componentKey)
+	componentKey, err := witness.NormalizeID(componentKey)
 	if err != nil {
 		return "", err
 	}
@@ -103,27 +96,11 @@ func SyncedReferenceName(endpointAlias, componentKey string) (string, error) {
 }
 
 func NewExportEnvelope(componentKey, keyType, publicKeyHex string) (*ExportEnvelope, error) {
-	componentKey, err := keytypes.NormalizeComponentKeySelector(componentKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid Sentry Key ID: %w", err)
-	}
-	if !keytypes.IsSentryComponentKeyType(keyType) {
-		return nil, fmt.Errorf("key type %q is not a sentry key type", keyType)
-	}
-	publicKeyHex = strings.ToLower(strings.TrimSpace(publicKeyHex))
-	publicKeyBytes, publicKeySHA256, err := validatePublicKey(keyType, componentKey, publicKeyHex)
+	reference, err := witness.NewPublicReference(keyType, componentKey, strings.ToLower(strings.TrimSpace(publicKeyHex)))
 	if err != nil {
 		return nil, err
 	}
-	return &ExportEnvelope{
-		Schema:            ExportSchema,
-		ComponentKey:      componentKey,
-		KeyType:           keyType,
-		PublicKeyEncoding: "hex",
-		PublicKeyHex:      publicKeyHex,
-		PublicKeySize:     len(publicKeyBytes),
-		PublicKeySHA256:   publicKeySHA256,
-	}, nil
+	return &reference, nil
 }
 
 func Import(paths storepaths.Paths, identityID, name string, data []byte) (*Record, error) {
@@ -219,26 +196,23 @@ func ParseImport(name string, data []byte) (*Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	var env ExportEnvelope
-	if err := json.Unmarshal(data, &env); err != nil {
+	env, err := witness.ParsePublicReference(data)
+	if err != nil {
 		return nil, fmt.Errorf("failed to parse sentry public-key envelope: %w", err)
 	}
-	if env.Schema != ExportSchema {
-		return nil, fmt.Errorf("unsupported sentry public-key envelope schema %q", env.Schema)
-	}
-	env, err = normalizeExportEnvelope(env)
+	publicKeyBytes, publicKeySHA256, err := validatePublicKey(env.KeyType, env.WitnessKeyID, env.PublicKeyHex)
 	if err != nil {
 		return nil, err
 	}
 	return &Record{
 		Schema:            RecordSchema,
 		Name:              name,
-		ComponentKey:      env.ComponentKey,
+		ComponentKey:      env.WitnessKeyID,
 		KeyType:           env.KeyType,
-		PublicKeyEncoding: env.PublicKeyEncoding,
+		PublicKeyEncoding: "hex",
 		PublicKeyHex:      env.PublicKeyHex,
-		PublicKeySize:     env.PublicKeySize,
-		PublicKeySHA256:   env.PublicKeySHA256,
+		PublicKeySize:     len(publicKeyBytes),
+		PublicKeySHA256:   publicKeySHA256,
 		Source:            SourceManual,
 	}, nil
 }
@@ -343,7 +317,7 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("sentry reference or Sentry Key ID %q not found", strings.TrimSpace(selector))
+		return nil, fmt.Errorf("sentry reference or Witness Key ID %q not found", strings.TrimSpace(selector))
 	}
 	wantKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 	if !ok {
@@ -366,7 +340,7 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 
 func resolveByNameOrComponentKey(paths storepaths.Paths, identityID, value string) (Record, bool, error) {
 	value = strings.TrimSpace(value)
-	if componentKey, err := keytypes.NormalizeComponentKeySelector(value); err == nil {
+	if componentKey, err := witness.NormalizeID(value); err == nil {
 		records, err := List(paths, identityID)
 		if err != nil {
 			return Record{}, false, err
@@ -379,23 +353,6 @@ func resolveByNameOrComponentKey(paths storepaths.Paths, identityID, value strin
 		return Record{}, false, nil
 	}
 	return Get(paths, identityID, value)
-}
-
-func normalizeExportEnvelope(env ExportEnvelope) (ExportEnvelope, error) {
-	if env.PublicKeyEncoding != "" && env.PublicKeyEncoding != "hex" {
-		return ExportEnvelope{}, fmt.Errorf("unsupported public_key_encoding %q", env.PublicKeyEncoding)
-	}
-	normalized, err := NewExportEnvelope(env.ComponentKey, env.KeyType, env.PublicKeyHex)
-	if err != nil {
-		return ExportEnvelope{}, err
-	}
-	if env.PublicKeySize != 0 && env.PublicKeySize != normalized.PublicKeySize {
-		return ExportEnvelope{}, fmt.Errorf("public_key_size %d does not match decoded public key size %d", env.PublicKeySize, normalized.PublicKeySize)
-	}
-	if env.PublicKeySHA256 != "" && strings.ToLower(env.PublicKeySHA256) != normalized.PublicKeySHA256 {
-		return ExportEnvelope{}, fmt.Errorf("public_key_sha256 does not match public_key_hex")
-	}
-	return *normalized, nil
 }
 
 func parseRecord(data []byte, expectedName string) (Record, error) {
@@ -421,17 +378,22 @@ func normalizeRecord(rec Record) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	env, err := normalizeExportEnvelope(ExportEnvelope{
-		Schema:            ExportSchema,
-		ComponentKey:      rec.ComponentKey,
-		KeyType:           rec.KeyType,
-		PublicKeyEncoding: rec.PublicKeyEncoding,
-		PublicKeyHex:      rec.PublicKeyHex,
-		PublicKeySize:     rec.PublicKeySize,
-		PublicKeySHA256:   rec.PublicKeySHA256,
-	})
+	env, err := witness.NewPublicReference(rec.KeyType, rec.ComponentKey, rec.PublicKeyHex)
 	if err != nil {
 		return Record{}, err
+	}
+	publicKeyBytes, publicKeySHA256, err := validatePublicKey(env.KeyType, env.WitnessKeyID, env.PublicKeyHex)
+	if err != nil {
+		return Record{}, err
+	}
+	if rec.PublicKeyEncoding != "" && rec.PublicKeyEncoding != "hex" {
+		return Record{}, fmt.Errorf("unsupported public_key_encoding %q", rec.PublicKeyEncoding)
+	}
+	if rec.PublicKeySize != 0 && rec.PublicKeySize != len(publicKeyBytes) {
+		return Record{}, fmt.Errorf("public_key_size %d does not match decoded public key size %d", rec.PublicKeySize, len(publicKeyBytes))
+	}
+	if rec.PublicKeySHA256 != "" && strings.ToLower(rec.PublicKeySHA256) != publicKeySHA256 {
+		return Record{}, fmt.Errorf("public_key_sha256 does not match public_key_hex")
 	}
 	source := strings.TrimSpace(rec.Source)
 	if source == "" {
@@ -452,12 +414,12 @@ func normalizeRecord(rec Record) (Record, error) {
 	return Record{
 		Schema:            RecordSchema,
 		Name:              name,
-		ComponentKey:      env.ComponentKey,
+		ComponentKey:      env.WitnessKeyID,
 		KeyType:           env.KeyType,
-		PublicKeyEncoding: env.PublicKeyEncoding,
+		PublicKeyEncoding: "hex",
 		PublicKeyHex:      env.PublicKeyHex,
-		PublicKeySize:     env.PublicKeySize,
-		PublicKeySHA256:   env.PublicKeySHA256,
+		PublicKeySize:     len(publicKeyBytes),
+		PublicKeySHA256:   publicKeySHA256,
 		Source:            source,
 		EndpointAlias:     strings.TrimSpace(rec.EndpointAlias),
 		LastSeenAt:        strings.TrimSpace(rec.LastSeenAt),
@@ -471,9 +433,9 @@ func recordFromDiscovered(item DiscoveredRecord, syncedAt string) (Record, error
 	if endpointAlias == "" {
 		return Record{}, fmt.Errorf("endpoint alias is required for discovered sentry")
 	}
-	componentKey, err := keytypes.NormalizeComponentKeySelector(item.ComponentKey)
+	componentKey, err := witness.NormalizeID(item.ComponentKey)
 	if err != nil {
-		return Record{}, fmt.Errorf("invalid discovered Sentry Key ID: %w", err)
+		return Record{}, fmt.Errorf("invalid discovered Witness Key ID: %w", err)
 	}
 	name, err := SyncedReferenceName(endpointAlias, componentKey)
 	if err != nil {
@@ -486,12 +448,10 @@ func recordFromDiscovered(item DiscoveredRecord, syncedAt string) (Record, error
 	return normalizeRecord(Record{
 		Schema:            RecordSchema,
 		Name:              name,
-		ComponentKey:      env.ComponentKey,
+		ComponentKey:      env.WitnessKeyID,
 		KeyType:           env.KeyType,
-		PublicKeyEncoding: env.PublicKeyEncoding,
+		PublicKeyEncoding: "hex",
 		PublicKeyHex:      env.PublicKeyHex,
-		PublicKeySize:     env.PublicKeySize,
-		PublicKeySHA256:   env.PublicKeySHA256,
 		Source:            SourceClientDiscovery,
 		EndpointAlias:     endpointAlias,
 		LastSeenAt:        item.LastSeenAt,
@@ -542,19 +502,19 @@ func validatePublicKey(keyType, componentKey, publicKeyHex string) ([]byte, stri
 	if len(publicKeyBytes) == 0 {
 		return nil, "", fmt.Errorf("public key is required")
 	}
-	wantSize, ok := keytypes.ComponentPublicKeySize(keyType)
+	wantSize, ok := witness.PublicKeySize(keyType)
 	if !ok {
 		return nil, "", fmt.Errorf("key type %q is not a sentry key type", keyType)
 	}
 	if len(publicKeyBytes) != wantSize {
 		return nil, "", fmt.Errorf("component public key length %d invalid (expected %d bytes)", len(publicKeyBytes), wantSize)
 	}
-	derivedSelector, err := keytypes.ComponentKeySelector(keyType, publicKeyBytes)
+	derivedSelector, err := witness.ID(keyType, publicKeyBytes)
 	if err != nil {
 		return nil, "", err
 	}
 	if derivedSelector != componentKey {
-		return nil, "", fmt.Errorf("sentry key ID %q does not match public key-derived Sentry Key ID %q", componentKey, derivedSelector)
+		return nil, "", fmt.Errorf("witness key ID %q does not match public key-derived Witness Key ID %q", componentKey, derivedSelector)
 	}
 	sum := sha256.Sum256(publicKeyBytes)
 	return publicKeyBytes, hex.EncodeToString(sum[:]), nil

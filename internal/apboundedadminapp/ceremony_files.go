@@ -92,7 +92,7 @@ func writeCeremony(path, extension string, value any, stdout io.Writer) error {
 	if err != nil || !info.IsDir() {
 		return fmt.Errorf("ceremony output directory must be an existing directory")
 	}
-	temp, err := os.CreateTemp(directory, ".apbounded-admin-key-ceremony-")
+	temp, err := os.CreateTemp(directory, ".witness-key-ceremony-")
 	if err != nil {
 		return err
 	}

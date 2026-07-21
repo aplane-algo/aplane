@@ -888,7 +888,7 @@ configure_python_sdk_client_data() {
 
 run_python_sdk_guarded_validate() {
     [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     local py_file
     py_file="$(mktemp)"
@@ -981,7 +981,7 @@ PY
 run_typescript_sdk_guarded_validate() {
     [ "$RELEASE_INSTALL" = "1" ] || return 0
     [ -n "$GUARDED_ADDRESS" ] || die "guarded address is not set"
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     local js_file
     js_file="$(mktemp)"
@@ -1071,7 +1071,7 @@ JS
 }
 
 generate_sentry_component_key() {
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-sentry\ngenerate aplane.sentry-falcon1024.v1\n' > /tmp/generate-sentry.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'disconnect\nconnect local-sentry\ngenerate aplane.witness-falcon1024.v1\n' > /tmp/generate-sentry.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-sentry.script 2>&1")"; then
@@ -1080,11 +1080,11 @@ generate_sentry_component_key() {
     fi
     printf '%s\n' "$out"
     SENTRY_COMPONENT_KEY="$(printf '%s\n' "$out" | awk '/Generated .* key:/ { print $NF; exit }')"
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "could not parse generated Sentry Key ID"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "could not parse generated Witness Key ID"
 }
 
 sync_sentry_key_to_signer() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'endpoints sync-sentries --yes\nendpoints sentries\n' > /tmp/sync-sentry.script"
     local out
@@ -1097,7 +1097,7 @@ sync_sentry_key_to_signer() {
     printf '%s\n' "$out" | grep -q 'Synced 1 endpoint-discovered sentry reference(s) to signer' \
         || die "sentry sync output did not include signer sync success marker"
     printf '%s\n' "$out" | grep -q "$SENTRY_COMPONENT_KEY" \
-        || die "sentry sync output did not include generated Sentry Key ID"
+        || die "sentry sync output did not include generated Witness Key ID"
 }
 
 enable_guarded_keytype() {
@@ -1121,7 +1121,7 @@ enable_corridor_keytype() {
 }
 
 generate_guarded_key() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-sentry1024.v1 sentry=%s\n' '$SENTRY_COMPONENT_KEY' > /tmp/generate-guarded.script"
     local out
@@ -1136,7 +1136,7 @@ generate_guarded_key() {
 }
 
 generate_corridor_key() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
     CORRIDOR_ALLOWED_ADDRESS="$(localnet_account_address 1)"
     CORRIDOR_BLOCKED_ADDRESS="$(localnet_account_address 2)"
     [ -n "$CORRIDOR_ALLOWED_ADDRESS" ] || die "could not find corridor allowed LocalNet account"
@@ -1309,7 +1309,7 @@ validate_corridor_blocked_send_fails() {
 }
 
 delete_sentry_component_key() {
-    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
+    [ -n "$SENTRY_COMPONENT_KEY" ] || die "Witness Key ID is not set"
 
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" "set -e
@@ -1344,7 +1344,7 @@ validate_guarded_self_send_after_sentry_delete_fails() {
     fi
     printf '%s\n' "$out" | grep -q 'Failed:' \
         || die "guarded validation did not report a failed transaction after sentry key deletion"
-    printf '%s\n' "$out" | grep -q 'did not advertise Sentry Key ID' \
+    printf '%s\n' "$out" | grep -q 'did not advertise Witness Key ID' \
         || die "guarded validation failure did not report missing sentry key"
 }
 

@@ -32,7 +32,7 @@ func (s Service) AdminGenerate(ctx context.Context, ir *identity.Runtime, req si
 		Address:           result.Address,
 		PublicKeyHex:      result.PublicKeyHex,
 		KeyType:           result.KeyType,
-		IsComponentKey:    result.IsComponentKey,
+		IsWitnessKey:      result.IsWitnessKey,
 		IsSpendingAccount: result.IsSpendingAccount,
 		Parameters:        result.Parameters,
 	}, nil

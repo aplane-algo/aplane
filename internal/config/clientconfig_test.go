@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestLoadConfigSignerStatusPollInterval(t *testing.T) {
@@ -251,7 +251,7 @@ func captureStdout(t *testing.T, fn func()) string {
 func TestLoadConfigEndpointRegistryDerivesSentryRoutesFromPublishedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKey := sentryEndpointTestHex("d6")
-	componentKey := sentryEndpointConfigTestComponentKey(t, keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentKey := sentryEndpointConfigTestComponentKey(t, witness.Falcon1024V1, publicKey)
 	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
 network: testnet
 signer_port: 12270
@@ -274,7 +274,7 @@ endpoints:
         component_key: %s
         key_type: %s
         last_seen_at: "2026-06-04T00:00:00Z"
-`, publicKey, componentKey, keytypes.SentryComponentFalcon1024V1)), 0o600); err != nil {
+`, publicKey, componentKey, witness.Falcon1024V1)), 0o600); err != nil {
 		t.Fatalf("write endpoints: %v", err)
 	}
 
@@ -290,7 +290,7 @@ endpoints:
 		t.Fatalf("derived route = %#v, want sentry-local ssh endpoint", route)
 	}
 	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries[publicKey]
-	if published.ComponentKey != componentKey || published.KeyType != keytypes.SentryComponentFalcon1024V1 {
+	if published.ComponentKey != componentKey || published.KeyType != witness.Falcon1024V1 {
 		t.Fatalf("published sentry = %#v, want component/key type", published)
 	}
 }
@@ -442,7 +442,7 @@ func decodeClientEndpointRegistryKnownFields(data []byte) error {
 }
 
 func sentryEndpointTestHex(prefix string) string {
-	return sentryEndpointTestHexN(prefix, keytypes.Falcon1024PublicKeySize)
+	return sentryEndpointTestHexN(prefix, witness.Falcon1024PublicKeySize)
 }
 
 func sentryEndpointTestHexN(prefix string, size int) string {
@@ -455,9 +455,9 @@ func sentryEndpointConfigTestComponentKey(t *testing.T, keyType, publicKeyHex st
 	if err != nil {
 		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
+	componentKey, err := witness.ID(keyType, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	return componentKey
 }

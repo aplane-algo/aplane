@@ -9,8 +9,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/mnemonic/bip39impl"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/witness"
 	dsafamilyreg "github.com/aplane-algo/aplane/lsig/dsafamily/signerreg"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -42,10 +42,10 @@ func RegisterSigner() {
 				Mnemonic: bip39impl.NewHandler(family.Name, family.MnemonicWordCount),
 			}},
 			Extra: []func(){
-				keygen.RegisterSentryComponents,
+				keygen.RegisterWitnessKeygen,
 				func() {
 					keytypecatalog.Register(keytypecatalog.Entry{
-						KeyType:      keytypes.SentryComponentFalcon1024V1,
+						KeyType:      witness.Falcon1024V1,
 						Family:       "sentry-falcon1024",
 						Availability: keytypecatalog.AvailabilityDefaultEnabled,
 					})

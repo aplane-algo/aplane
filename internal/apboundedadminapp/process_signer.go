@@ -30,14 +30,14 @@ func (s *processSigner) Sign(ctx context.Context, artifactPath string, request b
 	}
 	executable, err := s.executable()
 	if err != nil {
-		return boundedprotocol.Response{}, fmt.Errorf("locate apbounded-admin executable: %w", err)
+		return boundedprotocol.Response{}, fmt.Errorf("locate aprekey executable: %w", err)
 	}
 	info, err := os.Lstat(executable)
 	if err != nil {
-		return boundedprotocol.Response{}, fmt.Errorf("inspect apbounded-admin executable: %w", err)
+		return boundedprotocol.Response{}, fmt.Errorf("inspect aprekey executable: %w", err)
 	}
 	if !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
-		return boundedprotocol.Response{}, fmt.Errorf("apbounded-admin executable is not a regular executable file: %s", executable)
+		return boundedprotocol.Response{}, fmt.Errorf("aprekey executable is not a regular executable file: %s", executable)
 	}
 	requestJSON, err := json.Marshal(request)
 	if err != nil {
@@ -51,15 +51,15 @@ func (s *processSigner) Sign(ctx context.Context, artifactPath string, request b
 	cmd.Env = helperEnvironment()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return boundedprotocol.Response{}, fmt.Errorf("open apbounded-admin response pipe: %w", err)
+		return boundedprotocol.Response{}, fmt.Errorf("open aprekey response pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return boundedprotocol.Response{}, fmt.Errorf("start apbounded-admin signing child: %w", err)
+		return boundedprotocol.Response{}, fmt.Errorf("start aprekey signing child: %w", err)
 	}
 	response, decodeErr := boundedprotocol.DecodeResponse(io.LimitReader(stdout, boundedprotocol.MaxResponseBytes+1))
 	waitErr := cmd.Wait()
 	if waitErr != nil {
-		return boundedprotocol.Response{}, fmt.Errorf("apbounded-admin signing child failed: %w", waitErr)
+		return boundedprotocol.Response{}, fmt.Errorf("aprekey signing child failed: %w", waitErr)
 	}
 	if decodeErr != nil {
 		return boundedprotocol.Response{}, decodeErr

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Command apbounded-admin manages externally held Falcon contract-admin keys.
+// Command aprekey manages externally held Falcon contract-admin keys.
 package main
 
 import (
@@ -19,11 +19,11 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/apboundedadminapp"
-	"github.com/aplane-algo/aplane/internal/boundedadmin/artifact"
 	boundedauthorization "github.com/aplane-algo/aplane/internal/boundedadmin/authorization"
 	"github.com/aplane-algo/aplane/internal/boundedadmin/helpersign"
 	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/witness/artifact"
 	"golang.org/x/term"
 )
 
@@ -153,7 +153,7 @@ func (app application) rekey(args []string, unrekey bool) error {
 		return &usageError{err: err}
 	}
 	if keyPath == "" {
-		return &usageError{err: fmt.Errorf("%s requires --key <artifact.apbounded-admin-key>", command)}
+		return &usageError{err: fmt.Errorf("%s requires --key <artifact.wit>", command)}
 	}
 	positional := flags.Args()
 	options := apboundedadminapp.Options{
@@ -171,12 +171,12 @@ func (app application) rekey(args []string, unrekey bool) error {
 	})
 	if unrekey {
 		if len(positional) != 1 {
-			return &usageError{err: fmt.Errorf("usage: apbounded-admin unrekey --key <key.apbounded-admin-key> [options] <account>")}
+			return &usageError{err: fmt.Errorf("usage: aprekey unrekey --key <key.wit> [options] <account>")}
 		}
 		options.Account = positional[0]
 	} else {
 		if len(positional) != 3 || !strings.EqualFold(positional[1], "to") {
-			return &usageError{err: fmt.Errorf("usage: apbounded-admin rekey --key <key.apbounded-admin-key> [options] <account> to <target>")}
+			return &usageError{err: fmt.Errorf("usage: aprekey rekey --key <key.wit> [options] <account> to <target>")}
 		}
 		options.Account = positional[0]
 		options.Target = positional[2]
@@ -310,7 +310,7 @@ func (app application) sign(args []string) error {
 		return &usageError{err: err}
 	}
 	if flags.NArg() != 0 || *keyPath == "" {
-		return &usageError{err: fmt.Errorf("sign requires --key <artifact.apbounded-admin-key>")}
+		return &usageError{err: fmt.Errorf("sign requires --key <artifact.wit>")}
 	}
 
 	request, err := apboundedadminapp.ReadRequest(*requestPath, app.input())
@@ -330,7 +330,7 @@ func (app application) sign(args []string) error {
 		return err
 	}
 	metadata := request.Payload.Partial.Authorization
-	if reference.ContractAdminKeyID != metadata.ContractAdminKeyID || reference.PublicKeyHex != metadata.PublicKeyHex {
+	if reference.WitnessKeyID != metadata.ContractAdminKeyID || reference.PublicKeyHex != metadata.PublicKeyHex {
 		return fmt.Errorf("bounded-admin key does not match bounded authorization account")
 	}
 	txn := validated.Group.Entries[request.Payload.Partial.TargetIndex].Txn
@@ -407,12 +407,12 @@ func (app application) prepare(args []string, unrekey bool) error {
 	})
 	if unrekey {
 		if len(positional) != 1 {
-			return &usageError{err: fmt.Errorf("usage: apbounded-admin prepare-unrekey --out <request.apbounded-admin-request> [options] <account>")}
+			return &usageError{err: fmt.Errorf("usage: aprekey prepare-unrekey --out <request.apbounded-admin-request> [options] <account>")}
 		}
 		options.Account = positional[0]
 	} else {
 		if len(positional) != 3 || !strings.EqualFold(positional[1], "to") {
-			return &usageError{err: fmt.Errorf("usage: apbounded-admin prepare-rekey --out <request.apbounded-admin-request> [options] <account> to <target>")}
+			return &usageError{err: fmt.Errorf("usage: aprekey prepare-rekey --out <request.apbounded-admin-request> [options] <account> to <target>")}
 		}
 		options.Account, options.Target = positional[0], positional[2]
 	}
@@ -451,7 +451,7 @@ func (app application) complete(args []string) error {
 	}
 	positional := flags.Args()
 	if len(positional) != 3 || !strings.EqualFold(positional[1], "with") {
-		return &usageError{err: fmt.Errorf("usage: apbounded-admin complete [options] <request.apbounded-admin-request> with <response.apbounded-admin-signature>")}
+		return &usageError{err: fmt.Errorf("usage: aprekey complete [options] <request.apbounded-admin-request> with <response.apbounded-admin-signature>")}
 	}
 	if positional[0] == "-" && positional[2] == "-" {
 		return &usageError{err: fmt.Errorf("request and response cannot both be read from stdin; pass at least one as a file")}
@@ -521,21 +521,21 @@ func (app application) writeError(err error) {
 		})
 		return
 	}
-	_, _ = fmt.Fprintf(app.stderr, "apbounded-admin: %v\n", err)
+	_, _ = fmt.Fprintf(app.stderr, "aprekey: %v\n", err)
 }
 
 func (app application) usage() {
 	_, _ = fmt.Fprintln(app.stderr, "Usage:")
-	_, _ = fmt.Fprintln(app.stderr, "  apbounded-admin generate --out <directory>")
-	_, _ = fmt.Fprintln(app.stderr, "  apbounded-admin inspect <key.apbounded-admin-key>")
-	_, _ = fmt.Fprintln(app.stderr, "  apbounded-admin verify <key.apbounded-admin-key>")
-	_, _ = fmt.Fprintln(app.stderr, "  apbounded-admin sign --key <key.apbounded-admin-key> < request.json")
-	_, _ = fmt.Fprintln(app.stderr, "  apbounded-admin prepare-rekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <network>] [--fee <microalgos>] <account> to <target>")
-	_, _ = fmt.Fprintln(app.stderr, "  apbounded-admin prepare-unrekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <network>] [--fee <microalgos>] <account>")
-	_, _ = fmt.Fprintln(app.stderr, "  apbounded-admin sign --key <key.apbounded-admin-key> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>")
-	_, _ = fmt.Fprintln(app.stderr, "  apbounded-admin complete [--client-data <dir>] [--network <network>] [--nowait] <request.apbounded-admin-request> with <response.apbounded-admin-signature>")
-	_, _ = fmt.Fprintln(app.stderr, "  apbounded-admin rekey --key <key.apbounded-admin-key> [--client-data <dir>] [--network <network>] [--fee <microalgos>] [--nowait] <account> to <target>")
-	_, _ = fmt.Fprintln(app.stderr, "  apbounded-admin unrekey --key <key.apbounded-admin-key> [--client-data <dir>] [--network <network>] [--fee <microalgos>] [--nowait] <account>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey generate --out <directory>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey inspect <key.wit>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey verify <key.wit>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey sign --key <key.wit> < request.json")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey prepare-rekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <network>] [--fee <microalgos>] <account> to <target>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey prepare-unrekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <network>] [--fee <microalgos>] <account>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey sign --key <key.wit> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey complete [--client-data <dir>] [--network <network>] [--nowait] <request.apbounded-admin-request> with <response.apbounded-admin-signature>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey rekey --key <key.wit> [--client-data <dir>] [--network <network>] [--fee <microalgos>] [--nowait] <account> to <target>")
+	_, _ = fmt.Fprintln(app.stderr, "  aprekey unrekey --key <key.wit> [--client-data <dir>] [--network <network>] [--fee <microalgos>] [--nowait] <account>")
 }
 
 func readControllingTerminal(prompt string) ([]byte, error) {
@@ -574,7 +574,7 @@ func confirmControllingTerminal(prompt string) (bool, error) {
 
 func exactlyOnePath(command string, args []string) (string, error) {
 	if len(args) != 1 {
-		return "", &usageError{err: fmt.Errorf("%s requires exactly one .apbounded-admin-key path", command)}
+		return "", &usageError{err: fmt.Errorf("%s requires exactly one .wit path", command)}
 	}
 	return args[0], nil
 }

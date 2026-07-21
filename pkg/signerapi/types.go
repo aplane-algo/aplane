@@ -343,7 +343,7 @@ type StatusResponse struct {
 // SigningFlowSentry1 names the sentry co-signed component signing
 // choreography: canonical TX-prefixed group transport, role-tagged component
 // messages, exactly one user plus one sentry component signature per target,
-// Sentry Key ID selectors, and assembly via /sign/assemble with arg 0 = user
+// Witness Key ID selectors, and assembly via /sign/assemble with arg 0 = user
 // signature and arg 1 = sentry signature. The label is frozen: any change to
 // that choreography mints a new label (sentry2, ...), and unrelated future
 // mechanisms get their own label family. Clients route on this field and must
@@ -492,7 +492,7 @@ type KeyInfo struct {
 	BoundedAuthorization     *BoundedAuthorizationInfo `json:"bounded_authorization,omitempty"`
 	LsigSize                 int                       `json:"lsig_size,omitempty"` // Spend-path LogicSig size for group budget calculation (bytecode + crypto sig args); excludes the bounded contract-admin signature, which only the /sign/bounded-admin choreography attaches and the signer budgets itself
 	IsGenericLsig            bool                      `json:"is_generic_lsig,omitempty"`
-	IsComponentKey           bool                      `json:"is_component_key,omitempty"`
+	IsWitnessKey             bool                      `json:"is_witness_key,omitempty"`
 	IsSpendingAccount        *bool                     `json:"is_spending_account,omitempty"`
 	SigningArgs              []SigningArgInfo          `json:"signing_args,omitempty"` // Key-file signing arguments for LogicSigs (position = index)
 	Parameters               map[string]string         `json:"parameters,omitempty"`
@@ -517,7 +517,7 @@ type AdminGenerateResponse struct {
 	Address           string            `json:"address,omitempty"`
 	PublicKeyHex      string            `json:"public_key_hex,omitempty"`
 	KeyType           string            `json:"key_type,omitempty"`
-	IsComponentKey    bool              `json:"is_component_key,omitempty"`
+	IsWitnessKey      bool              `json:"is_witness_key,omitempty"`
 	IsSpendingAccount *bool             `json:"is_spending_account,omitempty"`
 	Parameters        map[string]string `json:"parameters,omitempty"`
 	Error             string            `json:"error,omitempty"`

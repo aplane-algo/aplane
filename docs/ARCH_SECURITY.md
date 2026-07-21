@@ -988,7 +988,7 @@ esac
 
 Helpers that only support `read` should exit non-zero on `write`. The caller will fall back to displaying the passphrase for manual storage.
 
-### Bounded Authorization Contract Admin Keys
+### Bounded Authorization Contract Admin Witnesses
 
 Bounded1 requires the base spending signature on every accepted transaction.
 When a profile authorizes `rekey` with `admin_key`, every pure rekey also
@@ -997,20 +997,29 @@ of the exact transaction ID and immutable bounded program binding. Composer-
 owned checks reject rekey-plus-transfer, close, clawback, unsupported types,
 and over-ceiling fees before either signing path.
 
-The contract-admin private key is never a signer or `apstore` key. Apsigner
+The contract-admin private key is a Falcon-1024 witness in standalone custody,
+never a signer or `apstore` key. Apsigner
 runs normal policy and forced operator review, loads only the spending key, and
-returns a typed partial through `/sign/bounded-admin`. `apbounded-admin`
+returns a typed partial through `/sign/bounded-admin`. `aprekey`
 independently validates the finalized group, stored bounded metadata, supplied
 program, and pure-rekey shape before producing the final LogicSig argument.
 Ordinary `/sign` rejects admin-key operations rather than returning an
 apparently complete transaction.
 
-Keeping the `.apbounded-admin-key` artifact off the signer makes the account
+Keeping the `.wit` artifact off the signer makes the account
 structurally unable to perform admin-key operations when external custody is
 unavailable. A compromised unlocked signer can still make policy-permitted
 spends and request a partial, but cannot complete the on-chain admin gate.
 
-Online `apbounded-admin rekey` owns network and signer connectivity but delegates
+The same witness key form is used for signer-custodied sentry authority, but
+the custodian capabilities are disjoint: the networked signer produces only
+`APLANE_SENTRY_V1` component-domain signatures, while the offline ceremony
+produces only `APLANE_BOUNDED_ADMIN_AUTH_V1` signatures. One keypair should
+serve one role for life. Known local collisions are rejected during account
+generation; out-of-band reuse remains an operator responsibility and
+invalidates the intended role-containment argument.
+
+Online `aprekey rekey` owns network and signer connectivity but delegates
 private-key use to the helper's signing path. For a stronger custody boundary,
 `prepare-rekey` writes a non-secret `.apbounded-admin-request` for transfer to an
 offline ceremony machine; `sign` returns a request-bound

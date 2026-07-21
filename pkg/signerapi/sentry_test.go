@@ -24,7 +24,7 @@ func TestComponentSignRequestValidate(t *testing.T) {
 	}{
 		{name: "valid sentry", request: valid},
 		{name: "valid user", request: ComponentSignRequest{Role: ComponentSignRoleUser, ComponentKey: "ADDR", GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
-		{name: "sentry may omit Sentry Key ID", request: ComponentSignRequest{Role: ComponentSignRoleSentry, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
+		{name: "sentry may omit Witness Key ID", request: ComponentSignRequest{Role: ComponentSignRoleSentry, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}},
 		{name: "invalid request ID", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.RequestID = "bad id" }), wantErr: "request_id contains invalid character"},
 		{name: "missing role", request: withComponentRequest(valid, func(r *ComponentSignRequest) { r.Role = "" }), wantErr: "role must be"},
 		{name: "user missing key", request: ComponentSignRequest{Role: ComponentSignRoleUser, GroupBytesHex: []string{"5458aa"}, TargetIndices: []int{0}}, wantErr: "component_key is required"},

@@ -29,6 +29,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/witness"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
@@ -53,8 +54,8 @@ func TestGuardedTargetsNormalizeSentryPublicKey(t *testing.T) {
 	if targets[0].Index != 0 || targets[0].Sender != sender || targets[0].Account != sender {
 		t.Fatalf("target = %+v, want index 0 sender/account %s", targets[0], sender)
 	}
-	if targets[0].SentryComponentKeyType != keytypes.SentryComponentFalcon1024V1 {
-		t.Fatalf("sentry key type = %q, want %q", targets[0].SentryComponentKeyType, keytypes.SentryComponentFalcon1024V1)
+	if targets[0].SentryComponentKeyType != witness.Falcon1024V1 {
+		t.Fatalf("sentry key type = %q, want %q", targets[0].SentryComponentKeyType, witness.Falcon1024V1)
 	}
 	if targets[0].SentryPublicKey != sentryHex {
 		t.Fatalf("sentry public key = %q, want %q", targets[0].SentryPublicKey, sentryHex)
@@ -105,8 +106,8 @@ func TestGuardedTargetsNormalizeFalconSentryPublicKey(t *testing.T) {
 	if len(targets) != 1 {
 		t.Fatalf("len(targets) = %d, want 1", len(targets))
 	}
-	if targets[0].SentryComponentKeyType != keytypes.SentryComponentFalcon1024V1 {
-		t.Fatalf("sentry key type = %q, want %q", targets[0].SentryComponentKeyType, keytypes.SentryComponentFalcon1024V1)
+	if targets[0].SentryComponentKeyType != witness.Falcon1024V1 {
+		t.Fatalf("sentry key type = %q, want %q", targets[0].SentryComponentKeyType, witness.Falcon1024V1)
 	}
 	if targets[0].SentryPublicKey != sentryHex {
 		t.Fatalf("sentry public key = %q, want %q", targets[0].SentryPublicKey, sentryHex)
@@ -180,7 +181,7 @@ func TestPlanGuardedGroupReturnsGroupedDummies(t *testing.T) {
 		Index:                  0,
 		Sender:                 sender,
 		Account:                sender,
-		SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+		SentryComponentKeyType: witness.Falcon1024V1,
 		SentryPublicKey:        sentryHex,
 	}}
 
@@ -230,7 +231,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "unexpected target index",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     9,
-				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "aa",
 			}}},
 			wantMessage: "unexpected signature for target index 9",
@@ -239,11 +240,11 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "duplicate target index",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
-				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "aa",
 			}, {
 				TargetIndex:     0,
-				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "bb",
 			}}},
 			wantMessage: "duplicate signature for target index 0",
@@ -256,7 +257,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 				Signature:       "aa",
 			}, {
 				TargetIndex:     1,
-				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "bb",
 			}}},
 			wantMessage: "signature for target index 0 used scheme",
@@ -265,7 +266,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "missing target index",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
-				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				SignatureScheme: witness.Falcon1024V1,
 				Signature:       "aa",
 			}}},
 			wantMessage: "missing signature for target index 1",
@@ -278,7 +279,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			err := collectComponentSignatures(
 				tt.resp,
 				[]int{0, 1},
-				keytypes.SentryComponentFalcon1024V1,
+				witness.Falcon1024V1,
 				dst,
 			)
 			if err == nil {
@@ -315,7 +316,7 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	if signatures[0] == "" {
 		t.Fatal("signature for target 0 is empty")
 	}
-	if requestIDs[sentryRequestKey{ComponentKeyType: keytypes.SentryComponentFalcon1024V1, PublicKey: sentryHex}] == "" {
+	if requestIDs[sentryRequestKey{ComponentKeyType: witness.Falcon1024V1, PublicKey: sentryHex}] == "" {
 		t.Fatal("request ID for sentry is empty")
 	}
 }
@@ -349,13 +350,13 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want explicit endpoint mismatch")
 	}
-	componentSelector, selectorErr := sentryComponentSelector(keytypes.SentryComponentFalcon1024V1, sentryHex)
+	componentSelector, selectorErr := sentryComponentSelector(witness.Falcon1024V1, sentryHex)
 	if selectorErr != nil {
 		t.Fatalf("sentryComponentSelector() error = %v", selectorErr)
 	}
 	errText := err.Error()
-	if !strings.Contains(errText, "did not advertise Sentry Key ID") || !strings.Contains(errText, componentSelector) {
-		t.Fatalf("requestSentryComponentSignatures() error = %q, want endpoint mismatch with Sentry Key ID %s", err, componentSelector)
+	if !strings.Contains(errText, "did not advertise Witness Key ID") || !strings.Contains(errText, componentSelector) {
+		t.Fatalf("requestSentryComponentSignatures() error = %q, want endpoint mismatch with Witness Key ID %s", err, componentSelector)
 	}
 	if strings.Contains(errText, sentryHex) {
 		t.Fatalf("requestSentryComponentSignatures() error exposed raw sentry public key: %q", err)
@@ -540,21 +541,21 @@ func guardedTargetForTest(account, sentryHex string) guardedTarget {
 		Index:                  0,
 		Sender:                 account,
 		Account:                account,
-		SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+		SentryComponentKeyType: witness.Falcon1024V1,
 		SentryPublicKey:        sentryHex,
 	}
 }
 
 func TestSentryComponentLabelUsesFalconSentryKeyID(t *testing.T) {
 	sentryHex := testFalconSentryPublicKeyHex(0x0a)
-	componentSelector, err := sentryComponentSelector(keytypes.SentryComponentFalcon1024V1, sentryHex)
+	componentSelector, err := sentryComponentSelector(witness.Falcon1024V1, sentryHex)
 	if err != nil {
 		t.Fatalf("sentryComponentSelector() error = %v", err)
 	}
 
-	label := sentryComponentLabel(keytypes.SentryComponentFalcon1024V1, sentryHex)
-	if !strings.Contains(label, componentSelector) || !strings.Contains(label, keytypes.SentryComponentFalcon1024V1) {
-		t.Fatalf("sentryComponentLabel() = %q, want Sentry Key ID %s and key type", label, componentSelector)
+	label := sentryComponentLabel(witness.Falcon1024V1, sentryHex)
+	if !strings.Contains(label, componentSelector) || !strings.Contains(label, witness.Falcon1024V1) {
+		t.Fatalf("sentryComponentLabel() = %q, want Witness Key ID %s and key type", label, componentSelector)
 	}
 	if strings.Contains(label, sentryHex) {
 		t.Fatalf("sentryComponentLabel() exposed raw Falcon sentry public key: %q", label)
@@ -567,9 +568,9 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey [
 	if err != nil {
 		t.Fatalf("decode sentry public key: %v", err)
 	}
-	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("Sentry Key ID: %v", err)
+		t.Fatalf("Witness Key ID: %v", err)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
@@ -580,10 +581,10 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey [
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
 			Count: 1,
 			Keys: []signerapi.KeyInfo{{
-				Address:        componentSelector,
-				PublicKeyHex:   publicKeyHex,
-				KeyType:        keytypes.SentryComponentFalcon1024V1,
-				IsComponentKey: true,
+				Address:      componentSelector,
+				PublicKeyHex: publicKeyHex,
+				KeyType:      witness.Falcon1024V1,
+				IsWitnessKey: true,
 			}},
 		})
 	})
@@ -601,7 +602,7 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey [
 			return
 		}
 		if req.Role != signerapi.ComponentSignRoleSentry || req.ComponentKey != componentSelector {
-			http.Error(w, "wrong Sentry Key ID", http.StatusBadRequest)
+			http.Error(w, "wrong Witness Key ID", http.StatusBadRequest)
 			return
 		}
 		group, err := canonical.DecodeGroupHex(req.GroupBytesHex)
@@ -623,7 +624,7 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey [
 			}
 			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
 				TargetIndex:     index,
-				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				SignatureScheme: witness.Falcon1024V1,
 				Signature:       hex.EncodeToString(signature),
 			})
 		}

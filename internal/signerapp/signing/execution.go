@@ -336,7 +336,7 @@ func zeroKeyMaterialFallback(key *coresigning.KeyMaterial) {
 			algocrypto.ZeroBytes(value.PrivateKey)
 			value.PrivateKey = nil
 		}
-	case *coresigning.ComponentKeyMaterial:
+	case *coresigning.WitnessKeyMaterial:
 		if value != nil {
 			algocrypto.ZeroBytes(value.PrivateKey)
 			algocrypto.ZeroBytes(value.PublicKey)

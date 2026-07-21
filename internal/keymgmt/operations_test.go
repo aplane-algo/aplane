@@ -4,8 +4,10 @@
 package keymgmt
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"os"
@@ -14,19 +16,69 @@ import (
 	"testing"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
-	apkeys "github.com/aplane-algo/aplane/internal/keys"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 	lsigsignerreg "github.com/aplane-algo/aplane/lsig/signerreg"
 )
+
+func TestWitnessRoleCollisionChecks(t *testing.T) {
+	publicKey := bytes.Repeat([]byte{0x5a}, witness.Falcon1024PublicKeySize)
+	publicKeyHex := hex.EncodeToString(publicKey)
+	witnessKeyID, err := witness.ID(witness.Falcon1024V1, publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	references := []sentryrefs.Record{{ComponentKey: witnessKeyID, PublicKeyHex: publicKeyHex}}
+	if err := rejectAdminWitnessKnownAsSentry(publicKeyHex, references, nil); err == nil || !strings.Contains(err.Error(), "sentry role") {
+		t.Fatalf("admin reference collision error = %v", err)
+	}
+	localWitnesses := map[string]keys.KeyScanInfo{
+		witnessKeyID: {KeyType: witness.Falcon1024V1, PublicKeyHex: publicKeyHex},
+	}
+	if err := rejectAdminWitnessKnownAsSentry(publicKeyHex, nil, localWitnesses); err == nil || !strings.Contains(err.Error(), "sentry custody") {
+		t.Fatalf("admin local-custody collision error = %v", err)
+	}
+	localSpendingKeys := map[string]keys.KeyScanInfo{
+		"ACCOUNT": {KeyType: "aplane.falcon1024.v1", PublicKeyHex: publicKeyHex},
+	}
+	if err := rejectAdminWitnessKnownAsSentry(publicKeyHex, nil, localSpendingKeys); err != nil {
+		t.Fatalf("admin non-witness collision error = %v, want nil", err)
+	}
+	scanned := map[string]keys.KeyScanInfo{
+		"ACCOUNT": {BoundedAuthorization: &boundedmeta.Metadata{AdminPublicKeyHex: publicKeyHex}},
+	}
+	if err := rejectSentryWitnessKnownAsAdmin(publicKeyHex, witnessKeyID, scanned); err == nil || !strings.Contains(err.Error(), "contract admin") {
+		t.Fatalf("sentry collision error = %v", err)
+	}
+}
+
+func TestValidateKnownWitnessRoleExclusivityRejectsLocalWitness(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	const identityID = "test-identity"
+	masterKey := []byte("0123456789abcdef0123456789abcdef")
+
+	generated, err := GenerateKey(paths, identityID, witness.Falcon1024V1, masterKey, nil)
+	if err != nil {
+		t.Fatalf("GenerateKey(witness) error = %v", err)
+	}
+	err = validateKnownWitnessRoleExclusivity(paths, identityID, "aplane.falcon1024-allowlist-alock.v1", map[string]string{
+		boundedmeta.AdminPublicKeyParameter: generated.PublicKeyHex,
+	}, masterKey)
+	if err == nil || !strings.Contains(err.Error(), "sentry custody") {
+		t.Fatalf("validateKnownWitnessRoleExclusivity() error = %v, want local sentry-custody collision", err)
+	}
+}
 
 func init() {
 	lsigsignerreg.RegisterSigner()
@@ -65,8 +117,8 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		{keyType: "aplane.falcon1024.v1", want: true},
 		{keyType: falcon1024guarded.KeyTypeV1, want: false},
 		{keyType: falcon1024guarded.KeyTypeV1, want: false},
-		{keyType: keytypes.SentryComponentFalcon1024V1, want: false},
-		{keyType: keytypes.SentryComponentFalcon1024V1, want: false},
+		{keyType: witness.Falcon1024V1, want: false},
+		{keyType: witness.Falcon1024V1, want: false},
 		{keyType: "aplane.governance-ed25519.v1", want: false},
 		{keyType: "aplane.falcon1024-allowlist.v1", want: false},
 		{keyType: "", want: false},
@@ -156,17 +208,17 @@ func TestValidKeyTypesIncludeIdentityActivatedYAMLComposedProvider(t *testing.T)
 }
 
 func TestValidKeyTypesIncludeSentryComponentKey(t *testing.T) {
-	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentFalcon1024V1) {
-		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentFalcon1024V1)
+	if !containsKeyType(GetValidKeyTypes(), witness.Falcon1024V1) {
+		t.Fatalf("GetValidKeyTypes() missing %s", witness.Falcon1024V1)
 	}
-	if !IsValidKeyType(keytypes.SentryComponentFalcon1024V1) {
-		t.Fatalf("IsValidKeyType() rejected %s", keytypes.SentryComponentFalcon1024V1)
+	if !IsValidKeyType(witness.Falcon1024V1) {
+		t.Fatalf("IsValidKeyType() rejected %s", witness.Falcon1024V1)
 	}
-	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentFalcon1024V1) {
-		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentFalcon1024V1)
+	if !containsKeyType(GetValidKeyTypes(), witness.Falcon1024V1) {
+		t.Fatalf("GetValidKeyTypes() missing %s", witness.Falcon1024V1)
 	}
-	if !IsValidKeyType(keytypes.SentryComponentFalcon1024V1) {
-		t.Fatalf("IsValidKeyType() rejected %s", keytypes.SentryComponentFalcon1024V1)
+	if !IsValidKeyType(witness.Falcon1024V1) {
+		t.Fatalf("IsValidKeyType() rejected %s", witness.Falcon1024V1)
 	}
 }
 
@@ -261,23 +313,23 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 			if result.Address == "" {
 				t.Fatal("Address is empty")
 			}
-			if result.IsComponentKey {
+			if result.IsWitnessKey {
 				t.Fatalf("guarded account marked as component: %#v", result)
 			}
 
-			decrypted, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(result.KeyFile, masterKey)
+			decrypted, err := keys.ReadDecryptedKeyJSONWithMasterKey(result.KeyFile, masterKey)
 			if err != nil {
 				t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
 			}
 			defer crypto.ZeroBytes(decrypted)
 
-			payload, err := apkeys.ParsePayload(decrypted)
+			payload, err := keys.ParsePayload(decrypted)
 			if err != nil {
 				t.Fatalf("ParsePayload() error = %v", err)
 			}
 			defer payload.ZeroSecrets()
-			if payload.Category != apkeys.CategoryDSALsig {
-				t.Fatalf("Category = %q, want %s", payload.Category, apkeys.CategoryDSALsig)
+			if payload.Category != keys.CategoryDSALsig {
+				t.Fatalf("Category = %q, want %s", payload.Category, keys.CategoryDSALsig)
 			}
 			if payload.KeyType != tt.keyType {
 				t.Fatalf("stored KeyType = %q, want %s", payload.KeyType, tt.keyType)
@@ -294,8 +346,8 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 			if payload.SaltCounter == nil {
 				t.Fatal("SaltCounter is nil")
 			}
-			if payload.SigningMetadataVersion != apkeys.CurrentSigningMetadataVersion {
-				t.Fatalf("SigningMetadataVersion = %d, want %d", payload.SigningMetadataVersion, apkeys.CurrentSigningMetadataVersion)
+			if payload.SigningMetadataVersion != keys.CurrentSigningMetadataVersion {
+				t.Fatalf("SigningMetadataVersion = %d, want %d", payload.SigningMetadataVersion, keys.CurrentSigningMetadataVersion)
 			}
 			if payload.TemplateFingerprint == "" {
 				t.Fatal("TemplateFingerprint is empty")
@@ -306,8 +358,8 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 
 func TestGenerateKeySentryComponent(t *testing.T) {
 	for _, keyType := range []string{
-		keytypes.SentryComponentFalcon1024V1,
-		keytypes.SentryComponentFalcon1024V1,
+		witness.Falcon1024V1,
+		witness.Falcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			paths := storepaths.NewPaths(t.TempDir())
@@ -320,8 +372,8 @@ func TestGenerateKeySentryComponent(t *testing.T) {
 			if result.KeyType != keyType {
 				t.Fatalf("KeyType = %q, want %s", result.KeyType, keyType)
 			}
-			if !result.IsComponentKey {
-				t.Fatal("IsComponentKey = false, want true")
+			if !result.IsWitnessKey {
+				t.Fatal("IsWitnessKey = false, want true")
 			}
 			if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
 				t.Fatalf("IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
@@ -329,8 +381,8 @@ func TestGenerateKeySentryComponent(t *testing.T) {
 			if result.PublicKeyHex == "" {
 				t.Fatal("PublicKeyHex is empty")
 			}
-			if !keytypes.IsComponentKeySelector(result.Address) {
-				t.Fatalf("Address = %q, want Sentry Key ID", result.Address)
+			if !witness.IsID(result.Address) {
+				t.Fatalf("Address = %q, want Witness Key ID", result.Address)
 			}
 			if result.Address == result.PublicKeyHex {
 				t.Fatal("component address unexpectedly equals public key hex")

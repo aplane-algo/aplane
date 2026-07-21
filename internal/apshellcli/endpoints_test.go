@@ -18,9 +18,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
@@ -85,13 +85,13 @@ func TestParseEndpointCreateSentryArgsAcceptsHyphenatedPortFlag(t *testing.T) {
 
 func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	dataDir := t.TempDir()
-	publicKeyHex := strings.Repeat("ab", keytypes.Falcon1024PublicKeySize)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
+	publicKeyHex := strings.Repeat("ab", witness.Falcon1024PublicKeySize)
+	componentKey := endpointCLITestComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	server := newEndpointCLIKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:        componentKey,
-		PublicKeyHex:   publicKeyHex,
-		KeyType:        keytypes.SentryComponentFalcon1024V1,
-		IsComponentKey: true,
+		Address:      componentKey,
+		PublicKeyHex: publicKeyHex,
+		KeyType:      witness.Falcon1024V1,
+		IsWitnessKey: true,
 	}})
 
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
@@ -142,13 +142,13 @@ func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	}
 	joined := strings.Join(progress, "\n")
 	if !strings.Contains(joined, componentKey) {
-		t.Fatalf("progress output = %q, want Sentry Key ID %s", joined, componentKey)
+		t.Fatalf("progress output = %q, want Witness Key ID %s", joined, componentKey)
 	}
 	if strings.Contains(joined, publicKeyHex) || strings.Contains(joined, strings.ToUpper(publicKeyHex)) {
 		t.Fatalf("progress output leaked raw sentry public key: %q", joined)
 	}
 	if strings.Contains(out.String(), componentKey) {
-		t.Fatalf("captured output = %q, Sentry Key ID should be live progress before prompt", out.String())
+		t.Fatalf("captured output = %q, Witness Key ID should be live progress before prompt", out.String())
 	}
 }
 
@@ -156,13 +156,13 @@ func TestRenderEndpointSentriesOmitsLastSeen(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
-	publicKeyHex := strings.Repeat("ab", keytypes.Falcon1024PublicKeySize)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
+	publicKeyHex := strings.Repeat("ab", witness.Falcon1024PublicKeySize)
+	componentKey := endpointCLITestComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	state.renderEndpointSentries(&apshellapp.EndpointSentriesResult{
 		Sentries: []apshellapp.EndpointSentryEntry{{
 			EndpointAlias: "sentry-local",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.SentryComponentFalcon1024V1,
+			KeyType:       witness.Falcon1024V1,
 			LastSeenAt:    "2026-06-04T00:00:00Z",
 		}},
 	})
@@ -175,7 +175,7 @@ func TestRenderEndpointSentriesOmitsLastSeen(t *testing.T) {
 		t.Fatalf("rendered sentries header = %q, want SENTRY KEY without legacy labels", rendered)
 	}
 	if !strings.Contains(rendered, componentKey) {
-		t.Fatalf("rendered sentries = %q, want Sentry Key ID", rendered)
+		t.Fatalf("rendered sentries = %q, want Witness Key ID", rendered)
 	}
 	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
 		t.Fatalf("rendered sentries leaked raw sentry public key: %q", rendered)
@@ -186,8 +186,8 @@ func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
-	publicKeyHex := strings.Repeat("cd", keytypes.Falcon1024PublicKeySize)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
+	publicKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
+	componentKey := endpointCLITestComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	state.renderEndpointShow(&apshellapp.EndpointShowResult{
 		Endpoint: apshellapp.EndpointEntry{
 			Alias: "sentry-local",
@@ -199,7 +199,7 @@ func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
 			PublishedSentries: []apshellapp.EndpointSentryEntry{{
 				EndpointAlias: "sentry-local",
 				ComponentKey:  componentKey,
-				KeyType:       keytypes.SentryComponentFalcon1024V1,
+				KeyType:       witness.Falcon1024V1,
 				LastSeenAt:    "2026-06-04T00:00:00Z",
 			}},
 		},
@@ -213,7 +213,7 @@ func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
 		t.Fatalf("rendered endpoint show header = %q, want SENTRY KEY without legacy labels", rendered)
 	}
 	if !strings.Contains(rendered, componentKey) {
-		t.Fatalf("rendered endpoint show = %q, want Sentry Key ID", rendered)
+		t.Fatalf("rendered endpoint show = %q, want Witness Key ID", rendered)
 	}
 	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
 		t.Fatalf("rendered endpoint show leaked raw sentry public key: %q", rendered)
@@ -245,9 +245,9 @@ func endpointCLITestComponentSelector(t *testing.T, keyType, publicKeyHex string
 	if err != nil {
 		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
 	}
-	selector, err := keytypes.ComponentKeySelector(keyType, publicKey)
+	selector, err := witness.ID(keyType, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	return selector
 }

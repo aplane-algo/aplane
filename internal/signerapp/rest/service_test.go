@@ -37,6 +37,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
 	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
@@ -299,7 +300,7 @@ func TestServiceSignComponentDelegates(t *testing.T) {
 			Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
 				Signature:       "aa",
-				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				SignatureScheme: witness.Falcon1024V1,
 			}},
 		},
 	}
@@ -666,21 +667,21 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
 	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{}}}
 
-	genResp, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: keytypes.SentryComponentFalcon1024V1})
+	genResp, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: witness.Falcon1024V1})
 	if genErr != nil {
 		t.Fatalf("AdminGenerate(component) error = %v, want nil", genErr)
 	}
 	if genResp.PublicKeyHex == "" {
 		t.Fatal("AdminGenerate public key is empty")
 	}
-	if !keytypes.IsComponentKeySelector(genResp.Address) {
-		t.Fatalf("AdminGenerate address = %q, want Sentry Key ID", genResp.Address)
+	if !witness.IsID(genResp.Address) {
+		t.Fatalf("AdminGenerate address = %q, want Witness Key ID", genResp.Address)
 	}
 	if genResp.Address == genResp.PublicKeyHex {
 		t.Fatal("AdminGenerate address unexpectedly equals public key hex")
 	}
-	if !genResp.IsComponentKey {
-		t.Fatal("AdminGenerate is_component_key = false, want true")
+	if !genResp.IsWitnessKey {
+		t.Fatal("AdminGenerate is_witness_key = false, want true")
 	}
 	if genResp.IsSpendingAccount == nil || *genResp.IsSpendingAccount {
 		t.Fatalf("AdminGenerate is_spending_account = %#v, want false pointer", genResp.IsSpendingAccount)
@@ -700,8 +701,8 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	if row.PublicKeyHex != genResp.PublicKeyHex {
 		t.Fatalf("component row public key = %q, want %q", row.PublicKeyHex, genResp.PublicKeyHex)
 	}
-	if !row.IsComponentKey {
-		t.Fatal("component row is_component_key = false, want true")
+	if !row.IsWitnessKey {
+		t.Fatal("component row is_witness_key = false, want true")
 	}
 	if row.IsSpendingAccount == nil || *row.IsSpendingAccount {
 		t.Fatalf("component row is_spending_account = %#v, want false pointer", row.IsSpendingAccount)
@@ -711,7 +712,7 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	infos := Service{}.buildKeyTypes([]string{
 		"ed25519",
-		keytypes.SentryComponentFalcon1024V1,
+		witness.Falcon1024V1,
 		keytypes.GuardedFalcon1024Sentry1024V1,
 		keytypes.CorridorV1,
 	}, nil)
@@ -721,8 +722,8 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	}
 
 	guarded := map[string]string{
-		keytypes.GuardedFalcon1024Sentry1024V1: keytypes.SentryComponentFalcon1024V1,
-		keytypes.CorridorV1:                    keytypes.SentryComponentFalcon1024V1,
+		keytypes.GuardedFalcon1024Sentry1024V1: witness.Falcon1024V1,
+		keytypes.CorridorV1:                    witness.Falcon1024V1,
 	}
 	for keyType, wantComponent := range guarded {
 		info, ok := byType[keyType]
@@ -736,7 +737,7 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 			t.Fatalf("%s sentry_component_key_type = %q, want %q", keyType, info.SentryComponentKeyType, wantComponent)
 		}
 	}
-	for _, keyType := range []string{"ed25519", keytypes.SentryComponentFalcon1024V1} {
+	for _, keyType := range []string{"ed25519", witness.Falcon1024V1} {
 		info := byType[keyType]
 		if info.SigningFlow != "" || info.SentryComponentKeyType != "" {
 			t.Fatalf("%s signing flow metadata = %q/%q, want empty", keyType, info.SigningFlow, info.SentryComponentKeyType)
@@ -844,7 +845,7 @@ func TestServiceKeyTypesIncludesNativeAndFalconSentry(t *testing.T) {
 		if keyType.KeyType == "ed25519" {
 			foundEd25519 = true
 		}
-		if keyType.KeyType == keytypes.SentryComponentFalcon1024V1 {
+		if keyType.KeyType == witness.Falcon1024V1 {
 			foundFalconComponent = true
 			if keyType.Family != "sentry-falcon1024" || keyType.MnemonicImport {
 				t.Fatalf("Falcon sentry key type info = %#v, want sentry metadata", keyType)
@@ -855,7 +856,7 @@ func TestServiceKeyTypesIncludesNativeAndFalconSentry(t *testing.T) {
 		t.Fatal("KeyTypes() did not include ed25519")
 	}
 	if !foundFalconComponent {
-		t.Fatalf("KeyTypes() did not include %s", keytypes.SentryComponentFalcon1024V1)
+		t.Fatalf("KeyTypes() did not include %s", witness.Falcon1024V1)
 	}
 }
 
@@ -878,11 +879,11 @@ func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 	if !keyTypesResponseContains(resp.KeyTypes, "ed25519") {
 		t.Fatal("signer node key types missing ed25519")
 	}
-	if keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentFalcon1024V1) {
-		t.Fatalf("signer node key types included %s", keytypes.SentryComponentFalcon1024V1)
+	if keyTypesResponseContains(resp.KeyTypes, witness.Falcon1024V1) {
+		t.Fatalf("signer node key types included %s", witness.Falcon1024V1)
 	}
-	if keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentFalcon1024V1) {
-		t.Fatalf("signer node key types included %s", keytypes.SentryComponentFalcon1024V1)
+	if keyTypesResponseContains(resp.KeyTypes, witness.Falcon1024V1) {
+		t.Fatalf("signer node key types included %s", witness.Falcon1024V1)
 	}
 
 	ir = setupIdentityRuntimeWithRole(t, false, noderole.RoleSentry)
@@ -893,8 +894,8 @@ func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 	if keyTypesResponseContains(resp.KeyTypes, "ed25519") {
 		t.Fatal("sentry node key types included ed25519")
 	}
-	if !keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentFalcon1024V1) {
-		t.Fatalf("sentry node key types missing %s", keytypes.SentryComponentFalcon1024V1)
+	if !keyTypesResponseContains(resp.KeyTypes, witness.Falcon1024V1) {
+		t.Fatalf("sentry node key types missing %s", witness.Falcon1024V1)
 	}
 }
 
@@ -905,11 +906,11 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeString() error = %v", err)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKeyBytes)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKeyBytes)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
-	env, err := sentryrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentFalcon1024V1, publicKey)
+	env, err := sentryrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("NewExportEnvelope() error = %v", err)
 	}
@@ -945,11 +946,11 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	if params[0].Name != sentryrefs.ParamSentryName || params[0].Type != "select" {
 		t.Fatalf("sentry param = %#v, want select sentry", params[0])
 	}
-	if params[0].Label != "Sentry Key ID" {
-		t.Fatalf("sentry label = %q, want Sentry Key ID label", params[0].Label)
+	if params[0].Label != "Witness Key ID" {
+		t.Fatalf("sentry label = %q, want Witness Key ID label", params[0].Label)
 	}
 	if len(params[0].Options) != 1 || params[0].Options[0] != componentKey || params[0].Default != componentKey {
-		t.Fatalf("sentry options/default = %#v/%q, want Sentry Key ID %s", params[0].Options, params[0].Default, componentKey)
+		t.Fatalf("sentry options/default = %#v/%q, want Witness Key ID %s", params[0].Options, params[0].Default, componentKey)
 	}
 }
 
@@ -960,11 +961,11 @@ func TestServiceKeyTypesForIdentityKeepsCorridorRecipientsWithSentryReference(t 
 	if err != nil {
 		t.Fatalf("DecodeString() error = %v", err)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKeyBytes)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKeyBytes)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
-	env, err := sentryrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentFalcon1024V1, publicKey)
+	env, err := sentryrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("NewExportEnvelope() error = %v", err)
 	}
@@ -1004,7 +1005,7 @@ func TestServiceKeyTypesForIdentityKeepsCorridorRecipientsWithSentryReference(t 
 		t.Fatalf("second corridor param = %#v, want select sentry", params[1])
 	}
 	if len(params[1].Options) != 1 || params[1].Options[0] != componentKey || params[1].Default != componentKey {
-		t.Fatalf("sentry options/default = %#v/%q, want Sentry Key ID %s", params[1].Options, params[1].Default, componentKey)
+		t.Fatalf("sentry options/default = %#v/%q, want Witness Key ID %s", params[1].Options, params[1].Default, componentKey)
 	}
 }
 

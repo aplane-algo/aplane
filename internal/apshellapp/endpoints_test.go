@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestEndpointImportDryRunDoesNotWriteFiles(t *testing.T) {
@@ -249,7 +250,7 @@ func TestEndpointsListAndShowUseResolvedLocalState(t *testing.T) {
 	if got := entry.PublishedSentryPublicKeys; len(got) != 1 || got[0] != publicKeyHex {
 		t.Fatalf("PublishedSentryPublicKeys = %#v, want %s", got, publicKeyHex)
 	}
-	componentID := testComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
+	componentID := testComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	if got := entry.PublishedSentryComponents; len(got) != 1 || got[0] != componentID {
 		t.Fatalf("PublishedSentryComponents = %#v, want %s", got, componentID)
 	}
@@ -278,7 +279,7 @@ func TestEndpointSentriesRenderComponentSelectorsOnly(t *testing.T) {
 		t.Fatalf("EndpointImport() error = %v", err)
 	}
 	publicKeyHex := testSentryPublicKeyHex()
-	componentID := testComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
+	componentID := testComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	writePublishedSentry(t, dataDir, "sentry-local", publicKeyHex)
 
 	sentries, err := app.EndpointSentries(context.Background())
@@ -293,12 +294,12 @@ func TestEndpointDiscoverSentriesRebuildsMappingsFromAllEndpoints(t *testing.T) 
 	app := newEndpointTestApp(t, dataDir)
 
 	publicKeyHex := testSentryPublicKeyHex()
-	componentSelector := testComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
+	componentSelector := testComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:        componentSelector,
-		PublicKeyHex:   strings.ToUpper(publicKeyHex),
-		KeyType:        keytypes.SentryComponentFalcon1024V1,
-		IsComponentKey: true,
+		Address:      componentSelector,
+		PublicKeyHex: strings.ToUpper(publicKeyHex),
+		KeyType:      witness.Falcon1024V1,
+		IsWitnessKey: true,
 	}})
 	signerServer := newEndpointKeysServer(t, "sign-token", []signerapi.KeyInfo{{
 		Address: "ADDR",
@@ -319,7 +320,7 @@ func TestEndpointDiscoverSentriesRebuildsMappingsFromAllEndpoints(t *testing.T) 
 	}
 	writeEndpointToken(t, dataDir, "signer-local", "sign-token")
 	writeEndpointToken(t, dataDir, "sentry-local", "sentry-token")
-	staleKeyHex := strings.Repeat("cd", keytypes.Falcon1024PublicKeySize)
+	staleKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
 	writePublishedSentry(t, dataDir, "sentry-local", staleKeyHex)
 
 	result, err := app.EndpointDiscoverSentries(context.Background(), EndpointDiscoverSentriesRequest{})
@@ -357,14 +358,14 @@ func TestEndpointDiscoverSentriesPreservesUnreachableEndpointInventory(t *testin
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
-	newOnlineKey := strings.Repeat("ab", keytypes.Falcon1024PublicKeySize)
-	oldOnlineKey := strings.Repeat("cd", keytypes.Falcon1024PublicKeySize)
-	offlineKey := strings.Repeat("ef", keytypes.Falcon1024PublicKeySize)
+	newOnlineKey := strings.Repeat("ab", witness.Falcon1024PublicKeySize)
+	oldOnlineKey := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
+	offlineKey := strings.Repeat("ef", witness.Falcon1024PublicKeySize)
 	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:        testComponentSelector(t, keytypes.SentryComponentFalcon1024V1, newOnlineKey),
-		PublicKeyHex:   newOnlineKey,
-		KeyType:        keytypes.SentryComponentFalcon1024V1,
-		IsComponentKey: true,
+		Address:      testComponentSelector(t, witness.Falcon1024V1, newOnlineKey),
+		PublicKeyHex: newOnlineKey,
+		KeyType:      witness.Falcon1024V1,
+		IsWitnessKey: true,
 	}})
 
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-online", config.ClientEndpointConfig{
@@ -435,7 +436,7 @@ func TestEndpointDiscoverSentriesPreservesLockedEndpointInventory(t *testing.T) 
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
-	staleKeyHex := strings.Repeat("cd", keytypes.Falcon1024PublicKeySize)
+	staleKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
 	sentryServer := newEndpointKeysStatusServer(t, "sentry-token", http.StatusForbidden, `{"error":"signer is locked"}`)
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
@@ -462,7 +463,7 @@ func TestEndpointDiscoverSentriesPreservesServerErrorEndpointInventory(t *testin
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
-	staleKeyHex := strings.Repeat("cd", keytypes.Falcon1024PublicKeySize)
+	staleKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
 	sentryServer := newEndpointKeysStatusServer(t, "sentry-token", http.StatusServiceUnavailable, `service unavailable`)
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
@@ -486,7 +487,7 @@ func TestEndpointDiscoverSentriesRejectsAuthFailure(t *testing.T) {
 	dataDir := t.TempDir()
 	app := newEndpointTestApp(t, dataDir)
 
-	staleKeyHex := strings.Repeat("cd", keytypes.Falcon1024PublicKeySize)
+	staleKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
 	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
@@ -520,12 +521,12 @@ func TestEndpointDiscoverSentriesRejectsInvalidEndpointMetadata(t *testing.T) {
 	app := newEndpointTestApp(t, dataDir)
 
 	publicKeyHex := testSentryPublicKeyHex()
-	staleKeyHex := strings.Repeat("cd", keytypes.Falcon1024PublicKeySize)
+	staleKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
 	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:        "bad-component-selector",
-		PublicKeyHex:   publicKeyHex,
-		KeyType:        keytypes.SentryComponentFalcon1024V1,
-		IsComponentKey: true,
+		Address:      "bad-component-selector",
+		PublicKeyHex: publicKeyHex,
+		KeyType:      witness.Falcon1024V1,
+		IsWitnessKey: true,
 	}})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
@@ -562,10 +563,10 @@ func TestEndpointDiscoverSentriesDryRunDoesNotWriteMappings(t *testing.T) {
 	app := newEndpointTestApp(t, dataDir)
 	publicKeyHex := testSentryPublicKeyHex()
 	sentryServer := newEndpointKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:        testComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex),
-		PublicKeyHex:   publicKeyHex,
-		KeyType:        keytypes.SentryComponentFalcon1024V1,
-		IsComponentKey: true,
+		Address:      testComponentSelector(t, witness.Falcon1024V1, publicKeyHex),
+		PublicKeyHex: publicKeyHex,
+		KeyType:      witness.Falcon1024V1,
+		IsWitnessKey: true,
 	}})
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
 		Role: config.ClientEndpointRoleSentry,
@@ -618,7 +619,7 @@ func TestEndpointSyncSentriesDryRunUsesPublishedInventory(t *testing.T) {
 	if rec.EndpointAlias != "sentry-local" || rec.PublicKey != publicKeyHex {
 		t.Fatalf("record = %#v, want sentry-local %s", rec, publicKeyHex)
 	}
-	componentID := testComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
+	componentID := testComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	wantName := "endpoint-sentry-local-" + strings.ToLower(componentID)
 	if rec.Name != wantName {
 		t.Fatalf("record name = %q, want %q", rec.Name, wantName)
@@ -767,14 +768,14 @@ func writePublishedSentries(t *testing.T, dir string, publications map[string]ma
 func endpointPublishedSentryForTest(t *testing.T, publicKeyHex string) config.ClientEndpointPublishedSentry {
 	t.Helper()
 	return config.ClientEndpointPublishedSentry{
-		ComponentKey: testComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex),
-		KeyType:      keytypes.SentryComponentFalcon1024V1,
+		ComponentKey: testComponentSelector(t, witness.Falcon1024V1, publicKeyHex),
+		KeyType:      witness.Falcon1024V1,
 		LastSeenAt:   "2026-06-04T00:00:00Z",
 	}
 }
 
 func testSentryPublicKeyHex() string {
-	return strings.Repeat("ab", keytypes.Falcon1024PublicKeySize)
+	return strings.Repeat("ab", witness.Falcon1024PublicKeySize)
 }
 
 func writeEndpointToken(t *testing.T, dir, alias, token string) {
@@ -794,9 +795,9 @@ func testComponentSelector(t *testing.T, keyType, publicKeyHex string) string {
 	if err != nil {
 		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
 	}
-	selector, err := keytypes.ComponentKeySelector(keyType, publicKey)
+	selector, err := witness.ID(keyType, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	return selector
 }
@@ -805,7 +806,7 @@ func assertHumanEndpointOutputUsesComponentOnly(t *testing.T, lines []string, pu
 	t.Helper()
 	output := strings.Join(lines, "\n")
 	if !strings.Contains(output, componentID) {
-		t.Fatalf("endpoint output = %q, want Sentry Key ID %s", output, componentID)
+		t.Fatalf("endpoint output = %q, want Witness Key ID %s", output, componentID)
 	}
 	if strings.Contains(output, publicKeyHex) || strings.Contains(output, strings.ToUpper(publicKeyHex)) {
 		t.Fatalf("endpoint output leaked raw sentry public key: %q", output)

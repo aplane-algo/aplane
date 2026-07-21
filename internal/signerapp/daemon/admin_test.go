@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/aplane-algo/aplane/internal/serverconfig"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +16,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/aplane-algo/aplane/internal/serverconfig"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/auth"
@@ -29,7 +31,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/policyruntime"
@@ -507,17 +508,17 @@ func TestAdminSyncSentriesNotifiesAdminKeyTypesChanged(t *testing.T) {
 	hub := &recordingAdminHub{}
 	server.hub = hub
 
-	publicKeyBytes := bytes.Repeat([]byte{0xab}, keytypes.Falcon1024PublicKeySize)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKeyBytes)
+	publicKeyBytes := bytes.Repeat([]byte{0xab}, witness.Falcon1024PublicKeySize)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKeyBytes)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	reqBody, _ := json.Marshal(signerapi.AdminSyncSentryReferencesRequest{
 		Candidates: []signerapi.SentryReferenceCandidate{{
 			EndpointAlias: "sentry-local",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.SentryComponentFalcon1024V1,
-			PublicKeyHex:  strings.Repeat("ab", keytypes.Falcon1024PublicKeySize),
+			KeyType:       witness.Falcon1024V1,
+			PublicKeyHex:  strings.Repeat("ab", witness.Falcon1024PublicKeySize),
 		}},
 	})
 

@@ -22,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
 	"github.com/aplane-algo/aplane/internal/signerapp/svcerr"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -46,7 +47,7 @@ type GenerateResult struct {
 	Address           string
 	PublicKeyHex      string
 	KeyType           string
-	IsComponentKey    bool
+	IsWitnessKey      bool
 	IsSpendingAccount *bool
 	Mnemonic          string
 	Parameters        map[string]string
@@ -182,7 +183,7 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		Address:           genResult.Address,
 		PublicKeyHex:      genResult.PublicKeyHex,
 		KeyType:           genResult.KeyType,
-		IsComponentKey:    genResult.IsComponentKey,
+		IsWitnessKey:      genResult.IsWitnessKey,
 		IsSpendingAccount: genResult.IsSpendingAccount,
 		Mnemonic:          genResult.Mnemonic,
 		Parameters:        params,
@@ -302,8 +303,8 @@ func isLockedStateError(err error) bool {
 }
 
 func normalizeDeleteKeyID(address string) (string, error) {
-	if keytypes.IsComponentKeySelector(address) {
-		selector, err := keytypes.NormalizeComponentKeySelector(address)
+	if witness.IsID(address) {
+		selector, err := witness.NormalizeID(address)
 		if err != nil {
 			return "", err
 		}

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"gopkg.in/yaml.v3"
@@ -363,7 +363,7 @@ func (c *Config) ForKey(key string) *Config {
 }
 
 // NormalizeKeyOverrideKey canonicalizes a runtime key-override lookup selector.
-// It accepts both signer auth addresses and Sentry Key IDs because Config.ForKey
+// It accepts both signer auth addresses and Witness Key IDs because Config.ForKey
 // is shared by signer and sentry effective policy snapshots. Policy document
 // validation must use the role-specific normalizers below instead.
 func NormalizeKeyOverrideKey(key string) (string, error) {
@@ -371,29 +371,29 @@ func NormalizeKeyOverrideKey(key string) (string, error) {
 	if raw == "" {
 		return "", fmt.Errorf("key override selector is required")
 	}
-	if selector, err := keytypes.NormalizeComponentKeySelector(raw); err == nil {
+	if selector, err := witness.NormalizeID(raw); err == nil {
 		return selector, nil
 	}
-	if len(raw) == keytypes.ComponentKeySelectorLength {
-		return "", fmt.Errorf("invalid Sentry Key ID %q", raw)
+	if len(raw) == witness.IDLength {
+		return "", fmt.Errorf("invalid Witness Key ID %q", raw)
 	}
 	addr, err := types.DecodeAddress(strings.ToUpper(raw))
 	if err != nil {
-		return "", fmt.Errorf("key override selector must be an Algorand address or Sentry Key ID")
+		return "", fmt.Errorf("key override selector must be an Algorand address or Witness Key ID")
 	}
 	return addr.String(), nil
 }
 
 // NormalizeSigningKeyOverrideKey validates and canonicalizes a signer-domain
 // policy key_overrides selector. Signer overrides are keyed by Algorand auth
-// address; Sentry Key IDs are valid only in sentry-domain policy.
+// address; Witness Key IDs are valid only in sentry-domain policy.
 func NormalizeSigningKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
 		return "", fmt.Errorf("signer key override selector is required")
 	}
-	if _, err := keytypes.NormalizeComponentKeySelector(raw); err == nil {
-		return "", fmt.Errorf("signer key override selector must be an Algorand auth address, not a Sentry Key ID")
+	if _, err := witness.NormalizeID(raw); err == nil {
+		return "", fmt.Errorf("signer key override selector must be an Algorand auth address, not a Witness Key ID")
 	}
 	addr, err := types.DecodeAddress(strings.ToUpper(raw))
 	if err != nil {
@@ -404,15 +404,15 @@ func NormalizeSigningKeyOverrideKey(key string) (string, error) {
 
 // NormalizeSentryKeyOverrideKey validates and canonicalizes a sentry
 // policy key_overrides selector. Sentry overrides are always keyed by
-// Sentry Key ID, not spending-account address.
+// Witness Key ID, not spending-account address.
 func NormalizeSentryKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
 		return "", fmt.Errorf("sentry key override selector is required")
 	}
-	selector, err := keytypes.NormalizeComponentKeySelector(raw)
+	selector, err := witness.NormalizeID(raw)
 	if err != nil {
-		return "", fmt.Errorf("sentry key override selector must be a Sentry Key ID: %w", err)
+		return "", fmt.Errorf("sentry key override selector must be a Witness Key ID: %w", err)
 	}
 	return selector, nil
 }

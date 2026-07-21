@@ -14,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
@@ -144,12 +145,12 @@ func TestVerifySignableKeysRejectsSentryKeyTypes(t *testing.T) {
 	}{
 		{
 			name:    "Falcon sentry key",
-			keyType: keytypes.SentryComponentFalcon1024V1,
+			keyType: witness.Falcon1024V1,
 			want:    sentryComponentSignRejectMessage,
 		},
 		{
 			name:    "falcon sentry key",
-			keyType: keytypes.SentryComponentFalcon1024V1,
+			keyType: witness.Falcon1024V1,
 			want:    sentryComponentSignRejectMessage,
 		},
 		{

@@ -16,6 +16,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
@@ -68,7 +69,7 @@ func signPreparedSentryComponents(ctx context.Context, plan *ComponentSignPlan, 
 
 	return &ComponentSignResult{
 		RequestID:    plan.RequestID,
-		ComponentKey: componentKey.ComponentKey,
+		ComponentKey: componentKey.WitnessKeyID,
 		Signatures:   signatures,
 	}, nil
 }
@@ -165,8 +166,8 @@ func loadGuardedAccountKeyMaterial(ctx context.Context, session componentKeyGett
 	return keyMaterial, nil
 }
 
-func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, componentKeySelector string) (*coresigning.KeyMaterial, *coresigning.ComponentKeyMaterial, *ServiceError) {
-	componentKeySelector, normalizeErr := keytypes.NormalizeComponentKeySelector(componentKeySelector)
+func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, componentKeySelector string) (*coresigning.KeyMaterial, *coresigning.WitnessKeyMaterial, *ServiceError) {
+	componentKeySelector, normalizeErr := witness.NormalizeID(componentKeySelector)
 	if normalizeErr != nil {
 		return nil, nil, badRequest(normalizeErr.Error())
 	}
@@ -177,7 +178,7 @@ func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, com
 		case errors.Is(err, keystore.ErrStoreLocked):
 			return nil, nil, lockedError()
 		case errors.Is(err, keystore.ErrKeyNotFound):
-			return nil, nil, badRequest(fmt.Sprintf("Sentry Key ID %q not found", componentKeySelector))
+			return nil, nil, badRequest(fmt.Sprintf("Witness Key ID %q not found", componentKeySelector))
 		default:
 			return nil, nil, internal(fmt.Sprintf("failed to load sentry key: %v", err))
 		}
@@ -185,26 +186,26 @@ func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, com
 	if keyMaterial == nil {
 		return nil, nil, internal("loaded sentry key material is nil")
 	}
-	if !keytypes.IsSentryComponentKeyType(keyMaterial.Type) {
+	if !witness.IsKeyType(keyMaterial.Type) {
 		gotType := keyMaterial.Type
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, badRequest(fmt.Sprintf("key %q is %s, not a sentry key", componentKeySelector, gotType))
 	}
-	if keyMaterial.Category != "" && keyMaterial.Category != keys.CategoryComponent {
+	if keyMaterial.Category != "" && keyMaterial.Category != keys.CategoryWitness {
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, badRequest(fmt.Sprintf("key %q is not a sentry key", componentKeySelector))
 	}
-	componentKey, ok := keyMaterial.Value.(*coresigning.ComponentKeyMaterial)
+	componentKey, ok := keyMaterial.Value.(*coresigning.WitnessKeyMaterial)
 	if !ok || componentKey == nil {
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, internal("loaded sentry key has invalid material")
 	}
-	if componentKey.ComponentKey != componentKeySelector {
+	if componentKey.WitnessKeyID != componentKeySelector {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, internal("loaded Sentry Key ID does not match requested Sentry Key ID")
+		return nil, nil, internal("loaded Witness Key ID does not match requested Witness Key ID")
 	}
-	publicKeySize, _ := keytypes.ComponentPublicKeySize(keyMaterial.Type)
-	privateKeySize, _ := keytypes.ComponentPrivateKeySize(keyMaterial.Type)
+	publicKeySize, _ := witness.PublicKeySize(keyMaterial.Type)
+	privateKeySize, _ := witness.PrivateKeySize(keyMaterial.Type)
 	if len(componentKey.PrivateKey) != privateKeySize {
 		zeroLoadedKeyMaterial(keyMaterial)
 		return nil, nil, internal(fmt.Sprintf("loaded sentry key has private key length %d", len(componentKey.PrivateKey)))
@@ -221,8 +222,11 @@ func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, com
 }
 
 func signSentryComponentMessage(keyType string, privateKey, msg []byte) ([]byte, *ServiceError) {
+	if err := witness.RequireCapability(witness.CustodianNetworkedSigner, witness.DomainSentryComponent); err != nil {
+		return nil, internal(err.Error())
+	}
 	switch keyType {
-	case keytypes.SentryComponentFalcon1024V1:
+	case witness.Falcon1024V1:
 		signature, err := signerops.New(nil).Sign(privateKey, msg)
 		if err != nil {
 			return nil, internal(fmt.Sprintf("failed to sign Falcon sentry component message: %v", err))
@@ -234,7 +238,7 @@ func signSentryComponentMessage(keyType string, privateKey, msg []byte) ([]byte,
 }
 
 func validateLoadedSentryComponentPair(keyType string, publicKey, privateKey []byte) error {
-	if err := keytypes.ValidateComponentPair(keyType, publicKey, privateKey); err != nil {
+	if err := witness.ValidatePair(keyType, publicKey, privateKey); err != nil {
 		return fmt.Errorf("loaded sentry key validation failed: %w", err)
 	}
 	return nil

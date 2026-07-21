@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	// BundleExtension identifies encrypted external contract-admin artifacts.
-	BundleExtension = ".apbounded-admin-key"
-	// ReferenceExtension identifies public contract-admin reference sidecars.
-	ReferenceExtension = ".apbounded-admin-key.json"
+	// BundleExtension identifies encrypted standalone witness artifacts.
+	BundleExtension = ".wit"
+	// ReferenceExtension identifies public witness reference sidecars.
+	ReferenceExtension = ".wit.json"
 )
 
-// FileSet describes files created for one external contract-admin credential.
+// FileSet describes files created for one standalone witness credential.
 type FileSet struct {
 	BundlePath    string
 	ReferencePath string
@@ -41,8 +41,8 @@ func GenerateFiles(directory string, passphrase []byte, now time.Time) (FileSet,
 	referenceBytes = append(referenceBytes, '\n')
 
 	files := FileSet{
-		BundlePath:    filepath.Join(directory, reference.ContractAdminKeyID+BundleExtension),
-		ReferencePath: filepath.Join(directory, reference.ContractAdminKeyID+ReferenceExtension),
+		BundlePath:    filepath.Join(directory, reference.WitnessKeyID+BundleExtension),
+		ReferencePath: filepath.Join(directory, reference.WitnessKeyID+ReferenceExtension),
 		Reference:     reference,
 	}
 	if err := requireAbsent(files.BundlePath); err != nil {
@@ -52,46 +52,46 @@ func GenerateFiles(directory string, passphrase []byte, now time.Time) (FileSet,
 		return FileSet{}, err
 	}
 	if err := writeExclusiveAtomic(files.BundlePath, bundleBytes); err != nil {
-		return FileSet{}, fmt.Errorf("write contract-admin artifact: %w", err)
+		return FileSet{}, fmt.Errorf("write witness artifact: %w", err)
 	}
 	if err := writeExclusiveAtomic(files.ReferencePath, referenceBytes); err != nil {
 		cleanupErr := os.Remove(files.BundlePath)
 		if cleanupErr != nil {
-			return FileSet{}, fmt.Errorf("write public contract-admin reference: %w (also failed to remove incomplete artifact: %v)", err, cleanupErr)
+			return FileSet{}, fmt.Errorf("write public witness reference: %w (also failed to remove incomplete artifact: %v)", err, cleanupErr)
 		}
-		return FileSet{}, fmt.Errorf("write public contract-admin reference: %w", err)
+		return FileSet{}, fmt.Errorf("write public witness reference: %w", err)
 	}
 	return files, nil
 }
 
-// LoadFile reads a regular .apbounded-admin-key file with a fixed upper bound. Symlinks and
+// LoadFile reads a regular .wit file with a fixed upper bound. Symlinks and
 // other file types are rejected.
 func LoadFile(path string) ([]byte, error) {
 	if filepath.Ext(path) != BundleExtension {
-		return nil, fmt.Errorf("contract-admin artifact must use the %s extension", BundleExtension)
+		return nil, fmt.Errorf("witness artifact must use the %s extension", BundleExtension)
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
-		return nil, fmt.Errorf("inspect contract-admin artifact: %w", err)
+		return nil, fmt.Errorf("inspect witness artifact: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("contract-admin artifact must be a regular file")
+		return nil, fmt.Errorf("witness artifact must be a regular file")
 	}
 	if info.Size() <= 0 || info.Size() > maxArtifactBytes {
-		return nil, fmt.Errorf("contract-admin artifact size %d is invalid", info.Size())
+		return nil, fmt.Errorf("witness artifact size %d is invalid", info.Size())
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open contract-admin artifact: %w", err)
+		return nil, fmt.Errorf("open witness artifact: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(file, maxArtifactBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read contract-admin artifact: %w", err)
+		return nil, fmt.Errorf("read witness artifact: %w", err)
 	}
 	if len(data) > maxArtifactBytes {
-		return nil, fmt.Errorf("contract-admin artifact exceeds %d bytes", maxArtifactBytes)
+		return nil, fmt.Errorf("witness artifact exceeds %d bytes", maxArtifactBytes)
 	}
 	return data, nil
 }
@@ -126,7 +126,7 @@ func requireAbsent(path string) error {
 
 func writeExclusiveAtomic(path string, data []byte) error {
 	directory := filepath.Dir(path)
-	temp, err := os.CreateTemp(directory, ".apbounded-admin-key-tmp-")
+	temp, err := os.CreateTemp(directory, ".witness-key-tmp-")
 	if err != nil {
 		return err
 	}

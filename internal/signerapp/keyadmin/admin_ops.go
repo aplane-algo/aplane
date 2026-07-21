@@ -18,6 +18,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/signerapp/storemut"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func (s Service) ListKeys(ir *identity.Runtime) ([]ListKeyInfo, *Error) {
@@ -70,7 +71,7 @@ func (s Service) GetKeyDetails(ir *identity.Runtime, address string) (*KeyDetail
 		info, err := keymgmt.DetectKeyInfoFromFileWithMasterKey(keyFile, mk)
 		if err == nil {
 			result.KeyType = info.Type
-			if keytypes.IsSentryComponentKeyType(info.Type) {
+			if witness.IsKeyType(info.Type) {
 				result.PublicKeyHex = info.PublicKeyHex
 			}
 			result.Parameters = keyDetailsParameters(info.Type, info.Parameters)
@@ -121,7 +122,7 @@ func sentryComponentSelectorForDetails(keyType, publicKeyHex string) (string, er
 	if err != nil {
 		return "", err
 	}
-	return keytypes.ComponentKeySelector(componentKeyType, publicKey)
+	return witness.ID(componentKeyType, publicKey)
 }
 
 func (s Service) ImportKey(ir *identity.Runtime, keyType, mnemonic string, params map[string]string) (*keymgmt.ImportResult, *Error) {

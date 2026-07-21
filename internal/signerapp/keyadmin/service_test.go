@@ -43,6 +43,7 @@ import (
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	dsafamilyreg "github.com/aplane-algo/aplane/lsig/dsafamily/signerreg"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
@@ -196,8 +197,8 @@ func TestServiceGenerateKeyEd25519(t *testing.T) {
 
 func TestServiceGenerateKeySentryComponent(t *testing.T) {
 	for _, keyType := range []string{
-		keytypes.SentryComponentFalcon1024V1,
-		keytypes.SentryComponentFalcon1024V1,
+		witness.Falcon1024V1,
+		witness.Falcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			ir := setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
@@ -211,8 +212,8 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 			if result.PublicKeyHex == "" {
 				t.Fatal("GenerateKey(component) public key is empty")
 			}
-			if !keytypes.IsComponentKeySelector(result.Address) {
-				t.Fatalf("GenerateKey(component) address = %q, want Sentry Key ID", result.Address)
+			if !witness.IsID(result.Address) {
+				t.Fatalf("GenerateKey(component) address = %q, want Witness Key ID", result.Address)
 			}
 			if result.Address == result.PublicKeyHex {
 				t.Fatal("GenerateKey(component) address unexpectedly equals public key hex")
@@ -224,8 +225,8 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 			if details.PublicKeyHex != result.PublicKeyHex {
 				t.Fatalf("GetKeyDetails(component) PublicKeyHex = %q, want %q", details.PublicKeyHex, result.PublicKeyHex)
 			}
-			if !result.IsComponentKey {
-				t.Fatal("GenerateKey(component) IsComponentKey = false, want true")
+			if !result.IsWitnessKey {
+				t.Fatal("GenerateKey(component) IsWitnessKey = false, want true")
 			}
 			if result.IsSpendingAccount == nil || *result.IsSpendingAccount {
 				t.Fatalf("GenerateKey(component) IsSpendingAccount = %#v, want false pointer", result.IsSpendingAccount)
@@ -244,10 +245,10 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 }
 
 func TestKeyDetailsParametersProjectsGuardedSentrySelector(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0xab}, keytypes.Falcon1024PublicKeySize)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	publicKey := bytes.Repeat([]byte{0xab}, witness.Falcon1024PublicKeySize)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 
 	got := keyDetailsParameters(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
@@ -270,7 +271,7 @@ func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	ir := setupIdentityRuntime(t)
 	svc := Service{}
 
-	result, err := svc.GenerateKey(context.Background(), ir, keytypes.SentryComponentFalcon1024V1, nil, nil)
+	result, err := svc.GenerateKey(context.Background(), ir, witness.Falcon1024V1, nil, nil)
 	if result != nil {
 		t.Fatalf("GenerateKey(component in signer node) result = %#v, want nil", result)
 	}
@@ -507,7 +508,7 @@ func TestServiceDeleteKeyRemovesSentryComponentKey(t *testing.T) {
 	ir := setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
 	svc := Service{}
 
-	genResult, genErr := svc.GenerateKey(context.Background(), ir, keytypes.SentryComponentFalcon1024V1, nil, nil)
+	genResult, genErr := svc.GenerateKey(context.Background(), ir, witness.Falcon1024V1, nil, nil)
 	if genErr != nil {
 		t.Fatalf("GenerateKey(component) error = %#v", genErr)
 	}

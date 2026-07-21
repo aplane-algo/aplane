@@ -15,6 +15,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keytypeux"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 // hexPattern matches hex strings starting with 0x followed by hex digits
@@ -174,7 +175,7 @@ func filterKeysForTab(keys []KeyInfo, tab keyListTab) []KeyInfo {
 }
 
 func keyBelongsToTab(key KeyInfo, tab keyListTab) bool {
-	isSentry := keytypes.IsSentryComponentKeyType(key.KeyType)
+	isSentry := witness.IsKeyType(key.KeyType)
 	if tab == keyListTabSentry {
 		return isSentry
 	}
@@ -358,7 +359,7 @@ func (m Model) renderKeyDetails() string {
 	sb.WriteString(fmt.Sprintf("Type:    %s\n", styledKeyTypeWithTemplateProvenanceStatus(m.details.keyType, m.details.templateProvenanceStatus)))
 	if m.details.publicKeyHex != "" {
 		label := "Public key"
-		if keytypes.IsSentryComponentKeyType(m.details.keyType) {
+		if witness.IsKeyType(m.details.keyType) {
 			label = "Sentry public key"
 		}
 		sb.WriteString(wrapText(fmt.Sprintf("%s: %s", label, displayPublicKeyHex(m.details.publicKeyHex)), m.popupBodyWidth(62)))

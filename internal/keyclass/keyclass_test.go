@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestNodeRoleAllowsKeyType(t *testing.T) {
@@ -22,16 +23,16 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.CorridorV1) {
 		t.Fatal("signer node rejected corridor account key")
 	}
-	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.SentryComponentFalcon1024V1) {
+	if NodeRoleAllowsKeyType(noderole.RoleSigner, witness.Falcon1024V1) {
 		t.Fatal("signer node allowed Falcon sentry key")
 	}
-	if NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.SentryComponentFalcon1024V1) {
+	if NodeRoleAllowsKeyType(noderole.RoleSigner, witness.Falcon1024V1) {
 		t.Fatal("signer node allowed Falcon sentry key")
 	}
-	if !NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.SentryComponentFalcon1024V1) {
+	if !NodeRoleAllowsKeyType(noderole.RoleSentry, witness.Falcon1024V1) {
 		t.Fatal("sentry node rejected Falcon sentry key")
 	}
-	if !NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.SentryComponentFalcon1024V1) {
+	if !NodeRoleAllowsKeyType(noderole.RoleSentry, witness.Falcon1024V1) {
 		t.Fatal("sentry node rejected Falcon sentry key")
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleSentry, "ed25519") {
@@ -46,7 +47,7 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if NodeRoleAllowsKeyType(noderole.Role("unknown"), "ed25519") {
 		t.Fatal("unknown node role allowed Ed25519 account key")
 	}
-	if NodeRoleAllowsKeyType(noderole.Role("unknown"), keytypes.SentryComponentFalcon1024V1) {
+	if NodeRoleAllowsKeyType(noderole.Role("unknown"), witness.Falcon1024V1) {
 		t.Fatal("unknown node role allowed sentry key")
 	}
 }
@@ -54,7 +55,7 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 func TestValidateKeyTypesAllowedForNodeRoleReportsConflicts(t *testing.T) {
 	err := ValidateKeyTypesAllowedForNodeRole(noderole.RoleSentry, map[string]string{
 		"ADDR": "ed25519",
-		"ATT":  keytypes.SentryComponentFalcon1024V1,
+		"ATT":  witness.Falcon1024V1,
 	})
 	if err == nil {
 		t.Fatal("ValidateKeyTypesAllowedForNodeRole() error = nil")

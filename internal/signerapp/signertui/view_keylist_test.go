@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestBuildDetailsParameterLinesFormatsAddressList(t *testing.T) {
@@ -140,7 +141,7 @@ func TestRenderKeyListViewUsesSignerNodeWithoutTabs(t *testing.T) {
 		admin:  adminPanelState{settings: &AdminSettings{NodeRole: "signer"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentFalcon1024V1},
+			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
@@ -164,7 +165,7 @@ func TestRenderKeyListViewDefaultsToSignerNodeWithoutTabs(t *testing.T) {
 		admin:     adminPanelState{settings: &AdminSettings{}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentFalcon1024V1},
+			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
@@ -191,7 +192,7 @@ func TestRenderKeyListViewUsesSentryNodeWithoutTabs(t *testing.T) {
 		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentFalcon1024V1},
+			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
@@ -216,7 +217,7 @@ func TestHandleKeyListKeysIgnoresTabOnSentryNode(t *testing.T) {
 		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentFalcon1024V1},
+			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
@@ -237,7 +238,7 @@ func TestHandleKeyListKeysIgnoresTabsOnSignerNode(t *testing.T) {
 		admin:     adminPanelState{settings: &AdminSettings{NodeRole: "signer"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentFalcon1024V1},
+			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
@@ -256,7 +257,7 @@ func TestSelectKeyByAddressSwitchesToSentryTab(t *testing.T) {
 	m := Model{admin: adminPanelState{settings: &AdminSettings{NodeRole: "sentry"}},
 		keylist: keyListState{keys: []KeyInfo{
 			{Address: "SIGNINGADDR", KeyType: "ed25519"},
-			{Address: "SENTRYKEY", KeyType: keytypes.SentryComponentFalcon1024V1},
+			{Address: "SENTRYKEY", KeyType: witness.Falcon1024V1},
 		}},
 	}
 
@@ -281,7 +282,7 @@ func TestRenderKeyDetailsShowsPreciseTemplateProvenanceNote(t *testing.T) {
 }
 
 func TestRenderKeyDetailsShowsSentryPublicKey(t *testing.T) {
-	rendered := stripANSI(Model{details: keyDetailsState{address: "aabbccdd", keyType: keytypes.SentryComponentFalcon1024V1, publicKeyHex: "aabbccdd"}, height: 30}.renderKeyDetails())
+	rendered := stripANSI(Model{details: keyDetailsState{address: "aabbccdd", keyType: witness.Falcon1024V1, publicKeyHex: "aabbccdd"}, height: 30}.renderKeyDetails())
 
 	if !strings.Contains(rendered, "Sentry public key: aabbccdd") {
 		t.Fatalf("renderKeyDetails() missing sentry public key:\n%s", rendered)
@@ -290,7 +291,7 @@ func TestRenderKeyDetailsShowsSentryPublicKey(t *testing.T) {
 
 func TestRenderKeyDetailsTruncatesLongPublicKey(t *testing.T) {
 	const publicKey = "0123456789abcdef0123456789abcdef0123456789abcdef"
-	rendered := stripANSI(Model{details: keyDetailsState{address: "SENTRYKEY", keyType: keytypes.SentryComponentFalcon1024V1, publicKeyHex: publicKey}, height: 30}.renderKeyDetails())
+	rendered := stripANSI(Model{details: keyDetailsState{address: "SENTRYKEY", keyType: witness.Falcon1024V1, publicKeyHex: publicKey}, height: 30}.renderKeyDetails())
 
 	if !strings.Contains(rendered, "Sentry public key: 0123456789abcdef0123...") {
 		t.Fatalf("renderKeyDetails() missing truncated sentry public key:\n%s", rendered)
@@ -303,7 +304,7 @@ func TestRenderKeyDetailsTruncatesLongPublicKey(t *testing.T) {
 func TestRenderKeyDetailsLabelsSentryKey(t *testing.T) {
 	rendered := stripANSI(Model{
 		initialNodeRole: "sentry",
-		details:         keyDetailsState{address: "SENTRYKEY", keyType: keytypes.SentryComponentFalcon1024V1}, height: 30,
+		details:         keyDetailsState{address: "SENTRYKEY", keyType: witness.Falcon1024V1}, height: 30,
 	}.renderKeyDetails())
 
 	if !strings.Contains(rendered, "Sentry Key: SENTRYKEY") {

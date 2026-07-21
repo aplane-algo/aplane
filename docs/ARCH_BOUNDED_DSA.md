@@ -18,9 +18,10 @@ been used and no compatibility or migration path was required.
 
 A bounded authorization contract is a stateless LogicSig program that
 defines the complete transaction envelope accepted for an account. Its
-contract admin key is an independent, normally cold key that authorizes a named
-administrative operation. It is not Algorand Governance, the `apadmin` client,
-an ASA manager key, or a sentry key.
+contract admin key is an independent witness key in standalone custody that
+authorizes a named administrative operation. It is not Algorand Governance,
+the `apadmin` client, or an ASA manager key. The key form is shared with sentry
+witnesses, but an individual keypair should never be enrolled in both roles.
 
 `bounded1` has three ordered regions:
 
@@ -261,13 +262,15 @@ UTF-8. A missing or explicitly empty optional parameter has a zero-length
 empty list. A list value is `u32(count) || field(element_0) || ...`. Nested or
 new parameter types require a new encoding rule before use by bounded.
 
-## Contract Admin Identity and Transcript
+## Contract Admin Witness Identity and Transcript
 
-The Contract Admin Key ID is uppercase unpadded base32 of:
+The `contract_admin_key_id` field carries the uppercase unpadded base32 Witness
+Key ID of the enrolled admin witness:
 
 ```text
 SHA512_256(
-  field("APLANE_BOUNDED_ADMIN_KEY_ID_V1") ||
+  field("APLANE_WITNESS_KEY_ID_V1") ||
+  field("aplane.witness-falcon1024.v1") ||
   field(falcon_admin_public_key)
 )
 ```
@@ -345,7 +348,7 @@ canonical_behavior_parameters_hex:
   3333333333333333333333333333333333333333
 
 contract_admin_key_id:
-  WS6X45XM2AI7Y2GNJ46GXMNJ42LCIOAETMEEOIMPSWS3LOFDDGQA
+  MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
   0a5e99e840a2e70f3b22653dbb438c39fa3f4f57d0a5f08fca2cc6afba198336

@@ -17,10 +17,10 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine/connect"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -287,21 +287,21 @@ func discoverSentryComponentKeys(keys []signerapi.KeyInfo) ([]DiscoveredSentryCo
 		// Component key types are runtime metadata: any advertised component
 		// key participates in discovery, and its key-type string is treated
 		// as opaque. Selector cross-derivation below pins the advertised
-		// Sentry Key ID to the advertised key type and public key.
-		if !key.IsComponentKey || key.KeyType == "" {
+		// Witness Key ID to the advertised key type and public key.
+		if !key.IsWitnessKey || key.KeyType == "" {
 			continue
 		}
 		publicKey, err := normalizeSentryPublicKeyHex(key.PublicKeyHex)
 		if err != nil {
-			return nil, fmt.Errorf("%w: Sentry Key ID %q has invalid public_key_hex: %v", ErrSentryDiscoveryInvalidMetadata, key.Address, err)
+			return nil, fmt.Errorf("%w: Witness Key ID %q has invalid public_key_hex: %v", ErrSentryDiscoveryInvalidMetadata, key.Address, err)
 		}
-		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
+		selector, err := witness.NormalizeID(key.Address)
 		if err != nil {
-			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Sentry Key ID %q: %v", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), key.Address, err)
+			return nil, fmt.Errorf("%w: metadata for %s has invalid advertised Witness Key ID %q: %v", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), key.Address, err)
 		}
 		expectedSelector, err := sentryComponentSelector(key.KeyType, publicKey)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to derive Sentry Key ID for sentry public key %s: %v", ErrSentryDiscoveryInvalidMetadata, shortSentryPublicKeyHex(publicKey), err)
+			return nil, fmt.Errorf("%w: failed to derive Witness Key ID for sentry public key %s: %v", ErrSentryDiscoveryInvalidMetadata, shortSentryPublicKeyHex(publicKey), err)
 		}
 		if selector != expectedSelector {
 			return nil, fmt.Errorf("%w: sentry component %s advertised selector %s, want %s", ErrSentryDiscoveryInvalidMetadata, sentryComponentLabel(key.KeyType, publicKey), selector, expectedSelector)
@@ -341,9 +341,9 @@ func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentC
 	}
 	expectedSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, expectedPublicKey)
 	if err != nil {
-		return fmt.Errorf("failed to derive expected Sentry Key ID: %w", err)
+		return fmt.Errorf("failed to derive expected Witness Key ID: %w", err)
 	}
-	expectedLabel := fmt.Sprintf("Sentry Key ID %s (%s)", expectedSelector, sentryKey.ComponentKeyType)
+	expectedLabel := fmt.Sprintf("Witness Key ID %s (%s)", expectedSelector, sentryKey.ComponentKeyType)
 	keys, err := client.GetKeysWithContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to inspect %s sentry keys: %w", source, err)
@@ -352,7 +352,7 @@ func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentC
 		return sentryEndpointLockedError{source: source}
 	}
 	for _, key := range keys.Keys {
-		if key.KeyType != sentryKey.ComponentKeyType || !key.IsComponentKey {
+		if key.KeyType != sentryKey.ComponentKeyType || !key.IsWitnessKey {
 			continue
 		}
 		publicKey, err := normalizeSentryPublicKeyHex(key.PublicKeyHex)
@@ -362,12 +362,12 @@ func verifySentryEndpointAdvertises(ctx context.Context, client sentryComponentC
 		if publicKey != expectedPublicKey {
 			continue
 		}
-		selector, err := keytypes.NormalizeComponentKeySelector(key.Address)
+		selector, err := witness.NormalizeID(key.Address)
 		if err != nil {
-			return fmt.Errorf("%s advertised %s with invalid Sentry Key ID %q: %w", source, expectedLabel, key.Address, err)
+			return fmt.Errorf("%s advertised %s with invalid Witness Key ID %q: %w", source, expectedLabel, key.Address, err)
 		}
 		if selector != expectedSelector {
-			return fmt.Errorf("%s advertised %s with Sentry Key ID %s, want %s", source, expectedLabel, selector, expectedSelector)
+			return fmt.Errorf("%s advertised %s with Witness Key ID %s, want %s", source, expectedLabel, selector, expectedSelector)
 		}
 		return nil
 	}

@@ -38,11 +38,11 @@ type KeyMaterial struct {
 	SigningMetadataVersion int                          // Version of durable key-file signing metadata
 }
 
-// ComponentKeyMaterial holds raw sentry key material. Sentry keys are not
-// transaction-signing provider keys and must only be used by the sentry
-// component-signing flow.
-type ComponentKeyMaterial struct {
-	ComponentKey string
+// WitnessKeyMaterial holds raw signer-custodied witness material. Witness keys
+// are not transaction-signing provider keys and this hot custody class may be
+// used only by the sentry component-signing flow.
+type WitnessKeyMaterial struct {
+	WitnessKeyID string
 	PublicKey    []byte
 	PrivateKey   []byte
 }

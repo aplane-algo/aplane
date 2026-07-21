@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/encoding/msgpack"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -238,8 +239,8 @@ func TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup(t *testi
 		keyType string
 		want    string
 	}{
-		{name: "ed25519 component", keyType: keytypes.SentryComponentFalcon1024V1, want: sentryComponentSignRejectMessage},
-		{name: "falcon component", keyType: keytypes.SentryComponentFalcon1024V1, want: sentryComponentSignRejectMessage},
+		{name: "ed25519 component", keyType: witness.Falcon1024V1, want: sentryComponentSignRejectMessage},
+		{name: "falcon component", keyType: witness.Falcon1024V1, want: sentryComponentSignRejectMessage},
 		{name: "guarded Falcon sentry", keyType: keytypes.GuardedFalcon1024Sentry1024V1, want: guardedAccountSignRejectMessage},
 		{name: "guarded falcon sentry", keyType: keytypes.GuardedFalcon1024Sentry1024V1, want: guardedAccountSignRejectMessage},
 		{name: "corridor", keyType: keytypes.CorridorV1, want: guardedAccountSignRejectMessage},

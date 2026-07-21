@@ -26,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
@@ -223,14 +224,14 @@ func bestEffortCloseAccount(t *testing.T, eng *engine.Engine, testnet *harness.T
 }
 
 // startMockSentryEndpoint stands up an HTTP endpoint that behaves like a sentry
-// node for one sentry key: it advertises the Sentry Key ID on /keys (so the
+// node for one sentry key: it advertises the Witness Key ID on /keys (so the
 // client's endpoint-advertisement check passes) and produces real sentry-role
 // component signatures on /sign/component using the test-held private key.
 func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token string) *httptest.Server {
 	t.Helper()
-	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("Failed to derive Sentry Key ID: %v", err)
+		t.Fatalf("Failed to derive Witness Key ID: %v", err)
 	}
 	publicKeyHex := hex.EncodeToString(publicKey)
 
@@ -247,10 +248,10 @@ func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token s
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
 			Count: 1,
 			Keys: []signerapi.KeyInfo{{
-				Address:        componentSelector,
-				PublicKeyHex:   publicKeyHex,
-				KeyType:        keytypes.SentryComponentFalcon1024V1,
-				IsComponentKey: true,
+				Address:      componentSelector,
+				PublicKeyHex: publicKeyHex,
+				KeyType:      witness.Falcon1024V1,
+				IsWitnessKey: true,
 			}},
 		})
 	})
@@ -265,7 +266,7 @@ func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token s
 			return
 		}
 		if req.Role != signerapi.ComponentSignRoleSentry || req.ComponentKey != componentSelector {
-			http.Error(w, "wrong Sentry Key ID", http.StatusBadRequest)
+			http.Error(w, "wrong Witness Key ID", http.StatusBadRequest)
 			return
 		}
 		group, err := canonical.DecodeGroupHex(req.GroupBytesHex)
@@ -291,7 +292,7 @@ func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token s
 			}
 			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
 				TargetIndex:     index,
-				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				SignatureScheme: witness.Falcon1024V1,
 				Signature:       hex.EncodeToString(signature),
 			})
 		}

@@ -758,7 +758,7 @@ The following runtime and policy settings affect server behavior:
 | `max_algo_payments` | `identities/<identity>/policy.yaml` | unset | Reject payment txns whose raw microAlgo amount exceeds the configured per-network ceiling. Admin UI/IPC input and rejection messages use ALGO display units. |
 | `review_asa_amounts` | `identities/<identity>/policy.yaml` | unset | Force review for ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset threshold. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
 | `max_asa_amounts` | `identities/<identity>/policy.yaml` | unset | Reject ASA transfers whose stored raw asset amount exceeds the configured per-network, per-asset ceiling. In the admin UI, any ASA ref that resolves on the selected network is entered in display units and converted to raw before persistence. |
-| `key_overrides` | `identities/<identity>/policy.yaml` | unset | YAML-only sparse policy overrides. Signer-domain overrides are keyed by signing auth address; sentry-domain overrides are keyed by Sentry Key ID. Unset fields inherit identity-wide policy, and nested overrides are rejected. |
+| `key_overrides` | `identities/<identity>/policy.yaml` | unset | YAML-only sparse policy overrides. Signer-domain overrides are keyed by signing auth address; sentry-domain overrides are keyed by Witness Key ID. Unset fields inherit identity-wide policy, and nested overrides are rejected. |
 
 **Pre-grouped immutability**: Pre-grouped transactions are always immutable. If they require additional dummies for LogicSig budget, the request is rejected. Clients should submit ungrouped transactions to let the server canonicalize the group.
 
@@ -867,7 +867,7 @@ rekey through a typed partial flow:
 3. Apsigner verifies the spending signature and returns finalized unsigned
    transactions plus one aligned partial LogicSig. It never returns the partial
    in `signed[]` and never handles contract-admin private material.
-4. `apbounded-admin sign` independently decodes the finalized group, verifies
+4. `aprekey sign` independently decodes the finalized group, verifies
    the pure rekey shape, bounded profile, program binding, Contract Admin Key ID,
    transaction ID, and spending signature, then confirms and adds the external
    Falcon signature.
@@ -875,7 +875,7 @@ rekey through a typed partial flow:
    ID, rechecks authorization/network/validity state, and submits directly to
    Algod without replanning.
 
-Online `apbounded-admin rekey` performs these stages directly. The separated
+Online `aprekey rekey` performs these stages directly. The separated
 ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
 `sign`, and `complete` using `.apbounded-admin-request` and
 `.apbounded-admin-signature` files.

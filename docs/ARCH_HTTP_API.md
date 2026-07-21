@@ -218,7 +218,7 @@ finalized transaction, durable metadata, and program contract.
 
 - optional `request_id`
 - `role`: `user` or `sentry`
-- `component_key`: guarded account address for `user`, Sentry Key ID for
+- `component_key`: guarded account address for `user`, Witness Key ID for
   `sentry`
 - `group_bytes_hex[]`: final TX-prefixed transaction bytes for the whole group
 - `target_indices[]`: zero-based indices to sign
@@ -233,7 +233,7 @@ always-review rules, and blocking operator approval, with the guarded account
 as the policy key for each target and non-target group positions evaluated as
 foreign context. The request can therefore block for a manual approval
 decision, exactly like `/sign`. For `role:"sentry"`, `component_key`
-identifies the local Sentry Key ID and the deterministic sentry policy domain
+identifies the local Witness Key ID and the deterministic sentry policy domain
 applies instead (no operator approval; see
 [ARCH_POLICY.md](ARCH_POLICY.md)). Each target index is signed independently
 using the role-separated sentry message derived from that target's TxID.
@@ -368,9 +368,9 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
   classification and stored bytecode remain authoritative.
 - optional `lsig_size`
 - optional `is_generic_lsig`
-- optional `is_component_key` and `is_spending_account`: sentry-key rows use
-  `address` as the Sentry Key ID, not as an Algorand spending address.
-  Sentry Key IDs are always 52-character uppercase base32
+- optional `is_witness_key` and `is_spending_account`: sentry-key rows use
+  `address` as the Witness Key ID, not as an Algorand spending address.
+  Witness Key IDs are always 52-character uppercase base32
   SHA-512/256 digests over the domain-separated key-type/public-key tuple;
   `public_key_hex` carries the full component public key.
 - optional `signing_args`: the key file's stored signing schema captured at
@@ -446,15 +446,16 @@ uses.
 For a bounded profile with `authorization: admin_key`, creation metadata includes
 the framework-injected scalar `bounded_admin_public_key` (`type:"bytes"`). It
 accepts the 1,793-byte Falcon-1024 public key from an external
-`.apbounded-admin-key.json` reference. The signer derives the Contract Admin Key
-ID and program binding; neither is accepted as a separate creation input.
+`.wit.json` reference. The signer derives the Contract Admin Key
+ID, which is the enrolled witness's Witness Key ID, and the program binding;
+neither is accepted as a separate creation input.
 
 `/admin/generate`:
 
 - request has `key_type`, optional `parameters`
 - no `name` field
 - response has `address`, optional `public_key_hex`, `key_type`, optional
-  `is_component_key`, optional `is_spending_account`, and optional `parameters`
+  `is_witness_key`, optional `is_spending_account`, and optional `parameters`
 - no mnemonic in REST response
 
 `/admin/sentries/sync`:

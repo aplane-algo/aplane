@@ -1,4 +1,4 @@
-.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell apbounded-admin apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 apbounded-admin-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
+.PHONY: testmode-check staticcheck race-cover-test build-check all clean apshell aprekey apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe applugin-checksum applugin-checksums help compile-teal compile-docassets curated-docs test check formal-test formal-test-deep formal-copy-sync-check race-test unit-test contract-test integration-test integration-test-testnet integration-test-localnet integration-test-reuse integration-test-cleanup soak-test-localnet apshell-command-coverage-localnet bundled-plugins bundled-plugins-linux bundled-plugins-darwin example-plugins examples-plugins install-example-plugins check-example-plugins build-bundled-plugins build-example-plugins docker-systemd-test docker-local-test docker-local-release-test apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64 bin-arm64 bin-amd64 bin-darwin-amd64 bin-darwin-arm64 security-analysis analyze-keyzero analyze-keylog analyze-seedphrase config-docs release-local fmt-check vet mod-tidy-check deadcode-check smoke-test integrity-check lint
 
 # Default target when running just "make"
 .DEFAULT_GOAL := all
@@ -89,14 +89,14 @@ internal/lsig/dummy.teal.tok: resources/dummy.teal.tok
 	@echo "✓ Updated internal/lsig/dummy.teal.tok"
 
 # Default: Build all first-party binaries and official bundled plugins.
-all: compile-teal apshell apbounded-admin apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe bundled-plugins
+all: compile-teal apshell aprekey apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe bundled-plugins
 
 # Build apshell
 apshell: compile-teal compile-docassets
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/apshell ./cmd/apshell
 
-apbounded-admin:
-	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/apbounded-admin ./cmd/apbounded-admin
+aprekey:
+	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/aprekey ./cmd/aprekey
 
 apsigner: compile-teal
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/apsigner ./cmd/apsigner
@@ -151,8 +151,8 @@ ARM64_LD_FLAGS = -ldflags '$(VERSION_LDFLAGS) -linkmode external -extldflags "-s
 apshell-arm64: compile-teal compile-docassets
 	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC="$(ARM64_CC)" go build $(ARM64_LD_FLAGS) -o apshell-arm64 ./cmd/apshell
 
-apbounded-admin-arm64:
-	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC="$(ARM64_CC)" go build $(ARM64_LD_FLAGS) -o apbounded-admin-arm64 ./cmd/apbounded-admin
+aprekey-arm64:
+	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC="$(ARM64_CC)" go build $(ARM64_LD_FLAGS) -o aprekey-arm64 ./cmd/aprekey
 
 apsigner-arm64: compile-teal
 	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC="$(ARM64_CC)" go build $(ARM64_LD_FLAGS) -o apsigner-arm64 ./cmd/apsigner
@@ -194,10 +194,10 @@ applugin-checksum-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(VERSION_LDFLAGS)' -o applugin-checksum-arm64 ./cmd/applugin-checksum
 
 # Build all binaries for arm64 into bin/arm64/
-bin-arm64: apshell-arm64 apbounded-admin-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64
+bin-arm64: apshell-arm64 aprekey-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apstore-arm64 appolicy-arm64 apapprover-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 applugin-checksum-arm64
 	@mkdir -p bin/arm64
 	@mv apshell-arm64 bin/arm64/apshell
-	@mv apbounded-admin-arm64 bin/arm64/apbounded-admin
+	@mv aprekey-arm64 bin/arm64/aprekey
 	@mv apsigner-arm64 bin/arm64/apsigner
 	@mv apadmin-arm64 bin/arm64/apadmin
 	@mv apconsole-arm64 bin/arm64/apconsole
@@ -218,7 +218,7 @@ bin-arm64: apshell-arm64 apbounded-admin-arm64 apsigner-arm64 apadmin-arm64 apco
 bin-amd64: compile-teal compile-docassets
 	@mkdir -p bin/amd64
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apshell ./cmd/apshell
-	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apbounded-admin ./cmd/apbounded-admin
+	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/aprekey ./cmd/aprekey
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apsigner ./cmd/apsigner
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apadmin ./cmd/apadmin
 	CGO_ENABLED=1 $(CC_CMD) go build $(LD_FLAGS) -o bin/amd64/apconsole ./cmd/apconsole
@@ -242,7 +242,7 @@ DARWIN_LD_FLAGS = -ldflags '$(VERSION_LDFLAGS)'
 bin-darwin-arm64: compile-teal compile-docassets
 	@mkdir -p bin/darwin-arm64
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apshell ./cmd/apshell
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apbounded-admin ./cmd/apbounded-admin
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/aprekey ./cmd/aprekey
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apsigner ./cmd/apsigner
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apadmin ./cmd/apadmin
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-arm64/apconsole ./cmd/apconsole
@@ -266,7 +266,7 @@ bin-darwin-arm64: compile-teal compile-docassets
 bin-darwin-amd64: compile-teal compile-docassets
 	@mkdir -p bin/darwin-amd64
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apshell ./cmd/apshell
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apbounded-admin ./cmd/apbounded-admin
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/aprekey ./cmd/aprekey
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apsigner ./cmd/apsigner
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apadmin ./cmd/apadmin
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DARWIN_LD_FLAGS) -o bin/darwin-amd64/apconsole ./cmd/apconsole
@@ -297,8 +297,8 @@ bin-windows-amd64: compile-teal compile-docassets
 clean:
 	find bin -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
 	rm -rf internal/docassets/generated
-	rm -f apshell apbounded-admin apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe migrate-config-v1 applugin-checksum
-	rm -f apshell-arm64 apbounded-admin-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apapprover-arm64 apstore-arm64 appolicy-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 migrate-config-v1-arm64 applugin-checksum-arm64
+	rm -f apshell aprekey apbounded-admin apsigner apadmin apconsole apapprover apstore appolicy appass aplocalnet appass-file appass-systemd-creds approbe migrate-config-v1 applugin-checksum
+	rm -f apshell-arm64 aprekey-arm64 apbounded-admin-arm64 apsigner-arm64 apadmin-arm64 apconsole-arm64 apapprover-arm64 apstore-arm64 appolicy-arm64 appass-arm64 aplocalnet-arm64 appass-file-arm64 appass-systemd-creds-arm64 approbe-arm64 migrate-config-v1-arm64 applugin-checksum-arm64
 
 # Local release dry-run (builds archives without publishing)
 # On macOS: also builds darwin archives. On Linux: linux only.
@@ -318,7 +318,7 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 		archive="aplane_$${VERSION}_linux_$${arch}.tar.gz"; \
 		rm -rf dist/staging; \
 		mkdir -p dist/staging/aplane/bin dist/staging/aplane/installer/scripts dist/staging/aplane/library/templates dist/staging/aplane/plugins.available; \
-		cp bin/$${arch}/apshell bin/$${arch}/apbounded-admin bin/$${arch}/apsigner bin/$${arch}/apadmin \
+		cp bin/$${arch}/apshell bin/$${arch}/aprekey bin/$${arch}/apsigner bin/$${arch}/apadmin \
 		   bin/$${arch}/apconsole \
 		   bin/$${arch}/apapprover bin/$${arch}/apstore bin/$${arch}/appolicy bin/$${arch}/appass \
 		   bin/$${arch}/aplocalnet \
@@ -344,7 +344,7 @@ release-local: bin-amd64 bin-arm64 bin-windows-amd64 bundled-plugins-linux
 		archive="aplane_$${VERSION}_darwin_$${darwinarch}.tar.gz"; \
 		rm -rf dist/staging; \
 		mkdir -p dist/staging/aplane/bin dist/staging/aplane/installer/scripts dist/staging/aplane/library/templates dist/staging/aplane/plugins.available; \
-		cp $${darwindir}apshell $${darwindir}apbounded-admin $${darwindir}apsigner $${darwindir}apadmin \
+		cp $${darwindir}apshell $${darwindir}aprekey $${darwindir}apsigner $${darwindir}apadmin \
 		   $${darwindir}apconsole \
 		   $${darwindir}apapprover $${darwindir}apstore $${darwindir}appolicy $${darwindir}appass \
 		   $${darwindir}aplocalnet \
@@ -909,7 +909,7 @@ config-docs:
 help:
 	@echo "Available targets:"
 	@echo "  make apshell            - Build apshell"
-	@echo "  make apbounded-admin   - Build external Falcon contract-admin helper"
+	@echo "  make aprekey          - Build external Falcon rekey utility"
 	@echo "  make apsigner        - Build apsigner (signing server)"
 	@echo "  make apadmin     - Build apadmin"
 	@echo "  make apconsole    - Build apconsole"
@@ -928,7 +928,7 @@ help:
 	@echo "  make bin-arm64         - Build all binaries for ARM64 into bin/arm64/"
 	@echo "  make bin-amd64         - Build all binaries for AMD64 into bin/amd64/"
 	@echo "  make apshell-arm64        - Cross-compile apshell for ARM64"
-	@echo "  make apbounded-admin-arm64 - Cross-compile apbounded-admin for ARM64"
+	@echo "  make aprekey-arm64    - Cross-compile aprekey for ARM64"
 	@echo "  make apsigner-arm64    - Cross-compile apsigner for ARM64"
 	@echo "  make apadmin-arm64 - Cross-compile apadmin for ARM64"
 	@echo "  make apconsole-arm64 - Cross-compile apconsole for ARM64"

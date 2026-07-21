@@ -9,13 +9,15 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestMetadataValidateAdminBinding(t *testing.T) {
 	publicKey := bytes.Repeat([]byte{0x5a}, FalconAdminPublicKeySize)
-	keyID, err := AdminKeyID(publicKey)
+	keyID, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("AdminKeyID() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	metadata := &Metadata{
 		Contract:               ContractV1,

@@ -64,13 +64,22 @@ They participate in a specific account or operation contract:
 
 | Type | Custody and use | Signer key type? |
 |---|---|---|
-| **Sentry component key** | Stored by a sentry-role signer and used through `/sign/component`; its signature is assembled into a guarded-account LogicSig. | Yes. Durable category `component`; never accepted as a spending account by ordinary `/sign`. |
-| **External contract-admin key** | Normally cold, stored in an encrypted `.apbounded-admin-key` artifact, and used only for a declared bounded admin operation through `apbounded-admin`. | No. It is external authority material, not an `apstore` key, sentry component, or ordinary signer key type. |
+| **Witness key, sentry enrollment** | Stored by a sentry-role signer and used through `/sign/component`; its signature is assembled into a guarded-account LogicSig. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
+| **Witness key, contract-admin enrollment** | Stored in a standalone encrypted `.wit` artifact and used only for a declared bounded admin operation through `aprekey`. | The key form has the same witness key type, but this custody container is never an `apstore` or signer key. |
 
 The current authority overlays are therefore **unguarded**, **sentry guarded**,
 and **contract-admin-authorized operation**. Contract-admin authority is
 operation-specific: the spending key still authenticates every bounded path,
 and the external admin key currently authorizes only a pure rekey.
+
+Witness **form**, **custody**, and **enrollment** are separate dimensions. The
+key record carries no role field: the program that embeds the public key names
+the role, and the custodian controls which message domain can be signed. A
+networked signer may produce only `APLANE_SENTRY_V1` component-domain
+signatures; the offline ceremony may produce only
+`APLANE_BOUNDED_ADMIN_AUTH_V1` signatures. One witness keypair should serve one
+role for its entire life. The software rejects collisions visible in local
+stores and sentry references, but cannot detect out-of-band key copying.
 
 Examples of the composed ontology:
 
@@ -79,9 +88,9 @@ Examples of the composed ontology:
 | `ed25519` | Native | n/a | none |
 | `aplane.falcon1024.v1` | DSA LogicSig | Plain DSA | none |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | none |
-| `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external contract-admin key for rekey |
-| `aplane.falcon1024-sentry1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | Falcon sentry component key |
-| `aplane.corridor.v1` | DSA LogicSig | dedicated compiled corridor policy | Falcon sentry component key |
+| `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external Falcon witness enrolled as contract admin for rekey |
+| `aplane.falcon1024-sentry1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | signer-custodied Falcon witness enrolled as sentry |
+| `aplane.corridor.v1` | DSA LogicSig | dedicated compiled corridor policy | signer-custodied Falcon witness enrolled as sentry |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 
 ## Resolution, classification, and behavior
@@ -89,7 +98,7 @@ Examples of the composed ontology:
 | Axis | Question it answers | Mechanism | Owner package(s) |
 |---|---|---|---|
 | **Resolve** | key type → its implementation | family-keyed registries + a `RoutingFamily` resolver | `internal/lsigprovider`, `internal/logicsigdsa` |
-| **Classify** | key type → category facts (is it a guarded account? which sentry component? what key size?) | string switches in a neutral leaf package | `internal/sentry/keytypes` |
+| **Classify** | key type → category facts (is it a guarded account? which witness form? what key size?) | string switches in neutral leaf packages | `internal/sentry/keytypes`, `internal/witness` |
 | **Behave** | do the operation (pack signatures, build assembly args, derive, sign) | provider-capability interfaces, queried from the resolved provider | `internal/signerapp/signing`, `internal/lsigprovider`, `internal/logicsigdsa` |
 
 **The governing rule:** *do not unify mechanisms across axes that have different
@@ -147,25 +156,26 @@ to the Falcon LogicSig base.
 
 ## Classify — key type → category facts
 
-**Mechanism:** pure string switches in `internal/sentry/keytypes`, a neutral leaf
-package. Examples:
+**Mechanism:** pure string switches in neutral leaf packages. Witness form and
+identity live in `internal/witness`; guarded-account role mapping lives in
+`internal/sentry/keytypes`. Examples:
 
 - `IsGuardedAccountKeyType(keyType)`
-- `IsSentryComponentKeyType(keyType)`
 - `SentryComponentKeyTypeForGuardedAccount(keyType)`
-- `ComponentPublicKeySize(keyType)` / `ComponentPrivateKeySize(keyType)`
+- `witness.IsKeyType(keyType)`
+- `witness.PublicKeySize(keyType)` / `witness.PrivateKeySize(keyType)`
 
-**Invariant:** `keytypes` imports no registry, provider, or algorithm-family
-package — only the standard library. This is load-bearing, not incidental.
+**Invariant:** these classifiers import no registry, provider, or
+algorithm-family package. This is load-bearing, not incidental.
 Classification is consumed from ~18 call sites across both the signer and the
 client, many of which run with **no provider registered** — e.g.
 `internal/config/client_endpoints.go` (client-side), `internal/keystore/file.go`,
 and `internal/cache/signer.go`. Because the answer comes from the string alone,
 it is identical in every binary and needs no registration step.
 
-(`keytypes` declares the Falcon-1024 key/signature sizes as literals for the same
-reason — to stay free of algorithm-family imports — with a consistency test that
-cross-checks them against `lsig/falcon1024/family`.)
+(`internal/witness` declares the frozen Falcon-1024 key/signature sizes as
+literals for the same reason, with a consistency test against
+`lsig/falcon1024/family`.)
 
 ---
 

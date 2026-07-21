@@ -3,7 +3,7 @@
 This project builds several first-party commands and developer helpers:
 
 1. **apshell** - client shell, JavaScript runner, MCP server, and plugin host
-2. **apbounded-admin** - external Falcon contract-admin artifact and bounded ceremony client
+2. **aprekey** - external Falcon contract-admin artifact and bounded ceremony client
 3. **apsigner** - signing daemon, HTTP API, admin protocol, approval coordinator, and SSH tunnel server
 4. **apadmin** - TUI admin client over local IPC or the SSH admin subsystem
 5. **apconsole** - secure-machine unified console for apshell, apadmin, and apsigner panes
@@ -25,7 +25,7 @@ This project builds several first-party commands and developer helpers:
 aplane/
 ├── cmd/
 │   ├── apshell/              # Shell, scripting, MCP, and plugin host
-│   ├── apbounded-admin/       # External contract-admin artifact and ceremony CLI
+│   ├── aprekey/       # External contract-admin artifact and ceremony CLI
 │   ├── apsigner/            # Signing daemon and admin/HTTP/SSH runtime
 │   ├── apadmin/             # Admin TUI
 │   ├── apconsole/            # Secure-machine unified console
@@ -127,7 +127,7 @@ make all
 
 # Build individual binaries
 make apshell
-make apbounded-admin
+make aprekey
 make apsigner
 make apadmin
 make apconsole
@@ -201,9 +201,9 @@ mkdir -p bin
 CGO_ENABLED=1 CC=musl-gcc go build -ldflags '-extldflags "-static"' \
   -o bin/apshell ./cmd/apshell
 
-# Build apbounded-admin with musl static linking
+# Build aprekey with musl static linking
 CGO_ENABLED=1 CC=musl-gcc go build -ldflags '-extldflags "-static"' \
-  -o bin/apbounded-admin ./cmd/apbounded-admin
+  -o bin/aprekey ./cmd/aprekey
 
 # Build apsigner with musl static linking
 CGO_ENABLED=1 CC=musl-gcc go build -ldflags '-extldflags "-static"' \

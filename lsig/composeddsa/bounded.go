@@ -4,6 +4,7 @@
 package composeddsa
 
 import (
+	"bytes"
 	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/tealtemplate"
 	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 // The generation-side vocabulary is defined in terms of boundedmeta, the
@@ -326,7 +328,7 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 	}
 
 	if boundedRequiresAdminKey(profile) {
-		adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
+		adminPublicKey, err := c.validatedAdminPublicKey(publicKey, params)
 		if err != nil {
 			return nil, err
 		}
@@ -339,7 +341,7 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 			return nil, err
 		}
 		binding := boundedProgramBinding(c.keyType, c.baseKeyType, c.ops.TEALVersion(), publicKey, adminPublicKey, profileEncoding, behaviorEncoding)
-		adminKeyID, err := BoundedAdminKeyID(adminPublicKey)
+		adminKeyID, err := witness.ID(witness.Falcon1024V1, adminPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -351,6 +353,17 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 		return nil, fmt.Errorf("invalid generated bounded metadata: %w", err)
 	}
 	return metadata, nil
+}
+
+func (c *ComposedDSA) validatedAdminPublicKey(spendingPublicKey []byte, params map[string]string) ([]byte, error) {
+	adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Equal(adminPublicKey, spendingPublicKey) {
+		return nil, fmt.Errorf("bounded admin witness key must differ from the spending key")
+	}
+	return adminPublicKey, nil
 }
 
 func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata, error) {
@@ -676,12 +689,6 @@ func boundedBasePrimitive(baseKeyType string) string {
 // BoundedProgramBinding derives the immutable bounded1 account binding.
 func BoundedProgramBinding(keyType, baseKeyType string, tealVersion int, spendingPublicKey, adminPublicKey, profileEncoding, behaviorEncoding []byte) [sha512.Size256]byte {
 	return boundedProgramBinding(keyType, baseKeyType, tealVersion, spendingPublicKey, adminPublicKey, profileEncoding, behaviorEncoding)
-}
-
-// BoundedAdminKeyID derives the display identifier for a Falcon contract-admin
-// public key.
-func BoundedAdminKeyID(adminPublicKey []byte) (string, error) {
-	return boundedmeta.AdminKeyID(adminPublicKey)
 }
 
 // BoundedAdminMessage returns the exact digest signed for a bounded1 admin

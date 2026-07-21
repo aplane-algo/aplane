@@ -33,7 +33,7 @@ var forbiddenGuardedSwitches = []string{
 	"SentryComponentKeyTypeForGuardedAccount",
 	"ComponentPublicKeySize",
 	"IsSentryComponentKeyType",
-	"keytypes.ComponentKeySelector(",
+	"witness.ID(",
 }
 
 // TestClientPackagesRouteOnSigningFlow pins the sentry1 signing-flow

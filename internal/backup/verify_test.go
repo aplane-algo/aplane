@@ -19,9 +19,9 @@ import (
 	utilkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/witness"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
@@ -61,18 +61,18 @@ func TestDeepVerifyBackupValidStandaloneFile(t *testing.T) {
 }
 
 func TestDeepVerifyBackupValidComponentKeyFile(t *testing.T) {
-	falconkeygen.RegisterSentryComponents()
+	falconkeygen.RegisterWitnessKeygen()
 	backupRoot := t.TempDir()
 	keysDir := filepath.Join(backupRoot, "apb")
 	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0xcd}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error = %v", err)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
-	payload := utilkeys.NewComponentPayload(keytypes.SentryComponentFalcon1024V1, publicKey, privateKey)
+	payload := utilkeys.NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
 	keyJSON, err := utilkeys.MarshalPayload(payload)
 	if err != nil {
 		t.Fatalf("MarshalPayload(component) error = %v", err)
@@ -91,8 +91,8 @@ func TestDeepVerifyBackupValidComponentKeyFile(t *testing.T) {
 	if report.TotalFiles != 1 || report.ValidFiles != 1 || report.FailedFiles != 0 {
 		t.Fatalf("report counts = %+v, want 1 valid component file", *report)
 	}
-	if report.Results[0].KeyType != keytypes.SentryComponentFalcon1024V1 {
-		t.Fatalf("KeyType = %q, want %s", report.Results[0].KeyType, keytypes.SentryComponentFalcon1024V1)
+	if report.Results[0].KeyType != witness.Falcon1024V1 {
+		t.Fatalf("KeyType = %q, want %s", report.Results[0].KeyType, witness.Falcon1024V1)
 	}
 }
 

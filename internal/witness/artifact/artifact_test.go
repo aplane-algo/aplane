@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 var testCreatedAt = time.Date(2026, time.July, 17, 12, 34, 56, 0, time.UTC)
@@ -76,7 +76,7 @@ func TestVerifyRejectsWrongPassphrase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
-	if _, err := Verify(bundle, []byte("wrong passphrase")); err == nil || !strings.Contains(err.Error(), "decrypt contract-admin artifact") {
+	if _, err := Verify(bundle, []byte("wrong passphrase")); err == nil || !strings.Contains(err.Error(), "decrypt witness artifact") {
 		t.Fatalf("Verify() error = %v, want decryption failure", err)
 	}
 }
@@ -88,6 +88,15 @@ func TestInspectRejectsUnknownSchemaBeforeEnvelopeValidation(t *testing.T) {
 	_, err := Inspect(data)
 	if ErrorCode(err) != ErrorUnsupportedArtifactSchema {
 		t.Fatalf("ErrorCode(Inspect()) = %q, want %q (error: %v)", ErrorCode(err), ErrorUnsupportedArtifactSchema, err)
+	}
+}
+
+func TestInspectRejectsSignerKeyPayload(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`{"format_version":1,"category":"witness","key_type":"aplane.witness-falcon1024.v1","public_key":"00","private_key":"00","created_at":"2026-07-21T00:00:00Z"}`)
+	if _, err := Inspect(data); err == nil {
+		t.Fatal("Inspect(signer key payload) error = nil, want custody-format rejection")
 	}
 }
 
@@ -134,7 +143,7 @@ func TestOpenRejectsCiphertextCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode corrupted bundle: %v", err)
 	}
-	if _, err := Open(corrupted, passphrase); err == nil || !strings.Contains(err.Error(), "decrypt contract-admin artifact") {
+	if _, err := Open(corrupted, passphrase); err == nil || !strings.Contains(err.Error(), "decrypt witness artifact") {
 		t.Fatalf("Open() error = %v, want authenticated decryption failure", err)
 	}
 }
@@ -142,7 +151,7 @@ func TestOpenRejectsCiphertextCorruption(t *testing.T) {
 func TestInspectRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 
-	data := []byte(`{"schema":"aplane.bounded-admin-key-bundle.v1","unexpected":true}`)
+	data := []byte(`{"schema":"aplane.witness-key-bundle.v1","unexpected":true}`)
 	if _, err := Inspect(data); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("Inspect() error = %v, want unknown-field rejection", err)
 	}
@@ -163,7 +172,7 @@ func TestParsePublicReferenceValidatesIdentity(t *testing.T) {
 		t.Fatalf("ParsePublicReference() = %#v, want %#v", parsed, generated)
 	}
 
-	parsed.ContractAdminKeyID = strings.Repeat("A", 52)
+	parsed.WitnessKeyID = strings.Repeat("A", 52)
 	mutated, err := json.Marshal(parsed)
 	if err != nil {
 		t.Fatal(err)
@@ -190,10 +199,10 @@ func TestGenerateFilesAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateFiles() error = %v", err)
 	}
-	if filepath.Base(files.BundlePath) != files.Reference.ContractAdminKeyID+BundleExtension {
+	if filepath.Base(files.BundlePath) != files.Reference.WitnessKeyID+BundleExtension {
 		t.Fatalf("bundle path = %q", files.BundlePath)
 	}
-	if filepath.Base(files.ReferencePath) != files.Reference.ContractAdminKeyID+ReferenceExtension {
+	if filepath.Base(files.ReferencePath) != files.Reference.WitnessKeyID+ReferenceExtension {
 		t.Fatalf("reference path = %q", files.ReferencePath)
 	}
 	for _, path := range []string{files.BundlePath, files.ReferencePath} {
@@ -218,7 +227,7 @@ func TestGenerateFilesAndLoad(t *testing.T) {
 	}
 }
 
-func TestGeneratedPublicIdentityUsesFrozenBoundedKeyID(t *testing.T) {
+func TestGeneratedPublicIdentityUsesWitnessKeyID(t *testing.T) {
 	_, _, reference, err := Generate([]byte("passphrase"), testCreatedAt)
 	if err != nil {
 		t.Fatal(err)
@@ -227,15 +236,15 @@ func TestGeneratedPublicIdentityUsesFrozenBoundedKeyID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(publicKey) != boundedmeta.FalconAdminPublicKeySize {
+	if len(publicKey) != witness.Falcon1024PublicKeySize {
 		t.Fatalf("public key length = %d", len(publicKey))
 	}
-	want, err := boundedmeta.AdminKeyID(publicKey)
+	want, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reference.ContractAdminKeyID != want {
-		t.Fatalf("ContractAdminKeyID = %q, want %q", reference.ContractAdminKeyID, want)
+	if reference.WitnessKeyID != want {
+		t.Fatalf("WitnessKeyID = %q, want %q", reference.WitnessKeyID, want)
 	}
 }
 
@@ -243,7 +252,7 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 	t.Parallel()
 
 	directory := t.TempDir()
-	existing := filepath.Join(directory, "existing.apbounded-admin-key")
+	existing := filepath.Join(directory, "existing.wit")
 	if err := os.WriteFile(existing, []byte("original"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +275,7 @@ func TestFileOperationsRejectOverwriteAndWrongFileKinds(t *testing.T) {
 		t.Fatalf("LoadFile(.apb) error = %v, want extension rejection", err)
 	}
 
-	symlink := filepath.Join(directory, "linked.apbounded-admin-key")
+	symlink := filepath.Join(directory, "linked.wit")
 	if err := os.Symlink(existing, symlink); err != nil {
 		t.Fatal(err)
 	}

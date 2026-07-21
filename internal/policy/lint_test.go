@@ -230,11 +230,11 @@ key_overrides:
 	if err == nil {
 		t.Fatal("ParseStoredConfig() error = nil, want invalid signer key override selector")
 	}
-	if !strings.Contains(err.Error(), "not a Sentry Key ID") {
-		t.Fatalf("ParseStoredConfig() error = %v, want Sentry Key ID rejection", err)
+	if !strings.Contains(err.Error(), "not a Witness Key ID") {
+		t.Fatalf("ParseStoredConfig() error = %v, want Witness Key ID rejection", err)
 	}
 	if _, err := NormalizeSentryKeyOverrideKey(sentryKeyID); err != nil {
-		t.Fatalf("test Sentry Key ID is invalid: %v", err)
+		t.Fatalf("test Witness Key ID is invalid: %v", err)
 	}
 }
 

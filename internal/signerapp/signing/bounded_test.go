@@ -12,6 +12,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -39,7 +40,7 @@ func testBoundedMetadata(t *testing.T, authorization string) *boundedmeta.Metada
 		for i := range publicKey {
 			publicKey[i] = byte(i + 1)
 		}
-		keyID, err := boundedmeta.AdminKeyID(publicKey)
+		keyID, err := witness.ID(witness.Falcon1024V1, publicKey)
 		if err != nil {
 			t.Fatal(err)
 		}

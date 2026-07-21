@@ -18,8 +18,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/verify"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -43,8 +43,8 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 			fields:  []string{"category", "created_at", "format_version", "key_type", "private_key", "public_key"},
 		},
 		{
-			name:    "component",
-			payload: NewComponentPayload(keytypes.SentryComponentFalcon1024V1, componentPublicKey, componentPrivateKey),
+			name:    "witness",
+			payload: NewWitnessPayload(witness.Falcon1024V1, componentPublicKey, componentPrivateKey),
 			fields:  []string{"category", "created_at", "format_version", "key_type", "private_key", "public_key"},
 		},
 		{
@@ -130,6 +130,13 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 				t.Fatalf("round trip parameters = %#v, want %#v", parsed.Parameters, tt.payload.Parameters)
 			}
 		})
+	}
+}
+
+func TestCanonicalPayloadRejectsStandaloneWitnessBundle(t *testing.T) {
+	data := []byte(`{"schema":"aplane.witness-key-bundle.v1","key_type":"aplane.witness-falcon1024.v1","witness_key_id":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","public_key_hex":"00","encryption":{}}`)
+	if _, err := ParsePayload(data); err == nil || !errors.Is(err, ErrIncompatibleKeyFormat) {
+		t.Fatalf("ParsePayload(standalone witness bundle) error = %v, want incompatible format", err)
 	}
 }
 
@@ -331,12 +338,12 @@ func TestPayloadSelectorsComeFromAuthoritativeMaterial(t *testing.T) {
 		t.Fatalf("native Selector() = %q, want %q", gotNative, wantNative)
 	}
 
-	component := NewComponentPayload(keytypes.SentryComponentFalcon1024V1, componentPublicKey, componentPrivateKey)
+	component := NewWitnessPayload(witness.Falcon1024V1, componentPublicKey, componentPrivateKey)
 	defer component.ZeroSecrets()
 	component.CreatedAt = canonicalTestTime
-	wantComponent, err := keytypes.ComponentKeySelector(component.KeyType, componentPublicKey)
+	wantComponent, err := witness.ID(component.KeyType, componentPublicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	gotComponent, err := component.Selector()
 	if err != nil {
@@ -429,7 +436,7 @@ func canonicalEd25519Pair(t *testing.T, fill byte) ([]byte, []byte) {
 func canonicalFalconComponentPair(t *testing.T, fill byte) ([]byte, []byte) {
 	t.Helper()
 	registerFalconComponentTestValidator.Do(func() {
-		keytypes.RegisterComponentPairValidator(keytypes.SentryComponentFalcon1024V1, func(publicKey, privateKey []byte) error {
+		witness.RegisterPairValidator(witness.Falcon1024V1, func(publicKey, privateKey []byte) error {
 			message := []byte("APLANE_COMPONENT_KEY_TEST_V1")
 			signature, err := signerops.New(nil).Sign(privateKey, message)
 			if err != nil {

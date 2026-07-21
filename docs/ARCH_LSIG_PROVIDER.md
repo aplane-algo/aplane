@@ -581,7 +581,7 @@ The planner selects the path and freezes its slots. The executor verifies plan
 integrity, generates only declared derived arguments, and places caller runtime
 arguments only in their declared slots. An admin-key rekey is routed through
 `/sign/bounded-admin`: apsigner returns the base-signature partial with the final
-admin slot reserved, and `apbounded-admin` independently validates the finalized
+admin slot reserved, and `aprekey` independently validates the finalized
 transaction and fills only that slot. Durable bounded metadata owns the layout
 and per-path maximum signed size. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).

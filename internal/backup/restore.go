@@ -478,7 +478,7 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 	if err := fsutil.WriteFile(destPath, encrypted); err != nil {
 		return "", rollbackPlans(fmt.Errorf("failed to write key file: %w", err))
 	}
-	componentMetadataPath, wroteComponentMetadata, err := keys.WriteComponentPublicMetadataFromKeyJSON(r.Paths, r.IdentityID, address, keyPayload)
+	componentMetadataPath, wroteComponentMetadata, err := keys.WriteWitnessPublicMetadataFromKeyJSON(r.Paths, r.IdentityID, address, keyPayload)
 	if err != nil {
 		_ = os.Remove(destPath)
 		return "", rollbackPlans(fmt.Errorf("failed to write component public metadata for %s: %w", address, err))

@@ -137,7 +137,7 @@ All under `cmd/`:
 | Binary | Role |
 |--------|------|
 | `apshell` | Client shell: REPL, script runner, JS runtime (Goja), MCP server, plugin host |
-| `apbounded-admin` | Dedicated client for generating, inspecting, verifying, and using external Falcon bounded contract-admin credentials; `rekey`/`unrekey` own online orchestration and `prepare-*`/`sign`/`complete` own separated ceremonies |
+| `aprekey` | Dedicated client for generating, inspecting, verifying, and using external Falcon bounded contract-admin credentials; `rekey`/`unrekey` own online orchestration and `prepare-*`/`sign`/`complete` own separated ceremonies |
 | `apsigner` | Signing daemon: HTTP API, admin protocol over IPC and SSH subsystem, key management, approval coordination, SSH tunnel server, audit logging |
 | `apadmin` | TUI admin client over IPC or SSH admin transport |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
@@ -166,7 +166,7 @@ Documentation notes:
 | Engine | `internal/apshellapp`, `internal/apboundedadminapp`, `internal/engine`, `internal/clientstate`, `internal/cache`, `internal/config`, `internal/engine/connect`, `internal/clientsign`, `internal/appresult`, `internal/appinput`, `internal/appspec`, `internal/asa`, `internal/addressbook`, `internal/refname`, `internal/keymgmt`, `internal/partkeyparse`, `internal/txnutil`, `internal/algo` |
 | Signer App | `internal/bootstrap/signer`, `internal/signerapp/daemon`, `internal/signerapp/startup`, `internal/signerapp/runtime`, `internal/signerapp/identity`, `internal/signerapp/unlockconfig`, `internal/signerapp/signing`, `internal/signerapp/approval`, `internal/signerapp/templates`, `internal/signerapp/templateadmin`, `internal/signerapp/keyadmin`, `internal/signerapp/storeadmin`, `internal/signerapp/backupadmin`, `internal/signerapp/rest`, `internal/signerapp/admin`, `internal/signerapp/adminserver`, `internal/signerapp/svcerr`, `internal/signerapp/sshprovision`, `internal/signerapp/asametadata`, `internal/signerapp/audit`, `internal/signerapp/filewatcher`, `internal/signerapp/ipcbind`, `internal/signerapp/txdesc`, `internal/signerapp/policyruntime`, `internal/noderole`, `internal/policy`, `internal/signerapp/approvalpolicy` |
 | Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
-| Storage/Crypto | `internal/crypto`, `internal/boundedadmin/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
+| Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
 | Tooling | `analysis/`, `test/arch`, `test/integration`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
@@ -551,7 +551,7 @@ The policy document may contain YAML-only `key_overrides`; during normal
 signing, the effective policy is selected by signing auth address, not by
 transaction sender, so rekeyed accounts use the policy override for the auth
 address. On sentry nodes, component signing selects overrides by the
-txid-shaped Sentry Key ID from the sentry-domain `policy.yaml`.
+txid-shaped Witness Key ID from the sentry-domain `policy.yaml`.
 Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
@@ -1108,9 +1108,9 @@ rekey, and compiles a 10,000 microAlgo fee ceiling. Layer 3 is reachable only
 for an admitted spend or for a spending-key rekey whose profile explicitly
 declares `policy_gate: layer3`; it can narrow but never broaden the envelope.
 
-The one bounded1 contract admin primitive is Falcon-1024. The signer retains the
-spending key and public contract-admin metadata; the private contract admin key
-remains external and normally cold. Admin-key rekey uses the explicit
+The one bounded1 contract admin primitive is the Falcon-1024 witness key. The
+signer retains the spending key and public contract-admin metadata; the private
+admin witness remains in standalone `.wit` custody. Admin-key rekey uses the explicit
 `signing_flow: bounded1` and `POST /sign/bounded-admin`, never ordinary caller
 runtime args or sentry assembly. Spending-key rekey remains possible only when
 the profile explicitly selects it and always receives forced operator review.
@@ -1123,7 +1123,7 @@ effects fail closed.
 
 `aplane.falcon1024-allowlist-alock.v1` is the framework-owned fixed-list
 profile. External key generation and ceremonies are owned by
-`apbounded-admin`; apshell and apconsole do not handle private contract-admin
+`aprekey`; apshell and apconsole do not handle private contract-admin
 artifacts. The normative field inventory, canonical encodings, vectors,
 schema, normal forms, and custody contract are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
@@ -1135,10 +1135,11 @@ compilation, TEAL rendering, and the program-instance binding;
 single finalized-transaction `Classify`/`Inspect` boundary. Signer-side
 planning/execution live in `internal/signerapp/signing`, and online rekey
 submission in `internal/engine/bounded_admin.go`. The external contract-admin
-ceremony is owned by the `apbounded-admin`-only packages:
-`internal/boundedadmin/{authorization,program,protocol,message,helpersign,artifact}`
+ceremony is owned by the `aprekey`-only packages:
+`internal/boundedadmin/{authorization,program,protocol,message,helpersign}`
 (request validation, frozen-bytecode structural validation, ceremony wire
-format, admin transcript, Falcon signing ops, and encrypted key custody), with
+format, admin transcript, and Falcon signing ops), with encrypted standalone
+witness custody in `internal/witness/artifact` and
 `internal/apboundedadminapp` composing the client application.
 
 ## Guarded Signing And Sentry Nodes
@@ -1185,25 +1186,28 @@ on-disk integrity checks live in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 ### Key Types
 
-Sentry key types are raw component-signing keys, not spending
+Witness key types are raw auxiliary signing keys, not spending
 accounts and not LogicSig providers:
 
-- `aplane.sentry-falcon1024.v1`
+- `aplane.witness-falcon1024.v1`
 
-They are selected by 52-character uppercase, no-padding base32 Sentry Key IDs
+They are selected by 52-character uppercase, no-padding base32 Witness Key IDs
 derived as:
 
 ```text
 base32_no_padding(SHA512_256(
-  "APLANE_COMPONENT_KEY_V1" || 0x00 || key_type || 0x00 ||
-  canonical_public_key_bytes
+  field("APLANE_WITNESS_KEY_ID_V1") || field(key_type) ||
+  field(canonical_public_key_bytes)
 ))
 ```
 
-The Sentry Key ID intentionally has the visual shape of an Algorand transaction ID,
+The Witness Key ID intentionally has the visual shape of an Algorand transaction ID,
 but it is not a valid Algorand address because addresses are 58 characters.
 The full sentry public key remains the verifier key embedded in guarded
-account LogicSig bytecode.
+account LogicSig bytecode. The same witness key form can serve a bounded
+contract-admin enrollment under standalone custody, but one keypair should
+never serve both roles. `internal/witness` owns identity and custodian/domain
+capabilities; `internal/sentry/keytypes` owns guarded-account role mapping.
 
 Guarded account key types name both the account DSA and the sentry DSA:
 
@@ -1211,7 +1215,7 @@ Guarded account key types name both the account DSA and the sentry DSA:
 
 A guarded account key file stores the resolved `sentry_public_key` and the
 LogicSig bytecode embeds that same public key. `/sign` rejects guarded-account
-key types and sentry key types. Guarded accounts are signed only
+key types and witness key types. Guarded accounts are signed only
 through the component-signing and assembly flow below.
 
 ### Component Message Contract
@@ -1349,19 +1353,19 @@ Operator handoff and manual endpoint setup use two paths:
 
 Sentry inventory is discovered explicitly with
 `apshell endpoints sync-sentries`. It queries authenticated `/keys` on
-configured sentry endpoints, validates Sentry Key ID metadata, and rebuilds
+configured sentry endpoints, validates Witness Key ID metadata, and rebuilds
 reachable endpoints' `published_sentries` inventory. Temporarily unavailable
 or locked endpoints preserve their prior local inventory; authentication
 failures, malformed responses, duplicate public keys across endpoints, and
-Sentry Key ID validation errors are hard failures that leave files unchanged.
-After discovery, the command prints Sentry Key IDs and asks before syncing the
+Witness Key ID validation errors are hard failures that leave files unchanged.
+After discovery, the command prints Witness Key IDs and asks before syncing the
 public inventory into the connected signer identity's sentry reference
 library for generation-time selection.
 
 Runtime guarded-send routing maps the embedded sentry public key to the
 endpoint whose `published_sentries` contains that key. If no explicit mapping
 exists, local self-discovery may resolve to the currently connected signer only
-when that endpoint advertises the matching Sentry Key ID; this is
+when that endpoint advertises the matching Witness Key ID; this is
 development ergonomics, not a production independence claim.
 
 ### Policy And Audit
@@ -1373,11 +1377,11 @@ sentry policy has no manual-review or operator-default verdict. It is
 deterministic authorization: all selected target movements must be positively
 authorized by the effective sentry policy, and deny guards fail closed.
 
-Sentry policy overrides are keyed by Sentry Key ID.
+Sentry policy overrides are keyed by Witness Key ID.
 Client-signing policy overrides are keyed by signing auth address.
 
 Sentry component approvals and rejections are recorded through existing sign
-audit events. Current records put the Sentry Key ID in `txn_auth`, the
+audit events. Current records put the Witness Key ID in `txn_auth`, the
 decoded target sender in `txn_sender`, and the matching deterministic policy
 rule in `policy_rule_id` when one applies.
 
@@ -1391,7 +1395,7 @@ Primary implementation ownership:
 - `internal/sentry/verify`: component signature verification primitives
   (signer-side only; client binaries must not link them).
 - `internal/sentry/keytypes`: sentry and guarded key-type identifiers,
-  Sentry Key ID validation, and DSA mapping.
+  Witness Key ID validation, and DSA mapping.
 - `internal/signerapp/signing`: signer-side component signing, sentry policy
   evaluation, and assembly.
 - `internal/signerapp/rest`: HTTP handlers for `/sign/component` and

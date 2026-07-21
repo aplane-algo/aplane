@@ -12,12 +12,13 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
 func TestImportGetListDelete(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
-	export := testExportJSON(t, keytypes.SentryComponentFalcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
+	export := testExportJSON(t, witness.Falcon1024V1, bytesOfLen(falconfamily.PublicKeySize, 0xab))
 
 	rec, err := Import(paths, "default", "Lab-Sentry", export)
 	if err != nil {
@@ -80,11 +81,11 @@ func TestListRejectsInvalidReferenceRecord(t *testing.T) {
 func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, pub)
+	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
-	if _, err := Import(paths, "default", "lab-sentry", testExportJSON(t, keytypes.SentryComponentFalcon1024V1, pub)); err != nil {
+	if _, err := Import(paths, "default", "lab-sentry", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 
@@ -105,17 +106,17 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		ParamSentryName: componentKey,
 	})
 	if err != nil {
-		t.Fatalf("ResolveCreationParams(Sentry Key ID) error = %v", err)
+		t.Fatalf("ResolveCreationParams(Witness Key ID) error = %v", err)
 	}
 	if got := resolved[keytypes.ParameterSentryPublicKey]; got != strings.Repeat("ab", falconfamily.PublicKeySize) {
-		t.Fatalf("Sentry Key ID sentry_public_key = %q, want imported public key", got)
+		t.Fatalf("Witness Key ID sentry_public_key = %q, want imported public key", got)
 	}
 }
 
 func TestResolveCreationParamsPreservesCorridorRecipients(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
-	if _, err := Import(paths, "default", "falcon-sentry", testExportJSON(t, keytypes.SentryComponentFalcon1024V1, pub)); err != nil {
+	if _, err := Import(paths, "default", "falcon-sentry", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 
@@ -153,15 +154,15 @@ func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
 func TestSyncDiscoveredWritesSourceMarkedReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, pub)
+	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 
 	result, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
 		EndpointAlias: "Sentry.Local",
 		ComponentKey:  componentKey,
-		KeyType:       keytypes.SentryComponentFalcon1024V1,
+		KeyType:       witness.Falcon1024V1,
 		PublicKeyHex:  strings.ToUpper(hex.EncodeToString(pub)),
 		LastSeenAt:    "2026-06-04T00:00:00Z",
 	}})
@@ -194,44 +195,44 @@ func TestSyncDiscoveredRejectsMismatchedComponentSelector(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
 	otherPub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, otherPub)
+	componentKey, err := witness.ID(witness.Falcon1024V1, otherPub)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 
 	_, err = SyncDiscovered(paths, "default", []DiscoveredRecord{{
 		EndpointAlias: "sentry-local",
 		ComponentKey:  componentKey,
-		KeyType:       keytypes.SentryComponentFalcon1024V1,
+		KeyType:       witness.Falcon1024V1,
 		PublicKeyHex:  hex.EncodeToString(pub),
 	}})
 	if err == nil {
 		t.Fatal("SyncDiscovered() error = nil, want selector/public-key mismatch rejection")
 	}
-	if !strings.Contains(err.Error(), "does not match public key") {
-		t.Fatalf("SyncDiscovered() error = %v, want Sentry Key ID mismatch", err)
+	if !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("SyncDiscovered() error = %v, want Witness Key ID mismatch", err)
 	}
 }
 
 func TestSyncDiscoveredRejectsSamePublicKeyFromMultipleEndpoints(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, pub)
+	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 
 	_, err = SyncDiscovered(paths, "default", []DiscoveredRecord{
 		{
 			EndpointAlias: "sentry-a",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.SentryComponentFalcon1024V1,
+			KeyType:       witness.Falcon1024V1,
 			PublicKeyHex:  hex.EncodeToString(pub),
 		},
 		{
 			EndpointAlias: "sentry-b",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.SentryComponentFalcon1024V1,
+			KeyType:       witness.Falcon1024V1,
 			PublicKeyHex:  strings.ToUpper(hex.EncodeToString(pub)),
 		},
 	})
@@ -246,32 +247,32 @@ func TestSyncDiscoveredRejectsSamePublicKeyFromMultipleEndpoints(t *testing.T) {
 func TestSyncDiscoveredReplacesOnlyClientDiscoveryReferences(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	manualPub := bytesOfLen(falconfamily.PublicKeySize, 0xab)
-	if _, err := Import(paths, "default", "manual-sentry", testExportJSON(t, keytypes.SentryComponentFalcon1024V1, manualPub)); err != nil {
+	if _, err := Import(paths, "default", "manual-sentry", testExportJSON(t, witness.Falcon1024V1, manualPub)); err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
 	stalePub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)
-	staleComponent, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, stalePub)
+	staleComponent, err := witness.ID(witness.Falcon1024V1, stalePub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector(stale) error = %v", err)
 	}
 	if _, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
 		EndpointAlias: "stale",
 		ComponentKey:  staleComponent,
-		KeyType:       keytypes.SentryComponentFalcon1024V1,
+		KeyType:       witness.Falcon1024V1,
 		PublicKeyHex:  hex.EncodeToString(stalePub),
 	}}); err != nil {
 		t.Fatalf("SyncDiscovered(stale) error = %v", err)
 	}
 
 	freshPub := bytesOfLen(falconfamily.PublicKeySize, 0xef)
-	freshComponent, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, freshPub)
+	freshComponent, err := witness.ID(witness.Falcon1024V1, freshPub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector(fresh) error = %v", err)
 	}
 	result, err := SyncDiscovered(paths, "default", []DiscoveredRecord{{
 		EndpointAlias: "fresh",
 		ComponentKey:  freshComponent,
-		KeyType:       keytypes.SentryComponentFalcon1024V1,
+		KeyType:       witness.Falcon1024V1,
 		PublicKeyHex:  hex.EncodeToString(freshPub),
 	}})
 	if err != nil {
@@ -294,9 +295,9 @@ func TestSyncDiscoveredReplacesOnlyClientDiscoveryReferences(t *testing.T) {
 
 func testExportJSON(t *testing.T, keyType string, pub []byte) []byte {
 	t.Helper()
-	componentKey, err := keytypes.ComponentKeySelector(keyType, pub)
+	componentKey, err := witness.ID(keyType, pub)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	env, err := NewExportEnvelope(componentKey, keyType, hex.EncodeToString(pub))
 	if err != nil {

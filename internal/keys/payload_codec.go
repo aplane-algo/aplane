@@ -17,7 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	sentrykeytypes "github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	sentrywitness "github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -94,11 +94,11 @@ func NewEd25519Payload(publicKey, privateKey []byte) *Payload {
 	}
 }
 
-// NewComponentPayload constructs a canonical sentry component key payload.
-func NewComponentPayload(keyType string, publicKey, privateKey []byte) *Payload {
+// NewWitnessPayload constructs a canonical signer-custodied witness payload.
+func NewWitnessPayload(keyType string, publicKey, privateKey []byte) *Payload {
 	return &Payload{
 		FormatVersion: CurrentKeyFormatVersion,
-		Category:      CategoryComponent,
+		Category:      CategoryWitness,
 		KeyType:       keyType,
 		PublicKey:     bytes.Clone(publicKey),
 		PrivateKey:    bytes.Clone(privateKey),
@@ -271,11 +271,11 @@ func (p *Payload) Validate() error {
 			return err
 		}
 		return validateNoLogicSigFields(p)
-	case CategoryComponent:
-		if !sentrykeytypes.IsSentryComponentKeyType(p.KeyType) {
-			return incompatibleKeyFormat("component category requires a sentry key type, got %q", p.KeyType)
+	case CategoryWitness:
+		if !sentrywitness.IsKeyType(p.KeyType) {
+			return incompatibleKeyFormat("witness category requires a witness key type, got %q", p.KeyType)
 		}
-		if err := validateComponentPayload(p); err != nil {
+		if err := validateWitnessPayload(p); err != nil {
 			return err
 		}
 		return validateNoLogicSigFields(p)
@@ -320,8 +320,8 @@ func (p *Payload) Selector() (string, error) {
 		var address types.Address
 		copy(address[:], p.PublicKey)
 		return address.String(), nil
-	case CategoryComponent:
-		return sentrykeytypes.ComponentKeySelector(p.KeyType, p.PublicKey)
+	case CategoryWitness:
+		return sentrywitness.ID(p.KeyType, p.PublicKey)
 	case CategoryDSALsig, CategoryGenericLsig:
 		if len(p.LogicSigBytecode) == 0 {
 			return "", incompatibleKeyFormatErr(fmt.Errorf("%w: %s requires lsig_bytecode", ErrInvalidLogicSigBytecode, p.Category))
@@ -456,23 +456,23 @@ func validateEd25519Payload(p *Payload) error {
 	return nil
 }
 
-func validateComponentPayload(p *Payload) error {
-	publicSize, ok := sentrykeytypes.ComponentPublicKeySize(p.KeyType)
+func validateWitnessPayload(p *Payload) error {
+	publicSize, ok := sentrywitness.PublicKeySize(p.KeyType)
 	if !ok {
-		return incompatibleKeyFormat("unsupported sentry key type %q", p.KeyType)
+		return incompatibleKeyFormat("unsupported witness key type %q", p.KeyType)
 	}
-	privateSize, ok := sentrykeytypes.ComponentPrivateKeySize(p.KeyType)
+	privateSize, ok := sentrywitness.PrivateKeySize(p.KeyType)
 	if !ok {
-		return incompatibleKeyFormat("unsupported sentry key type %q", p.KeyType)
+		return incompatibleKeyFormat("unsupported witness key type %q", p.KeyType)
 	}
 	if len(p.PublicKey) != publicSize {
-		return incompatibleKeyFormat("component public key length %d invalid (expected %d bytes)", len(p.PublicKey), publicSize)
+		return incompatibleKeyFormat("witness public key length %d invalid (expected %d bytes)", len(p.PublicKey), publicSize)
 	}
 	if len(p.PrivateKey) != privateSize {
-		return incompatibleKeyFormat("component private key length %d invalid (expected %d bytes)", len(p.PrivateKey), privateSize)
+		return incompatibleKeyFormat("witness private key length %d invalid (expected %d bytes)", len(p.PrivateKey), privateSize)
 	}
-	if err := sentrykeytypes.ValidateComponentPair(p.KeyType, p.PublicKey, p.PrivateKey); err != nil {
-		return incompatibleKeyFormat("invalid component key pair: %v", err)
+	if err := sentrywitness.ValidatePair(p.KeyType, p.PublicKey, p.PrivateKey); err != nil {
+		return incompatibleKeyFormat("invalid witness key pair: %v", err)
 	}
 	return nil
 }

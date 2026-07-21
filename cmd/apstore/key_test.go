@@ -15,8 +15,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keygen"
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
+	"github.com/aplane-algo/aplane/internal/witness"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 )
 
@@ -40,11 +40,11 @@ func TestCmdSentryExportWritesEnvelopeFile(t *testing.T) {
 		if env.Schema != sentryrefs.ExportSchema {
 			t.Fatalf("Schema = %q, want %q", env.Schema, sentryrefs.ExportSchema)
 		}
-		if env.ComponentKey != result.Address {
-			t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, result.Address)
+		if env.WitnessKeyID != result.Address {
+			t.Fatalf("ComponentKey = %q, want %q", env.WitnessKeyID, result.Address)
 		}
-		if env.KeyType != keytypes.SentryComponentFalcon1024V1 {
-			t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentFalcon1024V1)
+		if env.KeyType != witness.Falcon1024V1 {
+			t.Fatalf("KeyType = %q, want %q", env.KeyType, witness.Falcon1024V1)
 		}
 		if env.PublicKeyHex != publicKeyHex {
 			t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, publicKeyHex)
@@ -69,8 +69,8 @@ func TestCmdSentryExportStdoutIsJSONOnly(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &env); err != nil {
 			t.Fatalf("stdout is not a JSON envelope: %v\n%s", err, out)
 		}
-		if env.ComponentKey != result.Address {
-			t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, result.Address)
+		if env.WitnessKeyID != result.Address {
+			t.Fatalf("ComponentKey = %q, want %q", env.WitnessKeyID, result.Address)
 		}
 	})
 }
@@ -78,7 +78,7 @@ func TestCmdSentryExportStdoutIsJSONOnly(t *testing.T) {
 func TestCmdSentryExportRequiresPublicSidecar(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, passphrase []byte) {
 		result, _ := generateTestSentryComponentKey(t, passphrase)
-		path := apkeys.ComponentPublicMetadataPath(keystorePaths(), productIdentityID(), result.Address)
+		path := apkeys.WitnessPublicMetadataPath(keystorePaths(), productIdentityID(), result.Address)
 		if err := os.Remove(path); err != nil {
 			t.Fatalf("Remove(component public metadata) error = %v", err)
 		}
@@ -108,8 +108,8 @@ func TestCmdSentryExportRejectsSpendingKey(t *testing.T) {
 		if err == nil {
 			t.Fatal("cmdSentry(export spending key) error = nil, want rejection")
 		}
-		if !strings.Contains(err.Error(), "invalid Sentry Key ID") {
-			t.Fatalf("cmdSentry(export spending key) error = %v, want Sentry Key ID rejection", err)
+		if !strings.Contains(err.Error(), "invalid Witness Key ID") {
+			t.Fatalf("cmdSentry(export spending key) error = %v, want Witness Key ID rejection", err)
 		}
 	})
 }
@@ -119,8 +119,8 @@ func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.Ge
 	masterKey := deriveTestMasterKey(t, passphrase)
 	defer crypto.ZeroBytes(masterKey)
 
-	g := &falconkeygen.SentryFalcon1024Generator{}
-	result, err := g.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), masterKey, keytypes.SentryComponentFalcon1024V1, nil)
+	g := &falconkeygen.WitnessFalcon1024Generator{}
+	result, err := g.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), masterKey, witness.Falcon1024V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom(sentry-falcon1024) error = %v", err)
 	}

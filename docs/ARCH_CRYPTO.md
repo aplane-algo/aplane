@@ -111,7 +111,8 @@ Built-in and bundled key types include:
 - plain DSA LogicSigs `aplane.falcon1024.v1` and `aplane.ed25519.v1`
 - Falcon-only sentry accounts `aplane.falcon1024-sentry1024.v1`
   and `aplane.corridor.v1`
-- the Falcon sentry component key `aplane.sentry-falcon1024.v1`
+- the Falcon witness key `aplane.witness-falcon1024.v1`, used under separate
+  sentry and contract-admin custody capabilities
 - the generic `aplane.htlc.v1` template
 - bounded Falcon templates: `aplane.falcon1024-allowlist.v1`,
   `aplane.falcon1024-allowlist.v2`, `aplane.falcon1024-timelock.v1`, and

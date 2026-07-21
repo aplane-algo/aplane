@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/corridor"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
@@ -468,9 +469,9 @@ func TestSignComponentSentryRejectsRekeyBeforeKeyLoad(t *testing.T) {
 
 func TestSignComponentSentryAllowsExplicitRekeyPolicy(t *testing.T) {
 	publicKey, privateKey := testFalconComponentKeypair(t, 0x62)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 
 	source := types.Address{68}
@@ -488,10 +489,10 @@ rekey_policy:
 	txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
 	txn.RekeyTo = target
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.SentryComponentFalcon1024V1,
-		Category: keys.CategoryComponent,
-		Value: &coresigning.ComponentKeyMaterial{
-			ComponentKey: componentKey,
+		Type:     witness.Falcon1024V1,
+		Category: keys.CategoryWitness,
+		Value: &coresigning.WitnessKeyMaterial{
+			WitnessKeyID: componentKey,
 			PublicKey:    append([]byte(nil), publicKey...),
 			PrivateKey:   append([]byte(nil), privateKey...),
 		},
@@ -554,19 +555,19 @@ rekey_policy:
 
 func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
 	publicKey, privateKey := testFalconComponentKeypair(t, 0x61)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 
 	source := types.Address{31}.String()
 	dest := types.Address{32}.String()
 	txn := testnetPaymentTransaction(t, source, dest, 1)
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.SentryComponentFalcon1024V1,
-		Category: keys.CategoryComponent,
-		Value: &coresigning.ComponentKeyMaterial{
-			ComponentKey: componentKey,
+		Type:     witness.Falcon1024V1,
+		Category: keys.CategoryWitness,
+		Value: &coresigning.WitnessKeyMaterial{
+			WitnessKeyID: componentKey,
 			PublicKey:    append([]byte(nil), publicKey...),
 			PrivateKey:   append([]byte(nil), privateKey...),
 		},
@@ -1221,18 +1222,18 @@ func TestAssembleDecodedGuardedRejectsMismatchedPassthrough(t *testing.T) {
 }
 
 func TestSignPreparedSentryComponentsSignsFalconMessages(t *testing.T) {
-	falconkeygen.RegisterSentryComponents()
+	falconkeygen.RegisterWitnessKeygen()
 	publicKey, privateKey := testFalconComponentKeypair(t, 0x42)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.SentryComponentFalcon1024V1,
-		Category: keys.CategoryComponent,
-		Value: &coresigning.ComponentKeyMaterial{
-			ComponentKey: componentKey,
+		Type:     witness.Falcon1024V1,
+		Category: keys.CategoryWitness,
+		Value: &coresigning.WitnessKeyMaterial{
+			WitnessKeyID: componentKey,
 			PublicKey:    append([]byte(nil), publicKey...),
 			PrivateKey:   append([]byte(nil), privateKey...),
 		},
@@ -1257,8 +1258,8 @@ func TestSignPreparedSentryComponentsSignsFalconMessages(t *testing.T) {
 		if sig.TargetIndex != plan.Targets[i].TargetIndex {
 			t.Fatalf("signature %d target index = %d, want %d", i, sig.TargetIndex, plan.Targets[i].TargetIndex)
 		}
-		if sig.SignatureScheme != keytypes.SentryComponentFalcon1024V1 {
-			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, keytypes.SentryComponentFalcon1024V1)
+		if sig.SignatureScheme != witness.Falcon1024V1 {
+			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, witness.Falcon1024V1)
 		}
 		sigBytes, err := hex.DecodeString(sig.Signature)
 		if err != nil {
@@ -1274,7 +1275,7 @@ func TestSignPreparedSentryComponentsSignsFalconMessages(t *testing.T) {
 }
 
 func TestSignPreparedSentryComponentsSignsFalcon1024Messages(t *testing.T) {
-	falconkeygen.RegisterSentryComponents()
+	falconkeygen.RegisterWitnessKeygen()
 
 	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x43}, 64))
 	if err != nil {
@@ -1283,16 +1284,16 @@ func TestSignPreparedSentryComponentsSignsFalcon1024Messages(t *testing.T) {
 	if len(publicKey) != falconfamily.PublicKeySize {
 		t.Fatalf("public key length = %d, want %d", len(publicKey), falconfamily.PublicKeySize)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.SentryComponentFalcon1024V1,
-		Category: keys.CategoryComponent,
-		Value: &coresigning.ComponentKeyMaterial{
-			ComponentKey: componentKey,
+		Type:     witness.Falcon1024V1,
+		Category: keys.CategoryWitness,
+		Value: &coresigning.WitnessKeyMaterial{
+			WitnessKeyID: componentKey,
 			PublicKey:    append([]byte(nil), publicKey...),
 			PrivateKey:   append([]byte(nil), privateKey...),
 		},
@@ -1317,8 +1318,8 @@ func TestSignPreparedSentryComponentsSignsFalcon1024Messages(t *testing.T) {
 		if sig.TargetIndex != plan.Targets[i].TargetIndex {
 			t.Fatalf("signature %d target index = %d, want %d", i, sig.TargetIndex, plan.Targets[i].TargetIndex)
 		}
-		if sig.SignatureScheme != keytypes.SentryComponentFalcon1024V1 {
-			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, keytypes.SentryComponentFalcon1024V1)
+		if sig.SignatureScheme != witness.Falcon1024V1 {
+			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, witness.Falcon1024V1)
 		}
 		sigBytes, err := hex.DecodeString(sig.Signature)
 		if err != nil {
@@ -1478,16 +1479,16 @@ func preparedSentryComponentPlan(t *testing.T, componentKey string) *ComponentSi
 func testFalconComponentSelector(t *testing.T, fill byte) string {
 	t.Helper()
 	publicKey := bytes.Repeat([]byte{fill}, falconfamily.PublicKeySize)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	return componentKey
 }
 
 func testFalconComponentKeypair(t *testing.T, fill byte) ([]byte, []byte) {
 	t.Helper()
-	falconkeygen.RegisterSentryComponents()
+	falconkeygen.RegisterWitnessKeygen()
 	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKeypair() error = %v", err)
@@ -1604,16 +1605,16 @@ func TestLoadSentryComponentKeyMapsMissingKey(t *testing.T) {
 func TestLoadSentryComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T) {
 	_, privateKey := testFalconComponentKeypair(t, 0x44)
 	wrongPublicKey, _ := testFalconComponentKeypair(t, 0x45)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, wrongPublicKey)
+	componentKey, err := witness.ID(witness.Falcon1024V1, wrongPublicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.SentryComponentFalcon1024V1,
-		Category: keys.CategoryComponent,
-		Value: &coresigning.ComponentKeyMaterial{
-			ComponentKey: componentKey,
+		Type:     witness.Falcon1024V1,
+		Category: keys.CategoryWitness,
+		Value: &coresigning.WitnessKeyMaterial{
+			WitnessKeyID: componentKey,
 			PublicKey:    append([]byte(nil), wrongPublicKey...),
 			PrivateKey:   append([]byte(nil), privateKey...),
 		},

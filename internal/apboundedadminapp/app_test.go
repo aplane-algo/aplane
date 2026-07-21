@@ -111,7 +111,7 @@ func TestExecuteRekeyCoordinatesExternalSignature(t *testing.T) {
 
 	result, err := app.Execute(context.Background(), Options{
 		Operation:  OperationRekey,
-		Artifact:   "/cold/key.apbounded-admin-key",
+		Artifact:   "/cold/key.wit",
 		Account:    "account",
 		Target:     "target",
 		Fee:        4000,
@@ -124,7 +124,7 @@ func TestExecuteRekeyCoordinatesExternalSignature(t *testing.T) {
 	if runtime.preparedParams.From != "ACCOUNT" || runtime.preparedParams.To != "TARGET" || runtime.preparedParams.Fee != 4000 || !runtime.preparedParams.UseFlatFee {
 		t.Fatalf("prepared params = %#v", runtime.preparedParams)
 	}
-	if signer.calls != 1 || signer.artifact != "/cold/key.apbounded-admin-key" || signer.request.Payload.CurrentAuthAddress != "CURRENT" {
+	if signer.calls != 1 || signer.artifact != "/cold/key.wit" || signer.request.Payload.CurrentAuthAddress != "CURRENT" {
 		t.Fatalf("signer call = calls %d, artifact %q, request %#v", signer.calls, signer.artifact, signer.request)
 	}
 	if !runtime.completedWait {
@@ -145,7 +145,7 @@ func TestExecuteUnrekeyRequiresCurrentRekey(t *testing.T) {
 
 	_, err := app.Execute(context.Background(), Options{
 		Operation: OperationUnrekey,
-		Artifact:  "/cold/key.apbounded-admin-key",
+		Artifact:  "/cold/key.wit",
 		Account:   "account",
 	})
 	if err == nil {

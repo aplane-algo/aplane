@@ -67,15 +67,16 @@ Canonical forms:
   decimal version, for example `aplane.falcon1024.v1`,
   `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, and
   `aplane.falcon1024-allowlist-alock.v1`
-- sentry keys use the same canonical key-type identifier contract,
-  currently `aplane.sentry-falcon1024.v1`; these are component-signing keys selected by
-  52-character txid-shaped Sentry Key IDs, not spending accounts. The
+- witness keys use the same canonical key-type identifier contract,
+  currently `aplane.witness-falcon1024.v1`; signer-custodied instances serve
+  as sentry component-signing keys selected by 52-character txid-shaped
+  Witness Key IDs, not spending accounts. The
   compatibility wire/storage field name for that selector remains
   `component_key`.
-- external bounded contract-admin authorities are identified by a Falcon-1024
-  public key and 52-character Contract Admin Key ID. They are not signer key
-  types, accounts, or sentry keys. Private material is generated and held by
-  `apbounded-admin`.
+- external bounded contract-admin authorities use the same witness key type
+  and Witness Key ID, but private material remains in a structurally distinct
+  standalone `.wit` container owned by `aprekey`. It is never a signer
+  `.key` or spending account.
 - `aplane.falcon1024-allowlist-alock.v1` is reserved for the schema-v2
   framework-owned bounded1 allowlist. Its spending key and contract admin key
   are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
@@ -83,6 +84,14 @@ Canonical forms:
 - guarded account key types name both the account DSA and the sentry DSA,
   currently `aplane.falcon1024-sentry1024.v1`; `aplane.corridor.v1`
   is the Falcon-1024-only corridor shorthand.
+
+Witness key records carry no role field. Enrollment assigns the role and
+custody assigns signing capability: networked signer custody may produce only
+the `APLANE_SENTRY_V1` component-domain family, while standalone ceremony
+custody may produce only `APLANE_BOUNDED_ADMIN_AUTH_V1`. One witness keypair
+should serve only one role for its lifetime. Generation rejects collisions
+visible in local key metadata and sentry references, but cannot detect or
+prevent out-of-band key copying or enrollment.
 
 YAML templates declare `publisher`, `family`, and integer `version`; the
 computed key type is `publisher.family.v<version>`. Clients and tools must send
@@ -194,11 +203,13 @@ part of the canonical profile above.
 
 The sole bounded1 contract admin primitive is Falcon-1024. Its public key is
 exactly 1,793 bytes and its signature is non-empty and at most 1,280 bytes. The
-Contract Admin Key ID is uppercase unpadded base32 of:
+`contract_admin_key_id` field carries the uppercase unpadded base32 Witness Key
+ID of the enrolled admin witness:
 
 ```text
 SHA512_256(
-  field("APLANE_BOUNDED_ADMIN_KEY_ID_V1") ||
+  field("APLANE_WITNESS_KEY_ID_V1") ||
+  field("aplane.witness-falcon1024.v1") ||
   field(falcon_admin_public_key)
 )
 ```
@@ -234,13 +245,13 @@ For the complete vector inputs in `ARCH_BOUNDED_DSA.md`, the frozen outputs are:
 
 ```text
 Contract Admin Key ID:
-WS6X45XM2AI7Y2GNJ46GXMNJ42LCIOAETMEEOIMPSWS3LOFDDGQA
+MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
-92850ae9fbcbdd74efa92f281fa37275ca223b2ca36bf5262b3eff72c7412d93
+0a5e99e840a2e70f3b22653dbb438c39fa3f4f57d0a5f08fca2cc6afba198336
 
 admin_message:
-b700d2e5b4eb40ea16664cabea629ad87bfe4f83cdacfd2263f892b77ffbb193
+290c8f4a249f53973889e356a1a2974c04de33d892d615ac6b94180051ea75c9
 ```
 
 Argument slots are statically ordered as base signatures, signer-derived Layer
@@ -280,9 +291,9 @@ author TEAL.
 
 ### External Contract Admin Artifact Contract
 
-`apbounded-admin` owns external contract-admin private-key custody. Its encrypted
-artifacts use the `.apbounded-admin-key` extension and filenames of the form
-`<CONTRACT_ADMIN_KEY_ID>.apbounded-admin-key`. They are not signer `.key` files
+`aprekey` owns external contract-admin witness custody. Its encrypted
+artifacts use the `.wit` extension and filenames of the form
+`<WITNESS_KEY_ID>.wit`. They are not signer `.key` files
 or `apstore` `.apb` backup bundles. The helper rejects every other extension
 before parsing or passphrase work. The signer and `apstore` must not import,
 decrypt, back up, or restore these artifacts.
@@ -291,8 +302,9 @@ The top-level JSON contract is:
 
 ```json
 {
-  "schema": "aplane.bounded-admin-key-bundle.v1",
-  "contract_admin_key_id": "<52-character ID>",
+  "schema": "aplane.witness-key-bundle.v1",
+  "key_type": "aplane.witness-falcon1024.v1",
+  "witness_key_id": "<52-character ID>",
   "public_key_hex": "<canonical lowercase hex>",
   "encryption": {
     "envelope_version": 2,
@@ -308,7 +320,7 @@ The top-level JSON contract is:
 
 The complete file is bounded to 65,536 bytes. The decoder rejects unknown
 fields and trailing JSON values. Before prompting or invoking Argon2id, it
-requires the exact schema, a matching Contract Admin Key ID, an exact
+requires the exact schema and key type, a matching Witness Key ID, an exact
 1,793-byte Falcon-1024 public key, envelope version 2, the exact KDF parameters
 above, a 32-byte decoded salt, a 12-byte decoded nonce, and an AES-GCM
 ciphertext of at least 16 bytes. Unknown top-level or private-payload schemas
@@ -319,11 +331,11 @@ The nested envelope is the reviewed standalone encryption contract:
 Argon2id derives a 32-byte key using time 2, memory 64 MiB, and parallelism 4;
 AES-256-GCM encrypts the private payload with a random 12-byte nonce. The GCM
 operation uses no external additional authenticated data. Instead, the
-encrypted payload duplicates `contract_admin_key_id` and `public_key_hex`;
-both must exactly equal the validated public header
+encrypted payload duplicates `key_type`, `witness_key_id`, and
+`public_key_hex`; all three must exactly equal the validated public header
 after authenticated decryption.
 
-The decrypted payload schema is `aplane.bounded-admin-key-private.v1`. It
+The decrypted payload schema is `aplane.witness-key-private.v1`. It
 contains the duplicated public identity, base64 JSON byte field
 `private_material`, and an RFC3339Nano UTC `created_at`. Private material is
 the canonical 2,305-byte Falcon-1024 private key. The reader derives and
@@ -332,8 +344,8 @@ Private plaintext, private key bytes, passphrases, and temporary signatures
 must be cleared on success and failure.
 
 Generation also writes
-`<CONTRACT_ADMIN_KEY_ID>.apbounded-admin-key.json` with schema
-`aplane.bounded-admin-key-public.v1`, `contract_admin_key_id`, and
+`<WITNESS_KEY_ID>.wit.json` with schema
+`aplane.witness-key-public.v1`, `key_type`, `witness_key_id`, and
 `public_key_hex`. This sidecar is public convenience data only. The encrypted
 artifact's public header is authoritative and remains sufficient for inspect, verify,
 matching, and recovery when the sidecar is missing or stale. Both outputs are
@@ -344,7 +356,7 @@ reconstructed from the committed artifact.
 
 ### Contract Admin Ceremony Contract
 
-`apbounded-admin rekey` and `unrekey` are the interactive online clients for
+`aprekey rekey` and `unrekey` are the interactive online clients for
 admin-key-authorized bounded rekeys. They resolve `--client-data` before
 `APCLIENT_DATA`, use the configured signer endpoint and selected client
 network, obtain `aplane.bounded-admin-partial.v1` from `/sign/bounded-admin`, and
@@ -575,7 +587,7 @@ targets fail closed. Direct YAML edits are checked, signed, and verified
 through `appolicy` or `apstore policy`.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
-sentry overrides are keyed by Sentry Key ID. These overrides apply to
+sentry overrides are keyed by Witness Key ID. These overrides apply to
 policy phases, are not exposed through admin IPC, and direct YAML edits require
 offline `apstore policy sign` before the signer will trust them.
 
@@ -857,9 +869,9 @@ Additional client-state notes:
 - `apstore endpoint export` emits a public `aplane.endpoint.v1` JSON envelope for operator handoff. URL precedence is `--url <url>`, then `--host <client-reachable-host>` deriving `ssh://<host>:<endpoint.ssh.port>`, then signer `config.yaml` `endpoint.advertise_url`; if none is present, export fails with guidance to pass `--host`/`--url` or configure `endpoint.advertise_url`. For SSH URLs it includes `endpoint.signer_port` unless overridden with `--signer-port`. `--url <url>` is for explicit HTTPS, loopback HTTP, forwarded SSH ports, or unusual deployments. Like other portable JSON handoff envelopes, it uses a single `schema: "aplane.endpoint.v1"` discriminator. The envelope is strict JSON with portable endpoint URL and signer/local ports only. It must not contain client-local aliases, endpoint-role metadata, sentry public-key metadata, bearer tokens, private keys, mnemonics, encrypted key payloads, passphrases, or `known_hosts` trust entries; exported envelopes reject `url: self` because `self` is client-local state.
 - `apshell endpoints import --alias <alias> --role signer|sentry [--dry-run] <endpoint-json>` validates that envelope and writes client-local endpoint routing only: `$APCLIENT_DATA/endpoints.yaml`. Import replaces existing endpoint data when the alias matches. If the imported URL already belongs to a different alias with the same role, import fails without writing; the same URL may be represented by one `signer` alias and one `sentry` alias for dev co-location. Import is not an ownership or trust proof and does not discover sentry keys. Tokens are still obtained separately with `request-token --endpoint <alias>`, and SSH host trust is still established by the existing known-hosts flow.
 - `apshell endpoints create --alias <alias> --endpoint <url> --sentryport <port> [--dry-run]` manually creates or replaces a `role: sentry` endpoint profile in `$APCLIENT_DATA/endpoints.yaml` without an endpoint envelope. `--endpoint` is the client-reachable URL, commonly `ssh://host[:ssh-port]`; `--sentryport` is stored as the endpoint `signer_port` REST port used behind SSH sentry endpoints. Manual creation has the same replacement and duplicate same-role URL rules as import. It does not discover sentry keys, copy tokens, or establish SSH host trust.
-- `apshell endpoints sync-sentries [--dry-run] [--yes]` scans configured `sentry` endpoints with authenticated `/keys`, extracts sentry-key `public_key_hex` values, validates each `component_key` Sentry Key ID, and atomically rebuilds endpoint-local `published_sentries` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_sentries` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and Sentry Key ID validation failures are hard errors and leave files unchanged. After discovery, the command prints Sentry Key IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public sentry reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered sentries selectable from signer-side key generation clients such as `apadmin`.
-- `apshell endpoints sentries` lists the local endpoint-discovered sentry inventory by endpoint alias, Sentry Key ID, and key type without calling remote endpoints.
-- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. Human endpoint output identifies sentries by Sentry Key ID and must not print raw sentry public keys. `show` is local-only, does not call `/keys`, and includes `last_seen_at` for that endpoint's published sentries; `delete` refuses to remove the signer endpoint or an endpoint with published sentries still referenced by derived runtime routing.
+- `apshell endpoints sync-sentries [--dry-run] [--yes]` scans configured `sentry` endpoints with authenticated `/keys`, extracts sentry-key `public_key_hex` values, validates each `component_key` Witness Key ID, and atomically rebuilds endpoint-local `published_sentries` inventory in `endpoints.yaml`. Reachable endpoints are refreshed; temporarily unavailable endpoints, including locked signer identities, preserve their existing `published_sentries` entries. Authentication failures, endpoint configuration errors, malformed responses, duplicate public keys advertised by multiple endpoint aliases, and Witness Key ID validation failures are hard errors and leave files unchanged. After discovery, the command prints Witness Key IDs, not raw public keys, and requires interactive confirmation, unless `--yes` is provided, before copying the current inventory into the connected signer identity's public sentry reference catalog as source-marked `client_discovery` records. Sync carries only public metadata (`endpoint_alias`, `component_key`, `key_type`, `public_key_hex`, `last_seen_at`) and replaces only prior `client_discovery` records; manually imported records are preserved. This makes endpoint-discovered sentries selectable from signer-side key generation clients such as `apadmin`.
+- `apshell endpoints sentries` lists the local endpoint-discovered sentry inventory by endpoint alias, Witness Key ID, and key type without calling remote endpoints.
+- `apshell endpoints list`, `endpoints show <alias>`, `endpoints default <alias>`, and `endpoints delete <alias>` operate on local client configuration. Human endpoint output identifies sentries by Witness Key ID and must not print raw sentry public keys. `show` is local-only, does not call `/keys`, and includes `last_seen_at` for that endpoint's published sentries; `delete` refuses to remove the signer endpoint or an endpoint with published sentries still referenced by derived runtime routing.
 - interactive `apshell` startup does not require a pre-enrolled client: it validates client bootstrap/config inputs, but it may start without endpoint token files or a trusted signer host so the operator can run enrollment, recovery, and troubleshooting commands
 - for interactive `apshell`, token presence and SSH host trust are enforced when the shell attempts `connect`, startup auto-connect, or `request-token` flows; they are not preflight requirements for process startup
 - after a successful interactive `request-token` for the default endpoint, `apshell` immediately attempts to establish the signer SSH tunnel with the newly issued token; `request-token --endpoint <alias>` saves that endpoint's token and only auto-connects when `<alias>` is the default endpoint.
@@ -1097,8 +1109,8 @@ Categories:
 - native signing keys,
 - DSA-backed LogicSig keys,
 - generic LogicSig template instances,
-- sentry component keys (durable category `component`; used only through
-  sentry-role `/sign/component`).
+- signer-custodied witness keys serving the sentry role (durable category
+  `witness`; used only through sentry-role `/sign/component`).
 
 Generic LogicSig entries contain salted bytecode, `salt_counter`, and
 parameters rather than a private signing key.
@@ -1283,20 +1295,20 @@ that status does not invalidate the key or alter signing behavior.
 `apstore keys list` is a local, passphrase-gated inventory surface for the
 current product identity's encrypted key files. It decrypts key metadata using
 the identity store passphrase and lists successfully scanned key addresses or
-Sentry Key IDs with their key type, durable category, creation timestamp, and
+Witness Key IDs with their key type, durable category, creation timestamp, and
 key-file name.
 
 The default human output must not emit private key material, mnemonic material,
-or raw public-key hex. Sentry keys are identified by their Sentry Key ID, not
+or raw public-key hex. Sentry keys are identified by their Witness Key ID, not
 by the raw sentry public key. Recoverable key-scan warnings may be reported
 while still listing keys that scanned successfully.
 
 #### Sentry Public Key Export Envelope
 
-`apstore sentry export <sentry-key-id> [output-json]` emits a public-only JSON
+`apstore sentry export <witness-key-id> [output-json]` emits a public-only JSON
 envelope for a sentry key. The command reads the
-`keys/<sentry-key-id>.public.json` sidecar, verifies that `<sentry-key-id>`
-equals the canonical Sentry Key ID derived from the public key, and never reads
+`keys/<witness-key-id>.wit.json` sidecar, verifies that `<witness-key-id>`
+equals the canonical Witness Key ID derived from the public key, and never reads
 or decrypts private key material. If the sidecar is missing or malformed,
 export fails closed; the operator must regenerate the sentry key or run an
 explicit metadata backfill before exporting.
@@ -1306,22 +1318,19 @@ this prose example; persisted envelopes contain all 3,586 hex characters.
 
 ```json
 {
-  "schema": "aplane.sentry-public-key.v1",
-  "component_key": "H2DZY4Y4D726DVOAURO5HG4H2HVKTXE26LTVZ7LOGHFKAG6DN62Q",
-  "key_type": "aplane.sentry-falcon1024.v1",
-  "public_key_encoding": "hex",
-  "public_key_hex": "0000...0000",
-  "public_key_size": 1793,
-  "public_key_sha256": "d3a3deeec37ef5e50a463a2b1f8c9c6fc934a5c824a0c1cfd027d035a03b923a"
+  "schema": "aplane.witness-key-public.v1",
+  "key_type": "aplane.witness-falcon1024.v1",
+  "witness_key_id": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
+  "public_key_hex": "0000...0000"
 }
 ```
 
-`component_key` is the compatibility wire/storage field name for the Sentry Key
-ID: the 52-character uppercase base32 selector used to select a local sentry
-key. It is derived as
-`base32_no_padding(SHA512_256("APLANE_COMPONENT_KEY_V1" || 0x00 || key_type ||
-0x00 || canonical_public_key_bytes))`; it resembles an Algorand transaction ID
-and is not a valid Algorand address. `public_key_hex` is the raw component
+`witness_key_id` is the 52-character uppercase base32 selector derived as
+`base32_no_padding(SHA512_256(field("APLANE_WITNESS_KEY_ID_V1") ||
+field(key_type) || field(canonical_public_key_bytes)))`. It resembles an
+Algorand transaction ID and is not a valid Algorand address. Role-specific
+wire and sentry-reference records retain the field name `component_key`.
+`public_key_hex` is the raw component
 public key encoded in hex; it is the value embedded into guarded-account
 LogicSig bytecode and supplied as `sentry_public_key` during guarded account
 generation. The envelope makes no endpoint, policy, ownership, freshness, or
@@ -1330,7 +1339,7 @@ trust claim.
 #### Sentry Public Key Reference Library
 
 `apstore sentry import <export-json> <name>` imports an
-`aplane.sentry-public-key.v1` envelope into the target identity's public
+`aplane.witness-key-public.v1` envelope into the target identity's public
 sentry reference library:
 
 ```text
@@ -1344,8 +1353,8 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
 {
   "schema": "aplane.sentry-public-key-ref.v1",
   "name": "lab-sentry",
-  "component_key": "H2DZY4Y4D726DVOAURO5HG4H2HVKTXE26LTVZ7LOGHFKAG6DN62Q",
-  "key_type": "aplane.sentry-falcon1024.v1",
+  "component_key": "ROGAFDACF7ASC3EMZRWNKVM73NXHO4P6O4EB7ZXWER37SM63BMFQ",
+  "key_type": "aplane.witness-falcon1024.v1",
   "public_key_encoding": "hex",
   "public_key_hex": "0000...0000",
   "public_key_size": 1793,
@@ -1361,14 +1370,14 @@ Endpoint discovery may also populate this catalog through
 `endpoint-<alias>-<component_key>`, `endpoint_alias`, `last_seen_at`, and
 `synced_at`. They are public candidates derived from the client's
 `endpoints.yaml`; they are not a sentry ownership proof.
-Human list output treats the Sentry Key ID as the primary identifier
+Human list output treats the Witness Key ID as the primary identifier
 and shows generated endpoint-synced names only in detailed JSON views.
 
 The library is a generation convenience and trust-input inventory for the user
 signer. When generating a guarded account, callers may provide
-`sentry=<sentry-key-id>` instead of `sentry_public_key=<hex>`. For compatibility
+`sentry=<witness-key-id>` instead of `sentry_public_key=<hex>`. For compatibility
 with older scripts, `sentry=<name>` is also accepted. The signer resolves the
-Sentry Key ID or name to `public_key_hex`, verifies that the reference key type
+Witness Key ID or name to `public_key_hex`, verifies that the reference key type
 matches the guarded-account key type's required sentry key type,
 rejects requests that provide both forms, and persists the resolved
 `sentry_public_key` plus any other guarded-account creation parameters in the
@@ -1377,7 +1386,7 @@ corridor list.
 
 Identity-scoped `/keytypes` metadata may expose imported references as a
 creation parameter named `sentry` with `type:"select"` and `options[]`
-containing Sentry Key IDs whose sentry key type matches the guarded
+containing Witness Key IDs whose sentry key type matches the guarded
 account key type. This is UI metadata for generation clients such as `apadmin`;
 the durable key file still stores the resolved `sentry_public_key`; other
 provider-specific creation parameters remain exposed normally.
@@ -1387,7 +1396,7 @@ provider-specific creation parameters remain exposed normally.
 Contract-admin private keys never appear in signer inventory. Bounded account
 rows expose the immutable derived `admin_key_id`, program binding, Layer-3
 policy, and other non-secret bounded-authorization metadata. Apsigner does
-not report artifact availability because `.apbounded-admin-key` custody is
+not report artifact availability because `.wit` custody is
 external and intentionally outside the signer data model.
 
 `/keytypes` exposes the framework-injected scalar
@@ -1523,7 +1532,7 @@ Signing-audit semantics:
 - signing audit over HTTP records `transport:"http"` and the token-authenticated identity as requester
 - sentry-role component signing currently records approvals and policy
   rejections through `SIGN_APPROVED`/`SIGN_REJECTED`; `txn_auth` is the
-  Sentry Key ID, `txn_sender` is the decoded target sender, and
+  Witness Key ID, `txn_sender` is the decoded target sender, and
   `policy_rule_id` carries the deterministic sentry rule when present
 - approval audit enriches approved/rejected records with the admin session approver principal when an admin response supplies it
 - approved/rejected signing records include `policy_rule_id` when a policy rule forced manual review before the operator decision
@@ -1681,7 +1690,7 @@ Auto-rejection policy includes:
 - `transfer_policy` blocked destinations, route misses,
   close/clawback denials, and `reject_above` thresholds for direct `pay` and
   `axfer` movements
-- YAML-only `key_overrides` keyed by signing auth address or Sentry Key ID
+- YAML-only `key_overrides` keyed by signing auth address or Witness Key ID
 
 Policy enforcement stores and compares `review_algo_payments` and
 `max_algo_payments` in raw microAlgos; admin-facing input, display, and
@@ -2169,7 +2178,7 @@ Live signer-managed backup:
 - signer-managed backup covers active key files for the bound identity plus a
   verified policy snapshot; it does not export deleted archives, other
   identities, or live runtime state
-- external `.apbounded-admin-key`, `.apbounded-admin-key.json`,
+- external `.wit`, `.wit.json`,
   `.apbounded-admin-request`, and `.apbounded-admin-signature` files are never
   included in signer-managed backups; operators back up contract-admin
   artifacts independently

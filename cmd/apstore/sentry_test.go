@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestCmdSentryImportListShowRemove(t *testing.T) {
@@ -36,8 +36,8 @@ func TestCmdSentryImportListShowRemove(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cmdSentry(list) error = %v", err)
 		}
-		if !strings.Contains(listOut, env.ComponentKey) ||
-			!strings.Contains(listOut, keytypes.SentryComponentFalcon1024V1) ||
+		if !strings.Contains(listOut, env.WitnessKeyID) ||
+			!strings.Contains(listOut, witness.Falcon1024V1) ||
 			!strings.Contains(listOut, "name: lab-sentry") {
 			t.Fatalf("list output = %q, want imported sentry reference", listOut)
 		}
@@ -75,14 +75,14 @@ func TestCmdSentryListHidesEndpointSyncedRecordName(t *testing.T) {
 		for i := range pub {
 			pub[i] = 0xab
 		}
-		componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, pub)
+		componentKey, err := witness.ID(witness.Falcon1024V1, pub)
 		if err != nil {
-			t.Fatalf("ComponentKeySelector() error = %v", err)
+			t.Fatalf("witness.ID() error = %v", err)
 		}
 		if _, err := sentryrefs.SyncDiscovered(keystorePaths(), productIdentityID(), []sentryrefs.DiscoveredRecord{{
 			EndpointAlias: "foo",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.SentryComponentFalcon1024V1,
+			KeyType:       witness.Falcon1024V1,
 			PublicKeyHex:  strings.Repeat("ab", testSentryPublicKeySize(t)),
 		}}); err != nil {
 			t.Fatalf("SyncDiscovered() error = %v", err)
@@ -102,9 +102,9 @@ func TestCmdSentryListHidesEndpointSyncedRecordName(t *testing.T) {
 			t.Fatalf("list output exposed generated record name %q:\n%s", generatedName, listOut)
 		}
 		if !strings.Contains(listOut, componentKey) ||
-			!strings.Contains(listOut, keytypes.SentryComponentFalcon1024V1) ||
+			!strings.Contains(listOut, witness.Falcon1024V1) ||
 			!strings.Contains(listOut, "endpoint: foo") {
-			t.Fatalf("list output = %q, want Sentry Key ID, key type, and endpoint alias", listOut)
+			t.Fatalf("list output = %q, want Witness Key ID, key type, and endpoint alias", listOut)
 		}
 	})
 }
@@ -115,11 +115,11 @@ func testSentryExportJSON(t *testing.T) []byte {
 	for i := range pub {
 		pub[i] = 0xab
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, pub)
+	componentKey, err := witness.ID(witness.Falcon1024V1, pub)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
-	env, err := sentryrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentFalcon1024V1, strings.Repeat("ab", testSentryPublicKeySize(t)))
+	env, err := sentryrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, strings.Repeat("ab", testSentryPublicKeySize(t)))
 	if err != nil {
 		t.Fatalf("NewExportEnvelope() error = %v", err)
 	}
@@ -132,7 +132,7 @@ func testSentryExportJSON(t *testing.T) []byte {
 
 func testSentryPublicKeySize(t *testing.T) int {
 	t.Helper()
-	size, ok := keytypes.ComponentPublicKeySize(keytypes.SentryComponentFalcon1024V1)
+	size, ok := witness.PublicKeySize(witness.Falcon1024V1)
 	if !ok {
 		t.Fatal("Falcon sentry public-key size is unavailable")
 	}

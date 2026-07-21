@@ -28,13 +28,15 @@ not a DSA policy category.
 
 | Auxiliary authority type | Meaning |
 |---|---|
-| **Sentry component key** | A signer-managed, non-account key used through `/sign/component` and assembled into a guarded transaction. |
-| **External contract-admin key** | A normally cold key held in an `.apbounded-admin-key` artifact and used only for a bounded admin operation. It is not imported into the signer. |
+| **Sentry witness key** | A signer-managed, non-account witness used through `/sign/component` and assembled into a guarded transaction. |
+| **Contract-admin witness key** | The same witness key form in a standalone `.wit` container, used only for a bounded admin operation. It is not imported into the signer. |
 
-Sentry component keys appear in the sentry key-type inventory but cannot be
-used as spending accounts. External contract-admin keys do not appear in
-`keytypes`, `apstore`, or the signer keystore at all. A contract-admin key is
-not a sentry component key, and neither authority can substitute for the other.
+Both roles use `aplane.witness-falcon1024.v1` and the same Witness Key ID
+derivation. Custody keeps their capabilities separate: hot signer `.key`
+records use durable category `witness` and can sign only the sentry component
+domain; standalone `.wit` files can sign only the bounded admin domain. Never
+reuse one witness keypair across these roles. Local generation rejects known
+collisions, but cannot detect a key copied or enrolled out of band.
 
 ### Definition and availability
 
@@ -178,22 +180,22 @@ creation field; it is not a second signer-held key.
 Generate the external contract-admin key first:
 
 ```bash
-apbounded-admin generate --out /media/cold/bounded-admin
+aprekey generate --out /media/cold/bounded-admin
 ```
 
 Use the generated result's `public_key_hex` as the Contract Admin Public Key
 when generating `aplane.falcon1024-allowlist-alock.v1` in apadmin. Keep the
-`.apbounded-admin-key` artifact outside the signer. Ordinary spends use the
+`.wit` artifact outside the signer. Ordinary spends use the
 normal client flow. Rekey with the dedicated helper:
 
 ```bash
-apbounded-admin rekey --client-data "$APCLIENT_DATA" \
-  --key /media/cold/bounded-admin/<ID>.apbounded-admin-key \
+aprekey rekey --client-data "$APCLIENT_DATA" \
+  --key /media/cold/bounded-admin/<ID>.wit \
   <account> to <new-authorizer>
 ```
 
 For an air-gapped ceremony, use `prepare-rekey`, move the resulting
-`.apbounded-admin-request` to the ceremony machine, run `apbounded-admin sign`,
+`.apbounded-admin-request` to the ceremony machine, run `aprekey sign`,
 and return only the `.apbounded-admin-signature` file to `complete`. Loss of
 every artifact copy or its passphrase permanently removes the admin-key rekey
 path; ordinary policy-compliant spending can continue.

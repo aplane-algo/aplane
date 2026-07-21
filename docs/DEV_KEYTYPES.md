@@ -34,7 +34,7 @@ changing schema-v2 composed templates, transaction-effect classification,
 argument slots, Falcon contract-admin signing, or `signing_flow: bounded1`.
 Admin-capable account files contain the spending key and immutable public
 contract-admin metadata; private admin material exists only in the external
-`.apbounded-admin-key` artifact. Never copy that private key into account
+`.wit` artifact. Never copy that private key into account
 parameters, signer storage, or caller-supplied runtime arguments.
 
 ## Key Type Source Model
@@ -161,7 +161,7 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | default-enabled | `lsig/falcon1024/v1/standard.go` |
-| `aplane.sentry-falcon1024.v1` | Sentry key | Go-defined | default-enabled | `lsig/falcon1024/keygen/sentry.go` |
+| `aplane.witness-falcon1024.v1` | Witness key (sentry custody or external contract-admin custody) | Go-defined | default-enabled on sentry nodes | `internal/witness`, `lsig/falcon1024/keygen/witness.go` |
 | `aplane.falcon1024-sentry1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
 | `aplane.corridor.v1` | Guarded-account DSA LogicSig provider with recipient corridor and sentry-authorized rekey path | Go-defined | library-visible | `lsig/corridor` |
 | `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ed25519lsig` |
@@ -169,7 +169,7 @@ Go-defined key types:
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: `ed25519`, `aplane.falcon1024.v1`, and
-`aplane.sentry-falcon1024.v1` are default-enabled, while
+`aplane.witness-falcon1024.v1` are default-enabled, while
 `aplane.falcon1024-sentry1024.v1`, `aplane.corridor.v1`, and
 `aplane.ed25519.v1` are library-visible and not available for generation until
 the current identity enables them from the library. `aplane.ed25519.v1` is the Ed25519

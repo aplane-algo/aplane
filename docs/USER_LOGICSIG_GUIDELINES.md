@@ -733,14 +733,14 @@ transfers, independently authorized asset opt-ins, or a pure self-payment
 rekey, caps the protected transaction fee, and denies close and clawback
 effects before Layer 3. A rekey requires both the spending
 signature and an external contract-admin signature through
-`POST /sign/bounded-admin` and `apbounded-admin`.
+`POST /sign/bounded-admin` and `aprekey`.
 
 Its framework-owned `fixed_allowlist` policy handles all admitted spend effects
 without author TEAL. It constrains `Receiver`/`AssetReceiver`, optionally
 constrains `XferAsset`, `Amount`, and `AssetAmount`, and compiles canonical
 recipient/asset lists inline with an audited maximum of 30 entries each. It
 uses no runtime proof or signer-derived LogicSig argument. The external private
-key exists only in a `.apbounded-admin-key` artifact; losing all copies removes
+key exists only in a `.wit` artifact; losing all copies removes
 the admin-key rekey path but does not stop policy-compliant spending. See
 [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
 

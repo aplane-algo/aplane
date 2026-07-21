@@ -236,7 +236,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	state.PopulateSignerCache([]signerapi.KeyInfo{{
 		Address:                "ADDR1",
 		KeyType:                "aplane.falcon1024-sentry1024.v1",
-		SentryComponentKeyType: "aplane.sentry-falcon1024.v1",
+		SentryComponentKeyType: "aplane.witness-falcon1024.v1",
 		LsigSize:               1500,
 		Parameters: map[string]string{
 			"sentry_public_key": "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a",
@@ -251,7 +251,7 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	if got, ok := original.SentryPublicKeyForAddress("ADDR1"); !ok || got != "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a" {
 		t.Fatalf("sentry public key = %q/%v, want cached value", got, ok)
 	}
-	if got, ok := original.SentryComponentKeyTypeForAddress("ADDR1"); !ok || got != "aplane.sentry-falcon1024.v1" {
+	if got, ok := original.SentryComponentKeyTypeForAddress("ADDR1"); !ok || got != "aplane.witness-falcon1024.v1" {
 		t.Fatalf("sentry component key type = %q/%v, want cached value", got, ok)
 	}
 	if got := original.GetLsigSize("ADDR1"); got != 1500 {
