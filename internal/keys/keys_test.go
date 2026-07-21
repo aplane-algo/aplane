@@ -20,6 +20,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -67,6 +68,10 @@ func testEd25519Key(t *testing.T) (keyJSON []byte, address string) {
 
 // writeKeyFile writes key JSON to the identity-scoped keys directory, optionally encrypted.
 func writeKeyFile(t *testing.T, paths storepaths.Paths, identityID, address string, keyJSON, masterKey []byte) string {
+	return writeManagedCredentialFile(t, paths, identityID, address+AccountKeyExtension, keyJSON, masterKey)
+}
+
+func writeManagedCredentialFile(t *testing.T, paths storepaths.Paths, identityID, name string, keyJSON, masterKey []byte) string {
 	t.Helper()
 	keysDir := paths.KeysDir(identityID)
 	if err := fsutil.MkdirAll(keysDir); err != nil {
@@ -82,7 +87,7 @@ func writeKeyFile(t *testing.T, paths storepaths.Paths, identityID, address stri
 		dataToWrite = encrypted
 	}
 
-	filePath := filepath.Join(keysDir, address+".key")
+	filePath := filepath.Join(keysDir, name)
 	if err := os.WriteFile(filePath, dataToWrite, 0600); err != nil {
 		t.Fatalf("Failed to write key file: %v", err)
 	}
@@ -219,6 +224,111 @@ func TestScanKeysDirectoryWithMasterKey(t *testing.T) {
 		}
 		if info.PublicKeyHex == "" {
 			t.Error("public key hex should not be empty")
+		}
+	})
+
+	t.Run("canonical sentry credential", func(t *testing.T) {
+		masterKey := testMasterKey(t)
+		paths := storepaths.NewPaths(t.TempDir())
+		publicKey, privateKey := canonicalFalconComponentPair(t, 0x51)
+		payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
+		defer payload.ZeroSecrets()
+		selector, err := payload.Selector()
+		if err != nil {
+			t.Fatalf("Selector() error = %v", err)
+		}
+		keyJSON, err := MarshalPayload(payload)
+		if err != nil {
+			t.Fatalf("MarshalPayload() error = %v", err)
+		}
+		writeManagedCredentialFile(t, paths, "default", selector+SentryCredentialExtension, keyJSON, masterKey)
+
+		report, err := ScanKeysDirectoryWithMasterKeyReport(paths, "default", masterKey)
+		if err != nil {
+			t.Fatalf("ScanKeysDirectoryWithMasterKeyReport() error = %v", err)
+		}
+		if len(report.Warnings) != 0 {
+			t.Fatalf("warnings = %#v, want none", report.Warnings)
+		}
+		info, ok := report.Keys[selector]
+		if !ok {
+			t.Fatalf("sentry credential %s not loaded", selector)
+		}
+		if info.Category != CategoryWitness || info.KeyFile != SentryCredentialFilePath(paths, "default", selector) {
+			t.Fatalf("loaded sentry credential = %#v", info)
+		}
+	})
+
+	t.Run("legacy witness key extension is rejected", func(t *testing.T) {
+		masterKey := testMasterKey(t)
+		paths := storepaths.NewPaths(t.TempDir())
+		publicKey, privateKey := canonicalFalconComponentPair(t, 0x52)
+		payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
+		defer payload.ZeroSecrets()
+		selector, err := payload.Selector()
+		if err != nil {
+			t.Fatalf("Selector() error = %v", err)
+		}
+		keyJSON, err := MarshalPayload(payload)
+		if err != nil {
+			t.Fatalf("MarshalPayload() error = %v", err)
+		}
+		legacyPath := writeManagedCredentialFile(t, paths, "default", selector+AccountKeyExtension, keyJSON, masterKey)
+
+		report, err := ScanKeysDirectoryWithMasterKeyReport(paths, "default", masterKey)
+		if err != nil {
+			t.Fatalf("ScanKeysDirectoryWithMasterKeyReport() error = %v", err)
+		}
+		if len(report.Keys) != 0 || len(report.Warnings) != 1 {
+			t.Fatalf("report = %#v, want one rejection", report)
+		}
+		warning := report.Warnings[0]
+		if warning.Code != KeyScanWarningFilenameClassMismatch {
+			t.Fatalf("warning code = %q, want %q", warning.Code, KeyScanWarningFilenameClassMismatch)
+		}
+		for _, want := range []string{legacyPath, SentryCredentialExtension, "Stop apsigner", ".apb", "prior build"} {
+			if !contains(warning.Message(), want) {
+				t.Fatalf("warning message = %q, want %q", warning.Message(), want)
+			}
+		}
+	})
+
+	t.Run("account payload in sentry class is rejected", func(t *testing.T) {
+		masterKey := testMasterKey(t)
+		paths := storepaths.NewPaths(t.TempDir())
+		keyJSON, address := testEd25519Key(t)
+		writeManagedCredentialFile(t, paths, "default", address+SentryCredentialExtension, keyJSON, masterKey)
+
+		report, err := ScanKeysDirectoryWithMasterKeyReport(paths, "default", masterKey)
+		if err != nil {
+			t.Fatalf("ScanKeysDirectoryWithMasterKeyReport() error = %v", err)
+		}
+		if len(report.Keys) != 0 || len(report.Warnings) != 1 || report.Warnings[0].Code != KeyScanWarningFilenameClassMismatch {
+			t.Fatalf("report = %#v, want filename class rejection", report)
+		}
+	})
+
+	t.Run("external witness artifacts never reach decrypt", func(t *testing.T) {
+		paths := storepaths.NewPaths(t.TempDir())
+		keysDir := paths.KeysDir("default")
+		if err := fsutil.MkdirAll(keysDir); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"offline.wit", "offline.wit.json"} {
+			if err := os.WriteFile(filepath.Join(keysDir, name), []byte("not a managed credential"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		decryptCalls := 0
+		report, err := scanKeysDirectoryInternalReport(paths, "default", func(string) ([]byte, error) {
+			decryptCalls++
+			return nil, fmt.Errorf("unexpected decrypt")
+		})
+		if err != nil {
+			t.Fatalf("scanKeysDirectoryInternalReport() error = %v", err)
+		}
+		if decryptCalls != 0 || len(report.Keys) != 0 || len(report.Warnings) != 0 {
+			t.Fatalf("decrypt calls/report = %d/%#v, want empty", decryptCalls, report)
 		}
 	})
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -142,6 +143,7 @@ const (
 	KeyScanWarningLogicSigAddressInvalid  KeyScanWarningCode = "logic_sig_address_invalid"
 	KeyScanWarningAddressDerivationFailed KeyScanWarningCode = "address_derivation_failed"
 	KeyScanWarningFilenameAddressMismatch KeyScanWarningCode = "filename_address_mismatch"
+	KeyScanWarningFilenameClassMismatch   KeyScanWarningCode = "filename_class_mismatch"
 )
 
 // KeyScanWarning describes a recoverable key-scan failure. Scanning continues
@@ -181,6 +183,8 @@ func (w KeyScanWarning) Message() string {
 		return fmt.Sprintf("Failed to derive address for %s: %v", w.KeyFile, w.Err)
 	case KeyScanWarningFilenameAddressMismatch:
 		return fmt.Sprintf("Skipped key file %s: %v", w.KeyFile, w.Err)
+	case KeyScanWarningFilenameClassMismatch:
+		return fmt.Sprintf("Skipped managed credential %s: %v", w.KeyFile, w.Err)
 	default:
 		return fmt.Sprintf("Failed to scan key file %s: %v", w.KeyFile, w.Err)
 	}
@@ -289,14 +293,15 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 		return nil, fmt.Errorf("failed to read keys directory: %w", err)
 	}
 
-	// Scan for .key files (all key types: Ed25519, Falcon-1024, LogicSigs)
+	// Scan only signer-managed private credential classes. External witness
+	// artifacts and public witness references are intentionally excluded.
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".key") {
+		filenameSelector, _, ok := ParseManagedCredentialFilename(entry.Name())
+		if entry.IsDir() || !ok {
 			continue
 		}
 
-		filenameAddress := strings.TrimSuffix(entry.Name(), ".key")
-		keyFile := paths.KeyFilePath(identityID, filenameAddress)
+		keyFile := filepath.Join(keysDir, entry.Name())
 
 		// Read and decrypt the file ONCE to extract all needed info
 		data, err := decryptFunc(keyFile)
@@ -311,7 +316,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 			warn(keyPayloadScanWarningCode(err), keyFile, err)
 			continue
 		}
-		address, err := payload.Selector()
+		selector, err := payload.Selector()
 		if err != nil {
 			payload.ZeroSecrets()
 			crypto.ZeroBytes(data)
@@ -323,6 +328,20 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 		keyType := payloadMeta.KeyType
 		category := payloadMeta.Category
 		publicKeyHex := payloadMeta.PublicKeyHex
+		if err := ValidateManagedCredentialFilename(entry.Name(), selector, category); err != nil {
+			payload.ZeroSecrets()
+			crypto.ZeroBytes(data)
+			if errors.Is(err, ErrManagedCredentialClassMismatch) {
+				warn(KeyScanWarningFilenameClassMismatch, keyFile, managedCredentialClassMismatchError(err))
+			} else {
+				warn(
+					KeyScanWarningFilenameAddressMismatch,
+					keyFile,
+					fmt.Errorf("filename address %s does not match payload-derived address %s: %w", filenameSelector, selector, err),
+				)
+			}
+			continue
+		}
 		var lsigSize int
 		switch category {
 		case CategoryGenericLsig:
@@ -341,18 +360,13 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 		createdAt := payloadMeta.CreatedAt
 		payload.ZeroSecrets()
 		crypto.ZeroBytes(data) // Zero after all processing complete
-		if filenameAddress != address {
-			warn(KeyScanWarningFilenameAddressMismatch, keyFile, fmt.Errorf("filename address %s does not match payload-derived address %s", filenameAddress, address))
+		addressFiles[selector] = append(addressFiles[selector], keyFile)
+		if len(addressFiles[selector]) > 1 {
+			delete(keysMap, selector)
 			continue
 		}
 
-		addressFiles[address] = append(addressFiles[address], keyFile)
-		if len(addressFiles[address]) > 1 {
-			delete(keysMap, address)
-			continue
-		}
-
-		keysMap[address] = KeyScanInfo{
+		keysMap[selector] = KeyScanInfo{
 			KeyFile:                keyFile,
 			KeyType:                keyType,
 			Category:               category,
@@ -373,6 +387,13 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 	}
 
 	return &KeyScanReport{Keys: keysMap, Warnings: warnings}, nil
+}
+
+func managedCredentialClassMismatchError(err error) error {
+	return fmt.Errorf(
+		"%w. Stop apsigner before remediation: preserve the rejected file; if no verified .apb backup exists, use the prior build to export one; verify the backup; remove the stale managed file; then restore the .apb with the current build",
+		err,
+	)
 }
 
 // IsWitnessKey classifies a key payload as a sentry key.

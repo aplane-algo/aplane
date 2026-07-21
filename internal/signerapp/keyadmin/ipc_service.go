@@ -8,6 +8,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keytypefmt"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 )
@@ -65,6 +66,15 @@ func (s IPCService) ImportKey(ir *identity.Runtime, req adminproto.ImportKeyRequ
 
 func (s IPCService) logGenerateKey(genResult *GenerateResult) {
 	if genResult == nil {
+		return
+	}
+	if genResult.IsWitnessKey {
+		s.logf(
+			"generated sentry witness credential via IPC: %s (stored as %s%s)",
+			genResult.Address,
+			genResult.Address,
+			keys.SentryCredentialExtension,
+		)
 		return
 	}
 	if template, tmplErr := genericlsig.GetOrError(genResult.KeyType); tmplErr == nil {

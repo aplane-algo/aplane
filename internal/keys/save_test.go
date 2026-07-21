@@ -36,7 +36,7 @@ func TestSavePayloadEncrypted(t *testing.T) {
 	if result.Address != selector {
 		t.Fatalf("Address = %q, want %q", result.Address, selector)
 	}
-	if result.PrivateFile != paths.KeyFilePath("default", selector) {
+	if result.PrivateFile != AccountKeyFilePath(paths, "default", selector) {
 		t.Fatalf("PrivateFile = %q, want canonical selector path", result.PrivateFile)
 	}
 
@@ -83,6 +83,20 @@ func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	}
 	if result.Address != componentKey {
 		t.Fatalf("Address = %q, want %q", result.Address, componentKey)
+	}
+	wantPrivateFile := SentryCredentialFilePath(paths, "default", componentKey)
+	if result.PrivateFile != wantPrivateFile {
+		t.Fatalf("PrivateFile = %q, want %q", result.PrivateFile, wantPrivateFile)
+	}
+	privateData, err := os.ReadFile(result.PrivateFile)
+	if err != nil {
+		t.Fatalf("ReadFile(private credential) error = %v", err)
+	}
+	if !crypto.IsEncrypted(privateData) {
+		t.Fatal("saved sentry credential should be encrypted")
+	}
+	if _, err := os.Stat(AccountKeyFilePath(paths, "default", componentKey)); !os.IsNotExist(err) {
+		t.Fatalf("legacy witness .key stat error = %v, want not exist", err)
 	}
 
 	path := WitnessPublicMetadataPath(paths, "default", componentKey)
