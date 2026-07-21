@@ -220,7 +220,7 @@ func TestPreviewRestoreManagedArchiveReportsKeyMetadataAndExistingConflict(t *te
 	if err := os.MkdirAll(paths.KeysDir(identityID), 0o750); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
-	if err := os.WriteFile(paths.KeyFilePath(identityID, address), []byte("existing"), 0o600); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), []byte("existing"), 0o600); err != nil {
 		t.Fatalf("WriteFile(existing key) error = %v", err)
 	}
 
@@ -381,7 +381,7 @@ func TestRestoreKeyWritesStorePermissions(t *testing.T) {
 	}
 
 	assertStoreDirMode(t, paths.KeysDir(identityID))
-	assertFileMode(t, paths.KeyFilePath(identityID, address), fsutil.StoreFilePerm)
+	assertFileMode(t, apkeys.AccountKeyFilePath(paths, identityID, address), fsutil.StoreFilePerm)
 }
 
 func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
@@ -404,7 +404,7 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	if !strings.Contains(err.Error(), "role-forbidden") || !strings.Contains(err.Error(), witness.Falcon1024V1) {
 		t.Fatalf("RestoreKey() error = %v, want sentry-key role-forbidden rejection", err)
 	}
-	if _, err := os.Stat(paths.KeyFilePath(identityID, componentKey)); !os.IsNotExist(err) {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, componentKey)); !os.IsNotExist(err) {
 		t.Fatalf("restored sentry key stat error = %v, want not exist", err)
 	}
 }
@@ -549,7 +549,7 @@ func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T
 	if keyType != "ed25519" {
 		t.Fatalf("RestoreKey() key type = %q, want ed25519", keyType)
 	}
-	if _, statErr := os.Stat(paths.KeyFilePath(identityID, address)); statErr != nil {
+	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address)); statErr != nil {
 		t.Fatalf("canonical key file stat error = %v", statErr)
 	}
 	if _, statErr := os.Stat(duplicatePath); statErr != nil {
@@ -609,7 +609,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 		t.Fatalf("RestoreKey() error = %v, want signing metadata rejection", err)
 	}
 
-	if _, err := os.Stat(paths.KeyFilePath(identityID, address.String())); !os.IsNotExist(err) {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); !os.IsNotExist(err) {
 		t.Fatalf("restored key stat error = %v, want not exist", err)
 	}
 	templatePath := templatestore.GetTemplateFilePathForPaths(paths, identityID, keyType, templatestore.TemplateTypeGeneric)
@@ -666,7 +666,7 @@ func TestRestoreKeyPreservesBoundedSigningMetadata(t *testing.T) {
 	if _, err := restorer.RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
-	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(paths.KeyFilePath(identityID, address), testExportMasterKey)
+	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(apkeys.AccountKeyFilePath(paths, identityID, address), testExportMasterKey)
 	if err != nil {
 		t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
 	}
@@ -724,7 +724,7 @@ func TestRestoreKeyRejectsInvalidKeyTypeBeforeTemplatePathUse(t *testing.T) {
 		t.Fatalf("RestoreKey() error = %v, want invalid key_type rejection", err)
 	}
 
-	if _, err := os.Stat(paths.KeyFilePath(identityID, address.String())); !os.IsNotExist(err) {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); !os.IsNotExist(err) {
 		t.Fatalf("restored key stat error = %v, want not exist", err)
 	}
 	if entries, err := os.ReadDir(paths.KeyTypeRecordsDir(identityID)); err == nil && len(entries) > 0 {
@@ -794,10 +794,10 @@ func TestRestoreKeySkipsConflictingBundledTemplateForStandaloneGenericKey(t *tes
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
 
-	if _, err := os.Stat(paths.KeyFilePath(identityID, address.String())); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, address.String())); err != nil {
 		t.Fatalf("expected restored key file: %v", err)
 	}
-	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(paths.KeyFilePath(identityID, address.String()), testExportMasterKey)
+	restoredJSON, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(apkeys.AccountKeyFilePath(paths, identityID, address.String()), testExportMasterKey)
 	if err != nil {
 		t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
 	}

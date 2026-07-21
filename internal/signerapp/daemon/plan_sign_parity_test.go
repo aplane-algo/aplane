@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerrest "github.com/aplane-algo/aplane/internal/signerapp/rest"
@@ -730,7 +731,7 @@ func TestSignReplansAgainstCurrentSnapshotAfterKeyRemoval(t *testing.T) {
 	}
 
 	// Move to snapshot B: remove the key file from disk and reload the index.
-	keyPath := server.keyPaths.KeyFilePath(auth.DefaultIdentityID, genResp.Address)
+	keyPath := keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, genResp.Address)
 	if err := os.Remove(keyPath); err != nil {
 		t.Fatalf("os.Remove(%q) error = %v", keyPath, err)
 	}

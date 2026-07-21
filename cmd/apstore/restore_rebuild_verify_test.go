@@ -87,7 +87,7 @@ func TestCmdRebuildAcceptsTarballForMissingIdentity(t *testing.T) {
 	if !apcrypto.KeystoreMetadataExistsIn(keystorePaths().KeystoreMetadataDir(productIdentityID())) {
 		t.Fatal("keystore metadata missing after rebuild")
 	}
-	if _, err := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), address)); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)); err != nil {
 		t.Fatalf("rebuilt key file missing: %v", err)
 	}
 	meta, err := apcrypto.LoadKeystoreMetadata(keystorePaths().KeystoreMetadataDir(productIdentityID()))
@@ -301,7 +301,7 @@ func TestRestoreKeyIsIdempotentForSameBackup(t *testing.T) {
 	if firstType != "ed25519" || secondType != "ed25519" {
 		t.Fatalf("restoreKey() key types = %q, %q, want ed25519 both times", firstType, secondType)
 	}
-	if _, err := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), address)); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)); err != nil {
 		t.Fatalf("restored key file missing after repeated restore: %v", err)
 	}
 }
@@ -407,7 +407,7 @@ func TestRestoreKeySkipsTemplateConflictForStandaloneKey(t *testing.T) {
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if _, statErr := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), address)); statErr != nil {
+	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)); statErr != nil {
 		t.Fatalf("expected key file written despite template conflict, got stat err=%v", statErr)
 	}
 	loaded, err := templatestore.LoadTemplateFromPath(
@@ -468,7 +468,7 @@ func TestRestoreKeyRollsBackCompiledProviderActivationOnKeyWriteFailure(t *testi
 		t.Fatalf("writeStandaloneBackup() error = %v", err)
 	}
 
-	destPath := keystorePaths().KeyFilePath(productIdentityID(), address)
+	destPath := apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)
 	if err := os.MkdirAll(destPath, 0o755); err != nil {
 		t.Fatalf("MkdirAll(destPath) error = %v", err)
 	}
@@ -515,7 +515,7 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	if restoredKeyType != keyType {
 		t.Fatalf("restoreKey() keyType = %q, want %q", restoredKeyType, keyType)
 	}
-	if _, err := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), address)); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)); err != nil {
 		t.Fatalf("restored key file missing: %v", err)
 	}
 }
@@ -543,7 +543,7 @@ func TestRestoreKeyRejectsLogicSigWithoutSigningMetadata(t *testing.T) {
 	if !strings.Contains(err.Error(), "signing_metadata_version") {
 		t.Fatalf("restoreKey() error = %v, want signing metadata context", err)
 	}
-	if _, statErr := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), address)); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)); !os.IsNotExist(statErr) {
 		t.Fatalf("expected no key file written after missing signing metadata, got stat err=%v", statErr)
 	}
 }
@@ -674,7 +674,7 @@ func TestRestoreKeyRollsBackDisabledTemplateStateOnKeyWriteFailure(t *testing.T)
 	if err := keytypestate.SetState(paths, identityID, keyType, keytypestate.StateDisabled); err != nil {
 		t.Fatalf("SetState() error = %v", err)
 	}
-	destPath := paths.KeyFilePath(identityID, address)
+	destPath := apkeys.AccountKeyFilePath(paths, identityID, address)
 	if err := os.MkdirAll(destPath, 0o755); err != nil {
 		t.Fatalf("MkdirAll(destPath) error = %v", err)
 	}
@@ -730,7 +730,7 @@ func TestRestoreKeyRollsBackTemplateInstallOnKeyWriteFailure(t *testing.T) {
 	templateYAML := []byte("schema_version: 1\ntemplate_mode: generated\ntemplate_type: generic\npublisher: test\nfamily: rollback-template\nversion: 1\ndisplay_name: Rollback Template\nteal: |\n  #pragma version 8\n  int 1\n")
 	address, keyJSON := testAllowlistBackupBundle(t, keyType, templateYAML)
 
-	destPath := keystorePaths().KeyFilePath(productIdentityID(), address)
+	destPath := apkeys.AccountKeyFilePath(keystorePaths(), productIdentityID(), address)
 	if err := os.MkdirAll(destPath, 0o755); err != nil {
 		t.Fatalf("MkdirAll(destPath) error = %v", err)
 	}

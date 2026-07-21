@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/config"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"gopkg.in/yaml.v3"
 )
@@ -185,7 +186,7 @@ func clearClonedSignerKeys(dataDir string) error {
 		if entry.IsDir() {
 			continue
 		}
-		if strings.HasSuffix(entry.Name(), ".key") {
+		if _, _, ok := apkeys.ParseManagedCredentialFilename(entry.Name()); ok {
 			if err := os.Remove(filepath.Join(keysDir, entry.Name())); err != nil {
 				return err
 			}

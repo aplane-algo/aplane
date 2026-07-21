@@ -36,7 +36,7 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey() error = %v", err)
 	}
-	if err := os.WriteFile(paths.KeyFilePath(identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSigner, timeForBackupTest()); err != nil {
@@ -171,7 +171,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey() error = %v", err)
 	}
-	if err := os.WriteFile(paths.KeyFilePath(identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, address), encryptedKey, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(key) error = %v", err)
 	}
 
@@ -180,7 +180,7 @@ func TestCreateAllKeysArchiveSkipsInvalidPayloadsAndReports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey(bad) error = %v", err)
 	}
-	if err := os.WriteFile(paths.KeyFilePath(identityID, badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, identityID, badAddress), encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
 
@@ -237,7 +237,7 @@ func TestCreateAllKeysArchiveFailsWhenNoKeyIsExportable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey(bad) error = %v", err)
 	}
-	badFile := paths.KeyFilePath(identityID, "ONLYINVALIDKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	badFile := apkeys.AccountKeyFilePath(paths, identityID, "ONLYINVALIDKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	if err := os.WriteFile(badFile, encryptedBad, fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(bad key) error = %v", err)
 	}
@@ -258,7 +258,7 @@ func TestExportAllKeysStillAbortsOnDecryptFailure(t *testing.T) {
 	if err := fsutil.MkdirAll(srcDir); err != nil {
 		t.Fatalf("MkdirAll(keys) error = %v", err)
 	}
-	corruptFile := paths.KeyFilePath(identityID, "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	corruptFile := apkeys.AccountKeyFilePath(paths, identityID, "UNDECRYPTABLEKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	if err := os.WriteFile(corruptFile, []byte("not encrypted data"), fsutil.StoreFilePerm); err != nil {
 		t.Fatalf("WriteFile(corrupt) error = %v", err)
 	}

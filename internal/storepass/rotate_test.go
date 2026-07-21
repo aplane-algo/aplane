@@ -33,7 +33,7 @@ func TestRotateReencryptsKeysTemplatesAndMetadata(t *testing.T) {
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
-	keyPath := paths.KeyFilePath(identityID, "ADDR")
+	keyPath := apkeys.AccountKeyFilePath(paths, identityID, "ADDR")
 	sentryPath := apkeys.SentryCredentialFilePath(paths, identityID, "WITNESSID")
 	templatePath := paths.KeyTypeTemplate(identityID, "example-v1")
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKey)
@@ -107,7 +107,7 @@ func TestRotatePreservesCanonicalKeyPayloadBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Selector() error = %v", err)
 	}
-	keyPath := paths.KeyFilePath(identityID, selector)
+	keyPath := apkeys.AccountKeyFilePath(paths, identityID, selector)
 	writeEncryptedForRotateTest(t, keyPath, keyJSON, oldMasterKey)
 	writePolicyBaselineForRotateTest(t, paths, identityID, oldMasterKey, &policy.StoredConfig{})
 	writeNodeRoleBaselineForRotateTest(t, paths, identityID, oldMasterKey, noderole.RoleSigner)
@@ -152,7 +152,7 @@ func TestRotateRejectsWrongCurrentPassphraseBeforeMutation(t *testing.T) {
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
-	keyPath := paths.KeyFilePath(identityID, "ADDR")
+	keyPath := apkeys.AccountKeyFilePath(paths, identityID, "ADDR")
 	templatePath := paths.KeyTypeTemplate(identityID, "example-v1")
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKey)
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKey)
@@ -191,7 +191,7 @@ func TestRotateRejectsTamperedNodeRoleBeforeSwap(t *testing.T) {
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
-	keyPath := paths.KeyFilePath(identityID, "ADDR")
+	keyPath := apkeys.AccountKeyFilePath(paths, identityID, "ADDR")
 	templatePath := paths.KeyTypeTemplate(identityID, "example-v1")
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKey)
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKey)
@@ -244,7 +244,7 @@ func TestRotateRollsBackWhenAfterSwapFails(t *testing.T) {
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
-	keyPath := paths.KeyFilePath(identityID, "ADDR")
+	keyPath := apkeys.AccountKeyFilePath(paths, identityID, "ADDR")
 	templatePath := paths.KeyTypeTemplate(identityID, "example-v1")
 	writeEncryptedForRotateTest(t, keyPath, []byte(`{"kind":"key"}`), oldMasterKey)
 	writeEncryptedForRotateTest(t, templatePath, []byte("schema_version: 1\n"), oldMasterKey)
