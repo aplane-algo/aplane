@@ -23,7 +23,7 @@ type SSHServerConfig struct {
 	ListenAddress      string `yaml:"listen_address" description:"SSH listen address to bind" default:"127.0.0.1"`
 	Port               int    `yaml:"port" description:"SSH port to listen on" default:"1127"`
 	HostKeyPath        string `yaml:"host_key_path" description:"Server's private host key path" default:".ssh/ssh_host_key"`
-	AuthorizedKeysPath string `yaml:"authorized_keys_path" description:"Legacy/global authorized client public keys file" default:".ssh/authorized_keys"`
+	AuthorizedKeysPath string `yaml:"authorized_keys_path" description:"Process-global authorized client public keys file" default:".ssh/authorized_keys"`
 }
 
 // ServerEndpointConfig holds the signer endpoint surface exposed to clients.

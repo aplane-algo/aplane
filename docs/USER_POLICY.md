@@ -130,15 +130,15 @@ applied.
 | `always_review_warnings` | Require operator review for warning-level findings. Defaults to `false`. |
 | `auto_approve_self_noop_transfer` | Auto-approve exact low-risk 0-amount self-transfer shapes. Defaults to `false`. |
 | `max_fee_microalgos` | Reject txns whose fee exceeds this raw microAlgo ceiling. Omitted or `0` means no ceiling. |
-| `review_algo_payments` | Legacy per-network raw microAlgo review thresholds for ALGO payments. |
-| `max_algo_payments` | Legacy per-network raw microAlgo reject thresholds for ALGO payments. |
-| `review_asa_amounts` | Legacy per-network raw ASA unit review thresholds. |
-| `max_asa_amounts` | Legacy per-network raw ASA unit reject thresholds. |
+| `review_algo_payments` | Compatibility per-network raw microAlgo review thresholds for ALGO payments. |
+| `max_algo_payments` | Compatibility per-network raw microAlgo reject thresholds for ALGO payments. |
+| `review_asa_amounts` | Compatibility per-network raw ASA unit review thresholds. |
+| `max_asa_amounts` | Compatibility per-network raw ASA unit reject thresholds. |
 | `transfer_policy` | Source/asset/destination route table for direct ALGO and ASA movements. |
 | `key_overrides` | Advanced per-key policy overlays. YAML-only. |
 
-New operator-facing transfer policy should prefer `transfer_policy` over the
-legacy payment and ASA threshold maps.
+Use `transfer_policy` for route-based operator policy. The payment and ASA
+threshold maps remain accepted compatibility fields.
 
 Clawback controls are YAML-only in the guided policy editor. `reject_clawback`,
 `transfer_policy.clawback_on_no_route`, and clawback routes using

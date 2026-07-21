@@ -468,12 +468,12 @@ inventory. `internal/endpointrefs` owns the public `aplane.endpoint.v1` JSON
 handoff envelope used by `apstore endpoint export` and
 `apshell endpoints import`.
 
-`internal/config.Config` still has compatibility fields named
+`internal/config.Config` has compatibility fields named
 `LegacySignerPort` and `LegacySSH` with YAML tags `signer_port` and `ssh`, but
 managed `apshell` startup calls `CheckSupportedClientEndpointConfig` and
 rejects top-level `ssh:` signer routing in endpoint-routed client installs.
-Those fields are retained for old command forms and narrow internal
-materialization, not as the current routing contract.
+Those fields are accepted by compatibility command forms and narrow internal
+materialization, not as the routing contract.
 
 ### Server Configuration
 
@@ -517,8 +517,8 @@ signer data directory has a root `node.yaml` with exactly one role:
 initialized as sentry nodes. The role is immutable in supported tools, is
 integrity-bound per identity with an HMAC sidecar over the exact root
 `node.yaml`, and gates key generation, key import/restore, key scan, and HTTP
-service dispatch. Identity config `mode` is an unsupported pre-release shape
-and must be rejected rather than interpreted.
+service dispatch. Identity config does not own node role; a `mode` field there
+is unsupported and must be rejected.
 
 Passphrase helper configuration is identity-scoped via
 `internal/signerapp/unlockconfig.UnlockConfig`, stored at
@@ -550,7 +550,7 @@ and signed with `apstore policy`. Admin IPC policy messages are
 target-aware (`signer|sentry`), validate replacements before writing, use
 `expected_current_sha256` for optimistic concurrency, write the YAML plus a
 fresh sidecar, and update the bound runtime immediately on success. The limited
-admin policy settings payload remains a legacy scalar projection; YAML-only
+admin policy settings payload is a scalar compatibility projection; YAML-only
 fields such as `key_overrides` are edited through the shared full-document
 editor and are visible in canonical YAML snapshots.
 
@@ -563,7 +563,7 @@ Network-scoped policy derives transaction network identity from
 `GenesisHash` through built-in and configured mappings; `GenesisID` is
 display/diagnostic data, not the policy key.
 
-Legacy signer ASA transfer guard editing uses signer-wide ASA metadata under `cache/<network>_asa_cache.json` in the signer data directory. Signer code reaches this cache through `internal/signerapp/asametadata.Store`, not by treating it as APCLIENT_DATA cache state. This metadata is shared by all identities because ASA metadata is public chain state, not identity-private state. Built-in ASA metadata is starter data for the same effective cache model; successful live algod lookups for numeric ASA IDs are persisted to the signed cache. Enforcement remains raw-unit and numeric-ASA-ID based, so the metadata cache is not authoritative for requiring review, accepting, or rejecting transactions.
+Scalar ASA threshold editing uses signer-wide ASA metadata under `cache/<network>_asa_cache.json` in the signer data directory. Signer code reaches this cache through `internal/signerapp/asametadata.Store`, not by treating it as APCLIENT_DATA cache state. This metadata is shared by all identities because ASA metadata is public chain state, not identity-private state. Built-in ASA metadata is starter data for the same effective cache model; successful live algod lookups for numeric ASA IDs are persisted to the signed cache. Enforcement remains raw-unit and numeric-ASA-ID based, so the metadata cache is not authoritative for requiring review, accepting, or rejecting transactions.
 
 LocalNet setup is owned by `aplocalnet` (`cmd/aplocalnet` plus
 `internal/aplocalnet`). It is an operator-run setup utility, not a long-running
@@ -1766,7 +1766,7 @@ Weaker or more coupled areas:
   transport adaptation, and startup/operator logging; `cmd/apsigner` retains
   only flag parsing, provider registration, manifest/version early exits, and
   process handoff,
-- `internal/engine` now separates shared infrastructure (`engine.Core`) from the
+- `internal/engine` separates shared infrastructure (`engine.Core`) from the
   domain command methods on `Engine`, is transitively free of UI
   parsing/formatting imports, and the guarded-signing flow lives in the
   import-isolated `internal/engine/guarded` package — all enforced by

@@ -83,7 +83,7 @@ the length-prefixed domain, key type, and sentry public key. Role-specific wire
 fields retain the name `component_key`. The ID is txid-shaped but is not an
 Algorand address.
 
-The raw sentry public key is still important: it is the verifier embedded in a
+The raw sentry public key is the verifier embedded in a
 guarded account's LogicSig bytecode. The selector is a stable lookup handle;
 the public key is the cryptographic verifier.
 
@@ -266,8 +266,8 @@ Runtime guarded-send routing works like this:
 Endpoint import and `/keys` discovery are routing metadata. They do not prove
 ownership. If an endpoint is wrong or stale, assembly or on-chain LogicSig
 verification fails unless that endpoint controls the embedded sentry private
-key. If a previously discovered sentry key is deleted from the sentry node,
-guarded signing fails before submission with a missing-advertised-key error.
+key. Deleting an advertised sentry key causes guarded signing to fail before
+submission with a missing-advertised-key error.
 
 ## Guarded Transaction Flow
 

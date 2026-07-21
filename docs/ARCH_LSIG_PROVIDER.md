@@ -30,7 +30,7 @@ This document describes the LogicSig provider architecture.
 │ Sources:                   │    │ lsig/composeddsa/                         │
 │   Optional library YAML    │    │   └── template.go      YAML compositions  │
 │   Identity key type state  │    │ Shared TEAL substitution:                 │
-│                            │    │   tealtemplate (legacy)                     │
+│                            │    │   tealtemplate scalar helpers               │
 │                            │    │                                           │
 │ Category: generic_lsig     │    │ Sources:                                  │
 └────────────────────────────┘    │   Hardcoded Go (v1)                       │
@@ -117,7 +117,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/logicsigdsa` | DSA interface, type-filtered lookups |
 | `internal/lsigsalt` | Shared off-curve LogicSig salting |
 | `internal/tealtemplate` | Strict `$variable` constant-block template renderer |
-|  `internal/tealtemplate` (legacy.go) | Generated-mode restricted list expansion and legacy scalar substitution utilities |
+| `internal/tealtemplate/legacy.go` | Generated-mode restricted list expansion and scalar substitution utilities |
 | `internal/keytypecatalog` | Compiled key type visibility catalog |
 | `internal/keytypestate` | Identity-scoped state records for library-visible compiled providers and installed templates |
 | `internal/templatelibrary` | Optional library list/install workflow |

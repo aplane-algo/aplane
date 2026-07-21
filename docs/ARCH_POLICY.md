@@ -1,13 +1,13 @@
 # Policy Architecture
 
-This document describes the policy system. It is the current-state companion to
-[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+This document describes the policy system. Compatibility-bearing details live
+in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 
 ## Status
 
 This document covers two domains:
 
-- the **client-signing** policy implemented today: tier-based verdicts over
+- the **client-signing** policy: tier-based verdicts over
   signer-controlled transactions with an operator default fallback,
 - the **sentry** policy implemented for sentry component signing:
   policy-as-authorization for `/sign/component`, no operator default, no
@@ -240,14 +240,11 @@ Both policy domains are validated by schema, not by the identity's current key
 inventory. A sentry node can carry sentry-domain `policy.yaml` before an
 sentry key is installed.
 
-Legacy compatibility: a `policy.yaml` written before role domains existed
-places all client-signing-only fields at the top level. The loader treats
-top-level `reject_foreign_rekey` and `auto_approve_self_noop_transfer` as
-sugar for an implicit `client_signing:` block.
-Review-producing fields at the top level (`always_review_warnings`,
-`review_*`) are similarly treated as implicit client-signing. Operators
-migrating an existing policy can move these fields explicitly under
-`client_signing:` without semantic change. A top-level `transfer_policy` that
+For compatibility, the loader treats top-level
+`reject_foreign_rekey`, `auto_approve_self_noop_transfer`,
+`always_review_warnings`, and `review_*` fields as an implicit
+`client_signing:` block. The explicit `client_signing:` form has the same
+semantics. A top-level `transfer_policy` that
 contains review-producing behavior (`on_no_route: review`, `review_above`,
 and similar fields) is valid for client signing, but it is not a complete
 sentry allow-list; a sentry request that would need those review
@@ -352,8 +349,8 @@ Always Review rules force a human approval prompt even when the operator default
 is configured to skip review. The whole tier is client-signing-only: the
 sentry domain has no operator above the signer, so review-producing
 fields are rejected in sentry-domain `policy.yaml` at policy load time.
-Legacy top-level review-producing fields are client-signing-only compatibility
-fields. If a review verdict is still reachable while evaluating a sentry
+Top-level review-producing compatibility fields belong to client signing. If a
+review verdict is reachable while evaluating a sentry
 component request, the request fails closed as a policy configuration error.
 See [Verdict Mapping By Role](#verdict-mapping-by-role).
 
@@ -505,7 +502,7 @@ request fails closed as a policy configuration error. Operators can keep review
 behavior in `policy.yaml` and provide a deterministic sentry-domain `policy.yaml`
 transfer policy for sentry component signing.
 
-For example, a legacy top-level `transfer_policy` with one deterministic
+For example, a top-level compatibility `transfer_policy` with one deterministic
 `A -> B` route and `on_no_route: review` can authorize a sentry request for
 `A -> B` if no other guard denies it. A request for `A -> D` fails closed
 because the route miss would need a review verdict, which sentry cannot
@@ -518,7 +515,7 @@ Routing's shape is deliberately conservative:
 
 - For client signing, it produces only Always Deny or Always Review verdicts.
   A matching route is allow-to-continue, not approval, because fee, rekey,
-  close-out, clawback, warning, legacy transfer-guard, and Operator Default
+  close-out, clawback, warning, threshold-guard, and Operator Default
   behavior must still be able to apply.
 - For sentry, it is an allow-list: every target movement must be covered
   by a matching route, and any deny verdict rejects the request.
@@ -526,18 +523,18 @@ Routing's shape is deliberately conservative:
   operators grant allowed source/asset/destination paths and use `on_no_route`
   to decide what a miss means. The narrow exception is `blocked_destinations`,
   a global concrete-address deny list that runs before route matching. This
-  avoids source-scoped and route-local deny/allow precedence rules while
-  preserving a clear migration path through `on_no_route: review`.
-- It coexists with legacy transfer guards. Existing review/deny thresholds keep
-  their behavior and audit rule IDs, and routes cannot weaken them.
-- It coexists with legacy close/clawback reject booleans. Route-level
+  avoids source-scoped and route-local deny/allow precedence rules.
+  `on_no_route: review` lets client signing send route misses to operator review.
+- Threshold-map transfer guards are evaluated independently. Their review/deny
+  thresholds and audit rule IDs apply, and routes cannot weaken them.
+- Close/clawback reject booleans are evaluated independently. Route-level
   `close.allow:true` and `clawback.allow:true` permit matching movements only
   within routing; they do not override `reject_close_remainder`,
   `reject_asset_close`, or `reject_clawback`. This overlap is permitted rather
   than rejected: the reject booleans always win, so a route allow flag cannot
   weaken them. (An advisory check for this overlap exists in
-  `internal/policy/advisory.go` but is not currently wired into the policy load
-  or apply path, so no operator-facing warning is emitted today.)
+  `internal/policy/advisory.go` but is not wired into the policy load or apply
+  path, so no operator-facing warning is emitted.)
 - It rejects mixed-unit limits. ALGO microAlgos and ASA raw units are not
   comparable, so a route with amount limits must resolve to one asset unit per
   network.
@@ -826,11 +823,10 @@ transfer-settings, and asset-set field editors
 validate and commit successful edits into the in-memory draft as each field
 editor closes; applying the draft to production remains a separate `a` action.
 
-A normal transfer guard is a UI projection of adjacent stored routes with the
+A transfer guard is a UI projection of adjacent stored routes with the
 same derived guard name and network/source/destination/close shape. Note that
 this appolicy "transfer guard" (a grouping of `transfer_policy.routes`) is a
-different concept from the legacy `max_*`/`review_*` "transfer guard"
-amount-threshold maps described earlier in this document. The UI "Guards" screen
+different concept from the `max_*`/`review_*` amount-threshold maps. The UI "Guards" screen
 edits routes, not those maps; the two share a name but not a model. Group-level
 fields edit the shared shape: guard name, description, enabled, networks,
 sources, destinations, and close allowance. The route row table edits one real

@@ -311,8 +311,8 @@ Day-to-day:
   `passfile`, `systemd-creds`).
 - `appass` refuses to run while `apsigner` is active for the same data
   directory.
-- Stop `apsigner` before changing `unlock.yaml` or legacy
-  `passphrase_command_argv` startup behavior.
+- Stop `apsigner` before changing `unlock.yaml` or the process-global
+  `passphrase_command_argv` compatibility setting.
 
 Keeping live admin and offline unlock setup in separate tools prevents the
 running daemon's in-memory state from drifting out of sync with the signer
@@ -380,9 +380,8 @@ on admin input.
 
 > **Naming note:** despite the name, `passphrase_timeout` is not a time-to-live
 > on passphrase entry. It is the admin idle-session timeout — the runtime concept
-> is `SessionTimeout` (admin idle disconnect). The name is retained for config
-> stability; a future pre-`v1.0` schema may introduce `admin_idle_timeout` with a
-> dual-read window.
+> is `SessionTimeout` (admin idle disconnect). The configuration field remains
+> `passphrase_timeout`.
 
 In the default `prompt` passphrase mode, the signer effectively stays unlocked
 only while an admin client remains connected when `lock_on_disconnect: true`.
@@ -405,7 +404,7 @@ that identity in headless mode and the effective runtime behavior is:
 - passphrase timeout is disabled (`0`)
 - lock-on-disconnect is disabled
 
-For legacy process-global `passphrase_command_argv`, `config.yaml` must set
+For process-global `passphrase_command_argv`, `config.yaml` must set
 `passphrase_timeout: "0"` and must not set `lock_on_disconnect: true`.
 
 #### Lock / Unlock Behavior Matrix
@@ -906,10 +905,10 @@ transfer_policy:
         allow: true
 ```
 
-#### Rollout Defaults
+#### Route-Miss Defaults
 
-Use `on_no_route: review` during migration if you want route misses to reach
-an operator prompt instead of hard rejection. Use
+Use `on_no_route: review` when route misses should reach an operator prompt
+instead of hard rejection. Use
 `on_no_route: operator_default` only when route misses should behave as if
 routing did not exist; matching route
 thresholds and close/clawback checks still apply.
@@ -963,17 +962,16 @@ document. Direct YAML
 editing remains available through `apstore policy check`, `apstore policy sign`,
 and `apstore policy verify`.
 
-The legacy global transfer guard fields remain supported in `policy.yaml` for
-compatibility:
+The scalar transfer guard compatibility fields are accepted in `policy.yaml`:
 
 - `review_algo_payments`
 - `max_algo_payments`
 - `review_asa_amounts`
 - `max_asa_amounts`
 
-New operator-facing policy should prefer the `transfer_policy` route table,
-which can express source, destination, asset, close, clawback, and amount
-threshold rules in one model.
+Use the `transfer_policy` route table for operator-managed policy; it expresses
+source, destination, asset, close, clawback, and amount threshold rules in one
+model.
 
 In the `appolicy` Transfer Guards screen, the global blocked-destination list is
 edited next to the route list. Each editable guard contains one or more asset
@@ -1161,12 +1159,12 @@ Headless mode is intentionally long-lived: `passphrase_timeout` must be `0`, `lo
 ### Required Configuration
 
 Use `appass` to configure headless unlock for the target identity. It writes
-`identities/<identity>/unlock.yaml` and removes legacy process-global
-passphrase helper settings so they do not conflict.
+`identities/<identity>/unlock.yaml` and removes process-global passphrase
+helper compatibility settings so they do not conflict.
 
 Three effective settings work together to enable headless operation:
 
-#### 1. `passphrase_command_argv` (`unlock.yaml`, or legacy `config.yaml`)
+#### 1. `passphrase_command_argv` (`unlock.yaml`, or process-global `config.yaml`)
 
 Specifies a helper command that can read and store the passphrase (or master
 key). The helper receives a **verb** (`read` or `write`) as its first argument,
@@ -1263,7 +1261,7 @@ lock_on_disconnect: false
 
 - Default is `true` (signer locks when apadmin disconnects)
 - Identity-scoped `unlock.yaml` forces the effective value to `false`
-- Legacy process-global helper config must set this to `false`
+- Process-global helper configuration must set this to `false`
 - Without this, the signer would lock immediately after startup
 
 #### 3. User Auto-Approve

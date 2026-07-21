@@ -22,6 +22,7 @@
 - [Lifecycle Models](#lifecycle-models)
 - [Security-Sensitive Data](#security-sensitive-data)
 - [Compatibility Invariants](#compatibility-invariants)
+- [Changing the Data Model](#changing-the-data-model)
 - [Source Of Truth Index](#source-of-truth-index)
 
 ## Purpose
@@ -130,10 +131,10 @@ DTOs and contract fixtures.
 | Endpoint registry | Client data dir | `APCLIENT_DATA/endpoints.yaml` | `config.ClientEndpointRegistry`, derived signer and sentry connection profiles | shell endpoint commands, connection runtime | `internal/config`, `internal/apshellapp`, `internal/engine/connect` |
 | Endpoint-published sentries | Client data dir | `endpoints.yaml` `published_sentries` | derived `Config.SentryEndpoints` map keyed by embedded public key hex | guarded send orchestration | `internal/config`, `internal/apshellapp`, `internal/engine` |
 | Server config | Signer data dir | `APSIGNER_DATA/config.yaml` | `internal/serverconfig.ServerConfig` snapshot | Admin settings subset | `internal/serverconfig`, `internal/bootstrap/signer` |
-| Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/<identity>/node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | signer startup, identity load, keyadmin, restore, signing dispatch |
+| Node role | Signer data dir | `APSIGNER_DATA/node.yaml` plus `identities/<identity>/node.yaml.hmac` | single-purpose signer/sentry role gate | `/status`, service dispatch, key generation/restore gating | `internal/noderole`, `internal/keyclass`, signer startup, identity load, keyadmin, restore, signing dispatch |
 | Signing identity | Signer identity | `identities/<identity>/` | `identity.Runtime` | HTTP identity routing, admin session target | `internal/signerapp/identity` |
 | Identity config | Signer identity | `identities/<identity>/config.yaml` (parsed as `identity.StoredConfig`) | `identity.EffectiveConfig` (resolved, excluding key-class role) | admin settings | `internal/signerapp/identity`, `internal/signerapp/admin` |
-| Unlock config | Signer identity | `identities/<identity>/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/identity`, `cmd/appass` |
+| Unlock config | Signer identity | `identities/<identity>/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/unlockconfig` (identity re-exports helpers), `cmd/appass` |
 | Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
 | Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Account authority | Signer identity | `identities/<identity>/keys/<address>.key` | address -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
@@ -242,7 +243,9 @@ An identity is the root of sensitive signer state:
 identities/<identity>/
   keys/*.key
   keys/*.sen
+  keys/*.wit.json          # public sentry metadata sidecar (not private authority)
   .keystore
+  node.yaml.hmac
   aplane.token
   config.yaml
   policy.yaml
@@ -253,6 +256,7 @@ identities/<identity>/
   keytypes/<key_type>.json
   keytypes/<key_type>.template
   deleted/
+  passphrase | passphrase.cred   # optional helper artifacts
 ```
 
 `identity.Runtime` is the runtime projection. It owns:
@@ -281,7 +285,12 @@ payload families are:
 | `ed25519` | Native Algorand signing key. |
 | `dsa_lsig` | DSA-backed LogicSig key with private signing key plus stored LogicSig metadata. |
 | `generic_lsig` | TEAL-only LogicSig instance with bytecode and signing args. |
-| `component` | Sentry key used only through sentry-role `/sign/component`. |
+| `witness` | Signer-custodied witness key (`.sen`) used only through sentry-role `/sign/component`. |
+
+Category selects the managed credential class and filename extension: account
+categories use `.key`; `witness` uses `.sen`. There is no durable payload
+category named `component`; “component signing” is the wire/runtime flow, not
+the on-disk category.
 
 Durable signing metadata includes:
 
@@ -291,23 +300,26 @@ Durable signing metadata includes:
 - public/private key material where applicable,
 - stored LogicSig bytecode where applicable,
 - `salt_counter` for LogicSig keys,
-- `signing_metadata_version`,
+- `signing_metadata_version` (version 1 non-bounded; version 2 bounded),
 - `base_key_type` for composed DSA keys,
 - stored signing-argument schema in JSON field `signing_args`,
+- optional `bounded_authorization` for bounded1 DSA keys (metadata version 2),
 - optional `template_fingerprint`,
 - creation parameters and timestamps.
 
-Guarded account keys are DSA LogicSig keys whose stored bytecode embeds an
-sentry public key. They are not accepted by `/sign`; the client must use the
+Guarded account keys are DSA LogicSig keys whose stored bytecode embeds a
+sentry public key (for example `aplane.falcon1024-sentry1024.v1` and
+`aplane.corridor.v1`). They are not accepted by `/sign`; the client must use the
 guarded flow: user `/sign/component`, sentry `/sign/component`, user
-`/sign/assemble`, then algod submit. Sentry keys are selected by an uppercase,
+`/sign/assemble`, then algod submit. Inventory advertises
+`signing_flow: sentry1` for those keys. Sentry witness keys are selected by an uppercase,
 52-character txid-shaped Witness Key ID and are not Algorand spending accounts.
 
 Decrypted key payloads are parsed through `internal/keys.ParsePayload` and
 written through `internal/keys.MarshalPayload`. The v1 payload vocabulary is
 canonical: creation parameters use `parameters`, LogicSig bytecode uses
 `lsig_bytecode`, and duplicate JSON object members or unknown fields are
-rejected. Obsolete cosmetic aliases such as `params` and `bytecode_hex` are not
+rejected. Noncanonical aliases such as `params` and `bytecode_hex` are not
 accepted in fresh-system stores.
 
 The key file is the source of truth for signing existing keys. A live template
@@ -322,11 +334,37 @@ key state repair recover the selector from key material or bytecode.
 `template_fingerprint`, and `salt_counter` are not independent address
 derivation inputs.
 
-In code, this durable key-file schema is modeled by
-`internal/signingargs.Info`. Key-file storage aliases that type as
+The full durable payload is `keys.Payload` (codec in
+`internal/keys/payload_codec.go`). The signing-argument *schema slice* is
+modeled by `internal/signingargs.Info`; key-file storage aliases that type as
 `keys.StoredSigningArg`, signer cache aliases it as `cache.SigningArgInfo`, and
 `/keys` projects it to the SDK-facing `signerapi.SigningArgInfo` DTO. Template
-and `/keytypes` generation metadata still uses `runtime_args`.
+and `/keytypes` generation metadata uses `runtime_args`.
+
+### Bounded Authorization And External Contract Admin
+
+Bounded1 is a separate signing choreography from plain `/sign` and from
+sentry/guarded assembly. Normative field inventory, encodings, and custody
+rules live in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
+[ARCH_CONTRACTS.md](ARCH_CONTRACTS.md). From a data-model perspective:
+
+- Durable non-secret capability is stored on the account key as
+  `bounded_authorization` (signing metadata version 2), owned by
+  `internal/boundedmeta` and assembled by `lsig/composeddsa` at generation.
+- Inventory advertises `signing_flow: bounded1` so clients route admin-key
+  rekeys to `POST /sign/bounded-admin` rather than ordinary runtime args.
+- The spending key remains signer-managed (`.key`). The Falcon contract-admin
+  private material is **not** a signer-managed credential: it lives in a
+  standalone encrypted `.wit` bundle (`aplane.witness-key-bundle.v1`) owned by
+  `aprekey` / `internal/witness/artifact`, optionally with a public
+  `.wit.json` sidecar.
+- Separated ceremonies use short-lived non-secret files
+  `.apbounded-admin-request` / `.apbounded-admin-signature` (schemas
+  `aplane.bounded-admin-request.v1` / `aplane.bounded-admin-signature.v1`)
+  owned by `internal/boundedadmin/protocol` and
+  `internal/apboundedadminapp`.
+- Signer and `apstore` must not import, decrypt, back up, or restore private
+  `.wit` artifacts as managed keys.
 
 ### Key Types And Templates
 
@@ -491,7 +529,7 @@ local, rebuildable state:
 - swap session files and tombstones.
 
 JSON cache files use an HMAC envelope version plus a payload-level
-`schema_version`. Missing payload `schema_version` is interpreted as legacy v1;
+`schema_version`. A missing payload `schema_version` is interpreted as v1;
 future unsupported payload versions are rejected and the cache is rebuilt from
 empty or seed data. Cache files remain non-authoritative.
 
@@ -620,15 +658,18 @@ Primary projections:
 
 - `GroupSignRequest`,
 - `SignRequest`,
+- `BoundedAdminRequest`, `BoundedAdminPartialResponse`, `BoundedAdminMetadata`,
 - `ComponentSignRequest`,
 - `ComponentSignResponse`,
 - `GuardedAssemblyRequest`,
 - `GuardedAssemblyResponse`,
+- `GuardedSimulateRequest`, `GuardedSimulateResponse`,
 - `GroupPlanResponse`,
 - `GroupSignResponse`,
 - `GroupSimulateResponse`,
 - `MutationReport`,
-- `KeysResponse`,
+- `KeysResponse` / `KeyInfo` (including `signing_flow`,
+  `sentry_component_key_type`, optional `bounded_authorization`),
 - `KeyTypesResponse`,
 - `StatusResponse`,
 - `HealthResponse`,
@@ -638,7 +679,9 @@ Primary projections:
 - `ErrorResponse`.
 
 HTTP token authentication resolves exactly one identity, and handlers route to
-that identity runtime.
+that identity runtime. Clients route signing on inventory `signing_flow`
+labels (`sentry1`, `bounded1`, or empty for plain `/sign`) and must fail closed
+on unknown labels.
 
 ### Admin Protocol
 
@@ -732,14 +775,21 @@ keys.
 ### Signing Lifecycle
 
 1. Client prepares transaction bytes and metadata.
-2. Client sends `/plan`, `/simulate`, or `/sign`.
-3. Signer validates request shape and transaction network.
-4. Signer canonicalizes group and computes mutations.
+2. Client classifies effective signers from inventory (`signing_flow` and key
+   type). Guarded targets use the guarded lifecycle below; bounded admin-key
+   rekeys use `/sign/bounded-admin`; ordinary targets use `/plan`,
+   `/simulate`, or `/sign`.
+3. Signer validates request shape and transaction network. Plain `/sign` and
+   `/simulate` reject guarded-account and witness key types and admin-key
+   bounded operations that require the bounded-admin path.
+4. Signer canonicalizes group and computes mutations (bounded planning
+   classifies effects after fee pooling).
 5. Signer evaluates policy for signer-controlled slots.
 6. Signer either rejects, auto-approves, or requests operator approval.
-7. Signer signs/assembles finalized slots.
-8. Client submits signed bytes for `/sign`, or receives diagnostics for
-   `/simulate`.
+7. Signer signs/assembles finalized slots (bounded admin path returns a
+   partial plus authorization metadata, not a fully submittable group alone).
+8. Client submits signed bytes for `/sign`, completes a bounded ceremony when
+   required, or receives diagnostics for `/simulate`.
 
 Live `/sign` cancellation is request-scoped runtime state only. There is no
 durable sign request table.
@@ -803,6 +853,8 @@ Restore is per-key:
 | Master key | secret | derived at unlock; cached only while unlocked; zero on lock |
 | `.key` account private material | secret | encrypted at rest; decrypted on demand |
 | `.sen` sentry witness material | secret | encrypted at rest; usable only in the sentry component-signing domain |
+| External `.wit` contract-admin private material | secret | standalone `aplane.witness-key-bundle.v1`; never signer-managed; not backed up by `apstore` |
+| Bounded ceremony request/signature files | short-lived signing authority | non-secret but bind network/partial; mode `0600`, no overwrite |
 | Installed `.template` files | sensitive policy material | encrypted in identity store |
 | `policy.yaml` | safety-critical | authenticated by HMAC sidecar; parsed as signer or sentry policy according to node role |
 | `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |
@@ -819,11 +871,10 @@ generation availability, provenance, and policy editing behavior.
 
 ## Compatibility Invariants
 
-- Before `v1.0`, in-place installer upgrades are supported only from the
-  installer's minimum supported upgrade version. Key files created by this
-  release are signing authority; config, setting, admin protocol, SDK DTO,
-  cache, and docs-example shapes may be reset or renamed by later releases
-  unless a later contract explicitly says otherwise.
+- In-place installer upgrades require `install/release.json` at or above the
+  installer's minimum supported upgrade version. Key files are signing
+  authority; the exact compatibility scope for other persisted and wire shapes
+  is defined in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
 - Installer upgrade checks read `install/release.json`; tarball filenames and
   local archive labels are not compatibility authorities.
 - Canonical `key_type` strings are stored and transmitted exactly; display
@@ -854,6 +905,52 @@ generation availability, provenance, and policy editing behavior.
 - Product mode exposes one signing identity (`default`) even though runtime
   internals are identity-scoped.
 
+## Changing the Data Model
+
+Data-model changes must preserve these ownership rules:
+
+- Each durable or cross-boundary value has one authoritative representation.
+- HTTP, IPC, plugin, SDK, cache, and UI adapters project that authority into
+  boundary-specific DTOs.
+- `pkg/signerapi` owns the public HTTP contract. Signer domain packages use
+  internal types unless they implement the HTTP boundary.
+- Persistent identifiers such as key types, policy rule IDs, transfer route
+  IDs, schema versions, and signing-flow labels are compatibility-bearing.
+- Stored signing metadata describes an existing key's signing authority.
+  Key-type creation metadata describes future key generation. The two are not
+  interchangeable.
+- Security-sensitive mutable bytes are zeroed at the boundary that consumes
+  them.
+- Unknown schema variants, template types, key classes, signing flows, and
+  security-relevant enum values fail closed.
+
+When a change adds or modifies a durable file, cache payload, request DTO,
+admin message, long-lived runtime object, or cross-package request model:
+
+1. Update [ARCH_DATA_CATALOG.md](ARCH_DATA_CATALOG.md) in the same change.
+2. Update the owning architecture document and
+   [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md) when the behavior is
+   compatibility-bearing.
+3. Regenerate configuration documentation when documented config structs
+   change.
+4. Update `test/contracts/signerapi/*.json` and all SDK projections when the
+   public HTTP shape changes.
+5. Preserve explicit adapters between domain and boundary types.
+6. Add positive, malformed-input, and unknown-version tests at the authority
+   boundary.
+7. Document user-visible behavior and failure modes in the relevant user
+   guide.
+
+Current implementation constraints:
+
+- Signing-domain requests use selected `pkg/signerapi` group and sign DTOs
+  internally. Separating those types requires explicit REST-boundary
+  translation that preserves the HTTP JSON contract.
+- Add a schema-version field only with a concrete compatibility or migration
+  policy.
+- Retain persistent decode paths only when they are part of the active
+  compatibility contract in [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
+
 ## Source Of Truth Index
 
 | Model area | Source |
@@ -870,10 +967,15 @@ generation availability, provenance, and policy editing behavior.
 | Client endpoint registry | `internal/config/client_endpoints.go`, `internal/config/client_endpoint_writes.go` |
 | Identity runtime/config | `internal/signerapp/identity` |
 | Keystore and key files | `internal/crypto`, `internal/keystore`, `internal/keys` |
+| Signing-arg schema model | `internal/signingargs` |
+| Node role / key class gates | `internal/noderole`, `internal/keyclass` |
 | Sentry key types/messages/references | `internal/sentry`, `pkg/signerapi/sentry.go`, [ARCH_SENTRY.md](ARCH_SENTRY.md) |
+| Bounded authorization / external admin | `internal/boundedmeta`, `lsig/composeddsa`, `internal/witness/artifact`, `internal/boundedadmin`, `internal/apboundedadminapp`, [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) |
 | Key type state/catalog | `internal/keytypestate`, `internal/keytypecatalog` |
 | Template library/store | `internal/templatelibrary`, `internal/templatestore`, `internal/signerapp/templates` |
 | Signing flow | `internal/signerapp/signing`, [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) |
+| Unlock config | `internal/signerapp/unlockconfig` |
+| Client mutation lock | `internal/clientdata` |
 | App interaction model | `internal/engine`, `internal/appspec`, [ARCH_APP_INTERACTION.md](ARCH_APP_INTERACTION.md) |
 | Client state/cache | `internal/clientstate`, `internal/cache`, `internal/asa`, `internal/refname` |
 | Plugins | `internal/plugin`, [ARCH_PLUGINS.md](ARCH_PLUGINS.md) |

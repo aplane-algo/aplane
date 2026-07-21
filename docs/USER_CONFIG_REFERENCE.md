@@ -53,7 +53,7 @@ File: `config.yaml` in apsigner data directory (`-d` or `APSIGNER_DATA`, require
 | `endpoint.ssh.listen_address` | string | `127.0.0.1` | SSH listen address to bind |
 | `endpoint.ssh.port` | int | `1127` | SSH port to listen on |
 | `endpoint.ssh.host_key_path` | string | `.ssh/ssh_host_key` | Server's private host key path |
-| `endpoint.ssh.authorized_keys_path` | string | `.ssh/authorized_keys` | Legacy/global authorized client public keys file |
+| `endpoint.ssh.authorized_keys_path` | string | `.ssh/authorized_keys` | Process-global authorized client public keys file |
 | `passphrase_timeout` | string | `15m` | Admin idle disconnect timeout (0=never) |
 | `approval_wait` | string | `60s` | Maximum time to wait for operator approval of a signing request |
 | `ipc_path` | string | `$APSIGNER_DATA/aplane.sock` | Unix socket path for admin IPC |
@@ -113,5 +113,5 @@ Both apshell and apsigner require a data directory to be specified.
 
 For apsigner passphrase sources:
 1. `TEST_PASSPHRASE` environment variable (highest priority)
-2. identity `unlock.yaml` passphrase command, falling back to legacy `passphrase_command_argv` in config.yaml (headless mode)
+2. identity `unlock.yaml` passphrase command, falling back to process-global `passphrase_command_argv` in config.yaml (headless mode)
 3. Interactive prompt via apadmin IPC (default)

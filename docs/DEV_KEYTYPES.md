@@ -95,7 +95,7 @@ generated salt slot, compile the TEAL, patch that byte through counters
 salt anchor style is part of a versioned provider/template derivation contract:
 templates with omitted `derivation_version` are unsalted and compile exactly as
 written, succeeding only if the unmodified bytecode already derives an
-off-curve LogicSig address; template `derivation_version: 1` uses the legacy
+off-curve LogicSig address; template `derivation_version: 1` uses the v1
 stack-neutral generated marker preamble
 (`byte 0x41504c414e455f4c5349475f53414c545f56315f005f454e44; pop`), while
 template `derivation_version: 2` appends a trailing dead-code
@@ -139,8 +139,8 @@ Fingerprint authoring rules:
   cross-version or malformed fingerprint is "not comparable" (benign), while only
   a same-version, different-hash pair is a conflict.
 - A base-key-type or provider-identifier rename is a separate compatibility
-  event from the fingerprint: existing keys store the old raw `base_key_type`, so
-  the rename needs a retained registry alias or those keys can no longer sign.
+  event from the fingerprint: key files store the raw `base_key_type`, so the
+  renamed identifier needs a retained registry alias or those keys cannot sign.
   The `base_primitive` projection stabilizes the fingerprint, not signing.
 
 Backups may bundle template YAML with a key. `apstore backup import` treats that
@@ -290,9 +290,9 @@ Choose exactly one primary category.
 > `internal/sentry/keytypes` leaf), and **Behave** (the operation, via
 > provider-capability interfaces). They are deliberately distinct because each is
 > called from a place with different availability (registry? provider instance?
-> neither?). Read [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md) before routing by
-> `BaseKeyType` or moving classification onto provider interfaces — both have been
-> tried and are wrong.
+> neither?). Read [ARCH_KEYTYPE_AXES.md](ARCH_KEYTYPE_AXES.md); routing by
+> `BaseKeyType` or moving classification onto provider interfaces violates
+> those availability boundaries.
 
 ### A. Native Signing Key
 

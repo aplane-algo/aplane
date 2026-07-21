@@ -55,9 +55,9 @@ them.
 
 YAML templates are different: a library YAML file is only an install source. It
 does not become an active key type until it is imported into an identity store.
-New signer stores are initialized with `aplane.falcon1024-allowlist.v1`
-already installed and enabled from the bundled library source. Existing stores
-can import that template manually if they were created before this default.
+Signer stores are initialized with `aplane.falcon1024-allowlist.v1` installed
+and enabled from the bundled library source. Any missing library template can
+be imported explicitly with the template-management commands below.
 
 ## Operator Mental Model
 
@@ -240,11 +240,9 @@ as `signing_args`. That schema is captured from the template/provider
 additional key creation and provenance checks, but not for signing an existing
 key.
 
-Removing a bundled YAML source or catalog row is therefore not a revocation
-mechanism. A previously created self-contained LogicSig key can continue to
-sign from its stored bytecode and durable signing metadata. Retiring an
-undeployed template means fresh stores no longer offer it; development stores
-that contain retired installed templates should be recreated.
+Installed template availability is not a revocation mechanism. A
+self-contained LogicSig key signs from its stored bytecode and durable signing
+metadata even when its template is not installed.
 
 List installed templates:
 

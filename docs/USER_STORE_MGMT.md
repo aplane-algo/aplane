@@ -485,31 +485,6 @@ the address matches your backup in the apadmin TUI key list. After `apstore
 rebuild`, start `apsigner`, unlock the identity, and verify the restored
 addresses in apadmin.
 
-### Migrating a Legacy Sentry Witness File
-
-Current builds require signer-custodied sentry witnesses to use
-`<WitnessKeyID>.sen`. A witness payload left in a legacy
-`<WitnessKeyID>.key` file is rejected and is not loaded into the runtime key
-index. Runtime deletion therefore cannot remove that rejected file.
-
-To preserve and migrate it:
-
-1. Stop `apsigner` and preserve the legacy `.key` file.
-2. If you do not already have a verified `.apb` backup, use the prior build
-   that created the store to export the witness to `.apb`.
-3. Verify the `.apb` backup with that prior build.
-4. Remove the stale witness `.key` while `apsigner` remains stopped.
-5. Use the current build to restore the `.apb`; payload validation selects the
-   canonical `.sen` destination.
-6. Start and unlock `apsigner`, then verify that the Witness Key ID is
-   advertised by the sentry.
-
-Do not rename an encrypted `.key` to `.sen` blindly. The supported migration
-path decrypts and validates the payload category, key pair, and derived Witness
-Key ID before publishing the new managed credential.
-
----
-
 ## External Contract Admin Artifacts
 
 Bounded contract-admin private authority is a witness key stored only in an

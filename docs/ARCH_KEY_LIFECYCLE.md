@@ -120,8 +120,8 @@ Rules:
   creates a sentry node,
 - there is no `dual` role,
 - there is no supported role-change command,
-- identity-level `mode` is an unsupported pre-release shape and startup rejects
-  it rather than migrating it,
+- identity-level `mode` is unsupported because node role belongs only in root
+  `node.yaml`,
 - key generation, mnemonic import, restore, and out-of-band key scans must
   reject key classes forbidden by the node role,
 - service endpoints reject role/use mismatches even if a forbidden key file is

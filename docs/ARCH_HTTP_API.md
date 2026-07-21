@@ -180,8 +180,8 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 - optional `mutations`
 - optional `error`
 
-The older `signerapi.SignResponse` type is retained only for source
-compatibility; it is not the `/sign` wire response.
+`signerapi.SignResponse` is a source-compatibility alias; it is not the
+`/sign` wire response.
 
 `/sign` response semantics:
 
@@ -420,7 +420,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
   storage version and must not be compared across apsigner restarts.
 - `approval_wait_seconds`: effective manual signing approval wait, in seconds,
   for the authenticated identity. Clients may use this value to size `/sign`
-  request deadlines. Older signers may omit this field.
+  request deadlines. Clients must tolerate this field being omitted.
 
 `/keytypes` response:
 

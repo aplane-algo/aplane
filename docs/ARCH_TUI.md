@@ -66,9 +66,8 @@ identifies the current screen. The enum has families for:
 - `ViewError`
 
 See `internal/signerapp/signertui/model.go` for the authoritative enum values and the
-one-line comments that document each screen's purpose. Legacy policy view
-states may still appear in the enum for compatibility handlers, but they are
-not active apadmin entry points.
+one-line comments that document each screen's purpose. Compatibility-only
+policy view states in the enum are not active `apadmin` entry points.
 
 ## Admin Panel
 

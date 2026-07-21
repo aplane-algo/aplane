@@ -6,13 +6,6 @@ This document freezes the `bounded1` contract. The composer envelope, classifier
 composed schema v2, durable signing metadata, inventory projection,
 contract-admin ceremony, framework-owned fixed allowlist, and static Layer-3
 argument layout are implemented.
-The pre-release governed providers, endpoint, DTOs, helpers, and artifacts have
-been removed. Their exact behavior remains only as a test-local differential
-snapshot proving that bounded1 narrows the accepted transaction set. The two
-protocols are replacements, not aliases, and do not coexist in a release.
-
-The repository owner confirmed before this replacement that the system had not
-been used and no compatibility or migration path was required.
 
 ## Purpose and Authority
 
@@ -460,8 +453,8 @@ Non-bounded LogicSig keys use `signing_metadata_version: 1`. Bounded keys use
 `signing_metadata_version: 2` and require the canonical
 `bounded_authorization` object. The closed `layer3_policy` value is `custom` or
 `fixed_allowlist`; declared runtime and derived arguments and their complete
-slot masks are persisted. Top-level legacy `signing_args` are not used for
-bounded keys. Scan, load, backup, and restore consume the stored object without
+slot masks are persisted. Top-level `signing_args` are ignored for bounded
+keys. Scan, load, backup, and restore consume the stored object without
 consulting the installed template.
 
 ## Routing and Approval
@@ -483,14 +476,6 @@ Every bounded admin operation triggers the stable unconditional
 autoapproval, regardless of warning configuration. Simulation cannot release
 signed bytes and may omit an interactive prompt.
 
-## Pre-Adoption Replacement Record
-
-The earlier governed-rekey experiment was removed before adoption under the
-repository owner's explicit declaration that the system had not been used and
-that no backward compatibility was required. Old schemas, endpoints, key types,
-and artifact extensions are intentionally rejected. The permanent
-differential test is not a decoder or migration surface.
-
 ## Versioning
 
 After first production deployment, a change to field classification, normal
@@ -498,4 +483,4 @@ forms, fee ceiling semantics, canonical encoding, program binding, transcript,
 argument placement, endpoint choreography, or flow routing mints a new bounded
 contract and key type. Existing LogicSig bytecode cannot learn about a future
 authority-bearing field added to an existing transaction type; release review
-must assess legacy-network safety before retaining containment claims.
+must assess network-version safety before retaining containment claims.

@@ -17,9 +17,8 @@ templates and LogicSig-backed key types. It is intended for users, operators,
 and template authors who want to design, review, or reason about
 template-derived LogicSig policies.
 
-It is not a point-in-time audit of the current repository contents. Instead, it
-captures the review criteria and risk areas that should be applied to any
-templated LogicSig TEAL policy, whether it is:
+Apply these review criteria and risk areas to every templated LogicSig TEAL
+policy, whether it is:
 
 - a generic TEAL-only LogicSig
 - a signer-gated DSA LogicSig

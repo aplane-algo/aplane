@@ -83,10 +83,9 @@ it on no-op guard edits;
 renaming the guard or changing an asset row writes the generated convention.
 
 For `algo`, concrete ASA IDs, and eligible asset-set rows, `Review Above`
-and `Reject Above` use display units just like the old apadmin transfer guard
-editor. `50` means 50 ALGO for `algo`; `5` means 5 display units of the selected
-ASA or asset set. `appolicy` still writes raw base units to the selected policy
-document. This is the recommended UI path for rules such as "source A may send
+and `Reject Above` use display units. `50` means 50 ALGO for `algo`; `5` means
+5 display units of the selected ASA or asset set. `appolicy` writes raw base
+units to the selected policy document. This is the recommended UI path for rules such as "source A may send
 ALGO to B up to 50 ALGO" and "source A may send USDC to B up to 5 USDC."
 
 `Enter` opens a field-specific editor. Text and numeric fields open a
@@ -164,8 +163,7 @@ but it never auto-approves signing.
 
 ## Getting Started
 
-Start in review mode if you are migrating an existing signer and are not yet
-sure the route table is complete:
+Start in review mode when you are not yet sure the route table is complete:
 
 ```yaml
 transfer_policy:
@@ -1019,9 +1017,9 @@ IDs for close-out and clawback. `transfer_policy:close_route_miss` and
 `transfer_policy:clawback_route_miss` are used when the corresponding no-route
 fallback forces review.
 
-Legacy transfer guard rule IDs are preserved. For example, a
-`max_algo_payments` rejection remains a legacy transfer-guard rejection rather
-than being rewritten as a synthetic routing threshold.
+Threshold-map transfer guards retain their own rule IDs. For example, a
+`max_algo_payments` rejection is reported as a threshold-guard rejection, not
+as a synthetic routing threshold.
 
 Blocked-destination denials do not enter the approval queue. Operators who need
 active alerts for blocked attempts should alert on
@@ -1044,7 +1042,7 @@ transfer_policy:
 
 The field is `on_no_route`.
 
-### Policy Check Passes But The Signer Still Uses Old Behavior
+### Policy Check Passes But The Signer Uses Different Behavior
 
 Run `apstore policy sign` after editing, then reload, unlock, or restart the
 signer. A valid YAML file without a matching HMAC sidecar is not accepted after
@@ -1060,7 +1058,7 @@ Routing is only one policy layer. Check for:
 - `reject_asset_close`,
 - `reject_clawback`,
 - `max_fee_microalgos`,
-- legacy `max_algo_payments` or `max_asa_amounts`,
+- `max_algo_payments` or `max_asa_amounts`,
 - warning review settings.
 
 Routes cannot weaken those guards.
@@ -1092,7 +1090,7 @@ Clawback requires:
 - `clawback.allow:true`,
 - an `asset_sources` list,
 - matching `sources`, `asset_sources`, `assets`, and `destinations`,
-- `reject_clawback:false` if the legacy clawback guard would otherwise reject.
+- `reject_clawback:false` when the independent clawback guard should not reject.
 
 ### Unknown Genesis Hash
 

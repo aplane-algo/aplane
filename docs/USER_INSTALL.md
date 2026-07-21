@@ -31,8 +31,8 @@ Installer-generated `apenv.sh` files export `APLANE_INSTALL_ROOT`; systemd
 operator `apenv.sh` also exports `APLANE_BINDIR`.
 The bootstrap wrapper also accepts `APLANE_VERSION`,
 `APLANE_ENABLE_SERVICE`, `APLANE_START_SERVICE`, and
-`APLANE_REQUIRE_MINISIGN`; older `APSIGNER_*` names remain accepted as
-compatibility aliases.
+`APLANE_REQUIRE_MINISIGN`; matching `APSIGNER_*` names are compatibility
+aliases.
 
 ## Table of Contents
 
@@ -89,7 +89,7 @@ APLANE_INSTALL_ROOT=/path/to/my/aplane ./install.sh
 │   ├── config.yaml        # Signer config (ports, SSH, algod)
 │   ├── library/           # KeyType Library install sources
 │   │   └── templates/     # Template YAML files for defaults and apstore imports
-│   ├── .ssh/              # SSH host key and legacy/global authorized_keys
+│   ├── .ssh/              # SSH host key and process-global authorized_keys
 │   └── identities/default/ # Keystore (created during install)
 │       ├── .keystore
 │       └── .ssh/          # Identity-scoped authorized_keys after token enrollment
@@ -229,11 +229,11 @@ Each instance gets its own random ports, keystore, and `start.sh` launcher. They
 ### Existing install paths
 
 In-place upgrades are supported only when the existing install meets the
-installer's minimum supported version. Older installs, or installs without
+installer's minimum supported version. Installs below that floor, or without
 `install/release.json`, must use a fresh install root and fresh
 `apclient`/`apsigner` data directories.
 
-The installer is still conservative when pointed at an existing path:
+When pointed at an existing path, the installer:
 - Existing `config.yaml` files are left unchanged
 - `apconsole.yaml` is refreshed with the local console profile
 - Bundled plugin catalog payloads, currently
@@ -345,17 +345,17 @@ curl -fsSL https://raw.githubusercontent.com/aplane-algo/aplane/main/bootstrap-i
 ## Upgrade Compatibility
 
 This release supports in-place upgrades only when the existing install meets
-the installer's minimum supported version. If the existing install is older, or
+the installer's minimum supported version. If the existing install is below the floor, or
 if the installer cannot read `install/release.json`, install into a fresh root
-and initialize fresh `apclient` and `apsigner` data directories. Preserve old
-install directories separately until you have confirmed the fresh environment
+and initialize fresh `apclient` and `apsigner` data directories. Preserve the
+source install directory separately until you have confirmed the fresh environment
 has the keys, policy, endpoint routing, tokens, and network configuration you
 intend to use.
 
 Use `-f` or `--force` only when you intentionally need to bypass that installer
 upgrade check. The override does not skip process/service stop checks or other
 safety validation; it only permits an in-place install when the release metadata
-is missing, unreadable, or older than the installer's supported upgrade floor.
+is missing, unreadable, or below the installer's supported upgrade floor.
 
 ---
 
@@ -469,7 +469,7 @@ sudo APLANE_INSTALL_ROOT="$APLANE_INSTALL_ROOT" APLANE_BINDIR="$APLANE_BINDIR" .
 ```
 
 In-place upgrades are supported only when the existing install meets the
-installer's minimum supported version. For older installs, run `install.sh`
+installer's minimum supported version. For installs below that floor, run `install.sh`
 against a new local root or use `--systemd` with a fresh signer data directory.
 Use `-f` or `--force` only for an intentional installer upgrade-check override.
 
@@ -535,10 +535,10 @@ For unattended operation, install normally first, stop the service, then use
 ### Existing systemd installs
 
 Systemd in-place upgrades are supported only when the existing install meets
-the installer's minimum supported version. Use a fresh signer data directory
-instead of installing over an older existing one.
+the installer's minimum supported version. Otherwise, use a fresh signer data
+directory.
 
-The installer still refuses to continue while `apsigner.service` is active,
+The installer refuses to continue while `apsigner.service` is active,
 activating, reloading, or deactivating so it does not replace binaries under a
 live daemon.
 
@@ -549,9 +549,10 @@ sudo ./install.sh --systemd
 
 When pointed at an existing systemd install after the service is stopped, the
 installer checks `install/release.json` before upgrading an initialized signer
-store. Treat that behavior as a safety guard, not a migration guarantee.
+store. Passing this check permits installation; it does not transform data
+whose shape is outside the current compatibility contract.
 
-If a previous install left `identities/<id>/passphrase.cred` in place, the
+If `identities/<id>/passphrase.cred` exists, the
 installer re-adds the matching `LoadCredentialEncrypted=` directive to the
 new unit so the daemon can auto-unlock without rerunning
 `appass set systemd-creds`.

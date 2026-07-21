@@ -38,7 +38,7 @@ installer upgrades are intentionally narrow:
 - existing install directories are supported in place only when their
   `install/release.json` reports at least the installer's minimum supported
   upgrade version,
-- older install directories and installs without release metadata require a
+- install directories below that floor or without release metadata require a
   fresh install root unless the operator explicitly passes the installer
   `-f`/`--force` upgrade-check override,
 - no config, key, cache, or endpoint migration utility is shipped,
@@ -147,8 +147,9 @@ account.
 
 ### Bounded Authorization Contract V1
 
-`bounded1` is the only bounded-authorization contract. It has no alias or
-compatibility route for the removed governed-rekey endpoint and objects.
+`bounded1` is the only bounded-authorization contract. It has no protocol
+aliases; bounded admin operations use `POST /sign/bounded-admin` and the
+bounded1 DTOs defined below.
 
 Bounded1 uses TEAL v12 and admits only pure payments, pure asset transfers,
 asset opt-ins, plus an optional pure `pay` rekey. Asset opt-in is a distinct
@@ -446,7 +447,7 @@ source of truth for these result-local codes is `internal/protocol`; producers
 and CLI consumers must share those constants instead of maintaining parallel
 string lists. See the corresponding payload sections and contract tests before
 treating the central protocol list as exhaustive. Consumers should dispatch on
-`code` when present and treat prose `error` as display text or legacy fallback,
+`code` when present and treat prose `error` as display text or untyped fallback,
 not as an authoritative result-code source.
 
 IPC failure semantics:
@@ -468,19 +469,19 @@ IPC failure semantics:
 | Token provisioning approval | yes | no | yes | no |
 | Admin settings | yes | no | no | no |
 | Policy editor | yes | no | no | no |
-| Legacy policy settings editor | limited | no | no | no |
+| Scalar policy settings editor | limited | no | no | no |
 | Async notifications | yes | limited | limited | no |
 
 `appass` edits config offline; it is outside the live IPC surface.
 
-`apadmin`'s current policy editor uses the shared full-document editor. The
-older policy settings payload remains intentionally limited for compatibility:
+`apadmin` uses the shared full-document policy editor. The scalar compatibility
+payload is intentionally limited:
 it can mutate the admin-projected settings exposed by `get_policy_settings`,
 `update_policy_setting`, and `update_policy_asa_amounts`, including scalar
 policy toggles other than clawback controls, max fee, and network-scoped
 transfer guard thresholds. YAML-only fields such as `reject_clawback` and
 `key_overrides` are handled through canonical policy YAML, not through that
-legacy scalar settings payload.
+scalar compatibility payload.
 
 These client capabilities describe the product surface for the product
 identity. Backend admin routing is identity-scoped internally; `apadmin`,
@@ -563,12 +564,12 @@ is pointed at a supported in-place upgrade target.
 Unknown YAML fields are rejected by the Go loader with guidance that the file
 may have been written by a newer version or may contain a typo.
 
-For compatibility with pre-`user_auto_approve` signer configs, the Go loader
-accepts top-level `manual_approval` as a deprecated inverse alias:
+The Go loader accepts top-level `manual_approval` as an inverse compatibility
+alias:
 `manual_approval:true` maps to `user_auto_approve:false`, and
 `manual_approval:false` maps to `user_auto_approve:true`. If both fields are
-present, they must agree under that inverse mapping. New configs should write
-only `user_auto_approve`.
+present, they must agree under that inverse mapping. Canonical configs use only
+`user_auto_approve`.
 
 Process-global settings live in `config.yaml`. Identity-scoped settings live in `identities/<identity>/config.yaml` and nil means inherit from process defaults. `decommissioned:true` disables the identity.
 
@@ -588,8 +589,8 @@ through `appolicy` or `apstore policy`.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
 sentry overrides are keyed by Witness Key ID. These overrides apply to
-policy phases but are not projected through the legacy scalar policy-settings
-IPC. They can be changed through authenticated full-document `replace_policy`,
+policy phases but are not projected through the scalar compatibility
+policy-settings IPC. They can be changed through authenticated full-document `replace_policy`,
 or by direct/offline YAML editing followed by `appolicy` or `apstore policy`
 signing before the signer will trust the edited document.
 
@@ -626,7 +627,7 @@ Validation:
 - initialized signer data roots must contain root `node.yaml` with role
   `signer` or `sentry`. New initialization defaults to `signer` unless an
   sentry node is explicitly requested. Identity config `mode` is an
-  unsupported pre-release field and is rejected.
+  unsupported field and is rejected.
 - node role gates key generation, mnemonic import, restore, signer key reload,
   and signing service dispatch. Hand-placed key files or restored keys from the
   forbidden role are not usable; role-conflicting active inventory fails closed
@@ -698,9 +699,10 @@ the returned genesis hash, prints LocalNet metadata, and writes nothing.
 uses the resolved client and signer paths it displays. Non-interactive
 `--apply` targets the explicitly supplied data roots: `--client-data` or
 `APCLIENT_DATA` enables client mutation, and `--signer-data`/`-d` or
-`APSIGNER_DATA` enables signer mutation. If no explicit target source is present,
-`--apply` preserves the historical default-root behavior. At least one target is
-required after resolution. For each selected target it then:
+`APSIGNER_DATA` enables signer mutation. If no explicit target source is
+present, client data defaults to `~/aplane/apclient` and signer data defaults
+to `~/aplane/apsigner`. At least one target is required after resolution. For
+each selected target it then:
 
 - write signer `config.yaml` with `networks.localnet.algod.server`,
   `networks.localnet.algod.token`, and `networks.localnet.genesis_hash`
@@ -865,7 +867,7 @@ Additional client-state notes:
 - local-mode uninstall removes generated binaries, launcher/env files, and installer-generated MCP config, but preserves `APCLIENT_DATA` and local signer data by default; destructive removal of keys, tokens, plugins, scripts, caches, and swap state is an explicit manual step
 - `apconsole.yaml` supports `mode: local|remote`, `client_data`, and local-mode `signer_data`; relative paths resolve against the profile file
 - `endpoints.yaml` is the normal client-local endpoint registry for new installs, with `schema_version: 1`, a derived `default` signer endpoint alias, and user-defined endpoint aliases under `endpoints:`. Endpoint aliases are local references only; they are unique within one `APCLIENT_DATA` and use only ASCII letters, digits, `.`, `_`, and `-`.
-- if client `config.yaml` contains top-level `ssh:` signer settings, `apshell` startup and the apconsole shell pane fail closed with an operator-facing endpoint-routing migration message. Startup never materializes or rewrites endpoint routing.
+- if client `config.yaml` contains top-level `ssh:` signer settings, `apshell` startup and the apconsole shell pane fail closed with an operator-facing message directing the operator to configure `endpoints.yaml`. Startup never materializes or rewrites endpoint routing.
 - endpoint records carry connection profile fields together: required `role` (`signer` or `sentry`), `url` (`ssh://host[:port]`, loopback `http://...`, `https://...`, or `self` where supported), `signer_port`, `local_port`, `identity_file`, `known_hosts_path`, `token_file`, and endpoint-published `published_sentries`. Relative file paths resolve against `APCLIENT_DATA`. A registry may contain at most one `signer` endpoint; if present, that endpoint is the effective default. `published_sentries` is valid only on `sentry` endpoints.
 - endpoint token files are bearer credentials. The default signer endpoint commonly uses `APCLIENT_DATA/aplane.token` unless overridden. Non-primary endpoints default to `APCLIENT_DATA/tokens/<endpoint-alias>.token`. Reads reject group/world-accessible token files and token writes create owner-only files.
 - `published_sentries` is keyed by canonical embedded sentry public-key hex. Each record carries `component_key`, `key_type`, and `last_seen_at`; runtime guarded-send routing derives the endpoint for an embedded sentry public key from this endpoint-local inventory.
@@ -891,7 +893,7 @@ Additional client-state notes:
 - remote `apadmin` has the same client enrollment prerequisite as `apconsole`: it requires a default signer endpoint, the endpoint token, and a trusted signer host in the endpoint `known_hosts_path`; it does not prompt for first-use host trust
 - shared non-interactive client-enrollment preflight lives in `internal/clientenroll/preflight.go` and is used by `apshell --mcp` and remote-mode `apconsole`; remote `apadmin` has a separate implementation in `cmd/apadmin/remote.go`
 - tombstones suppress locally deleted proposals for that local actor
-- cache files are signed JSON with a per-client `.cache_key` and are local, rebuildable client state; the signed envelope has `version: 1`, and versioned cache payloads carry `schema_version: 1` with missing payload versions treated as legacy v1
+- cache files are signed JSON with a per-client `.cache_key` and are local, rebuildable client state; the signed envelope has `version: 1`, and versioned cache payloads carry `schema_version: 1`; a missing payload version is interpreted as v1
 - `signer_cache.json` is a local projection of authenticated signer `/keys`
   inventory. It may persist address key types, generic-LogicSig flags,
   `lsig_sizes`, key-file signing argument schemas, `signing_flows`,
@@ -1046,7 +1048,7 @@ Behavior:
 - new keystores are version 2
 - version 2 unlock uses stored KDF params
 - version 2 metadata with missing or zero KDF params is rejected
-- version 1 unlock falls back to the older Argon2id time parameter
+- version 1 unlock uses the implicit Argon2id parameters listed above
 
 ### Policy File (`policy.yaml`)
 
@@ -1136,7 +1138,7 @@ caller-selected creation parameter.
 Decrypted key payloads use one canonical v1 JSON schema owned by
 `internal/keys.ParsePayload` and `internal/keys.MarshalPayload`. Readers reject
 unknown fields, duplicate JSON object members, non-canonical timestamps, and
-obsolete payload aliases. Creation parameters are stored only in `parameters`;
+noncanonical payload aliases. Creation parameters are stored only in `parameters`;
 LogicSig bytecode is stored only in `lsig_bytecode`. The durable payload does
 not store a separately trusted address, template name, entropy, derivation
 record, or runtime-argument metadata under `runtime_args`.
@@ -1394,8 +1396,8 @@ and shows generated endpoint-synced names only in detailed JSON views.
 
 The library is a generation convenience and trust-input inventory for the user
 signer. When generating a guarded account, callers may provide
-`sentry=<witness-key-id>` instead of `sentry_public_key=<hex>`. For compatibility
-with older scripts, `sentry=<name>` is also accepted. The signer resolves the
+`sentry=<witness-key-id>` instead of `sentry_public_key=<hex>`.
+`sentry=<name>` is also accepted as a compatibility input. The signer resolves the
 Witness Key ID or name to `public_key_hex`, verifies that the reference key type
 matches the guarded-account key type's required sentry key type,
 rejects requests that provide both forms, and persists the resolved
@@ -1461,7 +1463,7 @@ Template capability notes:
 - omitted `derivation_version` compiles the template without a generated salt
   anchor and therefore succeeds only when the unmodified bytecode already
   derives an off-curve LogicSig address
-- `derivation_version: 1` uses the legacy generated `pushbytes; pop` marker,
+- `derivation_version: 1` uses the generated `pushbytes; pop` marker,
   and `derivation_version: 2` uses the trailing dead-code `bytecblock` salt
   anchor; new template-derived key types that need reliable generation should
   use `derivation_version: 2`
@@ -2253,7 +2255,7 @@ Restore:
 
 - `ParseBackup()` detects plain canonical key payload JSON or bundled
   `BackupBundle`; `backup_bundle` is a sentinel, while `payload_version` is the
-  bundle payload schema version. Missing `payload_version` is treated as legacy
+  bundle payload schema version. A missing `payload_version` is interpreted as
   v1; unknown sentinels or payload versions are rejected.
 - restore `warnings[]` entries have optional `address`, optional `key_type`, and `warning`; warnings are informational and do
   not change restore success/failure
@@ -2386,13 +2388,13 @@ Cross-SDK compatibility-bearing behavior:
 - SDKs decode non-2xx HTTP bodies as `signerapi.ErrorResponse` with top-level
   `error` plus a stable machine-readable `code`
   (`pkg/signerapi/error_codes.go`). Clients classify failures by `code`
-  (empty on pre-code servers), never by `error` message text.
+  (empty when the server does not supply one), never by `error` message text.
   Endpoint-specific success DTOs are not the error envelope.
 - SDK/client `/sign` deadlines must be long enough for the identity-effective
   signer approval wait. The repo-owned signer client discovers
   `/status.approval_wait_seconds` and uses that value plus slack; external SDKs
   should avoid defaults shorter than the configured approval wait. When
-  `/status` discovery fails or older signers omit `approval_wait_seconds`,
+  `/status` discovery fails or `approval_wait_seconds` is omitted,
   clients use the documented compatibility fallback deadline rather than the
   short inventory/health timeout.
 - SDK `/sign` calls should include an opaque `request_id` when the client may
@@ -2422,8 +2424,8 @@ Go SDK specifics:
   and finalized unsigned transaction bytes, but not reusable signed bytes.
 - raw request methods operate on SDK DTOs (`SignRequest`, `KeysResponse`,
   `PlanGroupResponse`, `GroupSignResponse`, `GroupSimulateResponse`) rather
-  than the base64-returning convenience layer. `SignResponse` is a legacy
-  source-compatibility type; the live `/sign` response is `GroupSignResponse`.
+  than the base64-returning convenience layer. `SignResponse` is a
+  source-compatibility alias; the live `/sign` response is `GroupSignResponse`.
 - `Config.NewAlgodClient(network)` is part of the supported Go SDK config surface
 - `GroupPlanResponse`, `RuntimeArgInfo`, and `SigningArgInfo` are compatibility aliases for `PlanGroupResponse`, `RuntimeArg`, and `SigningArg`
 - input uses `go-algorand-sdk` `types.Transaction`

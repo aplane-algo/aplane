@@ -282,7 +282,7 @@ client `ssh:` signer routing is not supported by managed startup in this
 endpoint-routed client model.
 
 apsigner also reads per-identity configuration overlays:
-- `identities/<identity>/config.yaml` — identity-scoped settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`, `decommissioned`) that override process-global defaults; the pre-release `mode` field is rejected in favor of root `node.yaml`
+- `identities/<identity>/config.yaml` — identity-scoped settings (`user_auto_approve`, `lock_on_disconnect`, `passphrase_timeout`, `approval_wait`, `decommissioned`) that override process-global defaults; node role is configured only in root `node.yaml`
 - `identities/<identity>/unlock.yaml` — identity-scoped passphrase helper configuration
 - `identities/<identity>/policy.yaml` — identity-scoped node-role policy
 - `identities/<identity>/keytypes/<key_type>.json` — identity-scoped state records for optional key types

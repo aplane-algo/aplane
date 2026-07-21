@@ -178,9 +178,9 @@ txn.GenesisHash -> resolver -> network token -> review_asa_amounts[token] / max_
 Unknown genesis hashes fail closed before a transaction can use the wrong policy
 bucket.
 
-### ASA Guard Editing Contract
+### ASA Threshold Compatibility Contract
 
-The legacy admin policy protocol accepts display input:
+The scalar admin policy protocol accepts display input:
 
 ```text
 asset_id:amount, asset_id:amount
@@ -206,20 +206,18 @@ through configured algod if the signer cache is cold so display amounts can be
 converted using the asset decimals. The editor rejects unresolved assets rather
 than guessing raw units.
 
-Policy persistence remains raw ASA ID and raw amount, independent of how the
-operator entered the value. Existing guards render back as numeric ASA IDs with
+Policy persistence uses raw ASA ID and raw amount, independent of how the
+operator entered the value. Configured guards render back as numeric ASA IDs with
 display-unit amounts and cache-backed symbols when metadata is available.
 
 Symbol search is intentionally local-cache only. It does not query algod by
 symbol or name. If more than one cached ASA has the same unit name, the client
 must ask the operator to choose by numeric ASA ID.
 
-`apadmin` no longer exposes this legacy threshold editor. Current
-operator-facing guided policy work is centered on the shared policy editor and
-the YAML `transfer_policy` route table. `apadmin` uses that editor online
-through the admin protocol; `appolicy` uses the same editor offline. The legacy
-map fields and admin protocol messages remain documented here because existing
-policy files and compatibility clients may still use them.
+The guided policy editor exposes the YAML `transfer_policy` route table rather
+than the scalar threshold-map editor. `apadmin` uses the shared editor online
+through the admin protocol; `appolicy` uses it offline. Threshold-map fields
+and their admin protocol messages remain accepted compatibility inputs.
 
 ## Admin Protocol
 

@@ -17,8 +17,8 @@ source. It is intended to be served on demand via an `mcp_manual` tool, the same
 way `js_reference` serves `USER_JSAPI.md`.
 
 > Precedence: where this manual and a live tool result disagree, trust the live
-> result. `keytypes`, `status`, and `mcp_reference` reflect the connected signer
-> right now; this document reflects the system design.
+> result. `keytypes`, `status`, and `mcp_reference` reflect connected-signer
+> state; this document defines the system design.
 
 ---
 

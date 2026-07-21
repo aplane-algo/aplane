@@ -2,8 +2,7 @@
 
 This document explains how the codebase answers questions about a key type, and
 **why** there are three separate mechanisms rather than one. Read this before
-trying to unify them — that unification has been attempted twice and is wrong
-both times (see [Why not collapse them](#why-not-collapse-them)).
+changing their boundaries (see [Why not collapse them](#why-not-collapse-them)).
 
 `docs/ARCH_LSIG_PROVIDER.md` is the detailed registry reference; it covers one of
 the three axes below (Resolve). This document is the cross-cutting view.
@@ -135,7 +134,7 @@ key type's own display label.
 > with the other uses of the word "family": the key-type display segment and the
 > YAML `family:` / wire `family` fields all carry a *different* value (the key
 > type's own label, not its routing key). The method is the only one that is the
-> registry routing key — and its name now says so.
+> registry routing key, and its name states that role.
 
 Ed25519 is the canonical example because the native key type and the LogicSig
 DSA family share the same cryptographic primitive but intentionally use different
@@ -143,7 +142,7 @@ registry names:
 
 | String | What it is | Meaning |
 |---|---|---|
-| `ed25519` | Native key type and native routing family | Standard Algorand Ed25519 account signing. It does not use a LogicSig, is default-enabled, and in this legacy/native case the key type and family are the same string. |
+| `ed25519` | Native key type and native routing family | Standard Algorand Ed25519 account signing. It does not use a LogicSig, is default-enabled, and the key type and family are the same string. |
 | `aplane.ed25519` | Qualified LogicSig DSA routing family | APlane's Ed25519-inside-LogicSig registry family. It is not a creatable key type; it is the family-keyed registry bucket for LogicSig metadata, keygen, signing, and mnemonic ops. The `aplane.` qualifier prevents collision with native `ed25519`. |
 | `aplane.ed25519.v1` | Versioned concrete LogicSig DSA key type | Version 1 of the APlane Ed25519 LogicSig DSA provider. Users can enable/create/import this key type; it signs with Ed25519, but verification happens inside TEAL via `ed25519verify_bare`. |
 
@@ -212,34 +211,33 @@ packed, _ := packer.PackComponentSignatures(u, s)     // Behave: call
 
 ## Why not collapse them
 
-Two tempting unifications, both wrong, for the same reason — a call site would be
-forced to depend on something it doesn't have.
+The axes cannot be unified because doing so would force call sites to depend on
+information they do not have.
 
-**1. Route by `BaseKeyType` instead of `RoutingFamily()` (tried, abandoned).** The
-idea was to make Resolve key off the `BaseKeyType` edge. It breaks on
+**1. Do not route by `BaseKeyType` instead of `RoutingFamily()`.** Resolve cannot
+key off the `BaseKeyType` edge because that breaks on
 guarded/sentry accounts: a guarded provider's `BaseKeyType` is
 `aplane.falcon1024.v1`, but that is its *component-signing primitive*, not its
 routing authority — the guarded account owns its own keygen, mnemonic-handler
 registration, and metadata under its own family (this is internal handler
 routing only; guarded/corridor accounts still report
 `SupportsMnemonicImport() == false`, i.e. no user mnemonic import). Routing
-metadata by `BaseKeyType` returned Falcon's metadata (wrong signature size) for
+metadata by `BaseKeyType` would return Falcon's metadata (wrong signature size) for
 guarded keys. `BaseKeyType` cannot express the delegate-vs-self distinction;
 `RoutingFamily()` can. **Route by `RoutingFamily()`.**
 
-**2. Classify by provider capability instead of string switches (correctly never
-shipped).** After the assembly hooks made Behave capability-driven, the natural
-next step looked like moving Classify the same way — let the provider declare "I
-am a guarded account, my sentry component is X." It would break every
+**2. Do not classify by provider capability instead of string switches.** A
+provider declaration such as "I am a guarded account, my sentry component is
+X" cannot serve every
 classification call site that has no provider: the client config, the keystore,
 the cache. Those run in binaries that may not register guarded providers at all.
 Classification must answer from the string, in any binary. **Classify by string
 in the neutral leaf.**
 
-The shape of both mistakes is identical: collapsing an axis onto a mechanism
+The constraint is the same in both cases: collapsing an axis onto a mechanism
 whose precondition (a populated registry / a provider instance) isn't met where
-that axis is actually called. The current split is not three accidents — it is
-three answers to three different availability constraints.
+that axis is actually called. The three APIs answer different availability
+constraints.
 
 ---
 
@@ -251,11 +249,10 @@ fallback that substring-matches the key type against registered families. This i
 **display-only** — it exists so an unregistered template (e.g. a keystore template
 not loaded in this process, queried client-side for a display color) still gets a
 plausible color. Keygen and signing never reach it: they always have a registered
-provider or a stored base key type in the key file. It is kept (rather than
-removed) because removing it cleanly would require threading the stored base key
-type through the `addressdisplay.ColorFormatter` callback — a cross-layer change
-not worth it for a cosmetic fallback. It is a fallback on the Resolve axis, not a
-separate resolution mechanism.
+provider or a stored base key type in the key file. The fallback avoids threading
+the stored base key type through the `addressdisplay.ColorFormatter` callback
+for cosmetic display. It is a fallback on the Resolve axis, not a separate
+resolution mechanism.
 
 ---
 

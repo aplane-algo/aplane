@@ -44,7 +44,7 @@ Transport notes:
 - the same line-delimited JSON admin protocol is carried over local IPC and the SSH `aplane-admin` subsystem,
 - `auth_required` carries the server admin protocol version as
   `protocol_version:{major,minor}`; clients should send their version in
-  `auth.protocol_version`, omitted versions are accepted as legacy/unknown,
+  `auth.protocol_version`; an omitted version is accepted as unknown,
   explicit major-version mismatches are rejected, and minor-version mismatches
   are logged for skew diagnosis,
 - post-auth admin connections use one dispatcher-owned reader in `internal/transport`,
@@ -367,7 +367,7 @@ Atomic transfer guard update:
 - map keys are validated as network context tokens
 - non-empty network entries are accepted only for networks listed in `policy_settings.policy_networks`
 - `policy_networks` is derived from signer `algod` config entries with non-empty `server` values
-- `mainnet`, `testnet`, and `betanet` fields are maintained for compatibility with older admin clients and map to ASA deny thresholds
+- `mainnet`, `testnet`, and `betanet` are scalar compatibility fields that map to ASA deny thresholds
 - when both review and deny thresholds are provided for the same network/asset, the deny threshold must be greater than or equal to the review threshold
 - admin/UI semantics are:
   - ASA refs must be numeric ASA IDs; ASA names and unit names are display labels only,
