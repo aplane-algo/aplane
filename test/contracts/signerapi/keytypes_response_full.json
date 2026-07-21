@@ -15,7 +15,7 @@
     {
       "key_type": "example.generic-policy.v1",
       "family": "generic",
-      "display_name": "Timed Allowlist",
+      "display_name": "Generic Policy",
       "description": "Generic LogicSig with creation and runtime arguments",
       "requires_logicsig": true,
       "mnemonic_word_count": 0,
