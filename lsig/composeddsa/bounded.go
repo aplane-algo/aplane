@@ -4,6 +4,7 @@
 package composeddsa
 
 import (
+	"bytes"
 	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
@@ -327,7 +328,7 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 	}
 
 	if boundedRequiresAdminKey(profile) {
-		adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
+		adminPublicKey, err := c.validatedAdminPublicKey(publicKey, params)
 		if err != nil {
 			return nil, err
 		}
@@ -352,6 +353,17 @@ func (c *ComposedDSA) BuildBoundedAuthorizationMetadata(publicKey []byte, params
 		return nil, fmt.Errorf("invalid generated bounded metadata: %w", err)
 	}
 	return metadata, nil
+}
+
+func (c *ComposedDSA) validatedAdminPublicKey(spendingPublicKey []byte, params map[string]string) ([]byte, error) {
+	adminPublicKey, err := decodeHexParameter(params[BoundedAdminPublicKeyParameter], BoundedAdminPublicKeyParameter, BoundedAdminPublicKeySize)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Equal(adminPublicKey, spendingPublicKey) {
+		return nil, fmt.Errorf("bounded admin witness key must differ from the spending key")
+	}
+	return adminPublicKey, nil
 }
 
 func (c *ComposedDSA) boundedAuthorizationMetadataBase() (*boundedmeta.Metadata, error) {

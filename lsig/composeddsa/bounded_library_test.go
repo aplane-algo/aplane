@@ -196,6 +196,34 @@ func TestBundledFalconAdminAllowlistV1AllowsOmittedOptionalConstraints(t *testin
 	}
 }
 
+func TestBundledFalconAdminAllowlistRejectsSpendingKeyAsAdminWitness(t *testing.T) {
+	falcon1024.RegisterClient()
+	data, err := templates.ReadFile("aplane.falcon1024-allowlist-alock.v1.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := composeddsa.ParseTemplateSpec(data)
+	if err != nil {
+		t.Fatalf("ParseTemplateSpec() error = %v", err)
+	}
+	provider, err := composeddsa.NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
+	}
+
+	publicKey := bytes.Repeat([]byte{0x41}, falconfamily.PublicKeySize)
+	values := map[string]string{
+		"recipients": types.Address{1}.String(),
+		composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(publicKey),
+	}
+	if _, err := provider.GenerateTEAL(publicKey, values); err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
+		t.Fatalf("GenerateTEAL() error = %v, want key distinctness rejection", err)
+	}
+	if _, err := provider.BuildBoundedAuthorizationMetadata(publicKey, values, []byte{1}); err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
+		t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v, want key distinctness rejection", err)
+	}
+}
+
 func TestBundledFalconAdminAllowlistV1MaximumBudget(t *testing.T) {
 	falcon1024.RegisterClient()
 	data, err := templates.ReadFile("aplane.falcon1024-allowlist-alock.v1.yaml")
