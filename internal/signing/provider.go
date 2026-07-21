@@ -19,6 +19,7 @@ package signing
 import (
 	"fmt"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 )
 
@@ -33,6 +34,7 @@ type KeyMaterial struct {
 	BaseKeyType            string                       // Base DSA key type used for signer ops, if different from Type
 	Parameters             map[string]string            // Creation parameters recorded in the key file, if any
 	SigningArgs            []lsigprovider.RuntimeArgDef // Durable signing-time LogicSig arg contract
+	BoundedAuthorization   *boundedmeta.Metadata        // Durable bounded signing and routing contract
 	SigningMetadataVersion int                          // Version of durable key-file signing metadata
 }
 

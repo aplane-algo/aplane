@@ -988,6 +988,35 @@ esac
 
 Helpers that only support `read` should exit non-zero on `write`. The caller will fall back to displaying the passphrase for manual storage.
 
+### Bounded Authorization Contract Admin Keys
+
+Bounded1 requires the base spending signature on every accepted transaction.
+When a profile authorizes `rekey` with `admin_key`, every pure rekey also
+requires a Falcon-1024 contract-admin signature over a domain-separated digest
+of the exact transaction ID and immutable bounded program binding. Composer-
+owned checks reject rekey-plus-transfer, close, clawback, unsupported types,
+and over-ceiling fees before either signing path.
+
+The contract-admin private key is never a signer or `apstore` key. Apsigner
+runs normal policy and forced operator review, loads only the spending key, and
+returns a typed partial through `/sign/bounded-admin`. `apbounded-admin`
+independently validates the finalized group, stored bounded metadata, supplied
+program, and pure-rekey shape before producing the final LogicSig argument.
+Ordinary `/sign` rejects admin-key operations rather than returning an
+apparently complete transaction.
+
+Keeping the `.apbounded-admin-key` artifact off the signer makes the account
+structurally unable to perform admin-key operations when external custody is
+unavailable. A compromised unlocked signer can still make policy-permitted
+spends and request a partial, but cannot complete the on-chain admin gate.
+
+Online `apbounded-admin rekey` owns network and signer connectivity but delegates
+private-key use to the helper's signing path. For a stronger custody boundary,
+`prepare-rekey` writes a non-secret `.apbounded-admin-request` for transfer to an
+offline ceremony machine; `sign` returns a request-bound
+`.apbounded-admin-signature`; and `complete` rechecks the frozen request before
+submission. See [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
+
 ### Defense in Depth
 
 | Attack Vector | Mitigation |

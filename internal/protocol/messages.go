@@ -590,6 +590,7 @@ type TemplateArgInfo struct {
 	Description string `json:"description,omitempty"`
 	Required    bool   `json:"required,omitempty"`
 	ByteLength  int    `json:"byte_length,omitempty"`
+	MaxSize     int    `json:"max_size,omitempty"`
 }
 
 // TemplateType fields use stable wire values: "generic", "composed", or

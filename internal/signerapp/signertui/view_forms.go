@@ -460,16 +460,7 @@ func isPasteOnlyParam(paramDef lsigprovider.ParameterDef) bool {
 	if paramDef.Type == "bytes" && paramDef.MaxLength > 256 {
 		return true
 	}
-	return isGovernancePublicKeyParam(paramDef)
-}
-
-func isGovernancePublicKeyParam(paramDef lsigprovider.ParameterDef) bool {
-	if paramDef.Type != "bytes" && paramDef.Type != "string" {
-		return false
-	}
-	identity := strings.ToLower(paramDef.Name + " " + paramDef.Label)
-	identity = strings.NewReplacer("_", "", "-", "", " ", "").Replace(identity)
-	return strings.Contains(identity, "governan") && strings.Contains(identity, "publickey")
+	return false
 }
 
 func middleEllipsize(value string, width int) string {

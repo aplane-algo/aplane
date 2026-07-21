@@ -272,6 +272,11 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 		Fee:        0,
 		UseFlatFee: false,
 	}
+	for _, arg := range args {
+		if strings.EqualFold(arg, "using") {
+			return params, fmt.Errorf("external contract-admin keys are handled by apbounded-admin rekey/unrekey")
+		}
+	}
 
 	if isUnrekey {
 		// unrekey <account> [fee=<microalgos>] [nowait] [arg:name=value]

@@ -254,6 +254,28 @@ sentry allow-list; a sentry request that would need those review
 outcomes fails closed unless sentry-domain `policy.yaml` supplies a
 deterministic replacement.
 
+## Bounded Authorization Interaction
+
+Bounded1's on-chain envelope is independent of signer policy. Signer policy may
+reject a transaction admitted by the LogicSig but can never widen the compiled
+envelope or raise its `max_fee`.
+
+Every transaction classified onto a bounded1 admin-operation path triggers the
+stable client-signing Always Review rule
+`bounded_admin_operation_requires_review`. The rule runs after hard rejection
+and before every Always Approve or Operator Default path. It therefore blocks
+`user_auto_approve:true`, `auto_approve_self_noop_transfer`, and warning
+configuration for both spending-key and Falcon contract-admin rekeys.
+Simulation is the sole exception because it releases no signed transaction
+bytes.
+
+The approval description names the operation, sender, rekey target,
+transaction fee and compiled ceiling, authorization mode, and Contract Admin
+Key ID when applicable. The external contract-admin confirmation is an
+additional authorization after signer approval; it cannot override policy
+rejection, cancellation, or operator denial. See
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
+
 ## Runtime Snapshot Semantics
 
 The identity runtime publishes policy updates atomically. Readers see either

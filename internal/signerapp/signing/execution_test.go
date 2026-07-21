@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
@@ -136,7 +137,7 @@ func TestExecutorSignSingleTransactionZeroesKeyAfterPostLoadCancel(t *testing.T)
 	session.InitializeSession()
 
 	exec := &Executor{}
-	_, _, err := exec.signSingleTransaction(types.Transaction{}, "AUTHADDR", "", nil, session, "default", ctx)
+	_, _, err := exec.signSingleTransaction(types.Transaction{}, "AUTHADDR", "", nil, nil, session, "default", ctx)
 	if err == nil {
 		t.Fatal("signSingleTransaction() error = nil, want cancellation")
 		return
@@ -164,6 +165,7 @@ func TestExecutorSignCryptoKeyRejectsUnsupportedKeyType(t *testing.T) {
 		types.Transaction{},
 		"AUTHADDR",
 		"",
+		nil,
 		nil,
 		keyMaterial,
 		"default",
@@ -257,6 +259,7 @@ func TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup(t *testi
 				"AUTHADDR",
 				"",
 				nil,
+				nil,
 				keyMaterial,
 				"default",
 			)
@@ -292,6 +295,7 @@ func TestExecutorSignCryptoKeyRejectsInvalidAuthAddress(t *testing.T) {
 		types.Transaction{},
 		"not-an-address",
 		types.Address{1}.String(),
+		nil,
 		nil,
 		&coresigning.KeyMaterial{
 			Type:  keyType,
@@ -578,6 +582,7 @@ func TestExecutorAssembleDSALogicSigRejectsMissingRequiredRuntimeArg(t *testing.
 		"AUTHADDR",
 		"",
 		nil,
+		nil,
 		&coresigning.KeyMaterial{
 			Type:                   keyType,
 			Category:               keys.CategoryDSALsig,
@@ -623,6 +628,7 @@ func TestExecutorAssembleDSALogicSigRejectsMissingSigningMetadata(t *testing.T) 
 		"AUTHADDR",
 		"",
 		nil,
+		nil,
 		&coresigning.KeyMaterial{
 			Type:     keyType,
 			Category: keys.CategoryDSALsig,
@@ -666,6 +672,7 @@ func TestExecutorAssembleDSALogicSigUsesStoredSigningArgsWithoutComposedProvider
 		types.Transaction{},
 		"AUTHADDR",
 		"",
+		nil,
 		nil,
 		&coresigning.KeyMaterial{
 			Type:                   keyType,
@@ -721,6 +728,7 @@ func TestExecutorAssembleDSALogicSigOrdersStoredSigningArgsOnSuccess(t *testing.
 		"AUTHADDR",
 		"",
 		map[string]string{"alpha": "ignored", "beta": "ignored"},
+		nil,
 		&coresigning.KeyMaterial{
 			Type:                   keyType,
 			Category:               keys.CategoryDSALsig,
@@ -743,6 +751,178 @@ func TestExecutorAssembleDSALogicSigOrdersStoredSigningArgsOnSuccess(t *testing.
 		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
 	}
 	assertLogicSigArgs(t, signedBytes, [][]byte{signature, {0x0b}, {0x0a}})
+}
+
+func TestExecutorAssembleBoundedSpendingRekeyUsesExactBaseArgs(t *testing.T) {
+	baseKeyType := "test-bounded-base-dsa-v1"
+	keyType := "test-bounded-composed-dsa-v1"
+	lsigprovider.RegisterIfAbsent(&testBaseSignatureProvider{keyType: baseKeyType, family: baseKeyType})
+	signature := []byte{0x99, 0x88}
+
+	signedBytes, gotKeyType, err := (&Executor{}).assembleDSALogicSig(
+		testBoundedRekey(),
+		types.Address{1}.String(),
+		types.Address{1}.String(),
+		nil,
+		&boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend)},
+		&coresigning.KeyMaterial{
+			Type:                   keyType,
+			Category:               keys.CategoryDSALsig,
+			BaseKeyType:            baseKeyType,
+			Bytecode:               append([]byte(nil), testApprovalProgram...),
+			SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
+			BoundedAuthorization:   testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend),
+		},
+		signature,
+		keyType,
+		"default",
+	)
+	if err != nil {
+		t.Fatalf("assembleDSALogicSig() error = %v", err)
+	}
+	if gotKeyType != keyType {
+		t.Fatalf("keyType = %q, want %q", gotKeyType, keyType)
+	}
+	assertLogicSigArgs(t, signedBytes, [][]byte{signature})
+}
+
+// TestResolveBoundedPlanItemsRejectsUndeclaredCallerArgs pins the caller-owned
+// slot boundary; the executor consumes only runtime args accepted into the plan.
+func TestResolveBoundedPlanItemsRejectsUndeclaredCallerArgs(t *testing.T) {
+	authAddr := types.Address{1}.String()
+	snapshot := PlannerIdentitySnapshot{
+		KeyMetadata: map[string]PlannerKeyMetadata{authAddr: {
+			PublicKeyHex:         "aabb",
+			BoundedAuthorization: testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend),
+		}},
+	}
+	requests := []signerapi.SignRequest{{
+		AuthAddress: authAddr,
+		TxnBytesHex: "00",
+		LsigArgs:    map[string]string{"admin_signature": "00"},
+	}}
+
+	_, err := resolveBoundedPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{})
+	if err == nil || err.Kind != ErrorBadRequest || !strings.Contains(err.Message, "not a declared runtime slot") {
+		t.Fatalf("resolveBoundedPlanItems() error = %#v, want caller-args rejection", err)
+	}
+}
+
+func TestResolveBoundedPlanItemsAcceptsDeclaredRuntimeArgs(t *testing.T) {
+	authAddr := types.Address{1}.String()
+	metadata := testBoundedMetadata(t, "")
+	metadata.RuntimeArgs = []boundedmeta.RuntimeArg{{Name: "preimage", Type: "bytes", Required: true, ByteLength: 2, MaxSize: 2}}
+	metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
+		Index: 1, Name: "preimage", Source: boundedmeta.ArgSourceRuntime, MaxSize: 2,
+		Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
+	})
+	metadata.PostSigningLogicSigSize += 2
+	if err := metadata.Validate(); err != nil {
+		t.Fatalf("runtime metadata invalid: %v", err)
+	}
+	snapshot := PlannerIdentitySnapshot{KeyMetadata: map[string]PlannerKeyMetadata{authAddr: {
+		PublicKeyHex: "aabb", BoundedAuthorization: metadata,
+	}}}
+	requests := []signerapi.SignRequest{{AuthAddress: authAddr, LsigArgs: map[string]string{"preimage": "aabb"}}}
+	items, err := resolveBoundedPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{})
+	if err != nil {
+		t.Fatalf("resolveBoundedPlanItems() error = %v", err)
+	}
+	if len(items) != 1 || items[0] == nil || !bytes.Equal(items[0].RuntimeArgs["preimage"], []byte{0xaa, 0xbb}) {
+		t.Fatalf("planned runtime args = %#v", items)
+	}
+
+	requests[0].LsigArgs = nil
+	if _, err := resolveBoundedPlanItems(snapshot, requests, []types.Transaction{testBoundedPayment()}, map[int]bool{}, map[int]bool{}); err == nil || !strings.Contains(err.Message, "missing required") {
+		t.Fatalf("missing runtime arg error = %#v", err)
+	}
+}
+
+func TestAssembleBoundedArgsPreservesInteriorEmptySlots(t *testing.T) {
+	metadata := &boundedmeta.Metadata{ArgumentLayout: []boundedmeta.ArgumentSlot{
+		{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired}},
+		{Index: 1, Name: "proof", Source: boundedmeta.ArgSourceDerived, MaxSize: boundedmeta.MerkleProofSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgOptional}},
+		{Index: 2, Name: "preimage", Source: boundedmeta.ArgSourceRuntime, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired}},
+		{Index: 3, Name: "admin_signature", Source: boundedmeta.ArgSourceAdmin, MaxSize: boundedmeta.FalconAdminSignatureSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden}},
+	}}
+	item := &boundedPlanItem{Path: boundedPathPureSpend, RuntimeArgs: map[string][]byte{"preimage": {0xaa}}}
+	args, err := assembleBoundedArgs(metadata, item, [][]byte{{0x99}}, [][]byte{nil})
+	if err != nil {
+		t.Fatalf("assembleBoundedArgs() error = %v", err)
+	}
+	if len(args) != 3 || !bytes.Equal(args[0], []byte{0x99}) || args[1] == nil || len(args[1]) != 0 || !bytes.Equal(args[2], []byte{0xaa}) {
+		t.Fatalf("assembled args = %#v, want base/empty/runtime with trailing admin omitted", args)
+	}
+}
+
+// TestVerifyBoundedPlanIntegrity pins the executor's single bounded recheck:
+// the loaded key must still match the planned classification.
+func TestVerifyBoundedPlanIntegrity(t *testing.T) {
+	metadata := testBoundedMetadata(t, boundedmeta.AdminAuthorizationSpend)
+	item := &boundedPlanItem{Path: boundedPathSpendingKeyRekey, Metadata: boundedmeta.Clone(metadata)}
+	loaded := &coresigning.KeyMaterial{
+		SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
+		BoundedAuthorization:   boundedmeta.Clone(metadata),
+	}
+
+	if err := verifyBoundedPlanIntegrity(item, loaded); err != nil {
+		t.Fatalf("matching metadata: unexpected error %v", err)
+	}
+	if err := verifyBoundedPlanIntegrity(nil, &coresigning.KeyMaterial{}); err != nil {
+		t.Fatalf("plain key without plan item: unexpected error %v", err)
+	}
+
+	if err := verifyBoundedPlanIntegrity(nil, loaded); err == nil || err.Kind != ErrorInternal {
+		t.Fatalf("key gained bounded metadata: error = %#v, want internal", err)
+	}
+	if err := verifyBoundedPlanIntegrity(item, &coresigning.KeyMaterial{}); err == nil || err.Kind != ErrorInternal {
+		t.Fatalf("key lost bounded metadata: error = %#v, want internal", err)
+	}
+
+	wrongVersion := &coresigning.KeyMaterial{
+		SigningMetadataVersion: keys.BoundedSigningMetadataVersion - 1,
+		BoundedAuthorization:   boundedmeta.Clone(metadata),
+	}
+	if err := verifyBoundedPlanIntegrity(item, wrongVersion); err == nil || err.Kind != ErrorInternal {
+		t.Fatalf("wrong signing metadata version: error = %#v, want internal", err)
+	}
+
+	drifted := boundedmeta.Clone(metadata)
+	drifted.MaxFee--
+	changed := &coresigning.KeyMaterial{
+		SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
+		BoundedAuthorization:   drifted,
+	}
+	if err := verifyBoundedPlanIntegrity(item, changed); err == nil || err.Kind != ErrorInternal {
+		t.Fatalf("metadata drift: error = %#v, want internal", err)
+	}
+}
+
+// TestExecutorSignCryptoKeyRejectsAdminRekeyFromPlanItem pins the executor's
+// defense-in-depth admin-path check, driven by the plan item rather than a
+// re-derived classification.
+func TestExecutorSignCryptoKeyRejectsAdminRekeyFromPlanItem(t *testing.T) {
+	metadata := testBoundedMetadata(t, boundedmeta.AdminAuthorizationAdmin)
+	item := &boundedPlanItem{Path: boundedPathAdminKeyRekey, Metadata: boundedmeta.Clone(metadata)}
+	keyMaterial := &coresigning.KeyMaterial{
+		Type:                   "test-bounded-admin-reject-v1",
+		Category:               keys.CategoryDSALsig,
+		SigningMetadataVersion: keys.BoundedSigningMetadataVersion,
+		BoundedAuthorization:   boundedmeta.Clone(metadata),
+	}
+
+	_, _, err := (&Executor{}).signCryptoKey(
+		testBoundedRekey(),
+		types.Address{1}.String(),
+		types.Address{1}.String(),
+		nil,
+		item,
+		keyMaterial,
+		"default",
+	)
+	if err == nil || err.Kind != ErrorBoundedAdminRequired {
+		t.Fatalf("signCryptoKey() error = %#v, want bounded_admin_required", err)
+	}
 }
 
 func TestExecutorAssembleDSALogicSigIgnoresLiveComposedProviderMetadata(t *testing.T) {
@@ -773,6 +953,7 @@ func TestExecutorAssembleDSALogicSigIgnoresLiveComposedProviderMetadata(t *testi
 		"AUTHADDR",
 		"",
 		map[string]string{"stored": "ignored"},
+		nil,
 		&coresigning.KeyMaterial{
 			Type:                   keyType,
 			Category:               keys.CategoryDSALsig,
@@ -816,6 +997,7 @@ func TestExecutorAssembleDSALogicSigRejectsMissingStoredBaseProvider(t *testing.
 		types.Transaction{},
 		"AUTHADDR",
 		"",
+		nil,
 		nil,
 		&coresigning.KeyMaterial{
 			Type:                   keyType,

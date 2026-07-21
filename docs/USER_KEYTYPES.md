@@ -10,6 +10,34 @@ For the full architecture-level key/keytype state matrix, see
 
 ## Concepts
 
+### Authorization types
+
+APlane separates the account authorization mechanism from additional signing
+authorities:
+
+| Account authorization type | Meaning | Examples |
+|---|---|---|
+| **Native** | Standard protocol account signature without a LogicSig. | `ed25519` |
+| **DSA LogicSig** | A LogicSig verifies digital signatures and may add transaction policy. | `aplane.falcon1024.v1`, bounded allowlists, guarded accounts |
+| **Generic LogicSig** | TEAL-only account with no DSA private key. | `aplane.allowlist.v1`, `aplane.htlc.v1` |
+
+DSA LogicSigs may use a **plain** signature-only program, a **bounded1** policy,
+an expert-mode **custom** schema-v1 composed policy, or a dedicated compiled
+provider policy such as Corridor. Sentry guarding is an additional authority,
+not a DSA policy category.
+
+| Auxiliary authority type | Meaning |
+|---|---|
+| **Sentry component key** | A signer-managed, non-account key used through `/sign/component` and assembled into a guarded transaction. |
+| **External contract-admin key** | A normally cold key held in an `.apbounded-admin-key` artifact and used only for a bounded admin operation. It is not imported into the signer. |
+
+Sentry component keys appear in the sentry key-type inventory but cannot be
+used as spending accounts. External contract-admin keys do not appear in
+`keytypes`, `apstore`, or the signer keystore at all. A contract-admin key is
+not a sentry component key, and neither authority can substitute for the other.
+
+### Definition and availability
+
 APlane has two optional key type paths:
 
 | Kind | Example | Where definition lives | How to enable |
@@ -133,6 +161,56 @@ existing keys use that key type.
 
 `keytype enable` can also re-enable an already-installed disabled YAML template.
 It does not import a new YAML source; use `template import` for that.
+
+## Falcon Admin Allowlist
+
+`aplane.falcon1024-admin-allowlist.v1` is the framework-owned transaction
+authorization account. It requires a Falcon spending signature on every
+transaction and a separate external Falcon contract-admin signature for a
+pure rekey. Its on-chain policy permits only ALGO payments and ASA transfers,
+denies all close/clawback effects, and constrains the destination to the sender
+or one of 1-30 compiled recipients.
+
+Optional creation parameters further constrain ASA IDs and per-transaction
+ALGO/ASA amounts. Omitting `asset_ids` allows any ASA ID; omitting an amount
+limit leaves that type's amount unrestricted. Asset and amount checks still
+apply to self-transfers. The signer injects the `bounded_admin_public_key`
+creation field; it is not a second signer-held key.
+
+Generate the external contract-admin key first:
+
+```bash
+apbounded-admin generate --out /media/cold/bounded-admin
+```
+
+Use the generated result's `public_key_hex` as the Contract Admin Public Key
+when generating `aplane.falcon1024-admin-allowlist.v1` in apadmin. Keep the
+`.apbounded-admin-key` artifact outside the signer. Ordinary spends use the
+normal client flow. Rekey with the dedicated helper:
+
+```bash
+apbounded-admin rekey --client-data "$APCLIENT_DATA" \
+  --key /media/cold/bounded-admin/<ID>.apbounded-admin-key \
+  <account> to <new-authorizer>
+```
+
+For an air-gapped ceremony, use `prepare-rekey`, move the resulting
+`.apbounded-admin-request` to the ceremony machine, run `apbounded-admin sign`,
+and return only the `.apbounded-admin-signature` file to `complete`. Loss of
+every artifact copy or its passphrase permanently removes the admin-key rekey
+path; ordinary policy-compliant spending can continue.
+
+During offline `sign`, built-in network names are verified against their
+canonical genesis hashes. Custom network names are marked as not independently
+verified offline because their name-to-hash mapping exists only in the online
+client configuration. Confirm the displayed genesis hash as part of a custom
+network ceremony; `complete` verifies it against the selected configured
+network before submission.
+
+The maximum policy cell has 30 recipients and 30 asset IDs. It needs an
+eight-transaction LogicSig budget group and remains viable under the compiled
+10,000 microAlgo fee ceiling only when the network minimum fee is at most
+1,250 microAlgos.
 
 ## YAML Templates
 

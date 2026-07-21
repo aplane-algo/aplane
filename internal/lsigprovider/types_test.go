@@ -160,3 +160,99 @@ func TestValidateAndOrderArgsRejectsLeftShift(t *testing.T) {
 		t.Fatalf("args = %v, want [vb]", args)
 	}
 }
+
+func TestNormalizeCreationParamsCanonicalizesBytesHex(t *testing.T) {
+	defs := []ParameterDef{{
+		Name: "bounded_admin_public_key",
+		Type: "bytes",
+	}}
+
+	for _, tc := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"prefixed uppercase", "0xAB12CD", "ab12cd"},
+		{"uppercase prefix", "0XAB12CD", "ab12cd"},
+		{"uppercase", "AB12CD", "ab12cd"},
+		{"surrounding whitespace", " ab12cd ", "ab12cd"},
+		{"already canonical", "ab12cd", "ab12cd"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NormalizeCreationParams(map[string]string{"bounded_admin_public_key": tc.input}, defs)
+			if err != nil {
+				t.Fatalf("NormalizeCreationParams() error = %v", err)
+			}
+			if got["bounded_admin_public_key"] != tc.want {
+				t.Fatalf("bounded_admin_public_key = %q, want %q", got["bounded_admin_public_key"], tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeCreationParamsRejectsInvalidBytesHex(t *testing.T) {
+	defs := []ParameterDef{{Name: "k", Type: "bytes"}}
+
+	for _, input := range []string{"0x", "zz", "abc"} {
+		if _, err := NormalizeCreationParams(map[string]string{"k": input}, defs); err == nil {
+			t.Fatalf("NormalizeCreationParams(%q) error = nil, want invalid hex error", input)
+		}
+	}
+}
+
+func TestNormalizeCreationParamsMaterializesCanonicalDefaults(t *testing.T) {
+	defs := []ParameterDef{
+		{Name: "limit", Type: "uint64", Default: "100"},
+		{Name: "proof", Type: "bytes", Default: "0xAB12"},
+		{Name: "rounds", Type: "uint64[]", Default: "10, 2"},
+	}
+
+	for _, tc := range []struct {
+		name   string
+		params map[string]string
+	}{
+		{name: "nil", params: nil},
+		{name: "missing", params: map[string]string{}},
+		{name: "empty", params: map[string]string{"limit": "", "proof": "", "rounds": ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NormalizeCreationParams(tc.params, defs)
+			if err != nil {
+				t.Fatalf("NormalizeCreationParams() error = %v", err)
+			}
+			if got["limit"] != "100" || got["proof"] != "ab12" || got["rounds"] != "2,10" {
+				t.Fatalf("NormalizeCreationParams() = %#v, want canonical defaults", got)
+			}
+		})
+	}
+
+	params := map[string]string{"limit": "200"}
+	got, err := NormalizeCreationParams(params, defs)
+	if err != nil {
+		t.Fatalf("NormalizeCreationParams(explicit) error = %v", err)
+	}
+	if got["limit"] != "200" {
+		t.Fatalf("explicit limit = %q, want 200", got["limit"])
+	}
+	if params["proof"] != "" || params["rounds"] != "" {
+		t.Fatal("NormalizeCreationParams mutated the caller's map")
+	}
+}
+
+func TestNormalizeCreationParamsPreservesNilWithoutDefaults(t *testing.T) {
+	got, err := NormalizeCreationParams(nil, []ParameterDef{{Name: "limit", Type: "uint64"}})
+	if err != nil {
+		t.Fatalf("NormalizeCreationParams() error = %v", err)
+	}
+	if got != nil {
+		t.Fatalf("NormalizeCreationParams() = %#v, want nil", got)
+	}
+
+	got, err = NormalizeCreationParams(nil, []ParameterDef{{Name: "required_limit", Type: "uint64", Required: true, Default: "100"}})
+	if err != nil {
+		t.Fatalf("NormalizeCreationParams(required) error = %v", err)
+	}
+	if got != nil {
+		t.Fatalf("NormalizeCreationParams(required) = %#v, want nil so validation rejects the missing value", got)
+	}
+}

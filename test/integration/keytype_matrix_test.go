@@ -25,7 +25,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
-const matrixGroupSize = 16
+const (
+	matrixGroupSize      = 16
+	matrixAccountFunding = 500_000
+)
 
 func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	lockOnDisconnect := false
@@ -161,7 +164,7 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	generated := make([]includedKeyTypeAccount, 0, len(cases))
 	for _, tc := range cases {
 		address := mustAdminGenerateKey(t, signerClient, signerd, tc.keyType, tc.params)
-		if err := funder.FundMicroAlgosAndWait(address, 500_000); err != nil {
+		if err := funder.FundMicroAlgosAndWait(address, matrixAccountFunding); err != nil {
 			t.Fatalf("failed to fund %s account %s: %v", tc.keyType, address, err)
 		}
 		generated = append(generated, includedKeyTypeAccount{
@@ -263,9 +266,14 @@ type matrixSignTxn struct {
 
 func (a includedKeyTypeAccount) positiveSignTxn(t *testing.T, sp types.SuggestedParams, destination string) matrixSignTxn {
 	t.Helper()
+	txn := mustPaymentTxnForMatrix(t, sp, a.address, destination, "keytype-matrix-positive", "", a.positiveFirstValid)
+	if uint64(txn.Fee) >= matrixAccountFunding {
+		t.Fatalf("matrix transaction fee %d exhausts account funding %d", txn.Fee, matrixAccountFunding)
+	}
+	txn.Amount = types.MicroAlgos(matrixAccountFunding - uint64(txn.Fee))
 	return matrixSignTxn{
 		authAddress: a.address,
-		txn:         mustPaymentTxnForMatrix(t, sp, a.address, destination, "keytype-matrix-positive", destination, a.positiveFirstValid),
+		txn:         txn,
 		lsigArgs:    a.positiveArgs,
 	}
 }

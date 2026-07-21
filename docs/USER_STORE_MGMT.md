@@ -10,6 +10,7 @@ This guide explains how to back up and restore your keys.
 - [Managed Backup with apstore](#managed-backup-with-apstore)
 - [Keystore Management](#keystore-management)
 - [Restoring Keys](#restoring-keys)
+- [External Contract Admin Artifacts](#external-contract-admin-artifacts)
 - [Security Best Practices](#security-best-practices)
 - [Command Reference](#command-reference)
 - [Troubleshooting](#troubleshooting)
@@ -485,6 +486,33 @@ rebuild`, start `apsigner`, unlock the identity, and verify the restored
 addresses in apadmin.
 
 ---
+
+## External Contract Admin Artifacts
+
+Bounded contract-admin private authority is stored only in encrypted
+`.apbounded-admin-key` artifacts managed by `apbounded-admin`. It is never an
+apsigner `.key`, an `apstore` `.apb`, or part of signer backup/restore. Do not
+put these files in the signer data directory or import them with `apstore`.
+
+Keep multiple independently protected copies and protect the artifact
+passphrase separately. Test each copy periodically:
+
+```bash
+apbounded-admin inspect /media/cold/<CONTRACT_ADMIN_KEY_ID>.apbounded-admin-key
+apbounded-admin verify /media/cold/<CONTRACT_ADMIN_KEY_ID>.apbounded-admin-key
+```
+
+The `.apbounded-admin-key.json` sidecar contains only public convenience data;
+the encrypted artifact header is self-sufficient. Losing every artifact copy
+or its passphrase permanently removes every admin-key operation from the
+immutable bounded LogicSig. Ordinary spending remains possible only within its
+compiled policy.
+
+Separated ceremonies additionally use `.apbounded-admin-request` request files
+and `.apbounded-admin-signature` response files. They contain no private key material and are not
+`apstore` backups, but they bind short-lived signing authority for one exact
+transaction. Store or destroy them according to the operator's ceremony audit
+policy. They cannot recover a lost `.apbounded-admin-key` artifact.
 
 ## Security Best Practices
 

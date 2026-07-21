@@ -17,6 +17,7 @@ type Info struct {
 	Type        string `json:"type"`
 	Required    bool   `json:"required,omitempty"`
 	ByteLength  int    `json:"byte_length,omitempty"`
+	MaxSize     int    `json:"max_size,omitempty"`
 }
 
 // FromRuntimeDefs projects provider runtime-argument definitions into the
@@ -34,6 +35,7 @@ func FromRuntimeDefs(defs []lsigprovider.RuntimeArgDef) []Info {
 			Type:        def.Type,
 			Required:    def.Required,
 			ByteLength:  def.ByteLength,
+			MaxSize:     def.MaxSize,
 		}
 	}
 	return out
@@ -54,6 +56,7 @@ func ToRuntimeDefs(args []Info) []lsigprovider.RuntimeArgDef {
 			Type:        arg.Type,
 			Required:    arg.Required,
 			ByteLength:  arg.ByteLength,
+			MaxSize:     arg.MaxSize,
 		}
 	}
 	return out

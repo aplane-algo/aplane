@@ -243,6 +243,13 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 		map[string]string{"ADDR1": "ed25519"},
 		map[string]int{"ADDR1": 123},
 	)
+	ir.keysLock.Lock()
+	ir.keyMetadata["ADDR1"] = KeyPublicMetadata{
+		Category:     "governance",
+		PublicKeyHex: "abcd",
+		Parameters:   map[string]string{"purpose": "rekey"},
+	}
+	ir.keysLock.Unlock()
 
 	snapshot := ir.KeyIndexSnapshot()
 	if snapshot.Revision != 1 {
@@ -257,10 +264,23 @@ func TestKeyIndexSnapshotMaterializesConsistentCopy(t *testing.T) {
 	if got := snapshot.LSigSizes["ADDR1"]; got != 123 {
 		t.Fatalf("snapshot lsig size = %d, want 123", got)
 	}
+	if got := snapshot.KeyMetadata["ADDR1"].Parameters["purpose"]; got != "rekey" {
+		t.Fatalf("snapshot key metadata purpose = %q, want rekey", got)
+	}
 
 	snapshot.KeyFiles["ADDR1"] = "mutated.key"
 	snapshot.KeyTypes["ADDR1"] = "mutated"
 	snapshot.LSigSizes["ADDR1"] = 999
+	metadata := snapshot.KeyMetadata["ADDR1"]
+	metadata.Category = "mutated"
+	metadata.Parameters["purpose"] = "mutated"
+	snapshot.KeyMetadata["ADDR1"] = metadata
+	if got := ir.keyMetadata["ADDR1"].Category; got != "governance" {
+		t.Fatalf("runtime metadata category = %q after caller mutation, want governance", got)
+	}
+	if got := ir.keyMetadata["ADDR1"].Parameters["purpose"]; got != "rekey" {
+		t.Fatalf("runtime metadata purpose = %q after caller mutation, want rekey", got)
+	}
 	ir.PublishSnapshot(
 		map[string]string{"ADDR2": "keys/ADDR2.key"},
 		map[string]string{"ADDR2": "aplane.falcon1024.v1"},

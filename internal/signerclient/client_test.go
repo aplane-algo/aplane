@@ -580,6 +580,38 @@ func TestRequestGroupSign_Success(t *testing.T) {
 	}
 }
 
+func TestRequestBoundedAdmin_Success(t *testing.T) {
+	response := signerapi.BoundedAdminPartialResponse{
+		Schema:        signerapi.BoundedAdminPartialSchemaV1,
+		Operation:     signerapi.BoundedAdminOperationRekey,
+		Transactions:  []string{"5458aa"},
+		PartialSigned: []string{"aabb"},
+		TargetIndex:   0,
+	}
+	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/sign/bounded-admin" || req.Method != http.MethodPost {
+			t.Fatalf("request = %s %s, want POST /sign/bounded-admin", req.Method, req.URL.Path)
+		}
+		var got signerapi.BoundedAdminRequest
+		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got.RequestID == "" || got.Operation != signerapi.BoundedAdminOperationRekey || len(got.Requests) != 1 {
+			t.Fatalf("request = %#v", got)
+		}
+		return mockResponse(http.StatusOK, jsonBody(t, response)), nil
+	})
+	c.cacheApprovalWaitSeconds(60)
+
+	got, err := c.RequestBoundedAdmin(signerapi.BoundedAdminOperationRekey, []signerapi.SignRequest{{TxnBytesHex: "aabb", AuthAddress: "ADDR1"}})
+	if err != nil {
+		t.Fatalf("RequestBoundedAdmin() error = %v", err)
+	}
+	if got.Schema != signerapi.BoundedAdminPartialSchemaV1 || got.PartialSigned[0] != "aabb" {
+		t.Fatalf("response = %#v", got)
+	}
+}
+
 func TestRequestGroupSign_ErrorField(t *testing.T) {
 	resp := signerapi.GroupSignResponse{Error: "rejected by policy"}
 	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {

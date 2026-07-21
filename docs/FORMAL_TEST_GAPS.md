@@ -48,6 +48,17 @@ stage. Existing formal models do not model SSH transport authentication, so no
 modeled invariant changed, but any future transport-boundary model must use
 this two-stage boundary rather than the former token-in-username assumption.
 
+**Model drift: bounded DSA planning and argument assembly.**
+The signing-boundary and transaction-planning models predate bounded1's closed
+effect classifier, post-fee-pooling revalidation, path-specific LogicSig
+argument slots, and external contract-admin partial flow. The implementation
+has independent Go/compiled-TEAL behavior tests and planner/executor integrity
+tests, but no TLA+ model currently represents the invariant that classification
+occurs once at the finalized plan boundary and execution can only assemble the
+planned path from its declared argument sources. Any future signing-authority
+model must include that boundary and must treat derived, runtime, and admin
+slots as distinct authorities.
+
 Otherwise, no actionable test gaps remain. Per-invariant status lives in
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md). The lifecycle L4-L7
 audit is closed by the explicit lease-release and writer-pending tests

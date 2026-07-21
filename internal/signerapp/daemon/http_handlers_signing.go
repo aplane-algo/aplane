@@ -30,6 +30,21 @@ func (fs *Signer) handleSign(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (fs *Signer) handleBoundedAdmin(w http.ResponseWriter, r *http.Request) {
+	ir, req, ok := decodeAuthenticatedJSONRequest[signerapi.BoundedAdminRequest](fs, w, r, http.MethodPost)
+	if !ok {
+		return
+	}
+
+	result, err := fs.restServiceWithSigningAudit(fs.signingAuditLogger(r)).PrepareBoundedAdmin(r.Context(), ir, req)
+	if err != nil {
+		writeServiceErrorJSON(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 // handleSignComponent handles the /sign/component endpoint for sentry MVP
 // role-separated component signatures.
 func (fs *Signer) handleSignComponent(w http.ResponseWriter, r *http.Request) {

@@ -398,14 +398,37 @@ func (c *Client) RequestGroupSignWithContext(ctx context.Context, requests []sig
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	var groupResp signerapi.GroupSignResponse
+	err = c.postSignApprovalRequest(ctx, "/sign", requestID, jsonBody, func(resp *http.Response) error {
+		if err := json.NewDecoder(resp.Body).Decode(&groupResp); err != nil {
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
+		if groupResp.Error != "" {
+			return fmt.Errorf("group signing failed: %s", groupResp.Error)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &groupResp, nil
+}
+
+// postSignApprovalRequest POSTs a sign-family request that may park on
+// operator approval and owns the shared cancel/timeout choreography for every
+// such endpoint: the approval-wait progress lines, the request deadline, and
+// canceling the pending approval server-side when the context ends while the
+// request is in flight. decode consumes the 200 response body; the request
+// context stays alive until it returns.
+func (c *Client) postSignApprovalRequest(ctx context.Context, path, requestID string, jsonBody []byte, decode func(*http.Response) error) error {
 	c.discoverApprovalWait(ctx)
 
 	w := c.progressWriter()
 	_, _ = fmt.Fprintln(w, "Waiting for approval from Signer...")
 
-	req, err := http.NewRequest("POST", c.BaseURL+"/sign", bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest(http.MethodPost, c.BaseURL+path, bytes.NewReader(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -448,7 +471,7 @@ func (c *Client) RequestGroupSignWithContext(ctx context.Context, requests []sig
 		if reqCtx.Err() != nil {
 			sendCancel()
 		}
-		return nil, fmt.Errorf("failed to make request to Signer: %w", err)
+		return fmt.Errorf("failed to make request to Signer: %w", err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -457,20 +480,53 @@ func (c *Client) RequestGroupSignWithContext(ctx context.Context, requests []sig
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, httpStatusError(resp)
+		return httpStatusError(resp)
 	}
-
-	var groupResp signerapi.GroupSignResponse
-	if err := json.NewDecoder(resp.Body).Decode(&groupResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := decode(resp); err != nil {
+		return err
 	}
-
-	if groupResp.Error != "" {
-		return nil, fmt.Errorf("group signing failed: %s", groupResp.Error)
-	}
-
 	_, _ = fmt.Fprintln(w, "Approved by Signer")
-	return &groupResp, nil
+	return nil
+}
+
+// RequestBoundedAdmin asks the signer for the spending half of one external
+// contract-admin operation. The returned object is not submission-ready.
+func (c *Client) RequestBoundedAdmin(operation string, requests []signerapi.SignRequest) (*signerapi.BoundedAdminPartialResponse, error) {
+	return c.RequestBoundedAdminWithContext(context.Background(), operation, requests)
+}
+
+func (c *Client) RequestBoundedAdminWithContext(ctx context.Context, operation string, requests []signerapi.SignRequest) (*signerapi.BoundedAdminPartialResponse, error) {
+	requestID, err := newSignRequestID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sign request ID: %w", err)
+	}
+	reqBody := signerapi.BoundedAdminRequest{RequestID: requestID, Operation: operation, Requests: requests}
+	if err := reqBody.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid bounded-admin request: %w", err)
+	}
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal bounded-admin request: %w", err)
+	}
+
+	var partial signerapi.BoundedAdminPartialResponse
+	err = c.postSignApprovalRequest(ctx, "/sign/bounded-admin", requestID, jsonBody, func(resp *http.Response) error {
+		decoder := json.NewDecoder(io.LimitReader(resp.Body, 512*1024))
+		if err := decoder.Decode(&partial); err != nil {
+			return fmt.Errorf("failed to decode bounded-admin response: %w", err)
+		}
+		if partial.Schema != signerapi.BoundedAdminPartialSchemaV1 {
+			return fmt.Errorf("unsupported bounded-admin partial schema %q", partial.Schema)
+		}
+		if partial.Operation != operation {
+			return fmt.Errorf("bounded-admin response operation %q does not match request %q", partial.Operation, operation)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &partial, nil
 }
 
 // RequestComponentSign sends a role-specific component-signing request to

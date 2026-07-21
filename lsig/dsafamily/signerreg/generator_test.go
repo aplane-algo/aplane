@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	keygenreg "github.com/aplane-algo/aplane/internal/keygen"
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
@@ -152,6 +153,25 @@ func (unsaltedTestDSA) DeriveLsig(context.Context, []byte, map[string]string) ([
 	return nil, "", fmt.Errorf("DeriveLsig should not be called without SaltedDeriver")
 }
 
+type boundedGeneratorTestDSA struct{ testFalcon1024V1 }
+
+func (*boundedGeneratorTestDSA) KeyType() string       { return "test.generator-bounded.v1" }
+func (*boundedGeneratorTestDSA) RoutingFamily() string { return "generator-bounded" }
+func (*boundedGeneratorTestDSA) BaseKeyType() string   { return "aplane.falcon1024.v1" }
+func (*boundedGeneratorTestDSA) BuildBoundedAuthorizationMetadata(_ []byte, _ map[string]string, bytecode []byte) (*boundedmeta.Metadata, error) {
+	return &boundedmeta.Metadata{
+		Contract:                boundedmeta.ContractV1,
+		BaseSignatureArgLayout:  boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}},
+		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, false),
+		SpendEffects:            []string{"pay"},
+		MaxFee:                  1_000,
+		AdminOperations:         []boundedmeta.AdminOperation{},
+		RuntimeArgs:             []boundedmeta.RuntimeArg{},
+		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
+		PostSigningLogicSigSize: len(bytecode) + 1280,
+	}, nil
+}
+
 // testMasterKey is a 32-byte key for testing (AES-256 requires exactly 32 bytes)
 var testMasterKey = []byte("test-master-key-32-bytes-long!!!")
 
@@ -255,6 +275,40 @@ func TestGenerateFromSeed(t *testing.T) {
 
 	if result1.PublicKeyHex != result2.PublicKeyHex {
 		t.Error("Same seed should produce same public key")
+	}
+}
+
+func TestGenerateFromSeedPersistsBoundedMetadataAfterDerivation(t *testing.T) {
+	paths, cleanup := setupTestKeystore(t)
+	defer cleanup()
+	const keyType = "test.generator-bounded.v1"
+	dsa := &boundedGeneratorTestDSA{}
+	logicsigdsa.Register(dsa)
+	ops := &testFalcon1024V1{}
+	generator := NewLogicSigGenerator("generator-bounded", map[string]LogicSigKeygenOps{keyType: ops})
+	seed := make([]byte, 64)
+	for i := range seed {
+		seed[i] = byte(i + 1)
+	}
+	result, err := generator.GenerateFromSeed(context.Background(), paths, testIdentityID, seed, testMasterKey, keyType, nil)
+	if err != nil {
+		t.Fatalf("GenerateFromSeed() error = %v", err)
+	}
+	keyJSON, err := apkeys.ReadDecryptedKeyJSONWithMasterKey(result.KeyFiles.PrivateFile, testMasterKey)
+	if err != nil {
+		t.Fatalf("ReadDecryptedKeyJSONWithMasterKey() error = %v", err)
+	}
+	defer crypto.ZeroBytes(keyJSON)
+	payload, err := apkeys.ParsePayload(keyJSON)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
+	}
+	defer payload.ZeroSecrets()
+	if payload.SigningMetadataVersion != apkeys.BoundedSigningMetadataVersion || payload.BoundedAuthorization == nil {
+		t.Fatalf("bounded authorization metadata = %#v", payload.BoundedAuthorization)
+	}
+	if got, want := payload.BoundedAuthorization.PostSigningLogicSigSize, len(payload.LogicSigBytecode)+1280; got != want {
+		t.Fatalf("PostSigningLogicSigSize = %d, want %d", got, want)
 	}
 }
 

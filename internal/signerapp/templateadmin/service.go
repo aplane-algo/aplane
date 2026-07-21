@@ -768,6 +768,7 @@ func runtimeArgInfos(args []lsigprovider.RuntimeArgDef) []signerapi.RuntimeArgIn
 			Type:        a.Type,
 			Required:    a.Required,
 			ByteLength:  a.ByteLength,
+			MaxSize:     a.MaxSize,
 		}
 	}
 	return out

@@ -20,7 +20,7 @@ type AuditLogger interface {
 }
 
 type VerifySignableKeysFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, passthroughIndices, foreignIndices map[int]bool) (signableCount int, err *ServiceError)
-type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, passthroughIndices, foreignIndices map[int]bool, hasPassthrough, isPreGrouped bool) (dummiesNeeded int, lsigIndices []int, err *ServiceError)
+type CalculateDummiesFunc func(snapshot PlannerIdentitySnapshot, identityID string, requests []signerapi.SignRequest, txns []types.Transaction, boundedItems []*boundedPlanItem, passthroughIndices, foreignIndices map[int]bool, hasPassthrough, isPreGrouped bool) (dummiesNeeded int, lsigIndices []int, err *ServiceError)
 type BuildFinalGroupFunc func(txns []types.Transaction, dummiesNeeded int, lsigIndices []int, isPreGrouped bool) (allTxns, dummyTxns []types.Transaction, feeInfo DummyFeeInfo, needsRegroup bool, err *ServiceError)
 type GenerateTxnDescriptionFunc func(txnBytesHex string) string
 
@@ -49,6 +49,9 @@ type PlanResult struct {
 	// KnownAddresses is the signer-local address set materialized from the same
 	// key snapshot used for planning.
 	KnownAddresses map[string]bool
+	// BoundedItems[i] records the signer-classified path for a bounded key after
+	// all group and fee mutations. Other entries are nil.
+	BoundedItems []*boundedPlanItem
 }
 
 // SnapshotFunc retrieves the identity snapshot needed for planning.
@@ -142,12 +145,31 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		console.Printf("[GROUP] %d foreign transaction(s) will not be signed\n", len(foreignIndices))
 	}
 
-	dummiesNeeded, lsigIndices, err := p.CalculateDummies(snapshot, identityID, req.Requests, txns, passthroughIndices, foreignIndices, hasPassthrough, isPreGrouped)
+	// Classify bounded requests before budgeting: the admin-key rekey slot must
+	// reserve the contract-admin signature bytes that ordinary spends never
+	// carry. This pass sees pre-pooling fees, so it is sizing input only — the
+	// authoritative classification runs on the finalized group below.
+	sizingBoundedItems, err := resolveBoundedPlanItems(snapshot, req.Requests, txns, passthroughIndices, foreignIndices)
+	if err != nil {
+		return nil, err
+	}
+
+	dummiesNeeded, lsigIndices, err := p.CalculateDummies(snapshot, identityID, req.Requests, txns, sizingBoundedItems, passthroughIndices, foreignIndices, hasPassthrough, isPreGrouped)
 	if err != nil {
 		return nil, err
 	}
 
 	allTxns, dummyTxns, feeInfo, needsRegroup, err := p.BuildFinalGroup(txns, dummiesNeeded, lsigIndices, isPreGrouped)
+	if err != nil {
+		return nil, err
+	}
+
+	// Re-classify against the finalized transactions: pooled dummy fees mutate
+	// the original LogicSig slots, and the bounded fee ceiling must hold for the
+	// fees actually signed. Fee pooling cannot change a transaction's shape, so
+	// the sizing pass and this pass always agree on the path. Dummies are
+	// appended after the originals, so request indices are unchanged.
+	boundedItems, err := resolveBoundedPlanItems(snapshot, req.Requests, allTxns, passthroughIndices, foreignIndices)
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +198,7 @@ func (p *Planner) PlanGroup(identityID string, req signerapi.GroupSignRequest) (
 		HasPassthrough:        hasPassthrough,
 		AuthKeyTypes:          authKeyTypes,
 		KnownAddresses:        knownAddresses,
+		BoundedItems:          boundedItems,
 	}, nil
 }
 

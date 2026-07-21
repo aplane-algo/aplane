@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 derivation_version: 2
 template_type: composed
 base_key_type: aplane.ed25519.v1
@@ -9,6 +9,18 @@ version: 1
 display_name: "Ed25519 Allowlist"
 description: "Ed25519 signature restricted to a fixed set of receiver addresses"
 
+bounded:
+  contract: bounded1
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  admin_operations:
+    - kind: rekey
+      authorization: spending_key
+      policy_gate: none
+  layer3:
+    policy: fixed_allowlist
+    recipients_parameter: recipients
+
 parameters:
   - name: recipients
     type: address[]
@@ -18,94 +30,3 @@ parameters:
     label: "Allowlisted Addresses"
     description: "Comma-separated Algorand addresses that may receive funds from this Ed25519 LogicSig"
     placeholder: "ADDR1, ADDR2, ADDR3"
-
-teal: |
-  // Only pay/axfer have destination fields this allowlist constrains.
-  // Other transaction types keep the base Ed25519 authorization surface.
-  txn TypeEnum
-  int pay
-  ==
-  bnz pay_path
-  txn TypeEnum
-  int axfer
-  ==
-  bnz asset_path
-  b allow
-
-  // --- asset transfer path ---
-  asset_path:
-  txn AssetReceiver
-  txn Sender
-  ==
-  bnz allow_asset_receiver
-  txn AssetReceiver
-  callsub is_allowlisted
-  bnz allow_asset_receiver
-  err
-
-  allow_asset_receiver:
-  txn AssetCloseTo
-  global ZeroAddress
-  ==
-  bnz allow_asset_close
-  txn AssetCloseTo
-  txn Sender
-  ==
-  bnz allow_asset_close
-  txn AssetCloseTo
-  callsub is_allowlisted
-  bnz allow_asset_close
-  err
-
-  allow_asset_close:
-  b allow
-
-  // --- payment path ---
-  pay_path:
-      txn Receiver
-      txn Sender
-      ==
-      bnz allow_pay_receiver
-      txn Receiver
-      callsub is_allowlisted
-      bnz allow_pay_receiver
-      err
-
-  allow_pay_receiver:
-      txn CloseRemainderTo
-      global ZeroAddress
-      ==
-      bnz allow_pay_close
-      txn CloseRemainderTo
-      txn Sender
-      ==
-      bnz allow_pay_close
-      txn CloseRemainderTo
-      callsub is_allowlisted
-      bnz allow_pay_close
-      err
-
-  allow_pay_close:
-      b allow
-
-  allow:
-      b end_checks
-
-  is_allowlisted:
-      {{range @recipients}}
-      dup
-      byte {{.}}
-      ==
-      bnz allowlisted
-      {{end}}
-      pop
-      int 0
-      retsub
-
-  allowlisted:
-      pop
-      int 1
-      retsub
-
-  // === APPROVED PATHS FALL THROUGH TO COMPOSER RETURN ===
-  end_checks:

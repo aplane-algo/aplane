@@ -25,6 +25,14 @@ transaction bytes.
 
 ## Roles And Boundaries
 
+Bounded contract administration is not a sentry role.
+Bounded accounts advertise the distinct `bounded1` signing flow, use no sentry
+key discovery, and never call `/sign/component`, `/sign/assemble`, or
+`/simulate/guarded`. Apsigner produces a spending partial through
+`/sign/bounded-admin`; the separately held `.apbounded-admin-key` authority is
+applied by `apbounded-admin`. A contract-admin key cannot serve as a sentry
+component key, and a sentry key cannot satisfy a bounded admin operation.
+
 Every signer data root has one root `node.yaml` role:
 
 | Role | May hold | Must not hold |

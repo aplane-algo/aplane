@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 
@@ -123,6 +124,83 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 			}
 			if !maps.Equal(parsed.Parameters, tt.payload.Parameters) {
 				t.Fatalf("round trip parameters = %#v, want %#v", parsed.Parameters, tt.payload.Parameters)
+			}
+		})
+	}
+}
+
+func TestBoundedPayloadMetadataRoundTrip(t *testing.T) {
+	bytecode := canonicalOffCurveBytecode(t)
+	payload := NewDSALSigPayload(
+		"test.bounded.v1", "test.base.v1", []byte{0x01}, []byte{0x02}, nil,
+		bytecode, 0, "", []StoredSigningArg{{Name: "legacy_runtime_arg", Type: "bytes", MaxSize: 32}}, "1:bounded",
+	)
+	defer payload.ZeroSecrets()
+	payload.CreatedAt = canonicalTestTime
+	metadata := &boundedmeta.Metadata{
+		Contract: boundedmeta.ContractV1,
+		BaseSignatureArgLayout: boundedmeta.SignatureArgLayout{
+			Count: 1, MaxSizes: []int{4},
+		},
+		ArgumentLayout:          boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{4}}, false),
+		SpendEffects:            []string{"pay", "axfer"},
+		MaxFee:                  1_000,
+		AdminOperations:         []boundedmeta.AdminOperation{{Kind: boundedmeta.AdminOperationRekey, Authorization: boundedmeta.AdminAuthorizationSpend, PolicyGate: boundedmeta.PolicyGateNone}},
+		Layer3Policy:            boundedmeta.Layer3PolicyCustom,
+		PostSigningLogicSigSize: len(bytecode) + 4,
+	}
+	if err := payload.SetBoundedAuthorization(metadata); err != nil {
+		t.Fatalf("SetBoundedAuthorization() error = %v", err)
+	}
+	if payload.SigningArgs != nil {
+		t.Fatalf("SetBoundedAuthorization() retained legacy signing args: %#v", payload.SigningArgs)
+	}
+
+	encoded, err := MarshalPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalPayload() error = %v", err)
+	}
+	defer zeroTestBytes(encoded)
+	parsed, err := ParsePayload(encoded)
+	if err != nil {
+		t.Fatalf("ParsePayload() error = %v", err)
+	}
+	defer parsed.ZeroSecrets()
+	if parsed.SigningMetadataVersion != BoundedSigningMetadataVersion {
+		t.Fatalf("SigningMetadataVersion = %d, want %d", parsed.SigningMetadataVersion, BoundedSigningMetadataVersion)
+	}
+	if got := parsed.BoundedAuthorization; got == nil || got.Contract != boundedmeta.ContractV1 || got.PostSigningLogicSigSize != len(bytecode)+4 {
+		t.Fatalf("BoundedAuthorization = %#v", got)
+	}
+
+	metadata.SpendEffects[0] = "tampered"
+	if parsed.BoundedAuthorization.SpendEffects[0] != "pay" {
+		t.Fatal("bounded authorization metadata was not deep-copied")
+	}
+}
+
+func TestParsePayloadRejectsInvalidBoundedMetadata(t *testing.T) {
+	bytecodeHex := hex.EncodeToString(canonicalOffCurveBytecode(t))
+	base := `{"format_version":1}`
+	base = strings.TrimSuffix(base, `}`) + `,"category":"dsa_lsig","key_type":"test.bounded.v1","public_key":"01","private_key":"02","lsig_bytecode":"` + bytecodeHex + `","salt_counter":0,"signing_metadata_version":2,"base_key_type":"test.base.v1","bounded_authorization":{"contract":"bounded1","base_signature_arg_layout":{"count":1,"max_sizes":[4]},"spend_effects":["pay"],"max_fee":1000,"admin_operations":[],"runtime_args":[],"derived_args":[],"argument_layout":[{"index":0,"name":"base_signature_0","source":"base_signature","max_size":4,"paths":{"spend":"required","spending_rekey":"required","admin_rekey":"required"}}],"layer3_policy":"custom","post_signing_lsig_size":9999},"created_at":"2026-07-10T12:34:56Z"}`
+	tests := []struct {
+		name string
+		data string
+		want string
+	}{
+		{name: "size mismatch", data: base, want: "does not match derived size"},
+		{name: "unknown nested field", data: strings.Replace(base, `"contract":"bounded1"`, `"contract":"bounded1","future":true`, 1), want: "unknown field"},
+		{name: "duplicate nested field", data: strings.Replace(base, `"contract":"bounded1"`, `"contract":"bounded1","contract":"bounded1"`, 1), want: `duplicate object member "contract"`},
+		{name: "wrong metadata version", data: strings.Replace(base, `"signing_metadata_version":2`, `"signing_metadata_version":1`, 1), want: "requires signing_metadata_version 2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload, err := ParsePayload([]byte(tt.data))
+			if payload != nil {
+				payload.ZeroSecrets()
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ParsePayload() error = %v, want %q", err, tt.want)
 			}
 		})
 	}
@@ -306,7 +384,7 @@ func TestParsePayloadRejectsUppercaseHex(t *testing.T) {
 	if parsed != nil {
 		parsed.ZeroSecrets()
 	}
-	if err == nil || !strings.Contains(err.Error(), "public_key must use lowercase hex") {
+	if err == nil || !strings.Contains(err.Error(), "public_key must be non-empty lowercase hex") {
 		t.Fatalf("ParsePayload() error = %v, want lowercase rejection", err)
 	}
 }

@@ -11,8 +11,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/sshtunnel"
 )
+
+func TestNewSSHAdminUsesCurrentProductIdentity(t *testing.T) {
+	client := NewSSHAdmin("localhost", 22, "token", "identity", "known-hosts")
+	if client.identityID != auth.CurrentProductIdentityID() {
+		t.Fatalf("identityID = %q, want %q", client.identityID, auth.CurrentProductIdentityID())
+	}
+}
+
+func TestNewSSHAdminForIdentityUsesExplicitIdentity(t *testing.T) {
+	client := NewSSHAdminForIdentity("localhost", 22, "alice", "token", "identity", "known-hosts")
+	if client.identityID != "alice" {
+		t.Fatalf("identityID = %q, want alice", client.identityID)
+	}
+}
 
 func TestSSHAdminClientCloseClosesClientWithoutStream(t *testing.T) {
 	c := &SSHAdminClient{

@@ -4,7 +4,6 @@
 package keys
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
@@ -17,8 +16,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/addressderive"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/logicsigdsa"
-	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/merkleallowlist"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
@@ -30,45 +27,6 @@ import (
 func TestMain(m *testing.M) {
 	addressderive.RegisterEd25519()
 	os.Exit(m.Run())
-}
-
-type scanSizeTestDSA struct {
-	keyType string
-	sigSize int
-}
-
-func (p scanSizeTestDSA) KeyType() string { return p.keyType }
-
-func (p scanSizeTestDSA) RoutingFamily() string { return "scan-size-test" }
-
-func (p scanSizeTestDSA) Version() int { return 1 }
-
-func (p scanSizeTestDSA) Category() string { return lsigprovider.CategoryDSALsig }
-
-func (p scanSizeTestDSA) DisplayName() string { return "Scan Size Test" }
-
-func (p scanSizeTestDSA) Description() string { return "test-only provider" }
-
-func (p scanSizeTestDSA) DisplayColor() string { return "" }
-
-func (p scanSizeTestDSA) CreationParams() []lsigprovider.ParameterDef { return nil }
-
-func (p scanSizeTestDSA) ValidateCreationParams(map[string]string) error { return nil }
-
-func (p scanSizeTestDSA) RuntimeArgs() []lsigprovider.RuntimeArgDef { return nil }
-
-func (p scanSizeTestDSA) BuildArgs(signature []byte, _ map[string][]byte) ([][]byte, error) {
-	return [][]byte{signature}, nil
-}
-
-func (p scanSizeTestDSA) CryptoSignatureSize() int { return p.sigSize }
-
-func (p scanSizeTestDSA) MnemonicScheme() string { return "" }
-
-func (p scanSizeTestDSA) MnemonicWordCount() int { return 0 }
-
-func (p scanSizeTestDSA) DeriveLsig(context.Context, []byte, map[string]string) ([]byte, string, error) {
-	return nil, "", fmt.Errorf("scan-size test provider does not derive LogicSigs")
 }
 
 // testMasterKey generates a 32-byte AES-256 key for test encryption.
@@ -540,51 +498,6 @@ func TestScanKeysDirectoryWithMasterKeyLoadsGenericUnderDerivedAddress(t *testin
 	}
 }
 
-func TestScanKeysDirectoryWithMasterKeyIncludesAllowlistV2ProofBudget(t *testing.T) {
-	const (
-		baseKeyType = "test.scan-size-base.v1"
-		baseSigSize = 123
-	)
-	logicsigdsa.RegisterIfAbsent(scanSizeTestDSA{keyType: baseKeyType, sigSize: baseSigSize})
-
-	masterKey := testMasterKey(t)
-	paths := storepaths.NewPaths(t.TempDir())
-	address, bytecode, counter := saltedLogicSigForScanTest(t)
-	keyJSON := []byte(`{
-		"format_version": 1,
-		"category": "dsa_lsig",
-		"key_type": "` + falcon1024AllowlistV2KeyType + `",
-		"public_key": "01020304",
-		"private_key": "05060708",
-		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
-		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
-		"base_key_type": "` + baseKeyType + `",
-		"parameters": {
-			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
-		},
-		"signing_metadata_version": 1,
-		"created_at": "2026-07-10T12:34:56Z"
-	}`)
-
-	writeKeyFile(t, paths, "default", address, keyJSON, masterKey)
-
-	report, err := ScanKeysDirectoryWithMasterKeyReport(paths, "default", masterKey)
-	if err != nil {
-		t.Fatalf("ScanKeysDirectoryWithMasterKeyReport() error = %v", err)
-	}
-	if len(report.Warnings) != 0 {
-		t.Fatalf("warnings = %#v, want none", report.Warnings)
-	}
-	info, ok := report.Keys[address]
-	if !ok {
-		t.Fatalf("derived address %s not loaded", address)
-	}
-	want := len(bytecode) + baseSigSize + merkleallowlist.ProofSize
-	if info.LsigSize != want {
-		t.Fatalf("LsigSize = %d, want %d", info.LsigSize, want)
-	}
-}
-
 func TestSignerGeneratedDSAArgSizeIncludesCorridorProofBudget(t *testing.T) {
 	if got := signerGeneratedDSAArgSizeForKey(keytypes.CorridorV1); got != merkleallowlist.ProofSize {
 		t.Fatalf("signerGeneratedDSAArgSizeForKey(corridor) = %d, want %d", got, merkleallowlist.ProofSize)
@@ -690,7 +603,7 @@ func TestScanKeysDirectoryWithMasterKeyRejectsDSALSigInvalidBytecode(t *testing.
 	if len(report.Warnings) != 1 {
 		t.Fatalf("warnings = %#v, want one warning", report.Warnings)
 	}
-	if !contains(report.Warnings[0].Reason(), "invalid lsig_bytecode hex") {
+	if !contains(report.Warnings[0].Reason(), "invalid lsig_bytecode") {
 		t.Fatalf("warning reason = %q, want invalid bytecode", report.Warnings[0].Reason())
 	}
 }

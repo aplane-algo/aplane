@@ -63,6 +63,9 @@ func (falconBoundaryTestOps) BuildSignatureArgs(sig []byte) ([][]byte, error) {
 func (falconBoundaryTestOps) BuildVerifyTEAL([]byte) (string, error) {
 	return "txn TxID\narg 0\npushbytes 0x01020304\nfalcon_verify\n", nil
 }
+func (falconBoundaryTestOps) SignatureArgLayout() SignatureArgLayout {
+	return SignatureArgLayout{Count: 1, MaxSizes: []int{4}}
+}
 
 type compileMockTransport struct {
 	bytecode []byte
@@ -631,7 +634,11 @@ func (markerVerifierOps) TEALVersion() int                            { return 1
 func (markerVerifierOps) BuildSignatureArgs([]byte) ([][]byte, error) { return nil, nil }
 func (o markerVerifierOps) BuildVerifyTEAL([]byte) (string, error)    { return o.verifyTEAL, nil }
 
-func TestFalconAllowlistTemplateOnlyAddsDestinationPredicate(t *testing.T) {
+func TestFalconAllowlistTemplateUsesBoundedFixedAllowlist(t *testing.T) {
+	RegisterBase(BaseRegistration{
+		BaseKeyType: "aplane.falcon1024.v1", FamilyName: "falcon1024", Version: 1,
+		Ops: falconBoundaryTestOps{}, NewAddressDeriver: func(string) addressderive.Deriver { return testDeriver{} },
+	})
 	data, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-allowlist.v1.yaml"))
 	if err != nil {
 		t.Fatalf("ReadFile(aplane.falcon1024-allowlist.v1.yaml) error = %v", err)
@@ -641,47 +648,38 @@ func TestFalconAllowlistTemplateOnlyAddsDestinationPredicate(t *testing.T) {
 		t.Fatalf("ParseTemplateSpec() error = %v", err)
 	}
 
-	for _, want := range []string{
-		"// Only pay/axfer have destination fields this allowlist constrains.",
-		"// Other transaction types keep the base Falcon authorization surface.",
-		"asset_path:",
-		"pay_path:",
-	} {
-		if !strings.Contains(spec.TEAL, want) {
-			t.Fatalf("falcon allowlist template missing %q:\n%s", want, spec.TEAL)
-		}
+	if spec.SchemaVersion != 2 || spec.Bounded == nil || spec.Bounded.Layer3 == nil {
+		t.Fatalf("falcon allowlist bounded profile = %#v", spec.Bounded)
 	}
-	normalized := strings.Join(strings.Fields(spec.TEAL), " ")
+	if spec.TEAL != "" {
+		t.Fatalf("framework-owned allowlist declares custom TEAL:\n%s", spec.TEAL)
+	}
+	provider, err := NewProviderFromTemplateSpec(spec)
+	if err != nil {
+		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
+	}
+	teal, err := provider.GenerateTEAL(make([]byte, provider.ops.PublicKeySize()), map[string]string{
+		"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+	})
+	if err != nil {
+		t.Fatalf("GenerateTEAL() error = %v", err)
+	}
+	normalized := strings.Join(strings.Fields(teal), " ")
 	for _, want := range []string{
-		"txn TypeEnum int pay == bnz pay_path",
-		"txn TypeEnum int axfer == bnz asset_path",
-		"bnz asset_path b allow",
-		"txn AssetReceiver txn Sender == bnz allow_asset_receiver",
-		"txn AssetReceiver callsub is_allowlisted bnz allow_asset_receiver",
-		"txn AssetCloseTo global ZeroAddress == bnz allow_asset_close",
-		"txn AssetCloseTo txn Sender == bnz allow_asset_close",
-		"txn AssetCloseTo callsub is_allowlisted bnz allow_asset_close",
-		"txn Receiver txn Sender == bnz allow_pay_receiver",
-		"txn Receiver callsub is_allowlisted bnz allow_pay_receiver",
-		"txn CloseRemainderTo global ZeroAddress == bnz allow_pay_close",
-		"txn CloseRemainderTo txn Sender == bnz allow_pay_close",
-		"txn CloseRemainderTo callsub is_allowlisted bnz allow_pay_close",
+		"txn Fee pushint 10000 <= assert",
+		"txn CloseRemainderTo global ZeroAddress == assert",
+		"txn AssetCloseTo global ZeroAddress == assert",
+		"txn AssetSender global ZeroAddress == assert",
+		"txn Receiver callsub __aplane_bounded1_layer3_recipient_allowed assert",
+		"txn AssetReceiver callsub __aplane_bounded1_layer3_recipient_allowed assert",
+		"txn Amount pushint 0 == assert txn Receiver txn Sender == assert",
 	} {
 		if !strings.Contains(normalized, want) {
-			t.Fatalf("falcon allowlist template missing normalized sequence %q:\n%s", want, spec.TEAL)
+			t.Fatalf("falcon allowlist program missing normalized sequence %q:\n%s", want, teal)
 		}
 	}
-	for _, forbidden := range []string{
-		"int keyreg",
-		"maybe_self_pay",
-		"maybe_self_asset_lifecycle",
-		"txn Amount int 0 ==",
-		"txn AssetAmount int 0 ==",
-		"txn AssetSender",
-	} {
-		if strings.Contains(normalized, forbidden) {
-			t.Fatalf("falcon allowlist template should not add extra Falcon restriction %q:\n%s", forbidden, spec.TEAL)
-		}
+	if strings.Contains(normalized, "int keyreg") || strings.Contains(normalized, "txn AssetCloseTo txn AssetReceiver") {
+		t.Fatalf("falcon allowlist program retained an unbounded effect path:\n%s", teal)
 	}
 }
 
@@ -773,6 +771,9 @@ func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
 	if spec.TemplateMode != "strict" {
 		t.Fatalf("TemplateMode = %q, want strict", spec.TemplateMode)
 	}
+	if spec.SchemaVersion != 2 || spec.Bounded == nil || len(spec.Bounded.DerivedArgs) != 1 || spec.Bounded.DerivedArgs[0].Kind != "merkle_allowlist_proof" {
+		t.Fatalf("bounded Merkle profile = %#v", spec.Bounded)
+	}
 	if len(spec.TemplateVariables) != 1 || spec.TemplateVariables[0].Name != "root" {
 		t.Fatalf("TemplateVariables = %#v, want root variable", spec.TemplateVariables)
 	}
@@ -822,11 +823,14 @@ func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
 
 	for _, want := range []string{
 		"// Template constants\nbytecblock 0x" + hex.EncodeToString(root),
+		"txn CloseRemainderTo\nglobal ZeroAddress\n==\nassert",
+		"txn AssetCloseTo\nglobal ZeroAddress\n==\nassert",
+		"txn AssetSender\nglobal ZeroAddress\n==\nassert",
 		"arg 1\nlen\nint 512\n==\nassert",
-		"byte 0x00\nswap\nconcat\nsha256",
-		"byte 0x01\nswap\nconcat\nsha256",
-		"txn CloseRemainderTo\ntxn Receiver\n==",
-		"txn AssetCloseTo\ntxn AssetReceiver\n==",
+		"pushbytes 0x00\nswap\nconcat\nsha256",
+		"pushbytes 0x01\nswap\nconcat\nsha256",
+		"txn Receiver\ncallsub verify_member\nassert",
+		"txn AssetReceiver\ncallsub verify_member\nassert",
 	} {
 		if !strings.Contains(teal, want) {
 			t.Fatalf("rendered Merkle allowlist TEAL missing %q:\n%s", want, teal)
@@ -838,8 +842,10 @@ func TestFalconMerkleAllowlistTemplateRootProofContract(t *testing.T) {
 	if got := strings.Count(teal, "callsub combine"); got != 16 {
 		t.Fatalf("rendered Merkle allowlist combine count = %d, want 16:\n%s", got, teal)
 	}
-	if strings.Contains(teal, "txn AssetSender") {
-		t.Fatalf("Merkle allowlist should leave AssetSender to base signer policy:\n%s", teal)
+	for _, forbidden := range []string{"txn CloseRemainderTo\ntxn Receiver", "txn AssetCloseTo\ntxn AssetReceiver"} {
+		if strings.Contains(teal, forbidden) {
+			t.Fatalf("bounded Merkle allowlist retained close-out path %q:\n%s", forbidden, teal)
+		}
 	}
 
 	args, err := provider.BuildArgs([]byte{0xaa}, nil)
@@ -898,9 +904,9 @@ func TestFalconAllowlistTemplateRendersMaxRecipientsWithinComposerBoundary(t *te
 
 	verifyIdx := strings.Index(teal, "falcon_verify")
 	assertIdx := strings.Index(teal, "falcon_verify\nassert")
-	suffixIdx := strings.Index(teal, "Only pay/axfer")
-	endIdx := strings.Index(teal, "end_checks:")
-	finalReturn := strings.LastIndex(teal, "int 1\nreturn")
+	suffixIdx := strings.Index(teal, "framework-owned fixed allowlist")
+	endIdx := strings.Index(teal, "__aplane_bounded1_layer3_done:")
+	finalReturn := strings.LastIndex(teal, "pushint 1\nreturn")
 	switch {
 	case verifyIdx < 0:
 		t.Fatalf("rendered TEAL missing Falcon verification:\n%s", teal)
@@ -913,7 +919,7 @@ func TestFalconAllowlistTemplateRendersMaxRecipientsWithinComposerBoundary(t *te
 	case finalReturn < endIdx:
 		t.Fatalf("rendered TEAL must fall through from end_checks to composer return:\n%s", teal)
 	}
-	if strings.Count(teal, "byte 0x") != len(recipients) {
+	if strings.Count(teal, "pushbytes 0x") != len(recipients)+1 {
 		t.Fatalf("rendered TEAL did not expand all recipients as byte literals:\n%s", teal)
 	}
 	if strings.Contains(teal, "addr 0x") || strings.Contains(teal, "{{.") {

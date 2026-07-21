@@ -38,6 +38,36 @@ func (s Service) SignGroup(ctx context.Context, ir *identity.Runtime, req signer
 	}, nil
 }
 
+func (s Service) PrepareBoundedAdmin(ctx context.Context, ir *identity.Runtime, req signerapi.BoundedAdminRequest) (*signerapi.BoundedAdminPartialResponse, *signersigning.ServiceError) {
+	ctx, preErr := ensureSignable(ctx, ir)
+	if preErr != nil {
+		return nil, preErr
+	}
+	if roleErr := requireAccountSigningRole(ir, "preparing bounded admin operation"); roleErr != nil {
+		return nil, roleErr
+	}
+	if s.Deps.NewSigningService == nil {
+		return nil, notConfigured("signing service")
+	}
+
+	ctx, finishSignRequest := ir.BeginSigningRequest(ctx, req.RequestID)
+	defer finishSignRequest()
+
+	result, err := s.Deps.NewSigningService(ir).PrepareBoundedAdminWithContext(ctx, ir.ID(), req, ir.SnapshotKeySession())
+	if err != nil {
+		return nil, err
+	}
+	return &signerapi.BoundedAdminPartialResponse{
+		Schema:        signerapi.BoundedAdminPartialSchemaV1,
+		Operation:     result.Operation,
+		Transactions:  result.Transactions,
+		PartialSigned: result.PartialSigned,
+		TargetIndex:   result.TargetIndex,
+		Authorization: result.Authorization,
+		Mutations:     result.Mutations,
+	}, nil
+}
+
 func (s Service) Plan(ir *identity.Runtime, req signerapi.GroupSignRequest) (*signerapi.GroupPlanResponse, *signersigning.ServiceError) {
 	// Plan takes no context: it never signs, so there is no request to
 	// register or cancel; only the runtime preconditions apply.

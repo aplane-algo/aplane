@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 derivation_version: 2
 template_type: composed
 base_key_type: aplane.falcon1024.v1
@@ -8,6 +8,20 @@ family: falcon1024-allowlist
 version: 2
 display_name: "Falcon-1024 Allowlist v2"
 description: "Allowlist implementation based on a fixed-depth Merkle root with signer-generated 512-byte proofs."
+
+bounded:
+  contract: bounded1
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  admin_operations:
+    - kind: rekey
+      authorization: spending_key
+      policy_gate: none
+  derived_args:
+    - name: merkle_proof
+      kind: merkle_allowlist_proof
+      parameter: recipients
+      max_size: 512
 
 parameters:
   - name: recipients
@@ -36,8 +50,8 @@ teal: |
   // recipients: unique address public keys sorted ascending, leaves
   // sha256(0x00 || pubkey), padded to 65536 leaves with sha256(0x00), and
   // internal nodes sha256(0x01 || min || max).
-  // Close-out is restricted to zero (no close) or the receiver that was just
-  // validated. Other transaction types keep the base Falcon surface.
+  // The bounded1 envelope rejects close-out, clawback, hybrid effects, and
+  // transaction types outside its closed transfer surface before this policy.
 
   txn TypeEnum
   int pay
@@ -47,7 +61,7 @@ teal: |
   int axfer
   ==
   bnz asset_path
-  b allow
+  err
 
   // --- asset transfer path ---
   asset_path:
@@ -57,22 +71,10 @@ teal: |
   bnz allow_asset_receiver
   txn AssetReceiver
   callsub verify_member
-  bnz allow_asset_receiver
-  err
+  assert
 
   allow_asset_receiver:
-  txn AssetCloseTo
-  global ZeroAddress
-  ==
-  bnz allow_asset_close
-  txn AssetCloseTo
-  txn AssetReceiver
-  ==
-  bnz allow_asset_close
-  err
-
-  allow_asset_close:
-  b allow
+  b end_checks
 
   // --- payment path ---
   pay_path:
@@ -82,24 +84,9 @@ teal: |
   bnz allow_pay_receiver
   txn Receiver
   callsub verify_member
-  bnz allow_pay_receiver
-  err
+  assert
 
   allow_pay_receiver:
-  txn CloseRemainderTo
-  global ZeroAddress
-  ==
-  bnz allow_pay_close
-  txn CloseRemainderTo
-  txn Receiver
-  ==
-  bnz allow_pay_close
-  err
-
-  allow_pay_close:
-  b allow
-
-  allow:
   b end_checks
 
   // verify_member: [candidate-address] -> [is_member 0/1]
@@ -111,7 +98,7 @@ teal: |
   int 512
   ==
   assert
-  byte 0x00
+  pushbytes 0x00
   swap
   concat
   sha256
@@ -207,7 +194,7 @@ teal: |
   swap
   combine_ordered:
   concat
-  byte 0x01
+  pushbytes 0x01
   swap
   concat
   sha256

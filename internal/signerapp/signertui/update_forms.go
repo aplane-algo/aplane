@@ -570,6 +570,9 @@ func (m Model) handleParamModalKeys(
 
 	default:
 		input := msg.String()
+		if msg.Type == tea.KeyRunes {
+			input = string(msg.Runes)
+		}
 		if len(input) > 0 && m.forms.generateFocus < len(params) && !isPasteOnlyParam(params[m.forms.generateFocus]) {
 			m = m.appendToCurrentParam(input, params)
 		}
@@ -611,7 +614,7 @@ func normalizePastedParam(input string, paramDef lsigprovider.ParameterDef) (str
 			if r >= 'A' && r <= 'F' {
 				r += 'a' - 'A'
 			}
-			if !((r >= 'a' && r <= 'f') || (r >= '0' && r <= '9')) {
+			if (r < 'a' || r > 'f') && (r < '0' || r > '9') {
 				return "", fmt.Errorf("pasted %s contains non-hexadecimal characters", paramDef.Label)
 			}
 		} else if r < 32 || r > 126 {

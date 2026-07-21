@@ -17,6 +17,7 @@ import (
 
 type SigningService interface {
 	SignGroupWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession) (*signersigning.SignGroupResult, *signersigning.ServiceError)
+	PrepareBoundedAdminWithContext(ctx context.Context, identityID string, req signerapi.BoundedAdminRequest, session *keystore.KeySession) (*signersigning.BoundedAdminResult, *signersigning.ServiceError)
 	SignGroupForSimulationWithContext(ctx context.Context, identityID string, req signerapi.GroupSignRequest, session *keystore.KeySession) (*signersigning.SignGroupResult, *signersigning.ServiceError)
 	SignComponentWithContext(ctx context.Context, identityID string, req signerapi.ComponentSignRequest, session *keystore.KeySession) (*signersigning.ComponentSignResult, *signersigning.ServiceError)
 	AssembleGuardedWithContext(ctx context.Context, identityID string, req signerapi.GuardedAssemblyRequest, session *keystore.KeySession) (*signersigning.GuardedAssemblyResult, *signersigning.ServiceError)

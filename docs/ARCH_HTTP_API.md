@@ -21,6 +21,7 @@ coverage.
 | `GET` | `/keys` | yes | yes |
 | `GET` | `/keytypes` | yes | no (but template-backed types appear only after unlock) |
 | `POST` | `/sign` | yes | yes |
+| `POST` | `/sign/bounded-admin` | yes | yes |
 | `POST` | `/sign/component` | yes | yes |
 | `POST` | `/sign/assemble` | yes | yes |
 | `POST` | `/sign/cancel` | yes | no |
@@ -33,7 +34,7 @@ coverage.
 
 Method enforcement:
 
-- `/sign`, `/sign/component`, `/sign/assemble`, `/sign/cancel`, `/plan`,
+- `/sign`, `/sign/bounded-admin`, `/sign/component`, `/sign/assemble`, `/sign/cancel`, `/plan`,
   `/simulate`, `/simulate/guarded`, `/status`, `/admin/generate`,
   `/admin/sentries/sync`, and `/admin/keys` enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
@@ -66,6 +67,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `unavailable` | temporary inability to serve the request | `503` |
 | `cache_refresh` | store mutated but the signer key cache failed to refresh | `500` |
 | `internal` | unexpected server-side failure | `500` |
+| `bounded_admin_required` | admin-key bounded operation sent to ordinary `/sign` or `/simulate` | `400` |
 
 An empty `code` means the server predates code support or the failure had no
 specific classification. New codes may be added; existing values must not change
@@ -141,6 +143,11 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
 - All three endpoints accept the same per-entry modes; mixing passthrough and foreign in one request is invalid, and all-foreign requests are rejected on every endpoint.
 - `/plan` performs canonical group building only. It never touches keys and returns canonical unsigned transactions in `transactions[]`.
 - `/sign` performs canonical group building plus approval/signing. Transaction-level hard policy is applied only to signer-controlled slots; passthrough and foreign entries contribute to group consistency, approval context, warning analysis, and audit visibility.
+- `/sign/bounded-admin` performs the same planning, policy, forced review, group
+  finalization, and spending-key signing for one admin-key-authorized pure
+  rekey, then returns a typed partial for external contract-admin completion.
+  It never loads a contract-admin private key and never returns the partial
+  through `signed[]`.
 - `/simulate` performs canonical group building, signer-side hard policy checks,
   simulation-only signing, and algod simulation on the transaction group's
   configured network. Signed bytes do not leave apsigner. If a group contains
@@ -183,6 +190,29 @@ compatibility; it is not the `/sign` wire response.
 - passthrough entries contain the original signed transaction bytes, returned unchanged.
 - foreign entries contain the empty string `""`.
 - server-added dummy slots appear as appended signed dummy transactions.
+- Admin-key bounded operations are rejected with `code:"bounded_admin_required"`;
+  pure spends and explicitly spending-key-authorized rekeys return complete
+  base-argument LogicSigs from `/sign`.
+
+`/sign/bounded-admin` request (`signerapi.BoundedAdminRequest`) carries optional
+`request_id`, `operation:"rekey"`, and shared `requests[]`. V1 requires exactly
+one sign-mode pure rekey, no caller LogicSig arguments, and no passthrough,
+foreign, or unrelated signable entries. The signer may append budget dummies.
+
+`/sign/bounded-admin` response (`signerapi.BoundedAdminPartialResponse`) contains:
+
+- `schema:"aplane.bounded-admin-partial.v1"` and `operation:"rekey"`
+- finalized TX-prefixed unsigned `transactions[]`
+- aligned `partial_signed[]`, with a spending-only LogicSig at `target_index`
+  and empty strings in every other slot
+- `authorization` with Contract Admin Key ID, public and spending public keys,
+  program binding, finalized transaction ID, diagnostic message, base argument
+  count, spend effects, and maximum fee
+- optional `mutations`
+
+The response is not submission-ready. `message_hex` and every other derived
+authorization field must be recomputed by the completing helper from the
+finalized transaction, durable metadata, and program contract.
 
 `/sign/component` request (`signerapi.ComponentSignRequest`):
 
@@ -322,11 +352,20 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 
 - `count`
 - `keys[]` with `address`, `public_key_hex`, `key_type`
-- optional `signing_flow`: guarded signing choreography label (e.g. `sentry1`);
-  empty means plain `/sign`. Clients route guarded sends on this label and treat
-  labels they do not implement as fail-fast.
+- optional `signing_flow`: explicit signing choreography label. `sentry1`
+  selects guarded component signing, `bounded1` selects transaction-aware
+  LogicSig routing, and empty means ordinary `/sign`. Clients dispatch these
+  cases explicitly and fail closed on labels they do not implement.
 - optional `sentry_component_key_type`: the sentry component key type used by
   this key's `signing_flow` (e.g. for `sentry1`)
+- optional `bounded_authorization`: present for `signing_flow: bounded1`.
+  It contains `contract`, `base_signature_arg_layout`,
+  `spend_effects`, `max_fee`, `admin_operations` (including each operation's
+  `policy_gate`), `runtime_args`, `derived_args`, the path-specific
+  `argument_layout`, and `layer3_policy`. `/keys` also includes instance-only
+  `admin_key_id`, `program_binding`, and `post_signing_lsig_size` when
+  applicable. This is routing and assembly metadata, not permission; signer
+  classification and stored bytecode remain authoritative.
 - optional `lsig_size`
 - optional `is_generic_lsig`
 - optional `is_component_key` and `is_spending_account`: sentry-key rows use
@@ -385,7 +424,7 @@ stored provenance was available. These fields do not change `/sign` behavior.
 
 `/keytypes` response:
 
-- `key_types[]` with `key_type`, `family`, `display_name`, `description`, `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `sentry_component_key_type`, `creation_params[]`, `runtime_args[]`
+- `key_types[]` with `key_type`, `family`, `display_name`, `description`, `requires_logicsig`, `mnemonic_word_count`, `mnemonic_import`, `mnemonic_scheme`, optional `signing_flow`, optional `sentry_component_key_type`, optional definition-level `bounded_authorization`, `creation_params[]`, `runtime_args[]`
 - each `creation_params` entry includes `name`, `label`, `description`, `type`, `required`, and optional `max_length`, `input_modes[]`, `options[]`, `min_items`, `max_items`, `min`, `max`, `example`, `placeholder`, `default`
 - each `input_modes` entry includes `name` and optional `label`, `transform`, `byte_length`, and `input_type`
 - each `runtime_args` entry includes `name`, `label`, `description`, `type`, `required`, and optional `byte_length`
@@ -404,6 +443,11 @@ meaning. The `family` field carries the middle segment of the canonical
 the canonical `key_type` is what clients send back on subsequent requests and
 what they should consult to decide which signing provider a composed template
 uses.
+For a bounded profile with `authorization: admin_key`, creation metadata includes
+the framework-injected scalar `bounded_admin_public_key` (`type:"bytes"`). It
+accepts the 1,793-byte Falcon-1024 public key from an external
+`.apbounded-admin-key.json` reference. The signer derives the Contract Admin Key
+ID and program binding; neither is accepted as a separate creation input.
 
 `/admin/generate`:
 

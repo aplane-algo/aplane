@@ -51,16 +51,17 @@ apstore template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
-| `aplane.falcon1024-allowlist.v1` | `aplane.falcon1024-allowlist.v1.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to a fixed unordered recipient address set or the sender itself; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-30) | None |
-| `aplane.falcon1024-allowlist.v2` | `aplane.falcon1024-allowlist.v2.yaml` | Requires a Falcon signature and restricts ALGO/ASA transfer destination fields to the sender itself or addresses proven against a fixed-depth Merkle tree built from key-file recipients; non-transfer transaction types keep the base Falcon authorization surface. | `recipients` (`address[]`, 1-65536) | None; signer generates proofs |
-| `aplane.falcon1024-hashlock.v1` | `aplane.falcon1024-hashlock.v1.yaml` | Requires a Falcon signature plus a SHA256 preimage check. | `hash` (default input mode: preimage) | `preimage` |
-| `aplane.falcon1024-timelock.v1` | `aplane.falcon1024-timelock.v1.yaml` | Requires a Falcon signature and `FirstValid >= unlock_round`; after the unlock round, transaction policy matches the base Falcon key type. | `unlock_round` | None |
+| `aplane.falcon1024-allowlist.v1` | `aplane.falcon1024-allowlist.v1.yaml` | Bounded1 Falcon spending with an inline recipient allowlist; close, clawback, hybrid effects, and non-transfer types reject. Pure rekey requires the spending key. | `recipients` (`address[]`, 1-30) | None |
+| `aplane.falcon1024-allowlist.v2` | `aplane.falcon1024-allowlist.v2.yaml` | Bounded1 Falcon spending with a fixed-depth Merkle recipient allowlist. Pure rekey requires the spending key and no proof. | `recipients` (`address[]`, 1-65536) | None; signer generates the optional 512-byte spend proof |
+| `aplane.falcon1024-admin-allowlist.v1` | `aplane.falcon1024-admin-allowlist.v1.yaml` | Framework-owned bounded1 ALGO/ASA allowlist with optional asset-ID and per-type amount limits; pure rekeys additionally require an external Falcon contract-admin signature. | `recipients` (`address[]`, 1-30), optional `asset_ids` (`uint64[]`, 1-30), optional `max_payment_amount`, optional `max_asset_amount`, framework-injected `bounded_admin_public_key` | None |
+| `aplane.falcon1024-hashlock.v1` | `aplane.falcon1024-hashlock.v1.yaml` | Bounded1 Falcon spending and spending-key pure rekey, both gated by the SHA256 preimage. | `hash` (default input mode: preimage) | `preimage` (1-64 bytes; required for spend and rekey) |
+| `aplane.falcon1024-timelock.v1` | `aplane.falcon1024-timelock.v1.yaml` | Bounded1 Falcon spending and spending-key pure rekey, both requiring `FirstValid >= unlock_round`. | `unlock_round` | None |
 
 ## Ed25519 Composed Templates
 
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
-| `aplane.ed25519-allowlist.v1` | `aplane.ed25519-allowlist.v1.yaml` | Requires an Ed25519 signature and restricts ALGO/ASA transfer destination fields to a fixed unordered recipient address set or the sender itself; non-transfer transaction types keep the base Ed25519 authorization surface. | `recipients` (`address[]`, 1-30) | None |
+| `aplane.ed25519-allowlist.v1` | `aplane.ed25519-allowlist.v1.yaml` | Bounded1 Ed25519 spending with an inline recipient allowlist; close, clawback, hybrid effects, and non-transfer types reject. Pure rekey requires the spending key. | `recipients` (`address[]`, 1-30) | None |
 
 ## Notes
 
@@ -124,31 +125,17 @@ assert
 This applies to `aplane.timed-allowlist.v1`, `aplane.allowlist.v1`,
 `aplane.htlc.v1`, and any new generic template.
 
-**Composed templates** (`template_type: composed`, with `base_key_type` pointing
-at a registered DSA family — e.g. `aplane.falcon1024.v1`) are wrapped by
-`lsig/composeddsa`. The composer emits the base provider's verifier TEAL
-first (which signs `txn TxID`), then an `assert`, then the template's user
-suffix. Because `TxID` covers every transaction field including `RekeyTo`
-and `CloseRemainderTo`, any change to those fields invalidates the
-signature and the program halts at the `assert` before the user suffix
-runs. Composed templates therefore do **NOT** need to include
-`txn RekeyTo == ZeroAddress` as defense in depth; doing so is redundant
-with the base signature binding.
+**Custom composed templates** (`schema_version: 1`) are expert-mode DSA
+policies. The base signature binds every transaction field, but the author TEAL
+must still reject any intentionally signed effect it does not want to permit.
 
-However, composed templates that implement *allowlist semantics* — i.e.
-the predicate restricts which addresses can receive transfer value — still need
-to enforce the allowlist on destination-like fields explicitly. A user who
-intentionally signs a payment with `CloseRemainderTo = attacker` would bind the
-signature correctly, but the allowlist would be bypassed if the template only
-checked `Receiver`. The composed `aplane.falcon1024-allowlist.v1` and
-`aplane.ed25519-allowlist.v1` templates therefore check `Receiver` and
-`CloseRemainderTo` for payments, and `AssetReceiver` and `AssetCloseTo` for ASA
-transfers. The Merkle allowlist template checks the same destination fields by
-signer-generated proof against the root derived from the key-file recipient
-list; close-out is allowed only to zero or the just-validated receiver. The
-sender itself is allowed as a destination; non-`pay`/`axfer` transaction types
-and clawback source selection through `AssetSender` remain governed by the base
-signature and signer policy.
+**Bounded composed templates** (`schema_version: 2`) place the composer-owned
+bounded1 envelope between base verification and Layer 3. That envelope admits
+only declared pure payment, pure asset transfer, asset opt-in, and pure rekey
+paths; it rejects close, clawback, hybrids, and non-transfer types. Layer 3 can
+narrow those paths but cannot broaden them. All APlane-bundled composed
+templates use this form. Runtime and signer-derived arguments must be declared
+inside `bounded`, and the resulting static slot layout is durable key metadata.
 
 The composed wrap order is locked in by
 `TestComposerVerifierAssertsBeforeUserSuffix` (in `lsig/composeddsa/`) and
@@ -161,4 +148,5 @@ rekey-guard regression can ship.
 | Template class | `txn RekeyTo == 0` | `CloseRemainderTo` policy |
 |---|---|---|
 | Generic (`template_type: generic`) | Required | Required (zero, or allowlisted per template semantics) |
-| Composed (`template_type: composed`) | Not needed (bound via base signature over `txn TxID`) | Required when the template implements receiver-allowlist semantics; otherwise not needed |
+| Custom composed (schema v1) | Author decision; all fields are signature-bound | Author decision |
+| Bounded composed (schema v2) | Pure rekey only when declared | Always zero in bounded1 |

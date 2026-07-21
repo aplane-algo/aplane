@@ -43,7 +43,7 @@ jump to its boundaries. The popup displays its visible line range whenever it
 overflows. Views with an existing purpose-built list, editor, or approval
 viewport retain that viewport so nested scroll handlers do not compete.
 
-Long byte parameters and governance public keys use an atomic paste control
+Long byte parameters, including bounded contract-admin public keys, use an atomic paste control
 instead of an editable multi-line field. Activating the control accepts the
 next terminal bracketed-paste event, stores the complete validated value, and
 renders a read-only single-line preview with its middle elided. This behavior

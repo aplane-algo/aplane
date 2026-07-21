@@ -33,6 +33,7 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 		"aplane.falcon1024-allowlist.v2",
 		"aplane.falcon1024-hashlock.v1",
 		"aplane.falcon1024-timelock.v1",
+		"aplane.falcon1024-admin-allowlist.v1",
 	} {
 		if lsigprovider.Has(keyType) {
 			t.Fatalf("RegisterClient() registered %s; it should remain an optional template", keyType)
@@ -107,9 +108,9 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 	}{
 		{"aplane.falcon1024-hashlock.v1.yaml", "sha256"},
 		{"aplane.falcon1024-timelock.v1.yaml", "FirstValid"},
-		{"aplane.falcon1024-allowlist.v1.yaml", "Only pay/axfer"},
+		{"aplane.falcon1024-allowlist.v1.yaml", "framework-owned fixed allowlist"},
 		{"aplane.falcon1024-allowlist.v2.yaml", "Allowlist v2"},
-		{"aplane.ed25519-allowlist.v1.yaml", "Only pay/axfer"},
+		{"aplane.ed25519-allowlist.v1.yaml", "framework-owned fixed allowlist"},
 	}
 
 	for _, c := range cases {

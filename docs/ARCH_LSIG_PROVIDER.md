@@ -67,6 +67,11 @@ not semantics:
 Already-generated keys keep their own stored TEAL/bytecode and do not depend on
 later template-source changes.
 
+The `bounded1` extension and its schema-v2 contract are frozen in
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md). The runtime accepts schema v1 for custom
+composed DSA templates and schema v2 for bounded templates; each version rejects
+the other's shape.
+
 **Restore precedence invariant:** when a backup carries bundled template YAML,
 restore resolves template installation/provenance against local destination-state
 precedence rather than the source system's original provenance:
@@ -127,6 +132,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider, also used by composed templates such as `aplane.ed25519-allowlist.v1` |
 | `lsig/ecdsak1` | secp256k1 LogicSig DSA provider |
 | `lsig/falcon1024_guarded` | Falcon-1024 guarded-account DSA providers (`aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`) |
+| `internal/boundedadmin` | External Falcon contract-admin identity, transcript, artifact, and ceremony validation |
 | `lsig/corridor` | Always-sentry corridor DSA provider (`aplane.corridor.v1`): Falcon-1024 user + sentry signatures with recipient-corridor and rekey policy |
 | `lsig/sentryaccount` | Shared client-safe helpers for guarded sentry-account providers |
 | `lsig/dsafamily` | Client-safe registration descriptor shared by DSA families (signer-side descriptor in `lsig/dsafamily/signerreg`) |
@@ -141,7 +147,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | Category | Example Key Types | Has Keys | Signing |
 |----------|-------------------|----------|---------|
 | `generic_lsig` | `aplane.timed-allowlist.v1`, `aplane.allowlist.v1` after template import | No | TEAL-only authorization |
-| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, guarded `aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`; `aplane.falcon1024-allowlist.v1` after new-store default install, `aplane.ed25519-allowlist.v1` after template import | Yes | Cryptographic signature |
+| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, bounded `aplane.falcon1024-admin-allowlist.v1`, guarded `aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`; `aplane.falcon1024-allowlist.v1` after new-store default install, `aplane.ed25519-allowlist.v1` after template import | Yes | Cryptographic signature |
 
 ## Interface Hierarchy
 
@@ -389,6 +395,27 @@ requires the salt block to be the final encoded instruction and patches its
 single byte entry. The selected counter is persisted in the key file as
 `salt_counter`; salt style is not exposed through public wire DTOs.
 
+### Bounded1 Composer Extension
+
+Schema-v2 composed templates add a composer-owned transaction envelope ahead
+of the author suffix. Authentication remains first; fee/type/effect dispatch
+is second; author Layer 3 is reachable only from the pure-spend branch. The
+composer owns all `__aplane_bounded1_` labels and the `bounded_` parameter
+namespace.
+
+Bounded-capable bases expose a static signature-argument layout. Bounded1 keeps
+`LSigProvider.BuildArgs` unchanged, then assembles declared signer-derived and
+caller runtime Layer-3 arguments into frozen slots selected by the plan. Durable
+key metadata, rather than the installed YAML template, records path routing,
+base argument count/sizes, all argument declarations and slots, profile, Falcon
+contract-admin metadata, and post-signing size.
+
+Bounded emission preserves the base/template's existing resolved salt style; it
+does not invent a bounded salt. The fixed bare-DSA bytecblock layout remains
+incompatible with suffix composition, while `StylePushbytes`, trailing
+bytecblock, and unsalted layouts retain their existing derivation contracts.
+See [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
+
 ### Salting Rationale
 
 LogicSig addresses are derived from the compiled program hash. A random program
@@ -443,8 +470,19 @@ semantics.
 
 ## Template Systems
 
-Generic and composed YAML templates use schema v1 with an explicit
-`template_mode`.
+Generic templates use their own schema-v1 contract. Custom composed DSA
+templates use composed schema v1 with an explicit `template_mode`; every
+APlane-bundled composed template uses bounded schema v2. Bounded composed
+templates use the separately validated contract described in
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md); composed schema v1 must reject
+`bounded` rather than discard it.
+
+The shared parser first inspects the raw mapping, rejects duplicate/merge keys,
+aliases, multiple documents, and invalid schema selectors, then decodes the
+selected version with recursive known-field checking. Composed schema v2
+requires `bounded`; generic validation rejects schema v2 and all bounded fields.
+Installed and library templates use this same parser before encrypted storage
+or provider registration.
 
 - `strict` mode declares `template_variables` and uses `$name` references that
   render through generated TEAL constant blocks.
@@ -533,6 +571,25 @@ clients as `compiled_provider` without writing an encrypted `.template` file. At
 installed templates, and dispatches each template to the generic or composed
 parser/provider builder.
 
+## Transaction-Aware Bounded Arguments
+
+Most DSA providers produce a fixed argument list from one key. Bounded1 starts
+with that base layout, then statically orders signer-derived Layer-3 arguments,
+caller runtime Layer-3 arguments, and an optional final contract-admin slot.
+Each slot records its source, maximum size, and spend/spending-rekey/admin-rekey
+requirement. Interior slots forbidden on a selected path are explicit empty byte
+strings; unused trailing slots may be omitted. Callers cannot populate derived
+or admin slots.
+
+The planner selects the path and freezes its slots. The executor verifies plan
+integrity, generates only declared derived arguments, and places caller runtime
+arguments only in their declared slots. An admin-key rekey is routed through
+`/sign/bounded-admin`: apsigner returns the base-signature partial with the final
+admin slot reserved, and `apbounded-admin` independently validates the finalized
+transaction and fills only that slot. Durable bounded metadata owns the layout
+and per-path maximum signed size. See
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md).
+
 ## Registration Flow
 
 ```
@@ -597,15 +654,17 @@ yields a template key type that signs with Ed25519 inside a LogicSig.
 | `aplane.ecdsak1.v1` | `aplane.ecdsak1` | `dsa_lsig` | Library-visible secp256k1 DSA |
 | `aplane.falcon1024-sentry-ed25519.v1` | `aplane.falcon1024-sentry-ed25519` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Ed25519 sentry component signatures |
 | `aplane.falcon1024-sentry-falcon1024.v1` | `aplane.falcon1024-sentry-falcon1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 sentry component signatures |
+| `aplane.falcon1024-admin-allowlist.v1` | `aplane.falcon1024-admin-allowlist` | `dsa_lsig` | Library-visible bounded1 fixed allowlist with Falcon spending and external Falcon contract-admin authorization |
 | `aplane.corridor.v1` | `aplane.corridor` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + sentry signatures with recipient corridor and sentry-authorized rekey |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
 | `aplane.timed-allowlist.v1` | `timed-allowlist` | `generic_lsig` | Optional template library: timed recipient allowlist |
 | `aplane.allowlist.v1` | `allowlist` | `generic_lsig` | Optional template library: restrict outgoing transfers to fixed recipient addresses |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
-| `aplane.ed25519-allowlist.v1` | `ed25519-allowlist` | `dsa_lsig` | Optional composed template library: Ed25519 + fixed receiver allowlist |
-| `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled composed template: installed/enabled for new signer identities; Falcon + fixed receiver allowlist |
-| `aplane.falcon1024-hashlock.v1` | `falcon1024-hashlock` | `dsa_lsig` | Optional template library: Falcon + hashlock |
-| `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional template library: Falcon + timelock |
+| `aplane.ed25519-allowlist.v1` | `ed25519-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Ed25519 + fixed receiver allowlist |
+| `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled for new signer identities; Falcon + fixed receiver allowlist |
+| `aplane.falcon1024-allowlist.v2` | `falcon1024-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Falcon + signer-derived Merkle receiver proof |
+| `aplane.falcon1024-hashlock.v1` | `falcon1024-hashlock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + runtime preimage gate on spend and rekey |
+| `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + validity-round gate on spend and rekey |
 
 ## Related Documentation
 

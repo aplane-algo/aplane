@@ -13,11 +13,12 @@ type (
 )
 
 const (
-	ErrorBadRequest  = svcerr.KindBadRequest
-	ErrorForbidden   = svcerr.KindForbidden
-	ErrorLocked      = svcerr.KindLocked
-	ErrorUnavailable = svcerr.KindUnavailable
-	ErrorInternal    = svcerr.KindInternal
+	ErrorBadRequest           = svcerr.KindBadRequest
+	ErrorForbidden            = svcerr.KindForbidden
+	ErrorLocked               = svcerr.KindLocked
+	ErrorUnavailable          = svcerr.KindUnavailable
+	ErrorInternal             = svcerr.KindInternal
+	ErrorBoundedAdminRequired = svcerr.KindBoundedAdminRequired
 )
 
 func badRequest(msg string) *ServiceError { return &ServiceError{Kind: ErrorBadRequest, Message: msg} }
@@ -26,6 +27,13 @@ func unavailable(msg string) *ServiceError {
 	return &ServiceError{Kind: ErrorUnavailable, Message: msg}
 }
 func internal(msg string) *ServiceError { return &ServiceError{Kind: ErrorInternal, Message: msg} }
+
+// boundedAdminRequired rejects an admin-key bounded operation submitted on the
+// plain /sign path with the machine-readable code clients route on to redirect
+// the operation to POST /sign/bounded-admin.
+func boundedAdminRequired() *ServiceError {
+	return &ServiceError{Kind: ErrorBoundedAdminRequired, Message: "Falcon-admin bounded operation requires POST /sign/bounded-admin"}
+}
 
 // lockedError reports the signer keystore as locked with the dedicated
 // machine-readable kind.

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
@@ -50,6 +51,19 @@ type DSAOps interface {
 	BuildSignatureArgs(signature []byte) ([][]byte, error)
 }
 
+// SignatureArgLayout describes the static LogicSig argument shape emitted by a
+// DSA base. Bounded-capable bases must expose this without probing dummy
+// signatures. It aliases the durable boundedmeta shape so the generation-side
+// and stored layouts are the same type.
+type SignatureArgLayout = boundedmeta.SignatureArgLayout
+
+// BoundedCapableDSAOps is implemented by DSA bases whose signature argument
+// layout is static and therefore safe to compose with bounded routing.
+type BoundedCapableDSAOps interface {
+	DSAOps
+	SignatureArgLayout() SignatureArgLayout
+}
+
 // Config holds configuration for creating a ComposedDSA.
 type Config struct {
 	// Identity
@@ -68,6 +82,11 @@ type Config struct {
 	TemplateVars []tealtemplate.TemplateVariable
 	Params       []lsigprovider.ParameterDef  // Creation-time parameters
 	RuntimeArgs  []lsigprovider.RuntimeArgDef // Signing-time arguments
+	// BoundedRuntimeArgs and DerivedArgs carry schema-v2-only slot metadata.
+	BoundedRuntimeArgs []boundedmeta.RuntimeArg
+	DerivedArgs        []boundedmeta.DerivedArg
+	Bounded            *BoundedAuthorizationProfile
+	Layer3             *Layer3Policy
 }
 
 // ComposedDSA composes:
@@ -87,13 +106,17 @@ type ComposedDSA struct {
 	description string
 
 	// Components
-	ops          DSAOps
-	tealSuffix   string
-	saltStyle    lsigsalt.Style
-	templateMode string
-	templateVars []tealtemplate.TemplateVariable
-	params       []lsigprovider.ParameterDef
-	runtimeArgs  []lsigprovider.RuntimeArgDef
+	ops                DSAOps
+	tealSuffix         string
+	saltStyle          lsigsalt.Style
+	templateMode       string
+	templateVars       []tealtemplate.TemplateVariable
+	params             []lsigprovider.ParameterDef
+	runtimeArgs        []lsigprovider.RuntimeArgDef
+	boundedRuntimeArgs []boundedmeta.RuntimeArg
+	derivedArgs        []boundedmeta.DerivedArg
+	bounded            *BoundedAuthorizationProfile
+	layer3             *Layer3Policy
 
 	// Algod client for TEAL compilation (must be set before DeriveLsig)
 	algodClient *algod.Client
@@ -106,20 +129,29 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 	if cfg.Ops == nil {
 		panic("composeddsa: Config.Ops is required")
 	}
+	params := append([]lsigprovider.ParameterDef(nil), cfg.Params...)
+	bounded := cloneBoundedProfile(cfg.Bounded)
+	if boundedRequiresAdminKey(bounded) && !hasParameter(params, BoundedAdminPublicKeyParameter) {
+		params = append(params, boundedAdminPublicKeyParameterDef())
+	}
 	return &ComposedDSA{
-		keyType:      cfg.KeyType,
-		baseKeyType:  cfg.BaseKeyType,
-		familyName:   cfg.FamilyName,
-		version:      cfg.Version,
-		displayName:  cfg.DisplayName,
-		description:  cfg.Description,
-		ops:          cfg.Ops,
-		tealSuffix:   cfg.TEALSuffix,
-		saltStyle:    cfg.SaltStyle,
-		templateMode: cfg.TemplateMode,
-		templateVars: cfg.TemplateVars,
-		params:       cfg.Params,
-		runtimeArgs:  cfg.RuntimeArgs,
+		keyType:            cfg.KeyType,
+		baseKeyType:        cfg.BaseKeyType,
+		familyName:         cfg.FamilyName,
+		version:            cfg.Version,
+		displayName:        cfg.DisplayName,
+		description:        cfg.Description,
+		ops:                cfg.Ops,
+		tealSuffix:         cfg.TEALSuffix,
+		saltStyle:          cfg.SaltStyle,
+		templateMode:       cfg.TemplateMode,
+		templateVars:       cfg.TemplateVars,
+		params:             params,
+		runtimeArgs:        cfg.RuntimeArgs,
+		boundedRuntimeArgs: append([]boundedmeta.RuntimeArg(nil), cfg.BoundedRuntimeArgs...),
+		derivedArgs:        append([]boundedmeta.DerivedArg(nil), cfg.DerivedArgs...),
+		bounded:            bounded,
+		layer3:             cloneLayer3Policy(cfg.Layer3),
 	}
 }
 
@@ -214,7 +246,29 @@ func (c *ComposedDSA) RuntimeArgs() []lsigprovider.RuntimeArgDef {
 	return c.runtimeArgs
 }
 
-// BuildArgs assembles LogicSig Args as [signature args..., runtime args...].
+// BoundedAuthorizationProfile returns a defensive copy of this
+// provider's bounded profile, or nil for legacy composed providers.
+func (c *ComposedDSA) BoundedAuthorizationProfile() *BoundedAuthorizationProfile {
+	return cloneBoundedProfile(c.bounded)
+}
+
+// Layer3PolicyName identifies whether the provider uses framework-owned or
+// contained custom Layer-3 policy.
+func (c *ComposedDSA) Layer3PolicyName() string {
+	return layer3PolicyName(c.layer3)
+}
+
+// SignatureArgLayout returns the static base signature layout when the base
+// advertises bounded capability.
+func (c *ComposedDSA) SignatureArgLayout() (SignatureArgLayout, bool) {
+	ops, ok := c.ops.(BoundedCapableDSAOps)
+	if !ok {
+		return SignatureArgLayout{}, false
+	}
+	return cloneSignatureArgLayout(ops.SignatureArgLayout()), true
+}
+
+// BuildArgs assembles LogicSig Args in the provider's declared order.
 func (c *ComposedDSA) BuildArgs(signature []byte, runtimeArgs map[string][]byte) ([][]byte, error) {
 	if signature == nil {
 		return nil, fmt.Errorf("signature is required for DSA LogicSig")
@@ -227,16 +281,92 @@ func (c *ComposedDSA) BuildArgs(signature []byte, runtimeArgs map[string][]byte)
 	if len(sigArgs) == 0 {
 		return nil, fmt.Errorf("algorithm returned no signature arguments")
 	}
+	if c.bounded != nil {
+		layout, err := c.validatedSignatureArgLayout()
+		if err != nil {
+			return nil, err
+		}
+		if err := validateBuiltSignatureArgs(sigArgs, layout); err != nil {
+			return nil, err
+		}
+	}
 
 	runtimeArgBytes, err := lsigprovider.ValidateAndOrderArgs(c.runtimeArgs, runtimeArgs)
 	if err != nil {
 		return nil, err
+	}
+	if c.bounded != nil {
+		return c.buildBoundedSpendArgs(sigArgs, runtimeArgBytes)
 	}
 
 	ordered := make([][]byte, 0, len(sigArgs)+len(runtimeArgBytes))
 	ordered = append(ordered, sigArgs...)
 	ordered = append(ordered, runtimeArgBytes...)
 	return ordered, nil
+}
+
+func (c *ComposedDSA) buildBoundedSpendArgs(signatureArgs, runtimeArgs [][]byte) ([][]byte, error) {
+	metadata, err := c.boundedAuthorizationMetadataBase()
+	if err != nil {
+		return nil, err
+	}
+	if metadata == nil {
+		return nil, fmt.Errorf("bounded argument assembly requires bounded metadata")
+	}
+
+	args := make([][]byte, len(metadata.ArgumentLayout))
+	baseIndex, runtimeIndex := 0, 0
+	for _, slot := range metadata.ArgumentLayout {
+		if slot.Index < 0 || slot.Index >= len(args) {
+			return nil, fmt.Errorf("bounded argument slot %q has invalid index %d", slot.Name, slot.Index)
+		}
+		value := []byte{}
+		switch slot.Source {
+		case boundedmeta.ArgSourceBaseSignature:
+			if baseIndex >= len(signatureArgs) {
+				return nil, fmt.Errorf("bounded base signature slot %q has no value", slot.Name)
+			}
+			value = signatureArgs[baseIndex]
+			baseIndex++
+		case boundedmeta.ArgSourceDerived, boundedmeta.ArgSourceAdmin:
+			// BuildArgs has no transaction context or external admin authority.
+			// Keep interior slots explicit so later runtime values retain their
+			// frozen indexes; unused trailing slots are trimmed below.
+		case boundedmeta.ArgSourceRuntime:
+			if runtimeIndex >= len(runtimeArgs) {
+				return nil, fmt.Errorf("bounded runtime slot %q has no value", slot.Name)
+			}
+			value = runtimeArgs[runtimeIndex]
+			runtimeIndex++
+		default:
+			return nil, fmt.Errorf("bounded argument slot %q has unsupported source %q", slot.Name, slot.Source)
+		}
+
+		switch slot.Paths.Spend {
+		case boundedmeta.ArgRequired:
+			if len(value) == 0 {
+				return nil, fmt.Errorf("required bounded spend argument slot %q is empty", slot.Name)
+			}
+		case boundedmeta.ArgOptional:
+		case boundedmeta.ArgForbidden:
+			if len(value) != 0 {
+				return nil, fmt.Errorf("forbidden bounded spend argument slot %q is populated", slot.Name)
+			}
+		default:
+			return nil, fmt.Errorf("bounded argument slot %q has invalid spend rule %q", slot.Name, slot.Paths.Spend)
+		}
+		if len(value) > slot.MaxSize {
+			return nil, fmt.Errorf("bounded argument slot %q exceeds maximum size %d", slot.Name, slot.MaxSize)
+		}
+		args[slot.Index] = value
+	}
+	if baseIndex != len(signatureArgs) || runtimeIndex != len(runtimeArgs) {
+		return nil, fmt.Errorf("bounded argument layout did not consume all provider arguments")
+	}
+	for len(args) > 0 && len(args[len(args)-1]) == 0 {
+		args = args[:len(args)-1]
+	}
+	return args, nil
 }
 
 // CompatibilityFingerprint returns a stable semantic fingerprint for the
@@ -256,6 +386,8 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		TemplateVars  []tealtemplate.TemplateVariable    `json:"template_variables,omitempty"`
 		Parameters    []lsigprovider.CanonicalParameter  `json:"parameters,omitempty"`
 		RuntimeArgs   []lsigprovider.CanonicalRuntimeArg `json:"runtime_args,omitempty"`
+		Bounded       any                                `json:"bounded,omitempty"`
+		Layer3        *Layer3Policy                      `json:"layer3,omitempty"`
 	}
 
 	params := make([]lsigprovider.CanonicalParameter, len(c.params))
@@ -268,6 +400,11 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		runtimeArgs[i] = lsigprovider.ProjectRuntimeArgDef(a)
 	}
 
+	metadata, metadataErr := c.boundedAuthorizationMetadataBase()
+	boundedProjection := boundedFingerprintProjection(c.bounded, metadata)
+	if metadataErr != nil {
+		boundedProjection = map[string]string{"invalid": metadataErr.Error()}
+	}
 	return lsigprovider.HashCompatibilitySpec(canonicalSpec{
 		BasePrimitive: lsigprovider.FingerprintBasePrimitive(c.baseKeyType),
 		TEALSuffix:    strings.TrimSpace(c.tealSuffix),
@@ -276,6 +413,8 @@ func (c *ComposedDSA) CompatibilityFingerprint() string {
 		TemplateVars:  c.templateVars,
 		Parameters:    params,
 		RuntimeArgs:   runtimeArgs,
+		Bounded:       boundedProjection,
+		Layer3:        cloneLayer3Policy(c.layer3),
 	})
 }
 
@@ -296,6 +435,10 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	if err := generictemplate.ValidateParameterValues(normalizedParams, c.params); err != nil {
 		return "", err
 	}
+	boundedProfile, _, err := c.validateBoundedConfig()
+	if err != nil {
+		return "", err
+	}
 
 	if len(publicKey) != c.ops.PublicKeySize() {
 		return "", fmt.Errorf("invalid public key size: expected %d, got %d",
@@ -311,13 +454,13 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	b.WriteString(fmt.Sprintf("#pragma version %d\n\n", version))
 
 	mode := c.effectiveTemplateMode()
-	hasSuffix := strings.TrimSpace(c.tealSuffix) != ""
+	hasSuffix := c.hasSuffix()
 	style, err := c.resolvedSaltStyle()
 	if err != nil {
 		return "", err
 	}
 	var strictSuffix tealtemplate.RenderedTemplate
-	if hasSuffix {
+	if strings.TrimSpace(c.tealSuffix) != "" {
 		if err := validateSuffixControlFlow(c.tealSuffix); err != nil {
 			return "", err
 		}
@@ -355,39 +498,59 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 		b.WriteString("\n")
 	}
 
-	if !hasSuffix {
+	if boundedProfile == nil && !hasSuffix {
 		return c.finishSaltedTEAL(b.String(), style)
 	}
 
 	b.WriteString("assert\n\n")
-
-	switch mode {
-	case generictemplate.TemplateModeStrict:
-		b.WriteString(strictSuffix.TEAL)
-		b.WriteString("\n\n")
-	case generictemplate.TemplateModeLegacy, generictemplate.TemplateModeGenerated:
-		// Optional user-supplied suffix with @variable substitution.
-		paramDefs := make([]tealtemplate.ParamDef, len(c.params))
-		for i, p := range c.params {
-			paramDefs[i] = tealtemplate.ParamDef{Name: p.Name, Type: composedTemplateParamType(p.Type)}
-		}
-
-		expanded, err := tealtemplate.ExpandLists(c.tealSuffix, normalizedParams, paramDefs)
+	if boundedProfile != nil {
+		prelude, err := c.renderBoundedPrelude(publicKey, normalizedParams, boundedProfile)
 		if err != nil {
-			return "", fmt.Errorf("failed to expand list templates: %w", err)
+			return "", fmt.Errorf("failed to render bounded1 envelope: %w", err)
 		}
-
-		substituted, err := tealtemplate.SubstituteVariables(expanded, normalizedParams, paramDefs)
-		if err != nil {
-			return "", fmt.Errorf("failed to substitute variables: %w", err)
-		}
-		b.WriteString(substituted)
-		b.WriteString("\n\n")
-	default:
-		return "", fmt.Errorf("unsupported template_mode %q", c.templateMode)
+		b.WriteString(prelude)
 	}
 
-	b.WriteString("int 1\nreturn\n")
+	if c.layer3 != nil {
+		layer3, err := c.renderLayer3Policy(normalizedParams, boundedProfile)
+		if err != nil {
+			return "", fmt.Errorf("failed to render Layer-3 policy: %w", err)
+		}
+		b.WriteString(layer3)
+		b.WriteString("\n")
+	} else {
+		switch mode {
+		case generictemplate.TemplateModeStrict:
+			b.WriteString(strictSuffix.TEAL)
+			b.WriteString("\n\n")
+		case generictemplate.TemplateModeLegacy, generictemplate.TemplateModeGenerated:
+			// Optional user-supplied suffix with @variable substitution.
+			paramDefs := make([]tealtemplate.ParamDef, len(c.params))
+			for i, p := range c.params {
+				paramDefs[i] = tealtemplate.ParamDef{Name: p.Name, Type: composedTemplateParamType(p.Type)}
+			}
+
+			expanded, err := tealtemplate.ExpandLists(c.tealSuffix, normalizedParams, paramDefs)
+			if err != nil {
+				return "", fmt.Errorf("failed to expand list templates: %w", err)
+			}
+
+			substituted, err := tealtemplate.SubstituteVariables(expanded, normalizedParams, paramDefs)
+			if err != nil {
+				return "", fmt.Errorf("failed to substitute variables: %w", err)
+			}
+			b.WriteString(substituted)
+			b.WriteString("\n\n")
+		default:
+			return "", fmt.Errorf("unsupported template_mode %q", c.templateMode)
+		}
+	}
+
+	if boundedProfile != nil {
+		b.WriteString(renderBoundedAccept())
+	} else {
+		b.WriteString("int 1\nreturn\n")
+	}
 
 	return c.finishSaltedTEAL(b.String(), style)
 }
@@ -425,7 +588,7 @@ func (c *ComposedDSA) saltLocator() (lsigsalt.Locator, error) {
 }
 
 func (c *ComposedDSA) hasSuffix() bool {
-	return strings.TrimSpace(c.tealSuffix) != ""
+	return strings.TrimSpace(c.tealSuffix) != "" || c.layer3 != nil
 }
 
 func (c *ComposedDSA) resolvedSaltStyle() (lsigsalt.Style, error) {

@@ -11,14 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/algorand/go-algorand-sdk/v2/types"
 	"github.com/aplane-algo/aplane/internal/appspec"
 	internallsig "github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/approvalpolicy"
-
-	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 type AuditRejectLogger interface {
@@ -212,11 +211,28 @@ func BuildApprovalDescription(req signerapi.GroupSignRequest, plan *PlanResult, 
 		}
 		txReq := req.Requests[i]
 		b.WriteString(describeTxnForApproval(txn, txReq, generateTxnDescriptionFromTxn))
+		if i < len(plan.BoundedItems) && plan.BoundedItems[i] != nil && plan.BoundedItems[i].Path != boundedPathPureSpend {
+			item := plan.BoundedItems[i]
+			b.WriteString("\n  Bounded authorization contract admin operation: REKEY")
+			b.WriteString("\n  Authorization: " + boundedAuthorizationLabel(item))
+			b.WriteString(fmt.Sprintf("\n  Profile maximum fee: %d microAlgos", item.Metadata.MaxFee))
+		}
 		b.WriteString("\n")
 	}
 
 	firstValid, lastValid = approvalWindow(allTxns)
 	return b.String(), firstValid, lastValid
+}
+
+func boundedAuthorizationLabel(item *boundedPlanItem) string {
+	switch item.Path {
+	case boundedPathSpendingKeyRekey:
+		return "spending key only"
+	case boundedPathAdminKeyRekey:
+		return "external contract admin key " + item.Metadata.AdminKeyID
+	default:
+		return "unknown"
+	}
 }
 
 // EvaluateAutoRejectionRules evaluates hard policy rules against each signable transaction.

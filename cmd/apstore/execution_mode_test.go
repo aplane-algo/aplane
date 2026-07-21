@@ -14,7 +14,7 @@ import (
 )
 
 func TestAcquireOfflineMutationLockAllowsExclusiveMutation(t *testing.T) {
-	for _, command := range []string{"initialize", "rebuild"} {
+	for _, command := range []string{"governance", "initialize", "rebuild"} {
 		release, err := acquireOfflineMutationLock(command, t.TempDir())
 		if err != nil {
 			t.Fatalf("acquireOfflineMutationLock(%q) error = %v", command, err)

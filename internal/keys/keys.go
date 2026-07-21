@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
 	"github.com/aplane-algo/aplane/internal/logicsigdsa"
@@ -123,6 +124,7 @@ type KeyScanInfo struct {
 	BaseKeyType            string // Base DSA key type used for signing metadata, if present
 	Parameters             map[string]string
 	SigningArgs            []StoredSigningArg
+	BoundedAuthorization   *boundedmeta.Metadata
 	SigningMetadataVersion int
 	TemplateFingerprint    string
 	CreatedAt              string // RFC 3339 creation timestamp (empty for legacy keys)
@@ -327,7 +329,13 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 			publicKeyHex = ""
 			lsigSize = len(payload.LogicSigBytecode)
 		case CategoryDSALsig:
-			lsigSize = len(payload.LogicSigBytecode) + dsaLogicSigArgBudgetForKey(keyType, signingMeta.BaseKeyType)
+			if signingMeta.BoundedAuthorization != nil {
+				// Spend-path size: group budgeting covers ordinary spends. The
+				// admin-key rekey slot is topped up per path by the planner.
+				lsigSize = signingMeta.BoundedAuthorization.SpendPathLogicSigSize()
+			} else {
+				lsigSize = len(payload.LogicSigBytecode) + dsaLogicSigArgBudgetForKey(keyType, signingMeta.BaseKeyType)
+			}
 		}
 
 		createdAt := payloadMeta.CreatedAt
@@ -353,6 +361,7 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 			BaseKeyType:            signingMeta.BaseKeyType,
 			Parameters:             signingMeta.Parameters,
 			SigningArgs:            signingMeta.SigningArgs,
+			BoundedAuthorization:   boundedmeta.Clone(signingMeta.BoundedAuthorization),
 			SigningMetadataVersion: signingMeta.SigningMetadataVersion,
 			TemplateFingerprint:    payloadMeta.TemplateFingerprint,
 			CreatedAt:              createdAt,
@@ -378,8 +387,6 @@ func IsGenericKey(category string) bool {
 	return category == CategoryGenericLsig
 }
 
-const falcon1024AllowlistV2KeyType = "aplane.falcon1024-allowlist.v2"
-
 func dsaLogicSigArgBudgetForKey(keyType, baseKeyType string) int {
 	return cryptoSignatureSizeForKey(keyType, baseKeyType) + signerGeneratedDSAArgSizeForKey(keyType)
 }
@@ -396,7 +403,7 @@ func cryptoSignatureSizeForKey(keyType, baseKeyType string) int {
 
 func signerGeneratedDSAArgSizeForKey(keyType string) int {
 	switch strings.ToLower(strings.TrimSpace(keyType)) {
-	case falcon1024AllowlistV2KeyType, keytypes.CorridorV1:
+	case keytypes.CorridorV1:
 		return merkleallowlist.ProofSize
 	default:
 		return 0
@@ -424,5 +431,6 @@ type SigningMetadata struct {
 	BaseKeyType            string
 	Parameters             map[string]string
 	SigningArgs            []StoredSigningArg
+	BoundedAuthorization   *boundedmeta.Metadata
 	SigningMetadataVersion int
 }

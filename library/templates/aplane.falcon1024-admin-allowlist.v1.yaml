@@ -1,0 +1,57 @@
+schema_version: 2
+derivation_version: 2
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: generated
+publisher: aplane
+family: falcon1024-admin-allowlist
+version: 1
+display_name: "Falcon-1024 Admin Allowlist"
+description: "Framework-owned ALGO/ASA allowlist with optional asset and amount limits, plus external Falcon contract-admin authorization for pure rekeys."
+
+bounded:
+  contract: bounded1
+  spend_effects: [pay, axfer, asset_opt_in]
+  max_fee: 10000
+  admin_operations:
+    - kind: rekey
+      authorization: admin_key
+      policy_gate: none
+  layer3:
+    policy: fixed_allowlist
+    recipients_parameter: recipients
+    asset_ids_parameter: asset_ids
+    max_payment_amount_parameter: max_payment_amount
+    max_asset_amount_parameter: max_asset_amount
+
+parameters:
+  - name: recipients
+    type: address[]
+    required: true
+    min_items: 1
+    max_items: 30
+    label: "Allowlisted Addresses"
+    description: "Addresses permitted to receive ALGO or ASA transfers from this bounded-authorization account"
+    placeholder: "ADDR1, ADDR2, ADDR3"
+  - name: asset_ids
+    type: uint64[]
+    required: false
+    min_items: 1
+    max_items: 30
+    label: "Allowed Asset IDs"
+    description: "Optional ASA IDs permitted for asset transfers; omit to allow any ASA"
+    placeholder: "1, 31566704"
+  - name: max_payment_amount
+    type: uint64
+    required: false
+    min: 1
+    label: "Maximum ALGO Amount"
+    description: "Optional maximum payment amount in microAlgos"
+    placeholder: "1000000"
+  - name: max_asset_amount
+    type: uint64
+    required: false
+    min: 1
+    label: "Maximum ASA Amount"
+    description: "Optional maximum asset-transfer amount in base units"
+    placeholder: "1000"

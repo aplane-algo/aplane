@@ -146,13 +146,17 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 	}{
 		{"group_sign_request_mixed.json", assertContractRoundTrip[GroupSignRequest]},
 		{"group_sign_response_mutated.json", assertContractRoundTrip[GroupSignResponse]},
+		{"bounded_admin_request.json", assertContractRoundTrip[BoundedAdminRequest]},
+		{"bounded_admin_partial_response.json", assertContractRoundTrip[BoundedAdminPartialResponse]},
 		{"group_plan_response_mutated.json", assertContractRoundTrip[GroupPlanResponse]},
 		{"group_simulate_response_mutated.json", assertContractRoundTrip[GroupSimulateResponse]},
 		{"error_response.json", assertContractRoundTrip[ErrorResponse]},
 		{"keys_response_guarded.json", assertContractRoundTrip[KeysResponse]},
+		{"keys_response_bounded.json", assertContractRoundTrip[KeysResponse]},
 		{"keys_response_generic.json", assertContractRoundTrip[KeysResponse]},
 		{"keys_response_component.json", assertContractRoundTrip[KeysResponse]},
 		{"keytypes_response_full.json", assertContractRoundTrip[KeyTypesResponse]},
+		{"keytypes_response_bounded.json", assertContractRoundTrip[KeyTypesResponse]},
 		{"admin_generate_request_generic.json", assertContractRoundTrip[AdminGenerateRequest]},
 		{"admin_generate_response_generic.json", assertContractRoundTrip[AdminGenerateResponse]},
 		{"admin_generate_response_component.json", assertContractRoundTrip[AdminGenerateResponse]},
@@ -242,6 +246,7 @@ func signerAPIErrorCodes(t *testing.T) []string {
 		ErrCodeUnavailable,
 		ErrCodeCacheRefresh,
 		ErrCodeInternal,
+		ErrCodeBoundedAdminRequired,
 	}
 }
 

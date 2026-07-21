@@ -102,6 +102,52 @@ teal: |
 	}
 }
 
+func TestInstallComposedSchemaV2BoundedTemplate(t *testing.T) {
+	falcon.RegisterClient()
+	paths := newLibraryTestPaths(t)
+	data := []byte(`schema_version: 2
+template_type: composed
+base_key_type: aplane.falcon1024.v1
+template_mode: strict
+publisher: test
+family: bounded-library
+version: 1
+display_name: Bounded Library
+description: Test bounded template
+derivation_version: 2
+bounded:
+  contract: bounded1
+  spend_effects: [pay, axfer]
+  max_fee: 2000
+  admin_operations: []
+teal: |
+  int 1
+  return
+`)
+	parsed, err := ParseYAML("bounded.yaml", data)
+	if err != nil {
+		t.Fatalf("ParseYAML() error = %v", err)
+	}
+	if parsed.KeyType != "test.bounded-library.v1" || parsed.TemplateType != templatestore.TemplateTypeComposed {
+		t.Fatalf("ParseYAML() = %#v", parsed)
+	}
+	installed, err := InstallParsed(paths, testIdentityID, parsed, testMasterKey())
+	if err != nil {
+		t.Fatalf("InstallParsed() error = %v", err)
+	}
+	stored, err := templatestore.LoadTemplateFromPath(installed.OutputPath, testMasterKey())
+	if err != nil {
+		t.Fatalf("LoadTemplateFromPath() error = %v", err)
+	}
+	reparsed, err := ParseYAML(installed.OutputPath, stored)
+	if err != nil {
+		t.Fatalf("ParseYAML(stored) error = %v", err)
+	}
+	if reparsed.KeyType != parsed.KeyType {
+		t.Fatalf("stored key type = %q, want %q", reparsed.KeyType, parsed.KeyType)
+	}
+}
+
 func TestListInvalidPrecedenceSkipsConflictDetection(t *testing.T) {
 	paths := newLibraryTestPaths(t)
 	writeLibraryFile(t, paths, "invalid.yaml", []byte("not: valid: yaml: ["))

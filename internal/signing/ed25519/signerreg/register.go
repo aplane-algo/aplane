@@ -41,7 +41,6 @@ func RegisterSigner() {
 			Family:       "sentry-ed25519",
 			Availability: keytypecatalog.AvailabilityDefaultEnabled,
 		})
-
 		// Mnemonic handler for Algorand mnemonic handling
 		mnemonic.RegisterEd25519Handler()
 	})

@@ -154,6 +154,7 @@ type CanonicalRuntimeArg struct {
 	Type       string `json:"type"`
 	Required   bool   `json:"required"`
 	ByteLength int    `json:"byte_length"`
+	MaxSize    int    `json:"max_size,omitempty"`
 }
 
 // ProjectParameterDef projects a provider parameter definition into its
@@ -182,6 +183,7 @@ func ProjectRuntimeArgDef(a RuntimeArgDef) CanonicalRuntimeArg {
 		Type:       a.Type,
 		Required:   a.Required,
 		ByteLength: a.ByteLength,
+		MaxSize:    a.MaxSize,
 	}
 }
 

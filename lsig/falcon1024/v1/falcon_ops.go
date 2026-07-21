@@ -58,4 +58,9 @@ func (o *FalconOps) BuildSignatureArgs(signature []byte) ([][]byte, error) {
 	return [][]byte{signature}, nil
 }
 
-var _ composeddsa.DSAOps = (*FalconOps)(nil)
+// SignatureArgLayout declares Falcon's single variable-length signature arg.
+func (o *FalconOps) SignatureArgLayout() composeddsa.SignatureArgLayout {
+	return composeddsa.SignatureArgLayout{Count: 1, MaxSizes: []int{family.MaxSignatureSize}}
+}
+
+var _ composeddsa.BoundedCapableDSAOps = (*FalconOps)(nil)

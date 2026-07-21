@@ -107,6 +107,30 @@ definitions or the fingerprint formula:
 
 ## Explicit Safety Decisions
 
+For bounded1 work, read
+[ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and preserve these additional invariants:
+
+- base DSA authentication executes on every accepted path;
+- composer-owned fee, type, and danger-field checks execute before author
+  Layer 3;
+- only pure `pay`/`axfer` spends can reach author Layer 3;
+- rekey detection precedes transaction-type dispatch and accepts only the
+  frozen pure-rekey normal form;
+- bounded1 uses only a Falcon-1024 contract admin key and has no algorithm
+  selector;
+- `max_fee` is explicit, compiled, and at most 10,000 microAlgos;
+- caller runtime args can never supply the contract-admin signature;
+- generated bounded keys persist signing-metadata version 2 with the complete
+  runtime-argument, signer-derived-argument, and path-specific slot layout;
+  signing, inventory, backup, and restore use that stored snapshot rather than
+  the installed YAML;
+- `/keys` and `/keytypes` advertise `signing_flow: bounded1`; every client must
+  dispatch empty, `sentry1`, and `bounded1` explicitly and reject unknown flows;
+- the implementation manifest and independent protocol inventory remain
+  separate completeness controls; and
+- schema v1 rejects `bounded`, while schema v2 rejects unknown and duplicate
+  fields at every level.
+
 Every template design must make safety-relevant behavior explicit. Do not
 silently choose a permissive policy, and do not silently add restrictions that
 the user did not ask for. Explain which behavior is enforced in TEAL and which,

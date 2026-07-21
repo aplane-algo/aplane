@@ -7,17 +7,18 @@
 package identity
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"bytes"
-	"os"
-	"path/filepath"
-
 	"github.com/aplane-algo/aplane/internal/auth"
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/noderole"
@@ -94,7 +95,8 @@ type Runtime struct {
 	keys         map[string]string // address -> keyfile path
 	keyTypes     map[string]string // address -> key type
 	keyLsigSizes map[string]int    // address -> lsig size
-	keysetRev    atomic.Uint64     // Process-local revision of the published key snapshot.
+	keyMetadata  map[string]KeyPublicMetadata
+	keysetRev    atomic.Uint64 // Process-local revision of the published key snapshot.
 	keysLock     sync.RWMutex
 
 	watcherCancel   context.CancelFunc
@@ -138,10 +140,20 @@ type Runtime struct {
 // KeyIndexSnapshot is a materialized copy of the runtime key index at one
 // published revision.
 type KeyIndexSnapshot struct {
-	Revision  uint64
-	KeyFiles  map[string]string
-	KeyTypes  map[string]string
-	LSigSizes map[string]int
+	Revision    uint64
+	KeyFiles    map[string]string
+	KeyTypes    map[string]string
+	LSigSizes   map[string]int
+	KeyMetadata map[string]KeyPublicMetadata
+}
+
+// KeyPublicMetadata is the non-secret portion of a scanned key published with
+// the runtime key index at one revision.
+type KeyPublicMetadata struct {
+	Category             string
+	PublicKeyHex         string
+	Parameters           map[string]string
+	BoundedAuthorization *boundedmeta.Metadata
 }
 
 // Config is the construction parameters for an identity Runtime.
@@ -189,6 +201,7 @@ func New(cfg Config) *Runtime {
 		keys:                make(map[string]string),
 		keyTypes:            make(map[string]string),
 		keyLsigSizes:        make(map[string]int),
+		keyMetadata:         make(map[string]KeyPublicMetadata),
 		onLocked:            cfg.OnLocked,
 		persistDecommission: cfg.PersistDecommission,
 	}
@@ -709,10 +722,11 @@ func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
 	defer ir.keysLock.RUnlock()
 
 	snapshot := KeyIndexSnapshot{
-		Revision:  ir.keysetRev.Load(),
-		KeyFiles:  make(map[string]string, len(ir.keys)),
-		KeyTypes:  make(map[string]string, len(ir.keyTypes)),
-		LSigSizes: make(map[string]int, len(ir.keyLsigSizes)),
+		Revision:    ir.keysetRev.Load(),
+		KeyFiles:    make(map[string]string, len(ir.keys)),
+		KeyTypes:    make(map[string]string, len(ir.keyTypes)),
+		LSigSizes:   make(map[string]int, len(ir.keyLsigSizes)),
+		KeyMetadata: make(map[string]KeyPublicMetadata, len(ir.keyMetadata)),
 	}
 	for k, v := range ir.keys {
 		snapshot.KeyFiles[k] = v
@@ -723,14 +737,37 @@ func (ir *Runtime) KeyIndexSnapshot() KeyIndexSnapshot {
 	for k, v := range ir.keyLsigSizes {
 		snapshot.LSigSizes[k] = v
 	}
+	for k, v := range ir.keyMetadata {
+		v.Parameters = maps.Clone(v.Parameters)
+		v.BoundedAuthorization = boundedmeta.Clone(v.BoundedAuthorization)
+		snapshot.KeyMetadata[k] = v
+	}
 	return snapshot
 }
 
-// KeySnapshot returns copies of the key maps. Safe for concurrent use.
-// Returns empty maps if the identity is decommissioned.
+// KeySnapshot returns copies of the three key index maps only — callers that
+// need per-key metadata use KeyIndexSnapshot, which additionally deep-clones
+// it. Safe for concurrent use. Returns nil maps if the identity is
+// decommissioned.
 func (ir *Runtime) KeySnapshot() (keys, keyTypes map[string]string, lsigSizes map[string]int) {
-	snapshot := ir.KeyIndexSnapshot()
-	return snapshot.KeyFiles, snapshot.KeyTypes, snapshot.LSigSizes
+	if ir.decommissioned.Load() {
+		return nil, nil, nil
+	}
+	ir.keysLock.RLock()
+	defer ir.keysLock.RUnlock()
+	keys = maps.Clone(ir.keys)
+	keyTypes = maps.Clone(ir.keyTypes)
+	lsigSizes = maps.Clone(ir.keyLsigSizes)
+	if keys == nil {
+		keys = map[string]string{}
+	}
+	if keyTypes == nil {
+		keyTypes = map[string]string{}
+	}
+	if lsigSizes == nil {
+		lsigSizes = map[string]int{}
+	}
+	return keys, keyTypes, lsigSizes
 }
 
 // PublishSnapshot replaces the key maps with new data from a reload.
@@ -738,10 +775,25 @@ func (ir *Runtime) PublishSnapshot(keys, keyTypes map[string]string, lsigSizes m
 	if ir.decommissioned.Load() {
 		return
 	}
+	metadata := make(map[string]KeyPublicMetadata)
+	if ir.keyStore != nil {
+		// GetSigningSummary builds a fresh caller-owned copy per call, so its
+		// maps and metadata are adopted here without another clone layer.
+		summaries := ir.keyStore.GetSigningSummary()
+		publicKeys := ir.keyStore.GetPublicKeyHexMap()
+		metadata = make(map[string]KeyPublicMetadata, len(summaries))
+		for selector, summary := range summaries {
+			metadata[selector] = KeyPublicMetadata{
+				Category: summary.Category, PublicKeyHex: publicKeys[selector], Parameters: summary.Parameters,
+				BoundedAuthorization: summary.BoundedAuthorization,
+			}
+		}
+	}
 	ir.keysLock.Lock()
 	ir.keys = keys
 	ir.keyTypes = keyTypes
 	ir.keyLsigSizes = lsigSizes
+	ir.keyMetadata = metadata
 	ir.keysetRev.Add(1)
 	ir.keysLock.Unlock()
 }
@@ -969,6 +1021,7 @@ func (ir *Runtime) performLockCleanup() {
 	ir.keys = make(map[string]string)
 	ir.keyTypes = make(map[string]string)
 	ir.keyLsigSizes = make(map[string]int)
+	ir.keyMetadata = make(map[string]KeyPublicMetadata)
 	ir.keysetRev.Add(1)
 	ir.keysLock.Unlock()
 

@@ -14,9 +14,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	sentrykeytypes "github.com/aplane-algo/aplane/internal/sentry/keytypes"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -37,6 +38,7 @@ type Payload struct {
 	SigningMetadataVersion int
 	BaseKeyType            string
 	SigningArgs            []StoredSigningArg
+	BoundedAuthorization   *boundedmeta.Metadata
 	TemplateFingerprint    string
 	CreatedAt              time.Time
 }
@@ -55,6 +57,7 @@ type CanonicalPayloadMetadata struct {
 	SigningMetadataVersion int
 	BaseKeyType            string
 	SigningArgs            []StoredSigningArg
+	BoundedAuthorization   *boundedmeta.Metadata
 	TemplateFingerprint    string
 	CreatedAt              string
 }
@@ -62,20 +65,21 @@ type CanonicalPayloadMetadata struct {
 // payloadWireV1 is the sole canonical JSON DTO for decrypted key payloads.
 // It remains private so durable JSON field ownership stays in this package.
 type payloadWireV1 struct {
-	FormatVersion          *int               `json:"format_version"`
-	Category               string             `json:"category"`
-	KeyType                string             `json:"key_type"`
-	PublicKeyHex           string             `json:"public_key,omitempty"`
-	PrivateKeyHex          string             `json:"private_key,omitempty"`
-	Parameters             map[string]string  `json:"parameters,omitempty"`
-	LogicSigBytecodeHex    string             `json:"lsig_bytecode,omitempty"`
-	SaltCounter            *byte              `json:"salt_counter,omitempty"`
-	TEALSource             string             `json:"teal_source,omitempty"`
-	SigningMetadataVersion int                `json:"signing_metadata_version,omitempty"`
-	BaseKeyType            string             `json:"base_key_type,omitempty"`
-	SigningArgs            []StoredSigningArg `json:"signing_args,omitempty"`
-	TemplateFingerprint    string             `json:"template_fingerprint,omitempty"`
-	CreatedAt              string             `json:"created_at"`
+	FormatVersion          *int                  `json:"format_version"`
+	Category               string                `json:"category"`
+	KeyType                string                `json:"key_type"`
+	PublicKeyHex           string                `json:"public_key,omitempty"`
+	PrivateKeyHex          string                `json:"private_key,omitempty"`
+	Parameters             map[string]string     `json:"parameters,omitempty"`
+	LogicSigBytecodeHex    string                `json:"lsig_bytecode,omitempty"`
+	SaltCounter            *byte                 `json:"salt_counter,omitempty"`
+	TEALSource             string                `json:"teal_source,omitempty"`
+	SigningMetadataVersion int                   `json:"signing_metadata_version,omitempty"`
+	BaseKeyType            string                `json:"base_key_type,omitempty"`
+	SigningArgs            []StoredSigningArg    `json:"signing_args,omitempty"`
+	BoundedAuthorization   *boundedmeta.Metadata `json:"bounded_authorization,omitempty"`
+	TemplateFingerprint    string                `json:"template_fingerprint,omitempty"`
+	CreatedAt              string                `json:"created_at"`
 }
 
 // NewEd25519Payload constructs a canonical native Ed25519 key payload.
@@ -158,6 +162,26 @@ func NewGenericLSigPayload(
 	}
 }
 
+// SetBoundedAuthorization attaches a validated bounded signing contract and
+// upgrades this LogicSig payload to the bounded metadata version.
+func (p *Payload) SetBoundedAuthorization(metadata *boundedmeta.Metadata) error {
+	if p == nil {
+		return incompatibleKeyFormat("key payload is nil")
+	}
+	if metadata == nil {
+		return incompatibleKeyFormat("bounded authorization metadata is nil")
+	}
+	if err := metadata.Validate(); err != nil {
+		return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
+	}
+	p.BoundedAuthorization = boundedmeta.Clone(metadata)
+	p.SigningMetadataVersion = BoundedSigningMetadataVersion
+	// Bounded metadata owns the complete argument contract. Legacy signing_args
+	// must not survive the upgrade or provide a second caller-controlled layout.
+	p.SigningArgs = nil
+	return nil
+}
+
 // ParsePayload strictly decodes and validates canonical decrypted key JSON.
 func ParsePayload(data []byte) (*Payload, error) {
 	if err := validateCanonicalJSONObject(data); err != nil {
@@ -208,6 +232,7 @@ func MarshalPayload(payload *Payload) ([]byte, error) {
 		SigningMetadataVersion: payload.SigningMetadataVersion,
 		BaseKeyType:            payload.BaseKeyType,
 		SigningArgs:            cloneStoredSigningArgs(payload.SigningArgs),
+		BoundedAuthorization:   boundedmeta.Clone(payload.BoundedAuthorization),
 		TemplateFingerprint:    payload.TemplateFingerprint,
 		CreatedAt:              payload.CreatedAt.UTC().Format(time.RFC3339),
 	}
@@ -247,7 +272,7 @@ func (p *Payload) Validate() error {
 		}
 		return validateNoLogicSigFields(p)
 	case CategoryComponent:
-		if !keytypes.IsSentryComponentKeyType(p.KeyType) {
+		if !sentrykeytypes.IsSentryComponentKeyType(p.KeyType) {
 			return incompatibleKeyFormat("component category requires a sentry key type, got %q", p.KeyType)
 		}
 		if err := validateComponentPayload(p); err != nil {
@@ -296,7 +321,7 @@ func (p *Payload) Selector() (string, error) {
 		copy(address[:], p.PublicKey)
 		return address.String(), nil
 	case CategoryComponent:
-		return keytypes.ComponentKeySelector(p.KeyType, p.PublicKey)
+		return sentrykeytypes.ComponentKeySelector(p.KeyType, p.PublicKey)
 	case CategoryDSALsig, CategoryGenericLsig:
 		if len(p.LogicSigBytecode) == 0 {
 			return "", incompatibleKeyFormatErr(fmt.Errorf("%w: %s requires lsig_bytecode", ErrInvalidLogicSigBytecode, p.Category))
@@ -324,6 +349,7 @@ func (p *Payload) Metadata() CanonicalPayloadMetadata {
 		SigningMetadataVersion: p.SigningMetadataVersion,
 		BaseKeyType:            p.BaseKeyType,
 		SigningArgs:            cloneStoredSigningArgs(p.SigningArgs),
+		BoundedAuthorization:   boundedmeta.Clone(p.BoundedAuthorization),
 		TemplateFingerprint:    p.TemplateFingerprint,
 		CreatedAt:              p.CreatedAt.UTC().Format(time.RFC3339),
 	}
@@ -341,6 +367,7 @@ func (p *Payload) SigningMetadata() SigningMetadata {
 		Parameters:             maps.Clone(p.Parameters),
 		SigningArgs:            cloneStoredSigningArgs(p.SigningArgs),
 		SigningMetadataVersion: p.SigningMetadataVersion,
+		BoundedAuthorization:   boundedmeta.Clone(p.BoundedAuthorization),
 	}
 }
 
@@ -388,21 +415,22 @@ func payloadFromWire(wire payloadWireV1) (*Payload, error) {
 		SigningMetadataVersion: wire.SigningMetadataVersion,
 		BaseKeyType:            wire.BaseKeyType,
 		SigningArgs:            cloneStoredSigningArgs(wire.SigningArgs),
+		BoundedAuthorization:   boundedmeta.Clone(wire.BoundedAuthorization),
 		TemplateFingerprint:    wire.TemplateFingerprint,
 		CreatedAt:              createdAt,
 	}, nil
 }
 
+// decodeCanonicalHex wraps the shared boundedmeta canonicality rule with the
+// key-codec contract: empty fields decode to nil (optional payload fields)
+// and violations surface as typed incompatible-key-format errors.
 func decodeCanonicalHex(field, value string) ([]byte, error) {
 	if value == "" {
 		return nil, nil
 	}
-	if value != strings.ToLower(value) {
-		return nil, incompatibleKeyFormat("%s must use lowercase hex", field)
-	}
-	decoded, err := hex.DecodeString(value)
+	decoded, err := boundedmeta.DecodeCanonicalHex(field, value, 0, 0)
 	if err != nil {
-		return nil, incompatibleKeyFormat("invalid %s hex: %v", field, err)
+		return nil, incompatibleKeyFormat("%v", err)
 	}
 	return decoded, nil
 }
@@ -429,11 +457,11 @@ func validateEd25519Payload(p *Payload) error {
 }
 
 func validateComponentPayload(p *Payload) error {
-	publicSize, ok := keytypes.ComponentPublicKeySize(p.KeyType)
+	publicSize, ok := sentrykeytypes.ComponentPublicKeySize(p.KeyType)
 	if !ok {
 		return incompatibleKeyFormat("unsupported sentry key type %q", p.KeyType)
 	}
-	privateSize, ok := keytypes.ComponentPrivateKeySize(p.KeyType)
+	privateSize, ok := sentrykeytypes.ComponentPrivateKeySize(p.KeyType)
 	if !ok {
 		return incompatibleKeyFormat("unsupported sentry key type %q", p.KeyType)
 	}
@@ -443,7 +471,7 @@ func validateComponentPayload(p *Payload) error {
 	if len(p.PrivateKey) != privateSize {
 		return incompatibleKeyFormat("component private key length %d invalid (expected %d bytes)", len(p.PrivateKey), privateSize)
 	}
-	if err := keytypes.ValidateComponentPair(p.KeyType, p.PublicKey, p.PrivateKey); err != nil {
+	if err := sentrykeytypes.ValidateComponentPair(p.KeyType, p.PublicKey, p.PrivateKey); err != nil {
 		return incompatibleKeyFormat("invalid component key pair: %v", err)
 	}
 	return nil
@@ -452,7 +480,7 @@ func validateComponentPayload(p *Payload) error {
 func validateNoLogicSigFields(p *Payload) error {
 	if len(p.Parameters) != 0 || len(p.LogicSigBytecode) != 0 || p.SaltCounter != nil ||
 		p.TEALSource != "" || p.SigningMetadataVersion != 0 || p.BaseKeyType != "" ||
-		len(p.SigningArgs) != 0 || p.TemplateFingerprint != "" {
+		len(p.SigningArgs) != 0 || p.BoundedAuthorization != nil || p.TemplateFingerprint != "" {
 		return incompatibleKeyFormat("category %q forbids LogicSig fields", p.Category)
 	}
 	return nil
@@ -465,8 +493,43 @@ func validateLogicSigFields(p *Payload) error {
 	if p.SaltCounter == nil {
 		return ErrMissingLogicSigSaltCounter
 	}
-	if p.SigningMetadataVersion != CurrentSigningMetadataVersion {
-		return incompatibleKeyFormat("%s requires signing_metadata_version %d", p.Category, CurrentSigningMetadataVersion)
+	if p.BoundedAuthorization == nil {
+		if p.SigningMetadataVersion != CurrentSigningMetadataVersion {
+			return incompatibleKeyFormat("%s without bounded_authorization requires signing_metadata_version %d", p.Category, CurrentSigningMetadataVersion)
+		}
+	} else {
+		if p.SigningMetadataVersion != BoundedSigningMetadataVersion {
+			return incompatibleKeyFormat("%s with bounded_authorization requires signing_metadata_version %d", p.Category, BoundedSigningMetadataVersion)
+		}
+		if p.Category != CategoryDSALsig {
+			return incompatibleKeyFormat("bounded_authorization requires dsa_lsig category")
+		}
+		if err := p.BoundedAuthorization.Validate(); err != nil {
+			return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
+		}
+		if p.BoundedAuthorization.RequiresAdminKey() {
+			parameterPublicKey, err := decodeCanonicalHex(boundedmeta.AdminPublicKeyParameter, p.Parameters[boundedmeta.AdminPublicKeyParameter])
+			if err != nil {
+				return err
+			}
+			metadataPublicKey, err := boundedmeta.ParseAdminPublicKey(p.BoundedAuthorization.AdminPublicKeyHex)
+			if err != nil {
+				return incompatibleKeyFormat("invalid bounded_authorization: %v", err)
+			}
+			if !bytes.Equal(parameterPublicKey, metadataPublicKey) {
+				return incompatibleKeyFormat("bounded_authorization admin public key does not match parameters.%s", boundedmeta.AdminPublicKeyParameter)
+			}
+		}
+		if len(p.SigningArgs) != 0 {
+			return incompatibleKeyFormat("bounded1 forbids caller-supplied signing_args")
+		}
+		expectedSize := len(p.LogicSigBytecode)
+		for _, slot := range p.BoundedAuthorization.ArgumentLayout {
+			expectedSize += slot.MaxSize
+		}
+		if p.BoundedAuthorization.PostSigningLogicSigSize != expectedSize {
+			return incompatibleKeyFormat("bounded_authorization post_signing_lsig_size %d does not match derived size %d", p.BoundedAuthorization.PostSigningLogicSigSize, expectedSize)
+		}
 	}
 	address, err := logicSigAddressBytes(p.LogicSigBytecode)
 	if err != nil {

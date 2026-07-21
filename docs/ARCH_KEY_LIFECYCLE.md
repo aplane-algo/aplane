@@ -60,6 +60,8 @@ This separation is deliberate:
 | LogicSig key file | `identities/<identity>/keys/<address>.key` | LogicSig bytecode, salt, signing metadata, and any private DSA key material. |
 | Sentry key file | `identities/<identity>/keys/<sentry_key_id>.key` | Component-signing authority for sentry-role `/sign/component`; not an Algorand spending account. |
 | Sentry public sidecar | `identities/<identity>/keys/<sentry_key_id>.public.json` | Public export metadata for local sentry keys. |
+| External contract-admin artifact | Operator-controlled `<contract_admin_key_id>.apbounded-admin-key`, outside signer data | External Falcon authority for bounded admin operations; owned only by `apbounded-admin`, never by signer or `apstore`. |
+| Contract-admin public reference | Operator-controlled `<contract_admin_key_id>.apbounded-admin-key.json` | Disposable convenience copy of the Contract Admin Key ID and public key used during bounded account generation. |
 | Node role | `<APSIGNER_DATA>/node.yaml` | Single-purpose role for the signer data root. |
 | Node role integrity sidecar | `identities/<identity>/node.yaml.hmac` | Per-identity HMAC over the exact root `node.yaml` bytes. |
 | Identity config | `identities/<identity>/config.yaml` | Identity-local runtime settings such as approval/lock timeouts and decommission state; it does not carry key-class role. |
@@ -108,7 +110,7 @@ Valid roles are exactly `signer` and `sentry`.
 
 | Node role | Allowed active key classes | Disallowed active key classes | Served signing paths |
 |---|---|---|---|
-| `signer` | Native signing keys, ordinary LogicSig keys, guarded account keys, and public sentry references used for generation. | Sentry component private keys. | Normal `/sign`, user-role `/sign/component`, `/sign/assemble`. |
+| `signer` | Native signing keys, ordinary and bounded LogicSig account keys, guarded account keys, and public sentry references used for generation. | Sentry component private keys and all external contract-admin private artifacts. | Normal `/sign`, bounded-admin spending-partial generation, user-role `/sign/component`, `/sign/assemble`. |
 | `sentry` | Sentry component private keys and their public sidecars. | Native signing keys, ordinary LogicSig account keys, and guarded account keys. | Sentry-role `/sign/component`. |
 
 Rules:
@@ -223,6 +225,7 @@ key is rejected during reload rather than published as a signable key.
 | DSA LogicSig key valid | Payload has private DSA material, stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, `base_key_type`, and valid signing metadata. | Yes on signer nodes when the base signing provider is registered. | Restores from stored metadata; composed template is not required. |
 | Generic LogicSig key valid | Payload has stored LogicSig bytecode, `salt_counter`, `signing_metadata_version`, and stored signing args. | Yes on signer nodes. | Restores from stored metadata; template is not required. |
 | Sentry key valid | Payload category/type is a sentry key and Sentry Key ID is canonical. | Only through sentry-role component signing on sentry nodes; normal `/sign` and spending paths reject it. | Restores as a sentry key on sentry nodes, regenerating the public sidecar; never as a spending account. |
+| Bounded account key valid | DSA LogicSig key whose bytecode embeds an external contract-admin public key and whose v2 metadata derives the matching Contract Admin Key ID and program binding. | Pure spends use signer-held authority; admin-key operations additionally require external completion through `apbounded-admin`. | Restores from durable bounded metadata. The external `.apbounded-admin-key` artifact is never part of signer backup or restore. |
 | Guarded account key valid | DSA LogicSig key whose bytecode embeds the sentry public key. | Only on signer nodes through guarded orchestration: user component signature, sentry component signature, local assembly. | Restores from stored bytecode and metadata. |
 | LogicSig missing `salt_counter` | Payload has LogicSig bytecode but no salt counter. | No; scan/verify/restore reject. | Restore rejects. |
 | LogicSig on-curve address | Stored LogicSig bytecode derives an on-curve address. | No; scan/verify/restore reject. | Restore rejects. |

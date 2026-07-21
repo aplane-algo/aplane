@@ -140,6 +140,24 @@ func TestGuardedTargetsRejectUnsupportedSigningFlow(t *testing.T) {
 	}
 }
 
+func TestGuardedTargetsDispatchBoundedOutsideSentryFlow(t *testing.T) {
+	sender := testAddress(1).String()
+	s, sc := newGuardedTestSigner(t, sender, 1500, testSentryPublicKeyHex(0xd6))
+	sc.SetSigningFlowForAddress(sender, signerapi.SigningFlowBounded1)
+	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "bounded")
+
+	if s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
+		t.Fatal("HasGuardedEffectiveSigner() = true for bounded1")
+	}
+	targets, err := s.guardedTargets([]types.Transaction{txn})
+	if err != nil {
+		t.Fatalf("guardedTargets() error = %v", err)
+	}
+	if len(targets) != 0 {
+		t.Fatalf("guardedTargets() = %#v, want no sentry targets", targets)
+	}
+}
+
 func TestGuardedTargetsRequireSentryComponentKeyTypeMetadata(t *testing.T) {
 	sender := testAddress(1).String()
 	sentryHex := testSentryPublicKeyHex(0xd6)
