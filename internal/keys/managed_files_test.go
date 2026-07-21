@@ -5,6 +5,7 @@ package keys
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -112,5 +113,31 @@ func TestParseManagedCredentialFilenameExcludesStandaloneWitnessFiles(t *testing
 	selector, class, ok := ParseManagedCredentialFilename("ID.sen")
 	if !ok || selector != "ID" || class != ManagedCredentialSentry {
 		t.Fatalf("ParseManagedCredentialFilename(ID.sen) = (%q, %q, %v)", selector, class, ok)
+	}
+}
+
+func TestScanManagedCredentialFiles(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"ACCOUNT.key", "WITNESS.sen", "EXTERNAL.wit", "EXTERNAL.wit.json", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "DIRECTORY.key"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := ScanManagedCredentialFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("managed files = %#v, want 2", files)
+	}
+	if files[0].Name != "ACCOUNT.key" || files[0].Class != ManagedCredentialAccount || files[0].Selector != "ACCOUNT" {
+		t.Fatalf("account record = %#v", files[0])
+	}
+	if files[1].Name != "WITNESS.sen" || files[1].Class != ManagedCredentialSentry || files[1].Selector != "WITNESS" {
+		t.Fatalf("sentry record = %#v", files[1])
 	}
 }

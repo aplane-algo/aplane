@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -65,11 +65,11 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 	}
 	defer crypto.ZeroBytes(oldMasterKey)
 
-	addresses, templateFiles, err := scanTargets(paths, identityID)
+	managedFiles, templateFiles, err := scanTargets(paths, identityID)
 	if err != nil {
 		return result, err
 	}
-	logTargets(opts.Logf, addresses, templateFiles)
+	logTargets(opts.Logf, managedFiles, templateFiles)
 
 	var pendingFiles []pendingFile
 	newKeystorePath := keystorePath + ".new"
@@ -82,9 +82,8 @@ func Rotate(paths storepaths.Paths, identityID string, oldPassphrase, newPassphr
 	defer crypto.ZeroBytes(newMasterKey)
 
 	logf(opts.Logf, "phase 1: creating new encrypted files")
-	for _, address := range addresses {
-		keyPath := paths.KeyFilePath(identityID, address)
-		pf, ok, err := createPendingEncryptedFile(keyPath, oldMasterKey, newMasterKey, address, opts.Logf)
+	for _, managedFile := range managedFiles {
+		pf, ok, err := createPendingEncryptedFile(managedFile.Path, oldMasterKey, newMasterKey, managedFile.Name, opts.Logf)
 		if err != nil {
 			cleanupPendingNewFiles(pendingFiles)
 			return result, err
@@ -176,8 +175,8 @@ func loadAndVerifyCurrentMasterKey(paths storepaths.Paths, identityID string, ol
 	return oldMasterKey, nil
 }
 
-func scanTargets(paths storepaths.Paths, identityID string) ([]string, []string, error) {
-	addresses, err := backup.ScanKeyFiles(paths.KeysDir(identityID))
+func scanTargets(paths storepaths.Paths, identityID string) ([]keys.ManagedCredentialFile, []string, error) {
+	managedFiles, err := keys.ScanManagedCredentialFiles(paths.KeysDir(identityID))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to scan keystore: %w", err)
 	}
@@ -193,16 +192,16 @@ func scanTargets(paths storepaths.Paths, identityID string) ([]string, []string,
 		}
 		return nil
 	})
-	return addresses, templateFiles, nil
+	return managedFiles, templateFiles, nil
 }
 
-func logTargets(log Logger, addresses []string, templateFiles []string) {
-	if len(addresses) == 0 && len(templateFiles) == 0 {
+func logTargets(log Logger, managedFiles []keys.ManagedCredentialFile, templateFiles []string) {
+	if len(managedFiles) == 0 && len(templateFiles) == 0 {
 		logf(log, "no key or template files found in keystore")
 		return
 	}
-	if len(addresses) > 0 {
-		logf(log, "found %d key file(s) to migrate", len(addresses))
+	if len(managedFiles) > 0 {
+		logf(log, "found %d managed credential file(s) to migrate", len(managedFiles))
 	}
 	if len(templateFiles) > 0 {
 		logf(log, "found %d template file(s) to migrate", len(templateFiles))

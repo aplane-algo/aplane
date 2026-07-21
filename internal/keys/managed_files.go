@@ -6,6 +6,7 @@ package keys
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -21,6 +22,13 @@ const (
 )
 
 type ManagedCredentialClass string
+
+type ManagedCredentialFile struct {
+	Selector string
+	Class    ManagedCredentialClass
+	Name     string
+	Path     string
+}
 
 const (
 	ManagedCredentialAccount ManagedCredentialClass = "account"
@@ -82,6 +90,36 @@ func ParseManagedCredentialFilename(name string) (selector string, class Managed
 		return "", "", false
 	}
 	return selector, class, true
+}
+
+// ScanManagedCredentialFiles returns concrete private credential paths for
+// both managed filename classes. It does not open or validate payloads.
+func ScanManagedCredentialFiles(dir string) ([]ManagedCredentialFile, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read managed credential directory: %w", err)
+	}
+
+	files := make([]ManagedCredentialFile, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		selector, class, ok := ParseManagedCredentialFilename(entry.Name())
+		if !ok {
+			continue
+		}
+		files = append(files, ManagedCredentialFile{
+			Selector: selector,
+			Class:    class,
+			Name:     entry.Name(),
+			Path:     filepath.Join(dir, entry.Name()),
+		})
+	}
+	return files, nil
 }
 
 func CanonicalManagedCredentialFilename(selector, category string) (string, error) {

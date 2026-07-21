@@ -333,7 +333,15 @@ func DeleteKey(address, keyFile, deletedKeysDir string) (*DeleteResult, error) {
 		return nil, fmt.Errorf("failed to create deleted keys directory: %w", err)
 	}
 
-	destPath := filepath.Join(deletedKeysDir, fmt.Sprintf("%s.key", address))
+	basename := filepath.Base(keyFile)
+	selector, _, ok := keys.ParseManagedCredentialFilename(basename)
+	if !ok {
+		return nil, fmt.Errorf("refusing to delete unrecognized managed credential filename %q", basename)
+	}
+	if selector != address {
+		return nil, fmt.Errorf("refusing to delete managed credential %q for selector %q", basename, address)
+	}
+	destPath := filepath.Join(deletedKeysDir, basename)
 	if err := os.Rename(keyFile, destPath); err != nil {
 		return nil, fmt.Errorf("failed to move key file: %w", err)
 	}
