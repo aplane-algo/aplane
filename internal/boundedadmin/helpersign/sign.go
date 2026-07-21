@@ -9,11 +9,11 @@ import (
 	"fmt"
 
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
-	"github.com/aplane-algo/aplane/internal/boundedadmin/artifact"
 	boundedauthorization "github.com/aplane-algo/aplane/internal/boundedadmin/authorization"
 	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
+	"github.com/aplane-algo/aplane/internal/witness/artifact"
 )
 
 const falcon1024PrivateKeySize = 2305
@@ -29,7 +29,7 @@ func Sign(request boundedprotocol.Request, credential *artifact.Credential) (bou
 		return boundedprotocol.Response{}, nil, fmt.Errorf("contract-admin credential is required")
 	}
 	metadata := request.Payload.Partial.Authorization
-	if credential.ContractAdminKeyID != metadata.ContractAdminKeyID || credential.PublicKeyHex != metadata.PublicKeyHex {
+	if credential.WitnessKeyID != metadata.ContractAdminKeyID || credential.PublicKeyHex != metadata.PublicKeyHex {
 		return boundedprotocol.Response{}, nil, fmt.Errorf("contract-admin artifact does not match bounded authorization account")
 	}
 

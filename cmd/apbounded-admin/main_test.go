@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/apboundedadminapp"
-	"github.com/aplane-algo/aplane/internal/boundedadmin/artifact"
+	"github.com/aplane-algo/aplane/internal/witness/artifact"
 )
 
 func TestGenerateInspectVerify(t *testing.T) {
@@ -74,7 +74,7 @@ func TestGenerateInspectVerify(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &verified); err != nil {
 		t.Fatalf("decode verify output: %v", err)
 	}
-	if !verified.Verified || verified.ContractAdminKeyID != generated.Reference.ContractAdminKeyID {
+	if !verified.Verified || verified.WitnessKeyID != generated.Reference.WitnessKeyID {
 		t.Fatalf("verify output = %#v", verified)
 	}
 }
@@ -103,7 +103,7 @@ func TestGenerateRejectsPassphraseMismatch(t *testing.T) {
 
 func TestInspectWritesTypedSchemaError(t *testing.T) {
 	directory := t.TempDir()
-	path := filepath.Join(directory, "unknown.apbounded-admin-key")
+	path := filepath.Join(directory, "unknown.wit")
 	if err := os.WriteFile(path, []byte(`{"schema":"aplane.external-governance-bundle.v2"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -167,13 +167,13 @@ func TestRekeyParsesOnlineWorkflowOptions(t *testing.T) {
 		},
 	}
 	exitCode := app.run([]string{
-		"rekey", "--client-data", "/client", "--network", "localnet", "--key", "/cold/key.apbounded-admin-key",
+		"rekey", "--client-data", "/client", "--network", "localnet", "--key", "/cold/key.wit",
 		"--fee", "4000", "account", "to", "target",
 	})
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", exitCode, stderr.String())
 	}
-	if got.Operation != apboundedadminapp.OperationRekey || got.ClientData != "/client" || got.Network != "localnet" || got.Artifact != "/cold/key.apbounded-admin-key" || got.Account != "account" || got.Target != "target" || got.Fee != 4000 || !got.UseFlatFee || !got.Wait {
+	if got.Operation != apboundedadminapp.OperationRekey || got.ClientData != "/client" || got.Network != "localnet" || got.Artifact != "/cold/key.wit" || got.Account != "account" || got.Target != "target" || got.Fee != 4000 || !got.UseFlatFee || !got.Wait {
 		t.Fatalf("options = %#v", got)
 	}
 	if !strings.Contains(stdout.String(), "TXID") || !strings.Contains(stdout.String(), "confirmed") {
@@ -193,7 +193,7 @@ func TestUnrekeyParsesNowait(t *testing.T) {
 			return &apboundedadminapp.Result{TxID: "TXID"}, nil
 		},
 	}
-	if exitCode := app.run([]string{"unrekey", "--key", "/cold/key.apbounded-admin-key", "--nowait", "account"}); exitCode != 0 {
+	if exitCode := app.run([]string{"unrekey", "--key", "/cold/key.wit", "--nowait", "account"}); exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %s", exitCode, stderr.String())
 	}
 	if got.Operation != apboundedadminapp.OperationUnrekey || got.Account != "account" || got.Target != "" || got.Wait {

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package artifact owns the external contract-admin key format. It is a
-// client-side custody package and must not be imported by signer or apstore
+// Package artifact owns the standalone witness-key custody format. It is a
+// client-side package and must not be imported by signer, keystore, or apstore
 // runtime code.
 package artifact
 
@@ -15,26 +15,25 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
-	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const (
-	BundleSchema          = "aplane.bounded-admin-key-bundle.v1"
-	PrivatePayloadSchema  = "aplane.bounded-admin-key-private.v1"
-	PublicReferenceSchema = "aplane.bounded-admin-key-public.v1"
+	BundleSchema          = "aplane.witness-key-bundle.v1"
+	PrivatePayloadSchema  = "aplane.witness-key-private.v1"
+	PublicReferenceSchema = "aplane.witness-key-public.v1"
 
 	ErrorUnsupportedArtifactSchema = "unsupported_artifact_schema"
 
-	maxArtifactBytes     = 64 * 1024
-	maxReferenceBytes    = 16 * 1024
-	falconSeedBytes      = 64
-	falconPrivateKeySize = 2305
-
+	maxArtifactBytes          = 64 * 1024
+	maxReferenceBytes         = 16 * 1024
+	falconSeedBytes           = 64
 	standaloneEnvelopeVersion = 2
 	standaloneKDFTime         = 2
 	standaloneKDFMemory       = 64 * 1024
@@ -44,7 +43,7 @@ const (
 	standaloneGCMTagBytes     = 16
 )
 
-var selfTestMessage = []byte("APLANE_BOUNDED_ADMIN_KEY_SELF_TEST_V1")
+var selfTestMessage = []byte("APLANE_WITNESS_KEY_SELF_TEST_V1")
 
 // ProtocolError carries a stable machine-readable artifact failure code.
 type ProtocolError struct {
@@ -73,25 +72,28 @@ func ErrorCode(err error) string {
 // Bundle is the public artifact header plus a nested standalone encryption
 // envelope. Schema and public identity are readable before passphrase work.
 type Bundle struct {
-	Schema             string                           `json:"schema"`
-	ContractAdminKeyID string                           `json:"contract_admin_key_id"`
-	PublicKeyHex       string                           `json:"public_key_hex"`
-	Encryption         apcrypto.EncryptedDataStandalone `json:"encryption"`
+	Schema       string                           `json:"schema"`
+	KeyType      string                           `json:"key_type"`
+	WitnessKeyID string                           `json:"witness_key_id"`
+	PublicKeyHex string                           `json:"public_key_hex"`
+	Encryption   apcrypto.EncryptedDataStandalone `json:"encryption"`
 }
 
-// PublicReference is safe to use as bounded account creation input.
+// PublicReference is safe to use as an enrollment input.
 type PublicReference struct {
-	Schema             string `json:"schema"`
-	ContractAdminKeyID string `json:"contract_admin_key_id"`
-	PublicKeyHex       string `json:"public_key_hex"`
+	Schema       string `json:"schema"`
+	KeyType      string `json:"key_type"`
+	WitnessKeyID string `json:"witness_key_id"`
+	PublicKeyHex string `json:"public_key_hex"`
 }
 
 type privatePayload struct {
-	Schema             string `json:"schema"`
-	ContractAdminKeyID string `json:"contract_admin_key_id"`
-	PublicKeyHex       string `json:"public_key_hex"`
-	PrivateMaterial    []byte `json:"private_material"`
-	CreatedAt          string `json:"created_at"`
+	Schema          string `json:"schema"`
+	KeyType         string `json:"key_type"`
+	WitnessKeyID    string `json:"witness_key_id"`
+	PublicKeyHex    string `json:"public_key_hex"`
+	PrivateMaterial []byte `json:"private_material"`
+	CreatedAt       string `json:"created_at"`
 }
 
 // Credential is decrypted helper-owned key material. Call Zero as soon as the
@@ -122,7 +124,7 @@ func Generate(passphrase []byte, now time.Time) (bundleBytes, referenceBytes []b
 	}
 	defer apcrypto.ZeroBytes(privateMaterial)
 
-	keyID, err := boundedmeta.AdminKeyID(publicKey)
+	keyID, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
 		return nil, nil, PublicReference{}, err
 	}
@@ -130,16 +132,18 @@ func Generate(passphrase []byte, now time.Time) (bundleBytes, referenceBytes []b
 		now = time.Now()
 	}
 	reference = PublicReference{
-		Schema:             PublicReferenceSchema,
-		ContractAdminKeyID: keyID,
-		PublicKeyHex:       hex.EncodeToString(publicKey),
+		Schema:       PublicReferenceSchema,
+		KeyType:      witness.Falcon1024V1,
+		WitnessKeyID: keyID,
+		PublicKeyHex: hex.EncodeToString(publicKey),
 	}
 	payload := privatePayload{
-		Schema:             PrivatePayloadSchema,
-		ContractAdminKeyID: keyID,
-		PublicKeyHex:       reference.PublicKeyHex,
-		PrivateMaterial:    bytes.Clone(privateMaterial),
-		CreatedAt:          now.UTC().Format(time.RFC3339Nano),
+		Schema:          PrivatePayloadSchema,
+		KeyType:         witness.Falcon1024V1,
+		WitnessKeyID:    keyID,
+		PublicKeyHex:    reference.PublicKeyHex,
+		PrivateMaterial: bytes.Clone(privateMaterial),
+		CreatedAt:       now.UTC().Format(time.RFC3339Nano),
 	}
 	defer apcrypto.ZeroBytes(payload.PrivateMaterial)
 	plaintext, err := json.Marshal(payload)
@@ -149,7 +153,7 @@ func Generate(passphrase []byte, now time.Time) (bundleBytes, referenceBytes []b
 	defer apcrypto.ZeroBytes(plaintext)
 	encryptedJSON, err := apcrypto.EncryptStandalone(plaintext, passphrase)
 	if err != nil {
-		return nil, nil, PublicReference{}, fmt.Errorf("encrypt contract-admin artifact: %w", err)
+		return nil, nil, PublicReference{}, fmt.Errorf("encrypt witness artifact: %w", err)
 	}
 	defer apcrypto.ZeroBytes(encryptedJSON)
 
@@ -161,18 +165,19 @@ func Generate(passphrase []byte, now time.Time) (bundleBytes, referenceBytes []b
 		return nil, nil, PublicReference{}, err
 	}
 	bundle := Bundle{
-		Schema:             BundleSchema,
-		ContractAdminKeyID: keyID,
-		PublicKeyHex:       reference.PublicKeyHex,
-		Encryption:         encryption,
+		Schema:       BundleSchema,
+		KeyType:      witness.Falcon1024V1,
+		WitnessKeyID: keyID,
+		PublicKeyHex: reference.PublicKeyHex,
+		Encryption:   encryption,
 	}
 	bundleBytes, err = json.MarshalIndent(bundle, "", "  ")
 	if err != nil {
-		return nil, nil, PublicReference{}, fmt.Errorf("encode contract-admin artifact: %w", err)
+		return nil, nil, PublicReference{}, fmt.Errorf("encode witness artifact: %w", err)
 	}
 	referenceBytes, err = json.MarshalIndent(reference, "", "  ")
 	if err != nil {
-		return nil, nil, PublicReference{}, fmt.Errorf("encode public contract-admin reference: %w", err)
+		return nil, nil, PublicReference{}, fmt.Errorf("encode public witness reference: %w", err)
 	}
 	return bundleBytes, referenceBytes, reference, nil
 }
@@ -191,19 +196,19 @@ func Inspect(data []byte) (PublicReference, error) {
 // projections to match.
 func ParsePublicReference(data []byte) (PublicReference, error) {
 	if len(data) == 0 || len(data) > maxReferenceBytes {
-		return PublicReference{}, fmt.Errorf("public contract-admin reference size %d is invalid", len(data))
+		return PublicReference{}, fmt.Errorf("public witness reference size %d is invalid", len(data))
 	}
 	var reference PublicReference
 	if err := decodeStrict(data, &reference); err != nil {
-		return PublicReference{}, fmt.Errorf("decode public contract-admin reference: %w", err)
+		return PublicReference{}, fmt.Errorf("decode public witness reference: %w", err)
 	}
 	if reference.Schema != PublicReferenceSchema {
 		return PublicReference{}, &ProtocolError{
 			Code: ErrorUnsupportedArtifactSchema,
-			Err:  fmt.Errorf("unsupported public contract-admin reference schema %q", reference.Schema),
+			Err:  fmt.Errorf("unsupported public witness reference schema %q", reference.Schema),
 		}
 	}
-	if err := validatePublicIdentity(reference.ContractAdminKeyID, reference.PublicKeyHex); err != nil {
+	if err := validatePublicIdentity(reference.KeyType, reference.WitnessKeyID, reference.PublicKeyHex); err != nil {
 		return PublicReference{}, err
 	}
 	return reference, nil
@@ -224,7 +229,7 @@ func Open(data, passphrase []byte) (credential *Credential, err error) {
 	}
 	plaintext, err := apcrypto.DecryptStandalone(encryptedJSON, passphrase)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt contract-admin artifact: %w", err)
+		return nil, fmt.Errorf("decrypt witness artifact: %w", err)
 	}
 	defer apcrypto.ZeroBytes(plaintext)
 
@@ -236,7 +241,7 @@ func Open(data, passphrase []byte) (credential *Credential, err error) {
 	if payload.Schema != PrivatePayloadSchema {
 		return nil, &ProtocolError{Code: ErrorUnsupportedArtifactSchema, Err: fmt.Errorf("unsupported private artifact schema %q", payload.Schema)}
 	}
-	if payload.ContractAdminKeyID != bundle.ContractAdminKeyID || payload.PublicKeyHex != bundle.PublicKeyHex {
+	if payload.KeyType != bundle.KeyType || payload.WitnessKeyID != bundle.WitnessKeyID || payload.PublicKeyHex != bundle.PublicKeyHex {
 		return nil, fmt.Errorf("artifact public and encrypted identity fields do not match")
 	}
 	credential = &Credential{
@@ -272,16 +277,16 @@ func Verify(data, passphrase []byte) (PublicReference, error) {
 
 func parseBundle(data []byte) (Bundle, error) {
 	if len(data) == 0 || len(data) > maxArtifactBytes {
-		return Bundle{}, fmt.Errorf("contract-admin artifact size %d is invalid", len(data))
+		return Bundle{}, fmt.Errorf("witness artifact size %d is invalid", len(data))
 	}
 	var bundle Bundle
 	if err := decodeStrict(data, &bundle); err != nil {
-		return Bundle{}, fmt.Errorf("decode contract-admin artifact: %w", err)
+		return Bundle{}, fmt.Errorf("decode witness artifact: %w", err)
 	}
 	if bundle.Schema != BundleSchema {
 		return Bundle{}, &ProtocolError{Code: ErrorUnsupportedArtifactSchema, Err: fmt.Errorf("unsupported artifact schema %q", bundle.Schema)}
 	}
-	if err := validatePublicIdentity(bundle.ContractAdminKeyID, bundle.PublicKeyHex); err != nil {
+	if err := validatePublicIdentity(bundle.KeyType, bundle.WitnessKeyID, bundle.PublicKeyHex); err != nil {
 		return Bundle{}, err
 	}
 	if err := validateEncryption(bundle.Encryption); err != nil {
@@ -290,17 +295,20 @@ func parseBundle(data []byte) (Bundle, error) {
 	return bundle, nil
 }
 
-func validatePublicIdentity(keyID, publicKeyHex string) error {
-	publicKey, err := boundedmeta.DecodeCanonicalHex("public key", publicKeyHex, 0, 0)
+func validatePublicIdentity(keyType, keyID, publicKeyHex string) error {
+	if !witness.IsKeyType(keyType) {
+		return fmt.Errorf("unsupported witness key type %q", keyType)
+	}
+	publicKey, err := decodeCanonicalPublicKey(publicKeyHex)
 	if err != nil {
 		return err
 	}
-	wantID, err := boundedmeta.AdminKeyID(publicKey)
+	wantID, err := witness.ID(keyType, publicKey)
 	if err != nil {
 		return err
 	}
 	if keyID != wantID {
-		return fmt.Errorf("contract admin key ID does not match public key")
+		return fmt.Errorf("witness key ID does not match key type and public key")
 	}
 	return nil
 }
@@ -310,29 +318,32 @@ func validateEncryption(encryption apcrypto.EncryptedDataStandalone) error {
 		return fmt.Errorf("unsupported nested encryption envelope version %d", encryption.EnvelopeVersion)
 	}
 	if encryption.KDFTime != standaloneKDFTime || encryption.KDFMemory != standaloneKDFMemory || encryption.KDFThreads != standaloneKDFThreads {
-		return fmt.Errorf("unsupported contract-admin artifact KDF parameters")
+		return fmt.Errorf("unsupported witness artifact KDF parameters")
 	}
 	salt, err := base64.StdEncoding.DecodeString(encryption.Salt)
 	if err != nil || len(salt) != standaloneSaltBytes {
-		return fmt.Errorf("contract-admin artifact encryption salt is invalid")
+		return fmt.Errorf("witness artifact encryption salt is invalid")
 	}
 	nonce, err := base64.StdEncoding.DecodeString(encryption.Nonce)
 	if err != nil || len(nonce) != standaloneNonceBytes {
-		return fmt.Errorf("contract-admin artifact encryption nonce is invalid")
+		return fmt.Errorf("witness artifact encryption nonce is invalid")
 	}
 	ciphertext, err := base64.StdEncoding.DecodeString(encryption.Ciphertext)
 	if err != nil || len(ciphertext) < standaloneGCMTagBytes {
-		return fmt.Errorf("contract-admin artifact encryption ciphertext is invalid")
+		return fmt.Errorf("witness artifact encryption ciphertext is invalid")
 	}
 	return nil
 }
 
 func validateCredential(credential *Credential) error {
-	publicKey, err := boundedmeta.DecodeCanonicalHex("public key", credential.PublicKeyHex, 0, 0)
+	publicKey, err := decodeCanonicalPublicKey(credential.PublicKeyHex)
 	if err != nil {
 		return err
 	}
-	if len(credential.PrivateMaterial) != falconPrivateKeySize {
+	if credential.KeyType != witness.Falcon1024V1 {
+		return fmt.Errorf("unsupported witness key type %q", credential.KeyType)
+	}
+	if len(credential.PrivateMaterial) != witness.Falcon1024PrivateKeySize {
 		return fmt.Errorf("Falcon-1024 private material length %d invalid", len(credential.PrivateMaterial))
 	}
 	signature, err := signFalcon(credential.PrivateMaterial, selfTestMessage)
@@ -361,7 +372,7 @@ func generateKey() (publicKey, privateMaterial []byte, err error) {
 }
 
 func signFalcon(privateKey, message []byte) ([]byte, error) {
-	if len(privateKey) != falconPrivateKeySize {
+	if len(privateKey) != witness.Falcon1024PrivateKeySize {
 		return nil, fmt.Errorf("Falcon-1024 private material length %d invalid", len(privateKey))
 	}
 	var private falcongo.PrivateKey
@@ -378,10 +389,28 @@ func signFalcon(privateKey, message []byte) ([]byte, error) {
 
 func referenceFromBundle(bundle Bundle) PublicReference {
 	return PublicReference{
-		Schema:             PublicReferenceSchema,
-		ContractAdminKeyID: bundle.ContractAdminKeyID,
-		PublicKeyHex:       bundle.PublicKeyHex,
+		Schema:       PublicReferenceSchema,
+		KeyType:      bundle.KeyType,
+		WitnessKeyID: bundle.WitnessKeyID,
+		PublicKeyHex: bundle.PublicKeyHex,
 	}
+}
+
+func decodeCanonicalPublicKey(value string) ([]byte, error) {
+	if value == "" || value != strings.ToLower(value) {
+		return nil, fmt.Errorf("public key must be non-empty lowercase hex")
+	}
+	publicKey, err := hex.DecodeString(value)
+	if err != nil {
+		return nil, fmt.Errorf("public key must be canonical lowercase hex: %w", err)
+	}
+	if hex.EncodeToString(publicKey) != value {
+		return nil, fmt.Errorf("public key must be canonical lowercase hex")
+	}
+	if len(publicKey) != witness.Falcon1024PublicKeySize {
+		return nil, fmt.Errorf("witness public key length %d invalid (expected %d bytes)", len(publicKey), witness.Falcon1024PublicKeySize)
+	}
+	return publicKey, nil
 }
 
 func decodeStrict(data []byte, target any) error {

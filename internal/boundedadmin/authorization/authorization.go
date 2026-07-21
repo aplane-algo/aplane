@@ -27,6 +27,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txeffects"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 // ValidatedRequest holds decoded ceremony state. Partial is short-lived
@@ -237,7 +238,7 @@ func validateAuthorizationMetadata(metadata signerapi.BoundedAdminMetadata, txn 
 	if err != nil {
 		return nil, nil, binding, message, err
 	}
-	wantID, err := boundedmeta.AdminKeyID(publicKey)
+	wantID, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil || wantID != metadata.ContractAdminKeyID {
 		return nil, nil, binding, message, fmt.Errorf("contract admin public identity is invalid")
 	}

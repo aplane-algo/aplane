@@ -7,12 +7,12 @@
 package boundedmeta
 
 import (
-	"crypto/sha512"
-	"encoding/base32"
 	"encoding/hex"
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const (
@@ -28,11 +28,10 @@ const (
 	SpendEffectPay             = "pay"
 	SpendEffectAxfer           = "axfer"
 	SpendEffectAssetOptIn      = "asset_opt_in"
-	FalconAdminPublicKeySize   = 1793
-	FalconAdminSignatureSize   = 1280
+	FalconAdminPublicKeySize   = witness.Falcon1024PublicKeySize
+	FalconAdminSignatureSize   = witness.Falcon1024SignatureSize
 	ProgramBindingSize         = 32
 	MaximumProfileFee          = 10_000
-	adminKeyIDDomainV1         = "APLANE_BOUNDED_ADMIN_KEY_ID_V1"
 )
 
 // SignatureArgLayout is the durable maximum shape of the spending signature
@@ -275,7 +274,7 @@ func validateAdminMetadata(metadata *Metadata, required bool) error {
 	if len(publicKey) == 0 || strings.TrimSpace(metadata.AdminKeyID) == "" {
 		return fmt.Errorf("admin-key-authorized operation requires admin public key and key ID")
 	}
-	wantKeyID, err := AdminKeyID(publicKey)
+	wantKeyID, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
 		return err
 	}
@@ -286,19 +285,6 @@ func validateAdminMetadata(metadata *Metadata, required bool) error {
 		return err
 	}
 	return nil
-}
-
-// AdminKeyID derives the frozen display identifier for a Falcon contract-admin
-// public key.
-func AdminKeyID(publicKey []byte) (string, error) {
-	if len(publicKey) != FalconAdminPublicKeySize {
-		return "", fmt.Errorf("contract admin public key length %d invalid (expected %d bytes)", len(publicKey), FalconAdminPublicKeySize)
-	}
-	var encoded []byte
-	encoded = AppendField(encoded, []byte(adminKeyIDDomainV1))
-	encoded = AppendField(encoded, publicKey)
-	digest := sha512.Sum512_256(encoded)
-	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(digest[:]), nil
 }
 
 // ParseAdminPublicKey decodes the canonical public-key representation used in

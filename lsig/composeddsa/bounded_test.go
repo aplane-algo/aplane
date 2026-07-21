@@ -17,6 +17,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/txeffects"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 type boundedTestOps struct{}
@@ -82,11 +83,11 @@ func TestBoundedGoldenVector(t *testing.T) {
 
 	spendingPublicKey := bytes.Repeat([]byte{0x11}, BoundedAdminPublicKeySize)
 	adminPublicKey := bytes.Repeat([]byte{0x22}, BoundedAdminPublicKeySize)
-	keyID, err := BoundedAdminKeyID(adminPublicKey)
+	keyID, err := witness.ID(witness.Falcon1024V1, adminPublicKey)
 	if err != nil {
-		t.Fatalf("BoundedAdminKeyID() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
-	const wantKeyID = "WS6X45XM2AI7Y2GNJ46GXMNJ42LCIOAETMEEOIMPSWS3LOFDDGQA"
+	const wantKeyID = "MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ"
 	if keyID != wantKeyID {
 		t.Fatalf("admin key ID = %s, want %s", keyID, wantKeyID)
 	}
