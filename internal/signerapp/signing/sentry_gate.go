@@ -3,7 +3,10 @@
 
 package signing
 
-import "github.com/aplane-algo/aplane/internal/sentry/keytypes"
+import (
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
+)
 
 const (
 	sentryComponentSignRejectMessage = "sentry keys require /sign/component"
@@ -12,7 +15,7 @@ const (
 
 func sentrySignRejectMessage(keyType string) (string, bool) {
 	switch {
-	case keytypes.IsSentryComponentKeyType(keyType):
+	case witness.IsKeyType(keyType):
 		return sentryComponentSignRejectMessage, true
 	case keytypes.IsGuardedAccountKeyType(keyType):
 		return guardedAccountSignRejectMessage, true

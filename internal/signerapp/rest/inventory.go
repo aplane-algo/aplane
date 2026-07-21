@@ -21,6 +21,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
@@ -44,7 +45,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 		summary := signingSummary[address]
 		category := summary.Category
 		isGeneric := keys.IsGenericKey(category)
-		isComponent := keys.IsComponentKey(category)
+		isComponent := keys.IsWitnessKey(category)
 
 		keyInfo := signerapi.KeyInfo{
 			Address:       address,
@@ -55,7 +56,7 @@ func (s Service) BuildKeyInfoList(ir *identity.Runtime) []signerapi.KeyInfo {
 		}
 		if isComponent {
 			spending := false
-			keyInfo.IsComponentKey = true
+			keyInfo.IsWitnessKey = true
 			keyInfo.IsSpendingAccount = &spending
 		}
 		if keytypes.IsGuardedAccountKeyType(keyType) {
@@ -179,7 +180,7 @@ func (s Service) buildKeyTypes(validTypes []string, enabledGeneric []string) []s
 			RuntimeArgs:    []signerapi.RuntimeArgInfo{},
 		}
 
-		if keytypes.IsSentryComponentKeyType(keyType) {
+		if witness.IsKeyType(keyType) {
 			info.Family, info.DisplayName, info.Description = sentryComponentKeyTypeMetadata(keyType)
 			keyTypes = append(keyTypes, info)
 			continue
@@ -433,7 +434,7 @@ func replaceSentryPublicKeyParam(params []signerapi.CreationParamInfo, replaceme
 
 func sentryComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
 	switch keyType {
-	case keytypes.SentryComponentFalcon1024V1:
+	case witness.Falcon1024V1:
 		return "sentry-falcon1024", "Sentry Falcon-1024 key", "Raw Falcon-1024 sentry signing key for sentry-role component signatures"
 	default:
 		return keyType, keyType, "Raw sentry signing key for sentry-role component signatures"

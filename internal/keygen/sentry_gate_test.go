@@ -10,6 +10,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 type registryTestGenerator struct {
@@ -38,7 +39,7 @@ func TestGetGeneratorRequiresExactSentryKeyTypeRegistration(t *testing.T) {
 	Register(&registryTestGenerator{family: "falcon1024"})
 
 	tests := []string{
-		keytypes.SentryComponentFalcon1024V1,
+		witness.Falcon1024V1,
 		keytypes.GuardedFalcon1024Sentry1024V1,
 		keytypes.CorridorV1,
 	}
@@ -60,10 +61,10 @@ func TestGetGeneratorAllowsExactSentryKeyTypeRegistration(t *testing.T) {
 	registry = &GeneratorRegistry{generators: make(map[string]Generator)}
 	defer func() { registry = original }()
 
-	exact := &registryTestGenerator{family: keytypes.SentryComponentFalcon1024V1}
+	exact := &registryTestGenerator{family: witness.Falcon1024V1}
 	Register(exact)
 
-	got, err := GetGenerator(keytypes.SentryComponentFalcon1024V1)
+	got, err := GetGenerator(witness.Falcon1024V1)
 	if err != nil {
 		t.Fatalf("GetGenerator() error = %v", err)
 	}

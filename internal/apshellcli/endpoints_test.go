@@ -18,9 +18,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/apshellapp"
 	"github.com/aplane-algo/aplane/internal/config"
 	"github.com/aplane-algo/aplane/internal/engine"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestEndpointCreateSentryCommandWritesManualEndpoint(t *testing.T) {
@@ -85,13 +85,13 @@ func TestParseEndpointCreateSentryArgsAcceptsHyphenatedPortFlag(t *testing.T) {
 
 func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	dataDir := t.TempDir()
-	publicKeyHex := strings.Repeat("ab", keytypes.Falcon1024PublicKeySize)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
+	publicKeyHex := strings.Repeat("ab", witness.Falcon1024PublicKeySize)
+	componentKey := endpointCLITestComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	server := newEndpointCLIKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
-		Address:        componentKey,
-		PublicKeyHex:   publicKeyHex,
-		KeyType:        keytypes.SentryComponentFalcon1024V1,
-		IsComponentKey: true,
+		Address:      componentKey,
+		PublicKeyHex: publicKeyHex,
+		KeyType:      witness.Falcon1024V1,
+		IsWitnessKey: true,
 	}})
 
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "sentry-local", config.ClientEndpointConfig{
@@ -156,13 +156,13 @@ func TestRenderEndpointSentriesOmitsLastSeen(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
-	publicKeyHex := strings.Repeat("ab", keytypes.Falcon1024PublicKeySize)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
+	publicKeyHex := strings.Repeat("ab", witness.Falcon1024PublicKeySize)
+	componentKey := endpointCLITestComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	state.renderEndpointSentries(&apshellapp.EndpointSentriesResult{
 		Sentries: []apshellapp.EndpointSentryEntry{{
 			EndpointAlias: "sentry-local",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.SentryComponentFalcon1024V1,
+			KeyType:       witness.Falcon1024V1,
 			LastSeenAt:    "2026-06-04T00:00:00Z",
 		}},
 	})
@@ -186,8 +186,8 @@ func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
-	publicKeyHex := strings.Repeat("cd", keytypes.Falcon1024PublicKeySize)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
+	publicKeyHex := strings.Repeat("cd", witness.Falcon1024PublicKeySize)
+	componentKey := endpointCLITestComponentSelector(t, witness.Falcon1024V1, publicKeyHex)
 	state.renderEndpointShow(&apshellapp.EndpointShowResult{
 		Endpoint: apshellapp.EndpointEntry{
 			Alias: "sentry-local",
@@ -199,7 +199,7 @@ func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
 			PublishedSentries: []apshellapp.EndpointSentryEntry{{
 				EndpointAlias: "sentry-local",
 				ComponentKey:  componentKey,
-				KeyType:       keytypes.SentryComponentFalcon1024V1,
+				KeyType:       witness.Falcon1024V1,
 				LastSeenAt:    "2026-06-04T00:00:00Z",
 			}},
 		},
@@ -245,9 +245,9 @@ func endpointCLITestComponentSelector(t *testing.T, keyType, publicKeyHex string
 	if err != nil {
 		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
 	}
-	selector, err := keytypes.ComponentKeySelector(keyType, publicKey)
+	selector, err := witness.ID(keyType, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	return selector
 }

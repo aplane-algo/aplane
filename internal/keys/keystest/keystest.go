@@ -13,7 +13,7 @@ import (
 
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 )
@@ -50,7 +50,7 @@ func DSALSigKeyJSON(t testing.TB, keyType, baseKeyType string, publicKey, privat
 func SentryComponentFalcon1024KeyJSON(t testing.TB, seedFill byte) (componentKey string, keyJSON []byte) {
 	t.Helper()
 	registerFalconComponentValidator.Do(func() {
-		keytypes.RegisterComponentPairValidator(keytypes.SentryComponentFalcon1024V1, validateFalconComponentPair)
+		witness.RegisterPairValidator(witness.Falcon1024V1, validateFalconComponentPair)
 	})
 	seed := make([]byte, 48)
 	for i := range seed {
@@ -62,19 +62,19 @@ func SentryComponentFalcon1024KeyJSON(t testing.TB, seedFill byte) (componentKey
 	}
 	publicKey := append([]byte(nil), keyPair.PublicKey[:]...)
 	privateKey := append([]byte(nil), keyPair.PrivateKey[:]...)
-	componentKey, err = keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentKey, err = witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
-	payload := keys.NewComponentPayload(keytypes.SentryComponentFalcon1024V1, publicKey, privateKey)
+	payload := keys.NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
 	defer payload.ZeroSecrets()
-	return componentKey, marshal(t, payload, "component")
+	return componentKey, marshal(t, payload, "witness")
 }
 
 var registerFalconComponentValidator sync.Once
 
 func validateFalconComponentPair(publicKey, privateKey []byte) error {
-	if len(publicKey) != keytypes.Falcon1024PublicKeySize {
+	if len(publicKey) != witness.Falcon1024PublicKeySize {
 		return fmt.Errorf("invalid Falcon public key length %d", len(publicKey))
 	}
 	var keyPair falcongo.KeyPair

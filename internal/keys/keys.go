@@ -375,9 +375,9 @@ func scanKeysDirectoryInternalReport(paths storepaths.Paths, identityID string, 
 	return &KeyScanReport{Keys: keysMap, Warnings: warnings}, nil
 }
 
-// IsComponentKey classifies a key payload as a sentry key.
-func IsComponentKey(category string) bool {
-	return category == CategoryComponent
+// IsWitnessKey classifies a key payload as a sentry key.
+func IsWitnessKey(category string) bool {
+	return category == CategoryWitness
 }
 
 // IsGenericKey classifies a key payload as a generic (no private key)

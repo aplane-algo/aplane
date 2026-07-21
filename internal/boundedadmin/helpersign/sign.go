@@ -13,6 +13,7 @@ import (
 	boundedprotocol "github.com/aplane-algo/aplane/internal/boundedadmin/protocol"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/internal/witness/artifact"
 )
 
@@ -31,6 +32,9 @@ func Sign(request boundedprotocol.Request, credential *artifact.Credential) (bou
 	metadata := request.Payload.Partial.Authorization
 	if credential.WitnessKeyID != metadata.ContractAdminKeyID || credential.PublicKeyHex != metadata.PublicKeyHex {
 		return boundedprotocol.Response{}, nil, fmt.Errorf("contract-admin artifact does not match bounded authorization account")
+	}
+	if err := witness.RequireCapability(witness.CustodianOfflineCeremony, witness.DomainBoundedAdmin); err != nil {
+		return boundedprotocol.Response{}, nil, err
 	}
 
 	signature, err := signMessage(credential, validated.Message[:])

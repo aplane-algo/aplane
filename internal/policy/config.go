@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	apconfig "github.com/aplane-algo/aplane/internal/config"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 	"gopkg.in/yaml.v3"
@@ -371,10 +371,10 @@ func NormalizeKeyOverrideKey(key string) (string, error) {
 	if raw == "" {
 		return "", fmt.Errorf("key override selector is required")
 	}
-	if selector, err := keytypes.NormalizeComponentKeySelector(raw); err == nil {
+	if selector, err := witness.NormalizeID(raw); err == nil {
 		return selector, nil
 	}
-	if len(raw) == keytypes.ComponentKeySelectorLength {
+	if len(raw) == witness.IDLength {
 		return "", fmt.Errorf("invalid Sentry Key ID %q", raw)
 	}
 	addr, err := types.DecodeAddress(strings.ToUpper(raw))
@@ -392,7 +392,7 @@ func NormalizeSigningKeyOverrideKey(key string) (string, error) {
 	if raw == "" {
 		return "", fmt.Errorf("signer key override selector is required")
 	}
-	if _, err := keytypes.NormalizeComponentKeySelector(raw); err == nil {
+	if _, err := witness.NormalizeID(raw); err == nil {
 		return "", fmt.Errorf("signer key override selector must be an Algorand auth address, not a Sentry Key ID")
 	}
 	addr, err := types.DecodeAddress(strings.ToUpper(raw))
@@ -410,7 +410,7 @@ func NormalizeSentryKeyOverrideKey(key string) (string, error) {
 	if raw == "" {
 		return "", fmt.Errorf("sentry key override selector is required")
 	}
-	selector, err := keytypes.NormalizeComponentKeySelector(raw)
+	selector, err := witness.NormalizeID(raw)
 	if err != nil {
 		return "", fmt.Errorf("sentry key override selector must be a Sentry Key ID: %w", err)
 	}

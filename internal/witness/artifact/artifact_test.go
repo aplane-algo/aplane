@@ -91,6 +91,15 @@ func TestInspectRejectsUnknownSchemaBeforeEnvelopeValidation(t *testing.T) {
 	}
 }
 
+func TestInspectRejectsSignerKeyPayload(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`{"format_version":1,"category":"witness","key_type":"aplane.witness-falcon1024.v1","public_key":"00","private_key":"00","created_at":"2026-07-21T00:00:00Z"}`)
+	if _, err := Inspect(data); err == nil {
+		t.Fatal("Inspect(signer key payload) error = nil, want custody-format rejection")
+	}
+}
+
 func TestInspectRejectsUnboundedKDFParameters(t *testing.T) {
 	t.Parallel()
 

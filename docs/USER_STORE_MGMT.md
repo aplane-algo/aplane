@@ -489,8 +489,8 @@ addresses in apadmin.
 
 ## External Contract Admin Artifacts
 
-Bounded contract-admin private authority is stored only in encrypted
-`.apbounded-admin-key` artifacts managed by `apbounded-admin`. It is never an
+Bounded contract-admin private authority is a witness key stored only in an
+encrypted `.wit` artifact managed by `apbounded-admin`. It is never an
 apsigner `.key`, an `apstore` `.apb`, or part of signer backup/restore. Do not
 put these files in the signer data directory or import them with `apstore`.
 
@@ -498,21 +498,26 @@ Keep multiple independently protected copies and protect the artifact
 passphrase separately. Test each copy periodically:
 
 ```bash
-apbounded-admin inspect /media/cold/<CONTRACT_ADMIN_KEY_ID>.apbounded-admin-key
-apbounded-admin verify /media/cold/<CONTRACT_ADMIN_KEY_ID>.apbounded-admin-key
+apbounded-admin inspect /media/cold/<WITNESS_KEY_ID>.wit
+apbounded-admin verify /media/cold/<WITNESS_KEY_ID>.wit
 ```
 
-The `.apbounded-admin-key.json` sidecar contains only public convenience data;
+The `.wit.json` sidecar contains only public convenience data;
 the encrypted artifact header is self-sufficient. Losing every artifact copy
 or its passphrase permanently removes every admin-key operation from the
 immutable bounded LogicSig. Ordinary spending remains possible only within its
 compiled policy.
 
+Do not enroll this keypair as a sentry, and do not use a sentry witness as a
+contract admin. Both roles use the same witness key form, but their custody
+boundaries permit different signature domains. The software rejects collisions
+it can see locally; it cannot detect out-of-band copies.
+
 Separated ceremonies additionally use `.apbounded-admin-request` request files
 and `.apbounded-admin-signature` response files. They contain no private key material and are not
 `apstore` backups, but they bind short-lived signing authority for one exact
 transaction. Store or destroy them according to the operator's ceremony audit
-policy. They cannot recover a lost `.apbounded-admin-key` artifact.
+policy. They cannot recover a lost `.wit` artifact.
 
 ## Security Best Practices
 

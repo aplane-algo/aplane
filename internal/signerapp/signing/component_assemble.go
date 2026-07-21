@@ -20,6 +20,7 @@ import (
 	sentryverify "github.com/aplane-algo/aplane/internal/sentry/verify"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	coresigning "github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 
 	algocrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -310,7 +311,7 @@ func signedTxnHasSignature(stxn types.SignedTxn) bool {
 
 func verifySentryAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {
 	switch componentKeyType {
-	case keytypes.SentryComponentFalcon1024V1:
+	case witness.Falcon1024V1:
 		return sentryverify.VerifyFalcon1024(publicKey, msg, signature)
 	default:
 		return fmt.Errorf("key type %q is not a sentry key type", componentKeyType)
@@ -325,7 +326,7 @@ func guardedAccountSentryPublicKey(parameters map[string]string, componentKeyTyp
 	if strings.TrimSpace(value) == "" {
 		return nil, internal("loaded guarded account key is missing sentry_public_key parameter")
 	}
-	publicKeySize, ok := keytypes.ComponentPublicKeySize(componentKeyType)
+	publicKeySize, ok := witness.PublicKeySize(componentKeyType)
 	if !ok {
 		return nil, internal(fmt.Sprintf("key type %q is not a sentry key type", componentKeyType))
 	}

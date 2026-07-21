@@ -23,6 +23,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const nonGuardedFalconKeyType = "aplane.falcon1024.v1"
@@ -55,7 +56,7 @@ func TestPlanGuardedGroupSizesBudgetAcrossAllLogicSigs(t *testing.T) {
 		Index:                  0,
 		Sender:                 guarded,
 		Account:                guarded,
-		SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+		SentryComponentKeyType: witness.Falcon1024V1,
 		SentryPublicKey:        sentryHex,
 	}}
 
@@ -111,7 +112,7 @@ func TestPlanGuardedGroupBudgetsNonGuardedByEffectiveSigner(t *testing.T) {
 		Index:                  0,
 		Sender:                 guarded,
 		Account:                guarded,
-		SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+		SentryComponentKeyType: witness.Falcon1024V1,
 		SentryPublicKey:        sentryHex,
 	}}
 
@@ -148,7 +149,7 @@ func TestPlanGuardedGroupBudgetsGuardedAuthorizerByEffectiveSigner(t *testing.T)
 		Index:                  0,
 		Sender:                 sender,
 		Account:                guardedAuthorizer,
-		SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+		SentryComponentKeyType: witness.Falcon1024V1,
 		SentryPublicKey:        sentryHex,
 	}}
 
@@ -270,7 +271,7 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerLsigSize(t *testing.T) 
 			Index:                  0,
 			Sender:                 sender,
 			Account:                guardedAuthorizer,
-			SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+			SentryComponentKeyType: witness.Falcon1024V1,
 			SentryPublicKey:        sentryHex,
 		}},
 		clientsign.SubmitOptions{},

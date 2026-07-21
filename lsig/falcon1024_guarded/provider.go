@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	"github.com/aplane-algo/aplane/lsig/generictemplate"
 
@@ -56,7 +57,7 @@ func NewProviderV1() *Provider {
 		familyName:             FamilyName,
 		displayName:            "Falcon-1024 / Falcon-1024 Sentry",
 		description:            "Falcon-1024 account requiring a Falcon-1024 sentry signature",
-		sentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+		sentryComponentKeyType: witness.Falcon1024V1,
 		sentryPublicKeySize:    family.PublicKeySize,
 		signatureSize:          SignatureSize,
 		sentrySignatureArg:     "sentry_falcon1024_component_signature",

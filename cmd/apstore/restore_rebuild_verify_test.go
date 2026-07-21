@@ -159,15 +159,15 @@ func TestCmdRebuildRoleOverrideRestoresSentryBackupWithoutManifest(t *testing.T)
 	if _, err := os.Stat(keystorePaths().KeyFilePath(productIdentityID(), componentKey)); err != nil {
 		t.Fatalf("rebuilt sentry key file missing: %v", err)
 	}
-	env, ok, err := apkeys.ReadComponentPublicMetadata(keystorePaths(), productIdentityID(), componentKey)
+	env, ok, err := apkeys.ReadWitnessPublicMetadata(keystorePaths(), productIdentityID(), componentKey)
 	if err != nil {
-		t.Fatalf("ReadComponentPublicMetadata() error = %v", err)
+		t.Fatalf("ReadWitnessPublicMetadata() error = %v", err)
 	}
 	if !ok {
-		t.Fatal("ReadComponentPublicMetadata() ok = false, want restored sidecar")
+		t.Fatal("ReadWitnessPublicMetadata() ok = false, want restored sidecar")
 	}
-	if env.ComponentKey != componentKey {
-		t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, componentKey)
+	if env.WitnessKeyID != componentKey {
+		t.Fatalf("ComponentKey = %q, want %q", env.WitnessKeyID, componentKey)
 	}
 }
 

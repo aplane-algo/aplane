@@ -169,8 +169,9 @@ Box names also accept `<app-id>:<name>`.
 | **DSA-backed LogicSig** (`dsa_lsig`) | a crypto key signs, wrapped in a LogicSig | `LogicSig.Args[0]` (Falcon ≈ 1280 bytes) |
 | **Generic LogicSig** (`generic_lsig`) | TEAL logic only — **no key, no signature** | args filled from the key file's stored schema |
 
-Every account key type except native `ed25519` is LogicSig-backed. Sentry
-component keys are auxiliary non-account keys.
+Every account key type except native `ed25519` is LogicSig-backed. Witness keys
+are auxiliary non-account keys; signer-custodied instances serve the sentry
+component role, while standalone `.wit` instances may serve contract admin.
 
 ### Key types (identifiers are `publisher.family.vN`)
 
@@ -186,7 +187,7 @@ component keys are auxiliary non-account keys.
 | `aplane.htlc.v1` | generic_lsig | optional template |
 | `aplane.falcon1024-sentry1024.v1` | guarded dsa_lsig | library-visible |
 | `aplane.corridor.v1` | guarded corridor dsa_lsig | library-visible |
-| `aplane.sentry-falcon1024.v1` | sentry component key | sentry nodes only |
+| `aplane.witness-falcon1024.v1` | witness key | sentry node `.key` custody or external `.wit` custody |
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
 availability is identity-scoped. Visibility states: `default_enabled` (every

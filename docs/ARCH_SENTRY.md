@@ -29,16 +29,17 @@ Bounded contract administration is not a sentry role.
 Bounded accounts advertise the distinct `bounded1` signing flow, use no sentry
 key discovery, and never call `/sign/component`, `/sign/assemble`, or
 `/simulate/guarded`. Apsigner produces a spending partial through
-`/sign/bounded-admin`; the separately held `.apbounded-admin-key` authority is
-applied by `apbounded-admin`. A contract-admin key cannot serve as a sentry
-component key, and a sentry key cannot satisfy a bounded admin operation.
+`/sign/bounded-admin`; the separately held `.wit` authority is
+applied by `apbounded-admin`. Both roles use the witness key form, but the
+custodians expose disjoint signature domains. An individual keypair should
+never be enrolled in both roles.
 
 Every signer data root has one root `node.yaml` role:
 
 | Role | May hold | Must not hold |
 |---|---|---|
-| `signer` | ordinary account keys and guarded account keys | sentry component private keys |
-| `sentry` | sentry component private keys and sentry-domain policy | ordinary account keys or guarded account keys |
+| `signer` | ordinary account keys and guarded account keys | signer-custodied witness private keys |
+| `sentry` | witness private keys serving the sentry role and sentry-domain policy | ordinary account keys or guarded account keys |
 
 There is no supported `dual` role. Development or production co-location uses
 separate data roots and separate `apsigner` processes. Same-host co-location
@@ -58,20 +59,23 @@ Primary ownership:
 
 ## Key Model
 
-Sentry uses two related but distinct key classes.
+Sentry uses a role-neutral witness key as its auxiliary signing authority. The
+same witness key form may be held externally for a bounded contract-admin
+role, but an individual keypair should serve only one role for its entire life.
 
-### Sentry Keys And Sentry Key IDs
+### Sentry Keys And Witness Key IDs
 
-Sentry keys are raw component-signing keys held by sentry nodes. They are not
+Sentry keys are raw witness keys held by sentry nodes. They are not
 Algorand accounts and cannot spend funds directly.
 
 Current sentry key types:
 
-- `aplane.sentry-falcon1024.v1`
+- `aplane.witness-falcon1024.v1`
 
-They are selected by a 52-character uppercase **Sentry Key ID** derived from
-the key type and sentry public key. The Sentry Key ID - sometimes referred to
-in the code as 'component key' - is txid-shaped but is not an Algorand address. 
+They are selected by a 52-character uppercase **Witness Key ID** derived from
+the length-prefixed domain, key type, and sentry public key. Role-specific wire
+fields retain the name `component_key`. The ID is txid-shaped but is not an
+Algorand address.
 
 The raw sentry public key is still important: it is the verifier embedded in a
 guarded account's LogicSig bytecode. The selector is a stable lookup handle;
@@ -89,7 +93,7 @@ Current guarded account key types:
 
 A guarded account key file stores the resolved sentry public key and embeds
 that same public key in its LogicSig bytecode. Generation may accept a public
-Sentry reference by Sentry Key ID, but the durable guarded key stores the
+Sentry reference by Witness Key ID, but the durable guarded key stores the
 resolved public key.
 
 `aplane.corridor.v1` is always Falcon-1024 for both the user component key and
@@ -223,7 +227,7 @@ Public reference records are stored under:
 identities/<identity>/sentries/
 ```
 
-They contain public metadata only: Sentry Key ID, key type, sentry public key
+They contain public metadata only: Witness Key ID, key type, sentry public key
 hex, source, and timestamps. They are not endpoint ownership proofs and do not
 authorize a future transaction. The guarded account's embedded public key is
 the trust input that matters after generation.
@@ -251,7 +255,7 @@ Runtime guarded-send routing works like this:
 2. The client builds an in-memory map from endpoint `published_sentries`.
 3. The client selects the sentry endpoint that advertises that public key.
 4. Before requesting a sentry component signature, the client verifies the
-   endpoint still advertises the expected Sentry Key ID.
+   endpoint still advertises the expected Witness Key ID.
 
 Endpoint import and `/keys` discovery are routing metadata. They do not prove
 ownership. If an endpoint is wrong or stale, assembly or on-chain LogicSig
@@ -445,7 +449,7 @@ Key ID validation failures are hard errors.
 Sentry component approvals and rejections use existing sign audit events. In
 the current projection:
 
-- `txn_auth` carries the Sentry Key ID,
+- `txn_auth` carries the Witness Key ID,
 - `txn_sender` carries the decoded target sender,
 - `policy_rule_id` carries the deterministic sentry rule when one matched.
 
@@ -458,8 +462,10 @@ Primary packages and files:
 
 - `pkg/signerapi`: HTTP DTOs for component signing, assembly, sentry sync, and
   key inventory.
-- `internal/sentry/keytypes`: sentry key-type identifiers, guarded key-type
-  mapping, Sentry Key ID derivation and validation.
+- `internal/witness`: witness key-type identifiers, Witness Key ID derivation,
+  public identity validation, keypair validation, and custodian capabilities.
+- `internal/sentry/keytypes`: guarded-account key-type mapping and sentry
+  enrollment requirements.
 - `internal/sentry/message`: role-separated component messages.
 - `internal/sentry/canonical`: canonical group decoding and group hashing.
 - `internal/sentry/verify`: component signature verification (signer-side

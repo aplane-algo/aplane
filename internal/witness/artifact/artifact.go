@@ -27,12 +27,11 @@ import (
 const (
 	BundleSchema          = "aplane.witness-key-bundle.v1"
 	PrivatePayloadSchema  = "aplane.witness-key-private.v1"
-	PublicReferenceSchema = "aplane.witness-key-public.v1"
+	PublicReferenceSchema = witness.PublicReferenceSchema
 
 	ErrorUnsupportedArtifactSchema = "unsupported_artifact_schema"
 
 	maxArtifactBytes          = 64 * 1024
-	maxReferenceBytes         = 16 * 1024
 	falconSeedBytes           = 64
 	standaloneEnvelopeVersion = 2
 	standaloneKDFTime         = 2
@@ -80,12 +79,7 @@ type Bundle struct {
 }
 
 // PublicReference is safe to use as an enrollment input.
-type PublicReference struct {
-	Schema       string `json:"schema"`
-	KeyType      string `json:"key_type"`
-	WitnessKeyID string `json:"witness_key_id"`
-	PublicKeyHex string `json:"public_key_hex"`
-}
+type PublicReference = witness.PublicReference
 
 type privatePayload struct {
 	Schema          string `json:"schema"`
@@ -131,11 +125,9 @@ func Generate(passphrase []byte, now time.Time) (bundleBytes, referenceBytes []b
 	if now.IsZero() {
 		now = time.Now()
 	}
-	reference = PublicReference{
-		Schema:       PublicReferenceSchema,
-		KeyType:      witness.Falcon1024V1,
-		WitnessKeyID: keyID,
-		PublicKeyHex: hex.EncodeToString(publicKey),
+	reference, err = witness.NewPublicReference(witness.Falcon1024V1, keyID, hex.EncodeToString(publicKey))
+	if err != nil {
+		return nil, nil, PublicReference{}, err
 	}
 	payload := privatePayload{
 		Schema:          PrivatePayloadSchema,
@@ -195,20 +187,14 @@ func Inspect(data []byte) (PublicReference, error) {
 // any encrypted artifact. Callers that also have an artifact must require both
 // projections to match.
 func ParsePublicReference(data []byte) (PublicReference, error) {
-	if len(data) == 0 || len(data) > maxReferenceBytes {
-		return PublicReference{}, fmt.Errorf("public witness reference size %d is invalid", len(data))
-	}
-	var reference PublicReference
-	if err := decodeStrict(data, &reference); err != nil {
-		return PublicReference{}, fmt.Errorf("decode public witness reference: %w", err)
-	}
-	if reference.Schema != PublicReferenceSchema {
+	reference, err := witness.ParsePublicReference(data)
+	if errors.Is(err, witness.ErrUnsupportedPublicReferenceSchema) {
 		return PublicReference{}, &ProtocolError{
 			Code: ErrorUnsupportedArtifactSchema,
-			Err:  fmt.Errorf("unsupported public witness reference schema %q", reference.Schema),
+			Err:  err,
 		}
 	}
-	if err := validatePublicIdentity(reference.KeyType, reference.WitnessKeyID, reference.PublicKeyHex); err != nil {
+	if err != nil {
 		return PublicReference{}, err
 	}
 	return reference, nil
@@ -296,21 +282,8 @@ func parseBundle(data []byte) (Bundle, error) {
 }
 
 func validatePublicIdentity(keyType, keyID, publicKeyHex string) error {
-	if !witness.IsKeyType(keyType) {
-		return fmt.Errorf("unsupported witness key type %q", keyType)
-	}
-	publicKey, err := decodeCanonicalPublicKey(publicKeyHex)
-	if err != nil {
-		return err
-	}
-	wantID, err := witness.ID(keyType, publicKey)
-	if err != nil {
-		return err
-	}
-	if keyID != wantID {
-		return fmt.Errorf("witness key ID does not match key type and public key")
-	}
-	return nil
+	_, err := witness.NewPublicReference(keyType, keyID, publicKeyHex)
+	return err
 }
 
 func validateEncryption(encryption apcrypto.EncryptedDataStandalone) error {

@@ -17,11 +17,11 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/internal/witness"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -38,7 +38,7 @@ func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey 
 	if err != nil {
 		t.Fatalf("decode sentry public key: %v", err)
 	}
-	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("Sentry Key ID: %v", err)
 	}
@@ -47,10 +47,10 @@ func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey 
 		_ = json.NewEncoder(w).Encode(signerapi.KeysResponse{
 			Count: 1,
 			Keys: []signerapi.KeyInfo{{
-				Address:        componentSelector,
-				PublicKeyHex:   publicKeyHex,
-				KeyType:        keytypes.SentryComponentFalcon1024V1,
-				IsComponentKey: true,
+				Address:      componentSelector,
+				PublicKeyHex: publicKeyHex,
+				KeyType:      witness.Falcon1024V1,
+				IsWitnessKey: true,
 			}},
 		})
 	})
@@ -84,7 +84,7 @@ func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey 
 			}
 			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
 				TargetIndex:     index,
-				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				SignatureScheme: witness.Falcon1024V1,
 				Signature:       hex.EncodeToString(signature),
 			})
 		}

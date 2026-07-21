@@ -737,13 +737,13 @@ because the coarse deny switch is set, the rekey shape is unsupported, or
 Both policy domains may contain `key_overrides`, a map from concrete signing
 authority selector to sparse policy blocks. In signer-domain `policy.yaml`,
 selectors are Algorand auth addresses for client signing. In sentry-domain
-`policy.yaml`, selectors are Sentry Key IDs.
+`policy.yaml`, selectors are Witness Key IDs.
 
 During normal transaction signing, the effective policy is selected by the
 `auth_address` key that will sign, not by transaction sender. This matters for
 rekeyed accounts: the auth address controls the override. During sentry
 component signing, the effective policy is selected by the request
-`component_key` Sentry Key ID.
+`component_key` Witness Key ID.
 
 At the stored-policy level, overrides are sparse: unset fields inherit from the
 identity-wide policy. Nested overrides are rejected. If an override includes a
@@ -929,7 +929,7 @@ policy decision:
 Sentry component signing uses the same policy rule identifiers for decoded
 transaction facts. Sentry component approvals and policy rejections are
 recorded through existing `SIGN_APPROVED`/`SIGN_REJECTED` audit events with the
-Sentry Key ID in `txn_auth`, the decoded sender in `txn_sender`, and the
+Witness Key ID in `txn_auth`, the decoded sender in `txn_sender`, and the
 policy rule in `policy_rule_id` when applicable. The
 architecture overview is in [ARCH_SENTRY.md](ARCH_SENTRY.md);
 compatibility-bearing audit details live in

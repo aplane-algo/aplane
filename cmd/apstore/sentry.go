@@ -9,8 +9,8 @@ import (
 	"os"
 
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func cmdSentry(args []string) error {
@@ -49,12 +49,12 @@ func cmdSentryExport(args []string) error {
 	if len(args) < 1 || len(args) > 2 {
 		return fmt.Errorf("usage: apstore sentry export <sentry-key-id> [output-json]")
 	}
-	componentKey, err := keytypes.NormalizeComponentKeySelector(args[0])
+	componentKey, err := witness.NormalizeID(args[0])
 	if err != nil {
 		return fmt.Errorf("invalid Sentry Key ID: %w", err)
 	}
 
-	envelope, ok, err := apkeys.ReadComponentPublicMetadata(keystorePaths(), productIdentityID(), componentKey)
+	envelope, ok, err := apkeys.ReadWitnessPublicMetadata(keystorePaths(), productIdentityID(), componentKey)
 	if err != nil {
 		return err
 	}

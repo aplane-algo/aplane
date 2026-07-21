@@ -43,7 +43,7 @@ func SavePayload(paths storepaths.Paths, identityID string, payload *Payload, ma
 	if err := fsutil.WriteFile(privateFile, dataToWrite); err != nil {
 		return nil, fmt.Errorf("failed to write key file: %w", err)
 	}
-	if err := writeComponentPublicMetadataFromPayload(paths, identityID, selector, payload); err != nil {
+	if err := writeWitnessPublicMetadataFromPayload(paths, identityID, selector, payload); err != nil {
 		return nil, err
 	}
 

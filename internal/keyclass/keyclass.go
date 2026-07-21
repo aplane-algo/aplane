@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 var ErrNodeRoleConflict = errors.New("node role inventory conflict")
@@ -19,7 +19,7 @@ var ErrNodeRoleConflict = errors.New("node role inventory conflict")
 // NodeRoleAllowsKeyType reports whether the single-purpose node role permits
 // keyType to exist in the identity's key inventory.
 func NodeRoleAllowsKeyType(role noderole.Role, keyType string) bool {
-	isSentryComponent := keytypes.IsSentryComponentKeyType(keyType)
+	isSentryComponent := witness.IsKeyType(keyType)
 	switch role {
 	case noderole.RoleSigner:
 		return !isSentryComponent

@@ -20,10 +20,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/witness"
 	falconsignerreg "github.com/aplane-algo/aplane/lsig/falcon1024/signerreg"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
@@ -400,7 +400,7 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	if err == nil {
 		t.Fatal("RestoreKey() error = nil, want role-forbidden rejection")
 	}
-	if !strings.Contains(err.Error(), "role-forbidden") || !strings.Contains(err.Error(), keytypes.SentryComponentFalcon1024V1) {
+	if !strings.Contains(err.Error(), "role-forbidden") || !strings.Contains(err.Error(), witness.Falcon1024V1) {
 		t.Fatalf("RestoreKey() error = %v, want sentry-key role-forbidden rejection", err)
 	}
 	if _, err := os.Stat(paths.KeyFilePath(identityID, componentKey)); !os.IsNotExist(err) {
@@ -408,7 +408,7 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	}
 }
 
-func TestRestoreKeyWritesComponentPublicMetadataOnSentryNode(t *testing.T) {
+func TestRestoreKeyWritesWitnessPublicMetadataOnSentryNode(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	identityID := "default"
 	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
@@ -430,28 +430,28 @@ func TestRestoreKeyWritesComponentPublicMetadataOnSentryNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
-	if keyType != keytypes.SentryComponentFalcon1024V1 {
-		t.Fatalf("RestoreKey() key type = %q, want %q", keyType, keytypes.SentryComponentFalcon1024V1)
+	if keyType != witness.Falcon1024V1 {
+		t.Fatalf("RestoreKey() key type = %q, want %q", keyType, witness.Falcon1024V1)
 	}
 
-	env, ok, err := apkeys.ReadComponentPublicMetadata(paths, identityID, componentKey)
+	env, ok, err := apkeys.ReadWitnessPublicMetadata(paths, identityID, componentKey)
 	if err != nil {
-		t.Fatalf("ReadComponentPublicMetadata() error = %v", err)
+		t.Fatalf("ReadWitnessPublicMetadata() error = %v", err)
 	}
 	if !ok {
-		t.Fatal("ReadComponentPublicMetadata() ok = false, want restored sidecar")
+		t.Fatal("ReadWitnessPublicMetadata() ok = false, want restored sidecar")
 	}
-	if env.ComponentKey != componentKey {
-		t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, componentKey)
+	if env.WitnessKeyID != componentKey {
+		t.Fatalf("ComponentKey = %q, want %q", env.WitnessKeyID, componentKey)
 	}
-	if env.KeyType != keytypes.SentryComponentFalcon1024V1 {
-		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentFalcon1024V1)
+	if env.KeyType != witness.Falcon1024V1 {
+		t.Fatalf("KeyType = %q, want %q", env.KeyType, witness.Falcon1024V1)
 	}
 	wantPublicKeyHex := fmt.Sprintf("%x", payload.PublicKey)
 	if env.PublicKeyHex != wantPublicKeyHex {
 		t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, wantPublicKeyHex)
 	}
-	assertFileMode(t, apkeys.ComponentPublicMetadataPath(paths, identityID, componentKey), fsutil.StoreFilePerm)
+	assertFileMode(t, apkeys.WitnessPublicMetadataPath(paths, identityID, componentKey), fsutil.StoreFilePerm)
 }
 
 func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T) {

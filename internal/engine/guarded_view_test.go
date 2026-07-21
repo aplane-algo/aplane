@@ -9,6 +9,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 // TestGuardedSignerCacheViewDelegation pins the engine→guarded cache-view
@@ -23,7 +24,7 @@ func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	signerCache := cache.NewSignerCache()
 	signerCache.AddAddress(addr, keytypes.GuardedFalcon1024Sentry1024V1)
 	signerCache.SetSigningFlowForAddress(addr, signerapi.SigningFlowSentry1)
-	signerCache.SetSentryComponentKeyTypeForAddress(addr, keytypes.SentryComponentFalcon1024V1)
+	signerCache.SetSentryComponentKeyTypeForAddress(addr, witness.Falcon1024V1)
 	signerCache.SetSentryPublicKeyForAddress(addr, sentryHex)
 	signerCache.SetLsigSize(addr, 1500)
 
@@ -36,8 +37,8 @@ func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	if got := view.SigningFlow(addr); got != signerapi.SigningFlowSentry1 {
 		t.Fatalf("SigningFlow() = %q, want %q", got, signerapi.SigningFlowSentry1)
 	}
-	if got, ok := view.SentryComponentKeyType(addr); !ok || got != keytypes.SentryComponentFalcon1024V1 {
-		t.Fatalf("SentryComponentKeyType() = %q/%v, want %s/true", got, ok, keytypes.SentryComponentFalcon1024V1)
+	if got, ok := view.SentryComponentKeyType(addr); !ok || got != witness.Falcon1024V1 {
+		t.Fatalf("SentryComponentKeyType() = %q/%v, want %s/true", got, ok, witness.Falcon1024V1)
 	}
 	if got, ok := view.SentryPublicKey(addr); !ok || got != sentryHex {
 		t.Fatalf("SentryPublicKey() = %q/%v, want %s/true", got, ok, sentryHex)

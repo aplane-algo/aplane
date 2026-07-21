@@ -96,7 +96,7 @@ func TestConnectionStateClientWrappersCallSignerEndpoints(t *testing.T) {
 				Signatures: []signerapi.ComponentSignature{{
 					TargetIndex:     0,
 					Signature:       "aabb",
-					SignatureScheme: "aplane.sentry-falcon1024.v1",
+					SignatureScheme: "aplane.witness-falcon1024.v1",
 				}},
 			}, req), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/sign/assemble":

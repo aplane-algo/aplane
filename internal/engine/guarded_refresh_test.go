@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/cache"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func testSentryPublicKeyHex(prefix byte) string {
@@ -58,7 +59,7 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 				Address:                guarded,
 				KeyType:                keytypes.GuardedFalcon1024Sentry1024V1,
 				SigningFlow:            signerapi.SigningFlowSentry1,
-				SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+				SentryComponentKeyType: witness.Falcon1024V1,
 				LsigSize:               1500,
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,
@@ -90,8 +91,8 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	if got, ok := eng.signerCacheSentryPublicKey(guarded); !ok || got != sentryHex {
 		t.Fatalf("sentry public key for guarded authorizer = %q/%v, want %s/true", got, ok, sentryHex)
 	}
-	if got, ok := eng.signerCacheSentryComponentKeyType(guarded); !ok || got != keytypes.SentryComponentFalcon1024V1 {
-		t.Fatalf("sentry component key type for guarded authorizer = %q/%v, want %s/true", got, ok, keytypes.SentryComponentFalcon1024V1)
+	if got, ok := eng.signerCacheSentryComponentKeyType(guarded); !ok || got != witness.Falcon1024V1 {
+		t.Fatalf("sentry component key type for guarded authorizer = %q/%v, want %s/true", got, ok, witness.Falcon1024V1)
 	}
 	if got := eng.signerCacheLsigSize(guarded); got != 1500 {
 		t.Fatalf("lsig size for guarded authorizer = %d, want 1500", got)
@@ -121,7 +122,7 @@ func TestRefreshSubmitSigningStateRefreshesGuardedKeyMissingFlowMetadata(t *test
 				Address:                sender,
 				KeyType:                keytypes.GuardedFalcon1024Sentry1024V1,
 				SigningFlow:            signerapi.SigningFlowSentry1,
-				SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+				SentryComponentKeyType: witness.Falcon1024V1,
 				LsigSize:               1500,
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,
@@ -174,7 +175,7 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 				Address:                guarded,
 				KeyType:                keytypes.GuardedFalcon1024Sentry1024V1,
 				SigningFlow:            signerapi.SigningFlowSentry1,
-				SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
+				SentryComponentKeyType: witness.Falcon1024V1,
 				LsigSize:               1500,
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,

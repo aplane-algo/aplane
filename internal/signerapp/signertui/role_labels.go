@@ -6,7 +6,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func (m Model) nodeRole() string {
@@ -33,7 +33,7 @@ func (m Model) rolePortLabel() string {
 }
 
 func (m Model) keyIdentifierLabel(keyType string) string {
-	if m.isSentryNode() || keytypes.IsSentryComponentKeyType(keyType) {
+	if m.isSentryNode() || witness.IsKeyType(keyType) {
 		return "Sentry Key"
 	}
 	return "Address"

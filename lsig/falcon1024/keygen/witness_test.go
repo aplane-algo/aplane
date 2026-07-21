@@ -10,14 +10,14 @@ import (
 	securecrypto "github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keystore"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
 func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
-	RegisterSentryComponents()
+	RegisterWitnessKeygen()
 	paths := storepaths.NewPaths(t.TempDir())
 	passphrase := []byte("component-generator-test-passphrase")
 	if _, _, err := securecrypto.CreateKeystoreMetadata(paths.IdentityDir("default"), passphrase); err != nil {
@@ -33,15 +33,15 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	}
 	defer securecrypto.ZeroBytes(masterKey)
 
-	g := &SentryFalcon1024Generator{}
-	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, keytypes.SentryComponentFalcon1024V1, nil)
+	g := &WitnessFalcon1024Generator{}
+	result, err := g.GenerateRandom(context.Background(), paths, "default", masterKey, witness.Falcon1024V1, nil)
 	if err != nil {
 		t.Fatalf("GenerateRandom() error = %v", err)
 	}
 	if len(result.PublicKeyHex) != falconfamily.PublicKeySize*2 {
 		t.Fatalf("PublicKeyHex length = %d, want %d", len(result.PublicKeyHex), falconfamily.PublicKeySize*2)
 	}
-	if !keytypes.IsComponentKeySelector(result.Address) {
+	if !witness.IsID(result.Address) {
 		t.Fatalf("Address = %q, want Sentry Key ID", result.Address)
 	}
 	if result.Address == result.PublicKeyHex {
@@ -62,11 +62,11 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	if !ok {
 		t.Fatalf("scan missing sentry key %q", result.Address)
 	}
-	if info.Category != keys.CategoryComponent {
-		t.Fatalf("scan category = %q, want %q", info.Category, keys.CategoryComponent)
+	if info.Category != keys.CategoryWitness {
+		t.Fatalf("scan category = %q, want %q", info.Category, keys.CategoryWitness)
 	}
-	if info.KeyType != keytypes.SentryComponentFalcon1024V1 {
-		t.Fatalf("scan key type = %q, want %q", info.KeyType, keytypes.SentryComponentFalcon1024V1)
+	if info.KeyType != witness.Falcon1024V1 {
+		t.Fatalf("scan key type = %q, want %q", info.KeyType, witness.Falcon1024V1)
 	}
 	if info.PublicKeyHex != result.PublicKeyHex {
 		t.Fatalf("scan public key = %q, want %q", info.PublicKeyHex, result.PublicKeyHex)
@@ -86,8 +86,8 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 	assertComponentMaterial(t, km, result.Address)
 }
 
-func TestSentryFalcon1024GeneratorRejectsWrongKeyType(t *testing.T) {
-	g := &SentryFalcon1024Generator{}
+func TestWitnessFalcon1024GeneratorRejectsWrongKeyType(t *testing.T) {
+	g := &WitnessFalcon1024Generator{}
 	_, err := g.GenerateRandom(context.Background(), storepaths.NewPaths(t.TempDir()), "default", nil, "ed25519", nil)
 	if err == nil {
 		t.Fatal("GenerateRandom() error = nil, want wrong key type rejection")
@@ -100,12 +100,12 @@ func assertComponentMaterial(t *testing.T, km *signing.KeyMaterial, wantSelector
 		t.Fatal("key material is nil")
 		return
 	}
-	material, ok := km.Value.(*signing.ComponentKeyMaterial)
+	material, ok := km.Value.(*signing.WitnessKeyMaterial)
 	if !ok {
-		t.Fatalf("key material value = %T, want *signing.ComponentKeyMaterial", km.Value)
+		t.Fatalf("key material value = %T, want *signing.WitnessKeyMaterial", km.Value)
 	}
-	if material.ComponentKey != wantSelector {
-		t.Fatalf("ComponentKey = %q, want %q", material.ComponentKey, wantSelector)
+	if material.WitnessKeyID != wantSelector {
+		t.Fatalf("WitnessKeyID = %q, want %q", material.WitnessKeyID, wantSelector)
 	}
 	securecrypto.ZeroBytes(material.PrivateKey)
 	securecrypto.ZeroBytes(material.PublicKey)

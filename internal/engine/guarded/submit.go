@@ -17,10 +17,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/clientsign"
 	"github.com/aplane-algo/aplane/internal/lsig"
 	"github.com/aplane-algo/aplane/internal/sentry/canonical"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/txnutil"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 type guardedTarget struct {
@@ -429,7 +429,7 @@ func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (s
 	if err != nil {
 		return "", err
 	}
-	return keytypes.DeriveComponentKeySelector(componentKeyType, publicKey), nil
+	return witness.DeriveID(componentKeyType, publicKey), nil
 }
 
 func sentryComponentLabel(componentKeyType, sentryPublicKey string) string {

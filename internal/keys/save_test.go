@@ -12,8 +12,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestSavePayloadEncrypted(t *testing.T) {
@@ -62,16 +62,16 @@ func TestSavePayloadEncrypted(t *testing.T) {
 	if roundTripped.KeyType != "ed25519" || roundTripped.Category != CategoryEd25519 {
 		t.Fatalf("round trip payload = (%q, %q), want ed25519 native", roundTripped.KeyType, roundTripped.Category)
 	}
-	if _, err := os.Stat(ComponentPublicMetadataPath(paths, "default", selector)); !os.IsNotExist(err) {
+	if _, err := os.Stat(WitnessPublicMetadataPath(paths, "default", selector)); !os.IsNotExist(err) {
 		t.Fatalf("component public metadata for ed25519 stat error = %v, want not exist", err)
 	}
 }
 
-func TestSavePayloadWritesComponentPublicMetadata(t *testing.T) {
+func TestSavePayloadWritesWitnessPublicMetadata(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
 	publicKey, privateKey := canonicalFalconComponentPair(t, 0x41)
-	payload := NewComponentPayload(keytypes.SentryComponentFalcon1024V1, publicKey, privateKey)
+	payload := NewWitnessPayload(witness.Falcon1024V1, publicKey, privateKey)
 	componentKey, err := payload.Selector()
 	if err != nil {
 		t.Fatalf("Selector() error = %v", err)
@@ -85,16 +85,16 @@ func TestSavePayloadWritesComponentPublicMetadata(t *testing.T) {
 		t.Fatalf("Address = %q, want %q", result.Address, componentKey)
 	}
 
-	path := ComponentPublicMetadataPath(paths, "default", componentKey)
+	path := WitnessPublicMetadataPath(paths, "default", componentKey)
 	assertKeyFileMode(t, path, fsutil.StoreFilePerm)
-	env, ok, err := ReadComponentPublicMetadata(paths, "default", componentKey)
+	env, ok, err := ReadWitnessPublicMetadata(paths, "default", componentKey)
 	if err != nil {
-		t.Fatalf("ReadComponentPublicMetadata() error = %v", err)
+		t.Fatalf("ReadWitnessPublicMetadata() error = %v", err)
 	}
 	if !ok {
-		t.Fatal("ReadComponentPublicMetadata() ok = false, want true")
+		t.Fatal("ReadWitnessPublicMetadata() ok = false, want true")
 	}
-	if env.ComponentKey != componentKey || env.KeyType != keytypes.SentryComponentFalcon1024V1 {
+	if env.WitnessKeyID != componentKey || env.KeyType != witness.Falcon1024V1 {
 		t.Fatalf("component metadata = %+v, want selector/key type", env)
 	}
 	if wantPublicKey := fmt.Sprintf("%x", publicKey); env.PublicKeyHex != wantPublicKey {

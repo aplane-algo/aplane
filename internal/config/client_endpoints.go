@@ -15,8 +15,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/tokenfile"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const (
@@ -429,10 +429,10 @@ func normalizeClientEndpointPublishedSentries(in map[string]ClientEndpointPublis
 		if _, exists := out[publicKey]; exists {
 			return nil, fmt.Errorf("duplicate published sentry public key %s", publicKey)
 		}
-		if !keytypes.IsSentryComponentKeyType(published.KeyType) {
+		if !witness.IsKeyType(published.KeyType) {
 			return nil, fmt.Errorf("published sentry %s has invalid key_type %q", publicKey, published.KeyType)
 		}
-		selector, err := keytypes.NormalizeComponentKeySelector(published.ComponentKey)
+		selector, err := witness.NormalizeID(published.ComponentKey)
 		if err != nil {
 			return nil, fmt.Errorf("published sentry %s has invalid component_key: %w", publicKey, err)
 		}
@@ -440,7 +440,7 @@ func normalizeClientEndpointPublishedSentries(in map[string]ClientEndpointPublis
 		if err != nil {
 			return nil, err
 		}
-		expectedSelector, err := keytypes.ComponentKeySelector(published.KeyType, publicKeyBytes)
+		expectedSelector, err := witness.ID(published.KeyType, publicKeyBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -466,7 +466,7 @@ func normalizePublishedSentryPublicKey(raw, keyType string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("published sentry public key must be hex: %w", err)
 	}
-	wantSize, ok := keytypes.ComponentPublicKeySize(keyType)
+	wantSize, ok := witness.PublicKeySize(keyType)
 	if !ok {
 		return "", fmt.Errorf("published sentry key_type %q is not a sentry key type", keyType)
 	}

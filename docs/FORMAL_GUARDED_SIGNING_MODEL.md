@@ -20,7 +20,7 @@ Normative inputs:
   and on-disk selector contracts.
 - [ARCH_POLICY.md](ARCH_POLICY.md): sentry-domain `policy.yaml`, sentry
   transfer policy, deterministic reject-only route-miss behavior, and
-  Sentry Key ID overrides.
+  Witness Key ID overrides.
 - [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md): client-signing policy
   precedence. This model imports only the snapshot and overlay concepts; the
   sentry role has no manual-review or operator-default verdict.
@@ -37,7 +37,7 @@ This model covers the current MVP:
 
 - guarded Falcon account keys whose LogicSig bytecode embeds one sentry
   public key,
-- sentry keys selected by txid-shaped Sentry Key IDs,
+- sentry keys selected by txid-shaped Witness Key IDs,
 - `/sign/component` for user-role and sentry-role component signatures,
 - `/sign/assemble` verification and LogicSig argument packing,
 - `apshell send` orchestration for guarded account senders,
@@ -85,12 +85,13 @@ parameters. Later endpoint routing does not move that trust anchor.
 
 ### Sentry Key
 
-`SentryComponentKey` is a non-spending key with:
+`SentryComponentKey` is the sentry-role projection of a non-spending witness
+key with:
 
-- key category `component`,
-- key type `aplane.sentry-falcon1024.v1`,
+- key category `witness`,
+- key type `aplane.witness-falcon1024.v1`,
 - public/private sentry key material,
-- Sentry Key ID derived as uppercase base32 SHA-512/256 of the
+- Witness Key ID derived as uppercase base32 SHA-512/256 of the
   domain-separated key type and canonical public key bytes.
 
 The selector is a routing and policy handle. It is not an Algorand sender,
@@ -112,7 +113,7 @@ signer services; clients do not verify component signatures (A10).
 
 `SentryPolicySnapshot` is the verified effective sentry-domain `policy.yaml` snapshot
 for one sentry identity. It contains transfer routing and sparse
-`key_overrides` keyed by Sentry Key ID.
+`key_overrides` keyed by Witness Key ID.
 
 Unlike client-signing policy, sentry policy has no manual-review verdict and
 no operator default. If no positive transfer route authorizes every target
@@ -267,12 +268,12 @@ not SentryPolicyAllowsAllTargets(snapshot, request) =>
 
 ### A5: Component Selector Validates Key Class
 
-A Sentry Key ID may load only a sentry key whose stored key
+A Witness Key ID may load only a sentry key whose stored key
 type, category, selector, and public/private key pair agree.
 
 ```text
 LoadSentryComponent(selector) succeeds =>
-  key.category = component and
+  key.category = witness and
   key.selector = selector and
   key.public_private_pair_valid
 ```
@@ -390,7 +391,7 @@ AssembledSignedTxn.AuthAddr != guarded_account =>
 
 The current guarded choreography is named `sentry1`: canonical TX-prefixed
 transport, role-tagged component messages, one user plus one sentry component
-signature per target, Sentry Key ID selectors, and assembly with
+signature per target, Witness Key ID selectors, and assembly with
 arg 0 = user / arg 1 = sentry. The label is frozen — any choreography change
 mints a new label, and unrelated future mechanisms get their own label family.
 Clients detect guarded sends from the `signing_flow` inventory field, treat
@@ -442,7 +443,7 @@ High-value test anchors:
   key type,
 - sender binding before user-role key load,
 - deterministic sentry-domain `policy.yaml` policy rejection before sentry key load,
-- Sentry Key ID/type/category/public-private validation,
+- Witness Key ID/type/category/public-private validation,
 - assembly rejection for wrong user signatures,
 - assembly rejection for wrong sentry signatures,
 - passthrough transaction-ID mismatch rejection,

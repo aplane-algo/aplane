@@ -17,9 +17,9 @@ import (
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/signing"
 	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 // FileKeyStore implements KeyStore using encrypted files on disk
@@ -256,8 +256,8 @@ func (f *FileKeyStore) Get(ctx context.Context, address string) (*signing.KeyMat
 		return loadGenericLsigKeys(payload, keyType, signingMeta), nil
 	}
 
-	if keys.IsComponentKey(signingMeta.Category) {
-		return loadComponentKeyMaterial(payload, keyType, signingMeta)
+	if keys.IsWitnessKey(signingMeta.Category) {
+		return loadWitnessKeyMaterial(payload, keyType, signingMeta)
 	}
 
 	// Get provider and load keys (for ed25519, falcon, etc.)
@@ -310,15 +310,15 @@ func loadGenericLsigKeys(payload *keys.Payload, keyType string, signingMeta keys
 	}
 }
 
-// loadComponentKeyMaterial projects an already-validated component payload
-// into KeyMaterial. ParsePayload enforced the sentry key type, key sizes, and
+// loadWitnessKeyMaterial projects an already-validated witness payload into
+// KeyMaterial. ParsePayload enforced the witness key type, key sizes, and
 // the public/private pair before Get reaches this point, so only cloning and
 // selector derivation remain.
-func loadComponentKeyMaterial(payload *keys.Payload, keyType string, signingMeta keys.SigningMetadata) (*signing.KeyMaterial, error) {
+func loadWitnessKeyMaterial(payload *keys.Payload, keyType string, signingMeta keys.SigningMetadata) (*signing.KeyMaterial, error) {
 	publicKey := bytes.Clone(payload.PublicKey)
 	privateKey := bytes.Clone(payload.PrivateKey)
 
-	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
+	componentKey, err := witness.ID(keyType, publicKey)
 	if err != nil {
 		crypto.ZeroBytes(publicKey)
 		crypto.ZeroBytes(privateKey)
@@ -330,8 +330,8 @@ func loadComponentKeyMaterial(payload *keys.Payload, keyType string, signingMeta
 		Category:   signingMeta.Category,
 		PublicKey:  append([]byte(nil), publicKey...),
 		Parameters: maps.Clone(signingMeta.Parameters),
-		Value: &signing.ComponentKeyMaterial{
-			ComponentKey: componentKey,
+		Value: &signing.WitnessKeyMaterial{
+			WitnessKeyID: componentKey,
 			PublicKey:    publicKey,
 			PrivateKey:   privateKey,
 		},

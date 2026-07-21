@@ -449,8 +449,8 @@ accounts are intentionally not completed in apshell or apconsole; use the
 dedicated contract-admin client:
 
 ```bash
-apbounded-admin rekey --key <key.apbounded-admin-key> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account> to <new-authorizer>
-apbounded-admin unrekey --key <key.apbounded-admin-key> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
+apbounded-admin rekey --key <key.wit> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account> to <new-authorizer>
+apbounded-admin unrekey --key <key.wit> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
 ```
 
 `APCLIENT_DATA` is used when `--client-data` is omitted. The command connects
@@ -465,7 +465,7 @@ online without contacting the signer again:
 ```bash
 apbounded-admin prepare-rekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account> to <new-authorizer>
 apbounded-admin prepare-unrekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account>
-apbounded-admin sign --key <key.apbounded-admin-key> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>
+apbounded-admin sign --key <key.wit> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>
 apbounded-admin complete [--client-data <dir>] [--network <name>] [--nowait] <request.apbounded-admin-request> with <response.apbounded-admin-signature>
 ```
 
@@ -698,13 +698,13 @@ flow.
 
 `endpoints sync-sentries` queries configured sentry endpoints using their
 endpoint token files, refreshes local endpoint-published sentry inventory,
-prints Sentry Key IDs for confirmation, and then syncs the public
+prints Witness Key IDs for confirmation, and then syncs the public
 sentry references into the connected signer identity. Temporarily unavailable
 sentry endpoints are skipped and keep their previous local inventory;
 authentication failures and malformed endpoint metadata fail closed.
 
 `endpoints sentries` lists the local endpoint-discovered sentry inventory by
-endpoint alias, Sentry Key ID, and key type without calling remote endpoints.
+endpoint alias, Witness Key ID, and key type without calling remote endpoints.
 
 **Examples:**
 ```

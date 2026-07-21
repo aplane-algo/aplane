@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 const endpointPublishedTestSeenAt = "2026-06-04T00:00:00Z"
@@ -189,7 +189,7 @@ func TestRebuildStoredClientEndpointPublishedSentriesReplacesInventory(t *testin
 	if _, ok := published[staleKey]; ok {
 		t.Fatalf("stale published sentry %s remained in %#v", staleKey, published)
 	}
-	if got := published[newKey]; got.ComponentKey == "" || got.KeyType != keytypes.SentryComponentFalcon1024V1 {
+	if got := published[newKey]; got.ComponentKey == "" || got.KeyType != witness.Falcon1024V1 {
 		t.Fatalf("new published sentry = %#v, want Ed25519 component metadata", got)
 	}
 	if route := cfg.SentryEndpoints[newKey]; route.Endpoint != "sentry-local" {
@@ -295,8 +295,8 @@ ssh: {}
 func endpointPublishedTestSentry(t *testing.T, publicKeyHex string) ClientEndpointPublishedSentry {
 	t.Helper()
 	return ClientEndpointPublishedSentry{
-		ComponentKey: sentryEndpointTestComponentKey(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex),
-		KeyType:      keytypes.SentryComponentFalcon1024V1,
+		ComponentKey: sentryEndpointTestComponentKey(t, witness.Falcon1024V1, publicKeyHex),
+		KeyType:      witness.Falcon1024V1,
 		LastSeenAt:   endpointPublishedTestSeenAt,
 	}
 }
@@ -307,9 +307,9 @@ func sentryEndpointTestComponentKey(t *testing.T, keyType, publicKeyHex string) 
 	if err != nil {
 		t.Fatalf("DecodeString(publicKeyHex) error = %v", err)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keyType, publicKey)
+	componentKey, err := witness.ID(keyType, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	return componentKey
 }

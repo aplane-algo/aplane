@@ -14,10 +14,10 @@ import (
 	"github.com/aplane-algo/aplane/internal/keystore"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
 	"github.com/aplane-algo/aplane/internal/templatepolicy"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 type fakeKeyStore struct {
@@ -443,7 +443,7 @@ func TestReloadBeforePublishErrorInvalidatesSnapshotAndClearsKeyCache(t *testing
 func TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish(t *testing.T) {
 	store := &fakeKeyStore{
 		cache:     map[string]string{"ADDR": "/keys/ADDR.key"},
-		keyTypes:  map[string]string{"ADDR": keytypes.SentryComponentFalcon1024V1},
+		keyTypes:  map[string]string{"ADDR": witness.Falcon1024V1},
 		lsigSizes: map[string]int{"ADDR": 0},
 	}
 	session := &fakeSession{}
@@ -455,8 +455,8 @@ func TestReloadNodeRoleValidationRejectsConflictingInventoryBeforePublish(t *tes
 		Session:         session,
 		TemplateManager: &Manager{Paths: utilkeys.NewPaths(t.TempDir()), Registrars: []TemplateRegistrar{testNoopRegistrar()}},
 		BeforePublish: func(_ map[string]string, keyTypes map[string]string, _ map[string]int) error {
-			if keyTypes["ADDR"] == keytypes.SentryComponentFalcon1024V1 {
-				return errors.New(`node role "signer" rejects key inventory: ADDR:aplane.sentry-falcon1024.v1`)
+			if keyTypes["ADDR"] == witness.Falcon1024V1 {
+				return errors.New(`node role "signer" rejects key inventory: ADDR:aplane.witness-falcon1024.v1`)
 			}
 			return nil
 		},

@@ -73,11 +73,11 @@ Important vocabulary:
   signer policy and group validation.
 - **key type** is the canonical identifier stored and sent on the wire, such as
   `ed25519` or `aplane.falcon1024.v1`.
-- **Sentry Key ID** means the 52-character uppercase base32 SHA-512/256 digest
-  over the domain-separated sentry-key type/public-key tuple. It selects a
-  local sentry key; it is not an Algorand account address and is not the
-  embedded verifier public key. Compatibility wire/storage fields may call this
-  value `component_key` or a component selector.
+- **Witness Key ID** means the 52-character uppercase base32 SHA-512/256 digest
+  over canonical length-prefixed domain, key type, and public-key fields. It
+  identifies the same role-neutral public key form in hot sentry custody or
+  standalone contract-admin custody; it is not an Algorand account address.
+  Sentry-role wire/storage fields may call this value `component_key`.
 
 ## System Boundaries
 
@@ -89,7 +89,7 @@ Important vocabulary:
 - identity config, node-role policy in `policy.yaml`, tokens, SSH enrollments,
   and key type state,
 - encrypted installed templates,
-- public sentry references and component public metadata sidecars,
+- public sentry references and witness public metadata sidecars,
 - signer-wide ASA metadata cache,
 - audit log,
 - managed backup archives,
@@ -137,7 +137,7 @@ DTOs and contract fixtures.
 | Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
 | Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
 | Signing key | Signer identity | `identities/<identity>/keys/*.key` | address/selector -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
-| Sentry public sidecar | Signer identity | `identities/<identity>/keys/<sentry_key_id>.public.json` | public sentry-key export metadata | `apstore sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
+| Sentry public sidecar | Signer identity | `identities/<identity>/keys/<witness_key_id>.wit.json` | public sentry-key export metadata | `apstore sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
 | Public sentry reference | Signer identity | `identities/<identity>/sentries/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` |
 | Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
 | Key type state | Signer identity | `keytypes/<key_type>.json` | enabled/disabled generation state | admin library/install state | `internal/keytypestate` |
@@ -299,7 +299,7 @@ Guarded account keys are DSA LogicSig keys whose stored bytecode embeds an
 sentry public key. They are not accepted by `/sign`; the client must use the
 guarded flow: user `/sign/component`, sentry `/sign/component`, user
 `/sign/assemble`, then algod submit. Sentry keys are selected by an uppercase,
-52-character txid-shaped Sentry Key ID and are not Algorand spending accounts.
+52-character txid-shaped Witness Key ID and are not Algorand spending accounts.
 
 Decrypted key payloads are parsed through `internal/keys.ParsePayload` and
 written through `internal/keys.MarshalPayload`. The v1 payload vocabulary is
@@ -341,8 +341,8 @@ inventory layer (`internal/signerapp/rest`). `internal/keytypecatalog` holds
 visibility metadata, not the assembled list.
 
 Default-enabled compiled providers include signer account providers
-(`ed25519`, `aplane.falcon1024.v1`) and sentry component providers
-(`aplane.sentry-falcon1024.v1`). Node role gates
+(`ed25519`, `aplane.falcon1024.v1`) and witness providers
+(`aplane.witness-falcon1024.v1`). Node role gates
 determine which default-enabled key classes may be generated or served by a
 store. Optional compiled providers and YAML templates become available only
 after identity-local enablement or installation.
@@ -392,7 +392,7 @@ client-signing policy. Runtime client-signing policy is an effective
 On sentry nodes, the same `policy.yaml` file is parsed as the sentry component
 policy. It uses the same transfer routing model as deterministic authorization for
 `/sign/component`; it has no operator default and no review verdict. Sentry
-`key_overrides` are keyed by Sentry Key ID, while client-signing overrides
+`key_overrides` are keyed by Witness Key ID, while client-signing overrides
 are keyed by Algorand auth address.
 
 `user_auto_approve` is not policy. It is the user/operator-default fallback in
@@ -835,7 +835,7 @@ generation availability, provenance, and policy editing behavior.
   policy on sentry nodes. Neither domain may wrap the other.
 - Client signer and sentry routing authority is `endpoints.yaml`, not
   `config.yaml`.
-- Sentry Key IDs are uppercase 52-character base32-no-padding
+- Witness Key IDs are uppercase 52-character base32-no-padding
   SHA-512/256 digests over the domain-separated key-type/public-key tuple;
   embedded sentry verifier keys are full public-key hex values.
 - Endpoint import and `/keys` discovery are routing/configuration inputs, not

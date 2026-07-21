@@ -28,13 +28,15 @@ not a DSA policy category.
 
 | Auxiliary authority type | Meaning |
 |---|---|
-| **Sentry component key** | A signer-managed, non-account key used through `/sign/component` and assembled into a guarded transaction. |
-| **External contract-admin key** | A normally cold key held in an `.apbounded-admin-key` artifact and used only for a bounded admin operation. It is not imported into the signer. |
+| **Sentry witness key** | A signer-managed, non-account witness used through `/sign/component` and assembled into a guarded transaction. |
+| **Contract-admin witness key** | The same witness key form in a standalone `.wit` container, used only for a bounded admin operation. It is not imported into the signer. |
 
-Sentry component keys appear in the sentry key-type inventory but cannot be
-used as spending accounts. External contract-admin keys do not appear in
-`keytypes`, `apstore`, or the signer keystore at all. A contract-admin key is
-not a sentry component key, and neither authority can substitute for the other.
+Both roles use `aplane.witness-falcon1024.v1` and the same Witness Key ID
+derivation. Custody keeps their capabilities separate: hot signer `.key`
+records use durable category `witness` and can sign only the sentry component
+domain; standalone `.wit` files can sign only the bounded admin domain. Never
+reuse one witness keypair across these roles. Local generation rejects known
+collisions, but cannot detect a key copied or enrolled out of band.
 
 ### Definition and availability
 
@@ -183,12 +185,12 @@ apbounded-admin generate --out /media/cold/bounded-admin
 
 Use the generated result's `public_key_hex` as the Contract Admin Public Key
 when generating `aplane.falcon1024-allowlist-alock.v1` in apadmin. Keep the
-`.apbounded-admin-key` artifact outside the signer. Ordinary spends use the
+`.wit` artifact outside the signer. Ordinary spends use the
 normal client flow. Rekey with the dedicated helper:
 
 ```bash
 apbounded-admin rekey --client-data "$APCLIENT_DATA" \
-  --key /media/cold/bounded-admin/<ID>.apbounded-admin-key \
+  --key /media/cold/bounded-admin/<ID>.wit \
   <account> to <new-authorizer>
 ```
 

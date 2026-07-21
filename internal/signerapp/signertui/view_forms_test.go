@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func TestRenderGenerateDisplayLabelsSentryKey(t *testing.T) {
 	rendered := stripANSI(Model{
 		initialNodeRole: "sentry",
-		forms:           formsState{generatedAddress: "SENTRYKEY", generatedKeyType: keytypes.SentryComponentFalcon1024V1},
+		forms:           formsState{generatedAddress: "SENTRYKEY", generatedKeyType: witness.Falcon1024V1},
 	}.renderGenerateDisplay())
 	if !strings.Contains(rendered, "Sentry Key: SENTRYKEY") {
 		t.Fatalf("renderGenerateDisplay() missing sentry key label:\n%s", rendered)

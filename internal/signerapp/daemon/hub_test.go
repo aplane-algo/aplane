@@ -12,11 +12,11 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/noderole"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	signerapproval "github.com/aplane-algo/aplane/internal/signerapp/approval"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signerstartup "github.com/aplane-algo/aplane/internal/signerapp/startup"
 	signertemplates "github.com/aplane-algo/aplane/internal/signerapp/templates"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 // TestSignerStateString verifies SignerState.String() returns correct values
@@ -230,7 +230,7 @@ func TestReloadServiceClosesRegistryOnNodeRoleConflict(t *testing.T) {
 
 	svc := signerstartup.NewReloadService(ir, testIdentityBuildOptions(signer), signer.identityBuildHooks(), nil)
 	err := svc.BeforePublish(nil, map[string]string{
-		"75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA": keytypes.SentryComponentFalcon1024V1,
+		"75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA": witness.Falcon1024V1,
 	}, nil)
 	if err == nil {
 		t.Fatal("BeforePublish() error = nil, want node role conflict")

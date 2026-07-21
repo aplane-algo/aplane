@@ -21,8 +21,8 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
 	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
@@ -474,7 +474,7 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 }
 
 func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
-	falconkeygen.RegisterSentryComponents()
+	falconkeygen.RegisterWitnessKeygen()
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
@@ -486,14 +486,14 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey(private) error = %v", err)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
+		t.Fatalf("witness.ID() error = %v", err)
 	}
 	keyJSON, err := json.Marshal(map[string]any{
 		"format_version": keys.CurrentKeyFormatVersion,
-		"category":       keys.CategoryComponent,
-		"key_type":       keytypes.SentryComponentFalcon1024V1,
+		"category":       keys.CategoryWitness,
+		"key_type":       witness.Falcon1024V1,
 		"public_key":     hex.EncodeToString(publicKey),
 		"private_key":    hex.EncodeToString(privateKey),
 		"created_at":     "2026-07-10T00:00:00Z",
@@ -516,8 +516,8 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if len(report.Keys) != 0 || len(report.Warnings) != 1 {
 		t.Fatalf("scan report = %#v, want one rejected key", report)
 	}
-	if !strings.Contains(report.Warnings[0].Reason(), "sentry public key does not match private key") {
-		t.Fatalf("scan warning = %v, want sentry key mismatch", report.Warnings[0])
+	if !strings.Contains(report.Warnings[0].Reason(), "witness public key does not match private key") {
+		t.Fatalf("scan warning = %v, want witness key mismatch", report.Warnings[0])
 	}
 }
 
