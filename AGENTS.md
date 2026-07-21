@@ -29,11 +29,14 @@ Apshell is the other major component; it provides a shell-like interface to gene
 
 ### Binaries (`cmd/`)
 - `cmd/apshell/`: Interactive shell, scripting environment, plugin host, and MCP surface
+- `cmd/aprekey/`: External witness generation and bounded contract-admin rekey/unrekey ceremonies
 - `cmd/apsigner/`: Thin signing-daemon entrypoint for flags and provider registration; `internal/signerapp/daemon` owns the HTTP/IPC/SSH runtime
 - `cmd/apadmin/`: TUI and batch admin client over IPC
 - `cmd/apconsole/`: Secure-machine console wrapper for apshell/apadmin/apsigner panes
 - `cmd/apapprover/`: Approval-only admin client over IPC
-- `cmd/apstore/`: Keystore management (initialize, backup, restore, rebuild, verify, changepass, template, key type)
+- `cmd/apstore/`: Local initialize/policy/verify/rebuild operations and
+  admin-protocol clients for daemon-owned backup, restore, changepass,
+  template, and key type operations
 - `cmd/appolicy/`: Offline policy checker/editor TUI for the node-role policy document (`policy.yaml`, parsed as signer policy on signer nodes and sentry policy on sentry nodes)
 - `cmd/appass/`: Passphrase auto-unlock setup TUI
 - `cmd/appass-file/`: Dev-only plaintext passphrase helper (insecure)
@@ -52,7 +55,10 @@ Apshell is the other major component; it provides a shell-like interface to gene
 - `internal/signerapp/`: Signer runtime, approval, identity, signing, and template lifecycle
 - `internal/keystore/`, `internal/keys/`, `internal/crypto/`: Keystore storage, key scanning, encryption, passphrase handling
 - `internal/signing/`, `internal/lsigprovider/`, `lsig/`: Native signing and LogicSig provider registries/families
-- `internal/adminproto/`, `internal/protocol/`, `internal/transport/`: IPC protocol, session/dispatch layer, and client transport
+- `internal/protocol/`: IPC/SSH admin message catalog and envelope definitions
+- `internal/adminproto/`: Transport-neutral admin request/result types and framed connections
+- `internal/signerapp/adminserver/`: Server-side admin sessions, dispatch, and handlers
+- `internal/transport/`: Admin client transport and request/response dispatch
 - `internal/plugin/`: Plugin discovery, manifest, lifecycle, and JSON-RPC protocol
 - `internal/scripting/`, `internal/jsapi/`: Goja runtime and JavaScript bindings
 - `internal/sshtunnel/`: SSH tunnel server/client

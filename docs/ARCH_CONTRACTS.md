@@ -588,8 +588,10 @@ through `appolicy` or `apstore policy`.
 Both policy domains support YAML-only `key_overrides` blocks for per-key
 effective policy. Client-signing overrides are keyed by Algorand auth address;
 sentry overrides are keyed by Witness Key ID. These overrides apply to
-policy phases, are not exposed through admin IPC, and direct YAML edits require
-offline `apstore policy sign` before the signer will trust them.
+policy phases but are not projected through the legacy scalar policy-settings
+IPC. They can be changed through authenticated full-document `replace_policy`,
+or by direct/offline YAML editing followed by `appolicy` or `apstore policy`
+signing before the signer will trust the edited document.
 
 Validation:
 
@@ -1831,14 +1833,17 @@ Lifecycle:
 
 ## Template Reload Contract
 
-`reloadKeysLocked()` order:
+`identity.Runtime.reloadLocked` delegates through the production function wired
+by `startup.WireReloadFunc` to `templates.ReloadService.Reload`. Its order is:
 
-1. master key
-2. template registration
-3. key scan
-4. index replacement
-5. session activation
-6. notifications
+1. initialize or reuse the master key
+2. verify the node role and load authenticated policy
+3. register templates
+4. scan keys
+5. validate scanned key classes against the node role
+6. replace the runtime indexes
+7. activate the key session
+8. emit audit and IPC notifications
 
 Template installation and identity key-type state are resolved from key type
 state records before key scan so generation/discovery state is current. The key scan

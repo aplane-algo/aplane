@@ -4,6 +4,12 @@
 
 *Version 0.4 — Draft*
 
+> Status: This whitepaper is design framing, not the shipped product contract.
+> See [ARCH_SENTRY.md](ARCH_SENTRY.md),
+> [USER_KEYTYPES.md](USER_KEYTYPES.md), and
+> [KEYTYPE_CAPABILITIES.md](KEYTYPE_CAPABILITIES.md) for current behavior and
+> supported key types.
+
 ---
 
 ## Abstract

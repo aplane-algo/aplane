@@ -51,6 +51,7 @@ a key.
 | Application | Purpose | Key Layers Used |
 |-------------|---------|-----------------|
 | **apshell** | Interactive shell, scripting runtime, plugin host, and MCP surface | UI + Shell App + Engine + Providers |
+| **aprekey** | External witness custody and bounded contract-admin rekey/unrekey orchestration, including separated ceremonies | Client orchestration + Bounded Admin + Witness Artifact |
 | **apadmin** | Signer admin TUI over IPC or SSH admin transport | UI (TUI) + admin protocol + Providers |
 | **apconsole** | Secure-machine console wrapper for shell/admin/daemon panes; local sentry nodes show admin plus daemon/status only | UI (TUI wrapper) + Shell App + admin protocol + signer lifecycle |
 | **apsigner** | Signing server daemon, approval coordinator, REST API, IPC admin surface, and SSH tunnel/admin server | Signer App + HTTP + admin protocol + Providers |
@@ -161,6 +162,7 @@ files and ownership boundaries, prefer [ARCH_SPEC.md](ARCH_SPEC.md).
 aplane/
 ├── cmd/                           # Application entry points
 │   ├── apshell/                   # Thin shell binary entrypoint
+│   ├── aprekey/                   # External witness and bounded admin ceremonies
 │   ├── apsigner/                 # Thin signer entrypoint: flags, providers, handoff
 │   ├── apadmin/                   # Admin TUI over IPC or SSH admin transport
 │   ├── apconsole/                 # Secure-machine console wrapper
@@ -190,13 +192,16 @@ aplane/
 │   ├── addressbook/, refname/      # Address resolution and persisted alias/set name rules
 │   ├── signerapp/                 # Signer runtime packages
 │   │   ├── daemon/                # Process composition and HTTP/IPC/SSH runtime
+│   │   ├── adminserver/           # Admin sessions, dispatch, handlers, displacement
 │   │   ├── startup/               # Startup validation and identity runtime assembly
 │   │   ├── identity/              # Identity runtime, registry, config, lifecycle
 │   │   ├── runtime/               # Lock state
 │   │   ├── approval/              # Approval queues
+│   │   ├── approvalpolicy/        # Signer approval policy integration
 │   │   ├── signing/               # Plan/approve/execute orchestration
 │   │   ├── keyadmin/              # Key generation/import/delete workflows
 │   │   ├── storeadmin/            # Store initialization and passphrase rotation
+│   │   ├── storemut/              # Signer-owned persistent mutation service
 │   │   ├── backupadmin/           # Signer-managed backup/restore admin workflows
 │   │   ├── rest/                  # Signer REST service layer
 │   │   ├── sshprovision/          # SSH token provisioning
@@ -212,7 +217,6 @@ aplane/
 │   ├── templatelibrary/           # Plaintext KeyType Library parsing/install
 │   ├── templatestore/             # Encrypted identity template storage
 │   ├── storepaths/                # Signer data path construction
-│   ├── storemut/                  # Signer-owned persistent mutation service
 │   ├── keystore/, keys/, crypto/  # Keystore storage, key scanning, encryption
 │   ├── signing/, signingargs/, keygen/  # Native signing, signing-arg metadata, and keygen registries
 │   ├── lsigprovider/              # Unified LogicSig provider registry
@@ -225,7 +229,7 @@ aplane/
 │   ├── config/                    # Client and server config loading
 │   ├── serverconfig/              # apsigner server configuration loading and validation
 │   ├── noderole/, keyclass/       # Durable signer node role and key-type classification gates
-│   ├── policy/, approvalpolicy/   # Signer policy config and approval warnings
+│   ├── policy/                    # Signer and sentry policy configuration
 │   ├── appinput/, appspec/        # App command parsing and ABI spec handling
 │   └── fsutil/, theme/, tokenfile/, cmdlog/, ...   # Focused support packages
 │
@@ -339,11 +343,15 @@ process is systemd-managed through `APLANE_SYSTEMD_MANAGED=1` or parent PID 1.
 4. For each discovered identity, `startup.BuildIdentityRuntime` loads the per-identity config overlay, API token, keystore, and wires the approval coordinator and reload function
 5. In headless mode, the product identity is unlocked immediately; in locked mode, unlock happens later via apadmin IPC
 
-Both modes use the same `reloadKeysLocked` path after unlock. That path
-registers enabled installed runtime templates before key scanning and populates
-per-identity key indexes. Identity key type activation and disabled records are
-consulted by inventory and admin key operations when deciding whether an
-optional key type can be discovered, generated, or imported.
+Both modes use the identity reload path after unlock:
+`identity.Runtime.Reload` or `ReloadWithPassphrase` delegates through
+`reloadLocked` to `templates.ReloadService.Reload`, wired by
+`startup.WireReloadFunc`. The reload verifies the node role and authenticated
+policy before registering enabled installed templates, scanning keys,
+validating key classes against the node role, and publishing the per-identity
+key indexes. Identity key type activation and disabled records are consulted by
+inventory and admin key operations when deciding whether an optional key type
+can be discovered, generated, or imported.
 
 **Identity-scoped runtime state:**
 
@@ -367,12 +375,24 @@ identity from request context; admin sessions over IPC or the SSH
 
 **Admin protocol architecture:**
 
-The admin protocol is split into transport and protocol layers:
-- `internal/adminproto` owns the transport-neutral protocol: session state machine, auth handshake, message dispatch, and business operation handlers
-- `internal/adminproto` owns active-session tracking, displacement negotiation, and line-stream adapters; `internal/signerapp/daemon/ipc.go` owns the Unix socket transport
-- `internal/sshtunnel` carries the same admin protocol over the SSH `aplane-admin` subsystem
+The admin protocol is split into wire, server, and transport layers:
 
-Non-transport code reaches the admin channel through the `AdminHub` interface on `Signer`, not by depending on the Unix IPC implementation directly. Protocol handlers access business logic through the `Services` interface, implemented by the Signer-backed `signerAdminServices`.
+- `internal/protocol` owns the IPC/SSH admin message catalog and envelope
+  definitions;
+- `internal/adminproto` owns transport-neutral admin request/result types and
+  the framed `AdminConn` abstraction;
+- `internal/signerapp/adminserver` owns authentication, session lifecycle,
+  active-session tracking, displacement, dispatch, handlers, and service
+  interfaces;
+- `internal/signerapp/daemon` adapts and wires the process transports; and
+- `internal/sshtunnel` carries the same admin protocol over the SSH
+  `aplane-admin` subsystem.
+
+Non-transport code reaches the admin channel through
+`internal/signerapp/adminserver.AdminHub`, implemented by the daemon
+composition, rather than depending on the Unix IPC implementation directly.
+Adminserver handlers access business logic through service interfaces wired to
+the signer-backed services in `internal/signerapp/daemon/admin_services.go`.
 
 See [USER_CONFIG.md](USER_CONFIG.md#headless-operation) for headless configuration details.
 

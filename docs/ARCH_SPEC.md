@@ -168,7 +168,7 @@ Documentation notes:
 | Provider | `internal/signing`, `lsig/`, `internal/sentry`, `internal/boundedadmin`, `internal/boundedmeta`, `internal/txeffects`, `internal/keyclass`, `internal/lsig`, `internal/lsigprovider`, `internal/signingargs`, `internal/logicsigdsa`, `internal/genericlsig`, `internal/lsigsalt`, `internal/tealtemplate`, `internal/addressderive`, `internal/keytypecatalog`, `internal/keytypestate`, `internal/algorithm`, `internal/keygen`, `internal/mnemonic` |
 | Storage/Crypto | `internal/crypto`, `internal/witness`, `internal/witness/artifact`, `internal/merkleallowlist`, `internal/keys`, `internal/keystore`, `internal/storepaths`, `internal/storelock`, `internal/signerapp/storemut`, `internal/storeinit`, `internal/storepass`, `internal/serverconfig`, `internal/defaultkeytypes`, `internal/clientdata`, `internal/signerapp/policyeditor`, `internal/templatestore`, `internal/templatelibrary`, `internal/templatepolicy`, `internal/backup`, `internal/security`, `internal/fsutil` |
 | Integration | `internal/bootstrap/shell`, `internal/auth`, `internal/authz`, `internal/protocol`, `internal/adminproto`, `internal/transport`, `internal/sshtunnel`, `internal/clientenroll`, `internal/endpointrefs`, `internal/plugin`, `internal/scripting`, `internal/jsapi`, `pkg/signerapi`, `internal/signerapi`, `internal/signerclient`, `internal/tokenfile`, `internal/checksum`, `internal/manifest` |
-| Tooling | `analysis/`, `test/arch`, `test/integration`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
+| Tooling | `analysis/`, `test/arch`, `test/contracts`, `test/fixtures`, `test/integration`, `test/registry`, `test/soak`, `internal/docassets`, `internal/xregistry`, `internal/signerprobe`, `internal/version` |
 
 This table is an orientation map rather than an ownership API. Small support
 packages are listed under the closest layer that depends on them.
@@ -322,7 +322,10 @@ This layer includes:
 - HTTP auth and authorization vocabulary/interfaces: `internal/auth`
 - grant-backed authorization decisions: `internal/authz`
 - IPC/SSH admin wire protocol and envelope definitions: `internal/protocol`
-- server-side admin protocol/session implementation: `internal/adminproto`
+- transport-neutral admin request/result types and framed `AdminConn`:
+  `internal/adminproto`
+- server-side admin session lifecycle, dispatch, and handlers:
+  `internal/signerapp/adminserver`
 - admin client transport, dispatcher, and stream wrappers: `internal/transport`
 - SSH tunnel server/client: `internal/sshtunnel`
 - plugin discovery, manifest, integrity, sandbox, JSON-RPC: `internal/plugin`
@@ -342,7 +345,11 @@ Admin transport model:
 The repo includes:
 
 - analysis tools under `analysis/`
-- integration harness under `test/integration`
+- architecture guards under `test/arch/`
+- compatibility fixtures under `test/contracts/` and test support under
+  `test/fixtures/`
+- integration, registry, and soak coverage under `test/integration/`,
+  `test/registry/`, and `test/soak/`
 
 The Go, TypeScript, and Python SDKs live in the separate MIT-licensed
 `aplane-algo/aplanesdk` repository. This repo owns the signer HTTP API DTOs in
@@ -656,7 +663,8 @@ admin idle timeout is enforced by `apadmin` as a disconnect; the signer applies
 | Sign request lifecycle, approval queues, cancellation (sign + token) | `internal/signerapp/approval` |
 | Planning, approval flow, execution, signing orchestration | `internal/signerapp/signing` |
 | Template registration, reload coordination | `internal/signerapp/templates` |
-| Admin protocol, session state, message dispatch | `internal/adminproto` |
+| Admin protocol wire types and framing | `internal/adminproto` |
+| Admin session state, message dispatch, and handlers | `internal/signerapp/adminserver` |
 | Identity runtime, config, token, SSH enrollment, lifecycle | `internal/signerapp/identity` |
 | HTTP contract types (request/response DTOs) | `pkg/signerapi` with `internal/signerapi` aliases |
 | Startup composition, path threading | `internal/bootstrap/signer`, `internal/bootstrap/shell` |
@@ -707,14 +715,19 @@ Implemented startup modes:
 - test unlocked startup via `TEST_PASSPHRASE`,
 - forced locked startup when keystore metadata does not exist.
 
-Both locked and headless paths converge through `reloadKeysLocked`, which:
+Both locked and headless paths converge through
+`identity.Runtime.reloadLocked`. Production wiring from
+`startup.WireReloadFunc` delegates the work to
+`templates.ReloadService.Reload`, which:
 
 1. initializes or reuses the master key,
-2. registers templates,
-3. scans keys,
-4. replaces runtime indexes,
-5. activates the key session,
-6. emits audit and IPC notifications.
+2. verifies the identity's node role and loads its authenticated policy,
+3. registers templates,
+4. scans keys,
+5. validates the scanned key classes against the node role,
+6. replaces runtime indexes,
+7. activates the key session,
+8. emits audit and IPC notifications.
 
 Template scan precedes key scan so generation/discovery state is current.
 LogicSig key files carry their own bytecode and signing arg contract, so
@@ -836,8 +849,9 @@ The server-side plan/sign boundary is split as follows:
 
 - startup option resolution, validation, identity assembly, and lifecycle entrypoint in `internal/signerapp/startup`,
 - transport adapters/builders for HTTP, IPC, and SSH in `internal/signerapp/daemon`,
-- server-side admin protocol/session state machine in `internal/adminproto`,
-- process-root identity-targeted admin facade for server-originated admin traffic in `internal/adminproto.AdminHub` and `internal/signerapp/daemon/admin_hub.go`,
+- transport-neutral admin request/result types and framed connections in `internal/adminproto`,
+- server-side admin protocol/session state machine in `internal/signerapp/adminserver`,
+- process-root identity-targeted admin facade for server-originated admin traffic in `internal/signerapp/adminserver.AdminHub` and `internal/signerapp/daemon/admin_hub.go`,
 - signer-backed admin protocol services in `internal/signerapp/daemon/admin_services.go`,
 - admin settings and policy service composition in `internal/signerapp/admin`,
 - admin key-mutation HTTP/IPC transport mapping in `internal/signerapp/daemon/http_handlers_admin.go` and `internal/signerapp/daemon/admin_services.go`, with reusable key operations in `internal/signerapp/keyadmin`,
@@ -1568,8 +1582,12 @@ The repo uses:
   `client_layering_test.go` keeps the client engine core free of UI
   parsing/formatting imports and isolates the guarded package;
   `guarded_surface_test.go` pins the guarded package's sanctioned exported API;
-  and `signingflow_test.go` pins guarded client routing on runtime
-  `signing_flow` metadata,
+  `signingflow_test.go` pins guarded client routing on runtime `signing_flow`
+  metadata; `bounded_vocabulary_test.go` pins bounded naming boundaries;
+  `keytype_inventory_test.go` pins the bundled key-type inventory;
+  `managed_credential_files_test.go` pins managed credential extension
+  ownership; and `witness_boundary_test.go` pins witness custody and signing
+  boundaries,
 - dedicated test harness packages,
 - analysis tools for security properties,
 - signer API and SDK contract tests backed by JSON fixtures in `test/contracts/signerapi/`.
@@ -1736,7 +1754,9 @@ Strong existing seams:
 - `internal/config` for configuration normalization
 - `internal/keystore` for storage/session separation
 - `internal/protocol` for IPC contract centralization
-- `internal/adminproto` for server-side admin session state, dispatch, and handler ownership
+- `internal/adminproto` for transport-neutral admin wire types and framing
+- `internal/signerapp/adminserver` for server-side admin session state,
+  dispatch, and handler ownership
 - `internal/lsigprovider` and provider registries for algorithm extensibility
 - `internal/plugin` for plugin lifecycle isolation
 

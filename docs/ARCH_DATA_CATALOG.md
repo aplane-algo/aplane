@@ -192,7 +192,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Authorization resource | request-scoped model | `auth.Resource` | target type/id/identity | `internal/auth`, HTTP/admin adapters | Empty identity is resolved at boundary or rejected. |
 | Product bootstrap grants | source-defined authority | `internal/authz` bootstrap setup | in-memory authorizer grants | `internal/authz` | No durable grant YAML in product mode. |
 | Authenticated HTTP identity | runtime-only | token authenticator match | `auth.Identity` | `internal/auth`, `internal/signerapp/daemon/http_auth.go` | Token authenticates exactly one identity; cross-identity target rejects. |
-| Admin session context | runtime-only | admin transport auth result | `adminproto.SessionContext` | `internal/adminproto`, `internal/protocol` | Bound to target identity; approvals carry approver principal. |
+| Admin session context | runtime-only | admin transport auth result | `adminserver.SessionContext` | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` | Bound to target identity; approvals carry approver principal. |
 | Token provisioning request | runtime wire model | SSH key-only request plus admin approval | admin `token_provisioning_request` | `internal/sshtunnel`, `internal/signerapp/sshprovision` | No token issued until admin approval and SSH key enrollment succeed. |
 
 ## HTTP Wire Models
@@ -225,15 +225,16 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 
 | Element | Kind | Authority | Projection | Owner | Checks |
 |---|---|---|---|---|---|
-| Admin envelope | wire contract | line-delimited JSON `kind`, `type`, `id` | request/response/notification routing | `internal/protocol`, `internal/transport` | Missing/unsupported messages yield protocol error. |
-| Passphrase messages | secret wire fields | JSON string decoded as `protocol.SensitiveBytes` | auth/unlock/changepass/store messages | `internal/protocol`, `internal/adminproto` | Handlers clone/zero mutable buffers where possible. |
-| Key management messages | wire contract | `generate_key`, `delete_key`, `import_key`, details/list | admin key operations | `internal/protocol`, `internal/adminproto` | Import mnemonic accepted only over local IPC; generate responses omit mnemonic; export messages are retained only to deny/decode legacy requests. |
-| Template management messages | wire contract | library/install/show/import/remove/activate/deactivate messages | template/key type lifecycle | `internal/adminproto`, `internal/signerapp/signertui` | Decrypted installed template source is local IPC only; user-facing CLI/TUI verbs are enable/disable. |
-| Sign approval prompt | runtime wire model | signer approval coordinator request | admin `sign_request` | `internal/signerapp/approval`, `internal/adminproto` | Approval prompts carry descriptions; response attaches approver principal. |
-| Token provisioning prompt | runtime wire model | SSH enrollment request | admin token provisioning messages | `internal/signerapp/sshprovision`, `internal/adminproto` | Admin approval required before token delivery. |
-| Backup/restore messages | wire contract | admin backup/restore DTOs | backup admin service calls | `internal/protocol`, `internal/signerapp/backupadmin` | Export passphrases parsed as `SensitiveBytes`. |
-| Admin settings messages | wire contract | settings get/update messages | process/identity config mutation | `internal/adminproto`, `internal/signerapp/admin` | Update paths authorize and apply config-staleness guards. |
-| Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | shared policy editor online store | `internal/adminproto`, `internal/signerapp/admin`, `internal/signerapp/policyeditor` | Target-aware signer/sentry writes replace whole documents and sidecars; apadmin and appolicy share the editor model. |
+| Admin envelope | wire contract | line-delimited JSON `kind`, `type`, `id` | request/response/notification routing | `internal/protocol`, `internal/transport`, `internal/signerapp/adminserver` | Missing/unsupported messages yield protocol error. |
+| Passphrase messages | secret wire fields | JSON string decoded as `protocol.SensitiveBytes` | auth/unlock/changepass/store messages | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver` | Handlers clone/zero mutable buffers where possible. |
+| Admin key list entry | wire projection | admin service key metadata | `protocol.AdminKeyInfo` projected from `adminproto.KeyInfo` | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver` | Deliberately distinct from the richer HTTP `signerapi.KeyInfo`; extend both admin types together for TUI-visible fields. |
+| Key management messages | wire contract | `generate_key`, `delete_key`, `import_key`, details/list | admin key operations | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver` | Import mnemonic accepted only over local IPC; generate responses omit mnemonic; export messages are retained only to deny/decode legacy requests. |
+| Template management messages | wire contract | library/install/show/import/remove/activate/deactivate messages | template/key type lifecycle | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/signertui` | Decrypted installed template source is local IPC only; user-facing CLI/TUI verbs are enable/disable. |
+| Sign approval prompt | runtime wire model | signer approval coordinator request | admin `sign_request` | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/approval` | Approval prompts carry descriptions; response attaches approver principal. |
+| Token provisioning prompt | runtime wire model | SSH enrollment request | admin token provisioning messages | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/sshprovision` | Admin approval required before token delivery. |
+| Backup/restore messages | wire contract | admin backup/restore DTOs | backup admin service calls | `internal/protocol`, `internal/signerapp/adminserver`, `internal/signerapp/backupadmin` | Export passphrases parsed as `SensitiveBytes`. |
+| Admin settings messages | wire contract | settings get/update messages | process/identity config mutation | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin` | Update paths authorize and apply config-staleness guards. |
+| Policy snapshot/validation/replacement | wire/runtime projection | active policy snapshot or replacement YAML | shared policy editor online store | `internal/protocol`, `internal/adminproto`, `internal/signerapp/adminserver`, `internal/signerapp/admin`, `internal/signerapp/policyeditor` | Target-aware signer/sentry writes replace whole documents and sidecars; apadmin and appolicy share the editor model. |
 
 ## Transaction And Signing Runtime Models
 

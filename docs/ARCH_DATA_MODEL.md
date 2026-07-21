@@ -148,7 +148,7 @@ DTOs and contract fixtures.
 | Authorization principal/group/grant | Product bootstrap model | source-defined bootstrap records | `auth.Authorizer` decisions | denial audit/error codes | `internal/auth`, `internal/authz` |
 | API token | Signer identity and client | signer `identities/<identity>/aplane.token`, client `aplane.token` | token authenticator | HTTP auth, SSH mutual proof | `internal/tokenfile`, `internal/auth`, `internal/sshtunnel` |
 | SSH enrollment | Signer identity | `identities/<identity>/.ssh/authorized_keys` | identity SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
-| Admin session | Signer identity | none | `adminproto.SessionContext`, session manager | admin IPC/SSH JSON envelope | `internal/adminproto`, `internal/protocol` |
+| Admin session | Signer identity | none | `adminserver.SessionContext`, session manager | admin IPC/SSH JSON envelope | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` |
 | Sign request | Live signer runtime | none durable | approval coordinator pending request | `/sign`, `/sign/cancel`, admin `sign_request` | `internal/signerapp/approval`, `internal/signerapp/signing` |
 | Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign`, `/simulate` | `internal/signerapp/signing`, `pkg/signerapi` |
 | Component signing request | Request-scoped | canonical group bytes and target indices | per-target user or sentry component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
