@@ -43,10 +43,8 @@ type application struct {
 }
 
 type generateResult struct {
-	Schema        string                   `json:"schema"`
-	ArtifactPath  string                   `json:"artifact_path"`
-	ReferencePath string                   `json:"reference_path"`
-	Reference     artifact.PublicReference `json:"reference"`
+	Schema    string                   `json:"schema"`
+	Reference artifact.PublicReference `json:"reference"`
 }
 
 type verifyResult struct {
@@ -249,10 +247,8 @@ func (app application) generate(args []string) error {
 		return err
 	}
 	return writeJSON(app.stdout, generateResult{
-		Schema:        "aplane.bounded-admin-generate-result.v1",
-		ArtifactPath:  files.BundlePath,
-		ReferencePath: files.ReferencePath,
-		Reference:     files.Reference,
+		Schema:    "aplane.bounded-admin-generate-result.v1",
+		Reference: files.Reference,
 	})
 }
 

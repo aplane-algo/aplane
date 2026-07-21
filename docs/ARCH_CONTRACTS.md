@@ -354,6 +354,25 @@ existing non-symlink directory. Each output is committed atomically; the pair
 is not a transactional filesystem unit, and the public sidecar can always be
 reconstructed from the committed artifact.
 
+Successful `aprekey generate` output is:
+
+```json
+{
+  "schema": "aplane.bounded-admin-generate-result.v1",
+  "reference": {
+    "schema": "aplane.witness-key-public.v1",
+    "key_type": "aplane.witness-falcon1024.v1",
+    "witness_key_id": "<52-character ID>",
+    "public_key_hex": "<canonical lowercase hex>"
+  }
+}
+```
+
+The result does not contain filesystem paths. Callers derive the two generated
+filenames from `--out` and `reference.witness_key_id` using the canonical
+`.wit` and `.wit.json` suffixes. Moving the generated files does not invalidate
+the result or either file.
+
 ### Contract Admin Ceremony Contract
 
 `aprekey rekey` and `unrekey` are the interactive online clients for
