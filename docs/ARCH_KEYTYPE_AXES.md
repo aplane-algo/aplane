@@ -79,7 +79,7 @@ Examples of the composed ontology:
 | `ed25519` | Native | n/a | none |
 | `aplane.falcon1024.v1` | DSA LogicSig | Plain DSA | none |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | none |
-| `aplane.falcon1024-admin-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external contract-admin key for rekey |
+| `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external contract-admin key for rekey |
 | `aplane.falcon1024-sentry-ed25519.v1` | DSA LogicSig | dedicated compiled guarded verifier | Ed25519 sentry component key |
 | `aplane.corridor.v1` | DSA LogicSig | dedicated compiled corridor policy | Falcon sentry component key |
 | `aplane.allowlist.v1` | Generic LogicSig | generic TEAL policy | none |

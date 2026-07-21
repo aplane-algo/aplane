@@ -147,7 +147,7 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | Category | Example Key Types | Has Keys | Signing |
 |----------|-------------------|----------|---------|
 | `generic_lsig` | `aplane.timed-allowlist.v1`, `aplane.allowlist.v1` after template import | No | TEAL-only authorization |
-| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, bounded `aplane.falcon1024-admin-allowlist.v1`, guarded `aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`; `aplane.falcon1024-allowlist.v1` after new-store default install, `aplane.ed25519-allowlist.v1` after template import | Yes | Cryptographic signature |
+| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, bounded `aplane.falcon1024-allowlist-alock.v1`, guarded `aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`; `aplane.falcon1024-allowlist.v1` after new-store default install, `aplane.ed25519-allowlist.v1` after template import | Yes | Cryptographic signature |
 
 ## Interface Hierarchy
 
@@ -654,7 +654,7 @@ yields a template key type that signs with Ed25519 inside a LogicSig.
 | `aplane.ecdsak1.v1` | `aplane.ecdsak1` | `dsa_lsig` | Library-visible secp256k1 DSA |
 | `aplane.falcon1024-sentry-ed25519.v1` | `aplane.falcon1024-sentry-ed25519` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Ed25519 sentry component signatures |
 | `aplane.falcon1024-sentry-falcon1024.v1` | `aplane.falcon1024-sentry-falcon1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 sentry component signatures |
-| `aplane.falcon1024-admin-allowlist.v1` | `aplane.falcon1024-admin-allowlist` | `dsa_lsig` | Library-visible bounded1 fixed allowlist with Falcon spending and external Falcon contract-admin authorization |
+| `aplane.falcon1024-allowlist-alock.v1` | `aplane.falcon1024-allowlist-alock` | `dsa_lsig` | Library-visible bounded1 fixed allowlist with Falcon spending and external Falcon contract-admin authorization |
 | `aplane.corridor.v1` | `aplane.corridor` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + sentry signatures with recipient corridor and sentry-authorized rekey |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
 | `aplane.timed-allowlist.v1` | `timed-allowlist` | `generic_lsig` | Optional template library: timed recipient allowlist |

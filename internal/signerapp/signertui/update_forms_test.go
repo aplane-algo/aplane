@@ -245,7 +245,7 @@ func TestHandleParamInputLongBytesUsesAtomicPaste(t *testing.T) {
 	const falconPublicKeyHexLength = 1793 * 2
 	input := strings.Repeat("A", falconPublicKeyHexLength-20) + "0123456789ABCDEFabcd"
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-admin-allowlist.v1",
+		KeyType:     "aplane.falcon1024-allowlist-alock.v1",
 		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:      "bounded_admin_public_key",
@@ -550,7 +550,7 @@ func TestHandleParamModalKeys_AddressListSpaceAndEnterStayInField(t *testing.T) 
 func TestHandleParamModalKeys_ControlledPasteUsesRawRunes(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-admin-allowlist.v1",
+		KeyType:     "aplane.falcon1024-allowlist-alock.v1",
 		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:      "bounded_admin_public_key",

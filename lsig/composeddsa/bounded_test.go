@@ -90,7 +90,7 @@ func TestBoundedGoldenVector(t *testing.T) {
 	}
 
 	binding := BoundedProgramBinding(
-		"aplane.falcon1024-admin-allowlist.v1",
+		"aplane.falcon1024-allowlist-alock.v1",
 		"aplane.falcon1024.v1",
 		12,
 		spendingPublicKey,
@@ -98,7 +98,7 @@ func TestBoundedGoldenVector(t *testing.T) {
 		profileEncoding,
 		behaviorEncoding,
 	)
-	const wantBinding = "92850ae9fbcbdd74efa92f281fa37275ca223b2ca36bf5262b3eff72c7412d93"
+	const wantBinding = "0a5e99e840a2e70f3b22653dbb438c39fa3f4f57d0a5f08fca2cc6afba198336"
 	if got := hex.EncodeToString(binding[:]); got != wantBinding {
 		t.Fatalf("program binding = %s, want %s", got, wantBinding)
 	}
@@ -106,7 +106,7 @@ func TestBoundedGoldenVector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BoundedAdminMessage() error = %v", err)
 	}
-	const wantMessage = "b700d2e5b4eb40ea16664cabea629ad87bfe4f83cdacfd2263f892b77ffbb193"
+	const wantMessage = "290c8f4a249f53973889e356a1a2974c04de33d892d615ac6b94180051ea75c9"
 	if got := hex.EncodeToString(message[:]); got != wantMessage {
 		t.Fatalf("admin message = %s, want %s", got, wantMessage)
 	}

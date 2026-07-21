@@ -36,7 +36,7 @@ included as normal user-account operations.
 | `aplane.ecdsak1.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.falcon1024-allowlist.v2` | C | N | C | Y | N | N | N | N | N | N | C |
-| `aplane.falcon1024-admin-allowlist.v1` | C | N | C | C | N | N | N | N | N | N | C |
+| `aplane.falcon1024-allowlist-alock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.ed25519-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.falcon1024-hashlock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
@@ -86,7 +86,7 @@ included as normal user-account operations.
   fixed-depth proof against the root derived from the key-file recipient list.
   Self-send, asset opt-in, and pure spending-key rekey require no proof. Close,
   clawback, and non-transfer types are rejected.
-- `aplane.falcon1024-admin-allowlist.v1` admits only pure `pay` and `axfer`
+- `aplane.falcon1024-allowlist-alock.v1` admits only pure `pay` and `axfer`
   spends to self or a compiled recipient. Optional asset-ID and amount limits
   narrow that set. It rejects close, clawback, and every other transaction
   type. Rekey is restricted to the pure payment normal form and additionally

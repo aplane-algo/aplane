@@ -77,7 +77,7 @@ Canonical forms:
   public key and 52-character Contract Admin Key ID. They are not signer key
   types, accounts, or sentry keys. Private material is generated and held by
   `apbounded-admin`.
-- `aplane.falcon1024-admin-allowlist.v1` is reserved for the schema-v2
+- `aplane.falcon1024-allowlist-alock.v1` is reserved for the schema-v2
   framework-owned bounded1 allowlist. Its spending key and contract admin key
   are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
   admin-key algorithm selector.

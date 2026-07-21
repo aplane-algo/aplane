@@ -1121,7 +1121,7 @@ spends and spending-key rekeys assemble the path-specific durable base,
 derived, and runtime argument slots; undeclared caller arguments and hybrid
 effects fail closed.
 
-`aplane.falcon1024-admin-allowlist.v1` is the framework-owned fixed-list
+`aplane.falcon1024-allowlist-alock.v1` is the framework-owned fixed-list
 profile. External key generation and ceremonies are owned by
 `apbounded-admin`; apshell and apconsole do not handle private contract-admin
 artifacts. The normative field inventory, canonical encodings, vectors,

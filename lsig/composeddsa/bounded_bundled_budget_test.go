@@ -50,7 +50,7 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 		{name: "aplane.falcon1024-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": strings.Join(recipients, ",")}, bytecode: 3159, spend: 4439, group: 5},
 		{name: "aplane.falcon1024-allowlist.v2.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": recipients[0]}, bytecode: 2188, spend: 3980, group: 4},
 		{name: "aplane.falcon1024-timelock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"unlock_round": "18446744073709551615"}, bytecode: 1947, spend: 3227, group: 4},
-		{name: "aplane.falcon1024-admin-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{
+		{name: "aplane.falcon1024-allowlist-alock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{
 			"recipients": strings.Join(recipients, ","), "asset_ids": strings.Join(assetIDs, ","),
 			"max_payment_amount": "18446744073709551615", "max_asset_amount": "18446744073709551615",
 			composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),

@@ -281,7 +281,7 @@ func TestParameterModalShowsCompactPastedKeyPreview(t *testing.T) {
 	const suffix = "0123456789ffffffffff"
 	value := strings.Repeat("a", falconPublicKeyHexLength-len(suffix)) + suffix
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-admin-allowlist.v1",
+		KeyType:     "aplane.falcon1024-allowlist-alock.v1",
 		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:      "bounded_admin_public_key",
@@ -303,7 +303,7 @@ func TestParameterModalShowsCompactPastedKeyPreview(t *testing.T) {
 		},
 	}
 
-	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-admin-allowlist.v1", "GENERATE", ""))
+	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-allowlist-alock.v1", "GENERATE", ""))
 	if !strings.Contains(rendered, "...") || !strings.Contains(rendered, suffix) {
 		t.Fatalf("parameter modal does not show a middle-elided key with its suffix:\n%s", rendered)
 	}
@@ -318,7 +318,7 @@ func TestParameterModalShowsCompactPastedKeyPreview(t *testing.T) {
 	}
 
 	m.forms.genericLSigPasteParam = "bounded_admin_public_key"
-	rendered = stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-admin-allowlist.v1", "GENERATE", ""))
+	rendered = stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-allowlist-alock.v1", "GENERATE", ""))
 	if !strings.Contains(rendered, "Paste key now") || !strings.Contains(rendered, "WAITING FOR PASTE") {
 		t.Fatalf("paste capture state is not visible:\n%s", rendered)
 	}

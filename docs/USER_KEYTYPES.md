@@ -162,9 +162,9 @@ existing keys use that key type.
 `keytype enable` can also re-enable an already-installed disabled YAML template.
 It does not import a new YAML source; use `template import` for that.
 
-## Falcon Admin Allowlist
+## Falcon Rekey-Locked Allowlist
 
-`aplane.falcon1024-admin-allowlist.v1` is the framework-owned transaction
+`aplane.falcon1024-allowlist-alock.v1` is the framework-owned transaction
 authorization account. It requires a Falcon spending signature on every
 transaction and a separate external Falcon contract-admin signature for a
 pure rekey. Its on-chain policy permits only ALGO payments and ASA transfers,
@@ -184,7 +184,7 @@ apbounded-admin generate --out /media/cold/bounded-admin
 ```
 
 Use the generated result's `public_key_hex` as the Contract Admin Public Key
-when generating `aplane.falcon1024-admin-allowlist.v1` in apadmin. Keep the
+when generating `aplane.falcon1024-allowlist-alock.v1` in apadmin. Keep the
 `.apbounded-admin-key` artifact outside the signer. Ordinary spends use the
 normal client flow. Rekey with the dedicated helper:
 

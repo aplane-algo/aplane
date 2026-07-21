@@ -747,7 +747,7 @@ live primarily in signer approval and local signer policy.
 
 #### Bounded Authorization Allowlist
 
-`aplane.falcon1024-admin-allowlist.v1` is a schema-v2 composed account with
+`aplane.falcon1024-allowlist-alock.v1` is a schema-v2 composed account with
 Falcon-1024 spending and external Falcon contract-admin authorization. The
 composer-owned `bounded1` envelope admits only pure payments, pure asset
 transfers, independently authorized asset opt-ins, or a pure self-payment

@@ -27,7 +27,7 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 		"aplane.falcon1024-allowlist.v1",
 		"aplane.falcon1024-allowlist.v2",
 		"aplane.falcon1024-timelock.v1",
-		"aplane.falcon1024-admin-allowlist.v1",
+		"aplane.falcon1024-allowlist-alock.v1",
 	} {
 		if lsigprovider.Has(keyType) {
 			t.Fatalf("RegisterClient() registered %s; it should remain an optional template", keyType)

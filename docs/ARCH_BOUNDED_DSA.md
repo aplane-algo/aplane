@@ -95,7 +95,7 @@ budgets. Every shipped Layer-3 policy adds its own worst-case cells before the
 key type can be enabled. The baseline proves that the contract-admin envelope
 itself fits under the v1 fee ceiling with three group slots of headroom.
 
-The shipped `aplane.falcon1024-admin-allowlist.v1` worst-case cell compiles
+The shipped `aplane.falcon1024-allowlist-alock.v1` worst-case cell compiles
 30 recipients, 30 asset IDs, both amount ceilings, a Falcon spending key, and
 a Falcon contract admin key:
 
@@ -124,7 +124,7 @@ effect surface:
 | `aplane.falcon1024-allowlist.v2` | fixed-depth Merkle recipient allowlist | spending key; no Layer 3 gate | optional signer-derived `merkle_proof` on spend |
 | `aplane.falcon1024-hashlock.v1` | SHA-256 preimage | spending key; Layer 3 required | caller `preimage`, required on spend and rekey, max 64 bytes |
 | `aplane.falcon1024-timelock.v1` | `FirstValid >= unlock_round` | spending key; Layer 3 required | none |
-| `aplane.falcon1024-admin-allowlist.v1` | inline recipient/asset/amount allowlist | external Falcon admin key | trailing admin signature |
+| `aplane.falcon1024-allowlist-alock.v1` | inline recipient/asset/amount allowlist | external Falcon admin key | trailing admin signature |
 
 Every profile rejects close, clawback, hybrid rekey, and non-transfer types.
 Hashlock and timelock intentionally prevent emergency spending-key rekey until
@@ -315,7 +315,7 @@ substrings.
 The first implementation must freeze and test a vector using:
 
 ```text
-full_key_type: aplane.falcon1024-admin-allowlist.v1
+full_key_type: aplane.falcon1024-allowlist-alock.v1
 base_primitive: falcon1024
 teal_version: 12
 spending_public_key: 1,793 bytes of 0x11
@@ -375,9 +375,9 @@ template_type: composed
 template_mode: generated
 base_key_type: aplane.falcon1024.v1
 publisher: aplane
-family: falcon1024-admin-allowlist
+family: falcon1024-allowlist-alock
 version: 1
-display_name: Falcon-1024 Admin Allowlist
+display_name: Falcon-1024 Rekey-Locked Allowlist
 
 bounded:
   contract: bounded1

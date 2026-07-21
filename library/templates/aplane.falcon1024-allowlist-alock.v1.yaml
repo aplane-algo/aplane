@@ -4,9 +4,9 @@ template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: generated
 publisher: aplane
-family: falcon1024-admin-allowlist
+family: falcon1024-allowlist-alock
 version: 1
-display_name: "Falcon-1024 Admin Allowlist"
+display_name: "Falcon-1024 Rekey-Locked Allowlist"
 description: "Framework-owned ALGO/ASA allowlist with optional asset and amount limits, plus external Falcon contract-admin authorization for pure rekeys."
 
 bounded:

@@ -26,7 +26,7 @@ import (
 
 func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-admin-allowlist.v1.yaml")
+	data, err := templates.ReadFile("aplane.falcon1024-allowlist-alock.v1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewProviderFromTemplateSpec() error = %v", err)
 	}
-	if provider.KeyType() != "aplane.falcon1024-admin-allowlist.v1" {
+	if provider.KeyType() != "aplane.falcon1024-allowlist-alock.v1" {
 		t.Fatalf("KeyType() = %q", provider.KeyType())
 	}
 	params := provider.CreationParams()
@@ -150,7 +150,7 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 
 func TestBundledFalconAdminAllowlistV1AllowsOmittedOptionalConstraints(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-admin-allowlist.v1.yaml")
+	data, err := templates.ReadFile("aplane.falcon1024-allowlist-alock.v1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestBundledFalconAdminAllowlistV1AllowsOmittedOptionalConstraints(t *testin
 
 func TestBundledFalconAdminAllowlistV1MaximumBudget(t *testing.T) {
 	falcon1024.RegisterClient()
-	data, err := templates.ReadFile("aplane.falcon1024-admin-allowlist.v1.yaml")
+	data, err := templates.ReadFile("aplane.falcon1024-allowlist-alock.v1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
