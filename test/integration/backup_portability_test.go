@@ -513,14 +513,14 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 	archivePath := mustCreateBackupArchive(t, sourceApstore, address, storePassphrase)
 	conflictingTemplatePath, err := filepath.Abs(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
 	if err != nil {
-		t.Fatalf("failed to resolve allowlist template path: %v", err)
+		t.Fatalf("failed to resolve HTLC template path: %v", err)
 	}
 	conflictingTemplateYAML, err := os.ReadFile(conflictingTemplatePath)
 	if err != nil {
-		t.Fatalf("failed to read allowlist template: %v", err)
+		t.Fatalf("failed to read HTLC template: %v", err)
 	}
-	conflictingTemplateYAML = bytes.Replace(conflictingTemplateYAML, []byte("  int 1000"), []byte("  int 999"), 1)
-	if !bytes.Contains(conflictingTemplateYAML, []byte("  int 999")) {
+	conflictingTemplateYAML = bytes.Replace(conflictingTemplateYAML, []byte("    max_items: 16"), []byte("    max_items: 15"), 1)
+	if !bytes.Contains(conflictingTemplateYAML, []byte("    max_items: 15")) {
 		t.Fatal("failed to create conflicting HTLC template fixture")
 	}
 	tamperBackupBundleTemplateInArchive(t, archivePath, address, storePassphrase, func(bundle map[string]any) {
