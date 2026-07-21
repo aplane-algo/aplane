@@ -348,10 +348,10 @@ contract_admin_key_id:
   WS6X45XM2AI7Y2GNJ46GXMNJ42LCIOAETMEEOIMPSWS3LOFDDGQA
 
 bounded_program_binding:
-  92850ae9fbcbdd74efa92f281fa37275ca223b2ca36bf5262b3eff72c7412d93
+  0a5e99e840a2e70f3b22653dbb438c39fa3f4f57d0a5f08fca2cc6afba198336
 
 admin_message:
-  b700d2e5b4eb40ea16664cabea629ad87bfe4f83cdacfd2263f892b77ffbb193
+  290c8f4a249f53973889e356a1a2974c04de33d892d615ac6b94180051ea75c9
 ```
 
 Whitespace and line wrapping above are presentation only. Code tests decode
