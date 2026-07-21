@@ -27,7 +27,7 @@ const (
 	CategoryGenericLsig = "generic_lsig"
 
 	// CategoryDSALsig is for DSA-based LogicSigs that require key material.
-	// Examples: aplane.falcon1024.v1, falcon-aplane.timed-allowlist.v1
+	// Examples: aplane.falcon1024.v1, falcon-aplane.htlc.v1
 	CategoryDSALsig = "dsa_lsig"
 )
 

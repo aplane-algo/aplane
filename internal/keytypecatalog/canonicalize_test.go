@@ -20,7 +20,7 @@ func TestCanonicalize(t *testing.T) {
 		{name: "trims and lowers canonical", keyType: " APLANE.FALCON1024.V1 ", want: "aplane.falcon1024.v1"},
 		{name: "other publisher unchanged", keyType: "custom.allowlist.v2", want: "custom.allowlist.v2"},
 		{name: "legacy unchanged", keyType: "allowlist-v1", want: "allowlist-v1"},
-		{name: "filename unchanged", keyType: "aplane.allowlist.v1.yaml", want: "aplane.allowlist.v1.yaml"},
+		{name: "filename unchanged", keyType: "test.generic-policy.v1.yaml", want: "test.generic-policy.v1.yaml"},
 		{name: "extra family dot unchanged", keyType: "aplane.white.list.v1", want: "aplane.white.list.v1"},
 		{name: "unsafe family unchanged", keyType: "white list.v1", want: "white list.v1"},
 		{name: "invalid version unchanged", keyType: "allowlist.version1", want: "allowlist.version1"},

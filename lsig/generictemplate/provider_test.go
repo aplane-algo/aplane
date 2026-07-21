@@ -1238,8 +1238,6 @@ teal: |
 func TestTemplateLibraryGenericTemplates(t *testing.T) {
 	optInAssets := "10458941,31566704"
 	for _, name := range []string{
-		"aplane.timed-allowlist.v1.yaml",
-		"aplane.allowlist.v1.yaml",
 		"aplane.htlc.v1.yaml",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1257,86 +1255,6 @@ func TestTemplateLibraryGenericTemplates(t *testing.T) {
 			}
 			tmpl := NewYAMLTemplate(spec)
 			switch name {
-			case "aplane.timed-allowlist.v1.yaml":
-				addrA := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
-				addrB := "AEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEA5RCDXMI"
-				params := map[string]string{
-					"recipients":   addrA + "," + addrB,
-					"unlock_round": "12345",
-				}
-				teal, err := tmpl.GenerateTEAL(params)
-				if err != nil {
-					t.Fatalf("GenerateTEAL() error = %v", err)
-				}
-				if !strings.Contains(teal, "txn Fee\nint 1000\n==\nassert") {
-					t.Fatalf("timed allowlist TEAL missing strict fee cap:\n%s", teal)
-				}
-				normalizedTEAL := strings.Join(strings.Fields(teal), " ")
-				for _, addr := range []string{addrA, addrB} {
-					if !strings.Contains(normalizedTEAL, "txn Receiver addr "+addr+" ==") {
-						t.Fatalf("timed allowlist TEAL missing payment recipient %s:\n%s", addr, teal)
-					}
-					if !strings.Contains(normalizedTEAL, "txn AssetCloseTo addr "+addr+" ==") {
-						t.Fatalf("timed allowlist TEAL missing asset close recipient %s:\n%s", addr, teal)
-					}
-				}
-				assertCompileWithSaltOffCurve(t, tmpl, params)
-				if strings.Contains(teal, "txn XferAsset\nint 10458941\n==") {
-					t.Fatalf("timed allowlist TEAL unexpectedly contains approved opt-in checks without parameter:\n%s", teal)
-				}
-				tealWithOptIn, err := tmpl.GenerateTEAL(map[string]string{
-					"recipients":           addrA,
-					"unlock_round":         "12345",
-					"allowed_optin_assets": optInAssets,
-				})
-				if err != nil {
-					t.Fatalf("GenerateTEAL() with allowed_optin_assets error = %v", err)
-				}
-				for _, assetID := range []string{"10458941", "31566704"} {
-					snippet := "txn XferAsset\nint " + assetID + "\n=="
-					if !strings.Contains(tealWithOptIn, snippet) {
-						t.Fatalf("timed allowlist TEAL missing approved opt-in asset %s:\n%s", assetID, tealWithOptIn)
-					}
-				}
-				if !strings.Contains(tealWithOptIn, "maybe_optin:\ntxn AssetSender\nglobal ZeroAddress\n==\nassert") ||
-					!strings.Contains(tealWithOptIn, "bz continue_checks") ||
-					!strings.Contains(tealWithOptIn, "txn AssetCloseTo\nglobal ZeroAddress\n==\nassert") {
-					t.Fatalf("timed allowlist approved opt-in path must enforce zero close-out:\n%s", tealWithOptIn)
-				}
-			case "aplane.allowlist.v1.yaml":
-				params := map[string]string{
-					"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-				}
-				teal, err := tmpl.GenerateTEAL(params)
-				if err != nil {
-					t.Fatalf("GenerateTEAL() error = %v", err)
-				}
-				if !strings.Contains(teal, "txn Fee\nint 1000\n==\nassert") {
-					t.Fatalf("allowlist TEAL missing strict fee cap:\n%s", teal)
-				}
-				if strings.Contains(teal, "int keyreg\n==\nbnz allow") {
-					t.Fatalf("allowlist TEAL still allows keyreg:\n%s", teal)
-				}
-				assertCompileWithSaltOffCurve(t, tmpl, params)
-				if strings.Contains(teal, "txn XferAsset\nint 10458941\n==") {
-					t.Fatalf("allowlist TEAL unexpectedly contains approved opt-in asset checks without parameter:\n%s", teal)
-				}
-				tealWithOptIn, err := tmpl.GenerateTEAL(map[string]string{
-					"recipients":           "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-					"allowed_optin_assets": optInAssets,
-				})
-				if err != nil {
-					t.Fatalf("GenerateTEAL() with allowed_optin_assets error = %v", err)
-				}
-				for _, assetID := range []string{"10458941", "31566704"} {
-					snippet := "txn XferAsset\nint " + assetID + "\n=="
-					if !strings.Contains(tealWithOptIn, snippet) {
-						t.Fatalf("allowlist TEAL missing approved opt-in asset %s:\n%s", assetID, tealWithOptIn)
-					}
-				}
-				if !strings.Contains(tealWithOptIn, "maybe_optin:\ntxn AssetCloseTo\nglobal ZeroAddress\n==\nassert") {
-					t.Fatalf("allowlist approved opt-in path must enforce zero close-out:\n%s", tealWithOptIn)
-				}
 			case "aplane.htlc.v1.yaml":
 				params := map[string]string{
 					"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

@@ -177,7 +177,7 @@ func jsonObjectsEqual(left, right any) bool {
 func TestBuildExportPayloadDoesNotBundleLibraryGenericTemplateWithoutKeystoreCopy(t *testing.T) {
 	const (
 		identityID = "default"
-		keyType    = "aplane.allowlist.v1"
+		keyType    = "aplane.htlc.v1"
 	)
 
 	payload, err := buildExportPayload(storepaths.NewPaths(t.TempDir()), identityID, testKeyJSON(t, keyType), testExportMasterKey)
@@ -200,12 +200,12 @@ func TestBuildExportPayloadDoesNotBundleLibraryGenericTemplateWithoutKeystoreCop
 func TestBuildExportPayloadBundlesLibraryGenericTemplateFromKeystore(t *testing.T) {
 	const (
 		identityID = "default"
-		keyType    = "aplane.allowlist.v1"
+		keyType    = "aplane.htlc.v1"
 	)
 
-	wantTemplate, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.allowlist.v1.yaml"))
+	wantTemplate, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.allowlist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
 
 	paths := storepaths.NewPaths(t.TempDir())

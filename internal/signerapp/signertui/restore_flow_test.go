@@ -468,12 +468,12 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 			Restored:    restored,
 			Errors: []RestoreError{{
 				Address: "FAILEDADDR",
-				Error:   "template conflict for aplane.timed-allowlist.v1",
+				Error:   "template conflict for test.timed-policy.v1",
 			}},
 			Warnings: []RestoreWarning{{
 				Address: "WARNADDR",
-				KeyType: "aplane.timed-allowlist.v1",
-				Warning: "skipped bundled template for aplane.timed-allowlist.v1: backup template conflicts with existing keystore definition",
+				KeyType: "test.timed-policy.v1",
+				Warning: "skipped bundled template for test.timed-policy.v1: backup template conflicts with existing keystore definition",
 			}},
 			Error: "1 key(s) failed to restore",
 		}},
@@ -490,7 +490,7 @@ func TestRestoreDisplayPopupFitsTerminalHeightAndScrollsRestoredKeys(t *testing.
 	if !strings.Contains(clean, "▼") || !strings.Contains(clean, "more below") {
 		t.Fatalf("restore display missing scroll-down indicator:\n%s", clean)
 	}
-	if !strings.Contains(clean, "FAILEDADDR: template conflict for aplane.timed-allowlist.v1") {
+	if !strings.Contains(clean, "FAILEDADDR: template conflict for test.timed-policy.v1") {
 		t.Fatalf("restore display should keep restore errors visible below key list:\n%s", clean)
 	}
 	if strings.Contains(clean, "RESTOREDADDR07") {

@@ -23,13 +23,9 @@ func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 	RegisterClient()
 
 	for _, keyType := range []string{
-		"aplane.timed-allowlist.v1",
-		"aplane.allowlist.v1",
 		"aplane.htlc.v1",
-		"aplane.ed25519-allowlist.v1",
 		"aplane.falcon1024-allowlist.v1",
 		"aplane.falcon1024-allowlist.v2",
-		"aplane.falcon1024-hashlock.v1",
 		"aplane.falcon1024-timelock.v1",
 		"aplane.falcon1024-admin-allowlist.v1",
 	} {
@@ -101,11 +97,9 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 		file         string
 		suffixMarker string // a substring unique to that template's user suffix
 	}{
-		{"aplane.falcon1024-hashlock.v1.yaml", "sha256"},
 		{"aplane.falcon1024-timelock.v1.yaml", "FirstValid"},
 		{"aplane.falcon1024-allowlist.v1.yaml", "framework-owned fixed allowlist"},
 		{"aplane.falcon1024-allowlist.v2.yaml", "Allowlist v2"},
-		{"aplane.ed25519-allowlist.v1.yaml", "framework-owned fixed allowlist"},
 	}
 
 	for _, c := range cases {
@@ -159,21 +153,11 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 }
 
 func bundledTemplateTestPublicKey(file string) []byte {
-	switch file {
-	case "aplane.ed25519-allowlist.v1.yaml":
-		return make([]byte, 32)
-	default:
-		return make([]byte, family.PublicKeySize)
-	}
+	return make([]byte, family.PublicKeySize)
 }
 
 func bundledTemplateTestVerifyOp(file string) string {
-	switch file {
-	case "aplane.ed25519-allowlist.v1.yaml":
-		return "ed25519verify_bare"
-	default:
-		return "falcon_verify"
-	}
+	return "falcon_verify"
 }
 
 // bundledTemplateTestParams returns the minimum parameters needed to
@@ -181,10 +165,6 @@ func bundledTemplateTestVerifyOp(file string) string {
 // shape-correct placeholders; this test does not exercise their semantics.
 func bundledTemplateTestParams(file string) map[string]string {
 	switch file {
-	case "aplane.falcon1024-hashlock.v1.yaml":
-		return map[string]string{
-			"hash": strings.Repeat("00", 32),
-		}
 	case "aplane.falcon1024-allowlist.v2.yaml":
 		return map[string]string{
 			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
@@ -194,10 +174,6 @@ func bundledTemplateTestParams(file string) map[string]string {
 			"unlock_round": "1",
 		}
 	case "aplane.falcon1024-allowlist.v1.yaml":
-		return map[string]string{
-			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-		}
-	case "aplane.ed25519-allowlist.v1.yaml":
 		return map[string]string{
 			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 		}

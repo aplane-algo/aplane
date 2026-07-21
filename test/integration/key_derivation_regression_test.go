@@ -47,8 +47,6 @@ func TestKeyDerivationRegression(t *testing.T) {
 
 	signerd := harness.NewSignerHarness(t)
 	installHTLCTemplate(t, signerd.GetWorkDir())
-	installAllowlistTemplate(t, signerd.GetWorkDir())
-	installFalconHashlockTemplate(t, signerd.GetWorkDir())
 	installFalconAllowlistTemplate(t, signerd.GetWorkDir())
 
 	if err := signerd.Start(); err != nil {
@@ -99,13 +97,6 @@ func TestKeyDerivationRegression(t *testing.T) {
 				"timeout_round":  fixedTimeoutRound,
 			},
 			wantAddress: "IL3QVEJLECESYIDLRXXOASBZ3NDTNYZ4YFQS625HV5KJTME4UGYYSHL2XU",
-		},
-		{
-			name:        "aplane.allowlist.v1",
-			keyType:     "aplane.allowlist.v1",
-			mnemonic:    "",
-			params:      map[string]string{"recipients": integrationBurnAddress},
-			wantAddress: "63PFDA36KKGN7XG4SHT5PQ6N6TG6W3CLDS2CPJYWG247X27IAWQUTCAPOE",
 		},
 	}
 

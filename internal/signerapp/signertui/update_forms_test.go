@@ -392,7 +392,7 @@ func TestHandleParamInput_AddressListAutoScrollsAndPages(t *testing.T) {
 func TestGenerateFormShowsTemplateShortcutLegend(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.allowlist.v1",
+		KeyType:     "test.generic-policy.v1",
 		DisplayName: "Allowlist",
 		Description: "Template-backed key type",
 	}})
@@ -407,7 +407,7 @@ func TestGenerateFormShowsTemplateShortcutLegend(t *testing.T) {
 func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.allowlist.v1",
+		KeyType:     "test.generic-policy.v1",
 		DisplayName: "Allowlist",
 		Description: "Template-backed key type",
 	}})
@@ -416,9 +416,9 @@ func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 		viewState: ViewGenerateForm,
 		forms:     formsState{generateKeyType: 0},
 		library: libraryState{templates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.allowlist.v1",
+			KeyType:      "test.generic-policy.v1",
 			TemplateType: "generic",
-			SourcePath:   "/tmp/keystore/library/templates/aplane.allowlist.v1.yaml",
+			SourcePath:   "/tmp/keystore/library/templates/test.generic-policy.v1.yaml",
 		}}},
 	}
 
@@ -427,7 +427,7 @@ func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 	if got.viewState != ViewLibraryTemplateDetails {
 		t.Fatalf("viewState after t = %v, want ViewLibraryTemplateDetails", got.viewState)
 	}
-	if !got.library.detailsLoading || got.library.detailsKeyType != "aplane.allowlist.v1" || got.library.detailsTemplateType != "generic" {
+	if !got.library.detailsLoading || got.library.detailsKeyType != "test.generic-policy.v1" || got.library.detailsTemplateType != "generic" {
 		t.Fatalf("library details state = loading:%v key:%q type:%q", got.library.detailsLoading, got.library.detailsKeyType, got.library.detailsTemplateType)
 	}
 	if cmd == nil {

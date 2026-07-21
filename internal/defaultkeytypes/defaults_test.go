@@ -63,16 +63,6 @@ func TestInstallForNewIdentityInstallsDefaultAllowlistTemplatesForSigner(t *test
 		}
 	}
 
-	// Ed25519 allowlist is a bundled but optional template (like the generic
-	// templates); it must not be auto-installed or enabled for new identities.
-	if _, ok, err := keytypestate.Get(paths, identityID, Ed25519AllowlistKeyType); err != nil {
-		t.Fatalf("keytypestate.Get(%s) error = %v", Ed25519AllowlistKeyType, err)
-	} else if ok {
-		t.Fatalf("optional key type %s must not be default-enabled", Ed25519AllowlistKeyType)
-	}
-	if templatestore.TemplateExistsForPaths(paths, identityID, Ed25519AllowlistKeyType, templatestore.TemplateTypeComposed) {
-		t.Fatalf("optional template %s must not be auto-installed", Ed25519AllowlistKeyType)
-	}
 }
 
 func TestInstallForNewIdentitySkipsSentryRole(t *testing.T) {

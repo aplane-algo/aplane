@@ -454,22 +454,24 @@ func TestAdminGenerateFalconAllowlistIsImmediatelyVisibleInKeyCache(t *testing.T
 	}
 }
 
-func TestAdminGenerateTimelockV1(t *testing.T) {
-	registerLibraryGenericTemplateForTest(t, "aplane.timed-allowlist.v1.yaml")
+func TestAdminGenerateHTLCV1(t *testing.T) {
+	registerLibraryGenericTemplateForTest(t, "aplane.htlc.v1.yaml")
 
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	installLibraryGenericTemplateForTest(t, server, "aplane.timed-allowlist.v1.yaml")
+	installLibraryGenericTemplateForTest(t, server, "aplane.htlc.v1.yaml")
 
 	algodCleanup := configureMockAlgod(t, server)
 	defer algodCleanup()
 
-	// aplane.timed-allowlist.v1 requires: recipients, unlock_round
+	// aplane.htlc.v1 requires a digest, recipient, refund address, and timeout.
 	reqBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType: "aplane.timed-allowlist.v1",
+		KeyType: "aplane.htlc.v1",
 		Parameters: map[string]string{
-			"recipients":   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-			"unlock_round": "1000000",
+			"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"recipient":      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"refund_address": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"timeout_round":  "1000000",
 		},
 	})
 
@@ -490,12 +492,12 @@ func TestAdminGenerateTimelockV1(t *testing.T) {
 	if resp.Address == "" {
 		t.Fatal("Expected non-empty address")
 	}
-	if resp.KeyType != "aplane.timed-allowlist.v1" {
-		t.Errorf("Expected key_type aplane.timed-allowlist.v1, got %s", resp.KeyType)
+	if resp.KeyType != "aplane.htlc.v1" {
+		t.Errorf("Expected key_type aplane.htlc.v1, got %s", resp.KeyType)
 	}
 	// Verify parameters are echoed back
-	if resp.Parameters["unlock_round"] == "" {
-		t.Error("Expected parameters to include unlock_round")
+	if resp.Parameters["timeout_round"] == "" {
+		t.Error("Expected parameters to include timeout_round")
 	}
 }
 
@@ -619,22 +621,24 @@ func TestAdminDeleteFalcon1024(t *testing.T) {
 	}
 }
 
-func TestAdminDeleteTimelockV1(t *testing.T) {
-	registerLibraryGenericTemplateForTest(t, "aplane.timed-allowlist.v1.yaml")
+func TestAdminDeleteHTLCV1(t *testing.T) {
+	registerLibraryGenericTemplateForTest(t, "aplane.htlc.v1.yaml")
 
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	installLibraryGenericTemplateForTest(t, server, "aplane.timed-allowlist.v1.yaml")
+	installLibraryGenericTemplateForTest(t, server, "aplane.htlc.v1.yaml")
 
 	algodCleanup := configureMockAlgod(t, server)
 	defer algodCleanup()
 
-	// Generate a aplane.timed-allowlist.v1 key
+	// Generate an aplane.htlc.v1 key.
 	genBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType: "aplane.timed-allowlist.v1",
+		KeyType: "aplane.htlc.v1",
 		Parameters: map[string]string{
-			"recipients":   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-			"unlock_round": "1000000",
+			"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"recipient":      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"refund_address": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"timeout_round":  "1000000",
 		},
 	})
 	genW := httptest.NewRecorder()
@@ -815,21 +819,23 @@ func TestAdminGenerateInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestAdminGenerateTimelockMissingAlgod(t *testing.T) {
-	registerLibraryGenericTemplateForTest(t, "aplane.timed-allowlist.v1.yaml")
+func TestAdminGenerateHTLCMissingAlgod(t *testing.T) {
+	registerLibraryGenericTemplateForTest(t, "aplane.htlc.v1.yaml")
 
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	installLibraryGenericTemplateForTest(t, server, "aplane.timed-allowlist.v1.yaml")
+	installLibraryGenericTemplateForTest(t, server, "aplane.htlc.v1.yaml")
 
 	// No algod configured
 	server.config.Algod = nil
 
 	reqBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType: "aplane.timed-allowlist.v1",
+		KeyType: "aplane.htlc.v1",
 		Parameters: map[string]string{
-			"recipients":   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-			"unlock_round": "1000000",
+			"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"recipient":      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"refund_address": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
+			"timeout_round":  "1000000",
 		},
 	})
 	w := httptest.NewRecorder()
@@ -847,19 +853,19 @@ func TestAdminGenerateTimelockMissingAlgod(t *testing.T) {
 	}
 }
 
-func TestAdminGenerateTimelockInvalidParams(t *testing.T) {
-	registerLibraryGenericTemplateForTest(t, "aplane.timed-allowlist.v1.yaml")
+func TestAdminGenerateHTLCInvalidParams(t *testing.T) {
+	registerLibraryGenericTemplateForTest(t, "aplane.htlc.v1.yaml")
 
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
-	installLibraryGenericTemplateForTest(t, server, "aplane.timed-allowlist.v1.yaml")
+	installLibraryGenericTemplateForTest(t, server, "aplane.htlc.v1.yaml")
 
 	algodCleanup := configureMockAlgod(t, server)
 	defer algodCleanup()
 
 	// Missing required params
 	reqBody, _ := json.Marshal(AdminGenerateRequest{
-		KeyType:    "aplane.timed-allowlist.v1",
+		KeyType:    "aplane.htlc.v1",
 		Parameters: map[string]string{}, // Missing all required params
 	})
 	w := httptest.NewRecorder()

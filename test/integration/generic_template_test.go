@@ -550,7 +550,7 @@ func apshellForSigner(t *testing.T, signerd *harness.SignerHarness) *harness.Aps
 func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 	lockOnDisconnect := false
 	env := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
-	installAllowlistTemplate(t, env.SignerDataDir)
+	installHTLCTemplate(t, env.SignerDataDir)
 
 	signerd := harness.NewSignerHarness(t)
 	if err := signerd.Start(); err != nil {
@@ -568,19 +568,22 @@ func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
 
 	params := map[string]string{
-		"recipients": integrationBurnAddress,
+		"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		"recipient":      integrationBurnAddress,
+		"refund_address": integrationBurnAddress,
+		"timeout_round":  "999999999",
 	}
 
 	// Generate the key
-	resp, err := signerClient.AdminGenerate("aplane.allowlist.v1", params)
+	resp, err := signerClient.AdminGenerate("aplane.htlc.v1", params)
 	if err != nil {
-		t.Fatalf("failed to generate aplane.allowlist.v1: %v", err)
+		t.Fatalf("failed to generate aplane.htlc.v1: %v", err)
 	}
 	if resp.Address == "" {
 		t.Fatal("admin generate returned empty address")
 	}
 	originalAddress := resp.Address
-	t.Logf("Generated aplane.allowlist.v1 address: %s", originalAddress)
+	t.Logf("Generated aplane.htlc.v1 address: %s", originalAddress)
 
 	if !waitForKey(t, signerd.GetURL(), token, originalAddress, 10*time.Second) {
 		t.Fatalf("signer did not reload generated key %s", originalAddress)
@@ -593,14 +596,14 @@ func TestGenericLSigRegenerationProducesSameAddress(t *testing.T) {
 	t.Logf("Deleted key %s", originalAddress)
 
 	// Regenerate with the same params
-	resp2, err := signerClient.AdminGenerate("aplane.allowlist.v1", params)
+	resp2, err := signerClient.AdminGenerate("aplane.htlc.v1", params)
 	if err != nil {
-		t.Fatalf("failed to regenerate aplane.allowlist.v1: %v", err)
+		t.Fatalf("failed to regenerate aplane.htlc.v1: %v", err)
 	}
 	if resp2.Address == "" {
 		t.Fatal("admin regenerate returned empty address")
 	}
-	t.Logf("Regenerated aplane.allowlist.v1 address: %s", resp2.Address)
+	t.Logf("Regenerated aplane.htlc.v1 address: %s", resp2.Address)
 
 	// Clean up the regenerated key
 	t.Cleanup(func() {

@@ -386,7 +386,7 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsSaltWarnings(t *testing.T) {
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
-		"key_type": "aplane.allowlist.v1",
+		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "260101058101",
 		"signing_metadata_version": 1,
 		"created_at": "2026-07-10T12:34:56Z"
@@ -428,18 +428,18 @@ func TestScanKeysDirectoryWithMasterKeyReportRecordsSaltWarnings(t *testing.T) {
 func TestKeyPayloadScanWarningClassification(t *testing.T) {
 	offCurve := canonicalOffCurveBytecode(t)
 
-	missingSalt := NewGenericLSigPayload("aplane.allowlist.v1", nil, offCurve, 0, "", nil, "")
+	missingSalt := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, 0, "", nil, "")
 	missingSalt.SaltCounter = nil
 
-	onCurvePayload := NewGenericLSigPayload("aplane.allowlist.v1", nil, canonicalOnCurveBytecode(t), 0, "", nil, "")
+	onCurvePayload := NewGenericLSigPayload("test.generic-policy.v1", nil, canonicalOnCurveBytecode(t), 0, "", nil, "")
 
-	missingBytecode := NewGenericLSigPayload("aplane.allowlist.v1", nil, offCurve, 0, "", nil, "")
+	missingBytecode := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, 0, "", nil, "")
 	missingBytecode.LogicSigBytecode = nil
 
-	wrongVersion := NewGenericLSigPayload("aplane.allowlist.v1", nil, offCurve, 0, "", nil, "")
+	wrongVersion := NewGenericLSigPayload("test.generic-policy.v1", nil, offCurve, 0, "", nil, "")
 	wrongVersion.SigningMetadataVersion = CurrentSigningMetadataVersion + 1
 
-	_, badHexErr := ParsePayload([]byte(`{"format_version":1,"category":"generic_lsig","key_type":"aplane.allowlist.v1","lsig_bytecode":"zz","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T00:00:00Z"}`))
+	_, badHexErr := ParsePayload([]byte(`{"format_version":1,"category":"generic_lsig","key_type":"test.generic-policy.v1","lsig_bytecode":"zz","salt_counter":0,"signing_metadata_version":1,"created_at":"2026-07-10T00:00:00Z"}`))
 
 	cases := []struct {
 		name    string
@@ -477,7 +477,7 @@ func TestScanKeysDirectoryWithMasterKeyLoadsGenericUnderDerivedAddress(t *testin
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
-		"key_type": "aplane.allowlist.v1",
+		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"signing_metadata_version": 1,
@@ -511,7 +511,7 @@ func TestScanKeysDirectoryWithMasterKeyRejectsGenericFilenameAddressMismatch(t *
 	keyJSON := []byte(`{
 		"format_version": 1,
 		"category": "generic_lsig",
-		"key_type": "aplane.allowlist.v1",
+		"key_type": "test.generic-policy.v1",
 		"lsig_bytecode": "` + hex.EncodeToString(bytecode) + `",
 		"salt_counter": ` + fmt.Sprintf("%d", counter) + `,
 		"signing_metadata_version": 1,

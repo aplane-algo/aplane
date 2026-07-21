@@ -107,16 +107,6 @@ func installHTLCTemplate(t *testing.T, signerDataDir string) {
 	installTemplateLibraryFile(t, signerDataDir, "aplane.htlc.v1.yaml", "HTLC")
 }
 
-func installAllowlistTemplate(t *testing.T, signerDataDir string) {
-	t.Helper()
-	installTemplateLibraryFile(t, signerDataDir, "aplane.allowlist.v1.yaml", "allowlist")
-}
-
-func installFalconHashlockTemplate(t *testing.T, signerDataDir string) {
-	t.Helper()
-	installTemplateLibraryFile(t, signerDataDir, "aplane.falcon1024-hashlock.v1.yaml", "Falcon hashlock")
-}
-
 func installFalconAllowlistTemplate(t *testing.T, signerDataDir string) {
 	t.Helper()
 	installTemplateLibraryFile(t, signerDataDir, "aplane.falcon1024-allowlist.v1.yaml", "Falcon allowlist")
@@ -1971,7 +1961,6 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 
 	signerd := harness.NewSignerHarness(t)
 	installHTLCTemplate(t, signerd.GetWorkDir())
-	installFalconHashlockTemplate(t, signerd.GetWorkDir())
 	if err := signerd.Start(); err != nil {
 		t.Fatalf("failed to start signer: %v", err)
 	}
@@ -1986,11 +1975,6 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 	token := readSignerToken(t, signerd)
 	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
 
-	hashlockPreimage := []byte("falcon-hashlock-secret")
-	hashlockPreimageHash := sha256.Sum256(hashlockPreimage)
-	falconAddr := mustAdminGenerateKey(t, signerClient, signerd, "aplane.falcon1024-hashlock.v1", map[string]string{
-		"hash": hex.EncodeToString(hashlockPreimageHash[:]),
-	})
 	genericPreimage := bytes.Repeat([]byte("g"), 32)
 	genericPreimageHash := sha256.Sum256(genericPreimage)
 	genericAddr := mustAdminGenerateKey(t, signerClient, signerd, "aplane.htlc.v1", map[string]string{
@@ -2004,22 +1988,6 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get suggested params: %v", err)
 	}
-
-	t.Run("missing required arg", func(t *testing.T) {
-		req := signerapi.GroupSignRequest{
-			Requests: []signerapi.SignRequest{{
-				AuthAddress: falconAddr,
-				TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, falconAddr, integrationBurnAddress, 0, "lsig-missing-arg"),
-			}},
-		}
-		status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
-		if status != http.StatusBadRequest {
-			t.Fatalf("expected 400 for missing required arg, got %d: %s", status, string(body))
-		}
-		if !strings.Contains(string(body), `missing required bounded1 runtime argument \"preimage\"`) {
-			t.Fatalf("expected missing required preimage error, got %s", string(body))
-		}
-	})
 
 	t.Run("invalid arg length", func(t *testing.T) {
 		req := signerapi.GroupSignRequest{
@@ -2070,57 +2038,6 @@ func TestLSigRuntimeArgValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("mixed generic and falcon lsig group", func(t *testing.T) {
-		req := signerapi.GroupSignRequest{
-			Requests: []signerapi.SignRequest{
-				{
-					AuthAddress: genericAddr,
-					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, genericAddr, integrationBurnAddress, 0, "lsig-mixed-generic"),
-					LsigArgs: map[string]string{
-						"preimage": hex.EncodeToString(genericPreimage),
-					},
-				},
-				{
-					AuthAddress: falconAddr,
-					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, falconAddr, integrationBurnAddress, 0, "lsig-mixed-falcon"),
-					LsigArgs: map[string]string{
-						"preimage": hex.EncodeToString(hashlockPreimage),
-					},
-				},
-			},
-		}
-		status, body := postSignRequest(t, signerd.GetURL(), "aplane "+token, req)
-		if status != http.StatusOK {
-			t.Fatalf("expected 200 for mixed generic+falcon lsig group, got %d: %s", status, string(body))
-		}
-
-		var resp signerapi.GroupSignResponse
-		if err := json.Unmarshal(body, &resp); err != nil {
-			t.Fatalf("failed to parse mixed lsig response: %v", err)
-		}
-		if resp.Error != "" {
-			t.Fatalf("unexpected sign error for mixed lsig group: %s", resp.Error)
-		}
-		if len(resp.Signed) < 2 {
-			t.Fatalf("expected at least two signed transactions, got %d", len(resp.Signed))
-		}
-
-		genericStxn := decodeSignedTxnHex(t, resp.Signed[0])
-		if len(genericStxn.Lsig.Args) != 1 || !bytes.Equal(genericStxn.Lsig.Args[0], genericPreimage) {
-			t.Fatalf("expected generic preimage arg in LogicSig, got %d args", len(genericStxn.Lsig.Args))
-		}
-
-		falconStxn := decodeSignedTxnHex(t, resp.Signed[1])
-		if len(falconStxn.Lsig.Args) != 2 {
-			t.Fatalf("expected falcon hashlock args [signature, preimage], got %d args", len(falconStxn.Lsig.Args))
-		}
-		if !bytes.Equal(falconStxn.Lsig.Args[1], hashlockPreimage) {
-			t.Fatal("expected falcon hashlock preimage as second LogicSig arg")
-		}
-		if len(falconStxn.Lsig.Args[0]) == 0 {
-			t.Fatal("expected falcon signature bytes as first LogicSig arg")
-		}
-	})
 }
 
 func TestApprovalTimeoutOrClientDisconnect(t *testing.T) {

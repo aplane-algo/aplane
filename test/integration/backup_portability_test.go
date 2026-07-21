@@ -118,30 +118,6 @@ func TestBackupPortabilityFirstMilestone(t *testing.T) {
 			},
 		},
 		{
-			name:                  "library generic template",
-			expectedTemplateType:  templatestore.TemplateTypeGeneric,
-			expectBundledTemplate: true,
-			prepareSource: func(t *testing.T, sourceDataDir string, _ *harness.ApStoreHarness) (string, map[string]string) {
-				installAllowlistTemplate(t, sourceDataDir)
-				return "aplane.allowlist.v1", map[string]string{"recipients": integrationBurnAddress}
-			},
-			prepareDestination: func(t *testing.T, destDataDir string) {
-				syncTemplateLibraryFile(t, destDataDir, "aplane.allowlist.v1.yaml")
-			},
-			buildSignRequest: func(t *testing.T, address string) signerapi.SignRequest {
-				return signerapi.SignRequest{
-					AuthAddress: address,
-					TxnBytesHex: mustUnsignedPaymentTxnHex(t, sp, address, integrationBurnAddress, 0, "backup-portability"),
-				}
-			},
-			assertRestoreArtifacts: func(t *testing.T, destPaths utilkeys.Paths, keyType, address string) {
-				t.Helper()
-				if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric) {
-					t.Fatalf("restored template %s (%s) not found in destination keystore", keyType, templatestore.TemplateTypeGeneric)
-				}
-			},
-		},
-		{
 			name:                  "library composed template",
 			expectedTemplateType:  templatestore.TemplateTypeComposed,
 			expectBundledTemplate: true,
@@ -509,7 +485,7 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 	lockOnDisconnect := false
 	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-	installAllowlistTemplate(t, sourceClone.SignerDataDir)
+	installHTLCTemplate(t, sourceClone.SignerDataDir)
 
 	sourceSigner := harness.NewSignerHarness(t)
 	if err := sourceSigner.Start(); err != nil {
@@ -525,12 +501,17 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 
 	sourceToken := readSignerToken(t, sourceSigner)
 	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
-	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.allowlist.v1", map[string]string{"recipients": integrationBurnAddress})
+	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.htlc.v1", map[string]string{
+		"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		"recipient":      integrationBurnAddress,
+		"refund_address": integrationBurnAddress,
+		"timeout_round":  "999999999",
+	})
 
 	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
 	archivePath := mustCreateBackupArchive(t, sourceApstore, address, storePassphrase)
-	conflictingTemplatePath, err := filepath.Abs(filepath.Join("..", "..", "library", "templates", "aplane.allowlist.v1.yaml"))
+	conflictingTemplatePath, err := filepath.Abs(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
 	if err != nil {
 		t.Fatalf("failed to resolve allowlist template path: %v", err)
 	}
@@ -538,9 +519,9 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 	if err != nil {
 		t.Fatalf("failed to read allowlist template: %v", err)
 	}
-	conflictingTemplateYAML = bytes.Replace(conflictingTemplateYAML, []byte("    max_items: 30"), []byte("    max_items: 29"), 1)
-	if !bytes.Contains(conflictingTemplateYAML, []byte("    max_items: 29")) {
-		t.Fatal("failed to create conflicting allowlist template fixture")
+	conflictingTemplateYAML = bytes.Replace(conflictingTemplateYAML, []byte("  int 1000"), []byte("  int 999"), 1)
+	if !bytes.Contains(conflictingTemplateYAML, []byte("  int 999")) {
+		t.Fatal("failed to create conflicting HTLC template fixture")
 	}
 	tamperBackupBundleTemplateInArchive(t, archivePath, address, storePassphrase, func(bundle map[string]any) {
 		bundle["template_yaml"] = string(conflictingTemplateYAML)
@@ -548,7 +529,7 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 
 	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	installAllowlistTemplate(t, destClone.SignerDataDir)
+	installHTLCTemplate(t, destClone.SignerDataDir)
 	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
 	if destStorePassphrase != storePassphrase {
 		t.Fatalf("test requires identical source/destination store passphrases, got %q vs %q", storePassphrase, destStorePassphrase)
@@ -567,7 +548,7 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 	if _, statErr := os.Stat(destPaths.KeyFilePath(auth.DefaultIdentityID, address)); statErr != nil {
 		t.Fatalf("expected restored key file despite template conflict, got stat err=%v", statErr)
 	}
-	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.allowlist.v1", templatestore.TemplateTypeGeneric) {
+	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
 		t.Fatal("expected destination template file to remain after template conflict")
 	}
 }
@@ -1107,7 +1088,7 @@ func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
 	lockOnDisconnect := false
 	sourceClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	sourceApstore := harness.NewApStoreHarness(t, sourceClone.SignerDataDir)
-	installAllowlistTemplate(t, sourceClone.SignerDataDir)
+	installHTLCTemplate(t, sourceClone.SignerDataDir)
 
 	sourceSigner := harness.NewSignerHarness(t)
 	if err := sourceSigner.Start(); err != nil {
@@ -1123,7 +1104,12 @@ func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
 
 	sourceToken := readSignerToken(t, sourceSigner)
 	sourceClient := signerclient.NewSignerClientWithToken(sourceSigner.GetURL(), sourceToken)
-	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.allowlist.v1", map[string]string{"recipients": integrationBurnAddress})
+	address := mustAdminGenerateKeyNoCleanup(t, sourceClient, sourceSigner, "aplane.htlc.v1", map[string]string{
+		"hash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		"recipient":      integrationBurnAddress,
+		"refund_address": integrationBurnAddress,
+		"timeout_round":  "999999999",
+	})
 
 	storePassphrase := mustReadPassphrase(t, sourceClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", storePassphrase)
@@ -1131,8 +1117,8 @@ func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
 
 	destClone := harness.CloneSharedTestEnv(t, harness.TestEnvCloneOptions{LockOnDisconnect: &lockOnDisconnect})
 	destApstore := harness.NewApStoreHarness(t, destClone.SignerDataDir)
-	installAllowlistTemplate(t, destClone.SignerDataDir)
-	syncTemplateLibraryFile(t, destClone.SignerDataDir, "aplane.allowlist.v1.yaml")
+	installHTLCTemplate(t, destClone.SignerDataDir)
+	syncTemplateLibraryFile(t, destClone.SignerDataDir, "aplane.htlc.v1.yaml")
 	destStorePassphrase := mustReadPassphrase(t, destClone.SignerDataDir)
 	t.Setenv("APSIGNER_PASSPHRASE", destStorePassphrase)
 
@@ -1144,12 +1130,12 @@ func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
 	if err := destApadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock destination signer: %v", err)
 	}
-	disableResult, err := destApadmin.DeactivateKeyType("aplane.allowlist.v1")
+	disableResult, err := destApadmin.DeactivateKeyType("aplane.htlc.v1")
 	if err != nil {
-		t.Fatalf("failed to deactivate aplane.allowlist.v1: %v", err)
+		t.Fatalf("failed to deactivate aplane.htlc.v1: %v", err)
 	}
 	if !disableResult.Success {
-		t.Fatalf("failed to deactivate aplane.allowlist.v1: %s", disableResult.Error)
+		t.Fatalf("failed to deactivate aplane.htlc.v1: %s", disableResult.Error)
 	}
 	t.Cleanup(func() { _ = destSigner.Stop() })
 
@@ -1160,8 +1146,8 @@ func TestBackupRestoreReenablesDisabledInstalledTemplate(t *testing.T) {
 
 	destToken := readSignerToken(t, destSigner)
 	destClient := signerclient.NewSignerClientWithToken(destSigner.GetURL(), destToken)
-	if !waitForKeyType(t, destClient, "aplane.allowlist.v1", 10*time.Second) {
-		t.Fatal("destination signer did not expose aplane.allowlist.v1 after restore-based re-enable")
+	if !waitForKeyType(t, destClient, "aplane.htlc.v1", 10*time.Second) {
+		t.Fatal("destination signer did not expose aplane.htlc.v1 after restore-based re-enable")
 	}
 }
 

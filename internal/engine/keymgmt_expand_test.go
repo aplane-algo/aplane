@@ -44,7 +44,7 @@ func TestEngineGenerateKeyExpandsAddressListParams(t *testing.T) {
 		case req.Method == http.MethodGet && req.URL.Path == "/keytypes":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeyTypesResponse{
 				KeyTypes: []signerapi.KeyTypeInfo{{
-					KeyType:        "aplane.allowlist.v1",
+					KeyType:        "test.generic-policy.v1",
 					CreationParams: []signerapi.CreationParamInfo{{Name: "recipients", Type: "address[]"}},
 				}},
 			}, req), nil
@@ -56,12 +56,12 @@ func TestEngineGenerateKeyExpandsAddressListParams(t *testing.T) {
 			captured = body.Parameters
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.AdminGenerateResponse{
 				Address: newKey,
-				KeyType: "aplane.allowlist.v1",
+				KeyType: "test.generic-policy.v1",
 			}, req), nil
 		case req.Method == http.MethodGet && req.URL.Path == "/keys":
 			return keyMgmtJSONResponse(t, http.StatusOK, signerapi.KeysResponse{
 				Count: 1,
-				Keys:  []signerapi.KeyInfo{{Address: newKey, KeyType: "aplane.allowlist.v1"}},
+				Keys:  []signerapi.KeyInfo{{Address: newKey, KeyType: "test.generic-policy.v1"}},
 			}, req), nil
 		default:
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
@@ -73,7 +73,7 @@ func TestEngineGenerateKeyExpandsAddressListParams(t *testing.T) {
 	eng.Connection = &engconnect.ConnectionState{SignerClient: client}
 
 	// recipients given as a raw address + an alias, in unsorted order.
-	_, err = eng.GenerateKey(context.Background(), "aplane.allowlist.v1",
+	_, err = eng.GenerateKey(context.Background(), "test.generic-policy.v1",
 		map[string]string{"recipients": addrB + ",friend"})
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)

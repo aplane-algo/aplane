@@ -16,7 +16,7 @@ type ComposedFalcon = composeddsa.ComposedDSA
 
 // ComposedFalconConfig configures a Falcon composed provider.
 type ComposedFalconConfig struct {
-	KeyType     string // e.g., "aplane.falcon1024-hashlock.v1"
+	KeyType     string // e.g., "test.falcon1024-policy.v1"
 	BaseKeyType string // e.g., "aplane.falcon1024.v1"
 	FamilyName  string // e.g., "falcon1024"
 	Version     int

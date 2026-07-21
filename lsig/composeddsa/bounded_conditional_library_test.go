@@ -28,15 +28,6 @@ func TestBundledBoundedConditionalGoldens(t *testing.T) {
 		wantTEALSHA256  string
 	}{
 		{
-			name: "aplane.falcon1024-hashlock.v1.yaml",
-			parameters: map[string]string{
-				"hash": hex.EncodeToString(make([]byte, sha256.Size)),
-			},
-			wantRuntimeArgs: 1,
-			wantFingerprint: "1:41753985a5958721833bba28918d812769c1237ab2dca22d1745b4a7a8120835",
-			wantTEALSHA256:  "272af8f48540178f8c5e65918906424a3e1715c952c874a09e218478e7080429",
-		},
-		{
 			name:            "aplane.falcon1024-timelock.v1.yaml",
 			parameters:      map[string]string{"unlock_round": "50000000"},
 			wantFingerprint: "1:c2be6928ec92c9f51ed8a2be3b175aa86e6e77c70d5aa399a0a3f8ab2ea8d250",
@@ -64,12 +55,6 @@ func TestBundledBoundedConditionalGoldens(t *testing.T) {
 			}
 			if len(metadata.AdminOperations) != 1 || metadata.AdminOperations[0].PolicyGate != boundedmeta.PolicyGateLayer3 {
 				t.Fatalf("bounded conditional rekey operation = %#v", metadata.AdminOperations)
-			}
-			if test.wantRuntimeArgs == 1 {
-				slot := metadata.ArgumentLayout[1]
-				if slot.Source != boundedmeta.ArgSourceRuntime || slot.MaxSize != 64 || slot.Paths.Spend != boundedmeta.ArgRequired || slot.Paths.SpendingRekey != boundedmeta.ArgRequired {
-					t.Fatalf("hashlock runtime slot = %#v", slot)
-				}
 			}
 			teal, err := provider.GenerateTEAL(publicKey, test.parameters)
 			if err != nil {

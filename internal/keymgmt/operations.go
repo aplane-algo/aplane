@@ -59,7 +59,7 @@ func GetValidKeyTypesWithActivated(activated []string) []string {
 	}
 
 	// Sort: standard algorithms first, then LogicSig DSAs grouped by family
-	// with fewer segments first (e.g., aplane.falcon1024.v1 before aplane.falcon1024-hashlock.v1).
+	// with fewer segments first (e.g., aplane.falcon1024.v1 before aplane.falcon1024-timelock.v1).
 	sort.Slice(types, func(i, j int) bool {
 		li := logicsigdsa.IsLogicSigType(types[i])
 		lj := logicsigdsa.IsLogicSigType(types[j])
@@ -275,7 +275,7 @@ func DeleteKey(address, keyFile, deletedKeysDir string) (*DeleteResult, error) {
 
 // KeyFileInfo contains info extracted from a key file
 type KeyFileInfo struct {
-	Type                string            // Full versioned type: "aplane.falcon1024.v1", "ed25519", "aplane.timed-allowlist.v1"
+	Type                string            // Full versioned type: "aplane.falcon1024.v1", "ed25519", "aplane.htlc.v1"
 	PublicKeyHex        string            // Hex-encoded public key stored in the key payload.
 	Parameters          map[string]string // Parameters for LogicSig keys (nil for DSA keys)
 	TemplateFingerprint string

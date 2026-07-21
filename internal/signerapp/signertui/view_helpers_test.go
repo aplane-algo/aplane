@@ -59,7 +59,7 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 			MnemonicImport:    true,
 		},
 		{
-			KeyType:           "aplane.timed-allowlist.v1",
+			KeyType:           "test.timed-policy.v1",
 			DisplayName:       "Timed Allowlist",
 			Description:       "Generic timed allowlist LogicSig",
 			MnemonicWordCount: 0,
@@ -96,7 +96,7 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 	if got, want := getImportKeyTypeCount(), 2; got != want {
 		t.Fatalf("getImportKeyTypeCount() = %d, want %d", got, want)
 	}
-	if got, want := getKeyTypeByIndex(1), "aplane.timed-allowlist.v1"; got != want {
+	if got, want := getKeyTypeByIndex(1), "test.timed-policy.v1"; got != want {
 		t.Fatalf("generate key type index 1 = %q, want %q", got, want)
 	}
 	if got, want := getImportKeyTypeByIndex(1), "aplane.falcon1024.v1"; got != want {
@@ -229,7 +229,7 @@ func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 func TestParameterModalMarksOnlyOptionalParameters(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.allowlist.v1",
+		KeyType:     "test.generic-policy.v1",
 		DisplayName: "Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{
 			{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true},
@@ -253,7 +253,7 @@ func TestParameterModalMarksOnlyOptionalParameters(t *testing.T) {
 		},
 	}
 
-	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.allowlist.v1", "GENERATE", ""))
+	rendered := stripANSI(m.renderParameterModalForKeyType("test.generic-policy.v1", "GENERATE", ""))
 	if !strings.Contains(rendered, "Recipients:") {
 		t.Fatalf("required label missing:\n%s", rendered)
 	}

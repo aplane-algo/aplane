@@ -67,7 +67,7 @@ type BoundedCapableDSAOps interface {
 // Config holds configuration for creating a ComposedDSA.
 type Config struct {
 	// Identity
-	KeyType     string // e.g., "aplane.falcon1024-hashlock.v1"
+	KeyType     string // e.g., "aplane.falcon1024-timelock.v1"
 	BaseKeyType string // e.g., "aplane.falcon1024.v1"
 	FamilyName  string // qualified registry family, e.g. "aplane.falcon1024"
 	Version     int

@@ -15,10 +15,7 @@ import (
 	librarytemplates "github.com/aplane-algo/aplane/library/templates"
 )
 
-const (
-	Falcon1024AllowlistKeyType = "aplane.falcon1024-allowlist.v1"
-	Ed25519AllowlistKeyType    = "aplane.ed25519-allowlist.v1"
-)
+const Falcon1024AllowlistKeyType = "aplane.falcon1024-allowlist.v1"
 
 type bundledTemplate struct {
 	fileName     string
