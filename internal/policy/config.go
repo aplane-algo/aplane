@@ -363,7 +363,7 @@ func (c *Config) ForKey(key string) *Config {
 }
 
 // NormalizeKeyOverrideKey canonicalizes a runtime key-override lookup selector.
-// It accepts both signer auth addresses and Sentry Key IDs because Config.ForKey
+// It accepts both signer auth addresses and Witness Key IDs because Config.ForKey
 // is shared by signer and sentry effective policy snapshots. Policy document
 // validation must use the role-specific normalizers below instead.
 func NormalizeKeyOverrideKey(key string) (string, error) {
@@ -375,25 +375,25 @@ func NormalizeKeyOverrideKey(key string) (string, error) {
 		return selector, nil
 	}
 	if len(raw) == witness.IDLength {
-		return "", fmt.Errorf("invalid Sentry Key ID %q", raw)
+		return "", fmt.Errorf("invalid Witness Key ID %q", raw)
 	}
 	addr, err := types.DecodeAddress(strings.ToUpper(raw))
 	if err != nil {
-		return "", fmt.Errorf("key override selector must be an Algorand address or Sentry Key ID")
+		return "", fmt.Errorf("key override selector must be an Algorand address or Witness Key ID")
 	}
 	return addr.String(), nil
 }
 
 // NormalizeSigningKeyOverrideKey validates and canonicalizes a signer-domain
 // policy key_overrides selector. Signer overrides are keyed by Algorand auth
-// address; Sentry Key IDs are valid only in sentry-domain policy.
+// address; Witness Key IDs are valid only in sentry-domain policy.
 func NormalizeSigningKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
 		return "", fmt.Errorf("signer key override selector is required")
 	}
 	if _, err := witness.NormalizeID(raw); err == nil {
-		return "", fmt.Errorf("signer key override selector must be an Algorand auth address, not a Sentry Key ID")
+		return "", fmt.Errorf("signer key override selector must be an Algorand auth address, not a Witness Key ID")
 	}
 	addr, err := types.DecodeAddress(strings.ToUpper(raw))
 	if err != nil {
@@ -404,7 +404,7 @@ func NormalizeSigningKeyOverrideKey(key string) (string, error) {
 
 // NormalizeSentryKeyOverrideKey validates and canonicalizes a sentry
 // policy key_overrides selector. Sentry overrides are always keyed by
-// Sentry Key ID, not spending-account address.
+// Witness Key ID, not spending-account address.
 func NormalizeSentryKeyOverrideKey(key string) (string, error) {
 	raw := strings.TrimSpace(key)
 	if raw == "" {
@@ -412,7 +412,7 @@ func NormalizeSentryKeyOverrideKey(key string) (string, error) {
 	}
 	selector, err := witness.NormalizeID(raw)
 	if err != nil {
-		return "", fmt.Errorf("sentry key override selector must be a Sentry Key ID: %w", err)
+		return "", fmt.Errorf("sentry key override selector must be a Witness Key ID: %w", err)
 	}
 	return selector, nil
 }

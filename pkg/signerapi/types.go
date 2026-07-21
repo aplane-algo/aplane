@@ -343,7 +343,7 @@ type StatusResponse struct {
 // SigningFlowSentry1 names the sentry co-signed component signing
 // choreography: canonical TX-prefixed group transport, role-tagged component
 // messages, exactly one user plus one sentry component signature per target,
-// Sentry Key ID selectors, and assembly via /sign/assemble with arg 0 = user
+// Witness Key ID selectors, and assembly via /sign/assemble with arg 0 = user
 // signature and arg 1 = sentry signature. The label is frozen: any change to
 // that choreography mints a new label (sentry2, ...), and unrelated future
 // mechanisms get their own label family. Clients route on this field and must

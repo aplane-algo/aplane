@@ -398,7 +398,7 @@ func (t guardedTarget) requestKey() sentryRequestKey {
 
 // normalizeSentryPublicKeyHex canonicalizes a sentry public key as lowercase
 // hex. Component key types and public keys are runtime metadata, so no
-// per-family size table is consulted: integrity comes from the Sentry Key ID
+// per-family size table is consulted: integrity comes from the Witness Key ID
 // selector matching the advertising endpoint and, authoritatively, from the
 // on-chain LogicSig.
 func normalizeSentryPublicKeyHex(raw string) (string, error) {
@@ -435,7 +435,7 @@ func sentryComponentSelector(componentKeyType string, sentryPublicKey string) (s
 func sentryComponentLabel(componentKeyType, sentryPublicKey string) string {
 	selector, err := sentryComponentSelector(componentKeyType, sentryPublicKey)
 	if err == nil {
-		return fmt.Sprintf("Sentry Key ID %s (%s)", selector, componentKeyType)
+		return fmt.Sprintf("Witness Key ID %s (%s)", selector, componentKeyType)
 	}
 	return fmt.Sprintf("sentry public key %s (%s)", shortSentryPublicKeyHex(sentryPublicKey), componentKeyType)
 }
@@ -639,9 +639,9 @@ func (s *Signer) requestOneSentryComponentSignatureSet(ctx context.Context, grou
 
 	componentSelector, err := sentryComponentSelector(sentryKey.ComponentKeyType, sentryKey.PublicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to derive Sentry Key ID for sentry public key %s: %w", shortSentryPublicKeyHex(sentryKey.PublicKey), err)
+		return "", fmt.Errorf("failed to derive Witness Key ID for sentry public key %s: %w", shortSentryPublicKeyHex(sentryKey.PublicKey), err)
 	}
-	componentLabel := fmt.Sprintf("Sentry Key ID %s (%s)", componentSelector, sentryKey.ComponentKeyType)
+	componentLabel := fmt.Sprintf("Witness Key ID %s (%s)", componentSelector, sentryKey.ComponentKeyType)
 
 	resp, err := endpoint.client.RequestComponentSignWithContext(ctx, signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleSentry,

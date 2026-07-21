@@ -40,7 +40,7 @@ func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey 
 	}
 	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("Sentry Key ID: %v", err)
+		t.Fatalf("Witness Key ID: %v", err)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {

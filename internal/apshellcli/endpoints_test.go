@@ -142,13 +142,13 @@ func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	}
 	joined := strings.Join(progress, "\n")
 	if !strings.Contains(joined, componentKey) {
-		t.Fatalf("progress output = %q, want Sentry Key ID %s", joined, componentKey)
+		t.Fatalf("progress output = %q, want Witness Key ID %s", joined, componentKey)
 	}
 	if strings.Contains(joined, publicKeyHex) || strings.Contains(joined, strings.ToUpper(publicKeyHex)) {
 		t.Fatalf("progress output leaked raw sentry public key: %q", joined)
 	}
 	if strings.Contains(out.String(), componentKey) {
-		t.Fatalf("captured output = %q, Sentry Key ID should be live progress before prompt", out.String())
+		t.Fatalf("captured output = %q, Witness Key ID should be live progress before prompt", out.String())
 	}
 }
 
@@ -175,7 +175,7 @@ func TestRenderEndpointSentriesOmitsLastSeen(t *testing.T) {
 		t.Fatalf("rendered sentries header = %q, want SENTRY KEY without legacy labels", rendered)
 	}
 	if !strings.Contains(rendered, componentKey) {
-		t.Fatalf("rendered sentries = %q, want Sentry Key ID", rendered)
+		t.Fatalf("rendered sentries = %q, want Witness Key ID", rendered)
 	}
 	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
 		t.Fatalf("rendered sentries leaked raw sentry public key: %q", rendered)
@@ -213,7 +213,7 @@ func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
 		t.Fatalf("rendered endpoint show header = %q, want SENTRY KEY without legacy labels", rendered)
 	}
 	if !strings.Contains(rendered, componentKey) {
-		t.Fatalf("rendered endpoint show = %q, want Sentry Key ID", rendered)
+		t.Fatalf("rendered endpoint show = %q, want Witness Key ID", rendered)
 	}
 	if strings.Contains(rendered, publicKeyHex) || strings.Contains(rendered, strings.ToUpper(publicKeyHex)) {
 		t.Fatalf("rendered endpoint show leaked raw sentry public key: %q", rendered)

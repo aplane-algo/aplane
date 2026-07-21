@@ -355,8 +355,8 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 		t.Fatalf("sentryComponentSelector() error = %v", selectorErr)
 	}
 	errText := err.Error()
-	if !strings.Contains(errText, "did not advertise Sentry Key ID") || !strings.Contains(errText, componentSelector) {
-		t.Fatalf("requestSentryComponentSignatures() error = %q, want endpoint mismatch with Sentry Key ID %s", err, componentSelector)
+	if !strings.Contains(errText, "did not advertise Witness Key ID") || !strings.Contains(errText, componentSelector) {
+		t.Fatalf("requestSentryComponentSignatures() error = %q, want endpoint mismatch with Witness Key ID %s", err, componentSelector)
 	}
 	if strings.Contains(errText, sentryHex) {
 		t.Fatalf("requestSentryComponentSignatures() error exposed raw sentry public key: %q", err)
@@ -555,7 +555,7 @@ func TestSentryComponentLabelUsesFalconSentryKeyID(t *testing.T) {
 
 	label := sentryComponentLabel(witness.Falcon1024V1, sentryHex)
 	if !strings.Contains(label, componentSelector) || !strings.Contains(label, witness.Falcon1024V1) {
-		t.Fatalf("sentryComponentLabel() = %q, want Sentry Key ID %s and key type", label, componentSelector)
+		t.Fatalf("sentryComponentLabel() = %q, want Witness Key ID %s and key type", label, componentSelector)
 	}
 	if strings.Contains(label, sentryHex) {
 		t.Fatalf("sentryComponentLabel() exposed raw Falcon sentry public key: %q", label)
@@ -570,7 +570,7 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey [
 	}
 	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("Sentry Key ID: %v", err)
+		t.Fatalf("Witness Key ID: %v", err)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
@@ -602,7 +602,7 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey [
 			return
 		}
 		if req.Role != signerapi.ComponentSignRoleSentry || req.ComponentKey != componentSelector {
-			http.Error(w, "wrong Sentry Key ID", http.StatusBadRequest)
+			http.Error(w, "wrong Witness Key ID", http.StatusBadRequest)
 			return
 		}
 		group, err := canonical.DecodeGroupHex(req.GroupBytesHex)

@@ -104,7 +104,7 @@ func TestCmdSentryListHidesEndpointSyncedRecordName(t *testing.T) {
 		if !strings.Contains(listOut, componentKey) ||
 			!strings.Contains(listOut, witness.Falcon1024V1) ||
 			!strings.Contains(listOut, "endpoint: foo") {
-			t.Fatalf("list output = %q, want Sentry Key ID, key type, and endpoint alias", listOut)
+			t.Fatalf("list output = %q, want Witness Key ID, key type, and endpoint alias", listOut)
 		}
 	})
 }

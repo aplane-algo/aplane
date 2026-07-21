@@ -106,10 +106,10 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		ParamSentryName: componentKey,
 	})
 	if err != nil {
-		t.Fatalf("ResolveCreationParams(Sentry Key ID) error = %v", err)
+		t.Fatalf("ResolveCreationParams(Witness Key ID) error = %v", err)
 	}
 	if got := resolved[keytypes.ParameterSentryPublicKey]; got != strings.Repeat("ab", falconfamily.PublicKeySize) {
-		t.Fatalf("Sentry Key ID sentry_public_key = %q, want imported public key", got)
+		t.Fatalf("Witness Key ID sentry_public_key = %q, want imported public key", got)
 	}
 }
 

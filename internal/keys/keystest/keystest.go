@@ -46,7 +46,7 @@ func DSALSigKeyJSON(t testing.TB, keyType, baseKeyType string, publicKey, privat
 }
 
 // SentryComponentFalcon1024KeyJSON returns a deterministic canonical Falcon
-// sentry component payload and its Sentry Key ID selector.
+// sentry component payload and its Witness Key ID selector.
 func SentryComponentFalcon1024KeyJSON(t testing.TB, seedFill byte) (componentKey string, keyJSON []byte) {
 	t.Helper()
 	registerFalconComponentValidator.Do(func() {

@@ -317,7 +317,7 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("sentry reference or Sentry Key ID %q not found", strings.TrimSpace(selector))
+		return nil, fmt.Errorf("sentry reference or Witness Key ID %q not found", strings.TrimSpace(selector))
 	}
 	wantKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
 	if !ok {
@@ -435,7 +435,7 @@ func recordFromDiscovered(item DiscoveredRecord, syncedAt string) (Record, error
 	}
 	componentKey, err := witness.NormalizeID(item.ComponentKey)
 	if err != nil {
-		return Record{}, fmt.Errorf("invalid discovered Sentry Key ID: %w", err)
+		return Record{}, fmt.Errorf("invalid discovered Witness Key ID: %w", err)
 	}
 	name, err := SyncedReferenceName(endpointAlias, componentKey)
 	if err != nil {
@@ -514,7 +514,7 @@ func validatePublicKey(keyType, componentKey, publicKeyHex string) ([]byte, stri
 		return nil, "", err
 	}
 	if derivedSelector != componentKey {
-		return nil, "", fmt.Errorf("sentry key ID %q does not match public key-derived Sentry Key ID %q", componentKey, derivedSelector)
+		return nil, "", fmt.Errorf("witness key ID %q does not match public key-derived Witness Key ID %q", componentKey, derivedSelector)
 	}
 	sum := sha256.Sum256(publicKeyBytes)
 	return publicKeyBytes, hex.EncodeToString(sum[:]), nil

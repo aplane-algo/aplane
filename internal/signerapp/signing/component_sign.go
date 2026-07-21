@@ -178,7 +178,7 @@ func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, com
 		case errors.Is(err, keystore.ErrStoreLocked):
 			return nil, nil, lockedError()
 		case errors.Is(err, keystore.ErrKeyNotFound):
-			return nil, nil, badRequest(fmt.Sprintf("Sentry Key ID %q not found", componentKeySelector))
+			return nil, nil, badRequest(fmt.Sprintf("Witness Key ID %q not found", componentKeySelector))
 		default:
 			return nil, nil, internal(fmt.Sprintf("failed to load sentry key: %v", err))
 		}
@@ -202,7 +202,7 @@ func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, com
 	}
 	if componentKey.WitnessKeyID != componentKeySelector {
 		zeroLoadedKeyMaterial(keyMaterial)
-		return nil, nil, internal("loaded Sentry Key ID does not match requested Sentry Key ID")
+		return nil, nil, internal("loaded Witness Key ID does not match requested Witness Key ID")
 	}
 	publicKeySize, _ := witness.PublicKeySize(keyMaterial.Type)
 	privateKeySize, _ := witness.PrivateKeySize(keyMaterial.Type)

@@ -51,7 +51,7 @@ func cmdSentryExport(args []string) error {
 	}
 	componentKey, err := witness.NormalizeID(args[0])
 	if err != nil {
-		return fmt.Errorf("invalid Sentry Key ID: %w", err)
+		return fmt.Errorf("invalid Witness Key ID: %w", err)
 	}
 
 	envelope, ok, err := apkeys.ReadWitnessPublicMetadata(keystorePaths(), productIdentityID(), componentKey)

@@ -42,7 +42,7 @@ func TestSentryFalcon1024GenerateRandomScansAndLoads(t *testing.T) {
 		t.Fatalf("PublicKeyHex length = %d, want %d", len(result.PublicKeyHex), falconfamily.PublicKeySize*2)
 	}
 	if !witness.IsID(result.Address) {
-		t.Fatalf("Address = %q, want Sentry Key ID", result.Address)
+		t.Fatalf("Address = %q, want Witness Key ID", result.Address)
 	}
 	if result.Address == result.PublicKeyHex {
 		t.Fatalf("Address unexpectedly equals full Falcon public key hex")

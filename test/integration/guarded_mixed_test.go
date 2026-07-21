@@ -224,14 +224,14 @@ func bestEffortCloseAccount(t *testing.T, eng *engine.Engine, testnet *harness.T
 }
 
 // startMockSentryEndpoint stands up an HTTP endpoint that behaves like a sentry
-// node for one sentry key: it advertises the Sentry Key ID on /keys (so the
+// node for one sentry key: it advertises the Witness Key ID on /keys (so the
 // client's endpoint-advertisement check passes) and produces real sentry-role
 // component signatures on /sign/component using the test-held private key.
 func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token string) *httptest.Server {
 	t.Helper()
 	componentSelector, err := witness.ID(witness.Falcon1024V1, publicKey)
 	if err != nil {
-		t.Fatalf("Failed to derive Sentry Key ID: %v", err)
+		t.Fatalf("Failed to derive Witness Key ID: %v", err)
 	}
 	publicKeyHex := hex.EncodeToString(publicKey)
 
@@ -266,7 +266,7 @@ func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token s
 			return
 		}
 		if req.Role != signerapi.ComponentSignRoleSentry || req.ComponentKey != componentSelector {
-			http.Error(w, "wrong Sentry Key ID", http.StatusBadRequest)
+			http.Error(w, "wrong Witness Key ID", http.StatusBadRequest)
 			return
 		}
 		group, err := canonical.DecodeGroupHex(req.GroupBytesHex)

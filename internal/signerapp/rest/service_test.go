@@ -675,7 +675,7 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 		t.Fatal("AdminGenerate public key is empty")
 	}
 	if !witness.IsID(genResp.Address) {
-		t.Fatalf("AdminGenerate address = %q, want Sentry Key ID", genResp.Address)
+		t.Fatalf("AdminGenerate address = %q, want Witness Key ID", genResp.Address)
 	}
 	if genResp.Address == genResp.PublicKeyHex {
 		t.Fatal("AdminGenerate address unexpectedly equals public key hex")
@@ -946,11 +946,11 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	if params[0].Name != sentryrefs.ParamSentryName || params[0].Type != "select" {
 		t.Fatalf("sentry param = %#v, want select sentry", params[0])
 	}
-	if params[0].Label != "Sentry Key ID" {
-		t.Fatalf("sentry label = %q, want Sentry Key ID label", params[0].Label)
+	if params[0].Label != "Witness Key ID" {
+		t.Fatalf("sentry label = %q, want Witness Key ID label", params[0].Label)
 	}
 	if len(params[0].Options) != 1 || params[0].Options[0] != componentKey || params[0].Default != componentKey {
-		t.Fatalf("sentry options/default = %#v/%q, want Sentry Key ID %s", params[0].Options, params[0].Default, componentKey)
+		t.Fatalf("sentry options/default = %#v/%q, want Witness Key ID %s", params[0].Options, params[0].Default, componentKey)
 	}
 }
 
@@ -1005,7 +1005,7 @@ func TestServiceKeyTypesForIdentityKeepsCorridorRecipientsWithSentryReference(t 
 		t.Fatalf("second corridor param = %#v, want select sentry", params[1])
 	}
 	if len(params[1].Options) != 1 || params[1].Options[0] != componentKey || params[1].Default != componentKey {
-		t.Fatalf("sentry options/default = %#v/%q, want Sentry Key ID %s", params[1].Options, params[1].Default, componentKey)
+		t.Fatalf("sentry options/default = %#v/%q, want Witness Key ID %s", params[1].Options, params[1].Default, componentKey)
 	}
 }
 

@@ -404,8 +404,8 @@ func applySentryReferenceParams(ir *identity.Runtime, infos []signerapi.KeyTypeI
 		}
 		sentryParam := signerapi.CreationParamInfo{
 			Name:        sentryrefs.ParamSentryName,
-			Label:       "Sentry Key ID",
-			Description: "Imported Sentry Key ID to embed in the guarded account",
+			Label:       "Witness Key ID",
+			Description: "Imported Witness Key ID to embed in the guarded account",
 			Type:        "select",
 			Required:    true,
 			Options:     append([]string(nil), componentIDs...),

@@ -108,8 +108,8 @@ func TestCmdSentryExportRejectsSpendingKey(t *testing.T) {
 		if err == nil {
 			t.Fatal("cmdSentry(export spending key) error = nil, want rejection")
 		}
-		if !strings.Contains(err.Error(), "invalid Sentry Key ID") {
-			t.Fatalf("cmdSentry(export spending key) error = %v, want Sentry Key ID rejection", err)
+		if !strings.Contains(err.Error(), "invalid Witness Key ID") {
+			t.Fatalf("cmdSentry(export spending key) error = %v, want Witness Key ID rejection", err)
 		}
 	})
 }
