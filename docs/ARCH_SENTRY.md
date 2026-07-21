@@ -30,7 +30,7 @@ Bounded accounts advertise the distinct `bounded1` signing flow, use no sentry
 key discovery, and never call `/sign/component`, `/sign/assemble`, or
 `/simulate/guarded`. Apsigner produces a spending partial through
 `/sign/bounded-admin`; the separately held `.wit` authority is
-applied by `apbounded-admin`. Both roles use the witness key form, but the
+applied by `aprekey`. Both roles use the witness key form, but the
 custodians expose disjoint signature domains. An individual keypair should
 never be enrolled in both roles.
 

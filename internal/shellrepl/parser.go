@@ -274,7 +274,7 @@ func ParseRekeyCommand(args []string, isUnrekey bool) (RekeyParams, error) {
 	}
 	for _, arg := range args {
 		if strings.EqualFold(arg, "using") {
-			return params, fmt.Errorf("external contract-admin keys are handled by apbounded-admin rekey/unrekey")
+			return params, fmt.Errorf("external contract-admin keys are handled by aprekey rekey/unrekey")
 		}
 	}
 

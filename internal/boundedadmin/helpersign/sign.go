@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 APlane Project LLC
 
-// Package helpersign owns cryptographic operations used only by apbounded-admin.
+// Package helpersign owns cryptographic operations used only by aprekey.
 package helpersign
 
 import (

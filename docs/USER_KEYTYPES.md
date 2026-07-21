@@ -180,7 +180,7 @@ creation field; it is not a second signer-held key.
 Generate the external contract-admin key first:
 
 ```bash
-apbounded-admin generate --out /media/cold/bounded-admin
+aprekey generate --out /media/cold/bounded-admin
 ```
 
 Use the generated result's `public_key_hex` as the Contract Admin Public Key
@@ -189,13 +189,13 @@ when generating `aplane.falcon1024-allowlist-alock.v1` in apadmin. Keep the
 normal client flow. Rekey with the dedicated helper:
 
 ```bash
-apbounded-admin rekey --client-data "$APCLIENT_DATA" \
+aprekey rekey --client-data "$APCLIENT_DATA" \
   --key /media/cold/bounded-admin/<ID>.wit \
   <account> to <new-authorizer>
 ```
 
 For an air-gapped ceremony, use `prepare-rekey`, move the resulting
-`.apbounded-admin-request` to the ceremony machine, run `apbounded-admin sign`,
+`.apbounded-admin-request` to the ceremony machine, run `aprekey sign`,
 and return only the `.apbounded-admin-signature` file to `complete`. Loss of
 every artifact copy or its passphrase permanently removes the admin-key rekey
 path; ordinary policy-compliant spending can continue.

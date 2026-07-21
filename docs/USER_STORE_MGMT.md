@@ -490,7 +490,7 @@ addresses in apadmin.
 ## External Contract Admin Artifacts
 
 Bounded contract-admin private authority is a witness key stored only in an
-encrypted `.wit` artifact managed by `apbounded-admin`. It is never an
+encrypted `.wit` artifact managed by `aprekey`. It is never an
 apsigner `.key`, an `apstore` `.apb`, or part of signer backup/restore. Do not
 put these files in the signer data directory or import them with `apstore`.
 
@@ -498,8 +498,8 @@ Keep multiple independently protected copies and protect the artifact
 passphrase separately. Test each copy periodically:
 
 ```bash
-apbounded-admin inspect /media/cold/<WITNESS_KEY_ID>.wit
-apbounded-admin verify /media/cold/<WITNESS_KEY_ID>.wit
+aprekey inspect /media/cold/<WITNESS_KEY_ID>.wit
+aprekey verify /media/cold/<WITNESS_KEY_ID>.wit
 ```
 
 The `.wit.json` sidecar contains only public convenience data;

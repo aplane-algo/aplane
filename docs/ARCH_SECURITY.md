@@ -1000,7 +1000,7 @@ and over-ceiling fees before either signing path.
 The contract-admin private key is a Falcon-1024 witness in standalone custody,
 never a signer or `apstore` key. Apsigner
 runs normal policy and forced operator review, loads only the spending key, and
-returns a typed partial through `/sign/bounded-admin`. `apbounded-admin`
+returns a typed partial through `/sign/bounded-admin`. `aprekey`
 independently validates the finalized group, stored bounded metadata, supplied
 program, and pure-rekey shape before producing the final LogicSig argument.
 Ordinary `/sign` rejects admin-key operations rather than returning an
@@ -1019,7 +1019,7 @@ serve one role for life. Known local collisions are rejected during account
 generation; out-of-band reuse remains an operator responsibility and
 invalidates the intended role-containment argument.
 
-Online `apbounded-admin rekey` owns network and signer connectivity but delegates
+Online `aprekey rekey` owns network and signer connectivity but delegates
 private-key use to the helper's signing path. For a stronger custody boundary,
 `prepare-rekey` writes a non-secret `.apbounded-admin-request` for transfer to an
 offline ceremony machine; `sign` returns a request-bound

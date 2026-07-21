@@ -75,7 +75,7 @@ Canonical forms:
   `component_key`.
 - external bounded contract-admin authorities use the same witness key type
   and Witness Key ID, but private material remains in a structurally distinct
-  standalone `.wit` container owned by `apbounded-admin`. It is never a signer
+  standalone `.wit` container owned by `aprekey`. It is never a signer
   `.key` or spending account.
 - `aplane.falcon1024-allowlist-alock.v1` is reserved for the schema-v2
   framework-owned bounded1 allowlist. Its spending key and contract admin key
@@ -291,7 +291,7 @@ author TEAL.
 
 ### External Contract Admin Artifact Contract
 
-`apbounded-admin` owns external contract-admin witness custody. Its encrypted
+`aprekey` owns external contract-admin witness custody. Its encrypted
 artifacts use the `.wit` extension and filenames of the form
 `<WITNESS_KEY_ID>.wit`. They are not signer `.key` files
 or `apstore` `.apb` backup bundles. The helper rejects every other extension
@@ -356,7 +356,7 @@ reconstructed from the committed artifact.
 
 ### Contract Admin Ceremony Contract
 
-`apbounded-admin rekey` and `unrekey` are the interactive online clients for
+`aprekey rekey` and `unrekey` are the interactive online clients for
 admin-key-authorized bounded rekeys. They resolve `--client-data` before
 `APCLIENT_DATA`, use the configured signer endpoint and selected client
 network, obtain `aplane.bounded-admin-partial.v1` from `/sign/bounded-admin`, and

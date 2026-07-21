@@ -449,8 +449,8 @@ accounts are intentionally not completed in apshell or apconsole; use the
 dedicated contract-admin client:
 
 ```bash
-apbounded-admin rekey --key <key.wit> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account> to <new-authorizer>
-apbounded-admin unrekey --key <key.wit> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
+aprekey rekey --key <key.wit> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account> to <new-authorizer>
+aprekey unrekey --key <key.wit> [--client-data <dir>] [--network <name>] [--fee <microalgos>] [--nowait] <account>
 ```
 
 `APCLIENT_DATA` is used when `--client-data` is omitted. The command connects
@@ -463,10 +463,10 @@ For a separate ceremony machine, prepare online, sign offline, then complete
 online without contacting the signer again:
 
 ```bash
-apbounded-admin prepare-rekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account> to <new-authorizer>
-apbounded-admin prepare-unrekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account>
-apbounded-admin sign --key <key.wit> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>
-apbounded-admin complete [--client-data <dir>] [--network <name>] [--nowait] <request.apbounded-admin-request> with <response.apbounded-admin-signature>
+aprekey prepare-rekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account> to <new-authorizer>
+aprekey prepare-unrekey --out <request.apbounded-admin-request> [--client-data <dir>] [--network <name>] [--fee <microalgos>] <account>
+aprekey sign --key <key.wit> --request <request.apbounded-admin-request> --out <response.apbounded-admin-signature>
+aprekey complete [--client-data <dir>] [--network <name>] [--nowait] <request.apbounded-admin-request> with <response.apbounded-admin-signature>
 ```
 
 The request and response files are non-secret, but they authorize one exact,

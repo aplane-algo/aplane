@@ -137,7 +137,7 @@ All under `cmd/`:
 | Binary | Role |
 |--------|------|
 | `apshell` | Client shell: REPL, script runner, JS runtime (Goja), MCP server, plugin host |
-| `apbounded-admin` | Dedicated client for generating, inspecting, verifying, and using external Falcon bounded contract-admin credentials; `rekey`/`unrekey` own online orchestration and `prepare-*`/`sign`/`complete` own separated ceremonies |
+| `aprekey` | Dedicated client for generating, inspecting, verifying, and using external Falcon bounded contract-admin credentials; `rekey`/`unrekey` own online orchestration and `prepare-*`/`sign`/`complete` own separated ceremonies |
 | `apsigner` | Signing daemon: HTTP API, admin protocol over IPC and SSH subsystem, key management, approval coordination, SSH tunnel server, audit logging |
 | `apadmin` | TUI admin client over IPC or SSH admin transport |
 | `apconsole` | Secure-machine console wrapper that hosts operator panes while preserving apshell/apadmin/apsigner interfaces |
@@ -1123,7 +1123,7 @@ effects fail closed.
 
 `aplane.falcon1024-allowlist-alock.v1` is the framework-owned fixed-list
 profile. External key generation and ceremonies are owned by
-`apbounded-admin`; apshell and apconsole do not handle private contract-admin
+`aprekey`; apshell and apconsole do not handle private contract-admin
 artifacts. The normative field inventory, canonical encodings, vectors,
 schema, normal forms, and custody contract are in [ARCH_BOUNDED_DSA.md](ARCH_BOUNDED_DSA.md) and
 [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md).
@@ -1135,7 +1135,7 @@ compilation, TEAL rendering, and the program-instance binding;
 single finalized-transaction `Classify`/`Inspect` boundary. Signer-side
 planning/execution live in `internal/signerapp/signing`, and online rekey
 submission in `internal/engine/bounded_admin.go`. The external contract-admin
-ceremony is owned by the `apbounded-admin`-only packages:
+ceremony is owned by the `aprekey`-only packages:
 `internal/boundedadmin/{authorization,program,protocol,message,helpersign}`
 (request validation, frozen-bytecode structural validation, ceremony wire
 format, admin transcript, and Falcon signing ops), with encrypted standalone

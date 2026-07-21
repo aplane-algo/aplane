@@ -733,7 +733,7 @@ transfers, independently authorized asset opt-ins, or a pure self-payment
 rekey, caps the protected transaction fee, and denies close and clawback
 effects before Layer 3. A rekey requires both the spending
 signature and an external contract-admin signature through
-`POST /sign/bounded-admin` and `apbounded-admin`.
+`POST /sign/bounded-admin` and `aprekey`.
 
 Its framework-owned `fixed_allowlist` policy handles all admitted spend effects
 without author TEAL. It constrains `Receiver`/`AssetReceiver`, optionally

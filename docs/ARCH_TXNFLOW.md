@@ -867,7 +867,7 @@ rekey through a typed partial flow:
 3. Apsigner verifies the spending signature and returns finalized unsigned
    transactions plus one aligned partial LogicSig. It never returns the partial
    in `signed[]` and never handles contract-admin private material.
-4. `apbounded-admin sign` independently decodes the finalized group, verifies
+4. `aprekey sign` independently decodes the finalized group, verifies
    the pure rekey shape, bounded profile, program binding, Contract Admin Key ID,
    transaction ID, and spending signature, then confirms and adds the external
    Falcon signature.
@@ -875,7 +875,7 @@ rekey through a typed partial flow:
    ID, rechecks authorization/network/validity state, and submits directly to
    Algod without replanning.
 
-Online `apbounded-admin rekey` performs these stages directly. The separated
+Online `aprekey rekey` performs these stages directly. The separated
 ceremony path splits them across `prepare-rekey`/`prepare-unrekey`, offline
 `sign`, and `complete` using `.apbounded-admin-request` and
 `.apbounded-admin-signature` files.
