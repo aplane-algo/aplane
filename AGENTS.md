@@ -70,7 +70,7 @@ For a current ownership map and source-of-truth files, prefer `docs/ARCH_SPEC.md
   - `signerops/`: Signer-side signing operations
   - `signerreg/`: Signer registration
 - `lsig/ed25519lsig/`: Ed25519 LogicSig DSA family (base key type `aplane.ed25519.v1`)
-- `lsig/falcon1024_guarded/`: Guarded DSA provider for the Falcon/Falcon `aplane.falcon1024-sentry-falcon1024.v1` key type
+- `lsig/falcon1024_guarded/`: Guarded DSA provider for the Falcon/Falcon `aplane.falcon1024-sentry1024.v1` key type
 - `lsig/composeddsa/`: Runtime-compiled LogicSig composer for DSA-based schemes (guarded/composed signing)
 - `lsig/dsafamily/`: Shared DSA family registration descriptors and key generator
 - `lsig/generictemplate/`: YAML-backed provider for generic LogicSigs

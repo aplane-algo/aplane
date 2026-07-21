@@ -11,7 +11,7 @@ the three axes below (Resolve). This document is the cross-cutting view.
 ## The three axes
 
 A "key type" (e.g. `aplane.falcon1024.v1`, `aplane.corridor.v1`,
-`aplane.falcon1024-sentry-falcon1024.v1`) is asked three different *kinds* of
+`aplane.falcon1024-sentry1024.v1`) is asked three different *kinds* of
 question, and each kind uses a different mechanism because each is callable from
 a different place.
 
@@ -80,7 +80,7 @@ Examples of the composed ontology:
 | `aplane.falcon1024.v1` | DSA LogicSig | Plain DSA | none |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | none |
 | `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external contract-admin key for rekey |
-| `aplane.falcon1024-sentry-falcon1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | Falcon sentry component key |
+| `aplane.falcon1024-sentry1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | Falcon sentry component key |
 | `aplane.corridor.v1` | DSA LogicSig | dedicated compiled corridor policy | Falcon sentry component key |
 | `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 

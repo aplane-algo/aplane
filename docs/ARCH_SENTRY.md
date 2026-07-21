@@ -84,7 +84,7 @@ They name both the account DSA and the required sentry DSA.
 
 Current guarded account key types:
 
-- `aplane.falcon1024-sentry-falcon1024.v1`
+- `aplane.falcon1024-sentry1024.v1`
 - `aplane.corridor.v1`
 
 A guarded account key file stores the resolved sentry public key and embeds

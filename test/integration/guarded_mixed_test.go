@@ -97,11 +97,11 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	// are library-gated (AvailabilityLibrary), so activate it for this identity
 	// before generation; the non-guarded falcon type is default-enabled.
 	t.Log("Generating guarded account and non-guarded falcon account...")
-	if err := apadmin.ActivateKeyType(keytypes.GuardedFalcon1024SentryFalcon1024V1); err != nil {
+	if err := apadmin.ActivateKeyType(keytypes.GuardedFalcon1024Sentry1024V1); err != nil {
 		t.Fatalf("Failed to activate guarded key type: %v", err)
 	}
 	guardedAddr, err := apadmin.GenerateKeyWithTypeAndParams(
-		keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		keytypes.GuardedFalcon1024Sentry1024V1,
 		map[string]string{keytypes.ParameterSentryPublicKey: sentryPubHex},
 	)
 	if err != nil {

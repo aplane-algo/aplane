@@ -18,6 +18,7 @@ func TestRetiredKeyTypeProductsDoNotReturn(t *testing.T) {
 		"aplane." + "allowlist" + ".v1",
 		"aplane." + "timed-allowlist" + ".v1",
 		"aplane." + "falcon1024-sentry-ed25519" + ".v1",
+		"aplane." + "falcon1024-sentry-falcon1024" + ".v1",
 		"aplane." + "sentry-ed25519" + ".v1",
 		"aplane." + "falcon1024-admin-allowlist" + ".v1",
 		"aplane." + "falcon1024-hashlock" + ".v1",

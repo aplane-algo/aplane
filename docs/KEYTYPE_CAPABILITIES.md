@@ -36,7 +36,7 @@ included as normal user-account operations.
 | `aplane.falcon1024-allowlist.v2` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.falcon1024-allowlist-alock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
-| `aplane.falcon1024-sentry-falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| `aplane.falcon1024-sentry1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.corridor.v1` | C | C | C | Y | C | N | N | N | N | N | C |
 | `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
 
@@ -80,7 +80,7 @@ included as normal user-account operations.
   narrow that set. It rejects close, clawback, and every other transaction
   type. Rekey is restricted to the pure payment normal form and additionally
   requires the external Falcon contract-admin signature.
-- `aplane.falcon1024-sentry-falcon1024.v1` requires guarded signing assembly.
+- `aplane.falcon1024-sentry1024.v1` requires guarded signing assembly.
   Once both the user and sentry component signatures verify, the on-chain
   guarded-account LogicSig does not restrict transaction type or special
   transaction fields. The sentry policy that decides whether to issue the

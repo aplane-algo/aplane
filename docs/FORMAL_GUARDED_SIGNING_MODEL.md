@@ -67,7 +67,7 @@ program requires two component signatures. The model observes:
 - stored signing metadata, bytecode, and runtime argument contract.
 
 The current guarded account key types are
-`aplane.falcon1024-sentry-falcon1024.v1` and `aplane.corridor.v1` (a Falcon
+`aplane.falcon1024-sentry1024.v1` and `aplane.corridor.v1` (a Falcon
 account whose program additionally restricts spends to a recipient corridor and
 permits a sentry-authorized 0-ALGO self-pay rekey). Both share the
 two-component-signature assembly modeled here; corridor's recipient-corridor and

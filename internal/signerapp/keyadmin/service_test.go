@@ -250,7 +250,7 @@ func TestKeyDetailsParametersProjectsGuardedSentrySelector(t *testing.T) {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
-	got := keyDetailsParameters(keytypes.GuardedFalcon1024SentryFalcon1024V1, map[string]string{
+	got := keyDetailsParameters(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		keytypes.ParameterSentryPublicKey: hex.EncodeToString(publicKey),
 		"other":                           "kept",
 	})

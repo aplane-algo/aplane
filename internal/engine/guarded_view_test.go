@@ -21,7 +21,7 @@ func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(addr, keytypes.GuardedFalcon1024SentryFalcon1024V1)
+	signerCache.AddAddress(addr, keytypes.GuardedFalcon1024Sentry1024V1)
 	signerCache.SetSigningFlowForAddress(addr, signerapi.SigningFlowSentry1)
 	signerCache.SetSentryComponentKeyTypeForAddress(addr, keytypes.SentryComponentFalcon1024V1)
 	signerCache.SetSentryPublicKeyForAddress(addr, sentryHex)

@@ -81,7 +81,7 @@ Canonical forms:
   are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
   admin-key algorithm selector.
 - guarded account key types name both the account DSA and the sentry DSA,
-  currently `aplane.falcon1024-sentry-falcon1024.v1`; `aplane.corridor.v1`
+  currently `aplane.falcon1024-sentry1024.v1`; `aplane.corridor.v1`
   is the Falcon-1024-only corridor shorthand.
 
 YAML templates declare `publisher`, `family`, and integer `version`; the

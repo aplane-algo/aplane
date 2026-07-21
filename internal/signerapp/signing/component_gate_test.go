@@ -41,7 +41,7 @@ func (s *cloningComponentSession) GetKeyWithContext(_ context.Context, address s
 func guardedGateKeyMaterial(baseKeyType string) func() *coresigning.KeyMaterial {
 	return func() *coresigning.KeyMaterial {
 		return &coresigning.KeyMaterial{
-			Type:        keytypes.GuardedFalcon1024SentryFalcon1024V1,
+			Type:        keytypes.GuardedFalcon1024Sentry1024V1,
 			Category:    keys.CategoryDSALsig,
 			BaseKeyType: baseKeyType,
 			Bytecode:    []byte{0x01, 0x02, 0x03},
@@ -76,7 +76,7 @@ func newComponentGateService(audit *testAuditLogger, approval *ApprovalService, 
 		Planner: &Planner{Snapshot: func(string) PlannerIdentitySnapshot {
 			return PlannerIdentitySnapshot{
 				KeyFiles: map[string]string{guardedAccount: "guarded.key"},
-				KeyTypes: map[string]string{guardedAccount: keytypes.GuardedFalcon1024SentryFalcon1024V1},
+				KeyTypes: map[string]string{guardedAccount: keytypes.GuardedFalcon1024Sentry1024V1},
 			}
 		}},
 		Approval:                      approval,

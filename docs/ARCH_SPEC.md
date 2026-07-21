@@ -1207,7 +1207,7 @@ account LogicSig bytecode.
 
 Guarded account key types name both the account DSA and the sentry DSA:
 
-- `aplane.falcon1024-sentry-falcon1024.v1`
+- `aplane.falcon1024-sentry1024.v1`
 
 A guarded account key file stores the resolved `sentry_public_key` and the
 LogicSig bytecode embeds that same public key. `/sign` rejects guarded-account

@@ -39,10 +39,10 @@ const (
 	// It is not an Algorand spending account and must not be accepted by /sign.
 	SentryComponentFalcon1024V1 = "aplane.sentry-falcon1024.v1"
 
-	// GuardedFalcon1024SentryFalcon1024V1 is the user-account key type whose
+	// GuardedFalcon1024Sentry1024V1 is the user-account key type whose
 	// LogicSig verifies a Falcon-1024 user signature plus a Falcon-1024
 	// sentry component signature.
-	GuardedFalcon1024SentryFalcon1024V1 = "aplane.falcon1024-sentry-falcon1024.v1"
+	GuardedFalcon1024Sentry1024V1 = "aplane.falcon1024-sentry1024.v1"
 
 	// CorridorV1 is a Falcon-1024 user-account key type whose LogicSig verifies
 	// a Falcon-1024 user signature plus a Falcon-1024 sentry component
@@ -79,7 +79,7 @@ func IsSentryComponentKeyType(keyType string) bool {
 // account that requires the component signing and assembly flow.
 func IsGuardedAccountKeyType(keyType string) bool {
 	switch keyType {
-	case GuardedFalcon1024SentryFalcon1024V1, CorridorV1:
+	case GuardedFalcon1024Sentry1024V1, CorridorV1:
 		return true
 	default:
 		return false
@@ -96,7 +96,7 @@ func IsSentryKeyType(keyType string) bool {
 // key type embedded by a guarded account key type.
 func SentryComponentKeyTypeForGuardedAccount(keyType string) (string, bool) {
 	switch keyType {
-	case GuardedFalcon1024SentryFalcon1024V1, CorridorV1:
+	case GuardedFalcon1024Sentry1024V1, CorridorV1:
 		return SentryComponentFalcon1024V1, true
 	default:
 		return "", false

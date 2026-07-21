@@ -747,7 +747,7 @@ the admin-key rekey path but does not stop policy-compliant spending. See
 #### Guarded Sentry Providers
 
 APlane also ships Go-defined, library-visible guarded sentry account providers:
-`aplane.falcon1024-sentry-falcon1024.v1` and `aplane.corridor.v1`. These require
+`aplane.falcon1024-sentry1024.v1` and `aplane.corridor.v1`. These require
 the guarded signing assembly flow (a user component signature plus a sentry
 component signature). For the plain guarded provider, the on-chain LogicSig does not restrict transaction shape
 once both signatures verify, so the sentry policy is the spending boundary.

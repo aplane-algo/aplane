@@ -38,7 +38,7 @@ func TestBuildDetailsParameterLinesFormatsAddressList(t *testing.T) {
 func TestBuildDetailsParameterLinesGuardedShowsSentrySelector(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		KeyType:     keytypes.GuardedFalcon1024Sentry1024V1,
 		DisplayName: "Falcon Sentry",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:  keytypes.ParameterSentryPublicKey,
@@ -47,7 +47,7 @@ func TestBuildDetailsParameterLinesGuardedShowsSentrySelector(t *testing.T) {
 		}},
 	}})
 
-	got := buildDetailsParameterLines(keytypes.GuardedFalcon1024SentryFalcon1024V1, map[string]string{
+	got := buildDetailsParameterLines(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		"Sentry":                          "75OU3CR55IDLKDFEZSFWLIRGE2I5Q337D3NTKAEHJ6K7FGYON5AA",
 		keytypes.ParameterSentryPublicKey: "aabbccdd",
 	})

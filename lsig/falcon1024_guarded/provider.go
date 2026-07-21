@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	FamilyName  = "aplane.falcon1024-sentry-falcon1024"
-	KeyTypeV1   = keytypes.GuardedFalcon1024SentryFalcon1024V1
+	FamilyName  = "aplane.falcon1024-sentry1024"
+	KeyTypeV1   = keytypes.GuardedFalcon1024Sentry1024V1
 	BaseKeyType = "aplane.falcon1024.v1"
 
 	ParamSentryPublicKey = keytypes.ParameterSentryPublicKey

@@ -154,7 +154,7 @@ func TestVerifySignableKeysRejectsSentryKeyTypes(t *testing.T) {
 		},
 		{
 			name:    "guarded account",
-			keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1,
+			keyType: keytypes.GuardedFalcon1024Sentry1024V1,
 			want:    guardedAccountSignRejectMessage,
 		},
 		{

@@ -17,7 +17,7 @@ func TestSentryKeyTypeClassifiers(t *testing.T) {
 	if !IsSentryComponentKeyType(SentryComponentFalcon1024V1) {
 		t.Fatal("Falcon sentry key type was not classified as component")
 	}
-	if !IsGuardedAccountKeyType(GuardedFalcon1024SentryFalcon1024V1) {
+	if !IsGuardedAccountKeyType(GuardedFalcon1024Sentry1024V1) {
 		t.Fatal("Falcon-guarded Falcon account key type was not classified as guarded")
 	}
 	if !IsGuardedAccountKeyType(CorridorV1) {
@@ -37,7 +37,7 @@ func TestSentryComponentKeyTypeForGuardedAccount(t *testing.T) {
 		want    string
 		ok      bool
 	}{
-		{GuardedFalcon1024SentryFalcon1024V1, SentryComponentFalcon1024V1, true},
+		{GuardedFalcon1024Sentry1024V1, SentryComponentFalcon1024V1, true},
 		{CorridorV1, SentryComponentFalcon1024V1, true},
 		{SentryComponentFalcon1024V1, "", false},
 	}
@@ -77,7 +77,7 @@ func TestComponentKeySelectorKnownVector(t *testing.T) {
 }
 
 func TestComponentKeySelectorRejectsNonComponentKeyType(t *testing.T) {
-	_, err := ComponentKeySelector(GuardedFalcon1024SentryFalcon1024V1, make([]byte, 32))
+	_, err := ComponentKeySelector(GuardedFalcon1024Sentry1024V1, make([]byte, 32))
 	if err == nil {
 		t.Fatal("ComponentKeySelector() accepted guarded account key type")
 	}

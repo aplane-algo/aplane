@@ -115,7 +115,7 @@ func newGuardedSimulateFixture(t *testing.T, baseKeyType string) *guardedSimulat
 		passthroughHex:     hex.EncodeToString(passthroughBytes),
 		freshKey: func() *coresigning.KeyMaterial {
 			return &coresigning.KeyMaterial{
-				Type:                   keytypes.GuardedFalcon1024SentryFalcon1024V1,
+				Type:                   keytypes.GuardedFalcon1024Sentry1024V1,
 				Category:               keys.CategoryDSALsig,
 				BaseKeyType:            baseKeyType,
 				PublicKey:              append([]byte(nil), publicKeyCopy...),

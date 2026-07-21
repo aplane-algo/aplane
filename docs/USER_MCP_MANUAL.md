@@ -184,7 +184,7 @@ component keys are auxiliary non-account keys.
 | `aplane.falcon1024-allowlist-alock.v1` | bounded dsa_lsig (admin-protected rekey) | optional template |
 | `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | optional template |
 | `aplane.htlc.v1` | generic_lsig | optional template |
-| `aplane.falcon1024-sentry-falcon1024.v1` | guarded dsa_lsig | library-visible |
+| `aplane.falcon1024-sentry1024.v1` | guarded dsa_lsig | library-visible |
 | `aplane.corridor.v1` | guarded corridor dsa_lsig | library-visible |
 | `aplane.sentry-falcon1024.v1` | sentry component key | sentry nodes only |
 

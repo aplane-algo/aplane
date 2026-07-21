@@ -35,7 +35,7 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	wantLibraryVisible := []string{
 		"aplane.corridor.v1",
 		"aplane.ed25519.v1",
-		"aplane.falcon1024-sentry-falcon1024.v1",
+		"aplane.falcon1024-sentry1024.v1",
 	}
 	if !reflect.DeepEqual(libraryVisible, wantLibraryVisible) {
 		t.Fatalf("library-visible compiled LogicSig inventory = %v, want %v", libraryVisible, wantLibraryVisible)
@@ -44,8 +44,8 @@ func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
 	if keytypes.SentryComponentFalcon1024V1 != "aplane.sentry-falcon1024.v1" {
 		t.Fatalf("sentry component key type = %q", keytypes.SentryComponentFalcon1024V1)
 	}
-	if keytypes.GuardedFalcon1024SentryFalcon1024V1 != "aplane.falcon1024-sentry-falcon1024.v1" {
-		t.Fatalf("guarded account key type = %q", keytypes.GuardedFalcon1024SentryFalcon1024V1)
+	if keytypes.GuardedFalcon1024Sentry1024V1 != "aplane.falcon1024-sentry1024.v1" {
+		t.Fatalf("guarded account key type = %q", keytypes.GuardedFalcon1024Sentry1024V1)
 	}
 }
 

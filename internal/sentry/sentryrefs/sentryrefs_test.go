@@ -88,7 +88,7 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		t.Fatalf("Import() error = %v", err)
 	}
 
-	resolved, err := ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024SentryFalcon1024V1, map[string]string{
+	resolved, err := ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		ParamSentryName: "lab-sentry",
 	})
 	if err != nil {
@@ -101,7 +101,7 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 		t.Fatalf("resolved params still contain %s: %#v", ParamSentryName, resolved)
 	}
 
-	resolved, err = ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024SentryFalcon1024V1, map[string]string{
+	resolved, err = ResolveCreationParams(paths, "default", keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		ParamSentryName: componentKey,
 	})
 	if err != nil {
@@ -138,7 +138,7 @@ func TestResolveCreationParamsPreservesCorridorRecipients(t *testing.T) {
 }
 
 func TestResolveCreationParamsRejectsConflictingInputs(t *testing.T) {
-	_, err := ResolveCreationParams(storepaths.NewPaths(t.TempDir()), "default", keytypes.GuardedFalcon1024SentryFalcon1024V1, map[string]string{
+	_, err := ResolveCreationParams(storepaths.NewPaths(t.TempDir()), "default", keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		ParamSentryName:                   "lab-sentry",
 		keytypes.ParameterSentryPublicKey: strings.Repeat("ab", falconfamily.PublicKeySize),
 	})

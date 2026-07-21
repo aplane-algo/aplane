@@ -635,7 +635,7 @@ func TestSignPreparedUserComponentsSignsGuardedAccountMessages(t *testing.T) {
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:        keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		Type:        keytypes.GuardedFalcon1024Sentry1024V1,
 		Category:    keys.CategoryDSALsig,
 		BaseKeyType: baseKeyType,
 		Bytecode:    []byte{0x01, 0x02, 0x03},
@@ -706,7 +706,7 @@ func TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages(t *testing.T) 
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:        keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		Type:        keytypes.GuardedFalcon1024Sentry1024V1,
 		Category:    keys.CategoryDSALsig,
 		BaseKeyType: baseKeyType,
 		Bytecode:    []byte{0x01, 0x02, 0x04},
@@ -796,7 +796,7 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txns[1], Sig: types.Signature{0x01}})
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		Type:                   keytypes.GuardedFalcon1024Sentry1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
@@ -928,7 +928,7 @@ func TestAssembleDecodedGuardedVerifiesFalconSentryAndBuildsSignedGroup(t *testi
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		Type:                   keytypes.GuardedFalcon1024Sentry1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
@@ -1094,7 +1094,7 @@ func TestAssembleDecodedGuardedRejectsWrongSentrySignature(t *testing.T) {
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		Type:                   keytypes.GuardedFalcon1024Sentry1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
@@ -1158,7 +1158,7 @@ func TestAssembleDecodedGuardedRejectsWrongUserSignature(t *testing.T) {
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		Type:                   keytypes.GuardedFalcon1024Sentry1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
@@ -1657,7 +1657,7 @@ func TestValidateGuardedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
 	// A passthrough whose sender is a locally-held guarded account is rejected:
 	// it must go through component assembly, not passthrough.
 	guardedSession := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
-		sender: {Type: keytypes.GuardedFalcon1024SentryFalcon1024V1},
+		sender: {Type: keytypes.GuardedFalcon1024Sentry1024V1},
 	}}
 	if _, err := validateGuardedPassthrough(context.Background(), signerapi.GuardedPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, guardedSession); err == nil {
 		t.Fatal("guarded-account passthrough: expected rejection, got nil")

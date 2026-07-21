@@ -712,7 +712,7 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	infos := Service{}.buildKeyTypes([]string{
 		"ed25519",
 		keytypes.SentryComponentFalcon1024V1,
-		keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		keytypes.GuardedFalcon1024Sentry1024V1,
 		keytypes.CorridorV1,
 	}, nil)
 	byType := make(map[string]signerapi.KeyTypeInfo, len(infos))
@@ -721,8 +721,8 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	}
 
 	guarded := map[string]string{
-		keytypes.GuardedFalcon1024SentryFalcon1024V1: keytypes.SentryComponentFalcon1024V1,
-		keytypes.CorridorV1:                          keytypes.SentryComponentFalcon1024V1,
+		keytypes.GuardedFalcon1024Sentry1024V1: keytypes.SentryComponentFalcon1024V1,
+		keytypes.CorridorV1:                    keytypes.SentryComponentFalcon1024V1,
 	}
 	for keyType, wantComponent := range guarded {
 		info, ok := byType[keyType]
@@ -800,7 +800,7 @@ func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 func TestGuardedAccountParametersProjection(t *testing.T) {
 	const sentryPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
 
-	got := guardedAccountParameters(keytypes.GuardedFalcon1024SentryFalcon1024V1, map[string]string{
+	got := guardedAccountParameters(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 		"unrelated":                       "not-projected",
 	})
@@ -812,7 +812,7 @@ func TestGuardedAccountParametersProjection(t *testing.T) {
 	}
 
 	got[keytypes.ParameterSentryPublicKey] = "mutated"
-	again := guardedAccountParameters(keytypes.GuardedFalcon1024SentryFalcon1024V1, map[string]string{
+	again := guardedAccountParameters(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 	})
 	if again[keytypes.ParameterSentryPublicKey] != sentryPublicKey {
@@ -827,7 +827,7 @@ func TestGuardedAccountParametersProjection(t *testing.T) {
 		t.Fatalf("guardedAccountParameters(corridor) = %#v, want recipients projected", corridor)
 	}
 
-	if empty := guardedAccountParameters(keytypes.GuardedFalcon1024SentryFalcon1024V1, nil); empty != nil {
+	if empty := guardedAccountParameters(keytypes.GuardedFalcon1024Sentry1024V1, nil); empty != nil {
 		t.Fatalf("guardedAccountParameters(nil) = %#v, want nil", empty)
 	}
 }
@@ -921,7 +921,7 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 		t.Fatalf("Import() error = %v", err)
 	}
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
-		KeyType: keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		KeyType: keytypes.GuardedFalcon1024Sentry1024V1,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
@@ -934,7 +934,7 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	}
 	var params []signerapi.CreationParamInfo
 	for _, info := range resp.KeyTypes {
-		if info.KeyType == keytypes.GuardedFalcon1024SentryFalcon1024V1 {
+		if info.KeyType == keytypes.GuardedFalcon1024Sentry1024V1 {
 			params = info.CreationParams
 			break
 		}

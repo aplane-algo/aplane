@@ -109,7 +109,7 @@ explicit `derivation_version: 2` means trailing dead-code `bytecblock`,
 `aplane.falcon1024.v1` uses the Algorand Foundation reference-compatible fixed
 `bytecblock` preamble, and `aplane.ed25519.v1` uses a fixed `bytecblock`
 preamble, while the guarded sentry and corridor providers
-(`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`) use the
+(`aplane.falcon1024-sentry1024.v1`, `aplane.corridor.v1`) use the
 stack-neutral `pushbytes` marker preamble
 (`lsigsalt.StylePushbytes`). User template TEAL cannot choose salt style, must remain relocatable,
 and must not depend on absolute constant-block layout or numeric `bytec`/`intc`
@@ -162,7 +162,7 @@ Go-defined key types:
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | default-enabled | `lsig/falcon1024/v1/standard.go` |
 | `aplane.sentry-falcon1024.v1` | Sentry key | Go-defined | default-enabled | `lsig/falcon1024/keygen/sentry.go` |
-| `aplane.falcon1024-sentry-falcon1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
+| `aplane.falcon1024-sentry1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
 | `aplane.corridor.v1` | Guarded-account DSA LogicSig provider with recipient corridor and sentry-authorized rekey path | Go-defined | library-visible | `lsig/corridor` |
 | `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ed25519lsig` |
 
@@ -170,7 +170,7 @@ Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
 `internal/keytypecatalog`: `ed25519`, `aplane.falcon1024.v1`, and
 `aplane.sentry-falcon1024.v1` are default-enabled, while
-`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`, and
+`aplane.falcon1024-sentry1024.v1`, `aplane.corridor.v1`, and
 `aplane.ed25519.v1` are library-visible and not available for generation until
 the current identity enables them from the library. `aplane.ed25519.v1` is the Ed25519
 LogicSig DSA provider, distinct from the native `ed25519` signing key. See

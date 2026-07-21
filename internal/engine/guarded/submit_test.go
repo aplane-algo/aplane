@@ -91,7 +91,7 @@ func TestGuardedTargetsUseEffectiveSigner(t *testing.T) {
 func TestGuardedTargetsNormalizeFalconSentryPublicKey(t *testing.T) {
 	sender := testAddress(1).String()
 	sentryHex := testFalconSentryPublicKeyHex(0xd6)
-	s, _ := newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024SentryFalcon1024V1, 1500, "0X"+strings.ToUpper(sentryHex))
+	s, _ := newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Sentry1024V1, 1500, "0X"+strings.ToUpper(sentryHex))
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
 	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
@@ -476,7 +476,7 @@ func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *ca
 
 func newGuardedTestSigner(t *testing.T, sender string, lsigSize int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
 	t.Helper()
-	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024SentryFalcon1024V1, lsigSize, sentryPublicKey)
+	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Sentry1024V1, lsigSize, sentryPublicKey)
 }
 
 func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, lsigSize int, sentryPublicKey string) (*Signer, *cache.SignerCache) {

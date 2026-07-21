@@ -13,10 +13,10 @@ import (
 )
 
 func TestNodeRoleAllowsKeyType(t *testing.T) {
-	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.GuardedFalcon1024SentryFalcon1024V1) {
+	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.GuardedFalcon1024Sentry1024V1) {
 		t.Fatal("signer node rejected guarded account key")
 	}
-	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.GuardedFalcon1024SentryFalcon1024V1) {
+	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.GuardedFalcon1024Sentry1024V1) {
 		t.Fatal("signer node rejected Falcon-guarded account key")
 	}
 	if !NodeRoleAllowsKeyType(noderole.RoleSigner, keytypes.CorridorV1) {
@@ -37,7 +37,7 @@ func TestNodeRoleAllowsKeyType(t *testing.T) {
 	if NodeRoleAllowsKeyType(noderole.RoleSentry, "ed25519") {
 		t.Fatal("sentry node allowed Ed25519 account key")
 	}
-	if NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.GuardedFalcon1024SentryFalcon1024V1) {
+	if NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.GuardedFalcon1024Sentry1024V1) {
 		t.Fatal("sentry node allowed guarded account key")
 	}
 	if NodeRoleAllowsKeyType(noderole.RoleSentry, keytypes.CorridorV1) {

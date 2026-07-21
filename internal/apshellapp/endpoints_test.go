@@ -302,7 +302,7 @@ func TestEndpointDiscoverSentriesRebuildsMappingsFromAllEndpoints(t *testing.T) 
 	}})
 	signerServer := newEndpointKeysServer(t, "sign-token", []signerapi.KeyInfo{{
 		Address: "ADDR",
-		KeyType: keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		KeyType: keytypes.GuardedFalcon1024Sentry1024V1,
 	}})
 
 	if _, err := config.UpsertStoredClientEndpoint(dataDir, "signer-local", config.ClientEndpointConfig{
