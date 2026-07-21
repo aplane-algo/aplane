@@ -1995,10 +1995,31 @@ EOF
 # Source this file to set up apshell environment:
 #   source $ENV_SH
 
-case ":\$PATH:" in
-  *":$BINDIR:"*) ;;
-  *) export PATH="$BINDIR:\$PATH" ;;
-esac
+_aplane_prepend_path() {
+  local add="\$1"
+  local remaining="\${PATH-}:"
+  local part new_path
+  local have_part=0
+  while [ -n "\$remaining" ]; do
+    part="\${remaining%%:*}"
+    remaining="\${remaining#*:}"
+    [ "\$part" = "\$add" ] && continue
+    if [ "\$have_part" = "0" ]; then
+      new_path="\$part"
+      have_part=1
+    else
+      new_path="\$new_path:\$part"
+    fi
+  done
+  if [ "\$have_part" = "1" ]; then
+    PATH="\$add:\$new_path"
+  else
+    PATH="\$add"
+  fi
+}
+_aplane_prepend_path "$BINDIR"
+export PATH
+unset -f _aplane_prepend_path
 export APLANE_INSTALL_ROOT="$CLIENT_PATH"
 export APCLIENT_DATA="$APCLIENT_DIR"
 ENVEOF
@@ -2174,14 +2195,32 @@ if [ "$LOCAL_MODE" = "1" ]; then
 # Source this file to set up aplane environment:
 #   source $ENV_SH
 
-case ":\$PATH:" in
-  *":$SIGNER_BINDIR:"*) ;;
-  *) export PATH="$SIGNER_BINDIR:\$PATH" ;;
-esac
-case ":\$PATH:" in
-  *":$CLIENT_BINDIR:"*) ;;
-  *) export PATH="$CLIENT_BINDIR:\$PATH" ;;
-esac
+_aplane_prepend_path() {
+  local add="\$1"
+  local remaining="\${PATH-}:"
+  local part new_path
+  local have_part=0
+  while [ -n "\$remaining" ]; do
+    part="\${remaining%%:*}"
+    remaining="\${remaining#*:}"
+    [ "\$part" = "\$add" ] && continue
+    if [ "\$have_part" = "0" ]; then
+      new_path="\$part"
+      have_part=1
+    else
+      new_path="\$new_path:\$part"
+    fi
+  done
+  if [ "\$have_part" = "1" ]; then
+    PATH="\$add:\$new_path"
+  else
+    PATH="\$add"
+  fi
+}
+_aplane_prepend_path "$SIGNER_BINDIR"
+_aplane_prepend_path "$CLIENT_BINDIR"
+export PATH
+unset -f _aplane_prepend_path
 export APLANE_INSTALL_ROOT="$LOCAL_PATH"
 export APSIGNER_DATA="$DATA_DIR"
 export APCLIENT_DATA="$APCLIENT_DIR"
@@ -2579,10 +2618,31 @@ if [ -n "$SUDO_USER" ]; then
 # Source this file to set up aplane environment:
 #   source $ENV_SH
 
-case ":\$PATH:" in
-  *":$BINDIR:"*) ;;
-  *) export PATH="$BINDIR:\$PATH" ;;
-esac
+_aplane_prepend_path() {
+  local add="\$1"
+  local remaining="\${PATH-}:"
+  local part new_path
+  local have_part=0
+  while [ -n "\$remaining" ]; do
+    part="\${remaining%%:*}"
+    remaining="\${remaining#*:}"
+    [ "\$part" = "\$add" ] && continue
+    if [ "\$have_part" = "0" ]; then
+      new_path="\$part"
+      have_part=1
+    else
+      new_path="\$new_path:\$part"
+    fi
+  done
+  if [ "\$have_part" = "1" ]; then
+    PATH="\$add:\$new_path"
+  else
+    PATH="\$add"
+  fi
+}
+_aplane_prepend_path "$BINDIR"
+export PATH
+unset -f _aplane_prepend_path
 export APLANE_INSTALL_ROOT="$OPERATOR_ROOT"
 export APLANE_BINDIR="$BINDIR"
 export APSIGNER_DATA="$DATA_DIR"
