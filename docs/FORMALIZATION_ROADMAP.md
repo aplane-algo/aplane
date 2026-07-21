@@ -340,6 +340,33 @@ slots in [FORMAL_TXN_PLANNING_MODEL.md](FORMAL_TXN_PLANNING_MODEL.md)). No
 invariant changed; coverage milestones (M3 companion models, the unmodeled
 S/A-series) are unchanged.
 
+**Drift review (2026-07-21, HEAD `7d6347a0`).** Re-checked after 137 commits —
+a window that added three TLA+ modules (`session_ownership`, `guarded_assembly`,
+`plugin_signing`), the bounded1 framework, witness-key unification, and the
+`.sen` credential split. All 13 standard and 11 deep TLC runs pass at the
+recorded metrics. Diff-driven correspondence holds in every anchored area:
+the decommission approval recheck (added with spec/doc in lockstep in
+`1faa4775`), the session-ownership guards (`PromoteToActive` →
+`FailAllPendingApprovals("apadmin displaced")` → `DisplaceSession` ordering
+verified at `daemon/ipc.go`), guarded assembly (check order, role-domain/txid
+binding, sender binding, abort-on-first-failure; the witness rename and
+Falcon-only change already absorbed by the specs), lifecycle (decommission
+step order, `BeginOperation` lease release at all sites, RWMutex
+writer-priority), and plugin signing (`localSigners` removal already reflected;
+`pregrouped-mixed` is not on `main`). Anchors: two stale line references
+corrected (S2, L9), one imprecise test citation replaced (I10); all other
+~120 file, ~95 function, ~150 test, and all TLA predicate anchors resolve.
+Reconciled in this pass: the user-role `/sign/component` signer-domain gate is
+now named in [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md)
+(narrowing-only, tracked in [FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md)); the
+code-side canonical passthrough re-encoding check is listed in
+`guarded_assembly.tla`'s intentional omissions (conservative direction); and
+the lock-during-unlock generation counter is recorded as a new
+[FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md) model-drift entry. The bounded1
+planning/argument-assembly and `/simulate/guarded` surfaces were already
+tracked there before this review. No spec guard diverged from code; no
+invariant weakened.
+
 ### Milestone status
 
 | Milestone | Status | Notes |

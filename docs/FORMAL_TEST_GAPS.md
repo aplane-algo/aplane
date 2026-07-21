@@ -48,6 +48,15 @@ stage. Existing formal models do not model SSH transport authentication, so no
 modeled invariant changed, but any future transport-boundary model must use
 this two-stage boundary rather than the former token-in-username assumption.
 
+**Model drift: lock-during-unlock race handling.**
+The runtime lock state machine gained a lock-generation counter: `TryUnlock`
+detects a `Lock()` that raced the unlock sequence, re-runs lock cleanup, and
+fails with `LockedDuringUnlockMessage` (`internal/signerapp/runtime/runtime.go`).
+The lifecycle models deliberately omit the lock/unlock state machine (only
+decommission's lock-interacting steps are modeled), so no modeled invariant is
+affected; a future lock-state model must include this generation-counter
+transition.
+
 **Model drift: bounded DSA planning and argument assembly.**
 The signing-boundary and transaction-planning models predate bounded1's closed
 effect classifier, post-fee-pooling revalidation, path-specific LogicSig

@@ -42,6 +42,9 @@ The model intentionally omits (honest gaps, mirrored from the code):
     them (explicit assumption in FORMAL_GUARDED_SIGNING_MODEL.md).
   - cryptographic validity of passthrough signatures (presence-checked
     only; the chain verifies),
+  - canonical msgpack re-encoding equality on passthrough bytes (the code
+    additionally rejects noncanonical passthrough encodings; strictly
+    narrower than PassthroughKept, so omission is conservative),
   - sentry policy evaluation (runs at component-sign time, A4 — not at
     assembly),
   - group-level semantics (fees, dummy budget), replay of identical

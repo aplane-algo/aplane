@@ -161,6 +161,12 @@ The client calls the primary signer:
 POST /sign/component role=user component_key=<guarded_account>
 ```
 
+Before any signing, the signer runs the signer-domain approval gates over the
+decoded targets — hard policy rejection, always-review rules, and blocking
+operator approval (`internal/signerapp/signing/component_gate.go`). This gate
+sequence only narrows the accepted set and is not yet modeled; see the
+guarded-signing entry in [FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md).
+
 The signer loads `component_key` as a local guarded account key. The decoded
 target sender may differ from `component_key`; authorizer binding is verified
 during assembly. The signer signs the user-role component message with the user
