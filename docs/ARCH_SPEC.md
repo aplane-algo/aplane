@@ -1201,8 +1201,12 @@ base32_no_padding(SHA512_256(
 ))
 ```
 
-The Witness Key ID intentionally has the visual shape of an Algorand transaction ID,
-but it is not a valid Algorand address because addresses are 58 characters.
+The Witness Key ID intentionally has the visual shape of an Algorand transaction
+ID, but it is not a valid Algorand address because addresses are 58 characters.
+Signer-custodied sentry witnesses use the canonical
+`identities/<identity>/keys/<WitnessKeyID>.sen` managed credential; account
+authority continues to use `<AlgorandAddress>.key`. External contract-admin
+witnesses remain standalone `.wit` artifacts and are never scanned by the signer.
 The full sentry public key remains the verifier key embedded in guarded
 account LogicSig bytecode. The same witness key form can serve a bounded
 contract-admin enrollment under standalone custody, but one keypair should
@@ -1441,7 +1445,7 @@ It owns:
 
 The keystore compatibility model is split between:
 
-- `.key` file envelope/payload compatibility for individual entries,
+- `.key` account-authority and `.sen` sentry-credential envelope/payload compatibility for individual entries,
 - `.keystore` metadata compatibility for master-key verification and KDF parameters.
 
 A scan:
@@ -1654,7 +1658,7 @@ Verification expectations remain:
 - IPC notifications and request/response message shapes remain compatible with `apadmin` and `apapprover`,
 - token provisioning and revocation remain compatible with the SSH client flow,
 - plugin discovery precedence and manifest validation remain unchanged unless explicitly versioned,
-- on-disk compatibility is checked for `.keystore`, `.key`, `.template`, `config.yaml`, `audit.log`, and token files.
+- on-disk compatibility is checked for `.keystore`, `.key`, `.sen`, `.template`, `config.yaml`, `audit.log`, and token files.
 - client endpoint compatibility is checked for `endpoints.yaml`,
   endpoint token files, endpoint handoff envelopes, and public sentry
   reference records when those surfaces change.

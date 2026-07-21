@@ -64,7 +64,7 @@ They participate in a specific account or operation contract:
 
 | Type | Custody and use | Signer key type? |
 |---|---|---|
-| **Witness key, sentry enrollment** | Stored by a sentry-role signer and used through `/sign/component`; its signature is assembled into a guarded-account LogicSig. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
+| **Witness key, sentry enrollment** | Stored as a sentry-managed `.sen` credential and used through `/sign/component`; its signature is assembled into a guarded-account LogicSig. | Yes. `aplane.witness-falcon1024.v1`, durable category `witness`; never accepted as a spending account by ordinary `/sign`. |
 | **Witness key, contract-admin enrollment** | Stored in a standalone encrypted `.wit` artifact and used only for a declared bounded admin operation through `aprekey`. | The key form has the same witness key type, but this custody container is never an `apstore` or signer key. |
 
 The current authority overlays are therefore **unguarded**, **sentry guarded**,

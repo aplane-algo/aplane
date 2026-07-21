@@ -75,8 +75,8 @@ Canonical forms:
   `component_key`.
 - external bounded contract-admin authorities use the same witness key type
   and Witness Key ID, but private material remains in a structurally distinct
-  standalone `.wit` container owned by `aprekey`. It is never a signer
-  `.key` or spending account.
+  standalone `.wit` container owned by `aprekey`. It is never a signer-managed
+  `.key`/`.sen` credential or spending account.
 - `aplane.falcon1024-allowlist-alock.v1` is reserved for the schema-v2
   framework-owned bounded1 allowlist. Its spending key and contract admin key
   are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
@@ -293,7 +293,7 @@ author TEAL.
 
 `aprekey` owns external contract-admin witness custody. Its encrypted
 artifacts use the `.wit` extension and filenames of the form
-`<WITNESS_KEY_ID>.wit`. They are not signer `.key` files
+`<WITNESS_KEY_ID>.wit`. They are not signer-managed `.key` or `.sen` files
 or `apstore` `.apb` backup bundles. The helper rejects every other extension
 before parsing or passphrase work. The signer and `apstore` must not import,
 decrypt, back up, or restore these artifacts.
@@ -772,7 +772,9 @@ execution, output decoding, environment filtering, and validation.
     *.tar.gz                # restorable managed/imported backup archives
   .ssh/ssh_host_key
   identities/<identity>/
-    keys/*.key
+    keys/*.key              # account authority, selected by Algorand address
+    keys/*.sen              # sentry witness authority, selected by Witness Key ID
+    keys/*.wit.json         # derived public witness reference; not private authority
     .keystore
     node.yaml.hmac
     aplane.token
@@ -786,7 +788,7 @@ execution, output decoding, environment filtering, and validation.
     keytypes/<key_type>.json
     keytypes/<key_type>.template
     sentries/<name>.json
-    deleted/keys/*.key
+    deleted/keys/*.{key,sen}
     deleted/keytypes/<key_type>.template
 ```
 
@@ -1094,9 +1096,17 @@ Policy load behavior:
 - `apstore policy check|verify|sign` checks, verifies, or signs the active
   node-role policy
 
-### Key Files (`.key`)
+### Managed Credential Files (`.key` and `.sen`)
 
-Encrypted files with:
+Both managed classes use the same encrypted envelope and canonical payload
+schema. Their extension is fixed by payload category:
+
+- `.key`: `ed25519`, `dsa_lsig`, and `generic_lsig` account authority,
+  selected by a 58-character Algorand address;
+- `.sen`: `witness` authority assigned to sentry custody, selected by a
+  52-character Witness Key ID.
+
+Managed credential files carry:
 
 - envelope versioning,
 - payload format versioning,
@@ -1201,14 +1211,21 @@ derivation inputs. `salt_counter` records the byte already embedded in stored
 LogicSig bytecode; changing the metadata field alone does not rederive or
 change the key address.
 
-Signer key scanning also binds accepted key authority to the canonical address
-filename. After decrypting a `.key` file, the scanner derives the payload
-address and accepts the file as signing authority only when its basename is
-`<derived-address>.key`. Misnamed `.key` artifacts are skipped and reported as
-key-file rejection diagnostics; they do not shadow the canonical file for that
-address. Key creation/import paths, and restore paths that elect to write a key,
-write the canonical address filename. Live restore still skips an existing
-canonical key file unless `overwrite:true` is supplied.
+Signer scanning binds accepted authority to the category-sensitive canonical
+filename:
+
+```text
+CanonicalName(payload) = Selector(payload) || ExtensionForCategory(payload.category)
+```
+
+After decrypting a `.key` or `.sen` candidate, the scanner derives the payload
+selector and category. It accepts the file only when the basename equals the
+canonical name. A witness payload in `<id>.key`, an account payload in
+`<address>.sen`, or any selector mismatch is skipped and reported; `.wit` and
+`.wit.json` are never private-credential candidates. Writers and restore derive
+the same canonical destination. Restore rejects a contradictory managed class
+for the same selector even with `overwrite:true`; an exact canonical destination
+is replaced only when overwrite is explicit.
 
 Every persisted LogicSig key file must derive an off-curve LogicSig address.
 Signer load, key scanning, backup verify, and restore reject LogicSig key
@@ -1794,7 +1811,7 @@ Watched paths:
 
 Mechanism:
 
-- reacts to Create, Write, Remove, and Rename on `.key`, `.template`, and key type state `.json` files
+- reacts to Create, Write, Remove, and Rename on `.key`, `.sen`, and `.template` files
 - missing key and key type directories are tracked and added later when created
 - when unlocked, qualifying changes trigger immediate reload
 - when locked, the watcher remains running and marks the identity dirty
@@ -2137,14 +2154,21 @@ Backup and restore are implemented in `internal/backup`.
 
 Export:
 
-1. decrypt key using store master key
-2. if a key is template-backed, bundle key JSON and template YAML into a
+1. discover the canonical managed credential: account authority from `.key`
+   and sentry witness authority from `.sen`; external `.wit` artifacts are not
+   managed backup inputs
+2. decrypt the credential using the store master key
+3. if a key is template-backed, bundle key JSON and template YAML into a
    `BackupBundle` using installed identity-local template YAML when available;
    generated bundles set `backup_bundle: 1` plus `payload_version: 1`
-3. re-encrypt with standalone passphrase using envelope version 2
-4. write `.apb` and return SHA256 checksum
+4. re-encrypt with standalone passphrase using envelope version 2
+5. write the unchanged `<selector>.apb` backup format and return its SHA256
+   checksum
 
-`ExportAllKeys()` writes all exports into an `apb/` subdirectory.
+`ExportAllKeys()` exports both managed credential classes into an `apb/`
+subdirectory. The source extension is not preserved in the backup filename;
+the validated payload category selects `.key` or `.sen` when the `.apb` is
+restored.
 
 Managed archive packaging:
 
@@ -2213,7 +2237,7 @@ Live signer-managed restore:
 - preview decrypts and inspects backup payload metadata, reports whether each key already exists, and does not write key, template, or key type state
 - failed preview/restore decrypt or payload parse attempts are rate limited with per-identity/archive exponential backoff; rate-limited responses use `code:"restore_rate_limited"`
 - restore decrypts selected `addresses`; if `addresses` is omitted, all `.apb` payloads in the archive are attempted
-- restore skips existing key files unless `overwrite:true` is supplied
+- restore skips an existing canonical managed credential unless `overwrite:true` is supplied; a contradictory `.key`/`.sen` class always rejects
 - restore reloads the bound identity runtime after one or more keys are restored
 - restore does not install archived policy documents or sidecars; restoring
   policy is an explicit manual recovery operation, and the destination store

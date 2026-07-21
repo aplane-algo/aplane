@@ -136,7 +136,8 @@ DTOs and contract fixtures.
 | Unlock config | Signer identity | `identities/<identity>/unlock.yaml` | startup/headless unlock config | none | `internal/signerapp/identity`, `cmd/appass` |
 | Keystore metadata | Signer identity | `identities/<identity>/.keystore` | derived master key after unlock | none | `internal/crypto`, `internal/keystore` |
 | Master key/session | Signer identity runtime | passphrase-derived, not persisted | `keystore.FileKeyStore`, `keystore.KeySession` | lock/status booleans only | `internal/keystore`, `internal/signerapp/runtime` |
-| Signing key | Signer identity | `identities/<identity>/keys/*.key` | address/selector -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
+| Account authority | Signer identity | `identities/<identity>/keys/<address>.key` | address -> key file/type/LogicSig size indexes | `/keys`, admin key lists/details | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
+| Sentry witness authority | Sentry identity | `identities/<identity>/keys/<witness_key_id>.sen` | Witness Key ID -> witness credential index | `/keys`, sentry component signing | `internal/keys`, `internal/keystore`, `internal/signerapp/identity` |
 | Sentry public sidecar | Signer identity | `identities/<identity>/keys/<witness_key_id>.wit.json` | public sentry-key export metadata | `apstore sentry export` | `internal/keys`, `internal/sentry/sentryrefs` |
 | Public sentry reference | Signer identity | `identities/<identity>/sentries/<name>.json` | key-generation select option | `/keytypes`, admin/apadmin generation UX | `internal/sentry/sentryrefs`, `internal/signerapp/rest`, `cmd/apstore` |
 | Key type | Process plus identity | compiled provider registry plus enabled identity records/templates | key type catalog and provider registries | `/keytypes`, admin `key_types` | `internal/keytypecatalog`, `internal/lsigprovider`, `internal/keygen` |
@@ -201,7 +202,7 @@ identity master key
 The strongest signing authority is:
 
 ```text
-encrypted .key payload
+encrypted canonical managed credential (`.key` or `.sen`)
   -> stored key type, bytecode, signing args, salt counter, base key type
   -> signer-side base provider where cryptographic signing is required
 ```
@@ -240,6 +241,7 @@ An identity is the root of sensitive signer state:
 ```text
 identities/<identity>/
   keys/*.key
+  keys/*.sen
   .keystore
   aplane.token
   config.yaml
@@ -799,7 +801,8 @@ Restore is per-key:
 |------|-------------|---------------|
 | Passphrase | secret | parsed into mutable buffers where possible; zero promptly |
 | Master key | secret | derived at unlock; cached only while unlocked; zero on lock |
-| `.key` private material | secret | encrypted at rest; decrypted on demand |
+| `.key` account private material | secret | encrypted at rest; decrypted on demand |
+| `.sen` sentry witness material | secret | encrypted at rest; usable only in the sentry component-signing domain |
 | Installed `.template` files | sensitive policy material | encrypted in identity store |
 | `policy.yaml` | safety-critical | authenticated by HMAC sidecar; parsed as signer or sentry policy according to node role |
 | `release.json` | provenance metadata | public installer/release stamp; not signing, policy, or trust authority |

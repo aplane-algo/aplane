@@ -58,7 +58,7 @@ This separation is deliberate:
 |---|---|---|
 | Native key file | `identities/<identity>/keys/<address>.key` | Native signing authority. |
 | LogicSig key file | `identities/<identity>/keys/<address>.key` | LogicSig bytecode, salt, signing metadata, and any private DSA key material. |
-| Sentry witness key file | `identities/<identity>/keys/<witness_key_id>.key` | Witness key in hot signer custody; component-signing authority for sentry-role `/sign/component`, never an Algorand spending account. |
+| Sentry witness credential | `identities/<identity>/keys/<witness_key_id>.sen` | Witness key in sentry custody; component-signing authority for sentry-role `/sign/component`, never an Algorand spending account. |
 | Witness public sidecar | `identities/<identity>/keys/<witness_key_id>.wit.json` | Canonical public witness reference for a local sentry key. |
 | External contract-admin witness | Operator-controlled `<witness_key_id>.wit`, outside signer data | The same Falcon witness form in standalone custody; owned only by `aprekey`, never by signer or `apstore`. |
 | Contract-admin public reference | Operator-controlled `<witness_key_id>.wit.json` | Disposable canonical public witness reference used during bounded account generation. |
@@ -131,7 +131,7 @@ A node may host multiple identities, but all identities inherit the same root
 node role. Role-conflicting key inventory anywhere in the data directory is a
 node-level store contradiction: startup/reload fails closed for the node rather
 than silently quarantining only one identity. This is a deliberate
-safety/availability tradeoff. A hand-placed conflicting `.key` can make the
+safety/availability tradeoff. A hand-placed role-conflicting `.key` or `.sen` can make the
 node unavailable until the operator removes it, while supported restore/import
 paths should preflight role before writing so this fail-closed path remains a
 backstop. After a reload detects a role inventory conflict, the process marks
@@ -216,9 +216,9 @@ key is rejected during reload rather than published as a signable key.
 |---|---|---|---|
 | Absent | No active key file under `keys/`. | No. | May be restored from a backup payload. |
 | Archived/deleted | Key file moved to `deleted/keys/`. | No; outside active scans. | Restore can write a new active canonical key file if selected. |
-| Present but signer locked | Encrypted `.key` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted key files; restore requires authenticated/unlocked flow. |
-| Present, decrypts, canonical filename matches derived address/selector | Active `.key` basename matches derived address or Witness Key ID. | Candidate for signing after category-specific validation. | Backup and restore use canonical filenames. |
-| Misnamed key file | `.key` basename does not match the derived address/selector. | No; scanner rejects/skips it. | Restore writes the canonical filename when it elects to restore. |
+| Present but signer locked | Encrypted `.key` or `.sen` exists but identity has no active key session. | No until unlock. | Backup can include active encrypted managed credentials; restore requires authenticated/unlocked flow. |
+| Present, decrypts, canonical filename matches derived selector and category | Account `.key` matches its Algorand address, or witness `.sen` matches its Witness Key ID. | Candidate for its category-specific signing path after validation. | Backup and restore use canonical filenames. |
+| Misnamed or wrong-class managed credential | Basename selector mismatches the payload, witness payload uses `.key`, or account payload uses `.sen`. | No; scanner rejects/skips it. | Restore derives the canonical filename from validated payload category. |
 | Role-forbidden key file | Key type is valid, but the node role does not allow that key class. | No; reload rejects the inventory conflict. | Restore/generation should refuse unless the destination node role allows that key class. |
 | Unknown key type | Payload names a key type unsupported by the current binary. | No. | Restore fails for that key unless support exists. |
 | Native key valid | Native key payload has valid key material and canonical key type. | Yes on signer nodes. | Restores directly onto signer nodes. |
@@ -238,12 +238,12 @@ key is rejected during reload rather than published as a signable key.
 
 | Transition | Preconditions | Write or runtime action | Result |
 |---|---|---|---|
-| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create encrypted canonical `.key`; LogicSig generation stores bytecode, salt, signing metadata, creation params, and optional template fingerprint. | Key becomes active after reload/scan. |
-| Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write encrypted canonical `.key`. | Key becomes active after reload/scan. |
-| Delete key | Authenticated admin request selects active key. | Move `.key` to `deleted/keys/`. | Key leaves active scans. |
+| Generate key | Key type is discoverable/generatable, node role allows the key class, and required parameters are valid. | Create canonical account `.key` or sentry witness `.sen`; LogicSig generation stores bytecode, salt, signing metadata, creation params, and optional template fingerprint. | Credential becomes active after reload/scan. |
+| Import mnemonic | Provider explicitly supports mnemonic import and node role allows the key class. | Derive key material and write the category-selected canonical managed credential. | Credential becomes active after reload/scan. |
+| Delete key | Authenticated admin request selects an active credential. | Preserve its basename while moving `.key` or `.sen` to `deleted/keys/`. | Credential leaves active scans. |
 | Backup create | Active key files are selected. | Write encrypted `.apb` payloads in managed backup archive and include source node role metadata in the archive manifest. | Source key files remain unchanged. |
 | Restore preview | Managed archive and passphrase are valid. | Decrypt/inspect payloads without mutation and compare payload key classes to destination node role. | Reports addresses, key types, conflicts, errors, role mismatches, and template requirements. |
-| Restore apply | Selected payload passes validation, destination node role allows the key class, and no unhandled existing-key conflict remains. | Write canonical encrypted `.key`, optionally install/enable needed template or compiled state, then reload identity. | Key becomes active; per-key rollback undoes restore side effects if final key write fails. |
+| Restore apply | Selected payload passes validation, destination node role allows the key class, and no contradictory managed class exists. | Write canonical encrypted `.key` or `.sen`, optionally install/enable needed template or compiled state, then reload identity. | Credential becomes active; per-key rollback undoes restore side effects if final write fails. |
 | Unlock/reload | Master key is available. | Verify node role integrity, register enabled templates, scan key files, validate node inventory against role, publish runtime indexes. | Valid active keys become signable; rejected files are diagnostics except role conflicts, which fail closed for the node. |
 | Repair template provenance | Template/provider state is reinstalled or re-enabled. | No key-file rewrite required unless explicitly restoring missing provenance. | Inventory warnings may clear; signing behavior is unchanged. |
 

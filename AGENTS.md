@@ -244,8 +244,9 @@ make applugin-checksums         # Generate checksums.sha256 for all example plug
 - Argon2id for key derivation (memory-hard, GPU-resistant)
 - Falcon-1024 for post-quantum signatures
 
-### Key File Format
-Key files (`.key`) use layered versioning:
+### Managed Credential File Format
+Managed credential files (`.key` account authority and `.sen` sentry witness
+authority) use the same layered versioning:
 - `envelope_version`: Encryption envelope format (AES-GCM parameters, salt/nonce encoding)
 - `format_version`: Decrypted payload schema (key fields, structure)
 - `signing_metadata_version` (LogicSig keys only): durable LogicSig signing-metadata schema; `>= 1` marks a v1 signing-metadata key
@@ -283,7 +284,8 @@ gofmt -s -w .         # Format code
 
 ### Key Files
 - `aplane.token`: API token for HTTP authentication (mode 0600)
-- `identities/<identity>/keys/*.key`: Encrypted private keys (mode 0600)
+- `identities/<identity>/keys/*.key`: Encrypted account-authority records (mode 0600)
+- `identities/<identity>/keys/*.sen`: Encrypted sentry witness credentials (mode 0600)
 - `identities/<identity>/.keystore`: Keystore metadata (master salt, passphrase verification)
 - `config.yaml`: Process-global server configuration
 - `identities/<identity>/config.yaml`: Identity-scoped runtime settings
