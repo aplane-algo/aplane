@@ -6,8 +6,6 @@ package guarded
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	cryptorand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,6 +22,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	"github.com/aplane-algo/aplane/internal/signing"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -33,13 +32,13 @@ import (
 // (self-signer fallback), plus /simulate/guarded. Any user-role component
 // request is counted and rejected — the contained flow must never ask the
 // wire for user component signatures.
-func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey ed25519.PrivateKey, captured *signerapi.GuardedSimulateRequest, userRoleCalls, simulateCalls *atomic.Int32, respond func(req signerapi.GuardedSimulateRequest) signerapi.GuardedSimulateResponse) *httptest.Server {
+func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey []byte, captured *signerapi.GuardedSimulateRequest, userRoleCalls, simulateCalls *atomic.Int32, respond func(req signerapi.GuardedSimulateRequest) signerapi.GuardedSimulateResponse) *httptest.Server {
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
 		t.Fatalf("decode sentry public key: %v", err)
 	}
-	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("Sentry Key ID: %v", err)
 	}
@@ -50,7 +49,7 @@ func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey 
 			Keys: []signerapi.KeyInfo{{
 				Address:        componentSelector,
 				PublicKeyHex:   publicKeyHex,
-				KeyType:        keytypes.SentryComponentEd25519V1,
+				KeyType:        keytypes.SentryComponentFalcon1024V1,
 				IsComponentKey: true,
 			}},
 		})
@@ -78,10 +77,15 @@ func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey 
 		}
 		for _, index := range req.TargetIndices {
 			msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
+			signature, err := signerops.New(nil).Sign(privateKey, msg[:])
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
 				TargetIndex:     index,
-				SignatureScheme: keytypes.SentryComponentEd25519V1,
-				Signature:       hex.EncodeToString(ed25519.Sign(privateKey, msg[:])),
+				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				Signature:       hex.EncodeToString(signature),
 			})
 		}
 		_ = json.NewEncoder(w).Encode(resp)
@@ -100,10 +104,7 @@ func newGuardedSimulateTestServer(t *testing.T, publicKeyHex string, privateKey 
 }
 
 func TestSignAndSubmitGroupSimulateUsesContainedGuardedEndpoint(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(cryptorand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
+	publicKey, privateKey := testFalconSentryKeypair(t, 0x71)
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
@@ -169,10 +170,7 @@ func TestSignAndSubmitGroupSimulateUsesContainedGuardedEndpoint(t *testing.T) {
 }
 
 func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(cryptorand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
+	publicKey, privateKey := testFalconSentryKeypair(t, 0x72)
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(3), testAddress(4), "guarded")
 
@@ -192,7 +190,7 @@ func TestSignAndSubmitGroupSimulateReportsFailure(t *testing.T) {
 	s.conn.SignerClient = signerclient.NewSignerClientWithToken(server.URL, "")
 
 	var out bytes.Buffer
-	_, _, err = s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{
+	_, _, err := s.SignAndSubmitGroup([]types.Transaction{txn}, clientsign.SubmitOptions{
 		Ctx:      context.Background(),
 		Simulate: true,
 		Out:      &out,

@@ -34,13 +34,6 @@ func RegisterSigner() {
 					},
 					Mnemonic: bip39impl.NewHandler(falcon1024guarded.KeyTypeV1, family.MnemonicWordCount),
 				},
-				{
-					Family: falcon1024guarded.KeyTypeFalcon1024V1,
-					Ops: map[string]dsafamilyreg.LogicSigKeygenOps{
-						falcon1024guarded.KeyTypeFalcon1024V1: ops,
-					},
-					Mnemonic: bip39impl.NewHandler(falcon1024guarded.KeyTypeFalcon1024V1, family.MnemonicWordCount),
-				},
 			},
 		})
 	})

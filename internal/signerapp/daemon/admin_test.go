@@ -505,8 +505,8 @@ func TestAdminSyncSentriesNotifiesAdminKeyTypesChanged(t *testing.T) {
 	hub := &recordingAdminHub{}
 	server.hub = hub
 
-	publicKeyBytes := bytes.Repeat([]byte{0xab}, 32)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKeyBytes)
+	publicKeyBytes := bytes.Repeat([]byte{0xab}, keytypes.Falcon1024PublicKeySize)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKeyBytes)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
@@ -514,8 +514,8 @@ func TestAdminSyncSentriesNotifiesAdminKeyTypesChanged(t *testing.T) {
 		Candidates: []signerapi.SentryReferenceCandidate{{
 			EndpointAlias: "sentry-local",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.SentryComponentEd25519V1,
-			PublicKeyHex:  strings.Repeat("ab", 32),
+			KeyType:       keytypes.SentryComponentFalcon1024V1,
+			PublicKeyHex:  strings.Repeat("ab", keytypes.Falcon1024PublicKeySize),
 		}},
 	})
 

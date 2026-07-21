@@ -5,7 +5,6 @@ package keymgmt
 
 import (
 	"context"
-	stded25519 "crypto/ed25519"
 	"encoding/base64"
 	"io"
 	"net/http"
@@ -65,8 +64,8 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		{keyType: "ed25519", want: true},
 		{keyType: "aplane.falcon1024.v1", want: true},
 		{keyType: falcon1024guarded.KeyTypeV1, want: false},
-		{keyType: falcon1024guarded.KeyTypeFalcon1024V1, want: false},
-		{keyType: keytypes.SentryComponentEd25519V1, want: false},
+		{keyType: falcon1024guarded.KeyTypeV1, want: false},
+		{keyType: keytypes.SentryComponentFalcon1024V1, want: false},
 		{keyType: keytypes.SentryComponentFalcon1024V1, want: false},
 		{keyType: "aplane.governance-ed25519.v1", want: false},
 		{keyType: "aplane.falcon1024-allowlist.v1", want: false},
@@ -83,7 +82,7 @@ func TestSupportsMnemonicImport(t *testing.T) {
 func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 
-	keyType := falcon1024guarded.KeyTypeFalcon1024V1
+	keyType := falcon1024guarded.KeyTypeV1
 	_, err := ImportKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, "mnemonic words here", nil, nil, []string{keyType})
 	if err == nil || !strings.Contains(err.Error(), "mnemonic import not supported") {
 		t.Fatalf("ImportKeyWithActivatedContext(%s) error = %v, want mnemonic import unsupported", keyType, err)
@@ -157,11 +156,11 @@ func TestValidKeyTypesIncludeIdentityActivatedYAMLComposedProvider(t *testing.T)
 }
 
 func TestValidKeyTypesIncludeSentryComponentKey(t *testing.T) {
-	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentEd25519V1) {
-		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentEd25519V1)
+	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentFalcon1024V1) {
+		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentFalcon1024V1)
 	}
-	if !IsValidKeyType(keytypes.SentryComponentEd25519V1) {
-		t.Fatalf("IsValidKeyType() rejected %s", keytypes.SentryComponentEd25519V1)
+	if !IsValidKeyType(keytypes.SentryComponentFalcon1024V1) {
+		t.Fatalf("IsValidKeyType() rejected %s", keytypes.SentryComponentFalcon1024V1)
 	}
 	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentFalcon1024V1) {
 		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentFalcon1024V1)
@@ -188,7 +187,7 @@ func TestValidKeyTypesExcludeExternalGovernancePrivateKeys(t *testing.T) {
 func TestValidKeyTypesIncludeActivatedFalcon1024GuardedKey(t *testing.T) {
 	for _, keyType := range []string{
 		falcon1024guarded.KeyTypeV1,
-		falcon1024guarded.KeyTypeFalcon1024V1,
+		falcon1024guarded.KeyTypeV1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			if containsKeyType(GetValidKeyTypes(), keyType) {
@@ -213,7 +212,7 @@ func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
 
 	for _, keyType := range []string{
 		falcon1024guarded.KeyTypeV1,
-		falcon1024guarded.KeyTypeFalcon1024V1,
+		falcon1024guarded.KeyTypeV1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, masterKey, nil, []string{keyType})
@@ -233,10 +232,6 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 	}{
 		{
 			keyType:         falcon1024guarded.KeyTypeV1,
-			sentryPublicKey: strings.Repeat("ab", stded25519.PublicKeySize),
-		},
-		{
-			keyType:         falcon1024guarded.KeyTypeFalcon1024V1,
 			sentryPublicKey: strings.Repeat("cd", falconfamily.PublicKeySize),
 		},
 	}
@@ -311,7 +306,7 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 
 func TestGenerateKeySentryComponent(t *testing.T) {
 	for _, keyType := range []string{
-		keytypes.SentryComponentEd25519V1,
+		keytypes.SentryComponentFalcon1024V1,
 		keytypes.SentryComponentFalcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {

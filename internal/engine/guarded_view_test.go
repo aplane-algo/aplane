@@ -21,9 +21,9 @@ func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
 	signerCache := cache.NewSignerCache()
-	signerCache.AddAddress(addr, keytypes.GuardedFalcon1024SentryEd25519V1)
+	signerCache.AddAddress(addr, keytypes.GuardedFalcon1024SentryFalcon1024V1)
 	signerCache.SetSigningFlowForAddress(addr, signerapi.SigningFlowSentry1)
-	signerCache.SetSentryComponentKeyTypeForAddress(addr, keytypes.SentryComponentEd25519V1)
+	signerCache.SetSentryComponentKeyTypeForAddress(addr, keytypes.SentryComponentFalcon1024V1)
 	signerCache.SetSentryPublicKeyForAddress(addr, sentryHex)
 	signerCache.SetLsigSize(addr, 1500)
 
@@ -36,8 +36,8 @@ func TestGuardedSignerCacheViewDelegation(t *testing.T) {
 	if got := view.SigningFlow(addr); got != signerapi.SigningFlowSentry1 {
 		t.Fatalf("SigningFlow() = %q, want %q", got, signerapi.SigningFlowSentry1)
 	}
-	if got, ok := view.SentryComponentKeyType(addr); !ok || got != keytypes.SentryComponentEd25519V1 {
-		t.Fatalf("SentryComponentKeyType() = %q/%v, want %s/true", got, ok, keytypes.SentryComponentEd25519V1)
+	if got, ok := view.SentryComponentKeyType(addr); !ok || got != keytypes.SentryComponentFalcon1024V1 {
+		t.Fatalf("SentryComponentKeyType() = %q/%v, want %s/true", got, ok, keytypes.SentryComponentFalcon1024V1)
 	}
 	if got, ok := view.SentryPublicKey(addr); !ok || got != sentryHex {
 		t.Fatalf("SentryPublicKey() = %q/%v, want %s/true", got, ok, sentryHex)

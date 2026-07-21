@@ -48,7 +48,6 @@ func TestRegisterClientMarksLibraryVisible(t *testing.T) {
 
 	libraryGatedKeyTypes := []string{
 		falcon1024guarded.KeyTypeV1,
-		falcon1024guarded.KeyTypeFalcon1024V1,
 		corridor.KeyTypeV1,
 		ed25519lsig.KeyTypeV1,
 	}

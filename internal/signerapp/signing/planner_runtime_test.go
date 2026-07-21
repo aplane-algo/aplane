@@ -143,8 +143,8 @@ func TestVerifySignableKeysRejectsSentryKeyTypes(t *testing.T) {
 		want    string
 	}{
 		{
-			name:    "ed25519 sentry key",
-			keyType: keytypes.SentryComponentEd25519V1,
+			name:    "Falcon sentry key",
+			keyType: keytypes.SentryComponentFalcon1024V1,
 			want:    sentryComponentSignRejectMessage,
 		},
 		{
@@ -154,7 +154,7 @@ func TestVerifySignableKeysRejectsSentryKeyTypes(t *testing.T) {
 		},
 		{
 			name:    "guarded account",
-			keyType: keytypes.GuardedFalcon1024SentryEd25519V1,
+			keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1,
 			want:    guardedAccountSignRejectMessage,
 		},
 		{

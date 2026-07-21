@@ -186,7 +186,7 @@ func TestHandleParamInput_AddressListPreservesAliasCase(t *testing.T) {
 func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-sentry-ed25519.v1",
+		KeyType:     "aplane.falcon1024-sentry-falcon1024.v1",
 		DisplayName: "Falcon-1024 / Ed25519 Sentry",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:    "sentry",
@@ -198,7 +198,7 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	}})
 
 	m := Model{forms: formsState{generateKeyType: 0}}
-	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-sentry-ed25519.v1")
+	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-sentry-falcon1024.v1")
 	if got := m.forms.genericLSigParams["sentry"]; got != "lab-sentry" {
 		t.Fatalf("default sentry = %q, want lab-sentry", got)
 	}

@@ -17,6 +17,7 @@ import (
 	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/internal/sentry/sentryrefs"
+	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
 )
 
 func TestCmdSentryExportWritesEnvelopeFile(t *testing.T) {
@@ -42,8 +43,8 @@ func TestCmdSentryExportWritesEnvelopeFile(t *testing.T) {
 		if env.ComponentKey != result.Address {
 			t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, result.Address)
 		}
-		if env.KeyType != keytypes.SentryComponentEd25519V1 {
-			t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentEd25519V1)
+		if env.KeyType != keytypes.SentryComponentFalcon1024V1 {
+			t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentFalcon1024V1)
 		}
 		if env.PublicKeyHex != publicKeyHex {
 			t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, publicKeyHex)
@@ -118,13 +119,13 @@ func generateTestSentryComponentKey(t *testing.T, passphrase []byte) (*keygen.Ge
 	masterKey := deriveTestMasterKey(t, passphrase)
 	defer crypto.ZeroBytes(masterKey)
 
-	g := &keygen.SentryEd25519Generator{}
-	result, err := g.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), masterKey, keytypes.SentryComponentEd25519V1, nil)
+	g := &falconkeygen.SentryFalcon1024Generator{}
+	result, err := g.GenerateRandom(context.Background(), keystorePaths(), productIdentityID(), masterKey, keytypes.SentryComponentFalcon1024V1, nil)
 	if err != nil {
-		t.Fatalf("GenerateRandom(sentry-ed25519) error = %v", err)
+		t.Fatalf("GenerateRandom(sentry-falcon1024) error = %v", err)
 	}
 	if result.PublicKeyHex == "" {
-		t.Fatal("GenerateRandom(sentry-ed25519) public key is empty")
+		t.Fatal("GenerateRandom(sentry-falcon1024) public key is empty")
 	}
 	return result, result.PublicKeyHex
 }

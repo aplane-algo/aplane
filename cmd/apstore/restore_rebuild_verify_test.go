@@ -774,5 +774,5 @@ func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 
 func testSentryComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
 	t.Helper()
-	return keystest.SentryComponentEd25519KeyJSON(t, 0xcd)
+	return keystest.SentryComponentFalcon1024KeyJSON(t, 0xcd)
 }

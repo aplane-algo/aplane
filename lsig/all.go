@@ -56,11 +56,6 @@ func RegisterClient() {
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, falcon1024guarded.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      falcon1024guarded.KeyTypeFalcon1024V1,
-			Family:       falcon1024guarded.FamilyNameFalcon1024,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, falcon1024guarded.RegisterClient)
-		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      corridor.KeyTypeV1,
 			Family:       corridor.FamilyName,
 			Availability: keytypecatalog.AvailabilityLibrary,

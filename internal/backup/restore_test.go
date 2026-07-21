@@ -400,7 +400,7 @@ func TestRestoreKeyRejectsRoleForbiddenComponentBeforeWrite(t *testing.T) {
 	if err == nil {
 		t.Fatal("RestoreKey() error = nil, want role-forbidden rejection")
 	}
-	if !strings.Contains(err.Error(), "role-forbidden") || !strings.Contains(err.Error(), keytypes.SentryComponentEd25519V1) {
+	if !strings.Contains(err.Error(), "role-forbidden") || !strings.Contains(err.Error(), keytypes.SentryComponentFalcon1024V1) {
 		t.Fatalf("RestoreKey() error = %v, want sentry-key role-forbidden rejection", err)
 	}
 	if _, err := os.Stat(paths.KeyFilePath(identityID, componentKey)); !os.IsNotExist(err) {
@@ -430,8 +430,8 @@ func TestRestoreKeyWritesComponentPublicMetadataOnSentryNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RestoreKey() error = %v", err)
 	}
-	if keyType != keytypes.SentryComponentEd25519V1 {
-		t.Fatalf("RestoreKey() key type = %q, want %q", keyType, keytypes.SentryComponentEd25519V1)
+	if keyType != keytypes.SentryComponentFalcon1024V1 {
+		t.Fatalf("RestoreKey() key type = %q, want %q", keyType, keytypes.SentryComponentFalcon1024V1)
 	}
 
 	env, ok, err := apkeys.ReadComponentPublicMetadata(paths, identityID, componentKey)
@@ -444,8 +444,8 @@ func TestRestoreKeyWritesComponentPublicMetadataOnSentryNode(t *testing.T) {
 	if env.ComponentKey != componentKey {
 		t.Fatalf("ComponentKey = %q, want %q", env.ComponentKey, componentKey)
 	}
-	if env.KeyType != keytypes.SentryComponentEd25519V1 {
-		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentEd25519V1)
+	if env.KeyType != keytypes.SentryComponentFalcon1024V1 {
+		t.Fatalf("KeyType = %q, want %q", env.KeyType, keytypes.SentryComponentFalcon1024V1)
 	}
 	wantPublicKeyHex := fmt.Sprintf("%x", payload.PublicKey)
 	if env.PublicKeyHex != wantPublicKeyHex {
@@ -790,5 +790,5 @@ func writeManagedRestoreArchive(t *testing.T, paths storepaths.Paths, identityID
 
 func testSentryComponentBackupKeyJSON(t *testing.T) (string, []byte) {
 	t.Helper()
-	return keystest.SentryComponentEd25519KeyJSON(t, 0xcd)
+	return keystest.SentryComponentFalcon1024KeyJSON(t, 0xcd)
 }

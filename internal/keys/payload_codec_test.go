@@ -12,12 +12,15 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/lsigsalt"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
+	"github.com/aplane-algo/aplane/internal/sentry/verify"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
 	"github.com/algorand/go-algorand-sdk/v2/types"
 )
@@ -26,6 +29,7 @@ var canonicalTestTime = time.Date(2026, 7, 10, 12, 34, 56, 0, time.UTC)
 
 func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 	publicKey, privateKey := canonicalEd25519Pair(t, 0x11)
+	componentPublicKey, componentPrivateKey := canonicalFalconComponentPair(t, 0x12)
 	bytecode := canonicalOffCurveBytecode(t)
 
 	tests := []struct {
@@ -40,7 +44,7 @@ func TestCanonicalPayloadFieldGoldens(t *testing.T) {
 		},
 		{
 			name:    "component",
-			payload: NewComponentPayload(keytypes.SentryComponentEd25519V1, publicKey, privateKey),
+			payload: NewComponentPayload(keytypes.SentryComponentFalcon1024V1, componentPublicKey, componentPrivateKey),
 			fields:  []string{"category", "created_at", "format_version", "key_type", "private_key", "public_key"},
 		},
 		{
@@ -310,6 +314,7 @@ func TestPayloadCategoryValidation(t *testing.T) {
 
 func TestPayloadSelectorsComeFromAuthoritativeMaterial(t *testing.T) {
 	publicKey, privateKey := canonicalEd25519Pair(t, 0x33)
+	componentPublicKey, componentPrivateKey := canonicalFalconComponentPair(t, 0x34)
 	bytecode := canonicalOffCurveBytecode(t)
 
 	native := NewEd25519Payload(publicKey, privateKey)
@@ -326,10 +331,10 @@ func TestPayloadSelectorsComeFromAuthoritativeMaterial(t *testing.T) {
 		t.Fatalf("native Selector() = %q, want %q", gotNative, wantNative)
 	}
 
-	component := NewComponentPayload(keytypes.SentryComponentEd25519V1, publicKey, privateKey)
+	component := NewComponentPayload(keytypes.SentryComponentFalcon1024V1, componentPublicKey, componentPrivateKey)
 	defer component.ZeroSecrets()
 	component.CreatedAt = canonicalTestTime
-	wantComponent, err := keytypes.ComponentKeySelector(component.KeyType, publicKey)
+	wantComponent, err := keytypes.ComponentKeySelector(component.KeyType, componentPublicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
@@ -420,6 +425,27 @@ func canonicalEd25519Pair(t *testing.T, fill byte) ([]byte, []byte) {
 	publicKey := privateKey.Public().(ed25519.PublicKey)
 	return bytes.Clone(publicKey), bytes.Clone(privateKey)
 }
+
+func canonicalFalconComponentPair(t *testing.T, fill byte) ([]byte, []byte) {
+	t.Helper()
+	registerFalconComponentTestValidator.Do(func() {
+		keytypes.RegisterComponentPairValidator(keytypes.SentryComponentFalcon1024V1, func(publicKey, privateKey []byte) error {
+			message := []byte("APLANE_COMPONENT_KEY_TEST_V1")
+			signature, err := signerops.New(nil).Sign(privateKey, message)
+			if err != nil {
+				return err
+			}
+			return verify.VerifyFalcon1024(publicKey, message, signature)
+		})
+	})
+	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
+	if err != nil {
+		t.Fatalf("GenerateKeypair() error = %v", err)
+	}
+	return publicKey, privateKey
+}
+
+var registerFalconComponentTestValidator sync.Once
 
 func canonicalOffCurveBytecode(t *testing.T) []byte {
 	t.Helper()

@@ -5,7 +5,6 @@ package signing
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -223,11 +222,6 @@ func loadSentryComponentKey(ctx context.Context, session componentKeyGetter, com
 
 func signSentryComponentMessage(keyType string, privateKey, msg []byte) ([]byte, *ServiceError) {
 	switch keyType {
-	case keytypes.SentryComponentEd25519V1:
-		if len(privateKey) != ed25519.PrivateKeySize {
-			return nil, internal(fmt.Sprintf("loaded sentry key has private key length %d", len(privateKey)))
-		}
-		return ed25519.Sign(ed25519.PrivateKey(privateKey), msg), nil
 	case keytypes.SentryComponentFalcon1024V1:
 		signature, err := signerops.New(nil).Sign(privateKey, msg)
 		if err != nil {

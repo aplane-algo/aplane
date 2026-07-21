@@ -32,9 +32,6 @@ var registerClientOnce sync.Once
 
 func RegisterClient() {
 	registerClientOnce.Do(func() {
-		// Two single-key-type registrations: the guarded variants have
-		// distinct registry family names, and algorithm metadata is keyed by
-		// family, so each carries its own metadata.
 		dsafamily.RegisterClient(dsafamily.ClientRegistration{
 			Family:   FamilyName,
 			Metadata: metadata{family: FamilyName, signatureSize: SignatureSize},
@@ -42,15 +39,6 @@ func RegisterClient() {
 				KeyType:        KeyTypeV1,
 				DSA:            NewProviderV1(),
 				AddressDeriver: falconkeys.GetFalconAddressDeriverForType(KeyTypeV1),
-			}},
-		})
-		dsafamily.RegisterClient(dsafamily.ClientRegistration{
-			Family:   FamilyNameFalcon1024,
-			Metadata: metadata{family: FamilyNameFalcon1024, signatureSize: SignatureSizeFalcon1024},
-			KeyTypes: []dsafamily.KeyType{{
-				KeyType:        KeyTypeFalcon1024V1,
-				DSA:            NewFalconSentryProviderV1(),
-				AddressDeriver: falconkeys.GetFalconAddressDeriverForType(KeyTypeFalcon1024V1),
 			}},
 		})
 	})

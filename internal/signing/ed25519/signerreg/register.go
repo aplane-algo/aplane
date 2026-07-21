@@ -11,9 +11,7 @@ import (
 	"sync"
 
 	"github.com/aplane-algo/aplane/internal/keygen"
-	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/mnemonic"
-	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	ed25519 "github.com/aplane-algo/aplane/internal/signing/ed25519"
 )
 
@@ -35,12 +33,6 @@ func RegisterSigner() {
 
 		// Key generator for creating new keys
 		keygen.RegisterEd25519Generator()
-		keygen.RegisterSentryEd25519Generator()
-		keytypecatalog.Register(keytypecatalog.Entry{
-			KeyType:      keytypes.SentryComponentEd25519V1,
-			Family:       "sentry-ed25519",
-			Availability: keytypecatalog.AvailabilityDefaultEnabled,
-		})
 		// Mnemonic handler for Algorand mnemonic handling
 		mnemonic.RegisterEd25519Handler()
 	})

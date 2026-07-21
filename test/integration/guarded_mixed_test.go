@@ -5,7 +5,6 @@ package integration_test
 
 import (
 	"context"
-	"crypto/ed25519"
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -27,6 +26,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/message"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 	"github.com/aplane-algo/aplane/test/integration/harness"
 )
 
@@ -78,7 +78,11 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 
 	// Test-held sentry key. The "sentry node" is the mock endpoint below; the
 	// guarded account embeds this public key at generation time.
-	sentryPub, sentryPriv, err := ed25519.GenerateKey(cryptorand.Reader)
+	sentrySeed := make([]byte, 64)
+	if _, err := cryptorand.Read(sentrySeed); err != nil {
+		t.Fatalf("Failed to generate sentry seed: %v", err)
+	}
+	sentryPub, sentryPriv, err := signerops.New(nil).GenerateKeypair(sentrySeed)
 	if err != nil {
 		t.Fatalf("Failed to generate sentry key: %v", err)
 	}
@@ -93,11 +97,11 @@ func TestMixedGuardedGroupTransaction(t *testing.T) {
 	// are library-gated (AvailabilityLibrary), so activate it for this identity
 	// before generation; the non-guarded falcon type is default-enabled.
 	t.Log("Generating guarded account and non-guarded falcon account...")
-	if err := apadmin.ActivateKeyType(keytypes.GuardedFalcon1024SentryEd25519V1); err != nil {
+	if err := apadmin.ActivateKeyType(keytypes.GuardedFalcon1024SentryFalcon1024V1); err != nil {
 		t.Fatalf("Failed to activate guarded key type: %v", err)
 	}
 	guardedAddr, err := apadmin.GenerateKeyWithTypeAndParams(
-		keytypes.GuardedFalcon1024SentryEd25519V1,
+		keytypes.GuardedFalcon1024SentryFalcon1024V1,
 		map[string]string{keytypes.ParameterSentryPublicKey: sentryPubHex},
 	)
 	if err != nil {
@@ -222,9 +226,9 @@ func bestEffortCloseAccount(t *testing.T, eng *engine.Engine, testnet *harness.T
 // node for one sentry key: it advertises the Sentry Key ID on /keys (so the
 // client's endpoint-advertisement check passes) and produces real sentry-role
 // component signatures on /sign/component using the test-held private key.
-func startMockSentryEndpoint(t *testing.T, publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey, token string) *httptest.Server {
+func startMockSentryEndpoint(t *testing.T, publicKey, privateKey []byte, token string) *httptest.Server {
 	t.Helper()
-	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("Failed to derive Sentry Key ID: %v", err)
 	}
@@ -245,7 +249,7 @@ func startMockSentryEndpoint(t *testing.T, publicKey ed25519.PublicKey, privateK
 			Keys: []signerapi.KeyInfo{{
 				Address:        componentSelector,
 				PublicKeyHex:   publicKeyHex,
-				KeyType:        keytypes.SentryComponentEd25519V1,
+				KeyType:        keytypes.SentryComponentFalcon1024V1,
 				IsComponentKey: true,
 			}},
 		})
@@ -280,10 +284,15 @@ func startMockSentryEndpoint(t *testing.T, publicKey ed25519.PublicKey, privateK
 				return
 			}
 			msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
+			signature, err := signerops.New(nil).Sign(privateKey, msg[:])
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
 				TargetIndex:     index,
-				SignatureScheme: keytypes.SentryComponentEd25519V1,
-				Signature:       hex.EncodeToString(ed25519.Sign(privateKey, msg[:])),
+				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				Signature:       hex.EncodeToString(signature),
 			})
 		}
 		_ = json.NewEncoder(w).Encode(resp)

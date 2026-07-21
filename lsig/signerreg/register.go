@@ -37,11 +37,6 @@ func RegisterSigner() {
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, guardedsignerreg.RegisterSigner)
 		registerCompiledSigner(keytypecatalog.Entry{
-			KeyType:      falcon1024guarded.KeyTypeFalcon1024V1,
-			Family:       falcon1024guarded.FamilyNameFalcon1024,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, guardedsignerreg.RegisterSigner)
-		registerCompiledSigner(keytypecatalog.Entry{
 			KeyType:      corridor.KeyTypeV1,
 			Family:       corridor.FamilyName,
 			Availability: keytypecatalog.AvailabilityLibrary,

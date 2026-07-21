@@ -7,7 +7,6 @@ package falcon1024guarded
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -27,19 +26,13 @@ import (
 )
 
 const (
-	// FamilyName / FamilyNameFalcon1024 are qualified registry families
-	// ("publisher.family"), used as keygen/mnemonic/metadata/signing registry
-	// keys for the two guarded variants.
-	FamilyName           = "aplane.falcon1024-sentry-ed25519"
-	FamilyNameFalcon1024 = "aplane.falcon1024-sentry-falcon1024"
-	KeyTypeV1            = keytypes.GuardedFalcon1024SentryEd25519V1
-	KeyTypeFalcon1024V1  = keytypes.GuardedFalcon1024SentryFalcon1024V1
-	BaseKeyType          = "aplane.falcon1024.v1"
+	FamilyName  = "aplane.falcon1024-sentry-falcon1024"
+	KeyTypeV1   = keytypes.GuardedFalcon1024SentryFalcon1024V1
+	BaseKeyType = "aplane.falcon1024.v1"
 
 	ParamSentryPublicKey = keytypes.ParameterSentryPublicKey
 
-	SignatureSize           = 2 + family.MaxSignatureSize + ed25519.SignatureSize
-	SignatureSizeFalcon1024 = 4 + family.MaxSignatureSize + family.MaxSignatureSize
+	SignatureSize = 4 + family.MaxSignatureSize + family.MaxSignatureSize
 )
 
 // Provider implements the guarded-account LogicSig shape for a Falcon user
@@ -61,24 +54,11 @@ func NewProviderV1() *Provider {
 	return &Provider{
 		keyType:                KeyTypeV1,
 		familyName:             FamilyName,
-		displayName:            "Falcon-1024 / Ed25519 Sentry",
-		description:            "Falcon-1024 account requiring an Ed25519 sentry signature",
-		sentryComponentKeyType: keytypes.SentryComponentEd25519V1,
-		sentryPublicKeySize:    ed25519.PublicKeySize,
-		signatureSize:          SignatureSize,
-		sentrySignatureArg:     "sentry_ed25519_component_signature",
-	}
-}
-
-func NewFalconSentryProviderV1() *Provider {
-	return &Provider{
-		keyType:                KeyTypeFalcon1024V1,
-		familyName:             FamilyNameFalcon1024,
 		displayName:            "Falcon-1024 / Falcon-1024 Sentry",
 		description:            "Falcon-1024 account requiring a Falcon-1024 sentry signature",
 		sentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 		sentryPublicKeySize:    family.PublicKeySize,
-		signatureSize:          SignatureSizeFalcon1024,
+		signatureSize:          SignatureSize,
 		sentrySignatureArg:     "sentry_falcon1024_component_signature",
 	}
 }
@@ -104,18 +84,10 @@ func (p *Provider) MnemonicScheme() string       { return family.MnemonicScheme 
 func (p *Provider) MnemonicWordCount() int       { return family.MnemonicWordCount }
 func (p *Provider) SupportsMnemonicImport() bool { return false }
 func (p *Provider) CreationParams() []lsigprovider.ParameterDef {
-	sentryLabel := "Sentry public key"
-	sentryDescription := "Hex-encoded sentry public key embedded in the guarded account"
-	switch p.sentryComponentKeyType {
-	case keytypes.SentryComponentEd25519V1:
-		sentryDescription = "Hex-encoded Ed25519 sentry public key embedded in the guarded account"
-	case keytypes.SentryComponentFalcon1024V1:
-		sentryDescription = "Hex-encoded Falcon-1024 sentry public key embedded in the guarded account"
-	}
 	return []lsigprovider.ParameterDef{{
 		Name:        ParamSentryPublicKey,
-		Label:       sentryLabel,
-		Description: sentryDescription,
+		Label:       "Sentry public key",
+		Description: "Hex-encoded Falcon-1024 sentry public key embedded in the guarded account",
 		Type:        "bytes",
 		Required:    true,
 		MaxLength:   p.sentryPublicKeySize * 2,
@@ -207,10 +179,7 @@ func (p *Provider) GenerateTEAL(publicKey []byte, params map[string]string) (str
 	if err != nil {
 		return "", err
 	}
-	sentryVerifier, err := p.sentryVerifyTEAL(sentryPublicKey)
-	if err != nil {
-		return "", err
-	}
+	sentryVerifier := p.sentryVerifyTEAL(sentryPublicKey)
 
 	return fmt.Sprintf(`#pragma version 12
 
@@ -238,24 +207,8 @@ assert
 		sentryVerifier), nil
 }
 
-func (p *Provider) sentryVerifyTEAL(sentryPublicKey []byte) (string, error) {
-	switch p.sentryComponentKeyType {
-	case keytypes.SentryComponentEd25519V1:
-		return fmt.Sprintf(`// === Sentry Ed25519 component signature ===
-pushbytes 0x%s
-pushbytes 0x%02x
-concat
-txn TxID
-concat
-sha512_256
-arg 1
-pushbytes 0x%s
-ed25519verify_bare
-`, hex.EncodeToString([]byte(message.DomainTagV1)),
-			byte(message.RoleSentry),
-			hex.EncodeToString(sentryPublicKey)), nil
-	case keytypes.SentryComponentFalcon1024V1:
-		return fmt.Sprintf(`// === Sentry Falcon-1024 component signature ===
+func (p *Provider) sentryVerifyTEAL(sentryPublicKey []byte) string {
+	return fmt.Sprintf(`// === Sentry Falcon-1024 component signature ===
 pushbytes 0x%s
 pushbytes 0x%02x
 concat
@@ -266,11 +219,8 @@ arg 1
 pushbytes 0x%s
 falcon_verify
 `, hex.EncodeToString([]byte(message.DomainTagV1)),
-			byte(message.RoleSentry),
-			hex.EncodeToString(sentryPublicKey)), nil
-	default:
-		return "", fmt.Errorf("unsupported sentry component key type %s", p.sentryComponentKeyType)
-	}
+		byte(message.RoleSentry),
+		hex.EncodeToString(sentryPublicKey))
 }
 
 // CompatibilityFingerprint returns the behavior-only compatibility fingerprint
@@ -309,15 +259,6 @@ func PackComponentSignaturesForKeyType(keyType string, userSignature, sentrySign
 	}
 	switch keyType {
 	case KeyTypeV1:
-		if len(sentrySignature) != ed25519.SignatureSize {
-			return nil, fmt.Errorf("sentry Ed25519 signature length %d invalid (expected %d bytes)", len(sentrySignature), ed25519.SignatureSize)
-		}
-		out := make([]byte, 2+len(userSignature)+len(sentrySignature))
-		binary.BigEndian.PutUint16(out[:2], uint16(len(userSignature)))
-		copy(out[2:], userSignature)
-		copy(out[2+len(userSignature):], sentrySignature)
-		return out, nil
-	case KeyTypeFalcon1024V1:
 		if len(sentrySignature) == 0 || len(sentrySignature) > family.MaxSignatureSize {
 			return nil, fmt.Errorf("sentry Falcon signature length %d invalid (expected 1..%d bytes)", len(sentrySignature), family.MaxSignatureSize)
 		}
@@ -336,26 +277,10 @@ func PackComponentSignaturesForKeyType(keyType string, userSignature, sentrySign
 func UnpackComponentSignaturesForKeyType(keyType string, signature []byte) ([]byte, []byte, error) {
 	switch keyType {
 	case KeyTypeV1:
-		return unpackEd25519SentrySignature(signature)
-	case KeyTypeFalcon1024V1:
 		return unpackFalconSentrySignature(signature)
 	default:
 		return nil, nil, fmt.Errorf("key type %q is not a guarded Falcon account key type", keyType)
 	}
-}
-
-func unpackEd25519SentrySignature(signature []byte) ([]byte, []byte, error) {
-	if len(signature) < 2+ed25519.SignatureSize {
-		return nil, nil, fmt.Errorf("guarded signature blob is too short")
-	}
-	userLen := int(binary.BigEndian.Uint16(signature[:2]))
-	if userLen <= 0 || userLen > family.MaxSignatureSize {
-		return nil, nil, fmt.Errorf("user Falcon signature length %d invalid (expected 1..%d bytes)", userLen, family.MaxSignatureSize)
-	}
-	if len(signature) != 2+userLen+ed25519.SignatureSize {
-		return nil, nil, fmt.Errorf("invalid guarded signature blob length")
-	}
-	return signature[2 : 2+userLen], signature[2+userLen:], nil
 }
 
 func unpackFalconSentrySignature(signature []byte) ([]byte, []byte, error) {

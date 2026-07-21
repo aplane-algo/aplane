@@ -37,7 +37,7 @@ func TestCmdSentryImportListShowRemove(t *testing.T) {
 			t.Fatalf("cmdSentry(list) error = %v", err)
 		}
 		if !strings.Contains(listOut, env.ComponentKey) ||
-			!strings.Contains(listOut, keytypes.SentryComponentEd25519V1) ||
+			!strings.Contains(listOut, keytypes.SentryComponentFalcon1024V1) ||
 			!strings.Contains(listOut, "name: lab-sentry") {
 			t.Fatalf("list output = %q, want imported sentry reference", listOut)
 		}
@@ -71,19 +71,19 @@ func TestCmdSentryImportListShowRemove(t *testing.T) {
 
 func TestCmdSentryListHidesEndpointSyncedRecordName(t *testing.T) {
 	withPolicyCommandStore(t, func(_ string, _ []byte) {
-		pub := make([]byte, 32)
+		pub := make([]byte, testSentryPublicKeySize(t))
 		for i := range pub {
 			pub[i] = 0xab
 		}
-		componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
+		componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, pub)
 		if err != nil {
 			t.Fatalf("ComponentKeySelector() error = %v", err)
 		}
 		if _, err := sentryrefs.SyncDiscovered(keystorePaths(), productIdentityID(), []sentryrefs.DiscoveredRecord{{
 			EndpointAlias: "foo",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.SentryComponentEd25519V1,
-			PublicKeyHex:  strings.Repeat("ab", 32),
+			KeyType:       keytypes.SentryComponentFalcon1024V1,
+			PublicKeyHex:  strings.Repeat("ab", testSentryPublicKeySize(t)),
 		}}); err != nil {
 			t.Fatalf("SyncDiscovered() error = %v", err)
 		}
@@ -102,7 +102,7 @@ func TestCmdSentryListHidesEndpointSyncedRecordName(t *testing.T) {
 			t.Fatalf("list output exposed generated record name %q:\n%s", generatedName, listOut)
 		}
 		if !strings.Contains(listOut, componentKey) ||
-			!strings.Contains(listOut, keytypes.SentryComponentEd25519V1) ||
+			!strings.Contains(listOut, keytypes.SentryComponentFalcon1024V1) ||
 			!strings.Contains(listOut, "endpoint: foo") {
 			t.Fatalf("list output = %q, want Sentry Key ID, key type, and endpoint alias", listOut)
 		}
@@ -111,15 +111,15 @@ func TestCmdSentryListHidesEndpointSyncedRecordName(t *testing.T) {
 
 func testSentryExportJSON(t *testing.T) []byte {
 	t.Helper()
-	pub := make([]byte, 32)
+	pub := make([]byte, testSentryPublicKeySize(t))
 	for i := range pub {
 		pub[i] = 0xab
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, pub)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, pub)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	env, err := sentryrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentEd25519V1, strings.Repeat("ab", 32))
+	env, err := sentryrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentFalcon1024V1, strings.Repeat("ab", testSentryPublicKeySize(t)))
 	if err != nil {
 		t.Fatalf("NewExportEnvelope() error = %v", err)
 	}
@@ -128,4 +128,13 @@ func testSentryExportJSON(t *testing.T) []byte {
 		t.Fatalf("Marshal(export) error = %v", err)
 	}
 	return data
+}
+
+func testSentryPublicKeySize(t *testing.T) int {
+	t.Helper()
+	size, ok := keytypes.ComponentPublicKeySize(keytypes.SentryComponentFalcon1024V1)
+	if !ok {
+		t.Fatal("Falcon sentry public-key size is unavailable")
+	}
+	return size
 }

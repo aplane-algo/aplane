@@ -6,7 +6,6 @@ package signing
 import (
 	"bytes"
 	"context"
-	stded25519 "crypto/ed25519"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -75,9 +74,7 @@ type guardedSimulateFixture struct {
 func newGuardedSimulateFixture(t *testing.T, baseKeyType string) *guardedSimulateFixture {
 	t.Helper()
 
-	sentrySeed := bytes.Repeat([]byte{0x61}, stded25519.SeedSize)
-	sentryPrivateKey := stded25519.NewKeyFromSeed(sentrySeed)
-	sentryPublicKey := append([]byte(nil), sentryPrivateKey.Public().(stded25519.PublicKey)...)
+	sentryPublicKey, sentryPrivateKey := testFalconComponentKeypair(t, 0x61)
 
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x62}, 64))
 	if err != nil {
@@ -96,7 +93,10 @@ func newGuardedSimulateFixture(t *testing.T, baseKeyType string) *guardedSimulat
 	}
 
 	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	sentrySignature := stded25519.Sign(sentryPrivateKey, sentryMsg[:])
+	sentrySignature, err := signerops.New(nil).Sign(sentryPrivateKey, sentryMsg[:])
+	if err != nil {
+		t.Fatalf("Sign(sentry) error = %v", err)
+	}
 	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txns[1], Sig: types.Signature{0x01}})
 
 	privateKeyCopy := append([]byte(nil), userPrivateKey...)
@@ -115,7 +115,7 @@ func newGuardedSimulateFixture(t *testing.T, baseKeyType string) *guardedSimulat
 		passthroughHex:     hex.EncodeToString(passthroughBytes),
 		freshKey: func() *coresigning.KeyMaterial {
 			return &coresigning.KeyMaterial{
-				Type:                   keytypes.GuardedFalcon1024SentryEd25519V1,
+				Type:                   keytypes.GuardedFalcon1024SentryFalcon1024V1,
 				Category:               keys.CategoryDSALsig,
 				BaseKeyType:            baseKeyType,
 				PublicKey:              append([]byte(nil), publicKeyCopy...),

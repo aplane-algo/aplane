@@ -433,8 +433,6 @@ func replaceSentryPublicKeyParam(params []signerapi.CreationParamInfo, replaceme
 
 func sentryComponentKeyTypeMetadata(keyType string) (family, displayName, description string) {
 	switch keyType {
-	case keytypes.SentryComponentEd25519V1:
-		return "sentry-ed25519", "Sentry Ed25519 key", "Raw Ed25519 sentry signing key for sentry-role component signatures"
 	case keytypes.SentryComponentFalcon1024V1:
 		return "sentry-falcon1024", "Sentry Falcon-1024 key", "Raw Falcon-1024 sentry signing key for sentry-role component signatures"
 	default:

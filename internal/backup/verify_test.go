@@ -5,7 +5,6 @@ package backup
 
 import (
 	"bytes"
-	stded25519 "crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -23,6 +22,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
 	"github.com/aplane-algo/aplane/internal/templatestore"
+	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 
 	sdkcrypto "github.com/algorand/go-algorand-sdk/v2/crypto"
 	"github.com/algorand/go-algorand-sdk/v2/types"
@@ -60,15 +61,18 @@ func TestDeepVerifyBackupValidStandaloneFile(t *testing.T) {
 }
 
 func TestDeepVerifyBackupValidComponentKeyFile(t *testing.T) {
+	falconkeygen.RegisterSentryComponents()
 	backupRoot := t.TempDir()
 	keysDir := filepath.Join(backupRoot, "apb")
-	privateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0xcd}, stded25519.SeedSize))
-	publicKey := privateKey.Public().(stded25519.PublicKey)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0xcd}, 64))
+	if err != nil {
+		t.Fatalf("GenerateKeypair() error = %v", err)
+	}
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	payload := utilkeys.NewComponentPayload(keytypes.SentryComponentEd25519V1, publicKey, privateKey)
+	payload := utilkeys.NewComponentPayload(keytypes.SentryComponentFalcon1024V1, publicKey, privateKey)
 	keyJSON, err := utilkeys.MarshalPayload(payload)
 	if err != nil {
 		t.Fatalf("MarshalPayload(component) error = %v", err)
@@ -87,8 +91,8 @@ func TestDeepVerifyBackupValidComponentKeyFile(t *testing.T) {
 	if report.TotalFiles != 1 || report.ValidFiles != 1 || report.FailedFiles != 0 {
 		t.Fatalf("report counts = %+v, want 1 valid component file", *report)
 	}
-	if report.Results[0].KeyType != keytypes.SentryComponentEd25519V1 {
-		t.Fatalf("KeyType = %q, want %s", report.Results[0].KeyType, keytypes.SentryComponentEd25519V1)
+	if report.Results[0].KeyType != keytypes.SentryComponentFalcon1024V1 {
+		t.Fatalf("KeyType = %q, want %s", report.Results[0].KeyType, keytypes.SentryComponentFalcon1024V1)
 	}
 }
 

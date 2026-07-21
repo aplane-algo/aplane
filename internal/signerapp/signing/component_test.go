@@ -6,7 +6,6 @@ package signing
 import (
 	"bytes"
 	"context"
-	stded25519 "crypto/ed25519"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -116,7 +115,7 @@ func TestPrepareComponentSigningUsesSentryRoleDomain(t *testing.T) {
 
 	req := signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}
@@ -188,7 +187,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 
 	_, err := (&Service{}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, nil)
@@ -210,7 +209,7 @@ func TestSigningServiceSignComponentDispatchesAfterValidation(t *testing.T) {
 }
 
 func TestSignComponentSentryRequiresPolicyBeforeKeyLoad(t *testing.T) {
-	componentKey := testEd25519ComponentSelector(t, 0xab)
+	componentKey := testFalconComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{20}.String(), types.Address{21}.String(), 1)
 	store := &componentKeyStore{}
 
@@ -234,7 +233,7 @@ func TestSignComponentSentryRequiresPolicyBeforeKeyLoad(t *testing.T) {
 
 func TestSignComponentSentryRequiresTransferPolicyBeforeKeyLoad(t *testing.T) {
 	cfg := sentryPolicyConfigForSigningTest(t, `{}`)
-	componentKey := testEd25519ComponentSelector(t, 0xab)
+	componentKey := testFalconComponentSelector(t, 0xab)
 	txn := testnetPaymentTransaction(t, types.Address{22}.String(), types.Address{23}.String(), 1)
 	store := &componentKeyStore{}
 
@@ -274,7 +273,7 @@ func TestSignComponentSentryRejectsNonTransferBeforeKeyLoad(t *testing.T) {
 	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-sentry-appl",
 		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -300,7 +299,7 @@ func TestSignComponentSentryRejectsRouteMissBeforeKeyLoad(t *testing.T) {
 	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-sentry-route-miss",
 		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -319,8 +318,8 @@ func TestSentryComponentPolicyUsesComponentKeyOverride(t *testing.T) {
 	source := types.Address{25}.String()
 	baseDest := types.Address{26}.String()
 	overrideDest := types.Address{27}.String()
-	componentKey := testEd25519ComponentSelector(t, 0xab)
-	otherComponentKey := testEd25519ComponentSelector(t, 0xcd)
+	componentKey := testFalconComponentSelector(t, 0xab)
+	otherComponentKey := testFalconComponentSelector(t, 0xcd)
 	cfg := sentryPolicyConfigForSigningTest(t, fmt.Sprintf(`
 transfer_policy:
   schema_version: 1
@@ -379,7 +378,7 @@ transfer_policy:
 	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-sentry-review-route-miss",
 		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -417,7 +416,7 @@ transfer_policy:
 	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-sentry-review-above",
 		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -446,7 +445,7 @@ func TestSignComponentSentryRejectsRekeyBeforeKeyLoad(t *testing.T) {
 	}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-sentry-rekey",
 		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  testEd25519ComponentSelector(t, 0xab),
+		ComponentKey:  testFalconComponentSelector(t, 0xab),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -468,10 +467,8 @@ func TestSignComponentSentryRejectsRekeyBeforeKeyLoad(t *testing.T) {
 }
 
 func TestSignComponentSentryAllowsExplicitRekeyPolicy(t *testing.T) {
-	seed := bytes.Repeat([]byte{0x62}, stded25519.SeedSize)
-	privateKey := stded25519.NewKeyFromSeed(seed)
-	publicKey := append([]byte(nil), privateKey.Public().(stded25519.PublicKey)...)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	publicKey, privateKey := testFalconComponentKeypair(t, 0x62)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
@@ -491,7 +488,7 @@ rekey_policy:
 	txn := testnetPaymentTransaction(t, source.String(), source.String(), 0)
 	txn.RekeyTo = target
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.SentryComponentEd25519V1,
+		Type:     keytypes.SentryComponentFalcon1024V1,
 		Category: keys.CategoryComponent,
 		Value: &coresigning.ComponentKeyMaterial{
 			ComponentKey: componentKey,
@@ -540,7 +537,7 @@ rekey_policy:
 	_, err := (&Service{SentryPolicy: cfg}).SignComponentWithContext(context.Background(), "default", signerapi.ComponentSignRequest{
 		RequestID:     "cmp-sentry-rekey-deny",
 		Role:          signerapi.ComponentSignRoleSentry,
-		ComponentKey:  testEd25519ComponentSelector(t, 0xbb),
+		ComponentKey:  testFalconComponentSelector(t, 0xbb),
 		GroupBytesHex: []string{txnutil.EncodeWithPrefixHex(txn)},
 		TargetIndices: []int{0},
 	}, newComponentKeySession(store))
@@ -556,10 +553,8 @@ rekey_policy:
 }
 
 func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
-	seed := bytes.Repeat([]byte{0x61}, stded25519.SeedSize)
-	privateKey := stded25519.NewKeyFromSeed(seed)
-	publicKey := append([]byte(nil), privateKey.Public().(stded25519.PublicKey)...)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	publicKey, privateKey := testFalconComponentKeypair(t, 0x61)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
@@ -568,7 +563,7 @@ func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
 	dest := types.Address{32}.String()
 	txn := testnetPaymentTransaction(t, source, dest, 1)
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.SentryComponentEd25519V1,
+		Type:     keytypes.SentryComponentFalcon1024V1,
 		Category: keys.CategoryComponent,
 		Value: &coresigning.ComponentKeyMaterial{
 			ComponentKey: componentKey,
@@ -612,7 +607,7 @@ func TestSignComponentSentryPolicyAllowsSigning(t *testing.T) {
 	if prepErr != nil {
 		t.Fatalf("PrepareComponentSigning() error = %v", prepErr)
 	}
-	if !stded25519.Verify(stded25519.PublicKey(publicKey), plan.Targets[0].Message[:], sigBytes) {
+	if err := verify.VerifyFalcon1024(publicKey, plan.Targets[0].Message[:], sigBytes); err != nil {
 		t.Fatal("sentry signature does not verify over component message")
 	}
 	if len(audit.approved) != 1 || audit.approved[0].authAddress != componentKey {
@@ -640,7 +635,7 @@ func TestSignPreparedUserComponentsSignsGuardedAccountMessages(t *testing.T) {
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:        keytypes.GuardedFalcon1024SentryEd25519V1,
+		Type:        keytypes.GuardedFalcon1024SentryFalcon1024V1,
 		Category:    keys.CategoryDSALsig,
 		BaseKeyType: baseKeyType,
 		Bytecode:    []byte{0x01, 0x02, 0x03},
@@ -711,7 +706,7 @@ func TestSignPreparedUserComponentsSignsGuardedAuthorizerMessages(t *testing.T) 
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:        keytypes.GuardedFalcon1024SentryEd25519V1,
+		Type:        keytypes.GuardedFalcon1024SentryFalcon1024V1,
 		Category:    keys.CategoryDSALsig,
 		BaseKeyType: baseKeyType,
 		Bytecode:    []byte{0x01, 0x02, 0x04},
@@ -771,9 +766,7 @@ func TestSigningServiceAssembleGuardedDispatchesAfterValidation(t *testing.T) {
 }
 
 func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
-	sentrySeed := bytes.Repeat([]byte{0x52}, stded25519.SeedSize)
-	sentryPrivateKey := stded25519.NewKeyFromSeed(sentrySeed)
-	sentryPublicKey := append([]byte(nil), sentryPrivateKey.Public().(stded25519.PublicKey)...)
+	sentryPublicKey, sentryPrivateKey := testFalconComponentKeypair(t, 0x52)
 
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x53}, 64))
 	if err != nil {
@@ -796,11 +789,14 @@ func TestAssembleDecodedGuardedVerifiesAndBuildsSignedGroup(t *testing.T) {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
 	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	sentrySignature := stded25519.Sign(sentryPrivateKey, sentryMsg[:])
+	sentrySignature, err := signerops.New(nil).Sign(sentryPrivateKey, sentryMsg[:])
+	if err != nil {
+		t.Fatalf("Sign(sentry) error = %v", err)
+	}
 	passthroughBytes := msgpack.Encode(types.SignedTxn{Txn: txns[1], Sig: types.Signature{0x01}})
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024SentryEd25519V1,
+		Type:                   keytypes.GuardedFalcon1024SentryFalcon1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
@@ -1070,9 +1066,8 @@ func TestAssembleDecodedGuardedBuildsCorridorProofArg(t *testing.T) {
 }
 
 func TestAssembleDecodedGuardedRejectsWrongSentrySignature(t *testing.T) {
-	sentryPrivateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x54}, stded25519.SeedSize))
-	wrongPrivateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x55}, stded25519.SeedSize))
-	sentryPublicKey := append([]byte(nil), sentryPrivateKey.Public().(stded25519.PublicKey)...)
+	sentryPublicKey, _ := testFalconComponentKeypair(t, 0x54)
+	_, wrongPrivateKey := testFalconComponentKeypair(t, 0x55)
 
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x56}, 64))
 	if err != nil {
@@ -1093,10 +1088,13 @@ func TestAssembleDecodedGuardedRejectsWrongSentrySignature(t *testing.T) {
 		t.Fatalf("Sign(user) error = %v", err)
 	}
 	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	wrongSignature := stded25519.Sign(wrongPrivateKey, sentryMsg[:])
+	wrongSignature, err := signerops.New(nil).Sign(wrongPrivateKey, sentryMsg[:])
+	if err != nil {
+		t.Fatalf("Sign(wrong sentry) error = %v", err)
+	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024SentryEd25519V1,
+		Type:                   keytypes.GuardedFalcon1024SentryFalcon1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
@@ -1129,8 +1127,7 @@ func TestAssembleDecodedGuardedRejectsWrongSentrySignature(t *testing.T) {
 }
 
 func TestAssembleDecodedGuardedRejectsWrongUserSignature(t *testing.T) {
-	sentryPrivateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x57}, stded25519.SeedSize))
-	sentryPublicKey := append([]byte(nil), sentryPrivateKey.Public().(stded25519.PublicKey)...)
+	sentryPublicKey, sentryPrivateKey := testFalconComponentKeypair(t, 0x57)
 
 	userPublicKey, userPrivateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x58}, 64))
 	if err != nil {
@@ -1155,10 +1152,13 @@ func TestAssembleDecodedGuardedRejectsWrongUserSignature(t *testing.T) {
 		t.Fatalf("Sign(wrong user) error = %v", err)
 	}
 	sentryMsg := message.ComponentMessage(message.RoleSentry, group.Entries[0].TxID)
-	sentrySignature := stded25519.Sign(sentryPrivateKey, sentryMsg[:])
+	sentrySignature, err := signerops.New(nil).Sign(sentryPrivateKey, sentryMsg[:])
+	if err != nil {
+		t.Fatalf("Sign(sentry) error = %v", err)
+	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:                   keytypes.GuardedFalcon1024SentryEd25519V1,
+		Type:                   keytypes.GuardedFalcon1024SentryFalcon1024V1,
 		Category:               keys.CategoryDSALsig,
 		BaseKeyType:            falcon1024guarded.BaseKeyType,
 		PublicKey:              append([]byte(nil), userPublicKey...),
@@ -1220,17 +1220,16 @@ func TestAssembleDecodedGuardedRejectsMismatchedPassthrough(t *testing.T) {
 	}
 }
 
-func TestSignPreparedSentryComponentsSignsEd25519Messages(t *testing.T) {
-	seed := bytes.Repeat([]byte{0x42}, stded25519.SeedSize)
-	privateKey := stded25519.NewKeyFromSeed(seed)
-	publicKey := append([]byte(nil), privateKey.Public().(stded25519.PublicKey)...)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+func TestSignPreparedSentryComponentsSignsFalconMessages(t *testing.T) {
+	falconkeygen.RegisterSentryComponents()
+	publicKey, privateKey := testFalconComponentKeypair(t, 0x42)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.SentryComponentEd25519V1,
+		Type:     keytypes.SentryComponentFalcon1024V1,
 		Category: keys.CategoryComponent,
 		Value: &coresigning.ComponentKeyMaterial{
 			ComponentKey: componentKey,
@@ -1258,14 +1257,14 @@ func TestSignPreparedSentryComponentsSignsEd25519Messages(t *testing.T) {
 		if sig.TargetIndex != plan.Targets[i].TargetIndex {
 			t.Fatalf("signature %d target index = %d, want %d", i, sig.TargetIndex, plan.Targets[i].TargetIndex)
 		}
-		if sig.SignatureScheme != keytypes.SentryComponentEd25519V1 {
-			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, keytypes.SentryComponentEd25519V1)
+		if sig.SignatureScheme != keytypes.SentryComponentFalcon1024V1 {
+			t.Fatalf("signature scheme = %q, want %s", sig.SignatureScheme, keytypes.SentryComponentFalcon1024V1)
 		}
 		sigBytes, err := hex.DecodeString(sig.Signature)
 		if err != nil {
 			t.Fatalf("DecodeString(signature) error = %v", err)
 		}
-		if !stded25519.Verify(stded25519.PublicKey(publicKey), plan.Targets[i].Message[:], sigBytes) {
+		if err := verify.VerifyFalcon1024(publicKey, plan.Targets[i].Message[:], sigBytes); err != nil {
 			t.Fatalf("signature %d does not verify over prepared component message", i)
 		}
 	}
@@ -1363,7 +1362,7 @@ func TestSignPreparedSentryComponentsRejectsUserRoleBeforeKeyLoad(t *testing.T) 
 }
 
 func TestSignPreparedSentryComponentsRejectsWrongKeyType(t *testing.T) {
-	plan := preparedSentryComponentPlan(t, testEd25519ComponentSelector(t, 0x11))
+	plan := preparedSentryComponentPlan(t, testFalconComponentSelector(t, 0x11))
 	session := &componentKeyTestSession{key: &coresigning.KeyMaterial{Type: "ed25519"}}
 
 	_, err := signPreparedSentryComponents(context.Background(), plan, session)
@@ -1476,14 +1475,24 @@ func preparedSentryComponentPlan(t *testing.T, componentKey string) *ComponentSi
 	return plan
 }
 
-func testEd25519ComponentSelector(t *testing.T, fill byte) string {
+func testFalconComponentSelector(t *testing.T, fill byte) string {
 	t.Helper()
-	publicKey := bytes.Repeat([]byte{fill}, stded25519.PublicKeySize)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	publicKey := bytes.Repeat([]byte{fill}, falconfamily.PublicKeySize)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 	return componentKey
+}
+
+func testFalconComponentKeypair(t *testing.T, fill byte) ([]byte, []byte) {
+	t.Helper()
+	falconkeygen.RegisterSentryComponents()
+	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
+	if err != nil {
+		t.Fatalf("GenerateKeypair() error = %v", err)
+	}
+	return publicKey, privateKey
 }
 
 type componentKeyTestSession struct {
@@ -1586,22 +1595,22 @@ func (p *componentUserTestProvider) ZeroKey(key *coresigning.KeyMaterial) {
 
 func TestLoadSentryComponentKeyMapsMissingKey(t *testing.T) {
 	session := &componentKeyTestSession{err: keystore.ErrKeyNotFound}
-	_, _, err := loadSentryComponentKey(context.Background(), session, testEd25519ComponentSelector(t, 0x22))
+	_, _, err := loadSentryComponentKey(context.Background(), session, testFalconComponentSelector(t, 0x22))
 	if err == nil || err.Kind != ErrorBadRequest {
 		t.Fatalf("loadSentryComponentKey() error = %#v, want bad request", err)
 	}
 }
 
 func TestLoadSentryComponentKeyRejectsMismatchedPublicPrivateKey(t *testing.T) {
-	privateKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x44}, stded25519.SeedSize))
-	wrongPublicKey := stded25519.NewKeyFromSeed(bytes.Repeat([]byte{0x45}, stded25519.SeedSize)).Public().(stded25519.PublicKey)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, wrongPublicKey)
+	_, privateKey := testFalconComponentKeypair(t, 0x44)
+	wrongPublicKey, _ := testFalconComponentKeypair(t, 0x45)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, wrongPublicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
 	keyMaterial := &coresigning.KeyMaterial{
-		Type:     keytypes.SentryComponentEd25519V1,
+		Type:     keytypes.SentryComponentFalcon1024V1,
 		Category: keys.CategoryComponent,
 		Value: &coresigning.ComponentKeyMaterial{
 			ComponentKey: componentKey,
@@ -1648,7 +1657,7 @@ func TestValidateGuardedPassthroughRequiresSignatureAndCanonical(t *testing.T) {
 	// A passthrough whose sender is a locally-held guarded account is rejected:
 	// it must go through component assembly, not passthrough.
 	guardedSession := &componentKeyTestSession{keysByAddr: map[string]*coresigning.KeyMaterial{
-		sender: {Type: keytypes.GuardedFalcon1024SentryEd25519V1},
+		sender: {Type: keytypes.GuardedFalcon1024SentryFalcon1024V1},
 	}}
 	if _, err := validateGuardedPassthrough(context.Background(), signerapi.GuardedPassthroughItem{TargetIndex: 0, SignedTxnHex: signed}, entry, guardedSession); err == nil {
 		t.Fatal("guarded-account passthrough: expected rejection, got nil")

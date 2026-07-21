@@ -7,9 +7,11 @@
 package keystest
 
 import (
-	"crypto/ed25519"
+	"fmt"
+	"sync"
 	"testing"
 
+	"github.com/algorandfoundation/falcon-signatures/falcongo"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 
@@ -43,24 +45,53 @@ func DSALSigKeyJSON(t testing.TB, keyType, baseKeyType string, publicKey, privat
 	return marshal(t, payload, "dsa_lsig")
 }
 
-// SentryComponentEd25519KeyJSON returns a deterministic canonical sentry
-// ed25519 component payload (seed is 32 bytes of seedFill) and its Sentry Key
-// ID selector.
-func SentryComponentEd25519KeyJSON(t testing.TB, seedFill byte) (componentKey string, keyJSON []byte) {
+// SentryComponentFalcon1024KeyJSON returns a deterministic canonical Falcon
+// sentry component payload and its Sentry Key ID selector.
+func SentryComponentFalcon1024KeyJSON(t testing.TB, seedFill byte) (componentKey string, keyJSON []byte) {
 	t.Helper()
-	seed := make([]byte, ed25519.SeedSize)
+	registerFalconComponentValidator.Do(func() {
+		keytypes.RegisterComponentPairValidator(keytypes.SentryComponentFalcon1024V1, validateFalconComponentPair)
+	})
+	seed := make([]byte, 48)
 	for i := range seed {
 		seed[i] = seedFill
 	}
-	privateKey := ed25519.NewKeyFromSeed(seed)
-	publicKey := privateKey.Public().(ed25519.PublicKey)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	keyPair, err := falcongo.GenerateKeyPair(seed)
+	if err != nil {
+		t.Fatalf("GenerateKeyPair() error = %v", err)
+	}
+	publicKey := append([]byte(nil), keyPair.PublicKey[:]...)
+	privateKey := append([]byte(nil), keyPair.PrivateKey[:]...)
+	componentKey, err = keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	payload := keys.NewComponentPayload(keytypes.SentryComponentEd25519V1, publicKey, privateKey)
+	payload := keys.NewComponentPayload(keytypes.SentryComponentFalcon1024V1, publicKey, privateKey)
 	defer payload.ZeroSecrets()
 	return componentKey, marshal(t, payload, "component")
+}
+
+var registerFalconComponentValidator sync.Once
+
+func validateFalconComponentPair(publicKey, privateKey []byte) error {
+	if len(publicKey) != keytypes.Falcon1024PublicKeySize {
+		return fmt.Errorf("invalid Falcon public key length %d", len(publicKey))
+	}
+	var keyPair falcongo.KeyPair
+	if len(privateKey) != len(keyPair.PrivateKey) {
+		return fmt.Errorf("invalid Falcon private key length %d", len(privateKey))
+	}
+	copy(keyPair.PublicKey[:], publicKey)
+	copy(keyPair.PrivateKey[:], privateKey)
+	message := []byte("APLANE_COMPONENT_KEY_TEST_V1")
+	signature, err := keyPair.Sign(message)
+	if err != nil {
+		return err
+	}
+	if err := falcongo.Verify(message, signature, keyPair.PublicKey); err != nil {
+		return fmt.Errorf("sentry public key does not match private key")
+	}
+	return nil
 }
 
 func marshal(t testing.TB, payload *keys.Payload, kind string) []byte {

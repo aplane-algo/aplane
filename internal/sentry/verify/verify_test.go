@@ -4,27 +4,10 @@
 package verify
 
 import (
-	"crypto/ed25519"
 	"testing"
 
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
 )
-
-func TestVerifyEd25519(t *testing.T) {
-	pub, priv, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
-	msg := []byte("message")
-	sig := ed25519.Sign(priv, msg)
-	if err := VerifyEd25519(pub, msg, sig); err != nil {
-		t.Fatalf("VerifyEd25519() error = %v", err)
-	}
-	sig[0] ^= 0xff
-	if err := VerifyEd25519(pub, msg, sig); err == nil {
-		t.Fatal("VerifyEd25519() accepted tampered signature")
-	}
-}
 
 func TestVerifyFalcon1024(t *testing.T) {
 	seed := make([]byte, 48)

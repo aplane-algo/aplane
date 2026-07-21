@@ -35,13 +35,10 @@ func TestGetGeneratorRequiresExactSentryKeyTypeRegistration(t *testing.T) {
 	registry = &GeneratorRegistry{generators: make(map[string]Generator)}
 	defer func() { registry = original }()
 
-	Register(&registryTestGenerator{family: "sentry-ed25519"})
 	Register(&registryTestGenerator{family: "falcon1024"})
 
 	tests := []string{
-		keytypes.SentryComponentEd25519V1,
 		keytypes.SentryComponentFalcon1024V1,
-		keytypes.GuardedFalcon1024SentryEd25519V1,
 		keytypes.GuardedFalcon1024SentryFalcon1024V1,
 		keytypes.CorridorV1,
 	}
@@ -63,24 +60,14 @@ func TestGetGeneratorAllowsExactSentryKeyTypeRegistration(t *testing.T) {
 	registry = &GeneratorRegistry{generators: make(map[string]Generator)}
 	defer func() { registry = original }()
 
-	exact := &registryTestGenerator{family: keytypes.SentryComponentEd25519V1}
+	exact := &registryTestGenerator{family: keytypes.SentryComponentFalcon1024V1}
 	Register(exact)
 
-	got, err := GetGenerator(keytypes.SentryComponentEd25519V1)
+	got, err := GetGenerator(keytypes.SentryComponentFalcon1024V1)
 	if err != nil {
 		t.Fatalf("GetGenerator() error = %v", err)
 	}
 	if got != exact {
 		t.Fatalf("GetGenerator() = %#v, want exact generator", got)
-	}
-
-	falconExact := &registryTestGenerator{family: keytypes.SentryComponentFalcon1024V1}
-	Register(falconExact)
-	got, err = GetGenerator(keytypes.SentryComponentFalcon1024V1)
-	if err != nil {
-		t.Fatalf("GetGenerator(falcon) error = %v", err)
-	}
-	if got != falconExact {
-		t.Fatalf("GetGenerator(falcon) = %#v, want exact generator", got)
 	}
 }
