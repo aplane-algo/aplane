@@ -34,10 +34,10 @@ func TestKeyTypePathsAreIdentityScoped(t *testing.T) {
 		t.Fatalf("KeyTypeRecordsDir() = %q, want %q", gotDir, wantDir)
 	}
 
-	if gotFile := paths.KeyTypeRecord("default", "aplane.falcon1024_ed25519.v1"); gotFile != filepath.Join(wantDir, "aplane.falcon1024_ed25519.v1.json") {
+	if gotFile := paths.KeyTypeRecord("default", "aplane.ed25519.v1"); gotFile != filepath.Join(wantDir, "aplane.ed25519.v1.json") {
 		t.Fatalf("KeyTypeRecord() = %q", gotFile)
 	}
-	if gotFile := paths.KeyTypeTemplate("default", "aplane.allowlist.v1"); gotFile != filepath.Join(wantDir, "aplane.allowlist.v1.template") {
+	if gotFile := paths.KeyTypeTemplate("default", "test.generic-policy.v1"); gotFile != filepath.Join(wantDir, "test.generic-policy.v1.template") {
 		t.Fatalf("KeyTypeTemplate() = %q", gotFile)
 	}
 }
@@ -51,8 +51,8 @@ func TestDeletedPathsAreIdentityScoped(t *testing.T) {
 	if got, want := paths.DeletedKeysDir("default"), filepath.Join(identityDir, "deleted", "keys"); got != want {
 		t.Fatalf("DeletedKeysDir() = %q, want %q", got, want)
 	}
-	got := paths.DeletedKeyTypeTemplate("default", "aplane.allowlist.v1")
-	want := filepath.Join(identityDir, "deleted", "keytypes", "aplane.allowlist.v1.template")
+	got := paths.DeletedKeyTypeTemplate("default", "test.generic-policy.v1")
+	want := filepath.Join(identityDir, "deleted", "keytypes", "test.generic-policy.v1.template")
 	if got != want {
 		t.Fatalf("DeletedKeyTypeTemplate() = %q, want %q", got, want)
 	}

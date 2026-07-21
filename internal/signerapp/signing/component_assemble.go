@@ -310,8 +310,6 @@ func signedTxnHasSignature(stxn types.SignedTxn) bool {
 
 func verifySentryAssemblySignature(componentKeyType string, publicKey, msg, signature []byte) error {
 	switch componentKeyType {
-	case keytypes.SentryComponentEd25519V1:
-		return sentryverify.VerifyEd25519(publicKey, msg, signature)
 	case keytypes.SentryComponentFalcon1024V1:
 		return sentryverify.VerifyFalcon1024(publicKey, msg, signature)
 	default:

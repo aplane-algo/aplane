@@ -19,7 +19,7 @@ authorities:
 |---|---|---|
 | **Native** | Standard protocol account signature without a LogicSig. | `ed25519` |
 | **DSA LogicSig** | A LogicSig verifies digital signatures and may add transaction policy. | `aplane.falcon1024.v1`, bounded allowlists, guarded accounts |
-| **Generic LogicSig** | TEAL-only account with no DSA private key. | `aplane.allowlist.v1`, `aplane.htlc.v1` |
+| **Generic LogicSig** | TEAL-only account with no DSA private key. | `aplane.htlc.v1` |
 
 DSA LogicSigs may use a **plain** signature-only program, a **bounded1** policy,
 an expert-mode **custom** schema-v1 composed policy, or a dedicated compiled
@@ -42,8 +42,8 @@ APlane has two optional key type paths:
 
 | Kind | Example | Where definition lives | How to enable |
 |---|---|---|---|
-| Compiled provider | `aplane.falcon1024_ed25519.v1` | Go code in the current binary | `apstore keytype enable` or apadmin KeyType Library |
-| YAML template | `aplane.allowlist.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apstore template import` or apadmin KeyType Library |
+| Compiled provider | `aplane.ed25519.v1` | Go code in the current binary | `apstore keytype enable` or apadmin KeyType Library |
+| YAML template | `aplane.htlc.v1` | Plaintext library YAML, then encrypted identity-local `.template` after import | `apstore template import` or apadmin KeyType Library |
 
 Default-enabled compiled providers, such as `ed25519` and
 `aplane.falcon1024.v1`, are available without extra steps.
@@ -87,11 +87,11 @@ Use `-d <path>` or `APSIGNER_DATA` to select the signer data directory:
 ```bash
 apstore -d $APSIGNER_DATA template list
 apstore -d $APSIGNER_DATA template show example.my_escrow.v1 --show-sensitive-template
-apstore -d $APSIGNER_DATA template import library/templates/aplane.allowlist.v1.yaml
-apstore -d $APSIGNER_DATA template import library/templates/aplane.ed25519-allowlist.v1.yaml
+apstore -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
+apstore -d $APSIGNER_DATA template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 apstore -d $APSIGNER_DATA template remove example.my_escrow.v1
-apstore -d $APSIGNER_DATA keytype enable aplane.falcon1024_ed25519.v1
-apstore -d $APSIGNER_DATA keytype disable aplane.falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
+apstore -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
 ```
 
 In `apadmin`, the KeyType Library presents both library-visible compiled
@@ -108,7 +108,7 @@ generate <key_type> [param=value ...]
 
 `keytypes` lists only key types currently exposed by the connected signer.
 Use the full canonical key type shown by `keytypes`, for example
-`aplane.timed-allowlist.v1` or `example.my_escrow.v1`. Files, IPC/HTTP
+`aplane.htlc.v1` or `example.my_escrow.v1`. Files, IPC/HTTP
 responses, and JSON fields use the same canonical `publisher.family.vN`
 identifier.
 
@@ -121,13 +121,11 @@ enablement.
 Enable a library-visible compiled provider:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype enable aplane.falcon1024_ed25519.v1
 apstore -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
 ```
 
-Other library-visible compiled providers include `aplane.ecdsak1.v1` and the
-guarded account key types `aplane.falcon1024-sentry-ed25519.v1`,
-`aplane.falcon1024-sentry-falcon1024.v1`, and `aplane.corridor.v1`.
+Other library-visible compiled providers include the guarded account key types
+`aplane.falcon1024-sentry1024.v1` and `aplane.corridor.v1`.
 `aplane.ed25519.v1` is the LogicSig-wrapped Ed25519 provider; native
 `ed25519` remains default-enabled and does not need this activation step.
 After activation, `aplane.ed25519.v1` also supports mnemonic import.
@@ -142,7 +140,7 @@ with:
 
 ```json
 {
-  "key_type": "aplane.falcon1024_ed25519.v1",
+  "key_type": "aplane.ed25519.v1",
   "source": "compiled",
   "state": "enabled",
   "fingerprint": "1:<behavior-only sha256 hex>",
@@ -153,7 +151,7 @@ with:
 Disable a library-visible compiled provider:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype disable aplane.falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype disable aplane.ed25519.v1
 ```
 
 Disabling removes the identity enablement record after checking that no
@@ -162,9 +160,9 @@ existing keys use that key type.
 `keytype enable` can also re-enable an already-installed disabled YAML template.
 It does not import a new YAML source; use `template import` for that.
 
-## Falcon Admin Allowlist
+## Falcon Rekey-Locked Allowlist
 
-`aplane.falcon1024-admin-allowlist.v1` is the framework-owned transaction
+`aplane.falcon1024-allowlist-alock.v1` is the framework-owned transaction
 authorization account. It requires a Falcon spending signature on every
 transaction and a separate external Falcon contract-admin signature for a
 pure rekey. Its on-chain policy permits only ALGO payments and ASA transfers,
@@ -184,7 +182,7 @@ apbounded-admin generate --out /media/cold/bounded-admin
 ```
 
 Use the generated result's `public_key_hex` as the Contract Admin Public Key
-when generating `aplane.falcon1024-admin-allowlist.v1` in apadmin. Keep the
+when generating `aplane.falcon1024-allowlist-alock.v1` in apadmin. Keep the
 `.apbounded-admin-key` artifact outside the signer. Ordinary spends use the
 normal client flow. Rekey with the dedicated helper:
 
@@ -223,7 +221,7 @@ library/templates/*.yaml
 Import a YAML template:
 
 ```bash
-apstore -d $APSIGNER_DATA template import library/templates/aplane.allowlist.v1.yaml
+apstore -d $APSIGNER_DATA template import library/templates/aplane.htlc.v1.yaml
 ```
 
 Import encrypts the YAML into the identity's keystore and enables the key type
@@ -231,7 +229,7 @@ for that identity.
 
 Fresh signer identities already include `aplane.falcon1024-allowlist.v1`;
 `template import` remains the path for existing identities that do not have it
-and for the other bundled templates such as `aplane.ed25519-allowlist.v1`.
+and for the other bundled templates such as `aplane.falcon1024-allowlist.v2`.
 
 Generated LogicSig keys store their salted bytecode and selected off-curve
 salt counter in the `.key` file. They also store the signing-argument schema
@@ -239,6 +237,12 @@ as `signing_args`. That schema is captured from the template/provider
 `runtime_args` when the key is created. The installed template is required for
 additional key creation and provenance checks, but not for signing an existing
 key.
+
+Removing a bundled YAML source or catalog row is therefore not a revocation
+mechanism. A previously created self-contained LogicSig key can continue to
+sign from its stored bytecode and durable signing metadata. Retiring an
+undeployed template means fresh stores no longer offer it; development stores
+that contain retired installed templates should be recreated.
 
 List installed templates:
 
@@ -301,7 +305,7 @@ the daemon reloads the identity runtime.
 Example:
 
 ```text
-conflicting compiled key type records ignored on reload: [aplane.falcon1024_ed25519.v1]
+conflicting compiled key type records ignored on reload: [aplane.ed25519.v1]
 ```
 
 This means the identity has an enabled compiled-provider state record whose
@@ -314,7 +318,7 @@ fingerprint is treated as benign (re-pinned), not a conflict.
 Refresh the enablement record:
 
 ```bash
-apstore -d $APSIGNER_DATA keytype enable aplane.falcon1024_ed25519.v1
+apstore -d $APSIGNER_DATA keytype enable aplane.ed25519.v1
 ```
 
 This updates the state-record fingerprint. It does not rewrite existing key
@@ -361,7 +365,7 @@ For example:
 ```text
 aplane.falcon1024.v1
 aplane.ed25519.v1
-aplane.allowlist.v1
+aplane.htlc.v1
 ```
 
 Use the full canonical key type in command input. On disk, in backups, in

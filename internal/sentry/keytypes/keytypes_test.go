@@ -4,8 +4,6 @@
 package keytypes
 
 import (
-	"bytes"
-	"crypto/ed25519"
 	"crypto/sha512"
 	"encoding/base32"
 	"strings"
@@ -16,16 +14,10 @@ import (
 )
 
 func TestSentryKeyTypeClassifiers(t *testing.T) {
-	if !IsSentryComponentKeyType(SentryComponentEd25519V1) {
-		t.Fatal("Ed25519 sentry key type was not classified as component")
-	}
 	if !IsSentryComponentKeyType(SentryComponentFalcon1024V1) {
 		t.Fatal("Falcon sentry key type was not classified as component")
 	}
-	if !IsGuardedAccountKeyType(GuardedFalcon1024SentryEd25519V1) {
-		t.Fatal("guarded Falcon account key type was not classified as guarded")
-	}
-	if !IsGuardedAccountKeyType(GuardedFalcon1024SentryFalcon1024V1) {
+	if !IsGuardedAccountKeyType(GuardedFalcon1024Sentry1024V1) {
 		t.Fatal("Falcon-guarded Falcon account key type was not classified as guarded")
 	}
 	if !IsGuardedAccountKeyType(CorridorV1) {
@@ -45,10 +37,9 @@ func TestSentryComponentKeyTypeForGuardedAccount(t *testing.T) {
 		want    string
 		ok      bool
 	}{
-		{GuardedFalcon1024SentryEd25519V1, SentryComponentEd25519V1, true},
-		{GuardedFalcon1024SentryFalcon1024V1, SentryComponentFalcon1024V1, true},
+		{GuardedFalcon1024Sentry1024V1, SentryComponentFalcon1024V1, true},
 		{CorridorV1, SentryComponentFalcon1024V1, true},
-		{SentryComponentEd25519V1, "", false},
+		{SentryComponentFalcon1024V1, "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.keyType, func(t *testing.T) {
@@ -61,31 +52,6 @@ func TestSentryComponentKeyTypeForGuardedAccount(t *testing.T) {
 }
 
 func TestComponentKeySelectorKnownVector(t *testing.T) {
-	pub := make([]byte, 32)
-	for i := range pub {
-		pub[i] = byte(i)
-	}
-
-	got, err := ComponentKeySelector(SentryComponentEd25519V1, pub)
-	if err != nil {
-		t.Fatalf("ComponentKeySelector() error = %v", err)
-	}
-	want := expectedComponentSelector(SentryComponentEd25519V1, pub)
-	if got != want {
-		t.Fatalf("ComponentKeySelector() = %q, want %q", got, want)
-	}
-	if len(got) != ComponentKeySelectorLength {
-		t.Fatalf("ComponentKeySelector() length = %d, want %d", len(got), ComponentKeySelectorLength)
-	}
-	if !IsComponentKeySelector(got) {
-		t.Fatalf("IsComponentKeySelector(%q) = false, want true", got)
-	}
-	if _, err := types.DecodeAddress(got); err == nil {
-		t.Fatalf("ComponentKeySelector() = %q decoded as an Algorand address", got)
-	}
-}
-
-func TestFalconComponentKeySelectorKnownVector(t *testing.T) {
 	pub := make([]byte, falconfamily.PublicKeySize)
 	for i := range pub {
 		pub[i] = byte(i)
@@ -105,10 +71,13 @@ func TestFalconComponentKeySelectorKnownVector(t *testing.T) {
 	if !IsComponentKeySelector(got) {
 		t.Fatalf("IsComponentKeySelector(%q) = false, want true", got)
 	}
+	if _, err := types.DecodeAddress(got); err == nil {
+		t.Fatalf("ComponentKeySelector() = %q decoded as an Algorand address", got)
+	}
 }
 
 func TestComponentKeySelectorRejectsNonComponentKeyType(t *testing.T) {
-	_, err := ComponentKeySelector(GuardedFalcon1024SentryEd25519V1, make([]byte, 32))
+	_, err := ComponentKeySelector(GuardedFalcon1024Sentry1024V1, make([]byte, 32))
 	if err == nil {
 		t.Fatal("ComponentKeySelector() accepted guarded account key type")
 	}
@@ -161,29 +130,4 @@ func expectedComponentSelector(keyType string, publicKey []byte) string {
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write(publicKey)
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(h.Sum(nil))
-}
-
-// TestValidateComponentPairEd25519RejectsSeedSuffixMismatch pins that the
-// built-in Ed25519 pair validator re-derives from the seed: a private key
-// whose suffix and the presented public key agree with each other but not
-// with the seed must be rejected.
-func TestValidateComponentPairEd25519RejectsSeedSuffixMismatch(t *testing.T) {
-	privA := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{1}, ed25519.SeedSize))
-	privB := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{2}, ed25519.SeedSize))
-	pubB := []byte(privB[ed25519.SeedSize:])
-
-	forged := append(append([]byte(nil), privA[:ed25519.SeedSize]...), pubB...)
-	err := ValidateComponentPair(SentryComponentEd25519V1, pubB, forged)
-	if err == nil || !strings.Contains(err.Error(), "suffix does not match its seed") {
-		t.Fatalf("ValidateComponentPair(forged) error = %v, want seed/suffix mismatch rejection", err)
-	}
-
-	err = ValidateComponentPair(SentryComponentEd25519V1, pubB, append([]byte(nil), privA...))
-	if err == nil || !strings.Contains(err.Error(), "public key does not match private key") {
-		t.Fatalf("ValidateComponentPair(wrong public) error = %v, want public-key mismatch rejection", err)
-	}
-
-	if err := ValidateComponentPair(SentryComponentEd25519V1, pubB, append([]byte(nil), privB...)); err != nil {
-		t.Fatalf("ValidateComponentPair(consistent pair) error = %v", err)
-	}
 }

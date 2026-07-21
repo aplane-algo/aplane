@@ -11,7 +11,7 @@ the three axes below (Resolve). This document is the cross-cutting view.
 ## The three axes
 
 A "key type" (e.g. `aplane.falcon1024.v1`, `aplane.corridor.v1`,
-`aplane.falcon1024-sentry-ed25519.v1`) is asked three different *kinds* of
+`aplane.falcon1024-sentry1024.v1`) is asked three different *kinds* of
 question, and each kind uses a different mechanism because each is callable from
 a different place.
 
@@ -79,10 +79,10 @@ Examples of the composed ontology:
 | `ed25519` | Native | n/a | none |
 | `aplane.falcon1024.v1` | DSA LogicSig | Plain DSA | none |
 | `aplane.falcon1024-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | none |
-| `aplane.falcon1024-admin-allowlist.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external contract-admin key for rekey |
-| `aplane.falcon1024-sentry-ed25519.v1` | DSA LogicSig | dedicated compiled guarded verifier | Ed25519 sentry component key |
+| `aplane.falcon1024-allowlist-alock.v1` | DSA LogicSig | Bounded DSA (`bounded1`) | external contract-admin key for rekey |
+| `aplane.falcon1024-sentry1024.v1` | DSA LogicSig | dedicated compiled guarded verifier | Falcon sentry component key |
 | `aplane.corridor.v1` | DSA LogicSig | dedicated compiled corridor policy | Falcon sentry component key |
-| `aplane.allowlist.v1` | Generic LogicSig | generic TEAL policy | none |
+| `aplane.htlc.v1` | Generic LogicSig | generic TEAL policy | none |
 
 ## Resolution, classification, and behavior
 
@@ -139,9 +139,9 @@ registry names:
 | `aplane.ed25519.v1` | Versioned concrete LogicSig DSA key type | Version 1 of the APlane Ed25519 LogicSig DSA provider. Users can enable/create/import this key type; it signs with Ed25519, but verification happens inside TEAL via `ed25519verify_bare`. |
 
 For composed templates, the key type's own label and its routing key can differ
-again: `aplane.ed25519-allowlist.v1` names the allowlist template, while its
-`RoutingFamily()` is `aplane.ed25519` because private-key operations delegate to
-the Ed25519 LogicSig base.
+again: `aplane.falcon1024-allowlist.v1` names the allowlist template, while its
+`RoutingFamily()` is `aplane.falcon1024` because private-key operations delegate
+to the Falcon LogicSig base.
 
 ---
 

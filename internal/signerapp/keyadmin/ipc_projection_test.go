@@ -84,12 +84,12 @@ func TestProjectDeleteIPC(t *testing.T) {
 func TestProjectListKeys(t *testing.T) {
 	keys, err := ProjectListKeys([]ListKeyInfo{
 		{Address: "A", KeyType: "ed25519"},
-		{Address: "B", KeyType: "aplane.timed-allowlist.v1", TemplateProvenanceStatus: "conflict", TemplateProvenanceNote: "changed"},
+		{Address: "B", KeyType: "test.timed-policy.v1", TemplateProvenanceStatus: "conflict", TemplateProvenanceNote: "changed"},
 	}, nil)
 	if err != nil {
 		t.Fatalf("ProjectListKeys() error = %v", err)
 	}
-	if len(keys) != 2 || keys[0].Address != "A" || keys[1].KeyType != "aplane.timed-allowlist.v1" {
+	if len(keys) != 2 || keys[0].Address != "A" || keys[1].KeyType != "test.timed-policy.v1" {
 		t.Fatalf("keys = %#v", keys)
 	}
 	if keys[1].TemplateProvenanceStatus != "conflict" || keys[1].TemplateProvenanceNote != "changed" {
@@ -106,7 +106,7 @@ func TestProjectListKeys(t *testing.T) {
 func TestProjectKeyDetailsIPC(t *testing.T) {
 	ok := ProjectKeyDetailsIPC(&KeyDetailsResult{
 		Address:      "ADDR",
-		KeyType:      "aplane.timed-allowlist.v1",
+		KeyType:      "test.timed-policy.v1",
 		PublicKeyHex: "aabbccdd",
 		Parameters:   map[string]string{"owner": "alice"},
 		DisplayTEAL:  "#pragma version 8",

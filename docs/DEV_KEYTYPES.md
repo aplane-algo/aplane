@@ -107,10 +107,10 @@ bare DSA versions may explicitly choose a reference layout such as a fixed
 means unsalted, explicit `derivation_version: 1` means generated marker,
 explicit `derivation_version: 2` means trailing dead-code `bytecblock`,
 `aplane.falcon1024.v1` uses the Algorand Foundation reference-compatible fixed
-`bytecblock` preamble, and `aplane.ecdsak1.v1` uses a fixed `bytecblock`
+`bytecblock` preamble, and `aplane.ed25519.v1` uses a fixed `bytecblock`
 preamble, while the guarded sentry and corridor providers
-(`aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`,
-`aplane.corridor.v1`) use the stack-neutral `pushbytes` marker preamble
+(`aplane.falcon1024-sentry1024.v1`, `aplane.corridor.v1`) use the
+stack-neutral `pushbytes` marker preamble
 (`lsigsalt.StylePushbytes`). User template TEAL cannot choose salt style, must remain relocatable,
 and must not depend on absolute constant-block layout or numeric `bytec`/`intc`
 indexes.
@@ -161,28 +161,20 @@ Go-defined key types:
 |---|---|---|---|---|
 | `ed25519` | Native signing key | Go-defined | default-enabled | `internal/signing/ed25519`, `internal/keygen/ed25519.go` |
 | `aplane.falcon1024.v1` | DSA LogicSig provider | Go-defined | default-enabled | `lsig/falcon1024/v1/standard.go` |
-| `aplane.sentry-ed25519.v1` | Sentry key | Go-defined | default-enabled | `internal/keygen/sentry_ed25519.go` |
 | `aplane.sentry-falcon1024.v1` | Sentry key | Go-defined | default-enabled | `lsig/falcon1024/keygen/sentry.go` |
-| `aplane.falcon1024-sentry-ed25519.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
-| `aplane.falcon1024-sentry-falcon1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
+| `aplane.falcon1024-sentry1024.v1` | Guarded-account DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_guarded` |
 | `aplane.corridor.v1` | Guarded-account DSA LogicSig provider with recipient corridor and sentry-authorized rekey path | Go-defined | library-visible | `lsig/corridor` |
-| `aplane.falcon1024_ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/falcon1024_ed25519` |
-| `aplane.ecdsak1.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ecdsak1` |
 | `aplane.ed25519.v1` | DSA LogicSig provider | Go-defined | library-visible | `lsig/ed25519lsig` |
 
 Compiled key types can be registered as binary capabilities without being
 default-visible for generation. Visibility is recorded in
-`internal/keytypecatalog`: `ed25519`, `aplane.falcon1024.v1`,
-`aplane.sentry-ed25519.v1`, and `aplane.sentry-falcon1024.v1` are
-default-enabled, while `aplane.falcon1024-sentry-ed25519.v1`,
-`aplane.falcon1024-sentry-falcon1024.v1`,
-`aplane.corridor.v1`,
-`aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, and `aplane.ed25519.v1`
-are library-visible and not available for generation until the current
-identity enables them from the library. `aplane.ed25519.v1` is the Ed25519
-LogicSig DSA provider, distinct from the native `ed25519` signing key; it also
-remains the base provider for Ed25519-backed composed templates such as
-`aplane.ed25519-allowlist.v1`. See `docs/ARCH_KEYTYPE_AXES.md` for the exact
+`internal/keytypecatalog`: `ed25519`, `aplane.falcon1024.v1`, and
+`aplane.sentry-falcon1024.v1` are default-enabled, while
+`aplane.falcon1024-sentry1024.v1`, `aplane.corridor.v1`, and
+`aplane.ed25519.v1` are library-visible and not available for generation until
+the current identity enables them from the library. `aplane.ed25519.v1` is the Ed25519
+LogicSig DSA provider, distinct from the native `ed25519` signing key. See
+`docs/ARCH_KEYTYPE_AXES.md` for the exact
 split between native `ed25519`, the `aplane.ed25519` LogicSig routing family,
 and the concrete `aplane.ed25519.v1` key type.
 Opt-in state records are plaintext identity-scoped metadata under
@@ -229,14 +221,10 @@ Bundled YAML templates, if installed:
 
 | Library key type | Behavior category | Install command | Runtime storage |
 |---|---|---|---|
-| `aplane.timed-allowlist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.timed-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.timed-allowlist.v1.{json,template}` |
-| `aplane.allowlist.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.allowlist.v1.{json,template}` |
 | `aplane.htlc.v1` | Generic LogicSig template | `apstore template import library/templates/aplane.htlc.v1.yaml` | `identities/<identity>/keytypes/aplane.htlc.v1.{json,template}` |
-| `aplane.ed25519-allowlist.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.ed25519-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.ed25519-allowlist.v1.{json,template}` |
 | `aplane.falcon1024-allowlist.v1` | Bounded1 composed DSA template | Installed/enabled during new signer-store initialization; existing stores can run `apstore template import library/templates/aplane.falcon1024-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v1.{json,template}` |
 | `aplane.falcon1024-allowlist.v2` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-allowlist.v2.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist.v2.{json,template}` |
-| `aplane.falcon1024-admin-allowlist.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-admin-allowlist.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-admin-allowlist.v1.{json,template}` |
-| `aplane.falcon1024-hashlock.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-hashlock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-hashlock.v1.{json,template}` |
+| `aplane.falcon1024-allowlist-alock.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-allowlist-alock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-allowlist-alock.v1.{json,template}` |
 | `aplane.falcon1024-timelock.v1` | Bounded1 composed DSA template | `apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml` | `identities/<identity>/keytypes/aplane.falcon1024-timelock.v1.{json,template}` |
 
 These template files are install sources, not product built-ins. They do not
@@ -319,9 +307,8 @@ Typical code areas:
 
 ### B. Generic LogicSig Template
 
-Examples:
-- `aplane.timed-allowlist.v1`
-- `aplane.allowlist.v1`
+Example:
+- `aplane.htlc.v1`
 
 Characteristics:
 - TEAL-only authorization
@@ -332,15 +319,13 @@ Typical code areas:
 - `library/templates/*.yaml`, installed with `apstore template import`, or
 - `lsig/<template>/template.go` only for a true product built-in
 
-Reference implementations: `library/templates/aplane.timed-allowlist.v1.yaml`, `library/templates/aplane.allowlist.v1.yaml`, and `library/templates/aplane.htlc.v1.yaml`.
+Reference implementation: `library/templates/aplane.htlc.v1.yaml`.
 
 ### C. DSA LogicSig Provider
 
 Examples:
 - `aplane.falcon1024.v1`
 - `aplane.ed25519.v1`
-- `aplane.falcon1024_ed25519.v1`
-- `aplane.ecdsak1.v1`
 
 Characteristics:
 - cryptographic signature verified by TEAL
@@ -352,7 +337,7 @@ Typical code areas:
 - `internal/logicsigdsa`
 - `internal/signing`
 
-Reference implementations: `lsig/falcon1024/`, `lsig/falcon1024_ed25519/`, and `lsig/ecdsak1/`.
+Reference implementations: `lsig/falcon1024/` and `lsig/ed25519lsig/`.
 
 ### D. Composed DSA Template
 
@@ -900,7 +885,7 @@ Use this checklist for every new key type.
 
 ## Naming Checklist
 
-- [ ] Key type is versioned, e.g. `aplane.allowlist.v1`.
+- [ ] Key type is versioned, e.g. `aplane.htlc.v1`.
 - [ ] Publisher is a stable lowercase namespace owner, e.g. `aplane`.
 - [ ] Family is stable and lowercase, e.g. `allowlist`.
 - [ ] Display name is concise and operator-readable.

@@ -19,7 +19,7 @@ func TestDisplay(t *testing.T) {
 		{name: "aplane falcon unchanged", keyType: "aplane.falcon1024.v1", want: "aplane.falcon1024.v1"},
 		{name: "aplane template unchanged", keyType: "aplane.falcon1024-allowlist.v1", want: "aplane.falcon1024-allowlist.v1"},
 		{name: "other publisher unchanged", keyType: "custom.allowlist.v2", want: "custom.allowlist.v2"},
-		{name: "filename unchanged", keyType: "aplane.allowlist.v1.yaml", want: "aplane.allowlist.v1.yaml"},
+		{name: "filename unchanged", keyType: "test.generic-policy.v1.yaml", want: "test.generic-policy.v1.yaml"},
 		{name: "extra family dot unchanged", keyType: "aplane.white.list.v1", want: "aplane.white.list.v1"},
 		{name: "unsafe family unchanged", keyType: "aplane.white list.v1", want: "aplane.white list.v1"},
 		{name: "legacy unchanged", keyType: "allowlist-v1", want: "allowlist-v1"},
@@ -58,7 +58,7 @@ func TestPublisher(t *testing.T) {
 		{name: "ed25519", keyType: "ed25519", want: ""},
 		{name: "aplane falcon", keyType: "aplane.falcon1024.v1", want: "aplane"},
 		{name: "other publisher", keyType: "custom.allowlist.v2", want: "custom"},
-		{name: "filename unchanged", keyType: "aplane.allowlist.v1.yaml", want: ""},
+		{name: "filename unchanged", keyType: "test.generic-policy.v1.yaml", want: ""},
 		{name: "missing publisher", keyType: "allowlist.v1", want: ""},
 	}
 

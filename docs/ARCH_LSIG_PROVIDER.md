@@ -24,8 +24,6 @@ This document describes the LogicSig provider architecture.
 │                            │    │   ├── v1/composer.go   Falcon wrapper     │
 │ TEAL-only authorization,   │    │   └── register.go      Composed base reg  │
 │ no cryptographic keys      │    │                                           │
-│                            │    │ lsig/falcon1024_ed25519/ Dual DSA         │
-│                            │    │ lsig/ecdsak1/             secp256k1 DSA   │
 │                            │    │ lsig/corridor/           Corridor sentry  │
 │                            │    │ lsig/falcon1024_guarded/ Guarded sentry   │
 │                            │    │ lsig/ed25519lsig/        Ed25519 LSig     │
@@ -126,12 +124,10 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 | `internal/templatestore` | Encrypted template file storage |
 | `internal/lsig` | Dummy transaction construction and LogicSig budget constant |
 | `internal/signing` | Dummy fee distribution and transaction signing helpers |
-| `lsig/composeddsa` | Generic runtime-compiled LogicSig composer used by Falcon, Ed25519, and ecdsak1 composed templates, and parser/provider builder for composed DSA YAML templates |
+| `lsig/composeddsa` | Generic runtime-compiled LogicSig composer used by DSA-backed composed templates, and parser/provider builder for composed DSA YAML templates |
 | `lsig/falcon1024` | Falcon-1024 DSA base provider; `v1/composer.go` is the Falcon-specific wrapper over `lsig/composeddsa` |
-| `lsig/falcon1024_ed25519` | Dual Falcon-1024 / Ed25519 DSA provider |
-| `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider, also used by composed templates such as `aplane.ed25519-allowlist.v1` |
-| `lsig/ecdsak1` | secp256k1 LogicSig DSA provider |
-| `lsig/falcon1024_guarded` | Falcon-1024 guarded-account DSA providers (`aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`) |
+| `lsig/ed25519lsig` | Library-visible Ed25519 LogicSig DSA provider |
+| `lsig/falcon1024_guarded` | Falcon/Falcon guarded-account DSA provider (`aplane.falcon1024-sentry1024.v1`) |
 | `internal/boundedadmin` | External Falcon contract-admin identity, transcript, artifact, and ceremony validation |
 | `lsig/corridor` | Always-sentry corridor DSA provider (`aplane.corridor.v1`): Falcon-1024 user + sentry signatures with recipient-corridor and rekey policy |
 | `lsig/sentryaccount` | Shared client-safe helpers for guarded sentry-account providers |
@@ -146,21 +142,21 @@ signing helpers that the diagram omits) and gives a one-line role for each.
 
 | Category | Example Key Types | Has Keys | Signing |
 |----------|-------------------|----------|---------|
-| `generic_lsig` | `aplane.timed-allowlist.v1`, `aplane.allowlist.v1` after template import | No | TEAL-only authorization |
-| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, `aplane.falcon1024_ed25519.v1`, `aplane.ecdsak1.v1`, bounded `aplane.falcon1024-admin-allowlist.v1`, guarded `aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`; `aplane.falcon1024-allowlist.v1` after new-store default install, `aplane.ed25519-allowlist.v1` after template import | Yes | Cryptographic signature |
+| `generic_lsig` | `aplane.htlc.v1` after template import | No | TEAL-only authorization |
+| `dsa_lsig` | `aplane.falcon1024.v1`, `aplane.ed25519.v1`, bounded `aplane.falcon1024-allowlist-alock.v1`, guarded `aplane.falcon1024-sentry1024.v1`, `aplane.corridor.v1`; bundled Falcon templates after install | Yes | Cryptographic signature |
 
 ## Interface Hierarchy
 
 ```
 LSigProvider (base interface - ALL providers implement this)
 ├── Identity
-│   ├── KeyType() string        "aplane.falcon1024.v1", "aplane.timed-allowlist.v1"
+│   ├── KeyType() string        "aplane.falcon1024.v1", "aplane.htlc.v1"
 │   ├── RoutingFamily() string  "aplane.falcon1024" (registry routing key; see ARCH_KEYTYPE_AXES.md)
 │   └── Version() int           1, 2, etc.
 ├── Category
 │   └── Category() string       "generic_lsig" or "dsa_lsig"
 ├── Display
-│   ├── DisplayName() string    "Falcon-1024", "Timed Allowlist"
+│   ├── DisplayName() string    "Falcon-1024", "HTLC"
 │   ├── Description() string    Short description for UI
 │   └── DisplayColor() string   ANSI color code
 ├── Parameters
@@ -251,7 +247,7 @@ The `BuildArgs` method encapsulates LogicSig arg ordering:
 | Generic (no runtime args) | `[]` |
 | Generic (with runtime args) | `[preimage, ...]` |
 | DSA (single-signature-arg form, e.g. `aplane.falcon1024.v1`) | `[signature]` |
-| DSA (multi-signature-arg form, e.g. `aplane.ecdsak1.v1`) | `[r, s]` |
+| DSA (multi-signature-arg form, when declared by a custom provider) | `[r, s]` |
 | DSA with runtime args | `[signature args..., runtime args...]` |
 
 **Invariant**: Arg order is determined by `RuntimeArgs()` schema order at key
@@ -310,7 +306,7 @@ path. Falcon exposes that engine through Falcon-specific names:
 
 ```go
 ExampleFalconHashlock = NewComposedFalcon(ComposedFalconConfig{
-    KeyType:     "aplane.falcon1024-hashlock.v1",
+    KeyType:     "example.falcon-hashlock.v1",
     FamilyName:  "aplane.falcon1024",
     Version:     1,
     DisplayName: "Falcon-1024 Hashlock",
@@ -378,7 +374,7 @@ while template-backed programs with `derivation_version: 2` append a trailing
 dead-code `bytecblock 0x00`. Provider-owned bare DSA versions may explicitly
 choose a reference layout such as a fixed `bytecblock 0x00` preamble.
 `aplane.falcon1024.v1` uses the Algorand Foundation
-reference-compatible fixed `bytecblock` preamble, `aplane.ecdsak1.v1` uses a
+reference-compatible fixed `bytecblock` preamble, `aplane.ed25519.v1` uses a
 fixed `bytecblock` preamble, generic or composed-template programs with
 `derivation_version: 1` use the generated marker, and generic or
 composed-template programs with `derivation_version: 2` use a trailing
@@ -529,8 +525,8 @@ derivation_version: 2
 template_type: composed
 base_key_type: aplane.falcon1024.v1
 template_mode: strict
-publisher: aplane
-family: falcon1024-hashlock
+publisher: example
+family: falcon-hashlock
 version: 1
 display_name: "Falcon-1024 Hashlock"
 description: "Falcon signature with SHA256 hash verification"
@@ -599,16 +595,10 @@ lsig.RegisterClient()
     │   └── falcon.RegisterClient()
     │       ├── v1.RegisterLogicSigDSA() → Falcon1024V1
     │       └── ... (metadata, address derivation)
-    ├── keytypecatalog.Register(aplane.falcon1024-sentry-ed25519.v1, library)
-    │   └── falcon1024guarded.RegisterClient()
-    ├── keytypecatalog.Register(aplane.falcon1024-sentry-falcon1024.v1, library)
+    ├── keytypecatalog.Register(aplane.falcon1024-sentry1024.v1, library)
     │   └── falcon1024guarded.RegisterClient()
     ├── keytypecatalog.Register(aplane.corridor.v1, library)
     │   └── corridor.RegisterClient()
-    ├── keytypecatalog.Register(aplane.falcon1024_ed25519.v1, library)
-    │   └── falcon1024_ed25519.RegisterClient()
-    ├── keytypecatalog.Register(aplane.ecdsak1.v1, library)
-    │   └── ecdsak1.RegisterClient()
     └── keytypecatalog.Register(aplane.ed25519.v1, library)
         └── ed25519lsig.RegisterClient()
 
@@ -650,20 +640,13 @@ yields a template key type that signs with Ed25519 inside a LogicSig.
 | Key Type | Key-type family | Category | Description |
 |----------|--------|----------|-------------|
 | `aplane.falcon1024.v1` | `aplane.falcon1024` | `dsa_lsig` | Default-enabled pure Falcon signature |
-| `aplane.falcon1024_ed25519.v1` | `aplane.falcon1024_ed25519` | `dsa_lsig` | Library-visible dual Falcon + Ed25519 DSA |
-| `aplane.ecdsak1.v1` | `aplane.ecdsak1` | `dsa_lsig` | Library-visible secp256k1 DSA |
-| `aplane.falcon1024-sentry-ed25519.v1` | `aplane.falcon1024-sentry-ed25519` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Ed25519 sentry component signatures |
-| `aplane.falcon1024-sentry-falcon1024.v1` | `aplane.falcon1024-sentry-falcon1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 sentry component signatures |
-| `aplane.falcon1024-admin-allowlist.v1` | `aplane.falcon1024-admin-allowlist` | `dsa_lsig` | Library-visible bounded1 fixed allowlist with Falcon spending and external Falcon contract-admin authorization |
+| `aplane.falcon1024-sentry1024.v1` | `aplane.falcon1024-sentry1024` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + Falcon-1024 sentry component signatures |
+| `aplane.falcon1024-allowlist-alock.v1` | `aplane.falcon1024-allowlist-alock` | `dsa_lsig` | Library-visible bounded1 fixed allowlist with Falcon spending and external Falcon contract-admin authorization |
 | `aplane.corridor.v1` | `aplane.corridor` | `dsa_lsig` | Library-visible guarded account: Falcon-1024 user + sentry signatures with recipient corridor and sentry-authorized rekey |
 | `aplane.ed25519.v1` | `aplane.ed25519` | `dsa_lsig` | Library-visible Ed25519 LogicSig DSA provider; distinct from native `ed25519` |
-| `aplane.timed-allowlist.v1` | `timed-allowlist` | `generic_lsig` | Optional template library: timed recipient allowlist |
-| `aplane.allowlist.v1` | `allowlist` | `generic_lsig` | Optional template library: restrict outgoing transfers to fixed recipient addresses |
 | `aplane.htlc.v1` | `htlc` | `generic_lsig` | Optional template library: hash-locked payment |
-| `aplane.ed25519-allowlist.v1` | `ed25519-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Ed25519 + fixed receiver allowlist |
 | `aplane.falcon1024-allowlist.v1` | `falcon1024-allowlist` | `dsa_lsig` | Bundled bounded1 composed template: installed/enabled for new signer identities; Falcon + fixed receiver allowlist |
 | `aplane.falcon1024-allowlist.v2` | `falcon1024-allowlist` | `dsa_lsig` | Optional bounded1 composed template: Falcon + signer-derived Merkle receiver proof |
-| `aplane.falcon1024-hashlock.v1` | `falcon1024-hashlock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + runtime preimage gate on spend and rekey |
 | `aplane.falcon1024-timelock.v1` | `falcon1024-timelock` | `dsa_lsig` | Optional bounded1 composed template: Falcon + validity-round gate on spend and rekey |
 
 ## Related Documentation

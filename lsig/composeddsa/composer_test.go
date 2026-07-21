@@ -569,8 +569,8 @@ func TestComposedDSAGenerateTEALRejectsReturnInSuffix(t *testing.T) {
 // TestComposerVerifierAssertsBeforeUserSuffix locks in the structural
 // invariant the composed templates rely on for rekey/close binding: the
 // base provider's verifier TEAL must run, an `assert` must follow it, and
-// only then may the user suffix execute. Composed templates such as
-// aplane.falcon1024-hashlock.v1 and aplane.falcon1024-timelock.v1
+// only then may the user suffix execute. Composed templates such as the
+// bundled Falcon timelock
 // intentionally omit explicit `txn RekeyTo == ZeroAddress` guards in
 // their suffix because the base signature-over-txid binding already
 // covers them — but only if the wrap order here is preserved. If a
@@ -683,30 +683,13 @@ func TestFalconAllowlistTemplateUsesBoundedFixedAllowlist(t *testing.T) {
 	}
 }
 
-func TestFalconHashlockAndTimelockOnlyAddGatingPredicate(t *testing.T) {
+func TestFalconTimelockOnlyAddsGatingPredicate(t *testing.T) {
 	tests := []struct {
 		name         string
 		file         string
 		required     []string
 		forbiddenTxn []string
 	}{
-		{
-			name: "hashlock",
-			file: "aplane.falcon1024-hashlock.v1.yaml",
-			required: []string{
-				"arg 1\nsha256",
-				"$hash\n==\nassert",
-			},
-			forbiddenTxn: []string{
-				"txn TypeEnum",
-				"txn Receiver",
-				"txn CloseRemainderTo",
-				"txn RekeyTo",
-				"txn AssetReceiver",
-				"txn AssetCloseTo",
-				"txn AssetSender",
-			},
-		},
 		{
 			name: "timelock",
 			file: "aplane.falcon1024-timelock.v1.yaml",

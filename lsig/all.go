@@ -25,12 +25,9 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/lsig/corridor"
-	"github.com/aplane-algo/aplane/lsig/ecdsak1"
-	ecdsak1family "github.com/aplane-algo/aplane/lsig/ecdsak1/family"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	falcon "github.com/aplane-algo/aplane/lsig/falcon1024"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	falcon1024ed25519 "github.com/aplane-algo/aplane/lsig/falcon1024_ed25519"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 )
 
@@ -59,25 +56,10 @@ func RegisterClient() {
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, falcon1024guarded.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      falcon1024guarded.KeyTypeFalcon1024V1,
-			Family:       falcon1024guarded.FamilyNameFalcon1024,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, falcon1024guarded.RegisterClient)
-		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      corridor.KeyTypeV1,
 			Family:       corridor.FamilyName,
 			Availability: keytypecatalog.AvailabilityLibrary,
 		}, corridor.RegisterClient)
-		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      falcon1024ed25519.KeyTypeV1,
-			Family:       falcon1024ed25519.FamilyName,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, falcon1024ed25519.RegisterClient)
-		registerCompiledProvider(keytypecatalog.Entry{
-			KeyType:      ecdsak1.KeyTypeV1,
-			Family:       ecdsak1family.Name,
-			Availability: keytypecatalog.AvailabilityLibrary,
-		}, ecdsak1.RegisterClient)
 		registerCompiledProvider(keytypecatalog.Entry{
 			KeyType:      ed25519lsig.KeyTypeV1,
 			Family:       ed25519lsig.FamilyName,

@@ -85,12 +85,12 @@ func TestParseEndpointCreateSentryArgsAcceptsHyphenatedPortFlag(t *testing.T) {
 
 func TestEndpointSyncSentriesProgressListsComponentsBeforePrompt(t *testing.T) {
 	dataDir := t.TempDir()
-	publicKeyHex := strings.Repeat("ab", 32)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
+	publicKeyHex := strings.Repeat("ab", keytypes.Falcon1024PublicKeySize)
+	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
 	server := newEndpointCLIKeysServer(t, "sentry-token", []signerapi.KeyInfo{{
 		Address:        componentKey,
 		PublicKeyHex:   publicKeyHex,
-		KeyType:        keytypes.SentryComponentEd25519V1,
+		KeyType:        keytypes.SentryComponentFalcon1024V1,
 		IsComponentKey: true,
 	}})
 
@@ -156,13 +156,13 @@ func TestRenderEndpointSentriesOmitsLastSeen(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
-	publicKeyHex := strings.Repeat("ab", 32)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
+	publicKeyHex := strings.Repeat("ab", keytypes.Falcon1024PublicKeySize)
+	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
 	state.renderEndpointSentries(&apshellapp.EndpointSentriesResult{
 		Sentries: []apshellapp.EndpointSentryEntry{{
 			EndpointAlias: "sentry-local",
 			ComponentKey:  componentKey,
-			KeyType:       keytypes.SentryComponentEd25519V1,
+			KeyType:       keytypes.SentryComponentFalcon1024V1,
 			LastSeenAt:    "2026-06-04T00:00:00Z",
 		}},
 	})
@@ -186,8 +186,8 @@ func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
 	var out bytes.Buffer
 	state := &REPLState{Out: &out}
 
-	publicKeyHex := strings.Repeat("cd", 32)
-	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentEd25519V1, publicKeyHex)
+	publicKeyHex := strings.Repeat("cd", keytypes.Falcon1024PublicKeySize)
+	componentKey := endpointCLITestComponentSelector(t, keytypes.SentryComponentFalcon1024V1, publicKeyHex)
 	state.renderEndpointShow(&apshellapp.EndpointShowResult{
 		Endpoint: apshellapp.EndpointEntry{
 			Alias: "sentry-local",
@@ -199,7 +199,7 @@ func TestRenderEndpointShowIncludesSentryLastSeen(t *testing.T) {
 			PublishedSentries: []apshellapp.EndpointSentryEntry{{
 				EndpointAlias: "sentry-local",
 				ComponentKey:  componentKey,
-				KeyType:       keytypes.SentryComponentEd25519V1,
+				KeyType:       keytypes.SentryComponentFalcon1024V1,
 				LastSeenAt:    "2026-06-04T00:00:00Z",
 			}},
 		},

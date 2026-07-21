@@ -186,7 +186,7 @@ func TestHandleParamInput_AddressListPreservesAliasCase(t *testing.T) {
 func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-sentry-ed25519.v1",
+		KeyType:     "aplane.falcon1024-sentry1024.v1",
 		DisplayName: "Falcon-1024 / Ed25519 Sentry",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:    "sentry",
@@ -198,7 +198,7 @@ func TestSelectParamDefaultsAndCyclesOptions(t *testing.T) {
 	}})
 
 	m := Model{forms: formsState{generateKeyType: 0}}
-	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-sentry-ed25519.v1")
+	m = m.initGenericLSigParamsForKeyType("aplane.falcon1024-sentry1024.v1")
 	if got := m.forms.genericLSigParams["sentry"]; got != "lab-sentry" {
 		t.Fatalf("default sentry = %q, want lab-sentry", got)
 	}
@@ -245,7 +245,7 @@ func TestHandleParamInputLongBytesUsesAtomicPaste(t *testing.T) {
 	const falconPublicKeyHexLength = 1793 * 2
 	input := strings.Repeat("A", falconPublicKeyHexLength-20) + "0123456789ABCDEFabcd"
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-admin-allowlist.v1",
+		KeyType:     "aplane.falcon1024-allowlist-alock.v1",
 		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:      "bounded_admin_public_key",
@@ -392,7 +392,7 @@ func TestHandleParamInput_AddressListAutoScrollsAndPages(t *testing.T) {
 func TestGenerateFormShowsTemplateShortcutLegend(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.allowlist.v1",
+		KeyType:     "test.generic-policy.v1",
 		DisplayName: "Allowlist",
 		Description: "Template-backed key type",
 	}})
@@ -407,7 +407,7 @@ func TestGenerateFormShowsTemplateShortcutLegend(t *testing.T) {
 func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.allowlist.v1",
+		KeyType:     "test.generic-policy.v1",
 		DisplayName: "Allowlist",
 		Description: "Template-backed key type",
 	}})
@@ -416,9 +416,9 @@ func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 		viewState: ViewGenerateForm,
 		forms:     formsState{generateKeyType: 0},
 		library: libraryState{templates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.allowlist.v1",
+			KeyType:      "test.generic-policy.v1",
 			TemplateType: "generic",
-			SourcePath:   "/tmp/keystore/library/templates/aplane.allowlist.v1.yaml",
+			SourcePath:   "/tmp/keystore/library/templates/test.generic-policy.v1.yaml",
 		}}},
 	}
 
@@ -427,7 +427,7 @@ func TestGenerateFormTemplateShortcutOpensYAMLDetails(t *testing.T) {
 	if got.viewState != ViewLibraryTemplateDetails {
 		t.Fatalf("viewState after t = %v, want ViewLibraryTemplateDetails", got.viewState)
 	}
-	if !got.library.detailsLoading || got.library.detailsKeyType != "aplane.allowlist.v1" || got.library.detailsTemplateType != "generic" {
+	if !got.library.detailsLoading || got.library.detailsKeyType != "test.generic-policy.v1" || got.library.detailsTemplateType != "generic" {
 		t.Fatalf("library details state = loading:%v key:%q type:%q", got.library.detailsLoading, got.library.detailsKeyType, got.library.detailsTemplateType)
 	}
 	if cmd == nil {
@@ -550,7 +550,7 @@ func TestHandleParamModalKeys_AddressListSpaceAndEnterStayInField(t *testing.T) 
 func TestHandleParamModalKeys_ControlledPasteUsesRawRunes(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-admin-allowlist.v1",
+		KeyType:     "aplane.falcon1024-allowlist-alock.v1",
 		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:      "bounded_admin_public_key",

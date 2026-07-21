@@ -299,7 +299,7 @@ func TestServiceSignComponentDelegates(t *testing.T) {
 			Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
 				Signature:       "aa",
-				SignatureScheme: keytypes.SentryComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
 			}},
 		},
 	}
@@ -666,7 +666,7 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 	ir := setupIdentityRuntimeWithRole(t, true, noderole.RoleSentry)
 	svc := Service{Deps: Dependencies{KeyAdmin: keyadmin.Service{}}}
 
-	genResp, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: keytypes.SentryComponentEd25519V1})
+	genResp, genErr := svc.AdminGenerate(context.Background(), ir, signerapi.AdminGenerateRequest{KeyType: keytypes.SentryComponentFalcon1024V1})
 	if genErr != nil {
 		t.Fatalf("AdminGenerate(component) error = %v, want nil", genErr)
 	}
@@ -711,9 +711,8 @@ func TestServiceComponentKeyGenerateAndInventoryProjection(t *testing.T) {
 func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	infos := Service{}.buildKeyTypes([]string{
 		"ed25519",
-		keytypes.SentryComponentEd25519V1,
-		keytypes.GuardedFalcon1024SentryEd25519V1,
-		keytypes.GuardedFalcon1024SentryFalcon1024V1,
+		keytypes.SentryComponentFalcon1024V1,
+		keytypes.GuardedFalcon1024Sentry1024V1,
 		keytypes.CorridorV1,
 	}, nil)
 	byType := make(map[string]signerapi.KeyTypeInfo, len(infos))
@@ -722,9 +721,8 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 	}
 
 	guarded := map[string]string{
-		keytypes.GuardedFalcon1024SentryEd25519V1:    keytypes.SentryComponentEd25519V1,
-		keytypes.GuardedFalcon1024SentryFalcon1024V1: keytypes.SentryComponentFalcon1024V1,
-		keytypes.CorridorV1:                          keytypes.SentryComponentFalcon1024V1,
+		keytypes.GuardedFalcon1024Sentry1024V1: keytypes.SentryComponentFalcon1024V1,
+		keytypes.CorridorV1:                    keytypes.SentryComponentFalcon1024V1,
 	}
 	for keyType, wantComponent := range guarded {
 		info, ok := byType[keyType]
@@ -738,7 +736,7 @@ func TestBuildKeyTypesServesSigningFlowMetadata(t *testing.T) {
 			t.Fatalf("%s sentry_component_key_type = %q, want %q", keyType, info.SentryComponentKeyType, wantComponent)
 		}
 	}
-	for _, keyType := range []string{"ed25519", keytypes.SentryComponentEd25519V1} {
+	for _, keyType := range []string{"ed25519", keytypes.SentryComponentFalcon1024V1} {
 		info := byType[keyType]
 		if info.SigningFlow != "" || info.SentryComponentKeyType != "" {
 			t.Fatalf("%s signing flow metadata = %q/%q, want empty", keyType, info.SigningFlow, info.SentryComponentKeyType)
@@ -802,7 +800,7 @@ func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 func TestGuardedAccountParametersProjection(t *testing.T) {
 	const sentryPublicKey = "d6fb74e10151ac3b0eaa7431b9b92c772c2a4a600c10b88cfd30169ea1ab4d0a"
 
-	got := guardedAccountParameters(keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
+	got := guardedAccountParameters(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 		"unrelated":                       "not-projected",
 	})
@@ -814,7 +812,7 @@ func TestGuardedAccountParametersProjection(t *testing.T) {
 	}
 
 	got[keytypes.ParameterSentryPublicKey] = "mutated"
-	again := guardedAccountParameters(keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
+	again := guardedAccountParameters(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		keytypes.ParameterSentryPublicKey: sentryPublicKey,
 	})
 	if again[keytypes.ParameterSentryPublicKey] != sentryPublicKey {
@@ -829,29 +827,22 @@ func TestGuardedAccountParametersProjection(t *testing.T) {
 		t.Fatalf("guardedAccountParameters(corridor) = %#v, want recipients projected", corridor)
 	}
 
-	if empty := guardedAccountParameters(keytypes.GuardedFalcon1024SentryEd25519V1, nil); empty != nil {
+	if empty := guardedAccountParameters(keytypes.GuardedFalcon1024Sentry1024V1, nil); empty != nil {
 		t.Fatalf("guardedAccountParameters(nil) = %#v, want nil", empty)
 	}
 }
 
-func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
+func TestServiceKeyTypesIncludesNativeAndFalconSentry(t *testing.T) {
 	keyTypes := Service{}.buildKeyTypes(keymgmt.GetValidKeyTypes(), nil)
 	if len(keyTypes) == 0 {
 		t.Fatal("buildKeyTypes() returned no key types")
 	}
 
 	foundEd25519 := false
-	foundEd25519Component := false
 	foundFalconComponent := false
 	for _, keyType := range keyTypes {
 		if keyType.KeyType == "ed25519" {
 			foundEd25519 = true
-		}
-		if keyType.KeyType == keytypes.SentryComponentEd25519V1 {
-			foundEd25519Component = true
-			if keyType.Family != "sentry-ed25519" || keyType.MnemonicImport {
-				t.Fatalf("Ed25519 sentry key type info = %#v, want sentry metadata", keyType)
-			}
 		}
 		if keyType.KeyType == keytypes.SentryComponentFalcon1024V1 {
 			foundFalconComponent = true
@@ -863,9 +854,6 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 	if !foundEd25519 {
 		t.Fatal("KeyTypes() did not include ed25519")
 	}
-	if !foundEd25519Component {
-		t.Fatalf("KeyTypes() did not include %s", keytypes.SentryComponentEd25519V1)
-	}
 	if !foundFalconComponent {
 		t.Fatalf("KeyTypes() did not include %s", keytypes.SentryComponentFalcon1024V1)
 	}
@@ -874,7 +862,7 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 func TestServiceKeyTypesHidesLibraryOnlyCompiledProvider(t *testing.T) {
 	keyTypes := Service{}.buildKeyTypes(keymgmt.GetValidKeyTypes(), nil)
 	for _, keyType := range keyTypes {
-		if keyType.KeyType == "aplane.falcon1024_ed25519.v1" {
+		if keyType.KeyType == "aplane.ed25519.v1" {
 			t.Fatal("KeyTypes() included library-only provider before identity activation")
 		}
 	}
@@ -890,8 +878,8 @@ func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 	if !keyTypesResponseContains(resp.KeyTypes, "ed25519") {
 		t.Fatal("signer node key types missing ed25519")
 	}
-	if keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentEd25519V1) {
-		t.Fatalf("signer node key types included %s", keytypes.SentryComponentEd25519V1)
+	if keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentFalcon1024V1) {
+		t.Fatalf("signer node key types included %s", keytypes.SentryComponentFalcon1024V1)
 	}
 	if keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentFalcon1024V1) {
 		t.Fatalf("signer node key types included %s", keytypes.SentryComponentFalcon1024V1)
@@ -905,9 +893,6 @@ func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 	if keyTypesResponseContains(resp.KeyTypes, "ed25519") {
 		t.Fatal("sentry node key types included ed25519")
 	}
-	if !keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentEd25519V1) {
-		t.Fatalf("sentry node key types missing %s", keytypes.SentryComponentEd25519V1)
-	}
 	if !keyTypesResponseContains(resp.KeyTypes, keytypes.SentryComponentFalcon1024V1) {
 		t.Fatalf("sentry node key types missing %s", keytypes.SentryComponentFalcon1024V1)
 	}
@@ -915,16 +900,16 @@ func TestServiceKeyTypesForIdentityFiltersByNodeRole(t *testing.T) {
 
 func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	ir := setupIdentityRuntime(t, false)
-	publicKey := strings.Repeat("ab", 32)
+	publicKey := strings.Repeat("ab", falconfamily.PublicKeySize)
 	publicKeyBytes, err := hex.DecodeString(publicKey)
 	if err != nil {
 		t.Fatalf("DecodeString() error = %v", err)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKeyBytes)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKeyBytes)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
-	env, err := sentryrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentEd25519V1, publicKey)
+	env, err := sentryrefs.NewExportEnvelope(componentKey, keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("NewExportEnvelope() error = %v", err)
 	}
@@ -936,7 +921,7 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 		t.Fatalf("Import() error = %v", err)
 	}
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
-		KeyType: keytypes.GuardedFalcon1024SentryEd25519V1,
+		KeyType: keytypes.GuardedFalcon1024Sentry1024V1,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
@@ -949,7 +934,7 @@ func TestServiceKeyTypesForIdentityUsesSentryReferenceOptions(t *testing.T) {
 	}
 	var params []signerapi.CreationParamInfo
 	for _, info := range resp.KeyTypes {
-		if info.KeyType == keytypes.GuardedFalcon1024SentryEd25519V1 {
+		if info.KeyType == keytypes.GuardedFalcon1024Sentry1024V1 {
 			params = info.CreationParams
 			break
 		}
@@ -1025,8 +1010,9 @@ func TestServiceKeyTypesForIdentityKeepsCorridorRecipientsWithSentryReference(t 
 
 func TestServiceKeyTypesIncludesActivatedCompiledProvider(t *testing.T) {
 	ir := setupIdentityRuntime(t, false)
+	const keyType = "aplane.ed25519.v1"
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: keyType,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
@@ -1038,8 +1024,8 @@ func TestServiceKeyTypesIncludesActivatedCompiledProvider(t *testing.T) {
 		t.Fatalf("KeyTypesForIdentity() error = %v", svcErr)
 	}
 	found := false
-	for _, keyType := range resp.KeyTypes {
-		if keyType.KeyType == "aplane.falcon1024_ed25519.v1" {
+	for _, item := range resp.KeyTypes {
+		if item.KeyType == keyType {
 			found = true
 			break
 		}
@@ -1211,7 +1197,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 	tests := []matrixCase{
 		{
 			name:    "library-only compiled provider is hidden",
-			keyType: "aplane.falcon1024_ed25519.v1",
+			keyType: "aplane.ed25519.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *identity.Runtime {
 				t.Helper()
 				return restMatrixIdentity(paths, auth.DefaultIdentityID)
@@ -1219,11 +1205,11 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 		},
 		{
 			name:    "activated compiled provider is visible",
-			keyType: "aplane.falcon1024_ed25519.v1",
+			keyType: "aplane.ed25519.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *identity.Runtime {
 				t.Helper()
 				if err := keytypestate.Put(paths, auth.DefaultIdentityID, keytypestate.Record{
-					KeyType: "aplane.falcon1024_ed25519.v1",
+					KeyType: "aplane.ed25519.v1",
 					Source:  keytypestate.SourceCompiled,
 					State:   keytypestate.StateEnabled,
 				}); err != nil {

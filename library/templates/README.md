@@ -14,23 +14,14 @@ reload `apsigner` before using the new key type.
 Generic LogicSig templates are TEAL-only accounts with no private key:
 
 ```bash
-apstore template import library/templates/aplane.timed-allowlist.v1.yaml
-apstore template import library/templates/aplane.allowlist.v1.yaml
 apstore template import library/templates/aplane.htlc.v1.yaml
 ```
 
 Falcon-1024 composed templates combine a Falcon signature with additional TEAL checks:
 
 ```bash
-apstore template import library/templates/aplane.falcon1024-hashlock.v1.yaml
 apstore template import library/templates/aplane.falcon1024-timelock.v1.yaml
 apstore template import library/templates/aplane.falcon1024-allowlist.v2.yaml
-```
-
-Ed25519 composed templates combine an Ed25519 signature with additional TEAL checks:
-
-```bash
-apstore template import library/templates/aplane.ed25519-allowlist.v1.yaml
 ```
 
 For existing stores that were initialized before this default was added:
@@ -43,8 +34,6 @@ apstore template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 
 | Key type | File | Purpose | Creation params | Runtime args |
 |---|---|---|---|---|
-| `aplane.timed-allowlist.v1` | `aplane.timed-allowlist.v1.yaml` | Allows ALGO or ASA transfers only to a fixed unordered recipient address set after `unlock_round`; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipients` (`address[]`), `unlock_round`, `allowed_optin_assets` (`uint64[]`, optional) | None |
-| `aplane.allowlist.v1` | `aplane.allowlist.v1.yaml` | Allows ALGO or ASA transfers only to a fixed unordered recipient address set; optional parameterized ASA opt-in is available for approved asset IDs only. | `recipients` (`address[]`), `allowed_optin_assets` (`uint64[]`, optional) | None |
 | `aplane.htlc.v1` | `aplane.htlc.v1.yaml` | Hash time-locked contract for ALGO or ASA transfers: recipient can claim before timeout with a preimage; refund address can reclaim after timeout; optional parameterized ASA opt-in is available for approved asset IDs only. | `hash` (default input mode: preimage), `recipient`, `refund_address`, `timeout_round`, `allowed_optin_assets` (`uint64[]`, optional) | `preimage` |
 
 ## Falcon-1024 Composed Templates
@@ -53,15 +42,8 @@ apstore template import library/templates/aplane.falcon1024-allowlist.v1.yaml
 |---|---|---|---|---|
 | `aplane.falcon1024-allowlist.v1` | `aplane.falcon1024-allowlist.v1.yaml` | Bounded1 Falcon spending with an inline recipient allowlist; close, clawback, hybrid effects, and non-transfer types reject. Pure rekey requires the spending key. | `recipients` (`address[]`, 1-30) | None |
 | `aplane.falcon1024-allowlist.v2` | `aplane.falcon1024-allowlist.v2.yaml` | Bounded1 Falcon spending with a fixed-depth Merkle recipient allowlist. Pure rekey requires the spending key and no proof. | `recipients` (`address[]`, 1-65536) | None; signer generates the optional 512-byte spend proof |
-| `aplane.falcon1024-admin-allowlist.v1` | `aplane.falcon1024-admin-allowlist.v1.yaml` | Framework-owned bounded1 ALGO/ASA allowlist with optional asset-ID and per-type amount limits; pure rekeys additionally require an external Falcon contract-admin signature. | `recipients` (`address[]`, 1-30), optional `asset_ids` (`uint64[]`, 1-30), optional `max_payment_amount`, optional `max_asset_amount`, framework-injected `bounded_admin_public_key` | None |
-| `aplane.falcon1024-hashlock.v1` | `aplane.falcon1024-hashlock.v1.yaml` | Bounded1 Falcon spending and spending-key pure rekey, both gated by the SHA256 preimage. | `hash` (default input mode: preimage) | `preimage` (1-64 bytes; required for spend and rekey) |
+| `aplane.falcon1024-allowlist-alock.v1` | `aplane.falcon1024-allowlist-alock.v1.yaml` | Framework-owned bounded1 ALGO/ASA allowlist with optional asset-ID and per-type amount limits; pure rekeys additionally require an external Falcon contract-admin signature. | `recipients` (`address[]`, 1-30), optional `asset_ids` (`uint64[]`, 1-30), optional `max_payment_amount`, optional `max_asset_amount`, framework-injected `bounded_admin_public_key` | None |
 | `aplane.falcon1024-timelock.v1` | `aplane.falcon1024-timelock.v1.yaml` | Bounded1 Falcon spending and spending-key pure rekey, both requiring `FirstValid >= unlock_round`. | `unlock_round` | None |
-
-## Ed25519 Composed Templates
-
-| Key type | File | Purpose | Creation params | Runtime args |
-|---|---|---|---|---|
-| `aplane.ed25519-allowlist.v1` | `aplane.ed25519-allowlist.v1.yaml` | Bounded1 Ed25519 spending with an inline recipient allowlist; close, clawback, hybrid effects, and non-transfer types reject. Pure rekey requires the spending key. | `recipients` (`address[]`, 1-30) | None |
 
 ## Notes
 
@@ -113,7 +95,7 @@ global ZeroAddress
 ==
 assert
 
-// for receiver-style templates (allowlist, htlc, timed-allowlist):
+// for receiver-style templates such as htlc:
 //   apply the allowlist to CloseRemainderTo / AssetCloseTo too;
 // for predicate-only templates with no receiver concept:
 //   txn CloseRemainderTo
@@ -122,8 +104,7 @@ assert
 //   assert
 ```
 
-This applies to `aplane.timed-allowlist.v1`, `aplane.allowlist.v1`,
-`aplane.htlc.v1`, and any new generic template.
+This applies to `aplane.htlc.v1` and any new generic template.
 
 **Custom composed templates** (`schema_version: 1`) are expert-mode DSA
 policies. The base signature binds every transaction field, but the author TEAL

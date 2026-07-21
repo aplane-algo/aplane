@@ -196,7 +196,7 @@ func TestServiceGenerateKeyEd25519(t *testing.T) {
 
 func TestServiceGenerateKeySentryComponent(t *testing.T) {
 	for _, keyType := range []string{
-		keytypes.SentryComponentEd25519V1,
+		keytypes.SentryComponentFalcon1024V1,
 		keytypes.SentryComponentFalcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
@@ -244,13 +244,13 @@ func TestServiceGenerateKeySentryComponent(t *testing.T) {
 }
 
 func TestKeyDetailsParametersProjectsGuardedSentrySelector(t *testing.T) {
-	publicKey := bytes.Repeat([]byte{0xab}, 32)
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	publicKey := bytes.Repeat([]byte{0xab}, keytypes.Falcon1024PublicKeySize)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 
-	got := keyDetailsParameters(keytypes.GuardedFalcon1024SentryEd25519V1, map[string]string{
+	got := keyDetailsParameters(keytypes.GuardedFalcon1024Sentry1024V1, map[string]string{
 		keytypes.ParameterSentryPublicKey: hex.EncodeToString(publicKey),
 		"other":                           "kept",
 	})
@@ -270,7 +270,7 @@ func TestServiceGenerateKeyRejectsKeyTypeDisallowedByNodeRole(t *testing.T) {
 	ir := setupIdentityRuntime(t)
 	svc := Service{}
 
-	result, err := svc.GenerateKey(context.Background(), ir, keytypes.SentryComponentEd25519V1, nil, nil)
+	result, err := svc.GenerateKey(context.Background(), ir, keytypes.SentryComponentFalcon1024V1, nil, nil)
 	if result != nil {
 		t.Fatalf("GenerateKey(component in signer node) result = %#v, want nil", result)
 	}
@@ -325,7 +325,7 @@ func TestServiceGenerateKeyRejectsLibraryProviderBeforeActivation(t *testing.T) 
 	ir := setupIdentityRuntime(t)
 	svc := Service{}
 
-	result, err := svc.GenerateKey(context.Background(), ir, "aplane.falcon1024_ed25519.v1", nil, nil)
+	result, err := svc.GenerateKey(context.Background(), ir, "aplane.ed25519.v1", nil, nil)
 	if result != nil {
 		t.Fatalf("GenerateKey() result = %#v, want nil", result)
 	}
@@ -337,7 +337,7 @@ func TestServiceGenerateKeyRejectsLibraryProviderBeforeActivation(t *testing.T) 
 func TestServiceGenerateKeyRereadsActivationAfterDeactivation(t *testing.T) {
 	ir := setupIdentityRuntime(t)
 	svc := Service{}
-	keyType := "aplane.falcon1024_ed25519.v1"
+	keyType := "aplane.ed25519.v1"
 
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
 		KeyType: keyType,
@@ -507,7 +507,7 @@ func TestServiceDeleteKeyRemovesSentryComponentKey(t *testing.T) {
 	ir := setupIdentityRuntimeWithRole(t, noderole.RoleSentry)
 	svc := Service{}
 
-	genResult, genErr := svc.GenerateKey(context.Background(), ir, keytypes.SentryComponentEd25519V1, nil, nil)
+	genResult, genErr := svc.GenerateKey(context.Background(), ir, keytypes.SentryComponentFalcon1024V1, nil, nil)
 	if genErr != nil {
 		t.Fatalf("GenerateKey(component) error = %#v", genErr)
 	}

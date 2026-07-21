@@ -32,19 +32,12 @@ included as normal user-account operations.
 | `ed25519` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| `aplane.falcon1024_ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| `aplane.ecdsak1.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.falcon1024-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
 | `aplane.falcon1024-allowlist.v2` | C | N | C | Y | N | N | N | N | N | N | C |
-| `aplane.falcon1024-admin-allowlist.v1` | C | N | C | C | N | N | N | N | N | N | C |
-| `aplane.ed25519-allowlist.v1` | C | N | C | Y | N | N | N | N | N | N | C |
-| `aplane.falcon1024-hashlock.v1` | C | N | C | C | N | N | N | N | N | N | C |
+| `aplane.falcon1024-allowlist-alock.v1` | C | N | C | C | N | N | N | N | N | N | C |
 | `aplane.falcon1024-timelock.v1` | C | N | C | C | N | N | N | N | N | N | C |
-| `aplane.falcon1024-sentry-ed25519.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| `aplane.falcon1024-sentry-falcon1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| `aplane.falcon1024-sentry1024.v1` | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | `aplane.corridor.v1` | C | C | C | Y | C | N | N | N | N | N | C |
-| `aplane.allowlist.v1` | C | C | C | C | C | N | N | N | N | N | N |
-| `aplane.timed-allowlist.v1` | C | C | C | C | C | N | N | N | N | N | N |
 | `aplane.htlc.v1` | C | C | C | C | C | N | N | N | N | N | N |
 
 ## Capability Columns
@@ -65,19 +58,15 @@ included as normal user-account operations.
 
 ## Condition Notes
 
-- `ed25519`, `aplane.falcon1024.v1`, `aplane.ed25519.v1`,
-  `aplane.falcon1024_ed25519.v1`, and `aplane.ecdsak1.v1` do not restrict
+- `ed25519`, `aplane.falcon1024.v1`, and `aplane.ed25519.v1` do not restrict
   transaction type or special transaction fields at the key-type layer. Local
   signer policy remains the safety boundary.
-- `aplane.falcon1024-allowlist.v1` and `aplane.ed25519-allowlist.v1` are
-  bounded1 templates. They admit only pure payments and pure asset transfers
-  to self or an inline allowlisted recipient, plus asset opt-in. They reject
+- `aplane.falcon1024-allowlist.v1` is a bounded1 template. It admits only pure
+  payments and pure asset transfers to self or an inline allowlisted recipient,
+  plus asset opt-in. It rejects
   close, clawback, and all non-transfer transaction types. Rekey is allowed
   only as the bounded1 pure self-payment form authorized by the spending key;
   the allowlist does not gate that rekey path.
-- `aplane.falcon1024-hashlock.v1` admits the same bounded transfer effects but
-  requires the configured SHA256 preimage for spending, asset opt-in, and pure
-  spending-key rekey. Close, clawback, and non-transfer types are rejected.
 - `aplane.falcon1024-timelock.v1` admits the same bounded transfer effects only
   when `FirstValid >= unlock_round`; the round condition also gates pure
   spending-key rekey. Close, clawback, and non-transfer types are rejected.
@@ -86,13 +75,12 @@ included as normal user-account operations.
   fixed-depth proof against the root derived from the key-file recipient list.
   Self-send, asset opt-in, and pure spending-key rekey require no proof. Close,
   clawback, and non-transfer types are rejected.
-- `aplane.falcon1024-admin-allowlist.v1` admits only pure `pay` and `axfer`
+- `aplane.falcon1024-allowlist-alock.v1` admits only pure `pay` and `axfer`
   spends to self or a compiled recipient. Optional asset-ID and amount limits
   narrow that set. It rejects close, clawback, and every other transaction
   type. Rekey is restricted to the pure payment normal form and additionally
   requires the external Falcon contract-admin signature.
-- `aplane.falcon1024-sentry-ed25519.v1` and
-  `aplane.falcon1024-sentry-falcon1024.v1` require guarded signing assembly.
+- `aplane.falcon1024-sentry1024.v1` requires guarded signing assembly.
   Once both the user and sentry component signatures verify, the on-chain
   guarded-account LogicSig does not restrict transaction type or special
   transaction fields. The sentry policy that decides whether to issue the
@@ -111,12 +99,6 @@ included as normal user-account operations.
   rekey, and the sentry's off-chain rekey policy decides whether a specific
   sender → rekey-target edge is authorized before issuing the sentry component
   signature.
-- `aplane.allowlist.v1` allows `pay` and normal `axfer` only to configured
-  allowlisted recipients. Close destinations must be zero or allowlisted. ASA
-  opt-in is allowed only for configured `allowed_optin_assets`.
-- `aplane.timed-allowlist.v1` has the same destination and opt-in rules as
-  `aplane.allowlist.v1`, but normal spend paths additionally require
-  `FirstValid >= unlock_round`. Approved ASA opt-in can happen before unlock.
 - `aplane.htlc.v1` allows claim paths to the configured recipient before
   timeout with the configured preimage, refund paths to the configured refund
   address after timeout, and approved ASA opt-in for configured

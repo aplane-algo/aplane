@@ -398,8 +398,6 @@ func compiledKeyTypeColumn(tmpl LibraryTemplateInfo) string {
 	switch {
 	case strings.HasPrefix(keyType, "falcon"):
 		return "falcon"
-	case strings.HasPrefix(keyType, "ecdsa"), strings.HasPrefix(keyType, "ecdsak1"):
-		return "ecdsa"
 	default:
 		return "dsa"
 	}

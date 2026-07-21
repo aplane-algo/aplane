@@ -196,8 +196,8 @@ func TestExecutorRejectsSentryKeyTypesBeforeSessionLoad(t *testing.T) {
 		name    string
 		keyType string
 	}{
-		{name: "falcon guarded ed25519 sentry", keyType: keytypes.GuardedFalcon1024SentryEd25519V1},
-		{name: "falcon guarded falcon sentry", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1},
+		{name: "Falcon guarded Falcon sentry", keyType: keytypes.GuardedFalcon1024Sentry1024V1},
+		{name: "falcon guarded falcon sentry", keyType: keytypes.GuardedFalcon1024Sentry1024V1},
 		{name: "corridor", keyType: keytypes.CorridorV1},
 	}
 
@@ -238,10 +238,10 @@ func TestExecutorSignCryptoKeyRejectsSentryKeyTypesBeforeProviderLookup(t *testi
 		keyType string
 		want    string
 	}{
-		{name: "ed25519 component", keyType: keytypes.SentryComponentEd25519V1, want: sentryComponentSignRejectMessage},
+		{name: "ed25519 component", keyType: keytypes.SentryComponentFalcon1024V1, want: sentryComponentSignRejectMessage},
 		{name: "falcon component", keyType: keytypes.SentryComponentFalcon1024V1, want: sentryComponentSignRejectMessage},
-		{name: "guarded ed25519 sentry", keyType: keytypes.GuardedFalcon1024SentryEd25519V1, want: guardedAccountSignRejectMessage},
-		{name: "guarded falcon sentry", keyType: keytypes.GuardedFalcon1024SentryFalcon1024V1, want: guardedAccountSignRejectMessage},
+		{name: "guarded Falcon sentry", keyType: keytypes.GuardedFalcon1024Sentry1024V1, want: guardedAccountSignRejectMessage},
+		{name: "guarded falcon sentry", keyType: keytypes.GuardedFalcon1024Sentry1024V1, want: guardedAccountSignRejectMessage},
 		{name: "corridor", keyType: keytypes.CorridorV1, want: guardedAccountSignRejectMessage},
 	}
 

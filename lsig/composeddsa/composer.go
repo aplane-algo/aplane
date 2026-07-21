@@ -67,7 +67,7 @@ type BoundedCapableDSAOps interface {
 // Config holds configuration for creating a ComposedDSA.
 type Config struct {
 	// Identity
-	KeyType     string // e.g., "aplane.falcon1024-hashlock.v1"
+	KeyType     string // e.g., "aplane.falcon1024-timelock.v1"
 	BaseKeyType string // e.g., "aplane.falcon1024.v1"
 	FamilyName  string // qualified registry family, e.g. "aplane.falcon1024"
 	Version     int
@@ -177,8 +177,8 @@ func (c *ComposedDSA) BaseKeyType() string {
 // RoutingFamily returns the qualified registry family ("publisher.family"). For a
 // composed template this is the base DSA's family (set from the base
 // registration), so keygen/signing/metadata lookups via RoutingFamily route to the
-// base provider's ops. For a DSA that owns its key generation (e.g.
-// falcon1024_ed25519) it is that provider's own qualified family.
+// base provider's ops. For a DSA that owns its key generation, it is that
+// provider's own qualified family.
 func (c *ComposedDSA) RoutingFamily() string {
 	return c.familyName
 }

@@ -4,9 +4,8 @@
 package guarded
 
 import (
+	"bytes"
 	"context"
-	"crypto/ed25519"
-	cryptorand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -31,6 +30,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
 func TestGuardedTargetsNormalizeSentryPublicKey(t *testing.T) {
@@ -53,8 +53,8 @@ func TestGuardedTargetsNormalizeSentryPublicKey(t *testing.T) {
 	if targets[0].Index != 0 || targets[0].Sender != sender || targets[0].Account != sender {
 		t.Fatalf("target = %+v, want index 0 sender/account %s", targets[0], sender)
 	}
-	if targets[0].SentryComponentKeyType != keytypes.SentryComponentEd25519V1 {
-		t.Fatalf("sentry key type = %q, want %q", targets[0].SentryComponentKeyType, keytypes.SentryComponentEd25519V1)
+	if targets[0].SentryComponentKeyType != keytypes.SentryComponentFalcon1024V1 {
+		t.Fatalf("sentry key type = %q, want %q", targets[0].SentryComponentKeyType, keytypes.SentryComponentFalcon1024V1)
 	}
 	if targets[0].SentryPublicKey != sentryHex {
 		t.Fatalf("sentry public key = %q, want %q", targets[0].SentryPublicKey, sentryHex)
@@ -91,7 +91,7 @@ func TestGuardedTargetsUseEffectiveSigner(t *testing.T) {
 func TestGuardedTargetsNormalizeFalconSentryPublicKey(t *testing.T) {
 	sender := testAddress(1).String()
 	sentryHex := testFalconSentryPublicKeyHex(0xd6)
-	s, _ := newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024SentryFalcon1024V1, 1500, "0X"+strings.ToUpper(sentryHex))
+	s, _ := newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Sentry1024V1, 1500, "0X"+strings.ToUpper(sentryHex))
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 
 	if !s.HasGuardedEffectiveSigner([]types.Transaction{txn}) {
@@ -180,7 +180,7 @@ func TestPlanGuardedGroupReturnsGroupedDummies(t *testing.T) {
 		Index:                  0,
 		Sender:                 sender,
 		Account:                sender,
-		SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+		SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 		SentryPublicKey:        sentryHex,
 	}}
 
@@ -230,7 +230,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "unexpected target index",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     9,
-				SignatureScheme: keytypes.SentryComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
 				Signature:       "aa",
 			}}},
 			wantMessage: "unexpected signature for target index 9",
@@ -239,11 +239,11 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "duplicate target index",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
-				SignatureScheme: keytypes.SentryComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
 				Signature:       "aa",
 			}, {
 				TargetIndex:     0,
-				SignatureScheme: keytypes.SentryComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
 				Signature:       "bb",
 			}}},
 			wantMessage: "duplicate signature for target index 0",
@@ -252,11 +252,11 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "wrong scheme",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
-				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				SignatureScheme: "aplane.sentry-unknown.v1",
 				Signature:       "aa",
 			}, {
 				TargetIndex:     1,
-				SignatureScheme: keytypes.SentryComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
 				Signature:       "bb",
 			}}},
 			wantMessage: "signature for target index 0 used scheme",
@@ -265,7 +265,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			name: "missing target index",
 			resp: &signerapi.ComponentSignResponse{Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
-				SignatureScheme: keytypes.SentryComponentEd25519V1,
+				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
 				Signature:       "aa",
 			}}},
 			wantMessage: "missing signature for target index 1",
@@ -278,7 +278,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 			err := collectComponentSignatures(
 				tt.resp,
 				[]int{0, 1},
-				keytypes.SentryComponentEd25519V1,
+				keytypes.SentryComponentFalcon1024V1,
 				dst,
 			)
 			if err == nil {
@@ -292,10 +292,7 @@ func TestCollectComponentSignaturesRejectsMalformedResponses(t *testing.T) {
 }
 
 func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(cryptorand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
+	publicKey, privateKey := testFalconSentryKeypair(t, 0x61)
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
@@ -310,7 +307,7 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	signatures, requestIDs, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
+		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
 	)
 	if err != nil {
 		t.Fatalf("requestSentryComponentSignatures() error = %v", err)
@@ -318,20 +315,14 @@ func TestRequestSentryComponentSignaturesUsesConfiguredHTTPEndpoint(t *testing.T
 	if signatures[0] == "" {
 		t.Fatal("signature for target 0 is empty")
 	}
-	if requestIDs[sentryRequestKey{ComponentKeyType: keytypes.SentryComponentEd25519V1, PublicKey: sentryHex}] == "" {
+	if requestIDs[sentryRequestKey{ComponentKeyType: keytypes.SentryComponentFalcon1024V1, PublicKey: sentryHex}] == "" {
 		t.Fatal("request ID for sentry is empty")
 	}
 }
 
 func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(cryptorand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
-	wrongPublicKey, wrongPrivateKey, err := ed25519.GenerateKey(cryptorand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
+	publicKey, privateKey := testFalconSentryKeypair(t, 0x62)
+	wrongPublicKey, wrongPrivateKey := testFalconSentryKeypair(t, 0x63)
 	sentryHex := hex.EncodeToString(publicKey)
 	wrongHex := hex.EncodeToString(wrongPublicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
@@ -350,15 +341,15 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 		sentryHex: {URL: wrongServer.URL, TokenFile: tokenFile},
 	}
 
-	_, _, err = s.requestSentryComponentSignatures(
+	_, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
+		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
 	)
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want explicit endpoint mismatch")
 	}
-	componentSelector, selectorErr := sentryComponentSelector(keytypes.SentryComponentEd25519V1, sentryHex)
+	componentSelector, selectorErr := sentryComponentSelector(keytypes.SentryComponentFalcon1024V1, sentryHex)
 	if selectorErr != nil {
 		t.Fatalf("sentryComponentSelector() error = %v", selectorErr)
 	}
@@ -375,10 +366,7 @@ func TestRequestSentryComponentSignaturesExplicitMismatchDoesNotFallback(t *test
 }
 
 func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
-	publicKey, _, err := ed25519.GenerateKey(cryptorand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
+	publicKey, _ := testFalconSentryKeypair(t, 0x64)
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
@@ -396,10 +384,10 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 		sentryHex: {URL: server.URL, TokenFile: tokenFile},
 	}
 
-	_, _, err = s.requestSentryComponentSignatures(
+	_, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
+		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
 	)
 	if err == nil {
 		t.Fatal("requestSentryComponentSignatures() error = nil, want locked endpoint")
@@ -416,10 +404,7 @@ func TestRequestSentryComponentSignaturesReportsLockedEndpoint(t *testing.T) {
 }
 
 func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(cryptorand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
+	publicKey, privateKey := testFalconSentryKeypair(t, 0x65)
 	sentryHex := hex.EncodeToString(publicKey)
 	txn := testPaymentTxn(t, testAddress(1), testAddress(2), "guarded")
 	groupBytesHex := encodeGroupHex([]types.Transaction{txn})
@@ -431,7 +416,7 @@ func TestRequestSentryComponentSignaturesFallsBackToCurrentSigner(t *testing.T) 
 	signatures, _, err := s.requestSentryComponentSignatures(
 		context.Background(),
 		groupBytesHex,
-		[]guardedTarget{ed25519GuardedTarget(txn.Sender.String(), sentryHex)},
+		[]guardedTarget{guardedTargetForTest(txn.Sender.String(), sentryHex)},
 	)
 	if err != nil {
 		t.Fatalf("requestSentryComponentSignatures() error = %v", err)
@@ -491,7 +476,7 @@ func newTestSigner(t *testing.T, build func(c *cache.SignerCache)) (*Signer, *ca
 
 func newGuardedTestSigner(t *testing.T, sender string, lsigSize int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
 	t.Helper()
-	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024SentryEd25519V1, lsigSize, sentryPublicKey)
+	return newGuardedTestSignerForKeyType(t, sender, keytypes.GuardedFalcon1024Sentry1024V1, lsigSize, sentryPublicKey)
 }
 
 func newGuardedTestSignerForKeyType(t *testing.T, sender, keyType string, lsigSize int, sentryPublicKey string) (*Signer, *cache.SignerCache) {
@@ -539,7 +524,7 @@ func testPaymentTxn(t *testing.T, from, to types.Address, note string) types.Tra
 }
 
 func testSentryPublicKeyHex(prefix byte) string {
-	var publicKey [ed25519.PublicKeySize]byte
+	var publicKey [falconfamily.PublicKeySize]byte
 	publicKey[0] = prefix
 	return hex.EncodeToString(publicKey[:])
 }
@@ -550,12 +535,12 @@ func testFalconSentryPublicKeyHex(prefix byte) string {
 	return hex.EncodeToString(publicKey)
 }
 
-func ed25519GuardedTarget(account, sentryHex string) guardedTarget {
+func guardedTargetForTest(account, sentryHex string) guardedTarget {
 	return guardedTarget{
 		Index:                  0,
 		Sender:                 account,
 		Account:                account,
-		SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+		SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 		SentryPublicKey:        sentryHex,
 	}
 }
@@ -576,13 +561,13 @@ func TestSentryComponentLabelUsesFalconSentryKeyID(t *testing.T) {
 	}
 }
 
-func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey ed25519.PrivateKey, token string, signCalls *atomic.Int32) *httptest.Server {
+func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey []byte, token string, signCalls *atomic.Int32) *httptest.Server {
 	t.Helper()
 	publicKey, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
 		t.Fatalf("decode sentry public key: %v", err)
 	}
-	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	componentSelector, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("Sentry Key ID: %v", err)
 	}
@@ -597,7 +582,7 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey e
 			Keys: []signerapi.KeyInfo{{
 				Address:        componentSelector,
 				PublicKeyHex:   publicKeyHex,
-				KeyType:        keytypes.SentryComponentEd25519V1,
+				KeyType:        keytypes.SentryComponentFalcon1024V1,
 				IsComponentKey: true,
 			}},
 		})
@@ -631,15 +616,29 @@ func newSentryEndpointTestServer(t *testing.T, publicKeyHex string, privateKey e
 		}
 		for _, index := range req.TargetIndices {
 			msg := message.ComponentMessage(message.RoleSentry, group.Entries[index].TxID)
+			signature, err := signerops.New(nil).Sign(privateKey, msg[:])
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			resp.Signatures = append(resp.Signatures, signerapi.ComponentSignature{
 				TargetIndex:     index,
-				SignatureScheme: keytypes.SentryComponentEd25519V1,
-				Signature:       hex.EncodeToString(ed25519.Sign(privateKey, msg[:])),
+				SignatureScheme: keytypes.SentryComponentFalcon1024V1,
+				Signature:       hex.EncodeToString(signature),
 			})
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	})
 	return httptest.NewServer(mux)
+}
+
+func testFalconSentryKeypair(t *testing.T, fill byte) ([]byte, []byte) {
+	t.Helper()
+	publicKey, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{fill}, 64))
+	if err != nil {
+		t.Fatalf("GenerateKeypair() error = %v", err)
+	}
+	return publicKey, privateKey
 }
 
 func writeSentryTokenFile(t *testing.T, token string) string {

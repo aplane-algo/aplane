@@ -55,12 +55,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
-	for _, keyType := range []string{"aplane.falcon1024_ed25519.v1", "aplane.ecdsak1.v1"} {
-		if err := apadmin.ActivateKeyType(keyType); err != nil {
-			t.Fatalf("failed to activate %s: %v", keyType, err)
-		}
-	}
-
 	token := readSignerToken(t, signerd)
 	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
 
@@ -84,12 +78,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			keyType: "aplane.falcon1024.v1",
 		},
 		{
-			keyType: "aplane.falcon1024_ed25519.v1",
-		},
-		{
-			keyType: "aplane.ecdsak1.v1",
-		},
-		{
 			keyType: "aplane.htlc.v1",
 			params: map[string]string{
 				"hash":           hex.EncodeToString(preimageHash[:]),
@@ -104,50 +92,11 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 			},
 		},
 		{
-			keyType: "aplane.allowlist.v1",
-			params:  map[string]string{"recipients": funder.GetAddress()},
-			negative: includedKeyTypeNegative{
-				name:     "non-allowlisted receiver",
-				receiver: integrationBurnAddress,
-			},
-		},
-		{
-			keyType: "aplane.timed-allowlist.v1",
-			params: map[string]string{
-				"recipients":   funder.GetAddress(),
-				"unlock_round": fmt.Sprintf("%d", timelockRound),
-			},
-			positiveFirstValid: timelockRound,
-			negative: includedKeyTypeNegative{
-				name:       "before unlock round",
-				firstValid: timelockRound - 1,
-			},
-		},
-		{
 			keyType: "aplane.falcon1024-allowlist.v1",
 			params:  map[string]string{"recipients": funder.GetAddress()},
 			negative: includedKeyTypeNegative{
 				name:     "non-allowlisted receiver",
 				receiver: integrationBurnAddress,
-			},
-		},
-		{
-			keyType: "aplane.ed25519-allowlist.v1",
-			params:  map[string]string{"recipients": funder.GetAddress()},
-			negative: includedKeyTypeNegative{
-				name:     "non-allowlisted receiver",
-				receiver: integrationBurnAddress,
-			},
-		},
-		{
-			keyType: "aplane.falcon1024-hashlock.v1",
-			params:  map[string]string{"hash": hex.EncodeToString(preimageHash[:])},
-			positiveArgs: map[string]string{
-				"preimage": hex.EncodeToString(preimage),
-			},
-			negative: includedKeyTypeNegative{
-				name: "wrong preimage",
-				args: map[string]string{"preimage": hex.EncodeToString(bytes.Repeat([]byte("x"), 32))},
 			},
 		},
 		{
@@ -423,12 +372,8 @@ func installAllBundledTemplates(t *testing.T, signerDataDir string) {
 	apstore := harness.NewApStoreHarness(t, signerDataDir)
 	templateFiles := []string{
 		"aplane.htlc.v1.yaml",
-		"aplane.allowlist.v1.yaml",
-		"aplane.timed-allowlist.v1.yaml",
-		"aplane.ed25519-allowlist.v1.yaml",
 		"aplane.falcon1024-allowlist.v1.yaml",
 		"aplane.falcon1024-allowlist.v2.yaml",
-		"aplane.falcon1024-hashlock.v1.yaml",
 		"aplane.falcon1024-timelock.v1.yaml",
 	}
 	templatePaths := make([]string, 0, len(templateFiles))

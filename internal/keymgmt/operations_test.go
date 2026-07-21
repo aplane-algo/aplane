@@ -5,7 +5,6 @@ package keymgmt
 
 import (
 	"context"
-	stded25519 "crypto/ed25519"
 	"encoding/base64"
 	"io"
 	"net/http"
@@ -65,12 +64,10 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		{keyType: "ed25519", want: true},
 		{keyType: "aplane.falcon1024.v1", want: true},
 		{keyType: falcon1024guarded.KeyTypeV1, want: false},
-		{keyType: falcon1024guarded.KeyTypeFalcon1024V1, want: false},
-		{keyType: keytypes.SentryComponentEd25519V1, want: false},
+		{keyType: falcon1024guarded.KeyTypeV1, want: false},
+		{keyType: keytypes.SentryComponentFalcon1024V1, want: false},
 		{keyType: keytypes.SentryComponentFalcon1024V1, want: false},
 		{keyType: "aplane.governance-ed25519.v1", want: false},
-		{keyType: "aplane.ecdsak1.v1", want: false},
-		{keyType: "aplane.falcon1024_ed25519.v1", want: false},
 		{keyType: "aplane.falcon1024-allowlist.v1", want: false},
 		{keyType: "", want: false},
 	}
@@ -85,9 +82,10 @@ func TestSupportsMnemonicImport(t *testing.T) {
 func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 
-	_, err := ImportKeyWithActivatedContext(context.Background(), paths, "test-identity", "aplane.ecdsak1.v1", "mnemonic words here", nil, nil, []string{"aplane.ecdsak1.v1"})
+	keyType := falcon1024guarded.KeyTypeV1
+	_, err := ImportKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, "mnemonic words here", nil, nil, []string{keyType})
 	if err == nil || !strings.Contains(err.Error(), "mnemonic import not supported") {
-		t.Fatalf("ImportKeyWithActivatedContext(aplane.ecdsak1.v1) error = %v, want mnemonic import unsupported", err)
+		t.Fatalf("ImportKeyWithActivatedContext(%s) error = %v, want mnemonic import unsupported", keyType, err)
 	}
 }
 
@@ -124,16 +122,17 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 }
 
 func TestValidKeyTypesIncludeIdentityActivatedLibraryProvider(t *testing.T) {
-	if containsKeyType(GetValidKeyTypes(), "aplane.falcon1024_ed25519.v1") {
+	const keyType = "aplane.ed25519.v1"
+	if containsKeyType(GetValidKeyTypes(), keyType) {
 		t.Fatal("GetValidKeyTypes() included library-only provider without activation")
 	}
-	if !containsKeyType(GetValidKeyTypesWithActivated([]string{"aplane.falcon1024_ed25519.v1"}), "aplane.falcon1024_ed25519.v1") {
+	if !containsKeyType(GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
 		t.Fatal("GetValidKeyTypesWithActivated() did not include activated library provider")
 	}
-	if IsValidKeyType("aplane.falcon1024_ed25519.v1") {
+	if IsValidKeyType(keyType) {
 		t.Fatal("IsValidKeyType() accepted library-only provider without activation")
 	}
-	if !IsValidKeyTypeWithActivated("aplane.falcon1024_ed25519.v1", []string{"aplane.falcon1024_ed25519.v1"}) {
+	if !IsValidKeyTypeWithActivated(keyType, []string{keyType}) {
 		t.Fatal("IsValidKeyTypeWithActivated() rejected activated library provider")
 	}
 }
@@ -157,11 +156,11 @@ func TestValidKeyTypesIncludeIdentityActivatedYAMLComposedProvider(t *testing.T)
 }
 
 func TestValidKeyTypesIncludeSentryComponentKey(t *testing.T) {
-	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentEd25519V1) {
-		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentEd25519V1)
+	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentFalcon1024V1) {
+		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentFalcon1024V1)
 	}
-	if !IsValidKeyType(keytypes.SentryComponentEd25519V1) {
-		t.Fatalf("IsValidKeyType() rejected %s", keytypes.SentryComponentEd25519V1)
+	if !IsValidKeyType(keytypes.SentryComponentFalcon1024V1) {
+		t.Fatalf("IsValidKeyType() rejected %s", keytypes.SentryComponentFalcon1024V1)
 	}
 	if !containsKeyType(GetValidKeyTypes(), keytypes.SentryComponentFalcon1024V1) {
 		t.Fatalf("GetValidKeyTypes() missing %s", keytypes.SentryComponentFalcon1024V1)
@@ -188,7 +187,7 @@ func TestValidKeyTypesExcludeExternalGovernancePrivateKeys(t *testing.T) {
 func TestValidKeyTypesIncludeActivatedFalcon1024GuardedKey(t *testing.T) {
 	for _, keyType := range []string{
 		falcon1024guarded.KeyTypeV1,
-		falcon1024guarded.KeyTypeFalcon1024V1,
+		falcon1024guarded.KeyTypeV1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			if containsKeyType(GetValidKeyTypes(), keyType) {
@@ -213,7 +212,7 @@ func TestGenerateKeyFalcon1024GuardedRequiresSentryPublicKey(t *testing.T) {
 
 	for _, keyType := range []string{
 		falcon1024guarded.KeyTypeV1,
-		falcon1024guarded.KeyTypeFalcon1024V1,
+		falcon1024guarded.KeyTypeV1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
 			_, err := GenerateKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, masterKey, nil, []string{keyType})
@@ -233,10 +232,6 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 	}{
 		{
 			keyType:         falcon1024guarded.KeyTypeV1,
-			sentryPublicKey: strings.Repeat("ab", stded25519.PublicKeySize),
-		},
-		{
-			keyType:         falcon1024guarded.KeyTypeFalcon1024V1,
 			sentryPublicKey: strings.Repeat("cd", falconfamily.PublicKeySize),
 		},
 	}
@@ -311,7 +306,7 @@ func TestGenerateKeyFalcon1024GuardedPersistsSigningMetadata(t *testing.T) {
 
 func TestGenerateKeySentryComponent(t *testing.T) {
 	for _, keyType := range []string{
-		keytypes.SentryComponentEd25519V1,
+		keytypes.SentryComponentFalcon1024V1,
 		keytypes.SentryComponentFalcon1024V1,
 	} {
 		t.Run(keyType, func(t *testing.T) {
@@ -350,7 +345,7 @@ func TestGenerateKeySentryComponent(t *testing.T) {
 func TestDetectKeyInfoFromFileWithMasterKeyRejectsPlaintext(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "plain.key")
-	content := []byte(`{"key_type":"aplane.timed-allowlist.v1","parameters":{"recipients":"ADDR"}}`)
+	content := []byte(`{"key_type":"test.timed-policy.v1","parameters":{"recipients":"ADDR"}}`)
 	if err := os.WriteFile(keyFile, content, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -549,7 +544,7 @@ func TestDetectKeyInfoFromFileWithMasterKeyWrongMasterKey(t *testing.T) {
 	keyFile := filepath.Join(dir, "encrypted.key")
 	masterKey := []byte("0123456789abcdef0123456789abcdef")
 	wrongKey := []byte("fedcba9876543210fedcba9876543210")
-	plaintext := []byte(`{"key_type":"aplane.timed-allowlist.v1","parameters":{"recipients":"ADDR"}}`)
+	plaintext := []byte(`{"key_type":"test.timed-policy.v1","parameters":{"recipients":"ADDR"}}`)
 	encrypted, err := crypto.EncryptWithMasterKey(plaintext, masterKey)
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey() error = %v", err)
@@ -651,8 +646,8 @@ func TestParseKeyFileInfoReadsCanonicalParameters(t *testing.T) {
 	}{
 		{
 			name:       "uses parameters when present",
-			payload:    canonicalGenericKeyJSON(t, "aplane.timed-allowlist.v1", map[string]string{"recipients": "ADDR1"}, ""),
-			wantType:   "aplane.timed-allowlist.v1",
+			payload:    canonicalGenericKeyJSON(t, "test.timed-policy.v1", map[string]string{"recipients": "ADDR1"}, ""),
+			wantType:   "test.timed-policy.v1",
 			wantParamK: "recipients",
 			wantParamV: "ADDR1",
 		},
@@ -692,7 +687,7 @@ func TestParseKeyFileInfoIncludesPublicKey(t *testing.T) {
 }
 
 func TestParseKeyFileInfoRejectsParameterAlias(t *testing.T) {
-	canonical := canonicalGenericKeyJSON(t, "aplane.timed-allowlist.v1", map[string]string{"recipients": "ADDR1"}, "")
+	canonical := canonicalGenericKeyJSON(t, "test.timed-policy.v1", map[string]string{"recipients": "ADDR1"}, "")
 	aliased := strings.Replace(string(canonical), `"parameters"`, `"params"`, 1)
 	_, err := parseKeyFileInfo([]byte(aliased))
 	if err == nil {
@@ -704,8 +699,8 @@ func TestParseKeyFileInfoRejectsParameterAlias(t *testing.T) {
 }
 
 func TestParseKeyFileInfoMissingKeyType(t *testing.T) {
-	canonical := canonicalGenericKeyJSON(t, "aplane.timed-allowlist.v1", nil, "")
-	missing := strings.Replace(string(canonical), `"key_type": "aplane.timed-allowlist.v1",`, "", 1)
+	canonical := canonicalGenericKeyJSON(t, "test.timed-policy.v1", nil, "")
+	missing := strings.Replace(string(canonical), `"key_type": "test.timed-policy.v1",`, "", 1)
 	_, err := parseKeyFileInfo([]byte(missing))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -723,7 +718,7 @@ func TestParseKeyFileInfoInvalidJSON(t *testing.T) {
 }
 
 func TestParseDisplayTEALMissingFieldReturnsEmpty(t *testing.T) {
-	teal, err := parseDisplayTEAL(canonicalGenericKeyJSON(t, "aplane.timed-allowlist.v1", nil, ""))
+	teal, err := parseDisplayTEAL(canonicalGenericKeyJSON(t, "test.timed-policy.v1", nil, ""))
 	if err != nil {
 		t.Fatalf("parseDisplayTEAL() error = %v", err)
 	}

@@ -24,14 +24,14 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 	svc := &stubServices{
 		listLibraryResult: adminproto.ListLibraryTemplatesResult{
 			Templates: []adminproto.LibraryTemplateInfo{{
-				KeyType:      "aplane.timed-allowlist.v1",
+				KeyType:      "test.timed-policy.v1",
 				TemplateType: "generic",
 				DisplayName:  "Timed Allowlist",
 			}},
 		},
 		installResult: adminproto.InstallLibraryTemplateResult{
 			Success:      true,
-			KeyType:      "aplane.timed-allowlist.v1",
+			KeyType:      "test.timed-policy.v1",
 			TemplateType: "generic",
 		},
 		listInstalledResult: adminproto.ListInstalledTemplatesResult{
@@ -50,7 +50,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 		},
 		showLibraryResult: adminproto.ShowLibraryTemplateResult{
 			Success:       true,
-			KeyType:       "aplane.timed-allowlist.v1",
+			KeyType:       "test.timed-policy.v1",
 			TemplateType:  "generic",
 			SourcePath:    "/tmp/aplane/library/templates/timed-allowlist.yaml",
 			SourceSHA256:  "0123456789abcdef",
@@ -70,16 +70,16 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 		},
 		activateResult: adminproto.ActivateKeyTypeResult{
 			Success: true,
-			KeyType: "aplane.falcon1024_ed25519.v1",
+			KeyType: "aplane.ed25519.v1",
 		},
 		deactivateResult: adminproto.DeactivateKeyTypeResult{
 			Success: true,
-			KeyType: "aplane.falcon1024_ed25519.v1",
+			KeyType: "aplane.ed25519.v1",
 			Removed: true,
 		},
 		keyTypesResult: adminproto.ListKeyTypesResult{
 			KeyTypes: []signerapi.KeyTypeInfo{{
-				KeyType:     "aplane.timed-allowlist.v1",
+				KeyType:     "test.timed-policy.v1",
 				DisplayName: "Timed Allowlist",
 			}},
 		},
@@ -101,7 +101,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 			Type: protocol.MsgTypeInstallLibraryTemplate,
 			ID:   "install-template-1",
 		},
-		KeyType:      "aplane.timed-allowlist.v1",
+		KeyType:      "test.timed-policy.v1",
 		TemplateType: "generic",
 	})
 	dispatchAdminMessage(t, session, protocol.ListInstalledTemplatesMessage{
@@ -125,7 +125,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 			Type: protocol.MsgTypeShowLibraryTemplate,
 			ID:   "show-library-1",
 		},
-		KeyType:      "aplane.timed-allowlist.v1",
+		KeyType:      "test.timed-policy.v1",
 		TemplateType: "generic",
 	})
 	dispatchAdminMessage(t, session, protocol.ImportInstalledTemplateMessage{
@@ -150,7 +150,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 			Type: protocol.MsgTypeActivateKeyType,
 			ID:   "activate-keytype-1",
 		},
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 	dispatchAdminMessage(t, session, protocol.DeactivateKeyTypeMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -158,7 +158,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 			Type: protocol.MsgTypeDeactivateKeyType,
 			ID:   "deactivate-keytype-1",
 		},
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 	dispatchAdminMessage(t, session, protocol.ListKeyTypesMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -174,8 +174,8 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 	if svc.installLibraryCalls != 1 {
 		t.Fatalf("InstallLibraryTemplate calls = %d, want 1", svc.installLibraryCalls)
 	}
-	if svc.lastInstallTemplate.KeyType != "aplane.timed-allowlist.v1" || svc.lastInstallTemplate.TemplateType != "generic" {
-		t.Fatalf("install request = %+v, want aplane.timed-allowlist.v1 generic", svc.lastInstallTemplate)
+	if svc.lastInstallTemplate.KeyType != "test.timed-policy.v1" || svc.lastInstallTemplate.TemplateType != "generic" {
+		t.Fatalf("install request = %+v, want test.timed-policy.v1 generic", svc.lastInstallTemplate)
 	}
 	if svc.listInstalledCalls != 1 {
 		t.Fatalf("ListInstalledTemplates calls = %d, want 1", svc.listInstalledCalls)
@@ -184,9 +184,9 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 		t.Fatalf("show installed calls/request = %d %+v, want escrow-v1", svc.showInstalledCalls, svc.lastShowInstalled)
 	}
 	if svc.showLibraryCalls != 1 ||
-		svc.lastShowLibrary.KeyType != "aplane.timed-allowlist.v1" ||
+		svc.lastShowLibrary.KeyType != "test.timed-policy.v1" ||
 		svc.lastShowLibrary.TemplateType != "generic" {
-		t.Fatalf("show library calls/request = %d %+v, want aplane.timed-allowlist.v1 generic", svc.showLibraryCalls, svc.lastShowLibrary)
+		t.Fatalf("show library calls/request = %d %+v, want test.timed-policy.v1 generic", svc.showLibraryCalls, svc.lastShowLibrary)
 	}
 	if svc.importInstalledCalls != 1 || string(svc.lastImportInstalled.TemplateYAML) != "schema_version: 1\n" {
 		t.Fatalf("import installed calls/request = %d %q, want template yaml", svc.importInstalledCalls, string(svc.lastImportInstalled.TemplateYAML))
@@ -197,13 +197,13 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 	if svc.activateKeyTypeCalls != 1 {
 		t.Fatalf("ActivateKeyType calls = %d, want 1", svc.activateKeyTypeCalls)
 	}
-	if svc.lastActivateKeyType.KeyType != "aplane.falcon1024_ed25519.v1" {
+	if svc.lastActivateKeyType.KeyType != "aplane.ed25519.v1" {
 		t.Fatalf("activate request = %+v, want dual provider", svc.lastActivateKeyType)
 	}
 	if svc.deactivateKeyTypeCalls != 1 {
 		t.Fatalf("DeactivateKeyType calls = %d, want 1", svc.deactivateKeyTypeCalls)
 	}
-	if svc.lastDeactivateKeyType.KeyType != "aplane.falcon1024_ed25519.v1" {
+	if svc.lastDeactivateKeyType.KeyType != "aplane.ed25519.v1" {
 		t.Fatalf("deactivate request = %+v, want dual provider", svc.lastDeactivateKeyType)
 	}
 	if svc.listKeyTypesCalls != 1 {
@@ -250,7 +250,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 			Type: protocol.MsgTypeInstallLibraryTemplate,
 			ID:   "install-locked",
 		},
-		KeyType:      "aplane.timed-allowlist.v1",
+		KeyType:      "test.timed-policy.v1",
 		TemplateType: "generic",
 	})
 	dispatchAdminMessage(t, session, protocol.ShowLibraryTemplateMessage{
@@ -259,7 +259,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 			Type: protocol.MsgTypeShowLibraryTemplate,
 			ID:   "show-library-locked",
 		},
-		KeyType:      "aplane.timed-allowlist.v1",
+		KeyType:      "test.timed-policy.v1",
 		TemplateType: "generic",
 	})
 	dispatchAdminMessage(t, session, protocol.ActivateKeyTypeMessage{
@@ -268,7 +268,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 			Type: protocol.MsgTypeActivateKeyType,
 			ID:   "activate-locked",
 		},
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 	dispatchAdminMessage(t, session, protocol.DeactivateKeyTypeMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -276,7 +276,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 			Type: protocol.MsgTypeDeactivateKeyType,
 			ID:   "deactivate-locked",
 		},
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 
 	if svc.listLibraryCalls != 0 {

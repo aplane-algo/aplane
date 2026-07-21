@@ -19,15 +19,12 @@ import (
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/library/templates"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
-	ed25519family "github.com/aplane-algo/aplane/lsig/ed25519lsig/family"
 	falcon1024 "github.com/aplane-algo/aplane/lsig/falcon1024"
 	falconfamily "github.com/aplane-algo/aplane/lsig/falcon1024/family"
 )
 
 func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 	falcon1024.RegisterClient()
-	ed25519lsig.RegisterClient()
 	client, err := algod.MakeClient(algo.ResolveTEALCompileAlgodURL(), "")
 	if err != nil {
 		t.Fatal(err)
@@ -50,12 +47,10 @@ func TestBundledBoundedCompiledBudgetMatrix(t *testing.T) {
 		admin      int
 		group      int
 	}{
-		{name: "aplane.ed25519-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, ed25519family.PublicKeySize), parameters: map[string]string{"recipients": strings.Join(recipients, ",")}, bytecode: 1397, spend: 1461, group: 2},
 		{name: "aplane.falcon1024-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": strings.Join(recipients, ",")}, bytecode: 3159, spend: 4439, group: 5},
 		{name: "aplane.falcon1024-allowlist.v2.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"recipients": recipients[0]}, bytecode: 2188, spend: 3980, group: 4},
-		{name: "aplane.falcon1024-hashlock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"hash": strings.Repeat("00", 32)}, bytecode: 1970, spend: 3314, group: 4},
 		{name: "aplane.falcon1024-timelock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{"unlock_round": "18446744073709551615"}, bytecode: 1947, spend: 3227, group: 4},
-		{name: "aplane.falcon1024-admin-allowlist.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{
+		{name: "aplane.falcon1024-allowlist-alock.v1.yaml", publicKey: bytes.Repeat([]byte{0x21}, falconfamily.PublicKeySize), parameters: map[string]string{
 			"recipients": strings.Join(recipients, ","), "asset_ids": strings.Join(assetIDs, ","),
 			"max_payment_amount": "18446744073709551615", "max_asset_amount": "18446744073709551615",
 			composeddsa.BoundedAdminPublicKeyParameter: hex.EncodeToString(adminKey),

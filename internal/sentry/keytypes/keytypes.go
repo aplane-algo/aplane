@@ -15,7 +15,6 @@
 package keytypes
 
 import (
-	"crypto/ed25519"
 	"crypto/sha512"
 	"encoding/base32"
 	"fmt"
@@ -28,28 +27,22 @@ import (
 // algorithm-family imports (keytypes_consistency_test.go cross-checks them
 // against lsig/falcon1024/family).
 const (
-	falcon1024PublicKeySize  = 1793
+	// Falcon1024PublicKeySize is the frozen public-key size for Falcon sentry
+	// component key types and their wire fixtures.
+	Falcon1024PublicKeySize = 1793
+
 	falcon1024PrivateKeySize = 2305
 )
 
 const (
-	// SentryComponentEd25519V1 is a raw Ed25519 component-signing key. It is
-	// not an Algorand spending account and must not be accepted by /sign.
-	SentryComponentEd25519V1 = "aplane.sentry-ed25519.v1"
-
 	// SentryComponentFalcon1024V1 is a raw Falcon-1024 component-signing key.
 	// It is not an Algorand spending account and must not be accepted by /sign.
 	SentryComponentFalcon1024V1 = "aplane.sentry-falcon1024.v1"
 
-	// GuardedFalcon1024SentryEd25519V1 is the user-account key type whose LogicSig
-	// verifies a Falcon-1024 user signature plus an Ed25519 sentry component
-	// signature.
-	GuardedFalcon1024SentryEd25519V1 = "aplane.falcon1024-sentry-ed25519.v1"
-
-	// GuardedFalcon1024SentryFalcon1024V1 is the user-account key type whose
+	// GuardedFalcon1024Sentry1024V1 is the user-account key type whose
 	// LogicSig verifies a Falcon-1024 user signature plus a Falcon-1024
 	// sentry component signature.
-	GuardedFalcon1024SentryFalcon1024V1 = "aplane.falcon1024-sentry-falcon1024.v1"
+	GuardedFalcon1024Sentry1024V1 = "aplane.falcon1024-sentry1024.v1"
 
 	// CorridorV1 is a Falcon-1024 user-account key type whose LogicSig verifies
 	// a Falcon-1024 user signature plus a Falcon-1024 sentry component
@@ -75,7 +68,7 @@ var componentKeySelectorEncoding = base32.StdEncoding.WithPadding(base32.NoPaddi
 // that may only be used through /sign/component.
 func IsSentryComponentKeyType(keyType string) bool {
 	switch keyType {
-	case SentryComponentEd25519V1, SentryComponentFalcon1024V1:
+	case SentryComponentFalcon1024V1:
 		return true
 	default:
 		return false
@@ -86,7 +79,7 @@ func IsSentryComponentKeyType(keyType string) bool {
 // account that requires the component signing and assembly flow.
 func IsGuardedAccountKeyType(keyType string) bool {
 	switch keyType {
-	case GuardedFalcon1024SentryEd25519V1, GuardedFalcon1024SentryFalcon1024V1, CorridorV1:
+	case GuardedFalcon1024Sentry1024V1, CorridorV1:
 		return true
 	default:
 		return false
@@ -103,9 +96,7 @@ func IsSentryKeyType(keyType string) bool {
 // key type embedded by a guarded account key type.
 func SentryComponentKeyTypeForGuardedAccount(keyType string) (string, bool) {
 	switch keyType {
-	case GuardedFalcon1024SentryEd25519V1:
-		return SentryComponentEd25519V1, true
-	case GuardedFalcon1024SentryFalcon1024V1, CorridorV1:
+	case GuardedFalcon1024Sentry1024V1, CorridorV1:
 		return SentryComponentFalcon1024V1, true
 	default:
 		return "", false
@@ -185,10 +176,8 @@ func IsComponentKeySelector(selector string) bool {
 // type.
 func ComponentPublicKeySize(keyType string) (int, bool) {
 	switch keyType {
-	case SentryComponentEd25519V1:
-		return ed25519.PublicKeySize, true
 	case SentryComponentFalcon1024V1:
-		return falcon1024PublicKeySize, true
+		return Falcon1024PublicKeySize, true
 	default:
 		return 0, false
 	}
@@ -198,8 +187,6 @@ func ComponentPublicKeySize(keyType string) (int, bool) {
 // type.
 func ComponentPrivateKeySize(keyType string) (int, bool) {
 	switch keyType {
-	case SentryComponentEd25519V1:
-		return ed25519.PrivateKeySize, true
 	case SentryComponentFalcon1024V1:
 		return falcon1024PrivateKeySize, true
 	default:

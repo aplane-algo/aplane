@@ -95,7 +95,7 @@ budgets. Every shipped Layer-3 policy adds its own worst-case cells before the
 key type can be enabled. The baseline proves that the contract-admin envelope
 itself fits under the v1 fee ceiling with three group slots of headroom.
 
-The shipped `aplane.falcon1024-admin-allowlist.v1` worst-case cell compiles
+The shipped `aplane.falcon1024-allowlist-alock.v1` worst-case cell compiles
 30 recipients, 30 asset IDs, both amount ceilings, a Falcon spending key, and
 a Falcon contract admin key:
 
@@ -109,8 +109,8 @@ microAlgos and rejects higher values before signing.
 
 Schema-v1 custom DSA policy is expert mode. Schema-v2 bounded templates may
 also use custom Layer 3 TEAL, but the framework still owns the effect envelope,
-fee ceiling, slot layout, and path routing. The bundled hashlock, timelock, and
-Merkle allowlist are bounded custom Layer 3 policies.
+fee ceiling, slot layout, and path routing. The bundled timelock and Merkle
+allowlist are bounded custom Layer 3 policies.
 
 ## Bundled Profiles
 
@@ -119,29 +119,25 @@ effect surface:
 
 | Key type | Layer 3 | Pure rekey | Extra slot |
 |---|---|---|---|
-| `aplane.ed25519-allowlist.v1` | inline fixed recipient allowlist | spending key; no Layer 3 gate | none |
 | `aplane.falcon1024-allowlist.v1` | inline fixed recipient allowlist | spending key; no Layer 3 gate | none |
 | `aplane.falcon1024-allowlist.v2` | fixed-depth Merkle recipient allowlist | spending key; no Layer 3 gate | optional signer-derived `merkle_proof` on spend |
-| `aplane.falcon1024-hashlock.v1` | SHA-256 preimage | spending key; Layer 3 required | caller `preimage`, required on spend and rekey, max 64 bytes |
 | `aplane.falcon1024-timelock.v1` | `FirstValid >= unlock_round` | spending key; Layer 3 required | none |
-| `aplane.falcon1024-admin-allowlist.v1` | inline recipient/asset/amount allowlist | external Falcon admin key | trailing admin signature |
+| `aplane.falcon1024-allowlist-alock.v1` | inline recipient/asset/amount allowlist | external Falcon admin key | trailing admin signature |
 
 Every profile rejects close, clawback, hybrid rekey, and non-transfer types.
-Hashlock and timelock intentionally prevent emergency spending-key rekey until
-their Layer 3 condition passes. The admin allowlist is the independent recovery
-option when that tradeoff is unsuitable.
+The timelock intentionally prevents emergency spending-key rekey until its
+Layer 3 condition passes. The rekey-locked allowlist is the independent
+recovery option when that tradeoff is unsuitable.
 
 Compiler-backed maximum-path measurements are frozen by
 `TestBundledBoundedCompiledBudgetMatrix`:
 
 | Key type | Bytecode | Spend path | Admin path | Largest group |
 |---|---:|---:|---:|---:|
-| Ed25519 inline allowlist | 1,397 | 1,461 | n/a | 2 |
 | Falcon inline allowlist | 3,159 | 4,439 | n/a | 5 |
 | Falcon Merkle allowlist | 2,188 | 3,980 | n/a | 4 |
-| Falcon hashlock | 1,970 | 3,314 | n/a | 4 |
 | Falcon timelock | 1,947 | 3,227 | n/a | 4 |
-| Falcon admin allowlist | 5,312 | 6,592 | 7,872 | 8 |
+| Falcon rekey-locked allowlist | 5,312 | 6,592 | 7,872 | 8 |
 
 At the 10,000 microAlgo ceiling, the largest group remains viable through a
 1,250 microAlgo network minimum fee.
@@ -315,7 +311,7 @@ substrings.
 The first implementation must freeze and test a vector using:
 
 ```text
-full_key_type: aplane.falcon1024-admin-allowlist.v1
+full_key_type: aplane.falcon1024-allowlist-alock.v1
 base_primitive: falcon1024
 teal_version: 12
 spending_public_key: 1,793 bytes of 0x11
@@ -352,10 +348,10 @@ contract_admin_key_id:
   WS6X45XM2AI7Y2GNJ46GXMNJ42LCIOAETMEEOIMPSWS3LOFDDGQA
 
 bounded_program_binding:
-  92850ae9fbcbdd74efa92f281fa37275ca223b2ca36bf5262b3eff72c7412d93
+  0a5e99e840a2e70f3b22653dbb438c39fa3f4f57d0a5f08fca2cc6afba198336
 
 admin_message:
-  b700d2e5b4eb40ea16664cabea629ad87bfe4f83cdacfd2263f892b77ffbb193
+  290c8f4a249f53973889e356a1a2974c04de33d892d615ac6b94180051ea75c9
 ```
 
 Whitespace and line wrapping above are presentation only. Code tests decode
@@ -375,9 +371,9 @@ template_type: composed
 template_mode: generated
 base_key_type: aplane.falcon1024.v1
 publisher: aplane
-family: falcon1024-admin-allowlist
+family: falcon1024-allowlist-alock
 version: 1
-display_name: Falcon-1024 Admin Allowlist
+display_name: Falcon-1024 Rekey-Locked Allowlist
 
 bounded:
   contract: bounded1

@@ -6,34 +6,90 @@ package lsig
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/corridor"
-	"github.com/aplane-algo/aplane/lsig/ecdsak1"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
-	falcon1024ed25519 "github.com/aplane-algo/aplane/lsig/falcon1024_ed25519"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 )
+
+func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
+	RegisterClient()
+
+	defaultEnabled := catalogKeyTypes(keytypecatalog.DefaultEnabled())
+	wantDefaultEnabled := []string{"aplane.falcon1024.v1"}
+	if !reflect.DeepEqual(defaultEnabled, wantDefaultEnabled) {
+		t.Fatalf("default-enabled compiled LogicSig inventory = %v, want %v", defaultEnabled, wantDefaultEnabled)
+	}
+
+	libraryVisible := catalogKeyTypes(keytypecatalog.LibraryVisible())
+	wantLibraryVisible := []string{
+		"aplane.corridor.v1",
+		"aplane.ed25519.v1",
+		"aplane.falcon1024-sentry1024.v1",
+	}
+	if !reflect.DeepEqual(libraryVisible, wantLibraryVisible) {
+		t.Fatalf("library-visible compiled LogicSig inventory = %v, want %v", libraryVisible, wantLibraryVisible)
+	}
+
+	if keytypes.SentryComponentFalcon1024V1 != "aplane.sentry-falcon1024.v1" {
+		t.Fatalf("sentry component key type = %q", keytypes.SentryComponentFalcon1024V1)
+	}
+	if keytypes.GuardedFalcon1024Sentry1024V1 != "aplane.falcon1024-sentry1024.v1" {
+		t.Fatalf("guarded account key type = %q", keytypes.GuardedFalcon1024Sentry1024V1)
+	}
+}
+
+func TestCanonicalBundledTemplateInventory(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "library", "templates"))
+	if err != nil {
+		t.Fatalf("ReadDir(library/templates) error = %v", err)
+	}
+	var got []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".yaml") {
+			got = append(got, entry.Name())
+		}
+	}
+	sort.Strings(got)
+	want := []string{
+		"aplane.falcon1024-allowlist-alock.v1.yaml",
+		"aplane.falcon1024-allowlist.v1.yaml",
+		"aplane.falcon1024-allowlist.v2.yaml",
+		"aplane.falcon1024-timelock.v1.yaml",
+		"aplane.htlc.v1.yaml",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("bundled template inventory = %v, want %v", got, want)
+	}
+}
+
+func catalogKeyTypes(entries []keytypecatalog.Entry) []string {
+	result := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, entry.KeyType)
+	}
+	return result
+}
 
 func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 	RegisterClient()
 
 	for _, keyType := range []string{
-		"aplane.timed-allowlist.v1",
-		"aplane.allowlist.v1",
 		"aplane.htlc.v1",
-		"aplane.ed25519-allowlist.v1",
 		"aplane.falcon1024-allowlist.v1",
 		"aplane.falcon1024-allowlist.v2",
-		"aplane.falcon1024-hashlock.v1",
 		"aplane.falcon1024-timelock.v1",
-		"aplane.falcon1024-admin-allowlist.v1",
+		"aplane.falcon1024-allowlist-alock.v1",
 	} {
 		if lsigprovider.Has(keyType) {
 			t.Fatalf("RegisterClient() registered %s; it should remain an optional template", keyType)
@@ -50,10 +106,7 @@ func TestRegisterClientMarksLibraryVisible(t *testing.T) {
 
 	libraryGatedKeyTypes := []string{
 		falcon1024guarded.KeyTypeV1,
-		falcon1024guarded.KeyTypeFalcon1024V1,
 		corridor.KeyTypeV1,
-		falcon1024ed25519.KeyTypeV1,
-		ecdsak1.KeyTypeV1,
 		ed25519lsig.KeyTypeV1,
 	}
 
@@ -106,11 +159,9 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 		file         string
 		suffixMarker string // a substring unique to that template's user suffix
 	}{
-		{"aplane.falcon1024-hashlock.v1.yaml", "sha256"},
 		{"aplane.falcon1024-timelock.v1.yaml", "FirstValid"},
 		{"aplane.falcon1024-allowlist.v1.yaml", "framework-owned fixed allowlist"},
 		{"aplane.falcon1024-allowlist.v2.yaml", "Allowlist v2"},
-		{"aplane.ed25519-allowlist.v1.yaml", "framework-owned fixed allowlist"},
 	}
 
 	for _, c := range cases {
@@ -164,21 +215,11 @@ func TestBundledComposedTemplatesBindTxIDBeforeSuffix(t *testing.T) {
 }
 
 func bundledTemplateTestPublicKey(file string) []byte {
-	switch file {
-	case "aplane.ed25519-allowlist.v1.yaml":
-		return make([]byte, 32)
-	default:
-		return make([]byte, family.PublicKeySize)
-	}
+	return make([]byte, family.PublicKeySize)
 }
 
 func bundledTemplateTestVerifyOp(file string) string {
-	switch file {
-	case "aplane.ed25519-allowlist.v1.yaml":
-		return "ed25519verify_bare"
-	default:
-		return "falcon_verify"
-	}
+	return "falcon_verify"
 }
 
 // bundledTemplateTestParams returns the minimum parameters needed to
@@ -186,10 +227,6 @@ func bundledTemplateTestVerifyOp(file string) string {
 // shape-correct placeholders; this test does not exercise their semantics.
 func bundledTemplateTestParams(file string) map[string]string {
 	switch file {
-	case "aplane.falcon1024-hashlock.v1.yaml":
-		return map[string]string{
-			"hash": strings.Repeat("00", 32),
-		}
 	case "aplane.falcon1024-allowlist.v2.yaml":
 		return map[string]string{
 			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
@@ -199,10 +236,6 @@ func bundledTemplateTestParams(file string) map[string]string {
 			"unlock_round": "1",
 		}
 	case "aplane.falcon1024-allowlist.v1.yaml":
-		return map[string]string{
-			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
-		}
-	case "aplane.ed25519-allowlist.v1.yaml":
 		return map[string]string{
 			"recipients": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ",
 		}

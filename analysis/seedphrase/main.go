@@ -42,7 +42,7 @@ var skipDirs = map[string]bool{
 // Key: path suffix, Value: reason for exemption.
 var exemptFiles = map[string]string{
 	"internal/mnemonic/ed25519_test.go":                  "tests mnemonic encoding/decoding",
-	"internal/mnemonic/bip39impl/bip39_test.go":          "tests BIP-39 mnemonic handling (shared across Falcon, Falcon+Ed25519, and ecdsak1)",
+	"internal/mnemonic/bip39impl/bip39_test.go":          "tests shared BIP-39 mnemonic handling",
 	"internal/keygen/ed25519_test.go":                    "tests key generation from mnemonics",
 	"lsig/dsafamily/signerreg/generator_test.go":         "tests key generation from mnemonics",
 	"test/integration/":                                  "integration tests may use test mnemonics",

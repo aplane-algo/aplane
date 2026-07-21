@@ -184,7 +184,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 		t.Fatalf("FindOffCurveAtOffset() error = %v", err)
 	}
 	err = svc.SaveGenericLSig(
-		"aplane.timed-allowlist.v1",
+		"test.timed-policy.v1",
 		map[string]string{"unlock_round": "123"},
 		salted.Bytecode,
 		salted.Counter,
@@ -213,7 +213,7 @@ func TestSaveGenericLSigCreatesPersistedKeyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParsePayload() error = %v", err)
 	}
-	if payload.Category != keys.CategoryGenericLsig || payload.KeyType != "aplane.timed-allowlist.v1" {
+	if payload.Category != keys.CategoryGenericLsig || payload.KeyType != "test.timed-policy.v1" {
 		t.Fatalf("payload = (%q, %q), want canonical generic LogicSig", payload.Category, payload.KeyType)
 	}
 }

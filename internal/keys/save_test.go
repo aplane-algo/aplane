@@ -70,11 +70,8 @@ func TestSavePayloadEncrypted(t *testing.T) {
 func TestSavePayloadWritesComponentPublicMetadata(t *testing.T) {
 	masterKey := testMasterKey(t)
 	paths := storepaths.NewPaths(t.TempDir())
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("GenerateKey() error = %v", err)
-	}
-	payload := NewComponentPayload(keytypes.SentryComponentEd25519V1, publicKey, privateKey)
+	publicKey, privateKey := canonicalFalconComponentPair(t, 0x41)
+	payload := NewComponentPayload(keytypes.SentryComponentFalcon1024V1, publicKey, privateKey)
 	componentKey, err := payload.Selector()
 	if err != nil {
 		t.Fatalf("Selector() error = %v", err)
@@ -97,7 +94,7 @@ func TestSavePayloadWritesComponentPublicMetadata(t *testing.T) {
 	if !ok {
 		t.Fatal("ReadComponentPublicMetadata() ok = false, want true")
 	}
-	if env.ComponentKey != componentKey || env.KeyType != keytypes.SentryComponentEd25519V1 {
+	if env.ComponentKey != componentKey || env.KeyType != keytypes.SentryComponentFalcon1024V1 {
 		t.Fatalf("component metadata = %+v, want selector/key type", env)
 	}
 	if wantPublicKey := fmt.Sprintf("%x", publicKey); env.PublicKeyHex != wantPublicKey {

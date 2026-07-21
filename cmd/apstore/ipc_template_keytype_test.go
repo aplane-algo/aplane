@@ -287,19 +287,19 @@ func TestCmdKeyTypeActivateUsesIPC(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		activateResult: protocol.ActivateKeyTypeResultMessage{
 			Success: true,
-			KeyType: "aplane.ecdsak1.v1",
+			KeyType: "aplane.ed25519.v1",
 		},
 	}
 	withFakeApstoreAdminClient(t, fake)
 
-	if err := cmdKeyType([]string{"enable", "aplane.ecdsak1.v1"}); err != nil {
+	if err := cmdKeyType([]string{"enable", "aplane.ed25519.v1"}); err != nil {
 		t.Fatalf("cmdKeyType(enable) error = %v", err)
 	}
 	if len(fake.requests) != 1 || fake.requests[0] != protocol.MsgTypeActivateKeyType {
 		t.Fatalf("requests = %v, want activate_keytype", fake.requests)
 	}
-	if fake.activateRequest.KeyType != "aplane.ecdsak1.v1" {
-		t.Fatalf("activate key type = %q, want aplane.ecdsak1.v1", fake.activateRequest.KeyType)
+	if fake.activateRequest.KeyType != "aplane.ed25519.v1" {
+		t.Fatalf("activate key type = %q, want aplane.ed25519.v1", fake.activateRequest.KeyType)
 	}
 	if !fake.closed {
 		t.Fatal("admin client was not closed")
@@ -310,16 +310,16 @@ func TestCmdKeyTypeActivateDoesNotInferPublisher(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		activateResult: protocol.ActivateKeyTypeResultMessage{
 			Success: true,
-			KeyType: "ecdsak1.v1",
+			KeyType: "ed25519.v1",
 		},
 	}
 	withFakeApstoreAdminClient(t, fake)
 
-	if err := cmdKeyType([]string{"enable", "ecdsak1.v1"}); err != nil {
+	if err := cmdKeyType([]string{"enable", "ed25519.v1"}); err != nil {
 		t.Fatalf("cmdKeyType(enable) error = %v", err)
 	}
-	if fake.activateRequest.KeyType != "ecdsak1.v1" {
-		t.Fatalf("activate key type = %q, want ecdsak1.v1", fake.activateRequest.KeyType)
+	if fake.activateRequest.KeyType != "ed25519.v1" {
+		t.Fatalf("activate key type = %q, want ed25519.v1", fake.activateRequest.KeyType)
 	}
 }
 
@@ -327,22 +327,22 @@ func TestCmdKeyTypeDeactivateUsesIPC(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		deactivateResult: protocol.DeactivateKeyTypeResultMessage{
 			Success: true,
-			KeyType: "aplane.ecdsak1.v1",
+			KeyType: "aplane.ed25519.v1",
 			Removed: true,
 		},
 	}
 	withFakeApstoreAdminClient(t, fake)
 
 	if err := withTestStdin("y\n", func() error {
-		return cmdKeyType([]string{"disable", "aplane.ecdsak1.v1"})
+		return cmdKeyType([]string{"disable", "aplane.ed25519.v1"})
 	}); err != nil {
 		t.Fatalf("cmdKeyType(disable) error = %v", err)
 	}
 	if len(fake.requests) != 1 || fake.requests[0] != protocol.MsgTypeDeactivateKeyType {
 		t.Fatalf("requests = %v, want deactivate_keytype", fake.requests)
 	}
-	if fake.deactivateRequest.KeyType != "aplane.ecdsak1.v1" {
-		t.Fatalf("deactivate key type = %q, want aplane.ecdsak1.v1", fake.deactivateRequest.KeyType)
+	if fake.deactivateRequest.KeyType != "aplane.ed25519.v1" {
+		t.Fatalf("deactivate key type = %q, want aplane.ed25519.v1", fake.deactivateRequest.KeyType)
 	}
 	if !fake.closed {
 		t.Fatal("admin client was not closed")
@@ -353,19 +353,19 @@ func TestCmdKeyTypeDeactivateDoesNotInferPublisher(t *testing.T) {
 	fake := &fakeApstoreAdminRequester{
 		deactivateResult: protocol.DeactivateKeyTypeResultMessage{
 			Success: true,
-			KeyType: "ecdsak1.v1",
+			KeyType: "ed25519.v1",
 			Removed: true,
 		},
 	}
 	withFakeApstoreAdminClient(t, fake)
 
 	if err := withTestStdin("y\n", func() error {
-		return cmdKeyType([]string{"disable", "ecdsak1.v1"})
+		return cmdKeyType([]string{"disable", "ed25519.v1"})
 	}); err != nil {
 		t.Fatalf("cmdKeyType(disable) error = %v", err)
 	}
-	if fake.deactivateRequest.KeyType != "ecdsak1.v1" {
-		t.Fatalf("deactivate key type = %q, want ecdsak1.v1", fake.deactivateRequest.KeyType)
+	if fake.deactivateRequest.KeyType != "ed25519.v1" {
+		t.Fatalf("deactivate key type = %q, want ed25519.v1", fake.deactivateRequest.KeyType)
 	}
 }
 
@@ -374,7 +374,7 @@ func TestCmdKeyTypeDeactivateCancelledBeforeIPC(t *testing.T) {
 	withFakeApstoreAdminClient(t, fake)
 
 	err := withTestStdin("n\n", func() error {
-		return cmdKeyType([]string{"disable", "aplane.ecdsak1.v1"})
+		return cmdKeyType([]string{"disable", "aplane.ed25519.v1"})
 	})
 	if err == nil || !strings.Contains(err.Error(), "cancelled") {
 		t.Fatalf("cmdKeyType(disable) error = %v, want cancellation", err)
@@ -386,7 +386,7 @@ func TestCmdKeyTypeDeactivateCancelledBeforeIPC(t *testing.T) {
 
 func TestCmdKeyTypeRejectsOldActivateDeactivateVerbs(t *testing.T) {
 	for _, verb := range []string{"activate", "deactivate"} {
-		err := cmdKeyType([]string{verb, "aplane.ecdsak1.v1"})
+		err := cmdKeyType([]string{verb, "aplane.ed25519.v1"})
 		if err == nil {
 			t.Fatalf("cmdKeyType(%s) error = nil, want usage error", verb)
 		}

@@ -4,6 +4,7 @@
 package keystore
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -22,6 +23,8 @@ import (
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
+	falconkeygen "github.com/aplane-algo/aplane/lsig/falcon1024/keygen"
+	"github.com/aplane-algo/aplane/lsig/falcon1024/signerops"
 )
 
 // testMasterKey is a 32-byte key for testing (AES-256 requires exactly 32 bytes)
@@ -471,25 +474,26 @@ func TestFileKeyStore_GetSigningSummary(t *testing.T) {
 }
 
 func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
+	falconkeygen.RegisterSentryComponents()
 	_, paths, cleanup := setupTestKeysDir(t)
 	defer cleanup()
 
-	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	publicKey, _, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x51}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKey(public) error = %v", err)
 	}
-	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	_, privateKey, err := signerops.New(nil).GenerateKeypair(bytes.Repeat([]byte{0x52}, 64))
 	if err != nil {
 		t.Fatalf("GenerateKey(private) error = %v", err)
 	}
-	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentEd25519V1, publicKey)
+	componentKey, err := keytypes.ComponentKeySelector(keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err != nil {
 		t.Fatalf("ComponentKeySelector() error = %v", err)
 	}
 	keyJSON, err := json.Marshal(map[string]any{
 		"format_version": keys.CurrentKeyFormatVersion,
 		"category":       keys.CategoryComponent,
-		"key_type":       keytypes.SentryComponentEd25519V1,
+		"key_type":       keytypes.SentryComponentFalcon1024V1,
 		"public_key":     hex.EncodeToString(publicKey),
 		"private_key":    hex.EncodeToString(privateKey),
 		"created_at":     "2026-07-10T00:00:00Z",

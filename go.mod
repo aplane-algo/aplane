@@ -13,7 +13,6 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.10.1
 	github.com/chzyer/readline v1.5.1
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/dop251/goja v0.0.0-20260106131823-651366fbe6e3
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/mark3labs/mcp-go v0.27.0

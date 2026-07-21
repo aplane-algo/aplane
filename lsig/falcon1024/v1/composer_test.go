@@ -51,7 +51,7 @@ func TestFalconBase(t *testing.T) {
 
 func newTestFalconHashlockProvider() *ComposedFalcon {
 	return NewComposedFalcon(ComposedFalconConfig{
-		KeyType:     "aplane.falcon1024-hashlock.v1",
+		KeyType:     "test.falcon1024-hashlock.v1",
 		FamilyName:  family.Name,
 		Version:     1,
 		DisplayName: "Falcon-1024 Hashlock",
@@ -81,8 +81,8 @@ assert`,
 func TestComposedFalconHashlockIdentity(t *testing.T) {
 	p := newTestFalconHashlockProvider()
 
-	if p.KeyType() != "aplane.falcon1024-hashlock.v1" {
-		t.Errorf("KeyType() = %q, want %q", p.KeyType(), "aplane.falcon1024-hashlock.v1")
+	if p.KeyType() != "test.falcon1024-hashlock.v1" {
+		t.Errorf("KeyType() = %q, want %q", p.KeyType(), "test.falcon1024-hashlock.v1")
 	}
 
 	if p.RoutingFamily() != family.Name {

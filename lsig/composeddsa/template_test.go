@@ -642,9 +642,7 @@ func TestBundledComposedTemplatesValidate(t *testing.T) {
 	registerTemplateTestBase("aplane.ed25519.v1")
 
 	paths := []string{
-		"library/templates/aplane.ed25519-allowlist.v1.yaml",
-		"library/templates/aplane.falcon1024-admin-allowlist.v1.yaml",
-		"library/templates/aplane.falcon1024-hashlock.v1.yaml",
+		"library/templates/aplane.falcon1024-allowlist-alock.v1.yaml",
 		"library/templates/aplane.falcon1024-timelock.v1.yaml",
 		"library/templates/aplane.falcon1024-allowlist.v1.yaml",
 		"library/templates/aplane.falcon1024-allowlist.v2.yaml",

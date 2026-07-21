@@ -61,8 +61,9 @@ aplane/
 │   └── config/               # Client and server config loading/validation
 ├── lsig/
 │   ├── falcon1024/           # Falcon-1024 DSA provider
-│   ├── falcon1024_ed25519/   # Dual Falcon-1024 / Ed25519 DSA provider
-│   ├── ecdsak1/              # ECDSA k=1 LogicSig provider
+│   ├── ed25519lsig/          # Ed25519 LogicSig DSA provider
+│   ├── falcon1024_guarded/   # Falcon/Falcon guarded LogicSig provider
+│   ├── corridor/             # Falcon/Falcon corridor provider
 │   ├── generictemplate/      # YAML-backed generic LogicSig providers
 │   └── composeddsa/          # DSA + TEAL-suffix composition helpers
 ├── library/templates/        # KeyType Library YAML sources
@@ -361,8 +362,8 @@ bin/apstore changepass
 
 # List, show, or install encrypted identity templates
 bin/apstore template list
-bin/apstore template show aplane.allowlist.v1 --show-sensitive-template
-bin/apstore template import library/templates/aplane.allowlist.v1.yaml
+bin/apstore template show aplane.htlc.v1 --show-sensitive-template
+bin/apstore template import library/templates/aplane.htlc.v1.yaml
 ```
 
 ### appass (Auto-Unlock Setup)

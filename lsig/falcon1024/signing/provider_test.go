@@ -199,8 +199,8 @@ func TestFalconProvider_LoadKeyMaterial_WrongFamily(t *testing.T) {
 		t.Fatalf("Failed to generate test key pair: %v", err)
 	}
 	payload := utilkeys.NewDSALSigPayload(
-		"aplane.ecdsak1.v1",
-		"aplane.ecdsak1.v1",
+		"aplane.ed25519.v1",
+		"aplane.ed25519.v1",
 		kp.PublicKey[:],
 		kp.PrivateKey[:],
 		nil,

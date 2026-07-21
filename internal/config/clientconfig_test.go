@@ -203,7 +203,8 @@ func TestLoadConfigRejectsSentryEndpointsField(t *testing.T) {
 	if err := os.WriteFile(path, []byte(fmt.Sprintf(`
 network: testnet
 sentry_endpoints:
-  %s:
+  ? %q
+  :
     url: self
 `, sentryEndpointTestHex("d6"))), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -250,7 +251,7 @@ func captureStdout(t *testing.T, fn func()) string {
 func TestLoadConfigEndpointRegistryDerivesSentryRoutesFromPublishedInventory(t *testing.T) {
 	dataDir := t.TempDir()
 	publicKey := sentryEndpointTestHex("d6")
-	componentKey := sentryEndpointConfigTestComponentKey(t, keytypes.SentryComponentEd25519V1, publicKey)
+	componentKey := sentryEndpointConfigTestComponentKey(t, keytypes.SentryComponentFalcon1024V1, publicKey)
 	if err := os.WriteFile(filepath.Join(dataDir, "config.yaml"), []byte(`
 network: testnet
 signer_port: 12270
@@ -268,11 +269,12 @@ endpoints:
     url: ssh://127.0.0.1:2223
     signer_port: 12271
     published_sentries:
-      %s:
+      ? %q
+      :
         component_key: %s
         key_type: %s
         last_seen_at: "2026-06-04T00:00:00Z"
-`, publicKey, componentKey, keytypes.SentryComponentEd25519V1)), 0o600); err != nil {
+`, publicKey, componentKey, keytypes.SentryComponentFalcon1024V1)), 0o600); err != nil {
 		t.Fatalf("write endpoints: %v", err)
 	}
 
@@ -288,7 +290,7 @@ endpoints:
 		t.Fatalf("derived route = %#v, want sentry-local ssh endpoint", route)
 	}
 	published := cfg.Endpoints.Endpoints["sentry-local"].PublishedSentries[publicKey]
-	if published.ComponentKey != componentKey || published.KeyType != keytypes.SentryComponentEd25519V1 {
+	if published.ComponentKey != componentKey || published.KeyType != keytypes.SentryComponentFalcon1024V1 {
 		t.Fatalf("published sentry = %#v, want component/key type", published)
 	}
 }
@@ -440,7 +442,7 @@ func decodeClientEndpointRegistryKnownFields(data []byte) error {
 }
 
 func sentryEndpointTestHex(prefix string) string {
-	return sentryEndpointTestHexN(prefix, 32)
+	return sentryEndpointTestHexN(prefix, keytypes.Falcon1024PublicKeySize)
 }
 
 func sentryEndpointTestHexN(prefix string, size int) string {

@@ -9,26 +9,11 @@
 package verify
 
 import (
-	"crypto/ed25519"
 	"fmt"
 
 	"github.com/algorand/falcon"
 	"github.com/algorandfoundation/falcon-signatures/falcongo"
 )
-
-// VerifyEd25519 verifies a sentry-role component signature.
-func VerifyEd25519(publicKey, message, signature []byte) error {
-	if len(publicKey) != ed25519.PublicKeySize {
-		return fmt.Errorf("ed25519 public key length %d invalid (expected %d bytes)", len(publicKey), ed25519.PublicKeySize)
-	}
-	if len(signature) != ed25519.SignatureSize {
-		return fmt.Errorf("ed25519 signature length %d invalid (expected %d bytes)", len(signature), ed25519.SignatureSize)
-	}
-	if !ed25519.Verify(ed25519.PublicKey(publicKey), message, signature) {
-		return fmt.Errorf("ed25519 signature verification failed")
-	}
-	return nil
-}
 
 // VerifyFalcon1024 verifies a user-role Falcon-1024 component signature.
 func VerifyFalcon1024(publicKey, message, signature []byte) error {

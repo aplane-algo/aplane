@@ -1103,7 +1103,7 @@ sync_sentry_key_to_signer() {
 enable_guarded_keytype() {
     local out
     if ! out="$(docker_exec_as_tester "$SIGNER_CONTAINER" ". /home/$TEST_USER/aplane/apenv.sh && \
-        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore keytype enable aplane.falcon1024-sentry-falcon1024.v1 2>&1")"; then
+        TEST_PASSPHRASE='$TEST_PASSPHRASE' apstore keytype enable aplane.falcon1024-sentry1024.v1 2>&1")"; then
         printf '%s\n' "$out" >&2
         die "failed to enable guarded Falcon/Falcon sentry key type on signer"
     fi
@@ -1123,7 +1123,7 @@ enable_corridor_keytype() {
 generate_guarded_key() {
     [ -n "$SENTRY_COMPONENT_KEY" ] || die "Sentry Key ID is not set"
 
-    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-sentry-falcon1024.v1 sentry=%s\n' '$SENTRY_COMPONENT_KEY' > /tmp/generate-guarded.script"
+    docker_exec_as_tester "$CLIENT_CONTAINER" "printf 'connect\ngenerate aplane.falcon1024-sentry1024.v1 sentry=%s\n' '$SENTRY_COMPONENT_KEY' > /tmp/generate-guarded.script"
     local out
     if ! out="$(docker_exec_as_tester "$CLIENT_CONTAINER" ". /home/$TEST_USER/aplane/apclient/apenv.sh && \
         apshell -script /tmp/generate-guarded.script 2>&1")"; then

@@ -40,7 +40,7 @@ func TestPlanGuardedGroupSizesBudgetAcrossAllLogicSigs(t *testing.T) {
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
 		c.SetLsigSize(guarded, 800)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
 		c.AddAddress(nonGuardedFalcon, nonGuardedFalconKeyType)
@@ -55,7 +55,7 @@ func TestPlanGuardedGroupSizesBudgetAcrossAllLogicSigs(t *testing.T) {
 		Index:                  0,
 		Sender:                 guarded,
 		Account:                guarded,
-		SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+		SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 		SentryPublicKey:        sentryHex,
 	}}
 
@@ -93,7 +93,7 @@ func TestPlanGuardedGroupBudgetsNonGuardedByEffectiveSigner(t *testing.T) {
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
 		c.SetLsigSize(guarded, 800)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
 		// The rekeyed sender itself contributes no LogicSig budget; its auth
@@ -111,7 +111,7 @@ func TestPlanGuardedGroupBudgetsNonGuardedByEffectiveSigner(t *testing.T) {
 		Index:                  0,
 		Sender:                 guarded,
 		Account:                guarded,
-		SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+		SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 		SentryPublicKey:        sentryHex,
 	}}
 
@@ -135,7 +135,7 @@ func TestPlanGuardedGroupBudgetsGuardedAuthorizerByEffectiveSigner(t *testing.T)
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guardedAuthorizer, keytypes.GuardedFalcon1024SentryEd25519V1)
+		c.AddAddress(guardedAuthorizer, keytypes.GuardedFalcon1024Sentry1024V1)
 		c.SetLsigSize(guardedAuthorizer, 2500)
 		c.SetSentryPublicKeyForAddress(guardedAuthorizer, sentryHex)
 	})
@@ -148,7 +148,7 @@ func TestPlanGuardedGroupBudgetsGuardedAuthorizerByEffectiveSigner(t *testing.T)
 		Index:                  0,
 		Sender:                 sender,
 		Account:                guardedAuthorizer,
-		SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+		SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 		SentryPublicKey:        sentryHex,
 	}}
 
@@ -176,7 +176,7 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
 		c.SetLsigSize(guarded, 1500)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
 		c.AddAddress(nonGuarded, "ed25519")
@@ -196,7 +196,7 @@ func TestRequestNonGuardedSignaturesShapesModesAndExtracts(t *testing.T) {
 
 	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
-		map[int]guardedTarget{0: ed25519GuardedTarget(guarded, sentryHex)},
+		map[int]guardedTarget{0: guardedTargetForTest(guarded, sentryHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
@@ -247,7 +247,7 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerLsigSize(t *testing.T) 
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guardedAuthorizer, keytypes.GuardedFalcon1024SentryEd25519V1)
+		c.AddAddress(guardedAuthorizer, keytypes.GuardedFalcon1024Sentry1024V1)
 		c.SetLsigSize(guardedAuthorizer, 1500)
 		c.SetSentryPublicKeyForAddress(guardedAuthorizer, sentryHex)
 		c.AddAddress(nonGuarded, "ed25519")
@@ -270,7 +270,7 @@ func TestRequestNonGuardedSignaturesUsesGuardedAuthorizerLsigSize(t *testing.T) 
 			Index:                  0,
 			Sender:                 sender,
 			Account:                guardedAuthorizer,
-			SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+			SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 			SentryPublicKey:        sentryHex,
 		}},
 		clientsign.SubmitOptions{},
@@ -302,7 +302,7 @@ func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
 		c.SetLsigSize(guarded, 1500)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
 	})
@@ -320,7 +320,7 @@ func TestRequestNonGuardedSignaturesAllGuardedMakesNoSignerCall(t *testing.T) {
 
 	signed, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 1,
-		map[int]guardedTarget{0: ed25519GuardedTarget(guarded, sentryHex)},
+		map[int]guardedTarget{0: guardedTargetForTest(guarded, sentryHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err != nil {
@@ -343,7 +343,7 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
 	s := newMixedTestSigner(t, func(c *cache.SignerCache) {
-		c.AddAddress(guarded, keytypes.GuardedFalcon1024SentryEd25519V1)
+		c.AddAddress(guarded, keytypes.GuardedFalcon1024Sentry1024V1)
 		c.SetLsigSize(guarded, 1500)
 		c.SetSentryPublicKeyForAddress(guarded, sentryHex)
 		c.AddAddress(nonGuarded, "ed25519")
@@ -362,7 +362,7 @@ func TestRequestNonGuardedSignaturesRejectsMissingSignature(t *testing.T) {
 
 	_, err := s.requestNonGuardedSignatures(
 		context.Background(), plannedTxns, groupBytesHex, 2,
-		map[int]guardedTarget{0: ed25519GuardedTarget(guarded, sentryHex)},
+		map[int]guardedTarget{0: guardedTargetForTest(guarded, sentryHex)},
 		clientsign.SubmitOptions{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "no signature for non-guarded position 2") {

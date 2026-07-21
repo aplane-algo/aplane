@@ -56,9 +56,9 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 				KeyType: "ed25519",
 			}, {
 				Address:                guarded,
-				KeyType:                keytypes.GuardedFalcon1024SentryEd25519V1,
+				KeyType:                keytypes.GuardedFalcon1024Sentry1024V1,
 				SigningFlow:            signerapi.SigningFlowSentry1,
-				SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+				SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 				LsigSize:               1500,
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,
@@ -84,14 +84,14 @@ func TestRefreshSubmitSigningStateDiscoversGuardedAuthorizer(t *testing.T) {
 	if auth, ok := eng.AuthCache.GetAuthAddress(sender); !ok || auth != guarded {
 		t.Fatalf("auth cache for sender = %q/%v, want %s/true", auth, ok, guarded)
 	}
-	if got := eng.signerCacheKeyType(guarded); got != keytypes.GuardedFalcon1024SentryEd25519V1 {
+	if got := eng.signerCacheKeyType(guarded); got != keytypes.GuardedFalcon1024Sentry1024V1 {
 		t.Fatalf("signer cache key type for guarded authorizer = %q, want guarded", got)
 	}
 	if got, ok := eng.signerCacheSentryPublicKey(guarded); !ok || got != sentryHex {
 		t.Fatalf("sentry public key for guarded authorizer = %q/%v, want %s/true", got, ok, sentryHex)
 	}
-	if got, ok := eng.signerCacheSentryComponentKeyType(guarded); !ok || got != keytypes.SentryComponentEd25519V1 {
-		t.Fatalf("sentry component key type for guarded authorizer = %q/%v, want %s/true", got, ok, keytypes.SentryComponentEd25519V1)
+	if got, ok := eng.signerCacheSentryComponentKeyType(guarded); !ok || got != keytypes.SentryComponentFalcon1024V1 {
+		t.Fatalf("sentry component key type for guarded authorizer = %q/%v, want %s/true", got, ok, keytypes.SentryComponentFalcon1024V1)
 	}
 	if got := eng.signerCacheLsigSize(guarded); got != 1500 {
 		t.Fatalf("lsig size for guarded authorizer = %d, want 1500", got)
@@ -106,7 +106,7 @@ func TestRefreshSubmitSigningStateRefreshesGuardedKeyMissingFlowMetadata(t *test
 	sentryHex := testSentryPublicKeyHex(0xd6)
 
 	staleSignerCache := cache.NewSignerCache()
-	staleSignerCache.AddAddress(sender, keytypes.GuardedFalcon1024SentryEd25519V1)
+	staleSignerCache.AddAddress(sender, keytypes.GuardedFalcon1024Sentry1024V1)
 	staleSignerCache.SetLsigSize(sender, 1500)
 
 	refreshes := 0
@@ -119,9 +119,9 @@ func TestRefreshSubmitSigningStateRefreshesGuardedKeyMissingFlowMetadata(t *test
 			Count: 1,
 			Keys: []signerapi.KeyInfo{{
 				Address:                sender,
-				KeyType:                keytypes.GuardedFalcon1024SentryEd25519V1,
+				KeyType:                keytypes.GuardedFalcon1024Sentry1024V1,
 				SigningFlow:            signerapi.SigningFlowSentry1,
-				SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+				SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 				LsigSize:               1500,
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,
@@ -172,9 +172,9 @@ func TestRefreshSubmitSigningStateDoesNotRefreshCachedAuthAddress(t *testing.T) 
 				KeyType: "ed25519",
 			}, {
 				Address:                guarded,
-				KeyType:                keytypes.GuardedFalcon1024SentryEd25519V1,
+				KeyType:                keytypes.GuardedFalcon1024Sentry1024V1,
 				SigningFlow:            signerapi.SigningFlowSentry1,
-				SentryComponentKeyType: keytypes.SentryComponentEd25519V1,
+				SentryComponentKeyType: keytypes.SentryComponentFalcon1024V1,
 				LsigSize:               1500,
 				Parameters: map[string]string{
 					keytypes.ParameterSentryPublicKey: sentryHex,

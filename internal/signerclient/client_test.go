@@ -544,7 +544,7 @@ func TestAdminSyncSentryReferences_Success(t *testing.T) {
 	got, err := c.AdminSyncSentryReferences([]signerapi.SentryReferenceCandidate{{
 		EndpointAlias: "sentry-local",
 		ComponentKey:  "I5T6BSFAT7TXWGKF4TQLDR6U6PTAZJDLN54XTY7JLFSQETEJW3JA",
-		KeyType:       "aplane.sentry-ed25519.v1",
+		KeyType:       "aplane.sentry-falcon1024.v1",
 		PublicKeyHex:  strings.Repeat("ab", 32),
 	}})
 	if err != nil {
@@ -750,7 +750,7 @@ func TestRequestComponentSignPostsToComponentEndpoint(t *testing.T) {
 			Signatures: []signerapi.ComponentSignature{{
 				TargetIndex:     0,
 				Signature:       "aabb",
-				SignatureScheme: "aplane.sentry-ed25519.v1",
+				SignatureScheme: "aplane.sentry-falcon1024.v1",
 			}},
 		}
 		return mockResponse(http.StatusOK, jsonBody(t, resp)), nil

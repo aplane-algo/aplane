@@ -155,11 +155,9 @@ func TestFingerprintsMatch(t *testing.T) {
 // every key in the field. Add rows, never rename tokens.
 func TestFingerprintBasePrimitiveFrozenMap(t *testing.T) {
 	frozen := map[string]string{
-		"aplane.falcon1024.v1":         "falcon1024-v1",
-		"aplane.ed25519.v1":            "ed25519-lsig-v1",
-		"aplane.ed25519lsig.v1":        "ed25519-lsig-v1",
-		"aplane.ecdsak1.v1":            "ecdsak1-v1",
-		"aplane.falcon1024_ed25519.v1": "falcon1024-ed25519-v1",
+		"aplane.falcon1024.v1":  "falcon1024-v1",
+		"aplane.ed25519.v1":     "ed25519-lsig-v1",
+		"aplane.ed25519lsig.v1": "ed25519-lsig-v1",
 	}
 	for raw, want := range frozen {
 		if got := FingerprintBasePrimitive(raw); got != want {

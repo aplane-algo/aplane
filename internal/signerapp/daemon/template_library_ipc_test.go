@@ -212,7 +212,7 @@ func TestShowLibraryTemplateRejectsCompiledProvider(t *testing.T) {
 
 	ir := server.registry.Get(auth.CurrentProductIdentityID())
 	result := server.adminServices().ShowLibraryTemplate(ir, adminproto.ShowLibraryTemplateRequest{
-		KeyType:      "aplane.falcon1024_ed25519.v1",
+		KeyType:      "aplane.ed25519.v1",
 		TemplateType: "compiled_provider",
 	})
 	if result.Success {
@@ -341,7 +341,7 @@ func TestIPCActivateKeyTypeEnablesCompiledProvider(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	keyType := "aplane.falcon1024_ed25519.v1"
+	keyType := "aplane.ed25519.v1"
 	recorder := &ipcJSONRecorderConn{}
 	ir := server.registry.Get(auth.CurrentProductIdentityID())
 	ipcServer := &IPCServer{signer: server}
@@ -380,7 +380,7 @@ func TestIPCDeactivateKeyTypeDisablesUnusedCompiledProvider(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	keyType := "aplane.ecdsak1.v1"
+	keyType := "aplane.ed25519.v1"
 	ir := server.registry.Get(auth.CurrentProductIdentityID())
 	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, ir.ID(), keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)
@@ -424,7 +424,7 @@ func TestIPCDeactivateKeyTypeRejectsProviderInUse(t *testing.T) {
 	server, cleanup := setupTestSigner(t)
 	defer cleanup()
 
-	keyType := "aplane.ecdsak1.v1"
+	keyType := "aplane.ed25519.v1"
 	ir := server.registry.Get(auth.CurrentProductIdentityID())
 	if _, err := templatelibrary.ActivateCompiledProvider(server.keyPaths, ir.ID(), keyType); err != nil {
 		t.Fatalf("ActivateCompiledProvider() error = %v", err)

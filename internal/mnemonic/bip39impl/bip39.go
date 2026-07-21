@@ -18,7 +18,7 @@ import (
 // is a standards-compliant BIP-39 implementation) and exposes it through
 // the aplane Handler interface. A single handler instance is parameterized
 // by family name and word count so key-type families that share the BIP-39
-// scheme (falcon1024, falcon1024_ed25519, ecdsak1) can reuse one
+// scheme can reuse one
 // implementation instead of each carrying a near-duplicate copy.
 //
 // Only the 24-word / 256-bit-entropy strength has been exercised in
@@ -102,7 +102,7 @@ func (h *BIP39Handler) MnemonicToEntropy(words []string) ([]byte, error) {
 
 // ValidateWordCount checks the given count against the handler's configured
 // word count. Error messages carry the family name so users importing an
-// ecdsak1 key don't see "falcon1024 requires exactly ..." style messages.
+// another key family does not see algorithm-specific error messages.
 func (h *BIP39Handler) ValidateWordCount(wordCount int) error {
 	if wordCount != h.wordCount {
 		return fmt.Errorf("%s requires exactly %d words, got %d", h.family, h.wordCount, wordCount)

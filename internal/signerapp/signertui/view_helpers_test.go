@@ -59,7 +59,7 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 			MnemonicImport:    true,
 		},
 		{
-			KeyType:           "aplane.timed-allowlist.v1",
+			KeyType:           "test.timed-policy.v1",
 			DisplayName:       "Timed Allowlist",
 			Description:       "Generic timed allowlist LogicSig",
 			MnemonicWordCount: 0,
@@ -83,8 +83,8 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 			MnemonicImport:    true,
 		},
 		{
-			KeyType:           "aplane.ecdsak1.v1",
-			DisplayName:       "ECDSA secp256k1",
+			KeyType:           "aplane.ed25519.v1",
+			DisplayName:       "Example DSA",
 			MnemonicWordCount: 24,
 			MnemonicImport:    false,
 		},
@@ -96,7 +96,7 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 	if got, want := getImportKeyTypeCount(), 2; got != want {
 		t.Fatalf("getImportKeyTypeCount() = %d, want %d", got, want)
 	}
-	if got, want := getKeyTypeByIndex(1), "aplane.timed-allowlist.v1"; got != want {
+	if got, want := getKeyTypeByIndex(1), "test.timed-policy.v1"; got != want {
 		t.Fatalf("generate key type index 1 = %q, want %q", got, want)
 	}
 	if got, want := getImportKeyTypeByIndex(1), "aplane.falcon1024.v1"; got != want {
@@ -203,7 +203,7 @@ func TestParameterModalFieldsFitPopupWidth(t *testing.T) {
 func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-sentry-falcon1024.v1",
+		KeyType:     "aplane.falcon1024-sentry1024.v1",
 		DisplayName: "Falcon-1024 / Falcon-1024 Sentry",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:    "sentry",
@@ -220,7 +220,7 @@ func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 		forms:  formsState{generateFocus: 0, genericLSigParams: map[string]string{"sentry": ""}, genericLSigParamModes: map[string]int{"sentry": 0}, genericLSigParamScroll: map[string]int{"sentry": 0}},
 	}
 
-	rendered := m.renderParameterModalForKeyType("aplane.falcon1024-sentry-falcon1024.v1", "GENERATE", "")
+	rendered := m.renderParameterModalForKeyType("aplane.falcon1024-sentry1024.v1", "GENERATE", "")
 	if !strings.Contains(stripANSI(rendered), "test1_") {
 		t.Fatalf("focused select did not render default option:\n%s", stripANSI(rendered))
 	}
@@ -229,7 +229,7 @@ func TestParameterModalFocusedSelectShowsDefaultOption(t *testing.T) {
 func TestParameterModalMarksOnlyOptionalParameters(t *testing.T) {
 	defer setServerKeyTypes(nil)
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.allowlist.v1",
+		KeyType:     "test.generic-policy.v1",
 		DisplayName: "Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{
 			{Name: "recipients", Label: "Recipients", Type: "address[]", Required: true},
@@ -253,7 +253,7 @@ func TestParameterModalMarksOnlyOptionalParameters(t *testing.T) {
 		},
 	}
 
-	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.allowlist.v1", "GENERATE", ""))
+	rendered := stripANSI(m.renderParameterModalForKeyType("test.generic-policy.v1", "GENERATE", ""))
 	if !strings.Contains(rendered, "Recipients:") {
 		t.Fatalf("required label missing:\n%s", rendered)
 	}
@@ -281,7 +281,7 @@ func TestParameterModalShowsCompactPastedKeyPreview(t *testing.T) {
 	const suffix = "0123456789ffffffffff"
 	value := strings.Repeat("a", falconPublicKeyHexLength-len(suffix)) + suffix
 	setServerKeyTypes([]protocol.KeyTypeInfo{{
-		KeyType:     "aplane.falcon1024-admin-allowlist.v1",
+		KeyType:     "aplane.falcon1024-allowlist-alock.v1",
 		DisplayName: "Falcon Bounded Allowlist",
 		CreationParams: []protocol.TemplateParamInfo{{
 			Name:      "bounded_admin_public_key",
@@ -303,7 +303,7 @@ func TestParameterModalShowsCompactPastedKeyPreview(t *testing.T) {
 		},
 	}
 
-	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-admin-allowlist.v1", "GENERATE", ""))
+	rendered := stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-allowlist-alock.v1", "GENERATE", ""))
 	if !strings.Contains(rendered, "...") || !strings.Contains(rendered, suffix) {
 		t.Fatalf("parameter modal does not show a middle-elided key with its suffix:\n%s", rendered)
 	}
@@ -318,7 +318,7 @@ func TestParameterModalShowsCompactPastedKeyPreview(t *testing.T) {
 	}
 
 	m.forms.genericLSigPasteParam = "bounded_admin_public_key"
-	rendered = stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-admin-allowlist.v1", "GENERATE", ""))
+	rendered = stripANSI(m.renderParameterModalForKeyType("aplane.falcon1024-allowlist-alock.v1", "GENERATE", ""))
 	if !strings.Contains(rendered, "Paste key now") || !strings.Contains(rendered, "WAITING FOR PASTE") {
 		t.Fatalf("paste capture state is not visible:\n%s", rendered)
 	}

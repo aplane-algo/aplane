@@ -345,16 +345,16 @@ func TestRestoreTemplateSavesLibraryDefinitionWhenNotInstalled(t *testing.T) {
 	dataDirectory = t.TempDir()
 	masterKey := bytes32(0x79)
 
-	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.allowlist.v1.yaml"))
+	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.allowlist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
 
-	if err := restoreTemplate(templateYAML, "aplane.allowlist.v1", "generic", masterKey); err != nil {
+	if err := restoreTemplate(templateYAML, "aplane.htlc.v1", "generic", masterKey); err != nil {
 		t.Fatalf("restoreTemplate() error = %v", err)
 	}
 
-	if !templatestore.TemplateExistsForPaths(keystorePaths(), productIdentityID(), "aplane.allowlist.v1", templatestore.TemplateTypeGeneric) {
+	if !templatestore.TemplateExistsForPaths(keystorePaths(), productIdentityID(), "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
 		t.Fatal("expected optional template restore to save the library definition")
 	}
 }
@@ -490,13 +490,13 @@ func TestRestoreKeyAllowsInstalledTemplateWithoutBundle(t *testing.T) {
 	paths := keystorePaths()
 	identityID := productIdentityID()
 	masterKey := bytes32(0x8b)
-	keyType := "aplane.allowlist.v1"
+	keyType := "aplane.htlc.v1"
 	bytecode := saltedLogicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
-	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.allowlist.v1.yaml"))
+	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.allowlist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
@@ -590,19 +590,19 @@ func TestRestoreKeyDoesNotInstallShippedLibraryComposedTemplateWithoutBundle(t *
 	dataDirectory = t.TempDir()
 	backupDir := t.TempDir()
 	masterKey := bytes32(0x8e)
-	keyType := "aplane.falcon1024-hashlock.v1"
+	keyType := "aplane.falcon1024-timelock.v1"
 	bytecode := saltedLogicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
-	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-hashlock.v1.yaml"))
+	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.falcon1024-timelock.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.falcon1024-hashlock.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.falcon1024-timelock.v1.yaml) error = %v", err)
 	}
 	if err := os.MkdirAll(keystorePaths().TemplateLibraryDir(), 0o755); err != nil {
 		t.Fatalf("MkdirAll(TemplateLibraryDir) error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(keystorePaths().TemplateLibraryDir(), "aplane.falcon1024-hashlock.v1.yaml"), templateYAML, 0o644); err != nil {
-		t.Fatalf("WriteFile(aplane.falcon1024-hashlock.v1.yaml) error = %v", err)
+	if err := os.WriteFile(filepath.Join(keystorePaths().TemplateLibraryDir(), "aplane.falcon1024-timelock.v1.yaml"), templateYAML, 0o644); err != nil {
+		t.Fatalf("WriteFile(aplane.falcon1024-timelock.v1.yaml) error = %v", err)
 	}
 
 	keyJSON := canonicalDSALSigKeyJSONForApstore(t, keyType, "aplane.falcon1024.v1", bytecode)
@@ -628,13 +628,13 @@ func TestRestoreKeyDoesNotEnableDisabledInstalledTemplateWithoutBundle(t *testin
 	paths := keystorePaths()
 	identityID := productIdentityID()
 	masterKey := bytes32(0x8f)
-	keyType := "aplane.allowlist.v1"
+	keyType := "aplane.htlc.v1"
 	bytecode := saltedLogicSigBytecodeForTest()
 	address := logicSigAddressForTestForBytes(t, bytecode)
 
-	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.allowlist.v1.yaml"))
+	templateYAML, err := os.ReadFile(filepath.Join("..", "..", "library", "templates", "aplane.htlc.v1.yaml"))
 	if err != nil {
-		t.Fatalf("ReadFile(aplane.allowlist.v1.yaml) error = %v", err)
+		t.Fatalf("ReadFile(aplane.htlc.v1.yaml) error = %v", err)
 	}
 	if _, err := templatestore.SaveTemplateForPaths(paths, identityID, templateYAML, keyType, templatestore.TemplateTypeGeneric, masterKey); err != nil {
 		t.Fatalf("SaveTemplateForPaths() error = %v", err)
@@ -755,14 +755,14 @@ func TestRestoreKeyRollsBackTemplateInstallOnKeyWriteFailure(t *testing.T) {
 
 func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 	bytecode := saltedLogicSigBytecodeForTest()
-	keyJSON := canonicalGenericKeyJSONForApstore(t, "aplane.allowlist.v1", bytecode)
+	keyJSON := canonicalGenericKeyJSONForApstore(t, "test.generic-policy.v1", bytecode)
 
 	keyType, address, hasLogicSigBytecode, err := restoreKeyMetadata(keyJSON)
 	if err != nil {
 		t.Fatalf("restoreKeyMetadata() error = %v", err)
 	}
-	if keyType != "aplane.allowlist.v1" {
-		t.Fatalf("restoreKeyMetadata() keyType = %q, want aplane.allowlist.v1", keyType)
+	if keyType != "test.generic-policy.v1" {
+		t.Fatalf("restoreKeyMetadata() keyType = %q, want test.generic-policy.v1", keyType)
 	}
 	if address != logicSigAddressForTestForBytes(t, bytecode) {
 		t.Fatalf("restoreKeyMetadata() address = %q, want %q", address, logicSigAddressForTestForBytes(t, bytecode))
@@ -774,5 +774,5 @@ func TestRestoreKeyMetadataUsesGenericLogicSigBytecode(t *testing.T) {
 
 func testSentryComponentKeyJSONForApstore(t *testing.T) (string, []byte) {
 	t.Helper()
-	return keystest.SentryComponentEd25519KeyJSON(t, 0xcd)
+	return keystest.SentryComponentFalcon1024KeyJSON(t, 0xcd)
 }
