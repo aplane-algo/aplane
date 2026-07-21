@@ -6,7 +6,7 @@ package main
 import "github.com/aplane-algo/aplane/internal/backup"
 
 func restoreContextForTest() backup.Restorer {
-	return backup.NewRestorer(keystorePaths(), productIdentityID()).WithLogger(logInfof)
+	return backup.NewRestorer(keystorePaths(), productIdentityID()).WithLogger(logInfof).WithOverwrite(true)
 }
 
 func restoreKey(keysDir, address string, masterKey, exportPassphrase []byte) (string, error) {

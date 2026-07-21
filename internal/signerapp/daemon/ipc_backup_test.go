@@ -13,6 +13,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/backup"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
 )
 
@@ -185,7 +186,7 @@ func TestIPCManagedBackupPreviewAndRestore(t *testing.T) {
 	if !del.Success {
 		t.Fatalf("DeleteKey() failed: %s", del.Error)
 	}
-	if _, err := os.Stat(server.keyPaths.KeyFilePath(auth.DefaultIdentityID, gen.Address)); !os.IsNotExist(err) {
+	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); !os.IsNotExist(err) {
 		t.Fatalf("deleted key stat err = %v, want not exist", err)
 	}
 
@@ -219,7 +220,7 @@ func TestIPCManagedBackupPreviewAndRestore(t *testing.T) {
 	if len(restored) != 1 {
 		t.Fatalf("restored key count = %d, want 1", len(restored))
 	}
-	if _, err := os.Stat(server.keyPaths.KeyFilePath(auth.DefaultIdentityID, gen.Address)); err != nil {
+	if _, err := os.Stat(keys.AccountKeyFilePath(server.keyPaths, auth.DefaultIdentityID, gen.Address)); err != nil {
 		t.Fatalf("restored key stat error = %v", err)
 	}
 

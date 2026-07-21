@@ -375,8 +375,10 @@ check_file_exists "authorized_keys" "$signer_authorized_keys_path"
 section "Keystore"
 check_file_exists "keystore" "$SIGNER_DATA/identities/default/.keystore"
 if [ -d "$SIGNER_DATA/identities/default/keys" ]; then
-  key_count="$(find "$SIGNER_DATA/identities/default/keys" -type f -name '*.key' 2>/dev/null | wc -l | tr -d ' ')"
-  pass "key directory" "$SIGNER_DATA/identities/default/keys ($key_count key files)"
+  account_count="$(find "$SIGNER_DATA/identities/default/keys" -type f -name '*.key' 2>/dev/null | wc -l | tr -d ' ')"
+  sentry_count="$(find "$SIGNER_DATA/identities/default/keys" -type f -name '*.sen' 2>/dev/null | wc -l | tr -d ' ')"
+  managed_count="$((account_count + sentry_count))"
+  pass "key directory" "$SIGNER_DATA/identities/default/keys ($managed_count managed credentials: $account_count account .key, $sentry_count sentry .sen)"
 else
   warn "key directory" "missing: $SIGNER_DATA/identities/default/keys"
 fi

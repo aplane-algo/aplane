@@ -541,6 +541,31 @@ func TestDeleteKey(t *testing.T) {
 	}
 }
 
+func TestDeleteKeyPreservesSentryCredentialClass(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	selector := "WITNESSID"
+	keyFile := filepath.Join(paths.KeysDir(identityID), selector+keys.SentryCredentialExtension)
+	if err := os.MkdirAll(filepath.Dir(keyFile), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, []byte("encrypted"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := DeleteKey(selector, keyFile, paths.DeletedKeysDir(identityID))
+	if err != nil {
+		t.Fatalf("DeleteKey() error = %v", err)
+	}
+	want := filepath.Join(paths.DeletedKeysDir(identityID), selector+keys.SentryCredentialExtension)
+	if result.DeletedPath != want {
+		t.Fatalf("DeletedPath = %q, want %q", result.DeletedPath, want)
+	}
+	if _, err := os.Stat(want); err != nil {
+		t.Fatalf("deleted sentry credential missing: %v", err)
+	}
+}
+
 func TestDeleteKey_MissingFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	keysDir := filepath.Join(tmpDir, "identities", "default", "keys")

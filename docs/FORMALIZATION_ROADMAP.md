@@ -450,10 +450,11 @@ maintainers should know they exist before changing related code or specs.
    filename binding."** The earlier framing imagined symmetric rejection of
    both colliding files at scan time and write-time preflight on every save.
    The reframing observes that production-code writes always use the
-   canonical `{address}.key` filename, so collisions can only arise from
-   non-canonical placement (manual file copies, legacy artifacts). The scan
-   now skips filename-vs-payload mismatches with a `KeyScanWarningFilenameAddressMismatch`
-   warning; address-collision rejection remains as a defensive fallback for
+   canonical category-selected filename (`{address}.key` for account authority,
+   `{witness_key_id}.sen` for sentry witness authority), so collisions can only
+   arise from non-canonical placement. The scan now skips selector mismatches
+   and category/extension mismatches with typed diagnostics;
+   selector-collision rejection remains as a defensive fallback for
    impossible-state regressions. The write-time preflight was removed.
 
 2. **S10 cross-read atomicity was resolved by materializing a per-request

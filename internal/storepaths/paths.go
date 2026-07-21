@@ -130,7 +130,3 @@ func (p Paths) DeletedKeyTypeTemplate(identityID, keyType string) string {
 func (p Paths) KeystoreMetadataDir(identityID string) string {
 	return p.IdentityDir(identityID)
 }
-
-func (p Paths) KeyFilePath(identityID, address string) string {
-	return filepath.Join(p.KeysDir(identityID), address+".key")
-}

@@ -936,8 +936,10 @@ $APSIGNER_DATA/identities/default/
 ├── keytypes/
 │   ├── *.json        # Plaintext key type state records
 │   └── *.template    # Encrypted installed template YAML
-├── keys/             # Encrypted key files
-│   └── *.key
+├── keys/             # Encrypted managed credentials and public witness metadata
+│   ├── *.key         # Algorand account authority
+│   ├── *.sen         # Sentry witness authority
+│   └── *.wit.json    # Public witness references
 ├── deleted/          # Identity-local deletion archive
 │   ├── keys/
 │   └── keytypes/

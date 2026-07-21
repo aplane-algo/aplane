@@ -39,7 +39,10 @@ func SavePayload(paths storepaths.Paths, identityID string, payload *Payload, ma
 		return nil, fmt.Errorf("failed to create keys directory: %w", err)
 	}
 
-	privateFile := paths.KeyFilePath(identityID, selector)
+	privateFile, err := CanonicalManagedCredentialPath(paths, identityID, selector, payload.Category)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive canonical managed credential path: %w", err)
+	}
 	if err := fsutil.WriteFile(privateFile, dataToWrite); err != nil {
 		return nil, fmt.Errorf("failed to write key file: %w", err)
 	}

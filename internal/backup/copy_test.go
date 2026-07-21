@@ -9,8 +9,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/keys/keystest"
 	"github.com/aplane-algo/aplane/internal/keytypestate"
@@ -20,6 +22,52 @@ import (
 )
 
 var testExportMasterKey = []byte("0123456789abcdef0123456789abcdef")
+
+func TestExportKeyUsesSentryCredentialSource(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
+	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, testExportMasterKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.KeysDir(identityID), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	source := keys.SentryCredentialFilePath(paths, identityID, selector)
+	if err := os.WriteFile(source, encrypted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	destination := t.TempDir()
+	if _, _, err := ExportKey(paths, identityID, paths.KeysDir(identityID), destination, selector, testExportMasterKey, []byte("export-passphrase")); err != nil {
+		t.Fatalf("ExportKey() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, selector+".apb")); err != nil {
+		t.Fatalf("witness .apb missing: %v", err)
+	}
+}
+
+func TestExportKeyRejectsAmbiguousManagedCredentialClasses(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
+	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, testExportMasterKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.KeysDir(identityID), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, extension := range []string{keys.AccountKeyExtension, keys.SentryCredentialExtension} {
+		if err := os.WriteFile(filepath.Join(paths.KeysDir(identityID), selector+extension), encrypted, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, _, err = ExportKey(paths, identityID, paths.KeysDir(identityID), t.TempDir(), selector, testExportMasterKey, []byte("export-passphrase"))
+	if err == nil || !strings.Contains(err.Error(), "ambiguous managed credential") {
+		t.Fatalf("ExportKey() error = %v, want ambiguity rejection", err)
+	}
+}
 
 func testKeyJSON(t *testing.T, keyType string) []byte {
 	t.Helper()

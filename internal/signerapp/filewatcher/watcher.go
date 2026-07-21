@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aplane-algo/aplane/internal/keys"
+
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -20,7 +22,7 @@ type Options struct {
 	Warnf Logf
 }
 
-// Start watches dirs for qualifying .key and .template changes and calls
+// Start watches dirs for managed credentials and .template changes and calls
 // reloadFn after a short debounce window.
 func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Options) error {
 	watcher, err := fsnotify.NewWatcher()
@@ -90,8 +92,7 @@ func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Optio
 				// state records (.json) are admin-mutated under the per-identity
 				// mutation lock; reacting to them would race the same admin
 				// handlers that wrote them.
-				if !strings.HasSuffix(event.Name, ".key") &&
-					!strings.HasSuffix(event.Name, ".template") {
+				if !isReloadCandidate(event.Name) {
 					continue
 				}
 
@@ -120,6 +121,12 @@ func Start(dirs []string, ctx context.Context, reloadFn func() error, opts Optio
 	}()
 
 	return nil
+}
+
+func isReloadCandidate(path string) bool {
+	return strings.HasSuffix(path, keys.AccountKeyExtension) ||
+		strings.HasSuffix(path, keys.SentryCredentialExtension) ||
+		strings.HasSuffix(path, ".template")
 }
 
 func infof(opts Options, format string, args ...interface{}) {

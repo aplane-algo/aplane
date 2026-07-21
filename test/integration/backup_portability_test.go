@@ -19,6 +19,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	backupbundle "github.com/aplane-algo/aplane/internal/backup"
 	apcrypto "github.com/aplane-algo/aplane/internal/crypto"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/signerapi"
 	"github.com/aplane-algo/aplane/internal/signerclient"
 	utilkeys "github.com/aplane-algo/aplane/internal/storepaths"
@@ -375,7 +376,7 @@ teal: |
 			mustRestoreArchive(t, destApstore, archivePath, exportPassphrase, address)
 
 			destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-			if _, err := os.Stat(destPaths.KeyFilePath(auth.DefaultIdentityID, address)); err != nil {
+			if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); err != nil {
 				t.Fatalf("restored key file missing for %s: %v", address, err)
 			}
 			if tc.assertRestoreArtifacts != nil {
@@ -472,7 +473,7 @@ func TestBackupRestoreRunsThroughSignerIPC(t *testing.T) {
 	}
 
 	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, err := os.Stat(destPaths.KeyFilePath(auth.DefaultIdentityID, address)); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); err != nil {
 		t.Fatalf("expected restored key file after IPC restore, got stat err=%v", err)
 	}
 	destToken := readSignerToken(t, destSigner)
@@ -545,7 +546,7 @@ func TestBackupRestoreSkipsConflictingInstalledLibraryBundledTemplate(t *testing
 	}
 
 	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, statErr := os.Stat(destPaths.KeyFilePath(auth.DefaultIdentityID, address)); statErr != nil {
+	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); statErr != nil {
 		t.Fatalf("expected restored key file despite template conflict, got stat err=%v", statErr)
 	}
 	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
@@ -666,7 +667,7 @@ teal: |
 	}
 
 	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, statErr := os.Stat(destPaths.KeyFilePath(auth.DefaultIdentityID, address)); statErr != nil {
+	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); statErr != nil {
 		t.Fatalf("expected restored key file despite destination template conflict, got stat err=%v", statErr)
 	}
 	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric) {
@@ -749,7 +750,7 @@ teal: |
 	mustRestoreArchive(t, destApstore, archivePath, destStorePassphrase, address)
 
 	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, err := os.Stat(destPaths.KeyFilePath(auth.DefaultIdentityID, address)); err != nil {
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); err != nil {
 		t.Fatalf("expected restored key file after idempotent restore: %v", err)
 	}
 	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeGeneric) {
@@ -887,7 +888,7 @@ teal: |
 	}
 
 	destPaths := utilkeys.NewPaths(destClone.SignerDataDir)
-	if _, statErr := os.Stat(destPaths.KeyFilePath(auth.DefaultIdentityID, address)); statErr != nil {
+	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); statErr != nil {
 		t.Fatalf("expected restored key file despite destination composed template conflict, got stat err=%v", statErr)
 	}
 	if !templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, keyType, templatestore.TemplateTypeComposed) {
@@ -1076,7 +1077,7 @@ func TestBackupRestoreStandaloneNoTemplateSucceedsWithoutLocalTemplate(t *testin
 	if err != nil {
 		t.Fatalf("expected standalone key restore without local template or bundled definition, got %v\noutput:\n%s", err, output)
 	}
-	if _, statErr := os.Stat(destPaths.KeyFilePath(auth.DefaultIdentityID, address)); statErr != nil {
+	if _, statErr := os.Stat(apkeys.AccountKeyFilePath(destPaths, auth.DefaultIdentityID, address)); statErr != nil {
 		t.Fatalf("expected restored key file without local template, got stat err=%v", statErr)
 	}
 	if templatestore.TemplateExistsForPaths(destPaths, auth.DefaultIdentityID, "aplane.htlc.v1", templatestore.TemplateTypeGeneric) {
@@ -1174,7 +1175,7 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 	}
 
 	paths := utilkeys.NewPaths(sourceClone.SignerDataDir)
-	activeKeyPath := paths.KeyFilePath(auth.DefaultIdentityID, activeAddress)
+	activeKeyPath := apkeys.AccountKeyFilePath(paths, auth.DefaultIdentityID, activeAddress)
 	activeKeyData, err := os.ReadFile(activeKeyPath)
 	if err != nil {
 		t.Fatalf("failed to read active key file: %v", err)
@@ -1188,7 +1189,7 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate second key: %v", err)
 	}
-	deletedKeyPath := paths.KeyFilePath(auth.DefaultIdentityID, deletedAddress)
+	deletedKeyPath := apkeys.AccountKeyFilePath(paths, auth.DefaultIdentityID, deletedAddress)
 	deletedKeyData, err := os.ReadFile(deletedKeyPath)
 	if err != nil {
 		t.Fatalf("failed to read second key file: %v", err)
@@ -1204,7 +1205,7 @@ func TestBackupAllArchiveContainsOnlyActiveCurrentIdentityKeys(t *testing.T) {
 	if err := os.MkdirAll(paths.KeysDir(otherIdentity), 0o755); err != nil {
 		t.Fatalf("failed to create other identity keys dir: %v", err)
 	}
-	if err := os.WriteFile(paths.KeyFilePath(otherIdentity, deletedAddress), activeKeyData, 0o600); err != nil {
+	if err := os.WriteFile(apkeys.AccountKeyFilePath(paths, otherIdentity, deletedAddress), activeKeyData, 0o600); err != nil {
 		t.Fatalf("failed to write other-identity key file: %v", err)
 	}
 

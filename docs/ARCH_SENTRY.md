@@ -68,6 +68,12 @@ role, but an individual keypair should serve only one role for its entire life.
 Sentry keys are raw witness keys held by sentry nodes. They are not
 Algorand accounts and cannot spend funds directly.
 
+Their canonical private record is
+`identities/<identity>/keys/<WitnessKeyID>.sen`. The `.sen` container uses the
+identity keystore master key and canonical `category: witness` payload. It is
+distinct from the independently encrypted external `.wit` artifact opened only
+by `aprekey`; signer scanning never opens `.wit` or `.wit.json` as private state.
+
 Current sentry key types:
 
 - `aplane.witness-falcon1024.v1`

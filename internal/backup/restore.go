@@ -64,6 +64,7 @@ type Restorer struct {
 	Paths      storepaths.Paths
 	IdentityID string
 	NodeRole   noderole.Role
+	Overwrite  bool
 	Logf       RestoreLogger
 	Warnf      RestoreWarningHandler
 }
@@ -84,6 +85,11 @@ func (r Restorer) WithWarningHandler(warnf RestoreWarningHandler) Restorer {
 
 func (r Restorer) WithNodeRole(role noderole.Role) Restorer {
 	r.NodeRole = role
+	return r
+}
+
+func (r Restorer) WithOverwrite(overwrite bool) Restorer {
+	r.Overwrite = overwrite
 	return r
 }
 
@@ -290,7 +296,7 @@ func PreviewRestoreWithNodeRole(paths storepaths.Paths, identityID, archivePath 
 			preview.Errors = append(preview.Errors, RestoreError{Error: err.Error()})
 			continue
 		}
-		keyType, derivedAddress, _, err := RestoreKeyMetadata(keyJSON)
+		metadata, err := parseRestoreCredentialMetadata(keyJSON)
 		crypto.ZeroBytes(keyJSON)
 		if len(templateYAML) > 0 {
 			crypto.ZeroBytes(templateYAML)
@@ -300,29 +306,41 @@ func PreviewRestoreWithNodeRole(paths storepaths.Paths, identityID, archivePath 
 			preview.Keys = append(preview.Keys, RestoreKeyInfo{Address: address, Error: err.Error()})
 			continue
 		}
-		if derivedAddress != address {
-			errMsg := fmt.Sprintf("address mismatch: expected %s, got %s", address, derivedAddress)
+		if metadata.selector != address {
+			errMsg := fmt.Sprintf("address mismatch: expected %s, got %s", address, metadata.selector)
 			preview.Errors = append(preview.Errors, RestoreError{Address: address, Error: errMsg})
-			preview.Keys = append(preview.Keys, RestoreKeyInfo{Address: address, KeyType: keyType, Error: errMsg})
+			preview.Keys = append(preview.Keys, RestoreKeyInfo{Address: address, KeyType: metadata.keyType, Error: errMsg})
 			continue
 		}
-		if roleErr := keyclass.ValidateKeyTypeAllowedForNodeRole(role, keyType); roleErr != nil {
+		if roleErr := keyclass.ValidateKeyTypeAllowedForNodeRole(role, metadata.keyType); roleErr != nil {
 			errMsg := fmt.Sprintf("role-forbidden: %v", roleErr)
 			preview.Errors = append(preview.Errors, RestoreError{Address: address, Error: errMsg})
 			preview.Keys = append(preview.Keys, RestoreKeyInfo{
 				Address:      address,
-				KeyType:      keyType,
+				KeyType:      metadata.keyType,
 				HasTemplate:  len(templateYAML) > 0,
 				TemplateType: tmplType,
 				Error:        errMsg,
 			})
 			continue
 		}
-		_, statErr := os.Stat(paths.KeyFilePath(identityID, address))
+		_, alreadyExists, destinationErr := keys.ManagedCredentialDestination(paths, identityID, address, metadata.category)
+		if destinationErr != nil {
+			errMsg := destinationErr.Error()
+			preview.Errors = append(preview.Errors, RestoreError{Address: address, Error: errMsg})
+			preview.Keys = append(preview.Keys, RestoreKeyInfo{
+				Address:      address,
+				KeyType:      metadata.keyType,
+				HasTemplate:  len(templateYAML) > 0,
+				TemplateType: tmplType,
+				Error:        errMsg,
+			})
+			continue
+		}
 		preview.Keys = append(preview.Keys, RestoreKeyInfo{
 			Address:       address,
-			KeyType:       keyType,
-			AlreadyExists: statErr == nil,
+			KeyType:       metadata.keyType,
+			AlreadyExists: alreadyExists,
 			HasTemplate:   len(templateYAML) > 0,
 			TemplateType:  tmplType,
 		})
@@ -405,7 +423,13 @@ func (r Restorer) RestoreKey(keysDir, address string, masterKey, exportPassphras
 	if err := r.validateKeyTypeAllowed(keyType); err != nil {
 		return "", err
 	}
-	destPath := r.Paths.KeyFilePath(r.IdentityID, address)
+	destPath, alreadyExists, err := keys.ManagedCredentialDestination(r.Paths, r.IdentityID, address, payload.Category)
+	if err != nil {
+		return "", err
+	}
+	if alreadyExists && !r.Overwrite {
+		return "", fmt.Errorf("%w: %s", keys.ErrManagedCredentialExists, destPath)
+	}
 
 	signingMeta := payload.SigningMetadata()
 	templateFingerprint := ""
@@ -527,19 +551,39 @@ func annotateMissingTemplateFingerprint(payload *keys.Payload, fingerprint strin
 
 // RestoreKeyMetadata reads key metadata needed for restore validation.
 func RestoreKeyMetadata(keyJSON []byte) (keyType string, address string, hasLogicSigBytecode bool, err error) {
+	metadata, err := parseRestoreCredentialMetadata(keyJSON)
+	if err != nil {
+		return "", "", false, err
+	}
+	return metadata.keyType, metadata.selector, metadata.hasLogicSigBytecode, nil
+}
+
+type restoreCredentialMetadata struct {
+	keyType             string
+	selector            string
+	category            string
+	hasLogicSigBytecode bool
+}
+
+func parseRestoreCredentialMetadata(keyJSON []byte) (restoreCredentialMetadata, error) {
 	payload, err := keys.ParsePayload(keyJSON)
 	if err != nil {
-		return "", "", false, fmt.Errorf("failed to parse key file: %w", err)
+		return restoreCredentialMetadata{}, fmt.Errorf("failed to parse key file: %w", err)
 	}
 	defer payload.ZeroSecrets()
 	if err := validateBackupKeyType(payload.KeyType); err != nil {
-		return "", "", false, err
+		return restoreCredentialMetadata{}, err
 	}
 	selector, err := payload.Selector()
 	if err != nil {
-		return "", "", false, err
+		return restoreCredentialMetadata{}, err
 	}
-	return payload.KeyType, selector, len(payload.LogicSigBytecode) > 0, nil
+	return restoreCredentialMetadata{
+		keyType:             payload.KeyType,
+		selector:            selector,
+		category:            payload.Category,
+		hasLogicSigBytecode: len(payload.LogicSigBytecode) > 0,
+	}, nil
 }
 
 // RestoreTemplate saves a template extracted from a backup bundle to the

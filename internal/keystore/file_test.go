@@ -505,7 +505,7 @@ func TestFileKeyStoreScanRejectsComponentPublicPrivateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncryptWithMasterKey() error = %v", err)
 	}
-	if err := os.WriteFile(paths.KeyFilePath(testIdentityID, componentKey), encrypted, 0o600); err != nil {
+	if err := os.WriteFile(keys.SentryCredentialFilePath(paths, testIdentityID, componentKey), encrypted, 0o600); err != nil {
 		t.Fatalf("WriteFile(component key) error = %v", err)
 	}
 

@@ -1,0 +1,237 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 APlane Project LLC
+
+package keys
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/aplane-algo/aplane/internal/storepaths"
+	"github.com/aplane-algo/aplane/internal/witness"
+
+	"github.com/algorand/go-algorand-sdk/v2/types"
+)
+
+const (
+	AccountKeyExtension       = ".key"
+	SentryCredentialExtension = ".sen"
+)
+
+type ManagedCredentialClass string
+
+type ManagedCredentialFile struct {
+	Selector string
+	Class    ManagedCredentialClass
+	Name     string
+	Path     string
+}
+
+const (
+	ManagedCredentialAccount ManagedCredentialClass = "account"
+	ManagedCredentialSentry  ManagedCredentialClass = "sentry"
+)
+
+var (
+	ErrManagedCredentialClassMismatch    = errors.New("managed credential filename class mismatch")
+	ErrManagedCredentialSelectorMismatch = errors.New("managed credential filename selector mismatch")
+	ErrManagedCredentialClassConflict    = errors.New("contradictory managed credential class exists")
+	ErrManagedCredentialExists           = errors.New("managed credential already exists")
+)
+
+// ManagedCredentialClassForCategory maps a canonical payload category to its
+// sole signer-managed filename class.
+func ManagedCredentialClassForCategory(category string) (ManagedCredentialClass, error) {
+	switch category {
+	case CategoryEd25519, CategoryDSALsig, CategoryGenericLsig:
+		return ManagedCredentialAccount, nil
+	case CategoryWitness:
+		return ManagedCredentialSentry, nil
+	default:
+		return "", fmt.Errorf("unsupported managed credential category %q", category)
+	}
+}
+
+func ManagedCredentialExtensionForCategory(category string) (string, error) {
+	class, err := ManagedCredentialClassForCategory(category)
+	if err != nil {
+		return "", err
+	}
+	return class.Extension(), nil
+}
+
+func (c ManagedCredentialClass) Extension() string {
+	switch c {
+	case ManagedCredentialAccount:
+		return AccountKeyExtension
+	case ManagedCredentialSentry:
+		return SentryCredentialExtension
+	default:
+		return ""
+	}
+}
+
+// ParseManagedCredentialFilename recognizes only signer-managed private
+// credential files. Standalone .wit artifacts and public sidecars are never
+// candidates.
+func ParseManagedCredentialFilename(name string) (selector string, class ManagedCredentialClass, ok bool) {
+	switch {
+	case strings.HasSuffix(name, AccountKeyExtension):
+		selector = strings.TrimSuffix(name, AccountKeyExtension)
+		class = ManagedCredentialAccount
+	case strings.HasSuffix(name, SentryCredentialExtension):
+		selector = strings.TrimSuffix(name, SentryCredentialExtension)
+		class = ManagedCredentialSentry
+	default:
+		return "", "", false
+	}
+	if selector == "" || filepath.Base(name) != name {
+		return "", "", false
+	}
+	return selector, class, true
+}
+
+// ScanManagedCredentialFiles returns concrete private credential paths for
+// both managed filename classes. It does not open or validate payloads.
+func ScanManagedCredentialFiles(dir string) ([]ManagedCredentialFile, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read managed credential directory: %w", err)
+	}
+
+	files := make([]ManagedCredentialFile, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		selector, class, ok := ParseManagedCredentialFilename(entry.Name())
+		if !ok {
+			continue
+		}
+		files = append(files, ManagedCredentialFile{
+			Selector: selector,
+			Class:    class,
+			Name:     entry.Name(),
+			Path:     filepath.Join(dir, entry.Name()),
+		})
+	}
+	return files, nil
+}
+
+func CanonicalManagedCredentialFilename(selector, category string) (string, error) {
+	class, err := ManagedCredentialClassForCategory(category)
+	if err != nil {
+		return "", err
+	}
+	if err := validateManagedSelector(selector, class); err != nil {
+		return "", err
+	}
+	return selector + class.Extension(), nil
+}
+
+func CanonicalManagedCredentialPath(paths storepaths.Paths, identityID, selector, category string) (string, error) {
+	name, err := CanonicalManagedCredentialFilename(selector, category)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(paths.KeysDir(identityID), name), nil
+}
+
+// AccountKeyFilePath is for code that already owns a validated Algorand
+// account address. Canonical writers should prefer CanonicalManagedCredentialPath.
+func AccountKeyFilePath(paths storepaths.Paths, identityID, address string) string {
+	return filepath.Join(paths.KeysDir(identityID), address+AccountKeyExtension)
+}
+
+// SentryCredentialFilePath is for code that already owns a validated Witness
+// Key ID. Canonical writers should prefer CanonicalManagedCredentialPath.
+func SentryCredentialFilePath(paths storepaths.Paths, identityID, witnessKeyID string) string {
+	return filepath.Join(paths.KeysDir(identityID), witnessKeyID+SentryCredentialExtension)
+}
+
+// ManagedCredentialDestination reports the canonical destination and whether
+// it exists, while rejecting an active file in the contradictory class.
+func ManagedCredentialDestination(paths storepaths.Paths, identityID, selector, category string) (string, bool, error) {
+	class, err := ManagedCredentialClassForCategory(category)
+	if err != nil {
+		return "", false, err
+	}
+	canonicalPath, err := CanonicalManagedCredentialPath(paths, identityID, selector, category)
+	if err != nil {
+		return "", false, err
+	}
+
+	otherClass := ManagedCredentialAccount
+	if class == ManagedCredentialAccount {
+		otherClass = ManagedCredentialSentry
+	}
+	contradictoryPath := filepath.Join(paths.KeysDir(identityID), selector+otherClass.Extension())
+	if _, err := os.Lstat(contradictoryPath); err == nil {
+		return "", false, fmt.Errorf("%w: %s", ErrManagedCredentialClassConflict, contradictoryPath)
+	} else if !os.IsNotExist(err) {
+		return "", false, fmt.Errorf("inspect contradictory managed credential %s: %w", contradictoryPath, err)
+	}
+
+	if _, err := os.Lstat(canonicalPath); err == nil {
+		return canonicalPath, true, nil
+	} else if !os.IsNotExist(err) {
+		return "", false, fmt.Errorf("inspect managed credential destination %s: %w", canonicalPath, err)
+	}
+	return canonicalPath, false, nil
+}
+
+func ValidateManagedCredentialFilename(name, derivedSelector, category string) error {
+	wantClass, err := ManagedCredentialClassForCategory(category)
+	if err != nil {
+		return err
+	}
+	if err := validateManagedSelector(derivedSelector, wantClass); err != nil {
+		return err
+	}
+	gotSelector, gotClass, ok := ParseManagedCredentialFilename(name)
+	if !ok {
+		return fmt.Errorf("%w: %q is not a managed credential filename", ErrManagedCredentialClassMismatch, name)
+	}
+	if gotClass != wantClass {
+		return fmt.Errorf(
+			"%w: payload category %q requires %s, got %s",
+			ErrManagedCredentialClassMismatch,
+			category,
+			wantClass.Extension(),
+			gotClass.Extension(),
+		)
+	}
+	if gotSelector != derivedSelector {
+		return fmt.Errorf(
+			"%w: filename selector %q does not match payload-derived selector %q",
+			ErrManagedCredentialSelectorMismatch,
+			gotSelector,
+			derivedSelector,
+		)
+	}
+	return nil
+}
+
+func validateManagedSelector(selector string, class ManagedCredentialClass) error {
+	switch class {
+	case ManagedCredentialAccount:
+		address, err := types.DecodeAddress(selector)
+		if err != nil || address.String() != selector {
+			return fmt.Errorf("invalid canonical Algorand account selector %q", selector)
+		}
+		return nil
+	case ManagedCredentialSentry:
+		if _, err := witness.NormalizeID(selector); err != nil {
+			return fmt.Errorf("invalid canonical Witness Key ID %q: %w", selector, err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported managed credential class %q", class)
+	}
+}

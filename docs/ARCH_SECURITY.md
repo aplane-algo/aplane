@@ -735,8 +735,8 @@ The keystore uses a master key architecture (similar to HashiCorp Vault) for eff
 
 | Version | Use | Description |
 |---------|-----|-------------|
-| 1 | In-keystore key files | Master-key encryption; uses the keystore-wide master key (Argon2id derived) |
-| 2 | Standalone backup/export | Self-contained passphrase-based encryption with an embedded salt; used by `apstore` backup/export files, not by in-keystore `.key` files |
+| 1 | In-keystore managed credentials | Master-key encryption for account `.key` and sentry witness `.sen` files; uses the keystore-wide master key (Argon2id derived) |
+| 2 | Standalone backup/export | Self-contained passphrase-based encryption with an embedded salt; used by `apstore` `.apb` files, not by in-keystore `.key` or `.sen` files |
 
 **Memory Protection:**
 

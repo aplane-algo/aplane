@@ -49,8 +49,9 @@ means no successful load/sign/restore result exists for that input.
 
 ### Key File
 
-`KeyFile` is an encrypted `.key` payload that becomes observable only after the
-identity master key decrypts it. The model observes:
+`KeyFile` is an encrypted managed credential payload: account authority uses
+`.key`, and sentry witness authority uses `.sen`. It becomes observable only
+after the identity master key decrypts it. The model observes:
 
 - key type,
 - key category,
@@ -123,27 +124,29 @@ planning and signing. Concretely it exposes:
 The runtime index is a cache of valid key-file authority. It is not an
 independent source of durable signing authority.
 
-Canonical filename binding is a store invariant, not a selection
-preference. A scan accepts a key file for address `X` only when the file is
-named `X.key` and the decrypted payload derives address `X`. A misnamed
-file is skipped as invalid key-file authority; it does not install an entry
-in the runtime index and it does not compete with the canonical file for the
-same address. See S13 below.
+Canonical filename binding is a store invariant, not a selection preference.
+A scan accepts a managed credential only when its name is
+`Selector(payload) || ExtensionForCategory(payload.category)`: account
+categories use `<AlgorandAddress>.key`, while witness category uses
+`<WitnessKeyID>.sen`. A selector mismatch or category/extension mismatch is
+skipped as invalid authority; it does not install a runtime entry. See S13.
 
 The model intentionally chooses skip-and-warn for misnamed files rather than
 strictly failing the entire reload. Canonical filename binding removes the
-selection ambiguity by construction: only `X.key` can load as authority for
-address `X`. A noncanonical artifact is diagnostic evidence of operator or
+selection ambiguity by construction: each valid payload has exactly one
+category-selected canonical name. A noncanonical artifact is diagnostic evidence of operator or
 tooling error, but it does not make the canonical file ambiguous.
 
-Address-collision rejection remains a defensive fallback for impossible or
-buggy states in which two accepted key files resolve to the same address. If
+Selector-collision rejection remains a defensive fallback for impossible or
+buggy states in which two accepted credentials resolve to the same selector. If
 that fallback is ever hit, reload fails closed and invalidates any
 previously-published snapshot rather than selecting a winner.
 
-Recovery is operator-driven: rename a valid misnamed file to its canonical
-address filename, or remove it if it is only an artifact, then trigger a
-reload.
+Recovery is operator-driven and performed while `apsigner` is stopped. For a
+legacy witness `.key`, preserve the file and use a prior build to create and
+verify an `.apb` backup before removing the stale file; restore with the current
+build to produce canonical `.sen`. Other noncanonical artifacts must be
+validated before canonical placement or removed, then the identity is reloaded.
 
 ### Auth Address Binding
 
@@ -385,23 +388,29 @@ budget planning.
 
 ### S13: Canonical Filename Binding
 
-Filename binding is a store invariant. A key file is loadable only if its
-canonical filename matches the address derived from its decrypted payload.
-The filename is not trusted as the authority; the payload-derived address is
-still computed and compared to the filename.
+Filename binding is a store invariant. A managed credential is loadable only
+if its canonical filename matches both the selector and category derived from
+its decrypted payload. The filename is not trusted as authority.
 
 ```text
-FileName(f) = X.key and AddressOf(Payload(f)) = Y and X != Y =>
-  RuntimeKeyIndex.Resolve(Y) unchanged by f and
-  f is reported as invalid key-file authority
+CanonicalName(p) = Selector(p) || ExtensionForCategory(Category(p))
+
+Category(p) in {ed25519, dsa_lsig, generic_lsig} =>
+  ExtensionForCategory(Category(p)) = ".key"
+
+Category(p) = witness =>
+  ExtensionForCategory(Category(p)) = ".sen"
+
+FileName(f) != CanonicalName(Payload(f)) =>
+  RuntimeKeyIndex.Resolve(Selector(Payload(f))) unchanged by f and
+  f is reported as invalid managed-credential authority
 ```
 
-Canonical writes and imports write to `X.key` for address `X`. Restore writes
-the same canonical path when a restore operation elects to write the key;
-higher-level restore may still skip an existing canonical key unless
-`overwrite:true` is supplied. These write paths do not pre-scan the directory
-for noncanonical duplicates. If a noncanonical `foo.key` also derives to `X`,
-the scanner skips `foo.key` and loads `X.key`.
+Canonical writers use the same function. Restore may replace an exact
+canonical destination only with `overwrite:true` and always rejects a
+contradictory `.key`/`.sen` class for the same selector. `.wit` and `.wit.json`
+are outside the managed-credential candidate set. Accepted duplicate selectors
+remain a fatal collision fallback rather than selecting by directory order.
 
 Status: implemented. See
 [FORMAL_TRACEABILITY.md](FORMAL_TRACEABILITY.md) for concrete code and test
@@ -478,9 +487,9 @@ These should be resolved before a machine-checkable model:
    the rejection invariants.
 3. ~~Address-collision rejection (intended S13).~~ **Resolved as canonical
    filename binding.** The chosen form is now stated in S13 and implemented
-   at key scan (`internal/keys/keys.go`). Canonical writes/imports/restores
-   continue to write `{address}.key`; misnamed files are skipped rather than
-   allowed to shadow or collide with canonical files.
+   at key scan (`internal/keys/keys.go`). Canonical writes/imports/restores use
+   the category-sensitive name function; misnamed and wrong-class files are
+   skipped rather than allowed to shadow canonical authority.
 4. ~~Cross-read snapshot consistency.~~ **Resolved.** Planning materializes a
    per-request key-index snapshot from the runtime once and uses that copied
    view for key-file resolution, key-type selection, LogicSig budget sizing,

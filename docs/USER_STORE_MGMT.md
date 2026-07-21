@@ -485,14 +485,44 @@ the address matches your backup in the apadmin TUI key list. After `apstore
 rebuild`, start `apsigner`, unlock the identity, and verify the restored
 addresses in apadmin.
 
+### Migrating a Legacy Sentry Witness File
+
+Current builds require signer-custodied sentry witnesses to use
+`<WitnessKeyID>.sen`. A witness payload left in a legacy
+`<WitnessKeyID>.key` file is rejected and is not loaded into the runtime key
+index. Runtime deletion therefore cannot remove that rejected file.
+
+To preserve and migrate it:
+
+1. Stop `apsigner` and preserve the legacy `.key` file.
+2. If you do not already have a verified `.apb` backup, use the prior build
+   that created the store to export the witness to `.apb`.
+3. Verify the `.apb` backup with that prior build.
+4. Remove the stale witness `.key` while `apsigner` remains stopped.
+5. Use the current build to restore the `.apb`; payload validation selects the
+   canonical `.sen` destination.
+6. Start and unlock `apsigner`, then verify that the Witness Key ID is
+   advertised by the sentry.
+
+Do not rename an encrypted `.key` to `.sen` blindly. The supported migration
+path decrypts and validates the payload category, key pair, and derived Witness
+Key ID before publishing the new managed credential.
+
 ---
 
 ## External Contract Admin Artifacts
 
 Bounded contract-admin private authority is a witness key stored only in an
 encrypted `.wit` artifact managed by `aprekey`. It is never an
-apsigner `.key`, an `apstore` `.apb`, or part of signer backup/restore. Do not
+apsigner managed credential, an `apstore` `.apb`, or part of signer
+backup/restore. Do not
 put these files in the signer data directory or import them with `apstore`.
+
+Sentry-role witnesses are different operational custody of the same key form:
+they are stored under the sentry identity as `<WitnessKeyID>.sen`, encrypted by
+that identity's master key, included in normal `.apb` backup/restore, and usable
+only for the sentry component-signing domain. Account authority remains in
+`<AlgorandAddress>.key`.
 
 Keep multiple independently protected copies and protect the artifact
 passphrase separately. Test each copy periodically:
@@ -550,7 +580,7 @@ Key files are **encrypted** with your store passphrase:
 
 **Important distinction:**
 - **Mnemonic** → The source of your private key (permanent)
-- **Encryption passphrase** → Protects the `.key` file (can be changed)
+- **Encryption passphrase** → Protects managed `.key` and `.sen` files (can be changed)
 
 If you have the original mnemonic, you can regenerate mnemonic-backed keys
 without the old store passphrase by importing them into a fresh keystore. For

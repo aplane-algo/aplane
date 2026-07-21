@@ -320,10 +320,13 @@ Keystore metadata is defined in `internal/crypto/encryption.go`.
   `kdf_threads`
 - passphrases are verified and converted into a master key using Argon2id
 
-### `.key`
+### `.key` and `.sen`
 
-Encrypted key files hold native keys, DSA-backed LogicSig keys, and generic
-LogicSig instances. Compatibility is split across:
+Encrypted `.key` files hold Algorand account authority: native keys,
+DSA-backed LogicSig keys, and generic LogicSig instances. Encrypted `.sen`
+files hold sentry-custodied witness authority. Both use the same keystore
+envelope and canonical payload codec; category determines the sole valid
+extension. Compatibility is split across:
 
 - `envelope_version` for the encryption envelope
 - `format_version` for the decrypted payload schema

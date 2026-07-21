@@ -263,6 +263,9 @@ Key deletion uses the same identity-local archive root:
 ```text
 identities/<identity>/keys/<address>.key
   -> identities/<identity>/deleted/keys/<address>.key
+
+identities/<identity>/keys/<witness_key_id>.sen
+  -> identities/<identity>/deleted/keys/<witness_key_id>.sen
 ```
 
 Archived keys and templates are outside active key/template scans. A user-requested
