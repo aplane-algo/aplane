@@ -169,7 +169,8 @@ Box names also accept `<app-id>:<name>`.
 | **DSA-backed LogicSig** (`dsa_lsig`) | a crypto key signs, wrapped in a LogicSig | `LogicSig.Args[0]` (Falcon ≈ 1280 bytes) |
 | **Generic LogicSig** (`generic_lsig`) | TEAL logic only — **no key, no signature** | args filled from the key file's stored schema |
 
-Everything except `ed25519` is LogicSig-backed.
+Every account key type except native `ed25519` is LogicSig-backed. Sentry
+component keys are auxiliary non-account keys.
 
 ### Key types (identifiers are `publisher.family.vN`)
 
@@ -177,16 +178,15 @@ Everything except `ed25519` is LogicSig-backed.
 |---------|----------|----------------------|
 | `ed25519` | native | default-enabled |
 | `aplane.falcon1024.v1` | dsa_lsig | **default-enabled** (post-quantum default) |
-| `aplane.falcon1024_ed25519.v1` | dsa_lsig (dual Falcon+Ed25519) | library-visible |
-| `aplane.ecdsak1.v1` | dsa_lsig (secp256k1) | library-visible |
+| `aplane.ed25519.v1` | Ed25519 dsa_lsig | library-visible |
 | `aplane.falcon1024-allowlist.v1` | dsa_lsig (composed) | bundled, installed+enabled on new identities |
-| `aplane.ed25519-allowlist.v1` | dsa_lsig (composed) | optional template |
-| `aplane.falcon1024-hashlock.v1` | dsa_lsig (composed) | optional template |
+| `aplane.falcon1024-allowlist.v2` | bounded dsa_lsig (Merkle allowlist) | optional template |
+| `aplane.falcon1024-allowlist-alock.v1` | bounded dsa_lsig (admin-protected rekey) | optional template |
 | `aplane.falcon1024-timelock.v1` | dsa_lsig (composed) | optional template |
-| `aplane.allowlist.v1` | generic_lsig | optional template |
-| `aplane.timed-allowlist.v1` | generic_lsig | optional template |
 | `aplane.htlc.v1` | generic_lsig | optional template |
-| `aplane.sentry-ed25519.v1`, `aplane.sentry-falcon1024.v1` | sentry component keys | sentry nodes only |
+| `aplane.falcon1024-sentry-falcon1024.v1` | guarded dsa_lsig | library-visible |
+| `aplane.corridor.v1` | guarded corridor dsa_lsig | library-visible |
+| `aplane.sentry-falcon1024.v1` | sentry component key | sentry nodes only |
 
 **Always call `keytypes` to see what the connected signer actually exposes** —
 availability is identity-scoped. Visibility states: `default_enabled` (every
@@ -212,21 +212,20 @@ never breaks an existing key's ability to sign.
   allowlist's `recipients`, a timelock's unlock round, a hashlock's hash). Pass
   them to `generate`/`generateKey`. Address-list and uint-list params are
   canonicalized (sorted) before the address is derived.
-- **Runtime args** are supplied per transaction at signing time (e.g. a hashlock
+- **Runtime args** are supplied per transaction at signing time (e.g. an HTLC
   preimage). Shell syntax: `arg:preimage=0x...`. JS: the `lsigArgs` option.
 
 ### Restricted variants (the safety is in the program)
 
 - `aplane.falcon1024-allowlist.v1` — bounded pay/asset-transfer receivers must
   be self or allowlisted; close, clawback, and non-transfer types are rejected.
-- `aplane.ed25519-allowlist.v1` — the same bounded inline allowlist using an
-  Ed25519 LogicSig DSA base.
-- `aplane.allowlist.v1` (generic) — pay/transfer only to allowlisted recipients;
-  no clawback/config/freeze/app/keyreg/rekey.
-- `aplane.timed-allowlist.v1` — allowlist rules plus `FirstValid >= unlock_round`.
+- `aplane.falcon1024-allowlist.v2` — the bounded allowlist using a
+  signer-generated Merkle proof for non-self spend destinations.
+- `aplane.falcon1024-allowlist-alock.v1` — the bounded fixed allowlist whose
+  pure rekey additionally requires an external Falcon admin signature.
+- `aplane.falcon1024-timelock.v1` — bounded Falcon transfer and pure-rekey
+  paths gated by `FirstValid >= unlock_round`.
 - `aplane.htlc.v1` — claim with preimage before timeout, refund after.
-- `*-hashlock` / `*-timelock` — bounded Falcon transfer and pure-rekey paths
-  gated by a preimage / unlock round.
 
 ### Corridors
 

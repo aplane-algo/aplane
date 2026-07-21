@@ -6,18 +6,80 @@ package lsig
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/aplane-algo/aplane/internal/keymgmt"
 	"github.com/aplane-algo/aplane/internal/keytypecatalog"
 	"github.com/aplane-algo/aplane/internal/lsigprovider"
+	"github.com/aplane-algo/aplane/internal/sentry/keytypes"
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
 	"github.com/aplane-algo/aplane/lsig/corridor"
 	"github.com/aplane-algo/aplane/lsig/ed25519lsig"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falcon1024guarded "github.com/aplane-algo/aplane/lsig/falcon1024_guarded"
 )
+
+func TestCanonicalCompiledLogicSigInventory(t *testing.T) {
+	RegisterClient()
+
+	defaultEnabled := catalogKeyTypes(keytypecatalog.DefaultEnabled())
+	wantDefaultEnabled := []string{"aplane.falcon1024.v1"}
+	if !reflect.DeepEqual(defaultEnabled, wantDefaultEnabled) {
+		t.Fatalf("default-enabled compiled LogicSig inventory = %v, want %v", defaultEnabled, wantDefaultEnabled)
+	}
+
+	libraryVisible := catalogKeyTypes(keytypecatalog.LibraryVisible())
+	wantLibraryVisible := []string{
+		"aplane.corridor.v1",
+		"aplane.ed25519.v1",
+		"aplane.falcon1024-sentry-falcon1024.v1",
+	}
+	if !reflect.DeepEqual(libraryVisible, wantLibraryVisible) {
+		t.Fatalf("library-visible compiled LogicSig inventory = %v, want %v", libraryVisible, wantLibraryVisible)
+	}
+
+	if keytypes.SentryComponentFalcon1024V1 != "aplane.sentry-falcon1024.v1" {
+		t.Fatalf("sentry component key type = %q", keytypes.SentryComponentFalcon1024V1)
+	}
+	if keytypes.GuardedFalcon1024SentryFalcon1024V1 != "aplane.falcon1024-sentry-falcon1024.v1" {
+		t.Fatalf("guarded account key type = %q", keytypes.GuardedFalcon1024SentryFalcon1024V1)
+	}
+}
+
+func TestCanonicalBundledTemplateInventory(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "library", "templates"))
+	if err != nil {
+		t.Fatalf("ReadDir(library/templates) error = %v", err)
+	}
+	var got []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".yaml") {
+			got = append(got, entry.Name())
+		}
+	}
+	sort.Strings(got)
+	want := []string{
+		"aplane.falcon1024-allowlist-alock.v1.yaml",
+		"aplane.falcon1024-allowlist.v1.yaml",
+		"aplane.falcon1024-allowlist.v2.yaml",
+		"aplane.falcon1024-timelock.v1.yaml",
+		"aplane.htlc.v1.yaml",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("bundled template inventory = %v, want %v", got, want)
+	}
+}
+
+func catalogKeyTypes(entries []keytypecatalog.Entry) []string {
+	result := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, entry.KeyType)
+	}
+	return result
+}
 
 func TestRegisterClientLeavesLibraryTemplatesOptional(t *testing.T) {
 	RegisterClient()

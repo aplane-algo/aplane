@@ -144,7 +144,7 @@ authenticated admin protocol.
 - Provide UI-agnostic API
 
 ### Signer: Provider Layer
-- Abstract signature algorithms (Ed25519, Falcon, dual Falcon/Ed25519, ECDSA secp256k1)
+- Provide native Ed25519, Falcon-1024, and Ed25519 LogicSig signing implementations
 - Handle key loading, signing, zeroing
 - Construct LogicSig transactions
 - Generate and recover keys from mnemonics
@@ -234,12 +234,10 @@ aplane/
 │   ├── falcon1024/                # Falcon-1024 DSA provider
 │   │   ├── derivation/, family/, keygen/, keys/, signing/
 │   │   └── v1/                    # v1 standard provider, ops, composer, templates
-│   ├── falcon1024_ed25519/        # Dual Falcon-1024 / Ed25519 DSA provider
 │   ├── falcon1024_guarded/        # Guarded Falcon-1024 (user + sentry) LogicSig provider
 │   ├── corridor/                  # Always-sentry corridor LogicSig provider
 │   ├── sentryaccount/             # Shared client-safe guarded/sentry account helpers
 │   ├── ed25519lsig/               # Ed25519 LogicSig DSA base for composed templates
-│   ├── ecdsak1/                   # ECDSA secp256k1 LogicSig DSA provider
 │   ├── composeddsa/               # Generic ComposedDSA composer
 │   ├── dsafamily/                 # Client-safe DSA family registration descriptors
 │   ├── signerreg/                 # Built-in signer-side LogicSig provider registration

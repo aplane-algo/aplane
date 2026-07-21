@@ -109,8 +109,8 @@ microAlgos and rejects higher values before signing.
 
 Schema-v1 custom DSA policy is expert mode. Schema-v2 bounded templates may
 also use custom Layer 3 TEAL, but the framework still owns the effect envelope,
-fee ceiling, slot layout, and path routing. The bundled hashlock, timelock, and
-Merkle allowlist are bounded custom Layer 3 policies.
+fee ceiling, slot layout, and path routing. The bundled timelock and Merkle
+allowlist are bounded custom Layer 3 policies.
 
 ## Bundled Profiles
 
@@ -119,29 +119,25 @@ effect surface:
 
 | Key type | Layer 3 | Pure rekey | Extra slot |
 |---|---|---|---|
-| `aplane.ed25519-allowlist.v1` | inline fixed recipient allowlist | spending key; no Layer 3 gate | none |
 | `aplane.falcon1024-allowlist.v1` | inline fixed recipient allowlist | spending key; no Layer 3 gate | none |
 | `aplane.falcon1024-allowlist.v2` | fixed-depth Merkle recipient allowlist | spending key; no Layer 3 gate | optional signer-derived `merkle_proof` on spend |
-| `aplane.falcon1024-hashlock.v1` | SHA-256 preimage | spending key; Layer 3 required | caller `preimage`, required on spend and rekey, max 64 bytes |
 | `aplane.falcon1024-timelock.v1` | `FirstValid >= unlock_round` | spending key; Layer 3 required | none |
 | `aplane.falcon1024-allowlist-alock.v1` | inline recipient/asset/amount allowlist | external Falcon admin key | trailing admin signature |
 
 Every profile rejects close, clawback, hybrid rekey, and non-transfer types.
-Hashlock and timelock intentionally prevent emergency spending-key rekey until
-their Layer 3 condition passes. The admin allowlist is the independent recovery
-option when that tradeoff is unsuitable.
+The timelock intentionally prevents emergency spending-key rekey until its
+Layer 3 condition passes. The rekey-locked allowlist is the independent
+recovery option when that tradeoff is unsuitable.
 
 Compiler-backed maximum-path measurements are frozen by
 `TestBundledBoundedCompiledBudgetMatrix`:
 
 | Key type | Bytecode | Spend path | Admin path | Largest group |
 |---|---:|---:|---:|---:|
-| Ed25519 inline allowlist | 1,397 | 1,461 | n/a | 2 |
 | Falcon inline allowlist | 3,159 | 4,439 | n/a | 5 |
 | Falcon Merkle allowlist | 2,188 | 3,980 | n/a | 4 |
-| Falcon hashlock | 1,970 | 3,314 | n/a | 4 |
 | Falcon timelock | 1,947 | 3,227 | n/a | 4 |
-| Falcon admin allowlist | 5,312 | 6,592 | 7,872 | 8 |
+| Falcon rekey-locked allowlist | 5,312 | 6,592 | 7,872 | 8 |
 
 At the 10,000 microAlgo ceiling, the largest group remains viable through a
 1,250 microAlgo network minimum fee.

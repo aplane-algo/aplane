@@ -496,7 +496,7 @@ The Engine builds signing contexts that encapsulate all information needed to si
 type SigningContext struct {
     Address     string // Resolved address (the account)
     SigningAddr string // Auth address (may differ if rekeyed)
-    KeyType     string // e.g., "ed25519", "aplane.falcon1024.v1", "aplane.timed-allowlist.v1"
+    KeyType     string // e.g., "ed25519", "aplane.falcon1024.v1", "aplane.htlc.v1"
     SigSize     int    // Crypto signature size (for fee calculation), 0 for ed25519 and generic lsigs
     IsLSig      bool   // true for LSig-based accounts (DSA or generic)
 }

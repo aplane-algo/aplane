@@ -66,10 +66,9 @@ Canonical forms:
   `publisher.family.vN`, where `vN` is a literal `v` followed by a positive
   decimal version, for example `aplane.falcon1024.v1`,
   `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, and
-  `aplane.ed25519-allowlist.v1`
+  `aplane.falcon1024-allowlist-alock.v1`
 - sentry keys use the same canonical key-type identifier contract,
-  for example `aplane.sentry-ed25519.v1` and
-  `aplane.sentry-falcon1024.v1`; they are component-signing keys selected by
+  currently `aplane.sentry-falcon1024.v1`; these are component-signing keys selected by
   52-character txid-shaped Sentry Key IDs, not spending accounts. The
   compatibility wire/storage field name for that selector remains
   `component_key`.
@@ -82,11 +81,8 @@ Canonical forms:
   are both Falcon-1024. Bounded1 has no Ed25519 contract-admin variant and no
   admin-key algorithm selector.
 - guarded account key types name both the account DSA and the sentry DSA,
-  for example `aplane.falcon1024-sentry-ed25519.v1` and
-  `aplane.falcon1024-sentry-falcon1024.v1`; `aplane.corridor.v1`
-  is the Falcon-1024-only corridor shorthand. The older Go-level
-  `GuardedFalcon1024SentryEd25519V1` symbol is a compatibility alias for the Ed25519
-  sentry form and is not a separate persisted identifier
+  currently `aplane.falcon1024-sentry-falcon1024.v1`; `aplane.corridor.v1`
+  is the Falcon-1024-only corridor shorthand.
 
 YAML templates declare `publisher`, `family`, and integer `version`; the
 computed key type is `publisher.family.v<version>`. Clients and tools must send
@@ -97,8 +93,8 @@ namespaces are not inferred or elided.
 Terminology:
 
 - `family` is the middle segment of `publisher.family.vN`. It groups versions
-  of one key type or template policy, for example `aplane.allowlist.v1` and
-  `aplane.allowlist.v2`.
+  of one key type or template policy, for example
+  `aplane.falcon1024-allowlist.v1` and `aplane.falcon1024-allowlist.v2`.
 - `base_key_type` is the field composed DSA templates use to point at their
   private signing primitive. For example,
   `base_key_type: aplane.falcon1024.v1` means the template's DSA signature is
@@ -957,14 +953,11 @@ The bundled templates that ship under `library/templates/` are:
 
 | Template | Purpose |
 |----------|---------|
-| `aplane.falcon1024-hashlock.v1` | Falcon-1024 signature with SHA256 hash verification |
 | `aplane.falcon1024-timelock.v1` | Falcon-1024 signature gated by round-based timelock |
 | `aplane.falcon1024-allowlist.v1` | Falcon-1024 signature restricted to a fixed set of receiver addresses (default-installed) |
 | `aplane.falcon1024-allowlist.v2` | Falcon-1024 allowlist using a fixed-depth Merkle root with signer-generated proofs |
-| `aplane.ed25519-allowlist.v1` | Ed25519 signature restricted to a fixed set of receiver addresses |
 | `aplane.htlc.v1` | Hash time-locked contract |
-| `aplane.timed-allowlist.v1` | Restrict funds to approved recipients after a specified round |
-| `aplane.allowlist.v1` | Restrict outgoing transfers to a fixed set of recipient addresses |
+| `aplane.falcon1024-allowlist-alock.v1` | Falcon-1024 bounded allowlist whose pure rekey additionally requires an external Falcon admin signature |
 
 Only `aplane.falcon1024-allowlist.v1` is installed and enabled by default for
 new signer stores; the rest are available to install from the library.
@@ -1229,8 +1222,7 @@ LogicSig salting is a generation-time contract:
   templates with `derivation_version: 2` use the trailing dead-code
   `bytecblock`, `aplane.falcon1024.v1` uses the Algorand Foundation
   reference-compatible fixed `bytecblock` preamble, and
-  `aplane.ed25519.v1` and `aplane.ecdsak1.v1` use fixed `bytecblock`
-  preambles.
+  `aplane.ed25519.v1` uses a fixed `bytecblock` preamble.
 - After algod compilation, salted providers patch the selected byte through
   counter values `0..255` and persist the first compiled bytecode whose LogicSig
   address is off-curve. Unsalted template providers perform no patching and
@@ -1309,17 +1301,18 @@ or decrypts private key material. If the sidecar is missing or malformed,
 export fails closed; the operator must regenerate the sentry key or run an
 explicit metadata backfill before exporting.
 
-The envelope schema is:
+The envelope schema is shown below. The Falcon public key hex is abbreviated in
+this prose example; persisted envelopes contain all 3,586 hex characters.
 
 ```json
 {
   "schema": "aplane.sentry-public-key.v1",
-  "component_key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
-  "key_type": "aplane.sentry-ed25519.v1",
+  "component_key": "H2DZY4Y4D726DVOAURO5HG4H2HVKTXE26LTVZ7LOGHFKAG6DN62Q",
+  "key_type": "aplane.sentry-falcon1024.v1",
   "public_key_encoding": "hex",
-  "public_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-  "public_key_size": 32,
-  "public_key_sha256": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd"
+  "public_key_hex": "0000...0000",
+  "public_key_size": 1793,
+  "public_key_sha256": "d3a3deeec37ef5e50a463a2b1f8c9c6fc934a5c824a0c1cfd027d035a03b923a"
 }
 ```
 
@@ -1351,12 +1344,12 @@ digits, `.`, `-`, and `_`. The persisted record schema is:
 {
   "schema": "aplane.sentry-public-key-ref.v1",
   "name": "lab-sentry",
-  "component_key": "MYJZE3UF7G4JXR5STMQK5TSL5FNE7PE224BSKLZ2H4AJWJIPBEBQ",
-  "key_type": "aplane.sentry-ed25519.v1",
+  "component_key": "H2DZY4Y4D726DVOAURO5HG4H2HVKTXE26LTVZ7LOGHFKAG6DN62Q",
+  "key_type": "aplane.sentry-falcon1024.v1",
   "public_key_encoding": "hex",
-  "public_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-  "public_key_size": 32,
-  "public_key_sha256": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+  "public_key_hex": "0000...0000",
+  "public_key_size": 1793,
+  "public_key_sha256": "d3a3deeec37ef5e50a463a2b1f8c9c6fc934a5c824a0c1cfd027d035a03b923a",
   "source": "manual",
   "imported_at": "2026-06-04T00:00:00Z"
 }

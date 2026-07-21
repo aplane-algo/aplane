@@ -342,7 +342,7 @@ visibility metadata, not the assembled list.
 
 Default-enabled compiled providers include signer account providers
 (`ed25519`, `aplane.falcon1024.v1`) and sentry component providers
-(`aplane.sentry-ed25519.v1`, `aplane.sentry-falcon1024.v1`). Node role gates
+(`aplane.sentry-falcon1024.v1`). Node role gates
 determine which default-enabled key classes may be generated or served by a
 store. Optional compiled providers and YAML templates become available only
 after identity-local enablement or installation.
@@ -351,7 +351,7 @@ Identity key type records are plaintext because they are not key material:
 
 ```json
 {
-  "key_type": "aplane.allowlist.v1",
+  "key_type": "aplane.htlc.v1",
   "source": "yaml_generic",
   "state": "enabled",
   "fingerprint": "...",

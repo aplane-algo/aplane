@@ -67,7 +67,6 @@ Algorand accounts and cannot spend funds directly.
 
 Current sentry key types:
 
-- `aplane.sentry-ed25519.v1`
 - `aplane.sentry-falcon1024.v1`
 
 They are selected by a 52-character uppercase **Sentry Key ID** derived from
@@ -85,7 +84,6 @@ They name both the account DSA and the required sentry DSA.
 
 Current guarded account key types:
 
-- `aplane.falcon1024-sentry-ed25519.v1`
 - `aplane.falcon1024-sentry-falcon1024.v1`
 - `aplane.corridor.v1`
 

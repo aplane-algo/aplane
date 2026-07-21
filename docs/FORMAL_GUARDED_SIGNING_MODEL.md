@@ -66,10 +66,10 @@ program requires two component signatures. The model observes:
 - stored guarded account key type, which determines the sentry key family,
 - stored signing metadata, bytecode, and runtime argument contract.
 
-The current guarded account key types are `aplane.falcon1024-sentry-ed25519.v1`,
-`aplane.falcon1024-sentry-falcon1024.v1`, and `aplane.corridor.v1` (a Falcon
+The current guarded account key types are
+`aplane.falcon1024-sentry-falcon1024.v1` and `aplane.corridor.v1` (a Falcon
 account whose program additionally restricts spends to a recipient corridor and
-permits a sentry-authorized 0-ALGO self-pay rekey). All three share the
+permits a sentry-authorized 0-ALGO self-pay rekey). Both share the
 two-component-signature assembly modeled here; corridor's recipient-corridor and
 rekey restrictions are LogicSig program semantics and sentry transfer/rekey
 policy, out of scope per the TEAL/budget exclusion in Scope and the sentry
@@ -88,8 +88,7 @@ parameters. Later endpoint routing does not move that trust anchor.
 `SentryComponentKey` is a non-spending key with:
 
 - key category `component`,
-- key type `aplane.sentry-ed25519.v1` or
-  `aplane.sentry-falcon1024.v1`,
+- key type `aplane.sentry-falcon1024.v1`,
 - public/private sentry key material,
 - Sentry Key ID derived as uppercase base32 SHA-512/256 of the
   domain-separated key type and canonical public key bytes.

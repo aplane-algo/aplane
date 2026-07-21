@@ -25,10 +25,10 @@ tree.
 Do not edit shipped library templates or Go providers just to satisfy a user's
 custom policy. Shipped templates, compiled providers, and installed template key
 types are compatibility boundaries. Changing the behavior of an existing key
-type such as `aplane.allowlist.v1`, `aplane.falcon1024-allowlist.v1`, or
-`aplane.htlc.v1` can break existing keys and backups. The guarded sentry and
-corridor providers (`aplane.falcon1024-sentry-ed25519.v1`,
-`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`) are Go-defined
+type such as `aplane.htlc.v1`, `aplane.falcon1024-allowlist.v1`, or
+`aplane.falcon1024-allowlist-alock.v1` can break existing keys and backups. The
+guarded sentry and corridor providers
+(`aplane.falcon1024-sentry-falcon1024.v1`, `aplane.corridor.v1`) are Go-defined
 compiled providers, not authorable as YAML; the bundled
 `aplane.falcon1024-allowlist.v2` Merkle allowlist is likewise a built-in.
 

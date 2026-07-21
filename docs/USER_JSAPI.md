@@ -192,8 +192,11 @@ for (const kt of keyTypes()) {
   print(kt.keyType, " ", kt.displayName)
 }
 
-let generated = generateKey("aplane.allowlist.v1", {
-  recipients: "ADDR1, ADDR2"
+let generated = generateKey("aplane.htlc.v1", {
+  hash: "SHA256_HEX",
+  recipient: "ADDR1",
+  refund_address: "ADDR2",
+  timeout_round: "50000000"
 })
 print(generated.address)
 ```

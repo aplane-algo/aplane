@@ -3,8 +3,8 @@
 # User LogicSig Guidelines
 
 > **TL;DR**
-> - The LogicSigs bundled with APlane (Falcon hashlock, Falcon timelock,
->   Falcon allowlist, Falcon Merkle allowlist, Ed25519 allowlist, and the
+> - The LogicSigs bundled with APlane (Falcon timelock, Falcon inline and
+>   Merkle allowlists, the rekey-locked Falcon allowlist, HTLC, and the
 >   signer-gated DSA providers) are safe to fund and use as documented.
 > - Anything you compile yourself — your own TEAL, your own YAML template, or
 >   an externally-supplied LogicSig — needs to pass the full review checklist
@@ -724,27 +724,6 @@ off-curve LogicSig account whose program performs Ed25519 verification.
 Transaction policy is expected to live primarily in signer approval and local
 signer policy.
 
-#### `aplane.falcon1024_ed25519.v1`
-
-- dual Falcon-1024 plus Ed25519 LogicSig DSA
-- signer-gated
-- best understood as a signing primitive rather than a full TEAL spending
-  policy
-
-This provider strengthens signature requirements but relies mainly on the
-signer-side policy boundary for transaction controls.
-
-#### `aplane.ecdsak1.v1`
-
-- ECDSA secp256k1 LogicSig DSA
-- signer-gated
-- best understood as a signing primitive rather than a full TEAL spending
-  policy
-
-This provider verifies an ECDSA secp256k1 signature over the transaction. Like
-the other signer-gated compiled providers, transaction policy is expected to
-live primarily in signer approval and local signer policy.
-
 #### Bounded Authorization Allowlist
 
 `aplane.falcon1024-allowlist-alock.v1` is a schema-v2 composed account with
@@ -768,10 +747,9 @@ the admin-key rekey path but does not stop policy-compliant spending. See
 #### Guarded Sentry Providers
 
 APlane also ships Go-defined, library-visible guarded sentry account providers:
-`aplane.falcon1024-sentry-ed25519.v1`, `aplane.falcon1024-sentry-falcon1024.v1`,
-and `aplane.corridor.v1`. These require the guarded signing assembly flow (a
-user component signature plus a sentry component signature). For the two plain
-guarded providers, the on-chain LogicSig does not restrict transaction shape
+`aplane.falcon1024-sentry-falcon1024.v1` and `aplane.corridor.v1`. These require
+the guarded signing assembly flow (a user component signature plus a sentry
+component signature). For the plain guarded provider, the on-chain LogicSig does not restrict transaction shape
 once both signatures verify, so the sentry policy is the spending boundary.
 `aplane.corridor.v1` additionally embeds a recipient-corridor allowlist and a
 sentry-authorized rekey path in its LogicSig. See
@@ -788,40 +766,6 @@ keystore before generation.
 
 These are signatureless once funded. If the TEAL permits a path, any network
 participant may be able to exercise it.
-
-##### `aplane.timed-allowlist.v1`
-
-- generic TEAL-only timed allowlist
-- public once funded
-- strict fixed fee
-- no key registration path
-- optional parameterized ASA opt-in only for explicitly approved asset IDs
-
-Leaving `allowed_optin_assets` empty disables only the public ASA opt-in helper
-path. It does not make the account ALGO-only: if the LogicSig account already
-holds an ASA, the normal asset-transfer path can send or close that ASA to one
-of the configured recipients after `unlock_round`. That distinction is
-intentional: third parties must not be able to opt the escrow into arbitrary new
-assets, but the timed allowlist applies to existing ASA holdings.
-
-##### `aplane.allowlist.v1`
-
-- generic receiver-allowlist style template
-- public once funded
-- strict fixed fee
-- no key registration path
-- optional parameterized ASA opt-in only for explicitly approved asset IDs
-
-Receiver restrictions alone are not the full policy surface. Rekey, ALGO
-close-out, ASA close-out, clawback behavior, and any approved helper paths must
-also be understood.
-
-Leaving `allowed_optin_assets` empty disables only the public ASA opt-in helper
-path. It does not make the account ALGO-only: if the LogicSig account already
-holds an ASA, the normal asset-transfer path can send or close that ASA to one
-of the allowlisted recipients. That distinction is intentional: third parties
-must not be able to opt the account into arbitrary new assets, but the allowlist
-applies to existing ASA holdings.
 
 ##### `aplane.htlc.v1`
 
@@ -859,16 +803,6 @@ verification with a bounded schema-v2 policy. Their YAML uses
 `bounded` block. The composer rejects close, clawback, non-transfer transaction
 types, mixed-effect rekeys, and fees above the declared ceiling before running
 the template's Layer 3 condition.
-
-##### `aplane.falcon1024-hashlock.v1`
-
-- bounded Falcon payments, asset transfers, and asset opt-in
-- SHA256 preimage required for both spend and pure spending-key rekey
-
-The preimage occupies a declared caller runtime slot with a 64-byte maximum.
-Without the preimage, even the legitimate owner cannot rekey the account. This
-is intentional; use the external-admin allowlist or a reviewed custom-policy
-template when an independent recovery authority is required.
 
 ##### `aplane.falcon1024-timelock.v1`
 
@@ -909,26 +843,6 @@ addresses. Payment and asset receivers must be the sender or allowlisted. The
 bounded envelope rejects payment close, asset close, clawback, all non-transfer
 transaction types, and rekey combined with another effect. Pure rekey uses the
 spending key and does not run the allowlist policy.
-
-#### Ed25519-Backed Composed Templates
-
-These are signer-gated templates built by combining Algorand Ed25519 signature
-verification with a bounded schema-v2 policy. Their YAML uses
-`template_type: composed`, `base_key_type: aplane.ed25519.v1`, and a `bounded`
-block.
-
-##### `aplane.ed25519-allowlist.v1`
-
-- bounded Ed25519 payments and asset transfers with an inline recipient allowlist
-- bundled as an optional template; import to install and enable it for an identity
-- asset opt-in and pure spending-key rekey remain available
-
-This template is the Ed25519 counterpart to the fixed-list Falcon allowlist.
-The bundled template accepts 1-30 recipient addresses. Payment and asset
-receivers must be the sender or allowlisted. The bounded envelope rejects
-payment close, asset close, clawback, all non-transfer transaction types, and
-rekey combined with another effect. Pure rekey uses the spending key and does
-not run the allowlist policy.
 
 ## How To Use Bundled LogicSigs Safely
 
