@@ -40,14 +40,43 @@ func TestWitnessRoleCollisionChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	references := []sentryrefs.Record{{ComponentKey: witnessKeyID, PublicKeyHex: publicKeyHex}}
-	if err := rejectAdminWitnessKnownAsSentry(publicKeyHex, references); err == nil || !strings.Contains(err.Error(), "sentry role") {
-		t.Fatalf("admin collision error = %v", err)
+	if err := rejectAdminWitnessKnownAsSentry(publicKeyHex, references, nil); err == nil || !strings.Contains(err.Error(), "sentry role") {
+		t.Fatalf("admin reference collision error = %v", err)
+	}
+	localWitnesses := map[string]keys.KeyScanInfo{
+		witnessKeyID: {KeyType: witness.Falcon1024V1, PublicKeyHex: publicKeyHex},
+	}
+	if err := rejectAdminWitnessKnownAsSentry(publicKeyHex, nil, localWitnesses); err == nil || !strings.Contains(err.Error(), "sentry custody") {
+		t.Fatalf("admin local-custody collision error = %v", err)
+	}
+	localSpendingKeys := map[string]keys.KeyScanInfo{
+		"ACCOUNT": {KeyType: "aplane.falcon1024.v1", PublicKeyHex: publicKeyHex},
+	}
+	if err := rejectAdminWitnessKnownAsSentry(publicKeyHex, nil, localSpendingKeys); err != nil {
+		t.Fatalf("admin non-witness collision error = %v, want nil", err)
 	}
 	scanned := map[string]keys.KeyScanInfo{
 		"ACCOUNT": {BoundedAuthorization: &boundedmeta.Metadata{AdminPublicKeyHex: publicKeyHex}},
 	}
 	if err := rejectSentryWitnessKnownAsAdmin(publicKeyHex, witnessKeyID, scanned); err == nil || !strings.Contains(err.Error(), "contract admin") {
 		t.Fatalf("sentry collision error = %v", err)
+	}
+}
+
+func TestValidateKnownWitnessRoleExclusivityRejectsLocalWitness(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	const identityID = "test-identity"
+	masterKey := []byte("0123456789abcdef0123456789abcdef")
+
+	generated, err := GenerateKey(paths, identityID, witness.Falcon1024V1, masterKey, nil)
+	if err != nil {
+		t.Fatalf("GenerateKey(witness) error = %v", err)
+	}
+	err = validateKnownWitnessRoleExclusivity(paths, identityID, "aplane.falcon1024-allowlist-alock.v1", map[string]string{
+		boundedmeta.AdminPublicKeyParameter: generated.PublicKeyHex,
+	}, masterKey)
+	if err == nil || !strings.Contains(err.Error(), "sentry custody") {
+		t.Fatalf("validateKnownWitnessRoleExclusivity() error = %v, want local sentry-custody collision", err)
 	}
 }
 

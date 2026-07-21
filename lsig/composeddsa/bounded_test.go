@@ -114,10 +114,10 @@ func TestBoundedGoldenVector(t *testing.T) {
 	if got := hex.EncodeToString(message[:]); got != wantMessage {
 		t.Fatalf("admin message = %s, want %s", got, wantMessage)
 	}
-	assertBoundedGoldenVectorDocumentation(t, fullKeyType, wantBinding, wantMessage)
+	assertBoundedGoldenVectorDocumentation(t, fullKeyType, wantKeyID, wantBinding, wantMessage)
 }
 
-func assertBoundedGoldenVectorDocumentation(t *testing.T, fullKeyType, binding, message string) {
+func assertBoundedGoldenVectorDocumentation(t *testing.T, fullKeyType, adminKeyID, binding, message string) {
 	t.Helper()
 	docPath := filepath.Join("..", "..", "docs", "ARCH_BOUNDED_DSA.md")
 	doc, err := os.ReadFile(docPath)
@@ -126,6 +126,7 @@ func assertBoundedGoldenVectorDocumentation(t *testing.T, fullKeyType, binding, 
 	}
 	for label, value := range map[string]string{
 		"full_key_type":           fullKeyType,
+		"contract_admin_key_id":   adminKeyID,
 		"bounded_program_binding": binding,
 		"admin_message":           message,
 	} {

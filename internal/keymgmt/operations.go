@@ -227,7 +227,11 @@ func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, identityID, key
 		if err != nil {
 			return fmt.Errorf("check sentry witness references: %w", err)
 		}
-		if err := rejectAdminWitnessKnownAsSentry(adminPublicKeyHex, references); err != nil {
+		scanned, err := keys.ScanKeysDirectoryWithMasterKey(paths, identityID, masterKey)
+		if err != nil {
+			return fmt.Errorf("check local sentry witness keys: %w", err)
+		}
+		if err := rejectAdminWitnessKnownAsSentry(adminPublicKeyHex, references, scanned); err != nil {
 			return err
 		}
 	}
@@ -254,10 +258,15 @@ func validateKnownWitnessRoleExclusivity(paths storepaths.Paths, identityID, key
 	return rejectSentryWitnessKnownAsAdmin(sentryPublicKeyHex, sentryWitnessID, scanned)
 }
 
-func rejectAdminWitnessKnownAsSentry(adminPublicKeyHex string, references []sentryrefs.Record) error {
+func rejectAdminWitnessKnownAsSentry(adminPublicKeyHex string, references []sentryrefs.Record, scanned map[string]keys.KeyScanInfo) error {
 	for _, reference := range references {
 		if strings.EqualFold(reference.PublicKeyHex, adminPublicKeyHex) {
 			return fmt.Errorf("witness key %s is already known in the sentry role and cannot be enrolled as a contract admin", reference.ComponentKey)
+		}
+	}
+	for witnessKeyID, info := range scanned {
+		if witness.IsKeyType(info.KeyType) && strings.EqualFold(info.PublicKeyHex, adminPublicKeyHex) {
+			return fmt.Errorf("witness key %s is already stored in sentry custody and cannot be enrolled as a contract admin", witnessKeyID)
 		}
 	}
 	return nil
