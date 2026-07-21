@@ -94,16 +94,23 @@ func ParseBackup(decryptedJSON []byte) (keyJSON []byte, templateYAML []byte, tem
 // identity-local template is available.
 // Returns the SHA256 checksum of the written key file and its size.
 func ExportKey(paths storepaths.Paths, identityID, srcDir, destDir, address string, masterKey, exportPassphrase []byte) (string, int64, error) {
-	srcFile := filepath.Join(srcDir, address+".key")
-	destFile := filepath.Join(destDir, address+".apb")
+	source, err := resolveManagedCredentialFile(srcDir, address)
+	if err != nil {
+		return "", 0, err
+	}
+	return exportManagedCredential(paths, identityID, destDir, source, masterKey, exportPassphrase)
+}
+
+func exportManagedCredential(paths storepaths.Paths, identityID, destDir string, source keys.ManagedCredentialFile, masterKey, exportPassphrase []byte) (string, int64, error) {
+	destFile := filepath.Join(destDir, source.Selector+".apb")
 
 	// Read source key file
-	data, err := os.ReadFile(srcFile)
+	data, err := os.ReadFile(source.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", 0, fmt.Errorf("key file not found: %s", address+".key")
+			return "", 0, fmt.Errorf("managed credential file not found: %s", source.Name)
 		}
-		return "", 0, fmt.Errorf("failed to read key file: %w", err)
+		return "", 0, fmt.Errorf("failed to read managed credential: %w", err)
 	}
 
 	// Decrypt with master key
@@ -112,11 +119,14 @@ func ExportKey(paths storepaths.Paths, identityID, srcDir, destDir, address stri
 		return "", 0, fmt.Errorf("failed to decrypt key: %w", err)
 	}
 	defer crypto.ZeroBytes(plaintext)
+	if err := validateExportSource(source, plaintext); err != nil {
+		return "", 0, err
+	}
 
 	// Determine what to encrypt: plain key or bundle with template
 	payload, err := buildExportPayload(paths, identityID, plaintext, masterKey)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to build export payload for %s: %w", address, err)
+		return "", 0, fmt.Errorf("failed to build export payload for %s: %w", source.Selector, err)
 	}
 	defer crypto.ZeroBytes(payload)
 
@@ -136,6 +146,43 @@ func ExportKey(paths storepaths.Paths, identityID, srcDir, destDir, address stri
 	checksum := hex.EncodeToString(h[:])
 
 	return checksum, int64(len(standaloneData)), nil
+}
+
+func resolveManagedCredentialFile(srcDir, selector string) (keys.ManagedCredentialFile, error) {
+	files, err := keys.ScanManagedCredentialFiles(srcDir)
+	if err != nil {
+		return keys.ManagedCredentialFile{}, err
+	}
+	var matches []keys.ManagedCredentialFile
+	for _, file := range files {
+		if file.Selector == selector {
+			matches = append(matches, file)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return keys.ManagedCredentialFile{}, fmt.Errorf("managed credential not found: %s", selector)
+	case 1:
+		return matches[0], nil
+	default:
+		return keys.ManagedCredentialFile{}, fmt.Errorf("ambiguous managed credential %s: both filename classes are present", selector)
+	}
+}
+
+func validateExportSource(source keys.ManagedCredentialFile, plaintext []byte) error {
+	payload, err := keys.ParsePayload(plaintext)
+	if err != nil {
+		return err
+	}
+	defer payload.ZeroSecrets()
+	selector, err := payload.Selector()
+	if err != nil {
+		return err
+	}
+	if err := keys.ValidateManagedCredentialFilename(source.Name, selector, payload.Category); err != nil {
+		return err
+	}
+	return nil
 }
 
 // buildExportPayload returns the plaintext to encrypt for export.
@@ -202,7 +249,7 @@ func findKeystoreTemplate(paths storepaths.Paths, identityID, keyType string) (t
 	return "", ""
 }
 
-// ExportAllKeys exports all .key files from the keystore to a standalone backup directory.
+// ExportAllKeys exports all managed credential files from the keystore to a standalone backup directory.
 // Each file is decrypted with the store's master key and re-encrypted with the export
 // passphrase using standalone encryption (envelope_version 2).
 // No .keystore file is written — each backup file is self-contained.
@@ -212,14 +259,20 @@ func findKeystoreTemplate(paths storepaths.Paths, identityID, keyType string) (t
 // damaged key cannot block backing up the remaining healthy keys. All other
 // failures (read, decrypt, template, IO) still abort the export.
 func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, masterKey, exportPassphrase []byte) (checksums, skipped map[string]string, err error) {
-	// Scan source directory for .key files
-	addresses, err := ScanKeyFiles(srcDir)
+	managedFiles, err := keys.ScanManagedCredentialFiles(srcDir)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if len(addresses) == 0 {
-		return nil, nil, fmt.Errorf("no .key files found in %s", srcDir)
+	if len(managedFiles) == 0 {
+		return nil, nil, fmt.Errorf("no managed credential files found in %s", srcDir)
+	}
+	seenSelectors := make(map[string]string, len(managedFiles))
+	for _, file := range managedFiles {
+		if previous, ok := seenSelectors[file.Selector]; ok {
+			return nil, nil, fmt.Errorf("ambiguous managed credential %s: %s and %s", file.Selector, previous, file.Name)
+		}
+		seenSelectors[file.Selector] = file.Name
 	}
 
 	// Create apb subdirectory in backup
@@ -231,16 +284,17 @@ func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, m
 	// Export each key to keys/ subdirectory
 	checksums = make(map[string]string)
 	skipped = make(map[string]string)
-	for _, address := range addresses {
-		checksum, _, err := ExportKey(paths, identityID, srcDir, keysDestDir, address, masterKey, exportPassphrase)
+	for _, managedFile := range managedFiles {
+		selector := managedFile.Selector
+		checksum, _, err := exportManagedCredential(paths, identityID, keysDestDir, managedFile, masterKey, exportPassphrase)
 		if err != nil {
 			if isCanonicalPayloadRejection(err) {
-				skipped[address] = err.Error()
+				skipped[selector] = err.Error()
 				continue
 			}
-			return nil, nil, fmt.Errorf("failed to export %s: %w", address, err)
+			return nil, nil, fmt.Errorf("failed to export %s: %w", selector, err)
 		}
-		checksums[address] = checksum
+		checksums[selector] = checksum
 	}
 
 	if len(checksums) == 0 {
@@ -255,5 +309,7 @@ func ExportAllKeys(paths storepaths.Paths, identityID, srcDir, destDir string, m
 // infrastructure failure (read, decrypt, template, IO) that must abort.
 func isCanonicalPayloadRejection(err error) bool {
 	return errors.Is(err, keys.ErrIncompatibleKeyFormat) ||
-		errors.Is(err, keys.ErrMissingLogicSigSaltCounter)
+		errors.Is(err, keys.ErrMissingLogicSigSaltCounter) ||
+		errors.Is(err, keys.ErrManagedCredentialClassMismatch) ||
+		errors.Is(err, keys.ErrManagedCredentialSelectorMismatch)
 }

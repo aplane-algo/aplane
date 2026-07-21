@@ -141,3 +141,19 @@ func TestScanManagedCredentialFiles(t *testing.T) {
 		t.Fatalf("sentry record = %#v", files[1])
 	}
 }
+
+func TestManagedCredentialDestinationRejectsContradictoryClass(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	account := types.Address{4}.String()
+	if err := os.MkdirAll(paths.KeysDir(identityID), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	contradictory := filepath.Join(paths.KeysDir(identityID), account+SentryCredentialExtension)
+	if err := os.WriteFile(contradictory, []byte("corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ManagedCredentialDestination(paths, identityID, account, CategoryEd25519); !errors.Is(err, ErrManagedCredentialClassConflict) {
+		t.Fatalf("ManagedCredentialDestination() error = %v, want class conflict", err)
+	}
+}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/crypto"
 	"github.com/aplane-algo/aplane/internal/fsutil"
+	apkeys "github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/noderole"
 	"github.com/aplane-algo/aplane/internal/policy"
 	ed25519signerreg "github.com/aplane-algo/aplane/internal/signing/ed25519/signerreg"
@@ -76,6 +77,44 @@ func TestCreateAllKeysArchiveUsesGroupAccessibleManagedBackupPermissions(t *test
 	}
 	if manifest.SourceNodeRole != string(noderole.RoleSigner) {
 		t.Fatalf("manifest source node role = %q, want signer", manifest.SourceNodeRole)
+	}
+}
+
+func TestCreateAllKeysArchiveExportsSentryCredential(t *testing.T) {
+	const identityID = "default"
+	paths := storepaths.NewPaths(t.TempDir())
+	if err := fsutil.MkdirAll(paths.KeysDir(identityID)); err != nil {
+		t.Fatal(err)
+	}
+	selector, keyJSON := testSentryComponentBackupKeyJSON(t)
+	encrypted, err := crypto.EncryptWithMasterKey(keyJSON, testExportMasterKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(apkeys.SentryCredentialFilePath(paths, identityID, selector), encrypted, fsutil.StoreFilePerm); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := noderole.SaveInitial(paths, noderole.RoleSentry, timeForBackupTest()); err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.SaveStoredSentryConfigWithMasterKey(paths.Root(), identityID, &policy.StoredConfig{}, testExportMasterKey, timeForBackupTest()); err != nil {
+		t.Fatal(err)
+	}
+
+	archivePath := BuildManagedArchivePath(paths, identityID, "20260721-010203")
+	result, err := CreateKeysArchive(paths, identityID, archivePath, nil, testExportMasterKey, []byte("export-passphrase"))
+	if err != nil {
+		t.Fatalf("CreateKeysArchive() error = %v", err)
+	}
+	if result.KeyCount != 1 || len(result.Addresses) != 1 || result.Addresses[0] != selector {
+		t.Fatalf("archive result = %#v, want sentry witness %s", result, selector)
+	}
+	extractDir := t.TempDir()
+	if err := ExtractTarGzArchive(archivePath, extractDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(extractDir, "apb", selector+".apb")); err != nil {
+		t.Fatalf("sentry witness .apb missing: %v", err)
 	}
 }
 

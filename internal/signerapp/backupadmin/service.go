@@ -4,6 +4,7 @@
 package backupadmin
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/aplane-algo/aplane/internal/adminproto"
 	"github.com/aplane-algo/aplane/internal/backup"
 	"github.com/aplane-algo/aplane/internal/crypto"
+	"github.com/aplane-algo/aplane/internal/keys"
 	"github.com/aplane-algo/aplane/internal/protocol"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	"github.com/aplane-algo/aplane/internal/storepaths"
@@ -232,19 +234,10 @@ func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBacku
 				if address == "" {
 					continue
 				}
-				if !req.Overwrite {
-					if _, statErr := os.Stat(s.Deps.KeyPaths().KeyFilePath(ir.ID(), address)); statErr == nil {
-						result.Skipped = append(result.Skipped, adminproto.RestoreKeyInfo{
-							Address:       address,
-							AlreadyExists: true,
-							Error:         "key already exists",
-						})
-						continue
-					}
-				}
 				warningAddress := address
 				restorer := backup.NewRestorer(s.Deps.KeyPaths(), ir.ID()).
 					WithNodeRole(ir.NodeRole()).
+					WithOverwrite(req.Overwrite).
 					WithLogger(s.Deps.Logf).
 					WithWarningHandler(func(keyType, warning string) {
 						result.Warnings = append(result.Warnings, adminproto.RestoreWarning{
@@ -255,6 +248,14 @@ func (s Service) RestoreBackup(ir *identity.Runtime, req adminproto.RestoreBacku
 					})
 				keyType, restoreErr := restorer.RestoreKey(keysDir, address, masterKey, passphraseBytes)
 				if restoreErr != nil {
+					if errors.Is(restoreErr, keys.ErrManagedCredentialExists) {
+						result.Skipped = append(result.Skipped, adminproto.RestoreKeyInfo{
+							Address:       address,
+							AlreadyExists: true,
+							Error:         "managed credential already exists",
+						})
+						continue
+					}
 					result.Errors = append(result.Errors, adminproto.RestoreError{
 						Address: address,
 						Error:   restoreErr.Error(),

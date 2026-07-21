@@ -6,6 +6,7 @@ package backup
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -433,6 +434,12 @@ func TestRestoreKeyWritesWitnessPublicMetadataOnSentryNode(t *testing.T) {
 	if keyType != witness.Falcon1024V1 {
 		t.Fatalf("RestoreKey() key type = %q, want %q", keyType, witness.Falcon1024V1)
 	}
+	if _, err := os.Stat(apkeys.SentryCredentialFilePath(paths, identityID, componentKey)); err != nil {
+		t.Fatalf("restored sentry credential missing: %v", err)
+	}
+	if _, err := os.Stat(apkeys.AccountKeyFilePath(paths, identityID, componentKey)); !os.IsNotExist(err) {
+		t.Fatalf("legacy witness .key stat error = %v, want not exist", err)
+	}
 
 	env, ok, err := apkeys.ReadWitnessPublicMetadata(paths, identityID, componentKey)
 	if err != nil {
@@ -452,6 +459,60 @@ func TestRestoreKeyWritesWitnessPublicMetadataOnSentryNode(t *testing.T) {
 		t.Fatalf("PublicKeyHex = %q, want %q", env.PublicKeyHex, wantPublicKeyHex)
 	}
 	assertFileMode(t, apkeys.WitnessPublicMetadataPath(paths, identityID, componentKey), fsutil.StoreFilePerm)
+}
+
+func TestRestoreKeyRequiresExplicitOverwrite(t *testing.T) {
+	ed25519signerreg.RegisterSigner()
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	address, keyJSON := testEd25519BackupKeyJSON(t)
+	keysDir := filepath.Join(t.TempDir(), "apb")
+	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, address+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+		t.Fatal(err)
+	}
+	restorer := NewRestorer(paths, identityID)
+	if _, err := restorer.RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); err != nil {
+		t.Fatalf("first RestoreKey() error = %v", err)
+	}
+	if _, err := restorer.RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); !errors.Is(err, apkeys.ErrManagedCredentialExists) {
+		t.Fatalf("second RestoreKey() error = %v, want existing credential", err)
+	}
+	if _, err := restorer.WithOverwrite(true).RestoreKey(keysDir, address, testExportMasterKey, []byte("export-passphrase")); err != nil {
+		t.Fatalf("overwrite RestoreKey() error = %v", err)
+	}
+}
+
+func TestRestoreKeyRejectsContradictoryManagedCredentialClass(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	identityID := "default"
+	componentKey, keyJSON := testSentryComponentBackupKeyJSON(t)
+	keysDir := filepath.Join(t.TempDir(), "apb")
+	if err := os.MkdirAll(keysDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeStandaloneBackupFile(filepath.Join(keysDir, componentKey+".apb"), keyJSON, []byte("export-passphrase")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.KeysDir(identityID), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := apkeys.AccountKeyFilePath(paths, identityID, componentKey)
+	if err := os.WriteFile(legacyPath, []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewRestorer(paths, identityID).
+		WithNodeRole(noderole.RoleSentry).
+		WithOverwrite(true).
+		RestoreKey(keysDir, componentKey, testExportMasterKey, []byte("export-passphrase"))
+	if !errors.Is(err, apkeys.ErrManagedCredentialClassConflict) {
+		t.Fatalf("RestoreKey() error = %v, want class conflict", err)
+	}
+	if _, statErr := os.Stat(apkeys.SentryCredentialFilePath(paths, identityID, componentKey)); !os.IsNotExist(statErr) {
+		t.Fatalf("canonical .sen was written despite conflict: %v", statErr)
+	}
 }
 
 func TestRestoreKeyWritesCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.T) {

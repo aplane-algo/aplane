@@ -38,6 +38,8 @@ const (
 var (
 	ErrManagedCredentialClassMismatch    = errors.New("managed credential filename class mismatch")
 	ErrManagedCredentialSelectorMismatch = errors.New("managed credential filename selector mismatch")
+	ErrManagedCredentialClassConflict    = errors.New("contradictory managed credential class exists")
+	ErrManagedCredentialExists           = errors.New("managed credential already exists")
 )
 
 // ManagedCredentialClassForCategory maps a canonical payload category to its
@@ -151,6 +153,37 @@ func AccountKeyFilePath(paths storepaths.Paths, identityID, address string) stri
 // Key ID. Canonical writers should prefer CanonicalManagedCredentialPath.
 func SentryCredentialFilePath(paths storepaths.Paths, identityID, witnessKeyID string) string {
 	return filepath.Join(paths.KeysDir(identityID), witnessKeyID+SentryCredentialExtension)
+}
+
+// ManagedCredentialDestination reports the canonical destination and whether
+// it exists, while rejecting an active file in the contradictory class.
+func ManagedCredentialDestination(paths storepaths.Paths, identityID, selector, category string) (string, bool, error) {
+	class, err := ManagedCredentialClassForCategory(category)
+	if err != nil {
+		return "", false, err
+	}
+	canonicalPath, err := CanonicalManagedCredentialPath(paths, identityID, selector, category)
+	if err != nil {
+		return "", false, err
+	}
+
+	otherClass := ManagedCredentialAccount
+	if class == ManagedCredentialAccount {
+		otherClass = ManagedCredentialSentry
+	}
+	contradictoryPath := filepath.Join(paths.KeysDir(identityID), selector+otherClass.Extension())
+	if _, err := os.Lstat(contradictoryPath); err == nil {
+		return "", false, fmt.Errorf("%w: %s", ErrManagedCredentialClassConflict, contradictoryPath)
+	} else if !os.IsNotExist(err) {
+		return "", false, fmt.Errorf("inspect contradictory managed credential %s: %w", contradictoryPath, err)
+	}
+
+	if _, err := os.Lstat(canonicalPath); err == nil {
+		return canonicalPath, true, nil
+	} else if !os.IsNotExist(err) {
+		return "", false, fmt.Errorf("inspect managed credential destination %s: %w", canonicalPath, err)
+	}
+	return canonicalPath, false, nil
 }
 
 func ValidateManagedCredentialFilename(name, derivedSelector, category string) error {

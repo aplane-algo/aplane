@@ -9,11 +9,6 @@ import (
 	"strings"
 )
 
-// ScanKeyFiles scans a directory for .key files and returns their addresses.
-func ScanKeyFiles(dir string) ([]string, error) {
-	return scanByExtension(dir, ".key")
-}
-
 // ScanBackupFiles scans a directory for .apb backup files and returns their addresses.
 func ScanBackupFiles(dir string) ([]string, error) {
 	return scanByExtension(dir, ".apb")
