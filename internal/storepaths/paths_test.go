@@ -34,7 +34,7 @@ func TestKeyTypePathsAreIdentityScoped(t *testing.T) {
 		t.Fatalf("KeyTypeRecordsDir() = %q, want %q", gotDir, wantDir)
 	}
 
-	if gotFile := paths.KeyTypeRecord("default", "aplane.falcon1024_ed25519.v1"); gotFile != filepath.Join(wantDir, "aplane.falcon1024_ed25519.v1.json") {
+	if gotFile := paths.KeyTypeRecord("default", "aplane.ed25519.v1"); gotFile != filepath.Join(wantDir, "aplane.ed25519.v1.json") {
 		t.Fatalf("KeyTypeRecord() = %q", gotFile)
 	}
 	if gotFile := paths.KeyTypeTemplate("default", "aplane.allowlist.v1"); gotFile != filepath.Join(wantDir, "aplane.allowlist.v1.template") {

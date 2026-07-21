@@ -615,14 +615,14 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: ActivateKeyTypeResultMessage{
 				BaseMessage:   BaseMessage{Type: MsgTypeActivateKeyTypeResult, ID: "activate-keytype-1"},
 				Success:       true,
-				KeyType:       "aplane.falcon1024_ed25519.v1",
+				KeyType:       "aplane.ed25519.v1",
 				AlreadyExists: true,
 			},
 			wantMap: map[string]any{
 				"type":           MsgTypeActivateKeyTypeResult,
 				"id":             "activate-keytype-1",
 				"success":        true,
-				"key_type":       "aplane.falcon1024_ed25519.v1",
+				"key_type":       "aplane.ed25519.v1",
 				"already_exists": true,
 			},
 		},
@@ -631,14 +631,14 @@ func TestCoreMessageJSONShapes(t *testing.T) {
 			msg: DeactivateKeyTypeResultMessage{
 				BaseMessage: BaseMessage{Type: MsgTypeDeactivateKeyTypeResult, ID: "deactivate-keytype-1"},
 				Success:     true,
-				KeyType:     "aplane.falcon1024_ed25519.v1",
+				KeyType:     "aplane.ed25519.v1",
 				Removed:     true,
 			},
 			wantMap: map[string]any{
 				"type":     MsgTypeDeactivateKeyTypeResult,
 				"id":       "deactivate-keytype-1",
 				"success":  true,
-				"key_type": "aplane.falcon1024_ed25519.v1",
+				"key_type": "aplane.ed25519.v1",
 				"removed":  true,
 			},
 		},

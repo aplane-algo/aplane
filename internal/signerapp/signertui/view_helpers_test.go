@@ -83,8 +83,8 @@ func TestServerKeyTypesDriveGenerateAndImportOptions(t *testing.T) {
 			MnemonicImport:    true,
 		},
 		{
-			KeyType:           "aplane.ecdsak1.v1",
-			DisplayName:       "ECDSA secp256k1",
+			KeyType:           "aplane.ed25519.v1",
+			DisplayName:       "Example DSA",
 			MnemonicWordCount: 24,
 			MnemonicImport:    false,
 		},

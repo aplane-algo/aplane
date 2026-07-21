@@ -70,11 +70,11 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 		},
 		activateResult: adminproto.ActivateKeyTypeResult{
 			Success: true,
-			KeyType: "aplane.falcon1024_ed25519.v1",
+			KeyType: "aplane.ed25519.v1",
 		},
 		deactivateResult: adminproto.DeactivateKeyTypeResult{
 			Success: true,
-			KeyType: "aplane.falcon1024_ed25519.v1",
+			KeyType: "aplane.ed25519.v1",
 			Removed: true,
 		},
 		keyTypesResult: adminproto.ListKeyTypesResult{
@@ -150,7 +150,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 			Type: protocol.MsgTypeActivateKeyType,
 			ID:   "activate-keytype-1",
 		},
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 	dispatchAdminMessage(t, session, protocol.DeactivateKeyTypeMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -158,7 +158,7 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 			Type: protocol.MsgTypeDeactivateKeyType,
 			ID:   "deactivate-keytype-1",
 		},
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 	dispatchAdminMessage(t, session, protocol.ListKeyTypesMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -197,13 +197,13 @@ func TestTemplateMessagesDispatchToTemplateServices(t *testing.T) {
 	if svc.activateKeyTypeCalls != 1 {
 		t.Fatalf("ActivateKeyType calls = %d, want 1", svc.activateKeyTypeCalls)
 	}
-	if svc.lastActivateKeyType.KeyType != "aplane.falcon1024_ed25519.v1" {
+	if svc.lastActivateKeyType.KeyType != "aplane.ed25519.v1" {
 		t.Fatalf("activate request = %+v, want dual provider", svc.lastActivateKeyType)
 	}
 	if svc.deactivateKeyTypeCalls != 1 {
 		t.Fatalf("DeactivateKeyType calls = %d, want 1", svc.deactivateKeyTypeCalls)
 	}
-	if svc.lastDeactivateKeyType.KeyType != "aplane.falcon1024_ed25519.v1" {
+	if svc.lastDeactivateKeyType.KeyType != "aplane.ed25519.v1" {
 		t.Fatalf("deactivate request = %+v, want dual provider", svc.lastDeactivateKeyType)
 	}
 	if svc.listKeyTypesCalls != 1 {
@@ -268,7 +268,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 			Type: protocol.MsgTypeActivateKeyType,
 			ID:   "activate-locked",
 		},
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 	dispatchAdminMessage(t, session, protocol.DeactivateKeyTypeMessage{
 		BaseMessage: protocol.BaseMessage{
@@ -276,7 +276,7 @@ func TestTemplateInstallAndListRequireUnlockedRuntime(t *testing.T) {
 			Type: protocol.MsgTypeDeactivateKeyType,
 			ID:   "deactivate-locked",
 		},
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 
 	if svc.listLibraryCalls != 0 {

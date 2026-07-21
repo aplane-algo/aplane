@@ -85,7 +85,7 @@ func TestActivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 	svc, ir, reloadCount := setupServiceWithReloadCounter(t)
 
 	result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 	if !result.Success {
 		t.Fatalf("ActivateKeyType failed: code=%q error=%q", result.Code, result.Error)
@@ -99,15 +99,15 @@ func TestActivateKeyTypeDoesNotInferPublisher(t *testing.T) {
 	svc, ir, _ := setupServiceWithReloadCounter(t)
 
 	result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
-		KeyType: "falcon1024_ed25519.v1",
+		KeyType: "ed25519.v1",
 	})
 	if result.Success {
 		t.Fatal("ActivateKeyType(unqualified) succeeded, want failure")
 	}
-	if result.KeyType != "falcon1024_ed25519.v1" {
-		t.Fatalf("KeyType = %q, want falcon1024_ed25519.v1", result.KeyType)
+	if result.KeyType != "ed25519.v1" {
+		t.Fatalf("KeyType = %q, want ed25519.v1", result.KeyType)
 	}
-	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.falcon1024_ed25519.v1"); err != nil {
+	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.ed25519.v1"); err != nil {
 		t.Fatalf("Get after Activate: %v", err)
 	} else if ok {
 		t.Fatal("canonical state record was created for unqualified key type")
@@ -121,14 +121,14 @@ func TestDeactivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 	svc, ir, reloadCount := setupServiceWithReloadCounter(t)
 
 	if result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	}); !result.Success {
 		t.Fatalf("setup ActivateKeyType failed: code=%q error=%q", result.Code, result.Error)
 	}
 	reloadCount.Store(0)
 
 	result := svc.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 	if !result.Success {
 		t.Fatalf("DeactivateKeyType failed: code=%q error=%q", result.Code, result.Error)
@@ -137,7 +137,7 @@ func TestDeactivateKeyTypeCompiledProviderTriggersReload(t *testing.T) {
 		t.Fatalf("reloadCount = %d, want >= 1 (admin handler missed ir.Reload after state-record delete)", got)
 	}
 
-	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.falcon1024_ed25519.v1"); err != nil {
+	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.ed25519.v1"); err != nil {
 		t.Fatalf("Get after Deactivate: %v", err)
 	} else if ok {
 		t.Fatal("state record still present after Deactivate; record should have been removed")
@@ -148,21 +148,21 @@ func TestDeactivateKeyTypeDoesNotInferPublisher(t *testing.T) {
 	svc, ir, _ := setupServiceWithReloadCounter(t)
 
 	if result := svc.ActivateKeyType(ir, adminproto.ActivateKeyTypeRequest{
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	}); !result.Success {
 		t.Fatalf("setup ActivateKeyType failed: code=%q error=%q", result.Code, result.Error)
 	}
 
 	result := svc.DeactivateKeyType(ir, adminproto.DeactivateKeyTypeRequest{
-		KeyType: "falcon1024_ed25519.v1",
+		KeyType: "ed25519.v1",
 	})
-	if result.KeyType != "falcon1024_ed25519.v1" {
-		t.Fatalf("KeyType = %q, want falcon1024_ed25519.v1", result.KeyType)
+	if result.KeyType != "ed25519.v1" {
+		t.Fatalf("KeyType = %q, want ed25519.v1", result.KeyType)
 	}
 	if result.Removed {
 		t.Fatal("DeactivateKeyType(unqualified).Removed = true, want false")
 	}
-	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.falcon1024_ed25519.v1"); err != nil {
+	if _, ok, err := keytypestate.Get(ir.KeyPaths(), ir.ID(), "aplane.ed25519.v1"); err != nil {
 		t.Fatalf("Get after Deactivate: %v", err)
 	} else if !ok {
 		t.Fatal("canonical state record was removed by unqualified deactivation")

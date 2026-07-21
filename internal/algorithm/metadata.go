@@ -7,7 +7,7 @@
 // display colors, etc.) for all signature algorithms. Both Ed25519 and
 // Falcon register their metadata here.
 //
-// For LogicSig-based DSAs (Falcon, ECDSA secp256k1, etc.), internal/logicsigdsa provides
+// For LogicSig-based DSAs, internal/logicsigdsa provides
 // additional versioned operations (keypair generation, LogicSig derivation).
 // The two registries are complementary - this one for metadata, logicsigdsa
 // for crypto operations.

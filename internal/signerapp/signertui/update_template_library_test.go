@@ -155,10 +155,10 @@ func TestTemplateLibraryViewKeyOpensDetailsViewerForYAMLEntry(t *testing.T) {
 
 func TestTemplateLibraryViewKeySynthesizesCompiledProviderDetails(t *testing.T) {
 	tmpl := protocol.LibraryTemplateInfo{
-		KeyType:      "aplane.falcon1024_ed25519.v1",
+		KeyType:      "aplane.ed25519.v1",
 		TemplateType: libraryTypeCompiledProvider,
-		DisplayName:  "Falcon1024 Ed25519",
-		Description:  "Dual signature provider",
+		DisplayName:  "Ed25519 LogicSig",
+		Description:  "Ed25519 DSA provider",
 		Parameters: []protocol.TemplateParamInfo{
 			{Name: "threshold", Label: "Threshold", Type: "uint64", Required: true, Description: "Signing threshold"},
 		},
@@ -179,7 +179,7 @@ func TestTemplateLibraryViewKeySynthesizesCompiledProviderDetails(t *testing.T) 
 	if cmd != nil {
 		t.Fatalf("t on compiled provider returned cmd = %v, want nil (no IPC roundtrip)", cmd)
 	}
-	for _, want := range []string{"Source: built-in key type", "Publisher: aplane", "Falcon1024 Ed25519", "Threshold", "Signing threshold"} {
+	for _, want := range []string{"Source: built-in key type", "Publisher: aplane", "Ed25519 LogicSig", "Threshold", "Signing threshold"} {
 		if !strings.Contains(got.library.detailsContent, want) {
 			t.Fatalf("compiled provider details missing %q:\n%s", want, got.library.detailsContent)
 		}
@@ -237,10 +237,10 @@ func TestLibraryDetailsViewerRendersSourceIntegrityMetadata(t *testing.T) {
 
 func TestCompiledProviderLibraryEntryUsesActivationLanguage(t *testing.T) {
 	tmpl := protocol.LibraryTemplateInfo{
-		KeyType:      "aplane.falcon1024_ed25519.v1",
+		KeyType:      "aplane.ed25519.v1",
 		TemplateType: libraryTypeCompiledProvider,
-		DisplayName:  "Falcon1024 Ed25519",
-		Description:  "Dual signature provider",
+		DisplayName:  "Ed25519 LogicSig",
+		Description:  "Ed25519 DSA provider",
 	}
 	m := Model{
 		viewState: ViewTemplateLibrary,
@@ -252,7 +252,7 @@ func TestCompiledProviderLibraryEntryUsesActivationLanguage(t *testing.T) {
 	rendered := m.View()
 	for _, want := range []string{
 		"KeyType Library",
-		"falcon",
+		"dsa",
 		"Disabled",
 		"Source: built-in key type",
 		"Publisher: aplane",
@@ -270,7 +270,7 @@ func TestCompiledProviderLibraryEntryUsesActivationLanguage(t *testing.T) {
 	}
 
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Enable Key Type", "Key type:  aplane.falcon1024_ed25519.v1", "Publisher: aplane", "Source:    falcon", "ENABLE"} {
+	for _, want := range []string{"Enable Key Type", "Key type:  aplane.ed25519.v1", "Publisher: aplane", "Source:    dsa", "ENABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -304,16 +304,16 @@ func TestUninstalledTemplateOpensEnableConfirmation(t *testing.T) {
 	}
 }
 
-func TestCompiledProviderLibraryEntryUsesECDSAColumn(t *testing.T) {
+func TestCompiledProviderLibraryEntryUsesDSAColumn(t *testing.T) {
 	tmpl := protocol.LibraryTemplateInfo{
-		KeyType:      "aplane.ecdsak1.v1",
+		KeyType:      "aplane.ed25519.v1",
 		TemplateType: libraryTypeCompiledProvider,
 		Installed:    true,
 		Enabled:      true,
 	}
 
-	if got := libraryTypeColumn(tmpl); got != "ecdsa" {
-		t.Fatalf("libraryTypeColumn() = %q, want ecdsa", got)
+	if got := libraryTypeColumn(tmpl); got != "dsa" {
+		t.Fatalf("libraryTypeColumn() = %q, want dsa", got)
 	}
 	if got := templateLibraryStatus(tmpl); got != "Enabled" {
 		t.Fatalf("templateLibraryStatus() = %q, want Enabled", got)
@@ -325,10 +325,10 @@ func TestCompiledProviderInstallResultUsesActivatedStatus(t *testing.T) {
 
 	next, _ := m.Update(ActivateKeyTypeResultMsg{
 		Success: true,
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 	})
 	got := next.(Model)
-	if got.library.installStatus != "aplane.falcon1024_ed25519.v1 Enabled" {
+	if got.library.installStatus != "aplane.ed25519.v1 Enabled" {
 		t.Fatalf("templateInstallStatus = %q, want Enabled status", got.library.installStatus)
 	}
 }
@@ -351,7 +351,7 @@ func TestCompiledProviderAlreadyActivatedStatus(t *testing.T) {
 	m := Model{
 		viewState: ViewTemplateLibrary,
 		library: libraryState{selectedTemplate: 0, templates: []protocol.LibraryTemplateInfo{{
-			KeyType:      "aplane.falcon1024_ed25519.v1",
+			KeyType:      "aplane.ed25519.v1",
 			TemplateType: libraryTypeCompiledProvider,
 			Installed:    true,
 		}}},
@@ -364,7 +364,7 @@ func TestCompiledProviderAlreadyActivatedStatus(t *testing.T) {
 	}
 
 	confirm := got.renderTemplateInstallConfirm()
-	for _, want := range []string{"Disable Key Type", "Key type:  aplane.falcon1024_ed25519.v1", "Publisher: aplane", "Source:    falcon", "DISABLE"} {
+	for _, want := range []string{"Disable Key Type", "Key type:  aplane.ed25519.v1", "Publisher: aplane", "Source:    dsa", "DISABLE"} {
 		if !strings.Contains(confirm, want) {
 			t.Fatalf("confirm view missing %q:\n%s", want, confirm)
 		}
@@ -376,11 +376,11 @@ func TestCompiledProviderDeactivateResultUsesDeactivatedStatus(t *testing.T) {
 
 	next, _ := m.Update(DeactivateKeyTypeResultMsg{
 		Success: true,
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: "aplane.ed25519.v1",
 		Removed: true,
 	})
 	got := next.(Model)
-	if got.library.installStatus != "aplane.falcon1024_ed25519.v1 Disabled" {
+	if got.library.installStatus != "aplane.ed25519.v1 Disabled" {
 		t.Fatalf("templateInstallStatus = %q, want Disabled status", got.library.installStatus)
 	}
 }

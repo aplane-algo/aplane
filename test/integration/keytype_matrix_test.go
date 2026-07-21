@@ -55,12 +55,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 	if err := apadmin.UnlockSigner(); err != nil {
 		t.Fatalf("failed to unlock signer: %v", err)
 	}
-	for _, keyType := range []string{"aplane.falcon1024_ed25519.v1", "aplane.ecdsak1.v1"} {
-		if err := apadmin.ActivateKeyType(keyType); err != nil {
-			t.Fatalf("failed to activate %s: %v", keyType, err)
-		}
-	}
-
 	token := readSignerToken(t, signerd)
 	signerClient := signerclient.NewSignerClientWithToken(signerd.GetURL(), token)
 
@@ -82,12 +76,6 @@ func TestIncludedKeyTypesSignInBatchedGroups(t *testing.T) {
 		},
 		{
 			keyType: "aplane.falcon1024.v1",
-		},
-		{
-			keyType: "aplane.falcon1024_ed25519.v1",
-		},
-		{
-			keyType: "aplane.ecdsak1.v1",
 		},
 		{
 			keyType: "aplane.htlc.v1",

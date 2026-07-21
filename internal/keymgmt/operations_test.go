@@ -69,8 +69,6 @@ func TestSupportsMnemonicImport(t *testing.T) {
 		{keyType: keytypes.SentryComponentEd25519V1, want: false},
 		{keyType: keytypes.SentryComponentFalcon1024V1, want: false},
 		{keyType: "aplane.governance-ed25519.v1", want: false},
-		{keyType: "aplane.ecdsak1.v1", want: false},
-		{keyType: "aplane.falcon1024_ed25519.v1", want: false},
 		{keyType: "aplane.falcon1024-allowlist.v1", want: false},
 		{keyType: "", want: false},
 	}
@@ -85,9 +83,10 @@ func TestSupportsMnemonicImport(t *testing.T) {
 func TestImportKeyRejectsValidButNonImportableType(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 
-	_, err := ImportKeyWithActivatedContext(context.Background(), paths, "test-identity", "aplane.ecdsak1.v1", "mnemonic words here", nil, nil, []string{"aplane.ecdsak1.v1"})
+	keyType := falcon1024guarded.KeyTypeFalcon1024V1
+	_, err := ImportKeyWithActivatedContext(context.Background(), paths, "test-identity", keyType, "mnemonic words here", nil, nil, []string{keyType})
 	if err == nil || !strings.Contains(err.Error(), "mnemonic import not supported") {
-		t.Fatalf("ImportKeyWithActivatedContext(aplane.ecdsak1.v1) error = %v, want mnemonic import unsupported", err)
+		t.Fatalf("ImportKeyWithActivatedContext(%s) error = %v, want mnemonic import unsupported", keyType, err)
 	}
 }
 
@@ -124,16 +123,17 @@ func TestImportKeyRestoresCanonicalPathWhenExistingKeyIsNonCanonical(t *testing.
 }
 
 func TestValidKeyTypesIncludeIdentityActivatedLibraryProvider(t *testing.T) {
-	if containsKeyType(GetValidKeyTypes(), "aplane.falcon1024_ed25519.v1") {
+	const keyType = "aplane.ed25519.v1"
+	if containsKeyType(GetValidKeyTypes(), keyType) {
 		t.Fatal("GetValidKeyTypes() included library-only provider without activation")
 	}
-	if !containsKeyType(GetValidKeyTypesWithActivated([]string{"aplane.falcon1024_ed25519.v1"}), "aplane.falcon1024_ed25519.v1") {
+	if !containsKeyType(GetValidKeyTypesWithActivated([]string{keyType}), keyType) {
 		t.Fatal("GetValidKeyTypesWithActivated() did not include activated library provider")
 	}
-	if IsValidKeyType("aplane.falcon1024_ed25519.v1") {
+	if IsValidKeyType(keyType) {
 		t.Fatal("IsValidKeyType() accepted library-only provider without activation")
 	}
-	if !IsValidKeyTypeWithActivated("aplane.falcon1024_ed25519.v1", []string{"aplane.falcon1024_ed25519.v1"}) {
+	if !IsValidKeyTypeWithActivated(keyType, []string{keyType}) {
 		t.Fatal("IsValidKeyTypeWithActivated() rejected activated library provider")
 	}
 }

@@ -4,22 +4,37 @@
 package composeddsa_test
 
 import (
-	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/aplane-algo/aplane/lsig/composeddsa"
-	ecdsav1 "github.com/aplane-algo/aplane/lsig/ecdsak1/v1"
 	ed25519v1 "github.com/aplane-algo/aplane/lsig/ed25519lsig/v1"
 	"github.com/aplane-algo/aplane/lsig/falcon1024/family"
 	falconv1 "github.com/aplane-algo/aplane/lsig/falcon1024/v1"
-	falconhybrid "github.com/aplane-algo/aplane/lsig/falcon1024_ed25519"
 )
 
-func TestBoundedBaseSignatureLayoutsMatchPackedArguments(t *testing.T) {
-	hybridSignature := make([]byte, 2+1+64)
-	binary.BigEndian.PutUint16(hybridSignature[:2], 1)
-	hybridSignature[2] = 1
+type splitSignatureOps struct{}
 
+func (splitSignatureOps) PublicKeySize() int       { return 32 }
+func (splitSignatureOps) CryptoSignatureSize() int { return 64 }
+func (splitSignatureOps) MnemonicScheme() string   { return "test" }
+func (splitSignatureOps) MnemonicWordCount() int   { return 0 }
+func (splitSignatureOps) DisplayColor() string     { return "" }
+func (splitSignatureOps) BuildVerifyTEAL([]byte) (string, error) {
+	return "txn TxID\narg 0\narg 1\n", nil
+}
+func (splitSignatureOps) TEALVersion() int { return 12 }
+func (splitSignatureOps) BuildSignatureArgs(signature []byte) ([][]byte, error) {
+	if len(signature) != 64 {
+		return nil, fmt.Errorf("signature length %d, want 64", len(signature))
+	}
+	return [][]byte{signature[:32], signature[32:]}, nil
+}
+func (splitSignatureOps) SignatureArgLayout() composeddsa.SignatureArgLayout {
+	return composeddsa.SignatureArgLayout{Count: 2, MaxSizes: []int{32, 32}}
+}
+
+func TestBoundedBaseSignatureLayoutsMatchPackedArguments(t *testing.T) {
 	tests := []struct {
 		name      string
 		ops       composeddsa.BoundedCapableDSAOps
@@ -27,8 +42,7 @@ func TestBoundedBaseSignatureLayoutsMatchPackedArguments(t *testing.T) {
 	}{
 		{name: "Falcon-1024", ops: falconv1.NewFalconOps(nil), signature: []byte{1}},
 		{name: "Ed25519", ops: ed25519v1.NewOps(), signature: make([]byte, 64)},
-		{name: "ECDSA secp256k1", ops: ecdsav1.NewECDSAK1Ops(nil), signature: make([]byte, 64)},
-		{name: "Falcon-1024 plus Ed25519", ops: falconhybrid.NewOps(), signature: hybridSignature},
+		{name: "synthetic split signature", ops: splitSignatureOps{}, signature: make([]byte, 64)},
 	}
 
 	for _, tt := range tests {

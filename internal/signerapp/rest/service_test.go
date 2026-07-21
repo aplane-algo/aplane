@@ -874,7 +874,7 @@ func TestServiceKeyTypesIncludesEd25519(t *testing.T) {
 func TestServiceKeyTypesHidesLibraryOnlyCompiledProvider(t *testing.T) {
 	keyTypes := Service{}.buildKeyTypes(keymgmt.GetValidKeyTypes(), nil)
 	for _, keyType := range keyTypes {
-		if keyType.KeyType == "aplane.falcon1024_ed25519.v1" {
+		if keyType.KeyType == "aplane.ed25519.v1" {
 			t.Fatal("KeyTypes() included library-only provider before identity activation")
 		}
 	}
@@ -1025,8 +1025,9 @@ func TestServiceKeyTypesForIdentityKeepsCorridorRecipientsWithSentryReference(t 
 
 func TestServiceKeyTypesIncludesActivatedCompiledProvider(t *testing.T) {
 	ir := setupIdentityRuntime(t, false)
+	const keyType = "aplane.ed25519.v1"
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
-		KeyType: "aplane.falcon1024_ed25519.v1",
+		KeyType: keyType,
 		Source:  keytypestate.SourceCompiled,
 		State:   keytypestate.StateEnabled,
 	}); err != nil {
@@ -1038,8 +1039,8 @@ func TestServiceKeyTypesIncludesActivatedCompiledProvider(t *testing.T) {
 		t.Fatalf("KeyTypesForIdentity() error = %v", svcErr)
 	}
 	found := false
-	for _, keyType := range resp.KeyTypes {
-		if keyType.KeyType == "aplane.falcon1024_ed25519.v1" {
+	for _, item := range resp.KeyTypes {
+		if item.KeyType == keyType {
 			found = true
 			break
 		}
@@ -1211,7 +1212,7 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 	tests := []matrixCase{
 		{
 			name:    "library-only compiled provider is hidden",
-			keyType: "aplane.falcon1024_ed25519.v1",
+			keyType: "aplane.ed25519.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *identity.Runtime {
 				t.Helper()
 				return restMatrixIdentity(paths, auth.DefaultIdentityID)
@@ -1219,11 +1220,11 @@ func TestServiceKeyTypesForIdentityLifecycleMatrix(t *testing.T) {
 		},
 		{
 			name:    "activated compiled provider is visible",
-			keyType: "aplane.falcon1024_ed25519.v1",
+			keyType: "aplane.ed25519.v1",
 			setup: func(t *testing.T, paths storepaths.Paths) *identity.Runtime {
 				t.Helper()
 				if err := keytypestate.Put(paths, auth.DefaultIdentityID, keytypestate.Record{
-					KeyType: "aplane.falcon1024_ed25519.v1",
+					KeyType: "aplane.ed25519.v1",
 					Source:  keytypestate.SourceCompiled,
 					State:   keytypestate.StateEnabled,
 				}); err != nil {

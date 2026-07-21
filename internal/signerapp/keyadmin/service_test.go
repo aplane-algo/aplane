@@ -325,7 +325,7 @@ func TestServiceGenerateKeyRejectsLibraryProviderBeforeActivation(t *testing.T) 
 	ir := setupIdentityRuntime(t)
 	svc := Service{}
 
-	result, err := svc.GenerateKey(context.Background(), ir, "aplane.falcon1024_ed25519.v1", nil, nil)
+	result, err := svc.GenerateKey(context.Background(), ir, "aplane.ed25519.v1", nil, nil)
 	if result != nil {
 		t.Fatalf("GenerateKey() result = %#v, want nil", result)
 	}
@@ -337,7 +337,7 @@ func TestServiceGenerateKeyRejectsLibraryProviderBeforeActivation(t *testing.T) 
 func TestServiceGenerateKeyRereadsActivationAfterDeactivation(t *testing.T) {
 	ir := setupIdentityRuntime(t)
 	svc := Service{}
-	keyType := "aplane.falcon1024_ed25519.v1"
+	keyType := "aplane.ed25519.v1"
 
 	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
 		KeyType: keyType,

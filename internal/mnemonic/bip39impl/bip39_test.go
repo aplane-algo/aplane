@@ -51,13 +51,14 @@ func TestBIP39Handler_ValidateWordCount(t *testing.T) {
 }
 
 func TestBIP39Handler_ValidateWordCount_ErrorMessageCarriesFamily(t *testing.T) {
-	h := NewHandler("ecdsak1", 24)
+	const family = "example-dsa"
+	h := NewHandler(family, 24)
 	err := h.ValidateWordCount(12)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "ecdsak1") {
-		t.Errorf("error message should mention family %q, got %q", "ecdsak1", err.Error())
+	if !strings.Contains(err.Error(), family) {
+		t.Errorf("error message should mention family %q, got %q", family, err.Error())
 	}
 }
 

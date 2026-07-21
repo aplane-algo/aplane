@@ -86,7 +86,7 @@ var familyImportExceptions = map[string]string{
 
 // TestSharedPackagesDoNotImportDSAFamilies pins the algorithm-family boundary:
 // core code under internal/ and pkg/ must stay family-agnostic. Concrete
-// family packages (lsig/falcon1024*, lsig/ecdsak1, ...) hook into core through
+// family packages under lsig hook into core through
 // registries (keygen, mnemonic, lsigprovider, component-pair validators), so
 // the production edge points strictly lsig -> internal. Template
 // infrastructure (generictemplate, composeddsa) is exempt; spec-frozen size

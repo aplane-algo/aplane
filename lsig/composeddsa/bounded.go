@@ -668,10 +668,6 @@ func boundedBasePrimitive(baseKeyType string) string {
 		return "falcon1024"
 	case "aplane.ed25519.v1", "aplane.ed25519lsig.v1":
 		return "ed25519"
-	case "aplane.ecdsak1.v1":
-		return "ecdsak1"
-	case "aplane.falcon1024_ed25519.v1":
-		return "falcon1024_ed25519"
 	default:
 		return normalized
 	}
