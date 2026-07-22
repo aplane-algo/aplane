@@ -12,6 +12,7 @@ import (
 
 	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/signerapi"
+	"github.com/aplane-algo/aplane/internal/witness"
 )
 
 func testBoundedAdminPlan(t *testing.T) (*PlanResult, signerapi.BoundedAdminRequest) {
@@ -91,6 +92,39 @@ func TestBuildBoundedAdminResultPublishesRecomputedTranscript(t *testing.T) {
 	txID := algocrypto.TransactionID(plan.AllTxns[0])
 	if result.Authorization.TransactionID != algocrypto.TransactionIDString(plan.AllTxns[0]) || len(txID) != 32 || len(result.Authorization.MessageHex) != 64 {
 		t.Fatalf("result transcript = %#v", result.Authorization)
+	}
+}
+
+func TestBuildBoundedAdminResultPublishesSentryVerifierMetadata(t *testing.T) {
+	plan, request := testBoundedAdminPlan(t)
+	metadata := plan.BoundedItems[0].Metadata
+	sentryPublicKey := make([]byte, boundedmeta.SentryPublicKeySizeV1)
+	for i := range sentryPublicKey {
+		sentryPublicKey[i] = 0x55
+	}
+	componentKeyID, err := witness.ID(boundedmeta.SentryComponentKeyTypeV1, sentryPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata.Sentry = &boundedmeta.SentryAuthorization{
+		Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
+		PublicKeyHex: hex.EncodeToString(sentryPublicKey), ComponentKeyID: componentKeyID,
+		SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+	}
+	metadata.ArgumentLayout = []boundedmeta.ArgumentSlot{
+		{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 1280, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired}},
+		{Index: 1, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry, MaxSize: boundedmeta.SentrySignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
+		{Index: 2, Name: "admin_signature", Source: boundedmeta.ArgSourceAdmin, MaxSize: boundedmeta.FalconAdminSignatureSize, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgForbidden, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgRequired}},
+	}
+	result, svcErr := buildBoundedAdminResult(plan, len(request.Requests), 0, plan.BoundedItems[0], []string{"partial"})
+	if svcErr != nil {
+		t.Fatal(svcErr)
+	}
+	if result.Authorization.AdminSignatureArgIndex != 2 || result.Authorization.Sentry == nil {
+		t.Fatalf("authorization = %#v", result.Authorization)
+	}
+	if result.Authorization.Sentry.ComponentKeyID != componentKeyID || result.Authorization.Sentry.SignatureArgIndex != 1 {
+		t.Fatalf("sentry authorization = %#v", result.Authorization.Sentry)
 	}
 }
 

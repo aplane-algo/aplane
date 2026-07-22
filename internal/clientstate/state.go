@@ -180,7 +180,11 @@ func (s *State) PopulateSignerCache(keys []signerapi.KeyInfo) {
 		if keyInfo.SentryComponentKeyType != "" {
 			s.SignerCache.SetSentryComponentKeyTypeForAddress(keyInfo.Address, keyInfo.SentryComponentKeyType)
 		}
-		if sentryPublicKey := keyInfo.Parameters[keytypes.ParameterSentryPublicKey]; sentryPublicKey != "" {
+		sentryPublicKey := keyInfo.Parameters[keytypes.ParameterSentryPublicKey]
+		if sentryPublicKey == "" && keyInfo.BoundedAuthorization != nil && keyInfo.BoundedAuthorization.Sentry != nil {
+			sentryPublicKey = keyInfo.BoundedAuthorization.Sentry.PublicKeyHex
+		}
+		if sentryPublicKey != "" {
 			s.SignerCache.SetSentryPublicKeyForAddress(keyInfo.Address, sentryPublicKey)
 		}
 		if len(keyInfo.SigningArgs) > 0 {

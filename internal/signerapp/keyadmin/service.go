@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aplane-algo/aplane/internal/boundedmeta"
 	"github.com/aplane-algo/aplane/internal/genericlsig"
 	"github.com/aplane-algo/aplane/internal/keyclass"
 	"github.com/aplane-algo/aplane/internal/keygen"
@@ -99,6 +100,10 @@ type Service struct {
 
 type GenerateGenericLSigFunc func(context.Context, *identity.Runtime, string, map[string]string) (string, error)
 
+type boundedInventoryProvider interface {
+	BoundedAuthorizationMetadata() *boundedmeta.Metadata
+}
+
 func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType string, params map[string]string, generateGenericLSig GenerateGenericLSigFunc) (*GenerateResult, *Error) {
 	keyType = keytypecatalog.Canonicalize(keyType)
 	if ctx == nil {
@@ -119,6 +124,18 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
 		params = resolved
+	} else if provider := lsigprovider.Get(keyType); provider != nil {
+		if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
+			if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil && metadata.Sentry != nil {
+				resolved, err := sentryrefs.ResolveCreationParamsForComponent(
+					ir.KeyPaths(), ir.ID(), keyType, metadata.Sentry.ComponentKeyType, params,
+				)
+				if err != nil {
+					return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+				}
+				params = resolved
+			}
+		}
 	}
 
 	if provider := lsigprovider.Get(keyType); provider != nil {
@@ -129,6 +146,13 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 			return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
 		}
 		params = normalized
+		if boundedProvider, ok := provider.(boundedInventoryProvider); ok {
+			if metadata := boundedProvider.BoundedAuthorizationMetadata(); metadata != nil && metadata.Sentry != nil {
+				if err := validateVisibleSentryAuthorityCollisions(ir, params[boundedmeta.SentryPublicKeyParameter]); err != nil {
+					return nil, &Error{Kind: ErrorInvalidInput, Message: err.Error()}
+				}
+			}
+		}
 	}
 
 	unlockMutation := s.lockMutation(ir.ID())
@@ -188,6 +212,30 @@ func (s Service) GenerateKey(ctx context.Context, ir *identity.Runtime, keyType 
 		Mnemonic:          genResult.Mnemonic,
 		Parameters:        params,
 	}, nil
+}
+
+func validateVisibleSentryAuthorityCollisions(ir *identity.Runtime, sentryPublicKeyHex string) error {
+	if ir == nil || ir.KeyStore() == nil {
+		return nil
+	}
+	normalized := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(sentryPublicKeyHex), "0x")))
+	if normalized == "" {
+		return nil
+	}
+	for selector, publicKeyHex := range ir.KeyStore().GetPublicKeyHexMap() {
+		if strings.ToLower(strings.TrimSpace(publicKeyHex)) == normalized {
+			return fmt.Errorf("bounded sentry public key collides with signer-managed key %s", selector)
+		}
+	}
+	for selector, summary := range ir.KeyStore().GetSigningSummary() {
+		if summary.BoundedAuthorization == nil {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(summary.BoundedAuthorization.AdminPublicKeyHex)) == normalized {
+			return fmt.Errorf("bounded sentry public key collides with contract-admin authority enrolled by %s", selector)
+		}
+	}
+	return nil
 }
 
 func (s Service) DeleteKey(ir *identity.Runtime, address string) (*DeleteResult, *Error) {

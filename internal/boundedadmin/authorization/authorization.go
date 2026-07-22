@@ -262,11 +262,29 @@ func validateAuthorizationMetadata(metadata signerapi.BoundedAdminMetadata, txn 
 	if metadata.MessageHex != hex.EncodeToString(message[:]) {
 		return nil, nil, binding, message, fmt.Errorf("contract-admin message does not match recomputed transcript")
 	}
+	var sentryPublicKey []byte
+	sentryArgIndex := 0
+	if metadata.Sentry != nil {
+		if metadata.Sentry.ComponentKeyType != witness.Falcon1024V1 {
+			return nil, nil, binding, message, fmt.Errorf("bounded sentry component key type is invalid")
+		}
+		sentryPublicKey, err = boundedmeta.DecodeCanonicalHex("bounded sentry public key", metadata.Sentry.PublicKeyHex, boundedmeta.SentryPublicKeySizeV1, boundedmeta.SentryPublicKeySizeV1)
+		if err != nil {
+			return nil, nil, binding, message, err
+		}
+		wantSentryID, err := witness.ID(metadata.Sentry.ComponentKeyType, sentryPublicKey)
+		if err != nil || wantSentryID != metadata.Sentry.ComponentKeyID {
+			return nil, nil, binding, message, fmt.Errorf("bounded sentry public identity is invalid")
+		}
+		sentryArgIndex = metadata.Sentry.SignatureArgIndex
+	}
 	if err := boundedprogram.Validate(partial.Lsig.Logic, boundedprogram.Expected{
 		SpendingPublicKey: spendingKey,
+		SentryPublicKey:   sentryPublicKey,
 		AdminPublicKey:    publicKey,
 		ProgramBinding:    binding[:],
 		BaseArgCount:      metadata.BaseSignatureArgCount,
+		SentryArgIndex:    sentryArgIndex,
 		AdminArgIndex:     metadata.AdminSignatureArgIndex,
 		MaxFee:            metadata.MaxFee,
 		SpendEffects:      metadata.SpendEffects,

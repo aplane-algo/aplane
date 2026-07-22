@@ -541,6 +541,32 @@ func TestBuildKeyTypesServesRuntimeBoundedMetadata(t *testing.T) {
 	}
 }
 
+func TestBuildKeyTypesServesBoundedSentryMetadata(t *testing.T) {
+	const keyType = "test.rest-bounded-sentry.v1"
+	profile := &composeddsa.BoundedAuthorizationProfile{
+		Contract: composeddsa.BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 2_000,
+		Sentry: &boundedmeta.SentryAuthorization{
+			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		},
+	}
+	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: profile})
+	infos := Service{}.buildKeyTypes([]string{keyType}, nil)
+	if len(infos) != 1 {
+		t.Fatalf("buildKeyTypes() returned %d rows", len(infos))
+	}
+	info := infos[0]
+	if info.SigningFlow != signerapi.SigningFlowBoundedSentry1 || info.SentryComponentKeyType != witness.Falcon1024V1 {
+		t.Fatalf("bounded sentry routing = %#v", info)
+	}
+	if info.BoundedAuthorization == nil || info.BoundedAuthorization.Sentry == nil {
+		t.Fatalf("bounded sentry metadata = %#v", info.BoundedAuthorization)
+	}
+	if got := info.CreationParams; len(got) != 1 || got[0].Name != boundedmeta.SentryPublicKeyParameter {
+		t.Fatalf("creation params = %#v, want raw sentry public key before reference projection", got)
+	}
+}
+
 func TestBoundedInfoFromStoredIncludesInstanceMetadata(t *testing.T) {
 	metadata := &boundedmeta.Metadata{
 		Contract:                boundedmeta.ContractV1,
@@ -769,6 +795,63 @@ func TestServiceKeyTypesForIdentityKeepsCorridorRecipientsWithSentryReference(t 
 	if len(params[1].Options) != 1 || params[1].Options[0] != componentKey || params[1].Default != componentKey {
 		t.Fatalf("sentry options/default = %#v/%q, want Witness Key ID %s", params[1].Options, params[1].Default, componentKey)
 	}
+}
+
+func TestServiceKeyTypesUsesSentryReferenceForBoundedProvider(t *testing.T) {
+	ir := setupIdentityRuntime(t, false)
+	publicKey := strings.Repeat("7d", falconfamily.PublicKeySize)
+	publicKeyBytes, err := hex.DecodeString(publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	componentKey, err := witness.ID(witness.Falcon1024V1, publicKeyBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := sentryrefs.NewExportEnvelope(componentKey, witness.Falcon1024V1, publicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sentryrefs.Import(ir.KeyPaths(), ir.ID(), "bounded-sentry", data); err != nil {
+		t.Fatal(err)
+	}
+
+	const keyType = "test.rest-reference-bounded-sentry.v1"
+	lsigprovider.Register(restTestDSAProvider{keyType: keyType, bounded: &composeddsa.BoundedAuthorizationProfile{
+		Contract: composeddsa.BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Sentry: &boundedmeta.SentryAuthorization{
+			Contract: boundedmeta.SentryContractV1, ComponentKeyType: witness.Falcon1024V1,
+			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		},
+	}})
+	if err := keytypestate.Put(ir.KeyPaths(), ir.ID(), keytypestate.Record{
+		KeyType: keyType, Source: keytypestate.SourceCompiled, State: keytypestate.StateEnabled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, svcErr := Service{}.KeyTypesForIdentity(ir)
+	if svcErr != nil {
+		t.Fatalf("KeyTypesForIdentity() error = %v", svcErr)
+	}
+	for _, info := range resp.KeyTypes {
+		if info.KeyType != keyType {
+			continue
+		}
+		if info.SigningFlow != signerapi.SigningFlowBoundedSentry1 || len(info.CreationParams) != 1 {
+			t.Fatalf("bounded sentry key type = %#v", info)
+		}
+		param := info.CreationParams[0]
+		if param.Name != sentryrefs.ParamSentryName || len(param.Options) != 1 || param.Options[0] != componentKey {
+			t.Fatalf("bounded sentry selector = %#v", param)
+		}
+		return
+	}
+	t.Fatalf("KeyTypesForIdentity() missing %s", keyType)
 }
 
 func TestServiceKeyTypesIncludesActivatedCompiledProvider(t *testing.T) {
@@ -1141,12 +1224,20 @@ func (p restTestDSAProvider) KeyType() string { return p.keyType }
 func (p restTestDSAProvider) RoutingFamily() string {
 	return strings.TrimSuffix(p.keyType, "-v1")
 }
-func (p restTestDSAProvider) Version() int                                { return 1 }
-func (p restTestDSAProvider) Category() string                            { return lsigprovider.CategoryDSALsig }
-func (p restTestDSAProvider) DisplayName() string                         { return "REST Test DSA" }
-func (p restTestDSAProvider) Description() string                         { return "Test provider" }
-func (p restTestDSAProvider) DisplayColor() string                        { return "" }
-func (p restTestDSAProvider) CreationParams() []lsigprovider.ParameterDef { return nil }
+func (p restTestDSAProvider) Version() int         { return 1 }
+func (p restTestDSAProvider) Category() string     { return lsigprovider.CategoryDSALsig }
+func (p restTestDSAProvider) DisplayName() string  { return "REST Test DSA" }
+func (p restTestDSAProvider) Description() string  { return "Test provider" }
+func (p restTestDSAProvider) DisplayColor() string { return "" }
+func (p restTestDSAProvider) CreationParams() []lsigprovider.ParameterDef {
+	if p.bounded != nil && p.bounded.Sentry != nil {
+		return []lsigprovider.ParameterDef{{
+			Name: boundedmeta.SentryPublicKeyParameter, Type: "bytes", Required: true,
+			MaxLength: boundedmeta.SentryPublicKeySizeV1 * 2,
+		}}
+	}
+	return nil
+}
 func (p restTestDSAProvider) ValidateCreationParams(map[string]string) error {
 	return nil
 }
@@ -1170,6 +1261,16 @@ func (p restTestDSAProvider) BoundedAuthorizationMetadata() *boundedmeta.Metadat
 		ArgumentLayout:         boundedmeta.BaseArgumentLayout(boundedmeta.SignatureArgLayout{Count: 1, MaxSizes: []int{1280}}, false),
 		MaxFee:                 p.bounded.MaxFee,
 		Layer3Policy:           boundedmeta.Layer3PolicyCustom,
+	}
+	if p.bounded.Sentry != nil {
+		sentry := *p.bounded.Sentry
+		sentry.RequiredOn = append([]string(nil), p.bounded.Sentry.RequiredOn...)
+		metadata.Sentry = &sentry
+		metadata.ArgumentLayout = append(metadata.ArgumentLayout, boundedmeta.ArgumentSlot{
+			Index: 1, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry,
+			MaxSize: boundedmeta.SentrySignatureMaxSizeV1,
+			Paths:   boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden},
+		})
 	}
 	for _, spendType := range p.bounded.SpendEffects {
 		metadata.SpendEffects = append(metadata.SpendEffects, string(spendType))

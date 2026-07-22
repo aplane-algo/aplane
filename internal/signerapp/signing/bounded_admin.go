@@ -140,23 +140,40 @@ func buildBoundedAdminResult(plan *PlanResult, requestCount, targetIndex int, it
 	if err != nil {
 		return nil, internal(fmt.Sprintf("build contract-admin transcript: %v", err))
 	}
+	authorization := signerapi.BoundedAdminMetadata{
+		ContractAdminKeyID:     metadata.AdminKeyID,
+		PublicKeyHex:           metadata.AdminPublicKeyHex,
+		SpendingPublicKeyHex:   hex.EncodeToString(item.SpendingPublicKey),
+		ProgramBindingHex:      metadata.ProgramBindingHex,
+		TransactionID:          algocrypto.TransactionIDString(plan.AllTxns[targetIndex]),
+		MessageHex:             hex.EncodeToString(message[:]),
+		BaseSignatureArgCount:  metadata.BaseSignatureArgLayout.Count,
+		AdminSignatureArgIndex: metadata.ArgumentLayout[len(metadata.ArgumentLayout)-1].Index,
+		SpendEffects:           append([]string(nil), metadata.SpendEffects...),
+		MaxFee:                 metadata.MaxFee,
+	}
+	if metadata.Sentry != nil {
+		for _, slot := range metadata.ArgumentLayout {
+			if slot.Source == boundedmeta.ArgSourceSentry {
+				authorization.Sentry = &signerapi.BoundedAdminSentryMetadata{
+					ComponentKeyType:  metadata.Sentry.ComponentKeyType,
+					PublicKeyHex:      metadata.Sentry.PublicKeyHex,
+					ComponentKeyID:    metadata.Sentry.ComponentKeyID,
+					SignatureArgIndex: slot.Index,
+				}
+				break
+			}
+		}
+		if authorization.Sentry == nil {
+			return nil, internal("stored bounded sentry argument slot is missing")
+		}
+	}
 	return &BoundedAdminResult{
 		Operation:     signerapi.BoundedAdminOperationRekey,
 		Transactions:  transactions,
 		PartialSigned: partials,
 		TargetIndex:   targetIndex,
-		Authorization: signerapi.BoundedAdminMetadata{
-			ContractAdminKeyID:     metadata.AdminKeyID,
-			PublicKeyHex:           metadata.AdminPublicKeyHex,
-			SpendingPublicKeyHex:   hex.EncodeToString(item.SpendingPublicKey),
-			ProgramBindingHex:      metadata.ProgramBindingHex,
-			TransactionID:          algocrypto.TransactionIDString(plan.AllTxns[targetIndex]),
-			MessageHex:             hex.EncodeToString(message[:]),
-			BaseSignatureArgCount:  metadata.BaseSignatureArgLayout.Count,
-			AdminSignatureArgIndex: metadata.ArgumentLayout[len(metadata.ArgumentLayout)-1].Index,
-			SpendEffects:           append([]string(nil), metadata.SpendEffects...),
-			MaxFee:                 metadata.MaxFee,
-		},
-		Mutations: BuildMutationReport(plan, requestCount),
+		Authorization: authorization,
+		Mutations:     BuildMutationReport(plan, requestCount),
 	}, nil
 }

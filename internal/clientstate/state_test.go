@@ -267,6 +267,24 @@ func TestPopulateSignerCachePreservesExistingPointer(t *testing.T) {
 	}
 }
 
+func TestPopulateSignerCacheReadsBoundedSentryMetadata(t *testing.T) {
+	state := New("testnet")
+	state.PopulateSignerCache([]signerapi.KeyInfo{{
+		Address: "BOUNDED", KeyType: "aplane.custom-bounded-sentry.v1",
+		SigningFlow:            signerapi.SigningFlowBoundedSentry1,
+		SentryComponentKeyType: "aplane.witness-falcon1024.v1",
+		BoundedAuthorization: &signerapi.BoundedAuthorizationInfo{
+			Sentry: &signerapi.BoundedSentryAuthorizationInfo{PublicKeyHex: "abcd"},
+		},
+	}})
+	if got, ok := state.SignerCache.SentryPublicKeyForAddress("BOUNDED"); !ok || got != "abcd" {
+		t.Fatalf("bounded sentry public key = %q/%v", got, ok)
+	}
+	if got := state.SignerCache.SigningFlowForAddress("BOUNDED"); got != signerapi.SigningFlowBoundedSentry1 {
+		t.Fatalf("bounded sentry flow = %q", got)
+	}
+}
+
 func TestApplyCacheChangesReloadsOnlyCurrentNetworkCaches(t *testing.T) {
 	dataDir := t.TempDir()
 	store := cache.NewStore(dataDir)

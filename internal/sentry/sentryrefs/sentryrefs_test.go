@@ -113,6 +113,30 @@ func TestResolveCreationParamsUsesImportedReference(t *testing.T) {
 	}
 }
 
+func TestResolveCreationParamsForBoundedProvider(t *testing.T) {
+	paths := storepaths.NewPaths(t.TempDir())
+	pub := bytesOfLen(falconfamily.PublicKeySize, 0x7c)
+	if _, err := Import(paths, "default", "bounded-sentry", testExportJSON(t, witness.Falcon1024V1, pub)); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := ResolveCreationParamsForComponent(
+		paths,
+		"default",
+		"aplane.custom-bounded-sentry.v1",
+		witness.Falcon1024V1,
+		map[string]string{ParamSentryName: "bounded-sentry", "limit": "10"},
+	)
+	if err != nil {
+		t.Fatalf("ResolveCreationParamsForComponent() error = %v", err)
+	}
+	if got := resolved[keytypes.ParameterSentryPublicKey]; got != strings.Repeat("7c", falconfamily.PublicKeySize) {
+		t.Fatalf("sentry_public_key = %q, want imported public key", got)
+	}
+	if resolved["limit"] != "10" {
+		t.Fatalf("resolved params lost provider parameter: %#v", resolved)
+	}
+}
+
 func TestResolveCreationParamsPreservesCorridorRecipients(t *testing.T) {
 	paths := storepaths.NewPaths(t.TempDir())
 	pub := bytesOfLen(falconfamily.PublicKeySize, 0xcd)

@@ -305,6 +305,17 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 	if !keytypes.IsGuardedAccountKeyType(keyType) {
 		return params, nil
 	}
+	wantKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
+	if !ok {
+		return nil, fmt.Errorf("key type %q is not a guarded account key type", keyType)
+	}
+	return ResolveCreationParamsForComponent(paths, identityID, keyType, wantKeyType, params)
+}
+
+// ResolveCreationParamsForComponent resolves the signer-facing sentry selector
+// for any provider that declares a sentry component type. This keeps generic
+// bounded-sentry templates out of hard-coded guarded-account key-type tables.
+func ResolveCreationParamsForComponent(paths storepaths.Paths, identityID, keyType, componentKeyType string, params map[string]string) (map[string]string, error) {
 	selector, hasSelector := params[ParamSentryName]
 	if !hasSelector || strings.TrimSpace(selector) == "" {
 		return params, nil
@@ -319,12 +330,8 @@ func ResolveCreationParams(paths storepaths.Paths, identityID, keyType string, p
 	if !ok {
 		return nil, fmt.Errorf("sentry reference or Witness Key ID %q not found", strings.TrimSpace(selector))
 	}
-	wantKeyType, ok := keytypes.SentryComponentKeyTypeForGuardedAccount(keyType)
-	if !ok {
-		return nil, fmt.Errorf("key type %q is not a guarded account key type", keyType)
-	}
-	if rec.KeyType != wantKeyType {
-		return nil, fmt.Errorf("sentry reference %q uses %s, but %s requires %s", rec.Name, rec.KeyType, keyType, wantKeyType)
+	if rec.KeyType != componentKeyType {
+		return nil, fmt.Errorf("sentry reference %q uses %s, but %s requires %s", rec.Name, rec.KeyType, keyType, componentKeyType)
 	}
 
 	resolved := make(map[string]string, len(params))

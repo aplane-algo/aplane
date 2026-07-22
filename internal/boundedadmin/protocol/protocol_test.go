@@ -35,6 +35,10 @@ func testRequestPayload() RequestPayload {
 				AdminSignatureArgIndex: 1,
 				SpendEffects:           []string{"pay", "axfer"},
 				MaxFee:                 10_000,
+				Sentry: &signerapi.BoundedAdminSentryMetadata{
+					ComponentKeyType: "aplane.witness-falcon1024.v1",
+					PublicKeyHex:     "aa", ComponentKeyID: "SENTRY", SignatureArgIndex: 1,
+				},
 			},
 			Mutations: &signerapi.MutationReport{
 				DummiesAdded: 2, GroupIDChanged: true, FeesModified: []int{0}, TotalFeesDelta: 2_000,
@@ -72,6 +76,11 @@ func TestRequestHashBindsEveryField(t *testing.T) {
 		{name: "admin arg index", mutate: func(value *RequestPayload) { value.Partial.Authorization.AdminSignatureArgIndex++ }},
 		{name: "spend effects", mutate: func(value *RequestPayload) { value.Partial.Authorization.SpendEffects = []string{"pay"} }},
 		{name: "max fee", mutate: func(value *RequestPayload) { value.Partial.Authorization.MaxFee-- }},
+		{name: "sentry presence", mutate: func(value *RequestPayload) { value.Partial.Authorization.Sentry = nil }},
+		{name: "sentry key type", mutate: func(value *RequestPayload) { value.Partial.Authorization.Sentry.ComponentKeyType += "x" }},
+		{name: "sentry public key", mutate: func(value *RequestPayload) { value.Partial.Authorization.Sentry.PublicKeyHex += "00" }},
+		{name: "sentry key ID", mutate: func(value *RequestPayload) { value.Partial.Authorization.Sentry.ComponentKeyID += "X" }},
+		{name: "sentry arg index", mutate: func(value *RequestPayload) { value.Partial.Authorization.Sentry.SignatureArgIndex++ }},
 		{name: "mutation presence", mutate: func(value *RequestPayload) { value.Partial.Mutations = nil }},
 		{name: "dummies added", mutate: func(value *RequestPayload) { value.Partial.Mutations.DummiesAdded++ }},
 		{name: "group changed", mutate: func(value *RequestPayload) { value.Partial.Mutations.GroupIDChanged = false }},
@@ -107,7 +116,8 @@ func TestRequestHashFieldInventory(t *testing.T) {
 	}{
 		"request payload": {value: RequestPayload{}, want: 4},
 		"partial":         {value: signerapi.BoundedAdminPartialResponse{}, want: 7},
-		"authorization":   {value: signerapi.BoundedAdminMetadata{}, want: 10},
+		"authorization":   {value: signerapi.BoundedAdminMetadata{}, want: 11},
+		"admin sentry":    {value: signerapi.BoundedAdminSentryMetadata{}, want: 4},
 		"mutation report": {value: signerapi.MutationReport{}, want: 9},
 	} {
 		if got := reflect.TypeOf(check.value).NumField(); got != check.want {
@@ -121,7 +131,7 @@ func TestRequestHashGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = "94280ecc570ad13e0ca8592fa00406298eb64a6c9903d111b09316dd61dee078"
+	const want = "ab6db6b741e03ed790b8c32821343f147a7f8be230a4437ab4300ab62b56cd17"
 	if value := fmt.Sprintf("%x", got); value != want {
 		t.Fatalf("RequestHash() = %s, want %s", value, want)
 	}
