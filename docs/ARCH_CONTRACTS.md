@@ -177,6 +177,9 @@ u32(spend_effect_count) || field(each effect in pay,axfer,asset_opt_in order) ||
 u64(max_fee) ||
 u32(admin_operation_count) ||
 field(kind) || field(authorization) || field(policy_gate) per admin operation in rekey order ||
+u32(sentry_present) ||
+if present: field("sentry1") || field("aplane.witness-falcon1024.v1") ||
+u32(1280) || u32(1) || field("spend") ||
 field(layer3_policy) ||
 u32(base_signature_arg_count) || u32(each base maximum) ||
 u32(derived_arg_count) || field/name/kind/parameter/maximum records ||
@@ -199,8 +202,9 @@ values participate. A missing or explicitly empty optional parameter uses a
 zero-length `canonical_value`, distinct from explicit zero, false, or an empty
 list. The separately bound injected
 `bounded_admin_public_key`, display/provenance data, paths, and per-request
-runtime values do not. Static runtime/derived declarations and path masks are
-part of the canonical profile above.
+runtime values do not. A sentry-enabled profile does include its injected
+`sentry_public_key` behavior parameter. Static runtime/derived declarations and
+path masks are part of the canonical profile above.
 
 The sole bounded1 contract admin primitive is Falcon-1024. Its public key is
 exactly 1,793 bytes and its signature is non-empty and at most 1,280 bytes. The
@@ -249,14 +253,15 @@ Contract Admin Key ID:
 MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
-0a5e99e840a2e70f3b22653dbb438c39fa3f4f57d0a5f08fca2cc6afba198336
+23aebf3166f64d6a0e6467d0fde647191094907f733c60fb946129d7cc828509
 
 admin_message:
-290c8f4a249f53973889e356a1a2974c04de33d892d615ac6b94180051ea75c9
+324dfa8eee495b7f4ddaa67f640c906184beb49abfd304d1336be233e84998b6
 ```
 
 Argument slots are statically ordered as base signatures, signer-derived Layer
-3 values, caller runtime Layer 3 values, and the optional admin signature.
+3 values, caller runtime Layer 3 values, the optional sentry signature, and the
+optional admin signature.
 Each slot has a frozen index, maximum, source, and path mask. Interior unused
 Layer 3 slots are explicit empty values; only trailing unused slots may be
 omitted. An admin-key partial omits the admin slot, and external completion pads

@@ -62,7 +62,7 @@ func TestBoundedGoldenVector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CanonicalBoundedProfile() error = %v", err)
 	}
-	const wantProfile = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e6465643100000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000010000000572656b65790000000961646d696e5f6b6579000000046e6f6e6500000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e617475726500000004000000087265717569726564000000087265717569726564000000087265717569726564000000010000000f61646d696e5f7369676e61747572650000000561646d696e0000050000000009666f7262696464656e00000009666f7262696464656e000000087265717569726564"
+	const wantProfile = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e6465643100000003000000037061790000000561786665720000000c61737365745f6f70745f696e0000000000002710000000010000000572656b65790000000961646d696e5f6b6579000000046e6f6e650000000000000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e617475726500000004000000087265717569726564000000087265717569726564000000087265717569726564000000010000000f61646d696e5f7369676e61747572650000000561646d696e0000050000000009666f7262696464656e00000009666f7262696464656e000000087265717569726564"
 	if got := hex.EncodeToString(profileEncoding); got != wantProfile {
 		t.Fatalf("canonical profile = %s, want %s", got, wantProfile)
 	}
@@ -102,7 +102,7 @@ func TestBoundedGoldenVector(t *testing.T) {
 		profileEncoding,
 		behaviorEncoding,
 	)
-	const wantBinding = "0a5e99e840a2e70f3b22653dbb438c39fa3f4f57d0a5f08fca2cc6afba198336"
+	const wantBinding = "23aebf3166f64d6a0e6467d0fde647191094907f733c60fb946129d7cc828509"
 	if got := hex.EncodeToString(binding[:]); got != wantBinding {
 		t.Fatalf("program binding = %s, want %s", got, wantBinding)
 	}
@@ -110,7 +110,7 @@ func TestBoundedGoldenVector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BoundedAdminMessage() error = %v", err)
 	}
-	const wantMessage = "290c8f4a249f53973889e356a1a2974c04de33d892d615ac6b94180051ea75c9"
+	const wantMessage = "324dfa8eee495b7f4ddaa67f640c906184beb49abfd304d1336be233e84998b6"
 	if got := hex.EncodeToString(message[:]); got != wantMessage {
 		t.Fatalf("admin message = %s, want %s", got, wantMessage)
 	}
@@ -158,6 +158,77 @@ func TestCanonicalBoundedBehaviorParametersEncodesAbsentOptionalScalar(t *testin
 	}
 	if bytes.Equal(absent, zero) {
 		t.Fatal("absent optional value encoded identically to an explicit zero")
+	}
+}
+
+func TestCanonicalBoundedSentryProfileGolden(t *testing.T) {
+	profile := &BoundedAuthorizationProfile{
+		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Sentry: &boundedmeta.SentryAuthorization{
+			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		},
+	}
+	metadata := &boundedmeta.Metadata{
+		Contract: BoundedContractV1, BaseSignatureArgLayout: SignatureArgLayout{Count: 1, MaxSizes: []int{4}},
+		SpendEffects: []string{boundedmeta.SpendEffectPay}, MaxFee: 1_000, Layer3Policy: boundedmeta.Layer3PolicyCustom,
+		Sentry: profile.Sentry,
+		ArgumentLayout: []boundedmeta.ArgumentSlot{
+			{Index: 0, Name: "base_signature_0", Source: boundedmeta.ArgSourceBaseSignature, MaxSize: 4, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgRequired, AdminRekey: boundedmeta.ArgRequired}},
+			{Index: 1, Name: boundedmeta.SentrySignatureSlot, Source: boundedmeta.ArgSourceSentry, MaxSize: boundedmeta.SentrySignatureMaxSizeV1, Paths: boundedmeta.ArgumentPathMask{Spend: boundedmeta.ArgRequired, SpendingRekey: boundedmeta.ArgForbidden, AdminRekey: boundedmeta.ArgForbidden}},
+		},
+	}
+	encoded, err := CanonicalBoundedProfile(profile, metadata)
+	if err != nil {
+		t.Fatalf("CanonicalBoundedProfile() error = %v", err)
+	}
+	const want = "0000001941504c414e455f424f554e4445445f50524f46494c455f563100000008626f756e64656431000000010000000370617900000000000003e800000000000000010000000773656e747279310000001c61706c616e652e7769746e6573732d66616c636f6e313032342e76310000050000000001000000057370656e6400000006637573746f6d00000001000000040000000000000000000000020000000000000010626173655f7369676e61747572655f300000000e626173655f7369676e617475726500000004000000087265717569726564000000087265717569726564000000087265717569726564000000010000001073656e7472795f7369676e61747572650000000673656e7472790000050000000008726571756972656400000009666f7262696464656e00000009666f7262696464656e"
+	if got := hex.EncodeToString(encoded); got != want {
+		t.Fatalf("canonical sentry profile = %s, want %s", got, want)
+	}
+}
+
+func TestBoundedAuthorizationMetadataSnapshotsSentryContract(t *testing.T) {
+	profile := &BoundedAuthorizationProfile{
+		Contract: BoundedContractV1, SpendEffects: []txeffects.SpendEffect{txeffects.SpendEffectPay}, MaxFee: 1_000,
+		Sentry: &boundedmeta.SentryAuthorization{
+			Contract: boundedmeta.SentryContractV1, ComponentKeyType: boundedmeta.SentryComponentKeyTypeV1,
+			SignatureMaxSize: boundedmeta.SentrySignatureMaxSizeV1, RequiredOn: []string{boundedmeta.PathSpend},
+		},
+	}
+	provider := newBoundedTestProvider(profile)
+	if _, err := provider.GenerateTEAL(
+		[]byte{0x01},
+		map[string]string{BoundedSentryPublicKeyParameter: strings.Repeat("42", boundedmeta.SentryPublicKeySizeV1)},
+	); err == nil || !strings.Contains(err.Error(), "TEAL gate is not implemented") {
+		t.Fatalf("GenerateTEAL() error = %v, want fail-closed sentry composer gate", err)
+	}
+	spendingPublicKey := bytes.Repeat([]byte{0x31}, boundedmeta.SentryPublicKeySizeV1)
+	sentryPublicKey := bytes.Repeat([]byte{0x42}, boundedmeta.SentryPublicKeySizeV1)
+	metadata, err := provider.BuildBoundedAuthorizationMetadata(
+		spendingPublicKey,
+		map[string]string{BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryPublicKey)},
+		bytes.Repeat([]byte{0x02}, 100),
+	)
+	if err != nil {
+		t.Fatalf("BuildBoundedAuthorizationMetadata() error = %v", err)
+	}
+	wantID, err := witness.ID(boundedmeta.SentryComponentKeyTypeV1, sentryPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Sentry == nil || metadata.Sentry.ComponentKeyID != wantID || metadata.Sentry.PublicKeyHex != hex.EncodeToString(sentryPublicKey) {
+		t.Fatalf("Sentry = %#v", metadata.Sentry)
+	}
+	if got, want := metadata.PostSigningLogicSigSize, 100+4+boundedmeta.SentrySignatureMaxSizeV1; got != want {
+		t.Fatalf("PostSigningLogicSigSize = %d, want %d", got, want)
+	}
+	if _, err := provider.BuildBoundedAuthorizationMetadata(
+		sentryPublicKey,
+		map[string]string{BoundedSentryPublicKeyParameter: hex.EncodeToString(sentryPublicKey)},
+		[]byte{1},
+	); err == nil || !strings.Contains(err.Error(), "must differ from the spending key") {
+		t.Fatalf("collision error = %v", err)
 	}
 }
 

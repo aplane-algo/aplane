@@ -134,6 +134,9 @@ func NewComposedDSA(cfg Config) *ComposedDSA {
 	if boundedRequiresAdminKey(bounded) && !hasParameter(params, BoundedAdminPublicKeyParameter) {
 		params = append(params, boundedAdminPublicKeyParameterDef())
 	}
+	if bounded != nil && bounded.Sentry != nil && !hasParameter(params, BoundedSentryPublicKeyParameter) {
+		params = append(params, boundedSentryPublicKeyParameterDef())
+	}
 	return &ComposedDSA{
 		keyType:            cfg.KeyType,
 		baseKeyType:        cfg.BaseKeyType,
@@ -438,6 +441,9 @@ func (c *ComposedDSA) GenerateTEAL(publicKey []byte, params map[string]string) (
 	boundedProfile, _, err := c.validateBoundedConfig()
 	if err != nil {
 		return "", err
+	}
+	if boundedProfile != nil && boundedProfile.Sentry != nil {
+		return "", fmt.Errorf("bounded sentry TEAL gate is not implemented")
 	}
 
 	if len(publicKey) != c.ops.PublicKeySize() {

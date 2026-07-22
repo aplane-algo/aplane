@@ -217,6 +217,10 @@ canonical_bounded_profile =
   u32(count(admin_operations)) ||
     field(operation_0.kind) || field(operation_0.authorization) ||
     field(operation_0.policy_gate) || ... ||
+  u32(sentry_present) ||
+    if present: field("sentry1") ||
+      field("aplane.witness-falcon1024.v1") || u32(1280) ||
+      u32(1) || field("spend") ||
   field(layer3_policy) ||
   u32(base_signature_arg_count) || u32(base_arg_0_max) || ... ||
   u32(count(derived_args)) || canonical_derived_args ||
@@ -230,7 +234,8 @@ use frozen order `rekey`. Duplicates are invalid. Empty spend sets are invalid.
 authorized independently from `axfer`. `max_fee` must be present and no greater
 than 10,000. The Layer 3 identity, argument declarations, maximum sizes, frozen
 indexes, sources, and path masks are security-bearing and therefore part of
-the canonical profile.
+the canonical profile. `sentry_present` is exactly zero or one. The initial
+optional sentry contract has the single ordered path list `[spend]`.
 
 ### Canonical behavior parameters
 
@@ -244,7 +249,9 @@ canonical_behavior_parameters =
 ```
 
 Only behavior-bearing account-creation values are included, in parameter
-definition order. The framework-injected `bounded_admin_public_key` is excluded
+definition order. A sentry-enabled profile includes the framework-injected
+`sentry_public_key`; the program binding must therefore commit to the resolved
+sentry key. The framework-injected `bounded_admin_public_key` is excluded
 because the program binding carries it separately. Display metadata, file
 paths, runtime values, and policy provenance are excluded.
 
@@ -344,10 +351,10 @@ contract_admin_key_id:
   MM3VSIAUKJ2BT2JBNB7V3HX2YUP7SMLWRWGWDQPEGSZ4ZRK6SLVQ
 
 bounded_program_binding:
-  0a5e99e840a2e70f3b22653dbb438c39fa3f4f57d0a5f08fca2cc6afba198336
+  23aebf3166f64d6a0e6467d0fde647191094907f733c60fb946129d7cc828509
 
 admin_message:
-  290c8f4a249f53973889e356a1a2974c04de33d892d615ac6b94180051ea75c9
+  324dfa8eee495b7f4ddaa67f640c906184beb49abfd304d1336be233e84998b6
 ```
 
 Whitespace and line wrapping above are presentation only. Code tests decode

@@ -111,7 +111,7 @@ func TestBundledFalconAdminAllowlistV1Contract(t *testing.T) {
 	if got, want := metadata.LogicSigSizeForPath(boundedmeta.PathAdminRekey), 3+falconfamily.MaxSignatureSize+boundedmeta.FalconAdminSignatureSize; got != want {
 		t.Fatalf("admin LogicSig size = %d, want %d", got, want)
 	}
-	if got, want := provider.CompatibilityFingerprint(), "1:c680e44d479361e71cbb07f2e6fac40a380007712d0427624ca5b5c755fbe486"; got != want {
+	if got, want := provider.CompatibilityFingerprint(), "1:36fff8d7505424e626c42c5d2132e001a9266195cc3974cbae8799b972b941f3"; got != want {
 		t.Fatalf("CompatibilityFingerprint() = %q, want %q", got, want)
 	}
 
