@@ -151,7 +151,9 @@ parsing formatted output.
 
 `simulate` has the same app-level toggle shape but the shell command also
 supports one-shot transaction simulation (`simulate send ...`) and uses
-command-specific text rendering. It is not part of the MCP structured switch,
+command-specific text rendering. The transaction workflow still performs
+ordinary executable signing and approval before client-side algod simulation.
+It is not part of the MCP structured switch,
 so `simulate` is not a structured (JSON) execute path — MCP captures its text
 output instead.
 

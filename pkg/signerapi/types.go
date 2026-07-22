@@ -285,7 +285,7 @@ type ErrorResponse struct {
 }
 
 const (
-	ProtocolVersionMajor = 1
+	ProtocolVersionMajor = 2
 	ProtocolVersionMinor = 0
 )
 

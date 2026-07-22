@@ -132,7 +132,7 @@ internal/engine/
 │   ├── client.go          # Signer client construction and request helpers
 │   ├── lifecycle.go       # Connect/disconnect and tunnel lifecycle
 │   ├── sentry_endpoint.go # Sentry endpoint connection helpers
-│   ├── signing.go         # Signer-facing plan/simulate/sign requests
+│   ├── signing.go         # Signer-facing plan/sign requests
 │   └── state.go           # Mutex-protected ConnectionState
 ├── connection.go          # Core-facing connection facade
 ├── group.go               # PreparedGroup, grouped preparation and execution

@@ -204,11 +204,10 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Keys response | wire projection | loaded key snapshot | `signerapi.KeysResponse` | `internal/signerapp/rest`, `pkg/signerapi` | Sentry-key rows use Witness Key ID as `address`; guarded rows expose non-secret params. |
 | Key info row | wire projection | loaded key metadata | `signerapi.KeyInfo` | `internal/signerapp/rest` | `is_witness_key`/`is_spending_account` disambiguate selectors from accounts. |
 | Key types response | wire projection | enabled providers/templates and sentry refs | `signerapi.KeyTypesResponse` | `internal/signerapp/rest` | Runtime args are generation metadata, not existing-key signing args. |
-| Group sign request | wire request | client transaction bytes | `signerapi.GroupSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Shared by `/sign`, `/plan`, `/simulate`; all-foreign invalid. |
+| Group sign request | wire request | client transaction bytes | `signerapi.GroupSignRequest` | `pkg/signerapi`, `internal/signerapp/signing` | Shared by `/sign` and `/plan`; all-foreign invalid. |
 | Sign request entry | wire request row | caller-supplied txn/signed bytes | sign/passthrough/foreign entry | `pkg/signerapi`, signer planner | `txn_sender` is advisory display data only. |
 | Group plan response | wire projection | canonical planned group | `signerapi.GroupPlanResponse` | `internal/signerapp/signing` | No key access; returns unsigned TX-prefixed transaction bytes. |
 | Group sign response | wire projection | finalized signed group | `signerapi.GroupSignResponse` | `internal/signerapp/signing` | Signed array aligns to finalized group positions. |
-| Group simulate response | wire projection | signer-internal simulation result | `signerapi.GroupSimulateResponse` | `internal/signerapp/rest` | Signed bytes do not leave signer. |
 | Mutation report | wire projection | canonicalization effects | `signerapi.MutationReport` | `internal/signerapp/signing` | Observability only, not durable authority. |
 | Cancel sign request/response | wire request/projection | live request registry lookup | `signerapi.CancelSign*` | `internal/signerapp/approval` | Only `/sign` request IDs are live cancel handles; component/assembly IDs are correlation only. |
 | Admin generate DTOs | wire request/projection | enabled key type plus parameters | `signerapi.AdminGenerate*` | `internal/signerapp/keyadmin` | No mnemonic in REST response. |
@@ -217,8 +216,6 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Component sign response | wire projection | per-target component signatures | `signerapi.ComponentSignResponse` | `internal/signerapp/signing` | Signature scheme is user key type or sentry key type. |
 | Guarded assembly request | wire request | group bytes plus user/sentry signatures | `signerapi.GuardedAssemblyRequest` | `internal/signerapp/signing` | Verifies sentry signature against embedded key in local account key. |
 | Guarded assembly response | wire projection | assembled signed group bytes | `signerapi.GuardedAssemblyResponse` | `internal/signerapp/signing` | Assembly does not trust endpoint-advertised public keys. |
-| Guarded simulate request | wire request | frozen group requests, sentry signatures, passthrough | `signerapi.GuardedSimulateRequest` | `pkg/signerapi`, `internal/signerapp/signing` | User component signatures are produced inside the signer; every position must be covered by a target, passthrough, or sign-mode entry. |
-| Guarded simulate response | wire projection | txids, final unsigned transactions, simulation report | `signerapi.GuardedSimulateResponse` | `internal/signerapp/rest` | Carries no signed bytes or component signatures. |
 | Admin sentry sync DTOs | wire request/projection | public candidate list | `signerapi.AdminSyncSentryReferences*` | `internal/signerapp/rest`, `internal/sentry/sentryrefs` | Writes public signer-side reference catalog only; HTTP authorizes as `sentries.sync`; no tokens or private keys. |
 
 ## Admin IPC Wire Models
@@ -248,7 +245,7 @@ and [ARCH_ADMIN_PROTOCOL.md](ARCH_ADMIN_PROTOCOL.md).
 | Sentry component message | request-scoped signing input | role byte plus target TxID | 32-byte message digest | `internal/sentry/message` | Shared by signer assembly and TEAL vectors; clients treat component signatures as opaque. |
 | Component signature set | request-scoped wire data | `/sign/component` response | per-target signatures by target index | `internal/signerapp/signing`, `pkg/signerapi` | Each signature is bound to one target TxID and role. |
 | Guarded assembly target | request-scoped wire data | `/sign/assemble` request targets | LogicSig args packing plan | `internal/signerapp/signing` | User and sentry signatures are verified before packed bytes are returned. |
-| Guarded send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | user component call (signer-domain gated), sentry call, optional non-guarded `/sign`, assembly, algod submit; simulation routes through `/simulate/guarded` instead | `internal/engine`, `internal/apshellapp` | Client holds no key material; endpoint routing is not trust; guarded targets are classified by effective signer and may be direct senders or AuthAddr authorizers; mixed groups sign non-guarded originals over the same canonical bytes. |
+| Guarded send orchestration | long-lived client workflow | signer inventory plus endpoint registry plus requests | user component call (signer-domain gated), sentry call, optional non-guarded `/sign`, assembly, then client algod submit or simulate | `internal/engine`, `internal/apshellapp` | Client holds no key material but does hold the final executable group; endpoint routing is not trust; guarded targets are classified by effective signer and may be direct senders or AuthAddr authorizers; mixed groups sign non-guarded originals over the same canonical bytes. |
 
 ## Plugin, JavaScript, And MCP Models
 

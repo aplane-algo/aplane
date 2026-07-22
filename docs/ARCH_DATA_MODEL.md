@@ -150,7 +150,7 @@ DTOs and contract fixtures.
 | SSH enrollment | Signer identity | `identities/<identity>/.ssh/authorized_keys` | identity SSH key set | SSH auth and token provisioning | `internal/sshtunnel`, `internal/signerapp/sshprovision` |
 | Admin session | Signer identity | none | `adminserver.SessionContext`, session manager | admin IPC/SSH JSON envelope | `internal/signerapp/adminserver`, `internal/adminproto`, `internal/protocol` |
 | Sign request | Live signer runtime | none durable | approval coordinator pending request | `/sign`, `/sign/cancel`, admin `sign_request` | `internal/signerapp/approval`, `internal/signerapp/signing` |
-| Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign`, `/simulate` | `internal/signerapp/signing`, `pkg/signerapi` |
+| Transaction plan/group | Request-scoped | caller transaction bytes | canonical planned group and mutation report | `/plan`, `/sign` | `internal/signerapp/signing`, `pkg/signerapi` |
 | Component signing request | Request-scoped | canonical group bytes and target indices | per-target user or sentry component signatures | `/sign/component` | `internal/signerapp/signing`, `pkg/signerapi` |
 | Guarded assembly request | Request-scoped | user and sentry component signatures plus group bytes | assembled signed group bytes | `/sign/assemble` | `internal/signerapp/signing`, `pkg/signerapi` |
 | App call metadata | Request-scoped | caller/engine prepared request | approval description context | `app_call_info` | `internal/engine`, `internal/signerapp/txdesc` |
@@ -626,7 +626,6 @@ Primary projections:
 - `GuardedAssemblyResponse`,
 - `GroupPlanResponse`,
 - `GroupSignResponse`,
-- `GroupSimulateResponse`,
 - `MutationReport`,
 - `KeysResponse`,
 - `KeyTypesResponse`,
@@ -732,14 +731,13 @@ keys.
 ### Signing Lifecycle
 
 1. Client prepares transaction bytes and metadata.
-2. Client sends `/plan`, `/simulate`, or `/sign`.
+2. Client sends `/plan` or `/sign`.
 3. Signer validates request shape and transaction network.
 4. Signer canonicalizes group and computes mutations.
 5. Signer evaluates policy for signer-controlled slots.
 6. Signer either rejects, auto-approves, or requests operator approval.
 7. Signer signs/assembles finalized slots.
-8. Client submits signed bytes for `/sign`, or receives diagnostics for
-   `/simulate`.
+8. Client routes returned signed bytes to algod submission or simulation.
 
 Live `/sign` cancellation is request-scoped runtime state only. There is no
 durable sign request table.

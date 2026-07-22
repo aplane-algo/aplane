@@ -27,7 +27,7 @@ The model intentionally omits:
 
   - cryptography (signature correctness, address derivation),
   - msgpack decode and Algorand transaction layout,
-  - the algod simulate gate (`/simulate` is a separate boundary),
+  - post-signing client routing to algod submission or simulation,
   - approval coordinator state (always-review, operator decision),
   - lifecycle leases and decommission,
   - LogicSig budget, fee adjustment, group-id recomputation,

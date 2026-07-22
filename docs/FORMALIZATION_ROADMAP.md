@@ -134,8 +134,8 @@ Preferred test targets:
 - policy precedence,
 - key-file metadata rejection,
 - decommission signing-stop behavior,
-- `/simulate` boundary: hard-policy enforcement, no signed bytes in response,
-  foreign-slot rejection, decommission/lock rejection,
+- client simulation boundary: ordinary signing and approval, exact signed-group
+  algod routing, no signer simulation endpoint, and pre-sign algod checks,
 - `auth_address` -> key file resolution via runtime index.
 - guarded signing assembly: wrong user signature rejection, wrong sentry
   signature rejection, passthrough transaction-ID binding,
@@ -276,10 +276,9 @@ snapshot, no actionable test gaps or deferred decision gaps remain in
 
 The current precise English model set starts with
 [FORMAL_TXN_PLANNING_MODEL.md](FORMAL_TXN_PLANNING_MODEL.md), which covers the
-shared `/plan`, `/sign`, and `/simulate` group-building boundary, request modes,
-pre-grouped immutability, dummy/fee mutation, policy-on-finalized-data, response
-alignment, and the `/simulate`-specific contract (hard-policy-only gating, no
-signed bytes in the response, foreign-slot rejection).
+shared `/plan` and `/sign` group-building boundary, request modes, pre-grouped
+immutability, dummy/fee mutation, policy-on-finalized-data, response alignment,
+and client-side simulation composition after ordinary executable signing.
 
 [FORMAL_POLICY_MODEL.md](FORMAL_POLICY_MODEL.md) captures the policy precedence
 model that gates the finalized planned group before final signing, including
@@ -363,7 +362,7 @@ code-side canonical passthrough re-encoding check is listed in
 `guarded_assembly.tla`'s intentional omissions (conservative direction); and
 the lock-during-unlock generation counter is recorded as a new
 [FORMAL_TEST_GAPS.md](FORMAL_TEST_GAPS.md) model-drift entry. The bounded1
-planning/argument-assembly and `/simulate/guarded` surfaces were already
+planning/argument-assembly and guarded simulation surfaces were already
 tracked there before this review. No spec guard diverged from code; no
 invariant weakened.
 
@@ -394,7 +393,7 @@ Machine-checked invariants by module:
 
 Not yet machine-checked: S1-S13 (entire signing-authority surface), the guarded
 signing invariants not covered by `guarded_assembly.tla` (A2-A5, A9-A13, and
-A15), AP1-AP3 (approval coordinator; modeled by construction), I4-I6, IS1-IS6,
+A15), AP1-AP3 (approval coordinator; modeled by construction), I4-I6, CS1-CS4,
 P1-P3, P8-P10, L1-L3, L9-L11.
 
 ### Verification methodology by module

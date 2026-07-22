@@ -165,6 +165,6 @@ For complex atomic groups where Transaction A funds Transaction B's sender (e.g.
 
 Plugin-generated atomic groups can bypass apshell's balance verification
 entirely when the plugin builds and validates its own transaction group.
-Simulate mode can also simulate a finalized unsigned group after signer
-planning, which is useful for checking group execution without signing, but it
-does not replace the built-in `send` command's static pre-checks.
+Simulate mode can check the exact finalized executable group after ordinary
+signing, but it does not replace the built-in `send` command's static
+pre-checks.

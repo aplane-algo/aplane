@@ -12,7 +12,7 @@ Normative inputs:
 
 - [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md): request modes, group canonicalization,
   pre-grouped immutability, dummies, fee adjustment, and response alignment.
-- [ARCH_HTTP_API.md](ARCH_HTTP_API.md): `/plan`, `/sign`, and `/simulate`
+- [ARCH_HTTP_API.md](ARCH_HTTP_API.md): `/plan` and `/sign`
   contract surface.
 - [ARCH_CONTRACTS.md](ARCH_CONTRACTS.md): approval/policy compatibility,
   lifecycle, and signing-authority contracts.
@@ -83,7 +83,7 @@ attempt:
 - network genesis-hash resolver,
 - dummy transaction template and size/budget rules,
 - fee-pooling rules,
-- policy snapshot for `/sign` and `/simulate` policy phases.
+- policy snapshot for `/sign` policy phases.
 
 For plan/sign parity, two snapshots are equivalent only when all values that can
 affect planning are equal, including key metadata, LogicSig budget inputs, dummy
@@ -129,7 +129,7 @@ Define:
 ```text
 Plan(snapshot, request)                          -> PlannedGroup | Reject
 Sign(snapshot, request, approval_result)         -> SignedGroup  | Reject
-Simulate(snapshot, request)                      -> SimulateResult | Reject
+ClientSimulate(snapshot, request, approval_result, algod) -> SimulateResult | Reject
 ```
 
 `Sign` is decomposed as:
@@ -140,22 +140,17 @@ decision  = PolicyAndApproval(snapshot.policy, planned, approval_result)
 signed    = ExecuteSigning(snapshot, planned, decision)
 ```
 
-`Simulate` is decomposed as:
+`ClientSimulate` is decomposed as:
 
 ```text
-planned   = Plan(snapshot, request)                       // same as /plan
-if ExistsForeign(planned): reject                         // IS5
-hardOnly  = HardPolicyOnly(snapshot.policy, planned)      // IS2
-if hardOnly rejects: reject
-internal  = ExecuteSigning(snapshot, planned, hardOnly)   // never exposed; IS4
-result    = AlgodSimulate(internal)                       // unsigned bytes + diagnostics
+if algod is unavailable: reject                           // before signing
+signed = Sign(snapshot, request, approval_result)         // ordinary executable path
+result = AlgodSimulate(algod, signed)                     // exact returned bytes
 ```
 
-Planning always runs first; rejection decisions in IS2 and IS5 occur after
-planning has produced a finalized group. Implementations may detect foreign
-content earlier or later than the current `internal/signerapp/rest/simulate.go`
-ordering as long as planning still yields the canonical group for IS1's
-purposes.
+The signer has no simulation transition. It cannot distinguish
+`ClientSimulate` from a caller that invokes `Sign` and later submits, stores, or
+discards the result.
 
 `Plan` performs group building only. It does not approve a request, produce
 signatures, or assemble final LogicSig authorizations. `/plan` may still require
@@ -252,7 +247,7 @@ of scope (see [FORMALIZATION_ROADMAP.md](FORMALIZATION_ROADMAP.md) Non-Goals).
 
 ## Policy and Approval Boundary
 
-Planning precedes policy and approval for `/sign` and `/simulate`.
+Planning precedes policy and approval for `/sign`.
 
 Policy evaluation observes the finalized planned data:
 
@@ -413,90 +408,63 @@ In particular, varying only `genesis_id` while holding `genesis_hash` constant
 must not change the selected network bucket. Unknown genesis hashes reject
 before policy can select the wrong bucket.
 
-## Simulate Endpoint Invariants
+## Client-Side Simulation Invariants
 
-`/simulate` is a separate boundary from `/sign` even though it reuses the same
-request grammar and shares planning. The invariants below describe what
-`/simulate` must and must not do.
+Simulation is a client workflow after ordinary signing, not a signer endpoint.
+The invariants below constrain the composition of signing and algod routing.
 
-### IS1: Simulate Plans Like Sign
+### CS1: Authorization Equivalence
 
-`/simulate` runs the same canonical group-building procedure as `/plan` and
-`/sign`. The invariant is about the planning *step* inside `/simulate`, not
-about the overall `/simulate` result; `/simulate` may still reject after
-planning (for foreign placeholders per IS5, or for hard-policy/lifecycle
-reasons per IS2 and IS6).
+For equivalent snapshots and requests, simulation obtains the same signed group
+as submission and traverses every ordinary policy and approval gate.
 
 ```text
-EquivalentSnapshot(s_plan, s_sim) and
-SimulatePlanningStage(s_sim, request) = planned_sim =>
-  planned_sim = Plan(s_plan, request)
+ClientSimulateSigningStage(snapshot, request, approval_result) =
+  Sign(snapshot, request, approval_result)
 ```
 
-This decouples the planning equivalence from the rest-of-simulate gate:
-implementations may not skip planning, and the planning output must match
-`/plan`, but a `/simulate` accept additionally requires the request to
-satisfy IS2, IS5, and IS6.
+An Always Deny rejection, Always Review prompt, operator denial, lifecycle
+failure, or unresolved signing slot therefore has the same result regardless
+of the client's intended route.
 
-### IS2: Simulate Enforces Hard Policy
+### CS2: Exact Signed Group Routing
 
-Always Deny policy verdicts reject before any signing or algod simulation.
+The algod simulation input is byte-for-byte the complete executable group
+returned by ordinary signing and, for guarded flows, ordinary assembly.
 
 ```text
-AlwaysDenyMatches(snapshot.policy, Plan(snapshot, request)) =>
-  Simulate(snapshot, request) rejects
+ClientSimulate(snapshot, request, approval_result, algod) = result =>
+  result.algod_input = Sign(snapshot, request, approval_result)
 ```
 
-### IS3: Simulate Does Not Wait For Operator Approval
+The client must not re-plan, mutate, regroup, or automatically request a second
+set of signatures after simulation failure.
 
-`/simulate` does not block on operator approval. Always Review matches
-proceed to internal signing without prompting; the entire procedure is
-self-contained inside the signer process.
+### CS3: Signer Routing Ignorance
+
+No request field or signer transition identifies a post-signing simulation
+route. A signer approval authorizes release of executable signatures, not a
+restricted simulation-only capability.
 
 ```text
-AlwaysReviewMatches(snapshot.policy, Plan(snapshot, request)) =>
-  Simulate(snapshot, request) does not enqueue a PendingApproval
+SignerObservation(simulate_intent) = SignerObservation(submit_intent)
 ```
 
-This compensates for the response never exposing signed bytes (see IS4): an
-operator review prompt for a simulation that no one signs would be pure
-friction. Implementations that change this trade-off must update IS3.
+Audit events consequently attest to signature authorization and release; they
+do not attest that algod simulated, submitted, or committed the group.
 
-### IS4: Simulate Never Exposes Signed Bytes
+### CS4: Algod Availability Precedes Signing
 
-The `/simulate` response contains only finalized unsigned transaction bytes
-and diagnostics. No element of the response contains a signature produced by
-this signer.
+The client rejects a simulation request before requesting any signatures when
+its algod dependency is unavailable.
 
 ```text
-Simulate(snapshot, request) = result =>
-  forall i: result.transactions[i] is an unsigned transaction encoding and
-            contains no signer-produced signature
+not AlgodAvailable =>
+  ClientSimulate rejects and Sign is not invoked
 ```
 
-The internally generated signed bytes used by algod simulation are
-process-local; they do not appear in any wire response.
-
-### IS5: Simulate Rejects Unresolved Foreign Slots
-
-Foreign-mode entries provide unsigned bytes from another signer. `/sign` may
-accept them as context-only slots. `/simulate` cannot, because algod
-simulation needs every group position to carry a usable signature. The caller
-must instead supply the corresponding signed bytes as a passthrough entry.
-
-```text
-ExistsForeign(request) => Simulate(snapshot, request) rejects
-```
-
-### IS6: Simulate Honors Lifecycle And Unlock State
-
-A decommissioned or locked identity rejects `/simulate` for the same reasons
-it rejects `/sign`.
-
-```text
-runtime.decommissioned or not runtime.unlocked =>
-  Simulate(snapshot, request) rejects
-```
+This ordering avoids spending an approval or releasing signatures for a client
+configuration that cannot perform the requested route.
 
 ## Assumptions
 
@@ -542,8 +510,9 @@ Implementation areas that should remain aligned with this model:
 - `internal/signerapp/signing/execution.go`
 - `internal/signerapp/signing/approval.go`
 - `internal/signerapp/signing/always_review.go`
-- `internal/signerapp/signing/simulation.go`
-- `internal/signerapp/rest`
+- `internal/clientsign/submit.go`
+- `internal/engine/guarded/submit.go`
+- `internal/signing/simulate.go`
 - `pkg/signerapi`
 - `internal/signerclient`
 
@@ -558,11 +527,11 @@ High-value test anchors:
 - foreign slots return `""`,
 - passthrough bytes return unchanged,
 - Always Deny wins over every later approval path,
-- `/simulate` produces the same finalized unsigned group as `/plan`,
-- `/simulate` rejects on Always Deny without invoking algod,
-- `/simulate` rejects requests containing foreign-mode entries,
-- `/simulate` response never contains signer-produced signed bytes,
-- `/simulate` rejects decommissioned or locked identities.
+- client simulation calls ordinary `/sign` and never a signer simulation route,
+- client algod receives the exact returned signed group,
+- missing client algod rejects before any signature request,
+- guarded simulation uses ordinary component signing and assembly,
+- simulation failure does not submit or automatically sign again.
 
 ## Open Questions
 

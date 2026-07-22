@@ -1096,7 +1096,6 @@ Use this when a token may be compromised or to rotate credentials.
 | `POST /sign/assemble` | Required |
 | `POST /sign/cancel` | Required |
 | `POST /plan` | Required |
-| `POST /simulate` | Required |
 | `GET /status` | Required |
 | `GET /keys` | Required |
 | `GET /keytypes` | Required |

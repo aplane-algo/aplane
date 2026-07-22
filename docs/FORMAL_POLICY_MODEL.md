@@ -49,10 +49,9 @@ document defines the shared snapshot and sparse-override vocabulary; the
 sentry-specific decision rules are modeled in
 [FORMAL_GUARDED_SIGNING_MODEL.md](FORMAL_GUARDED_SIGNING_MODEL.md).
 
-Policy also gates `/simulate`, but only at the Always Deny tier. `/simulate`
-does not wait on operator approval and does not block on Always Review
-matches; see [FORMAL_TXN_PLANNING_MODEL.md](FORMAL_TXN_PLANNING_MODEL.md) IS2
-and IS3 for the simulate-specific boundary.
+Client simulation obtains signatures through ordinary signing, so every policy
+tier and operator-approval rule applies exactly as it does for submission. The
+signer receives no simulation designation.
 
 Policy is separate from:
 

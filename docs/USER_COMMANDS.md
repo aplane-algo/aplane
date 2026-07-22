@@ -841,15 +841,16 @@ verbose [on|off]
 ### simulate
 
 Toggle transaction simulation mode (dry-run) or simulate a single transaction
-command. In simulate mode, apshell asks apsigner to canonicalize the group, sign
-inside the signer process, and run algod simulation without returning reusable
-signed transaction bytes.
+command. In simulate mode, apshell requests ordinary executable signatures from
+apsigner, including the normal policy and operator approval path, then sends the
+exact signed group to the client-configured algod simulation endpoint instead
+of submitting it.
 
-Signer-managed simulation runs through apsigner's `/simulate` endpoint:
-apsigner signs only inside the signer process, calls algod simulate on the
-transaction group's configured network, and returns diagnostics plus final
-unsigned transaction data. Reusable signed transaction bytes are not returned to
-apshell.
+Simulation does not submit the group, but it is not a non-signing preview.
+Apshell temporarily holds network-submittable signed bytes, and those bytes
+remain valid until the transaction validity window expires. Use the JS
+`plan()` operation when canonical group inspection without signing or approval
+is required.
 
 ```
 simulate                        # Show current state
@@ -928,6 +929,10 @@ App budget: 150 consumed / 700 added
 ```
 
 Execution traces require algod to support the simulate trace endpoint (AVM v9+). If the node does not support traces, the trace sections are omitted and all other sections still display normally.
+
+Guarded simulation follows the same user and sentry component approval flow as
+guarded submission. Without user auto-approval, a connected admin client must
+approve the request.
 
 ---
 
