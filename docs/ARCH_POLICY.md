@@ -263,8 +263,8 @@ stable client-signing Always Review rule
 and before every Always Approve or Operator Default path. It therefore blocks
 `user_auto_approve:true`, `auto_approve_self_noop_transfer`, and warning
 configuration for both spending-key and Falcon contract-admin rekeys.
-Simulation is the sole exception because it releases no signed transaction
-bytes.
+A client intent to simulate is not an exception because apsigner releases the
+same executable signatures and receives no simulation designation.
 
 The approval description names the operation, sender, rekey target,
 transaction fee and compiled ceiling, authorization mode, and Contract Admin

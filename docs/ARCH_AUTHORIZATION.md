@@ -245,7 +245,7 @@ grant accidentally contains the same typo.
 | `identity.restore` | List, preview, or restore signer-managed backup archives for the bound identity | `identity` | Yes |
 | `identity.passphrase` | Rotate the identity keystore passphrase | `identity` | Yes |
 | `identity.decommission` | Decommission identity | `identity` | No |
-| `sign.request` | Request transaction signing, signing plan, simulation, or sign-request cancellation | `transaction` | Yes for signing/cancel |
+| `sign.request` | Request transaction signing, signing plan, or sign-request cancellation | `transaction` | Yes for signing/cancel |
 | `sign.component` | Request user-role or sentry-role component signatures for the guarded signing flow | `transaction` | Yes |
 | `sign.assemble` | Assemble verified user and sentry component signatures into signed guarded transactions | `transaction` | Yes |
 | `sign.approve` | Approve or reject signing request | `sign_request` | No |
@@ -346,7 +346,7 @@ response handling, token rotation, or policy/settings changes.
 Enforced callsites:
 
 - `internal/signerapp/daemon/http_runtime.go` wraps HTTP `/sign`, `/sign/component`,
-  `/sign/assemble`, `/plan`, `/simulate`, `/simulate/guarded`, `/status`,
+  `/sign/assemble`, `/plan`, `/status`,
   `/keys`, `/keytypes`, `/admin/generate`, `/admin/sentries/sync`, and
   `/admin/keys` with
   `requireAuth`. `/admin/sentries/sync` uses `sentries.sync` because it

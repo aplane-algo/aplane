@@ -358,7 +358,7 @@ SDK repo consumes for compatibility testing. `internal/signerapi` is an
 in-repo alias layer over the public DTO types in `pkg/signerapi` (not error
 codes); `pkg/signerapi/error_codes.go` remains the sole error-code source.
 The SDK shape is native-client first: `SignerClient` wrappers expose APlane's
-HTTP signing, planning, simulation, inventory, status, and cancellation APIs
+HTTP signing, planning, inventory, status, and cancellation APIs
 directly, and the SDK-native prep layer mirrors apshell's core client-side
 transaction preparation once a caller has a normalized typed intent. That prep
 layer builds unsigned transaction candidates, resolves effective signer
@@ -857,10 +857,10 @@ The server-side plan/sign boundary is split as follows:
 - admin key-mutation HTTP/IPC transport mapping in `internal/signerapp/daemon/http_handlers_admin.go` and `internal/signerapp/daemon/admin_services.go`, with reusable key operations in `internal/signerapp/keyadmin`,
 - IPC bind-path validation in `internal/signerapp/ipcbind`,
 - filesystem key/template reload watching in `internal/signerapp/filewatcher`,
-- REST service composition for signing, planning, simulation, key administration, and generic LogicSig generation in `internal/signerapp/rest`,
+- REST service composition for signing, planning, key administration, and generic LogicSig generation in `internal/signerapp/rest`,
 - signer runtime state and lifecycle management in `internal/signerapp/runtime`,
 - sign request lifecycle, cancellation, and approval queue ownership in `internal/signerapp/approval`,
-- planning, approval flow, execution, simulation, and top-level sign orchestration in `internal/signerapp/signing`,
+- planning, approval flow, execution, and top-level sign orchestration in `internal/signerapp/signing`,
 - signer transaction description formatting in `internal/signerapp/txdesc`,
 - template registration and reload lifecycle in `internal/signerapp/templates`,
 - template library, install, show, import, remove, activate, and deactivate workflows in `internal/signerapp/templateadmin`,
@@ -889,40 +889,32 @@ Storage primitives should not own:
 
 ### Simulate Signing Boundary
 
-Client simulate mode is a signed preflight for signer-managed transactions.
-`internal/clientsign.SignAndSubmitViaGroup` builds the normal server-shaped
-requests and sends them to signer `/simulate`, so the signer performs the same
-group-shaping work used by real submission: dummy transaction insertion, fee
-pooling, group-ID assignment, network/genesis validation, hard-policy validation, and
-simulation-only signing. apsigner then calls algod simulate using the algod
-configuration for the transaction group's genesis/network and does not enable
-empty-signature bypasses. This makes LogicSig policy checks, including template
-runtime args, match real execution.
+Client simulate mode is a post-signing routing choice. Apsigner has no
+simulation endpoint or simulation-only signing mode.
+`internal/clientsign.SignAndSubmitViaGroup` sends the normal request to `/sign`,
+including ordinary policy, review, approval, signing, and audit behavior. Once
+the executable signed group is returned, the client either submits it or sends
+the exact same bytes to its configured algod simulation endpoint. Apsigner
+cannot know which route the client chooses.
 
 For both simulate and submit paths, `SignAndSubmitViaGroup` returns the
 post-planning submitted transaction objects so callers and `txnjson` output
 describe the exact transaction slots sent to algod rather than the caller's
 pre-signing drafts.
 
-This boundary matters because reusable signed transaction msgpack can be
-submitted normally until the validity window expires. `/simulate` keeps those
-bytes inside apsigner and returns only txids, final unsigned transaction bytes,
-mutation metadata, and simulation diagnostics. Mixed plugin/server-managed
-groups still use `/plan` first so plugin-owned slots can be signed locally from
-canonical bytes, then use `/simulate` with passthrough plugin signatures for
-the full real-signed preflight. All-plugin groups assign group IDs and sign
-locally before local algod simulation without contacting the signer.
+This boundary matters because the returned msgpack is reusable and normally
+submittable until the validity window expires. Simulation therefore requires
+the same authorization as submission and must not be presented as a
+non-executable approval. Audit events record authorization and release of
+signatures, not whether the client later simulated, submitted, or committed the
+group.
 
-Guarded groups have the same boundary through `/simulate/guarded`: the client
-sends the frozen canonical group, sentry component signatures, signed
-dummy/foreign passthrough entries, and sign-mode entries for local non-guarded
-legs. apsigner produces the user component signatures internally with
-simulation gate semantics (hard policy rejection applies; review and operator
-approval are skipped), assembles under the full `/sign/assemble` invariants,
-simulates against its own algod, and returns only simulation results. User
-component signatures and assembled bytes never leave the signer, so a
-simulation request cannot be converted into a submittable guarded transaction.
-See [ARCH_SENTRY.md](ARCH_SENTRY.md).
+Mixed plugin/server-managed groups retain their ordinary canonicalization and
+signing path, then branch to client algod only after the final executable group
+exists. Guarded groups likewise complete the normal user and sentry component
+signing plus `/sign/assemble` path before the client routes the assembled group
+to submit or simulate. The client consequently holds executable guarded bytes
+in both modes. See [ARCH_SENTRY.md](ARCH_SENTRY.md).
 
 ## Client Ownership Model
 
@@ -934,7 +926,7 @@ See [ARCH_SENTRY.md](ARCH_SENTRY.md).
 | Persisted alias/set name validation and normalization | `internal/refname` |
 | Address/key-type terminal display formatting | `internal/addressdisplay` |
 | Signer connection, tunnel lifecycle, signer-facing HTTP | `internal/engine/connect` |
-| Signer HTTP client (plan, sign, simulate, keys) | `internal/signerclient` |
+| Signer HTTP client (plan, sign, keys) | `internal/signerclient` |
 | Structured result + MCP projection | `internal/appresult` |
 | Shared ASA metadata, reference, and amount handling | `internal/asa` |
 | Command registry, parsing adapters, rendering, plugin arg normalization | `internal/apshellcli` |
@@ -1591,8 +1583,7 @@ The repo uses:
 - dedicated test harness packages,
 - analysis tools for security properties,
 - signer API and SDK contract tests backed by JSON fixtures in `test/contracts/signerapi/`.
-  These fixtures pin SDK-exposed HTTP DTOs, including signer-managed
-  `/simulate` response shape. SDK package tests are owned by the external
+  These fixtures pin SDK-exposed HTTP DTOs. SDK package tests are owned by the external
   `aplane-algo/aplanesdk` repository; that repository also owns cross-language
   prepared-request parity fixtures for the SDK prep layer. `/status` is
   SDK-facing because clients use `keyset_revision` for refresh decisions and
@@ -1794,7 +1785,7 @@ Product-level boundaries:
 | Client Enrollment / Remote Preflight | `internal/clientenroll/preflight.go`, `cmd/apconsole/preflight.go`, `cmd/apadmin/remote.go` |
 | Shell App | `internal/apshellapp/app.go`, `internal/apshellapp/runtime.go`, `internal/apshellapp/connect.go` |
 | Engine | `internal/engine/engine.go`, `internal/engine/core.go`, `internal/engine/status_sync.go`, `internal/engine/connect/state.go`, `internal/engine/guarded/submit.go` |
-| Signing | `internal/signerapp/signing/service.go`, `internal/signerapp/signing/planner.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/execution.go`, `internal/signerapp/signing/approval.go`, `internal/signerapp/signing/simulation.go` |
+| Signing | `internal/signerapp/signing/service.go`, `internal/signerapp/signing/planner.go`, `internal/signerapp/signing/planner_runtime.go`, `internal/signerapp/signing/execution.go`, `internal/signerapp/signing/approval.go` |
 | Key Admin | `internal/signerapp/keyadmin/service.go`, `internal/signerapp/keyadmin/admin_ops.go`, `internal/signerapp/keyadmin/generic_lsig.go` |
 | KeyType Library | `internal/signerapp/templateadmin/service.go`, `internal/templatelibrary/library.go`, `internal/templatestore/store.go`, `internal/keytypestate/state.go`, `internal/storepaths/paths.go`, `internal/signerapp/daemon/admin_services.go` |
 | Store/Backup Admin | `internal/signerapp/storeadmin/service.go`, `internal/signerapp/backupadmin/service.go`, `internal/signerapp/backupadmin/limiter.go`, `internal/backup/*.go` |

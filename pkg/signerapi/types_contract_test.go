@@ -149,7 +149,6 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"bounded_admin_request.json", assertContractRoundTrip[BoundedAdminRequest]},
 		{"bounded_admin_partial_response.json", assertContractRoundTrip[BoundedAdminPartialResponse]},
 		{"group_plan_response_mutated.json", assertContractRoundTrip[GroupPlanResponse]},
-		{"group_simulate_response_mutated.json", assertContractRoundTrip[GroupSimulateResponse]},
 		{"error_response.json", assertContractRoundTrip[ErrorResponse]},
 		{"keys_response_guarded.json", assertContractRoundTrip[KeysResponse]},
 		{"keys_response_bounded.json", assertContractRoundTrip[KeysResponse]},
@@ -170,8 +169,6 @@ func TestSignerAPIContractFixturesRoundTrip(t *testing.T) {
 		{"component_sign_response_sentry.json", assertContractRoundTrip[ComponentSignResponse]},
 		{"guarded_assembly_request_mixed.json", assertContractRoundTrip[GuardedAssemblyRequest]},
 		{"guarded_assembly_response.json", assertContractRoundTrip[GuardedAssemblyResponse]},
-		{"guarded_simulate_request_mixed.json", assertContractRoundTrip[GuardedSimulateRequest]},
-		{"guarded_simulate_response.json", assertContractRoundTrip[GuardedSimulateResponse]},
 		{"health_response_ready.json", assertContractRoundTrip[HealthResponse]},
 		{"status_response_ready.json", assertContractRoundTrip[StatusResponse]},
 	}

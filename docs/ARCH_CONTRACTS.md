@@ -355,6 +355,25 @@ existing non-symlink directory. Each output is committed atomically; the pair
 is not a transactional filesystem unit, and the public sidecar can always be
 reconstructed from the committed artifact.
 
+Successful `aprekey generate` output is:
+
+```json
+{
+  "schema": "aplane.bounded-admin-generate-result.v1",
+  "reference": {
+    "schema": "aplane.witness-key-public.v1",
+    "key_type": "aplane.witness-falcon1024.v1",
+    "witness_key_id": "<52-character ID>",
+    "public_key_hex": "<canonical lowercase hex>"
+  }
+}
+```
+
+The result does not contain filesystem paths. Callers derive the two generated
+filenames from `--out` and `reference.witness_key_id` using the canonical
+`.wit` and `.wit.json` suffixes. Moving the generated files does not invalidate
+the result or either file.
+
 ### Contract Admin Ceremony Contract
 
 `aprekey rekey` and `unrekey` are the interactive online clients for
@@ -2345,7 +2364,7 @@ Cross-SDK compatibility-bearing behavior:
   signer metadata such as effective auth address, optional LogicSig args,
   optional LogicSig size hints, optional app-call display metadata, and
   SDK-side preflight checks. Prepared groups preserve caller/apshell-equivalent
-  transaction ordering before handoff to `/plan`, `/simulate`, `/sign`, or the
+  transaction ordering before handoff to `/plan`, `/sign`, or the
   guarded component flow.
 - For equivalent normalized typed transaction intents, SDK prep should converge
   with apshell's core prep behavior for transaction fields, suggested params,
@@ -2355,7 +2374,7 @@ Cross-SDK compatibility-bearing behavior:
 - For ordinary APlane-managed signing, SDK prep must not take ownership of
   final group ID assignment, signer-managed dummy insertion, fee pooling,
   policy, approval, or signing. Those remain apsigner-owned behavior behind
-  `/plan`, `/simulate`, and `/sign`.
+  `/plan` and `/sign`.
 - Go, Python, and TypeScript SDKs expose a typed low-level
   `/sign/bounded-admin` request that returns
   `aplane.bounded-admin-partial.v1`. This API handles no external contract-admin
@@ -2374,13 +2393,11 @@ Cross-SDK compatibility-bearing behavior:
   block on operator approval, so SDK deadlines for them follow the same
   approval-aware rule as `/sign`, not the short sentry-role component
   deadline.
-- Guarded simulation uses `/simulate/guarded` instead of the component +
-  assembly flow: the client sends the frozen group, sentry component
-  signatures, signed passthrough entries, and sign-mode entries for local
-  non-guarded legs; apsigner produces user components internally and returns
-  only txids, final unsigned transactions, and simulation diagnostics. SDKs
-  must not implement guarded simulation by requesting real user components and
-  simulating client-side.
+- Guarded simulation uses the same component and assembly flow as submission.
+  The client obtains ordinary user and sentry component signatures, signs local
+  non-guarded legs through `/sign`, assembles through `/sign/assemble`, verifies
+  the frozen canonical bytes, and only then sends the exact executable group to
+  its configured algod simulation endpoint.
 - SDKs expose the authenticated `/status` DTO, including
   `protocol_version`, `build_version`, `keyset_revision`, and
   `approval_wait_seconds`, and include the matching signer API fixture in their
@@ -2419,13 +2436,10 @@ Go SDK specifics:
 - `GetStatusWithContext(ctx)` returns the raw `/status` DTO for keyset
   revision and approval-wait discovery
 - `PlanRequestsWithContext(ctx, requests)` and `SignRequestsWithContext(ctx, requests)` expose server-shaped `/plan` and `/sign` request flows directly
-- `SimulateRequestsWithContext(ctx, requests)` exposes signer-managed
-  `/simulate`; the response contains txids, diagnostics, mutation metadata,
-  and finalized unsigned transaction bytes, but not reusable signed bytes.
 - raw request methods operate on SDK DTOs (`SignRequest`, `KeysResponse`,
-  `PlanGroupResponse`, `GroupSignResponse`, `GroupSimulateResponse`) rather
+  `PlanGroupResponse`, `GroupSignResponse`) rather
   than the base64-returning convenience layer. `SignResponse` is a
-  source-compatibility alias; the live `/sign` response is `GroupSignResponse`.
+  source-compatibility type; the live `/sign` response is `GroupSignResponse`.
 - `Config.NewAlgodClient(network)` is part of the supported Go SDK config surface
 - `GroupPlanResponse`, `RuntimeArgInfo`, and `SigningArgInfo` are compatibility aliases for `PlanGroupResponse`, `RuntimeArg`, and `SigningArg`
 - input uses `go-algorand-sdk` `types.Transaction`
@@ -2442,8 +2456,8 @@ TypeScript and Python SDKs preserve the same broad behaviors:
 - raw `signRequests` / `sign_requests` APIs accept one or more `/sign` request
   entries and expose the native `/sign` response for adapters that already own
   transaction encoding
-- raw `simulateRequests` / `simulate_requests` APIs expose signer-managed
-  `/simulate` with the same no-signed-bytes response boundary as the Go SDK
+- simulation helpers use ordinary raw signing APIs and then call the SDK's
+  client-configured algod simulation endpoint with the returned executable group
 - AlgoKit Utils adapters are optional client-side projections over the native
   SDK client. They provide the AlgoKit `addr` plus transaction-signer shape and
   call raw `/sign` for the indexes AlgoKit asks them to sign. They do not

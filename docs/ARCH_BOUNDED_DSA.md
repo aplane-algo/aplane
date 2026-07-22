@@ -473,8 +473,9 @@ LogicSig size. Clients route:
 Signer-side classification is authoritative. Unknown flow labels fail closed.
 Every bounded admin operation triggers the stable unconditional
 `bounded_admin_operation_requires_review` rule before blanket or self-no-op
-autoapproval, regardless of warning configuration. Simulation cannot release
-signed bytes and may omit an interactive prompt.
+autoapproval, regardless of warning configuration. A client intent to simulate
+does not alter this requirement; apsigner sees an ordinary executable signing
+request.
 
 ## Versioning
 

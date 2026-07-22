@@ -10,9 +10,6 @@ import (
 	"github.com/aplane-algo/aplane/internal/auth"
 	"github.com/aplane-algo/aplane/internal/signerapp/identity"
 	signersigning "github.com/aplane-algo/aplane/internal/signerapp/signing"
-
-	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
-	"github.com/algorand/go-algorand-sdk/v2/types"
 )
 
 // Product-mode Signer/IPCServer wrappers kept only for test convenience.
@@ -71,8 +68,4 @@ func (s *IPCServer) offerDisplacement(newConn net.Conn) bool {
 // handleClient handles a single IPC client connection.
 func (s *IPCServer) handleClient(conn net.Conn) {
 	s.acceptAdminSession(adminproto.NewUnixAdminConn(conn, nil), "ipc", "ipc-passphrase", "")
-}
-
-func (fs *Signer) algodForTransactionGroup(signedTxns []types.SignedTxn) (*algod.Client, *signersigning.ServiceError) {
-	return fs.simulator().AlgodForTransactionGroup(signedTxns)
 }

@@ -288,7 +288,6 @@ signer decides what to sign:
 |----------|---------|
 | `POST /sign` | `signed[]` — hex signed-txn blobs, 1:1 with positions |
 | `POST /plan` | `transactions[]` — TX-prefixed **unsigned** canonical txns (no signing, no approval) |
-| `POST /simulate` | txids, diagnostics, final unsigned txns — **never reusable signed bytes** |
 | `POST /sign/cancel` | cancel a pending approval prompt by request ID |
 
 `plan()` in JS previews the planned group (dummies, fees, group ID) without
@@ -416,14 +415,15 @@ Four levers let you inspect a transaction before it is real:
 
 | Lever | Shell | JS | Effect |
 |-------|-------|-----|--------|
-| Simulate | `simulate on` / `simulate <cmd>` | `setSimulate(true)` | Dry-run against algod simulate; no submission, no reusable signed bytes |
+| Simulate | `simulate on` / `simulate <cmd>` | `setSimulate(true)` | Ordinary executable signing and approval, then client-side algod simulation without submission |
 | Plan | — | `plan(requests)` | Build the canonical group (dummies/fees/group ID) without signing or approval |
 | Write | `write on` | `setWriteMode(true)` | Dump transaction JSON to `txnjson/` for inspection |
 | Verbose | `verbose on` | `setVerbose(true)` | Emit `log()` output and extra diagnostics |
 | Wait | `nowait` to skip | `{ wait: false }` | Whether to wait for confirmation (default: wait) |
 
-A good pattern for anything irreversible: `simulate` it, read the diagnostics,
-then run it for real.
+A good pattern for anything irreversible is to inspect with `plan()` first,
+then simulate and read the diagnostics. Simulation releases reusable signed
+bytes even though apshell does not submit them.
 
 > Full detail: [USER_JSAPI.md](USER_JSAPI.md), [USER_LOGGING.md](USER_LOGGING.md).
 
@@ -585,7 +585,8 @@ each MCP server instance uses its own:
   tools or a terminal.
 - **Amounts: human units in the shell, microAlgos in JS** (`algo()` /
   `microalgos()`).
-- **Asset names resolve per network.** `simulate` before anything irreversible.
+- **Asset names resolve per network.** Inspect with `plan()` and remember that
+  `simulate` requests executable signatures before anything irreversible.
 
 ---
 

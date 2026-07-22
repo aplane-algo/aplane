@@ -321,12 +321,13 @@ type GroupPlanResponse struct {
 
 The `Transactions` array maps 1:1 to the finalized group positions. Each entry is a hex-encoded unsigned transaction with the `TX` prefix, ready for signing.
 
-The `/simulate` endpoint accepts the same request shape as `/sign`. It
-canonicalizes and signs inside apsigner, resolves algod from the transaction
-group's genesis/network, calls algod simulate with real signatures, and returns
-`GroupSimulateResponse` containing txids, final unsigned `transactions`,
-mutation metadata, diagnostic output, and a `failed` flag when algod reports an
-execution failure. It never returns signed transaction bytes.
+Simulation is not a signer endpoint. The client requests an ordinary
+`GroupSignResponse` from `/sign`, including the same policy, review, approval,
+and audit behavior as submission. It decodes the complete executable group and
+sends those exact bytes to the client-configured algod simulation endpoint.
+The signer cannot tell whether released signatures will be simulated or
+submitted. Guarded simulation similarly completes ordinary component signing
+and `/sign/assemble` before the client routes the assembled group to algod.
 
 ---
 

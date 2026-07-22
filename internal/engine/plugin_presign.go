@@ -80,6 +80,9 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	if err := assertPluginSignersMatched(txns, pluginSignerRefs); err != nil {
 		return nil, err
 	}
+	if e.AlgodClient == nil {
+		return nil, ErrNoAlgodClient
+	}
 
 	// --- Phase 1: /plan — plugin slots foreign, managed slots sign-mode ---
 	planRequests := make([]signerapi.SignRequest, len(txns))
@@ -181,7 +184,7 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 		passthrough[s.Index] = signedHex
 	}
 
-	// --- Phase 3: /sign or /simulate — passthrough plugin+dummy, sign-mode managed ---
+	// --- Phase 3: /sign — passthrough plugin+dummy, sign-mode managed ---
 	signRequests := make([]signerapi.SignRequest, len(canonicalTxns))
 	for i, ctxn := range canonicalTxns {
 		if stxnHex, ok := passthrough[i]; ok {
@@ -189,17 +192,6 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 			continue
 		}
 		signRequests[i] = e.managedSignRequest(ctxn, lsigArgsAt(lsigArgs, i))
-	}
-
-	if e.Simulate {
-		simResp, err := e.RequestGroupSimulateWithContext(ctx, signRequests)
-		if err != nil {
-			return nil, fmt.Errorf("server simulation failed: %w", err)
-		}
-		if simResp.Failed {
-			return &PluginSubmitResult{TxIDs: simResp.TxIDs, Output: simResp.Output}, errorWithSubmissionOutput(signing.ErrSimulationFailed, simResp.Output)
-		}
-		return &PluginSubmitResult{TxIDs: simResp.TxIDs, Output: simResp.Output}, nil
 	}
 
 	signResp, err := e.RequestGroupSignWithContext(ctx, signRequests)
@@ -212,6 +204,17 @@ func (e *Engine) SignAndSubmitWithPluginSigners(
 	}
 
 	var output bytes.Buffer
+	if e.Simulate {
+		signedObjects := make([]types.SignedTxn, len(finalSignedTxns))
+		for i, signedBytes := range finalSignedTxns {
+			if err := msgpack.Decode(signedBytes, &signedObjects[i]); err != nil {
+				return nil, fmt.Errorf("failed to decode signed transaction %d: %w", i+1, err)
+			}
+		}
+		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(ctx, signedObjects, e.AlgodClient, &output)
+		return &PluginSubmitResult{TxIDs: txIDs, Output: output.String()}, errorWithSubmissionOutput(simErr, output.String())
+	}
+
 	txIDs, err := signing.SubmitTransactionsWithContext(ctx, finalSignedTxns, e.AlgodClient, true, &output)
 	return &PluginSubmitResult{TxIDs: txIDs, Output: output.String()}, errorWithSubmissionOutput(err, output.String())
 }

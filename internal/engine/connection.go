@@ -104,10 +104,6 @@ func (e *Core) RequestGroupPlanWithContext(ctx context.Context, requests []signe
 	return e.Connection.RequestGroupPlanWithContext(ctx, requests)
 }
 
-func (e *Core) RequestGroupSimulateWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSimulateResponse, error) {
-	return e.Connection.RequestGroupSimulateWithContext(ctx, requests)
-}
-
 func (e *Core) RequestGroupSignWithContext(ctx context.Context, requests []signerapi.SignRequest) (*signerapi.GroupSignResponse, error) {
 	return e.Connection.RequestGroupSignWithContext(ctx, requests)
 }

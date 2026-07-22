@@ -867,52 +867,6 @@ func TestRequestGroupPlanDoesNotUseApprovalWaitDeadline(t *testing.T) {
 	}
 }
 
-// --- RequestGroupSimulate ---
-
-func TestRequestGroupSimulate_Success(t *testing.T) {
-	resp := signerapi.GroupSimulateResponse{
-		TxIDs:        []string{"TXID1"},
-		Transactions: []string{"TX:aabb"},
-		Output:       "ok\n",
-	}
-	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
-		if req.URL.Path != "/simulate" || req.Method != "POST" {
-			t.Errorf("request = %s %s, want POST /simulate", req.Method, req.URL.Path)
-		}
-		return mockResponse(200, jsonBody(t, resp)), nil
-	})
-
-	got, err := c.RequestGroupSimulate([]signerapi.SignRequest{
-		{TxnBytesHex: "aabb", AuthAddress: "ADDR1"},
-	})
-	if err != nil {
-		t.Fatalf("RequestGroupSimulate() error = %v", err)
-	}
-	if len(got.TxIDs) != 1 || got.TxIDs[0] != "TXID1" {
-		t.Errorf("TxIDs = %v, want [TXID1]", got.TxIDs)
-	}
-	if got.Output != "ok\n" {
-		t.Errorf("Output = %q, want ok", got.Output)
-	}
-}
-
-func TestRequestGroupSimulate_ErrorField(t *testing.T) {
-	resp := signerapi.GroupSimulateResponse{Error: "simulation unavailable"}
-	c := newTestClient(t, func(req *http.Request) (*http.Response, error) {
-		return mockResponse(200, jsonBody(t, resp)), nil
-	})
-
-	_, err := c.RequestGroupSimulate([]signerapi.SignRequest{
-		{TxnBytesHex: "aabb", AuthAddress: "ADDR1"},
-	})
-	if err == nil {
-		t.Fatal("expected error for error response")
-	}
-	if !strings.Contains(err.Error(), "simulation unavailable") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
 // --- Auth header ---
 
 func TestAuthorizationHeader(t *testing.T) {

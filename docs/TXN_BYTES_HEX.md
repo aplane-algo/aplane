@@ -150,8 +150,8 @@ inbound requests, but clients should send and expect the TX-prefixed form.
 | Foreign transaction (multi-party) | `TxnBytesHex` (no `auth_address`) |
 | Passthrough transaction | `signed_txn_hex` (already signed; returned unchanged) |
 | Planned unsigned group | `/plan` `transactions[]` (`TX` + msgpack, hex) |
-| Signer-managed simulation | `/simulate` response with txids, mutations, diagnostics, a `failed` flag, and final unsigned `transactions[]`; signed bytes stay in apsigner |
-| Unsigned planning simulation | `/plan` output + algod simulate with empty signatures enabled |
+| Full signed simulation | ordinary `/sign` response followed by client-side algod simulation of the exact executable `signed[]` group |
+| Unsigned planning | `/plan` output for inspection; the built-in full simulation path does not use empty-signature overrides |
 
 ## Benefits
 

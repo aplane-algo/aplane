@@ -6,6 +6,12 @@
 
 This contract is consumed by `apshell`, the in-tree `internal/signerclient`, and external SDK clients in the `aplane-algo/aplanesdk` repo (Go, TypeScript, Python). It documents the request/response wire format, status codes, identity routing, and the `/sign/cancel` lifecycle.
 
+The current signer HTTP protocol is `2.0`. Version 2 removes the signer-owned
+ordinary and guarded simulation endpoints and their DTOs. Simulation-capable
+clients must use ordinary signing followed by client-side algod simulation.
+This is a coordinated breaking change: clients that call the removed routes
+receive `404` and must be upgraded with apsigner.
+
 The product-facing HTTP API is a single-signer API. Internally, successful
 token authentication resolves an identity and every authenticated handler routes
 to that identity's runtime. In product use this is the product identity
@@ -26,8 +32,6 @@ coverage.
 | `POST` | `/sign/assemble` | yes | yes |
 | `POST` | `/sign/cancel` | yes | no |
 | `POST` | `/plan` | yes | yes |
-| `POST` | `/simulate` | yes | yes |
-| `POST` | `/simulate/guarded` | yes | yes |
 | `POST` | `/admin/generate` | yes | yes |
 | `POST` | `/admin/sentries/sync` | yes | no |
 | `DELETE` | `/admin/keys` | yes | yes |
@@ -35,7 +39,7 @@ coverage.
 Method enforcement:
 
 - `/sign`, `/sign/bounded-admin`, `/sign/component`, `/sign/assemble`, `/sign/cancel`, `/plan`,
-  `/simulate`, `/simulate/guarded`, `/status`, `/admin/generate`,
+  `/status`, `/admin/generate`,
   `/admin/sentries/sync`, and `/admin/keys` enforce their HTTP method.
 - `/keys`, `/keytypes`, and `/health` are operationally `GET` endpoints and accept wrong methods for compatibility.
 
@@ -67,7 +71,7 @@ The stable wire-contract `code` values that SDK clients branch on are defined in
 | `unavailable` | temporary inability to serve the request | `503` |
 | `cache_refresh` | store mutated but the signer key cache failed to refresh | `500` |
 | `internal` | unexpected server-side failure | `500` |
-| `bounded_admin_required` | admin-key bounded operation sent to ordinary `/sign` or `/simulate` | `400` |
+| `bounded_admin_required` | admin-key bounded operation sent to ordinary `/sign` | `400` |
 
 An empty `code` means the server predates code support or the failure had no
 specific classification. New codes may be added; existing values must not change
@@ -82,9 +86,8 @@ Timeout behavior:
 - the repo-owned `internal/signerclient` uses per-request default deadlines:
   `/health` 3 seconds, `/status` 5 seconds, inventory requests 30 seconds,
   mutations including `/admin/sentries/sync` 60 seconds, `/plan` 60 seconds,
-  `/simulate` 60 seconds, `/sign/component` 2 minutes for sentry-role
-  requests, `/sign/assemble` 2 minutes, `/simulate/guarded` 2 minutes, and
-  `/sign` based on approval wait. User-role `/sign/component` requests can
+  `/sign/component` 2 minutes for sentry-role requests, `/sign/assemble` 2
+  minutes, and `/sign` based on approval wait. User-role `/sign/component` requests can
   block on operator approval and use the same approval-aware deadline as
   `/sign`.
 - caller-provided contexts with earlier deadlines are preserved.
@@ -109,7 +112,7 @@ Identity routing:
 
 ## Request/Response Shapes
 
-`/sign`, `/plan`, and `/simulate` share request type `signerapi.GroupSignRequest`
+`/sign` and `/plan` share request type `signerapi.GroupSignRequest`
 from `pkg/signerapi/types.go` (re-exported internally via `internal/signerapi/types.go`):
 
 - top-level fields: optional `request_id`, `requests[]`
@@ -127,9 +130,7 @@ policy, and audit decisions use the sender decoded from `txn_bytes_hex`.
 - `method`: ABI method signature when `mode:"abi"`
 
 `/sign` uses `app_call_info` to render application-call approval prompts.
-`/simulate` uses the same metadata for signer-side inspection before internal
-simulation signing. `/plan` accepts the same request DTO but does not perform
-approval or signing.
+`/plan` accepts the same request DTO but does not perform approval or signing.
 
 `request_id` is optional and is used by `/sign` to correlate a live synchronous
 sign request with a later `/sign/cancel` request. If absent, apsigner generates
@@ -140,7 +141,7 @@ letters, digits, `-`, `_`, `.`, or `:`.
 
 See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthrough/sign distinction. The contract surface:
 
-- All three endpoints accept the same per-entry modes; mixing passthrough and foreign in one request is invalid, and all-foreign requests are rejected on every endpoint.
+- Both endpoints accept the same per-entry modes; mixing passthrough and foreign in one request is invalid, and all-foreign requests are rejected on both endpoints.
 - `/plan` performs canonical group building only. It never touches keys and returns canonical unsigned transactions in `transactions[]`.
 - `/sign` performs canonical group building plus approval/signing. Transaction-level hard policy is applied only to signer-controlled slots; passthrough and foreign entries contribute to group consistency, approval context, warning analysis, and audit visibility.
 - `/sign/bounded-admin` performs the same planning, policy, forced review, group
@@ -148,31 +149,20 @@ See [ARCH_TXNFLOW.md](ARCH_TXNFLOW.md) (Mode Selection) for the foreign/passthro
   rekey, then returns a typed partial for external contract-admin completion.
   It never loads a contract-admin private key and never returns the partial
   through `signed[]`.
-- `/simulate` performs canonical group building, signer-side hard policy checks,
-  simulation-only signing, and algod simulation on the transaction group's
-  configured network. Signed bytes do not leave apsigner. If a group contains
-  transactions owned by another signer, those entries must be supplied as
-  passthrough signed transactions; unresolved foreign placeholders are rejected.
-- Client simulate mode must not call `/sign` for signer-managed simulation. It
-  uses `/simulate` so reusable signed transaction bytes remain inside apsigner.
-- `/simulate/guarded` (`signerapi.GuardedSimulateRequest`) is the guarded
-  counterpart: the client sends the frozen canonical group (`requests[]`, same
-  per-entry shapes as `/sign`), guarded targets carrying sentry component
-  signatures, and signed passthrough entries for dummies and externally signed
-  legs. apsigner produces the user component signatures internally with
-  simulation gate semantics (hard policy rejection applies, no operator
-  prompts), signs local non-guarded legs through the ordinary simulation path,
-  assembles under the full `/sign/assemble` invariants, and simulates against
-  its own algod. The response (`signerapi.GuardedSimulateResponse`) carries
-  `tx_ids`, final unsigned `transactions`, `output`, and `failed` — never
-  signed bytes or component signatures. A simulate flag on `/sign/component`
-  would be a client-claimed approval bypass; containment lives in the endpoint
-  shape instead.
-- For plugin-generated groups, mixed signer/plugin simulation uses `/plan` to
-  get canonical bytes, signs plugin-owned slots locally, then calls `/simulate`
-  with those passthrough signatures so signer-owned slots are also real-signed
-  inside apsigner. All-plugin groups assign the group locally, sign locally, and
-  call algod simulate without a signer request.
+- Apsigner has no simulation endpoint or simulation request mode. Full
+  simulation obtains an executable group through ordinary `/sign` and, for
+  guarded groups, ordinary `/sign/component` and `/sign/assemble`. The client
+  then sends the exact returned group to its configured algod simulate
+  endpoint. Apsigner cannot distinguish this from a request whose result will
+  be submitted, so policy, review, approval, signing, and audit semantics are
+  identical.
+- Client simulation fails before requesting signatures when no client algod is
+  configured. Once signatures are returned, the client holds reusable,
+  network-submittable bytes until their validity window expires.
+- Plugin-generated simulation follows the same rule: canonicalize as needed,
+  obtain every managed signature through ordinary signing, preserve plugin
+  passthrough signatures, and send the exact final group from the client to
+  algod simulation.
 
 `/sign` response (`signerapi.GroupSignResponse`):
 
@@ -324,17 +314,6 @@ longer live, later `/sign/cancel` calls return `state:"not_found"`.
 - `transactions`
 - optional `mutations`
 - optional `error`
-
-`/simulate` response (`signerapi.GroupSimulateResponse`):
-
-- `tx_ids`
-- `transactions`: final TX-prefixed unsigned transaction bytes
-- optional `mutations`
-- optional `output`: human-readable algod simulation diagnostics
-- optional `failed`: true when algod simulation completed and reported an
-  execution failure
-- optional `error`: transport, validation, configuration, signing, or algod
-  availability failure
 
 `MutationReport` fields:
 
