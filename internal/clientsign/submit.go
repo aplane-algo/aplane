@@ -38,8 +38,8 @@ type SubmitOptions struct {
 	TxnWriter func(txn types.Transaction, txID string)
 }
 
-// SignAndSubmitViaGroup signs and submits transactions using the /sign endpoint,
-// or uses /simulate when SubmitOptions.Simulate is set.
+// SignAndSubmitViaGroup signs transactions using the /sign endpoint, then
+// submits or simulates the returned executable group through the client algod.
 // This is the simplified flow where the server handles:
 // - Dummy transaction creation for LSig budget
 // - Fee pooling across LSig transactions
@@ -62,6 +62,9 @@ func SignAndSubmitViaGroup(
 
 	if signerClient == nil {
 		return nil, nil, fmt.Errorf("not connected to Signer")
+	}
+	if algodClient == nil {
+		return nil, nil, fmt.Errorf("algod client not configured")
 	}
 
 	w := opts.Out
@@ -102,33 +105,12 @@ func SignAndSubmitViaGroup(
 		}
 	}
 
-	if opts.Simulate {
-		if opts.Verbose {
-			_, _ = fmt.Fprintf(w, "Sending %d transaction(s) to /simulate...\n", len(txns))
-		}
-		resp, err := signerClient.RequestGroupSimulateWithContext(opts.Ctx, requests)
-		if err != nil {
-			return nil, nil, err
-		}
-		if resp.Mutations != nil && resp.Mutations.ForeignCount > 0 {
-			return nil, nil, fmt.Errorf("/simulate returned %d foreign placeholder slot(s); use /plan or a list-based multi-party flow instead", resp.Mutations.ForeignCount)
-		}
-		submittedTxns, err := decodePrefixedTransactionHexes(resp.Transactions)
-		if err != nil {
-			return nil, nil, err
-		}
-		if resp.Output != "" {
-			_, _ = fmt.Fprint(w, resp.Output)
-		}
-		writeSubmittedTransactions(opts.TxnWriter, submittedTxns, resp.TxIDs, len(txns))
-		if resp.Failed {
-			return resp.TxIDs, submittedTxns, signing.ErrSimulationFailed
-		}
-		return resp.TxIDs, submittedTxns, nil
-	}
-
 	if opts.Verbose {
-		_, _ = fmt.Fprintf(w, "Sending %d transaction(s) to /sign...\n", len(txns))
+		if opts.Simulate {
+			_, _ = fmt.Fprintf(w, "Requesting executable signatures for client-side simulation of %d transaction(s)...\n", len(txns))
+		} else {
+			_, _ = fmt.Fprintf(w, "Sending %d transaction(s) to /sign...\n", len(txns))
+		}
 	}
 
 	// Send to /sign endpoint
@@ -167,14 +149,14 @@ func SignAndSubmitViaGroup(
 		}
 	}
 
-	// Submit or simulate
-	if algodClient == nil {
-		return nil, nil, fmt.Errorf("algod client not configured")
-	}
-
-	submittedTxns, err := decodeSignedTransactions(signedTxns)
+	signedObjects, submittedTxns, _, err := decodeSignedTransactionObjects(signedTxns)
 	if err != nil {
 		return nil, nil, err
+	}
+	if opts.Simulate {
+		txIDs, simErr := signing.SimulateSignedTransactionsWithContext(opts.Ctx, signedObjects, algodClient, w)
+		writeSubmittedTransactions(opts.TxnWriter, submittedTxns, txIDs, len(txns))
+		return txIDs, submittedTxns, simErr
 	}
 
 	txIDs, err := signing.SubmitTransactionsWithContext(opts.Ctx, signedTxns, algodClient, opts.WaitForConfirmation, w)
@@ -219,23 +201,6 @@ func decodeSignedTransactionHex(signedHex []string) ([][]byte, error) {
 		signedTxns[i] = signedBytes
 	}
 	return signedTxns, nil
-}
-
-func decodeSignedTransactions(signedTxns [][]byte) ([]types.Transaction, error) {
-	_, txns, _, err := decodeSignedTransactionObjects(signedTxns)
-	return txns, err
-}
-
-func decodePrefixedTransactionHexes(txnHexes []string) ([]types.Transaction, error) {
-	txns := make([]types.Transaction, len(txnHexes))
-	for i, txnHex := range txnHexes {
-		txn, err := txnutil.DecodePrefixedHex(txnHex)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode simulated transaction %d: %w", i+1, err)
-		}
-		txns[i] = txn
-	}
-	return txns, nil
 }
 
 func decodeSignedTransactionObjects(signedTxns [][]byte) ([]types.SignedTxn, []types.Transaction, []string, error) {
